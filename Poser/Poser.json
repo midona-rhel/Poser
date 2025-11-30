@@ -1,0 +1,19 @@
+{
+  "Author": "Midona",
+  "Name": "Poser",
+  "InternalName": "Poser",
+  "AssemblyVersion": "0.0.0.1",
+  "Description": "A posing tool for FFXIV.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "gpose",
+    "posing"
+  ],
+  "DalamudApiLevel": 13,
+  "LoadRequiredState": 0,
+  "LoadSync": false,
+  "CanUnloadAsync": false,
+  "LoadPriority": 0,
+  "Punchline": "A posing tool for FFXIV.",
+  "AcceptsFeedback": true
+}
