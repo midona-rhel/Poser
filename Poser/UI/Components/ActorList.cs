@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
+using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Poser.Core;
 using Poser.Entities;
@@ -17,15 +19,15 @@ namespace Poser.UI.Components;
 /// </summary>
 public class ActorList : IDisposable
 {
+    private const float IconColumnWidth = 32f;
+    private const float CellPaddingX = 4f;
+
     private readonly IActorManager _actorManager;
     private readonly IAnimationService _animationService;
     private readonly EventBus _eventBus;
 
     private List<ActorBase> _actors = new();
-
-    public event Action<ActorBase, bool>? OnAnimationFreezeToggle;
-    public event Action<ActorBase, bool>? OnPhysicsFreezeToggle;
-    public event Action? OnSpawnClone;
+    private bool _isCollapsed = false;
 
     public ActorList(IActorManager actorManager, IAnimationService animationService, EventBus eventBus)
     {
@@ -47,112 +49,78 @@ public class ActorList : IDisposable
 
     public void Draw()
     {
-        // Collapsible header with spawn button
-        if (CollapsibleSection.Draw(
-            "Actors",
-            _actors.Count,
-            FontAwesomeIcon.Plus,
-            () => OnSpawnClone?.Invoke(),
-            "Spawn clone of player"))
-        {
-            DrawActorsTable();
-        }
-    }
+        float iconColWidth = IconColumnWidth * ImGuiHelpers.GlobalScale;
+        float cellPadding = CellPaddingX * ImGuiHelpers.GlobalScale;
 
-    private void DrawActorsTable()
-    {
         var brighterBg = ImPoser.GetBrighterTableBg();
         var tabHovered = ImPoser.GetTabHoveredColor();
         var tabActive = ImPoser.GetTabActiveColor();
 
-        ImGui.PushStyleColor(ImGuiCol.TableRowBg, brighterBg);
-        ImGui.PushStyleColor(ImGuiCol.TableRowBgAlt, brighterBg);
-
-        var tableFlags = ImGuiTableFlags.RowBg |
-                         ImGuiTableFlags.BordersInnerV |
-                         ImGuiTableFlags.SizingStretchProp;
-
-        if (ImGui.BeginTable("##actors_table", 4, tableFlags))
+        using (ImRaii.PushStyle(ImGuiStyleVar.CellPadding, new Vector2(cellPadding, 4f * ImGuiHelpers.GlobalScale)))
+        using (ImRaii.PushColor(ImGuiCol.TableRowBg, brighterBg))
+        using (ImRaii.PushColor(ImGuiCol.TableRowBgAlt, brighterBg))
         {
-            // Setup columns
-            ImGui.TableSetupColumn("##icon", ImGuiTableColumnFlags.WidthFixed, UIConstants.ScaledRowHeight);
-            ImGui.TableSetupColumn("Name", ImGuiTableColumnFlags.WidthStretch);
-            ImGui.TableSetupColumn("##physics", ImGuiTableColumnFlags.WidthFixed, UIConstants.ScaledRowHeight);
-            ImGui.TableSetupColumn("##anim", ImGuiTableColumnFlags.WidthFixed, UIConstants.ScaledRowHeight);
+            var tableFlags = ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerV;
 
-            // Header row
-            DrawTableHeader();
-
-            // Data rows
-            for (int i = 0; i < _actors.Count; i++)
+            if (ImGui.BeginTable("##actors_table", 2, tableFlags))
             {
-                var actor = _actors[i];
-                bool isSelected = _actorManager.IsSelected(actor);
-                bool isFrozen = _animationService.IsFrozen(actor);
-                bool isPhysicsFrozen = _animationService.IsPhysicsFrozen(actor);
+                ImGui.TableSetupColumn("##icon", ImGuiTableColumnFlags.WidthFixed, iconColWidth);
+                ImGui.TableSetupColumn("##name", ImGuiTableColumnFlags.WidthStretch);
 
-                DrawActorRow(i, actor, isSelected, isFrozen, isPhysicsFrozen, tabHovered, tabActive);
+                // Header row
+                ImGui.TableNextRow();
+                ImGui.TableNextColumn();
+
+                // Collapse button in icon column
+                float buttonSize = ImGui.GetFrameHeight();
+                var arrowIcon = _isCollapsed ? FontAwesomeIcon.CaretRight : FontAwesomeIcon.CaretDown;
+                if (ImPoser.CenteredIconButton("actors_collapse", arrowIcon, new Vector2(buttonSize, buttonSize)))
+                {
+                    _isCollapsed = !_isCollapsed;
+                }
+
+                ImGui.TableNextColumn();
+                ImGui.AlignTextToFramePadding();
+                ImGui.TextDisabled($"Actors ({_actors.Count})");
+
+                // Data rows (if not collapsed)
+                if (!_isCollapsed)
+                {
+                    for (int i = 0; i < _actors.Count; i++)
+                    {
+                        var actor = _actors[i];
+                        bool isSelected = _actorManager.IsSelected(actor);
+                        bool isFrozen = _animationService.IsFrozen(actor);
+
+                        DrawActorRow(i, actor, isSelected, isFrozen, tabHovered, tabActive);
+                    }
+                }
+
+                ImGui.EndTable();
             }
-
-            ImGui.EndTable();
         }
 
-        ImGui.PopStyleColor(2);
-
-        if (_actors.Count == 0)
+        if (!_isCollapsed && _actors.Count == 0)
         {
             ImGui.TextDisabled("No actors in scene");
         }
     }
 
-    private void DrawTableHeader()
-    {
-        ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(0);
-        // Empty for icon column
-
-        ImGui.TableSetColumnIndex(1);
-        ImGui.Text("Name");
-
-        ImGui.TableSetColumnIndex(2);
-        ImPoser.CenterIconInCell(FontAwesomeIcon.Wind, null, "Freeze Physics");
-
-        ImGui.TableSetColumnIndex(3);
-        ImPoser.CenterIconInCell(FontAwesomeIcon.Snowflake, null, "Freeze Animation");
-    }
-
-    private void DrawActorRow(int index, ActorBase actor, bool isSelected, bool isFrozen, bool isPhysicsFrozen,
-        System.Numerics.Vector4 tabHovered, System.Numerics.Vector4 tabActive)
+    private void DrawActorRow(int index, ActorBase actor, bool isSelected, bool isFrozen,
+        Vector4 tabHovered, Vector4 tabActive)
     {
         // Determine icon color based on poseable state
         var iconColor = isFrozen ? UIConstants.PoseableColor : UIConstants.NotPoseableColor;
 
         TableRow.Begin(index, isSelected, tabActive, tabHovered);
 
-        // Icon column
-        if (TableRow.IconColumn(FontAwesomeIcon.User, iconColor))
-        {
-            HandleSelection(index);
-        }
+        // Icon column - display only, no selection
+        TableRow.IconColumn(FontAwesomeIcon.User, iconColor);
 
-        // Name column
+        // Name column - this triggers selection
         if (TableRow.TextColumn(actor.Name))
         {
             HandleSelection(index);
-        }
-
-        // Physics freeze checkbox
-        bool physicsFrozen = isPhysicsFrozen;
-        if (TableRow.CheckboxColumn("physics", ref physicsFrozen, 2))
-        {
-            OnPhysicsFreezeToggle?.Invoke(actor, physicsFrozen);
-        }
-
-        // Animation freeze checkbox
-        bool animFrozen = isFrozen;
-        if (TableRow.CheckboxColumn("anim", ref animFrozen, 3))
-        {
-            OnAnimationFreezeToggle?.Invoke(actor, animFrozen);
         }
 
         TableRow.End();

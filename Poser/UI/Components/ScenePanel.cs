@@ -1,6 +1,7 @@
 using System;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
+using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Poser.Core;
 using Poser.Entities;
@@ -18,8 +19,6 @@ public class ScenePanel : IDisposable
     private readonly IActorManager _actorManager;
     private readonly EntityList _entityList;
 
-    public event Action<ActorBase, bool>? OnAnimationFreezeToggle;
-    public event Action<ActorBase, bool>? OnPhysicsFreezeToggle;
     public event Action? OnSpawnClone;
     public event Action? OnDeleteSelected;
 
@@ -30,11 +29,6 @@ public class ScenePanel : IDisposable
     {
         _actorManager = actorManager;
         _entityList = new EntityList(actorManager, animationService, eventBus);
-
-        // Wire up events
-        _entityList.OnAnimationFreezeToggle += (actor, freeze) => OnAnimationFreezeToggle?.Invoke(actor, freeze);
-        _entityList.OnPhysicsFreezeToggle += (actor, freeze) => OnPhysicsFreezeToggle?.Invoke(actor, freeze);
-        _entityList.OnSpawnClone += () => OnSpawnClone?.Invoke();
     }
 
     public void Draw()
@@ -47,20 +41,41 @@ public class ScenePanel : IDisposable
 
         ImGui.Spacing();
 
-        // Delete button at bottom
-        DrawDeleteButton();
+        // Plus and Delete buttons at bottom
+        DrawBottomButtons();
     }
 
-    private void DrawDeleteButton()
+    private void DrawBottomButtons()
     {
         bool hasSelection = _actorManager.SelectedActors.Count > 0;
+        float buttonSize = UIConstants.ScaledButtonSize;
+        float cellPadding = 4f * ImGuiHelpers.GlobalScale; // Match ActorList.CellPaddingX
+
+        // Offset to align with table icon column content
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + cellPadding);
+
+        // Plus button on the left
+        if (ImPoser.CenteredIconButton(
+            "spawn_clone",
+            FontAwesomeIcon.Plus,
+            new System.Numerics.Vector2(buttonSize, buttonSize),
+            "Spawn clone of player"))
+        {
+            OnSpawnClone?.Invoke();
+        }
+
+        ImGui.SameLine();
+
+        // Trash button right-aligned
+        float trashButtonWidth = buttonSize * 4;
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - trashButtonWidth);
 
         using (ImRaii.Disabled(!hasSelection))
         {
             if (ImPoser.FontIconButton(
                 "delete_selected",
                 FontAwesomeIcon.Trash,
-                new System.Numerics.Vector2(ImPoser.GetRemainingWidth(), UIConstants.ScaledButtonSize),
+                new System.Numerics.Vector2(trashButtonWidth, buttonSize),
                 "Delete selected entities",
                 hasSelection))
             {

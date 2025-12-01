@@ -1,9 +1,9 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility;
+using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using Poser.Core;
-using Poser.Entities;
-using Poser.History;
 using Poser.Services;
 using Poser.UI.Components;
 
@@ -12,6 +12,7 @@ namespace Poser.UI;
 public class MainWindow : Window
 {
     private const float SidebarWidth = 560f;
+    private const float PropertiesMinHeight = 200f;
 
     private readonly IGPoseService _gPoseService;
     private readonly IAnimationService _animationService;
@@ -30,7 +31,7 @@ public class MainWindow : Window
         IPosingService posingService,
         EventBus eventBus)
         : base($"{Poser.PluginName}###poser_sidebar_window",
-            ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove)
+            ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar)
     {
         _gPoseService = gPoseService;
         _animationService = animationService;
@@ -39,19 +40,11 @@ public class MainWindow : Window
         // Initialize components
         _topBar = new TopBar(gPoseService, historyService);
         _scenePanel = new ScenePanel(actorManager, animationService, eventBus);
-        _propertiesPanel = new PropertiesPanel(actorManager, posingService);
+        _propertiesPanel = new PropertiesPanel(actorManager, posingService, animationService, historyService);
 
         // Wire up events from ScenePanel
-        _scenePanel.OnAnimationFreezeToggle += HandleAnimationFreezeToggle;
-        _scenePanel.OnPhysicsFreezeToggle += HandlePhysicsFreezeToggle;
         _scenePanel.OnSpawnClone += HandleSpawnClone;
         _scenePanel.OnDeleteSelected += HandleDeleteSelected;
-
-        SizeConstraints = new WindowSizeConstraints
-        {
-            MinimumSize = new Vector2(SidebarWidth, 400),
-            MaximumSize = new Vector2(SidebarWidth, 4000)
-        };
     }
 
     public override void PreDraw()
@@ -59,8 +52,17 @@ public class MainWindow : Window
         base.PreDraw();
 
         var displaySize = ImGui.GetIO().DisplaySize;
+
+        // Position window at right edge, full height
         Position = new Vector2(displaySize.X - SidebarWidth, 0);
         Size = new Vector2(SidebarWidth, displaySize.Y);
+
+        // Lock size constraints to screen height
+        SizeConstraints = new WindowSizeConstraints
+        {
+            MinimumSize = new Vector2(SidebarWidth, displaySize.Y),
+            MaximumSize = new Vector2(SidebarWidth, displaySize.Y)
+        };
     }
 
     public override void Draw()
@@ -75,25 +77,35 @@ public class MainWindow : Window
             return;
         }
 
-        _scenePanel.Draw();
+        float totalHeight = ImGui.GetContentRegionAvail().Y;
 
-        ImGui.Spacing();
+        // Properties gets priority - use minimum height
+        float propertiesHeight = PropertiesMinHeight * ImGuiHelpers.GlobalScale;
+
+        // Scene gets remaining space
+        float sceneHeight = totalHeight - propertiesHeight - ImGui.GetStyle().ItemSpacing.Y;
+
+        // Scene panel - scrollable child that fills top portion
+        using (var child = ImRaii.Child("scene_region", new Vector2(-1, sceneHeight), false,
+            ImGuiWindowFlags.AlwaysUseWindowPadding))
+        {
+            if (child.Success)
+            {
+                _scenePanel.Draw();
+            }
+        }
+
         ImGui.Separator();
-        ImGui.Spacing();
 
-        _propertiesPanel.Draw();
-    }
-
-    private void HandleAnimationFreezeToggle(ActorBase actor, bool freeze)
-    {
-        var action = new FreezeAnimationAction(_animationService, actor, freeze);
-        _historyService.Push(action);
-    }
-
-    private void HandlePhysicsFreezeToggle(ActorBase actor, bool freeze)
-    {
-        var action = new FreezePhysicsAction(_animationService, actor, freeze);
-        _historyService.Push(action);
+        // Properties panel - child region to properly constrain width, no scroll
+        using (var child = ImRaii.Child("properties_region", new Vector2(-1, -1), false,
+            ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
+        {
+            if (child.Success)
+            {
+                _propertiesPanel.Draw();
+            }
+        }
     }
 
     private void HandleSpawnClone()

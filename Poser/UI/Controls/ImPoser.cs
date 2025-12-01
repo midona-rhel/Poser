@@ -132,6 +132,50 @@ public static class ImPoser
         return clicked && enabled;
     }
 
+    /// <summary>
+    /// Button with visually centered FontAwesome icon.
+    /// Uses Button + manual icon draw for perfect centering.
+    /// </summary>
+    public static bool CenteredIconButton(string id, FontAwesomeIcon icon, Vector2? size = null,
+        string? tooltip = null, bool enabled = true)
+    {
+        var buttonSize = size ?? new Vector2(UIConstants.ScaledButtonSize);
+        bool clicked = false;
+
+        using (ImRaii.PushId(id))
+        using (ImRaii.Disabled(!enabled))
+        {
+            var startPos = ImGui.GetCursorScreenPos();
+
+            // Draw button background (empty label)
+            clicked = ImGui.Button("##btn", buttonSize);
+
+            // Calculate icon size and center position
+            using (ImRaii.PushFont(UiBuilder.IconFont))
+            {
+                var iconStr = icon.ToIconString();
+                var iconSize = ImGui.CalcTextSize(iconStr);
+
+                var iconPos = new Vector2(
+                    startPos.X + (buttonSize.X - iconSize.X) / 2,
+                    startPos.Y + (buttonSize.Y - iconSize.Y) / 2);
+
+                var drawList = ImGui.GetWindowDrawList();
+                var textColor = enabled
+                    ? ImGui.GetColorU32(ImGuiCol.Text)
+                    : ImGui.GetColorU32(ImGuiCol.TextDisabled);
+                drawList.AddText(iconPos, textColor, iconStr);
+            }
+        }
+
+        if (tooltip != null && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+        {
+            ImGui.SetTooltip(tooltip);
+        }
+
+        return clicked && enabled;
+    }
+
     public static bool FontIconButtonRight(string id, FontAwesomeIcon icon, float position, string? tooltip = null, bool enabled = true)
     {
         var size = new Vector2(UIConstants.ScaledButtonSize);

@@ -1,16 +1,19 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using Poser.Entities;
 using Poser.Services;
 
+using StructsGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
+
 namespace Poser.Game;
 
 /// <summary>
 /// Service that applies transform overrides to actors.
-/// Uses framework tick to continuously apply overrides.
+/// Hooks SetPosition to intercept game reset attempts.
 /// </summary>
 public unsafe class PosingService : IPosingService
 {
@@ -19,23 +22,42 @@ public unsafe class PosingService : IPosingService
     private readonly IGPoseService _gPoseService;
     private readonly IAnimationService _animationService;
 
+    // Hook for intercepting position resets
+    private delegate void SetPositionDelegate(StructsGameObject* gameObject, float x, float y, float z);
+    private readonly Hook<SetPositionDelegate>? _setPositionHook;
+
     // Transform overrides keyed by actor address
     private readonly Dictionary<nint, Transform> _transformOverrides = new();
 
     // Original transforms before override (for restoration)
     private readonly Dictionary<nint, Transform> _originalTransforms = new();
 
-    // Dirty flag - only apply transforms that have changed
-    private readonly HashSet<nint> _dirtyTransforms = new();
-
-    public PosingService(IPluginLog log, IFramework framework, IGPoseService gPoseService, IAnimationService animationService)
+    public PosingService(
+        IPluginLog log,
+        IFramework framework,
+        IGPoseService gPoseService,
+        IAnimationService animationService,
+        IGameInteropProvider hooking)
     {
         _log = log;
         _framework = framework;
         _gPoseService = gPoseService;
         _animationService = animationService;
 
-        // Apply overrides every frame
+        // Hook SetPosition to intercept game reset attempts (like Brio does)
+        try
+        {
+            var setPositionAddress = (nint)StructsGameObject.Addresses.SetPosition.Value;
+            _setPositionHook = hooking.HookFromAddress<SetPositionDelegate>(setPositionAddress, SetPositionDetour);
+            _setPositionHook.Enable();
+            _log.Debug("PosingService: SetPosition hook initialized");
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"PosingService: Failed to hook SetPosition: {ex.Message}");
+        }
+
+        // Apply overrides every frame as backup
         _framework.Update += OnFrameworkUpdate;
 
         // Reset all when exiting GPose
@@ -45,6 +67,21 @@ public unsafe class PosingService : IPosingService
         _animationService.OnFreezeStateChanged += OnActorFreezeStateChanged;
 
         _log.Debug("PosingService initialized");
+    }
+
+    /// <summary>
+    /// Intercepts the game's SetPosition calls. If we have an override, apply it instead.
+    /// </summary>
+    private void SetPositionDetour(StructsGameObject* gameObject, float x, float y, float z)
+    {
+        if (_gPoseService.IsGPosing && _transformOverrides.TryGetValue((nint)gameObject, out var transform))
+        {
+            // Reapply our override instead of game's reset
+            ApplyTransformToActor((nint)gameObject, transform);
+            return; // Don't call original - we override completely
+        }
+
+        _setPositionHook!.Original(gameObject, x, y, z);
     }
 
     private void OnGPoseStateChanged(bool isGPosing)
@@ -66,20 +103,12 @@ public unsafe class PosingService : IPosingService
 
     private void OnFrameworkUpdate(IFramework framework)
     {
-        // Only apply transforms that are marked dirty
-        if (_dirtyTransforms.Count == 0)
-            return;
-
-        foreach (var actorAddress in _dirtyTransforms)
+        // Apply ALL overrides every frame as backup
+        // The hook handles most cases, but this ensures persistence
+        foreach (var (actorAddress, transform) in _transformOverrides)
         {
-            if (_transformOverrides.TryGetValue(actorAddress, out var transform))
-            {
-                ApplyTransformToActor(actorAddress, transform);
-            }
+            ApplyTransformToActor(actorAddress, transform);
         }
-
-        // Clear dirty flags after applying
-        _dirtyTransforms.Clear();
     }
 
     private void ApplyTransformToActor(nint actorAddress, Transform transform)
@@ -116,10 +145,7 @@ public unsafe class PosingService : IPosingService
 
         _transformOverrides[actor.Address] = transform;
 
-        // Mark as dirty - will be applied on next framework update
-        _dirtyTransforms.Add(actor.Address);
-
-        // Also apply immediately for responsive feedback
+        // Apply immediately for responsive feedback
         ApplyTransformToActor(actor.Address, transform);
     }
 
@@ -201,7 +227,6 @@ public unsafe class PosingService : IPosingService
     {
         if (_transformOverrides.Remove(address))
         {
-            _dirtyTransforms.Remove(address);
             if (_originalTransforms.TryGetValue(address, out var original))
             {
                 ApplyTransformToActor(address, original);
@@ -220,7 +245,6 @@ public unsafe class PosingService : IPosingService
 
         _transformOverrides.Clear();
         _originalTransforms.Clear();
-        _dirtyTransforms.Clear();
     }
 
     public bool HasTransformOverride(ActorBase actor)
@@ -230,6 +254,7 @@ public unsafe class PosingService : IPosingService
 
     public void Dispose()
     {
+        _setPositionHook?.Dispose();
         _gPoseService.OnGPoseStateChanged -= OnGPoseStateChanged;
         _animationService.OnFreezeStateChanged -= OnActorFreezeStateChanged;
         _framework.Update -= OnFrameworkUpdate;

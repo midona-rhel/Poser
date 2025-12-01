@@ -68,9 +68,11 @@ public static class TableRow
         ImPoser.VerticalCenterText();
 
         var style = ImGui.GetStyle();
+        // Never pass isSelected=true to Selectable - we handle highlighting via TableSetBgColor
+        // This avoids double-highlighting (Selectable's highlight + our row background)
         bool clicked = ImGui.Selectable(
             $"{text}##row_{_currentRowIndex}",
-            _currentRowSelected,
+            false, // Always false - TableSetBgColor handles selection highlight
             ImGuiSelectableFlags.None,
             new Vector2(ImGui.GetContentRegionAvail().X, UIConstants.ScaledRowHeight - style.CellPadding.Y * 2));
 
@@ -100,7 +102,7 @@ public static class TableRow
     /// </summary>
     public static bool End()
     {
-        // Apply hover highlight at the end (only if not selected)
+        // Apply tab color hover highlight (only if not already selected)
         if (_currentRowHovered && !_currentRowSelected)
         {
             ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(_hoverColor));
