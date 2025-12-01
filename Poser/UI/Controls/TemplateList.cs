@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.Utility.Raii;
 
 namespace Poser.UI.Controls;
 
@@ -10,45 +10,77 @@ public class TemplateList<T>
 {
     private readonly string _id;
     private readonly Func<T, string> _getLabel;
-    private readonly Action<T>? _onSelect;
+    private readonly Action<IReadOnlyList<T>>? _onSelectionChanged;
     private readonly Action<T>? _onDoubleClick;
 
-    private int _selectedIndex = -1;
+    private readonly HashSet<int> _selectedIndices = new();
     private List<T> _items = new();
 
-    public T? SelectedItem => _selectedIndex >= 0 && _selectedIndex < _items.Count ? _items[_selectedIndex] : default;
-    public int SelectedIndex => _selectedIndex;
+    public IReadOnlyList<T> SelectedItems => _selectedIndices
+        .Where(i => i >= 0 && i < _items.Count)
+        .Select(i => _items[i])
+        .ToList();
 
-    public TemplateList(string id, Func<T, string> getLabel, Action<T>? onSelect = null, Action<T>? onDoubleClick = null)
+    public T? PrimarySelection => _selectedIndices.Count > 0 && _selectedIndices.First() < _items.Count
+        ? _items[_selectedIndices.First()]
+        : default;
+
+    public TemplateList(string id, Func<T, string> getLabel, Action<IReadOnlyList<T>>? onSelectionChanged = null, Action<T>? onDoubleClick = null)
     {
         _id = id;
         _getLabel = getLabel;
-        _onSelect = onSelect;
+        _onSelectionChanged = onSelectionChanged;
         _onDoubleClick = onDoubleClick;
     }
 
     public void SetItems(List<T> items)
     {
         _items = items;
-        if (_selectedIndex >= _items.Count)
-            _selectedIndex = _items.Count - 1;
+        // Remove invalid indices
+        _selectedIndices.RemoveWhere(i => i >= _items.Count);
     }
 
     public void Draw(Vector2 size)
     {
-        // Use ImGui's built-in ListBox which respects theme colors (FrameBg)
         if (ImGui.BeginListBox($"##{_id}", size))
         {
             for (int i = 0; i < _items.Count; i++)
             {
                 var item = _items[i];
-                bool isSelected = i == _selectedIndex;
+                bool isSelected = _selectedIndices.Contains(i);
                 string label = _getLabel(item);
 
                 if (ImGui.Selectable($"{label}##{_id}_{i}", isSelected, ImGuiSelectableFlags.AllowDoubleClick))
                 {
-                    _selectedIndex = i;
-                    _onSelect?.Invoke(item);
+                    bool ctrlHeld = ImGui.GetIO().KeyCtrl;
+                    bool shiftHeld = ImGui.GetIO().KeyShift;
+
+                    if (ctrlHeld)
+                    {
+                        // Toggle selection
+                        if (isSelected)
+                            _selectedIndices.Remove(i);
+                        else
+                            _selectedIndices.Add(i);
+                    }
+                    else if (shiftHeld && _selectedIndices.Count > 0)
+                    {
+                        // Range selection
+                        int anchor = _selectedIndices.Min();
+                        int start = Math.Min(anchor, i);
+                        int end = Math.Max(anchor, i);
+                        _selectedIndices.Clear();
+                        for (int j = start; j <= end; j++)
+                            _selectedIndices.Add(j);
+                    }
+                    else
+                    {
+                        // Single selection
+                        _selectedIndices.Clear();
+                        _selectedIndices.Add(i);
+                    }
+
+                    _onSelectionChanged?.Invoke(SelectedItems);
 
                     if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
                     {
@@ -68,12 +100,25 @@ public class TemplateList<T>
 
     public void ClearSelection()
     {
-        _selectedIndex = -1;
+        _selectedIndices.Clear();
+        _onSelectionChanged?.Invoke(SelectedItems);
     }
 
     public void Select(int index)
     {
         if (index >= 0 && index < _items.Count)
-            _selectedIndex = index;
+        {
+            _selectedIndices.Clear();
+            _selectedIndices.Add(index);
+            _onSelectionChanged?.Invoke(SelectedItems);
+        }
+    }
+
+    public void SelectMultiple(IEnumerable<int> indices)
+    {
+        _selectedIndices.Clear();
+        foreach (var i in indices.Where(i => i >= 0 && i < _items.Count))
+            _selectedIndices.Add(i);
+        _onSelectionChanged?.Invoke(SelectedItems);
     }
 }

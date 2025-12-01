@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -37,7 +38,7 @@ public class MainWindow : Window
         _actorList = new TemplateList<ActorBase>(
             "actors",
             actor => actor.Name,
-            onSelect: actor => { _actorManager.SelectedActor = actor; },
+            onSelectionChanged: OnActorSelectionChanged,
             onDoubleClick: actor => { /* Handle actor double click */ }
         );
 
@@ -53,6 +54,11 @@ public class MainWindow : Window
             MinimumSize = new Vector2(SidebarWidth, 400),
             MaximumSize = new Vector2(SidebarWidth, 4000)
         };
+    }
+
+    private void OnActorSelectionChanged(IReadOnlyList<ActorBase> selectedActors)
+    {
+        _actorManager.SelectMultiple(selectedActors);
     }
 
     public override void PreDraw()
@@ -180,27 +186,45 @@ public class MainWindow : Window
 
     private void DrawFreezeButton()
     {
-        var selectedActor = _actorManager.SelectedActor;
+        var selectedActors = _actorManager.SelectedActors;
+        bool hasSelection = selectedActors.Count > 0;
 
-        using (ImRaii.Disabled(selectedActor == null))
+        using (ImRaii.Disabled(!hasSelection))
         {
-            bool isFrozen = selectedActor != null && _animationService.IsFrozen(selectedActor);
-            string buttonText = isFrozen ? "Unfreeze Animation" : "Freeze Animation";
+            // Check if any selected actor is frozen
+            bool anyFrozen = selectedActors.Any(a => _animationService.IsFrozen(a));
+            bool allFrozen = hasSelection && selectedActors.All(a => _animationService.IsFrozen(a));
+
+            string buttonText;
+            if (selectedActors.Count > 1)
+            {
+                buttonText = allFrozen
+                    ? $"Unfreeze {selectedActors.Count} Actors"
+                    : $"Freeze {selectedActors.Count} Actors";
+            }
+            else
+            {
+                buttonText = anyFrozen ? "Unfreeze Animation" : "Freeze Animation";
+            }
 
             if (ImGui.Button(buttonText, new Vector2(ImGui.GetContentRegionAvail().X, 0)))
             {
-                if (selectedActor != null)
+                bool freeze = !allFrozen;
+                foreach (var actor in selectedActors)
                 {
-                    // Create action for undo/redo
-                    var action = new FreezeAnimationAction(_animationService, selectedActor, !isFrozen);
-                    _historyService.Push(action);
+                    bool currentlyFrozen = _animationService.IsFrozen(actor);
+                    if (currentlyFrozen != freeze)
+                    {
+                        var action = new FreezeAnimationAction(_animationService, actor, freeze);
+                        _historyService.Push(action);
+                    }
                 }
             }
         }
 
-        if (_actorManager.SelectedActor == null && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+        if (!hasSelection && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
         {
-            ImGui.SetTooltip("Select an actor first");
+            ImGui.SetTooltip("Select an actor first (Ctrl+click for multiple)");
         }
     }
 }

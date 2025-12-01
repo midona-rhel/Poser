@@ -3,6 +3,8 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Bindings.ImGuizmo;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
+using Poser.Entities;
+using Poser.History;
 using Poser.Services;
 
 namespace Poser.UI;
@@ -11,10 +13,20 @@ public class GizmoOverlayWindow : Window
 {
     private readonly IActorManager _actorManager;
     private readonly ICameraService _cameraService;
+    private readonly IPosingService _posingService;
+    private readonly IHistoryService _historyService;
 
     private const int GizmoId = 142857;
 
-    public GizmoOverlayWindow(IActorManager actorManager, ICameraService cameraService)
+    // Track the transform when we start dragging for undo
+    private Transform? _dragStartTransform;
+    private ActorBase? _dragActor;
+
+    public GizmoOverlayWindow(
+        IActorManager actorManager,
+        ICameraService cameraService,
+        IPosingService posingService,
+        IHistoryService historyService)
         : base("##poser_gizmo_overlay",
             ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoDecoration |
@@ -27,6 +39,8 @@ public class GizmoOverlayWindow : Window
     {
         _actorManager = actorManager;
         _cameraService = cameraService;
+        _posingService = posingService;
+        _historyService = historyService;
 
         // This window needs to be non-interactable except for the gizmo
         RespectCloseHotkey = false;
@@ -48,7 +62,7 @@ public class GizmoOverlayWindow : Window
 
     public override void Draw()
     {
-        var selectedActor = _actorManager.SelectedActor;
+        var selectedActor = _actorManager.PrimarySelectedActor;
         if (selectedActor == null)
             return;
 
@@ -56,13 +70,11 @@ public class GizmoOverlayWindow : Window
         var viewMatrix = _cameraService.GetViewMatrix();
         var projectionMatrix = _cameraService.GetProjectionMatrix();
 
-        // Get actor transform
-        var position = selectedActor.Position;
-        var rotation = selectedActor.Rotation;
+        // Get the effective transform (override or game state)
+        var transform = _posingService.GetEffectiveTransform(selectedActor);
 
         // Create model matrix from actor transform
-        var modelMatrix = Matrix4x4.CreateFromQuaternion(rotation);
-        modelMatrix.Translation = position;
+        var modelMatrix = transform.ToMatrix();
 
         // Setup ImGuizmo
         ImGuizmo.BeginFrame();
@@ -73,10 +85,19 @@ public class GizmoOverlayWindow : Window
         ImGuizmo.SetDrawlist();
         ImGuizmo.Enable(true);
 
-        // Draw the gizmo
         // Note: We need a mutable copy of viewMatrix for ImGuizmo
         var viewMatrixCopy = viewMatrix;
 
+        // Check if we're starting a new drag operation
+        bool isUsing = ImGuizmo.IsUsing();
+        if (isUsing && _dragStartTransform == null)
+        {
+            // Starting to drag - store the initial transform
+            _dragStartTransform = transform;
+            _dragActor = selectedActor;
+        }
+
+        // Draw the gizmo and handle manipulation
         if (ImGuizmo.Manipulate(
             ref viewMatrixCopy,
             ref projectionMatrix,
@@ -84,8 +105,52 @@ public class GizmoOverlayWindow : Window
             ImGuizmoMode.World,
             ref modelMatrix))
         {
-            // TODO: Apply the transform back to the actor
-            // For now, we just draw the gizmo
+            // Extract the new transform from the manipulated matrix
+            var newTransform = Transform.FromMatrix(modelMatrix);
+
+            // Apply the transform to the primary selected actor
+            _posingService.SetTransformOverride(selectedActor, newTransform);
+
+            // Also apply to other selected actors (offset by their relative positions)
+            ApplyToOtherSelectedActors(selectedActor, transform, newTransform);
+        }
+
+        // Check if we finished dragging
+        if (!isUsing && _dragStartTransform.HasValue && _dragActor != null)
+        {
+            // Finished dragging - create undo action
+            var finalTransform = _posingService.GetEffectiveTransform(_dragActor);
+            if (_dragStartTransform.Value != finalTransform)
+            {
+                var action = new TranslateActorAction(
+                    _posingService,
+                    _dragActor,
+                    _dragStartTransform.Value,
+                    finalTransform);
+                _historyService.Push(action);
+            }
+
+            _dragStartTransform = null;
+            _dragActor = null;
+        }
+    }
+
+    /// <summary>
+    /// Applies the same delta transform to other selected actors.
+    /// </summary>
+    private void ApplyToOtherSelectedActors(ActorBase primary, Transform oldTransform, Transform newTransform)
+    {
+        // Calculate the delta
+        var positionDelta = newTransform.Position - oldTransform.Position;
+
+        foreach (var actor in _actorManager.SelectedActors)
+        {
+            if (actor == primary)
+                continue;
+
+            var actorTransform = _posingService.GetEffectiveTransform(actor);
+            actorTransform.Position += positionDelta;
+            _posingService.SetTransformOverride(actor, actorTransform);
         }
     }
 

@@ -19,7 +19,8 @@ public class UIManager : IUIManager
         IActorManager actorManager,
         ICameraService cameraService,
         IAnimationService animationService,
-        IHistoryService historyService)
+        IHistoryService historyService,
+        IPosingService posingService)
     {
         _pluginInterface = pluginInterface;
         _gPoseService = gPoseService;
@@ -30,7 +31,7 @@ public class UIManager : IUIManager
         _windowSystem.AddWindow(_mainWindow);
 
         // Create gizmo overlay window
-        _gizmoOverlay = new GizmoOverlayWindow(actorManager, cameraService);
+        _gizmoOverlay = new GizmoOverlayWindow(actorManager, cameraService, posingService, historyService);
         _windowSystem.AddWindow(_gizmoOverlay);
 
         // Hook into Dalamud's UI drawing

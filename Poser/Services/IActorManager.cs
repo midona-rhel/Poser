@@ -12,9 +12,44 @@ public interface IActorManager : IDisposable
     IReadOnlyList<ActorBase> Actors { get; }
 
     /// <summary>
-    /// Gets or sets the currently selected actor.
+    /// Gets the currently selected actors (supports multi-selection).
     /// </summary>
-    ActorBase? SelectedActor { get; set; }
+    IReadOnlyList<ActorBase> SelectedActors { get; }
+
+    /// <summary>
+    /// Gets the primary selected actor (first in selection).
+    /// </summary>
+    ActorBase? PrimarySelectedActor { get; }
+
+    /// <summary>
+    /// Sets the selection to a single actor.
+    /// </summary>
+    void Select(ActorBase actor);
+
+    /// <summary>
+    /// Sets the selection to multiple actors.
+    /// </summary>
+    void SelectMultiple(IEnumerable<ActorBase> actors);
+
+    /// <summary>
+    /// Adds an actor to the current selection.
+    /// </summary>
+    void AddToSelection(ActorBase actor);
+
+    /// <summary>
+    /// Removes an actor from the current selection.
+    /// </summary>
+    void RemoveFromSelection(ActorBase actor);
+
+    /// <summary>
+    /// Clears all selections.
+    /// </summary>
+    void ClearSelection();
+
+    /// <summary>
+    /// Checks if an actor is selected.
+    /// </summary>
+    bool IsSelected(ActorBase actor);
 
     /// <summary>
     /// Refreshes the actor list from the game.
@@ -27,7 +62,7 @@ public interface IActorManager : IDisposable
     event Action? OnActorsChanged;
 
     /// <summary>
-    /// Event fired when the selected actor changes.
+    /// Event fired when the selection changes.
     /// </summary>
-    event Action<ActorBase?>? OnSelectedActorChanged;
+    event Action<IReadOnlyList<ActorBase>>? OnSelectionChanged;
 }
