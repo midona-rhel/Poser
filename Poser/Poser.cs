@@ -1,5 +1,6 @@
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Objects;
+using Dalamud.Game.Command;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,8 +15,10 @@ namespace Poser;
 public class Poser : IDalamudPlugin
 {
     public const string PluginName = "Poser";
+    private const string CommandName = "/poser";
 
     private readonly ServiceProvider _serviceProvider;
+    private readonly ICommandManager _commandManager;
 
     public Poser(
         IDalamudPluginInterface pluginInterface,
@@ -24,9 +27,12 @@ public class Poser : IDalamudPlugin
         IFramework framework,
         IObjectTable objectTable,
         ISigScanner sigScanner,
-        IGameInteropProvider gameInterop)
+        IGameInteropProvider gameInterop,
+        ICommandManager commandManager)
     {
         log.Info($"Starting {PluginName}...");
+
+        _commandManager = commandManager;
 
         // Build DI container
         _serviceProvider = ConfigureServices(
@@ -36,12 +42,25 @@ public class Poser : IDalamudPlugin
             framework,
             objectTable,
             sigScanner,
-            gameInterop);
+            gameInterop,
+            commandManager);
 
         // Initialize UI Manager (triggers subscription to draw events)
         _ = _serviceProvider.GetRequiredService<IUIManager>();
 
+        // Register the /poser command
+        _commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
+        {
+            HelpMessage = "Open the Poser window"
+        });
+
         log.Info($"{PluginName} started successfully!");
+    }
+
+    private void OnCommand(string command, string args)
+    {
+        var uiManager = _serviceProvider.GetRequiredService<IUIManager>();
+        uiManager.ToggleMainWindow();
     }
 
     private static ServiceProvider ConfigureServices(
@@ -51,7 +70,8 @@ public class Poser : IDalamudPlugin
         IFramework framework,
         IObjectTable objectTable,
         ISigScanner sigScanner,
-        IGameInteropProvider gameInterop)
+        IGameInteropProvider gameInterop,
+        ICommandManager commandManager)
     {
         var services = new ServiceCollection();
 
@@ -63,6 +83,7 @@ public class Poser : IDalamudPlugin
         services.AddSingleton(objectTable);
         services.AddSingleton(sigScanner);
         services.AddSingleton(gameInterop);
+        services.AddSingleton(commandManager);
 
         // Register core services
         services.AddSingleton<EventBus>();
@@ -83,6 +104,7 @@ public class Poser : IDalamudPlugin
 
     public void Dispose()
     {
+        _commandManager.RemoveHandler(CommandName);
         _serviceProvider.Dispose();
     }
 }

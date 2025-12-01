@@ -1,54 +1,52 @@
-using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface;
-using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
+using Poser.Core;
 using Poser.Entities;
 using Poser.History;
 using Poser.Services;
-using Poser.UI.Controls;
+using Poser.UI.Components;
 
 namespace Poser.UI;
 
 public class MainWindow : Window
 {
-    private const float SidebarWidth = 280f;
+    private const float SidebarWidth = 560f;
 
     private readonly IGPoseService _gPoseService;
-    private readonly IActorManager _actorManager;
     private readonly IAnimationService _animationService;
     private readonly IHistoryService _historyService;
-    private readonly TemplateList<ActorBase> _actorList;
+
+    // UI Components
+    private readonly TopBar _topBar;
+    private readonly ScenePanel _scenePanel;
+    private readonly PropertiesPanel _propertiesPanel;
 
     public MainWindow(
         IGPoseService gPoseService,
         IActorManager actorManager,
         IAnimationService animationService,
-        IHistoryService historyService)
+        IHistoryService historyService,
+        IPosingService posingService,
+        EventBus eventBus)
         : base($"{Poser.PluginName}###poser_sidebar_window",
             ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove)
     {
         _gPoseService = gPoseService;
-        _actorManager = actorManager;
         _animationService = animationService;
         _historyService = historyService;
 
-        _actorList = new TemplateList<ActorBase>(
-            "actors",
-            actor => actor.Name,
-            onSelectionChanged: OnActorSelectionChanged,
-            onDoubleClick: actor => { /* Handle actor double click */ }
-        );
+        // Initialize components
+        _topBar = new TopBar(gPoseService, historyService);
+        _scenePanel = new ScenePanel(actorManager, animationService, eventBus);
+        _propertiesPanel = new PropertiesPanel(actorManager, posingService);
 
-        // Subscribe to actor changes
-        _actorManager.OnActorsChanged += RefreshActorList;
+        // Wire up events from ScenePanel
+        _scenePanel.OnAnimationFreezeToggle += HandleAnimationFreezeToggle;
+        _scenePanel.OnPhysicsFreezeToggle += HandlePhysicsFreezeToggle;
+        _scenePanel.OnSpawnClone += HandleSpawnClone;
+        _scenePanel.OnDeleteSelected += HandleDeleteSelected;
 
-        // Initial refresh
-        RefreshActorList();
-
-        // Fixed width sidebar
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(SidebarWidth, 400),
@@ -56,175 +54,55 @@ public class MainWindow : Window
         };
     }
 
-    private void OnActorSelectionChanged(IReadOnlyList<ActorBase> selectedActors)
-    {
-        _actorManager.SelectMultiple(selectedActors);
-    }
-
     public override void PreDraw()
     {
         base.PreDraw();
 
-        // Position window stuck to right edge of screen
         var displaySize = ImGui.GetIO().DisplaySize;
-        var windowHeight = displaySize.Y;
-
         Position = new Vector2(displaySize.X - SidebarWidth, 0);
-        Size = new Vector2(SidebarWidth, windowHeight);
-    }
-
-    private void RefreshActorList()
-    {
-        _actorList.SetItems(_actorManager.Actors.ToList());
+        Size = new Vector2(SidebarWidth, displaySize.Y);
     }
 
     public override void Draw()
     {
-        DrawTopBar();
-
+        _topBar.Draw();
         ImGui.Separator();
         ImGui.Spacing();
 
-        DrawActorSection();
-    }
-
-    private void DrawTopBar()
-    {
-        var windowWidth = ImGui.GetContentRegionAvail().X;
-
-        // Left side: GPose status
-        DrawGPoseStatus();
-
-        // Right side: Undo/Redo buttons
-        ImGui.SameLine();
-        DrawUndoRedoButtons(windowWidth);
-    }
-
-    private void DrawGPoseStatus()
-    {
-        if (_gPoseService.IsGPosing)
+        if (!_gPoseService.IsGPosing)
         {
-            ImGui.TextColored(new Vector4(0.4f, 1.0f, 0.4f, 1.0f), "GPose Active");
-        }
-        else
-        {
-            ImGui.TextDisabled("Not in GPose");
-        }
-    }
-
-    private void DrawUndoRedoButtons(float windowWidth)
-    {
-        // Calculate position for right-aligned buttons
-        float buttonSize = ImGui.GetFrameHeight();
-        float spacing = ImGui.GetStyle().ItemSpacing.X;
-        float buttonsWidth = (buttonSize * 2) + spacing;
-        float rightX = windowWidth - buttonsWidth;
-
-        ImGui.SetCursorPosX(rightX);
-
-        // Push icon font for FontAwesome
-        ImGui.PushFont(UiBuilder.IconFont);
-
-        // Undo button with FontAwesome icon
-        using (ImRaii.Disabled(!_historyService.CanUndo))
-        {
-            if (ImGui.Button(FontAwesomeIcon.Undo.ToIconString(), new Vector2(buttonSize, buttonSize)))
-            {
-                _historyService.Undo();
-            }
+            ImGui.TextDisabled("Enter GPose to see scene");
+            return;
         }
 
-        ImGui.PopFont();
-
-        if (_historyService.CanUndo && ImGui.IsItemHovered())
-        {
-            ImGui.SetTooltip($"Undo: {_historyService.UndoDescription}");
-        }
-
-        ImGui.SameLine();
-
-        ImGui.PushFont(UiBuilder.IconFont);
-
-        // Redo button with FontAwesome icon
-        using (ImRaii.Disabled(!_historyService.CanRedo))
-        {
-            if (ImGui.Button(FontAwesomeIcon.Redo.ToIconString(), new Vector2(buttonSize, buttonSize)))
-            {
-                _historyService.Redo();
-            }
-        }
-
-        ImGui.PopFont();
-
-        if (_historyService.CanRedo && ImGui.IsItemHovered())
-        {
-            ImGui.SetTooltip($"Redo: {_historyService.RedoDescription}");
-        }
-    }
-
-    private void DrawActorSection()
-    {
-        // Actors header
-        if (_gPoseService.IsGPosing)
-        {
-            ImGui.Text($"Actors ({_actorManager.Actors.Count})");
-        }
-        else
-        {
-            ImGui.TextDisabled("Enter GPose to see actors");
-        }
-        ImGui.Spacing();
-
-        // Actor list
-        _actorList.Draw(new Vector2(ImGui.GetContentRegionAvail().X, 150));
+        _scenePanel.Draw();
 
         ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
 
-        // Freeze button for selected actor
-        DrawFreezeButton();
+        _propertiesPanel.Draw();
     }
 
-    private void DrawFreezeButton()
+    private void HandleAnimationFreezeToggle(ActorBase actor, bool freeze)
     {
-        var selectedActors = _actorManager.SelectedActors;
-        bool hasSelection = selectedActors.Count > 0;
+        var action = new FreezeAnimationAction(_animationService, actor, freeze);
+        _historyService.Push(action);
+    }
 
-        using (ImRaii.Disabled(!hasSelection))
-        {
-            // Check if any selected actor is frozen
-            bool anyFrozen = selectedActors.Any(a => _animationService.IsFrozen(a));
-            bool allFrozen = hasSelection && selectedActors.All(a => _animationService.IsFrozen(a));
+    private void HandlePhysicsFreezeToggle(ActorBase actor, bool freeze)
+    {
+        var action = new FreezePhysicsAction(_animationService, actor, freeze);
+        _historyService.Push(action);
+    }
 
-            string buttonText;
-            if (selectedActors.Count > 1)
-            {
-                buttonText = allFrozen
-                    ? $"Unfreeze {selectedActors.Count} Actors"
-                    : $"Freeze {selectedActors.Count} Actors";
-            }
-            else
-            {
-                buttonText = anyFrozen ? "Unfreeze Animation" : "Freeze Animation";
-            }
+    private void HandleSpawnClone()
+    {
+        // TODO: Implement actor spawning
+    }
 
-            if (ImGui.Button(buttonText, new Vector2(ImGui.GetContentRegionAvail().X, 0)))
-            {
-                bool freeze = !allFrozen;
-                foreach (var actor in selectedActors)
-                {
-                    bool currentlyFrozen = _animationService.IsFrozen(actor);
-                    if (currentlyFrozen != freeze)
-                    {
-                        var action = new FreezeAnimationAction(_animationService, actor, freeze);
-                        _historyService.Push(action);
-                    }
-                }
-            }
-        }
-
-        if (!hasSelection && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-        {
-            ImGui.SetTooltip("Select an actor first (Ctrl+click for multiple)");
-        }
+    private void HandleDeleteSelected()
+    {
+        // TODO: Implement actor deletion
     }
 }

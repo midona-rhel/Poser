@@ -56,13 +56,7 @@ public interface IActorManager : IDisposable
     /// </summary>
     void RefreshActors();
 
-    /// <summary>
-    /// Event fired when the actor list changes.
-    /// </summary>
-    event Action? OnActorsChanged;
-
-    /// <summary>
-    /// Event fired when the selection changes.
-    /// </summary>
-    event Action<IReadOnlyList<ActorBase>>? OnSelectionChanged;
+    // Events removed - use EventBus with:
+    // - ActorListChangedEvent for actor list changes
+    // - SelectionChangedEvent for selection changes
 }

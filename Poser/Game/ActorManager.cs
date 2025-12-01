@@ -20,22 +20,27 @@ public class ActorManager : IActorManager
     private readonly IObjectTable _objectTable;
     private readonly IGPoseService _gPoseService;
     private readonly IFramework _framework;
+    private readonly EventBus _eventBus;
 
     private readonly List<ActorBase> _actors = new();
     private readonly List<ActorBase> _selectedActors = new();
+
+    // Track actor addresses to detect actual changes
+    private readonly HashSet<nint> _lastActorAddresses = new();
+
+    // Debounce flag to prevent multiple refreshes per frame
+    private bool _pendingRefresh = false;
 
     public IReadOnlyList<ActorBase> Actors => _actors.AsReadOnly();
     public IReadOnlyList<ActorBase> SelectedActors => _selectedActors.AsReadOnly();
     public ActorBase? PrimarySelectedActor => _selectedActors.FirstOrDefault();
 
-    public event Action? OnActorsChanged;
-    public event Action<IReadOnlyList<ActorBase>>? OnSelectionChanged;
-
-    public ActorManager(IObjectTable objectTable, IGPoseService gPoseService, IFramework framework)
+    public ActorManager(IObjectTable objectTable, IGPoseService gPoseService, IFramework framework, EventBus eventBus)
     {
         _objectTable = objectTable;
         _gPoseService = gPoseService;
         _framework = framework;
+        _eventBus = eventBus;
 
         _gPoseService.OnGPoseStateChanged += OnGPoseStateChanged;
         _framework.Update += OnFrameworkUpdate;
@@ -47,7 +52,7 @@ public class ActorManager : IActorManager
 
         _selectedActors.Clear();
         _selectedActors.Add(actor);
-        OnSelectionChanged?.Invoke(SelectedActors);
+        _eventBus.Publish(new SelectionChangedEvent(SelectedActors));
     }
 
     public void SelectMultiple(IEnumerable<ActorBase> actors)
@@ -57,7 +62,7 @@ public class ActorManager : IActorManager
         {
             _selectedActors.Add(actor);
         }
-        OnSelectionChanged?.Invoke(SelectedActors);
+        _eventBus.Publish(new SelectionChangedEvent(SelectedActors));
     }
 
     public void AddToSelection(ActorBase actor)
@@ -65,14 +70,14 @@ public class ActorManager : IActorManager
         if (!_actors.Contains(actor) || _selectedActors.Contains(actor)) return;
 
         _selectedActors.Add(actor);
-        OnSelectionChanged?.Invoke(SelectedActors);
+        _eventBus.Publish(new SelectionChangedEvent(SelectedActors));
     }
 
     public void RemoveFromSelection(ActorBase actor)
     {
         if (_selectedActors.Remove(actor))
         {
-            OnSelectionChanged?.Invoke(SelectedActors);
+            _eventBus.Publish(new SelectionChangedEvent(SelectedActors));
         }
     }
 
@@ -81,7 +86,7 @@ public class ActorManager : IActorManager
         if (_selectedActors.Count > 0)
         {
             _selectedActors.Clear();
-            OnSelectionChanged?.Invoke(SelectedActors);
+            _eventBus.Publish(new SelectionChangedEvent(SelectedActors));
         }
     }
 
@@ -91,8 +96,9 @@ public class ActorManager : IActorManager
     {
         if (isGPosing)
         {
-            // Delay refresh by one frame to let actors initialize
-            _framework.RunOnTick(RefreshActors);
+            // Mark pending refresh - will be processed on next framework update
+            // This gives actors time to initialize
+            _pendingRefresh = true;
         }
         else
         {
@@ -105,12 +111,30 @@ public class ActorManager : IActorManager
         if (!_gPoseService.IsGPosing)
             return;
 
-        // Check for new/removed actors periodically
-        var currentCount = GetGPoseCharacters().Count();
-        if (currentCount != _actors.Count)
+        // Process pending refresh from GPose entry
+        if (_pendingRefresh)
+        {
+            _pendingRefresh = false;
+            RefreshActors();
+            return;
+        }
+
+        // Check for actor changes by comparing addresses
+        var currentAddresses = GetGPoseCharacterAddresses();
+        if (!currentAddresses.SetEquals(_lastActorAddresses))
         {
             RefreshActors();
         }
+    }
+
+    private HashSet<nint> GetGPoseCharacterAddresses()
+    {
+        var addresses = new HashSet<nint>();
+        foreach (var obj in GetGPoseCharacters())
+        {
+            addresses.Add(obj.Address);
+        }
+        return addresses;
     }
 
     private IEnumerable<IGameObject> GetGPoseCharacters()
@@ -131,8 +155,16 @@ public class ActorManager : IActorManager
 
     public void RefreshActors()
     {
-        ClearActors();
+        // Clear existing actors
+        _selectedActors.Clear();
+        foreach (var actor in _actors)
+        {
+            actor.Dispose();
+        }
+        _actors.Clear();
+        _lastActorAddresses.Clear();
 
+        // Build new actor list
         foreach (var gameObject in GetGPoseCharacters())
         {
             var actor = new ActorBase(
@@ -141,9 +173,10 @@ public class ActorManager : IActorManager
                 gameObject.Address
             );
             _actors.Add(actor);
+            _lastActorAddresses.Add(gameObject.Address);
         }
 
-        OnActorsChanged?.Invoke();
+        _eventBus.Publish(new ActorListChangedEvent(Actors));
     }
 
     private void ClearActors()
@@ -154,7 +187,8 @@ public class ActorManager : IActorManager
             actor.Dispose();
         }
         _actors.Clear();
-        OnActorsChanged?.Invoke();
+        _lastActorAddresses.Clear();
+        _eventBus.Publish(new ActorListChangedEvent(Actors));
     }
 
     private static string GetActorName(IGameObject gameObject)

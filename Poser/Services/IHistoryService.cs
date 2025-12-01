@@ -15,7 +15,7 @@ public interface IHistoryAction
 /// <summary>
 /// Provides undo/redo functionality.
 /// </summary>
-public interface IHistoryService
+public interface IHistoryService : IDisposable
 {
     bool CanUndo { get; }
     bool CanRedo { get; }

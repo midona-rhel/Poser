@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Bindings.ImGuizmo;
@@ -15,18 +16,19 @@ public class GizmoOverlayWindow : Window
     private readonly ICameraService _cameraService;
     private readonly IPosingService _posingService;
     private readonly IHistoryService _historyService;
+    private readonly IAnimationService _animationService;
 
     private const int GizmoId = 142857;
 
-    // Track the transform when we start dragging for undo
-    private Transform? _dragStartTransform;
-    private ActorBase? _dragActor;
+    // Track transforms when we start dragging for undo
+    private Dictionary<ActorBase, Transform>? _dragStartTransforms;
 
     public GizmoOverlayWindow(
         IActorManager actorManager,
         ICameraService cameraService,
         IPosingService posingService,
-        IHistoryService historyService)
+        IHistoryService historyService,
+        IAnimationService animationService)
         : base("##poser_gizmo_overlay",
             ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoDecoration |
@@ -41,8 +43,8 @@ public class GizmoOverlayWindow : Window
         _cameraService = cameraService;
         _posingService = posingService;
         _historyService = historyService;
+        _animationService = animationService;
 
-        // This window needs to be non-interactable except for the gizmo
         RespectCloseHotkey = false;
     }
 
@@ -50,7 +52,6 @@ public class GizmoOverlayWindow : Window
     {
         base.PreDraw();
 
-        // Position at top-left corner, spanning the entire screen
         ImGuiHelpers.SetNextWindowPosRelativeMainViewport(Vector2.Zero, ImGuiCond.Always);
 
         var io = ImGui.GetIO();
@@ -66,14 +67,14 @@ public class GizmoOverlayWindow : Window
         if (selectedActor == null)
             return;
 
-        // Get camera matrices
+        // Check if the primary actor is frozen - required for posing
+        bool isFrozen = _animationService.IsFrozen(selectedActor);
+
         var viewMatrix = _cameraService.GetViewMatrix();
         var projectionMatrix = _cameraService.GetProjectionMatrix();
 
-        // Get the effective transform (override or game state)
+        // Get the effective transform for the primary selected actor
         var transform = _posingService.GetEffectiveTransform(selectedActor);
-
-        // Create model matrix from actor transform
         var modelMatrix = transform.ToMatrix();
 
         // Setup ImGuizmo
@@ -83,74 +84,117 @@ public class GizmoOverlayWindow : Window
         ImGuizmo.SetOrthographic(false);
         ImGuizmo.AllowAxisFlip(false);
         ImGuizmo.SetDrawlist();
-        ImGuizmo.Enable(true);
 
-        // Note: We need a mutable copy of viewMatrix for ImGuizmo
+        // Enable gizmo only if actor is frozen
+        ImGuizmo.Enable(isFrozen);
+
         var viewMatrixCopy = viewMatrix;
 
         // Check if we're starting a new drag operation
         bool isUsing = ImGuizmo.IsUsing();
-        if (isUsing && _dragStartTransform == null)
+        if (isUsing && _dragStartTransforms == null && isFrozen)
         {
-            // Starting to drag - store the initial transform
-            _dragStartTransform = transform;
-            _dragActor = selectedActor;
+            // Starting to drag - store initial transforms for ALL selected frozen actors
+            _dragStartTransforms = new Dictionary<ActorBase, Transform>();
+            foreach (var actor in _actorManager.SelectedActors)
+            {
+                // Only track frozen actors
+                if (_animationService.IsFrozen(actor))
+                {
+                    _dragStartTransforms[actor] = _posingService.GetEffectiveTransform(actor);
+                }
+            }
         }
 
-        // Draw the gizmo and handle manipulation
+        // Draw gizmo with both Translate and Rotate
+        // When not frozen, the gizmo will be drawn grayed out and non-interactive
         if (ImGuizmo.Manipulate(
             ref viewMatrixCopy,
             ref projectionMatrix,
-            ImGuizmoOperation.Translate,
+            ImGuizmoOperation.Translate | ImGuizmoOperation.Rotate,
             ImGuizmoMode.World,
             ref modelMatrix))
         {
-            // Extract the new transform from the manipulated matrix
-            var newTransform = Transform.FromMatrix(modelMatrix);
+            // Only apply if frozen
+            if (isFrozen)
+            {
+                var newTransform = Transform.FromMatrix(modelMatrix);
 
-            // Apply the transform to the primary selected actor
-            _posingService.SetTransformOverride(selectedActor, newTransform);
+                // Apply to primary actor
+                _posingService.SetTransformOverride(selectedActor, newTransform);
 
-            // Also apply to other selected actors (offset by their relative positions)
-            ApplyToOtherSelectedActors(selectedActor, transform, newTransform);
+                // Apply delta to other selected frozen actors
+                ApplyDeltaToOtherActors(selectedActor, transform, newTransform);
+            }
         }
 
         // Check if we finished dragging
-        if (!isUsing && _dragStartTransform.HasValue && _dragActor != null)
+        if (!isUsing && _dragStartTransforms != null)
         {
-            // Finished dragging - create undo action
-            var finalTransform = _posingService.GetEffectiveTransform(_dragActor);
-            if (_dragStartTransform.Value != finalTransform)
-            {
-                var action = new TranslateActorAction(
-                    _posingService,
-                    _dragActor,
-                    _dragStartTransform.Value,
-                    finalTransform);
-                _historyService.Push(action);
-            }
-
-            _dragStartTransform = null;
-            _dragActor = null;
+            CreateUndoAction();
+            _dragStartTransforms = null;
         }
     }
 
-    /// <summary>
-    /// Applies the same delta transform to other selected actors.
-    /// </summary>
-    private void ApplyToOtherSelectedActors(ActorBase primary, Transform oldTransform, Transform newTransform)
+    private void ApplyDeltaToOtherActors(ActorBase primary, Transform oldTransform, Transform newTransform)
     {
-        // Calculate the delta
+        // Calculate deltas
         var positionDelta = newTransform.Position - oldTransform.Position;
+        var rotationDelta = newTransform.Rotation * Quaternion.Inverse(oldTransform.Rotation);
 
         foreach (var actor in _actorManager.SelectedActors)
         {
             if (actor == primary)
                 continue;
 
+            // Only apply to frozen actors
+            if (!_animationService.IsFrozen(actor))
+                continue;
+
             var actorTransform = _posingService.GetEffectiveTransform(actor);
+
+            // Apply position delta
             actorTransform.Position += positionDelta;
+
+            // Apply rotation delta (rotate around the primary actor's position)
+            var relativePos = actorTransform.Position - oldTransform.Position;
+            var rotatedRelativePos = Vector3.Transform(relativePos, rotationDelta);
+            actorTransform.Position = newTransform.Position + rotatedRelativePos - positionDelta;
+
+            // Also rotate the actor itself
+            actorTransform.Rotation = rotationDelta * actorTransform.Rotation;
+
             _posingService.SetTransformOverride(actor, actorTransform);
+        }
+    }
+
+    private void CreateUndoAction()
+    {
+        if (_dragStartTransforms == null || _dragStartTransforms.Count == 0)
+            return;
+
+        var actions = new List<IHistoryAction>();
+
+        foreach (var (actor, startTransform) in _dragStartTransforms)
+        {
+            var endTransform = _posingService.GetEffectiveTransform(actor);
+            if (startTransform != endTransform)
+            {
+                actions.Add(new TransformActorAction(_posingService, actor, startTransform, endTransform));
+            }
+        }
+
+        if (actions.Count == 0)
+            return;
+
+        if (actions.Count == 1)
+        {
+            _historyService.Push(actions[0]);
+        }
+        else
+        {
+            var description = $"Transform {actions.Count} actors";
+            _historyService.Push(new CompositeAction(description, actions));
         }
     }
 

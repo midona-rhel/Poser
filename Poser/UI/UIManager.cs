@@ -1,5 +1,6 @@
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
+using Poser.Core;
 using Poser.Services;
 using System;
 
@@ -20,18 +21,19 @@ public class UIManager : IUIManager
         ICameraService cameraService,
         IAnimationService animationService,
         IHistoryService historyService,
-        IPosingService posingService)
+        IPosingService posingService,
+        EventBus eventBus)
     {
         _pluginInterface = pluginInterface;
         _gPoseService = gPoseService;
         _windowSystem = new WindowSystem(Poser.PluginName);
 
         // Create main window (sidebar)
-        _mainWindow = new MainWindow(gPoseService, actorManager, animationService, historyService);
+        _mainWindow = new MainWindow(gPoseService, actorManager, animationService, historyService, posingService, eventBus);
         _windowSystem.AddWindow(_mainWindow);
 
         // Create gizmo overlay window
-        _gizmoOverlay = new GizmoOverlayWindow(actorManager, cameraService, posingService, historyService);
+        _gizmoOverlay = new GizmoOverlayWindow(actorManager, cameraService, posingService, historyService, animationService);
         _windowSystem.AddWindow(_gizmoOverlay);
 
         // Hook into Dalamud's UI drawing

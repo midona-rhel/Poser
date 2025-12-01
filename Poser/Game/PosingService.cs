@@ -16,6 +16,8 @@ public unsafe class PosingService : IPosingService
 {
     private readonly IPluginLog _log;
     private readonly IFramework _framework;
+    private readonly IGPoseService _gPoseService;
+    private readonly IAnimationService _animationService;
 
     // Transform overrides keyed by actor address
     private readonly Dictionary<nint, Transform> _transformOverrides = new();
@@ -23,24 +25,61 @@ public unsafe class PosingService : IPosingService
     // Original transforms before override (for restoration)
     private readonly Dictionary<nint, Transform> _originalTransforms = new();
 
-    public PosingService(IPluginLog log, IFramework framework)
+    // Dirty flag - only apply transforms that have changed
+    private readonly HashSet<nint> _dirtyTransforms = new();
+
+    public PosingService(IPluginLog log, IFramework framework, IGPoseService gPoseService, IAnimationService animationService)
     {
         _log = log;
         _framework = framework;
+        _gPoseService = gPoseService;
+        _animationService = animationService;
 
         // Apply overrides every frame
         _framework.Update += OnFrameworkUpdate;
 
+        // Reset all when exiting GPose
+        _gPoseService.OnGPoseStateChanged += OnGPoseStateChanged;
+
+        // Reset actor transform when they are unfrozen
+        _animationService.OnFreezeStateChanged += OnActorFreezeStateChanged;
+
         _log.Debug("PosingService initialized");
+    }
+
+    private void OnGPoseStateChanged(bool isGPosing)
+    {
+        if (!isGPosing)
+        {
+            ClearAllOverrides();
+        }
+    }
+
+    private void OnActorFreezeStateChanged(ActorBase actor, bool isFrozen)
+    {
+        if (!isFrozen)
+        {
+            // Actor was unfrozen - reset their transform
+            ClearTransformOverrideByAddress(actor.Address);
+        }
     }
 
     private void OnFrameworkUpdate(IFramework framework)
     {
-        // Apply overrides every frame to ensure they persist
-        foreach (var (actorAddress, transform) in _transformOverrides)
+        // Only apply transforms that are marked dirty
+        if (_dirtyTransforms.Count == 0)
+            return;
+
+        foreach (var actorAddress in _dirtyTransforms)
         {
-            ApplyTransformToActor(actorAddress, transform);
+            if (_transformOverrides.TryGetValue(actorAddress, out var transform))
+            {
+                ApplyTransformToActor(actorAddress, transform);
+            }
         }
+
+        // Clear dirty flags after applying
+        _dirtyTransforms.Clear();
     }
 
     private void ApplyTransformToActor(nint actorAddress, Transform transform)
@@ -77,7 +116,10 @@ public unsafe class PosingService : IPosingService
 
         _transformOverrides[actor.Address] = transform;
 
-        // Apply immediately
+        // Mark as dirty - will be applied on next framework update
+        _dirtyTransforms.Add(actor.Address);
+
+        // Also apply immediately for responsive feedback
         ApplyTransformToActor(actor.Address, transform);
     }
 
@@ -104,19 +146,16 @@ public unsafe class PosingService : IPosingService
 
     public Transform GetOriginalTransform(ActorBase actor)
     {
-        // If we have a stored original, return it
         if (_originalTransforms.TryGetValue(actor.Address, out var original))
         {
             return original;
         }
 
-        // Otherwise read from game memory
         return ReadTransformFromGame(actor.Address);
     }
 
     public Transform GetEffectiveTransform(ActorBase actor)
     {
-        // Return override if we have one, otherwise read from game
         if (_transformOverrides.TryGetValue(actor.Address, out var transform))
         {
             return transform;
@@ -137,7 +176,6 @@ public unsafe class PosingService : IPosingService
         var drawObject = gameObject->DrawObject;
         if (drawObject == null)
         {
-            // Fall back to GameObject position (doesn't have full transform)
             return new Transform
             {
                 Position = gameObject->Position,
@@ -156,13 +194,18 @@ public unsafe class PosingService : IPosingService
 
     public void ClearTransformOverride(ActorBase actor)
     {
-        if (_transformOverrides.Remove(actor.Address))
+        ClearTransformOverrideByAddress(actor.Address);
+    }
+
+    private void ClearTransformOverrideByAddress(nint address)
+    {
+        if (_transformOverrides.Remove(address))
         {
-            // Restore original transform if we have it
-            if (_originalTransforms.TryGetValue(actor.Address, out var original))
+            _dirtyTransforms.Remove(address);
+            if (_originalTransforms.TryGetValue(address, out var original))
             {
-                ApplyTransformToActor(actor.Address, original);
-                _originalTransforms.Remove(actor.Address);
+                ApplyTransformToActor(address, original);
+                _originalTransforms.Remove(address);
             }
         }
     }
@@ -177,6 +220,7 @@ public unsafe class PosingService : IPosingService
 
         _transformOverrides.Clear();
         _originalTransforms.Clear();
+        _dirtyTransforms.Clear();
     }
 
     public bool HasTransformOverride(ActorBase actor)
@@ -186,8 +230,10 @@ public unsafe class PosingService : IPosingService
 
     public void Dispose()
     {
-        ClearAllOverrides();
+        _gPoseService.OnGPoseStateChanged -= OnGPoseStateChanged;
+        _animationService.OnFreezeStateChanged -= OnActorFreezeStateChanged;
         _framework.Update -= OnFrameworkUpdate;
+        ClearAllOverrides();
         GC.SuppressFinalize(this);
     }
 }

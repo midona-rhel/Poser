@@ -4,10 +4,26 @@ using Poser.Services;
 
 namespace Poser.History;
 
-public class HistoryService : IHistoryService
+public class HistoryService : IHistoryService, IDisposable
 {
+    private readonly IGPoseService _gPoseService;
     private readonly Stack<IHistoryAction> _undoStack = new();
     private readonly Stack<IHistoryAction> _redoStack = new();
+
+    public HistoryService(IGPoseService gPoseService)
+    {
+        _gPoseService = gPoseService;
+        _gPoseService.OnGPoseStateChanged += OnGPoseStateChanged;
+    }
+
+    private void OnGPoseStateChanged(bool isGPosing)
+    {
+        if (!isGPosing)
+        {
+            // Clear history when exiting GPose
+            Clear();
+        }
+    }
 
     public bool CanUndo => _undoStack.Count > 0;
     public bool CanRedo => _redoStack.Count > 0;
@@ -57,5 +73,11 @@ public class HistoryService : IHistoryService
         _undoStack.Clear();
         _redoStack.Clear();
         OnHistoryChanged?.Invoke();
+    }
+
+    public void Dispose()
+    {
+        _gPoseService.OnGPoseStateChanged -= OnGPoseStateChanged;
+        GC.SuppressFinalize(this);
     }
 }

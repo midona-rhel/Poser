@@ -4,18 +4,18 @@ using Poser.Services;
 namespace Poser.History;
 
 /// <summary>
-/// Action to translate an actor's position with undo/redo support.
+/// Action to transform an actor (translate/rotate/scale) with undo/redo support.
 /// </summary>
-public class TranslateActorAction : IHistoryAction
+public class TransformActorAction : IHistoryAction
 {
     private readonly IPosingService _posingService;
     private readonly ActorBase _actor;
     private readonly Transform _oldTransform;
     private readonly Transform _newTransform;
 
-    public string Description => $"Move {_actor.Name}";
+    public string Description => $"Transform {_actor.Name}";
 
-    public TranslateActorAction(
+    public TransformActorAction(
         IPosingService posingService,
         ActorBase actor,
         Transform oldTransform,
