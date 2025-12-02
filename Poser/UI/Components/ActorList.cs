@@ -71,8 +71,12 @@ public class ActorList : IDisposable
                 ImGui.TableNextRow();
                 ImGui.TableNextColumn();
 
-                // Collapse button in icon column
+                // Collapse button - center in cell using actual content region (like CenterIconInCell)
                 float buttonSize = ImGui.GetFrameHeight();
+                float cellWidth = ImGui.GetContentRegionAvail().X;
+                float offsetX = (cellWidth - buttonSize) / 2;
+                ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
+
                 var arrowIcon = _isCollapsed ? FontAwesomeIcon.CaretRight : FontAwesomeIcon.CaretDown;
                 if (ImPoser.CenteredIconButton("actors_collapse", arrowIcon, new Vector2(buttonSize, buttonSize)))
                 {

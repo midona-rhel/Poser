@@ -49,12 +49,17 @@ public class ScenePanel : IDisposable
     {
         bool hasSelection = _actorManager.SelectedActors.Count > 0;
         float buttonSize = UIConstants.ScaledButtonSize;
-        float cellPadding = 4f * ImGuiHelpers.GlobalScale; // Match ActorList.CellPaddingX
 
-        // Offset to align with table icon column content
-        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + cellPadding);
+        // Match ActorList constants for alignment
+        float iconColWidth = 32f * ImGuiHelpers.GlobalScale;
+        float cellPadding = 4f * ImGuiHelpers.GlobalScale;
 
-        // Plus button on the left
+        // Center button like icons in table: cellPadding + (contentWidth - buttonSize) / 2
+        float cellContentWidth = iconColWidth - (cellPadding * 2);
+        float offsetX = cellPadding + (cellContentWidth - buttonSize) / 2;
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
+
+        // Plus button aligned with table icon column
         if (ImPoser.CenteredIconButton(
             "spawn_clone",
             FontAwesomeIcon.Plus,
