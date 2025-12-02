@@ -66,8 +66,8 @@ public class TransformWidget
         float totalSpacing = spacing * 3;
         float fieldWidth = MathF.Floor((availableWidth - labelWidth - totalSpacing) / 3);
 
-        // Calculate total height (header + 3 rows + spacing between rows)
-        float totalHeight = headerHeight + (rowHeight + style.ItemSpacing.Y) * 3;
+        // Calculate total height (header + 3 rows + 2/3 row padding)
+        float totalHeight = headerHeight + (rowHeight + style.ItemSpacing.Y) * (11f / 3f);
 
         // Column X positions (relative to content start)
         float col0X = startPos.X + labelWidth + spacing;

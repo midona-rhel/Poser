@@ -36,12 +36,22 @@ public class ScenePanel : IDisposable
         ImGui.Text("Scene");
         ImGui.Spacing();
 
-        // Draw entity list (contains ActorList and future sublists)
-        _entityList.Draw();
+        // Calculate height for scrollable region (leave room for buttons)
+        float buttonHeight = UIConstants.ScaledButtonSize + ImGui.GetStyle().ItemSpacing.Y * 2;
+        float availableHeight = ImGui.GetContentRegionAvail().Y - buttonHeight;
+
+        // Scrollable entity list region
+        using (var child = ImRaii.Child("entity_list_scroll", new System.Numerics.Vector2(-1, availableHeight), false))
+        {
+            if (child.Success)
+            {
+                _entityList.Draw();
+            }
+        }
 
         ImGui.Spacing();
 
-        // Plus and Delete buttons at bottom
+        // Plus and Delete buttons at bottom (outside scroll)
         DrawBottomButtons();
     }
 

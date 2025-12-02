@@ -115,6 +115,7 @@ public static class ImPoser
     {
         bool clicked = false;
         var buttonSize = size ?? new Vector2(UIConstants.ScaledButtonSize);
+        var startPos = ImGui.GetCursorScreenPos();
 
         using (ImRaii.Disabled(!enabled))
         {
@@ -123,6 +124,11 @@ public static class ImPoser
                 clicked = ImGui.Button($"{icon.ToIconString()}##{id}", buttonSize);
             }
         }
+
+        // Draw black outline (1 pixel by scale)
+        var drawList = ImGui.GetWindowDrawList();
+        var outlineThickness = 1f * ImGuiHelpers.GlobalScale;
+        drawList.AddRect(startPos, startPos + buttonSize, ImGui.GetColorU32(new Vector4(0, 0, 0, 1)), 0, ImDrawFlags.None, outlineThickness);
 
         if (tooltip != null && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
         {
@@ -150,6 +156,8 @@ public static class ImPoser
             // Draw button background (empty label)
             clicked = ImGui.Button("##btn", buttonSize);
 
+            var drawList = ImGui.GetWindowDrawList();
+
             // Calculate icon size and center position
             using (ImRaii.PushFont(UiBuilder.IconFont))
             {
@@ -160,12 +168,15 @@ public static class ImPoser
                     startPos.X + (buttonSize.X - iconSize.X) / 2,
                     startPos.Y + (buttonSize.Y - iconSize.Y) / 2);
 
-                var drawList = ImGui.GetWindowDrawList();
                 var textColor = enabled
                     ? ImGui.GetColorU32(ImGuiCol.Text)
                     : ImGui.GetColorU32(ImGuiCol.TextDisabled);
                 drawList.AddText(iconPos, textColor, iconStr);
             }
+
+            // Draw black outline (1 pixel by scale)
+            var outlineThickness = 1f * ImGuiHelpers.GlobalScale;
+            drawList.AddRect(startPos, startPos + buttonSize, ImGui.GetColorU32(new Vector4(0, 0, 0, 1)), 0, ImDrawFlags.None, outlineThickness);
         }
 
         if (tooltip != null && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
