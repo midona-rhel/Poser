@@ -13,6 +13,7 @@ public class UIManager : IUIManager
     private readonly WindowSystem _windowSystem;
     private readonly MainWindow _mainWindow;
     private readonly GizmoOverlayWindow _gizmoOverlay;
+    private readonly HotbarWindow _hotbarWindow;
 
     public UIManager(
         IDalamudPluginInterface pluginInterface,
@@ -22,19 +23,27 @@ public class UIManager : IUIManager
         IAnimationService animationService,
         IHistoryService historyService,
         IPosingService posingService,
+        IGazeService gazeService,
+        IEditorState editorState,
         EventBus eventBus)
     {
         _pluginInterface = pluginInterface;
         _gPoseService = gPoseService;
         _windowSystem = new WindowSystem(Poser.PluginName);
 
-        // Create main window (sidebar)
-        _mainWindow = new MainWindow(gPoseService, actorManager, animationService, historyService, posingService, eventBus);
-        _windowSystem.AddWindow(_mainWindow);
+        // Create windows in z-order (first added = drawn first = underneath)
 
-        // Create gizmo overlay window
-        _gizmoOverlay = new GizmoOverlayWindow(actorManager, cameraService, posingService, historyService, animationService);
+        // Hotbar at bottom (lowest priority)
+        _hotbarWindow = new HotbarWindow(gPoseService, editorState);
+        _windowSystem.AddWindow(_hotbarWindow);
+
+        // Gizmo overlay
+        _gizmoOverlay = new GizmoOverlayWindow(actorManager, cameraService, posingService, historyService, animationService, editorState);
         _windowSystem.AddWindow(_gizmoOverlay);
+
+        // Main sidebar (highest priority, on top)
+        _mainWindow = new MainWindow(gPoseService, actorManager, animationService, historyService, posingService, gazeService, eventBus);
+        _windowSystem.AddWindow(_mainWindow);
 
         // Hook into Dalamud's UI drawing
         _pluginInterface.UiBuilder.Draw += DrawUI;
@@ -50,6 +59,7 @@ public class UIManager : IUIManager
         // Windows closed by default, opens when entering GPose
         _mainWindow.IsOpen = false;
         _gizmoOverlay.IsOpen = false;
+        _hotbarWindow.IsOpen = false;
     }
 
     private void OnGPoseStateChanged(bool isGPosing)
@@ -57,6 +67,7 @@ public class UIManager : IUIManager
         // Open windows when entering GPose, close when exiting
         _mainWindow.IsOpen = isGPosing;
         _gizmoOverlay.IsOpen = isGPosing;
+        _hotbarWindow.IsOpen = isGPosing;
     }
 
     private void DrawUI()

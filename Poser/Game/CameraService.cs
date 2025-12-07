@@ -31,6 +31,15 @@ public class CameraService : ICameraService
         return proj;
     }
 
+    public unsafe Vector3 GetCameraPosition()
+    {
+        var camera = CameraManager.Instance()->GetActiveCamera();
+        if (camera == null)
+            return Vector3.Zero;
+
+        return camera->CameraBase.SceneCamera.Position;
+    }
+
     public unsafe bool WorldToScreen(Vector3 worldPos, out Vector2 screenPos)
     {
         var camera = CameraManager.Instance()->GetActiveCamera();

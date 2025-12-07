@@ -95,6 +95,8 @@ public class Poser : IDalamudPlugin
         services.AddSingleton<IAnimationService, AnimationService>();
         services.AddSingleton<IHistoryService, HistoryService>();
         services.AddSingleton<IPosingService, PosingService>();
+        services.AddSingleton<IGazeService, GazeService>();
+        services.AddSingleton<IEditorState, EditorState>();
 
         // Register UI
         services.AddSingleton<IUIManager, UIManager>();

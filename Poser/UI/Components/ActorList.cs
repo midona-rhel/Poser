@@ -20,6 +20,7 @@ namespace Poser.UI.Components;
 public class ActorList : IDisposable
 {
     private const float IconColumnWidth = 32f;
+    private const float CheckboxColumnWidth = 32f;
     private const float CellPaddingX = 4f;
 
     private readonly IActorManager _actorManager;
@@ -50,6 +51,7 @@ public class ActorList : IDisposable
     public void Draw()
     {
         float iconColWidth = IconColumnWidth * ImGuiHelpers.GlobalScale;
+        float checkboxColWidth = CheckboxColumnWidth * ImGuiHelpers.GlobalScale;
         float cellPadding = CellPaddingX * ImGuiHelpers.GlobalScale;
 
         var brighterBg = ImPoser.GetBrighterTableBg();
@@ -62,10 +64,11 @@ public class ActorList : IDisposable
         {
             var tableFlags = ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerV;
 
-            if (ImGui.BeginTable("##actors_table", 2, tableFlags))
+            if (ImGui.BeginTable("##actors_table", 3, tableFlags))
             {
                 ImGui.TableSetupColumn("##icon", ImGuiTableColumnFlags.WidthFixed, iconColWidth);
                 ImGui.TableSetupColumn("##name", ImGuiTableColumnFlags.WidthStretch);
+                ImGui.TableSetupColumn("##freeze", ImGuiTableColumnFlags.WidthFixed, checkboxColWidth);
 
                 // Header row
                 ImGui.TableNextRow();
@@ -85,7 +88,11 @@ public class ActorList : IDisposable
 
                 ImGui.TableNextColumn();
                 ImGui.AlignTextToFramePadding();
-                ImGui.TextDisabled($"Actors ({_actors.Count})");
+                ImGui.TextDisabled($"Entities ({_actors.Count})");
+
+                // Freeze column header - snowflake icon
+                ImGui.TableNextColumn();
+                ImPoser.CenterIconInCell(FontAwesomeIcon.Snowflake, null, "Freeze animation");
 
                 // Data rows (if not collapsed)
                 if (!_isCollapsed)
@@ -106,7 +113,7 @@ public class ActorList : IDisposable
 
         if (!_isCollapsed && _actors.Count == 0)
         {
-            ImGui.TextDisabled("No actors in scene");
+            ImGui.TextDisabled("No entities in scene");
         }
     }
 
@@ -125,6 +132,31 @@ public class ActorList : IDisposable
         if (TableRow.TextColumn(actor.Name))
         {
             HandleSelection(index);
+        }
+
+        // Freeze checkbox column
+        bool frozen = isFrozen;
+        if (TableRow.CheckboxColumn("freeze", ref frozen, 2))
+        {
+            // If this actor is selected, apply to all selected actors
+            if (isSelected)
+            {
+                foreach (var selectedActor in _actorManager.SelectedActors)
+                {
+                    if (frozen)
+                        _animationService.Freeze(selectedActor);
+                    else
+                        _animationService.Unfreeze(selectedActor);
+                }
+            }
+            else
+            {
+                // Just apply to this actor
+                if (frozen)
+                    _animationService.Freeze(actor);
+                else
+                    _animationService.Unfreeze(actor);
+            }
         }
 
         TableRow.End();

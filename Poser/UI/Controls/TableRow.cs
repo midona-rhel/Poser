@@ -68,13 +68,15 @@ public static class TableRow
         ImPoser.VerticalCenterText();
 
         var style = ImGui.GetStyle();
-        // Never pass isSelected=true to Selectable - we handle highlighting via TableSetBgColor
-        // This avoids double-highlighting (Selectable's highlight + our row background)
-        bool clicked = ImGui.Selectable(
-            $"{text}##row_{_currentRowIndex}",
-            false, // Always false - TableSetBgColor handles selection highlight
-            ImGuiSelectableFlags.None,
-            new Vector2(ImGui.GetContentRegionAvail().X, UIConstants.ScaledRowHeight - style.CellPadding.Y * 2));
+        var cellStart = ImGui.GetCursorScreenPos();
+        var cellSize = new Vector2(ImGui.GetContentRegionAvail().X, UIConstants.ScaledRowHeight - style.CellPadding.Y * 2);
+
+        // Draw text manually
+        ImGui.Text(text);
+
+        // Invisible button for click detection (no visual hover effect)
+        ImGui.SetCursorScreenPos(cellStart);
+        bool clicked = ImGui.InvisibleButton($"##row_{_currentRowIndex}", cellSize);
 
         if (ImGui.IsItemHovered())
             _currentRowHovered = true;

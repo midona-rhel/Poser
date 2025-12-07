@@ -15,6 +15,11 @@ public interface ICameraService
     Matrix4x4 GetProjectionMatrix();
 
     /// <summary>
+    /// Gets the current camera position in world space.
+    /// </summary>
+    Vector3 GetCameraPosition();
+
+    /// <summary>
     /// Converts a world position to screen coordinates.
     /// </summary>
     /// <param name="worldPos">The world position to convert.</param>
