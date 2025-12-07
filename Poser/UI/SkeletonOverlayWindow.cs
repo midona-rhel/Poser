@@ -112,9 +112,12 @@ public class SkeletonOverlayWindow : Window
             if (skeleton == null || !skeleton.IsValid)
                 continue;
 
-            // Show skeleton overlay if either edit mode is on OR overlay is explicitly visible
-            if (!actor.IsEditMode && !skeleton.IsOverlayVisible)
+            // Show skeleton overlay only when edit mode is enabled
+            if (!actor.IsEditMode)
                 continue;
+
+            // Update bone transforms from game memory before drawing
+            skeleton.UpdateBoneTransforms();
 
             // Register skeleton for cache updates in FinalizeSkeletons hook
             _bonePosingService.RegisterSkeletonForCacheUpdate(skeleton);

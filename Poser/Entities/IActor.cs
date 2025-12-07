@@ -1,6 +1,3 @@
-using System;
-using DalamudObjectKind = Dalamud.Game.ClientState.Objects.Enums.ObjectKind;
-
 namespace Poser.Entities;
 
 public interface IActor : IEntity
@@ -11,9 +8,9 @@ public interface IActor : IEntity
     nint Address { get; }
 
     /// <summary>
-    /// The type of game object (Player, Companion, BattleNpc, etc.).
+    /// The type of actor (Player, Companion, BattleNpc, etc.).
     /// </summary>
-    DalamudObjectKind ObjectKind { get; }
+    ActorKind ActorKind { get; }
 
     /// <summary>
     /// Whether the actor is currently being posed.

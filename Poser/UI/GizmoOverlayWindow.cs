@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Bindings.ImGuizmo;
@@ -33,7 +34,7 @@ public class GizmoOverlayWindow : Window
 
     // Bone gizmo state
     private Transform? _lastFrameBoneGizmo;
-    private Transform? _boneDragStartModification;
+    private Dictionary<IBone, Transform>? _boneDragStartModifications;
 
     public GizmoOverlayWindow(
         IActorManager actorManager,
@@ -81,6 +82,14 @@ public class GizmoOverlayWindow : Window
 
     public override void Draw()
     {
+        // Setup ImGuizmo once per frame
+        ImGuizmo.BeginFrame();
+        var io = ImGui.GetIO();
+        ImGuizmo.SetRect(0, 0, io.DisplaySize.X, io.DisplaySize.Y);
+        ImGuizmo.SetOrthographic(false);
+        ImGuizmo.AllowAxisFlip(false);
+        ImGuizmo.SetDrawlist();
+
         var targetType = _editorState.GetGizmoTargetType();
 
         switch (targetType)
@@ -123,14 +132,6 @@ public class GizmoOverlayWindow : Window
         var pivotTransform = new Transform(pivotPosition, pivotRotation, Vector3.One);
         var modelMatrix = pivotTransform.ToMatrix();
 
-        // Setup ImGuizmo
-        ImGuizmo.BeginFrame();
-        var io = ImGui.GetIO();
-        ImGuizmo.SetRect(0, 0, io.DisplaySize.X, io.DisplaySize.Y);
-        ImGuizmo.SetOrthographic(false);
-        ImGuizmo.AllowAxisFlip(false);
-        ImGuizmo.SetDrawlist();
-
         // Enable gizmo only if at least one actor is frozen
         ImGuizmo.Enable(anyFrozen);
 
@@ -156,11 +157,21 @@ public class GizmoOverlayWindow : Window
             ? ImGuizmoMode.Local
             : ImGuizmoMode.World;
 
-        // Draw gizmo with both Translate and Rotate
+        // Get the gizmo operation based on selected tool
+        var gizmoOperation = _editorState.TransformTool switch
+        {
+            TransformTool.Move => ImGuizmoOperation.Translate,
+            TransformTool.Rotate => ImGuizmoOperation.Rotate,
+            TransformTool.Scale => ImGuizmoOperation.Scale,
+            TransformTool.Universal => ImGuizmoOperation.Translate | ImGuizmoOperation.Rotate | ImGuizmoOperation.Scale,
+            _ => ImGuizmoOperation.Translate
+        };
+
+        // Draw gizmo
         if (ImGuizmo.Manipulate(
             ref viewMatrixCopy,
             ref projectionMatrix,
-            ImGuizmoOperation.Translate | ImGuizmoOperation.Rotate,
+            gizmoOperation,
             gizmoMode,
             ref modelMatrix))
         {
@@ -181,11 +192,13 @@ public class GizmoOverlayWindow : Window
 
     private void DrawBoneGizmo()
     {
-        var selectedBone = _editorState.SelectedBone;
-        if (selectedBone == null)
+        var selectedBones = _editorState.SelectedBones;
+        if (selectedBones.Count == 0)
             return;
 
-        var skeleton = selectedBone.Skeleton as Skeleton;
+        // Use the first selected bone as the primary for gizmo positioning
+        var primaryBone = selectedBones[0];
+        var skeleton = primaryBone.Skeleton as Skeleton;
         if (skeleton == null || !skeleton.IsValid)
             return;
 
@@ -205,20 +218,35 @@ public class GizmoOverlayWindow : Window
         var modelMatrix = skeleton.GetModelMatrix();
         worldViewMatrix = Matrix4x4.Multiply(modelMatrix, worldViewMatrix);
 
-        // Get the bone's current transform
-        var currentTransform = selectedBone.LastTransform;
+        // Calculate gizmo position based on pivot mode
+        Transform gizmoTransform;
+        if (selectedBones.Count == 1 || _editorState.TransformPivot == TransformPivot.Individual)
+        {
+            // Single bone or individual pivot - use primary bone's transform
+            gizmoTransform = primaryBone.LastTransform;
+        }
+        else
+        {
+            // Multiple bones with median pivot - calculate average position
+            var averagePosition = Vector3.Zero;
+            foreach (var bone in selectedBones)
+            {
+                averagePosition += bone.LastTransform.Position;
+            }
+            averagePosition /= selectedBones.Count;
+
+            // Use primary bone's rotation for gizmo orientation
+            gizmoTransform = new Transform
+            {
+                Position = averagePosition,
+                Rotation = primaryBone.LastTransform.Rotation,
+                Scale = Vector3.One
+            };
+        }
 
         // Use last observed, or current if not tracking yet
-        var lastObserved = _lastFrameBoneGizmo ?? currentTransform;
+        var lastObserved = _lastFrameBoneGizmo ?? gizmoTransform;
         var lastMatrix = lastObserved.ToMatrix();
-
-        // Setup ImGuizmo
-        ImGuizmo.BeginFrame();
-        var io = ImGui.GetIO();
-        ImGuizmo.SetRect(0, 0, io.DisplaySize.X, io.DisplaySize.Y);
-        ImGuizmo.SetOrthographic(false);
-        ImGuizmo.AllowAxisFlip(false);
-        ImGuizmo.SetDrawlist();
 
         // Enable gizmo only if actor is frozen
         ImGuizmo.Enable(isFrozen);
@@ -226,9 +254,14 @@ public class GizmoOverlayWindow : Window
         bool isUsing = ImGuizmo.IsUsing();
 
         // Capture for history on drag start (only if frozen)
-        if (isUsing && _lastFrameBoneGizmo == null && isFrozen)
+        if (isUsing && _boneDragStartModifications == null && isFrozen)
         {
-            _boneDragStartModification = _bonePosingService.GetModification(selectedBone);
+            _boneDragStartModifications = new Dictionary<IBone, Transform>();
+            foreach (var bone in selectedBones)
+            {
+                var mod = _bonePosingService.GetModification(bone);
+                _boneDragStartModifications[bone] = mod ?? new Transform { Position = Vector3.Zero, Rotation = Quaternion.Identity, Scale = Vector3.Zero };
+            }
         }
 
         // Get the gizmo operation based on selected tool
@@ -259,24 +292,48 @@ public class GizmoOverlayWindow : Window
         if (newTransform != null && isFrozen)
         {
             var delta = newTransform.Value.CalculateDiff(lastObserved);
-            _bonePosingService.ApplyTransform(selectedBone, delta, null, TransformComponents.All);
+
+            // Filter to only "root" bones - bones that don't have an ancestor also in the selection.
+            // This prevents double-applying transforms (e.g., rotating arm also rotates elbow/wrist
+            // through the hierarchy, so we shouldn't also rotate elbow/wrist directly).
+            var rootBones = GetSelectionRootBones(selectedBones);
+
+            // Apply transform only to root bones
+            foreach (var bone in rootBones)
+            {
+                _bonePosingService.ApplyTransform(bone, delta, null, TransformComponents.All);
+            }
         }
 
         // Finish drag - create undo action
         if (_lastFrameBoneGizmo.HasValue && !isUsing)
         {
-            var modification = _bonePosingService.GetModification(selectedBone);
-            if (modification.HasValue)
+            if (_boneDragStartModifications != null && _boneDragStartModifications.Count > 0)
             {
-                var action = new TransformBoneAction(
-                    _bonePosingService,
-                    selectedBone,
-                    _boneDragStartModification ?? new Transform { Position = Vector3.Zero, Rotation = Quaternion.Identity, Scale = Vector3.Zero },
-                    modification.Value);
-                _historyService.Record(action);
+                var actions = new List<IHistoryAction>();
+
+                foreach (var (bone, startMod) in _boneDragStartModifications)
+                {
+                    var endMod = _bonePosingService.GetModification(bone);
+                    if (endMod.HasValue)
+                    {
+                        actions.Add(new TransformBoneAction(_bonePosingService, bone, startMod, endMod.Value));
+                    }
+                }
+
+                if (actions.Count == 1)
+                {
+                    _historyService.Record(actions[0]);
+                }
+                else if (actions.Count > 1)
+                {
+                    var description = $"Transform {actions.Count} bones";
+                    _historyService.Push(new CompositeAction(description, actions));
+                }
             }
+
             _lastFrameBoneGizmo = null;
-            _boneDragStartModification = null;
+            _boneDragStartModifications = null;
         }
     }
 
@@ -429,5 +486,43 @@ public class GizmoOverlayWindow : Window
     {
         ImGuizmo.SetID(0);
         base.PostDraw();
+    }
+
+    /// <summary>
+    /// Filters a list of selected bones to only include "root" bones -
+    /// bones that don't have an ancestor also in the selection.
+    /// This prevents double-applying transforms through the bone hierarchy.
+    /// </summary>
+    private static List<IBone> GetSelectionRootBones(IReadOnlyList<IBone> selectedBones)
+    {
+        if (selectedBones.Count <= 1)
+            return selectedBones.ToList();
+
+        var selectedSet = new HashSet<IBone>(selectedBones);
+        var rootBones = new List<IBone>();
+
+        foreach (var bone in selectedBones)
+        {
+            // Check if any ancestor of this bone is also selected
+            bool hasSelectedAncestor = false;
+            var parent = bone.ParentBone;
+            while (parent != null)
+            {
+                if (selectedSet.Contains(parent))
+                {
+                    hasSelectedAncestor = true;
+                    break;
+                }
+                parent = parent.ParentBone;
+            }
+
+            // Only include if no ancestor is selected
+            if (!hasSelectedAncestor)
+            {
+                rootBones.Add(bone);
+            }
+        }
+
+        return rootBones;
     }
 }

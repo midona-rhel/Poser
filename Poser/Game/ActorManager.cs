@@ -17,6 +17,21 @@ public class ActorManager : IActorManager
     private const int GPoseStart = 201;
     private const int GPoseEnd = 439;
 
+    /// <summary>
+    /// Converts Dalamud's ObjectKind to our ActorKind enum.
+    /// </summary>
+    private static ActorKind ToActorKind(ObjectKind objectKind) => objectKind switch
+    {
+        ObjectKind.Player => ActorKind.Player,
+        ObjectKind.BattleNpc => ActorKind.BattleNpc,
+        ObjectKind.EventNpc => ActorKind.EventNpc,
+        ObjectKind.Companion => ActorKind.Companion,
+        ObjectKind.MountType => ActorKind.Mount,
+        ObjectKind.Ornament => ActorKind.Ornament,
+        ObjectKind.Retainer => ActorKind.Retainer,
+        _ => ActorKind.None
+    };
+
     private readonly IObjectTable _objectTable;
     private readonly IGPoseService _gPoseService;
     private readonly IFramework _framework;
@@ -173,7 +188,7 @@ public class ActorManager : IActorManager
                 new EntityId($"actor_{gameObject.GameObjectId}"),
                 GetActorName(gameObject),
                 gameObject.Address,
-                gameObject.ObjectKind
+                ToActorKind(gameObject.ObjectKind)
             );
             _actors.Add(actor);
             _lastActorAddresses.Add(gameObject.Address);

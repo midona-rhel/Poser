@@ -29,12 +29,6 @@ public class Skeleton : EntityBase, ISkeleton
     public bool IsValid { get; private set; }
 
     /// <summary>
-    /// Whether this skeleton's overlay is visible on screen.
-    /// Controls skeleton drawing in SkeletonOverlayWindow.
-    /// </summary>
-    public bool IsOverlayVisible { get; set; } = false;
-
-    /// <summary>
     /// Skeletons are always collapsible.
     /// </summary>
     public override bool IsCollapsible => true;
@@ -218,6 +212,12 @@ public class Skeleton : EntityBase, ISkeleton
         }
 
         IsValid = _bones.Count > 0;
+
+        // Initialize bone transforms immediately so they're ready for display
+        if (IsValid)
+        {
+            UpdateBoneTransforms();
+        }
     }
 
     /// <summary>

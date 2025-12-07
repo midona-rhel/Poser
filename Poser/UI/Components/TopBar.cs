@@ -63,29 +63,29 @@ public class TopBar
         // Determine mode based on selection state
         if (targetType == GizmoTargetType.Bone)
         {
-            // Edit mode - bone is selected
-            ImGui.TextColored(new Vector4(1.0f, 0.7f, 0.3f, 1.0f), "Edit Mode");
+            // Posing mode - bone is selected
+            ImGui.TextColored(new Vector4(1.0f, 0.7f, 0.3f, 1.0f), "Posing");
             if (ImGui.IsItemHovered())
             {
-                ImGui.SetTooltip("Editing bones. Press Tab to exit edit mode.");
+                ImGui.SetTooltip("Posing bones. Press Tab to exit.");
             }
         }
         else if (selectedActor != null && selectedActor.IsEditMode)
         {
-            // Edit mode enabled but no bone selected yet
-            ImGui.TextColored(new Vector4(1.0f, 0.7f, 0.3f, 1.0f), "Edit Mode");
+            // Posing mode enabled but no bone selected yet
+            ImGui.TextColored(new Vector4(1.0f, 0.7f, 0.3f, 1.0f), "Posing");
             if (ImGui.IsItemHovered())
             {
-                ImGui.SetTooltip("Edit mode active. Click a bone to select it, or press Tab to exit.");
+                ImGui.SetTooltip("Click a bone to select it, or press Tab to exit.");
             }
         }
         else
         {
-            // Object mode
-            ImGui.Text("Object Mode");
+            // Actor mode - can only move actors
+            ImGui.Text("Actor");
             if (ImGui.IsItemHovered())
             {
-                ImGui.SetTooltip("Select an actor and press Tab to enter edit mode.");
+                ImGui.SetTooltip("Moving actors. Press Tab or enable skeleton to pose bones.");
             }
         }
     }

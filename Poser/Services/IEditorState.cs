@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Poser.Entities;
 
 namespace Poser.Services;
@@ -87,11 +88,29 @@ public interface IEditorState
     /// <summary>Bone display mode - hierarchy or category grouping.</summary>
     BoneDisplayMode BoneDisplayMode { get; set; }
 
-    /// <summary>Currently selected bone (if any).</summary>
+    /// <summary>Currently selected bone (primary, if any).</summary>
     IBone? SelectedBone { get; set; }
 
-    /// <summary>Select a bone.</summary>
+    /// <summary>All currently selected bones.</summary>
+    IReadOnlyList<IBone> SelectedBones { get; }
+
+    /// <summary>Select a single bone (clears previous selection).</summary>
     void SelectBone(IBone? bone);
+
+    /// <summary>Select multiple bones (clears previous selection).</summary>
+    void SelectBones(IEnumerable<IBone> bones);
+
+    /// <summary>Add a bone to the current selection.</summary>
+    void AddBoneToSelection(IBone bone);
+
+    /// <summary>Remove a bone from the current selection.</summary>
+    void RemoveBoneFromSelection(IBone bone);
+
+    /// <summary>Toggle bone selection (add if not selected, remove if selected).</summary>
+    void ToggleBoneSelection(IBone bone);
+
+    /// <summary>Check if a bone is currently selected.</summary>
+    bool IsBoneSelected(IBone bone);
 
     /// <summary>Clear bone selection.</summary>
     void ClearBoneSelection();

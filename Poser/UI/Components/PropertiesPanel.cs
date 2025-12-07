@@ -193,9 +193,8 @@ public class PropertiesPanel
         // Check if this is a companion (pets, mounts, minions can't have animations changed)
         bool isCompanion = actor.IsCompanion;
 
-        // === Animation Section (at top) ===
-        ImGui.TextDisabled("Animation");
-        ImGui.Spacing();
+        // === Animation Section ===
+        ImPoser.SectionHeader("Animation");
 
         if (isCompanion)
         {
@@ -203,38 +202,23 @@ public class PropertiesPanel
         }
         else
         {
-            // === Animation Playback ===
             DrawAnimationSection(actor, labelWidth);
         }
 
-        // Separator between animation and playback controls
-        ImGui.Spacing();
-        ImGui.Separator();
-        ImGui.TextDisabled("Playback");
-        ImGui.Spacing();
-
-        // === Speed Control ===
+        // === Playback Section ===
+        ImPoser.SectionSeparator("Playback");
         DrawSpeedSection(actor, labelWidth);
-
         ImGui.Spacing();
-
-        // === Animation Scrubbing (always show, disabled when not frozen) ===
         DrawScrubSection(actor, isFrozen, labelWidth);
 
-        // Clear separator between Playback and Gaze
-        ImGui.Spacing();
-        ImGui.Separator();
-        ImGui.TextDisabled("Gaze");
-        ImGui.Spacing();
-
-        // === Gaze Controls ===
+        // === Gaze Section ===
+        ImPoser.SectionSeparator("Gaze");
         DrawGazeSection(actor, isFrozen, labelWidth);
     }
 
     private void DrawSpeedSection(IActor actor, float labelWidth)
     {
-        ImGui.Text("Speed");
-        ImGui.SameLine(labelWidth);
+        ImPoser.Label("Speed", labelWidth);
 
         float speed = _animationService.GetSpeed(actor);
 
@@ -291,8 +275,7 @@ public class PropertiesPanel
         float? duration = _animationService.GetAnimationDuration(actor);
         float? currentTime = _animationService.GetAnimationTime(actor);
 
-        ImGui.Text("Time");
-        ImGui.SameLine(labelWidth);
+        ImPoser.Label("Time", labelWidth);
 
         // Always show slider to maintain consistent height
         float time = currentTime ?? 0f;
@@ -320,8 +303,7 @@ public class PropertiesPanel
         bool hasOverride = _animationService.HasBaseOverride(actor);
 
         // Base Animation
-        ImGui.Text("Base");
-        ImGui.SameLine(labelWidth);
+        ImPoser.Label("Base", labelWidth);
 
         float selectorWidth = ImGui.GetContentRegionAvail().X - 35 * ImGuiHelpers.GlobalScale;
 
@@ -356,8 +338,7 @@ public class PropertiesPanel
         }
 
         // Blend Animation
-        ImGui.Text("Blend");
-        ImGui.SameLine(labelWidth);
+        ImPoser.Label("Blend", labelWidth);
 
         if (_blendAnimationSelector.Draw("blend_anim", null, id =>
         {
@@ -374,8 +355,7 @@ public class PropertiesPanel
         var gazeState = _gazeService.GetGazeState(actor);
 
         // Gaze mode dropdown
-        ImGui.Text("Mode");
-        ImGui.SameLine(labelWidth);
+        ImPoser.Label("Mode", labelWidth);
         ImGui.SetNextItemWidth(-1);
         int currentMode = (int)gazeState.Mode;
         if (ImGui.Combo("##gaze_mode", ref currentMode, GazeModeNames, GazeModeNames.Length))
@@ -386,8 +366,7 @@ public class PropertiesPanel
         ImGui.Spacing();
 
         // Target type checkboxes (which body parts)
-        ImGui.Text("Affect");
-        ImGui.SameLine(labelWidth);
+        ImPoser.Label("Affect", labelWidth);
 
         bool affectBody = gazeState.TargetType.HasFlag(GazeTargetType.Body);
         if (ImGui.Checkbox("Body", ref affectBody))
@@ -422,8 +401,7 @@ public class PropertiesPanel
         if (gazeState.Mode == GazeTargetMode.Entity)
         {
             ImGui.Spacing();
-            ImGui.Text("Target");
-            ImGui.SameLine(labelWidth);
+            ImPoser.Label("Target", labelWidth);
 
             // Show combo with available entities
             var actors = _actorManager.Actors;

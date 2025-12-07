@@ -22,6 +22,26 @@ public static class ImPoser
         return ImGui.GetTextLineHeight() + (ImGui.GetStyle().FramePadding.Y * 2);
     }
 
+    /// <summary>
+    /// Applies tree-view indentation by inserting invisible spacers.
+    /// Each level = button size + half item spacing.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void ApplyTreeIndentation(int depth)
+    {
+        if (depth <= 0) return;
+
+        float buttonSize = ImGui.GetFrameHeight();
+        float halfSpacing = ImGui.GetStyle().ItemSpacing.X * 0.5f;
+        float indentWidth = buttonSize + halfSpacing;
+
+        for (int i = 0; i < depth; i++)
+        {
+            ImGui.Dummy(new Vector2(indentWidth, buttonSize));
+            ImGui.SameLine(0, 0);
+        }
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static float GetRemainingWidth()
     {
@@ -303,6 +323,105 @@ public static class ImPoser
         {
             ImGui.SetTooltip(text);
         }
+    }
+
+    #endregion
+
+    #region Form Layout
+
+    /// <summary>
+    /// Draws a label and positions cursor for the control.
+    /// Call this, then draw your control on the same line.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Label(string text, float labelWidth)
+    {
+        ImGui.Text(text);
+        ImGui.SameLine(labelWidth);
+    }
+
+    /// <summary>
+    /// Draws a section header (disabled text with spacing).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void SectionHeader(string text)
+    {
+        ImGui.TextDisabled(text);
+        ImGui.Spacing();
+    }
+
+    /// <summary>
+    /// Draws a section separator with header.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void SectionSeparator(string? headerText = null)
+    {
+        ImGui.Spacing();
+        ImGui.Separator();
+        if (headerText != null)
+        {
+            ImGui.TextDisabled(headerText);
+            ImGui.Spacing();
+        }
+    }
+
+    #endregion
+
+    #region Table Row Helpers
+
+    /// <summary>
+    /// Sets table row background color if the row is selected.
+    /// Call immediately after TableNextRow().
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void HighlightRowIfSelected(bool isSelected, Vector4 activeColor)
+    {
+        if (isSelected)
+        {
+            ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(activeColor));
+            ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg1, ImGui.GetColorU32(activeColor));
+        }
+    }
+
+    /// <summary>
+    /// Sets table row background color for hover effect.
+    /// Call after checking ImGui.IsItemHovered().
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void HighlightRowOnHover(Vector4 hoverColor)
+    {
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(hoverColor));
+            ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg1, ImGui.GetColorU32(hoverColor));
+        }
+    }
+
+    /// <summary>
+    /// Draws a transparent selectable (no header colors) with hover highlighting.
+    /// Returns true if clicked.
+    /// </summary>
+    public static bool TransparentSelectable(string label, Vector4 hoverColor)
+    {
+        return TransparentSelectable(label, false, hoverColor, hoverColor);
+    }
+
+    /// <summary>
+    /// Draws a transparent selectable with separate colors for normal hover and selected+hover states.
+    /// Returns true if clicked.
+    /// </summary>
+    public static bool TransparentSelectable(string label, bool isSelected, Vector4 hoverColor, Vector4 selectedHoverColor)
+    {
+        bool clicked;
+        using (ImRaii.PushColor(ImGuiCol.Header, Vector4.Zero))
+        using (ImRaii.PushColor(ImGuiCol.HeaderHovered, Vector4.Zero))
+        using (ImRaii.PushColor(ImGuiCol.HeaderActive, Vector4.Zero))
+        {
+            ImGui.AlignTextToFramePadding();
+            clicked = ImGui.Selectable(label, false);
+            HighlightRowOnHover(isSelected ? selectedHoverColor : hoverColor);
+        }
+        return clicked;
     }
 
     #endregion
