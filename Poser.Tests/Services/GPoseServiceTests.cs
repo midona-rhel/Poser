@@ -3,7 +3,6 @@ using Xunit;
 
 namespace Poser.Tests.Services;
 
-#pragma warning disable CS0618 // Testing legacy event support
 public class GPoseServiceTests
 {
     [Fact]
@@ -44,64 +43,21 @@ public class GPoseServiceTests
     }
 
     [Fact]
-    public void OnGPoseStateChanged_FiresWhenEnteringGPose()
+    public void SetGPoseState_SetsStateDirectly()
     {
         // Arrange
         var service = new MockGPoseService();
-        bool eventFired = false;
-        bool? receivedState = null;
-        service.OnGPoseStateChanged += state =>
-        {
-            eventFired = true;
-            receivedState = state;
-        };
 
         // Act
-        service.EnterGPose();
+        service.SetGPoseState(true);
 
         // Assert
-        Assert.True(eventFired);
-        Assert.True(receivedState);
-    }
-
-    [Fact]
-    public void OnGPoseStateChanged_FiresWhenExitingGPose()
-    {
-        // Arrange
-        var service = new MockGPoseService();
-        service.EnterGPose();
-
-        bool eventFired = false;
-        bool? receivedState = null;
-        service.OnGPoseStateChanged += state =>
-        {
-            eventFired = true;
-            receivedState = state;
-        };
+        Assert.True(service.IsGPosing);
 
         // Act
-        service.ExitGPose();
+        service.SetGPoseState(false);
 
         // Assert
-        Assert.True(eventFired);
-        Assert.False(receivedState);
-    }
-
-    [Fact]
-    public void OnGPoseStateChanged_DoesNotFireWhenStateUnchanged()
-    {
-        // Arrange
-        var service = new MockGPoseService();
-        service.EnterGPose();
-
-        int eventCount = 0;
-        service.OnGPoseStateChanged += _ => eventCount++;
-
-        // Act
-        service.IsGPosing = true; // Same state
-
-        // Assert
-        Assert.Equal(0, eventCount);
+        Assert.False(service.IsGPosing);
     }
 }
-#pragma warning restore CS0618

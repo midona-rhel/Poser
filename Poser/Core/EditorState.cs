@@ -1,4 +1,3 @@
-using System;
 using Poser.Entities;
 using Poser.Services;
 
@@ -10,6 +9,7 @@ namespace Poser.Core;
 public class EditorState : IEditorState
 {
     private readonly IActorManager _actorManager;
+    private readonly IEventBus _eventBus;
     private IBone? _selectedBone;
 
     public TransformPivot TransformPivot { get; set; } = TransformPivot.Individual;
@@ -18,9 +18,10 @@ public class EditorState : IEditorState
     public bool DebugMode { get; set; } = false;
     public BoneDisplayMode BoneDisplayMode { get; set; } = BoneDisplayMode.Category;
 
-    public EditorState(IActorManager actorManager)
+    public EditorState(IActorManager actorManager, IEventBus eventBus)
     {
         _actorManager = actorManager;
+        _eventBus = eventBus;
     }
 
     public IBone? SelectedBone
@@ -31,12 +32,10 @@ public class EditorState : IEditorState
             if (_selectedBone != value)
             {
                 _selectedBone = value;
-                OnBoneSelectionChanged?.Invoke(value);
+                _eventBus.Publish(new BoneSelectionChangedEvent(value));
             }
         }
     }
-
-    public event Action<IBone?>? OnBoneSelectionChanged;
 
     public void SelectBone(IBone? bone)
     {

@@ -51,3 +51,8 @@ public record PhysicsFreezeStateChangedEvent(bool IsFrozen) : IEvent;
 /// Published when an actor's transform is modified via posing.
 /// </summary>
 public record TransformChangedEvent(IActor Actor, Transform NewTransform) : IEvent;
+
+/// <summary>
+/// Published when bone selection changes in the editor.
+/// </summary>
+public record BoneSelectionChangedEvent(IBone? SelectedBone) : IEvent;

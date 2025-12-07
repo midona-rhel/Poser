@@ -1,4 +1,3 @@
-using System;
 using Poser.Entities;
 
 namespace Poser.Services;
@@ -90,9 +89,6 @@ public interface IEditorState
 
     /// <summary>Currently selected bone (if any).</summary>
     IBone? SelectedBone { get; set; }
-
-    /// <summary>Event fired when bone selection changes.</summary>
-    event Action<IBone?>? OnBoneSelectionChanged;
 
     /// <summary>Select a bone.</summary>
     void SelectBone(IBone? bone);

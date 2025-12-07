@@ -15,9 +15,6 @@ public class GPoseService : IGPoseService
 
     public bool IsGPosing => _clientState.IsGPosing;
 
-    [Obsolete("Use IEventBus.Subscribe<GPoseStateChangedEvent> instead")]
-    public event Action<bool>? OnGPoseStateChanged;
-
     public GPoseService(IClientState clientState, IFramework framework, IEventBus eventBus)
     {
         _clientState = clientState;
@@ -34,14 +31,7 @@ public class GPoseService : IGPoseService
         if (currentState != _lastGPoseState)
         {
             _lastGPoseState = currentState;
-
-            // Publish via EventBus (preferred)
             _eventBus.Publish(new GPoseStateChangedEvent(currentState));
-
-            // Legacy event for backwards compatibility
-#pragma warning disable CS0618
-            OnGPoseStateChanged?.Invoke(currentState);
-#pragma warning restore CS0618
         }
     }
 
