@@ -23,8 +23,8 @@ public static class UIConstants
     public static float ScaledHeaderHeight => HeaderHeight * ImGuiHelpers.GlobalScale;
 
     // Colors
-    public static readonly Vector4 PoseableColor = new(0.4f, 0.9f, 0.4f, 1.0f);   // Green - actor is poseable
-    public static readonly Vector4 NotPoseableColor = new(0.9f, 0.4f, 0.4f, 1.0f); // Red - actor not poseable
-    public static readonly Vector4 GPoseActiveColor = new(0.4f, 1.0f, 0.4f, 1.0f); // GPose indicator
+    public static readonly Vector4 DefaultIconColor = new(1.0f, 1.0f, 1.0f, 1.0f);   // White for all entities
+    public static readonly Vector4 HiddenIconColor = new(0.5f, 0.5f, 0.5f, 0.5f);    // Dimmed - hidden
     public static readonly Vector4 DisabledTextColor = new(0.5f, 0.5f, 0.5f, 1.0f);
+    public static readonly Vector4 SkeletonColor = new(0.6f, 0.8f, 1.0f, 1.0f);      // Light blue - for skeleton (future)
 }

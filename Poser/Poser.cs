@@ -5,6 +5,7 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Poser.Core;
+using Poser.Core.BoneInfo;
 using Poser.Game;
 using Poser.History;
 using Poser.Services;
@@ -28,11 +29,15 @@ public class Poser : IDalamudPlugin
         IObjectTable objectTable,
         ISigScanner sigScanner,
         IGameInteropProvider gameInterop,
-        ICommandManager commandManager)
+        ICommandManager commandManager,
+        IDataManager dataManager)
     {
         log.Info($"Starting {PluginName}...");
 
         _commandManager = commandManager;
+
+        // Initialize bone info service with logger
+        BoneInfoService.Initialize(log);
 
         // Build DI container
         _serviceProvider = ConfigureServices(
@@ -43,7 +48,8 @@ public class Poser : IDalamudPlugin
             objectTable,
             sigScanner,
             gameInterop,
-            commandManager);
+            commandManager,
+            dataManager);
 
         // Initialize UI Manager (triggers subscription to draw events)
         _ = _serviceProvider.GetRequiredService<IUIManager>();
@@ -71,7 +77,8 @@ public class Poser : IDalamudPlugin
         IObjectTable objectTable,
         ISigScanner sigScanner,
         IGameInteropProvider gameInterop,
-        ICommandManager commandManager)
+        ICommandManager commandManager,
+        IDataManager dataManager)
     {
         var services = new ServiceCollection();
 
@@ -84,18 +91,23 @@ public class Poser : IDalamudPlugin
         services.AddSingleton(sigScanner);
         services.AddSingleton(gameInterop);
         services.AddSingleton(commandManager);
+        services.AddSingleton(dataManager);
 
         // Register core services
         services.AddSingleton<EventBus>();
+        services.AddSingleton<IEventBus>(sp => sp.GetRequiredService<EventBus>());
 
         // Register game services
         services.AddSingleton<IGPoseService, GPoseService>();
         services.AddSingleton<IActorManager, ActorManager>();
         services.AddSingleton<ICameraService, CameraService>();
         services.AddSingleton<IAnimationService, AnimationService>();
+        services.AddSingleton<IAnimationDataService, AnimationDataService>();
+        services.AddSingleton<IActorSpawnService, ActorSpawnService>();
         services.AddSingleton<IHistoryService, HistoryService>();
         services.AddSingleton<IPosingService, PosingService>();
         services.AddSingleton<IGazeService, GazeService>();
+        services.AddSingleton<ISkeletonService, SkeletonService>();
         services.AddSingleton<IEditorState, EditorState>();
 
         // Register UI

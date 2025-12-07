@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Poser.Services;
 
 namespace Poser.Core;
 
@@ -11,7 +12,7 @@ public interface IEvent { }
 /// <summary>
 /// Provides decoupled communication between components via publish/subscribe pattern.
 /// </summary>
-public class EventBus : IDisposable
+public class EventBus : IEventBus
 {
     private readonly Dictionary<Type, List<Delegate>> _handlers = new();
     private readonly object _lock = new();

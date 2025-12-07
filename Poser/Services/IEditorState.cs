@@ -14,10 +14,27 @@ public enum PivotMode
 }
 
 /// <summary>
+/// Bone display mode for skeleton hierarchy.
+/// </summary>
+public enum BoneDisplayMode
+{
+    /// <summary>Show bones in their natural hierarchy.</summary>
+    Hierarchy,
+    /// <summary>Group bones by category (Head, Arms, Legs, etc.).</summary>
+    Category
+}
+
+/// <summary>
 /// Tracks editor-wide state like pivot mode, tool selection, etc.
 /// </summary>
 public interface IEditorState
 {
     /// <summary>Current pivot mode for transforms.</summary>
     PivotMode PivotMode { get; set; }
+
+    /// <summary>Debug mode - expands all entities and logs untranslated bones.</summary>
+    bool DebugMode { get; set; }
+
+    /// <summary>Bone display mode - hierarchy or category grouping.</summary>
+    BoneDisplayMode BoneDisplayMode { get; set; }
 }

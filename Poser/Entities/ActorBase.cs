@@ -1,6 +1,7 @@
 using System.Numerics;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using Poser.Core;
+using DalamudObjectKind = Dalamud.Game.ClientState.Objects.Enums.ObjectKind;
 
 namespace Poser.Entities;
 
@@ -8,11 +9,49 @@ public class ActorBase : EntityBase, IActor
 {
     public nint Address { get; }
     public bool IsPosing { get; private set; }
+    public DalamudObjectKind ObjectKind { get; }
 
-    public ActorBase(EntityId id, string name, nint address)
+    public ActorBase(EntityId id, string name, nint address, DalamudObjectKind objectKind = DalamudObjectKind.None)
         : base(id, name)
     {
         Address = address;
+        ObjectKind = objectKind;
+    }
+
+    /// <summary>
+    /// Returns true if this actor is a companion (minion, mount, pet).
+    /// </summary>
+    public bool IsCompanion => ObjectKind == DalamudObjectKind.Companion ||
+                               ObjectKind == DalamudObjectKind.MountType ||
+                               ObjectKind == DalamudObjectKind.Ornament;
+
+    /// <summary>
+    /// Returns true if this actor is a player character.
+    /// </summary>
+    public bool IsPlayer => ObjectKind == DalamudObjectKind.Player;
+
+    /// <summary>
+    /// Returns true if this actor is an NPC (battle or event).
+    /// </summary>
+    public bool IsNpc => ObjectKind == DalamudObjectKind.BattleNpc || ObjectKind == DalamudObjectKind.EventNpc;
+
+    /// <summary>
+    /// Actors are always collapsible (they will have skeleton children).
+    /// </summary>
+    public override bool IsCollapsible => true;
+
+    /// <summary>
+    /// Returns the entity type based on ObjectKind.
+    /// </summary>
+    public override EntityType EntityType
+    {
+        get
+        {
+            if (IsPlayer) return EntityType.Player;
+            if (IsNpc) return EntityType.Npc;
+            if (IsCompanion) return EntityType.Companion;
+            return EntityType.Generic;
+        }
     }
 
     /// <summary>
@@ -46,8 +85,8 @@ public class ActorBase : EntityBase, IActor
         }
     }
 
-    public ActorBase(string name, nint address)
-        : this(EntityId.New(), name, address)
+    public ActorBase(string name, nint address, DalamudObjectKind objectKind = DalamudObjectKind.None)
+        : this(EntityId.New(), name, address, objectKind)
     {
     }
 

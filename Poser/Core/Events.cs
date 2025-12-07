@@ -27,19 +27,19 @@ public record EntityHierarchyChangedEvent : IEvent;
 /// Published when the actor list changes (actors added/removed from GPose).
 /// Replaces ActorManager.OnActorsChanged direct event.
 /// </summary>
-public record ActorListChangedEvent(IReadOnlyList<ActorBase> Actors) : IEvent;
+public record ActorListChangedEvent(IReadOnlyList<IActor> Actors) : IEvent;
 
 /// <summary>
 /// Published when actor selection changes.
 /// Replaces ActorManager.OnSelectionChanged direct event.
 /// </summary>
-public record SelectionChangedEvent(IReadOnlyList<ActorBase> SelectedActors) : IEvent;
+public record SelectionChangedEvent(IReadOnlyList<IActor> SelectedActors) : IEvent;
 
 /// <summary>
 /// Published when an actor's animation freeze state changes.
 /// Replaces AnimationService.OnFreezeStateChanged direct event.
 /// </summary>
-public record FreezeStateChangedEvent(ActorBase Actor, bool IsFrozen) : IEvent;
+public record FreezeStateChangedEvent(IActor Actor, bool IsFrozen) : IEvent;
 
 /// <summary>
 /// Published when physics freeze state changes (global).
@@ -50,4 +50,4 @@ public record PhysicsFreezeStateChangedEvent(bool IsFrozen) : IEvent;
 /// <summary>
 /// Published when an actor's transform is modified via posing.
 /// </summary>
-public record TransformChangedEvent(ActorBase Actor, Transform NewTransform) : IEvent;
+public record TransformChangedEvent(IActor Actor, Transform NewTransform) : IEvent;

@@ -22,7 +22,17 @@ public interface IHistoryService : IDisposable
     string? UndoDescription { get; }
     string? RedoDescription { get; }
 
+    /// <summary>
+    /// Push an action and execute it.
+    /// </summary>
     void Push(IHistoryAction action);
+
+    /// <summary>
+    /// Record an already-executed action without re-executing it.
+    /// Use when the action was already applied (e.g., during slider drag).
+    /// </summary>
+    void Record(IHistoryAction action);
+
     void Undo();
     void Redo();
     void Clear();

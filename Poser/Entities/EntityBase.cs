@@ -18,6 +18,22 @@ public abstract class EntityBase : IEntity, IDisposable
     public bool IsVisible { get; set; } = true;
     public bool IsSelected { get; set; }
 
+    /// <summary>
+    /// Override in derived classes to indicate if this entity can be collapsed.
+    /// Default returns true if entity has children.
+    /// </summary>
+    public virtual bool IsCollapsible => Children.Count > 0;
+
+    /// <summary>
+    /// Whether this entity is currently collapsed in the UI.
+    /// </summary>
+    public bool IsCollapsed { get; set; }
+
+    /// <summary>
+    /// Override in derived classes to return the entity type.
+    /// </summary>
+    public virtual EntityType EntityType => EntityType.Generic;
+
     protected EntityBase(EntityId id, string name)
     {
         Id = id;

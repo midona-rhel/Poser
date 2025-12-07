@@ -34,10 +34,15 @@ public class MainWindow : Window
         IGPoseService gPoseService,
         IActorManager actorManager,
         IAnimationService animationService,
+        IAnimationDataService animationDataService,
+        IActorSpawnService spawnService,
         IHistoryService historyService,
+        ICameraService cameraService,
         IPosingService posingService,
         IGazeService gazeService,
-        EventBus eventBus)
+        ISkeletonService skeletonService,
+        IEditorState editorState,
+        IEventBus eventBus)
         : base($"{Poser.PluginName}###poser_sidebar_window",
             ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar)
     {
@@ -47,12 +52,8 @@ public class MainWindow : Window
 
         // Initialize components
         _topBar = new TopBar(gPoseService, historyService);
-        _scenePanel = new ScenePanel(actorManager, animationService, eventBus);
-        _propertiesPanel = new PropertiesPanel(actorManager, posingService, animationService, historyService, gazeService);
-
-        // Wire up events from ScenePanel
-        _scenePanel.OnSpawnClone += HandleSpawnClone;
-        _scenePanel.OnDeleteSelected += HandleDeleteSelected;
+        _scenePanel = new ScenePanel(actorManager, animationService, spawnService, historyService, cameraService, gPoseService, skeletonService, editorState, eventBus);
+        _propertiesPanel = new PropertiesPanel(actorManager, posingService, animationService, animationDataService, historyService, gazeService);
     }
 
     public override void PreDraw()
@@ -190,13 +191,4 @@ public class MainWindow : Window
         ImGui.Dummy(new Vector2(availWidth, splitterHeight));
     }
 
-    private void HandleSpawnClone()
-    {
-        // TODO: Implement actor spawning
-    }
-
-    private void HandleDeleteSelected()
-    {
-        // TODO: Implement actor deletion
-    }
 }

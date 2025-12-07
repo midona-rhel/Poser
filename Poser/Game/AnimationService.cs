@@ -5,6 +5,7 @@ using Dalamud.Hooking;
 using Dalamud.Memory;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
+using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using Poser.Core;
 using Poser.Entities;
 using Poser.Services;
@@ -16,8 +17,11 @@ public class AnimationService : IAnimationService
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
     private readonly IGPoseService _gPoseService;
-    private readonly EventBus _eventBus;
+    private readonly IEventBus _eventBus;
     private readonly Dictionary<nint, float?> _speedOverrides = new();
+
+    // Base animation override tracking
+    private readonly Dictionary<nint, OriginalBaseAnimation> _baseOverrides = new();
 
     // Physics freeze - global, patches game code like Brio does
     private readonly nint _freezePhysicsAddress;
@@ -31,13 +35,13 @@ public class AnimationService : IAnimationService
 
     /// <summary>Use EventBus.Subscribe&lt;FreezeStateChangedEvent&gt; instead.</summary>
     [Obsolete("Use EventBus.Subscribe<FreezeStateChangedEvent> instead.")]
-    public event Action<ActorBase, bool>? OnFreezeStateChanged;
+    public event Action<IActor, bool>? OnFreezeStateChanged;
 
     /// <summary>Use EventBus.Subscribe&lt;PhysicsFreezeStateChangedEvent&gt; instead.</summary>
     [Obsolete("Use EventBus.Subscribe<PhysicsFreezeStateChangedEvent> instead.")]
-    public event Action<ActorBase, bool>? OnPhysicsFreezeStateChanged;
+    public event Action<IActor, bool>? OnPhysicsFreezeStateChanged;
 
-    public unsafe AnimationService(IFramework framework, ISigScanner sigScanner, IGameInteropProvider hooking, IPluginLog log, IGPoseService gPoseService, EventBus eventBus)
+    public unsafe AnimationService(IFramework framework, ISigScanner sigScanner, IGameInteropProvider hooking, IPluginLog log, IGPoseService gPoseService, IEventBus eventBus)
     {
         _framework = framework;
         _log = log;
@@ -103,9 +107,9 @@ public class AnimationService : IAnimationService
         }
     }
 
-    public bool IsFrozen(ActorBase actor) => _speedOverrides.ContainsKey(actor.Address) && _speedOverrides[actor.Address] == 0f;
+    public bool IsFrozen(IActor actor) => _speedOverrides.ContainsKey(actor.Address) && _speedOverrides[actor.Address] == 0f;
 
-    public void Freeze(ActorBase actor)
+    public void Freeze(IActor actor)
     {
         if (!_speedOverrides.ContainsKey(actor.Address) || _speedOverrides[actor.Address] != 0f)
         {
@@ -116,7 +120,7 @@ public class AnimationService : IAnimationService
         }
     }
 
-    public void Unfreeze(ActorBase actor)
+    public void Unfreeze(IActor actor)
     {
         if (_speedOverrides.ContainsKey(actor.Address))
         {
@@ -135,7 +139,7 @@ public class AnimationService : IAnimationService
         }
     }
 
-    public void ToggleFreeze(ActorBase actor)
+    public void ToggleFreeze(IActor actor)
     {
         if (IsFrozen(actor))
             Unfreeze(actor);
@@ -144,9 +148,9 @@ public class AnimationService : IAnimationService
     }
 
     // Physics freeze is global (affects all actors)
-    public bool IsPhysicsFrozen(ActorBase actor) => _isPhysicsFrozen;
+    public bool IsPhysicsFrozen(IActor actor) => _isPhysicsFrozen;
 
-    public void FreezePhysics(ActorBase actor)
+    public void FreezePhysics(IActor actor)
     {
         if (!_isPhysicsFrozen)
         {
@@ -162,7 +166,7 @@ public class AnimationService : IAnimationService
         }
     }
 
-    public void UnfreezePhysics(ActorBase actor)
+    public void UnfreezePhysics(IActor actor)
     {
         if (_isPhysicsFrozen)
         {
@@ -172,7 +176,7 @@ public class AnimationService : IAnimationService
         }
     }
 
-    public void TogglePhysicsFreeze(ActorBase actor)
+    public void TogglePhysicsFreeze(IActor actor)
     {
         if (_isPhysicsFrozen)
             UnfreezePhysics(actor);
@@ -260,6 +264,198 @@ public class AnimationService : IAnimationService
 
         character->Timeline.OverallSpeed = speed;
     }
+
+    #region Speed Control
+
+    public float GetSpeed(IActor actor)
+    {
+        if (_speedOverrides.TryGetValue(actor.Address, out var speed) && speed.HasValue)
+            return speed.Value;
+        return 1.0f;
+    }
+
+    public void SetSpeed(IActor actor, float speed)
+    {
+        _speedOverrides[actor.Address] = speed;
+        SetAnimationSpeed(actor.Address, speed);
+    }
+
+    public void ResetSpeed(IActor actor)
+    {
+        _speedOverrides.Remove(actor.Address);
+        SetAnimationSpeed(actor.Address, 1.0f);
+    }
+
+    #endregion
+
+    #region Animation Scrubbing
+
+    public unsafe float? GetAnimationDuration(IActor actor)
+    {
+        if (actor.Address == nint.Zero) return null;
+
+        var character = (Character*)actor.Address;
+        if (character == null) return null;
+
+        var drawObject = character->GameObject.DrawObject;
+        if (drawObject == null) return null;
+
+        if (drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
+            return null;
+
+        var charaBase = (CharacterBase*)drawObject;
+        if (charaBase->Skeleton == null) return null;
+
+        var skeleton = charaBase->Skeleton;
+        if (skeleton->PartialSkeletonCount <= 0) return null;
+
+        var partial = &skeleton->PartialSkeletons[0];
+        var animatedSkeleton = partial->GetHavokAnimatedSkeleton(0);
+        if (animatedSkeleton == null) return null;
+
+        if (animatedSkeleton->AnimationControls.Length <= 0) return null;
+
+        var control = animatedSkeleton->AnimationControls[0].Value;
+        if (control == null) return null;
+
+        var binding = control->hkaAnimationControl.Binding;
+        if (binding.ptr == null) return null;
+
+        var anim = binding.ptr->Animation.ptr;
+        if (anim == null) return null;
+
+        return anim->Duration;
+    }
+
+    public unsafe float? GetAnimationTime(IActor actor)
+    {
+        if (actor.Address == nint.Zero) return null;
+
+        var character = (Character*)actor.Address;
+        if (character == null) return null;
+
+        var drawObject = character->GameObject.DrawObject;
+        if (drawObject == null) return null;
+
+        if (drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
+            return null;
+
+        var charaBase = (CharacterBase*)drawObject;
+        if (charaBase->Skeleton == null) return null;
+
+        var skeleton = charaBase->Skeleton;
+        if (skeleton->PartialSkeletonCount <= 0) return null;
+
+        var partial = &skeleton->PartialSkeletons[0];
+        var animatedSkeleton = partial->GetHavokAnimatedSkeleton(0);
+        if (animatedSkeleton == null) return null;
+
+        if (animatedSkeleton->AnimationControls.Length <= 0) return null;
+
+        var control = animatedSkeleton->AnimationControls[0].Value;
+        if (control == null) return null;
+
+        return control->hkaAnimationControl.LocalTime;
+    }
+
+    public unsafe void SetAnimationTime(IActor actor, float time)
+    {
+        if (actor.Address == nint.Zero) return;
+
+        var character = (Character*)actor.Address;
+        if (character == null) return;
+
+        var drawObject = character->GameObject.DrawObject;
+        if (drawObject == null) return;
+
+        if (drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
+            return;
+
+        var charaBase = (CharacterBase*)drawObject;
+        if (charaBase->Skeleton == null) return;
+
+        var skeleton = charaBase->Skeleton;
+        if (skeleton->PartialSkeletonCount <= 0) return;
+
+        var partial = &skeleton->PartialSkeletons[0];
+        var animatedSkeleton = partial->GetHavokAnimatedSkeleton(0);
+        if (animatedSkeleton == null) return;
+
+        if (animatedSkeleton->AnimationControls.Length <= 0) return;
+
+        var control = animatedSkeleton->AnimationControls[0].Value;
+        if (control == null) return;
+
+        control->hkaAnimationControl.LocalTime = time;
+    }
+
+    #endregion
+
+    #region Base/Blend Animation
+
+    public unsafe void ApplyBaseAnimation(IActor actor, ushort timelineId, bool interrupt)
+    {
+        if (actor.Address == nint.Zero) return;
+
+        var character = (Character*)actor.Address;
+        if (character == null) return;
+
+        // Store original state if not already overridden
+        if (!_baseOverrides.ContainsKey(actor.Address))
+        {
+            _baseOverrides[actor.Address] = new OriginalBaseAnimation(
+                character->Mode,
+                character->ModeParam,
+                character->Timeline.BaseOverride);
+        }
+
+        // Apply the override (like Brio)
+        character->SetMode(CharacterModes.AnimLock, 0);
+        character->Timeline.BaseOverride = timelineId;
+
+        if (interrupt)
+        {
+            PlayBlendAnimation(actor, timelineId);
+        }
+    }
+
+    public unsafe void StopBaseAnimation(IActor actor)
+    {
+        if (actor.Address == nint.Zero) return;
+
+        if (!_baseOverrides.TryGetValue(actor.Address, out var original))
+            return;
+
+        var character = (Character*)actor.Address;
+        if (character == null) return;
+
+        // Restore original state
+        character->Timeline.BaseOverride = original.OriginalTimeline;
+        character->Mode = original.OriginalMode;
+        character->ModeParam = original.OriginalInput;
+
+        _baseOverrides.Remove(actor.Address);
+
+        // Play idle animation
+        PlayBlendAnimation(actor, 3);
+    }
+
+    public bool HasBaseOverride(IActor actor) => _baseOverrides.ContainsKey(actor.Address);
+
+    public unsafe void PlayBlendAnimation(IActor actor, ushort timelineId)
+    {
+        if (actor.Address == nint.Zero) return;
+
+        var character = (Character*)actor.Address;
+        if (character == null) return;
+
+        character->Timeline.TimelineSequencer.PlayTimeline(timelineId);
+    }
+
+    #endregion
+
+    /// <summary>Stores original animation state for restoration.</summary>
+    private record struct OriginalBaseAnimation(CharacterModes OriginalMode, byte OriginalInput, ushort OriginalTimeline);
 
     public void Dispose()
     {

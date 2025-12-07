@@ -9,7 +9,7 @@ namespace Poser.History;
 public class TransformActorAction : IHistoryAction
 {
     private readonly IPosingService _posingService;
-    private readonly ActorBase _actor;
+    private readonly IActor _actor;
     private readonly Transform _oldTransform;
     private readonly Transform _newTransform;
 
@@ -17,7 +17,7 @@ public class TransformActorAction : IHistoryAction
 
     public TransformActorAction(
         IPosingService posingService,
-        ActorBase actor,
+        IActor actor,
         Transform oldTransform,
         Transform newTransform)
     {

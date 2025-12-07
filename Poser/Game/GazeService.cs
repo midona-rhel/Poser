@@ -36,7 +36,7 @@ public unsafe class GazeService : IGazeService, IDisposable
     private delegate nint ActorLookAtLoopDelegate(ContainerInterface* args);
     private Hook<ActorLookAtLoopDelegate>? _actorLookAtLoop;
 
-    private readonly Dictionary<ActorBase, GazeState> _gazeStates = new();
+    private readonly Dictionary<IActor, GazeState> _gazeStates = new();
     private readonly Dictionary<ulong, LookAtDataHolder> _lookAtHandles = new();
 
     public GazeService(
@@ -98,10 +98,22 @@ public unsafe class GazeService : IGazeService, IDisposable
                 }
                 else if (lookAtDataHolder.TargetMode == GazeTargetMode.Forward)
                 {
-                    // Forward mode - set look mode to Frozen (look straight ahead)
-                    lookAtDataHolder.Target.Eyes.LookAtTarget.LookMode = LookMode.Frozen;
-                    lookAtDataHolder.Target.Head.LookAtTarget.LookMode = LookMode.Frozen;
-                    lookAtDataHolder.Target.Body.LookAtTarget.LookMode = LookMode.Frozen;
+                    // Forward mode - calculate a position in front of the character based on their facing direction
+                    var nativeObj = (GameObject*)targetActor.Address;
+                    var position = new Vector3(nativeObj->Position.X, nativeObj->Position.Y, nativeObj->Position.Z);
+                    var rotation = nativeObj->Rotation;
+
+                    // Calculate forward direction from rotation (Y rotation in radians)
+                    // Add a point 10 units in front of the character at head height
+                    var forwardDir = new Vector3(
+                        MathF.Sin(rotation),
+                        0f,
+                        MathF.Cos(rotation)
+                    );
+
+                    // Position 10 units ahead, slightly elevated for head/eye level
+                    var forwardPos = position + forwardDir * 10f + new Vector3(0, 1.5f, 0);
+                    SetLookAtTargetPosition(lookAtDataHolder, forwardPos);
                 }
 
                 // Apply the look-at updates
@@ -143,7 +155,7 @@ public unsafe class GazeService : IGazeService, IDisposable
             holder.Target.Head.LookAtTarget.Position = position;
     }
 
-    public GazeState GetGazeState(ActorBase actor)
+    public GazeState GetGazeState(IActor actor)
     {
         if (!_gazeStates.TryGetValue(actor, out var state))
         {
@@ -153,21 +165,21 @@ public unsafe class GazeService : IGazeService, IDisposable
         return state;
     }
 
-    public void SetGazeMode(ActorBase actor, GazeTargetMode mode)
+    public void SetGazeMode(IActor actor, GazeTargetMode mode)
     {
         var state = GetGazeState(actor);
         state.Mode = mode;
         ApplyGaze(actor, state);
     }
 
-    public void SetGazeTargetType(ActorBase actor, GazeTargetType targetType)
+    public void SetGazeTargetType(IActor actor, GazeTargetType targetType)
     {
         var state = GetGazeState(actor);
         state.TargetType = targetType;
         ApplyGaze(actor, state);
     }
 
-    public void SetGazeTarget(ActorBase actor, ActorBase target)
+    public void SetGazeTarget(IActor actor, IActor target)
     {
         var state = GetGazeState(actor);
         state.TargetEntity = target;
@@ -175,7 +187,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         ApplyGaze(actor, state);
     }
 
-    public void ResetGaze(ActorBase actor)
+    public void ResetGaze(IActor actor)
     {
         _gazeStates.Remove(actor);
         if (actor.Address != nint.Zero)
@@ -188,7 +200,15 @@ public unsafe class GazeService : IGazeService, IDisposable
         }
     }
 
-    private void ApplyGaze(ActorBase actor, GazeState state)
+    public void SetGazeState(IActor actor, GazeState state)
+    {
+        // Clone the state so we own it
+        var clonedState = state.Clone();
+        _gazeStates[actor] = clonedState;
+        ApplyGaze(actor, clonedState);
+    }
+
+    private void ApplyGaze(IActor actor, GazeState state)
     {
         if (actor.Address == nint.Zero)
             return;

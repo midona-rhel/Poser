@@ -9,14 +9,14 @@ namespace Poser.History;
 public class FreezePhysicsAction : IHistoryAction
 {
     private readonly IAnimationService _animationService;
-    private readonly ActorBase _actor;
+    private readonly IActor _actor;
     private readonly bool _freeze;
 
     public string Description => _freeze
         ? $"Freeze Physics {_actor.Name}"
         : $"Unfreeze Physics {_actor.Name}";
 
-    public FreezePhysicsAction(IAnimationService animationService, ActorBase actor, bool freeze)
+    public FreezePhysicsAction(IAnimationService animationService, IActor actor, bool freeze)
     {
         _animationService = animationService;
         _actor = actor;

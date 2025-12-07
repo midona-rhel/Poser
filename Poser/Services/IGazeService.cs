@@ -37,7 +37,17 @@ public class GazeState
 {
     public GazeTargetMode Mode { get; set; } = GazeTargetMode.None;
     public GazeTargetType TargetType { get; set; } = GazeTargetType.All;
-    public ActorBase? TargetEntity { get; set; }
+    public IActor? TargetEntity { get; set; }
+
+    /// <summary>
+    /// Creates a copy of this gaze state.
+    /// </summary>
+    public GazeState Clone() => new()
+    {
+        Mode = Mode,
+        TargetType = TargetType,
+        TargetEntity = TargetEntity
+    };
 }
 
 /// <summary>
@@ -48,25 +58,31 @@ public interface IGazeService
     /// <summary>
     /// Gets the current gaze state for an actor.
     /// </summary>
-    GazeState GetGazeState(ActorBase actor);
+    GazeState GetGazeState(IActor actor);
 
     /// <summary>
     /// Sets the gaze mode for an actor.
     /// </summary>
-    void SetGazeMode(ActorBase actor, GazeTargetMode mode);
+    void SetGazeMode(IActor actor, GazeTargetMode mode);
 
     /// <summary>
     /// Sets which body parts are affected by gaze control.
     /// </summary>
-    void SetGazeTargetType(ActorBase actor, GazeTargetType targetType);
+    void SetGazeTargetType(IActor actor, GazeTargetType targetType);
 
     /// <summary>
     /// Sets an entity for the actor to look at.
     /// </summary>
-    void SetGazeTarget(ActorBase actor, ActorBase target);
+    void SetGazeTarget(IActor actor, IActor target);
 
     /// <summary>
     /// Resets gaze to game default for an actor.
     /// </summary>
-    void ResetGaze(ActorBase actor);
+    void ResetGaze(IActor actor);
+
+    /// <summary>
+    /// Sets the complete gaze state for an actor.
+    /// Used for history/undo support.
+    /// </summary>
+    void SetGazeState(IActor actor, GazeState state);
 }

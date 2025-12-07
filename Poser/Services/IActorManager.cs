@@ -9,37 +9,37 @@ public interface IActorManager : IDisposable
     /// <summary>
     /// Gets the list of actors currently available in GPose.
     /// </summary>
-    IReadOnlyList<ActorBase> Actors { get; }
+    IReadOnlyList<IActor> Actors { get; }
 
     /// <summary>
     /// Gets the currently selected actors (supports multi-selection).
     /// </summary>
-    IReadOnlyList<ActorBase> SelectedActors { get; }
+    IReadOnlyList<IActor> SelectedActors { get; }
 
     /// <summary>
     /// Gets the primary selected actor (first in selection).
     /// </summary>
-    ActorBase? PrimarySelectedActor { get; }
+    IActor? PrimarySelectedActor { get; }
 
     /// <summary>
     /// Sets the selection to a single actor.
     /// </summary>
-    void Select(ActorBase actor);
+    void Select(IActor actor);
 
     /// <summary>
     /// Sets the selection to multiple actors.
     /// </summary>
-    void SelectMultiple(IEnumerable<ActorBase> actors);
+    void SelectMultiple(IEnumerable<IActor> actors);
 
     /// <summary>
     /// Adds an actor to the current selection.
     /// </summary>
-    void AddToSelection(ActorBase actor);
+    void AddToSelection(IActor actor);
 
     /// <summary>
     /// Removes an actor from the current selection.
     /// </summary>
-    void RemoveFromSelection(ActorBase actor);
+    void RemoveFromSelection(IActor actor);
 
     /// <summary>
     /// Clears all selections.
@@ -49,7 +49,7 @@ public interface IActorManager : IDisposable
     /// <summary>
     /// Checks if an actor is selected.
     /// </summary>
-    bool IsSelected(ActorBase actor);
+    bool IsSelected(IActor actor);
 
     /// <summary>
     /// Refreshes the actor list from the game.

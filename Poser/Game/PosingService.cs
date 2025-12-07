@@ -22,7 +22,7 @@ public unsafe class PosingService : IPosingService
     private readonly IPluginLog _log;
     private readonly IFramework _framework;
     private readonly IGPoseService _gPoseService;
-    private readonly EventBus _eventBus;
+    private readonly IEventBus _eventBus;
 
     // Hook for intercepting position resets
     private delegate void SetPositionDelegate(StructsGameObject* gameObject, float x, float y, float z);
@@ -38,7 +38,7 @@ public unsafe class PosingService : IPosingService
         IPluginLog log,
         IFramework framework,
         IGPoseService gPoseService,
-        EventBus eventBus,
+        IEventBus eventBus,
         IGameInteropProvider hooking)
     {
         _log = log;
@@ -132,12 +132,12 @@ public unsafe class PosingService : IPosingService
         drawObject->Object.Scale = transform.Scale;
     }
 
-    public Transform? GetTransformOverride(ActorBase actor)
+    public Transform? GetTransformOverride(IActor actor)
     {
         return _transformOverrides.TryGetValue(actor.Address, out var transform) ? transform : null;
     }
 
-    public void SetTransformOverride(ActorBase actor, Transform transform)
+    public void SetTransformOverride(IActor actor, Transform transform)
     {
         // Store original if we haven't already
         if (!_originalTransforms.ContainsKey(actor.Address))
@@ -151,28 +151,28 @@ public unsafe class PosingService : IPosingService
         ApplyTransformToActor(actor.Address, transform);
     }
 
-    public void SetPosition(ActorBase actor, Vector3 position)
+    public void SetPosition(IActor actor, Vector3 position)
     {
         var current = GetEffectiveTransform(actor);
         current.Position = position;
         SetTransformOverride(actor, current);
     }
 
-    public void SetRotation(ActorBase actor, Quaternion rotation)
+    public void SetRotation(IActor actor, Quaternion rotation)
     {
         var current = GetEffectiveTransform(actor);
         current.Rotation = rotation;
         SetTransformOverride(actor, current);
     }
 
-    public void SetScale(ActorBase actor, Vector3 scale)
+    public void SetScale(IActor actor, Vector3 scale)
     {
         var current = GetEffectiveTransform(actor);
         current.Scale = scale;
         SetTransformOverride(actor, current);
     }
 
-    public Transform GetOriginalTransform(ActorBase actor)
+    public Transform GetOriginalTransform(IActor actor)
     {
         if (_originalTransforms.TryGetValue(actor.Address, out var original))
         {
@@ -182,7 +182,7 @@ public unsafe class PosingService : IPosingService
         return ReadTransformFromGame(actor.Address);
     }
 
-    public Transform GetEffectiveTransform(ActorBase actor)
+    public Transform GetEffectiveTransform(IActor actor)
     {
         if (_transformOverrides.TryGetValue(actor.Address, out var transform))
         {
@@ -220,7 +220,7 @@ public unsafe class PosingService : IPosingService
         };
     }
 
-    public void ClearTransformOverride(ActorBase actor)
+    public void ClearTransformOverride(IActor actor)
     {
         ClearTransformOverrideByAddress(actor.Address);
     }
@@ -249,7 +249,7 @@ public unsafe class PosingService : IPosingService
         _originalTransforms.Clear();
     }
 
-    public bool HasTransformOverride(ActorBase actor)
+    public bool HasTransformOverride(IActor actor)
     {
         return _transformOverrides.ContainsKey(actor.Address);
     }

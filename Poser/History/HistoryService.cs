@@ -46,6 +46,17 @@ public class HistoryService : IHistoryService, IDisposable
         OnHistoryChanged?.Invoke();
     }
 
+    public void Record(IHistoryAction action)
+    {
+        // Add to undo stack WITHOUT executing (action was already applied)
+        _undoStack.Push(action);
+
+        // Clear redo stack (new action invalidates redo history)
+        _redoStack.Clear();
+
+        OnHistoryChanged?.Invoke();
+    }
+
     public void Undo()
     {
         if (!CanUndo) return;

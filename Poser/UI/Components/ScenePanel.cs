@@ -5,6 +5,7 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Poser.Core;
 using Poser.Entities;
+using Poser.History;
 using Poser.Services;
 using Poser.UI.Controls;
 
@@ -17,18 +18,25 @@ namespace Poser.UI.Components;
 public class ScenePanel : IDisposable
 {
     private readonly IActorManager _actorManager;
+    private readonly IActorSpawnService _spawnService;
+    private readonly IHistoryService _historyService;
     private readonly EntityList _entityList;
-
-    public event Action? OnSpawnClone;
-    public event Action? OnDeleteSelected;
 
     public ScenePanel(
         IActorManager actorManager,
         IAnimationService animationService,
-        EventBus eventBus)
+        IActorSpawnService spawnService,
+        IHistoryService historyService,
+        ICameraService cameraService,
+        IGPoseService gPoseService,
+        ISkeletonService skeletonService,
+        IEditorState editorState,
+        IEventBus eventBus)
     {
         _actorManager = actorManager;
-        _entityList = new EntityList(actorManager, animationService, eventBus);
+        _spawnService = spawnService;
+        _historyService = historyService;
+        _entityList = new EntityList(actorManager, animationService, spawnService, historyService, cameraService, gPoseService, skeletonService, editorState, eventBus);
     }
 
     public void Draw()
@@ -76,7 +84,12 @@ public class ScenePanel : IDisposable
             new System.Numerics.Vector2(buttonSize, buttonSize),
             "Spawn clone of player"))
         {
-            OnSpawnClone?.Invoke();
+            var spawned = _spawnService.SpawnPlayerClone();
+            if (spawned != null)
+            {
+                // Select the newly spawned actor
+                _actorManager.Select(spawned);
+            }
         }
 
         ImGui.SameLine();
@@ -85,16 +98,23 @@ public class ScenePanel : IDisposable
         float trashButtonWidth = buttonSize * 4;
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - trashButtonWidth);
 
-        using (ImRaii.Disabled(!hasSelection))
+        // Only allow deleting spawned actors
+        var primarySelected = _actorManager.PrimarySelectedActor;
+        bool canDelete = primarySelected != null && _spawnService.IsSpawnedActor(primarySelected);
+
+        using (ImRaii.Disabled(!canDelete))
         {
             if (ImPoser.FontIconButton(
                 "delete_selected",
                 FontAwesomeIcon.Trash,
                 new System.Numerics.Vector2(trashButtonWidth, buttonSize),
-                "Delete selected entities",
-                hasSelection))
+                canDelete ? "Delete selected entity" : "Can only delete spawned entities",
+                canDelete))
             {
-                OnDeleteSelected?.Invoke();
+                if (primarySelected != null)
+                {
+                    _spawnService.DestroyActor(primarySelected);
+                }
             }
         }
     }

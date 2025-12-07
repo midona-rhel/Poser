@@ -1,4 +1,5 @@
 using System;
+using DalamudObjectKind = Dalamud.Game.ClientState.Objects.Enums.ObjectKind;
 
 namespace Poser.Entities;
 
@@ -10,9 +11,29 @@ public interface IActor : IEntity
     nint Address { get; }
 
     /// <summary>
+    /// The type of game object (Player, Companion, BattleNpc, etc.).
+    /// </summary>
+    DalamudObjectKind ObjectKind { get; }
+
+    /// <summary>
     /// Whether the actor is currently being posed.
     /// </summary>
     bool IsPosing { get; }
+
+    /// <summary>
+    /// Returns true if this actor is a companion (minion, mount, pet).
+    /// </summary>
+    bool IsCompanion { get; }
+
+    /// <summary>
+    /// Returns true if this actor is a player character.
+    /// </summary>
+    bool IsPlayer { get; }
+
+    /// <summary>
+    /// Returns true if this actor is an NPC (battle or event).
+    /// </summary>
+    bool IsNpc { get; }
 
     /// <summary>
     /// Begin posing this actor.

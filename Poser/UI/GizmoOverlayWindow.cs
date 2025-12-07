@@ -23,7 +23,7 @@ public class GizmoOverlayWindow : Window
     private const int GizmoId = 142857;
 
     // Track transforms when we start dragging for undo
-    private Dictionary<ActorBase, Transform>? _dragStartTransforms;
+    private Dictionary<IActor, Transform>? _dragStartTransforms;
 
     public GizmoOverlayWindow(
         IActorManager actorManager,
@@ -108,7 +108,7 @@ public class GizmoOverlayWindow : Window
         if (isUsing && _dragStartTransforms == null && anyFrozen)
         {
             // Starting to drag - store initial transforms for ALL selected frozen actors
-            _dragStartTransforms = new Dictionary<ActorBase, Transform>();
+            _dragStartTransforms = new Dictionary<IActor, Transform>();
             foreach (var actor in _actorManager.SelectedActors)
             {
                 if (_animationService.IsFrozen(actor))

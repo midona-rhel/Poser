@@ -111,6 +111,31 @@ public static class ImPoser
 
     #region Buttons
 
+    /// <summary>
+    /// Simple icon button without outline. Good for collapse/expand arrows.
+    /// </summary>
+    public static bool IconButton(string id, FontAwesomeIcon icon, Vector2? size = null, string? tooltip = null)
+    {
+        bool clicked;
+        var buttonSize = size ?? new Vector2(UIConstants.ScaledButtonSize);
+
+        using (ImRaii.PushStyle(ImGuiStyleVar.FramePadding, Vector2.Zero))
+        using (ImRaii.PushColor(ImGuiCol.Button, Vector4.Zero))
+        using (ImRaii.PushColor(ImGuiCol.ButtonHovered, ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonHovered] with { W = 0.3f }))
+        using (ImRaii.PushColor(ImGuiCol.ButtonActive, ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive] with { W = 0.5f }))
+        using (ImRaii.PushFont(UiBuilder.IconFont))
+        {
+            clicked = ImGui.Button($"{icon.ToIconString()}##{id}", buttonSize);
+        }
+
+        if (tooltip != null && ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip(tooltip);
+        }
+
+        return clicked;
+    }
+
     public static bool FontIconButton(string id, FontAwesomeIcon icon, Vector2? size = null, string? tooltip = null, bool enabled = true)
     {
         bool clicked = false;
@@ -195,6 +220,59 @@ public static class ImPoser
         ImGui.SetCursorPosX(pixelPos);
 
         return FontIconButton(id, icon, size, tooltip, enabled);
+    }
+
+    /// <summary>
+    /// Button that uses a FontAwesome icon for sizing but displays text centered on top.
+    /// The icon is invisible (0% opacity) and only used to ensure consistent button sizing.
+    /// </summary>
+    public static bool TextOverIconButton(string id, FontAwesomeIcon sizeIcon, string text, Vector2? size = null, string? tooltip = null)
+    {
+        bool clicked;
+        var buttonSize = size ?? new Vector2(UIConstants.ScaledButtonSize);
+        var startPos = ImGui.GetCursorScreenPos();
+
+        using (ImRaii.PushStyle(ImGuiStyleVar.FramePadding, Vector2.Zero))
+        using (ImRaii.PushColor(ImGuiCol.Button, Vector4.Zero))
+        using (ImRaii.PushColor(ImGuiCol.ButtonHovered, ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonHovered] with { W = 0.3f }))
+        using (ImRaii.PushColor(ImGuiCol.ButtonActive, ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive] with { W = 0.5f }))
+        using (ImRaii.PushFont(UiBuilder.IconFont))
+        {
+            // Draw invisible icon button for sizing
+            using (ImRaii.PushColor(ImGuiCol.Text, Vector4.Zero))
+            {
+                clicked = ImGui.Button($"{sizeIcon.ToIconString()}##{id}", buttonSize);
+            }
+        }
+
+        // Draw text centered on top
+        if (!string.IsNullOrEmpty(text))
+        {
+            var drawList = ImGui.GetWindowDrawList();
+            var textSize = ImGui.CalcTextSize(text);
+            var textPos = new Vector2(
+                startPos.X + (buttonSize.X - textSize.X) / 2,
+                startPos.Y + (buttonSize.Y - textSize.Y) / 2);
+            var textColor = ImGui.GetColorU32(UIConstants.DisabledTextColor);
+            drawList.AddText(textPos, textColor, text);
+        }
+
+        if (tooltip != null && ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip(tooltip);
+        }
+
+        return clicked;
+    }
+
+    /// <summary>
+    /// Invisible dummy spacer that matches the size of an icon button.
+    /// Not clickable, not hoverable - purely for layout/indentation.
+    /// </summary>
+    public static void InvisibleButtonSpacer(Vector2? size = null)
+    {
+        var spacerSize = size ?? new Vector2(ImGui.GetFrameHeight());
+        ImGui.Dummy(spacerSize);
     }
 
     #endregion

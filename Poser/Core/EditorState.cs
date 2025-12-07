@@ -8,4 +8,6 @@ namespace Poser.Core;
 public class EditorState : IEditorState
 {
     public PivotMode PivotMode { get; set; } = PivotMode.Local;
+    public bool DebugMode { get; set; } = false;
+    public BoneDisplayMode BoneDisplayMode { get; set; } = BoneDisplayMode.Category;
 }

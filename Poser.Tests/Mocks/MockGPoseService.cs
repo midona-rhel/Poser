@@ -36,4 +36,9 @@ public class MockGPoseService : IGPoseService
     /// Simulates exiting GPose.
     /// </summary>
     public void ExitGPose() => IsGPosing = false;
+
+    /// <summary>
+    /// Sets the GPose state directly.
+    /// </summary>
+    public void SetGPoseState(bool isGPosing) => IsGPosing = isGPosing;
 }

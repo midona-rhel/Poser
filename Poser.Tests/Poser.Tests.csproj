@@ -2,9 +2,11 @@
 
 	<PropertyGroup>
 		<TargetFramework>net9.0-windows</TargetFramework>
+		<Platforms>x64</Platforms>
 		<Nullable>enable</Nullable>
 		<IsPackable>false</IsPackable>
 		<IsTestProject>true</IsTestProject>
+		<DalamudLibPath>$(appdata)\XIVLauncher\addon\Hooks\dev\</DalamudLibPath>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -23,6 +25,13 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\Poser\Poser.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Reference Include="Dalamud">
+			<HintPath>$(DalamudLibPath)Dalamud.dll</HintPath>
+			<Private>false</Private>
+		</Reference>
 	</ItemGroup>
 
 </Project>

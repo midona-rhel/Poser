@@ -13,6 +13,7 @@ public class UIManager : IUIManager
     private readonly WindowSystem _windowSystem;
     private readonly MainWindow _mainWindow;
     private readonly GizmoOverlayWindow _gizmoOverlay;
+    private readonly SkeletonOverlayWindow _skeletonOverlay;
     private readonly HotbarWindow _hotbarWindow;
 
     public UIManager(
@@ -21,28 +22,35 @@ public class UIManager : IUIManager
         IActorManager actorManager,
         ICameraService cameraService,
         IAnimationService animationService,
+        IAnimationDataService animationDataService,
+        IActorSpawnService spawnService,
         IHistoryService historyService,
         IPosingService posingService,
         IGazeService gazeService,
+        ISkeletonService skeletonService,
         IEditorState editorState,
-        EventBus eventBus)
+        IEventBus eventBus)
     {
         _pluginInterface = pluginInterface;
         _gPoseService = gPoseService;
         _windowSystem = new WindowSystem(Poser.PluginName);
 
-        // Create windows in z-order (first added = drawn first = underneath)
+        // Create windows in z-order (last added = drawn on top)
 
-        // Hotbar at bottom (lowest priority)
-        _hotbarWindow = new HotbarWindow(gPoseService, editorState);
-        _windowSystem.AddWindow(_hotbarWindow);
+        // Skeleton overlay (lowest z-order, underneath everything)
+        _skeletonOverlay = new SkeletonOverlayWindow(actorManager, cameraService, skeletonService);
+        _windowSystem.AddWindow(_skeletonOverlay);
 
-        // Gizmo overlay
+        // Gizmo overlay (above skeleton overlay)
         _gizmoOverlay = new GizmoOverlayWindow(actorManager, cameraService, posingService, historyService, animationService, editorState);
         _windowSystem.AddWindow(_gizmoOverlay);
 
-        // Main sidebar (highest priority, on top)
-        _mainWindow = new MainWindow(gPoseService, actorManager, animationService, historyService, posingService, gazeService, eventBus);
+        // Hotbar (above gizmo)
+        _hotbarWindow = new HotbarWindow(gPoseService, editorState);
+        _windowSystem.AddWindow(_hotbarWindow);
+
+        // Main sidebar (highest z-order, on top)
+        _mainWindow = new MainWindow(gPoseService, actorManager, animationService, animationDataService, spawnService, historyService, cameraService, posingService, gazeService, skeletonService, editorState, eventBus);
         _windowSystem.AddWindow(_mainWindow);
 
         // Hook into Dalamud's UI drawing
@@ -59,6 +67,7 @@ public class UIManager : IUIManager
         // Windows closed by default, opens when entering GPose
         _mainWindow.IsOpen = false;
         _gizmoOverlay.IsOpen = false;
+        _skeletonOverlay.IsOpen = false;
         _hotbarWindow.IsOpen = false;
     }
 
@@ -67,6 +76,7 @@ public class UIManager : IUIManager
         // Open windows when entering GPose, close when exiting
         _mainWindow.IsOpen = isGPosing;
         _gizmoOverlay.IsOpen = isGPosing;
+        _skeletonOverlay.IsOpen = isGPosing;
         _hotbarWindow.IsOpen = isGPosing;
     }
 

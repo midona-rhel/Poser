@@ -20,10 +20,10 @@ public class ActorManager : IActorManager
     private readonly IObjectTable _objectTable;
     private readonly IGPoseService _gPoseService;
     private readonly IFramework _framework;
-    private readonly EventBus _eventBus;
+    private readonly IEventBus _eventBus;
 
-    private readonly List<ActorBase> _actors = new();
-    private readonly List<ActorBase> _selectedActors = new();
+    private readonly List<IActor> _actors = new();
+    private readonly List<IActor> _selectedActors = new();
 
     // Track actor addresses to detect actual changes
     private readonly HashSet<nint> _lastActorAddresses = new();
@@ -31,11 +31,11 @@ public class ActorManager : IActorManager
     // Debounce flag to prevent multiple refreshes per frame
     private bool _pendingRefresh = false;
 
-    public IReadOnlyList<ActorBase> Actors => _actors.AsReadOnly();
-    public IReadOnlyList<ActorBase> SelectedActors => _selectedActors.AsReadOnly();
-    public ActorBase? PrimarySelectedActor => _selectedActors.FirstOrDefault();
+    public IReadOnlyList<IActor> Actors => _actors.AsReadOnly();
+    public IReadOnlyList<IActor> SelectedActors => _selectedActors.AsReadOnly();
+    public IActor? PrimarySelectedActor => _selectedActors.FirstOrDefault();
 
-    public ActorManager(IObjectTable objectTable, IGPoseService gPoseService, IFramework framework, EventBus eventBus)
+    public ActorManager(IObjectTable objectTable, IGPoseService gPoseService, IFramework framework, IEventBus eventBus)
     {
         _objectTable = objectTable;
         _gPoseService = gPoseService;
@@ -46,7 +46,7 @@ public class ActorManager : IActorManager
         _framework.Update += OnFrameworkUpdate;
     }
 
-    public void Select(ActorBase actor)
+    public void Select(IActor actor)
     {
         if (!_actors.Contains(actor)) return;
 
@@ -55,7 +55,7 @@ public class ActorManager : IActorManager
         _eventBus.Publish(new SelectionChangedEvent(SelectedActors));
     }
 
-    public void SelectMultiple(IEnumerable<ActorBase> actors)
+    public void SelectMultiple(IEnumerable<IActor> actors)
     {
         _selectedActors.Clear();
         foreach (var actor in actors.Where(a => _actors.Contains(a)))
@@ -65,7 +65,7 @@ public class ActorManager : IActorManager
         _eventBus.Publish(new SelectionChangedEvent(SelectedActors));
     }
 
-    public void AddToSelection(ActorBase actor)
+    public void AddToSelection(IActor actor)
     {
         if (!_actors.Contains(actor) || _selectedActors.Contains(actor)) return;
 
@@ -73,7 +73,7 @@ public class ActorManager : IActorManager
         _eventBus.Publish(new SelectionChangedEvent(SelectedActors));
     }
 
-    public void RemoveFromSelection(ActorBase actor)
+    public void RemoveFromSelection(IActor actor)
     {
         if (_selectedActors.Remove(actor))
         {
@@ -90,7 +90,7 @@ public class ActorManager : IActorManager
         }
     }
 
-    public bool IsSelected(ActorBase actor) => _selectedActors.Contains(actor);
+    public bool IsSelected(IActor actor) => _selectedActors.Contains(actor);
 
     private void OnGPoseStateChanged(bool isGPosing)
     {
@@ -160,7 +160,8 @@ public class ActorManager : IActorManager
         _selectedActors.Clear();
         foreach (var actor in _actors)
         {
-            actor.Dispose();
+            if (actor is IDisposable disposable)
+                disposable.Dispose();
         }
         _actors.Clear();
         _lastActorAddresses.Clear();
@@ -171,7 +172,8 @@ public class ActorManager : IActorManager
             var actor = new ActorBase(
                 new EntityId($"actor_{gameObject.GameObjectId}"),
                 GetActorName(gameObject),
-                gameObject.Address
+                gameObject.Address,
+                gameObject.ObjectKind
             );
             _actors.Add(actor);
             _lastActorAddresses.Add(gameObject.Address);
@@ -185,7 +187,8 @@ public class ActorManager : IActorManager
         _selectedActors.Clear();
         foreach (var actor in _actors)
         {
-            actor.Dispose();
+            if (actor is IDisposable disposable)
+                disposable.Dispose();
         }
         _actors.Clear();
         _lastActorAddresses.Clear();
