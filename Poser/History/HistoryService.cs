@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Poser.Core;
 using Poser.Services;
 
 namespace Poser.History;
@@ -7,18 +8,20 @@ namespace Poser.History;
 public class HistoryService : IHistoryService, IDisposable
 {
     private readonly IGPoseService _gPoseService;
+    private readonly IEventBus _eventBus;
     private readonly Stack<IHistoryAction> _undoStack = new();
     private readonly Stack<IHistoryAction> _redoStack = new();
 
-    public HistoryService(IGPoseService gPoseService)
+    public HistoryService(IGPoseService gPoseService, IEventBus eventBus)
     {
         _gPoseService = gPoseService;
-        _gPoseService.OnGPoseStateChanged += OnGPoseStateChanged;
+        _eventBus = eventBus;
+        _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
     }
 
-    private void OnGPoseStateChanged(bool isGPosing)
+    private void OnGPoseStateChanged(GPoseStateChangedEvent e)
     {
-        if (!isGPosing)
+        if (!e.IsGPosing)
         {
             // Clear history when exiting GPose
             Clear();
@@ -88,7 +91,7 @@ public class HistoryService : IHistoryService, IDisposable
 
     public void Dispose()
     {
-        _gPoseService.OnGPoseStateChanged -= OnGPoseStateChanged;
+        _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         GC.SuppressFinalize(this);
     }
 }

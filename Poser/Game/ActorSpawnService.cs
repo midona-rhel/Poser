@@ -7,6 +7,7 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Event;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
+using Poser.Core;
 using Poser.Entities;
 using Poser.Services;
 
@@ -22,6 +23,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
     private readonly IObjectTable _objectTable;
     private readonly IGPoseService _gPoseService;
     private readonly IActorManager _actorManager;
+    private readonly IEventBus _eventBus;
     private readonly IPluginLog _log;
 
     private readonly HashSet<ushort> _spawnedIndexes = new();
@@ -32,15 +34,17 @@ public unsafe class ActorSpawnService : IActorSpawnService
         IObjectTable objectTable,
         IGPoseService gPoseService,
         IActorManager actorManager,
+        IEventBus eventBus,
         IPluginLog log)
     {
         _clientState = clientState;
         _objectTable = objectTable;
         _gPoseService = gPoseService;
         _actorManager = actorManager;
+        _eventBus = eventBus;
         _log = log;
 
-        _gPoseService.OnGPoseStateChanged += OnGPoseStateChanged;
+        _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
     }
 
     public IActor? SpawnPlayerClone()
@@ -273,9 +277,9 @@ public unsafe class ActorSpawnService : IActorSpawnService
         }
     }
 
-    private void OnGPoseStateChanged(bool isGPosing)
+    private void OnGPoseStateChanged(GPoseStateChangedEvent e)
     {
-        if (!isGPosing)
+        if (!e.IsGPosing)
         {
             // Destroy all spawned actors when exiting GPose
             DestroyAllSpawned();
@@ -308,7 +312,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
     public void Dispose()
     {
-        _gPoseService.OnGPoseStateChanged -= OnGPoseStateChanged;
+        _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         DestroyAllSpawned();
     }
 }

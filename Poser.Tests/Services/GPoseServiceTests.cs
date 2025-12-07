@@ -3,6 +3,7 @@ using Xunit;
 
 namespace Poser.Tests.Services;
 
+#pragma warning disable CS0618 // Testing legacy event support
 public class GPoseServiceTests
 {
     [Fact]
@@ -103,3 +104,4 @@ public class GPoseServiceTests
         Assert.Equal(0, eventCount);
     }
 }
+#pragma warning restore CS0618

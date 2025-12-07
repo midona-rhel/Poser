@@ -21,6 +21,11 @@ public interface IActor : IEntity
     bool IsPosing { get; }
 
     /// <summary>
+    /// Whether edit mode is enabled for this actor (skeleton is active for bone manipulation).
+    /// </summary>
+    bool IsEditMode { get; set; }
+
+    /// <summary>
     /// Returns true if this actor is a companion (minion, mount, pet).
     /// </summary>
     bool IsCompanion { get; }

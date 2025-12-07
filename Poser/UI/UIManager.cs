@@ -1,5 +1,9 @@
+using Dalamud.Bindings.ImGui;
+using Dalamud.Game.ClientState.Keys;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
+using Dalamud.Plugin.Services;
+using Poser.Controllers;
 using Poser.Core;
 using Poser.Services;
 using System;
@@ -10,11 +14,18 @@ public class UIManager : IUIManager
 {
     private readonly IDalamudPluginInterface _pluginInterface;
     private readonly IGPoseService _gPoseService;
+    private readonly IActorManager _actorManager;
+    private readonly IEditorState _editorState;
+    private readonly IEventBus _eventBus;
+    private readonly IKeyState _keyState;
     private readonly WindowSystem _windowSystem;
     private readonly MainWindow _mainWindow;
     private readonly GizmoOverlayWindow _gizmoOverlay;
     private readonly SkeletonOverlayWindow _skeletonOverlay;
     private readonly HotbarWindow _hotbarWindow;
+
+    // Track E key state to detect press edge
+    private bool _wasEPressed;
 
     public UIManager(
         IDalamudPluginInterface pluginInterface,
@@ -30,20 +41,26 @@ public class UIManager : IUIManager
         ISkeletonService skeletonService,
         IBonePosingService bonePosingService,
         IEditorState editorState,
-        IEventBus eventBus)
+        IEventBus eventBus,
+        IPosingController posingController,
+        IKeyState keyState)
     {
         _pluginInterface = pluginInterface;
         _gPoseService = gPoseService;
+        _actorManager = actorManager;
+        _editorState = editorState;
+        _eventBus = eventBus;
+        _keyState = keyState;
         _windowSystem = new WindowSystem(Poser.PluginName);
 
         // Create windows in z-order (last added = drawn on top)
 
         // Skeleton overlay (lowest z-order, underneath everything)
-        _skeletonOverlay = new SkeletonOverlayWindow(actorManager, cameraService, skeletonService, bonePosingService, historyService, editorState);
+        _skeletonOverlay = new SkeletonOverlayWindow(actorManager, cameraService, skeletonService, bonePosingService, editorState);
         _windowSystem.AddWindow(_skeletonOverlay);
 
         // Gizmo overlay (above skeleton overlay)
-        _gizmoOverlay = new GizmoOverlayWindow(actorManager, cameraService, posingService, historyService, animationService, editorState);
+        _gizmoOverlay = new GizmoOverlayWindow(actorManager, cameraService, posingService, bonePosingService, skeletonService, historyService, animationService, editorState);
         _windowSystem.AddWindow(_gizmoOverlay);
 
         // Hotbar (above gizmo)
@@ -51,7 +68,7 @@ public class UIManager : IUIManager
         _windowSystem.AddWindow(_hotbarWindow);
 
         // Main sidebar (highest z-order, on top)
-        _mainWindow = new MainWindow(gPoseService, actorManager, animationService, animationDataService, spawnService, historyService, cameraService, posingService, gazeService, skeletonService, editorState, eventBus);
+        _mainWindow = new MainWindow(gPoseService, actorManager, animationService, animationDataService, spawnService, historyService, cameraService, posingService, gazeService, skeletonService, editorState, eventBus, posingController);
         _windowSystem.AddWindow(_mainWindow);
 
         // Hook into Dalamud's UI drawing
@@ -63,7 +80,7 @@ public class UIManager : IUIManager
         _pluginInterface.UiBuilder.DisableCutsceneUiHide = true;
 
         // Subscribe to GPose state changes to auto-open/close UI
-        _gPoseService.OnGPoseStateChanged += OnGPoseStateChanged;
+        _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
 
         // Windows closed by default, opens when entering GPose
         _mainWindow.IsOpen = false;
@@ -72,18 +89,46 @@ public class UIManager : IUIManager
         _hotbarWindow.IsOpen = false;
     }
 
-    private void OnGPoseStateChanged(bool isGPosing)
+    private void OnGPoseStateChanged(GPoseStateChangedEvent e)
     {
         // Open windows when entering GPose, close when exiting
-        _mainWindow.IsOpen = isGPosing;
-        _gizmoOverlay.IsOpen = isGPosing;
-        _skeletonOverlay.IsOpen = isGPosing;
-        _hotbarWindow.IsOpen = isGPosing;
+        _mainWindow.IsOpen = e.IsGPosing;
+        _gizmoOverlay.IsOpen = e.IsGPosing;
+        _skeletonOverlay.IsOpen = e.IsGPosing;
+        _hotbarWindow.IsOpen = e.IsGPosing;
     }
 
     private void DrawUI()
     {
+        // Handle E key for edit mode toggle (only in GPose)
+        if (_gPoseService.IsGPosing)
+        {
+            HandleEditModeKey();
+        }
+
         _windowSystem.Draw();
+    }
+
+    private void HandleEditModeKey()
+    {
+        // Check E key state using IKeyState (allows us to consume the key)
+        bool isEPressed = _keyState[VirtualKey.E];
+
+        // Detect rising edge (key just pressed)
+        if (isEPressed && !_wasEPressed)
+        {
+            // Toggle edit mode on the primary selected actor
+            var selectedActor = _actorManager.PrimarySelectedActor;
+            if (selectedActor != null)
+            {
+                _editorState.ToggleEditMode(selectedActor);
+            }
+
+            // Consume the key to prevent game from receiving it
+            _keyState[VirtualKey.E] = false;
+        }
+
+        _wasEPressed = isEPressed;
     }
 
     public void ToggleMainWindow()
@@ -93,7 +138,7 @@ public class UIManager : IUIManager
 
     public void Dispose()
     {
-        _gPoseService.OnGPoseStateChanged -= OnGPoseStateChanged;
+        _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _pluginInterface.UiBuilder.Draw -= DrawUI;
         _pluginInterface.UiBuilder.OpenMainUi -= ToggleMainWindow;
 

@@ -3,18 +3,16 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Bindings.ImGuizmo;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
-using Poser.Core;
 using Poser.Entities;
-using Poser.History;
 using Poser.Services;
 
 namespace Poser.UI;
 
 /// <summary>
-/// Overlay window that draws skeleton bones on screen and handles bone posing.
+/// Overlay window that draws skeleton bones on screen for bone selection.
+/// Gizmo manipulation is handled by GizmoOverlayWindow.
 /// </summary>
 public class SkeletonOverlayWindow : Window
 {
@@ -22,7 +20,6 @@ public class SkeletonOverlayWindow : Window
     private readonly ICameraService _cameraService;
     private readonly ISkeletonService _skeletonService;
     private readonly IBonePosingService _bonePosingService;
-    private readonly IHistoryService _historyService;
     private readonly IEditorState _editorState;
 
     // Configuration
@@ -48,12 +45,6 @@ public class SkeletonOverlayWindow : Window
     private static readonly Vector4 TextColorVec = new(1.0f, 1.0f, 1.0f, 1.0f);
     private static readonly Vector4 TextOutlineColorVec = new(0.0f, 0.0f, 0.0f, 1.0f);
 
-    // Gizmo state
-    private const int GizmoId = 857142;
-    private Transform? _trackingTransform;
-    private Transform? _dragStartTransform;
-
-
     // Bone display data
     private class BoneDisplayData
     {
@@ -73,7 +64,6 @@ public class SkeletonOverlayWindow : Window
         ICameraService cameraService,
         ISkeletonService skeletonService,
         IBonePosingService bonePosingService,
-        IHistoryService historyService,
         IEditorState editorState)
         : base("##poser_skeleton_overlay",
             ImGuiWindowFlags.NoBackground |
@@ -89,7 +79,6 @@ public class SkeletonOverlayWindow : Window
         _cameraService = cameraService;
         _skeletonService = skeletonService;
         _bonePosingService = bonePosingService;
-        _historyService = historyService;
         _editorState = editorState;
 
         RespectCloseHotkey = false;
@@ -104,8 +93,6 @@ public class SkeletonOverlayWindow : Window
         var io = ImGui.GetIO();
         Size = io.DisplaySize;
         SizeCondition = ImGuiCond.Always;
-
-        ImGuizmo.SetID(GizmoId);
     }
 
     public override void Draw()
@@ -118,15 +105,19 @@ public class SkeletonOverlayWindow : Window
 
         var bones = new List<BoneDisplayData>();
 
-        // Collect all bones and their screen positions
+        // Collect all bones and their screen positions from actors with visible skeletons
         foreach (var actor in _actorManager.Actors)
         {
             var skeleton = _skeletonService.GetSkeleton(actor) as Skeleton;
-            if (skeleton == null || !skeleton.IsValid || !skeleton.IsOverlayVisible)
+            if (skeleton == null || !skeleton.IsValid)
                 continue;
 
-            // Update bone transforms from game memory
-            skeleton.UpdateBoneTransforms();
+            // Show skeleton overlay if either edit mode is on OR overlay is explicitly visible
+            if (!actor.IsEditMode && !skeleton.IsOverlayVisible)
+                continue;
+
+            // Register skeleton for cache updates in FinalizeSkeletons hook
+            _bonePosingService.RegisterSkeletonForCacheUpdate(skeleton);
 
             // Get model matrix for world-space conversion
             var modelMatrix = skeleton.GetModelMatrix();
@@ -198,9 +189,6 @@ public class SkeletonOverlayWindow : Window
 
         // Draw context menu if open
         DrawBoneContextMenu(drawList);
-
-        // Draw gizmo for selected bone
-        DrawBoneGizmo();
     }
 
     private int GetHierarchyDepth(IBone bone)
@@ -256,8 +244,8 @@ public class SkeletonOverlayWindow : Window
             return; // Don't process new right-clicks while menu is open
         }
 
-        // Right-click to open context menu
-        if (ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+        // Left-click to select bones
+        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
         {
             // Find bone under cursor
             BoneDisplayData? clickedBone = null;
@@ -463,179 +451,5 @@ public class SkeletonOverlayWindow : Window
 
         // Main text
         drawList.AddText(textPos, textColor, boneName);
-    }
-
-    private void DrawBoneGizmo()
-    {
-        var selectedBone = _editorState.SelectedBone;
-        if (selectedBone == null)
-            return;
-
-        var skeleton = selectedBone.Skeleton as Skeleton;
-        if (skeleton == null || !skeleton.IsValid)
-            return;
-
-        // Get camera matrices
-        var viewMatrix = _cameraService.GetViewMatrix();
-        var projectionMatrix = _cameraService.GetProjectionMatrix();
-
-        // Get the model matrix (character world transform)
-        var modelMatrix = skeleton.GetModelMatrix();
-        Matrix4x4.Decompose(modelMatrix, out _, out var modelRotation, out _);
-
-        // Get bone and parent world transforms
-        var boneWorld = GetBoneWorldTransform(selectedBone, modelMatrix);
-        var parentWorld = selectedBone.ParentBone != null
-            ? GetBoneWorldTransform(selectedBone.ParentBone, modelMatrix)
-            : boneWorld;
-
-        // Determine gizmo POSITION based on TransformPivot
-        Vector3 gizmoPosition = _editorState.TransformPivot switch
-        {
-            TransformPivot.Parent => parentWorld.Position,
-            TransformPivot.Median => boneWorld.Position, // For single bone, same as individual
-            _ => boneWorld.Position // Individual
-        };
-
-        // Determine gizmo ORIENTATION based on TransformOrientation
-        Quaternion gizmoOrientation = _editorState.TransformOrientation switch
-        {
-            TransformOrientation.Global => Quaternion.Identity,
-            TransformOrientation.Parent => parentWorld.Rotation,
-            _ => boneWorld.Rotation // Local
-        };
-
-        // Build gizmo matrix
-        var gizmoTransform = new Transform
-        {
-            Position = gizmoPosition,
-            Rotation = gizmoOrientation,
-            Scale = Vector3.One
-        };
-        var gizmoMatrix = gizmoTransform.ToMatrix();
-
-        // Setup ImGuizmo
-        ImGuizmo.BeginFrame();
-        var io = ImGui.GetIO();
-        ImGuizmo.SetRect(0, 0, io.DisplaySize.X, io.DisplaySize.Y);
-        ImGuizmo.SetOrthographic(false);
-        ImGuizmo.AllowAxisFlip(false);
-        ImGuizmo.SetDrawlist();
-        ImGuizmo.Enable(true);
-
-        var viewMatrixCopy = viewMatrix;
-        bool isUsing = ImGuizmo.IsUsing();
-
-        // Track drag start
-        if (isUsing && _dragStartTransform == null)
-        {
-            _dragStartTransform = gizmoTransform;
-            _trackingTransform = boneWorld;
-        }
-
-        // Always use Local mode - the gizmo orientation already reflects our desired axes
-        var gizmoMode = ImGuizmoMode.Local;
-
-        // Draw gizmo with rotate and scale
-        if (ImGuizmo.Manipulate(
-            ref viewMatrixCopy,
-            ref projectionMatrix,
-            ImGuizmoOperation.Rotate | ImGuizmoOperation.Scale,
-            gizmoMode,
-            ref gizmoMatrix))
-        {
-            if (_trackingTransform.HasValue && _dragStartTransform.HasValue)
-            {
-                var newGizmoTransform = Transform.FromMatrix(gizmoMatrix);
-                var startGizmo = _dragStartTransform.Value;
-
-                // Calculate world-space rotation delta
-                var localRotDelta = Quaternion.Inverse(startGizmo.Rotation) * newGizmoTransform.Rotation;
-                var worldRotDelta = startGizmo.Rotation * localRotDelta * Quaternion.Inverse(startGizmo.Rotation);
-
-                // Calculate scale delta
-                var scaleDelta = newGizmoTransform.Scale - startGizmo.Scale;
-
-                // Convert to model space
-                var invModelRot = Quaternion.Inverse(modelRotation);
-                var modelRotDelta = Quaternion.Normalize(invModelRot * worldRotDelta * modelRotation);
-
-                // Calculate position change when rotating/scaling around pivot
-                Vector3 modelPosDelta = Vector3.Zero;
-                if (_editorState.TransformPivot != TransformPivot.Individual)
-                {
-                    var pivotPos = gizmoPosition;
-                    var boneStartPos = _trackingTransform.Value.Position;
-                    var offset = boneStartPos - pivotPos;
-
-                    // Apply rotation to offset
-                    var rotatedOffset = Vector3.Transform(offset, worldRotDelta);
-
-                    // Apply scale to offset (scale moves bone away from/toward pivot)
-                    var scaledOffset = rotatedOffset * (Vector3.One + scaleDelta);
-
-                    // New world position
-                    var newWorldPos = pivotPos + scaledOffset;
-                    var worldPosDelta = newWorldPos - boneStartPos;
-
-                    // Convert to model space
-                    modelPosDelta = Vector3.Transform(worldPosDelta, invModelRot);
-                }
-
-                // Apply transform
-                _bonePosingService.ResetBone(selectedBone);
-                _bonePosingService.ApplyTransform(selectedBone,
-                    new Transform
-                    {
-                        Position = modelPosDelta,
-                        Rotation = modelRotDelta,
-                        Scale = scaleDelta
-                    },
-                    Transform.Identity,
-                    TransformComponents.Position | TransformComponents.Rotation | TransformComponents.Scale);
-            }
-        }
-
-        // Finish drag - create undo action
-        if (!isUsing && _dragStartTransform != null)
-        {
-            var modification = _bonePosingService.GetModification(selectedBone);
-            if (modification.HasValue)
-            {
-                var action = new TransformBoneAction(
-                    _bonePosingService,
-                    selectedBone,
-                    Transform.Identity,
-                    modification.Value);
-                _historyService.Record(action);
-            }
-            _dragStartTransform = null;
-            _trackingTransform = null;
-        }
-    }
-
-    private Transform GetBoneWorldTransform(IBone bone, Matrix4x4 modelMatrix)
-    {
-        // Get model rotation from matrix
-        Matrix4x4.Decompose(modelMatrix, out _, out var modelRotation, out var modelPosition);
-
-        // Transform bone position to world space
-        var worldPos = Vector3.Transform(bone.LastTransform.Position, modelMatrix);
-
-        // Combine rotations: model rotation * bone local rotation
-        var worldRot = modelRotation * bone.LastTransform.Rotation;
-
-        return new Transform
-        {
-            Position = worldPos,
-            Rotation = worldRot,
-            Scale = bone.LastTransform.Scale
-        };
-    }
-
-    public override void PostDraw()
-    {
-        ImGuizmo.SetID(0);
-        base.PostDraw();
     }
 }

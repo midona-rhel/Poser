@@ -62,7 +62,7 @@ public unsafe class PosingService : IPosingService
         _framework.Update += OnFrameworkUpdate;
 
         // Reset all when exiting GPose
-        _gPoseService.OnGPoseStateChanged += OnGPoseStateChanged;
+        _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
 
         // Reset actor transform when they are unfrozen
         _eventBus.Subscribe<FreezeStateChangedEvent>(OnFreezeStateChanged);
@@ -85,9 +85,9 @@ public unsafe class PosingService : IPosingService
         _setPositionHook!.Original(gameObject, x, y, z);
     }
 
-    private void OnGPoseStateChanged(bool isGPosing)
+    private void OnGPoseStateChanged(GPoseStateChangedEvent e)
     {
-        if (!isGPosing)
+        if (!e.IsGPosing)
         {
             ClearAllOverrides();
         }
@@ -256,7 +256,7 @@ public unsafe class PosingService : IPosingService
     public void Dispose()
     {
         _setPositionHook?.Dispose();
-        _gPoseService.OnGPoseStateChanged -= OnGPoseStateChanged;
+        _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _eventBus.Unsubscribe<FreezeStateChangedEvent>(OnFreezeStateChanged);
         _framework.Update -= OnFrameworkUpdate;
         ClearAllOverrides();

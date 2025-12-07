@@ -45,19 +45,6 @@ public class ActorManagerTests
     }
 
     [Fact]
-    public void AddActor_FiresOnActorsChanged()
-    {
-        var manager = new MockActorManager();
-        var actor = new ActorBase(new EntityId("test_1"), "Test Actor", nint.Zero);
-        bool eventFired = false;
-        manager.OnActorsChanged += () => eventFired = true;
-
-        manager.AddActor(actor);
-
-        Assert.True(eventFired);
-    }
-
-    [Fact]
     public void ClearActors_RemovesAllActors()
     {
         var manager = new MockActorManager();
@@ -96,20 +83,16 @@ public class ActorManagerTests
     }
 
     [Fact]
-    public void Select_FiresOnSelectionChanged()
+    public void Select_SetsSelectedActorsList()
     {
         var manager = new MockActorManager();
         var actor = new ActorBase(new EntityId("test_1"), "Test Actor", nint.Zero);
         manager.AddActor(actor);
 
-        IReadOnlyList<ActorBase>? receivedActors = null;
-        manager.OnSelectionChanged += actors => receivedActors = actors;
-
         manager.Select(actor);
 
-        Assert.NotNull(receivedActors);
-        Assert.Single(receivedActors);
-        Assert.Equal(actor, receivedActors[0]);
+        Assert.Single(manager.SelectedActors);
+        Assert.Equal(actor, manager.SelectedActors[0]);
     }
 
     [Fact]
@@ -196,14 +179,36 @@ public class ActorManagerTests
     }
 
     [Fact]
-    public void RefreshActors_FiresOnActorsChanged()
+    public void SelectMultiple_SelectsAllActorsInList()
     {
         var manager = new MockActorManager();
-        bool eventFired = false;
-        manager.OnActorsChanged += () => eventFired = true;
+        var actor1 = new ActorBase(new EntityId("test_1"), "Actor 1", nint.Zero);
+        var actor2 = new ActorBase(new EntityId("test_2"), "Actor 2", nint.Zero);
+        var actor3 = new ActorBase(new EntityId("test_3"), "Actor 3", nint.Zero);
+        manager.AddActor(actor1);
+        manager.AddActor(actor2);
+        manager.AddActor(actor3);
 
-        manager.RefreshActors();
+        manager.SelectMultiple(new[] { actor1, actor2 });
 
-        Assert.True(eventFired);
+        Assert.Equal(2, manager.SelectedActors.Count);
+        Assert.Contains(actor1, manager.SelectedActors);
+        Assert.Contains(actor2, manager.SelectedActors);
+        Assert.DoesNotContain(actor3, manager.SelectedActors);
+    }
+
+    [Fact]
+    public void SelectMultiple_IgnoresActorsNotInList()
+    {
+        var manager = new MockActorManager();
+        var actor1 = new ActorBase(new EntityId("test_1"), "Actor 1", nint.Zero);
+        var actor2 = new ActorBase(new EntityId("test_2"), "Actor 2", nint.Zero);
+        manager.AddActor(actor1);
+        // actor2 is not added to the manager
+
+        manager.SelectMultiple(new[] { actor1, actor2 });
+
+        Assert.Single(manager.SelectedActors);
+        Assert.Contains(actor1, manager.SelectedActors);
     }
 }

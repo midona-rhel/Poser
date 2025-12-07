@@ -3,9 +3,9 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
+using Poser.Controllers;
 using Poser.Core;
 using Poser.Entities;
-using Poser.History;
 using Poser.Services;
 using Poser.UI.Controls;
 
@@ -19,24 +19,22 @@ public class ScenePanel : IDisposable
 {
     private readonly IActorManager _actorManager;
     private readonly IActorSpawnService _spawnService;
-    private readonly IHistoryService _historyService;
     private readonly EntityList _entityList;
 
     public ScenePanel(
         IActorManager actorManager,
         IAnimationService animationService,
         IActorSpawnService spawnService,
-        IHistoryService historyService,
         ICameraService cameraService,
         IGPoseService gPoseService,
         ISkeletonService skeletonService,
         IEditorState editorState,
-        IEventBus eventBus)
+        IEventBus eventBus,
+        IPosingController controller)
     {
         _actorManager = actorManager;
         _spawnService = spawnService;
-        _historyService = historyService;
-        _entityList = new EntityList(actorManager, animationService, spawnService, historyService, cameraService, gPoseService, skeletonService, editorState, eventBus);
+        _entityList = new EntityList(actorManager, animationService, spawnService, cameraService, gPoseService, skeletonService, editorState, eventBus, controller);
     }
 
     public void Draw()

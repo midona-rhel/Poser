@@ -10,6 +10,7 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
+using Poser.Core;
 using Poser.Entities;
 using Poser.Services;
 
@@ -29,6 +30,7 @@ public unsafe class GazeService : IGazeService, IDisposable
     private readonly IGPoseService _gPoseService;
     private readonly ICameraService _cameraService;
     private readonly IObjectTable _objectTable;
+    private readonly IEventBus _eventBus;
     private readonly IPluginLog _log;
 
     private delegate* unmanaged<CharacterLookAtController*, LookAtTarget*, uint, nint, void> _updateLookAt;
@@ -43,6 +45,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         IGPoseService gPoseService,
         ICameraService cameraService,
         IObjectTable objectTable,
+        IEventBus eventBus,
         ISigScanner sigScanner,
         IGameInteropProvider hooks,
         IPluginLog log)
@@ -50,6 +53,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         _gPoseService = gPoseService;
         _cameraService = cameraService;
         _objectTable = objectTable;
+        _eventBus = eventBus;
         _log = log;
 
         try
@@ -66,7 +70,7 @@ public unsafe class GazeService : IGazeService, IDisposable
             _log.Warning($"GazeService: Failed to initialize gaze hooks, gaze control will be disabled: {ex.Message}");
         }
 
-        _gPoseService.OnGPoseStateChanged += OnGPoseStateChanged;
+        _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
     }
 
     private nint ActorLookAtDetour(ContainerInterface* args)
@@ -237,9 +241,9 @@ public unsafe class GazeService : IGazeService, IDisposable
         };
     }
 
-    private void OnGPoseStateChanged(bool isGPosing)
+    private void OnGPoseStateChanged(GPoseStateChangedEvent e)
     {
-        if (!isGPosing)
+        if (!e.IsGPosing)
         {
             _lookAtHandles.Clear();
             _gazeStates.Clear();
@@ -249,7 +253,7 @@ public unsafe class GazeService : IGazeService, IDisposable
     public void Dispose()
     {
         _actorLookAtLoop?.Dispose();
-        _gPoseService.OnGPoseStateChanged -= OnGPoseStateChanged;
+        _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
     }
 }
 

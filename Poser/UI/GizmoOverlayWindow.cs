@@ -4,17 +4,23 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Bindings.ImGuizmo;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
+using Poser.Core;
 using Poser.Entities;
 using Poser.History;
 using Poser.Services;
 
 namespace Poser.UI;
 
+/// <summary>
+/// Unified gizmo overlay window that handles both actor and bone transforms.
+/// </summary>
 public class GizmoOverlayWindow : Window
 {
     private readonly IActorManager _actorManager;
     private readonly ICameraService _cameraService;
     private readonly IPosingService _posingService;
+    private readonly IBonePosingService _bonePosingService;
+    private readonly ISkeletonService _skeletonService;
     private readonly IHistoryService _historyService;
     private readonly IAnimationService _animationService;
     private readonly IEditorState _editorState;
@@ -22,13 +28,19 @@ public class GizmoOverlayWindow : Window
     /// <summary>Arbitrary unique ID for ImGuizmo to track gizmo state.</summary>
     private const int GizmoId = 142857;
 
-    // Track transforms when we start dragging for undo
-    private Dictionary<IActor, Transform>? _dragStartTransforms;
+    // Actor gizmo state
+    private Dictionary<IActor, Transform>? _actorDragStartTransforms;
+
+    // Bone gizmo state
+    private Transform? _lastFrameBoneGizmo;
+    private Transform? _boneDragStartModification;
 
     public GizmoOverlayWindow(
         IActorManager actorManager,
         ICameraService cameraService,
         IPosingService posingService,
+        IBonePosingService bonePosingService,
+        ISkeletonService skeletonService,
         IHistoryService historyService,
         IAnimationService animationService,
         IEditorState editorState)
@@ -45,6 +57,8 @@ public class GizmoOverlayWindow : Window
         _actorManager = actorManager;
         _cameraService = cameraService;
         _posingService = posingService;
+        _bonePosingService = bonePosingService;
+        _skeletonService = skeletonService;
         _historyService = historyService;
         _animationService = animationService;
         _editorState = editorState;
@@ -67,6 +81,25 @@ public class GizmoOverlayWindow : Window
 
     public override void Draw()
     {
+        var targetType = _editorState.GetGizmoTargetType();
+
+        switch (targetType)
+        {
+            case GizmoTargetType.Bone:
+                DrawBoneGizmo();
+                break;
+            case GizmoTargetType.Actor:
+                DrawActorGizmo();
+                break;
+            case GizmoTargetType.None:
+            default:
+                // No target, no gizmo
+                break;
+        }
+    }
+
+    private void DrawActorGizmo()
+    {
         var selectedActor = _actorManager.PrimarySelectedActor;
         if (selectedActor == null)
             return;
@@ -86,7 +119,7 @@ public class GizmoOverlayWindow : Window
         var projectionMatrix = _cameraService.GetProjectionMatrix();
 
         // Calculate pivot position based on mode
-        var (pivotPosition, pivotRotation) = CalculatePivot();
+        var (pivotPosition, pivotRotation) = CalculateActorPivot();
         var pivotTransform = new Transform(pivotPosition, pivotRotation, Vector3.One);
         var modelMatrix = pivotTransform.ToMatrix();
 
@@ -105,15 +138,15 @@ public class GizmoOverlayWindow : Window
 
         // Check if we're starting a new drag operation
         bool isUsing = ImGuizmo.IsUsing();
-        if (isUsing && _dragStartTransforms == null && anyFrozen)
+        if (isUsing && _actorDragStartTransforms == null && anyFrozen)
         {
             // Starting to drag - store initial transforms for ALL selected frozen actors
-            _dragStartTransforms = new Dictionary<IActor, Transform>();
+            _actorDragStartTransforms = new Dictionary<IActor, Transform>();
             foreach (var actor in _actorManager.SelectedActors)
             {
                 if (_animationService.IsFrozen(actor))
                 {
-                    _dragStartTransforms[actor] = _posingService.GetEffectiveTransform(actor);
+                    _actorDragStartTransforms[actor] = _posingService.GetEffectiveTransform(actor);
                 }
             }
         }
@@ -134,19 +167,120 @@ public class GizmoOverlayWindow : Window
             if (anyFrozen)
             {
                 var newPivotTransform = Transform.FromMatrix(modelMatrix);
-                ApplyPivotTransform(pivotTransform, newPivotTransform);
+                ApplyActorPivotTransform(pivotTransform, newPivotTransform);
             }
         }
 
         // Check if we finished dragging
-        if (!isUsing && _dragStartTransforms != null)
+        if (!isUsing && _actorDragStartTransforms != null)
         {
-            CreateUndoAction();
-            _dragStartTransforms = null;
+            CreateActorUndoAction();
+            _actorDragStartTransforms = null;
         }
     }
 
-    private (Vector3 position, Quaternion rotation) CalculatePivot()
+    private void DrawBoneGizmo()
+    {
+        var selectedBone = _editorState.SelectedBone;
+        if (selectedBone == null)
+            return;
+
+        var skeleton = selectedBone.Skeleton as Skeleton;
+        if (skeleton == null || !skeleton.IsValid)
+            return;
+
+        // Check if the actor is frozen - bones can only be manipulated when frozen
+        var actor = skeleton.Actor;
+        bool isFrozen = _animationService.IsFrozen(actor);
+
+        // Register skeleton for cache updates
+        _bonePosingService.RegisterSkeletonForCacheUpdate(skeleton);
+
+        // Get camera matrices
+        var projectionMatrix = _cameraService.GetProjectionMatrix();
+        var worldViewMatrix = _cameraService.GetViewMatrix();
+        worldViewMatrix.M44 = 1; // Important fix from Brio
+
+        // Get the model matrix and incorporate it into the view matrix
+        var modelMatrix = skeleton.GetModelMatrix();
+        worldViewMatrix = Matrix4x4.Multiply(modelMatrix, worldViewMatrix);
+
+        // Get the bone's current transform
+        var currentTransform = selectedBone.LastTransform;
+
+        // Use last observed, or current if not tracking yet
+        var lastObserved = _lastFrameBoneGizmo ?? currentTransform;
+        var lastMatrix = lastObserved.ToMatrix();
+
+        // Setup ImGuizmo
+        ImGuizmo.BeginFrame();
+        var io = ImGui.GetIO();
+        ImGuizmo.SetRect(0, 0, io.DisplaySize.X, io.DisplaySize.Y);
+        ImGuizmo.SetOrthographic(false);
+        ImGuizmo.AllowAxisFlip(false);
+        ImGuizmo.SetDrawlist();
+
+        // Enable gizmo only if actor is frozen
+        ImGuizmo.Enable(isFrozen);
+
+        bool isUsing = ImGuizmo.IsUsing();
+
+        // Capture for history on drag start (only if frozen)
+        if (isUsing && _lastFrameBoneGizmo == null && isFrozen)
+        {
+            _boneDragStartModification = _bonePosingService.GetModification(selectedBone);
+        }
+
+        // Get the gizmo operation based on selected tool
+        var gizmoOperation = _editorState.TransformTool switch
+        {
+            TransformTool.Move => ImGuizmoOperation.Translate,
+            TransformTool.Rotate => ImGuizmoOperation.Rotate,
+            TransformTool.Scale => ImGuizmoOperation.Scale,
+            TransformTool.Universal => ImGuizmoOperation.Translate | ImGuizmoOperation.Rotate | ImGuizmoOperation.Scale,
+            _ => ImGuizmoOperation.Rotate
+        };
+
+        Transform? newTransform = null;
+
+        // Draw gizmo
+        if (ImGuizmo.Manipulate(
+            ref worldViewMatrix,
+            ref projectionMatrix,
+            gizmoOperation,
+            ImGuizmoMode.Local,
+            ref lastMatrix))
+        {
+            newTransform = Transform.FromMatrix(lastMatrix);
+            _lastFrameBoneGizmo = newTransform;
+        }
+
+        // Apply transform if changed (only if frozen)
+        if (newTransform != null && isFrozen)
+        {
+            var delta = newTransform.Value.CalculateDiff(lastObserved);
+            _bonePosingService.ApplyTransform(selectedBone, delta, null, TransformComponents.All);
+        }
+
+        // Finish drag - create undo action
+        if (_lastFrameBoneGizmo.HasValue && !isUsing)
+        {
+            var modification = _bonePosingService.GetModification(selectedBone);
+            if (modification.HasValue)
+            {
+                var action = new TransformBoneAction(
+                    _bonePosingService,
+                    selectedBone,
+                    _boneDragStartModification ?? new Transform { Position = Vector3.Zero, Rotation = Quaternion.Identity, Scale = Vector3.Zero },
+                    modification.Value);
+                _historyService.Record(action);
+            }
+            _lastFrameBoneGizmo = null;
+            _boneDragStartModification = null;
+        }
+    }
+
+    private (Vector3 position, Quaternion rotation) CalculateActorPivot()
     {
         var selectedActors = _actorManager.SelectedActors;
         var primaryActor = _actorManager.PrimarySelectedActor;
@@ -213,7 +347,7 @@ public class GizmoOverlayWindow : Window
         return (pivotPosition, pivotRotation);
     }
 
-    private void ApplyPivotTransform(Transform oldPivot, Transform newPivot)
+    private void ApplyActorPivotTransform(Transform oldPivot, Transform newPivot)
     {
         // Calculate deltas
         var positionDelta = newPivot.Position - oldPivot.Position;
@@ -261,14 +395,14 @@ public class GizmoOverlayWindow : Window
         }
     }
 
-    private void CreateUndoAction()
+    private void CreateActorUndoAction()
     {
-        if (_dragStartTransforms == null || _dragStartTransforms.Count == 0)
+        if (_actorDragStartTransforms == null || _actorDragStartTransforms.Count == 0)
             return;
 
         var actions = new List<IHistoryAction>();
 
-        foreach (var (actor, startTransform) in _dragStartTransforms)
+        foreach (var (actor, startTransform) in _actorDragStartTransforms)
         {
             var endTransform = _posingService.GetEffectiveTransform(actor);
             if (startTransform != endTransform)

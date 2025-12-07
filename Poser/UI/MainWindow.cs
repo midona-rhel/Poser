@@ -4,6 +4,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
+using Poser.Controllers;
 using Poser.Core;
 using Poser.Services;
 using Poser.UI.Components;
@@ -42,7 +43,8 @@ public class MainWindow : Window
         IGazeService gazeService,
         ISkeletonService skeletonService,
         IEditorState editorState,
-        IEventBus eventBus)
+        IEventBus eventBus,
+        IPosingController posingController)
         : base($"{Poser.PluginName}###poser_sidebar_window",
             ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar)
     {
@@ -51,9 +53,9 @@ public class MainWindow : Window
         _historyService = historyService;
 
         // Initialize components
-        _topBar = new TopBar(gPoseService, historyService);
-        _scenePanel = new ScenePanel(actorManager, animationService, spawnService, historyService, cameraService, gPoseService, skeletonService, editorState, eventBus);
-        _propertiesPanel = new PropertiesPanel(actorManager, posingService, animationService, animationDataService, historyService, gazeService);
+        _topBar = new TopBar(gPoseService, historyService, actorManager, editorState);
+        _scenePanel = new ScenePanel(actorManager, animationService, spawnService, cameraService, gPoseService, skeletonService, editorState, eventBus, posingController);
+        _propertiesPanel = new PropertiesPanel(actorManager, posingService, animationService, animationDataService, historyService, gazeService, posingController);
     }
 
     public override void PreDraw()

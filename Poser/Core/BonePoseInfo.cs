@@ -70,10 +70,6 @@ public class BonePoseInfo
         // Calculate delta from original
         var delta = original.HasValue ? CalculateDiff(transform, original.Value) : transform;
 
-        // Check if delta is essentially identity (no change)
-        if (IsApproximatelyIdentity(delta))
-            return null;
-
         // Find or create stack entry with matching propagation
         var transformIndex = GetTransformIndex(prop);
 
@@ -82,10 +78,6 @@ public class BonePoseInfo
 
         // Combine with existing
         var finalTransform = CombineTransforms(existing, delta);
-
-        // Check if result is essentially identity
-        if (IsApproximatelyIdentity(finalTransform))
-            return null;
 
         // Validate for NaN
         if (float.IsNaN(finalTransform.Rotation.X) || float.IsNaN(finalTransform.Rotation.Y) ||
@@ -130,9 +122,17 @@ public class BonePoseInfo
 
     private int GetTransformIndex(TransformComponents components)
     {
+        // Identity for additive deltas: Zero position, Identity rotation, Zero scale (not One!)
+        var identityDelta = new Transform
+        {
+            Position = Vector3.Zero,
+            Rotation = Quaternion.Identity,
+            Scale = Vector3.Zero
+        };
+
         if (_stacks.Count == 0)
         {
-            _stacks.Add(new BonePoseTransformInfo(components, Transform.Identity));
+            _stacks.Add(new BonePoseTransformInfo(components, identityDelta));
             return 0;
         }
 
@@ -142,7 +142,7 @@ public class BonePoseInfo
             return _stacks.Count - 1;
 
         // Create new stack
-        _stacks.Add(new BonePoseTransformInfo(components, Transform.Identity));
+        _stacks.Add(new BonePoseTransformInfo(components, identityDelta));
         return _stacks.Count - 1;
     }
 
@@ -164,14 +164,6 @@ public class BonePoseInfo
             Rotation = Quaternion.Normalize(a.Rotation * b.Rotation),
             Scale = a.Scale + b.Scale
         };
-    }
-
-    private static bool IsApproximatelyIdentity(Transform t)
-    {
-        const float epsilon = 0.0001f;
-        return Vector3.DistanceSquared(t.Position, Vector3.Zero) < epsilon &&
-               Vector3.DistanceSquared(t.Scale, Vector3.Zero) < epsilon &&
-               MathF.Abs(Quaternion.Dot(t.Rotation, Quaternion.Identity) - 1f) < epsilon;
     }
 }
 

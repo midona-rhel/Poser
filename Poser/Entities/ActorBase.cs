@@ -9,6 +9,7 @@ public class ActorBase : EntityBase, IActor
 {
     public nint Address { get; }
     public bool IsPosing { get; private set; }
+    public bool IsEditMode { get; set; }
     public DalamudObjectKind ObjectKind { get; }
 
     public ActorBase(EntityId id, string name, nint address, DalamudObjectKind objectKind = DalamudObjectKind.None)

@@ -158,4 +158,35 @@ public static class BoneInfoService
             return data.Subcategory;
         return BoneSubcategory.None;
     }
+
+    /// <summary>
+    /// Gets the root bone name for a category (the actual bone that represents the category).
+    /// Returns null for abstract categories like Equipment and Other.
+    /// </summary>
+    public static string? GetCategoryRootBone(BoneCategory category) => category switch
+    {
+        BoneCategory.Root => "n_root",
+        BoneCategory.Spine => "j_kosi",
+        BoneCategory.Head => "j_kao",
+        BoneCategory.LeftArm => "j_ude_a_l",
+        BoneCategory.RightArm => "j_ude_a_r",
+        BoneCategory.LeftLeg => "j_asi_a_l",
+        BoneCategory.RightLeg => "j_asi_a_r",
+        BoneCategory.Tail => "j_sippo_a",
+        _ => null  // Equipment and Other stay abstract
+    };
+
+    /// <summary>
+    /// Gets the root bone name for a subcategory (the actual bone that represents the subcategory).
+    /// Returns null for abstract subcategories or those without a clear root bone.
+    /// </summary>
+    public static string? GetSubcategoryRootBone(BoneSubcategory subcategory) => subcategory switch
+    {
+        BoneSubcategory.Hair => "j_kami_a",
+        BoneSubcategory.Ears => "j_mimi_l",
+        BoneSubcategory.LeftEye => "j_f_eye_l",
+        BoneSubcategory.RightEye => "j_f_eye_r",
+        BoneSubcategory.Mouth => "j_ago",
+        _ => null  // Most subcategories stay abstract
+    };
 }

@@ -42,7 +42,7 @@ public class ActorManager : IActorManager
         _framework = framework;
         _eventBus = eventBus;
 
-        _gPoseService.OnGPoseStateChanged += OnGPoseStateChanged;
+        _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _framework.Update += OnFrameworkUpdate;
     }
 
@@ -92,9 +92,9 @@ public class ActorManager : IActorManager
 
     public bool IsSelected(IActor actor) => _selectedActors.Contains(actor);
 
-    private void OnGPoseStateChanged(bool isGPosing)
+    private void OnGPoseStateChanged(GPoseStateChangedEvent e)
     {
-        if (isGPosing)
+        if (e.IsGPosing)
         {
             // Mark pending refresh - will be processed on next framework update
             // This gives actors time to initialize
@@ -207,7 +207,7 @@ public class ActorManager : IActorManager
 
     public void Dispose()
     {
-        _gPoseService.OnGPoseStateChanged -= OnGPoseStateChanged;
+        _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _framework.Update -= OnFrameworkUpdate;
         ClearActors();
         GC.SuppressFinalize(this);

@@ -6,10 +6,10 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
+using Poser.Controllers;
 using Poser.Core;
 using Poser.Core.BoneInfo;
 using Poser.Entities;
-using Poser.History;
 using Poser.Services;
 using Poser.UI.Controls;
 
@@ -26,12 +26,12 @@ public class EntityList : IDisposable
     private readonly IActorManager _actorManager;
     private readonly IAnimationService _animationService;
     private readonly IActorSpawnService _spawnService;
-    private readonly IHistoryService _historyService;
     private readonly ICameraService _cameraService;
     private readonly IGPoseService _gPoseService;
     private readonly ISkeletonService _skeletonService;
     private readonly IEditorState _editorState;
     private readonly IEventBus _eventBus;
+    private readonly IPosingController _controller;
 
     private List<IActor> _actors = new();
     private bool _isCollapsed = false;
@@ -45,22 +45,22 @@ public class EntityList : IDisposable
         IActorManager actorManager,
         IAnimationService animationService,
         IActorSpawnService spawnService,
-        IHistoryService historyService,
         ICameraService cameraService,
         IGPoseService gPoseService,
         ISkeletonService skeletonService,
         IEditorState editorState,
-        IEventBus eventBus)
+        IEventBus eventBus,
+        IPosingController controller)
     {
         _actorManager = actorManager;
         _animationService = animationService;
         _spawnService = spawnService;
-        _historyService = historyService;
         _cameraService = cameraService;
         _gPoseService = gPoseService;
         _skeletonService = skeletonService;
         _editorState = editorState;
         _eventBus = eventBus;
+        _controller = controller;
 
         _eventBus.Subscribe<ActorListChangedEvent>(OnActorListChanged);
         _actors = _actorManager.Actors.ToList();
@@ -299,9 +299,7 @@ public class EntityList : IDisposable
             bool visible = isVisible;
             if (DrawCheckbox($"visible_{entity.Id}", ref visible))
             {
-                _spawnService.SetVisibility(actor, visible);
-                var action = new VisibilityAction(_spawnService, actor, visible);
-                _historyService.Record(action);
+                _controller.SetActorVisibility(actor, visible);
             }
         }
         else if (entity is Skeleton skeleton)
@@ -310,6 +308,12 @@ public class EntityList : IDisposable
             if (DrawCheckbox($"overlay_{entity.Id}", ref overlayVisible))
             {
                 skeleton.IsOverlayVisible = overlayVisible;
+
+                // Auto-freeze animation when enabling overlay for posing
+                if (overlayVisible && !_animationService.IsFrozen(skeleton.Actor))
+                {
+                    _controller.SetFrozen(skeleton.Actor, true);
+                }
             }
         }
 
@@ -324,18 +328,12 @@ public class EntityList : IDisposable
                 {
                     foreach (var selectedActor in _actorManager.SelectedActors)
                     {
-                        if (frozen)
-                            _animationService.Freeze(selectedActor);
-                        else
-                            _animationService.Unfreeze(selectedActor);
+                        _controller.SetFrozen(selectedActor, frozen);
                     }
                 }
                 else
                 {
-                    if (frozen)
-                        _animationService.Freeze(actor);
-                    else
-                        _animationService.Unfreeze(actor);
+                    _controller.SetFrozen(actor, frozen);
                 }
             }
         }
@@ -429,12 +427,56 @@ public class EntityList : IDisposable
     {
         bool isCollapsed = !_editorState.DebugMode && collapsedCats.Contains(category);
 
+        // Check if this category has a real root bone
+        var rootBoneName = BoneInfoService.GetCategoryRootBone(category);
+        Bone? rootBone = null;
+
+        if (rootBoneName != null)
+        {
+            // Find the root bone in the subcategory dictionary
+            foreach (var bones in subcatDict.Values)
+            {
+                rootBone = bones.FirstOrDefault(b => b.BoneName == rootBoneName);
+                if (rootBone != null)
+                    break;
+            }
+        }
+
+        // If we have a real root bone, draw it as a selectable bone header
+        if (rootBone != null)
+        {
+            DrawBoneAsGroupHeader(rootBone, skeletonId, category, totalCount, subcatDict, depth,
+                collapsedCats, collapsedSubs, tabHovered, tabActive, isCollapsed);
+        }
+        else
+        {
+            // Abstract category (Equipment, Other) - keep current behavior
+            DrawAbstractCategoryHeader(skeletonId, category, totalCount, subcatDict, depth,
+                collapsedCats, collapsedSubs, tabHovered, tabActive, isCollapsed);
+        }
+    }
+
+    private void DrawBoneAsGroupHeader(Bone rootBone, EntityId skeletonId, BoneCategory category, int totalCount,
+        Dictionary<BoneSubcategory, List<Bone>> subcatDict, int depth,
+        HashSet<BoneCategory> collapsedCats, HashSet<BoneSubcategory> collapsedSubs,
+        Vector4 tabHovered, Vector4 tabActive, bool isCollapsed)
+    {
+        bool isSelected = _editorState.SelectedBone == rootBone;
+
         ImGui.TableNextRow();
+
+        // Apply selection highlight
+        if (isSelected)
+        {
+            ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(tabActive));
+            ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg1, ImGui.GetColorU32(tabActive));
+        }
+
         ImGui.TableNextColumn();
 
         float buttonSize = ImGui.GetFrameHeight();
 
-        // Apply indentation: each level = button size + half item spacing
+        // Apply indentation
         var halfSpacing = ImGui.GetStyle().ItemSpacing.X * 0.5f;
         for (int i = 0; i < depth; i++)
         {
@@ -454,13 +496,80 @@ public class EntityList : IDisposable
 
         ImGui.SameLine();
 
-        // Category icon (bone icon in light blue to show it represents bones)
+        // Bone icon
+        ImGui.AlignTextToFramePadding();
+        var boneIcon = rootBone.ChildBones.Count > 0 ? FontAwesomeIcon.CircleNodes : FontAwesomeIcon.Bone;
+        ImPoser.FontIcon(boneIcon, UIConstants.SkeletonColor);
+
+        ImGui.SameLine();
+
+        // Bone name (clickable for selection) - show friendly name with count
+        using (ImRaii.PushColor(ImGuiCol.Header, Vector4.Zero))
+        using (ImRaii.PushColor(ImGuiCol.HeaderHovered, Vector4.Zero))
+        using (ImRaii.PushColor(ImGuiCol.HeaderActive, Vector4.Zero))
+        {
+            ImGui.AlignTextToFramePadding();
+            if (ImGui.Selectable($"{rootBone.Name} ({totalCount})##{rootBone.Id}", false))
+            {
+                _editorState.SelectBone(rootBone);
+            }
+
+            // Set row background based on hover state
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(tabHovered));
+                ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg1, ImGui.GetColorU32(tabHovered));
+            }
+        }
+
+        // Empty visibility/freeze columns
+        ImGui.TableNextColumn();
+        ImGui.TableNextColumn();
+
+        // Draw children if not collapsed
+        if (!isCollapsed)
+        {
+            DrawCategoryChildren(skeletonId, category, subcatDict, depth, collapsedSubs, tabHovered, tabActive, rootBone);
+        }
+    }
+
+    private void DrawAbstractCategoryHeader(EntityId skeletonId, BoneCategory category, int totalCount,
+        Dictionary<BoneSubcategory, List<Bone>> subcatDict, int depth,
+        HashSet<BoneCategory> collapsedCats, HashSet<BoneSubcategory> collapsedSubs,
+        Vector4 tabHovered, Vector4 tabActive, bool isCollapsed)
+    {
+        ImGui.TableNextRow();
+        ImGui.TableNextColumn();
+
+        float buttonSize = ImGui.GetFrameHeight();
+
+        // Apply indentation
+        var halfSpacing = ImGui.GetStyle().ItemSpacing.X * 0.5f;
+        for (int i = 0; i < depth; i++)
+        {
+            ImGui.Dummy(new Vector2(buttonSize + halfSpacing, buttonSize));
+            ImGui.SameLine(0, 0);
+        }
+
+        // Collapse button
+        var arrowIcon = isCollapsed ? FontAwesomeIcon.CaretRight : FontAwesomeIcon.CaretDown;
+        if (ImPoser.IconButton($"cat_{skeletonId}_{category}", arrowIcon, new Vector2(buttonSize, buttonSize)))
+        {
+            if (collapsedCats.Contains(category))
+                collapsedCats.Remove(category);
+            else
+                collapsedCats.Add(category);
+        }
+
+        ImGui.SameLine();
+
+        // Category icon
         ImGui.AlignTextToFramePadding();
         ImPoser.FontIcon(FontAwesomeIcon.Bone, UIConstants.SkeletonColor);
 
         ImGui.SameLine();
 
-        // Category name with count (using normal text color, not disabled)
+        // Category name with count
         ImGui.AlignTextToFramePadding();
         ImGui.Text($"{BoneInfoService.GetCategoryDisplayName(category)} ({totalCount})");
 
@@ -468,40 +577,76 @@ public class EntityList : IDisposable
         ImGui.TableNextColumn();
         ImGui.TableNextColumn();
 
-        // Draw subcategories/bones if not collapsed
+        // Draw children if not collapsed
         if (!isCollapsed)
         {
-            // Check if we have any non-None subcategories
-            bool hasSubcategories = subcatDict.Keys.Any(s => s != BoneSubcategory.None);
+            DrawCategoryChildren(skeletonId, category, subcatDict, depth, collapsedSubs, tabHovered, tabActive, null);
+        }
+    }
 
-            if (hasSubcategories)
+    private void DrawCategoryChildren(EntityId skeletonId, BoneCategory category,
+        Dictionary<BoneSubcategory, List<Bone>> subcatDict, int depth,
+        HashSet<BoneSubcategory> collapsedSubs, Vector4 tabHovered, Vector4 tabActive, Bone? rootBone)
+    {
+        // Check if we have any non-None subcategories
+        bool hasSubcategories = subcatDict.Keys.Any(s => s != BoneSubcategory.None);
+
+        if (hasSubcategories)
+        {
+            // Draw subcategories first (skip None, draw it last or mixed with others)
+            foreach (BoneSubcategory subcategory in Enum.GetValues<BoneSubcategory>())
             {
-                // Draw subcategories first (skip None, draw it last or mixed with others)
-                foreach (BoneSubcategory subcategory in Enum.GetValues<BoneSubcategory>())
+                if (subcategory == BoneSubcategory.None)
+                    continue;
+
+                if (!subcatDict.TryGetValue(subcategory, out var subBones) || subBones.Count == 0)
+                    continue;
+
+                // Filter out root bone from children list
+                var filteredBones = rootBone != null
+                    ? subBones.Where(b => b != rootBone).ToList()
+                    : subBones;
+
+                if (filteredBones.Count > 0)
                 {
-                    if (subcategory == BoneSubcategory.None)
-                        continue;
-
-                    if (!subcatDict.TryGetValue(subcategory, out var subBones) || subBones.Count == 0)
-                        continue;
-
-                    DrawSubcategoryGroup(skeletonId, category, subcategory, subBones, depth + 1, collapsedSubs, tabHovered, tabActive);
+                    DrawSubcategoryGroup(skeletonId, category, subcategory, filteredBones, depth + 1, collapsedSubs, tabHovered, tabActive);
                 }
+            }
 
-                // Draw bones without subcategory (None) at the end
-                if (subcatDict.TryGetValue(BoneSubcategory.None, out var noneBones) && noneBones.Count > 0)
+            // Draw bones without subcategory (None) at the end
+            if (subcatDict.TryGetValue(BoneSubcategory.None, out var noneBones) && noneBones.Count > 0)
+            {
+                var filteredNone = rootBone != null
+                    ? noneBones.Where(b => b != rootBone).OrderBy(b => b.GetFriendlyName()).ToList()
+                    : noneBones.OrderBy(b => b.GetFriendlyName()).ToList();
+
+                foreach (var bone in filteredNone)
                 {
-                    foreach (var bone in noneBones.OrderBy(b => b.GetFriendlyName()))
+                    DrawBoneInCategoryView(bone, category, depth + 1, tabHovered, tabActive);
+                }
+            }
+        }
+        else
+        {
+            // No subcategories, draw bones in hierarchy if we have a root bone
+            var allBones = subcatDict.Values.SelectMany(b => b).ToList();
+
+            if (rootBone != null)
+            {
+                // Use hierarchy - draw root bone's children recursively
+                var categoryBones = new HashSet<Bone>(allBones.Where(b => b != rootBone));
+                foreach (var childBone in rootBone.ChildBones.Cast<Bone>().OrderBy(b => b.GetFriendlyName()))
+                {
+                    if (categoryBones.Contains(childBone))
                     {
-                        DrawBoneInCategoryView(bone, category, depth + 1, tabHovered, tabActive);
+                        DrawBoneHierarchy(childBone, categoryBones, category, depth + 1, tabHovered, tabActive);
                     }
                 }
             }
             else
             {
-                // No subcategories, draw bones directly
-                var sortedBones = subcatDict.Values.SelectMany(b => b).OrderBy(b => b.GetFriendlyName()).ToList();
-                foreach (var bone in sortedBones)
+                // No root bone, draw flat list
+                foreach (var bone in allBones.OrderBy(b => b.GetFriendlyName()))
                 {
                     DrawBoneInCategoryView(bone, category, depth + 1, tabHovered, tabActive);
                 }
@@ -515,6 +660,194 @@ public class EntityList : IDisposable
     {
         bool isCollapsed = !_editorState.DebugMode && collapsedSubs.Contains(subcategory);
 
+        // Check if this subcategory has a real root bone
+        var rootBoneName = BoneInfoService.GetSubcategoryRootBone(subcategory);
+        Bone? rootBone = rootBoneName != null
+            ? bones.FirstOrDefault(b => b.BoneName == rootBoneName)
+            : null;
+
+        // If we have a real root bone, draw it as a selectable bone header
+        if (rootBone != null)
+        {
+            DrawSubcategoryBoneHeader(rootBone, skeletonId, category, subcategory, bones, depth,
+                collapsedSubs, tabHovered, tabActive, isCollapsed);
+        }
+        else
+        {
+            // Abstract subcategory - keep current behavior
+            DrawAbstractSubcategoryHeader(skeletonId, category, subcategory, bones, depth,
+                collapsedSubs, tabHovered, tabActive, isCollapsed);
+        }
+    }
+
+    private void DrawSubcategoryBoneHeader(Bone rootBone, EntityId skeletonId, BoneCategory category,
+        BoneSubcategory subcategory, List<Bone> bones, int depth,
+        HashSet<BoneSubcategory> collapsedSubs, Vector4 tabHovered, Vector4 tabActive, bool isCollapsed)
+    {
+        bool isSelected = _editorState.SelectedBone == rootBone;
+
+        ImGui.TableNextRow();
+
+        // Apply selection highlight
+        if (isSelected)
+        {
+            ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(tabActive));
+            ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg1, ImGui.GetColorU32(tabActive));
+        }
+
+        ImGui.TableNextColumn();
+
+        float buttonSize = ImGui.GetFrameHeight();
+
+        // Apply indentation
+        var halfSpacing = ImGui.GetStyle().ItemSpacing.X * 0.5f;
+        for (int i = 0; i < depth; i++)
+        {
+            ImGui.Dummy(new Vector2(buttonSize + halfSpacing, buttonSize));
+            ImGui.SameLine(0, 0);
+        }
+
+        // Collapse button
+        var arrowIcon = isCollapsed ? FontAwesomeIcon.CaretRight : FontAwesomeIcon.CaretDown;
+        if (ImPoser.IconButton($"subcat_{skeletonId}_{category}_{subcategory}", arrowIcon, new Vector2(buttonSize, buttonSize)))
+        {
+            if (collapsedSubs.Contains(subcategory))
+                collapsedSubs.Remove(subcategory);
+            else
+                collapsedSubs.Add(subcategory);
+        }
+
+        ImGui.SameLine();
+
+        // Bone icon
+        ImGui.AlignTextToFramePadding();
+        var boneIcon = rootBone.ChildBones.Count > 0 ? FontAwesomeIcon.CircleNodes : FontAwesomeIcon.Bone;
+        ImPoser.FontIcon(boneIcon, UIConstants.SkeletonColor);
+
+        ImGui.SameLine();
+
+        // Bone name (clickable for selection) - show friendly name with count
+        using (ImRaii.PushColor(ImGuiCol.Header, Vector4.Zero))
+        using (ImRaii.PushColor(ImGuiCol.HeaderHovered, Vector4.Zero))
+        using (ImRaii.PushColor(ImGuiCol.HeaderActive, Vector4.Zero))
+        {
+            ImGui.AlignTextToFramePadding();
+            if (ImGui.Selectable($"{rootBone.Name} ({bones.Count})##{rootBone.Id}_subcat", false))
+            {
+                _editorState.SelectBone(rootBone);
+            }
+
+            // Set row background based on hover state
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(tabHovered));
+                ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg1, ImGui.GetColorU32(tabHovered));
+            }
+        }
+
+        // Empty visibility/freeze columns
+        ImGui.TableNextColumn();
+        ImGui.TableNextColumn();
+
+        // Draw children if not collapsed - use actual bone hierarchy
+        if (!isCollapsed)
+        {
+            // Get bones in this subcategory as a set for filtering
+            var subcategoryBones = new HashSet<Bone>(bones);
+
+            // Draw direct children of root bone that are in this subcategory, recursively
+            foreach (var childBone in rootBone.ChildBones.Cast<Bone>().OrderBy(b => b.GetFriendlyName()))
+            {
+                if (subcategoryBones.Contains(childBone))
+                {
+                    DrawBoneHierarchy(childBone, subcategoryBones, category, depth + 1, tabHovered, tabActive);
+                }
+            }
+        }
+    }
+
+    private void DrawBoneHierarchy(Bone bone, HashSet<Bone> allowedBones, BoneCategory category, int depth,
+        Vector4 tabHovered, Vector4 tabActive)
+    {
+        // Draw this bone
+        bool hasVisibleChildren = bone.ChildBones.Cast<Bone>().Any(c => allowedBones.Contains(c));
+        DrawBoneInHierarchyView(bone, category, depth, hasVisibleChildren, tabHovered, tabActive);
+
+        // Recursively draw children that are in the allowed set
+        foreach (var childBone in bone.ChildBones.Cast<Bone>().OrderBy(b => b.GetFriendlyName()))
+        {
+            if (allowedBones.Contains(childBone))
+            {
+                DrawBoneHierarchy(childBone, allowedBones, category, depth + 1, tabHovered, tabActive);
+            }
+        }
+    }
+
+    private void DrawBoneInHierarchyView(Bone bone, BoneCategory category, int depth, bool hasChildren,
+        Vector4 tabHovered, Vector4 tabActive)
+    {
+        bool isSelected = _editorState.SelectedBone == bone;
+
+        ImGui.TableNextRow();
+
+        // Apply selection highlight
+        if (isSelected)
+        {
+            ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(tabActive));
+            ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg1, ImGui.GetColorU32(tabActive));
+        }
+
+        ImGui.TableNextColumn();
+
+        float buttonSize = ImGui.GetFrameHeight();
+
+        // Apply indentation
+        var halfSpacing = ImGui.GetStyle().ItemSpacing.X * 0.5f;
+        for (int i = 0; i < depth; i++)
+        {
+            ImGui.Dummy(new Vector2(buttonSize + halfSpacing, buttonSize));
+            ImGui.SameLine(0, 0);
+        }
+
+        // Dot or connector (no collapse for individual bones in this view)
+        ImPoser.TextOverIconButton($"dot_{bone.Id}_hier", FontAwesomeIcon.CaretDown, hasChildren ? "├" : "·", new Vector2(buttonSize, buttonSize));
+
+        ImGui.SameLine();
+
+        // Bone icon
+        ImGui.AlignTextToFramePadding();
+        var boneIcon = hasChildren ? FontAwesomeIcon.CircleNodes : FontAwesomeIcon.Bone;
+        ImPoser.FontIcon(boneIcon, UIConstants.SkeletonColor);
+
+        ImGui.SameLine();
+
+        // Bone name (clickable for selection)
+        using (ImRaii.PushColor(ImGuiCol.Header, Vector4.Zero))
+        using (ImRaii.PushColor(ImGuiCol.HeaderHovered, Vector4.Zero))
+        using (ImRaii.PushColor(ImGuiCol.HeaderActive, Vector4.Zero))
+        {
+            ImGui.AlignTextToFramePadding();
+            if (ImGui.Selectable($"{bone.Name}##{bone.Id}_hier", false))
+            {
+                _editorState.SelectBone(bone);
+            }
+
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(tabHovered));
+                ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg1, ImGui.GetColorU32(tabHovered));
+            }
+        }
+
+        // Empty columns
+        ImGui.TableNextColumn();
+        ImGui.TableNextColumn();
+    }
+
+    private void DrawAbstractSubcategoryHeader(EntityId skeletonId, BoneCategory category,
+        BoneSubcategory subcategory, List<Bone> bones, int depth,
+        HashSet<BoneSubcategory> collapsedSubs, Vector4 tabHovered, Vector4 tabActive, bool isCollapsed)
+    {
         ImGui.TableNextRow();
         ImGui.TableNextColumn();
 

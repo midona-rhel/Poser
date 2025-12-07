@@ -15,12 +15,16 @@ public class MockGPoseService : IGPoseService
             if (_isGPosing != value)
             {
                 _isGPosing = value;
+#pragma warning disable CS0618
                 OnGPoseStateChanged?.Invoke(value);
+#pragma warning restore CS0618
             }
         }
     }
 
+#pragma warning disable CS0618
     public event Action<bool>? OnGPoseStateChanged;
+#pragma warning restore CS0618
 
     public void Dispose()
     {

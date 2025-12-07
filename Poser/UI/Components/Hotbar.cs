@@ -24,7 +24,9 @@ public class Hotbar
 
     public void Draw()
     {
+        float buttonSize = ImGui.GetFrameHeight();
         float comboWidth = 100f;
+        float buttonSpacing = 2f;
 
         // Transform Pivot selector
         ImGui.AlignTextToFramePadding();
@@ -74,14 +76,24 @@ public class Hotbar
             });
         }
 
+        ImGui.SameLine(0, 16f); // Gap before tool buttons
+
+        // Tool selection buttons (Move, Rotate, Scale, Universal)
+        DrawToolButton(TransformTool.Move, FontAwesomeIcon.ArrowsAlt, "Move (G)", buttonSize);
+        ImGui.SameLine(0, buttonSpacing);
+        DrawToolButton(TransformTool.Rotate, FontAwesomeIcon.Sync, "Rotate (R)", buttonSize);
+        ImGui.SameLine(0, buttonSpacing);
+        DrawToolButton(TransformTool.Scale, FontAwesomeIcon.ExpandAlt, "Scale (S)", buttonSize);
+        ImGui.SameLine(0, buttonSpacing);
+        DrawToolButton(TransformTool.Universal, FontAwesomeIcon.Atom, "Universal - Move, Rotate & Scale (U)", buttonSize);
+
         // Right side buttons
-        float buttonSize = ImGui.GetFrameHeight();
         float rightPadding = 8f;
-        float buttonSpacing = 4f;
+        float rightButtonSpacing = 4f;
 
         // Calculate positions from right to left: debug, category toggle
         float debugButtonX = ImGui.GetContentRegionMax().X - buttonSize - rightPadding;
-        float categoryButtonX = debugButtonX - buttonSize - buttonSpacing;
+        float categoryButtonX = debugButtonX - buttonSize - rightButtonSpacing;
 
         // Category toggle button
         ImGui.SameLine(categoryButtonX);
@@ -114,6 +126,20 @@ public class Hotbar
             if (ImPoser.IconButton("debug_toggle", FontAwesomeIcon.Bug, new Vector2(buttonSize, buttonSize), "Debug Mode: Expand all entities, log untranslated bones"))
             {
                 _editorState.DebugMode = !_editorState.DebugMode;
+            }
+        }
+    }
+
+    private void DrawToolButton(TransformTool tool, FontAwesomeIcon icon, string tooltip, float size)
+    {
+        bool isActive = _editorState.TransformTool == tool;
+        var color = isActive ? UIConstants.SkeletonColor : UIConstants.DisabledTextColor;
+
+        using (ImRaii.PushColor(ImGuiCol.Text, color))
+        {
+            if (ImPoser.CenteredIconButton($"tool_{tool}", icon, new Vector2(size, size), tooltip))
+            {
+                _editorState.TransformTool = tool;
             }
         }
     }

@@ -30,6 +30,7 @@ public class Skeleton : EntityBase, ISkeleton
 
     /// <summary>
     /// Whether this skeleton's overlay is visible on screen.
+    /// Controls skeleton drawing in SkeletonOverlayWindow.
     /// </summary>
     public bool IsOverlayVisible { get; set; } = false;
 
@@ -59,6 +60,16 @@ public class Skeleton : EntityBase, ISkeleton
     public IBone? GetBone(int partialId, int boneIndex)
     {
         return _bonesByIndex.TryGetValue((partialId, boneIndex), out var bone) ? bone : null;
+    }
+
+    public Bone? GetBoneByName(string name, int partialId)
+    {
+        foreach (var bone in _bones)
+        {
+            if (bone.BoneName == name && bone.PartialId == partialId)
+                return bone as Bone;
+        }
+        return null;
     }
 
     public void Refresh()

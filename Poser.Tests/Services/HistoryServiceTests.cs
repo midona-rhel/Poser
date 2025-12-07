@@ -1,3 +1,4 @@
+using Poser.Core;
 using Poser.History;
 using Poser.Services;
 using Poser.Tests.Mocks;
@@ -22,11 +23,18 @@ public class HistoryServiceTests
         public void Undo() => UndoCount++;
     }
 
+    private static (MockGPoseService gPose, EventBus eventBus, HistoryService history) CreateServices()
+    {
+        var gPose = new MockGPoseService();
+        var eventBus = new EventBus();
+        var history = new HistoryService(gPose, eventBus);
+        return (gPose, eventBus, history);
+    }
+
     [Fact]
     public void CanUndo_WhenEmpty_ReturnsFalse()
     {
-        var gPoseService = new MockGPoseService();
-        var historyService = new HistoryService(gPoseService);
+        var (_, _, historyService) = CreateServices();
 
         Assert.False(historyService.CanUndo);
     }
@@ -34,8 +42,7 @@ public class HistoryServiceTests
     [Fact]
     public void CanRedo_WhenEmpty_ReturnsFalse()
     {
-        var gPoseService = new MockGPoseService();
-        var historyService = new HistoryService(gPoseService);
+        var (_, _, historyService) = CreateServices();
 
         Assert.False(historyService.CanRedo);
     }
@@ -43,8 +50,7 @@ public class HistoryServiceTests
     [Fact]
     public void Push_ExecutesActionAndEnablesUndo()
     {
-        var gPoseService = new MockGPoseService();
-        var historyService = new HistoryService(gPoseService);
+        var (_, _, historyService) = CreateServices();
         var action = new MockHistoryAction();
 
         historyService.Push(action);
@@ -56,8 +62,7 @@ public class HistoryServiceTests
     [Fact]
     public void Record_DoesNotExecuteAction()
     {
-        var gPoseService = new MockGPoseService();
-        var historyService = new HistoryService(gPoseService);
+        var (_, _, historyService) = CreateServices();
         var action = new MockHistoryAction();
 
         historyService.Record(action);
@@ -69,8 +74,7 @@ public class HistoryServiceTests
     [Fact]
     public void Undo_CallsUndoOnAction()
     {
-        var gPoseService = new MockGPoseService();
-        var historyService = new HistoryService(gPoseService);
+        var (_, _, historyService) = CreateServices();
         var action = new MockHistoryAction();
         historyService.Push(action);
 
@@ -84,8 +88,7 @@ public class HistoryServiceTests
     [Fact]
     public void Redo_ReExecutesAction()
     {
-        var gPoseService = new MockGPoseService();
-        var historyService = new HistoryService(gPoseService);
+        var (_, _, historyService) = CreateServices();
         var action = new MockHistoryAction();
         historyService.Push(action);
         historyService.Undo();
@@ -100,8 +103,7 @@ public class HistoryServiceTests
     [Fact]
     public void Push_ClearsRedoStack()
     {
-        var gPoseService = new MockGPoseService();
-        var historyService = new HistoryService(gPoseService);
+        var (_, _, historyService) = CreateServices();
         var action1 = new MockHistoryAction("Action 1");
         var action2 = new MockHistoryAction("Action 2");
         historyService.Push(action1);
@@ -116,8 +118,7 @@ public class HistoryServiceTests
     [Fact]
     public void UndoDescription_ReturnsTopActionDescription()
     {
-        var gPoseService = new MockGPoseService();
-        var historyService = new HistoryService(gPoseService);
+        var (_, _, historyService) = CreateServices();
         var action = new MockHistoryAction("Test Description");
 
         historyService.Push(action);
@@ -128,8 +129,7 @@ public class HistoryServiceTests
     [Fact]
     public void RedoDescription_ReturnsUndoneActionDescription()
     {
-        var gPoseService = new MockGPoseService();
-        var historyService = new HistoryService(gPoseService);
+        var (_, _, historyService) = CreateServices();
         var action = new MockHistoryAction("Test Description");
         historyService.Push(action);
 
@@ -141,8 +141,7 @@ public class HistoryServiceTests
     [Fact]
     public void Clear_RemovesAllHistory()
     {
-        var gPoseService = new MockGPoseService();
-        var historyService = new HistoryService(gPoseService);
+        var (_, _, historyService) = CreateServices();
         historyService.Push(new MockHistoryAction());
         historyService.Push(new MockHistoryAction());
         historyService.Undo();
@@ -156,8 +155,7 @@ public class HistoryServiceTests
     [Fact]
     public void OnHistoryChanged_FiresOnPush()
     {
-        var gPoseService = new MockGPoseService();
-        var historyService = new HistoryService(gPoseService);
+        var (_, _, historyService) = CreateServices();
         int eventCount = 0;
         historyService.OnHistoryChanged += () => eventCount++;
 
@@ -169,8 +167,7 @@ public class HistoryServiceTests
     [Fact]
     public void OnHistoryChanged_FiresOnUndo()
     {
-        var gPoseService = new MockGPoseService();
-        var historyService = new HistoryService(gPoseService);
+        var (_, _, historyService) = CreateServices();
         historyService.Push(new MockHistoryAction());
         int eventCount = 0;
         historyService.OnHistoryChanged += () => eventCount++;
@@ -183,8 +180,7 @@ public class HistoryServiceTests
     [Fact]
     public void OnHistoryChanged_FiresOnRedo()
     {
-        var gPoseService = new MockGPoseService();
-        var historyService = new HistoryService(gPoseService);
+        var (_, _, historyService) = CreateServices();
         historyService.Push(new MockHistoryAction());
         historyService.Undo();
         int eventCount = 0;
@@ -198,13 +194,13 @@ public class HistoryServiceTests
     [Fact]
     public void ExitingGPose_ClearsHistory()
     {
-        var gPoseService = new MockGPoseService();
-        var historyService = new HistoryService(gPoseService);
+        var (gPoseService, eventBus, historyService) = CreateServices();
         gPoseService.SetGPoseState(true);
         historyService.Push(new MockHistoryAction());
         historyService.Push(new MockHistoryAction());
 
-        gPoseService.SetGPoseState(false);
+        // Simulate GPose exit via EventBus (the new way)
+        eventBus.Publish(new GPoseStateChangedEvent(false));
 
         Assert.False(historyService.CanUndo);
         Assert.False(historyService.CanRedo);
@@ -213,8 +209,7 @@ public class HistoryServiceTests
     [Fact]
     public void MultipleUndoRedo_WorksCorrectly()
     {
-        var gPoseService = new MockGPoseService();
-        var historyService = new HistoryService(gPoseService);
+        var (_, _, historyService) = CreateServices();
         var action1 = new MockHistoryAction("Action 1");
         var action2 = new MockHistoryAction("Action 2");
         var action3 = new MockHistoryAction("Action 3");

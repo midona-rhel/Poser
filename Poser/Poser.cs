@@ -4,6 +4,7 @@ using Dalamud.Game.Command;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Poser.Controllers;
 using Poser.Core;
 using Poser.Core.BoneInfo;
 using Poser.Game;
@@ -30,7 +31,8 @@ public class Poser : IDalamudPlugin
         ISigScanner sigScanner,
         IGameInteropProvider gameInterop,
         ICommandManager commandManager,
-        IDataManager dataManager)
+        IDataManager dataManager,
+        IKeyState keyState)
     {
         log.Info($"Starting {PluginName}...");
 
@@ -49,7 +51,8 @@ public class Poser : IDalamudPlugin
             sigScanner,
             gameInterop,
             commandManager,
-            dataManager);
+            dataManager,
+            keyState);
 
         // Initialize UI Manager (triggers subscription to draw events)
         _ = _serviceProvider.GetRequiredService<IUIManager>();
@@ -78,7 +81,8 @@ public class Poser : IDalamudPlugin
         ISigScanner sigScanner,
         IGameInteropProvider gameInterop,
         ICommandManager commandManager,
-        IDataManager dataManager)
+        IDataManager dataManager,
+        IKeyState keyState)
     {
         var services = new ServiceCollection();
 
@@ -92,6 +96,7 @@ public class Poser : IDalamudPlugin
         services.AddSingleton(gameInterop);
         services.AddSingleton(commandManager);
         services.AddSingleton(dataManager);
+        services.AddSingleton(keyState);
 
         // Register core services
         services.AddSingleton<EventBus>();
@@ -110,6 +115,9 @@ public class Poser : IDalamudPlugin
         services.AddSingleton<ISkeletonService, SkeletonService>();
         services.AddSingleton<IBonePosingService, BonePosingService>();
         services.AddSingleton<IEditorState, EditorState>();
+
+        // Register controllers
+        services.AddSingleton<IPosingController, PosingController>();
 
         // Register UI
         services.AddSingleton<IUIManager, UIManager>();

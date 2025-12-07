@@ -28,16 +28,24 @@ public unsafe class BonePosingService : IBonePosingService
     private readonly IGPoseService _gPoseService;
     private readonly ISkeletonService _skeletonService;
     private readonly IActorManager _actorManager;
+    private readonly IEventBus _eventBus;
 
     // Hook for intercepting bone physics updates
     private delegate nint UpdateBonePhysicsDelegate(nint a1);
     private readonly Hook<UpdateBonePhysicsDelegate>? _updateBonePhysicsHook;
 
+    // Hook for finalizing skeletons before rendering (takes final snapshot)
+    private delegate void FinalizeSkeletonsDelegate(nint a1);
+    private readonly Hook<FinalizeSkeletonsDelegate>? _finalizeSkeletonsHook;
+
     // Pose info per skeleton (keyed by actor address)
     private readonly Dictionary<nint, SkeletonPoseInfo> _poseInfos = new();
 
-    // Track which skeletons need updating this frame
+    // Track which skeletons need updating this frame (have modifications)
     private readonly HashSet<nint> _skeletonsToUpdate = new();
+
+    // Track which skeletons need cache updates (visible overlays, active gizmo, etc.)
+    private readonly HashSet<nint> _skeletonsToUpdateCache = new();
 
     private bool _isUpdating = false;
 
@@ -49,6 +57,7 @@ public unsafe class BonePosingService : IBonePosingService
         IGPoseService gPoseService,
         ISkeletonService skeletonService,
         IActorManager actorManager,
+        IEventBus eventBus,
         IGameInteropProvider hooking,
         ISigScanner scanner)
     {
@@ -57,6 +66,7 @@ public unsafe class BonePosingService : IBonePosingService
         _gPoseService = gPoseService;
         _skeletonService = skeletonService;
         _actorManager = actorManager;
+        _eventBus = eventBus;
 
         // Hook UpdateBonePhysics - this is called during skeleton updates
         // Signature from Brio: "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 41 54 41 56 48 83 EC ?? 48 8B 59 ??"
@@ -72,8 +82,22 @@ public unsafe class BonePosingService : IBonePosingService
             _log.Warning($"BonePosingService: Failed to hook UpdateBonePhysics: {ex.Message}");
         }
 
+        // Hook FinalizeSkeletons - called before rendering, takes final snapshot
+        // Signature from Brio: "40 53 55 57 41 55 48 83 EC 68"
+        try
+        {
+            var finalizeSkeletonsAddress = scanner.ScanText("40 53 55 57 41 55 48 83 EC 68");
+            _finalizeSkeletonsHook = hooking.HookFromAddress<FinalizeSkeletonsDelegate>(finalizeSkeletonsAddress, FinalizeSkeletonsDetour);
+            _finalizeSkeletonsHook.Enable();
+            _log.Debug("BonePosingService: FinalizeSkeletons hook initialized");
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"BonePosingService: Failed to hook FinalizeSkeletons: {ex.Message}");
+        }
+
         _framework.Update += OnFrameworkUpdate;
-        _gPoseService.OnGPoseStateChanged += OnGPoseStateChanged;
+        _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
 
         _log.Debug("BonePosingService initialized");
     }
@@ -111,11 +135,19 @@ public unsafe class BonePosingService : IBonePosingService
                 _skeletonsToUpdate.Add(actorAddress);
             }
         }
+
+        // Clear cache update registrations (they're re-registered each frame by the overlay)
+        _skeletonsToUpdateCache.Clear();
     }
 
-    private void OnGPoseStateChanged(bool isGPosing)
+    public void RegisterSkeletonForCacheUpdate(ISkeleton skeleton)
     {
-        if (!isGPosing)
+        _skeletonsToUpdateCache.Add(skeleton.Actor.Address);
+    }
+
+    private void OnGPoseStateChanged(GPoseStateChangedEvent e)
+    {
+        if (!e.IsGPosing)
         {
             // Clear all pose modifications when exiting GPose
             _poseInfos.Clear();
@@ -194,6 +226,23 @@ public unsafe class BonePosingService : IBonePosingService
                 {
                     ApplyBoneTransform(pose, boneIdx, stack);
                 }
+
+                // Update LastTransform AFTER applying modifications (like Brio)
+                // This ensures the gizmo sees our modified position, not the game's original
+                var bone = skeleton.GetBoneByName(boneName, partialIdx);
+                if (bone != null)
+                {
+                    var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
+                    if (modelSpace != null)
+                    {
+                        bone.LastTransform = new Transform
+                        {
+                            Position = new Vector3(modelSpace->Translation.X, modelSpace->Translation.Y, modelSpace->Translation.Z),
+                            Rotation = new Quaternion(modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W),
+                            Scale = new Vector3(modelSpace->Scale.X, modelSpace->Scale.Y, modelSpace->Scale.Z)
+                        };
+                    }
+                }
             }
         }
     }
@@ -215,7 +264,7 @@ public unsafe class BonePosingService : IBonePosingService
             }
         }
 
-        // Apply rotation (pre-multiply: newRot = delta * currentRot for world-space deltas)
+        // Apply rotation (post-multiply: newRot = currentRot * delta for local-space deltas, like Brio)
         if (info.Transform.Rotation != Quaternion.Identity)
         {
             var propagate = info.PropagateComponents.HasFlag(TransformComponents.Rotation);
@@ -227,7 +276,7 @@ public unsafe class BonePosingService : IBonePosingService
                     modelSpace->Rotation.Y,
                     modelSpace->Rotation.Z,
                     modelSpace->Rotation.W);
-                var newRot = Quaternion.Normalize(info.Transform.Rotation * currentRot);
+                var newRot = Quaternion.Normalize(currentRot * info.Transform.Rotation);
                 modelSpace->Rotation = *(hkQuaternionf*)(&newRot);
             }
         }
@@ -287,7 +336,7 @@ public unsafe class BonePosingService : IBonePosingService
         OnBoneTransformChanged?.Invoke(bone);
     }
 
-    public void ApplyTransform(IBone bone, Transform transform, Transform originalTransform, TransformComponents propagate = TransformComponents.Position | TransformComponents.Rotation)
+    public void ApplyTransform(IBone bone, Transform transform, Transform? originalTransform = null, TransformComponents propagate = TransformComponents.Position | TransformComponents.Rotation)
     {
         var poseInfo = GetPoseInfo(bone.Skeleton);
         var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
@@ -347,11 +396,106 @@ public unsafe class BonePosingService : IBonePosingService
         return combined;
     }
 
+    private void FinalizeSkeletonsDetour(nint a1)
+    {
+        _finalizeSkeletonsHook!.Original(a1);  // Let game finalize first
+
+        if (!_gPoseService.IsGPosing)
+            return;
+
+        // Take final snapshot of all skeletons that need cache updates
+        // This includes: skeletons with modifications + skeletons with visible overlays/gizmos
+        // Combine both sets to ensure all relevant skeletons are updated
+        foreach (var actorAddress in _skeletonsToUpdate)
+        {
+            UpdateSkeletonCache(actorAddress);
+        }
+
+        // Also update skeletons registered for cache updates (even without modifications)
+        foreach (var actorAddress in _skeletonsToUpdateCache)
+        {
+            if (!_skeletonsToUpdate.Contains(actorAddress))
+            {
+                UpdateSkeletonCache(actorAddress);
+            }
+        }
+    }
+
+    private void UpdateSkeletonCache(nint actorAddress)
+    {
+        IActor? actor = null;
+        foreach (var a in _actorManager.Actors)
+        {
+            if (a.Address == actorAddress)
+            {
+                actor = a;
+                break;
+            }
+        }
+
+        if (actor == null)
+            return;
+
+        var skeleton = _skeletonService.GetSkeleton(actor) as Skeleton;
+        if (skeleton == null || !skeleton.IsValid)
+            return;
+
+        var character = (Character*)actor.Address;
+        if (character == null)
+            return;
+
+        var drawObject = character->GameObject.DrawObject;
+        if (drawObject == null)
+            return;
+
+        if (drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
+            return;
+
+        var charaBase = (CharacterBase*)drawObject;
+        if (charaBase->Skeleton == null)
+            return;
+
+        var gameSkeleton = charaBase->Skeleton;
+
+        // Update LastTransform for ALL bones in modified skeletons (like Brio's UpdateCachedTransforms)
+        for (int partialIdx = 0; partialIdx < gameSkeleton->PartialSkeletonCount; partialIdx++)
+        {
+            var partial = &gameSkeleton->PartialSkeletons[partialIdx];
+            var pose = partial->GetHavokPose(0);
+            if (pose == null)
+                continue;
+
+            var boneCount = pose->Skeleton->Bones.Length;
+            for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
+            {
+                var rawBone = pose->Skeleton->Bones[boneIdx];
+                var boneName = rawBone.Name.String ?? $"bone_{partialIdx}_{boneIdx}";
+
+                var bone = skeleton.GetBoneByName(boneName, partialIdx);
+                if (bone == null)
+                    continue;
+
+                // Read with DontPropagate - get the CURRENT state, don't cascade
+                var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
+                if (modelSpace != null)
+                {
+                    bone.LastTransform = new Transform
+                    {
+                        Position = new Vector3(modelSpace->Translation.X, modelSpace->Translation.Y, modelSpace->Translation.Z),
+                        Rotation = new Quaternion(modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W),
+                        Scale = new Vector3(modelSpace->Scale.X, modelSpace->Scale.Y, modelSpace->Scale.Z)
+                    };
+                }
+            }
+        }
+    }
+
     public void Dispose()
     {
         _updateBonePhysicsHook?.Dispose();
+        _finalizeSkeletonsHook?.Dispose();
         _framework.Update -= OnFrameworkUpdate;
-        _gPoseService.OnGPoseStateChanged -= OnGPoseStateChanged;
+        _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _poseInfos.Clear();
         GC.SuppressFinalize(this);
     }

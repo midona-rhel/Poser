@@ -110,11 +110,4 @@ public interface IAnimationService : IDisposable
 
     #endregion
 
-    /// <summary>Use EventBus.Subscribe&lt;FreezeStateChangedEvent&gt; instead.</summary>
-    [Obsolete("Use EventBus.Subscribe<FreezeStateChangedEvent> instead.")]
-    event Action<IActor, bool>? OnFreezeStateChanged;
-
-    /// <summary>Use EventBus.Subscribe&lt;PhysicsFreezeStateChangedEvent&gt; instead.</summary>
-    [Obsolete("Use EventBus.Subscribe<PhysicsFreezeStateChangedEvent> instead.")]
-    event Action<IActor, bool>? OnPhysicsFreezeStateChanged;
 }

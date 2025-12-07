@@ -33,14 +33,6 @@ public class AnimationService : IAnimationService
     private delegate bool CalculateAndApplyOverallSpeedDelegate(nint timelineContainer);
     private readonly Hook<CalculateAndApplyOverallSpeedDelegate>? _calculateSpeedHook;
 
-    /// <summary>Use EventBus.Subscribe&lt;FreezeStateChangedEvent&gt; instead.</summary>
-    [Obsolete("Use EventBus.Subscribe<FreezeStateChangedEvent> instead.")]
-    public event Action<IActor, bool>? OnFreezeStateChanged;
-
-    /// <summary>Use EventBus.Subscribe&lt;PhysicsFreezeStateChangedEvent&gt; instead.</summary>
-    [Obsolete("Use EventBus.Subscribe<PhysicsFreezeStateChangedEvent> instead.")]
-    public event Action<IActor, bool>? OnPhysicsFreezeStateChanged;
-
     public unsafe AnimationService(IFramework framework, ISigScanner sigScanner, IGameInteropProvider hooking, IPluginLog log, IGPoseService gPoseService, IEventBus eventBus)
     {
         _framework = framework;
@@ -49,7 +41,7 @@ public class AnimationService : IAnimationService
         _eventBus = eventBus;
 
         // Subscribe to GPose exit to reset state
-        _gPoseService.OnGPoseStateChanged += OnGPoseStateChanged;
+        _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
 
         // Hook the game's speed calculation function
         try
@@ -82,9 +74,9 @@ public class AnimationService : IAnimationService
         }
     }
 
-    private void OnGPoseStateChanged(bool isGPosing)
+    private void OnGPoseStateChanged(GPoseStateChangedEvent e)
     {
-        if (!isGPosing)
+        if (!e.IsGPosing)
         {
             // Reset all state when exiting GPose
             ResetAllState();
@@ -115,7 +107,6 @@ public class AnimationService : IAnimationService
         {
             _speedOverrides[actor.Address] = 0f;
             SetAnimationSpeed(actor.Address, 0f);
-            OnFreezeStateChanged?.Invoke(actor, true);
             _eventBus.Publish(new FreezeStateChangedEvent(actor, true));
         }
     }
@@ -126,14 +117,12 @@ public class AnimationService : IAnimationService
         {
             _speedOverrides.Remove(actor.Address);
             SetAnimationSpeed(actor.Address, 1f);
-            OnFreezeStateChanged?.Invoke(actor, false);
             _eventBus.Publish(new FreezeStateChangedEvent(actor, false));
 
             // Unfreezing an actor should also unfreeze physics
             if (_isPhysicsFrozen)
             {
                 DisablePhysicsFreeze();
-                OnPhysicsFreezeStateChanged?.Invoke(actor, false);
                 _eventBus.Publish(new PhysicsFreezeStateChangedEvent(false));
             }
         }
@@ -155,7 +144,6 @@ public class AnimationService : IAnimationService
         if (!_isPhysicsFrozen)
         {
             EnablePhysicsFreeze();
-            OnPhysicsFreezeStateChanged?.Invoke(actor, true);
             _eventBus.Publish(new PhysicsFreezeStateChangedEvent(true));
         }
 
@@ -171,7 +159,6 @@ public class AnimationService : IAnimationService
         if (_isPhysicsFrozen)
         {
             DisablePhysicsFreeze();
-            OnPhysicsFreezeStateChanged?.Invoke(actor, false);
             _eventBus.Publish(new PhysicsFreezeStateChangedEvent(false));
         }
     }
@@ -459,7 +446,7 @@ public class AnimationService : IAnimationService
 
     public void Dispose()
     {
-        _gPoseService.OnGPoseStateChanged -= OnGPoseStateChanged;
+        _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _calculateSpeedHook?.Dispose();
         _framework.Update -= OnFrameworkUpdate;
 

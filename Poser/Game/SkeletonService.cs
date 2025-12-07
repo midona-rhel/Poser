@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Dalamud.Plugin.Services;
+using Poser.Core;
 using Poser.Entities;
 using Poser.Services;
 
@@ -13,14 +14,16 @@ public class SkeletonService : ISkeletonService
 {
     private readonly IPluginLog _log;
     private readonly IGPoseService _gPoseService;
+    private readonly IEventBus _eventBus;
     private readonly Dictionary<nint, Skeleton> _skeletons = new();
 
-    public SkeletonService(IPluginLog log, IGPoseService gPoseService)
+    public SkeletonService(IPluginLog log, IGPoseService gPoseService, IEventBus eventBus)
     {
         _log = log;
         _gPoseService = gPoseService;
+        _eventBus = eventBus;
 
-        _gPoseService.OnGPoseStateChanged += OnGPoseStateChanged;
+        _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
     }
 
     public ISkeleton? GetSkeleton(IActor actor)
@@ -75,9 +78,9 @@ public class SkeletonService : ISkeletonService
         _skeletons.Clear();
     }
 
-    private void OnGPoseStateChanged(bool isGPosing)
+    private void OnGPoseStateChanged(GPoseStateChangedEvent e)
     {
-        if (!isGPosing)
+        if (!e.IsGPosing)
         {
             ClearAll();
         }
@@ -85,7 +88,7 @@ public class SkeletonService : ISkeletonService
 
     public void Dispose()
     {
-        _gPoseService.OnGPoseStateChanged -= OnGPoseStateChanged;
+        _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         ClearAll();
     }
 }

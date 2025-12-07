@@ -27,8 +27,8 @@ public class TransformTests
 
         // Assert
         Assert.Equal(Vector3.Zero, transform.Position);
-        Assert.Equal(default(Quaternion), transform.Rotation);
-        Assert.Equal(Vector3.Zero, transform.Scale);
+        Assert.Equal(Quaternion.Identity, transform.Rotation);
+        Assert.Equal(Vector3.One, transform.Scale);
     }
 
     [Fact]

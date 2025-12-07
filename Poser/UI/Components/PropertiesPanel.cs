@@ -4,6 +4,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
+using Poser.Controllers;
 using Poser.Entities;
 using Poser.History;
 using Poser.Services;
@@ -31,6 +32,7 @@ public class PropertiesPanel
     private readonly IAnimationService _animationService;
     private readonly IHistoryService _historyService;
     private readonly IGazeService _gazeService;
+    private readonly IPosingController _controller;
     private readonly TransformWidget _transformWidget;
 
     // Reusable animation selectors
@@ -40,7 +42,6 @@ public class PropertiesPanel
     private PropertiesTab _activeTab = PropertiesTab.Transform;
 
     // Tracking for slider history (we create history on release, not every frame)
-    private float _speedBeforeEdit;
     private bool _isEditingSpeed;
 
     // Current animation state
@@ -54,13 +55,15 @@ public class PropertiesPanel
         IAnimationService animationService,
         IAnimationDataService animationDataService,
         IHistoryService historyService,
-        IGazeService gazeService)
+        IGazeService gazeService,
+        IPosingController controller)
     {
         _actorManager = actorManager;
         _posingService = posingService;
         _animationService = animationService;
         _historyService = historyService;
         _gazeService = gazeService;
+        _controller = controller;
         _transformWidget = new TransformWidget();
 
         // Create reusable animation selectors
@@ -235,10 +238,10 @@ public class PropertiesPanel
 
         float speed = _animationService.GetSpeed(actor);
 
-        // Capture before value when starting to edit
+        // Start tracking when slider becomes active
         if (ImGui.IsItemActive() && !_isEditingSpeed)
         {
-            _speedBeforeEdit = speed;
+            _controller.BeginSpeedChange(actor);
             _isEditingSpeed = true;
         }
 
@@ -252,10 +255,7 @@ public class PropertiesPanel
         if (_isEditingSpeed && ImGui.IsItemDeactivatedAfterEdit())
         {
             _isEditingSpeed = false;
-            if (MathF.Abs(_speedBeforeEdit - speed) > 0.001f)
-            {
-                RecordSpeedChange(actor, _speedBeforeEdit, speed);
-            }
+            _controller.EndSpeedChange(actor, speed);
         }
 
         ImGui.SameLine();
@@ -270,19 +270,10 @@ public class PropertiesPanel
         {
             if (ImPoser.CenteredIconButton("play_pause", playPauseIcon, null, playPauseTooltip))
             {
-                float oldSpeed = _animationService.GetSpeed(actor);
                 if (isPlaying)
-                {
-                    // Pause
-                    _animationService.SetSpeed(actor, 0f);
-                    RecordSpeedChange(actor, oldSpeed, 0f);
-                }
+                    _controller.SetAnimationSpeed(actor, 0f);
                 else
-                {
-                    // Resume to normal speed
-                    _animationService.SetSpeed(actor, 1f);
-                    RecordSpeedChange(actor, oldSpeed, 1f);
-                }
+                    _controller.SetAnimationSpeed(actor, 1f);
             }
         }
 
@@ -291,18 +282,8 @@ public class PropertiesPanel
         // Reset speed button
         if (ImPoser.CenteredIconButton("reset_speed", FontAwesomeIcon.Undo, null, "Reset Speed"))
         {
-            float oldSpeed = _animationService.GetSpeed(actor);
-            _animationService.ResetSpeed(actor);
-            RecordSpeedChange(actor, oldSpeed, 1f);
+            _controller.SetAnimationSpeed(actor, 1f);
         }
-    }
-
-    private void RecordSpeedChange(IActor actor, float oldSpeed, float newSpeed)
-    {
-        if (MathF.Abs(oldSpeed - newSpeed) < 0.001f) return;
-
-        var action = new SpeedChangeAction(_animationService, actor, oldSpeed, newSpeed);
-        _historyService.Record(action);
     }
 
     private void DrawScrubSection(IActor actor, bool isFrozen, float labelWidth)
@@ -391,7 +372,6 @@ public class PropertiesPanel
     private void DrawGazeSection(IActor actor, bool isFrozen, float labelWidth)
     {
         var gazeState = _gazeService.GetGazeState(actor);
-        var oldState = gazeState.Clone();
 
         // Gaze mode dropdown
         ImGui.Text("Mode");
@@ -400,10 +380,7 @@ public class PropertiesPanel
         int currentMode = (int)gazeState.Mode;
         if (ImGui.Combo("##gaze_mode", ref currentMode, GazeModeNames, GazeModeNames.Length))
         {
-            var newState = gazeState.Clone();
-            newState.Mode = (GazeTargetMode)currentMode;
-            _gazeService.SetGazeState(actor, newState);
-            RecordGazeChange(actor, oldState, newState);
+            _controller.SetGazeMode(actor, (GazeTargetMode)currentMode);
         }
 
         ImGui.Spacing();
@@ -418,10 +395,7 @@ public class PropertiesPanel
             var newType = affectBody
                 ? gazeState.TargetType | GazeTargetType.Body
                 : gazeState.TargetType & ~GazeTargetType.Body;
-            var newState = gazeState.Clone();
-            newState.TargetType = newType;
-            _gazeService.SetGazeState(actor, newState);
-            RecordGazeChange(actor, oldState, newState);
+            _controller.SetGazeTargetType(actor, newType);
         }
 
         ImGui.SameLine();
@@ -431,10 +405,7 @@ public class PropertiesPanel
             var newType = affectHead
                 ? gazeState.TargetType | GazeTargetType.Head
                 : gazeState.TargetType & ~GazeTargetType.Head;
-            var newState = gazeState.Clone();
-            newState.TargetType = newType;
-            _gazeService.SetGazeState(actor, newState);
-            RecordGazeChange(actor, oldState, newState);
+            _controller.SetGazeTargetType(actor, newType);
         }
 
         ImGui.SameLine();
@@ -444,10 +415,7 @@ public class PropertiesPanel
             var newType = affectEyes
                 ? gazeState.TargetType | GazeTargetType.Eyes
                 : gazeState.TargetType & ~GazeTargetType.Eyes;
-            var newState = gazeState.Clone();
-            newState.TargetType = newType;
-            _gazeService.SetGazeState(actor, newState);
-            RecordGazeChange(actor, oldState, newState);
+            _controller.SetGazeTargetType(actor, newType);
         }
 
         // Entity target list (only shown in Entity mode)
@@ -473,10 +441,7 @@ public class PropertiesPanel
                     bool isSelected = gazeState.TargetEntity == targetActor;
                     if (ImGui.Selectable(targetActor.Name, isSelected))
                     {
-                        var newState = gazeState.Clone();
-                        newState.TargetEntity = targetActor;
-                        _gazeService.SetGazeState(actor, newState);
-                        RecordGazeChange(actor, oldState, newState);
+                        _controller.SetGazeTarget(actor, targetActor);
                     }
 
                     if (isSelected)
@@ -491,15 +456,7 @@ public class PropertiesPanel
         // Reset button
         if (ImGui.Button("Reset Gaze"))
         {
-            var newState = new GazeState();
-            _gazeService.SetGazeState(actor, newState);
-            RecordGazeChange(actor, oldState, newState);
+            _controller.ResetGaze(actor);
         }
-    }
-
-    private void RecordGazeChange(IActor actor, GazeState oldState, GazeState newState)
-    {
-        var action = new GazeHistoryAction(_gazeService, actor, oldState, newState);
-        _historyService.Record(action);
     }
 }

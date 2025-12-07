@@ -41,6 +41,34 @@ public enum BoneDisplayMode
 }
 
 /// <summary>
+/// Transform tool - which operation the gizmo performs.
+/// </summary>
+public enum TransformTool
+{
+    /// <summary>Move/translate the selection.</summary>
+    Move,
+    /// <summary>Rotate the selection.</summary>
+    Rotate,
+    /// <summary>Scale the selection.</summary>
+    Scale,
+    /// <summary>Combined move, rotate, and scale in one gizmo.</summary>
+    Universal
+}
+
+/// <summary>
+/// The type of gizmo target.
+/// </summary>
+public enum GizmoTargetType
+{
+    /// <summary>No target selected.</summary>
+    None,
+    /// <summary>Actor(s) selected - object mode.</summary>
+    Actor,
+    /// <summary>Bone selected - edit mode.</summary>
+    Bone
+}
+
+/// <summary>
 /// Tracks editor-wide state like pivot mode, tool selection, etc.
 /// </summary>
 public interface IEditorState
@@ -50,6 +78,9 @@ public interface IEditorState
 
     /// <summary>Transform orientation - which axes to use for transforms.</summary>
     TransformOrientation TransformOrientation { get; set; }
+
+    /// <summary>Current transform tool (Move, Rotate, Scale).</summary>
+    TransformTool TransformTool { get; set; }
 
     /// <summary>Debug mode - expands all entities and logs untranslated bones.</summary>
     bool DebugMode { get; set; }
@@ -68,4 +99,10 @@ public interface IEditorState
 
     /// <summary>Clear bone selection.</summary>
     void ClearBoneSelection();
+
+    /// <summary>Get the current gizmo target type based on selection state.</summary>
+    GizmoTargetType GetGizmoTargetType();
+
+    /// <summary>Toggle edit mode on the given actor.</summary>
+    void ToggleEditMode(IActor actor);
 }
