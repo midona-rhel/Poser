@@ -21,9 +21,15 @@ namespace Poser.Game;
 /// </summary>
 public unsafe class GazeService : IGazeService, IDisposable
 {
+    // LookAt controller indices for _updateLookAt function
+    private const uint LookAtIndex_Body = 0;
+    private const uint LookAtIndex_Head = 1;
+    private const uint LookAtIndex_Eyes = 2;
+
     private readonly IGPoseService _gPoseService;
     private readonly ICameraService _cameraService;
     private readonly IObjectTable _objectTable;
+    private readonly IPluginLog _log;
 
     private delegate* unmanaged<CharacterLookAtController*, LookAtTarget*, uint, nint, void> _updateLookAt;
 
@@ -38,11 +44,13 @@ public unsafe class GazeService : IGazeService, IDisposable
         ICameraService cameraService,
         IObjectTable objectTable,
         ISigScanner sigScanner,
-        IGameInteropProvider hooks)
+        IGameInteropProvider hooks,
+        IPluginLog log)
     {
         _gPoseService = gPoseService;
         _cameraService = cameraService;
         _objectTable = objectTable;
+        _log = log;
 
         try
         {
@@ -53,9 +61,9 @@ public unsafe class GazeService : IGazeService, IDisposable
             _actorLookAtLoop = hooks.HookFromAddress<ActorLookAtLoopDelegate>(actorLookAtLoopAddress, ActorLookAtDetour);
             _actorLookAtLoop.Enable();
         }
-        catch
+        catch (Exception ex)
         {
-            // Sig scan failed - gaze control won't work but plugin will still load
+            _log.Warning($"GazeService: Failed to initialize gaze hooks, gaze control will be disabled: {ex.Message}");
         }
 
         _gPoseService.OnGPoseStateChanged += OnGPoseStateChanged;
@@ -81,24 +89,12 @@ public unsafe class GazeService : IGazeService, IDisposable
                 if (lookAtDataHolder.TargetMode == GazeTargetMode.Camera)
                 {
                     var cameraPos = _cameraService.GetCameraPosition();
-
-                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Eyes))
-                        lookAtDataHolder.Target.Eyes.LookAtTarget.Position = cameraPos;
-                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Body))
-                        lookAtDataHolder.Target.Body.LookAtTarget.Position = cameraPos;
-                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Head))
-                        lookAtDataHolder.Target.Head.LookAtTarget.Position = cameraPos;
+                    SetLookAtTargetPosition(lookAtDataHolder, cameraPos);
                 }
                 else if (lookAtDataHolder.TargetMode == GazeTargetMode.Entity && lookAtDataHolder.TargetEntityAddress != nint.Zero)
                 {
                     var targetPos = GetEntityPosition(lookAtDataHolder.TargetEntityAddress);
-
-                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Eyes))
-                        lookAtDataHolder.Target.Eyes.LookAtTarget.Position = targetPos;
-                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Body))
-                        lookAtDataHolder.Target.Body.LookAtTarget.Position = targetPos;
-                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Head))
-                        lookAtDataHolder.Target.Head.LookAtTarget.Position = targetPos;
+                    SetLookAtTargetPosition(lookAtDataHolder, targetPos);
                 }
                 else if (lookAtDataHolder.TargetMode == GazeTargetMode.Forward)
                 {
@@ -116,11 +112,11 @@ public unsafe class GazeService : IGazeService, IDisposable
                 fixed (LookAtTarget* eyesTarget = &lookAtDataHolder.Target.Eyes.LookAtTarget)
                 {
                     if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Body))
-                        _updateLookAt(lookAtController, bodyTarget, 0, 0);
+                        _updateLookAt(lookAtController, bodyTarget, LookAtIndex_Body, 0);
                     if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Head))
-                        _updateLookAt(lookAtController, headTarget, 1, 0);
+                        _updateLookAt(lookAtController, headTarget, LookAtIndex_Head, 0);
                     if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Eyes))
-                        _updateLookAt(lookAtController, eyesTarget, 2, 0);
+                        _updateLookAt(lookAtController, eyesTarget, LookAtIndex_Eyes, 0);
                 }
             }
         }
@@ -130,8 +126,21 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     private Vector3 GetEntityPosition(nint address)
     {
+        if (address == nint.Zero)
+            return Vector3.Zero;
+
         var gameObject = (GameObject*)address;
         return gameObject->Position;
+    }
+
+    private static void SetLookAtTargetPosition(LookAtDataHolder holder, Vector3 position)
+    {
+        if (holder.TargetType.HasFlag(GazeTargetType.Eyes))
+            holder.Target.Eyes.LookAtTarget.Position = position;
+        if (holder.TargetType.HasFlag(GazeTargetType.Body))
+            holder.Target.Body.LookAtTarget.Position = position;
+        if (holder.TargetType.HasFlag(GazeTargetType.Head))
+            holder.Target.Head.LookAtTarget.Position = position;
     }
 
     public GazeState GetGazeState(ActorBase actor)

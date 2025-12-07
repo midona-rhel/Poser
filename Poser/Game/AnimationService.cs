@@ -29,8 +29,12 @@ public class AnimationService : IAnimationService
     private delegate bool CalculateAndApplyOverallSpeedDelegate(nint timelineContainer);
     private readonly Hook<CalculateAndApplyOverallSpeedDelegate>? _calculateSpeedHook;
 
-    // Events kept for backward compatibility, but EventBus is preferred
+    /// <summary>Use EventBus.Subscribe&lt;FreezeStateChangedEvent&gt; instead.</summary>
+    [Obsolete("Use EventBus.Subscribe<FreezeStateChangedEvent> instead.")]
     public event Action<ActorBase, bool>? OnFreezeStateChanged;
+
+    /// <summary>Use EventBus.Subscribe&lt;PhysicsFreezeStateChangedEvent&gt; instead.</summary>
+    [Obsolete("Use EventBus.Subscribe<PhysicsFreezeStateChangedEvent> instead.")]
     public event Action<ActorBase, bool>? OnPhysicsFreezeStateChanged;
 
     public unsafe AnimationService(IFramework framework, ISigScanner sigScanner, IGameInteropProvider hooking, IPluginLog log, IGPoseService gPoseService, EventBus eventBus)

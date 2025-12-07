@@ -142,11 +142,12 @@ public class ActorManager : IActorManager
         for (int i = GPoseStart; i <= GPoseEnd; i++)
         {
             var obj = _objectTable[i];
-            if (obj != null && obj.ObjectKind == ObjectKind.Player ||
-                obj?.ObjectKind == ObjectKind.BattleNpc ||
-                obj?.ObjectKind == ObjectKind.EventNpc ||
-                obj?.ObjectKind == ObjectKind.Companion ||
-                obj?.ObjectKind == ObjectKind.Retainer)
+            if (obj != null && (
+                obj.ObjectKind == ObjectKind.Player ||
+                obj.ObjectKind == ObjectKind.BattleNpc ||
+                obj.ObjectKind == ObjectKind.EventNpc ||
+                obj.ObjectKind == ObjectKind.Companion ||
+                obj.ObjectKind == ObjectKind.Retainer))
             {
                 yield return obj;
             }

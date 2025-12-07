@@ -4,10 +4,12 @@ using System.Numerics;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
+using Poser.Core;
 using Poser.Entities;
 using Poser.Services;
 
 using StructsGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
+using Transform = Poser.Entities.Transform;
 
 namespace Poser.Game;
 
@@ -20,7 +22,7 @@ public unsafe class PosingService : IPosingService
     private readonly IPluginLog _log;
     private readonly IFramework _framework;
     private readonly IGPoseService _gPoseService;
-    private readonly IAnimationService _animationService;
+    private readonly EventBus _eventBus;
 
     // Hook for intercepting position resets
     private delegate void SetPositionDelegate(StructsGameObject* gameObject, float x, float y, float z);
@@ -36,13 +38,13 @@ public unsafe class PosingService : IPosingService
         IPluginLog log,
         IFramework framework,
         IGPoseService gPoseService,
-        IAnimationService animationService,
+        EventBus eventBus,
         IGameInteropProvider hooking)
     {
         _log = log;
         _framework = framework;
         _gPoseService = gPoseService;
-        _animationService = animationService;
+        _eventBus = eventBus;
 
         // Hook SetPosition to intercept game reset attempts (like Brio does)
         try
@@ -64,7 +66,7 @@ public unsafe class PosingService : IPosingService
         _gPoseService.OnGPoseStateChanged += OnGPoseStateChanged;
 
         // Reset actor transform when they are unfrozen
-        _animationService.OnFreezeStateChanged += OnActorFreezeStateChanged;
+        _eventBus.Subscribe<FreezeStateChangedEvent>(OnFreezeStateChanged);
 
         _log.Debug("PosingService initialized");
     }
@@ -92,12 +94,12 @@ public unsafe class PosingService : IPosingService
         }
     }
 
-    private void OnActorFreezeStateChanged(ActorBase actor, bool isFrozen)
+    private void OnFreezeStateChanged(FreezeStateChangedEvent evt)
     {
-        if (!isFrozen)
+        if (!evt.IsFrozen)
         {
             // Actor was unfrozen - reset their transform
-            ClearTransformOverrideByAddress(actor.Address);
+            ClearTransformOverrideByAddress(evt.Actor.Address);
         }
     }
 
@@ -256,7 +258,7 @@ public unsafe class PosingService : IPosingService
     {
         _setPositionHook?.Dispose();
         _gPoseService.OnGPoseStateChanged -= OnGPoseStateChanged;
-        _animationService.OnFreezeStateChanged -= OnActorFreezeStateChanged;
+        _eventBus.Unsubscribe<FreezeStateChangedEvent>(OnFreezeStateChanged);
         _framework.Update -= OnFrameworkUpdate;
         ClearAllOverrides();
         GC.SuppressFinalize(this);

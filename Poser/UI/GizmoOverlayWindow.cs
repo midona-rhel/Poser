@@ -19,6 +19,7 @@ public class GizmoOverlayWindow : Window
     private readonly IAnimationService _animationService;
     private readonly IEditorState _editorState;
 
+    /// <summary>Arbitrary unique ID for ImGuizmo to track gizmo state.</summary>
     private const int GizmoId = 142857;
 
     // Track transforms when we start dragging for undo

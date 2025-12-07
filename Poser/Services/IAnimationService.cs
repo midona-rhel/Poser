@@ -48,6 +48,11 @@ public interface IAnimationService : IDisposable
     /// </summary>
     void TogglePhysicsFreeze(ActorBase actor);
 
+    /// <summary>Use EventBus.Subscribe&lt;FreezeStateChangedEvent&gt; instead.</summary>
+    [Obsolete("Use EventBus.Subscribe<FreezeStateChangedEvent> instead.")]
     event Action<ActorBase, bool>? OnFreezeStateChanged;
+
+    /// <summary>Use EventBus.Subscribe&lt;PhysicsFreezeStateChangedEvent&gt; instead.</summary>
+    [Obsolete("Use EventBus.Subscribe<PhysicsFreezeStateChangedEvent> instead.")]
     event Action<ActorBase, bool>? OnPhysicsFreezeStateChanged;
 }
