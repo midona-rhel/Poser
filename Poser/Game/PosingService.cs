@@ -9,7 +9,6 @@ using Poser.Entities;
 using Poser.Services;
 
 using StructsGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
-using Transform = Poser.Entities.Transform;
 
 namespace Poser.Game;
 

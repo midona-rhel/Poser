@@ -28,6 +28,7 @@ public class UIManager : IUIManager
         IPosingService posingService,
         IGazeService gazeService,
         ISkeletonService skeletonService,
+        IBonePosingService bonePosingService,
         IEditorState editorState,
         IEventBus eventBus)
     {
@@ -38,7 +39,7 @@ public class UIManager : IUIManager
         // Create windows in z-order (last added = drawn on top)
 
         // Skeleton overlay (lowest z-order, underneath everything)
-        _skeletonOverlay = new SkeletonOverlayWindow(actorManager, cameraService, skeletonService);
+        _skeletonOverlay = new SkeletonOverlayWindow(actorManager, cameraService, skeletonService, bonePosingService, historyService, editorState);
         _windowSystem.AddWindow(_skeletonOverlay);
 
         // Gizmo overlay (above skeleton overlay)

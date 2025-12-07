@@ -1,7 +1,7 @@
 using System;
 using System.Numerics;
 
-namespace Poser.Entities;
+namespace Poser;
 
 /// <summary>
 /// Represents a 3D transform with position, rotation, and scale.

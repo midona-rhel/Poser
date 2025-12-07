@@ -1,3 +1,6 @@
+using System;
+using Poser.Entities;
+
 namespace Poser.Services;
 
 /// <summary>
@@ -37,4 +40,16 @@ public interface IEditorState
 
     /// <summary>Bone display mode - hierarchy or category grouping.</summary>
     BoneDisplayMode BoneDisplayMode { get; set; }
+
+    /// <summary>Currently selected bone (if any).</summary>
+    IBone? SelectedBone { get; set; }
+
+    /// <summary>Event fired when bone selection changes.</summary>
+    event Action<IBone?>? OnBoneSelectionChanged;
+
+    /// <summary>Select a bone.</summary>
+    void SelectBone(IBone? bone);
+
+    /// <summary>Clear bone selection.</summary>
+    void ClearBoneSelection();
 }
