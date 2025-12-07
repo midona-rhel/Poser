@@ -123,4 +123,39 @@ public static class BoneInfoService
             _ => category.ToString()
         };
     }
+
+    /// <summary>
+    /// Gets the display name for a subcategory.
+    /// </summary>
+    public static string GetSubcategoryDisplayName(BoneSubcategory subcategory)
+    {
+        return subcategory switch
+        {
+            BoneSubcategory.None => "",
+            BoneSubcategory.Face => "Face",
+            BoneSubcategory.LeftEye => "Left Eye",
+            BoneSubcategory.RightEye => "Right Eye",
+            BoneSubcategory.Eyebrows => "Eyebrows",
+            BoneSubcategory.Nose => "Nose",
+            BoneSubcategory.Mouth => "Mouth",
+            BoneSubcategory.Cheeks => "Cheeks",
+            BoneSubcategory.Hair => "Hair",
+            BoneSubcategory.Ears => "Ears",
+            BoneSubcategory.Hand => "Hand",
+            BoneSubcategory.Fingers => "Fingers",
+            BoneSubcategory.Foot => "Foot",
+            BoneSubcategory.Toes => "Toes",
+            _ => subcategory.ToString()
+        };
+    }
+
+    /// <summary>
+    /// Gets the subcategory for a bone.
+    /// </summary>
+    public static BoneSubcategory GetSubcategory(string boneName)
+    {
+        if (_boneData.TryGetValue(boneName, out var data))
+            return data.Subcategory;
+        return BoneSubcategory.None;
+    }
 }

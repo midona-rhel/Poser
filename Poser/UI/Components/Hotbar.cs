@@ -14,7 +14,8 @@ public class Hotbar
 {
     private readonly IEditorState _editorState;
 
-    private static readonly string[] PivotModeNames = { "Local", "World", "Average" };
+    private static readonly string[] PivotNames = { "Individual", "Parent", "Median" };
+    private static readonly string[] OrientationNames = { "Local", "Global", "Parent" };
 
     public Hotbar(IEditorState editorState)
     {
@@ -23,37 +24,58 @@ public class Hotbar
 
     public void Draw()
     {
-        // Vertically center text with the combo box
-        float comboHeight = ImGui.GetFrameHeight();
-        float textHeight = ImGui.GetTextLineHeight();
-        float offsetY = (comboHeight - textHeight) / 2;
+        float comboWidth = 100f;
 
-        var cursorPos = ImGui.GetCursorPos();
-        ImGui.SetCursorPosY(cursorPos.Y + offsetY);
+        // Transform Pivot selector
+        ImGui.AlignTextToFramePadding();
         ImGui.Text("Pivot:");
         ImGui.SameLine();
 
-        ImGui.SetCursorPosY(cursorPos.Y);
-        ImGui.SetNextItemWidth(100f);
-        int currentMode = (int)_editorState.PivotMode;
-        if (ImGui.Combo("##pivot_mode", ref currentMode, PivotModeNames, PivotModeNames.Length))
+        ImGui.SetNextItemWidth(comboWidth);
+        int currentPivot = (int)_editorState.TransformPivot;
+        if (ImGui.Combo("##pivot", ref currentPivot, PivotNames, PivotNames.Length))
         {
-            _editorState.PivotMode = (PivotMode)currentMode;
+            _editorState.TransformPivot = (TransformPivot)currentPivot;
         }
 
         if (ImGui.IsItemHovered())
         {
-            ImGui.SetTooltip(_editorState.PivotMode switch
+            ImGui.SetTooltip(_editorState.TransformPivot switch
             {
-                PivotMode.Local => "Transform around each object's local origin",
-                PivotMode.World => "Transform around world origin",
-                PivotMode.Average => "Transform around the average center of selected objects",
+                TransformPivot.Individual => "Transform around each object's own origin",
+                TransformPivot.Parent => "Transform around the parent bone's position",
+                TransformPivot.Median => "Transform around the median center of selected objects",
+                _ => ""
+            });
+        }
+
+        ImGui.SameLine();
+
+        // Transform Orientation selector
+        ImGui.AlignTextToFramePadding();
+        ImGui.Text("Orientation:");
+        ImGui.SameLine();
+
+        ImGui.SetNextItemWidth(comboWidth);
+        int currentOrientation = (int)_editorState.TransformOrientation;
+        if (ImGui.Combo("##orientation", ref currentOrientation, OrientationNames, OrientationNames.Length))
+        {
+            _editorState.TransformOrientation = (TransformOrientation)currentOrientation;
+        }
+
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip(_editorState.TransformOrientation switch
+            {
+                TransformOrientation.Local => "Use the object's local coordinate axes",
+                TransformOrientation.Global => "Use world coordinate axes",
+                TransformOrientation.Parent => "Use the parent bone's coordinate axes",
                 _ => ""
             });
         }
 
         // Right side buttons
-        float buttonSize = comboHeight;
+        float buttonSize = ImGui.GetFrameHeight();
         float rightPadding = 8f;
         float buttonSpacing = 4f;
 

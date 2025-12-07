@@ -4,16 +4,29 @@ using Poser.Entities;
 namespace Poser.Services;
 
 /// <summary>
-/// Pivot point mode for transform operations.
+/// Transform pivot - the center point around which transforms occur.
 /// </summary>
-public enum PivotMode
+public enum TransformPivot
 {
-    /// <summary>Transform around each object's local origin.</summary>
+    /// <summary>Transform around each object's own origin.</summary>
+    Individual,
+    /// <summary>Transform around the parent bone's position.</summary>
+    Parent,
+    /// <summary>Transform around the median center of all selected objects.</summary>
+    Median
+}
+
+/// <summary>
+/// Transform orientation - which coordinate axes to use for transforms.
+/// </summary>
+public enum TransformOrientation
+{
+    /// <summary>Use the object's local coordinate axes.</summary>
     Local,
-    /// <summary>Transform around world origin.</summary>
-    World,
-    /// <summary>Transform around the average center of selected objects.</summary>
-    Average
+    /// <summary>Use world coordinate axes.</summary>
+    Global,
+    /// <summary>Use the parent bone's coordinate axes.</summary>
+    Parent
 }
 
 /// <summary>
@@ -32,8 +45,11 @@ public enum BoneDisplayMode
 /// </summary>
 public interface IEditorState
 {
-    /// <summary>Current pivot mode for transforms.</summary>
-    PivotMode PivotMode { get; set; }
+    /// <summary>Transform pivot - the center point for transforms.</summary>
+    TransformPivot TransformPivot { get; set; }
+
+    /// <summary>Transform orientation - which axes to use for transforms.</summary>
+    TransformOrientation TransformOrientation { get; set; }
 
     /// <summary>Debug mode - expands all entities and logs untranslated bones.</summary>
     bool DebugMode { get; set; }

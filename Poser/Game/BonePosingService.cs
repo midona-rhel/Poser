@@ -215,7 +215,7 @@ public unsafe class BonePosingService : IBonePosingService
             }
         }
 
-        // Apply rotation
+        // Apply rotation (pre-multiply: newRot = delta * currentRot for world-space deltas)
         if (info.Transform.Rotation != Quaternion.Identity)
         {
             var propagate = info.PropagateComponents.HasFlag(TransformComponents.Rotation);
@@ -227,7 +227,7 @@ public unsafe class BonePosingService : IBonePosingService
                     modelSpace->Rotation.Y,
                     modelSpace->Rotation.Z,
                     modelSpace->Rotation.W);
-                var newRot = Quaternion.Normalize(currentRot * info.Transform.Rotation);
+                var newRot = Quaternion.Normalize(info.Transform.Rotation * currentRot);
                 modelSpace->Rotation = *(hkQuaternionf*)(&newRot);
             }
         }

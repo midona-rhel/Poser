@@ -118,8 +118,10 @@ public class GizmoOverlayWindow : Window
             }
         }
 
-        // Determine gizmo mode based on pivot mode
-        var gizmoMode = _editorState.PivotMode == PivotMode.Local ? ImGuizmoMode.Local : ImGuizmoMode.World;
+        // Determine gizmo mode based on transform orientation
+        var gizmoMode = _editorState.TransformOrientation == TransformOrientation.Local
+            ? ImGuizmoMode.Local
+            : ImGuizmoMode.World;
 
         // Draw gizmo with both Translate and Rotate
         if (ImGuizmo.Manipulate(
@@ -149,18 +151,11 @@ public class GizmoOverlayWindow : Window
         var selectedActors = _actorManager.SelectedActors;
         var primaryActor = _actorManager.PrimarySelectedActor;
 
-        switch (_editorState.PivotMode)
+        // First calculate the pivot position based on TransformPivot
+        Vector3 pivotPosition;
+        switch (_editorState.TransformPivot)
         {
-            case PivotMode.World:
-                // Rotate around primary (first selected) actor's position
-                if (primaryActor != null)
-                {
-                    var t = _posingService.GetEffectiveTransform(primaryActor);
-                    return (t.Position, Quaternion.Identity);
-                }
-                return (Vector3.Zero, Quaternion.Identity);
-
-            case PivotMode.Average:
+            case TransformPivot.Median:
                 // Average position of all selected actors
                 var averagePosition = Vector3.Zero;
                 int frozenCount = 0;
@@ -174,18 +169,48 @@ public class GizmoOverlayWindow : Window
                 }
                 if (frozenCount > 0)
                     averagePosition /= frozenCount;
-                return (averagePosition, Quaternion.Identity);
+                pivotPosition = averagePosition;
+                break;
 
-            case PivotMode.Local:
+            case TransformPivot.Individual:
+            case TransformPivot.Parent:
             default:
-                // Each actor rotates around itself - use primary for gizmo display
+                // Use primary actor's position for gizmo display
                 if (primaryActor != null)
                 {
-                    var t = _posingService.GetEffectiveTransform(primaryActor);
-                    return (t.Position, t.Rotation);
+                    pivotPosition = _posingService.GetEffectiveTransform(primaryActor).Position;
                 }
-                return (Vector3.Zero, Quaternion.Identity);
+                else
+                {
+                    pivotPosition = Vector3.Zero;
+                }
+                break;
         }
+
+        // Then calculate the rotation based on TransformOrientation
+        Quaternion pivotRotation;
+        switch (_editorState.TransformOrientation)
+        {
+            case TransformOrientation.Global:
+                pivotRotation = Quaternion.Identity;
+                break;
+
+            case TransformOrientation.Local:
+            case TransformOrientation.Parent:
+            default:
+                // Use primary actor's rotation for local orientation
+                if (primaryActor != null)
+                {
+                    pivotRotation = _posingService.GetEffectiveTransform(primaryActor).Rotation;
+                }
+                else
+                {
+                    pivotRotation = Quaternion.Identity;
+                }
+                break;
+        }
+
+        return (pivotPosition, pivotRotation);
     }
 
     private void ApplyPivotTransform(Transform oldPivot, Transform newPivot)
@@ -194,9 +219,9 @@ public class GizmoOverlayWindow : Window
         var positionDelta = newPivot.Position - oldPivot.Position;
         var rotationDelta = newPivot.Rotation * Quaternion.Inverse(oldPivot.Rotation);
 
-        if (_editorState.PivotMode == PivotMode.Local)
+        if (_editorState.TransformPivot == TransformPivot.Individual)
         {
-            // Local mode: each actor rotates around its own center
+            // Individual mode: each actor rotates around its own center
             foreach (var actor in _actorManager.SelectedActors)
             {
                 if (!_animationService.IsFrozen(actor))
@@ -215,7 +240,7 @@ public class GizmoOverlayWindow : Window
         }
         else
         {
-            // World/Average mode: all actors rotate around the pivot point
+            // Median/Parent mode: all actors rotate around the pivot point
             foreach (var actor in _actorManager.SelectedActors)
             {
                 if (!_animationService.IsFrozen(actor))

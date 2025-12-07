@@ -11,7 +11,8 @@ public class EditorState : IEditorState
 {
     private IBone? _selectedBone;
 
-    public PivotMode PivotMode { get; set; } = PivotMode.Local;
+    public TransformPivot TransformPivot { get; set; } = TransformPivot.Individual;
+    public TransformOrientation TransformOrientation { get; set; } = TransformOrientation.Local;
     public bool DebugMode { get; set; } = false;
     public BoneDisplayMode BoneDisplayMode { get; set; } = BoneDisplayMode.Category;
 

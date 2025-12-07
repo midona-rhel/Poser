@@ -16,6 +16,7 @@ public class ActorBase : EntityBase, IActor
     {
         Address = address;
         ObjectKind = objectKind;
+        IsCollapsed = true; // Start collapsed by default
     }
 
     /// <summary>

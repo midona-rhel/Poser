@@ -266,6 +266,7 @@ public class Skeleton : EntityBase, ISkeleton
 
     /// <summary>
     /// Gets the model matrix for transforming bone positions to world space.
+    /// Includes the character's ScaleFactor like Brio does.
     /// </summary>
     public unsafe Matrix4x4 GetModelMatrix()
     {
@@ -280,12 +281,32 @@ public class Skeleton : EntityBase, ISkeleton
         if (drawObject == null)
             return Matrix4x4.Identity;
 
+        if (drawObject->Object.GetObjectType() != FFXIVClientStructs.FFXIV.Client.Graphics.Scene.ObjectType.CharacterBase)
+            return Matrix4x4.Identity;
+
+        var charaBase = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)drawObject;
+
         var position = drawObject->Object.Position;
         var rotation = drawObject->Object.Rotation;
-        var scale = drawObject->Object.Scale;
+        // Include ScaleFactor like Brio does (ScaleFactor1 * ScaleFactor2 at offsets 0x2A0 and 0x2A4)
+        var scaleFactor = GetScaleFactor(charaBase);
+        var scale = drawObject->Object.Scale * scaleFactor;
 
         return Matrix4x4.CreateScale(scale) *
                Matrix4x4.CreateFromQuaternion(rotation) *
                Matrix4x4.CreateTranslation(position);
+    }
+
+    /// <summary>
+    /// Gets the scale factor from CharacterBase (ScaleFactor1 * ScaleFactor2).
+    /// Based on Brio's BrioCharacterBase offsets.
+    /// </summary>
+    private static unsafe float GetScaleFactor(FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase* charaBase)
+    {
+        // ScaleFactor1 at offset 0x2A0, ScaleFactor2 at offset 0x2A4
+        var basePtr = (byte*)charaBase;
+        var scaleFactor1 = *(float*)(basePtr + 0x2A0);
+        var scaleFactor2 = *(float*)(basePtr + 0x2A4);
+        return scaleFactor1 * scaleFactor2;
     }
 }
