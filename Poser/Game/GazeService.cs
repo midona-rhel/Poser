@@ -140,6 +140,9 @@ public unsafe class GazeService : IGazeService, IDisposable
         }
 
         // Call original - this runs gaze IK and modifies bones
+        // Note: In Brio, gaze and bone posing are mutually exclusive for gaze bones
+        // We don't re-apply bone transforms here - if user wants to pose gaze bones,
+        // they should disable gaze first
         return _actorLookAtLoop.Original(args);
     }
 

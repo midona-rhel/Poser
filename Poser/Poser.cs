@@ -117,6 +117,7 @@ public class Poser : IDalamudPlugin
         services.AddSingleton<IPosingService, PosingService>();
         services.AddSingleton<IGazeService, GazeService>();
         services.AddSingleton<ISkeletonService, SkeletonService>();
+        services.AddSingleton<IIKService, IKService>();
         services.AddSingleton<IBonePosingService, BonePosingService>();
         services.AddSingleton<ISelectionService, SelectionService>();
         services.AddSingleton<IEditorState, EditorState>();

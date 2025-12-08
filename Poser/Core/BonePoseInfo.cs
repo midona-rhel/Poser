@@ -23,6 +23,7 @@ public enum TransformComponents
 /// </summary>
 public record struct BonePoseTransformInfo(
     TransformComponents PropagateComponents,
+    BoneIKInfo IKInfo,
     Transform Transform);
 
 /// <summary>
@@ -62,31 +63,59 @@ public class BonePoseInfo
     /// <param name="transform">The new absolute transform.</param>
     /// <param name="original">The original transform before modification.</param>
     /// <param name="propagation">Which components to propagate.</param>
+    /// <param name="accumulate">If true, add to existing delta. If false (default when original is provided), REPLACE existing delta.</param>
     /// <returns>The final transform, or null if no change.</returns>
-    public Transform? Apply(Transform transform, Transform? original = null, TransformComponents? propagation = null)
+    public Transform? Apply(Transform transform, Transform? original = null, TransformComponents? propagation = null, bool? accumulate = null)
     {
         var prop = propagation ?? DefaultPropagation;
 
         // Calculate delta from original
         var delta = original.HasValue ? CalculateDiff(transform, original.Value) : transform;
 
+        // Debug logging
+        System.Diagnostics.Debug.WriteLine($"[BonePoseInfo.Apply] Bone={BoneName}");
+        System.Diagnostics.Debug.WriteLine($"  transform: Pos={transform.Position}, Rot={transform.Rotation}, Scale={transform.Scale}");
+        System.Diagnostics.Debug.WriteLine($"  original: {(original.HasValue ? $"Pos={original.Value.Position}, Rot={original.Value.Rotation}, Scale={original.Value.Scale}" : "NULL")}");
+        System.Diagnostics.Debug.WriteLine($"  calculated delta: Pos={delta.Position}, Rot={delta.Rotation}, Scale={delta.Scale}");
+
         // Find or create stack entry with matching propagation
         var transformIndex = GetTransformIndex(prop);
 
         // Get existing transform at this index
         var existing = _stacks[transformIndex].Transform;
+        System.Diagnostics.Debug.WriteLine($"  existing: Pos={existing.Position}, Rot={existing.Rotation}, Scale={existing.Scale}");
 
-        // Combine with existing
-        var finalTransform = CombineTransforms(existing, delta);
+        // Determine whether to accumulate or replace:
+        // - If accumulate is explicitly set, use that
+        // - If original is provided, REPLACE (UI/gizmo passes original = should replace)
+        // - If no original (raw delta), ACCUMULATE
+        bool shouldAccumulate = accumulate ?? !original.HasValue;
+
+        Transform finalTransform;
+        if (shouldAccumulate)
+        {
+            // Accumulate: add delta to existing (for incremental changes)
+            finalTransform = CombineTransforms(existing, delta);
+            System.Diagnostics.Debug.WriteLine($"  mode: ACCUMULATE");
+        }
+        else
+        {
+            // Replace: use delta directly (for absolute target from original)
+            finalTransform = delta;
+            System.Diagnostics.Debug.WriteLine($"  mode: REPLACE");
+        }
+
+        System.Diagnostics.Debug.WriteLine($"  final: Pos={finalTransform.Position}, Rot={finalTransform.Rotation}, Scale={finalTransform.Scale}");
 
         // Validate for NaN
         if (float.IsNaN(finalTransform.Rotation.X) || float.IsNaN(finalTransform.Rotation.Y) ||
             float.IsNaN(finalTransform.Rotation.Z) || float.IsNaN(finalTransform.Rotation.W))
         {
             finalTransform.Rotation = Quaternion.Identity;
+            System.Diagnostics.Debug.WriteLine($"  WARNING: NaN detected, reset to Identity");
         }
 
-        _stacks[transformIndex] = new BonePoseTransformInfo(prop, finalTransform);
+        _stacks[transformIndex] = new BonePoseTransformInfo(prop, BoneIKInfo.Disabled, finalTransform);
         return finalTransform;
     }
 
@@ -132,7 +161,7 @@ public class BonePoseInfo
 
         if (_stacks.Count == 0)
         {
-            _stacks.Add(new BonePoseTransformInfo(components, identityDelta));
+            _stacks.Add(new BonePoseTransformInfo(components, BoneIKInfo.Disabled, identityDelta));
             return 0;
         }
 
@@ -142,22 +171,24 @@ public class BonePoseInfo
             return _stacks.Count - 1;
 
         // Create new stack
-        _stacks.Add(new BonePoseTransformInfo(components, identityDelta));
+        _stacks.Add(new BonePoseTransformInfo(components, BoneIKInfo.Disabled, identityDelta));
         return _stacks.Count - 1;
     }
 
     private static Transform CalculateDiff(Transform newTransform, Transform original)
     {
+        // Match Brio's formula: Conjugate(original) * new, normalized
         return new Transform
         {
             Position = newTransform.Position - original.Position,
-            Rotation = Quaternion.Normalize(newTransform.Rotation * Quaternion.Inverse(original.Rotation)),
+            Rotation = Quaternion.Normalize(Quaternion.Conjugate(original.Rotation) * newTransform.Rotation),
             Scale = newTransform.Scale - original.Scale
         };
     }
 
     private static Transform CombineTransforms(Transform a, Transform b)
     {
+        // Match Brio's + operator - normalizes quaternion to prevent drift
         return new Transform
         {
             Position = a.Position + b.Position,

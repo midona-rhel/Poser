@@ -302,17 +302,16 @@ public class GizmoOverlayWindow : Window
         // Apply transform if changed (only if frozen)
         if (newTransform != null && isFrozen)
         {
-            var delta = newTransform.Value.CalculateDiff(lastObserved);
-
             // Filter to only "root" bones - bones that don't have an ancestor also in the selection.
             // This prevents double-applying transforms (e.g., rotating arm also rotates elbow/wrist
             // through the hierarchy, so we shouldn't also rotate elbow/wrist directly).
             var rootBones = GetSelectionRootBones(selectedBones);
 
             // Apply transform only to root bones
+            // Gizmo passes incremental deltas (lastObserved changes each frame), so ACCUMULATE
             foreach (var bone in rootBones)
             {
-                _bonePosingService.ApplyTransform(bone, delta, null, TransformComponents.All);
+                _bonePosingService.ApplyTransform(bone, newTransform.Value, lastObserved, TransformComponents.All, accumulate: true);
             }
         }
 

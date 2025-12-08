@@ -12,11 +12,15 @@ public struct Transform
     public Quaternion Rotation;
     public Vector3 Scale;
 
+    /// <summary>
+    /// Identity transform for additive deltas.
+    /// Note: Scale is Zero (not One) because deltas are ADDED to existing scale.
+    /// </summary>
     public static readonly Transform Identity = new()
     {
         Position = Vector3.Zero,
         Rotation = Quaternion.Identity,
-        Scale = Vector3.One
+        Scale = Vector3.Zero
     };
 
     public Transform()
@@ -85,6 +89,7 @@ public struct Transform
     /// <summary>
     /// Calculates the difference between this transform and another (like Brio's CalculateDiff).
     /// Returns a delta transform: this - other.
+    /// Rotation is normalized to prevent quaternion drift.
     /// </summary>
     public Transform CalculateDiff(Transform other)
     {
@@ -96,13 +101,18 @@ public struct Transform
         };
     }
 
+    /// <summary>
+    /// Combines two transforms (additive for deltas).
+    /// Scale is ADDED (not multiplied) to support delta accumulation.
+    /// Rotation is normalized to prevent quaternion drift.
+    /// </summary>
     public static Transform operator +(Transform a, Transform b)
     {
         return new Transform
         {
             Position = a.Position + b.Position,
-            Rotation = a.Rotation * b.Rotation,
-            Scale = a.Scale * b.Scale
+            Rotation = Quaternion.Normalize(a.Rotation * b.Rotation),
+            Scale = a.Scale + b.Scale
         };
     }
 

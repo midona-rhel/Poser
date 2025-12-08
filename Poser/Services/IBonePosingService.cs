@@ -42,7 +42,8 @@ public interface IBonePosingService : IDisposable
     /// <param name="transform">The transform delta to apply.</param>
     /// <param name="originalTransform">The original transform before modification (pass null to apply delta directly).</param>
     /// <param name="propagate">Components to propagate.</param>
-    void ApplyTransform(IBone bone, Transform transform, Transform? originalTransform = null, TransformComponents propagate = TransformComponents.Position | TransformComponents.Rotation);
+    /// <param name="accumulate">If true, accumulate with existing. If false, replace. If null, auto-detect based on whether original is provided.</param>
+    void ApplyTransform(IBone bone, Transform transform, Transform? originalTransform = null, TransformComponents propagate = TransformComponents.Position | TransformComponents.Rotation, bool? accumulate = null);
 
     /// <summary>
     /// Reset a bone to its original pose.

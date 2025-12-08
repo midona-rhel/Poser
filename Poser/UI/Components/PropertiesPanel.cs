@@ -61,6 +61,10 @@ public class PropertiesPanel
     // Gaze mode names for dropdown
     private static readonly string[] GazeModeNames = { "None", "Forward", "Camera", "Entity" };
 
+    // Track original bone transform for proper delta calculation
+    private IBone? _trackingBone;
+    private Transform? _trackingOriginalTransform;
+
     public PropertiesPanel(
         ISelectionService selectionService,
         IActorManager actorManager,
@@ -245,8 +249,16 @@ public class PropertiesPanel
         }
         else if (entity is IBone bone)
         {
-            // For bones, get from bone transform (uses LastTransform cache)
-            transform = bone.Transform;
+            // For bones, use tracked transform if we're editing, otherwise get fresh from bone
+            if (_trackingBone == bone && _trackingOriginalTransform.HasValue)
+            {
+                // Keep using the tracked original while editing
+                transform = bone.Transform;
+            }
+            else
+            {
+                transform = bone.Transform;
+            }
             canEdit = true; // Bones are always editable
         }
         else
@@ -261,6 +273,16 @@ public class PropertiesPanel
         {
             ApplyTransform(entity, transform);
         }
+        else
+        {
+            // Widget returned false - drag ended or no change
+            // Clear tracking when editing stops
+            if (_trackingBone != null)
+            {
+                _trackingBone = null;
+                _trackingOriginalTransform = null;
+            }
+        }
     }
 
     private void ApplyTransform(IEntity entity, Transform transform)
@@ -271,9 +293,16 @@ public class PropertiesPanel
         }
         else if (entity is IBone bone)
         {
-            // For bones, apply through bone posing service
-            // Note: Gaze is NOT auto-locked - bone posing works additively on top of gaze (like Brio)
-            _bonePosingService.ApplyTransform(bone, transform);
+            // Start tracking if not already
+            if (_trackingBone != bone)
+            {
+                _trackingBone = bone;
+                _trackingOriginalTransform = bone.Transform;
+            }
+
+            // For bones, apply through bone posing service with original transform
+            // Properties panel passes constant original -> full delta -> REPLACE mode
+            _bonePosingService.ApplyTransform(bone, transform, _trackingOriginalTransform, TransformComponents.All, accumulate: false);
         }
     }
 

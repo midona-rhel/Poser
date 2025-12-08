@@ -29,6 +29,7 @@ public unsafe class BonePosingService : IBonePosingService
     private readonly ISkeletonService _skeletonService;
     private readonly IActorManager _actorManager;
     private readonly IEventBus _eventBus;
+    private readonly IIKService _ikService;
 
     // Hook for intercepting bone physics updates
     private delegate nint UpdateBonePhysicsDelegate(nint a1);
@@ -47,14 +48,6 @@ public unsafe class BonePosingService : IBonePosingService
     // Track which skeletons need cache updates (visible overlays, active gizmo, etc.)
     private readonly HashSet<nint> _skeletonsToUpdateCache = new();
 
-    // Gaze bones - these are modified by gaze IK and should be applied AFTER gaze runs
-    // They are skipped in UpdateBonePhysicsDetour and applied in ActorLookAtDetour instead
-    public static readonly HashSet<string> GazeBoneNames = new()
-    {
-        "j_kubi", "j_kao", "j_f_eye_l", "j_f_eye_r", // Head/neck/eyes
-        "n_hkata_l", "n_hkata_r", "j_sebo_a", "j_sebo_b", "j_sebo_c" // Body (spine/shoulders for body gaze)
-    };
-
     private bool _isUpdating = false;
 
     public event Action<IBone>? OnBoneTransformChanged;
@@ -66,6 +59,7 @@ public unsafe class BonePosingService : IBonePosingService
         ISkeletonService skeletonService,
         IActorManager actorManager,
         IEventBus eventBus,
+        IIKService ikService,
         IGameInteropProvider hooking,
         ISigScanner scanner)
     {
@@ -75,12 +69,13 @@ public unsafe class BonePosingService : IBonePosingService
         _skeletonService = skeletonService;
         _actorManager = actorManager;
         _eventBus = eventBus;
+        _ikService = ikService;
 
         // Hook UpdateBonePhysics - this is called during skeleton updates
-        // Signature from Brio: "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 41 54 41 56 48 83 EC ?? 48 8B 59 ??"
+        // Signature from Brio - MUST use the complete signature including "45 33 E4" (xor r12d, r12d) to match the correct function
         try
         {
-            var updateBonePhysicsAddress = scanner.ScanText("48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 41 54 41 56 48 83 EC ?? 48 8B 59 ??");
+            var updateBonePhysicsAddress = scanner.ScanText("48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 41 54 41 56 48 83 EC ?? 48 8B 59 ?? 45 33 E4");
             _updateBonePhysicsHook = hooking.HookFromAddress<UpdateBonePhysicsDelegate>(updateBonePhysicsAddress, UpdateBonePhysicsDetour);
             _updateBonePhysicsHook.Enable();
             _log.Debug("BonePosingService: UpdateBonePhysics hook initialized");
@@ -182,6 +177,8 @@ public unsafe class BonePosingService : IBonePosingService
 
     private void ApplyAllBoneTransforms()
     {
+        _debugLogCounter++;
+
         foreach (var actorAddress in _skeletonsToUpdate)
         {
             if (!_poseInfos.TryGetValue(actorAddress, out var poseInfo))
@@ -229,6 +226,7 @@ public unsafe class BonePosingService : IBonePosingService
         var gameSkeleton = charaBase->Skeleton;
         var partialCount = gameSkeleton->PartialSkeletonCount;
 
+        // First pass: Apply all bone transform modifications
         for (int partialIdx = 0; partialIdx < partialCount; partialIdx++)
         {
             var partial = &gameSkeleton->PartialSkeletons[partialIdx];
@@ -246,15 +244,17 @@ public unsafe class BonePosingService : IBonePosingService
                 if (!bonePoseInfo.HasStacks)
                     continue;
 
+                // Get the bone reference for IK
+                var bone = skeleton.GetBoneByName(boneName, partialIdx);
+
                 // Apply all stacks for this bone
                 foreach (var stack in bonePoseInfo.Stacks)
                 {
-                    ApplyBoneTransform(pose, boneIdx, stack);
+                    ApplyBoneTransform(pose, boneIdx, stack, bone);
                 }
 
                 // Update LastTransform AFTER applying modifications (like Brio)
                 // This ensures the gizmo sees our modified position, not the game's original
-                var bone = skeleton.GetBoneByName(boneName, partialIdx);
                 if (bone != null)
                 {
                     var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
@@ -270,46 +270,156 @@ public unsafe class BonePosingService : IBonePosingService
                 }
             }
         }
+
+        // Second pass: Reparent partial skeleton roots to follow their parent bones
+        // This makes face bones follow head movement (face is in a different partial skeleton)
+        ReparentPartials(skeleton, gameSkeleton);
+
+        // Third pass: Update cached transforms for reparented bones
+        UpdateCachedTransformsAfterReparent(skeleton, gameSkeleton);
     }
 
-    private void ApplyBoneTransform(hkaPose* pose, int boneIdx, BonePoseTransformInfo info)
+    /// <summary>
+    /// Updates LastTransform for all bones after reparenting partials.
+    /// This ensures face bones have correct cached transforms after following head.
+    /// </summary>
+    private void UpdateCachedTransformsAfterReparent(Skeleton skeleton, GameSkeleton* gameSkeleton)
     {
-        // Apply position - always apply (zero delta = no change, like Brio)
-        var propagatePos = info.PropagateComponents.HasFlag(TransformComponents.Position);
-        var modelSpace = pose->AccessBoneModelSpace(boneIdx, propagatePos ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
-        if (modelSpace != null)
+        var partialCount = gameSkeleton->PartialSkeletonCount;
+
+        for (int partialIdx = 0; partialIdx < partialCount; partialIdx++)
         {
-            var newPos = new Vector3(
-                modelSpace->Translation.X + info.Transform.Position.X,
-                modelSpace->Translation.Y + info.Transform.Position.Y,
-                modelSpace->Translation.Z + info.Transform.Position.Z);
-            modelSpace->Translation = *(hkVector4f*)(&newPos);
+            var partial = &gameSkeleton->PartialSkeletons[partialIdx];
+            var pose = partial->GetHavokPose(0);
+            if (pose == null)
+                continue;
+
+            var boneCount = pose->Skeleton->Bones.Length;
+            for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
+            {
+                var rawBone = pose->Skeleton->Bones[boneIdx];
+                var boneName = rawBone.Name.String ?? $"bone_{partialIdx}_{boneIdx}";
+
+                var bone = skeleton.GetBoneByName(boneName, partialIdx);
+                if (bone == null)
+                    continue;
+
+                var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
+                if (modelSpace != null)
+                {
+                    bone.LastTransform = new Transform
+                    {
+                        Position = new Vector3(modelSpace->Translation.X, modelSpace->Translation.Y, modelSpace->Translation.Z),
+                        Rotation = new Quaternion(modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W),
+                        Scale = new Vector3(modelSpace->Scale.X, modelSpace->Scale.Y, modelSpace->Scale.Z)
+                    };
+                }
+            }
+        }
+    }
+
+    // Debug logging - only log once per bone per few frames to avoid spam
+    private int _debugLogCounter = 0;
+    private const int DebugLogInterval = 60; // Log every 60 frames
+
+    /// <summary>
+    /// Reparent partial skeleton roots to follow their parent bones.
+    /// This is critical for face bones to follow head movement - face skeleton is separate from body skeleton.
+    /// </summary>
+    private void ReparentPartials(Skeleton skeleton, GameSkeleton* gameSkeleton)
+    {
+        var partialCount = gameSkeleton->PartialSkeletonCount;
+
+        for (int partialIdx = 0; partialIdx < partialCount; partialIdx++)
+        {
+            var partial = &gameSkeleton->PartialSkeletons[partialIdx];
+            var pose = partial->GetHavokPose(0);
+            if (pose == null)
+                continue;
+
+            var boneCount = pose->Skeleton->Bones.Length;
+            for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
+            {
+                var rawBone = pose->Skeleton->Bones[boneIdx];
+                var boneName = rawBone.Name.String ?? $"bone_{partialIdx}_{boneIdx}";
+
+                var bone = skeleton.GetBoneByName(boneName, partialIdx);
+                if (bone == null)
+                    continue;
+
+                // Partial roots (not skeleton root) should follow their parent bone
+                if (bone.IsPartialRoot && !bone.IsSkeletonRoot && bone.ParentBone != null)
+                {
+                    var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.Propagate);
+                    var parent = bone.ParentBone.LastTransform;
+
+                    var pos = parent.Position;
+                    var rot = parent.Rotation;
+                    var scale = parent.Scale;
+
+                    modelSpace->Translation = *(hkVector4f*)(&pos);
+                    modelSpace->Rotation = *(hkQuaternionf*)(&rot);
+                    modelSpace->Scale = *(hkVector4f*)(&scale);
+
+                    if (_debugLogCounter % DebugLogInterval == 0)
+                    {
+                        _log.Debug($"[ReparentPartials] Bone={boneName} (partial {partialIdx}) → Parent={bone.ParentBone.BoneName}");
+                        _log.Debug($"  Copied transform: Pos={pos}, Rot={rot}, Scale={scale}");
+                    }
+                }
+            }
+        }
+    }
+
+    private void ApplyBoneTransform(hkaPose* pose, int boneIdx, BonePoseTransformInfo info, IBone? bone)
+    {
+        // Position - match Brio's ApplySnapshot exactly
+        var prop = info.PropagateComponents.HasFlag(TransformComponents.Position);
+        var modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
+        var beforePos = new Vector3(modelSpace->Translation.X, modelSpace->Translation.Y, modelSpace->Translation.Z);
+        var tempPos = beforePos + info.Transform.Position;
+
+        // Apply IK for position if enabled
+        if (info.IKInfo.Enabled && bone != null)
+        {
+            // Solve IK to reach target position
+            _ikService.SolveIK(pose, info.IKInfo, bone, tempPos);
+
+            // If not enforcing constraints, override with exact position after IK
+            if (!info.IKInfo.EnforceConstraints)
+            {
+                modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
+                modelSpace->Translation = *(hkVector4f*)(&tempPos);
+            }
+        }
+        else
+        {
+            // No IK - direct position write
+            modelSpace->Translation = *(hkVector4f*)(&tempPos);
         }
 
-        // Apply rotation - always apply (identity delta = no change, like Brio)
-        var propagateRot = info.PropagateComponents.HasFlag(TransformComponents.Rotation);
-        modelSpace = pose->AccessBoneModelSpace(boneIdx, propagateRot ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
-        if (modelSpace != null)
-        {
-            var currentRot = new Quaternion(
-                modelSpace->Rotation.X,
-                modelSpace->Rotation.Y,
-                modelSpace->Rotation.Z,
-                modelSpace->Rotation.W);
-            var newRot = Quaternion.Normalize(currentRot * info.Transform.Rotation);
-            modelSpace->Rotation = *(hkQuaternionf*)(&newRot);
-        }
+        // Rotation - match Brio's ApplySnapshot exactly (NO normalize!)
+        prop = info.PropagateComponents.HasFlag(TransformComponents.Rotation);
+        modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
+        var beforeRot = new Quaternion(modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W);
+        var tempRot = beforeRot * info.Transform.Rotation;  // Quaternion multiply, no normalize
+        modelSpace->Rotation = *(hkQuaternionf*)(&tempRot);
 
-        // Apply scale - always apply (zero delta = no change, like Brio)
-        var propagateScale = info.PropagateComponents.HasFlag(TransformComponents.Scale);
-        modelSpace = pose->AccessBoneModelSpace(boneIdx, propagateScale ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
-        if (modelSpace != null)
+        // Scale - match Brio's ApplySnapshot exactly
+        prop = info.PropagateComponents.HasFlag(TransformComponents.Scale);
+        modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
+        var beforeScale = new Vector3(modelSpace->Scale.X, modelSpace->Scale.Y, modelSpace->Scale.Z);
+        var tempScale = beforeScale + info.Transform.Scale;
+        modelSpace->Scale = *(hkVector4f*)(&tempScale);
+
+        // Debug logging
+        if (_debugLogCounter % DebugLogInterval == 0)
         {
-            var newScale = new Vector3(
-                modelSpace->Scale.X + info.Transform.Scale.X,
-                modelSpace->Scale.Y + info.Transform.Scale.Y,
-                modelSpace->Scale.Z + info.Transform.Scale.Z);
-            modelSpace->Scale = *(hkVector4f*)(&newScale);
+            _log.Debug($"[ApplyBoneTransform] boneIdx={boneIdx}, IK={info.IKInfo.Enabled}");
+            _log.Debug($"  Delta: Pos={info.Transform.Position}, Rot={info.Transform.Rotation}, Scale={info.Transform.Scale}");
+            _log.Debug($"  Before: Pos={beforePos}, Rot={beforeRot}, Scale={beforeScale}");
+            _log.Debug($"  After: Pos={tempPos}, Rot={tempRot}, Scale={tempScale}");
+            _log.Debug($"  Propagate: {info.PropagateComponents}");
         }
     }
 
@@ -352,12 +462,18 @@ public unsafe class BonePosingService : IBonePosingService
         OnBoneTransformChanged?.Invoke(bone);
     }
 
-    public void ApplyTransform(IBone bone, Transform transform, Transform? originalTransform = null, TransformComponents propagate = TransformComponents.Position | TransformComponents.Rotation)
+    public void ApplyTransform(IBone bone, Transform transform, Transform? originalTransform = null, TransformComponents propagate = TransformComponents.Position | TransformComponents.Rotation, bool? accumulate = null)
     {
+        _log.Debug($"[ApplyTransform] Bone={bone.BoneName}");
+        _log.Debug($"  New Transform: Pos={transform.Position}, Rot={transform.Rotation}, Scale={transform.Scale}");
+        _log.Debug($"  Original: {(originalTransform.HasValue ? $"Pos={originalTransform.Value.Position}, Rot={originalTransform.Value.Rotation}, Scale={originalTransform.Value.Scale}" : "NULL")}");
+        _log.Debug($"  Propagate: {propagate}, Accumulate: {accumulate}");
+
         var poseInfo = GetPoseInfo(bone.Skeleton);
         var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
 
-        bonePoseInfo.Apply(transform, originalTransform, propagate);
+        var result = bonePoseInfo.Apply(transform, originalTransform, propagate, accumulate);
+        _log.Debug($"  Result: {(result.HasValue ? $"Pos={result.Value.Position}, Rot={result.Value.Rotation}, Scale={result.Value.Scale}" : "NULL")}");
 
         OnBoneTransformChanged?.Invoke(bone);
     }
@@ -418,6 +534,9 @@ public unsafe class BonePosingService : IBonePosingService
 
         if (!_gPoseService.IsGPosing)
             return;
+
+        // DON'T re-apply transforms here - transforms are applied ONCE in UpdateBonePhysicsDetour
+        // Re-applying would double the delta (Brio only applies once and caches here)
 
         // Take final snapshot of all skeletons that need cache updates
         // This includes: skeletons with modifications + skeletons with visible overlays/gizmos
