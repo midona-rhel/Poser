@@ -200,9 +200,8 @@ public class EntityList : IDisposable
             }
         }
 
-        // Check bone selection
-        bool isBoneSelected = entity is Bone bone && _editorState.IsBoneSelected(bone);
-        bool isSelected = isActorSelected || isBoneSelected;
+        // Check selection via unified selection system
+        bool isSelected = _editorState.IsSelected(entity);
 
         // Determine collapse state
         bool effectiveCollapsed = _editorState.DebugMode ? false : entity.IsCollapsed;
@@ -255,14 +254,18 @@ public class EntityList : IDisposable
 
         if (result.VisibilityToggled)
         {
+            // Cascade visibility to all children
+            SetVisibilityRecursive(entity, result.NewVisibilityValue);
+
+            // Special handling for actors
             if (actor != null)
             {
                 _controller.SetActorVisibility(actor, result.NewVisibilityValue);
             }
+            // Special handling for skeleton - also set edit mode
             else if (entity is Skeleton skeleton)
             {
-                // Edit mode toggle for skeleton
-                _editorState.ToggleEditMode(skeleton.Actor);
+                skeleton.Actor.IsEditMode = result.NewVisibilityValue;
 
                 // Auto-freeze animation when enabling edit mode
                 if (result.NewVisibilityValue && !_animationService.IsFrozen(skeleton.Actor))
@@ -294,51 +297,26 @@ public class EntityList : IDisposable
 
     private void HandleEntityClick(IEntity entity, int index, bool ctrlHeld, bool shiftHeld)
     {
-        // Handle bone selection
-        if (entity is IBone clickedBone)
-        {
-            if (ctrlHeld)
-            {
-                _editorState.ToggleBoneSelection(clickedBone);
-            }
-            else
-            {
-                _editorState.SelectBone(clickedBone);
-            }
-            return;
-        }
-
-        // Handle actor selection
-        if (entity is not IActor actor)
-            return;
-
         if (ctrlHeld)
         {
-            if (_actorManager.IsSelected(actor))
-                _actorManager.RemoveFromSelection(actor);
-            else
-                _actorManager.AddToSelection(actor);
+            _editorState.ToggleSelection(entity);
         }
-        else if (shiftHeld && _actorManager.SelectedActors.Count > 0)
+        else if (shiftHeld && _editorState.PrimarySelection != null)
         {
-            var firstSelected = _actorManager.SelectedActors.First();
-            var firstIndex = _actors.IndexOf(firstSelected);
-            if (firstIndex >= 0 && index >= 0 && index < _actors.Count)
-            {
-                int start = Math.Min(firstIndex, index);
-                int end = Math.Max(firstIndex, index);
-
-                var rangeActors = new List<IActor>();
-                for (int j = start; j <= end; j++)
-                {
-                    rangeActors.Add(_actors[j]);
-                }
-                _actorManager.SelectMultiple(rangeActors);
-            }
+            _editorState.SelectRange(_editorState.PrimarySelection, entity);
         }
         else
         {
-            _actorManager.Select(actor);
+            _editorState.Select(entity);
+        }
+    }
+
+    private static void SetVisibilityRecursive(IEntity entity, bool visible)
+    {
+        entity.IsVisible = visible;
+        foreach (var child in entity.Children)
+        {
+            SetVisibilityRecursive(child, visible);
         }
     }
 

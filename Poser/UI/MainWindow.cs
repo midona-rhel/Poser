@@ -40,6 +40,7 @@ public class MainWindow : Window
         IHistoryService historyService,
         ICameraService cameraService,
         IPosingService posingService,
+        IBonePosingService bonePosingService,
         IGazeService gazeService,
         ISkeletonService skeletonService,
         IEditorState editorState,
@@ -55,7 +56,7 @@ public class MainWindow : Window
         // Initialize components
         _topBar = new TopBar(gPoseService, historyService, actorManager, editorState);
         _scenePanel = new ScenePanel(actorManager, animationService, spawnService, cameraService, gPoseService, skeletonService, editorState, eventBus, posingController);
-        _propertiesPanel = new PropertiesPanel(actorManager, posingService, animationService, animationDataService, historyService, gazeService, posingController);
+        _propertiesPanel = new PropertiesPanel(editorState, actorManager, posingService, bonePosingService, animationService, animationDataService, historyService, gazeService, posingController);
     }
 
     public override void PreDraw()

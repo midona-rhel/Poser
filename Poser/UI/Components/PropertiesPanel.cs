@@ -5,6 +5,7 @@ using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Poser.Controllers;
+using Poser.Core;
 using Poser.Entities;
 using Poser.History;
 using Poser.Services;
@@ -27,8 +28,10 @@ public class PropertiesPanel
     private const float TabBarWidth = 40f;
     private const float LabelWidth = 50f;
 
+    private readonly IEditorState _editorState;
     private readonly IActorManager _actorManager;
     private readonly IPosingService _posingService;
+    private readonly IBonePosingService _bonePosingService;
     private readonly IAnimationService _animationService;
     private readonly IHistoryService _historyService;
     private readonly IGazeService _gazeService;
@@ -50,16 +53,20 @@ public class PropertiesPanel
     private static readonly string[] GazeModeNames = { "None", "Forward", "Camera", "Entity" };
 
     public PropertiesPanel(
+        IEditorState editorState,
         IActorManager actorManager,
         IPosingService posingService,
+        IBonePosingService bonePosingService,
         IAnimationService animationService,
         IAnimationDataService animationDataService,
         IHistoryService historyService,
         IGazeService gazeService,
         IPosingController controller)
     {
+        _editorState = editorState;
         _actorManager = actorManager;
         _posingService = posingService;
+        _bonePosingService = bonePosingService;
         _animationService = animationService;
         _historyService = historyService;
         _gazeService = gazeService;
@@ -76,7 +83,8 @@ public class PropertiesPanel
 
     private void OnTransformCommit(Transform oldTransform, Transform newTransform)
     {
-        var actor = _actorManager.PrimarySelectedActor;
+        // Handle transform commit for actors only (bones use different history)
+        var actor = _editorState.SelectedActor;
         if (actor == null) return;
 
         var action = new TransformHistoryAction(_posingService, actor, oldTransform, newTransform);
@@ -85,9 +93,15 @@ public class PropertiesPanel
 
     public void Draw()
     {
-        var selected = _actorManager.PrimarySelectedActor;
+        var primarySelection = _editorState.PrimarySelection;
+        var selectedCategory = _editorState.SelectedCategory;
 
-        if (selected == null)
+        // Check what we have selected
+        bool hasActorSelected = _editorState.SelectedActor != null;
+        bool hasBoneSelected = _editorState.SelectedBone != null;
+        bool hasCategorySelected = selectedCategory != null;
+
+        if (primarySelection == null && !hasCategorySelected)
         {
             ImGui.Text("Properties");
             ImGui.Spacing();
@@ -96,7 +110,24 @@ public class PropertiesPanel
         }
 
         // Entity name header (centered)
-        var headerText = selected.Name;
+        string headerText;
+        if (hasCategorySelected)
+        {
+            headerText = $"Category: {selectedCategory}";
+        }
+        else if (primarySelection is IBone bone)
+        {
+            headerText = bone.DisplayName;
+        }
+        else if (primarySelection is IActor actor)
+        {
+            headerText = actor.Name;
+        }
+        else
+        {
+            headerText = primarySelection?.Name ?? "Unknown";
+        }
+
         var headerWidth = ImGui.CalcTextSize(headerText).X;
         var availWidth = ImGui.GetContentRegionAvail().X;
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (availWidth - headerWidth) * 0.5f);
@@ -110,25 +141,89 @@ public class PropertiesPanel
         float tabBarWidth = TabBarWidth * ImGuiHelpers.GlobalScale;
         float availHeight = ImGui.GetContentRegionAvail().Y;
 
-        // Draw vertical tab bar
-        using (var tabChild = ImRaii.Child("tab_bar", new Vector2(tabBarWidth, availHeight), false))
-        {
-            if (tabChild.Success)
-            {
-                DrawVerticalTabBar();
-            }
-        }
+        // Only show tab bar for actors (bones/categories only have transform)
+        bool showAnimationTab = hasActorSelected && !hasBoneSelected && !hasCategorySelected;
 
-        ImGui.SameLine();
+        if (showAnimationTab)
+        {
+            // Draw vertical tab bar
+            using (var tabChild = ImRaii.Child("tab_bar", new Vector2(tabBarWidth, availHeight), false))
+            {
+                if (tabChild.Success)
+                {
+                    DrawVerticalTabBar();
+                }
+            }
+
+            ImGui.SameLine();
+        }
 
         // Draw content area
         using (var contentChild = ImRaii.Child("tab_content", new Vector2(-1, availHeight), false))
         {
             if (contentChild.Success)
             {
-                DrawTabContent(selected);
+                if (hasCategorySelected)
+                {
+                    DrawCategoryContent();
+                }
+                else if (hasBoneSelected)
+                {
+                    DrawBoneContent(_editorState.SelectedBone!);
+                }
+                else if (hasActorSelected)
+                {
+                    DrawTabContent(_editorState.SelectedActor!);
+                }
             }
         }
+    }
+
+    private void DrawCategoryContent()
+    {
+        var categoryBones = _editorState.GetSelectedCategoryBones();
+        ImGui.Text($"{categoryBones.Count} bones in category");
+        ImGui.Spacing();
+
+        ImPoser.SectionHeader("Transform");
+        ImGui.TextDisabled("Use gizmo to transform category bones");
+    }
+
+    private void DrawBoneContent(IBone bone)
+    {
+        ImPoser.SectionHeader("Transform");
+
+        // Get bone modification
+        var modification = _bonePosingService.GetModification(bone);
+        var transform = modification ?? new Transform { Position = Vector3.Zero, Rotation = Quaternion.Identity, Scale = Vector3.Zero };
+
+        // Show current bone transform info
+        ImGui.Text($"Position: {transform.Position:F3}");
+        ImGui.Text($"Rotation: {QuaternionToEuler(transform.Rotation):F1}°");
+        if (transform.Scale != Vector3.Zero)
+        {
+            ImGui.Text($"Scale: {transform.Scale:F3}");
+        }
+
+        ImGui.Spacing();
+        ImGui.TextDisabled("Use gizmo to transform bones");
+    }
+
+    private static Vector3 QuaternionToEuler(Quaternion q)
+    {
+        // Convert quaternion to euler angles in degrees
+        var sinr_cosp = 2 * (q.W * q.X + q.Y * q.Z);
+        var cosr_cosp = 1 - 2 * (q.X * q.X + q.Y * q.Y);
+        var roll = MathF.Atan2(sinr_cosp, cosr_cosp);
+
+        var sinp = 2 * (q.W * q.Y - q.Z * q.X);
+        var pitch = MathF.Abs(sinp) >= 1 ? MathF.CopySign(MathF.PI / 2, sinp) : MathF.Asin(sinp);
+
+        var siny_cosp = 2 * (q.W * q.Z + q.X * q.Y);
+        var cosy_cosp = 1 - 2 * (q.Y * q.Y + q.Z * q.Z);
+        var yaw = MathF.Atan2(siny_cosp, cosy_cosp);
+
+        return new Vector3(roll, pitch, yaw) * (180f / MathF.PI);
     }
 
     private void DrawVerticalTabBar()

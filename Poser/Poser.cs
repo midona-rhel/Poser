@@ -54,6 +54,11 @@ public class Poser : IDalamudPlugin
             dataManager,
             keyState);
 
+        // Resolve circular dependency: EditorState needs ActorManager
+        var editorState = _serviceProvider.GetRequiredService<IEditorState>() as EditorState;
+        var actorManager = _serviceProvider.GetRequiredService<IActorManager>();
+        editorState?.SetActorManager(actorManager);
+
         // Initialize UI Manager (triggers subscription to draw events)
         _ = _serviceProvider.GetRequiredService<IUIManager>();
 

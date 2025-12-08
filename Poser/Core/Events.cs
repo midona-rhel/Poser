@@ -56,3 +56,13 @@ public record TransformChangedEvent(IActor Actor, Transform NewTransform) : IEve
 /// Published when bone selection changes in the editor.
 /// </summary>
 public record BoneSelectionChangedEvent(IBone? SelectedBone) : IEvent;
+
+/// <summary>
+/// Published when posing mode is entered or exited.
+/// </summary>
+public record PosingModeChangedEvent(bool IsPosingMode) : IEvent;
+
+/// <summary>
+/// Published when an actor's gaze lock state changes.
+/// </summary>
+public record GazeLockChangedEvent(IActor Actor, bool IsLocked) : IEvent;

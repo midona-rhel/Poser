@@ -69,4 +69,10 @@ public interface IBonePosingService : IDisposable
     /// Call this for skeletons with visible overlays or active gizmo manipulation.
     /// </summary>
     void RegisterSkeletonForCacheUpdate(ISkeleton skeleton);
+
+    /// <summary>
+    /// Snapshot all bones in a skeleton at their current transforms.
+    /// This freezes the entire skeleton including gaze bones.
+    /// </summary>
+    void SnapshotSkeleton(ISkeleton skeleton);
 }

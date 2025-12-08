@@ -8,7 +8,7 @@ using Poser.UI.Controls;
 namespace Poser.UI.Components;
 
 /// <summary>
-/// Renders the top bar with GPose status, mode indicator, and undo/redo buttons.
+/// Renders the top bar with GPose status, posing mode toggle, and undo/redo buttons.
 /// </summary>
 public class TopBar
 {
@@ -31,7 +31,7 @@ public class TopBar
 
         DrawGPoseStatus();
         ImGui.SameLine();
-        DrawModeIndicator();
+        DrawPosingModeToggle();
         ImGui.SameLine();
         DrawUndoRedoButtons(windowWidth);
     }
@@ -48,45 +48,51 @@ public class TopBar
         }
     }
 
-    private void DrawModeIndicator()
+    private void DrawPosingModeToggle()
     {
-        // Only show mode when in GPose
+        // Only show when in GPose
         if (!_gPoseService.IsGPosing)
             return;
 
         ImGui.TextDisabled("|");
         ImGui.SameLine();
 
-        var targetType = _editorState.GetGizmoTargetType();
-        var selectedActor = _actorManager.PrimarySelectedActor;
+        var isPosingMode = _editorState.IsPosingMode;
+        float buttonHeight = ImGui.GetFrameHeight();
 
-        // Determine mode based on selection state
-        if (targetType == GizmoTargetType.Bone)
+        // Toggle icon button
+        var toggleIcon = isPosingMode ? FontAwesomeIcon.ToggleOn : FontAwesomeIcon.ToggleOff;
+        var toggleColor = isPosingMode
+            ? new Vector4(1.0f, 0.7f, 0.3f, 1.0f)
+            : new Vector4(0.5f, 0.5f, 0.5f, 1.0f);
+
+        using (ImRaii.PushColor(ImGuiCol.Text, toggleColor))
+        using (ImRaii.PushFont(UiBuilder.IconFont))
         {
-            // Posing mode - bone is selected
-            ImGui.TextColored(new Vector4(1.0f, 0.7f, 0.3f, 1.0f), "Posing");
-            if (ImGui.IsItemHovered())
+            if (ImGui.Button($"{toggleIcon.ToIconString()}##pose_toggle", new Vector2(buttonHeight, buttonHeight)))
             {
-                ImGui.SetTooltip("Posing bones. Press Tab to exit.");
+                _editorState.TogglePosingMode();
             }
         }
-        else if (selectedActor != null && selectedActor.IsEditMode)
+
+        if (ImGui.IsItemHovered())
         {
-            // Posing mode enabled but no bone selected yet
-            ImGui.TextColored(new Vector4(1.0f, 0.7f, 0.3f, 1.0f), "Posing");
-            if (ImGui.IsItemHovered())
-            {
-                ImGui.SetTooltip("Click a bone to select it, or press Tab to exit.");
-            }
+            var tooltip = isPosingMode
+                ? "Pose Mode ON - All actors frozen. Click to exit."
+                : "Pose Mode OFF - Click to freeze actors and enable bone posing.";
+            ImGui.SetTooltip(tooltip);
+        }
+
+        ImGui.SameLine();
+
+        // Label
+        if (isPosingMode)
+        {
+            ImGui.TextColored(toggleColor, "Pose");
         }
         else
         {
-            // Actor mode - can only move actors
-            ImGui.Text("Actor");
-            if (ImGui.IsItemHovered())
-            {
-                ImGui.SetTooltip("Moving actors. Press Tab or enable skeleton to pose bones.");
-            }
+            ImGui.TextDisabled("Pose");
         }
     }
 

@@ -68,7 +68,7 @@ public class UIManager : IUIManager
         _windowSystem.AddWindow(_hotbarWindow);
 
         // Main sidebar (highest z-order, on top)
-        _mainWindow = new MainWindow(gPoseService, actorManager, animationService, animationDataService, spawnService, historyService, cameraService, posingService, gazeService, skeletonService, editorState, eventBus, posingController);
+        _mainWindow = new MainWindow(gPoseService, actorManager, animationService, animationDataService, spawnService, historyService, cameraService, posingService, bonePosingService, gazeService, skeletonService, editorState, eventBus, posingController);
         _windowSystem.AddWindow(_mainWindow);
 
         // Hook into Dalamud's UI drawing
@@ -117,12 +117,8 @@ public class UIManager : IUIManager
         // Detect rising edge (key just pressed)
         if (isEPressed && !_wasEPressed)
         {
-            // Toggle edit mode on the primary selected actor
-            var selectedActor = _actorManager.PrimarySelectedActor;
-            if (selectedActor != null)
-            {
-                _editorState.ToggleEditMode(selectedActor);
-            }
+            // Toggle posing mode
+            _editorState.TogglePosingMode();
 
             // Consume the key to prevent game from receiving it
             _keyState[VirtualKey.E] = false;

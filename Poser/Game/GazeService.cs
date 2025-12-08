@@ -84,6 +84,30 @@ public unsafe class GazeService : IGazeService, IDisposable
             if (targetActor is not null && targetActor.IsValid()
                 && _lookAtHandles.TryGetValue(targetActor.GameObjectId, out var lookAtDataHolder))
             {
+                // Check if gaze is locked - if so, apply frozen look-at and skip normal processing
+                bool anyLocked = lookAtDataHolder.EyesLocked || lookAtDataHolder.HeadLocked || lookAtDataHolder.BodyLocked;
+
+                if (anyLocked)
+                {
+                    // Apply locked gaze - positions are already set during LockGaze()
+                    var lookAtController = &((Character*)targetActor.Address)->LookAt.Controller;
+
+                    fixed (LookAtTarget* bodyTarget = &lookAtDataHolder.Target.Body.LookAtTarget)
+                    fixed (LookAtTarget* headTarget = &lookAtDataHolder.Target.Head.LookAtTarget)
+                    fixed (LookAtTarget* eyesTarget = &lookAtDataHolder.Target.Eyes.LookAtTarget)
+                    {
+                        if (lookAtDataHolder.BodyLocked)
+                            _updateLookAt(lookAtController, bodyTarget, LookAtIndex_Body, 0);
+                        if (lookAtDataHolder.HeadLocked)
+                            _updateLookAt(lookAtController, headTarget, LookAtIndex_Head, 0);
+                        if (lookAtDataHolder.EyesLocked)
+                            _updateLookAt(lookAtController, eyesTarget, LookAtIndex_Eyes, 0);
+                    }
+
+                    // Don't call original - we've handled the look-at
+                    return _actorLookAtLoop.Original(args);
+                }
+
                 if (lookAtDataHolder.TargetMode == GazeTargetMode.None)
                 {
                     return _actorLookAtLoop.Original(args);
@@ -250,6 +274,93 @@ public unsafe class GazeService : IGazeService, IDisposable
         }
     }
 
+    public void LockGaze(IActor actor, GazeTargetType targetType = GazeTargetType.All)
+    {
+        if (actor.Address == nint.Zero)
+            return;
+
+        var gameObject = _objectTable.CreateObjectReference(actor.Address);
+        if (gameObject == null)
+            return;
+
+        if (!_lookAtHandles.TryGetValue(gameObject.GameObjectId, out var holder))
+        {
+            holder = new LookAtDataHolder();
+            _lookAtHandles[gameObject.GameObjectId] = holder;
+        }
+
+        // Get current camera position to freeze at
+        var cameraPos = _cameraService.GetCameraPosition();
+
+        // Set lock flags and freeze mode
+        if (targetType.HasFlag(GazeTargetType.Eyes))
+        {
+            holder.EyesLocked = true;
+            holder.Target.Eyes.LookAtTarget.Position = cameraPos;
+            holder.Target.Eyes.LookAtTarget.LookMode = LookMode.Frozen;
+        }
+        if (targetType.HasFlag(GazeTargetType.Head))
+        {
+            holder.HeadLocked = true;
+            holder.Target.Head.LookAtTarget.Position = cameraPos;
+            holder.Target.Head.LookAtTarget.LookMode = LookMode.Frozen;
+        }
+        if (targetType.HasFlag(GazeTargetType.Body))
+        {
+            holder.BodyLocked = true;
+            holder.Target.Body.LookAtTarget.Position = cameraPos;
+            holder.Target.Body.LookAtTarget.LookMode = LookMode.Frozen;
+        }
+
+        holder.TargetType = targetType;
+
+        _log.Debug($"GazeService: Locked gaze for actor {gameObject.GameObjectId}, type={targetType}");
+        _eventBus.Publish(new GazeLockChangedEvent(actor, true));
+    }
+
+    public void UnlockGaze(IActor actor)
+    {
+        if (actor.Address == nint.Zero)
+            return;
+
+        var gameObject = _objectTable.CreateObjectReference(actor.Address);
+        if (gameObject == null)
+            return;
+
+        if (_lookAtHandles.TryGetValue(gameObject.GameObjectId, out var holder))
+        {
+            holder.EyesLocked = false;
+            holder.HeadLocked = false;
+            holder.BodyLocked = false;
+
+            // Reset to position tracking mode
+            holder.Target.Eyes.LookAtTarget.LookMode = LookMode.Position;
+            holder.Target.Head.LookAtTarget.LookMode = LookMode.Position;
+            holder.Target.Body.LookAtTarget.LookMode = LookMode.Position;
+
+            _log.Debug($"GazeService: Unlocked gaze for actor {gameObject.GameObjectId}");
+        }
+
+        _eventBus.Publish(new GazeLockChangedEvent(actor, false));
+    }
+
+    public bool IsGazeLocked(IActor actor)
+    {
+        if (actor.Address == nint.Zero)
+            return false;
+
+        var gameObject = _objectTable.CreateObjectReference(actor.Address);
+        if (gameObject == null)
+            return false;
+
+        if (_lookAtHandles.TryGetValue(gameObject.GameObjectId, out var holder))
+        {
+            return holder.EyesLocked || holder.HeadLocked || holder.BodyLocked;
+        }
+
+        return false;
+    }
+
     public void Dispose()
     {
         _actorLookAtLoop?.Dispose();
@@ -263,6 +374,11 @@ internal class LookAtDataHolder
     public GazeTargetType TargetType;
     public nint TargetEntityAddress;
     public LookAtSource Target;
+
+    // Lock state - when locked, gaze is frozen at current position
+    public bool EyesLocked;
+    public bool HeadLocked;
+    public bool BodyLocked;
 }
 
 [StructLayout(LayoutKind.Sequential)]

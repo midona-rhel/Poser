@@ -20,7 +20,6 @@ public class BoneCategoryList
     private readonly IEditorState _editorState;
     private readonly CategoryConfig _categoryConfig;
     private readonly Dictionary<EntityId, HashSet<string>> _collapsedCategories = new();
-    private readonly Dictionary<EntityId, HashSet<string>> _selectedCategories = new();
 
     public BoneCategoryList(IEditorState editorState)
     {
@@ -43,12 +42,6 @@ public class BoneCategoryList
             _collapsedCategories[skeleton.Id] = collapsedSet;
         }
 
-        if (!_selectedCategories.TryGetValue(skeleton.Id, out var selectedSet))
-        {
-            selectedSet = new HashSet<string>();
-            _selectedCategories[skeleton.Id] = selectedSet;
-        }
-
         // Build a lookup of bone name -> Bone entity
         var bonesByName = new Dictionary<string, Bone>();
         GatherBones(skeleton, bonesByName);
@@ -60,7 +53,7 @@ public class BoneCategoryList
             if (category.IsNsfw)
                 continue;
 
-            DrawCategory(skeleton, category, bonesByName, baseDepth, collapsedSet, selectedSet, tabHovered, tabActive);
+            DrawCategory(skeleton, category, bonesByName, baseDepth, collapsedSet, tabHovered, tabActive);
         }
     }
 
@@ -94,7 +87,6 @@ public class BoneCategoryList
         Dictionary<string, Bone> bonesByName,
         int depth,
         HashSet<string> collapsedSet,
-        HashSet<string> selectedSet,
         Vector4 tabHovered,
         Vector4 tabActive)
     {
@@ -114,7 +106,7 @@ public class BoneCategoryList
         string categoryKey = $"{skeleton.Id}_{category.Id}";
         bool isCollapsed = !_editorState.DebugMode && collapsedSet.Contains(category.Id);
         bool hasContent = categoryBones.Count > 0 || hasVisibleChildren;
-        bool isSelected = selectedSet.Contains(category.Id);
+        bool isSelected = _editorState.IsCategorySelected(category.Id);
 
         // Get all bones for visibility toggle
         var allCategoryBones = GetAllBonesInCategoryRecursive(category, bonesByName);
@@ -148,21 +140,8 @@ public class BoneCategoryList
 
         if (result.Clicked)
         {
-            if (result.CtrlHeld)
-            {
-                // Toggle this category selection
-                if (selectedSet.Contains(category.Id))
-                    selectedSet.Remove(category.Id);
-                else
-                    selectedSet.Add(category.Id);
-            }
-            else
-            {
-                // Clear other selections and select this category
-                selectedSet.Clear();
-                _editorState.ClearBoneSelection();
-                selectedSet.Add(category.Id);
-            }
+            // Select this category in EditorState
+            _editorState.SelectCategory(category.Id, skeleton);
         }
 
         if (result.VisibilityToggled)
@@ -182,20 +161,20 @@ public class BoneCategoryList
                 if (childCategory.IsNsfw)
                     continue;
 
-                DrawCategory(skeleton, childCategory, bonesByName, depth + 1, collapsedSet, selectedSet, tabHovered, tabActive);
+                DrawCategory(skeleton, childCategory, bonesByName, depth + 1, collapsedSet, tabHovered, tabActive);
             }
 
             // Then draw bones directly in this category
             foreach (var bone in categoryBones.OrderBy(b => b.GetFriendlyName()))
             {
-                DrawBone(bone, depth + 1, selectedSet, tabHovered, tabActive);
+                DrawBone(bone, depth + 1, tabHovered, tabActive);
             }
         }
     }
 
-    private void DrawBone(Bone bone, int depth, HashSet<string> selectedCategories, Vector4 tabHovered, Vector4 tabActive)
+    private void DrawBone(Bone bone, int depth, Vector4 tabHovered, Vector4 tabActive)
     {
-        bool isSelected = _editorState.IsBoneSelected(bone);
+        bool isSelected = _editorState.IsSelected(bone);
 
         var config = new EntityListItemConfig
         {
@@ -216,13 +195,10 @@ public class BoneCategoryList
 
         if (result.Clicked)
         {
-            // Clear category selection when selecting a bone
-            selectedCategories.Clear();
-
             if (result.CtrlHeld)
-                _editorState.ToggleBoneSelection(bone);
+                _editorState.ToggleSelection(bone);
             else
-                _editorState.SelectBone(bone);
+                _editorState.Select(bone);
         }
 
         if (result.VisibilityToggled)
@@ -272,7 +248,36 @@ public class BoneCategoryList
     public void ClearState(EntityId skeletonId)
     {
         _collapsedCategories.Remove(skeletonId);
-        _selectedCategories.Remove(skeletonId);
+    }
+
+    /// <summary>
+    /// Get all bones in a category (and its children) for the given skeleton.
+    /// Used by GizmoOverlayWindow to resolve category selection to bones.
+    /// </summary>
+    public List<Bone> GetBonesForCategory(string categoryId, Skeleton skeleton)
+    {
+        var bonesByName = new Dictionary<string, Bone>();
+        GatherBones(skeleton, bonesByName);
+
+        var category = FindCategory(categoryId, _categoryConfig.RootCategories);
+        if (category == null)
+            return new List<Bone>();
+
+        return GetAllBonesInCategoryRecursive(category, bonesByName);
+    }
+
+    private BoneCategory? FindCategory(string categoryId, IEnumerable<BoneCategory> categories)
+    {
+        foreach (var cat in categories)
+        {
+            if (cat.Id == categoryId)
+                return cat;
+
+            var found = FindCategory(categoryId, cat.Children);
+            if (found != null)
+                return found;
+        }
+        return null;
     }
 
     private static void AddAllCategoryIds(BoneCategory category, HashSet<string> ids)

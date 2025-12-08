@@ -225,7 +225,7 @@ public class SkeletonOverlayWindow : Window
             if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
             {
                 var selectedBone = _contextMenuBones[_contextMenuIndex];
-                _editorState.SelectBone(selectedBone.Bone);
+                _editorState.Select(selectedBone.Bone);
                 _contextMenuBones = null;
                 return;
             }
@@ -287,7 +287,7 @@ public class SkeletonOverlayWindow : Window
                 else
                 {
                     // Single bone - select directly
-                    _editorState.SelectBone(clickedBone.Bone);
+                    _editorState.Select(clickedBone.Bone);
                 }
             }
         }

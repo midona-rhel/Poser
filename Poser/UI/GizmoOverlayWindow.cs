@@ -109,20 +109,9 @@ public class GizmoOverlayWindow : Window
 
     private void DrawActorGizmo()
     {
-        var selectedActor = _actorManager.PrimarySelectedActor;
+        var selectedActor = _editorState.SelectedActor;
         if (selectedActor == null)
             return;
-
-        // Check if at least one selected actor is frozen
-        bool anyFrozen = false;
-        foreach (var actor in _actorManager.SelectedActors)
-        {
-            if (_animationService.IsFrozen(actor))
-            {
-                anyFrozen = true;
-                break;
-            }
-        }
 
         var viewMatrix = _cameraService.GetViewMatrix();
         var projectionMatrix = _cameraService.GetProjectionMatrix();
@@ -132,23 +121,20 @@ public class GizmoOverlayWindow : Window
         var pivotTransform = new Transform(pivotPosition, pivotRotation, Vector3.One);
         var modelMatrix = pivotTransform.ToMatrix();
 
-        // Enable gizmo only if at least one actor is frozen
-        ImGuizmo.Enable(anyFrozen);
+        // Always enable gizmo for actor manipulation (works with or without freeze)
+        ImGuizmo.Enable(true);
 
         var viewMatrixCopy = viewMatrix;
 
         // Check if we're starting a new drag operation
         bool isUsing = ImGuizmo.IsUsing();
-        if (isUsing && _actorDragStartTransforms == null && anyFrozen)
+        if (isUsing && _actorDragStartTransforms == null)
         {
-            // Starting to drag - store initial transforms for ALL selected frozen actors
+            // Starting to drag - store initial transforms for ALL selected actors
             _actorDragStartTransforms = new Dictionary<IActor, Transform>();
-            foreach (var actor in _actorManager.SelectedActors)
+            foreach (var actor in _editorState.GetSelected<IActor>())
             {
-                if (_animationService.IsFrozen(actor))
-                {
-                    _actorDragStartTransforms[actor] = _posingService.GetEffectiveTransform(actor);
-                }
+                _actorDragStartTransforms[actor] = _posingService.GetEffectiveTransform(actor);
             }
         }
 
@@ -175,11 +161,8 @@ public class GizmoOverlayWindow : Window
             gizmoMode,
             ref modelMatrix))
         {
-            if (anyFrozen)
-            {
-                var newPivotTransform = Transform.FromMatrix(modelMatrix);
-                ApplyActorPivotTransform(pivotTransform, newPivotTransform);
-            }
+            var newPivotTransform = Transform.FromMatrix(modelMatrix);
+            ApplyActorPivotTransform(pivotTransform, newPivotTransform);
         }
 
         // Check if we finished dragging
@@ -192,7 +175,17 @@ public class GizmoOverlayWindow : Window
 
     private void DrawBoneGizmo()
     {
-        var selectedBones = _editorState.SelectedBones;
+        // Get bones either from direct selection or from category selection
+        List<IBone> selectedBones;
+        if (_editorState.SelectedCategory != null)
+        {
+            selectedBones = _editorState.GetSelectedCategoryBones().ToList();
+        }
+        else
+        {
+            selectedBones = _editorState.GetSelected<IBone>().ToList();
+        }
+
         if (selectedBones.Count == 0)
             return;
 
@@ -339,8 +332,8 @@ public class GizmoOverlayWindow : Window
 
     private (Vector3 position, Quaternion rotation) CalculateActorPivot()
     {
-        var selectedActors = _actorManager.SelectedActors;
-        var primaryActor = _actorManager.PrimarySelectedActor;
+        var selectedActors = _editorState.GetSelected<IActor>();
+        var primaryActor = _editorState.SelectedActor;
 
         // First calculate the pivot position based on TransformPivot
         Vector3 pivotPosition;
@@ -349,17 +342,14 @@ public class GizmoOverlayWindow : Window
             case TransformPivot.Median:
                 // Average position of all selected actors
                 var averagePosition = Vector3.Zero;
-                int frozenCount = 0;
+                int actorCount = 0;
                 foreach (var actor in selectedActors)
                 {
-                    if (_animationService.IsFrozen(actor))
-                    {
-                        averagePosition += _posingService.GetEffectiveTransform(actor).Position;
-                        frozenCount++;
-                    }
+                    averagePosition += _posingService.GetEffectiveTransform(actor).Position;
+                    actorCount++;
                 }
-                if (frozenCount > 0)
-                    averagePosition /= frozenCount;
+                if (actorCount > 0)
+                    averagePosition /= actorCount;
                 pivotPosition = averagePosition;
                 break;
 
@@ -413,11 +403,8 @@ public class GizmoOverlayWindow : Window
         if (_editorState.TransformPivot == TransformPivot.Individual)
         {
             // Individual mode: each actor rotates around its own center
-            foreach (var actor in _actorManager.SelectedActors)
+            foreach (var actor in _editorState.GetSelected<IActor>())
             {
-                if (!_animationService.IsFrozen(actor))
-                    continue;
-
                 var actorTransform = _posingService.GetEffectiveTransform(actor);
 
                 // Apply position delta (translation)
@@ -432,11 +419,8 @@ public class GizmoOverlayWindow : Window
         else
         {
             // Median/Parent mode: all actors rotate around the pivot point
-            foreach (var actor in _actorManager.SelectedActors)
+            foreach (var actor in _editorState.GetSelected<IActor>())
             {
-                if (!_animationService.IsFrozen(actor))
-                    continue;
-
                 var actorTransform = _posingService.GetEffectiveTransform(actor);
 
                 // Rotate position around the pivot

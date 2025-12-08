@@ -88,36 +88,87 @@ public interface IEditorState
     /// <summary>Bone display mode - hierarchy or category grouping.</summary>
     BoneDisplayMode BoneDisplayMode { get; set; }
 
-    /// <summary>Currently selected bone (primary, if any).</summary>
-    IBone? SelectedBone { get; set; }
+    /// <summary>
+    /// Whether posing mode is enabled. When true, all actors are frozen
+    /// and bone manipulation is allowed.
+    /// </summary>
+    bool IsPosingMode { get; }
 
-    /// <summary>All currently selected bones.</summary>
-    IReadOnlyList<IBone> SelectedBones { get; }
+    /// <summary>Enter posing mode - freezes all actors and enables bone manipulation.</summary>
+    void EnterPosingMode();
 
-    /// <summary>Select a single bone (clears previous selection).</summary>
-    void SelectBone(IBone? bone);
+    /// <summary>Exit posing mode - unfreezes actors and clears selection.</summary>
+    void ExitPosingMode();
 
-    /// <summary>Select multiple bones (clears previous selection).</summary>
-    void SelectBones(IEnumerable<IBone> bones);
+    /// <summary>Toggle posing mode on/off.</summary>
+    void TogglePosingMode();
 
-    /// <summary>Add a bone to the current selection.</summary>
-    void AddBoneToSelection(IBone bone);
+    #region Unified Selection (IEntity)
 
-    /// <summary>Remove a bone from the current selection.</summary>
-    void RemoveBoneFromSelection(IBone bone);
+    /// <summary>All currently selected entities.</summary>
+    IReadOnlyList<IEntity> SelectedEntities { get; }
 
-    /// <summary>Toggle bone selection (add if not selected, remove if selected).</summary>
-    void ToggleBoneSelection(IBone bone);
+    /// <summary>Primary selected entity (first in selection).</summary>
+    IEntity? PrimarySelection { get; }
 
-    /// <summary>Check if a bone is currently selected.</summary>
-    bool IsBoneSelected(IBone bone);
+    /// <summary>Select a single entity (clears previous selection).</summary>
+    void Select(IEntity entity);
 
-    /// <summary>Clear bone selection.</summary>
-    void ClearBoneSelection();
+    /// <summary>Add an entity to the current selection (Ctrl+click).</summary>
+    void AddToSelection(IEntity entity);
+
+    /// <summary>Remove an entity from the current selection.</summary>
+    void RemoveFromSelection(IEntity entity);
+
+    /// <summary>Toggle entity selection (add if not selected, remove if selected).</summary>
+    void ToggleSelection(IEntity entity);
+
+    /// <summary>Select a range of entities (Shift+click).</summary>
+    void SelectRange(IEntity from, IEntity to);
+
+    /// <summary>Check if an entity is currently selected.</summary>
+    bool IsSelected(IEntity entity);
+
+    /// <summary>Clear all selection.</summary>
+    void ClearSelection();
+
+    #endregion
+
+    #region Convenience accessors
+
+    /// <summary>Get selected entities of a specific type.</summary>
+    IEnumerable<T> GetSelected<T>() where T : IEntity;
+
+    /// <summary>Get the primary selected bone (if any bone is selected).</summary>
+    IBone? SelectedBone { get; }
+
+    /// <summary>Get the primary selected actor (if any actor is selected).</summary>
+    IActor? SelectedActor { get; }
 
     /// <summary>Get the current gizmo target type based on selection state.</summary>
     GizmoTargetType GetGizmoTargetType();
 
-    /// <summary>Toggle edit mode on the given actor.</summary>
-    void ToggleEditMode(IActor actor);
+    #endregion
+
+    #region Category Selection
+
+    /// <summary>Currently selected category ID (if any).</summary>
+    string? SelectedCategory { get; }
+
+    /// <summary>The skeleton that the selected category belongs to.</summary>
+    ISkeleton? SelectedCategorySkeleton { get; }
+
+    /// <summary>Select a bone category (clears entity selection).</summary>
+    void SelectCategory(string categoryId, ISkeleton skeleton);
+
+    /// <summary>Clear category selection.</summary>
+    void ClearCategorySelection();
+
+    /// <summary>Check if a category is selected.</summary>
+    bool IsCategorySelected(string categoryId);
+
+    /// <summary>Get all bones in the selected category (if any).</summary>
+    IReadOnlyList<IBone> GetSelectedCategoryBones();
+
+    #endregion
 }

@@ -85,4 +85,20 @@ public interface IGazeService
     /// Used for history/undo support.
     /// </summary>
     void SetGazeState(IActor actor, GazeState state);
+
+    /// <summary>
+    /// Lock an actor's gaze at its current position (prevents game from updating).
+    /// Used when entering posing mode to freeze head/eyes.
+    /// </summary>
+    void LockGaze(IActor actor, GazeTargetType targetType = GazeTargetType.All);
+
+    /// <summary>
+    /// Unlock an actor's gaze (allows game to control again).
+    /// </summary>
+    void UnlockGaze(IActor actor);
+
+    /// <summary>
+    /// Check if an actor's gaze is locked.
+    /// </summary>
+    bool IsGazeLocked(IActor actor);
 }

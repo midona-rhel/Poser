@@ -98,8 +98,25 @@ public unsafe class BonePosingService : IBonePosingService
 
         _framework.Update += OnFrameworkUpdate;
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
+        _eventBus.Subscribe<PosingModeChangedEvent>(OnPosingModeChanged);
 
         _log.Debug("BonePosingService initialized");
+    }
+
+    private void OnPosingModeChanged(PosingModeChangedEvent e)
+    {
+        if (e.IsPosingMode)
+        {
+            // Snapshot all actor skeletons when entering posing mode
+            foreach (var actor in _actorManager.Actors)
+            {
+                var skeleton = _skeletonService.GetSkeleton(actor);
+                if (skeleton != null)
+                {
+                    SnapshotSkeleton(skeleton);
+                }
+            }
+        }
     }
 
     private nint UpdateBonePhysicsDetour(nint a1)
@@ -490,12 +507,80 @@ public unsafe class BonePosingService : IBonePosingService
         }
     }
 
+    public void SnapshotSkeleton(ISkeleton skeleton)
+    {
+        var poseInfo = GetPoseInfo(skeleton);
+
+        // Mark skeleton for update so it starts being controlled by our hook
+        _skeletonsToUpdate.Add(skeleton.Actor.Address);
+
+        // Read current bone transforms from game and apply them as modifications
+        // This "claims" the bones and prevents game systems (like LookAt) from controlling them
+        var character = (Character*)skeleton.Actor.Address;
+        if (character == null)
+            return;
+
+        var drawObject = character->GameObject.DrawObject;
+        if (drawObject == null)
+            return;
+
+        if (drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
+            return;
+
+        var charaBase = (CharacterBase*)drawObject;
+        if (charaBase->Skeleton == null)
+            return;
+
+        var gameSkeleton = charaBase->Skeleton;
+        var partialCount = gameSkeleton->PartialSkeletonCount;
+
+        for (int partialIdx = 0; partialIdx < partialCount; partialIdx++)
+        {
+            var partial = &gameSkeleton->PartialSkeletons[partialIdx];
+            var pose = partial->GetHavokPose(0);
+            if (pose == null)
+                continue;
+
+            var boneCount = pose->Skeleton->Bones.Length;
+            for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
+            {
+                var rawBone = pose->Skeleton->Bones[boneIdx];
+                var boneName = rawBone.Name.String ?? $"bone_{partialIdx}_{boneIdx}";
+
+                var bonePoseInfo = poseInfo.GetPoseInfo(boneName, partialIdx);
+                if (bonePoseInfo.HasStacks)
+                    continue; // Already has modifications, don't overwrite
+
+                // Read current transform from game in local space (reference pose)
+                var localSpace = pose->AccessBoneLocalSpace(boneIdx);
+                if (localSpace == null)
+                    continue;
+
+                // Store the current rotation as a "modification" that maintains this pose
+                // Using identity as the delta means we're snapshotting current state
+                var currentRotation = new Quaternion(
+                    localSpace->Rotation.X,
+                    localSpace->Rotation.Y,
+                    localSpace->Rotation.Z,
+                    localSpace->Rotation.W);
+
+                // Apply identity delta with the bone marked as having a stack
+                // This tells ApplyBoneTransform to maintain current pose
+                bonePoseInfo.Apply(
+                    new Transform { Position = Vector3.Zero, Rotation = Quaternion.Identity, Scale = Vector3.Zero },
+                    new Transform { Position = Vector3.Zero, Rotation = currentRotation, Scale = Vector3.One },
+                    TransformComponents.Rotation);
+            }
+        }
+    }
+
     public void Dispose()
     {
         _updateBonePhysicsHook?.Dispose();
         _finalizeSkeletonsHook?.Dispose();
         _framework.Update -= OnFrameworkUpdate;
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
+        _eventBus.Unsubscribe<PosingModeChangedEvent>(OnPosingModeChanged);
         _poseInfos.Clear();
         GC.SuppressFinalize(this);
     }
