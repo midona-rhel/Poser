@@ -266,51 +266,42 @@ public unsafe class BonePosingService : IBonePosingService
 
     private void ApplyBoneTransform(hkaPose* pose, int boneIdx, BonePoseTransformInfo info)
     {
-        // Apply position
-        if (info.Transform.Position != Vector3.Zero)
+        // Apply position - always apply (zero delta = no change, like Brio)
+        var propagatePos = info.PropagateComponents.HasFlag(TransformComponents.Position);
+        var modelSpace = pose->AccessBoneModelSpace(boneIdx, propagatePos ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
+        if (modelSpace != null)
         {
-            var propagate = info.PropagateComponents.HasFlag(TransformComponents.Position);
-            var modelSpace = pose->AccessBoneModelSpace(boneIdx, propagate ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
-            if (modelSpace != null)
-            {
-                var newPos = new Vector3(
-                    modelSpace->Translation.X + info.Transform.Position.X,
-                    modelSpace->Translation.Y + info.Transform.Position.Y,
-                    modelSpace->Translation.Z + info.Transform.Position.Z);
-                modelSpace->Translation = *(hkVector4f*)(&newPos);
-            }
+            var newPos = new Vector3(
+                modelSpace->Translation.X + info.Transform.Position.X,
+                modelSpace->Translation.Y + info.Transform.Position.Y,
+                modelSpace->Translation.Z + info.Transform.Position.Z);
+            modelSpace->Translation = *(hkVector4f*)(&newPos);
         }
 
-        // Apply rotation (post-multiply: newRot = currentRot * delta for local-space deltas, like Brio)
-        if (info.Transform.Rotation != Quaternion.Identity)
+        // Apply rotation - always apply (identity delta = no change, like Brio)
+        var propagateRot = info.PropagateComponents.HasFlag(TransformComponents.Rotation);
+        modelSpace = pose->AccessBoneModelSpace(boneIdx, propagateRot ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
+        if (modelSpace != null)
         {
-            var propagate = info.PropagateComponents.HasFlag(TransformComponents.Rotation);
-            var modelSpace = pose->AccessBoneModelSpace(boneIdx, propagate ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
-            if (modelSpace != null)
-            {
-                var currentRot = new Quaternion(
-                    modelSpace->Rotation.X,
-                    modelSpace->Rotation.Y,
-                    modelSpace->Rotation.Z,
-                    modelSpace->Rotation.W);
-                var newRot = Quaternion.Normalize(currentRot * info.Transform.Rotation);
-                modelSpace->Rotation = *(hkQuaternionf*)(&newRot);
-            }
+            var currentRot = new Quaternion(
+                modelSpace->Rotation.X,
+                modelSpace->Rotation.Y,
+                modelSpace->Rotation.Z,
+                modelSpace->Rotation.W);
+            var newRot = Quaternion.Normalize(currentRot * info.Transform.Rotation);
+            modelSpace->Rotation = *(hkQuaternionf*)(&newRot);
         }
 
-        // Apply scale
-        if (info.Transform.Scale != Vector3.Zero)
+        // Apply scale - always apply (zero delta = no change, like Brio)
+        var propagateScale = info.PropagateComponents.HasFlag(TransformComponents.Scale);
+        modelSpace = pose->AccessBoneModelSpace(boneIdx, propagateScale ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
+        if (modelSpace != null)
         {
-            var propagate = info.PropagateComponents.HasFlag(TransformComponents.Scale);
-            var modelSpace = pose->AccessBoneModelSpace(boneIdx, propagate ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
-            if (modelSpace != null)
-            {
-                var newScale = new Vector3(
-                    modelSpace->Scale.X + info.Transform.Scale.X,
-                    modelSpace->Scale.Y + info.Transform.Scale.Y,
-                    modelSpace->Scale.Z + info.Transform.Scale.Z);
-                modelSpace->Scale = *(hkVector4f*)(&newScale);
-            }
+            var newScale = new Vector3(
+                modelSpace->Scale.X + info.Transform.Scale.X,
+                modelSpace->Scale.Y + info.Transform.Scale.Y,
+                modelSpace->Scale.Z + info.Transform.Scale.Z);
+            modelSpace->Scale = *(hkVector4f*)(&newScale);
         }
     }
 
@@ -568,7 +559,7 @@ public unsafe class BonePosingService : IBonePosingService
                 // This tells ApplyBoneTransform to maintain current pose
                 bonePoseInfo.Apply(
                     new Transform { Position = Vector3.Zero, Rotation = Quaternion.Identity, Scale = Vector3.Zero },
-                    new Transform { Position = Vector3.Zero, Rotation = currentRotation, Scale = Vector3.One },
+                    new Transform { Position = Vector3.Zero, Rotation = currentRotation, Scale = Vector3.Zero },
                     TransformComponents.Rotation);
             }
         }

@@ -1,6 +1,3 @@
-using System.Collections.Generic;
-using Poser.Entities;
-
 namespace Poser.Services;
 
 /// <summary>
@@ -56,20 +53,10 @@ public enum TransformTool
 }
 
 /// <summary>
-/// The type of gizmo target.
-/// </summary>
-public enum GizmoTargetType
-{
-    /// <summary>No target selected.</summary>
-    None,
-    /// <summary>Actor(s) selected - object mode.</summary>
-    Actor,
-    /// <summary>Bone selected - edit mode.</summary>
-    Bone
-}
-
-/// <summary>
-/// Tracks editor-wide state like pivot mode, tool selection, etc.
+/// Tracks editor-wide state: gizmo settings and posing mode.
+///
+/// NOTE: Selection is handled by ISelectionService, not here.
+/// This interface only tracks editor tool settings.
 /// </summary>
 public interface IEditorState
 {
@@ -94,81 +81,8 @@ public interface IEditorState
     /// </summary>
     bool IsPosingMode { get; }
 
-    /// <summary>Enter posing mode - freezes all actors and enables bone manipulation.</summary>
-    void EnterPosingMode();
-
-    /// <summary>Exit posing mode - unfreezes actors and clears selection.</summary>
-    void ExitPosingMode();
-
-    /// <summary>Toggle posing mode on/off.</summary>
+    /// <summary>
+    /// Toggle posing mode on/off.
+    /// </summary>
     void TogglePosingMode();
-
-    #region Unified Selection (IEntity)
-
-    /// <summary>All currently selected entities.</summary>
-    IReadOnlyList<IEntity> SelectedEntities { get; }
-
-    /// <summary>Primary selected entity (first in selection).</summary>
-    IEntity? PrimarySelection { get; }
-
-    /// <summary>Select a single entity (clears previous selection).</summary>
-    void Select(IEntity entity);
-
-    /// <summary>Add an entity to the current selection (Ctrl+click).</summary>
-    void AddToSelection(IEntity entity);
-
-    /// <summary>Remove an entity from the current selection.</summary>
-    void RemoveFromSelection(IEntity entity);
-
-    /// <summary>Toggle entity selection (add if not selected, remove if selected).</summary>
-    void ToggleSelection(IEntity entity);
-
-    /// <summary>Select a range of entities (Shift+click).</summary>
-    void SelectRange(IEntity from, IEntity to);
-
-    /// <summary>Check if an entity is currently selected.</summary>
-    bool IsSelected(IEntity entity);
-
-    /// <summary>Clear all selection.</summary>
-    void ClearSelection();
-
-    #endregion
-
-    #region Convenience accessors
-
-    /// <summary>Get selected entities of a specific type.</summary>
-    IEnumerable<T> GetSelected<T>() where T : IEntity;
-
-    /// <summary>Get the primary selected bone (if any bone is selected).</summary>
-    IBone? SelectedBone { get; }
-
-    /// <summary>Get the primary selected actor (if any actor is selected).</summary>
-    IActor? SelectedActor { get; }
-
-    /// <summary>Get the current gizmo target type based on selection state.</summary>
-    GizmoTargetType GetGizmoTargetType();
-
-    #endregion
-
-    #region Category Selection
-
-    /// <summary>Currently selected category ID (if any).</summary>
-    string? SelectedCategory { get; }
-
-    /// <summary>The skeleton that the selected category belongs to.</summary>
-    ISkeleton? SelectedCategorySkeleton { get; }
-
-    /// <summary>Select a bone category (clears entity selection).</summary>
-    void SelectCategory(string categoryId, ISkeleton skeleton);
-
-    /// <summary>Clear category selection.</summary>
-    void ClearCategorySelection();
-
-    /// <summary>Check if a category is selected.</summary>
-    bool IsCategorySelected(string categoryId);
-
-    /// <summary>Get all bones in the selected category (if any).</summary>
-    IReadOnlyList<IBone> GetSelectedCategoryBones();
-
-    #endregion
 }

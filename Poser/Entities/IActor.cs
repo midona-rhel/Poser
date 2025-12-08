@@ -1,6 +1,12 @@
+using Poser.Entities.Capabilities;
+
 namespace Poser.Entities;
 
-public interface IActor : IEntity
+/// <summary>
+/// Represents a game character that can be posed and animated.
+/// Extends capability interfaces for compile-time type checking.
+/// </summary>
+public interface IActor : IEntity, ITransformable, IAnimatable, IGazeable, ISkeletonOwner
 {
     /// <summary>
     /// Memory address of the game character object.

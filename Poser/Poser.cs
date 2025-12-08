@@ -4,7 +4,6 @@ using Dalamud.Game.Command;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Microsoft.Extensions.DependencyInjection;
-using Poser.Controllers;
 using Poser.Core;
 using Poser.Core.BoneInfo;
 using Poser.Game;
@@ -119,10 +118,8 @@ public class Poser : IDalamudPlugin
         services.AddSingleton<IGazeService, GazeService>();
         services.AddSingleton<ISkeletonService, SkeletonService>();
         services.AddSingleton<IBonePosingService, BonePosingService>();
+        services.AddSingleton<ISelectionService, SelectionService>();
         services.AddSingleton<IEditorState, EditorState>();
-
-        // Register controllers
-        services.AddSingleton<IPosingController, PosingController>();
 
         // Register UI
         services.AddSingleton<IUIManager, UIManager>();

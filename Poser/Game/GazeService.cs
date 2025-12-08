@@ -36,7 +36,7 @@ public unsafe class GazeService : IGazeService, IDisposable
     private delegate* unmanaged<CharacterLookAtController*, LookAtTarget*, uint, nint, void> _updateLookAt;
 
     private delegate nint ActorLookAtLoopDelegate(ContainerInterface* args);
-    private Hook<ActorLookAtLoopDelegate>? _actorLookAtLoop;
+    private Hook<ActorLookAtLoopDelegate> _actorLookAtLoop = null!;
 
     private readonly Dictionary<IActor, GazeState> _gazeStates = new();
     private readonly Dictionary<ulong, LookAtDataHolder> _lookAtHandles = new();
@@ -56,108 +56,86 @@ public unsafe class GazeService : IGazeService, IDisposable
         _eventBus = eventBus;
         _log = log;
 
-        try
-        {
-            var updateFaceTrackerAddress = sigScanner.ScanText("E8 ?? ?? ?? ?? 8B D7 48 8B CB E8 ?? ?? ?? ?? 41 ?? ?? 8B D7 48 ?? ?? 48 ?? ?? ?? ?? 48 83 ?? ?? 5F");
-            _updateLookAt = (delegate* unmanaged<CharacterLookAtController*, LookAtTarget*, uint, nint, void>)updateFaceTrackerAddress;
+        // No try-catch - let plugin fail to load if sigs are invalid rather than run in broken state
+        var updateFaceTrackerAddress = sigScanner.ScanText("E8 ?? ?? ?? ?? 8B D7 48 8B CB E8 ?? ?? ?? ?? 41 ?? ?? 8B D7 48 ?? ?? 48 ?? ?? ?? ?? 48 83 ?? ?? 5F");
+        _updateLookAt = (delegate* unmanaged<CharacterLookAtController*, LookAtTarget*, uint, nint, void>)updateFaceTrackerAddress;
 
-            var actorLookAtLoopAddress = sigScanner.ScanText("E8 ?? ?? ?? ?? 48 83 C3 08 48 83 EF 01 75 CF 48 ?? ?? ?? ?? 48");
-            _actorLookAtLoop = hooks.HookFromAddress<ActorLookAtLoopDelegate>(actorLookAtLoopAddress, ActorLookAtDetour);
-            _actorLookAtLoop.Enable();
-        }
-        catch (Exception ex)
-        {
-            _log.Warning($"GazeService: Failed to initialize gaze hooks, gaze control will be disabled: {ex.Message}");
-        }
+        var actorLookAtLoopAddress = sigScanner.ScanText("E8 ?? ?? ?? ?? 48 83 C3 08 48 83 EF 01 75 CF 48 ?? ?? ?? ?? 48");
+        _actorLookAtLoop = hooks.HookFromAddress<ActorLookAtLoopDelegate>(actorLookAtLoopAddress, ActorLookAtDetour);
+        _actorLookAtLoop.Enable();
 
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
     }
 
     private nint ActorLookAtDetour(ContainerInterface* args)
     {
-        if (_actorLookAtLoop == null)
-            return 0;
-
         if (_gPoseService.IsGPosing)
         {
             var targetActor = _objectTable.CreateObjectReference((nint)args->OwnerObject);
             if (targetActor is not null && targetActor.IsValid()
                 && _lookAtHandles.TryGetValue(targetActor.GameObjectId, out var lookAtDataHolder))
             {
-                // Check if gaze is locked - if so, apply frozen look-at and skip normal processing
-                bool anyLocked = lookAtDataHolder.EyesLocked || lookAtDataHolder.HeadLocked || lookAtDataHolder.BodyLocked;
+                // Copy to local variable (like Brio does) to avoid issues with managed memory
+                LookAtSource lookAt = lookAtDataHolder.Target;
 
-                if (anyLocked)
-                {
-                    // Apply locked gaze - positions are already set during LockGaze()
-                    var lookAtController = &((Character*)targetActor.Address)->LookAt.Controller;
-
-                    fixed (LookAtTarget* bodyTarget = &lookAtDataHolder.Target.Body.LookAtTarget)
-                    fixed (LookAtTarget* headTarget = &lookAtDataHolder.Target.Head.LookAtTarget)
-                    fixed (LookAtTarget* eyesTarget = &lookAtDataHolder.Target.Eyes.LookAtTarget)
-                    {
-                        if (lookAtDataHolder.BodyLocked)
-                            _updateLookAt(lookAtController, bodyTarget, LookAtIndex_Body, 0);
-                        if (lookAtDataHolder.HeadLocked)
-                            _updateLookAt(lookAtController, headTarget, LookAtIndex_Head, 0);
-                        if (lookAtDataHolder.EyesLocked)
-                            _updateLookAt(lookAtController, eyesTarget, LookAtIndex_Eyes, 0);
-                    }
-
-                    // Don't call original - we've handled the look-at
-                    return _actorLookAtLoop.Original(args);
-                }
-
+                // Skip processing if gaze mode is None
                 if (lookAtDataHolder.TargetMode == GazeTargetMode.None)
                 {
                     return _actorLookAtLoop.Original(args);
                 }
 
-                // Update target positions based on mode
+                // Update target positions based on mode (only for unlocked parts)
                 if (lookAtDataHolder.TargetMode == GazeTargetMode.Camera)
                 {
                     var cameraPos = _cameraService.GetCameraPosition();
-                    SetLookAtTargetPosition(lookAtDataHolder, cameraPos);
+                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Eyes) && !lookAtDataHolder.EyesLocked)
+                        lookAt.Eyes.LookAtTarget.Position = cameraPos;
+                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Head) && !lookAtDataHolder.HeadLocked)
+                        lookAt.Head.LookAtTarget.Position = cameraPos;
+                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Body) && !lookAtDataHolder.BodyLocked)
+                        lookAt.Body.LookAtTarget.Position = cameraPos;
                 }
                 else if (lookAtDataHolder.TargetMode == GazeTargetMode.Entity && lookAtDataHolder.TargetEntityAddress != nint.Zero)
                 {
                     var targetPos = GetEntityPosition(lookAtDataHolder.TargetEntityAddress);
-                    SetLookAtTargetPosition(lookAtDataHolder, targetPos);
+                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Eyes) && !lookAtDataHolder.EyesLocked)
+                        lookAt.Eyes.LookAtTarget.Position = targetPos;
+                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Head) && !lookAtDataHolder.HeadLocked)
+                        lookAt.Head.LookAtTarget.Position = targetPos;
+                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Body) && !lookAtDataHolder.BodyLocked)
+                        lookAt.Body.LookAtTarget.Position = targetPos;
                 }
                 else if (lookAtDataHolder.TargetMode == GazeTargetMode.Forward)
                 {
-                    // Forward mode - calculate a position in front of the character based on their facing direction
+                    // Forward mode - calculate a position in front of the character
                     var nativeObj = (GameObject*)targetActor.Address;
                     var position = new Vector3(nativeObj->Position.X, nativeObj->Position.Y, nativeObj->Position.Z);
                     var rotation = nativeObj->Rotation;
 
-                    // Calculate forward direction from rotation (Y rotation in radians)
-                    // Add a point 10 units in front of the character at head height
                     var forwardDir = new Vector3(
                         MathF.Sin(rotation),
                         0f,
                         MathF.Cos(rotation)
                     );
 
-                    // Position 10 units ahead, slightly elevated for head/eye level
                     var forwardPos = position + forwardDir * 10f + new Vector3(0, 1.5f, 0);
-                    SetLookAtTargetPosition(lookAtDataHolder, forwardPos);
+                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Eyes) && !lookAtDataHolder.EyesLocked)
+                        lookAt.Eyes.LookAtTarget.Position = forwardPos;
+                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Head) && !lookAtDataHolder.HeadLocked)
+                        lookAt.Head.LookAtTarget.Position = forwardPos;
+                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Body) && !lookAtDataHolder.BodyLocked)
+                        lookAt.Body.LookAtTarget.Position = forwardPos;
                 }
 
-                // Apply the look-at updates
+                // Apply the look-at updates using direct pointer (like Brio, no fixed)
                 var lookAtController = &((Character*)targetActor.Address)->LookAt.Controller;
 
-                fixed (LookAtTarget* bodyTarget = &lookAtDataHolder.Target.Body.LookAtTarget)
-                fixed (LookAtTarget* headTarget = &lookAtDataHolder.Target.Head.LookAtTarget)
-                fixed (LookAtTarget* eyesTarget = &lookAtDataHolder.Target.Eyes.LookAtTarget)
-                {
-                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Body))
-                        _updateLookAt(lookAtController, bodyTarget, LookAtIndex_Body, 0);
-                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Head))
-                        _updateLookAt(lookAtController, headTarget, LookAtIndex_Head, 0);
-                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Eyes))
-                        _updateLookAt(lookAtController, eyesTarget, LookAtIndex_Eyes, 0);
-                }
+                if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Body))
+                    _updateLookAt(lookAtController, &lookAt.Body.LookAtTarget, LookAtIndex_Body, 0);
+                if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Head))
+                    _updateLookAt(lookAtController, &lookAt.Head.LookAtTarget, LookAtIndex_Head, 0);
+                if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Eyes))
+                    _updateLookAt(lookAtController, &lookAt.Eyes.LookAtTarget, LookAtIndex_Eyes, 0);
             }
         }
 
@@ -292,24 +270,24 @@ public unsafe class GazeService : IGazeService, IDisposable
         // Get current camera position to freeze at
         var cameraPos = _cameraService.GetCameraPosition();
 
-        // Set lock flags and freeze mode
+        // Set lock flags - use Position mode (not Frozen), lock booleans prevent updates in detour
         if (targetType.HasFlag(GazeTargetType.Eyes))
         {
             holder.EyesLocked = true;
             holder.Target.Eyes.LookAtTarget.Position = cameraPos;
-            holder.Target.Eyes.LookAtTarget.LookMode = LookMode.Frozen;
+            holder.Target.Eyes.LookAtTarget.LookMode = LookMode.Position;
         }
         if (targetType.HasFlag(GazeTargetType.Head))
         {
             holder.HeadLocked = true;
             holder.Target.Head.LookAtTarget.Position = cameraPos;
-            holder.Target.Head.LookAtTarget.LookMode = LookMode.Frozen;
+            holder.Target.Head.LookAtTarget.LookMode = LookMode.Position;
         }
         if (targetType.HasFlag(GazeTargetType.Body))
         {
             holder.BodyLocked = true;
             holder.Target.Body.LookAtTarget.Position = cameraPos;
-            holder.Target.Body.LookAtTarget.LookMode = LookMode.Frozen;
+            holder.Target.Body.LookAtTarget.LookMode = LookMode.Position;
         }
 
         holder.TargetType = targetType;
@@ -363,7 +341,7 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     public void Dispose()
     {
-        _actorLookAtLoop?.Dispose();
+        _actorLookAtLoop.Dispose();
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
     }
 }

@@ -3,7 +3,6 @@ using Dalamud.Game.ClientState.Keys;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
-using Poser.Controllers;
 using Poser.Core;
 using Poser.Services;
 using System;
@@ -14,7 +13,6 @@ public class UIManager : IUIManager
 {
     private readonly IDalamudPluginInterface _pluginInterface;
     private readonly IGPoseService _gPoseService;
-    private readonly IActorManager _actorManager;
     private readonly IEditorState _editorState;
     private readonly IEventBus _eventBus;
     private readonly IKeyState _keyState;
@@ -40,14 +38,13 @@ public class UIManager : IUIManager
         IGazeService gazeService,
         ISkeletonService skeletonService,
         IBonePosingService bonePosingService,
+        ISelectionService selectionService,
         IEditorState editorState,
         IEventBus eventBus,
-        IPosingController posingController,
         IKeyState keyState)
     {
         _pluginInterface = pluginInterface;
         _gPoseService = gPoseService;
-        _actorManager = actorManager;
         _editorState = editorState;
         _eventBus = eventBus;
         _keyState = keyState;
@@ -56,11 +53,18 @@ public class UIManager : IUIManager
         // Create windows in z-order (last added = drawn on top)
 
         // Skeleton overlay (lowest z-order, underneath everything)
-        _skeletonOverlay = new SkeletonOverlayWindow(actorManager, cameraService, skeletonService, bonePosingService, editorState);
+        _skeletonOverlay = new SkeletonOverlayWindow(actorManager, cameraService, skeletonService, bonePosingService, selectionService);
         _windowSystem.AddWindow(_skeletonOverlay);
 
         // Gizmo overlay (above skeleton overlay)
-        _gizmoOverlay = new GizmoOverlayWindow(actorManager, cameraService, posingService, bonePosingService, skeletonService, historyService, animationService, editorState);
+        _gizmoOverlay = new GizmoOverlayWindow(
+            eventBus,
+            selectionService,
+            animationService,
+            editorState,
+            cameraService,
+            posingService,
+            bonePosingService);
         _windowSystem.AddWindow(_gizmoOverlay);
 
         // Hotbar (above gizmo)
@@ -68,7 +72,18 @@ public class UIManager : IUIManager
         _windowSystem.AddWindow(_hotbarWindow);
 
         // Main sidebar (highest z-order, on top)
-        _mainWindow = new MainWindow(gPoseService, actorManager, animationService, animationDataService, spawnService, historyService, cameraService, posingService, bonePosingService, gazeService, skeletonService, editorState, eventBus, posingController);
+        _mainWindow = new MainWindow(
+            gPoseService,
+            actorManager,
+            animationService,
+            animationDataService,
+            posingService,
+            bonePosingService,
+            spawnService,
+            historyService,
+            gazeService,
+            selectionService,
+            editorState);
         _windowSystem.AddWindow(_mainWindow);
 
         // Hook into Dalamud's UI drawing

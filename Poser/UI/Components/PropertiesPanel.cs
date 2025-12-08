@@ -1,50 +1,45 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
-using Poser.Controllers;
-using Poser.Core;
 using Poser.Entities;
+using Poser.Entities.Capabilities;
 using Poser.History;
 using Poser.Services;
 using Poser.UI.Controls;
 
 namespace Poser.UI.Components;
 
-public enum PropertiesTab
-{
-    Transform,
-    Animation
-}
-
 /// <summary>
 /// Renders the Properties panel showing details of the selected entity.
-/// Fixed height, non-collapsible panel anchored at the bottom.
+/// Uses capability interfaces to determine what UI to show.
 /// </summary>
 public class PropertiesPanel
 {
     private const float TabBarWidth = 40f;
     private const float LabelWidth = 50f;
 
-    private readonly IEditorState _editorState;
+    private readonly ISelectionService _selectionService;
     private readonly IActorManager _actorManager;
     private readonly IPosingService _posingService;
     private readonly IBonePosingService _bonePosingService;
     private readonly IAnimationService _animationService;
     private readonly IHistoryService _historyService;
     private readonly IGazeService _gazeService;
-    private readonly IPosingController _controller;
     private readonly TransformWidget _transformWidget;
 
     // Reusable animation selectors
     private readonly AnimationSelector _baseAnimationSelector;
     private readonly AnimationSelector _blendAnimationSelector;
 
-    private PropertiesTab _activeTab = PropertiesTab.Transform;
+    // Active tab - determined by entity capabilities
+    private int _activeTabIndex = 0;
 
-    // Tracking for slider history (we create history on release, not every frame)
+    // Tracking for slider history
+    private float _speedBeforeEdit;
     private bool _isEditingSpeed;
 
     // Current animation state
@@ -53,55 +48,46 @@ public class PropertiesPanel
     private static readonly string[] GazeModeNames = { "None", "Forward", "Camera", "Entity" };
 
     public PropertiesPanel(
-        IEditorState editorState,
+        ISelectionService selectionService,
         IActorManager actorManager,
         IPosingService posingService,
         IBonePosingService bonePosingService,
         IAnimationService animationService,
         IAnimationDataService animationDataService,
         IHistoryService historyService,
-        IGazeService gazeService,
-        IPosingController controller)
+        IGazeService gazeService)
     {
-        _editorState = editorState;
+        _selectionService = selectionService;
         _actorManager = actorManager;
         _posingService = posingService;
         _bonePosingService = bonePosingService;
         _animationService = animationService;
         _historyService = historyService;
         _gazeService = gazeService;
-        _controller = controller;
         _transformWidget = new TransformWidget();
 
-        // Create reusable animation selectors
         _baseAnimationSelector = new AnimationSelector(animationDataService);
         _blendAnimationSelector = new AnimationSelector(animationDataService);
 
-        // Wire up transform history
         _transformWidget.OnTransformCommit += OnTransformCommit;
     }
 
     private void OnTransformCommit(Transform oldTransform, Transform newTransform)
     {
-        // Handle transform commit for actors only (bones use different history)
-        var actor = _editorState.SelectedActor;
-        if (actor == null) return;
-
-        var action = new TransformHistoryAction(_posingService, actor, oldTransform, newTransform);
-        _historyService.Push(action);
+        var entity = _selectionService.Primary;
+        if (entity is IActor actor)
+        {
+            var action = new TransformActorAction(_posingService, actor, oldTransform, newTransform);
+            _historyService.Push(action);
+        }
+        // TODO: Add TransformBoneAction for bones
     }
 
     public void Draw()
     {
-        var primarySelection = _editorState.PrimarySelection;
-        var selectedCategory = _editorState.SelectedCategory;
+        var entity = _selectionService.Primary;
 
-        // Check what we have selected
-        bool hasActorSelected = _editorState.SelectedActor != null;
-        bool hasBoneSelected = _editorState.SelectedBone != null;
-        bool hasCategorySelected = selectedCategory != null;
-
-        if (primarySelection == null && !hasCategorySelected)
+        if (entity == null)
         {
             ImGui.Text("Properties");
             ImGui.Spacing();
@@ -109,25 +95,13 @@ public class PropertiesPanel
             return;
         }
 
-        // Entity name header (centered)
-        string headerText;
-        if (hasCategorySelected)
-        {
-            headerText = $"Category: {selectedCategory}";
-        }
-        else if (primarySelection is IBone bone)
-        {
-            headerText = bone.DisplayName;
-        }
-        else if (primarySelection is IActor actor)
-        {
-            headerText = actor.Name;
-        }
-        else
-        {
-            headerText = primarySelection?.Name ?? "Unknown";
-        }
+        DrawEntity(entity);
+    }
 
+    private void DrawEntity(IEntity entity)
+    {
+        // Header with entity name
+        var headerText = entity.Name;
         var headerWidth = ImGui.CalcTextSize(headerText).X;
         var availWidth = ImGui.GetContentRegionAvail().X;
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (availWidth - headerWidth) * 0.5f);
@@ -137,142 +111,109 @@ public class PropertiesPanel
         ImGui.Separator();
         ImGui.Spacing();
 
-        // Layout: vertical tab bar on left, content on right
+        // Build list of available tabs based on capabilities
+        var tabs = GetAvailableTabs(entity);
+
+        if (tabs.Count == 0)
+        {
+            ImGui.TextDisabled($"Entity type: {entity.EntityType}");
+            return;
+        }
+
+        // Clamp active tab index
+        if (_activeTabIndex >= tabs.Count)
+            _activeTabIndex = 0;
+
         float tabBarWidth = TabBarWidth * ImGuiHelpers.GlobalScale;
         float availHeight = ImGui.GetContentRegionAvail().Y;
 
-        // Only show tab bar for actors (bones/categories only have transform)
-        bool showAnimationTab = hasActorSelected && !hasBoneSelected && !hasCategorySelected;
-
-        if (showAnimationTab)
+        // Only show tab bar if multiple tabs
+        if (tabs.Count > 1)
         {
-            // Draw vertical tab bar
             using (var tabChild = ImRaii.Child("tab_bar", new Vector2(tabBarWidth, availHeight), false))
             {
                 if (tabChild.Success)
                 {
-                    DrawVerticalTabBar();
+                    DrawTabBar(tabs);
                 }
             }
-
             ImGui.SameLine();
         }
 
-        // Draw content area
+        // Draw content
         using (var contentChild = ImRaii.Child("tab_content", new Vector2(-1, availHeight), false))
         {
             if (contentChild.Success)
             {
-                if (hasCategorySelected)
-                {
-                    DrawCategoryContent();
-                }
-                else if (hasBoneSelected)
-                {
-                    DrawBoneContent(_editorState.SelectedBone!);
-                }
-                else if (hasActorSelected)
-                {
-                    DrawTabContent(_editorState.SelectedActor!);
-                }
+                tabs[_activeTabIndex].Draw(entity);
             }
         }
     }
 
-    private void DrawCategoryContent()
+    private List<EntityTab> GetAvailableTabs(IEntity entity)
     {
-        var categoryBones = _editorState.GetSelectedCategoryBones();
-        ImGui.Text($"{categoryBones.Count} bones in category");
-        ImGui.Spacing();
+        var tabs = new List<EntityTab>();
 
-        ImPoser.SectionHeader("Transform");
-        ImGui.TextDisabled("Use gizmo to transform category bones");
-    }
-
-    private void DrawBoneContent(IBone bone)
-    {
-        ImPoser.SectionHeader("Transform");
-
-        // Get bone modification
-        var modification = _bonePosingService.GetModification(bone);
-        var transform = modification ?? new Transform { Position = Vector3.Zero, Rotation = Quaternion.Identity, Scale = Vector3.Zero };
-
-        // Show current bone transform info
-        ImGui.Text($"Position: {transform.Position:F3}");
-        ImGui.Text($"Rotation: {QuaternionToEuler(transform.Rotation):F1}°");
-        if (transform.Scale != Vector3.Zero)
+        // Transform tab - for ITransformable
+        if (entity is ITransformable)
         {
-            ImGui.Text($"Scale: {transform.Scale:F3}");
+            tabs.Add(new EntityTab("Transform", FontAwesomeIcon.ArrowsAlt, DrawTransformTab));
         }
 
-        ImGui.Spacing();
-        ImGui.TextDisabled("Use gizmo to transform bones");
+        // Animation tab - for IAnimatable
+        if (entity is IAnimatable animatable && animatable.CanControlAnimation)
+        {
+            tabs.Add(new EntityTab("Animation", FontAwesomeIcon.Walking, DrawAnimationTab));
+        }
+
+        return tabs;
     }
 
-    private static Vector3 QuaternionToEuler(Quaternion q)
-    {
-        // Convert quaternion to euler angles in degrees
-        var sinr_cosp = 2 * (q.W * q.X + q.Y * q.Z);
-        var cosr_cosp = 1 - 2 * (q.X * q.X + q.Y * q.Y);
-        var roll = MathF.Atan2(sinr_cosp, cosr_cosp);
-
-        var sinp = 2 * (q.W * q.Y - q.Z * q.X);
-        var pitch = MathF.Abs(sinp) >= 1 ? MathF.CopySign(MathF.PI / 2, sinp) : MathF.Asin(sinp);
-
-        var siny_cosp = 2 * (q.W * q.Z + q.X * q.Y);
-        var cosy_cosp = 1 - 2 * (q.Y * q.Y + q.Z * q.Z);
-        var yaw = MathF.Atan2(siny_cosp, cosy_cosp);
-
-        return new Vector3(roll, pitch, yaw) * (180f / MathF.PI);
-    }
-
-    private void DrawVerticalTabBar()
+    private void DrawTabBar(List<EntityTab> tabs)
     {
         float buttonSize = TabBarWidth * ImGuiHelpers.GlobalScale - ImGui.GetStyle().WindowPadding.X;
         var size = new Vector2(buttonSize, buttonSize);
 
-        // Transform tab (move icon)
-        bool isTransformActive = _activeTab == PropertiesTab.Transform;
-        using (ImRaii.PushColor(ImGuiCol.Button, ImGui.GetColorU32(ImGuiCol.TabActive), isTransformActive))
-        using (ImRaii.PushColor(ImGuiCol.ButtonHovered, ImGui.GetColorU32(ImGuiCol.TabHovered)))
+        for (int i = 0; i < tabs.Count; i++)
         {
-            if (ImPoser.CenteredIconButton("tab_transform", FontAwesomeIcon.ArrowsAlt, size, "Transform"))
-            {
-                _activeTab = PropertiesTab.Transform;
-            }
-        }
+            var tab = tabs[i];
+            bool isActive = _activeTabIndex == i;
 
-        ImGui.Spacing();
-
-        // Animation tab (walking person icon)
-        bool isAnimationActive = _activeTab == PropertiesTab.Animation;
-        using (ImRaii.PushColor(ImGuiCol.Button, ImGui.GetColorU32(ImGuiCol.TabActive), isAnimationActive))
-        using (ImRaii.PushColor(ImGuiCol.ButtonHovered, ImGui.GetColorU32(ImGuiCol.TabHovered)))
-        {
-            if (ImPoser.CenteredIconButton("tab_animation", FontAwesomeIcon.Walking, size, "Animation"))
+            using (ImRaii.PushColor(ImGuiCol.Button, ImGui.GetColorU32(ImGuiCol.TabActive), isActive))
+            using (ImRaii.PushColor(ImGuiCol.ButtonHovered, ImGui.GetColorU32(ImGuiCol.TabHovered)))
             {
-                _activeTab = PropertiesTab.Animation;
+                if (ImPoser.CenteredIconButton($"tab_{i}", tab.Icon, size, tab.Name))
+                {
+                    _activeTabIndex = i;
+                }
             }
+
+            if (i < tabs.Count - 1)
+                ImGui.Spacing();
         }
     }
 
-    private void DrawTabContent(IActor actor)
+    #region Transform Tab
+
+    private void DrawTransformTab(IEntity entity)
+    {
+        if (entity is IActor actor)
+        {
+            DrawActorTransform(actor);
+        }
+        else if (entity is IBone bone)
+        {
+            DrawBoneTransform(bone);
+        }
+        else if (entity is ITransformable transformable)
+        {
+            DrawGenericTransform(transformable, entity);
+        }
+    }
+
+    private void DrawActorTransform(IActor actor)
     {
         bool isFrozen = _animationService.IsFrozen(actor);
-
-        switch (_activeTab)
-        {
-            case PropertiesTab.Transform:
-                DrawTransformTab(actor, isFrozen);
-                break;
-            case PropertiesTab.Animation:
-                DrawAnimationTab(actor, isFrozen);
-                break;
-        }
-    }
-
-    private void DrawTransformTab(IActor actor, bool isFrozen)
-    {
         var transform = _posingService.GetEffectiveTransform(actor);
 
         if (_transformWidget.Draw("transform", ref transform, !isFrozen))
@@ -281,46 +222,137 @@ public class PropertiesPanel
         }
     }
 
-    private void DrawAnimationTab(IActor actor, bool isFrozen)
+    private void DrawBoneTransform(IBone bone)
     {
+        var transform = bone.Transform;
+
+        ImGui.TextDisabled("Transform");
+        ImGui.Spacing();
+        ImGui.Text($"Position: {transform.Position.X:F3}, {transform.Position.Y:F3}, {transform.Position.Z:F3}");
+
+        var euler = QuaternionToEuler(transform.Rotation);
+        ImGui.Text($"Rotation: {euler.X:F1}, {euler.Y:F1}, {euler.Z:F1}");
+
+        if (transform.Scale != Vector3.One)
+        {
+            ImGui.Text($"Scale: {transform.Scale.X:F3}, {transform.Scale.Y:F3}, {transform.Scale.Z:F3}");
+        }
+
+        ImGui.Spacing();
+        ImGui.TextDisabled("Use gizmo to transform bones");
+    }
+
+    private void DrawGenericTransform(ITransformable transformable, IEntity entity)
+    {
+        var transform = entity.Transform;
+
+        ImGui.TextDisabled("Transform");
+        ImGui.Spacing();
+        ImGui.Text($"Position: {transform.Position.X:F3}, {transform.Position.Y:F3}, {transform.Position.Z:F3}");
+
+        var euler = QuaternionToEuler(transform.Rotation);
+        ImGui.Text($"Rotation: {euler.X:F1}, {euler.Y:F1}, {euler.Z:F1}");
+    }
+
+    #endregion
+
+    #region Animation Tab
+
+    private void DrawAnimationTab(IEntity entity)
+    {
+        if (entity is not IActor actor)
+            return;
+
         float labelWidth = LabelWidth * ImGuiHelpers.GlobalScale;
+        bool isFrozen = _animationService.IsFrozen(actor);
 
-        // Check if this is a companion (pets, mounts, minions can't have animations changed)
-        bool isCompanion = actor.IsCompanion;
+        // Animation Section
+        ImGui.TextDisabled("Animation");
+        ImGui.Spacing();
+        DrawAnimationSection(actor, labelWidth);
 
-        // === Animation Section ===
-        ImPoser.SectionHeader("Animation");
+        ImGui.Spacing();
+        ImGui.Separator();
 
-        if (isCompanion)
-        {
-            ImGui.TextDisabled("Animation controls not available for companions");
-        }
-        else
-        {
-            DrawAnimationSection(actor, labelWidth);
-        }
-
-        // === Playback Section ===
-        ImPoser.SectionSeparator("Playback");
+        // Playback Section
+        ImGui.TextDisabled("Playback");
+        ImGui.Spacing();
         DrawSpeedSection(actor, labelWidth);
         ImGui.Spacing();
         DrawScrubSection(actor, isFrozen, labelWidth);
 
-        // === Gaze Section ===
-        ImPoser.SectionSeparator("Gaze");
-        DrawGazeSection(actor, isFrozen, labelWidth);
+        ImGui.Spacing();
+        ImGui.Separator();
+
+        // Gaze Section (actors are IGazeable)
+        if (entity is IGazeable)
+        {
+            ImGui.TextDisabled("Gaze");
+            ImGui.Spacing();
+            DrawGazeSection(actor, labelWidth);
+        }
+    }
+
+    private void DrawAnimationSection(IActor actor, float labelWidth)
+    {
+        bool hasOverride = _animationService.HasBaseOverride(actor);
+
+        // Base Animation
+        ImGui.Text("Base");
+        ImGui.SameLine(labelWidth);
+
+        float selectorWidth = ImGui.GetContentRegionAvail().X - 35 * ImGuiHelpers.GlobalScale;
+
+        if (_baseAnimationSelector.Draw("base_anim", _currentBaseId, id =>
+        {
+            ushort? oldId = hasOverride ? _currentBaseId : null;
+            _animationService.ApplyBaseAnimation(actor, id, true);
+            _currentBaseId = id;
+
+            var action = new BaseAnimationAction(_animationService, actor, oldId, id);
+            _historyService.Record(action);
+        }, selectorWidth))
+        {
+        }
+
+        ImGui.SameLine();
+
+        using (ImRaii.Disabled(!hasOverride))
+        {
+            if (ImPoser.CenteredIconButton("stop_base", FontAwesomeIcon.Stop, null, "Stop Animation"))
+            {
+                ushort? oldId = _currentBaseId;
+                _animationService.StopBaseAnimation(actor);
+
+                var action = new BaseAnimationAction(_animationService, actor, oldId, null);
+                _historyService.Record(action);
+
+                _currentBaseId = null;
+            }
+        }
+
+        // Blend Animation
+        ImGui.Text("Blend");
+        ImGui.SameLine(labelWidth);
+
+        if (_blendAnimationSelector.Draw("blend_anim", null, id =>
+        {
+            _animationService.PlayBlendAnimation(actor, id);
+        }, selectorWidth))
+        {
+        }
     }
 
     private void DrawSpeedSection(IActor actor, float labelWidth)
     {
-        ImPoser.Label("Speed", labelWidth);
+        ImGui.Text("Speed");
+        ImGui.SameLine(labelWidth);
 
         float speed = _animationService.GetSpeed(actor);
 
-        // Start tracking when slider becomes active
         if (ImGui.IsItemActive() && !_isEditingSpeed)
         {
-            _controller.BeginSpeedChange(actor);
+            _speedBeforeEdit = speed;
             _isEditingSpeed = true;
         }
 
@@ -330,38 +362,43 @@ public class PropertiesPanel
             _animationService.SetSpeed(actor, speed);
         }
 
-        // Create history action when slider is released
         if (_isEditingSpeed && ImGui.IsItemDeactivatedAfterEdit())
         {
             _isEditingSpeed = false;
-            _controller.EndSpeedChange(actor, speed);
-        }
-
-        ImGui.SameLine();
-
-        // Play/Pause toggle button
-        bool isPlaying = speed > 0f;
-        var playPauseIcon = isPlaying ? FontAwesomeIcon.Pause : FontAwesomeIcon.Play;
-        var playPauseTooltip = isPlaying ? "Pause" : "Play";
-
-        // Active state when paused (speed == 0)
-        using (ImRaii.PushColor(ImGuiCol.Button, ImGui.GetColorU32(ImGuiCol.ButtonActive), !isPlaying))
-        {
-            if (ImPoser.CenteredIconButton("play_pause", playPauseIcon, null, playPauseTooltip))
+            if (MathF.Abs(_speedBeforeEdit - speed) > 0.001f)
             {
-                if (isPlaying)
-                    _controller.SetAnimationSpeed(actor, 0f);
-                else
-                    _controller.SetAnimationSpeed(actor, 1f);
+                var action = new SpeedChangeAction(_animationService, actor, _speedBeforeEdit, speed);
+                _historyService.Record(action);
             }
         }
 
         ImGui.SameLine();
 
-        // Reset speed button
+        bool isPlaying = speed > 0f;
+        var playPauseIcon = isPlaying ? FontAwesomeIcon.Pause : FontAwesomeIcon.Play;
+
+        using (ImRaii.PushColor(ImGuiCol.Button, ImGui.GetColorU32(ImGuiCol.ButtonActive), !isPlaying))
+        {
+            if (ImPoser.CenteredIconButton("play_pause", playPauseIcon, null, isPlaying ? "Pause" : "Play"))
+            {
+                float oldSpeed = _animationService.GetSpeed(actor);
+                float newSpeed = isPlaying ? 0f : 1f;
+                _animationService.SetSpeed(actor, newSpeed);
+
+                var action = new SpeedChangeAction(_animationService, actor, oldSpeed, newSpeed);
+                _historyService.Record(action);
+            }
+        }
+
+        ImGui.SameLine();
+
         if (ImPoser.CenteredIconButton("reset_speed", FontAwesomeIcon.Undo, null, "Reset Speed"))
         {
-            _controller.SetAnimationSpeed(actor, 1f);
+            float oldSpeed = _animationService.GetSpeed(actor);
+            _animationService.ResetSpeed(actor);
+
+            var action = new SpeedChangeAction(_animationService, actor, oldSpeed, 1f);
+            _historyService.Record(action);
         }
     }
 
@@ -370,13 +407,11 @@ public class PropertiesPanel
         float? duration = _animationService.GetAnimationDuration(actor);
         float? currentTime = _animationService.GetAnimationTime(actor);
 
-        ImPoser.Label("Time", labelWidth);
+        ImGui.Text("Time");
+        ImGui.SameLine(labelWidth);
 
-        // Always show slider to maintain consistent height
         float time = currentTime ?? 0f;
         float maxTime = duration ?? 1f;
-
-        // Disable slider when not frozen or no animation
         bool canScrub = isFrozen && duration.HasValue && currentTime.HasValue;
 
         using (ImRaii.Disabled(!canScrub))
@@ -393,132 +428,60 @@ public class PropertiesPanel
         }
     }
 
-    private void DrawAnimationSection(IActor actor, float labelWidth)
-    {
-        bool hasOverride = _animationService.HasBaseOverride(actor);
-
-        // Base Animation
-        ImPoser.Label("Base", labelWidth);
-
-        float selectorWidth = ImGui.GetContentRegionAvail().X - 35 * ImGuiHelpers.GlobalScale;
-
-        if (_baseAnimationSelector.Draw("base_anim", _currentBaseId, id =>
-        {
-            ushort? oldId = hasOverride ? _currentBaseId : null;
-            _animationService.ApplyBaseAnimation(actor, id, true);
-            _currentBaseId = id;
-
-            var action = new BaseAnimationAction(_animationService, actor, oldId, id);
-            _historyService.Record(action);
-        }, selectorWidth))
-        {
-            // Animation was selected
-        }
-
-        ImGui.SameLine();
-
-        // Stop button
-        using (ImRaii.Disabled(!hasOverride))
-        {
-            if (ImPoser.CenteredIconButton("stop_base", FontAwesomeIcon.Stop, null, "Stop Animation"))
-            {
-                ushort? oldId = _currentBaseId;
-                _animationService.StopBaseAnimation(actor);
-
-                var action = new BaseAnimationAction(_animationService, actor, oldId, null);
-                _historyService.Record(action);
-
-                _currentBaseId = null;
-            }
-        }
-
-        // Blend Animation
-        ImPoser.Label("Blend", labelWidth);
-
-        if (_blendAnimationSelector.Draw("blend_anim", null, id =>
-        {
-            _animationService.PlayBlendAnimation(actor, id);
-            // Blend animations are one-shot, no undo needed
-        }, selectorWidth))
-        {
-            // Animation was selected
-        }
-    }
-
-    private void DrawGazeSection(IActor actor, bool isFrozen, float labelWidth)
+    private void DrawGazeSection(IActor actor, float labelWidth)
     {
         var gazeState = _gazeService.GetGazeState(actor);
+        var oldState = gazeState.Clone();
 
-        // Gaze mode dropdown
-        ImPoser.Label("Mode", labelWidth);
+        // Mode dropdown
+        ImGui.Text("Mode");
+        ImGui.SameLine(labelWidth);
         ImGui.SetNextItemWidth(-1);
         int currentMode = (int)gazeState.Mode;
         if (ImGui.Combo("##gaze_mode", ref currentMode, GazeModeNames, GazeModeNames.Length))
         {
-            _controller.SetGazeMode(actor, (GazeTargetMode)currentMode);
+            var newState = gazeState.Clone();
+            newState.Mode = (GazeTargetMode)currentMode;
+            _gazeService.SetGazeState(actor, newState);
+            RecordGazeChange(actor, oldState, newState);
         }
 
         ImGui.Spacing();
 
-        // Target type checkboxes (which body parts)
-        ImPoser.Label("Affect", labelWidth);
+        // Target type checkboxes
+        ImGui.Text("Affect");
+        ImGui.SameLine(labelWidth);
 
-        bool affectBody = gazeState.TargetType.HasFlag(GazeTargetType.Body);
-        if (ImGui.Checkbox("Body", ref affectBody))
-        {
-            var newType = affectBody
-                ? gazeState.TargetType | GazeTargetType.Body
-                : gazeState.TargetType & ~GazeTargetType.Body;
-            _controller.SetGazeTargetType(actor, newType);
-        }
-
+        DrawGazeCheckbox("Body", GazeTargetType.Body, actor, gazeState, oldState);
         ImGui.SameLine();
-        bool affectHead = gazeState.TargetType.HasFlag(GazeTargetType.Head);
-        if (ImGui.Checkbox("Head", ref affectHead))
-        {
-            var newType = affectHead
-                ? gazeState.TargetType | GazeTargetType.Head
-                : gazeState.TargetType & ~GazeTargetType.Head;
-            _controller.SetGazeTargetType(actor, newType);
-        }
-
+        DrawGazeCheckbox("Head", GazeTargetType.Head, actor, gazeState, oldState);
         ImGui.SameLine();
-        bool affectEyes = gazeState.TargetType.HasFlag(GazeTargetType.Eyes);
-        if (ImGui.Checkbox("Eyes", ref affectEyes))
-        {
-            var newType = affectEyes
-                ? gazeState.TargetType | GazeTargetType.Eyes
-                : gazeState.TargetType & ~GazeTargetType.Eyes;
-            _controller.SetGazeTargetType(actor, newType);
-        }
+        DrawGazeCheckbox("Eyes", GazeTargetType.Eyes, actor, gazeState, oldState);
 
-        // Entity target list (only shown in Entity mode)
+        // Entity target (Entity mode only)
         if (gazeState.Mode == GazeTargetMode.Entity)
         {
             ImGui.Spacing();
-            ImPoser.Label("Target", labelWidth);
+            ImGui.Text("Target");
+            ImGui.SameLine(labelWidth);
 
-            // Show combo with available entities
-            var actors = _actorManager.Actors;
             string currentTargetName = gazeState.TargetEntity?.Name ?? "None";
-
             ImGui.SetNextItemWidth(-1);
             if (ImGui.BeginCombo("##gaze_target", currentTargetName))
             {
-                foreach (var targetActor in actors)
+                foreach (var targetActor in _actorManager.Actors)
                 {
-                    // Don't allow targeting self
-                    if (targetActor == actor)
-                        continue;
+                    if (targetActor == actor) continue;
 
                     bool isSelected = gazeState.TargetEntity == targetActor;
                     if (ImGui.Selectable(targetActor.Name, isSelected))
                     {
-                        _controller.SetGazeTarget(actor, targetActor);
+                        var newState = gazeState.Clone();
+                        newState.TargetEntity = targetActor;
+                        _gazeService.SetGazeState(actor, newState);
+                        RecordGazeChange(actor, oldState, newState);
                     }
-
-                    if (isSelected)
-                        ImGui.SetItemDefaultFocus();
+                    if (isSelected) ImGui.SetItemDefaultFocus();
                 }
                 ImGui.EndCombo();
             }
@@ -526,10 +489,71 @@ public class PropertiesPanel
 
         ImGui.Spacing();
 
-        // Reset button
         if (ImGui.Button("Reset Gaze"))
         {
-            _controller.ResetGaze(actor);
+            var newState = new GazeState();
+            _gazeService.SetGazeState(actor, newState);
+            RecordGazeChange(actor, oldState, newState);
+        }
+    }
+
+    private void DrawGazeCheckbox(string label, GazeTargetType type, IActor actor, GazeState gazeState, GazeState oldState)
+    {
+        bool isSet = gazeState.TargetType.HasFlag(type);
+        if (ImGui.Checkbox(label, ref isSet))
+        {
+            var newType = isSet
+                ? gazeState.TargetType | type
+                : gazeState.TargetType & ~type;
+            var newState = gazeState.Clone();
+            newState.TargetType = newType;
+            _gazeService.SetGazeState(actor, newState);
+            RecordGazeChange(actor, oldState, newState);
+        }
+    }
+
+    private void RecordGazeChange(IActor actor, GazeState oldState, GazeState newState)
+    {
+        var action = new GazeHistoryAction(_gazeService, actor, oldState, newState);
+        _historyService.Record(action);
+    }
+
+    #endregion
+
+    #region Helpers
+
+    private static Vector3 QuaternionToEuler(Quaternion q)
+    {
+        var sinr_cosp = 2 * (q.W * q.X + q.Y * q.Z);
+        var cosr_cosp = 1 - 2 * (q.X * q.X + q.Y * q.Y);
+        var roll = MathF.Atan2(sinr_cosp, cosr_cosp);
+
+        var sinp = 2 * (q.W * q.Y - q.Z * q.X);
+        var pitch = MathF.Abs(sinp) >= 1 ? MathF.CopySign(MathF.PI / 2, sinp) : MathF.Asin(sinp);
+
+        var siny_cosp = 2 * (q.W * q.Z + q.X * q.Y);
+        var cosy_cosp = 1 - 2 * (q.Y * q.Y + q.Z * q.Z);
+        var yaw = MathF.Atan2(siny_cosp, cosy_cosp);
+
+        return new Vector3(roll, pitch, yaw) * (180f / MathF.PI);
+    }
+
+    #endregion
+
+    /// <summary>
+    /// Represents a tab in the properties panel.
+    /// </summary>
+    private class EntityTab
+    {
+        public string Name { get; }
+        public FontAwesomeIcon Icon { get; }
+        public Action<IEntity> Draw { get; }
+
+        public EntityTab(string name, FontAwesomeIcon icon, Action<IEntity> draw)
+        {
+            Name = name;
+            Icon = icon;
+            Draw = draw;
         }
     }
 }

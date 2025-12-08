@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -11,6 +10,12 @@ using Poser.Services;
 
 namespace Poser.Game;
 
+/// <summary>
+/// Manages the lifecycle of actors in GPose.
+///
+/// NOTE: Selection is handled by SelectionService, not here.
+/// This class only tracks actor lifecycle (discovery, refresh).
+/// </summary>
 public class ActorManager : IActorManager
 {
     // GPose actors are in object table slots 201-439
@@ -38,7 +43,6 @@ public class ActorManager : IActorManager
     private readonly IEventBus _eventBus;
 
     private readonly List<IActor> _actors = new();
-    private readonly List<IActor> _selectedActors = new();
 
     // Track actor addresses to detect actual changes
     private readonly HashSet<nint> _lastActorAddresses = new();
@@ -47,8 +51,6 @@ public class ActorManager : IActorManager
     private bool _pendingRefresh = false;
 
     public IReadOnlyList<IActor> Actors => _actors.AsReadOnly();
-    public IReadOnlyList<IActor> SelectedActors => _selectedActors.AsReadOnly();
-    public IActor? PrimarySelectedActor => _selectedActors.FirstOrDefault();
 
     public ActorManager(IObjectTable objectTable, IGPoseService gPoseService, IFramework framework, IEventBus eventBus)
     {
@@ -60,52 +62,6 @@ public class ActorManager : IActorManager
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _framework.Update += OnFrameworkUpdate;
     }
-
-    public void Select(IActor actor)
-    {
-        if (!_actors.Contains(actor)) return;
-
-        _selectedActors.Clear();
-        _selectedActors.Add(actor);
-        _eventBus.Publish(new SelectionChangedEvent(SelectedActors));
-    }
-
-    public void SelectMultiple(IEnumerable<IActor> actors)
-    {
-        _selectedActors.Clear();
-        foreach (var actor in actors.Where(a => _actors.Contains(a)))
-        {
-            _selectedActors.Add(actor);
-        }
-        _eventBus.Publish(new SelectionChangedEvent(SelectedActors));
-    }
-
-    public void AddToSelection(IActor actor)
-    {
-        if (!_actors.Contains(actor) || _selectedActors.Contains(actor)) return;
-
-        _selectedActors.Add(actor);
-        _eventBus.Publish(new SelectionChangedEvent(SelectedActors));
-    }
-
-    public void RemoveFromSelection(IActor actor)
-    {
-        if (_selectedActors.Remove(actor))
-        {
-            _eventBus.Publish(new SelectionChangedEvent(SelectedActors));
-        }
-    }
-
-    public void ClearSelection()
-    {
-        if (_selectedActors.Count > 0)
-        {
-            _selectedActors.Clear();
-            _eventBus.Publish(new SelectionChangedEvent(SelectedActors));
-        }
-    }
-
-    public bool IsSelected(IActor actor) => _selectedActors.Contains(actor);
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent e)
     {
@@ -172,7 +128,6 @@ public class ActorManager : IActorManager
     public void RefreshActors()
     {
         // Clear existing actors
-        _selectedActors.Clear();
         foreach (var actor in _actors)
         {
             if (actor is IDisposable disposable)
@@ -199,7 +154,6 @@ public class ActorManager : IActorManager
 
     private void ClearActors()
     {
-        _selectedActors.Clear();
         foreach (var actor in _actors)
         {
             if (actor is IDisposable disposable)

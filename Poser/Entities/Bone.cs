@@ -22,6 +22,24 @@ public class Bone : EntityBase, IBone
     public bool IsSkeletonRoot { get; internal set; }
     public Transform LastTransform { get; internal set; } = Transform.Identity;
 
+    #region ITransformable
+
+    /// <summary>
+    /// Gets the current transform of this bone (from LastTransform cache).
+    /// </summary>
+    public override Transform Transform
+    {
+        get => LastTransform;
+        set => LastTransform = value;
+    }
+
+    /// <summary>
+    /// Bones show gizmo when visible.
+    /// </summary>
+    public bool ShowGizmo => IsVisible;
+
+    #endregion
+
     /// <summary>
     /// Bones are collapsible if they have children.
     /// </summary>

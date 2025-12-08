@@ -4,8 +4,6 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
-using Poser.Controllers;
-using Poser.Core;
 using Poser.Services;
 using Poser.UI.Components;
 
@@ -18,8 +16,6 @@ public class MainWindow : Window
     private const float MinPanelHeight = 100f;
 
     private readonly IGPoseService _gPoseService;
-    private readonly IAnimationService _animationService;
-    private readonly IHistoryService _historyService;
 
     // UI Components
     private readonly TopBar _topBar;
@@ -36,27 +32,38 @@ public class MainWindow : Window
         IActorManager actorManager,
         IAnimationService animationService,
         IAnimationDataService animationDataService,
-        IActorSpawnService spawnService,
-        IHistoryService historyService,
-        ICameraService cameraService,
         IPosingService posingService,
         IBonePosingService bonePosingService,
+        IActorSpawnService spawnService,
+        IHistoryService historyService,
         IGazeService gazeService,
-        ISkeletonService skeletonService,
-        IEditorState editorState,
-        IEventBus eventBus,
-        IPosingController posingController)
+        ISelectionService selectionService,
+        IEditorState editorState)
         : base($"{Poser.PluginName}###poser_sidebar_window",
             ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar)
     {
         _gPoseService = gPoseService;
-        _animationService = animationService;
-        _historyService = historyService;
 
-        // Initialize components
-        _topBar = new TopBar(gPoseService, historyService, actorManager, editorState);
-        _scenePanel = new ScenePanel(actorManager, animationService, spawnService, cameraService, gPoseService, skeletonService, editorState, eventBus, posingController);
-        _propertiesPanel = new PropertiesPanel(editorState, actorManager, posingService, bonePosingService, animationService, animationDataService, historyService, gazeService, posingController);
+        // Initialize components with their required services
+        _topBar = new TopBar(gPoseService, editorState, historyService);
+
+        _scenePanel = new ScenePanel(
+            actorManager,
+            selectionService,
+            animationService,
+            gPoseService,
+            editorState,
+            spawnService);
+
+        _propertiesPanel = new PropertiesPanel(
+            selectionService,
+            actorManager,
+            posingService,
+            bonePosingService,
+            animationService,
+            animationDataService,
+            historyService,
+            gazeService);
     }
 
     public override void PreDraw()

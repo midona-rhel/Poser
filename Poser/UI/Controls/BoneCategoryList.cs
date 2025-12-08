@@ -17,12 +17,14 @@ namespace Poser.UI.Controls;
 /// </summary>
 public class BoneCategoryList
 {
+    private readonly ISelectionService _selectionService;
     private readonly IEditorState _editorState;
     private readonly CategoryConfig _categoryConfig;
     private readonly Dictionary<EntityId, HashSet<string>> _collapsedCategories = new();
 
-    public BoneCategoryList(IEditorState editorState)
+    public BoneCategoryList(ISelectionService selectionService, IEditorState editorState)
     {
+        _selectionService = selectionService;
         _editorState = editorState;
         _categoryConfig = CategoryReader.ReadEmbeddedResource();
     }
@@ -106,7 +108,6 @@ public class BoneCategoryList
         string categoryKey = $"{skeleton.Id}_{category.Id}";
         bool isCollapsed = !_editorState.DebugMode && collapsedSet.Contains(category.Id);
         bool hasContent = categoryBones.Count > 0 || hasVisibleChildren;
-        bool isSelected = _editorState.IsCategorySelected(category.Id);
 
         // Get all bones for visibility toggle
         var allCategoryBones = GetAllBonesInCategoryRecursive(category, bonesByName);
@@ -119,7 +120,7 @@ public class BoneCategoryList
             Icon = FontAwesomeIcon.CircleNodes,
             IconColor = UIConstants.SkeletonColor,
             Depth = depth,
-            IsSelected = isSelected,
+            IsSelected = false, // Categories are not selectable in the same way
             IsCollapsible = hasContent,
             IsCollapsed = isCollapsed,
             ShowFreezeCheckbox = false,
@@ -140,8 +141,16 @@ public class BoneCategoryList
 
         if (result.Clicked)
         {
-            // Select this category in EditorState
-            _editorState.SelectCategory(category.Id, skeleton);
+            // Select all bones in the category
+            var bones = GetAllBonesInCategoryRecursive(category, bonesByName);
+            if (bones.Count > 0)
+            {
+                _selectionService.Select(bones[0]);
+                for (int i = 1; i < bones.Count; i++)
+                {
+                    _selectionService.AddToSelection(bones[i]);
+                }
+            }
         }
 
         if (result.VisibilityToggled)
@@ -174,7 +183,7 @@ public class BoneCategoryList
 
     private void DrawBone(Bone bone, int depth, Vector4 tabHovered, Vector4 tabActive)
     {
-        bool isSelected = _editorState.IsSelected(bone);
+        bool isSelected = _selectionService.IsSelected(bone);
 
         var config = new EntityListItemConfig
         {
@@ -196,9 +205,9 @@ public class BoneCategoryList
         if (result.Clicked)
         {
             if (result.CtrlHeld)
-                _editorState.ToggleSelection(bone);
+                _selectionService.ToggleSelection(bone);
             else
-                _editorState.Select(bone);
+                _selectionService.Select(bone);
         }
 
         if (result.VisibilityToggled)

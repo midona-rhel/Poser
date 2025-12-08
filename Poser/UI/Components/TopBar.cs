@@ -9,20 +9,22 @@ namespace Poser.UI.Components;
 
 /// <summary>
 /// Renders the top bar with GPose status, posing mode toggle, and undo/redo buttons.
+/// Injects services directly - reads state from services, calls methods on services.
 /// </summary>
 public class TopBar
 {
     private readonly IGPoseService _gPoseService;
-    private readonly IHistoryService _historyService;
-    private readonly IActorManager _actorManager;
     private readonly IEditorState _editorState;
+    private readonly IHistoryService _historyService;
 
-    public TopBar(IGPoseService gPoseService, IHistoryService historyService, IActorManager actorManager, IEditorState editorState)
+    public TopBar(
+        IGPoseService gPoseService,
+        IEditorState editorState,
+        IHistoryService historyService)
     {
         _gPoseService = gPoseService;
-        _historyService = historyService;
-        _actorManager = actorManager;
         _editorState = editorState;
+        _historyService = historyService;
     }
 
     public void Draw()
@@ -50,17 +52,15 @@ public class TopBar
 
     private void DrawPosingModeToggle()
     {
-        // Only show when in GPose
         if (!_gPoseService.IsGPosing)
             return;
 
         ImGui.TextDisabled("|");
         ImGui.SameLine();
 
-        var isPosingMode = _editorState.IsPosingMode;
         float buttonHeight = ImGui.GetFrameHeight();
+        bool isPosingMode = _editorState.IsPosingMode;
 
-        // Toggle icon button
         var toggleIcon = isPosingMode ? FontAwesomeIcon.ToggleOn : FontAwesomeIcon.ToggleOff;
         var toggleColor = isPosingMode
             ? new Vector4(1.0f, 0.7f, 0.3f, 1.0f)
@@ -85,7 +85,6 @@ public class TopBar
 
         ImGui.SameLine();
 
-        // Label
         if (isPosingMode)
         {
             ImGui.TextColored(toggleColor, "Pose");

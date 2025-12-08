@@ -20,7 +20,7 @@ public class SkeletonOverlayWindow : Window
     private readonly ICameraService _cameraService;
     private readonly ISkeletonService _skeletonService;
     private readonly IBonePosingService _bonePosingService;
-    private readonly IEditorState _editorState;
+    private readonly ISelectionService _selectionService;
 
     // Configuration
     private const float BoneCircleSize = 4f;
@@ -64,7 +64,7 @@ public class SkeletonOverlayWindow : Window
         ICameraService cameraService,
         ISkeletonService skeletonService,
         IBonePosingService bonePosingService,
-        IEditorState editorState)
+        ISelectionService selectionService)
         : base("##poser_skeleton_overlay",
             ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoDecoration |
@@ -79,7 +79,7 @@ public class SkeletonOverlayWindow : Window
         _cameraService = cameraService;
         _skeletonService = skeletonService;
         _bonePosingService = bonePosingService;
-        _editorState = editorState;
+        _selectionService = selectionService;
 
         RespectCloseHotkey = false;
     }
@@ -103,6 +103,7 @@ public class SkeletonOverlayWindow : Window
         var screenHeight = io.DisplaySize.Y;
         var mousePos = io.MousePos;
 
+        var selectedBone = _selectionService.GetFirstSelected<IBone>();
         var bones = new List<BoneDisplayData>();
 
         // Collect all bones and their screen positions from actors with visible skeletons
@@ -149,7 +150,7 @@ public class SkeletonOverlayWindow : Window
             // Create display data for each bone
             foreach (var (bone, screenPos) in boneScreenPositions)
             {
-                var isSelected = _editorState.SelectedBone == bone;
+                var isSelected = selectedBone == bone;
                 var isModified = _bonePosingService.HasModifications(bone);
 
                 Vector2? parentScreenPos = null;
@@ -224,8 +225,8 @@ public class SkeletonOverlayWindow : Window
             // Left-click to confirm selection
             if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
             {
-                var selectedBone = _contextMenuBones[_contextMenuIndex];
-                _editorState.Select(selectedBone.Bone);
+                var selectedBoneData = _contextMenuBones[_contextMenuIndex];
+                _selectionService.Select(selectedBoneData.Bone);
                 _contextMenuBones = null;
                 return;
             }
@@ -287,7 +288,7 @@ public class SkeletonOverlayWindow : Window
                 else
                 {
                     // Single bone - select directly
-                    _editorState.Select(clickedBone.Bone);
+                    _selectionService.Select(clickedBone.Bone);
                 }
             }
         }

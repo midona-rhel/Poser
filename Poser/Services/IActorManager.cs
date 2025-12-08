@@ -4,6 +4,12 @@ using Poser.Entities;
 
 namespace Poser.Services;
 
+/// <summary>
+/// Manages the lifecycle of actors in GPose.
+///
+/// NOTE: Selection is handled by ISelectionService, not here.
+/// This interface only tracks actor lifecycle (discovery, refresh).
+/// </summary>
 public interface IActorManager : IDisposable
 {
     /// <summary>
@@ -12,51 +18,10 @@ public interface IActorManager : IDisposable
     IReadOnlyList<IActor> Actors { get; }
 
     /// <summary>
-    /// Gets the currently selected actors (supports multi-selection).
-    /// </summary>
-    IReadOnlyList<IActor> SelectedActors { get; }
-
-    /// <summary>
-    /// Gets the primary selected actor (first in selection).
-    /// </summary>
-    IActor? PrimarySelectedActor { get; }
-
-    /// <summary>
-    /// Sets the selection to a single actor.
-    /// </summary>
-    void Select(IActor actor);
-
-    /// <summary>
-    /// Sets the selection to multiple actors.
-    /// </summary>
-    void SelectMultiple(IEnumerable<IActor> actors);
-
-    /// <summary>
-    /// Adds an actor to the current selection.
-    /// </summary>
-    void AddToSelection(IActor actor);
-
-    /// <summary>
-    /// Removes an actor from the current selection.
-    /// </summary>
-    void RemoveFromSelection(IActor actor);
-
-    /// <summary>
-    /// Clears all selections.
-    /// </summary>
-    void ClearSelection();
-
-    /// <summary>
-    /// Checks if an actor is selected.
-    /// </summary>
-    bool IsSelected(IActor actor);
-
-    /// <summary>
     /// Refreshes the actor list from the game.
     /// </summary>
     void RefreshActors();
 
-    // Events removed - use EventBus with:
-    // - ActorListChangedEvent for actor list changes
-    // - SelectionChangedEvent for selection changes
+    // Events are published via EventBus:
+    // - ActorListChangedEvent when actor list changes
 }

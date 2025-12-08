@@ -7,24 +7,34 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Core;
 using Poser.Entities;
-using Poser.History;
 using Poser.Services;
 
 namespace Poser.UI;
 
 /// <summary>
+/// What type of entity the gizmo is targeting.
+/// </summary>
+internal enum GizmoTargetType
+{
+    None,
+    Actor,
+    Bone
+}
+
+/// <summary>
 /// Unified gizmo overlay window that handles both actor and bone transforms.
+/// Injects services directly - reads state from services, calls methods on services.
+/// Still uses IEventBus to publish drag start/end events for history recording.
 /// </summary>
 public class GizmoOverlayWindow : Window
 {
-    private readonly IActorManager _actorManager;
+    private readonly IEventBus _eventBus;
+    private readonly ISelectionService _selectionService;
+    private readonly IAnimationService _animationService;
+    private readonly IEditorState _editorState;
     private readonly ICameraService _cameraService;
     private readonly IPosingService _posingService;
     private readonly IBonePosingService _bonePosingService;
-    private readonly ISkeletonService _skeletonService;
-    private readonly IHistoryService _historyService;
-    private readonly IAnimationService _animationService;
-    private readonly IEditorState _editorState;
 
     /// <summary>Arbitrary unique ID for ImGuizmo to track gizmo state.</summary>
     private const int GizmoId = 142857;
@@ -37,14 +47,13 @@ public class GizmoOverlayWindow : Window
     private Dictionary<IBone, Transform>? _boneDragStartModifications;
 
     public GizmoOverlayWindow(
-        IActorManager actorManager,
+        IEventBus eventBus,
+        ISelectionService selectionService,
+        IAnimationService animationService,
+        IEditorState editorState,
         ICameraService cameraService,
         IPosingService posingService,
-        IBonePosingService bonePosingService,
-        ISkeletonService skeletonService,
-        IHistoryService historyService,
-        IAnimationService animationService,
-        IEditorState editorState)
+        IBonePosingService bonePosingService)
         : base("##poser_gizmo_overlay",
             ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoDecoration |
@@ -55,14 +64,13 @@ public class GizmoOverlayWindow : Window
             ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoSavedSettings)
     {
-        _actorManager = actorManager;
+        _eventBus = eventBus;
+        _selectionService = selectionService;
+        _animationService = animationService;
+        _editorState = editorState;
         _cameraService = cameraService;
         _posingService = posingService;
         _bonePosingService = bonePosingService;
-        _skeletonService = skeletonService;
-        _historyService = historyService;
-        _animationService = animationService;
-        _editorState = editorState;
 
         RespectCloseHotkey = false;
     }
@@ -90,7 +98,7 @@ public class GizmoOverlayWindow : Window
         ImGuizmo.AllowAxisFlip(false);
         ImGuizmo.SetDrawlist();
 
-        var targetType = _editorState.GetGizmoTargetType();
+        var targetType = GetGizmoTargetType();
 
         switch (targetType)
         {
@@ -107,17 +115,32 @@ public class GizmoOverlayWindow : Window
         }
     }
 
+    private GizmoTargetType GetGizmoTargetType()
+    {
+        var selectedBone = _selectionService.GetFirstSelected<IBone>();
+        if (selectedBone != null)
+            return GizmoTargetType.Bone;
+
+        var selectedActor = _selectionService.GetFirstSelected<IActor>();
+        if (selectedActor != null)
+            return GizmoTargetType.Actor;
+
+        return GizmoTargetType.None;
+    }
+
     private void DrawActorGizmo()
     {
-        var selectedActor = _editorState.SelectedActor;
-        if (selectedActor == null)
+        var selectedActors = _selectionService.GetSelected<IActor>().ToList();
+        if (selectedActors.Count == 0)
             return;
+
+        var primaryActor = selectedActors[0];
 
         var viewMatrix = _cameraService.GetViewMatrix();
         var projectionMatrix = _cameraService.GetProjectionMatrix();
 
         // Calculate pivot position based on mode
-        var (pivotPosition, pivotRotation) = CalculateActorPivot();
+        var (pivotPosition, pivotRotation) = CalculateActorPivot(selectedActors, primaryActor);
         var pivotTransform = new Transform(pivotPosition, pivotRotation, Vector3.One);
         var modelMatrix = pivotTransform.ToMatrix();
 
@@ -132,10 +155,12 @@ public class GizmoOverlayWindow : Window
         {
             // Starting to drag - store initial transforms for ALL selected actors
             _actorDragStartTransforms = new Dictionary<IActor, Transform>();
-            foreach (var actor in _editorState.GetSelected<IActor>())
+            foreach (var actor in selectedActors)
             {
                 _actorDragStartTransforms[actor] = _posingService.GetEffectiveTransform(actor);
             }
+            // Emit drag start event for history recording
+            _eventBus.Publish(new TransformDragStartedEvent(selectedActors.Cast<IEntity>().ToList()));
         }
 
         // Determine gizmo mode based on transform orientation
@@ -162,30 +187,21 @@ public class GizmoOverlayWindow : Window
             ref modelMatrix))
         {
             var newPivotTransform = Transform.FromMatrix(modelMatrix);
-            ApplyActorPivotTransform(pivotTransform, newPivotTransform);
+            ApplyActorPivotTransform(selectedActors, primaryActor, pivotTransform, newPivotTransform);
         }
 
         // Check if we finished dragging
         if (!isUsing && _actorDragStartTransforms != null)
         {
-            CreateActorUndoAction();
+            // Emit drag end event for history recording
+            _eventBus.Publish(new TransformDragEndedEvent());
             _actorDragStartTransforms = null;
         }
     }
 
     private void DrawBoneGizmo()
     {
-        // Get bones either from direct selection or from category selection
-        List<IBone> selectedBones;
-        if (_editorState.SelectedCategory != null)
-        {
-            selectedBones = _editorState.GetSelectedCategoryBones().ToList();
-        }
-        else
-        {
-            selectedBones = _editorState.GetSelected<IBone>().ToList();
-        }
-
+        var selectedBones = _selectionService.GetSelected<IBone>().ToList();
         if (selectedBones.Count == 0)
             return;
 
@@ -255,6 +271,8 @@ public class GizmoOverlayWindow : Window
                 var mod = _bonePosingService.GetModification(bone);
                 _boneDragStartModifications[bone] = mod ?? new Transform { Position = Vector3.Zero, Rotation = Quaternion.Identity, Scale = Vector3.Zero };
             }
+            // Emit drag start event for history recording
+            _eventBus.Publish(new TransformDragStartedEvent(selectedBones.Cast<IEntity>().ToList()));
         }
 
         // Get the gizmo operation based on selected tool
@@ -298,31 +316,13 @@ public class GizmoOverlayWindow : Window
             }
         }
 
-        // Finish drag - create undo action
+        // Finish drag - emit event for history
         if (_lastFrameBoneGizmo.HasValue && !isUsing)
         {
             if (_boneDragStartModifications != null && _boneDragStartModifications.Count > 0)
             {
-                var actions = new List<IHistoryAction>();
-
-                foreach (var (bone, startMod) in _boneDragStartModifications)
-                {
-                    var endMod = _bonePosingService.GetModification(bone);
-                    if (endMod.HasValue)
-                    {
-                        actions.Add(new TransformBoneAction(_bonePosingService, bone, startMod, endMod.Value));
-                    }
-                }
-
-                if (actions.Count == 1)
-                {
-                    _historyService.Record(actions[0]);
-                }
-                else if (actions.Count > 1)
-                {
-                    var description = $"Transform {actions.Count} bones";
-                    _historyService.Push(new CompositeAction(description, actions));
-                }
+                // Emit drag end event for history recording
+                _eventBus.Publish(new TransformDragEndedEvent());
             }
 
             _lastFrameBoneGizmo = null;
@@ -330,11 +330,8 @@ public class GizmoOverlayWindow : Window
         }
     }
 
-    private (Vector3 position, Quaternion rotation) CalculateActorPivot()
+    private (Vector3 position, Quaternion rotation) CalculateActorPivot(List<IActor> selectedActors, IActor primaryActor)
     {
-        var selectedActors = _editorState.GetSelected<IActor>();
-        var primaryActor = _editorState.SelectedActor;
-
         // First calculate the pivot position based on TransformPivot
         Vector3 pivotPosition;
         switch (_editorState.TransformPivot)
@@ -357,14 +354,7 @@ public class GizmoOverlayWindow : Window
             case TransformPivot.Parent:
             default:
                 // Use primary actor's position for gizmo display
-                if (primaryActor != null)
-                {
-                    pivotPosition = _posingService.GetEffectiveTransform(primaryActor).Position;
-                }
-                else
-                {
-                    pivotPosition = Vector3.Zero;
-                }
+                pivotPosition = _posingService.GetEffectiveTransform(primaryActor).Position;
                 break;
         }
 
@@ -380,21 +370,14 @@ public class GizmoOverlayWindow : Window
             case TransformOrientation.Parent:
             default:
                 // Use primary actor's rotation for local orientation
-                if (primaryActor != null)
-                {
-                    pivotRotation = _posingService.GetEffectiveTransform(primaryActor).Rotation;
-                }
-                else
-                {
-                    pivotRotation = Quaternion.Identity;
-                }
+                pivotRotation = _posingService.GetEffectiveTransform(primaryActor).Rotation;
                 break;
         }
 
         return (pivotPosition, pivotRotation);
     }
 
-    private void ApplyActorPivotTransform(Transform oldPivot, Transform newPivot)
+    private void ApplyActorPivotTransform(List<IActor> selectedActors, IActor primaryActor, Transform oldPivot, Transform newPivot)
     {
         // Calculate deltas
         var positionDelta = newPivot.Position - oldPivot.Position;
@@ -403,7 +386,7 @@ public class GizmoOverlayWindow : Window
         if (_editorState.TransformPivot == TransformPivot.Individual)
         {
             // Individual mode: each actor rotates around its own center
-            foreach (var actor in _editorState.GetSelected<IActor>())
+            foreach (var actor in selectedActors)
             {
                 var actorTransform = _posingService.GetEffectiveTransform(actor);
 
@@ -419,7 +402,7 @@ public class GizmoOverlayWindow : Window
         else
         {
             // Median/Parent mode: all actors rotate around the pivot point
-            foreach (var actor in _editorState.GetSelected<IActor>())
+            foreach (var actor in selectedActors)
             {
                 var actorTransform = _posingService.GetEffectiveTransform(actor);
 
@@ -433,36 +416,6 @@ public class GizmoOverlayWindow : Window
 
                 _posingService.SetTransformOverride(actor, actorTransform);
             }
-        }
-    }
-
-    private void CreateActorUndoAction()
-    {
-        if (_actorDragStartTransforms == null || _actorDragStartTransforms.Count == 0)
-            return;
-
-        var actions = new List<IHistoryAction>();
-
-        foreach (var (actor, startTransform) in _actorDragStartTransforms)
-        {
-            var endTransform = _posingService.GetEffectiveTransform(actor);
-            if (startTransform != endTransform)
-            {
-                actions.Add(new TransformActorAction(_posingService, actor, startTransform, endTransform));
-            }
-        }
-
-        if (actions.Count == 0)
-            return;
-
-        if (actions.Count == 1)
-        {
-            _historyService.Push(actions[0]);
-        }
-        else
-        {
-            var description = $"Transform {actions.Count} actors";
-            _historyService.Push(new CompositeAction(description, actions));
         }
     }
 
