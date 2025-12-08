@@ -4,6 +4,8 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
+using Poser.Data;
+using Poser.Data.Config;
 using Poser.Entities;
 using Poser.Services;
 using Poser.UI.Controls;
@@ -12,7 +14,7 @@ namespace Poser.UI.Components;
 
 /// <summary>
 /// Unified entity list showing all scene entities in a hierarchical table.
-/// Injects services directly - reads state from services, calls methods on services.
+/// Uses TreeListItem hierarchy for clean, type-specific rendering.
 /// </summary>
 public class EntityList
 {
@@ -22,8 +24,13 @@ public class EntityList
     private readonly IActorManager _actorManager;
     private readonly ISelectionService _selectionService;
     private readonly IAnimationService _animationService;
+    private readonly ISkeletonService _skeletonService;
     private readonly IGPoseService _gPoseService;
-    private readonly IEditorState _editorState;
+    private readonly CategoryConfig _categoryConfig;
+
+    // Cached tree items - rebuilt when actors change
+    private readonly List<TreeListItem> _items = new();
+    private int _lastActorCount = -1;
 
     // Local UI state only
     private bool _isCollapsed = false;
@@ -32,14 +39,16 @@ public class EntityList
         IActorManager actorManager,
         ISelectionService selectionService,
         IAnimationService animationService,
+        ISkeletonService skeletonService,
         IGPoseService gPoseService,
         IEditorState editorState)
     {
         _actorManager = actorManager;
         _selectionService = selectionService;
         _animationService = animationService;
+        _skeletonService = skeletonService;
         _gPoseService = gPoseService;
-        _editorState = editorState;
+        _categoryConfig = CategoryReader.ReadEmbeddedResource();
     }
 
     public void Draw()
@@ -53,6 +62,13 @@ public class EntityList
 
         var actors = _actorManager.Actors;
         int totalEntities = actors.Count + (_gPoseService.IsGPosing ? 1 : 0); // +1 for camera
+
+        // Rebuild tree items if actor count changed
+        if (actors.Count != _lastActorCount)
+        {
+            RebuildItems(actors);
+            _lastActorCount = actors.Count;
+        }
 
         using (ImRaii.PushStyle(ImGuiStyleVar.CellPadding, new Vector2(cellPadding, 4f * ImGuiHelpers.GlobalScale)))
         using (ImRaii.PushColor(ImGuiCol.TableRowBg, brighterBg))
@@ -73,9 +89,9 @@ public class EntityList
                         DrawCameraRow(tabHovered, tabActive);
                     }
 
-                    for (int i = 0; i < actors.Count; i++)
+                    foreach (var item in _items)
                     {
-                        DrawEntityRow(actors[i], 0, tabHovered, tabActive);
+                        item.Draw(tabHovered, tabActive, _selectionService);
                     }
                 }
 
@@ -86,6 +102,23 @@ public class EntityList
         if (!_isCollapsed && totalEntities == 0)
         {
             ImGui.TextDisabled("No entities in scene");
+        }
+    }
+
+    private void RebuildItems(IReadOnlyList<IActor> actors)
+    {
+        _items.Clear();
+
+        foreach (var actor in actors)
+        {
+            var actorItem = new ActorListItem(
+                actor,
+                0,
+                _animationService,
+                _skeletonService,
+                _selectionService,
+                _categoryConfig);
+            _items.Add(actorItem);
         }
     }
 
@@ -134,152 +167,5 @@ public class EntityList
         {
             // TODO: Select camera when it's an entity
         }
-    }
-
-    private void DrawEntityRow(IEntity entity, int depth, Vector4 tabHovered, Vector4 tabActive)
-    {
-        IActor? actor = entity as IActor;
-
-        // Read state directly from services
-        bool isSelected = _selectionService.IsSelected(entity);
-        bool isFrozen = actor != null && _animationService.IsFrozen(actor);
-        bool isVisible = true; // TODO: Get from visibility service when created
-
-        var icon = GetIconForEntity(entity);
-        Vector4 iconColor = GetIconColor(entity, isVisible);
-        Vector4? textColor = isVisible ? null : new Vector4(0.5f, 0.5f, 0.5f, 0.7f);
-
-        bool effectiveCollapsed = _editorState.DebugMode ? false : entity.IsCollapsed;
-
-        var config = new EntityListItemConfig
-        {
-            Id = entity.Id.ToString(),
-            Name = entity.Name,
-            Icon = icon,
-            IconColor = iconColor,
-            TextColor = textColor,
-            Depth = depth,
-            IsSelected = isSelected,
-            IsCollapsible = entity.IsCollapsible,
-            IsCollapsed = effectiveCollapsed,
-            ShowFreezeCheckbox = actor != null,
-            IsFrozen = isFrozen,
-            ShowVisibilityCheckbox = actor != null || entity is Skeleton,
-            IsVisible = isVisible
-        };
-
-        var result = EntityListItem.Draw(config, tabHovered, tabActive);
-
-        HandleInteractions(entity, actor, result);
-
-        // Draw children if not collapsed
-        if (_editorState.DebugMode || !entity.IsCollapsed)
-        {
-            foreach (var child in entity.Children)
-            {
-                DrawEntityRow(child, depth + 1, tabHovered, tabActive);
-            }
-        }
-    }
-
-    private void HandleInteractions(IEntity entity, IActor? actor, EntityListItemResult result)
-    {
-        if (result.CollapseToggled)
-        {
-            entity.IsCollapsed = !entity.IsCollapsed;
-        }
-
-        if (result.Clicked)
-        {
-            HandleSelectionClick(entity, result.CtrlHeld, result.ShiftHeld);
-        }
-
-        if (result.FreezeToggled && actor != null)
-        {
-            _animationService.ToggleFreeze(actor);
-        }
-
-        if (result.VisibilityToggled)
-        {
-            // TODO: Call visibility service when created
-        }
-    }
-
-    private void HandleSelectionClick(IEntity entity, bool ctrlHeld, bool shiftHeld)
-    {
-        if (ctrlHeld)
-        {
-            _selectionService.ToggleSelection(entity);
-        }
-        else if (shiftHeld && _selectionService.Primary != null)
-        {
-            var displayOrder = GatherDisplayOrder();
-            _selectionService.SelectRange(_selectionService.Primary, entity, displayOrder);
-        }
-        else
-        {
-            _selectionService.Select(entity);
-        }
-    }
-
-    private IReadOnlyList<IEntity> GatherDisplayOrder()
-    {
-        var result = new List<IEntity>();
-        foreach (var actor in _actorManager.Actors)
-        {
-            GatherEntitiesRecursive(actor, result);
-        }
-        return result;
-    }
-
-    private void GatherEntitiesRecursive(IEntity entity, List<IEntity> result)
-    {
-        result.Add(entity);
-        if (!entity.IsCollapsed)
-        {
-            foreach (var child in entity.Children)
-            {
-                GatherEntitiesRecursive(child, result);
-            }
-        }
-    }
-
-    private static Vector4 GetIconColor(IEntity entity, bool isVisible)
-    {
-        if (entity.EntityType == EntityType.Skeleton || entity.EntityType == EntityType.Bone)
-        {
-            return UIConstants.SkeletonColor;
-        }
-        return isVisible ? UIConstants.DefaultIconColor : UIConstants.HiddenIconColor;
-    }
-
-    private static FontAwesomeIcon GetIconForEntity(IEntity entity)
-    {
-        return entity.EntityType switch
-        {
-            EntityType.Player => FontAwesomeIcon.User,
-            EntityType.Npc => FontAwesomeIcon.UserShield,
-            EntityType.Companion => FontAwesomeIcon.Paw,
-            EntityType.Camera => FontAwesomeIcon.Camera,
-            EntityType.Skeleton => FontAwesomeIcon.CircleNodes,
-            EntityType.Bone => entity is Bone bone && bone.ChildBones.Count > 0
-                ? FontAwesomeIcon.CircleNodes
-                : FontAwesomeIcon.Circle,
-            _ => entity switch
-            {
-                IActor actor => actor.ActorKind switch
-                {
-                    ActorKind.Player => FontAwesomeIcon.User,
-                    ActorKind.Companion => FontAwesomeIcon.Paw,
-                    ActorKind.Mount => FontAwesomeIcon.Horse,
-                    ActorKind.Ornament => FontAwesomeIcon.Gem,
-                    ActorKind.BattleNpc => FontAwesomeIcon.UserShield,
-                    ActorKind.EventNpc => FontAwesomeIcon.UserTie,
-                    ActorKind.Retainer => FontAwesomeIcon.Store,
-                    _ => FontAwesomeIcon.User
-                },
-                _ => FontAwesomeIcon.QuestionCircle
-            }
-        };
     }
 }

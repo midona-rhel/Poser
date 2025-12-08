@@ -1,3 +1,4 @@
+using System.Numerics;
 using Poser.Entities;
 
 namespace Poser.Services;
@@ -87,13 +88,25 @@ public interface IGazeService
     void SetGazeState(IActor actor, GazeState state);
 
     /// <summary>
-    /// Lock an actor's gaze at its current position (prevents game from updating).
-    /// Used when entering posing mode to freeze head/eyes.
+    /// Lock an actor's gaze at the current camera position.
+    /// The head/eyes will continue looking at that position even if camera moves.
     /// </summary>
     void LockGaze(IActor actor, GazeTargetType targetType = GazeTargetType.All);
 
     /// <summary>
-    /// Unlock an actor's gaze (allows game to control again).
+    /// Lock or unlock a specific gaze target type at a position.
+    /// Like Brio's SetTargetLock.
+    /// </summary>
+    void SetTargetLock(IActor actor, bool doLock, GazeTargetType targetType, Vector3 position);
+
+    /// <summary>
+    /// Disable gaze control entirely for an actor.
+    /// Head/eyes will move naturally with parent bones (good for posing mode).
+    /// </summary>
+    void DisableGaze(IActor actor);
+
+    /// <summary>
+    /// Unlock an actor's gaze (allows camera tracking again).
     /// </summary>
     void UnlockGaze(IActor actor);
 
@@ -101,4 +114,20 @@ public interface IGazeService
     /// Check if an actor's gaze is locked.
     /// </summary>
     bool IsGazeLocked(IActor actor);
+
+    /// <summary>
+    /// Check if a specific gaze part is locked.
+    /// </summary>
+    bool IsPartLocked(IActor actor, GazeTargetType targetType);
+
+    /// <summary>
+    /// Check if gaze control is enabled for an actor.
+    /// </summary>
+    bool IsGazeEnabled(IActor actor);
+
+    /// <summary>
+    /// Enable gaze control for an actor (like Brio's StartLookAt).
+    /// Initializes with Camera mode.
+    /// </summary>
+    void EnableGaze(IActor actor);
 }

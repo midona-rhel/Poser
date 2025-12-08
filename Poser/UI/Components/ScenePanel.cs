@@ -23,6 +23,7 @@ public class ScenePanel
         IActorManager actorManager,
         ISelectionService selectionService,
         IAnimationService animationService,
+        ISkeletonService skeletonService,
         IGPoseService gPoseService,
         IEditorState editorState,
         IActorSpawnService spawnService)
@@ -34,6 +35,7 @@ public class ScenePanel
             actorManager,
             selectionService,
             animationService,
+            skeletonService,
             gPoseService,
             editorState);
     }

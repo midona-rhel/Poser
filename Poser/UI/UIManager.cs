@@ -82,6 +82,8 @@ public class UIManager : IUIManager
             spawnService,
             historyService,
             gazeService,
+            skeletonService,
+            cameraService,
             selectionService,
             editorState);
         _windowSystem.AddWindow(_mainWindow);

@@ -314,6 +314,72 @@ public static class ImPoser
 
     #endregion
 
+    #region Toggle Controls
+
+    /// <summary>
+    /// Toggle button with lock icon (like Brio's ToggleLock).
+    /// Returns (toggleClicked, lockClicked).
+    /// </summary>
+    public static (bool toggleClicked, bool lockClicked) ToggleLock(
+        string label,
+        float width,
+        ref bool enabled,
+        ref bool locked,
+        bool disableOnLock = false)
+    {
+        bool toggleClicked = false;
+        bool lockClicked = false;
+
+        using (ImRaii.PushColor(ImGuiCol.ChildBg, ImGui.GetColorU32(ImGuiCol.Tab)))
+        using (ImRaii.PushStyle(ImGuiStyleVar.ChildRounding, ImGui.GetStyle().FrameRounding))
+        {
+            var height = 25 * ImGuiHelpers.GlobalScale;
+            using var child = ImRaii.Child($"###{label}_togglelock", new Vector2(width - 2f, height), false, ImGuiWindowFlags.NoScrollbar);
+
+            if (child.Success)
+            {
+                // Toggle button
+                using (ImRaii.Disabled(locked && disableOnLock))
+                {
+                    if (ToggleButton($"{label}###toggle", new Vector2(53, 25), enabled))
+                    {
+                        toggleClicked = true;
+                        enabled = !enabled;
+                    }
+                }
+
+                ImGui.SameLine();
+
+                // Lock button
+                using (ImRaii.Disabled(!enabled))
+                {
+                    var lockIcon = locked ? FontAwesomeIcon.Lock : FontAwesomeIcon.Unlock;
+                    var lockTooltip = locked ? "Unlock" : "Lock";
+                    if (IconButton($"{label}_lock", lockIcon, null, lockTooltip))
+                    {
+                        lockClicked = true;
+                        locked = !locked;
+                    }
+                }
+            }
+        }
+
+        return (toggleClicked, lockClicked);
+    }
+
+    /// <summary>
+    /// Toggle button that changes color when active.
+    /// </summary>
+    public static bool ToggleButton(string label, Vector2 size, bool isActive)
+    {
+        using (ImRaii.PushColor(ImGuiCol.Button, ImGui.GetColorU32(isActive ? ImGuiCol.TabActive : ImGuiCol.Tab)))
+        {
+            return ImGui.Button(label, size);
+        }
+    }
+
+    #endregion
+
     #region Tooltips
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

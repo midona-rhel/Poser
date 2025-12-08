@@ -37,6 +37,8 @@ public class MainWindow : Window
         IActorSpawnService spawnService,
         IHistoryService historyService,
         IGazeService gazeService,
+        ISkeletonService skeletonService,
+        ICameraService cameraService,
         ISelectionService selectionService,
         IEditorState editorState)
         : base($"{Poser.PluginName}###poser_sidebar_window",
@@ -51,6 +53,7 @@ public class MainWindow : Window
             actorManager,
             selectionService,
             animationService,
+            skeletonService,
             gPoseService,
             editorState,
             spawnService);
@@ -63,7 +66,10 @@ public class MainWindow : Window
             animationService,
             animationDataService,
             historyService,
-            gazeService);
+            gazeService,
+            skeletonService,
+            cameraService,
+            editorState);
     }
 
     public override void PreDraw()

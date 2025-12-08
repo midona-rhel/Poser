@@ -60,8 +60,11 @@ public class EditorState : IEditorState
                 _animationService.Freeze(actor);
             }
 
-            // Lock gaze to prevent head/eyes from tracking
-            _gazeService.LockGaze(actor, GazeTargetType.All);
+            // Note: Gaze is NOT disabled here - bone posing works additively on top of gaze
+            // User can manually lock/unlock gaze via the UI (like Brio)
+
+            // Enable edit mode to show skeleton overlay
+            actor.IsEditMode = true;
         }
 
         _eventBus.Publish(new PosingModeChangedEvent(true));
@@ -84,6 +87,9 @@ public class EditorState : IEditorState
 
             // Unlock gaze to allow normal tracking
             _gazeService.UnlockGaze(actor);
+
+            // Disable edit mode
+            actor.IsEditMode = false;
         }
 
         _eventBus.Publish(new PosingModeChangedEvent(false));

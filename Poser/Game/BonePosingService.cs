@@ -47,6 +47,14 @@ public unsafe class BonePosingService : IBonePosingService
     // Track which skeletons need cache updates (visible overlays, active gizmo, etc.)
     private readonly HashSet<nint> _skeletonsToUpdateCache = new();
 
+    // Gaze bones - these are modified by gaze IK and should be applied AFTER gaze runs
+    // They are skipped in UpdateBonePhysicsDetour and applied in ActorLookAtDetour instead
+    public static readonly HashSet<string> GazeBoneNames = new()
+    {
+        "j_kubi", "j_kao", "j_f_eye_l", "j_f_eye_r", // Head/neck/eyes
+        "n_hkata_l", "n_hkata_r", "j_sebo_a", "j_sebo_b", "j_sebo_c" // Body (spine/shoulders for body gaze)
+    };
+
     private bool _isUpdating = false;
 
     public event Action<IBone>? OnBoneTransformChanged;
@@ -500,69 +508,10 @@ public unsafe class BonePosingService : IBonePosingService
 
     public void SnapshotSkeleton(ISkeleton skeleton)
     {
-        var poseInfo = GetPoseInfo(skeleton);
-
-        // Mark skeleton for update so it starts being controlled by our hook
+        // Just mark skeleton for update - the freeze already stops animations
+        // We don't need to apply any transforms until the user actually modifies a bone
+        // This matches Brio's approach: freezing + zero deltas = preserved state
         _skeletonsToUpdate.Add(skeleton.Actor.Address);
-
-        // Read current bone transforms from game and apply them as modifications
-        // This "claims" the bones and prevents game systems (like LookAt) from controlling them
-        var character = (Character*)skeleton.Actor.Address;
-        if (character == null)
-            return;
-
-        var drawObject = character->GameObject.DrawObject;
-        if (drawObject == null)
-            return;
-
-        if (drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
-            return;
-
-        var charaBase = (CharacterBase*)drawObject;
-        if (charaBase->Skeleton == null)
-            return;
-
-        var gameSkeleton = charaBase->Skeleton;
-        var partialCount = gameSkeleton->PartialSkeletonCount;
-
-        for (int partialIdx = 0; partialIdx < partialCount; partialIdx++)
-        {
-            var partial = &gameSkeleton->PartialSkeletons[partialIdx];
-            var pose = partial->GetHavokPose(0);
-            if (pose == null)
-                continue;
-
-            var boneCount = pose->Skeleton->Bones.Length;
-            for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
-            {
-                var rawBone = pose->Skeleton->Bones[boneIdx];
-                var boneName = rawBone.Name.String ?? $"bone_{partialIdx}_{boneIdx}";
-
-                var bonePoseInfo = poseInfo.GetPoseInfo(boneName, partialIdx);
-                if (bonePoseInfo.HasStacks)
-                    continue; // Already has modifications, don't overwrite
-
-                // Read current transform from game in local space (reference pose)
-                var localSpace = pose->AccessBoneLocalSpace(boneIdx);
-                if (localSpace == null)
-                    continue;
-
-                // Store the current rotation as a "modification" that maintains this pose
-                // Using identity as the delta means we're snapshotting current state
-                var currentRotation = new Quaternion(
-                    localSpace->Rotation.X,
-                    localSpace->Rotation.Y,
-                    localSpace->Rotation.Z,
-                    localSpace->Rotation.W);
-
-                // Apply identity delta with the bone marked as having a stack
-                // This tells ApplyBoneTransform to maintain current pose
-                bonePoseInfo.Apply(
-                    new Transform { Position = Vector3.Zero, Rotation = Quaternion.Identity, Scale = Vector3.Zero },
-                    new Transform { Position = Vector3.Zero, Rotation = currentRotation, Scale = Vector3.Zero },
-                    TransformComponents.Rotation);
-            }
-        }
     }
 
     public void Dispose()
