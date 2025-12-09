@@ -290,20 +290,31 @@ public unsafe class ActorSpawnService : IActorSpawnService
     {
         _log.Debug("ActorSpawnService: Destroying all spawned actors");
 
-        try
+        var com = ClientObjectManager.Instance();
+        if (com == null)
         {
-            var com = ClientObjectManager.Instance();
-            if (com == null)
-                return;
+            _spawnedIndexes.Clear();
+            _visibilityOverrides.Clear();
+            return;
+        }
 
-            foreach (var idx in _spawnedIndexes)
+        var failedIndexes = new List<ushort>();
+        foreach (var idx in _spawnedIndexes)
+        {
+            try
             {
                 com->DeleteObjectByIndex(idx, 0);
             }
+            catch (Exception ex)
+            {
+                _log.Warning($"ActorSpawnService: Failed to destroy actor at index {idx}: {ex.Message}");
+                failedIndexes.Add(idx);
+            }
         }
-        catch (Exception ex)
+
+        if (failedIndexes.Count > 0)
         {
-            _log.Error($"ActorSpawnService: Failed to destroy all spawned: {ex.Message}");
+            _log.Error($"ActorSpawnService: Failed to destroy {failedIndexes.Count} actors");
         }
 
         _spawnedIndexes.Clear();

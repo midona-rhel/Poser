@@ -91,8 +91,11 @@ public class Bone : EntityBase, IBone
     /// <summary>
     /// Adds a child bone to this bone.
     /// </summary>
-    internal void AddChildBone(Bone child)
+    internal void AddChildBone(Bone? child)
     {
+        if (child == null)
+            return;
+
         if (!_childBones.Contains(child))
         {
             _childBones.Add(child);

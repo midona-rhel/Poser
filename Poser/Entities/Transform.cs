@@ -101,20 +101,33 @@ public struct Transform
         };
     }
 
+    private const float Epsilon = 0.0001f;
+
+    /// <summary>
+    /// Compares transforms using epsilon tolerance to handle floating-point precision.
+    /// </summary>
     public override bool Equals(object? obj)
     {
         if (obj is Transform other)
         {
-            return Position == other.Position &&
-                   Rotation == other.Rotation &&
-                   Scale == other.Scale;
+            return Vector3.DistanceSquared(Position, other.Position) < Epsilon &&
+                   MathF.Abs(Quaternion.Dot(Rotation, other.Rotation)) > 1f - Epsilon &&
+                   Vector3.DistanceSquared(Scale, other.Scale) < Epsilon;
         }
         return false;
     }
 
+    /// <summary>
+    /// Hash code uses rounded values to maintain consistency with epsilon-based Equals.
+    /// </summary>
     public override int GetHashCode()
     {
-        return HashCode.Combine(Position, Rotation, Scale);
+        // Round to reduce hash collisions from near-equal transforms
+        static int RoundComponent(float v) => (int)(v * 1000);
+        return HashCode.Combine(
+            RoundComponent(Position.X), RoundComponent(Position.Y), RoundComponent(Position.Z),
+            RoundComponent(Rotation.W),
+            RoundComponent(Scale.X), RoundComponent(Scale.Y), RoundComponent(Scale.Z));
     }
 
     public static bool operator ==(Transform left, Transform right) => left.Equals(right);

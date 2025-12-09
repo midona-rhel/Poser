@@ -20,7 +20,7 @@ namespace Poser.UI.Components;
 /// Renders the Properties panel showing details of the selected entity.
 /// Uses capability interfaces to determine what UI to show.
 /// </summary>
-public class PropertiesPanel
+public class PropertiesPanel : IDisposable
 {
     private const float TabBarWidth = 40f;
     private const float LabelWidth = 50f;
@@ -686,4 +686,10 @@ public class PropertiesPanel
     }
 
     #endregion
+
+    public void Dispose()
+    {
+        _transformWidget.OnTransformCommit -= OnTransformCommit;
+        GC.SuppressFinalize(this);
+    }
 }

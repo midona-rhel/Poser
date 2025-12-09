@@ -102,7 +102,7 @@ public class AnimationService : IAnimationService
         }
     }
 
-    public bool IsFrozen(IActor actor) => _speedOverrides.ContainsKey(actor.Address) && _speedOverrides[actor.Address] == 0f;
+    public bool IsFrozen(IActor actor) => _speedOverrides.TryGetValue(actor.Address, out var speed) && speed == 0f;
 
     public void Freeze(IActor actor)
     {

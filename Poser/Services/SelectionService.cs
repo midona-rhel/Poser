@@ -10,7 +10,7 @@ namespace Poser.Services;
 /// Single source of truth for entity selection.
 /// UI components call methods directly; service publishes result events.
 /// </summary>
-public class SelectionService : ISelectionService
+public class SelectionService : ISelectionService, IDisposable
 {
     private readonly IEventBus _eventBus;
     private readonly List<IEntity> _selected = new();
@@ -75,8 +75,16 @@ public class SelectionService : ISelectionService
         }
     }
 
-    public void SelectRange(IEntity from, IEntity to, IEnumerable<IEntity> displayOrder)
+    public void SelectRange(IEntity from, IEntity to, IEnumerable<IEntity>? displayOrder)
     {
+        if (displayOrder == null)
+        {
+            // Fallback: just select both entities
+            AddToSelection(from);
+            AddToSelection(to);
+            return;
+        }
+
         var orderedList = displayOrder.ToList();
         var fromIndex = orderedList.IndexOf(from);
         var toIndex = orderedList.IndexOf(to);
@@ -154,5 +162,11 @@ public class SelectionService : ISelectionService
         {
             ClearSelection();
         }
+    }
+
+    public void Dispose()
+    {
+        _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
+        GC.SuppressFinalize(this);
     }
 }

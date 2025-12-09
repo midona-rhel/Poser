@@ -44,7 +44,7 @@ public class BoneCategoryListItem : TreeListItem
         foreach (var childCategory in category.Children)
         {
             // Skip NSFW categories unless setting is enabled
-            if (childCategory.IsNsfw && !PoserSettings.Instance.ShowNsfwBones)
+            if (childCategory.IsNsfw && !(PoserSettings.Instance?.ShowNsfwBones ?? false))
                 continue;
 
             var childItem = new BoneCategoryListItem(childCategory, skeleton, depth + 1, selectionService);

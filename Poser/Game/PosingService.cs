@@ -82,7 +82,7 @@ public unsafe class PosingService : IPosingService
             return; // Don't call original - we override completely
         }
 
-        _setPositionHook!.Original(gameObject, x, y, z);
+        _setPositionHook?.Original(gameObject, x, y, z);
     }
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent e)

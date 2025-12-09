@@ -154,8 +154,8 @@ public class Skeleton : EntityBase, ISkeleton
                     partialBones[partialIdx][boneIdx] = bone;
                     _bones.Add(bone);
 
-                    // Use full path for unique lookup
-                    var uniqueKey = $"{partialIdx}_{boneName}";
+                    // Store first bone with this name for quick lookup
+                    // Use GetBoneByName(name, partialId) for partial-specific lookup
                     if (!_bonesByName.ContainsKey(boneName))
                         _bonesByName[boneName] = bone;
                     _bonesByIndex[(partialIdx, boneIdx)] = bone;
@@ -310,6 +310,9 @@ public class Skeleton : EntityBase, ISkeleton
     /// </summary>
     private static unsafe float GetScaleFactor(FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase* charaBase)
     {
+        if (charaBase == null)
+            return 1f;
+
         var basePtr = (byte*)charaBase;
         var scaleFactor1 = *(float*)(basePtr + CharacterBaseScaleFactor1Offset);
         var scaleFactor2 = *(float*)(basePtr + CharacterBaseScaleFactor2Offset);

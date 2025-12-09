@@ -73,9 +73,10 @@ public class EntityList
         }
 
         // Check if NSFW setting changed - update category visibility without full rebuild
-        if (_lastShowNsfw != PoserSettings.Instance.ShowNsfwBones)
+        var currentShowNsfw = PoserSettings.Instance?.ShowNsfwBones ?? false;
+        if (_lastShowNsfw != currentShowNsfw)
         {
-            _lastShowNsfw = PoserSettings.Instance.ShowNsfwBones;
+            _lastShowNsfw = currentShowNsfw;
             // Notify skeleton items to rebuild their categories (preserves actor/skeleton collapse state)
             foreach (var item in _items)
             {
