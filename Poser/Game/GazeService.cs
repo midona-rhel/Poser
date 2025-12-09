@@ -155,16 +155,6 @@ public unsafe class GazeService : IGazeService, IDisposable
         return gameObject->Position;
     }
 
-    private static void SetLookAtTargetPosition(LookAtDataHolder holder, Vector3 position)
-    {
-        if (holder.TargetType.HasFlag(GazeTargetType.Eyes))
-            holder.Target.Eyes.LookAtTarget.Position = position;
-        if (holder.TargetType.HasFlag(GazeTargetType.Body))
-            holder.Target.Body.LookAtTarget.Position = position;
-        if (holder.TargetType.HasFlag(GazeTargetType.Head))
-            holder.Target.Head.LookAtTarget.Position = position;
-    }
-
     public GazeState GetGazeState(IActor actor)
     {
         if (!_gazeStates.TryGetValue(actor, out var state))

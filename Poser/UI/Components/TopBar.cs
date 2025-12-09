@@ -63,9 +63,7 @@ public class TopBar
         bool isPosingMode = _editorState.IsPosingMode;
 
         var toggleIcon = isPosingMode ? FontAwesomeIcon.ToggleOn : FontAwesomeIcon.ToggleOff;
-        var toggleColor = isPosingMode
-            ? new Vector4(1.0f, 0.7f, 0.3f, 1.0f)
-            : new Vector4(0.5f, 0.5f, 0.5f, 1.0f);
+        var toggleColor = isPosingMode ? UIConstants.ActiveColor : UIConstants.InactiveColor;
 
         using (ImRaii.PushColor(ImGuiCol.Text, toggleColor))
         using (ImRaii.PushFont(UiBuilder.IconFont))

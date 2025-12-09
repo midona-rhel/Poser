@@ -50,22 +50,7 @@ public class HistoryService : IHistoryService, IDisposable
     private void OnTransformDragStarted(TransformDragStartedEvent e)
     {
         _dragEntities = e.Entities;
-        _dragStartTransforms = new Dictionary<IEntity, Transform>();
-
-        foreach (var entity in e.Entities)
-        {
-            if (entity is IBone bone)
-            {
-                // For bones, capture the current modification (or identity if none)
-                var mod = _bonePosingService.GetModification(bone);
-                _dragStartTransforms[entity] = mod ?? Transform.Identity;
-            }
-            else if (entity is IActor actor)
-            {
-                // For actors, capture the current effective transform
-                _dragStartTransforms[entity] = _posingService.GetEffectiveTransform(actor);
-            }
-        }
+        _dragStartTransforms = CaptureTransforms(e.Entities);
     }
 
     private void OnTransformDragEnded(TransformDragEndedEvent e)
@@ -77,20 +62,7 @@ public class HistoryService : IHistoryService, IDisposable
             return;
         }
 
-        // Capture end transforms
-        var endTransforms = new Dictionary<IEntity, Transform>();
-        foreach (var entity in _dragEntities)
-        {
-            if (entity is IBone bone)
-            {
-                var mod = _bonePosingService.GetModification(bone);
-                endTransforms[entity] = mod ?? Transform.Identity;
-            }
-            else if (entity is IActor actor)
-            {
-                endTransforms[entity] = _posingService.GetEffectiveTransform(actor);
-            }
-        }
+        var endTransforms = CaptureTransforms(_dragEntities);
 
         // Check if anything actually changed
         bool hasChanges = false;
@@ -122,6 +94,24 @@ public class HistoryService : IHistoryService, IDisposable
 
         _dragStartTransforms = null;
         _dragEntities = null;
+    }
+
+    private Dictionary<IEntity, Transform> CaptureTransforms(IReadOnlyList<IEntity> entities)
+    {
+        var transforms = new Dictionary<IEntity, Transform>();
+        foreach (var entity in entities)
+        {
+            if (entity is IBone bone)
+            {
+                var mod = _bonePosingService.GetModification(bone);
+                transforms[entity] = mod ?? Transform.Identity;
+            }
+            else if (entity is IActor actor)
+            {
+                transforms[entity] = _posingService.GetEffectiveTransform(actor);
+            }
+        }
+        return transforms;
     }
 
     private static bool TransformsEqual(Transform a, Transform b)

@@ -139,7 +139,6 @@ public class ActorBase : EntityBase, IActor
         if (!IsPosing)
         {
             IsPosing = true;
-            OnBeginPosing();
         }
     }
 
@@ -148,22 +147,6 @@ public class ActorBase : EntityBase, IActor
         if (IsPosing)
         {
             IsPosing = false;
-            OnEndPosing();
         }
-    }
-
-    public virtual void ResetPose()
-    {
-        // Override in derived classes to implement pose reset
-    }
-
-    protected virtual void OnBeginPosing()
-    {
-        // Override in derived classes for custom behavior
-    }
-
-    protected virtual void OnEndPosing()
-    {
-        // Override in derived classes for custom behavior
     }
 }

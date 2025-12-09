@@ -17,11 +17,6 @@ public class Camera : EntityBase, ICamera
     public Vector3 Position => _cameraService.GetCameraPosition();
 
     /// <summary>
-    /// The camera's rotation (not yet implemented).
-    /// </summary>
-    public Quaternion Rotation => Quaternion.Identity;
-
-    /// <summary>
     /// Cameras are not collapsible.
     /// </summary>
     public override bool IsCollapsible => false;

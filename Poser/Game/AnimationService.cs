@@ -14,6 +14,9 @@ namespace Poser.Game;
 
 public class AnimationService : IAnimationService
 {
+    // Physics freeze offset relative to the main signature address
+    private const int PhysicsFreezePatchOffset = 0x9;
+
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
     private readonly IGPoseService _gPoseService;
@@ -64,7 +67,7 @@ public class AnimationService : IAnimationService
             if (sigScanner.TryScanText(freezePhysicsSig, out _freezePhysicsAddress))
             {
                 _originalPhysicsBytes1 = MemoryHelper.ReadRaw(_freezePhysicsAddress, 4);
-                _originalPhysicsBytes2 = MemoryHelper.ReadRaw(_freezePhysicsAddress - 0x9, 3);
+                _originalPhysicsBytes2 = MemoryHelper.ReadRaw(_freezePhysicsAddress - PhysicsFreezePatchOffset, 3);
                 _log.Debug("AnimationService: Physics freeze address found");
             }
         }
@@ -179,7 +182,7 @@ public class AnimationService : IAnimationService
         {
             // Replace with NOPs to freeze physics - same technique as Brio/Anamnesis
             _originalPhysicsBytes1 = ReplaceRaw(_freezePhysicsAddress, [0x90, 0x90, 0x90, 0x90]);
-            _originalPhysicsBytes2 = ReplaceRaw(_freezePhysicsAddress - 0x9, [0x90, 0x90, 0x90]);
+            _originalPhysicsBytes2 = ReplaceRaw(_freezePhysicsAddress - PhysicsFreezePatchOffset, [0x90, 0x90, 0x90]);
             _isPhysicsFrozen = true;
             _log.Debug("Physics freeze enabled");
         }
@@ -196,7 +199,7 @@ public class AnimationService : IAnimationService
         try
         {
             ReplaceRaw(_freezePhysicsAddress, _originalPhysicsBytes1);
-            ReplaceRaw(_freezePhysicsAddress - 0x9, _originalPhysicsBytes2);
+            ReplaceRaw(_freezePhysicsAddress - PhysicsFreezePatchOffset, _originalPhysicsBytes2);
             _isPhysicsFrozen = false;
             _log.Debug("Physics freeze disabled");
         }

@@ -72,18 +72,11 @@ public class BonePoseInfo
         // Calculate delta from original
         var delta = original.HasValue ? CalculateDiff(transform, original.Value) : transform;
 
-        // Debug logging
-        System.Diagnostics.Debug.WriteLine($"[BonePoseInfo.Apply] Bone={BoneName}");
-        System.Diagnostics.Debug.WriteLine($"  transform: Pos={transform.Position}, Rot={transform.Rotation}, Scale={transform.Scale}");
-        System.Diagnostics.Debug.WriteLine($"  original: {(original.HasValue ? $"Pos={original.Value.Position}, Rot={original.Value.Rotation}, Scale={original.Value.Scale}" : "NULL")}");
-        System.Diagnostics.Debug.WriteLine($"  calculated delta: Pos={delta.Position}, Rot={delta.Rotation}, Scale={delta.Scale}");
-
         // Find or create stack entry with matching propagation
         var transformIndex = GetTransformIndex(prop);
 
         // Get existing transform at this index
         var existing = _stacks[transformIndex].Transform;
-        System.Diagnostics.Debug.WriteLine($"  existing: Pos={existing.Position}, Rot={existing.Rotation}, Scale={existing.Scale}");
 
         // Determine whether to accumulate or replace:
         // - If accumulate is explicitly set, use that
@@ -96,23 +89,18 @@ public class BonePoseInfo
         {
             // Accumulate: add delta to existing (for incremental changes)
             finalTransform = CombineTransforms(existing, delta);
-            System.Diagnostics.Debug.WriteLine($"  mode: ACCUMULATE");
         }
         else
         {
             // Replace: use delta directly (for absolute target from original)
             finalTransform = delta;
-            System.Diagnostics.Debug.WriteLine($"  mode: REPLACE");
         }
-
-        System.Diagnostics.Debug.WriteLine($"  final: Pos={finalTransform.Position}, Rot={finalTransform.Rotation}, Scale={finalTransform.Scale}");
 
         // Validate for NaN
         if (float.IsNaN(finalTransform.Rotation.X) || float.IsNaN(finalTransform.Rotation.Y) ||
             float.IsNaN(finalTransform.Rotation.Z) || float.IsNaN(finalTransform.Rotation.W))
         {
             finalTransform.Rotation = Quaternion.Identity;
-            System.Diagnostics.Debug.WriteLine($"  WARNING: NaN detected, reset to Identity");
         }
 
         _stacks[transformIndex] = new BonePoseTransformInfo(prop, BoneIKInfo.Disabled, finalTransform);

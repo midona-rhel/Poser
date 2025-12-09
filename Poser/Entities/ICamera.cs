@@ -11,9 +11,4 @@ public interface ICamera : IEntity
     /// The camera's position in world space.
     /// </summary>
     Vector3 Position { get; }
-
-    /// <summary>
-    /// The camera's rotation.
-    /// </summary>
-    Quaternion Rotation { get; }
 }

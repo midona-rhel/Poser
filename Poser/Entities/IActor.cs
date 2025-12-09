@@ -6,7 +6,7 @@ namespace Poser.Entities;
 /// Represents a game character that can be posed and animated.
 /// Extends capability interfaces for compile-time type checking.
 /// </summary>
-public interface IActor : IEntity, ITransformable, IAnimatable, IGazeable, ISkeletonOwner
+public interface IActor : IEntity, ITransformable, IAnimatable, ISkeletonOwner
 {
     /// <summary>
     /// Memory address of the game character object.
@@ -52,9 +52,4 @@ public interface IActor : IEntity, ITransformable, IAnimatable, IGazeable, ISkel
     /// End posing this actor.
     /// </summary>
     void EndPosing();
-
-    /// <summary>
-    /// Reset the actor's pose to default.
-    /// </summary>
-    void ResetPose();
 }

@@ -18,11 +18,6 @@ namespace Poser.Core;
 public record GPoseStateChangedEvent(bool IsGPosing) : IEvent;
 
 /// <summary>
-/// Published when the entity hierarchy changes (actors added/removed).
-/// </summary>
-public record EntityHierarchyChangedEvent : IEvent;
-
-/// <summary>
 /// Published when the actor list changes (actors added/removed from GPose).
 /// </summary>
 public record ActorListChangedEvent(IReadOnlyList<IActor> Actors) : IEvent;
@@ -64,12 +59,6 @@ public record TransformDragStartedEvent(IReadOnlyList<IEntity> Entities) : IEven
 /// </summary>
 public record TransformDragEndedEvent : IEvent;
 
-/// <summary>
-/// Published when an entity's transform is modified.
-/// Contains old transform for undo support.
-/// </summary>
-public record TransformChangedEvent(IEntity Entity, Transform OldTransform, Transform NewTransform) : IEvent;
-
 #endregion
 
 #region Animation Events (for History)
@@ -84,11 +73,6 @@ public record FreezeStateChangedEvent(IActor Actor, bool IsFrozen) : IEvent;
 /// </summary>
 public record PhysicsFreezeStateChangedEvent(bool IsFrozen) : IEvent;
 
-/// <summary>
-/// Published when an actor's animation speed changes.
-/// </summary>
-public record SpeedChangedEvent(IActor Actor, float Speed) : IEvent;
-
 #endregion
 
 #region Gaze Events (for History)
@@ -97,22 +81,5 @@ public record SpeedChangedEvent(IActor Actor, float Speed) : IEvent;
 /// Published when an actor's gaze lock state changes.
 /// </summary>
 public record GazeLockChangedEvent(IActor Actor, bool IsLocked) : IEvent;
-
-/// <summary>
-/// Published when an actor's gaze state changes (mode, target, etc.).
-/// </summary>
-public record GazeStateChangedEvent(IActor Actor, GazeState State) : IEvent;
-
-#endregion
-
-#region Editor Settings Events
-
-/// <summary>
-/// Published when editor settings change (pivot, orientation, tool).
-/// </summary>
-public record EditorSettingsChangedEvent(
-    TransformPivot Pivot,
-    TransformOrientation Orientation,
-    TransformTool Tool) : IEvent;
 
 #endregion

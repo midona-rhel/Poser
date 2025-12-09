@@ -101,31 +101,6 @@ public struct Transform
         };
     }
 
-    /// <summary>
-    /// Combines two transforms (additive for deltas).
-    /// Scale is ADDED (not multiplied) to support delta accumulation.
-    /// Rotation is normalized to prevent quaternion drift.
-    /// </summary>
-    public static Transform operator +(Transform a, Transform b)
-    {
-        return new Transform
-        {
-            Position = a.Position + b.Position,
-            Rotation = Quaternion.Normalize(a.Rotation * b.Rotation),
-            Scale = a.Scale + b.Scale
-        };
-    }
-
-    public static Transform operator -(Transform a, Transform b)
-    {
-        return new Transform
-        {
-            Position = a.Position - b.Position,
-            Rotation = Quaternion.Inverse(b.Rotation) * a.Rotation,
-            Scale = a.Scale / b.Scale
-        };
-    }
-
     public override bool Equals(object? obj)
     {
         if (obj is Transform other)

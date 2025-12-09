@@ -26,5 +26,10 @@ public static class UIConstants
     public static readonly Vector4 DefaultIconColor = new(1.0f, 1.0f, 1.0f, 1.0f);   // White for all entities
     public static readonly Vector4 HiddenIconColor = new(0.5f, 0.5f, 0.5f, 0.5f);    // Dimmed - hidden
     public static readonly Vector4 DisabledTextColor = new(0.5f, 0.5f, 0.5f, 1.0f);
-    public static readonly Vector4 SkeletonColor = new(0.6f, 0.8f, 1.0f, 1.0f);      // Light blue - for skeleton (future)
+    public static readonly Vector4 SkeletonColor = new(0.6f, 0.8f, 1.0f, 1.0f);      // Light blue - for skeleton
+
+    // Toggle/State colors (used for Pose toggle, Gaze controls, etc.)
+    public static readonly Vector4 ActiveColor = new(1.0f, 0.7f, 0.3f, 1.0f);        // Orange - active/enabled
+    public static readonly Vector4 InactiveColor = new(0.5f, 0.5f, 0.5f, 1.0f);      // Gray - inactive/disabled
+    public static readonly Vector4 LockedColor = new(0.8f, 0.3f, 0.3f, 1.0f);        // Red - locked state
 }

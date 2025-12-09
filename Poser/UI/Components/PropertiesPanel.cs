@@ -399,8 +399,8 @@ public class PropertiesPanel
         ImGui.Spacing();
         ImGui.Separator();
 
-        // Gaze Section (actors are IGazeable)
-        if (entity is IGazeable)
+        // Gaze Section (actors support gaze control)
+        if (entity is IActor)
         {
             ImGui.TextDisabled("Gaze");
             ImGui.Spacing();
@@ -626,10 +626,10 @@ public class PropertiesPanel
         float buttonHeight = ImGui.GetFrameHeight();
         float spacing = ImGui.GetStyle().ItemSpacing.X;
 
-        // Colors matching Pose toggle
-        var activeColor = new Vector4(1.0f, 0.7f, 0.3f, 1.0f);
-        var inactiveColor = new Vector4(0.5f, 0.5f, 0.5f, 1.0f);
-        var lockedColor = new Vector4(0.8f, 0.3f, 0.3f, 1.0f);
+        // Use centralized color constants
+        var activeColor = UIConstants.ActiveColor;
+        var inactiveColor = UIConstants.InactiveColor;
+        var lockedColor = UIConstants.LockedColor;
 
         // Label
         if (isTracking)
@@ -686,22 +686,4 @@ public class PropertiesPanel
     }
 
     #endregion
-
-
-    /// <summary>
-    /// Represents a tab in the properties panel.
-    /// </summary>
-    private class EntityTab
-    {
-        public string Name { get; }
-        public FontAwesomeIcon Icon { get; }
-        public Action<IEntity> Draw { get; }
-
-        public EntityTab(string name, FontAwesomeIcon icon, Action<IEntity> draw)
-        {
-            Name = name;
-            Icon = icon;
-            Draw = draw;
-        }
-    }
 }

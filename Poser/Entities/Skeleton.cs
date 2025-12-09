@@ -19,6 +19,10 @@ public class Skeleton : EntityBase, ISkeleton
 {
     private const int MaxPoses = 4;
 
+    // CharacterBase memory offsets for scale factors (from Brio's BrioCharacterBase)
+    private const int CharacterBaseScaleFactor1Offset = 0x2A0;
+    private const int CharacterBaseScaleFactor2Offset = 0x2A4;
+
     private readonly List<IBone> _bones = new();
     private readonly Dictionary<string, Bone> _bonesByName = new();
     private readonly Dictionary<(int, int), Bone> _bonesByIndex = new();
@@ -58,10 +62,15 @@ public class Skeleton : EntityBase, ISkeleton
 
     public Bone? GetBoneByName(string name, int partialId)
     {
-        foreach (var bone in _bones)
+        // Fast path: check dictionary first (O(1) for most lookups)
+        if (_bonesByName.TryGetValue(name, out var bone) && bone.PartialId == partialId)
+            return bone;
+
+        // Slow path: linear search if bone exists in different partial
+        foreach (var b in _bones)
         {
-            if (bone.BoneName == name && bone.PartialId == partialId)
-                return bone as Bone;
+            if (b.BoneName == name && b.PartialId == partialId)
+                return b as Bone;
         }
         return null;
     }
@@ -87,27 +96,29 @@ public class Skeleton : EntityBase, ISkeleton
 
     private unsafe void BuildSkeleton()
     {
+        var gameSkeleton = GetGameSkeleton();
+        if (gameSkeleton != null)
+            BuildFromGameSkeleton(gameSkeleton);
+    }
+
+    private unsafe GameSkeleton* GetGameSkeleton()
+    {
         if (Actor.Address == nint.Zero)
-            return;
+            return null;
 
         var character = (Character*)Actor.Address;
         if (character == null)
-            return;
+            return null;
 
         var drawObject = character->GameObject.DrawObject;
         if (drawObject == null)
-            return;
+            return null;
 
-        // Check if it's a CharacterBase
         if (drawObject->Object.GetObjectType() != FFXIVClientStructs.FFXIV.Client.Graphics.Scene.ObjectType.CharacterBase)
-            return;
+            return null;
 
         var charaBase = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)drawObject;
-        if (charaBase->Skeleton == null)
-            return;
-
-        var gameSkeleton = charaBase->Skeleton;
-        BuildFromGameSkeleton(gameSkeleton);
+        return charaBase->Skeleton;
     }
 
     private unsafe void BuildFromGameSkeleton(GameSkeleton* gameSkeleton)
@@ -226,25 +237,10 @@ public class Skeleton : EntityBase, ISkeleton
     /// </summary>
     public unsafe void UpdateBoneTransforms()
     {
-        if (Actor.Address == nint.Zero)
+        var gameSkeleton = GetGameSkeleton();
+        if (gameSkeleton == null)
             return;
 
-        var character = (Character*)Actor.Address;
-        if (character == null)
-            return;
-
-        var drawObject = character->GameObject.DrawObject;
-        if (drawObject == null)
-            return;
-
-        if (drawObject->Object.GetObjectType() != FFXIVClientStructs.FFXIV.Client.Graphics.Scene.ObjectType.CharacterBase)
-            return;
-
-        var charaBase = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)drawObject;
-        if (charaBase->Skeleton == null)
-            return;
-
-        var gameSkeleton = charaBase->Skeleton;
         var partialCount = gameSkeleton->PartialSkeletonCount;
 
         for (int partialIdx = 0; partialIdx < partialCount; partialIdx++)
@@ -314,10 +310,9 @@ public class Skeleton : EntityBase, ISkeleton
     /// </summary>
     private static unsafe float GetScaleFactor(FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase* charaBase)
     {
-        // ScaleFactor1 at offset 0x2A0, ScaleFactor2 at offset 0x2A4
         var basePtr = (byte*)charaBase;
-        var scaleFactor1 = *(float*)(basePtr + 0x2A0);
-        var scaleFactor2 = *(float*)(basePtr + 0x2A4);
+        var scaleFactor1 = *(float*)(basePtr + CharacterBaseScaleFactor1Offset);
+        var scaleFactor2 = *(float*)(basePtr + CharacterBaseScaleFactor2Offset);
         return scaleFactor1 * scaleFactor2;
     }
 }
