@@ -560,6 +560,13 @@ public class PropertiesPanel
                 _gazeService.DisableGaze(actor);
         }
 
+        // Reset button on same line
+        ImGui.SameLine();
+        if (ImPoser.IconButton("gaze_reset", FontAwesomeIcon.Undo, null, "Reset gaze to game default"))
+        {
+            _gazeService.ResetGaze(actor);
+        }
+
         // Only show rest of UI if gaze is enabled
         if (!gazeEnabled)
             return;
@@ -602,28 +609,79 @@ public class PropertiesPanel
         }
 
         ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
 
-        // ToggleLock controls for Camera mode (like Brio)
-        // Show Eyes, Head, Body with lock buttons
-        DrawGazeLockToggle("Eyes", actor, GazeTargetType.Eyes);
-        ImGui.SameLine();
-        DrawGazeLockToggle("Head", actor, GazeTargetType.Head);
-        ImGui.SameLine();
-        DrawGazeLockToggle("Body", actor, GazeTargetType.Body);
+        // Draw gaze controls for each body part: Label [Toggle] [Lock]
+        DrawGazePartRow("Eyes", actor, gazeState, GazeTargetType.Eyes, labelWidth);
+        DrawGazePartRow("Head", actor, gazeState, GazeTargetType.Head, labelWidth);
+        DrawGazePartRow("Body", actor, gazeState, GazeTargetType.Body, labelWidth);
     }
 
-    private void DrawGazeLockToggle(string label, IActor actor, GazeTargetType targetType)
+    private void DrawGazePartRow(string label, IActor actor, GazeState gazeState, GazeTargetType targetType, float labelWidth)
     {
+        bool isTracking = gazeState.TargetType.HasFlag(targetType);
         bool isLocked = _gazeService.IsPartLocked(actor, targetType);
 
-        ImGui.Text(label);
-        ImGui.SameLine();
+        float buttonHeight = ImGui.GetFrameHeight();
+        float spacing = ImGui.GetStyle().ItemSpacing.X;
 
-        var icon = isLocked ? FontAwesomeIcon.Lock : FontAwesomeIcon.Unlock;
-        if (ImPoser.IconButton($"gaze_lock_{label}", icon, null, isLocked ? "Unlock" : "Lock at camera"))
+        // Colors matching Pose toggle
+        var activeColor = new Vector4(1.0f, 0.7f, 0.3f, 1.0f);
+        var inactiveColor = new Vector4(0.5f, 0.5f, 0.5f, 1.0f);
+        var lockedColor = new Vector4(0.8f, 0.3f, 0.3f, 1.0f);
+
+        // Label
+        if (isTracking)
+            ImGui.TextColored(activeColor, label);
+        else
+            ImGui.TextDisabled(label);
+
+        ImGui.SameLine(labelWidth);
+
+        // Toggle button (like Pose toggle)
+        var toggleIcon = isTracking ? FontAwesomeIcon.ToggleOn : FontAwesomeIcon.ToggleOff;
+        var toggleColor = isTracking ? activeColor : inactiveColor;
+
+        using (ImRaii.PushColor(ImGuiCol.Text, toggleColor))
+        using (ImRaii.PushFont(UiBuilder.IconFont))
         {
-            var cameraPos = _cameraService.GetCameraPosition();
-            _gazeService.SetTargetLock(actor, !isLocked, targetType, cameraPos);
+            if (ImGui.Button($"{toggleIcon.ToIconString()}##gaze_toggle_{label}", new Vector2(buttonHeight, buttonHeight)))
+            {
+                GazeTargetType newTargetType;
+                if (isTracking)
+                    newTargetType = gazeState.TargetType & ~targetType;
+                else
+                    newTargetType = gazeState.TargetType | targetType;
+
+                _gazeService.SetGazeTargetType(actor, newTargetType);
+            }
+        }
+
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip(isTracking ? $"Disable {label} tracking" : $"Enable {label} tracking");
+        }
+
+        ImGui.SameLine(0, spacing);
+
+        // Lock button
+        var lockIcon = isLocked ? FontAwesomeIcon.Lock : FontAwesomeIcon.Unlock;
+        var lockColor = isLocked ? lockedColor : inactiveColor;
+
+        using (ImRaii.PushColor(ImGuiCol.Text, lockColor))
+        using (ImRaii.PushFont(UiBuilder.IconFont))
+        {
+            if (ImGui.Button($"{lockIcon.ToIconString()}##gaze_lock_{label}", new Vector2(buttonHeight, buttonHeight)))
+            {
+                var cameraPos = _cameraService.GetCameraPosition();
+                _gazeService.SetTargetLock(actor, !isLocked, targetType, cameraPos);
+            }
+        }
+
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip(isLocked ? $"Unlock {label} - resume tracking" : $"Lock {label} at current camera position");
         }
     }
 

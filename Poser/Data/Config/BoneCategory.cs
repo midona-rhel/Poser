@@ -36,6 +36,14 @@ public class BoneCategory
 
     private static string FormatDisplayName(string id)
     {
+        // Known acronyms that should stay uppercase
+        var acronyms = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase)
+        {
+            { "Ivcs", "IVCS" },
+            { "Nsfw", "NSFW" },
+            { "Ik", "IK" }
+        };
+
         // Insert spaces before capital letters (except first)
         var result = new System.Text.StringBuilder();
         for (int i = 0; i < id.Length; i++)
@@ -47,7 +55,20 @@ public class BoneCategory
             }
             result.Append(c);
         }
-        return result.ToString();
+
+        var formatted = result.ToString();
+
+        // Replace known acronyms with proper casing
+        foreach (var (pattern, replacement) in acronyms)
+        {
+            formatted = System.Text.RegularExpressions.Regex.Replace(
+                formatted,
+                $@"\b{pattern}\b",
+                replacement,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        }
+
+        return formatted;
     }
 
     /// <summary>

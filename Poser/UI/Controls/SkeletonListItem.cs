@@ -13,27 +13,54 @@ namespace Poser.UI.Controls;
 public class SkeletonListItem : TreeListItem
 {
     private readonly Skeleton _skeleton;
+    private readonly CategoryConfig _categoryConfig;
+    private readonly ISelectionService _selectionService;
+    private readonly int _depth;
 
     public SkeletonListItem(Skeleton skeleton, int depth, CategoryConfig categoryConfig, ISelectionService selectionService)
         : base(depth)
     {
         _skeleton = skeleton;
+        _categoryConfig = categoryConfig;
+        _selectionService = selectionService;
+        _depth = depth;
 
         // Build children from category config
-        foreach (var category in categoryConfig.RootCategories)
+        BuildCategories();
+
+        // Start collapsed
+        IsCollapsed = true;
+    }
+
+    /// <summary>
+    /// Builds category children based on current NSFW setting.
+    /// </summary>
+    private void BuildCategories()
+    {
+        bool showNsfw = PoserSettings.Instance?.ShowNsfwBones ?? false;
+
+        foreach (var category in _categoryConfig.RootCategories)
         {
-            if (category.IsNsfw)
+            // Skip NSFW categories unless setting is enabled
+            if (category.IsNsfw && !showNsfw)
                 continue;
 
-            var categoryItem = new BoneCategoryListItem(category, skeleton, depth + 1, selectionService);
+            var categoryItem = new BoneCategoryListItem(category, _skeleton, _depth + 1, _selectionService);
             if (categoryItem.HasContent)
             {
                 Children.Add(categoryItem);
             }
         }
+    }
 
-        // Start collapsed
-        IsCollapsed = true;
+    /// <summary>
+    /// Rebuilds category children based on current NSFW setting.
+    /// Called when NSFW setting changes.
+    /// </summary>
+    public void RebuildCategories()
+    {
+        Children.Clear();
+        BuildCategories();
     }
 
     public override string Id => _skeleton.Id.ToString();

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
@@ -31,6 +32,7 @@ public class EntityList
     // Cached tree items - rebuilt when actors change
     private readonly List<TreeListItem> _items = new();
     private int _lastActorCount = -1;
+    private bool _lastShowNsfw = false;
 
     // Local UI state only
     private bool _isCollapsed = false;
@@ -63,11 +65,40 @@ public class EntityList
         var actors = _actorManager.Actors;
         int totalEntities = actors.Count + (_gPoseService.IsGPosing ? 1 : 0); // +1 for camera
 
-        // Rebuild tree items if actor count changed
+        // Rebuild tree items only if actor count changed
         if (actors.Count != _lastActorCount)
         {
             RebuildItems(actors);
             _lastActorCount = actors.Count;
+        }
+
+        // Check if NSFW setting changed - update category visibility without full rebuild
+        if (_lastShowNsfw != PoserSettings.Instance.ShowNsfwBones)
+        {
+            _lastShowNsfw = PoserSettings.Instance.ShowNsfwBones;
+            // Notify skeleton items to rebuild their categories (preserves actor/skeleton collapse state)
+            foreach (var item in _items)
+            {
+                if (item is ActorListItem actorItem)
+                {
+                    foreach (var child in actorItem.Children)
+                    {
+                        if (child is SkeletonListItem skeletonItem)
+                        {
+                            skeletonItem.RebuildCategories();
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check if any actors need their skeleton added (e.g., after Penumbra mod loads)
+        foreach (var item in _items)
+        {
+            if (item is ActorListItem actorItem)
+            {
+                actorItem.TryAddSkeleton();
+            }
         }
 
         using (ImRaii.PushStyle(ImGuiStyleVar.CellPadding, new Vector2(cellPadding, 4f * ImGuiHelpers.GlobalScale)))

@@ -2,6 +2,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility.Raii;
+using Poser.Data.Config;
 using Poser.Services;
 using Poser.UI.Controls;
 
@@ -99,10 +100,14 @@ public class TopBar
     {
         float buttonSize = ImGui.GetFrameHeight();
         float spacing = ImGui.GetStyle().ItemSpacing.X;
-        float buttonsWidth = (buttonSize * 2) + spacing;
+        float buttonsWidth = (buttonSize * 3) + (spacing * 2); // 3 buttons: settings, undo, redo
         float rightX = windowWidth - buttonsWidth;
 
         ImGui.SetCursorPosX(rightX);
+
+        // Settings button
+        DrawSettingsButton(buttonSize);
+        ImGui.SameLine();
 
         // Undo button
         using (ImRaii.PushFont(UiBuilder.IconFont))
@@ -138,6 +143,41 @@ public class TopBar
         if (_historyService.CanRedo && ImGui.IsItemHovered())
         {
             ImGui.SetTooltip($"Redo: {_historyService.RedoDescription}");
+        }
+    }
+
+    private void DrawSettingsButton(float buttonSize)
+    {
+        using (ImRaii.PushFont(UiBuilder.IconFont))
+        {
+            if (ImGui.Button(FontAwesomeIcon.Cog.ToIconString(), new Vector2(buttonSize, buttonSize)))
+            {
+                ImGui.OpenPopup("##settings_popup");
+            }
+        }
+
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Settings");
+        }
+
+        // Settings popup menu
+        if (ImGui.BeginPopup("##settings_popup"))
+        {
+            ImGui.TextDisabled("Display");
+            ImGui.Separator();
+
+            var showNsfw = PoserSettings.Instance.ShowNsfwBones;
+            if (ImGui.Checkbox("Show NSFW Bones", ref showNsfw))
+            {
+                PoserSettings.Instance.ShowNsfwBones = showNsfw;
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("Show IVCS genitalia and other adult content bones");
+            }
+
+            ImGui.EndPopup();
         }
     }
 }

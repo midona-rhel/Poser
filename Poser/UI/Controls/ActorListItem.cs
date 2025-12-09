@@ -13,6 +13,11 @@ public class ActorListItem : TreeListItem
 {
     private readonly IActor _actor;
     private readonly IAnimationService _animationService;
+    private readonly ISkeletonService _skeletonService;
+    private readonly ISelectionService _selectionService;
+    private readonly CategoryConfig _categoryConfig;
+    private readonly int _depth;
+    private bool _skeletonAdded;
 
     public ActorListItem(
         IActor actor,
@@ -25,13 +30,30 @@ public class ActorListItem : TreeListItem
     {
         _actor = actor;
         _animationService = animationService;
+        _skeletonService = skeletonService;
+        _selectionService = selectionService;
+        _categoryConfig = categoryConfig;
+        _depth = depth;
 
-        // Add skeleton as child if actor has one
-        var skeleton = skeletonService.GetSkeleton(actor) as Skeleton;
+        // Try to add skeleton if already valid
+        TryAddSkeleton();
+    }
+
+    /// <summary>
+    /// Attempts to add the skeleton child if the skeleton is valid and not already added.
+    /// Called on construction and can be called later if skeleton becomes valid.
+    /// </summary>
+    public void TryAddSkeleton()
+    {
+        if (_skeletonAdded)
+            return;
+
+        var skeleton = _skeletonService.GetSkeleton(_actor) as Skeleton;
         if (skeleton != null && skeleton.IsValid)
         {
-            var skeletonItem = new SkeletonListItem(skeleton, depth + 1, categoryConfig, selectionService);
+            var skeletonItem = new SkeletonListItem(skeleton, _depth + 1, _categoryConfig, _selectionService);
             Children.Add(skeletonItem);
+            _skeletonAdded = true;
         }
     }
 
