@@ -66,6 +66,19 @@ public enum SymmetryMode
 }
 
 /// <summary>
+/// Skeleton visualization mode for the overlay.
+/// </summary>
+public enum SkeletonViewMode
+{
+    /// <summary>Simple dots with lines (Ktisis-style, default).</summary>
+    Dots,
+    /// <summary>Blender-style bone shapes (diamond/octahedra pointing to child).</summary>
+    Octahedra,
+    /// <summary>Only balls at joint positions, no connecting geometry.</summary>
+    Joints
+}
+
+/// <summary>
 /// Tracks editor-wide state: gizmo settings.
 ///
 /// NOTE: Selection is handled by ISelectionService, not here.
@@ -90,4 +103,10 @@ public interface IEditorState
 
     /// <summary>Symmetry mode for paired bones (left/right).</summary>
     SymmetryMode SymmetryMode { get; set; }
+
+    /// <summary>Skeleton visualization mode for the overlay.</summary>
+    SkeletonViewMode SkeletonViewMode { get; set; }
+
+    /// <summary>When true, only show selected bones and their symmetry pairs in the overlay.</summary>
+    bool ShowSelectedBonesOnly { get; set; }
 }

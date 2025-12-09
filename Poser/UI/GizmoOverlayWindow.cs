@@ -246,13 +246,34 @@ public class GizmoOverlayWindow : Window
             _boneDragStartModifications = new Dictionary<IBone, Transform>();
             // Expand virtual bones when capturing initial state
             var expandedForHistory = ExpandVirtualBones(selectedBones);
-            foreach (var bone in expandedForHistory)
+
+            // Also include paired bones if symmetry is enabled
+            var allBonesForHistory = new List<IBone>(expandedForHistory);
+            if (_editorState.SymmetryMode != SymmetryMode.Off)
+            {
+                var selectedNames = new HashSet<string>(expandedForHistory.Select(b => b.BoneName));
+                foreach (var bone in expandedForHistory)
+                {
+                    var pairedName = GetPairedBoneName(bone.BoneName);
+                    if (pairedName != null && !selectedNames.Contains(pairedName))
+                    {
+                        var pairedBone = skeleton.Bones.FirstOrDefault(b => b.BoneName == pairedName);
+                        if (pairedBone != null)
+                        {
+                            allBonesForHistory.Add(pairedBone);
+                            selectedNames.Add(pairedName); // Avoid duplicates
+                        }
+                    }
+                }
+            }
+
+            foreach (var bone in allBonesForHistory)
             {
                 var mod = _bonePosingService.GetModification(bone);
                 _boneDragStartModifications[bone] = mod ?? new Transform { Position = Vector3.Zero, Rotation = Quaternion.Identity, Scale = Vector3.Zero };
             }
             // Emit drag start event for history recording
-            _eventBus.Publish(new TransformDragStartedEvent(expandedForHistory.Cast<IEntity>().ToList()));
+            _eventBus.Publish(new TransformDragStartedEvent(allBonesForHistory.Cast<IEntity>().ToList()));
         }
 
         // Get the gizmo operation based on selected tool

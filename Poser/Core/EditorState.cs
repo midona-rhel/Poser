@@ -17,4 +17,6 @@ public class EditorState : IEditorState
     public bool DebugMode { get; set; } = false;
     public BoneDisplayMode BoneDisplayMode { get; set; } = BoneDisplayMode.Category;
     public SymmetryMode SymmetryMode { get; set; } = SymmetryMode.Off;
+    public SkeletonViewMode SkeletonViewMode { get; set; } = SkeletonViewMode.Dots;
+    public bool ShowSelectedBonesOnly { get; set; } = false;
 }

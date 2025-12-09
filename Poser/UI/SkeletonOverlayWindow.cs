@@ -21,11 +21,14 @@ public class SkeletonOverlayWindow : Window
     private readonly ISkeletonService _skeletonService;
     private readonly IBonePosingService _bonePosingService;
     private readonly ISelectionService _selectionService;
+    private readonly IEditorState _editorState;
 
     // Configuration
     private const float BoneCircleSize = 4f;
     private const float SelectedBoneCircleSize = 6f;
+    private const float JointCircleSize = 8f;
     private const float LineThickness = 1.5f;
+    private const float OctahedraWidth = 4f;
 
     // Overlap detection (as fraction of screen height)
     private const float OverlapThreshold = 0.01f; // 1% of screen height - bones closer than this overlap
@@ -35,13 +38,10 @@ public class SkeletonOverlayWindow : Window
     private int _contextMenuIndex;
     private Vector2 _contextMenuPos;
 
-    // Colors
+    // Static colors (line/outline)
     private static readonly Vector4 LineColorVec = new(1.0f, 1.0f, 1.0f, 0.5f);
     private static readonly Vector4 DotColorVec = new(1.0f, 1.0f, 1.0f, 0.9f);
     private static readonly Vector4 DotOutlineColorVec = new(0.0f, 0.0f, 0.0f, 0.8f);
-    private static readonly Vector4 HoveredDotColorVec = new(1.0f, 0.9f, 0.5f, 1.0f);
-    private static readonly Vector4 SelectedDotColorVec = new(0.3f, 0.7f, 1.0f, 1.0f);
-    private static readonly Vector4 ModifiedDotColorVec = new(1.0f, 0.5f, 0.3f, 1.0f);
     private static readonly Vector4 TextColorVec = new(1.0f, 1.0f, 1.0f, 1.0f);
     private static readonly Vector4 TextOutlineColorVec = new(0.0f, 0.0f, 0.0f, 1.0f);
 
@@ -55,7 +55,7 @@ public class SkeletonOverlayWindow : Window
         public float Size { get; init; }
         public bool IsHovered { get; set; }
         public bool IsSelected { get; set; }
-        public bool IsModified { get; set; }
+        public bool IsSymmetryPair { get; set; }
         public int HierarchyDepth { get; init; }
     }
 
@@ -64,7 +64,8 @@ public class SkeletonOverlayWindow : Window
         ICameraService cameraService,
         ISkeletonService skeletonService,
         IBonePosingService bonePosingService,
-        ISelectionService selectionService)
+        ISelectionService selectionService,
+        IEditorState editorState)
         : base("##poser_skeleton_overlay",
             ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoDecoration |
@@ -73,15 +74,50 @@ public class SkeletonOverlayWindow : Window
             ImGuiWindowFlags.NoScrollbar |
             ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoCollapse |
-            ImGuiWindowFlags.NoSavedSettings)
+            ImGuiWindowFlags.NoSavedSettings |
+            ImGuiWindowFlags.NoBringToFrontOnFocus)
     {
         _actorManager = actorManager;
         _cameraService = cameraService;
         _skeletonService = skeletonService;
         _bonePosingService = bonePosingService;
         _selectionService = selectionService;
+        _editorState = editorState;
 
         RespectCloseHotkey = false;
+    }
+
+    /// <summary>
+    /// Gets the paired bone name for symmetry (swaps _l/_r suffix).
+    /// </summary>
+    private static string? GetPairedBoneName(string boneName)
+    {
+        if (boneName.EndsWith("_l")) return boneName[..^2] + "_r";
+        if (boneName.EndsWith("_r")) return boneName[..^2] + "_l";
+        return null;
+    }
+
+    /// <summary>
+    /// Inverts hue of a color while keeping same brightness.
+    /// </summary>
+    private static Vector4 GetInverseColor(Vector4 color)
+    {
+        // Simple complementary color: invert RGB components
+        // To maintain brightness, we use (1-R, 1-G, 1-B) but adjust to keep luminance similar
+        float luminance = 0.299f * color.X + 0.587f * color.Y + 0.114f * color.Z;
+        var inverted = new Vector4(1f - color.X, 1f - color.Y, 1f - color.Z, color.W);
+        float invertedLuminance = 0.299f * inverted.X + 0.587f * inverted.Y + 0.114f * inverted.Z;
+
+        // Scale to match original luminance
+        if (invertedLuminance > 0.001f)
+        {
+            float scale = luminance / invertedLuminance;
+            inverted.X = Math.Min(1f, inverted.X * scale);
+            inverted.Y = Math.Min(1f, inverted.Y * scale);
+            inverted.Z = Math.Min(1f, inverted.Z * scale);
+        }
+
+        return inverted;
     }
 
     public override void PreDraw()
@@ -97,7 +133,8 @@ public class SkeletonOverlayWindow : Window
 
     public override void Draw()
     {
-        var drawList = ImGui.GetWindowDrawList();
+        // Use background draw list so skeleton renders behind all other windows
+        var drawList = ImGui.GetBackgroundDrawList();
         var viewportPos = ImGui.GetMainViewport().Pos;
         var io = ImGui.GetIO();
         var screenHeight = io.DisplaySize.Y;
@@ -105,6 +142,27 @@ public class SkeletonOverlayWindow : Window
 
         var selectedBone = _selectionService.GetFirstSelected<IBone>();
         var bones = new List<BoneDisplayData>();
+
+        // Build set of selected bone names for symmetry pair detection
+        var selectedBoneNames = new HashSet<string>();
+        if (selectedBone != null)
+        {
+            selectedBoneNames.Add(selectedBone.BoneName);
+        }
+
+        // Build set of symmetry pair names
+        var symmetryPairNames = new HashSet<string>();
+        if (_editorState.SymmetryMode != SymmetryMode.Off)
+        {
+            foreach (var name in selectedBoneNames)
+            {
+                var pairedName = GetPairedBoneName(name);
+                if (pairedName != null)
+                {
+                    symmetryPairNames.Add(pairedName);
+                }
+            }
+        }
 
         // Collect all bones and their screen positions from actors with visible skeletons
         foreach (var actor in _actorManager.Actors)
@@ -148,7 +206,7 @@ public class SkeletonOverlayWindow : Window
             foreach (var (bone, screenPos) in boneScreenPositions)
             {
                 var isSelected = selectedBone == bone;
-                var isModified = _bonePosingService.HasModifications(bone);
+                var isSymmetryPair = symmetryPairNames.Contains(bone.BoneName);
 
                 Vector2? parentScreenPos = null;
                 if (bone.ParentBone != null && boneScreenPositions.TryGetValue(bone.ParentBone, out var parentPos))
@@ -164,7 +222,7 @@ public class SkeletonOverlayWindow : Window
                     ParentDisplayPosition = parentScreenPos,
                     Size = isSelected ? SelectedBoneCircleSize : BoneCircleSize,
                     IsSelected = isSelected,
-                    IsModified = isModified,
+                    IsSymmetryPair = isSymmetryPair,
                     HierarchyDepth = boneDepths[bone]
                 });
             }
@@ -173,14 +231,30 @@ public class SkeletonOverlayWindow : Window
         // Update hover state
         UpdateHoverState(bones, mousePos);
 
+        // Filter bones if ShowSelectedBonesOnly is enabled
+        if (_editorState.ShowSelectedBonesOnly)
+        {
+            bones = bones.Where(b => b.IsSelected || b.IsSymmetryPair || b.IsHovered).ToList();
+        }
+
         // Handle right-click context menu for overlapping bones
         HandleBoneContextMenu(bones, mousePos, screenHeight);
 
-        // Draw lines first (behind dots)
-        DrawBoneLines(drawList, bones);
-
-        // Draw dots on top
-        DrawBoneDots(drawList, bones);
+        // Draw based on view mode
+        switch (_editorState.SkeletonViewMode)
+        {
+            case SkeletonViewMode.Dots:
+                DrawBoneLines(drawList, bones);
+                DrawBoneDots(drawList, bones);
+                break;
+            case SkeletonViewMode.Octahedra:
+                DrawBoneOctahedra(drawList, bones);
+                DrawBoneDots(drawList, bones);
+                break;
+            case SkeletonViewMode.Joints:
+                DrawBoneJoints(drawList, bones);
+                break;
+        }
 
         // Draw bone name tooltip for hovered bone (not if context menu open)
         if (_contextMenuBones == null)
@@ -212,6 +286,9 @@ public class SkeletonOverlayWindow : Window
         // Handle context menu interactions
         if (_contextMenuBones != null)
         {
+            // Capture mouse while context menu is open
+            ImGui.SetNextFrameWantCaptureMouse(true);
+
             // Scroll to change selection
             if (io.MouseWheel != 0)
             {
@@ -242,34 +319,40 @@ public class SkeletonOverlayWindow : Window
                 return;
             }
 
-            return; // Don't process new right-clicks while menu is open
+            return; // Don't process new clicks while menu is open
         }
 
-        // Left-click to select bones
-        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+        // Find bone under cursor using manual distance check (NoInputs prevents IsMouseHoveringRect)
+        BoneDisplayData? hoveredBone = null;
+        foreach (var bone in bones)
         {
-            // Find bone under cursor
-            BoneDisplayData? clickedBone = null;
-            foreach (var bone in bones)
-            {
-                var dist = Vector2.Distance(bone.DisplayPosition, mousePos);
-                if (dist <= (bone.Size + 2f) * ImGuiHelpers.GlobalScale)
-                {
-                    clickedBone = bone;
-                    break;
-                }
-            }
+            var radius = (bone.Size + 2f) * ImGuiHelpers.GlobalScale;
+            var dist = Vector2.Distance(bone.DisplayPosition, mousePos);
 
-            if (clickedBone != null)
+            if (dist <= radius)
+            {
+                hoveredBone = bone;
+                break;
+            }
+        }
+
+        // If hovering a bone, capture mouse for next frame and handle clicks
+        if (hoveredBone != null)
+        {
+            // Tell ImGui we want mouse input next frame (prevents click-through)
+            ImGui.SetNextFrameWantCaptureMouse(true);
+
+            // Left-click to select
+            if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
             {
                 // Find all overlapping bones at this position
-                var overlapping = new List<BoneDisplayData> { clickedBone };
+                var overlapping = new List<BoneDisplayData> { hoveredBone };
                 foreach (var other in bones)
                 {
-                    if (other.Bone == clickedBone.Bone)
+                    if (other.Bone == hoveredBone.Bone)
                         continue;
 
-                    if (Vector2.Distance(clickedBone.OriginalScreenPosition, other.OriginalScreenPosition) < overlapThreshold)
+                    if (Vector2.Distance(hoveredBone.OriginalScreenPosition, other.OriginalScreenPosition) < overlapThreshold)
                     {
                         overlapping.Add(other);
                     }
@@ -285,7 +368,7 @@ public class SkeletonOverlayWindow : Window
                 else
                 {
                     // Single bone - select directly
-                    _selectionService.Select(clickedBone.Bone);
+                    _selectionService.Select(hoveredBone.Bone);
                 }
             }
         }
@@ -334,12 +417,12 @@ public class SkeletonOverlayWindow : Window
             }
 
             // Dot indicator
-            var dotColor = bone.IsModified
-                ? ImGui.GetColorU32(ModifiedDotColorVec)
+            var dotIndicatorColor = bone.IsSelected
+                ? ImGui.GetColorU32(ImGui.GetStyle().Colors[(int)ImGuiCol.TabActive])
                 : ImGui.GetColorU32(DotColorVec);
             drawList.AddCircleFilled(
                 itemPos + new Vector2(4f, lineHeight / 2) * ImGuiHelpers.GlobalScale,
-                3f * ImGuiHelpers.GlobalScale, dotColor);
+                3f * ImGuiHelpers.GlobalScale, dotIndicatorColor);
 
             // Bone name
             var textColor = isHighlighted
@@ -386,13 +469,118 @@ public class SkeletonOverlayWindow : Window
     {
         var dotColor = ImGui.GetColorU32(DotColorVec);
         var outlineColor = ImGui.GetColorU32(DotOutlineColorVec);
-        var hoveredColor = ImGui.GetColorU32(HoveredDotColorVec);
-        var selectedColor = ImGui.GetColorU32(SelectedDotColorVec);
-        var modifiedColor = ImGui.GetColorU32(ModifiedDotColorVec);
+
+        // Get colors from ImGui style (tab colors)
+        var selectedColorVec = ImGui.GetStyle().Colors[(int)ImGuiCol.TabActive];
+        var hoveredColorVec = ImGui.GetStyle().Colors[(int)ImGuiCol.TabHovered];
+        var symmetryColorVec = GetInverseColor(selectedColorVec);
+
+        var selectedColor = ImGui.GetColorU32(selectedColorVec);
+        var hoveredColor = ImGui.GetColorU32(hoveredColorVec);
+        var symmetryColor = ImGui.GetColorU32(symmetryColorVec);
 
         foreach (var bone in bones)
         {
             var scaledSize = bone.Size * ImGuiHelpers.GlobalScale;
+
+            // Determine color based on state (priority: selected > hovered > symmetry > default)
+            uint color;
+            if (bone.IsSelected)
+                color = selectedColor;
+            else if (bone.IsHovered)
+                color = hoveredColor;
+            else if (bone.IsSymmetryPair)
+                color = symmetryColor;
+            else
+                color = dotColor;
+
+            // Draw outline
+            drawList.AddCircle(bone.DisplayPosition, scaledSize + 1, outlineColor, 12, 1.5f * ImGuiHelpers.GlobalScale);
+
+            // Draw filled circle for selected/hovered/symmetry, outline for others
+            if (bone.IsSelected || bone.IsHovered || bone.IsSymmetryPair)
+                drawList.AddCircleFilled(bone.DisplayPosition, scaledSize, color, 12);
+            else
+                drawList.AddCircle(bone.DisplayPosition, scaledSize, color, 12, 1.5f * ImGuiHelpers.GlobalScale);
+        }
+    }
+
+    private void DrawBoneOctahedra(ImDrawListPtr drawList, List<BoneDisplayData> bones)
+    {
+        var outlineColor = ImGui.GetColorU32(DotOutlineColorVec);
+
+        // Get colors from ImGui style (tab colors)
+        var selectedColorVec = ImGui.GetStyle().Colors[(int)ImGuiCol.TabActive];
+        var hoveredColorVec = ImGui.GetStyle().Colors[(int)ImGuiCol.TabHovered];
+        var symmetryColorVec = GetInverseColor(selectedColorVec);
+        var defaultColorVec = DotColorVec with { W = 0.6f }; // Semi-transparent white
+
+        foreach (var bone in bones)
+        {
+            if (bone.ParentDisplayPosition == null)
+                continue;
+
+            // Determine color based on state
+            Vector4 colorVec;
+            if (bone.IsSelected)
+                colorVec = selectedColorVec;
+            else if (bone.IsHovered)
+                colorVec = hoveredColorVec;
+            else if (bone.IsSymmetryPair)
+                colorVec = symmetryColorVec;
+            else
+                colorVec = defaultColorVec;
+
+            var fillColor = ImGui.GetColorU32(colorVec with { W = colorVec.W * 0.5f });
+            var edgeColor = ImGui.GetColorU32(colorVec);
+
+            // Draw octahedron from parent to bone (diamond shape)
+            var start = bone.ParentDisplayPosition.Value;
+            var end = bone.DisplayPosition;
+            var direction = end - start;
+            var length = direction.Length();
+
+            if (length < 1f) continue;
+
+            var mid = (start + end) / 2;
+            var perpendicular = Vector2.Normalize(new Vector2(-direction.Y, direction.X));
+            var width = OctahedraWidth * ImGuiHelpers.GlobalScale;
+
+            var left = mid + perpendicular * width;
+            var right = mid - perpendicular * width;
+
+            // Draw filled triangles (diamond shape)
+            drawList.AddTriangleFilled(start, left, end, fillColor);
+            drawList.AddTriangleFilled(start, right, end, fillColor);
+
+            // Draw outline
+            drawList.AddLine(start, left, edgeColor, 1.5f * ImGuiHelpers.GlobalScale);
+            drawList.AddLine(left, end, edgeColor, 1.5f * ImGuiHelpers.GlobalScale);
+            drawList.AddLine(end, right, edgeColor, 1.5f * ImGuiHelpers.GlobalScale);
+            drawList.AddLine(right, start, edgeColor, 1.5f * ImGuiHelpers.GlobalScale);
+        }
+    }
+
+    private void DrawBoneJoints(ImDrawListPtr drawList, List<BoneDisplayData> bones)
+    {
+        var outlineColor = ImGui.GetColorU32(DotOutlineColorVec);
+
+        // Get colors from ImGui style (tab colors)
+        var selectedColorVec = ImGui.GetStyle().Colors[(int)ImGuiCol.TabActive];
+        var hoveredColorVec = ImGui.GetStyle().Colors[(int)ImGuiCol.TabHovered];
+        var symmetryColorVec = GetInverseColor(selectedColorVec);
+
+        var selectedColor = ImGui.GetColorU32(selectedColorVec);
+        var hoveredColor = ImGui.GetColorU32(hoveredColorVec);
+        var symmetryColor = ImGui.GetColorU32(symmetryColorVec);
+        var dotColor = ImGui.GetColorU32(DotColorVec);
+
+        foreach (var bone in bones)
+        {
+            // Use larger joint size
+            var scaledSize = JointCircleSize * ImGuiHelpers.GlobalScale;
+            if (bone.IsSelected)
+                scaledSize = (JointCircleSize + 2f) * ImGuiHelpers.GlobalScale;
 
             // Determine color based on state
             uint color;
@@ -400,19 +588,16 @@ public class SkeletonOverlayWindow : Window
                 color = selectedColor;
             else if (bone.IsHovered)
                 color = hoveredColor;
-            else if (bone.IsModified)
-                color = modifiedColor;
+            else if (bone.IsSymmetryPair)
+                color = symmetryColor;
             else
                 color = dotColor;
 
             // Draw outline
-            drawList.AddCircle(bone.DisplayPosition, scaledSize + 1, outlineColor, 12, 1.5f * ImGuiHelpers.GlobalScale);
+            drawList.AddCircle(bone.DisplayPosition, scaledSize + 1, outlineColor, 16, 2f * ImGuiHelpers.GlobalScale);
 
-            // Draw filled circle for selected/hovered, outline for others
-            if (bone.IsSelected || bone.IsHovered)
-                drawList.AddCircleFilled(bone.DisplayPosition, scaledSize, color, 12);
-            else
-                drawList.AddCircle(bone.DisplayPosition, scaledSize, color, 12, 1.5f * ImGuiHelpers.GlobalScale);
+            // Draw filled circle (always filled for joints mode)
+            drawList.AddCircleFilled(bone.DisplayPosition, scaledSize, color, 16);
         }
     }
 

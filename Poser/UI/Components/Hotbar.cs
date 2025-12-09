@@ -17,6 +17,7 @@ public class Hotbar
     private static readonly string[] PivotNames = { "Local", "Parent", "Average" };
     private static readonly string[] OrientationNames = { "Local", "Global", "Parent" };
     private static readonly string[] SymmetryNames = { "Off", "Copy", "Mirror" };
+    private static readonly string[] ViewModeNames = { "Dots", "Octahedra", "Joints" };
 
     public Hotbar(IEditorState editorState)
     {
@@ -142,9 +143,50 @@ public class Hotbar
         float rightPadding = 8f;
         float rightButtonSpacing = 4f;
 
-        // Calculate positions from right to left: debug, category toggle
+        // Calculate positions from right to left: debug, category toggle, show selected, view mode dropdown
         float debugButtonX = ImGui.GetContentRegionMax().X - buttonSize - rightPadding;
         float categoryButtonX = debugButtonX - buttonSize - rightButtonSpacing;
+        float showSelectedButtonX = categoryButtonX - buttonSize - rightButtonSpacing;
+        float viewModeComboWidth = 85f;
+        float viewModeX = showSelectedButtonX - viewModeComboWidth - rightButtonSpacing;
+
+        // View mode dropdown
+        ImGui.SameLine(viewModeX);
+        ImGui.SetNextItemWidth(viewModeComboWidth);
+        int currentViewMode = (int)_editorState.SkeletonViewMode;
+        if (ImGui.Combo("##viewmode", ref currentViewMode, ViewModeNames, ViewModeNames.Length))
+        {
+            _editorState.SkeletonViewMode = (SkeletonViewMode)currentViewMode;
+        }
+
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip(_editorState.SkeletonViewMode switch
+            {
+                SkeletonViewMode.Dots => "Skeleton View: Dots with lines",
+                SkeletonViewMode.Octahedra => "Skeleton View: Blender-style bone shapes",
+                SkeletonViewMode.Joints => "Skeleton View: Joints only (no lines)",
+                _ => ""
+            });
+        }
+
+        // Show selected bones toggle
+        ImGui.SameLine(showSelectedButtonX);
+        var showSelectedIcon = _editorState.ShowSelectedBonesOnly ? FontAwesomeIcon.Eye : FontAwesomeIcon.EyeSlash;
+        var showSelectedColor = _editorState.ShowSelectedBonesOnly
+            ? UIConstants.SkeletonColor
+            : UIConstants.DisabledTextColor;
+        var showSelectedTooltip = _editorState.ShowSelectedBonesOnly
+            ? "Show Selected Bones Only: ON (click to show all)"
+            : "Show Selected Bones Only: OFF (click to filter)";
+
+        using (ImRaii.PushColor(ImGuiCol.Text, showSelectedColor))
+        {
+            if (ImPoser.IconButton("show_selected_toggle", showSelectedIcon, new Vector2(buttonSize, buttonSize), showSelectedTooltip))
+            {
+                _editorState.ShowSelectedBonesOnly = !_editorState.ShowSelectedBonesOnly;
+            }
+        }
 
         // Category toggle button
         ImGui.SameLine(categoryButtonX);

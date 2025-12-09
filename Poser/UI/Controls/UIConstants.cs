@@ -32,4 +32,9 @@ public static class UIConstants
     public static readonly Vector4 ActiveColor = new(1.0f, 0.7f, 0.3f, 1.0f);        // Orange - active/enabled
     public static readonly Vector4 InactiveColor = new(0.5f, 0.5f, 0.5f, 1.0f);      // Gray - inactive/disabled
     public static readonly Vector4 LockedColor = new(0.8f, 0.3f, 0.3f, 1.0f);        // Red - locked state
+
+    // Skeleton overlay bone colors (static)
+    public static readonly Vector4 DefaultBoneColor = new(1.0f, 1.0f, 1.0f, 0.9f);   // White - default bone
+    public static readonly Vector4 BoneLineColor = new(1.0f, 1.0f, 1.0f, 0.5f);      // Semi-transparent white - bone lines
+    public static readonly Vector4 BoneOutlineColor = new(0.0f, 0.0f, 0.0f, 0.8f);   // Black - bone outlines
 }
