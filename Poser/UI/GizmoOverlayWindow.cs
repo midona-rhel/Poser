@@ -227,31 +227,9 @@ public class GizmoOverlayWindow : Window
         var modelMatrix = skeleton.GetModelMatrix();
         worldViewMatrix = Matrix4x4.Multiply(modelMatrix, worldViewMatrix);
 
-        // Calculate gizmo position based on pivot mode
-        Transform gizmoTransform;
-        if (selectedBones.Count == 1 || _editorState.TransformPivot == TransformPivot.Individual)
-        {
-            // Single bone or individual pivot - use primary bone's transform
-            gizmoTransform = primaryBone.LastTransform;
-        }
-        else
-        {
-            // Multiple bones with median pivot - calculate average position
-            var averagePosition = Vector3.Zero;
-            foreach (var bone in selectedBones)
-            {
-                averagePosition += bone.LastTransform.Position;
-            }
-            averagePosition /= selectedBones.Count;
-
-            // Use primary bone's rotation for gizmo orientation
-            gizmoTransform = new Transform
-            {
-                Position = averagePosition,
-                Rotation = primaryBone.LastTransform.Rotation,
-                Scale = Vector3.One
-            };
-        }
+        // Calculate gizmo position and orientation based on pivot and orientation modes
+        var (pivotPosition, pivotOrientation) = CalculateBonePivot(selectedBones, primaryBone);
+        var gizmoTransform = new Transform(pivotPosition, pivotOrientation, Vector3.One);
 
         // Use last observed, or current if not tracking yet
         var lastObserved = _lastFrameBoneGizmo ?? gizmoTransform;
@@ -287,6 +265,11 @@ public class GizmoOverlayWindow : Window
             _ => ImGuizmoOperation.Rotate
         };
 
+        // Determine ImGuizmo mode based on orientation
+        var gizmoMode = _editorState.TransformOrientation == TransformOrientation.Global
+            ? ImGuizmoMode.World
+            : ImGuizmoMode.Local;
+
         Transform? newTransform = null;
 
         // Draw gizmo
@@ -294,7 +277,7 @@ public class GizmoOverlayWindow : Window
             ref worldViewMatrix,
             ref projectionMatrix,
             gizmoOperation,
-            ImGuizmoMode.Local,
+            gizmoMode,
             ref lastMatrix))
         {
             newTransform = Transform.FromMatrix(lastMatrix);
@@ -308,16 +291,10 @@ public class GizmoOverlayWindow : Window
             var expandedBones = ExpandVirtualBones(selectedBones);
 
             // Filter to only "root" bones - bones that don't have an ancestor also in the selection.
-            // This prevents double-applying transforms (e.g., rotating arm also rotates elbow/wrist
-            // through the hierarchy, so we shouldn't also rotate elbow/wrist directly).
             var rootBones = GetSelectionRootBones(expandedBones);
 
-            // Apply transform only to root bones
-            // Gizmo passes incremental deltas (lastObserved changes each frame), so ACCUMULATE
-            foreach (var bone in rootBones)
-            {
-                _bonePosingService.ApplyTransform(bone, newTransform.Value, lastObserved, TransformComponents.All, accumulate: true);
-            }
+            // Apply transform based on pivot mode
+            ApplyBonePivotTransform(rootBones, lastObserved, newTransform.Value);
         }
 
         // Finish drag - emit event for history
@@ -334,51 +311,113 @@ public class GizmoOverlayWindow : Window
         }
     }
 
+    private (Vector3 position, Quaternion rotation) CalculateBonePivot(List<IBone> selectedBones, IBone primaryBone)
+    {
+        // Calculate pivot position based on TransformPivot
+        Vector3 pivotPosition = _editorState.TransformPivot switch
+        {
+            TransformPivot.Local => primaryBone.LastTransform.Position,
+            TransformPivot.Parent => primaryBone.ParentBone?.LastTransform.Position
+                                     ?? primaryBone.LastTransform.Position,
+            TransformPivot.Average => CalculateAveragePosition(selectedBones),
+            _ => primaryBone.LastTransform.Position
+        };
+
+        // Calculate pivot orientation based on TransformOrientation
+        Quaternion pivotOrientation = _editorState.TransformOrientation switch
+        {
+            TransformOrientation.Global => Quaternion.Identity,
+            TransformOrientation.Local => primaryBone.LastTransform.Rotation,
+            TransformOrientation.Parent => primaryBone.ParentBone?.LastTransform.Rotation
+                                           ?? primaryBone.LastTransform.Rotation,
+            _ => primaryBone.LastTransform.Rotation
+        };
+
+        return (pivotPosition, pivotOrientation);
+    }
+
+    private static Vector3 CalculateAveragePosition(List<IBone> bones)
+    {
+        if (bones.Count == 0)
+            return Vector3.Zero;
+
+        var average = Vector3.Zero;
+        foreach (var bone in bones)
+        {
+            average += bone.LastTransform.Position;
+        }
+        return average / bones.Count;
+    }
+
+    private void ApplyBonePivotTransform(List<IBone> bones, Transform oldPivot, Transform newPivot)
+    {
+        // Calculate deltas from pivot transform
+        var positionDelta = newPivot.Position - oldPivot.Position;
+        var rotationDelta = newPivot.Rotation * Quaternion.Inverse(oldPivot.Rotation);
+
+        // For Local pivot, each bone transforms around itself
+        if (_editorState.TransformPivot == TransformPivot.Local && bones.Count == 1)
+        {
+            // Single bone: apply transform directly
+            _bonePosingService.ApplyTransform(bones[0], newPivot, oldPivot, TransformComponents.All, accumulate: true);
+            return;
+        }
+
+        // For Average/Parent pivot (or multi-selection with Local), bones orbit the pivot
+        foreach (var bone in bones)
+        {
+            // Get bone's position relative to pivot
+            var relativePos = bone.LastTransform.Position - oldPivot.Position;
+
+            // Rotate position around pivot
+            var rotatedRelativePos = Vector3.Transform(relativePos, rotationDelta);
+
+            // New position = new pivot position + rotated relative position
+            var newPosition = newPivot.Position + rotatedRelativePos;
+
+            // Apply rotation to bone's own rotation
+            var newRotation = rotationDelta * bone.LastTransform.Rotation;
+
+            // Create new transform and apply
+            var newBoneTransform = new Transform(newPosition, newRotation, bone.LastTransform.Scale);
+            _bonePosingService.ApplyTransform(bone, newBoneTransform, bone.LastTransform, TransformComponents.All, accumulate: true);
+        }
+    }
+
     private (Vector3 position, Quaternion rotation) CalculateActorPivot(List<IActor> selectedActors, IActor primaryActor)
     {
-        // First calculate the pivot position based on TransformPivot
-        Vector3 pivotPosition;
-        switch (_editorState.TransformPivot)
+        // Calculate pivot position based on TransformPivot
+        Vector3 pivotPosition = _editorState.TransformPivot switch
         {
-            case TransformPivot.Median:
-                // Average position of all selected actors
-                var averagePosition = Vector3.Zero;
-                int actorCount = 0;
-                foreach (var actor in selectedActors)
-                {
-                    averagePosition += _posingService.GetEffectiveTransform(actor).Position;
-                    actorCount++;
-                }
-                if (actorCount > 0)
-                    averagePosition /= actorCount;
-                pivotPosition = averagePosition;
-                break;
+            TransformPivot.Local => _posingService.GetEffectiveTransform(primaryActor).Position,
+            TransformPivot.Parent => _posingService.GetEffectiveTransform(primaryActor).Position, // Actors don't have parents
+            TransformPivot.Average => CalculateActorAveragePosition(selectedActors),
+            _ => _posingService.GetEffectiveTransform(primaryActor).Position
+        };
 
-            case TransformPivot.Individual:
-            case TransformPivot.Parent:
-            default:
-                // Use primary actor's position for gizmo display
-                pivotPosition = _posingService.GetEffectiveTransform(primaryActor).Position;
-                break;
-        }
-
-        // Then calculate the rotation based on TransformOrientation
-        Quaternion pivotRotation;
-        switch (_editorState.TransformOrientation)
+        // Calculate pivot orientation based on TransformOrientation
+        Quaternion pivotRotation = _editorState.TransformOrientation switch
         {
-            case TransformOrientation.Global:
-                pivotRotation = Quaternion.Identity;
-                break;
-
-            case TransformOrientation.Local:
-            case TransformOrientation.Parent:
-            default:
-                // Use primary actor's rotation for local orientation
-                pivotRotation = _posingService.GetEffectiveTransform(primaryActor).Rotation;
-                break;
-        }
+            TransformOrientation.Global => Quaternion.Identity,
+            TransformOrientation.Local => _posingService.GetEffectiveTransform(primaryActor).Rotation,
+            TransformOrientation.Parent => _posingService.GetEffectiveTransform(primaryActor).Rotation, // Actors don't have parents
+            _ => _posingService.GetEffectiveTransform(primaryActor).Rotation
+        };
 
         return (pivotPosition, pivotRotation);
+    }
+
+    private Vector3 CalculateActorAveragePosition(List<IActor> actors)
+    {
+        if (actors.Count == 0)
+            return Vector3.Zero;
+
+        var average = Vector3.Zero;
+        foreach (var actor in actors)
+        {
+            average += _posingService.GetEffectiveTransform(actor).Position;
+        }
+        return average / actors.Count;
     }
 
     private void ApplyActorPivotTransform(List<IActor> selectedActors, IActor primaryActor, Transform oldPivot, Transform newPivot)
@@ -387,9 +426,9 @@ public class GizmoOverlayWindow : Window
         var positionDelta = newPivot.Position - oldPivot.Position;
         var rotationDelta = newPivot.Rotation * Quaternion.Inverse(oldPivot.Rotation);
 
-        if (_editorState.TransformPivot == TransformPivot.Individual)
+        if (_editorState.TransformPivot == TransformPivot.Local)
         {
-            // Individual mode: each actor rotates around its own center
+            // Local mode: each actor rotates around its own center
             foreach (var actor in selectedActors)
             {
                 var actorTransform = _posingService.GetEffectiveTransform(actor);
@@ -405,7 +444,7 @@ public class GizmoOverlayWindow : Window
         }
         else
         {
-            // Median/Parent mode: all actors rotate around the pivot point
+            // Average/Parent mode: all actors rotate around the pivot point
             foreach (var actor in selectedActors)
             {
                 var actorTransform = _posingService.GetEffectiveTransform(actor);

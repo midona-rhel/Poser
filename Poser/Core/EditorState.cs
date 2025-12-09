@@ -11,7 +11,7 @@ namespace Poser.Core;
 /// </summary>
 public class EditorState : IEditorState
 {
-    public TransformPivot TransformPivot { get; set; } = TransformPivot.Individual;
+    public TransformPivot TransformPivot { get; set; } = TransformPivot.Local;
     public TransformOrientation TransformOrientation { get; set; } = TransformOrientation.Local;
     public TransformTool TransformTool { get; set; } = TransformTool.Rotate;
     public bool DebugMode { get; set; } = false;

@@ -14,7 +14,7 @@ public class Hotbar
 {
     private readonly IEditorState _editorState;
 
-    private static readonly string[] PivotNames = { "Individual", "Parent", "Median" };
+    private static readonly string[] PivotNames = { "Local", "Parent", "Average" };
     private static readonly string[] OrientationNames = { "Local", "Global", "Parent" };
 
     public Hotbar(IEditorState editorState)
@@ -44,9 +44,9 @@ public class Hotbar
         {
             ImGui.SetTooltip(_editorState.TransformPivot switch
             {
-                TransformPivot.Individual => "Transform around each object's own origin",
-                TransformPivot.Parent => "Transform around the parent bone's position",
-                TransformPivot.Median => "Transform around the median center of selected objects",
+                TransformPivot.Local => "Gizmo on first selected entity's position",
+                TransformPivot.Parent => "Gizmo on parent of first selected (fallback to entity if no parent)",
+                TransformPivot.Average => "Gizmo at average position of all selected entities",
                 _ => ""
             });
         }

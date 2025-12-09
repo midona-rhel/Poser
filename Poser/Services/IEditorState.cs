@@ -5,12 +5,12 @@ namespace Poser.Services;
 /// </summary>
 public enum TransformPivot
 {
-    /// <summary>Transform around each object's own origin.</summary>
-    Individual,
-    /// <summary>Transform around the parent bone's position.</summary>
+    /// <summary>Gizmo on first selected entity's position.</summary>
+    Local,
+    /// <summary>Gizmo on parent of first selected (fallback to entity if no parent).</summary>
     Parent,
-    /// <summary>Transform around the median center of all selected objects.</summary>
-    Median
+    /// <summary>Gizmo at average position of all selected entities.</summary>
+    Average
 }
 
 /// <summary>
