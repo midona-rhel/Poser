@@ -292,7 +292,7 @@ public class GizmoOverlayWindow : Window
             var expandedBones = ExpandVirtualBones(selectedBones);
 
             // Apply transform based on pivot mode
-            ApplyBonePivotTransform(expandedBones, lastObserved, newTransform.Value);
+            ApplyBonePivotTransform(expandedBones, skeleton, lastObserved, newTransform.Value);
         }
 
         // Finish drag - emit event for history
@@ -347,7 +347,7 @@ public class GizmoOverlayWindow : Window
         return average / bones.Count;
     }
 
-    private void ApplyBonePivotTransform(List<IBone> bones, Transform oldPivot, Transform newPivot)
+    private void ApplyBonePivotTransform(List<IBone> bones, Skeleton skeleton, Transform oldPivot, Transform newPivot)
     {
         // Calculate deltas from pivot transform
         var positionDelta = newPivot.Position - oldPivot.Position;
@@ -356,10 +356,17 @@ public class GizmoOverlayWindow : Window
         // Scale should never propagate to children
         const TransformComponents propagate = TransformComponents.Position | TransformComponents.Rotation;
 
+        // Build set of selected bone names for symmetry deduplication
+        var selectedBoneNames = new HashSet<string>(bones.Select(b => b.BoneName));
+
         // For single bone with Local pivot, apply transform directly
         if (_editorState.TransformPivot == TransformPivot.Local && bones.Count == 1)
         {
-            _bonePosingService.ApplyTransform(bones[0], newPivot, oldPivot, propagate, accumulate: true);
+            var bone = bones[0];
+            _bonePosingService.ApplyTransform(bone, newPivot, oldPivot, propagate, accumulate: true);
+
+            // Apply symmetry if enabled
+            ApplySymmetryTransform(bone, skeleton, selectedBoneNames, newPivot, oldPivot, propagate);
             return;
         }
 
@@ -374,7 +381,76 @@ public class GizmoOverlayWindow : Window
 
             var newBoneTransform = new Transform(newPosition, newRotation, bone.LastTransform.Scale);
             _bonePosingService.ApplyTransform(bone, newBoneTransform, bone.LastTransform, propagate, accumulate: true);
+
+            // Apply symmetry if enabled
+            ApplySymmetryTransform(bone, skeleton, selectedBoneNames, newBoneTransform, bone.LastTransform, propagate);
         }
+    }
+
+    /// <summary>
+    /// Apply symmetry transform to the paired bone (if exists and not already selected).
+    /// </summary>
+    private void ApplySymmetryTransform(IBone bone, Skeleton skeleton, HashSet<string> selectedBoneNames,
+        Transform newTransform, Transform oldTransform, TransformComponents propagate)
+    {
+        if (_editorState.SymmetryMode == SymmetryMode.Off)
+            return;
+
+        // Find paired bone name (swap _l <-> _r)
+        var pairedName = GetPairedBoneName(bone.BoneName);
+        if (pairedName == null)
+            return;
+
+        // Skip if paired bone is already selected (will be transformed directly)
+        if (selectedBoneNames.Contains(pairedName))
+            return;
+
+        // Find the paired bone in the skeleton
+        var pairedBone = skeleton.Bones.FirstOrDefault(b => b.BoneName == pairedName);
+        if (pairedBone == null)
+            return;
+
+        // Calculate deltas from the original bone's transform
+        var positionDelta = newTransform.Position - oldTransform.Position;
+        var rotationDelta = newTransform.Rotation * Quaternion.Inverse(oldTransform.Rotation);
+
+        Transform symmetryTransform;
+        if (_editorState.SymmetryMode == SymmetryMode.Copy)
+        {
+            // Copy: apply same delta to paired bone
+            symmetryTransform = new Transform(
+                pairedBone.LastTransform.Position + positionDelta,
+                Quaternion.Normalize(rotationDelta * pairedBone.LastTransform.Rotation),
+                pairedBone.LastTransform.Scale);
+        }
+        else // Mirror
+        {
+            // Mirror: invert X, Y, and Z deltas
+            var mirroredPositionDelta = new Vector3(-positionDelta.X, -positionDelta.Y, -positionDelta.Z);
+
+            // Rotation delta: invert X, Y, and Z, keep W
+            var mirroredRotationDelta = new Quaternion(-rotationDelta.X, -rotationDelta.Y, -rotationDelta.Z, rotationDelta.W);
+
+            symmetryTransform = new Transform(
+                pairedBone.LastTransform.Position + mirroredPositionDelta,
+                Quaternion.Normalize(mirroredRotationDelta * pairedBone.LastTransform.Rotation),
+                pairedBone.LastTransform.Scale);
+        }
+
+        _bonePosingService.ApplyTransform(pairedBone, symmetryTransform, pairedBone.LastTransform, propagate, accumulate: true);
+    }
+
+    /// <summary>
+    /// Get the paired bone name by swapping _l <-> _r suffix.
+    /// Returns null if bone has no pair.
+    /// </summary>
+    private static string? GetPairedBoneName(string boneName)
+    {
+        if (boneName.EndsWith("_l"))
+            return boneName[..^2] + "_r";
+        if (boneName.EndsWith("_r"))
+            return boneName[..^2] + "_l";
+        return null;
     }
 
     private (Vector3 position, Quaternion rotation) CalculateActorPivot(List<IActor> selectedActors, IActor primaryActor)

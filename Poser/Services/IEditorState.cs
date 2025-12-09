@@ -53,6 +53,19 @@ public enum TransformTool
 }
 
 /// <summary>
+/// Symmetry mode for paired bones (left/right).
+/// </summary>
+public enum SymmetryMode
+{
+    /// <summary>No symmetry - only transform selected bone.</summary>
+    Off,
+    /// <summary>Copy - paired bone gets the same transform.</summary>
+    Copy,
+    /// <summary>Mirror - paired bone gets mirrored transform across body center.</summary>
+    Mirror
+}
+
+/// <summary>
 /// Tracks editor-wide state: gizmo settings.
 ///
 /// NOTE: Selection is handled by ISelectionService, not here.
@@ -74,4 +87,7 @@ public interface IEditorState
 
     /// <summary>Bone display mode - hierarchy or category grouping.</summary>
     BoneDisplayMode BoneDisplayMode { get; set; }
+
+    /// <summary>Symmetry mode for paired bones (left/right).</summary>
+    SymmetryMode SymmetryMode { get; set; }
 }

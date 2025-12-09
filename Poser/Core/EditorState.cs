@@ -16,4 +16,5 @@ public class EditorState : IEditorState
     public TransformTool TransformTool { get; set; } = TransformTool.Rotate;
     public bool DebugMode { get; set; } = false;
     public BoneDisplayMode BoneDisplayMode { get; set; } = BoneDisplayMode.Category;
+    public SymmetryMode SymmetryMode { get; set; } = SymmetryMode.Off;
 }

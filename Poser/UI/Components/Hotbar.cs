@@ -16,6 +16,7 @@ public class Hotbar
 
     private static readonly string[] PivotNames = { "Local", "Parent", "Average" };
     private static readonly string[] OrientationNames = { "Local", "Global", "Parent" };
+    private static readonly string[] SymmetryNames = { "Off", "Copy", "Mirror" };
 
     public Hotbar(IEditorState editorState)
     {
@@ -74,6 +75,56 @@ public class Hotbar
                 TransformOrientation.Parent => "Use the parent bone's coordinate axes",
                 _ => ""
             });
+        }
+
+        ImGui.SameLine();
+
+        // Reset pivot/orientation button
+        bool isDefault = _editorState.TransformPivot == TransformPivot.Local &&
+                         _editorState.TransformOrientation == TransformOrientation.Local;
+        using (ImRaii.Disabled(isDefault))
+        {
+            if (ImPoser.IconButton("reset_pivot", FontAwesomeIcon.Undo, new Vector2(buttonSize, buttonSize), "Reset to Local/Local"))
+            {
+                _editorState.TransformPivot = TransformPivot.Local;
+                _editorState.TransformOrientation = TransformOrientation.Local;
+            }
+        }
+
+        ImGui.SameLine(0, 16f); // Gap before symmetry
+
+        // Symmetry mode dropdown
+        ImGui.AlignTextToFramePadding();
+        ImGui.Text("Symmetry:");
+        ImGui.SameLine();
+
+        ImGui.SetNextItemWidth(comboWidth);
+        int currentSymmetry = (int)_editorState.SymmetryMode;
+        if (ImGui.Combo("##symmetry", ref currentSymmetry, SymmetryNames, SymmetryNames.Length))
+        {
+            _editorState.SymmetryMode = (SymmetryMode)currentSymmetry;
+        }
+
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip(_editorState.SymmetryMode switch
+            {
+                SymmetryMode.Off => "No symmetry - only transform selected bone",
+                SymmetryMode.Copy => "Paired bone gets the same transform (both arms up)",
+                SymmetryMode.Mirror => "Paired bone gets mirrored transform (left up = right down)",
+                _ => ""
+            });
+        }
+
+        ImGui.SameLine();
+
+        // Reset symmetry button
+        using (ImRaii.Disabled(_editorState.SymmetryMode == SymmetryMode.Off))
+        {
+            if (ImPoser.IconButton("reset_symmetry", FontAwesomeIcon.Undo, new Vector2(buttonSize, buttonSize), "Reset Symmetry to Off"))
+            {
+                _editorState.SymmetryMode = SymmetryMode.Off;
+            }
         }
 
         ImGui.SameLine(0, 16f); // Gap before tool buttons
