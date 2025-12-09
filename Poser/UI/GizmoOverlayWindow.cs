@@ -44,6 +44,12 @@ public class GizmoOverlayWindow : Window
 
     // Bone gizmo state
     private Transform? _lastFrameBoneGizmo;
+    private Transform? _dragStartGizmo;  // Gizmo transform at drag start
+    private Dictionary<IBone, Vector3>? _dragStartRelativePositions;  // Bone position relative to parent at drag start
+    private Dictionary<IBone, Vector3>? _dragStartRelativeToGizmo;  // Bone position relative to gizmo at drag start (for Average)
+    private Dictionary<IBone, Quaternion>? _dragStartBoneRotations;  // Bone rotations at drag start
+    private Dictionary<IBone, Vector3>? _dragStartParentPositions;  // Parent position at drag start
+    private Dictionary<IBone, Transform>? _dragStartBoneTransforms;  // Full bone transforms at drag start
     private Dictionary<IBone, Transform>? _boneDragStartModifications;
 
     public GizmoOverlayWindow(
@@ -244,8 +250,26 @@ public class GizmoOverlayWindow : Window
         if (isUsing && _boneDragStartModifications == null && isFrozen)
         {
             _boneDragStartModifications = new Dictionary<IBone, Transform>();
+            _dragStartGizmo = gizmoTransform;  // Store gizmo at drag start
+            _dragStartRelativePositions = new Dictionary<IBone, Vector3>();
+            _dragStartRelativeToGizmo = new Dictionary<IBone, Vector3>();
+            _dragStartBoneRotations = new Dictionary<IBone, Quaternion>();
+            _dragStartParentPositions = new Dictionary<IBone, Vector3>();
+            _dragStartBoneTransforms = new Dictionary<IBone, Transform>();
+
             // Expand virtual bones when capturing initial state
             var expandedForHistory = ExpandVirtualBones(selectedBones);
+
+            // Capture relative positions, rotations, parent positions, and full transforms
+            foreach (var bone in expandedForHistory)
+            {
+                var parentPos = bone.ParentBone?.LastTransform.Position ?? gizmoTransform.Position;
+                _dragStartRelativePositions[bone] = bone.LastTransform.Position - parentPos;  // For Parent pivot
+                _dragStartRelativeToGizmo[bone] = bone.LastTransform.Position - gizmoTransform.Position;  // For Average pivot
+                _dragStartBoneRotations[bone] = bone.LastTransform.Rotation;
+                _dragStartParentPositions[bone] = parentPos;
+                _dragStartBoneTransforms[bone] = bone.LastTransform;
+            }
 
             // Also include paired bones if symmetry is enabled
             var allBonesForHistory = new List<IBone>(expandedForHistory);
@@ -326,6 +350,12 @@ public class GizmoOverlayWindow : Window
             }
 
             _lastFrameBoneGizmo = null;
+            _dragStartGizmo = null;
+            _dragStartRelativePositions = null;
+            _dragStartRelativeToGizmo = null;
+            _dragStartBoneRotations = null;
+            _dragStartParentPositions = null;
+            _dragStartBoneTransforms = null;
             _boneDragStartModifications = null;
         }
     }
@@ -391,10 +421,136 @@ public class GizmoOverlayWindow : Window
             return;
         }
 
-        // For multi-bone selection:
-        // - Translation: apply position delta directly to each bone
-        // - Rotation: apply rotation delta to each bone's rotation (no position orbiting)
-        // This avoids drift when rotating parent-child bones together
+        // For Parent pivot - orbit using TOTAL rotation from drag start applied to ORIGINAL relative position
+        // For multi-bone: process in hierarchy order, rotations compound down the chain
+        if (_editorState.TransformPivot == TransformPivot.Parent && _dragStartGizmo.HasValue && _dragStartRelativePositions != null && _dragStartBoneRotations != null)
+        {
+            // Total rotation from drag start to now (one rotation input from gizmo)
+            var totalRotation = newPivot.Rotation * Quaternion.Inverse(_dragStartGizmo.Value.Rotation);
+
+            // Sort bones by hierarchy depth (parents first)
+            var sortedBones = bones.OrderBy(b => GetBoneDepth(b)).ToList();
+
+            // Track new positions and accumulated rotations for children
+            var newPositions = new Dictionary<IBone, Vector3>();
+            var accumulatedRotations = new Dictionary<IBone, Quaternion>();
+
+            foreach (var bone in sortedBones)
+            {
+                if (!_dragStartRelativePositions.TryGetValue(bone, out var originalRelativePos))
+                    continue;
+                if (!_dragStartBoneRotations.TryGetValue(bone, out var originalBoneRot))
+                    continue;
+
+                // Count how many ancestors are in the selection - rotation compounds for each
+                int selectedAncestorCount = CountSelectedAncestors(bone, sortedBones);
+
+                // Compound rotation: totalRotation applied (1 + selectedAncestorCount) times
+                // Each selected ancestor adds one more rotation
+                var compoundedRotation = totalRotation;
+                for (int i = 0; i < selectedAncestorCount; i++)
+                {
+                    compoundedRotation = totalRotation * compoundedRotation;
+                }
+
+                // Orbit center: use parent's NEW position if parent was in selection, otherwise current position
+                Vector3 orbitCenter;
+                if (bone.ParentBone != null && newPositions.TryGetValue(bone.ParentBone, out var parentNewPos))
+                {
+                    orbitCenter = parentNewPos;
+                }
+                else
+                {
+                    orbitCenter = bone.ParentBone?.LastTransform.Position ?? newPivot.Position;
+                }
+
+                // Rotate ORIGINAL relative vector by COMPOUNDED rotation
+                var rotatedRelative = Vector3.Transform(originalRelativePos, compoundedRotation);
+                var newPosition = orbitCenter + rotatedRelative;
+
+                // Track this bone's new position for its children
+                newPositions[bone] = newPosition;
+
+                // Rotate ORIGINAL bone rotation by COMPOUNDED rotation
+                var newRotation = compoundedRotation * originalBoneRot;
+
+                var newTransform = new Transform(newPosition, newRotation, bone.LastTransform.Scale);
+                _bonePosingService.ApplyTransform(bone, newTransform, bone.LastTransform, propagate, accumulate: true);
+                ApplySymmetryTransform(bone, skeleton, selectedBoneNames, newTransform, bone.LastTransform, propagate);
+            }
+            return;
+        }
+
+        // For Average pivot - orbit all bones around the average center point
+        // Uses same compounding approach as Parent pivot
+        if (_editorState.TransformPivot == TransformPivot.Average && _dragStartGizmo.HasValue && _dragStartRelativeToGizmo != null && _dragStartBoneRotations != null)
+        {
+            // Total rotation from drag start to now
+            var totalRotation = newPivot.Rotation * Quaternion.Inverse(_dragStartGizmo.Value.Rotation);
+
+            // Sort bones by hierarchy depth (parents first)
+            var sortedBones = bones.OrderBy(b => GetBoneDepth(b)).ToList();
+
+            // Track new positions for children
+            var newPositions = new Dictionary<IBone, Vector3>();
+
+            foreach (var bone in sortedBones)
+            {
+                // Use relative-to-gizmo for Average pivot (not relative-to-parent)
+                if (!_dragStartRelativeToGizmo.TryGetValue(bone, out var originalRelativeToGizmo))
+                    continue;
+                if (!_dragStartBoneRotations.TryGetValue(bone, out var originalBoneRot))
+                    continue;
+
+                // Count how many ancestors are in the selection - rotation compounds for each
+                int selectedAncestorCount = CountSelectedAncestors(bone, sortedBones);
+
+                // Compound rotation
+                var compoundedRotation = totalRotation;
+                for (int i = 0; i < selectedAncestorCount; i++)
+                {
+                    compoundedRotation = totalRotation * compoundedRotation;
+                }
+
+                // For root bones (no parent in selection): orbit around gizmo (average center)
+                // For child bones: orbit around parent's new position
+                Vector3 orbitCenter;
+                Vector3 originalRelativePos;
+                if (bone.ParentBone != null && newPositions.TryGetValue(bone.ParentBone, out var parentNewPos))
+                {
+                    // Child bone: orbit around parent's new position
+                    orbitCenter = parentNewPos;
+                    // Use relative-to-parent for children
+                    if (_dragStartRelativePositions != null && _dragStartRelativePositions.TryGetValue(bone, out var relToParent))
+                        originalRelativePos = relToParent;
+                    else
+                        originalRelativePos = originalRelativeToGizmo;
+                }
+                else
+                {
+                    // Root bone: orbit around gizmo (average center)
+                    orbitCenter = newPivot.Position;
+                    originalRelativePos = originalRelativeToGizmo;
+                }
+
+                // Rotate ORIGINAL relative vector by COMPOUNDED rotation
+                var rotatedRelative = Vector3.Transform(originalRelativePos, compoundedRotation);
+                var newPosition = orbitCenter + rotatedRelative;
+
+                // Track this bone's new position for its children
+                newPositions[bone] = newPosition;
+
+                // Rotate ORIGINAL bone rotation by COMPOUNDED rotation
+                var newRotation = compoundedRotation * originalBoneRot;
+
+                var newTransform = new Transform(newPosition, newRotation, bone.LastTransform.Scale);
+                _bonePosingService.ApplyTransform(bone, newTransform, bone.LastTransform, propagate, accumulate: true);
+                ApplySymmetryTransform(bone, skeleton, selectedBoneNames, newTransform, bone.LastTransform, propagate);
+            }
+            return;
+        }
+
+        // For Local pivot multi-bone: each bone rotates in place
         foreach (var bone in bones)
         {
             var newPosition = bone.LastTransform.Position + positionDelta;
@@ -597,5 +753,36 @@ public class GizmoOverlayWindow : Window
         }
 
         return expandedBones;
+    }
+
+    /// <summary>
+    /// Get the depth of a bone in the hierarchy (0 = root).
+    /// </summary>
+    private static int GetBoneDepth(IBone bone)
+    {
+        int depth = 0;
+        var current = bone.ParentBone;
+        while (current != null)
+        {
+            depth++;
+            current = current.ParentBone;
+        }
+        return depth;
+    }
+
+    /// <summary>
+    /// Count how many of this bone's ancestors are in the selection.
+    /// </summary>
+    private static int CountSelectedAncestors(IBone bone, List<IBone> selectedBones)
+    {
+        int count = 0;
+        var current = bone.ParentBone;
+        while (current != null)
+        {
+            if (selectedBones.Contains(current))
+                count++;
+            current = current.ParentBone;
+        }
+        return count;
     }
 }
