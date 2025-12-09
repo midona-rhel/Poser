@@ -34,8 +34,6 @@ public class TopBar
 
         DrawGPoseStatus();
         ImGui.SameLine();
-        DrawPosingModeToggle();
-        ImGui.SameLine();
         DrawUndoRedoButtons(windowWidth);
     }
 
@@ -48,49 +46,6 @@ public class TopBar
         else
         {
             ImGui.TextDisabled("Not in GPose");
-        }
-    }
-
-    private void DrawPosingModeToggle()
-    {
-        if (!_gPoseService.IsGPosing)
-            return;
-
-        ImGui.TextDisabled("|");
-        ImGui.SameLine();
-
-        float buttonHeight = ImGui.GetFrameHeight();
-        bool isPosingMode = _editorState.IsPosingMode;
-
-        var toggleIcon = isPosingMode ? FontAwesomeIcon.ToggleOn : FontAwesomeIcon.ToggleOff;
-        var toggleColor = isPosingMode ? UIConstants.ActiveColor : UIConstants.InactiveColor;
-
-        using (ImRaii.PushColor(ImGuiCol.Text, toggleColor))
-        using (ImRaii.PushFont(UiBuilder.IconFont))
-        {
-            if (ImGui.Button($"{toggleIcon.ToIconString()}##pose_toggle", new Vector2(buttonHeight, buttonHeight)))
-            {
-                _editorState.TogglePosingMode();
-            }
-        }
-
-        if (ImGui.IsItemHovered())
-        {
-            var tooltip = isPosingMode
-                ? "Pose Mode ON - All actors frozen. Click to exit."
-                : "Pose Mode OFF - Click to freeze actors and enable bone posing.";
-            ImGui.SetTooltip(tooltip);
-        }
-
-        ImGui.SameLine();
-
-        if (isPosingMode)
-        {
-            ImGui.TextColored(toggleColor, "Pose");
-        }
-        else
-        {
-            ImGui.TextDisabled("Pose");
         }
     }
 

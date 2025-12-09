@@ -1,13 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Poser.Core;
-using Poser.Data;
-using Poser.Data.Config;
 using Poser.Entities;
 using Poser.Entities.Capabilities;
 using Poser.History;
@@ -19,6 +18,7 @@ namespace Poser.UI.Components;
 /// <summary>
 /// Renders the Properties panel showing details of the selected entity.
 /// Uses capability interfaces to determine what UI to show.
+/// Can operate in live mode (follows selection) or frozen mode (locked to specific entities).
 /// </summary>
 public class PropertiesPanel : IDisposable
 {
@@ -30,23 +30,15 @@ public class PropertiesPanel : IDisposable
     private readonly IPosingService _posingService;
     private readonly IBonePosingService _bonePosingService;
     private readonly IAnimationService _animationService;
+    private readonly IAnimationDataService _animationDataService;
     private readonly IHistoryService _historyService;
     private readonly IGazeService _gazeService;
-    private readonly ISkeletonService _skeletonService;
     private readonly ICameraService _cameraService;
-    private readonly IEditorState _editorState;
     private readonly TransformWidget _transformWidget;
 
     // Reusable animation selectors
     private readonly AnimationSelector _baseAnimationSelector;
     private readonly AnimationSelector _blendAnimationSelector;
-
-    // Category config for skeleton tab
-    private readonly CategoryConfig _categoryConfig;
-
-    // Cached category items - rebuilt when skeleton changes
-    private readonly List<BoneCategoryListItem> _categoryItems = new();
-    private Skeleton? _lastSkeleton;
 
     // Active tab - determined by entity capabilities
     private int _activeTabIndex = 0;
@@ -61,9 +53,20 @@ public class PropertiesPanel : IDisposable
     // Gaze mode names for dropdown
     private static readonly string[] GazeModeNames = { "None", "Forward", "Camera", "Entity" };
 
-    // Track original bone transform for proper delta calculation
+    // Track bone transform frame-by-frame for incremental deltas (like gizmo)
     private IBone? _trackingBone;
-    private Transform? _trackingOriginalTransform;
+    private Transform? _lastFrameTransform;
+
+    // Placeholder for disabled UI
+    private string _placeholderText = "";
+
+    // Frozen mode: when set, panel shows these entities instead of live selection
+    private List<IEntity>? _frozenEntities;
+
+    /// <summary>
+    /// Event fired when user clicks pop-out button. Passes current selection to create detached window.
+    /// </summary>
+    public event Action<IReadOnlyList<IEntity>>? OnPopOutRequested;
 
     public PropertiesPanel(
         ISelectionService selectionService,
@@ -74,33 +77,57 @@ public class PropertiesPanel : IDisposable
         IAnimationDataService animationDataService,
         IHistoryService historyService,
         IGazeService gazeService,
-        ISkeletonService skeletonService,
-        ICameraService cameraService,
-        IEditorState editorState)
+        ICameraService cameraService)
     {
         _selectionService = selectionService;
         _actorManager = actorManager;
         _posingService = posingService;
         _bonePosingService = bonePosingService;
         _animationService = animationService;
+        _animationDataService = animationDataService;
         _historyService = historyService;
         _gazeService = gazeService;
-        _skeletonService = skeletonService;
         _cameraService = cameraService;
-        _editorState = editorState;
         _transformWidget = new TransformWidget();
 
         _baseAnimationSelector = new AnimationSelector(animationDataService);
         _blendAnimationSelector = new AnimationSelector(animationDataService);
 
-        _categoryConfig = CategoryReader.ReadEmbeddedResource();
-
         _transformWidget.OnTransformCommit += OnTransformCommit;
+    }
+
+    /// <summary>
+    /// Freezes this panel to show specific entities instead of following live selection.
+    /// Used for detached/pop-out windows.
+    /// </summary>
+    public void FreezeToEntities(IReadOnlyList<IEntity> entities)
+    {
+        _frozenEntities = entities.ToList();
+    }
+
+    /// <summary>
+    /// Gets the entities this panel is currently showing (frozen or live selection).
+    /// </summary>
+    private IReadOnlyList<IEntity> GetCurrentEntities()
+    {
+        if (_frozenEntities != null)
+            return _frozenEntities;
+        return _selectionService.Selected;
+    }
+
+    /// <summary>
+    /// Gets the primary entity this panel is currently showing.
+    /// </summary>
+    private IEntity? GetPrimaryEntity()
+    {
+        if (_frozenEntities != null)
+            return _frozenEntities.FirstOrDefault();
+        return _selectionService.Primary;
     }
 
     private void OnTransformCommit(Transform oldTransform, Transform newTransform)
     {
-        var entity = _selectionService.Primary;
+        var entity = GetPrimaryEntity();
         if (entity is IActor actor)
         {
             var action = new TransformActorAction(_posingService, actor, oldTransform, newTransform);
@@ -108,34 +135,45 @@ public class PropertiesPanel : IDisposable
         }
         else if (entity is IBone bone)
         {
+            // Use Record instead of Push - the transform was already applied during drag
             var action = new TransformBoneAction(_bonePosingService, bone, oldTransform, newTransform);
-            _historyService.Push(action);
+            _historyService.Record(action);
         }
     }
 
     public void Draw()
     {
-        var entity = _selectionService.Primary;
+        var entities = GetCurrentEntities();
+        var entity = GetPrimaryEntity();
 
-        if (entity == null)
+        if (entity == null || entities.Count == 0)
         {
-            ImGui.Text("Properties");
+            DrawEmptyHeader();
             ImGui.Spacing();
             ImGui.TextDisabled("No entity selected");
             return;
         }
 
-        DrawEntity(entity);
+        DrawEntity(entity, entities);
     }
 
-    private void DrawEntity(IEntity entity)
+    private void DrawEmptyHeader()
     {
-        // Header with entity name
-        var headerText = entity.Name;
+        var headerText = "Properties";
         var headerWidth = ImGui.CalcTextSize(headerText).X;
         var availWidth = ImGui.GetContentRegionAvail().X;
+
+        // Only show pop-out button if not already frozen (i.e., in main panel)
+        float buttonWidth = _frozenEntities == null ? 24 * ImGuiHelpers.GlobalScale : 0;
+
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (availWidth - headerWidth) * 0.5f);
         ImGui.Text(headerText);
+    }
+
+    private void DrawEntity(IEntity primaryEntity, IReadOnlyList<IEntity> allEntities)
+    {
+        // Header with selection summary and pop-out button
+        DrawSelectionHeader(allEntities);
 
         ImGui.Spacing();
         ImGui.Separator();
@@ -149,7 +187,7 @@ public class PropertiesPanel : IDisposable
         {
             if (tabChild.Success)
             {
-                DrawTabBar(entity);
+                DrawTabBar(primaryEntity);
             }
         }
         ImGui.SameLine();
@@ -159,9 +197,108 @@ public class PropertiesPanel : IDisposable
         {
             if (contentChild.Success)
             {
-                DrawActiveTabContent(entity);
+                DrawActiveTabContent(primaryEntity);
             }
         }
+    }
+
+    /// <summary>
+    /// Draws the selection header with smart formatting and pop-out button.
+    /// </summary>
+    private void DrawSelectionHeader(IReadOnlyList<IEntity> entities)
+    {
+        var headerText = FormatSelectionText(entities);
+        var headerWidth = ImGui.CalcTextSize(headerText).X;
+        var availWidth = ImGui.GetContentRegionAvail().X;
+
+        // Pop-out button (only in live mode, not frozen)
+        float buttonSize = 20 * ImGuiHelpers.GlobalScale;
+        bool showPopOut = _frozenEntities == null && entities.Count > 0;
+
+        if (showPopOut)
+        {
+            // Center text accounting for button on right
+            float totalContentWidth = headerWidth + buttonSize + ImGui.GetStyle().ItemSpacing.X;
+            float startX = ImGui.GetCursorPosX() + (availWidth - totalContentWidth) * 0.5f;
+
+            ImGui.SetCursorPosX(startX);
+            ImGui.AlignTextToFramePadding();
+            ImGui.Text(headerText);
+
+            ImGui.SameLine();
+
+            if (ImPoser.CenteredIconButton("pop_out", FontAwesomeIcon.ExternalLinkAlt, new Vector2(buttonSize, buttonSize), "Pop out to separate window"))
+            {
+                OnPopOutRequested?.Invoke(entities);
+            }
+        }
+        else
+        {
+            // Just center the text
+            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (availWidth - headerWidth) * 0.5f);
+            ImGui.Text(headerText);
+        }
+    }
+
+    /// <summary>
+    /// Formats selection text based on entity count and types.
+    /// </summary>
+    private static string FormatSelectionText(IReadOnlyList<IEntity> entities)
+    {
+        if (entities.Count == 0)
+            return "Properties";
+
+        if (entities.Count == 1)
+            return entities[0].Name;
+
+        // Check if all entities are the same type
+        // Note: Bone and VirtualBone are both IBone, BoneCategory is separate
+        var first = entities[0];
+        var firstType = GetEntityTypeCategory(first);
+
+        bool allSameType = entities.All(e => GetEntityTypeCategory(e) == firstType);
+
+        if (entities.Count == 2)
+        {
+            // Two entities: show both names
+            if (allSameType)
+                return $"{entities[0].Name}, {entities[1].Name}";
+            else
+                return $"{entities[0].Name} + 1 entity";
+        }
+
+        // 3+ entities
+        int otherCount = entities.Count - 1;
+        string typeName = allSameType ? GetTypePluralName(firstType, otherCount) : "entities";
+
+        return $"{first.Name} + {otherCount} {typeName}";
+    }
+
+    /// <summary>
+    /// Gets a category string for grouping entity types.
+    /// </summary>
+    private static string GetEntityTypeCategory(IEntity entity)
+    {
+        return entity switch
+        {
+            IBone => "bone",
+            IActor => "actor",
+            // BoneCategoryListItem selections would be VirtualBone
+            _ => entity.GetType().Name
+        };
+    }
+
+    /// <summary>
+    /// Gets the plural name for an entity type category.
+    /// </summary>
+    private static string GetTypePluralName(string typeCategory, int count)
+    {
+        return typeCategory switch
+        {
+            "bone" => count == 1 ? "bone" : "bones",
+            "actor" => count == 1 ? "actor" : "actors",
+            _ => count == 1 ? "entity" : "entities"
+        };
     }
 
     private void DrawTabBar(IEntity entity)
@@ -172,7 +309,6 @@ public class PropertiesPanel : IDisposable
         // Determine which tabs are enabled for this entity
         bool transformEnabled = entity is ITransformable;
         bool animationEnabled = entity is IAnimatable animatable && animatable.CanControlAnimation;
-        bool skeletonEnabled = entity is ISkeletonOwner;
 
         // Tab 0: Transform
         DrawTabButton(0, FontAwesomeIcon.ArrowsAlt, "Transform", size, transformEnabled);
@@ -180,10 +316,6 @@ public class PropertiesPanel : IDisposable
 
         // Tab 1: Animation
         DrawTabButton(1, FontAwesomeIcon.Walking, "Animation", size, animationEnabled);
-        ImGui.Spacing();
-
-        // Tab 2: Skeleton
-        DrawTabButton(2, FontAwesomeIcon.CircleNodes, "Skeleton", size, skeletonEnabled);
     }
 
     private void DrawTabButton(int index, FontAwesomeIcon icon, string tooltip, Vector2 size, bool enabled)
@@ -206,25 +338,23 @@ public class PropertiesPanel : IDisposable
 
     private void DrawActiveTabContent(IEntity entity)
     {
+        // Determine which tabs are enabled for this entity
+        bool transformEnabled = entity is ITransformable;
+        bool animationEnabled = entity is IAnimatable animatable && animatable.CanControlAnimation;
+
         switch (_activeTabIndex)
         {
             case 0: // Transform
-                if (entity is ITransformable)
+                using (ImRaii.Disabled(!transformEnabled))
+                {
                     DrawTransformTab(entity);
-                else
-                    ImGui.TextDisabled("Transform not available for this entity");
+                }
                 break;
             case 1: // Animation
-                if (entity is IAnimatable animatable && animatable.CanControlAnimation)
+                using (ImRaii.Disabled(!animationEnabled))
+                {
                     DrawAnimationTab(entity);
-                else
-                    ImGui.TextDisabled("Animation not available for this entity");
-                break;
-            case 2: // Skeleton
-                if (entity is ISkeletonOwner)
-                    DrawSkeletonTab(entity);
-                else
-                    ImGui.TextDisabled("Skeleton not available for this entity");
+                }
                 break;
         }
     }
@@ -233,11 +363,7 @@ public class PropertiesPanel : IDisposable
 
     private void DrawTransformTab(IEntity entity)
     {
-        // Unified transform tab for any ITransformable entity
-        if (entity is not ITransformable)
-            return;
-
-        // Get the current transform
+        // Get the current transform (use default if entity not transformable)
         Transform transform;
         bool canEdit;
 
@@ -249,29 +375,33 @@ public class PropertiesPanel : IDisposable
         }
         else if (entity is IBone bone)
         {
-            // For bones, use tracked transform if we're editing, otherwise get fresh from bone
-            if (_trackingBone == bone && _trackingOriginalTransform.HasValue)
-            {
-                // Keep using the tracked original while editing
-                transform = bone.Transform;
-            }
-            else
-            {
-                transform = bone.Transform;
-            }
+            // For bones, use last frame's transform if actively tracking (for incremental deltas)
+            // Otherwise get fresh from bone
+            transform = (_trackingBone == bone && _lastFrameTransform.HasValue)
+                ? _lastFrameTransform.Value
+                : bone.Transform;
             canEdit = true; // Bones are always editable
         }
-        else
+        else if (entity is ITransformable)
         {
             // Generic ITransformable
             transform = entity.Transform;
+            canEdit = false;
+        }
+        else
+        {
+            // Not transformable - show disabled placeholder
+            transform = Transform.Identity;
             canEdit = false;
         }
 
         // Draw the unified transform widget
         if (_transformWidget.Draw("transform", ref transform, !canEdit))
         {
-            ApplyTransform(entity, transform);
+            if (entity is ITransformable)
+            {
+                ApplyTransform(entity, transform);
+            }
         }
         else
         {
@@ -280,7 +410,7 @@ public class PropertiesPanel : IDisposable
             if (_trackingBone != null)
             {
                 _trackingBone = null;
-                _trackingOriginalTransform = null;
+                _lastFrameTransform = null;
             }
         }
     }
@@ -297,75 +427,16 @@ public class PropertiesPanel : IDisposable
             if (_trackingBone != bone)
             {
                 _trackingBone = bone;
-                _trackingOriginalTransform = bone.Transform;
+                _lastFrameTransform = bone.Transform;
             }
 
-            // For bones, apply through bone posing service with original transform
-            // Properties panel passes constant original -> full delta -> REPLACE mode
-            _bonePosingService.ApplyTransform(bone, transform, _trackingOriginalTransform, TransformComponents.All, accumulate: false);
-        }
-    }
+            // Use gizmo-style incremental deltas: compare to last frame, accumulate
+            // This prevents losing existing modifications when we start editing
+            var lastObserved = _lastFrameTransform ?? bone.Transform;
+            _bonePosingService.ApplyTransform(bone, transform, lastObserved, TransformComponents.All, accumulate: true);
 
-    #endregion
-
-    #region Skeleton Tab
-
-    private void DrawSkeletonTab(IEntity entity)
-    {
-        if (entity is not IActor actor)
-            return;
-
-        var skeleton = _skeletonService.GetSkeleton(actor) as Skeleton;
-        if (skeleton == null || !skeleton.IsValid)
-        {
-            ImGui.TextDisabled("No skeleton available");
-            return;
-        }
-
-        // Rebuild category items if skeleton changed
-        if (skeleton != _lastSkeleton)
-        {
-            _categoryItems.Clear();
-            foreach (var category in _categoryConfig.RootCategories)
-            {
-                if (category.IsNsfw)
-                    continue;
-
-                var categoryItem = new BoneCategoryListItem(category, skeleton, 0, _selectionService);
-                if (categoryItem.HasContent)
-                {
-                    _categoryItems.Add(categoryItem);
-                }
-            }
-            _lastSkeleton = skeleton;
-        }
-
-        var tabHovered = ImPoser.GetTabHoveredColor();
-        var tabActive = ImPoser.GetTabActiveColor();
-
-        // Draw categories directly in a table
-        using (var child = ImRaii.Child("bone_list", new Vector2(-1, -1), false))
-        {
-            if (child.Success)
-            {
-                var tableFlags = ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY;
-                using (var table = ImRaii.Table("skeleton_table", 3, tableFlags))
-                {
-                    if (table.Success)
-                    {
-                        // Column setup: Name (stretchy), Freeze (fixed), Visibility (fixed)
-                        ImGui.TableSetupColumn("Name", ImGuiTableColumnFlags.WidthStretch);
-                        ImGui.TableSetupColumn("F", ImGuiTableColumnFlags.WidthFixed, 24 * ImGuiHelpers.GlobalScale);
-                        ImGui.TableSetupColumn("V", ImGuiTableColumnFlags.WidthFixed, 24 * ImGuiHelpers.GlobalScale);
-
-                        // Draw categories directly (no skeleton row in properties)
-                        foreach (var categoryItem in _categoryItems)
-                        {
-                            categoryItem.Draw(tabHovered, tabActive, _selectionService);
-                        }
-                    }
-                }
-            }
+            // Update last frame transform for next iteration
+            _lastFrameTransform = transform;
         }
     }
 
@@ -375,36 +446,146 @@ public class PropertiesPanel : IDisposable
 
     private void DrawAnimationTab(IEntity entity)
     {
-        if (entity is not IActor actor)
-            return;
-
         float labelWidth = LabelWidth * ImGuiHelpers.GlobalScale;
-        bool isFrozen = _animationService.IsFrozen(actor);
 
         // Animation Section
         ImGui.TextDisabled("Animation");
         ImGui.Spacing();
-        DrawAnimationSection(actor, labelWidth);
 
-        ImGui.Spacing();
-        ImGui.Separator();
-
-        // Playback Section
-        ImGui.TextDisabled("Playback");
-        ImGui.Spacing();
-        DrawSpeedSection(actor, labelWidth);
-        ImGui.Spacing();
-        DrawScrubSection(actor, isFrozen, labelWidth);
-
-        ImGui.Spacing();
-        ImGui.Separator();
-
-        // Gaze Section (actors support gaze control)
-        if (entity is IActor)
+        if (entity is IActor actor)
         {
+            bool isFrozen = _animationService.IsFrozen(actor);
+
+            DrawAnimationSection(actor, labelWidth);
+
+            ImGui.Spacing();
+            ImGui.Separator();
+
+            // Playback Section
+            ImGui.TextDisabled("Playback");
+            ImGui.Spacing();
+            DrawSpeedSection(actor, labelWidth);
+            ImGui.Spacing();
+            DrawScrubSection(actor, isFrozen, labelWidth);
+
+            ImGui.Spacing();
+            ImGui.Separator();
+
+            // Gaze Section
             ImGui.TextDisabled("Gaze");
             ImGui.Spacing();
             DrawGazeSection(actor, labelWidth);
+        }
+        else
+        {
+            // Placeholder UI for non-actor entities - matches full actor UI structure, all disabled
+            float selectorWidth = ImGui.GetContentRegionAvail().X - 35 * ImGuiHelpers.GlobalScale;
+            float sliderWidth = ImGui.GetContentRegionAvail().X - 70 * ImGuiHelpers.GlobalScale;
+
+            // Current animation
+            ImGui.Text("Current");
+            ImGui.SameLine(labelWidth);
+            ImGui.TextDisabled("None");
+
+            // Base animation
+            ImGui.Text("Base");
+            ImGui.SameLine(labelWidth);
+            ImGui.SetNextItemWidth(selectorWidth);
+            ImGui.InputText("##base_ph", ref _placeholderText, 100, ImGuiInputTextFlags.ReadOnly);
+            ImGui.SameLine();
+            ImPoser.CenteredIconButton("stop_ph", FontAwesomeIcon.Stop, null, "Stop Animation");
+
+            // Blend animation
+            ImGui.Text("Blend");
+            ImGui.SameLine(labelWidth);
+            ImGui.SetNextItemWidth(selectorWidth);
+            ImGui.InputText("##blend_ph", ref _placeholderText, 100, ImGuiInputTextFlags.ReadOnly);
+
+            ImGui.Spacing();
+            ImGui.Separator();
+
+            // Playback Section
+            ImGui.TextDisabled("Playback");
+            ImGui.Spacing();
+
+            // Speed
+            ImGui.Text("Speed");
+            ImGui.SameLine(labelWidth);
+            float speed = 1f;
+            ImGui.SetNextItemWidth(sliderWidth);
+            ImGui.SliderFloat("##speed_ph", ref speed, 0f, 3f, "%.2fx");
+            ImGui.SameLine();
+            ImPoser.CenteredIconButton("play_ph", FontAwesomeIcon.Play, null, "Play");
+            ImGui.SameLine();
+            ImPoser.CenteredIconButton("reset_ph", FontAwesomeIcon.Undo, null, "Reset Speed");
+
+            // Time
+            ImGui.Spacing();
+            ImGui.Text("Time");
+            ImGui.SameLine(labelWidth);
+            float time = 0f;
+            ImGui.SetNextItemWidth(sliderWidth);
+            ImGui.SliderFloat("##time_ph", ref time, 0f, 1f, "N/A");
+
+            ImGui.Spacing();
+            ImGui.Separator();
+
+            // Gaze Section
+            ImGui.TextDisabled("Gaze");
+            ImGui.Spacing();
+
+            // Enable
+            ImGui.Text("Enable");
+            ImGui.SameLine(labelWidth);
+            bool enable = false;
+            ImGui.Checkbox("##enable_ph", ref enable);
+            ImGui.SameLine();
+            ImPoser.IconButton("reset_gaze_ph", FontAwesomeIcon.Undo, null, "Reset gaze");
+
+            ImGui.Spacing();
+
+            // Mode
+            ImGui.Text("Mode");
+            ImGui.SameLine(labelWidth);
+            ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X);
+            int mode = 0;
+            ImGui.Combo("##mode_ph", ref mode, GazeModeNames, GazeModeNames.Length);
+
+            // Target
+            ImGui.Text("Target");
+            ImGui.SameLine(labelWidth);
+            ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X);
+            if (ImGui.BeginCombo("##target_ph", "Select..."))
+            {
+                ImGui.EndCombo();
+            }
+
+            ImGui.Spacing();
+
+            // Track
+            ImGui.Text("Track");
+            ImGui.SameLine(labelWidth);
+            bool track = false;
+            ImGui.Checkbox("Eyes##track_ph1", ref track);
+            ImGui.SameLine();
+            ImGui.Checkbox("Head##track_ph2", ref track);
+            ImGui.SameLine();
+            ImGui.Checkbox("Body##track_ph3", ref track);
+
+            // Lock
+            ImGui.Text("Lock");
+            ImGui.SameLine(labelWidth);
+            ImPoser.IconButton("lock_eyes_ph", FontAwesomeIcon.Unlock, null, "Lock Eyes");
+            ImGui.SameLine();
+            ImGui.Text("Eyes");
+            ImGui.SameLine();
+            ImPoser.IconButton("lock_head_ph", FontAwesomeIcon.Unlock, null, "Lock Head");
+            ImGui.SameLine();
+            ImGui.Text("Head");
+            ImGui.SameLine();
+            ImPoser.IconButton("lock_body_ph", FontAwesomeIcon.Unlock, null, "Lock Body");
+            ImGui.SameLine();
+            ImGui.Text("Body");
         }
     }
 
@@ -412,13 +593,17 @@ public class PropertiesPanel : IDisposable
     {
         bool hasOverride = _animationService.HasBaseOverride(actor);
 
+        // Use our override ID, or fall back to game's current animation
+        var displayId = _currentBaseId ?? _animationService.GetCurrentBaseAnimation(actor);
+
         // Base Animation
+        ImGui.AlignTextToFramePadding();
         ImGui.Text("Base");
         ImGui.SameLine(labelWidth);
 
         float selectorWidth = ImGui.GetContentRegionAvail().X - 35 * ImGuiHelpers.GlobalScale;
 
-        if (_baseAnimationSelector.Draw("base_anim", _currentBaseId, id =>
+        if (_baseAnimationSelector.Draw("base_anim", displayId, id =>
         {
             ushort? oldId = hasOverride ? _currentBaseId : null;
             _animationService.ApplyBaseAnimation(actor, id, true);
@@ -447,6 +632,7 @@ public class PropertiesPanel : IDisposable
         }
 
         // Blend Animation
+        ImGui.AlignTextToFramePadding();
         ImGui.Text("Blend");
         ImGui.SameLine(labelWidth);
 
@@ -460,6 +646,7 @@ public class PropertiesPanel : IDisposable
 
     private void DrawSpeedSection(IActor actor, float labelWidth)
     {
+        ImGui.AlignTextToFramePadding();
         ImGui.Text("Speed");
         ImGui.SameLine(labelWidth);
 
@@ -522,6 +709,7 @@ public class PropertiesPanel : IDisposable
         float? duration = _animationService.GetAnimationDuration(actor);
         float? currentTime = _animationService.GetAnimationTime(actor);
 
+        ImGui.AlignTextToFramePadding();
         ImGui.Text("Time");
         ImGui.SameLine(labelWidth);
 
@@ -529,9 +717,10 @@ public class PropertiesPanel : IDisposable
         float maxTime = duration ?? 1f;
         bool canScrub = isFrozen && duration.HasValue && currentTime.HasValue;
 
+        // Time slider uses full width (no trailing buttons)
         using (ImRaii.Disabled(!canScrub))
         {
-            ImGui.SetNextItemWidth(-1);
+            ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X);
             string format = canScrub ? "%.2fs" : (isFrozen ? "N/A" : "Freeze to scrub");
             if (ImGui.SliderFloat("##time", ref time, 0f, maxTime, format))
             {
@@ -549,7 +738,8 @@ public class PropertiesPanel : IDisposable
         var gazeState = _gazeService.GetGazeState(actor);
         bool gazeEnabled = _gazeService.IsGazeEnabled(actor);
 
-        // Enable Face Control toggle (like Brio)
+        // Enable toggle
+        ImGui.AlignTextToFramePadding();
         ImGui.Text("Enable");
         ImGui.SameLine(labelWidth);
         if (ImGui.Checkbox("##enable_gaze", ref gazeEnabled))
@@ -567,121 +757,97 @@ public class PropertiesPanel : IDisposable
             _gazeService.ResetGaze(actor);
         }
 
-        // Only show rest of UI if gaze is enabled
-        if (!gazeEnabled)
-            return;
-
         ImGui.Spacing();
 
-        // Mode selector (like Brio's selector strip)
-        ImGui.Text("Mode");
-        ImGui.SameLine(labelWidth);
-        int modeIndex = (int)gazeState.Mode;
-        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X);
-        if (ImGui.Combo("##gaze_mode", ref modeIndex, GazeModeNames, GazeModeNames.Length))
+        // All remaining controls always visible, disabled when gaze is not enabled
+        using (ImRaii.Disabled(!gazeEnabled))
         {
-            _gazeService.SetGazeMode(actor, (GazeTargetMode)modeIndex);
-        }
-
-        // Entity selector for Entity mode
-        if (gazeState.Mode == GazeTargetMode.Entity)
-        {
-            ImGui.Text("Target");
+            // Mode + Target on same row
+            ImGui.AlignTextToFramePadding();
+            ImGui.Text("Mode");
             ImGui.SameLine(labelWidth);
-            ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X);
 
-            var actors = _actorManager.Actors;
-            var currentTarget = gazeState.TargetEntity;
+            // Calculate widths: each dropdown gets half the remaining space
+            float availableWidth = ImGui.GetContentRegionAvail().X;
+            float targetLabelWidth = ImGui.CalcTextSize("Target").X + ImGui.GetStyle().ItemSpacing.X;
+            float comboWidth = (availableWidth - targetLabelWidth) / 2 - ImGui.GetStyle().ItemSpacing.X;
 
-            if (ImGui.BeginCombo("##gaze_target", currentTarget?.Name ?? "Select..."))
+            int modeIndex = (int)gazeState.Mode;
+            ImGui.SetNextItemWidth(comboWidth);
+            if (ImGui.Combo("##gaze_mode", ref modeIndex, GazeModeNames, GazeModeNames.Length))
             {
-                foreach (var targetActor in actors)
-                {
-                    if (targetActor == actor) continue; // Can't look at self
-                    bool isSelected = currentTarget == targetActor;
-                    if (ImGui.Selectable(targetActor.Name, isSelected))
-                    {
-                        _gazeService.SetGazeTarget(actor, targetActor);
-                    }
-                }
-                ImGui.EndCombo();
+                _gazeService.SetGazeMode(actor, (GazeTargetMode)modeIndex);
             }
+
+            ImGui.SameLine();
+            ImGui.AlignTextToFramePadding();
+            ImGui.Text("Target");
+            ImGui.SameLine();
+
+            using (ImRaii.Disabled(gazeState.Mode != GazeTargetMode.Entity))
+            {
+                var actors = _actorManager.Actors;
+                var currentTarget = gazeState.TargetEntity;
+
+                ImGui.SetNextItemWidth(comboWidth);
+                if (ImGui.BeginCombo("##gaze_target", currentTarget?.Name ?? "Select..."))
+                {
+                    foreach (var targetActor in actors)
+                    {
+                        if (targetActor == actor) continue; // Can't look at self
+                        bool isSelected = currentTarget == targetActor;
+                        if (ImGui.Selectable(targetActor.Name, isSelected))
+                        {
+                            _gazeService.SetGazeTarget(actor, targetActor);
+                        }
+                    }
+                    ImGui.EndCombo();
+                }
+            }
+
+            ImGui.Spacing();
+
+            // Track + Lock combined on single row: [Eyes ✓][🔒] [Head ✓][🔒] [Body ✓][🔒]
+            // Spread evenly across available width
+            float groupWidth = ImGui.GetContentRegionAvail().X / 3;
+
+            DrawGazePartGroup("Eyes", actor, gazeState, GazeTargetType.Eyes, groupWidth);
+            ImGui.SameLine();
+            DrawGazePartGroup("Head", actor, gazeState, GazeTargetType.Head, groupWidth);
+            ImGui.SameLine();
+            DrawGazePartGroup("Body", actor, gazeState, GazeTargetType.Body, groupWidth);
         }
-
-        ImGui.Spacing();
-        ImGui.Separator();
-        ImGui.Spacing();
-
-        // Draw gaze controls for each body part: Label [Toggle] [Lock]
-        DrawGazePartRow("Eyes", actor, gazeState, GazeTargetType.Eyes, labelWidth);
-        DrawGazePartRow("Head", actor, gazeState, GazeTargetType.Head, labelWidth);
-        DrawGazePartRow("Body", actor, gazeState, GazeTargetType.Body, labelWidth);
     }
 
-    private void DrawGazePartRow(string label, IActor actor, GazeState gazeState, GazeTargetType targetType, float labelWidth)
+    private void DrawGazePartGroup(string label, IActor actor, GazeState gazeState, GazeTargetType targetType, float groupWidth)
     {
+        // Draw checkbox + lock button for one body part
         bool isTracking = gazeState.TargetType.HasFlag(targetType);
         bool isLocked = _gazeService.IsPartLocked(actor, targetType);
 
-        float buttonHeight = ImGui.GetFrameHeight();
-        float spacing = ImGui.GetStyle().ItemSpacing.X;
-
-        // Use centralized color constants
-        var activeColor = UIConstants.ActiveColor;
-        var inactiveColor = UIConstants.InactiveColor;
-        var lockedColor = UIConstants.LockedColor;
-
-        // Label
-        if (isTracking)
-            ImGui.TextColored(activeColor, label);
-        else
-            ImGui.TextDisabled(label);
-
-        ImGui.SameLine(labelWidth);
-
-        // Toggle button (like Pose toggle)
-        var toggleIcon = isTracking ? FontAwesomeIcon.ToggleOn : FontAwesomeIcon.ToggleOff;
-        var toggleColor = isTracking ? activeColor : inactiveColor;
-
-        using (ImRaii.PushColor(ImGuiCol.Text, toggleColor))
-        using (ImRaii.PushFont(UiBuilder.IconFont))
+        // Checkbox for tracking
+        if (ImGui.Checkbox($"{label}##track_{label}", ref isTracking))
         {
-            if (ImGui.Button($"{toggleIcon.ToIconString()}##gaze_toggle_{label}", new Vector2(buttonHeight, buttonHeight)))
-            {
-                GazeTargetType newTargetType;
-                if (isTracking)
-                    newTargetType = gazeState.TargetType & ~targetType;
-                else
-                    newTargetType = gazeState.TargetType | targetType;
+            GazeTargetType newTargetType;
+            if (isTracking)
+                newTargetType = gazeState.TargetType | targetType;
+            else
+                newTargetType = gazeState.TargetType & ~targetType;
 
-                _gazeService.SetGazeTargetType(actor, newTargetType);
-            }
+            _gazeService.SetGazeTargetType(actor, newTargetType);
         }
 
-        if (ImGui.IsItemHovered())
-        {
-            ImGui.SetTooltip(isTracking ? $"Disable {label} tracking" : $"Enable {label} tracking");
-        }
-
-        ImGui.SameLine(0, spacing);
+        ImGui.SameLine();
 
         // Lock button
-        var lockIcon = isLocked ? FontAwesomeIcon.Lock : FontAwesomeIcon.Unlock;
-        var lockColor = isLocked ? lockedColor : inactiveColor;
-
-        using (ImRaii.PushColor(ImGuiCol.Text, lockColor))
-        using (ImRaii.PushFont(UiBuilder.IconFont))
+        var icon = isLocked ? FontAwesomeIcon.Lock : FontAwesomeIcon.Unlock;
+        using (ImRaii.PushColor(ImGuiCol.Button, ImGui.GetColorU32(ImGuiCol.ButtonActive), isLocked))
         {
-            if (ImGui.Button($"{lockIcon.ToIconString()}##gaze_lock_{label}", new Vector2(buttonHeight, buttonHeight)))
+            if (ImPoser.IconButton($"lock_{label}", icon, null, isLocked ? $"Unlock {label}" : $"Lock {label}"))
             {
                 var cameraPos = _cameraService.GetCameraPosition();
                 _gazeService.SetTargetLock(actor, !isLocked, targetType, cameraPos);
             }
-        }
-
-        if (ImGui.IsItemHovered())
-        {
-            ImGui.SetTooltip(isLocked ? $"Unlock {label} - resume tracking" : $"Lock {label} at current camera position");
         }
     }
 

@@ -47,6 +47,7 @@ public class Skeleton : EntityBase, ISkeleton
     {
         Actor = actor;
         IsCollapsed = true; // Start collapsed by default
+        IsVisible = false; // Start unchecked (not visible in overlay)
         BuildSkeleton();
     }
 

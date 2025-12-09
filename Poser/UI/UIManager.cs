@@ -4,8 +4,11 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Poser.Core;
+using Poser.Entities;
 using Poser.Services;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Poser.UI;
 
@@ -13,17 +16,26 @@ public class UIManager : IUIManager
 {
     private readonly IDalamudPluginInterface _pluginInterface;
     private readonly IGPoseService _gPoseService;
-    private readonly IEditorState _editorState;
     private readonly IEventBus _eventBus;
-    private readonly IKeyState _keyState;
     private readonly WindowSystem _windowSystem;
     private readonly MainWindow _mainWindow;
     private readonly GizmoOverlayWindow _gizmoOverlay;
     private readonly SkeletonOverlayWindow _skeletonOverlay;
     private readonly HotbarWindow _hotbarWindow;
 
-    // Track E key state to detect press edge
-    private bool _wasEPressed;
+    // Services needed to create detached property windows
+    private readonly ISelectionService _selectionService;
+    private readonly IActorManager _actorManager;
+    private readonly IPosingService _posingService;
+    private readonly IBonePosingService _bonePosingService;
+    private readonly IAnimationService _animationService;
+    private readonly IAnimationDataService _animationDataService;
+    private readonly IHistoryService _historyService;
+    private readonly IGazeService _gazeService;
+    private readonly ICameraService _cameraService;
+
+    // Track detached windows
+    private readonly List<DetachedPropertiesWindow> _detachedWindows = new();
 
     public UIManager(
         IDalamudPluginInterface pluginInterface,
@@ -45,10 +57,19 @@ public class UIManager : IUIManager
     {
         _pluginInterface = pluginInterface;
         _gPoseService = gPoseService;
-        _editorState = editorState;
         _eventBus = eventBus;
-        _keyState = keyState;
         _windowSystem = new WindowSystem(Poser.PluginName);
+
+        // Store services for creating detached windows
+        _selectionService = selectionService;
+        _actorManager = actorManager;
+        _posingService = posingService;
+        _bonePosingService = bonePosingService;
+        _animationService = animationService;
+        _animationDataService = animationDataService;
+        _historyService = historyService;
+        _gazeService = gazeService;
+        _cameraService = cameraService;
 
         // Create windows in z-order (last added = drawn on top)
 
@@ -88,6 +109,9 @@ public class UIManager : IUIManager
             editorState);
         _windowSystem.AddWindow(_mainWindow);
 
+        // Subscribe to pop-out requests from properties panel
+        _mainWindow.OnPropertiesPopOutRequested += CreateDetachedPropertiesWindow;
+
         // Hook into Dalamud's UI drawing
         _pluginInterface.UiBuilder.Draw += DrawUI;
         _pluginInterface.UiBuilder.OpenMainUi += ToggleMainWindow;
@@ -113,35 +137,61 @@ public class UIManager : IUIManager
         _gizmoOverlay.IsOpen = e.IsGPosing;
         _skeletonOverlay.IsOpen = e.IsGPosing;
         _hotbarWindow.IsOpen = e.IsGPosing;
+
+        // Close all detached windows when leaving GPose
+        if (!e.IsGPosing)
+        {
+            CloseAllDetachedWindows();
+        }
+    }
+
+    private void CreateDetachedPropertiesWindow(IReadOnlyList<IEntity> entities)
+    {
+        var window = new DetachedPropertiesWindow(
+            entities,
+            _selectionService,
+            _actorManager,
+            _posingService,
+            _bonePosingService,
+            _animationService,
+            _animationDataService,
+            _historyService,
+            _gazeService,
+            _cameraService);
+
+        window.OnCloseRequested += OnDetachedWindowCloseRequested;
+        window.IsOpen = true;
+
+        _detachedWindows.Add(window);
+        _windowSystem.AddWindow(window);
+    }
+
+    private void OnDetachedWindowCloseRequested(DetachedPropertiesWindow window)
+    {
+        RemoveDetachedWindow(window);
+    }
+
+    private void RemoveDetachedWindow(DetachedPropertiesWindow window)
+    {
+        window.OnCloseRequested -= OnDetachedWindowCloseRequested;
+        _windowSystem.RemoveWindow(window);
+        _detachedWindows.Remove(window);
+        window.Dispose();
+    }
+
+    private void CloseAllDetachedWindows()
+    {
+        // Create a copy to iterate since we're modifying the list
+        var windowsToClose = _detachedWindows.ToArray();
+        foreach (var window in windowsToClose)
+        {
+            RemoveDetachedWindow(window);
+        }
     }
 
     private void DrawUI()
     {
-        // Handle E key for edit mode toggle (only in GPose)
-        if (_gPoseService.IsGPosing)
-        {
-            HandleEditModeKey();
-        }
-
         _windowSystem.Draw();
-    }
-
-    private void HandleEditModeKey()
-    {
-        // Check E key state using IKeyState (allows us to consume the key)
-        bool isEPressed = _keyState[VirtualKey.E];
-
-        // Detect rising edge (key just pressed)
-        if (isEPressed && !_wasEPressed)
-        {
-            // Toggle posing mode
-            _editorState.TogglePosingMode();
-
-            // Consume the key to prevent game from receiving it
-            _keyState[VirtualKey.E] = false;
-        }
-
-        _wasEPressed = isEPressed;
     }
 
     public void ToggleMainWindow()
@@ -152,8 +202,12 @@ public class UIManager : IUIManager
     public void Dispose()
     {
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
+        _mainWindow.OnPropertiesPopOutRequested -= CreateDetachedPropertiesWindow;
         _pluginInterface.UiBuilder.Draw -= DrawUI;
         _pluginInterface.UiBuilder.OpenMainUi -= ToggleMainWindow;
+
+        // Clean up detached windows
+        CloseAllDetachedWindows();
 
         _windowSystem.RemoveAllWindows();
     }

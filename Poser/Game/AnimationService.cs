@@ -432,6 +432,23 @@ public class AnimationService : IAnimationService
 
     public bool HasBaseOverride(IActor actor) => _baseOverrides.ContainsKey(actor.Address);
 
+    public unsafe ushort? GetCurrentBaseAnimation(IActor actor)
+    {
+        if (actor.Address == nint.Zero) return null;
+
+        var character = (Character*)actor.Address;
+        if (character == null) return null;
+
+        // First check if we have an override applied
+        var baseOverride = character->Timeline.BaseOverride;
+        if (baseOverride > 0)
+            return baseOverride;
+
+        // Otherwise check the timeline sequencer's base slot (slot 0)
+        var baseSlotTimeline = character->Timeline.TimelineSequencer.TimelineIds[0];
+        return baseSlotTimeline > 0 ? baseSlotTimeline : null;
+    }
+
     public unsafe void PlayBlendAnimation(IActor actor, ushort timelineId)
     {
         if (actor.Address == nint.Zero) return;

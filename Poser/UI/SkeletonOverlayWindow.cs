@@ -113,10 +113,6 @@ public class SkeletonOverlayWindow : Window
             if (skeleton == null || !skeleton.IsValid)
                 continue;
 
-            // Show skeleton overlay only when edit mode is enabled
-            if (!actor.IsEditMode)
-                continue;
-
             // Update bone transforms from game memory before drawing
             skeleton.UpdateBoneTransforms();
 
@@ -132,7 +128,8 @@ public class SkeletonOverlayWindow : Window
 
             foreach (var bone in skeleton.Bones)
             {
-                if (bone.IsHiddenBone)
+                // Skip hidden bones (internal) and invisible bones (user toggled off)
+                if (bone.IsHiddenBone || !bone.IsVisible)
                     continue;
 
                 // Transform bone position to world space

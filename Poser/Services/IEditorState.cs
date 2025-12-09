@@ -53,7 +53,7 @@ public enum TransformTool
 }
 
 /// <summary>
-/// Tracks editor-wide state: gizmo settings and posing mode.
+/// Tracks editor-wide state: gizmo settings.
 ///
 /// NOTE: Selection is handled by ISelectionService, not here.
 /// This interface only tracks editor tool settings.
@@ -74,15 +74,4 @@ public interface IEditorState
 
     /// <summary>Bone display mode - hierarchy or category grouping.</summary>
     BoneDisplayMode BoneDisplayMode { get; set; }
-
-    /// <summary>
-    /// Whether posing mode is enabled. When true, all actors are frozen
-    /// and bone manipulation is allowed.
-    /// </summary>
-    bool IsPosingMode { get; }
-
-    /// <summary>
-    /// Toggle posing mode on/off.
-    /// </summary>
-    void TogglePosingMode();
 }

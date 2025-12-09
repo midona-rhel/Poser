@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
+using Poser.Entities;
 using Poser.Services;
 using Poser.UI.Components;
 
@@ -26,6 +28,11 @@ public class MainWindow : Window
     private float _propertiesRatio = 0.5f; // Properties takes 50% by default
     private bool _isDraggingSplitter;
     private float _dragOffset; // Offset from splitter center to mouse when drag started
+
+    /// <summary>
+    /// Event fired when user requests to pop out the properties panel.
+    /// </summary>
+    public event Action<IReadOnlyList<IEntity>>? OnPropertiesPopOutRequested;
 
     public MainWindow(
         IGPoseService gPoseService,
@@ -67,9 +74,10 @@ public class MainWindow : Window
             animationDataService,
             historyService,
             gazeService,
-            skeletonService,
-            cameraService,
-            editorState);
+            cameraService);
+
+        // Forward pop-out requests
+        _propertiesPanel.OnPopOutRequested += entities => OnPropertiesPopOutRequested?.Invoke(entities);
     }
 
     public override void PreDraw()

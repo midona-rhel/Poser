@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Interface;
@@ -61,6 +62,68 @@ public class SkeletonListItem : TreeListItem
     {
         Children.Clear();
         BuildCategories();
+    }
+
+    /// <summary>
+    /// Hides all bones that belong to NSFW categories.
+    /// Called when NSFW setting is turned off.
+    /// </summary>
+    public void HideNsfwBones()
+    {
+        // Build bone lookup
+        var bonesByName = new Dictionary<string, Bone>();
+        GatherBones(_skeleton, bonesByName);
+
+        // Iterate NSFW categories and hide their bones
+        foreach (var category in _categoryConfig.RootCategories)
+        {
+            if (category.IsNsfw)
+            {
+                HideBonesInCategory(category, bonesByName);
+            }
+        }
+    }
+
+    private void HideBonesInCategory(BoneCategory category, Dictionary<string, Bone> bonesByName)
+    {
+        // Hide direct bones
+        foreach (var boneName in category.Bones)
+        {
+            if (bonesByName.TryGetValue(boneName, out var bone))
+            {
+                bone.IsVisible = false;
+            }
+        }
+
+        // Recurse into child categories
+        foreach (var child in category.Children)
+        {
+            HideBonesInCategory(child, bonesByName);
+        }
+    }
+
+    private void GatherBones(Skeleton skeleton, Dictionary<string, Bone> bonesByName)
+    {
+        void ProcessEntity(IEntity entity)
+        {
+            if (entity is Bone bone)
+            {
+                if (!bonesByName.ContainsKey(bone.BoneName))
+                {
+                    bonesByName[bone.BoneName] = bone;
+                }
+            }
+
+            foreach (var child in entity.Children)
+            {
+                ProcessEntity(child);
+            }
+        }
+
+        foreach (var child in skeleton.Children)
+        {
+            ProcessEntity(child);
+        }
     }
 
     public override string Id => _skeleton.Id.ToString();

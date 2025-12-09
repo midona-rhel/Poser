@@ -266,13 +266,15 @@ public class GizmoOverlayWindow : Window
         if (isUsing && _boneDragStartModifications == null && isFrozen)
         {
             _boneDragStartModifications = new Dictionary<IBone, Transform>();
-            foreach (var bone in selectedBones)
+            // Expand virtual bones when capturing initial state
+            var expandedForHistory = ExpandVirtualBones(selectedBones);
+            foreach (var bone in expandedForHistory)
             {
                 var mod = _bonePosingService.GetModification(bone);
                 _boneDragStartModifications[bone] = mod ?? new Transform { Position = Vector3.Zero, Rotation = Quaternion.Identity, Scale = Vector3.Zero };
             }
             // Emit drag start event for history recording
-            _eventBus.Publish(new TransformDragStartedEvent(selectedBones.Cast<IEntity>().ToList()));
+            _eventBus.Publish(new TransformDragStartedEvent(expandedForHistory.Cast<IEntity>().ToList()));
         }
 
         // Get the gizmo operation based on selected tool
@@ -302,10 +304,13 @@ public class GizmoOverlayWindow : Window
         // Apply transform if changed (only if frozen)
         if (newTransform != null && isFrozen)
         {
+            // Expand virtual bones to their constituent bones
+            var expandedBones = ExpandVirtualBones(selectedBones);
+
             // Filter to only "root" bones - bones that don't have an ancestor also in the selection.
             // This prevents double-applying transforms (e.g., rotating arm also rotates elbow/wrist
             // through the hierarchy, so we shouldn't also rotate elbow/wrist directly).
-            var rootBones = GetSelectionRootBones(selectedBones);
+            var rootBones = GetSelectionRootBones(expandedBones);
 
             // Apply transform only to root bones
             // Gizmo passes incremental deltas (lastObserved changes each frame), so ACCUMULATE
@@ -422,6 +427,31 @@ public class GizmoOverlayWindow : Window
     {
         ImGuizmo.SetID(0);
         base.PostDraw();
+    }
+
+    /// <summary>
+    /// Expands virtual bones into their constituent real bones.
+    /// Regular bones are passed through unchanged.
+    /// </summary>
+    private static List<IBone> ExpandVirtualBones(IReadOnlyList<IBone> selectedBones)
+    {
+        var expandedBones = new List<IBone>();
+
+        foreach (var bone in selectedBones)
+        {
+            if (bone is VirtualBone virtualBone)
+            {
+                // Add all constituent bones
+                expandedBones.AddRange(virtualBone.ConstituentBones);
+            }
+            else
+            {
+                // Regular bone - add as-is
+                expandedBones.Add(bone);
+            }
+        }
+
+        return expandedBones;
     }
 
     /// <summary>

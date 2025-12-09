@@ -21,7 +21,9 @@ public enum EntityType
     /// <summary>Skeleton root.</summary>
     Skeleton,
     /// <summary>Individual bone.</summary>
-    Bone
+    Bone,
+    /// <summary>Virtual bone (calculated pivot point for bone groups).</summary>
+    VirtualBone
 }
 
 public interface IEntity

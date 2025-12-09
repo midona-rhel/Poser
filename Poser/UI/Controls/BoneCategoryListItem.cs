@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -17,6 +18,12 @@ public class BoneCategoryListItem : TreeListItem
     private readonly Skeleton _skeleton;
     private readonly ISelectionService _selectionService;
     private readonly List<Bone> _directBones = new();
+
+    // Cached virtual bone for multi-bone categories
+    private VirtualBone? _virtualBone;
+
+    // Whether this category maps directly to a single matching bone
+    private Bone? _matchingBone;
 
     public bool HasContent { get; }
 
@@ -61,6 +68,13 @@ public class BoneCategoryListItem : TreeListItem
         }
 
         HasContent = Children.Count > 0;
+
+        // Use first bone in category as root (order defined in Categories.xml)
+        // e.g., Head category has j_kubi (neck) first, so gizmo appears at neck
+        if (_directBones.Count > 0)
+        {
+            _matchingBone = _directBones[0];
+        }
 
         // Start collapsed
         IsCollapsed = true;
@@ -108,7 +122,24 @@ public class BoneCategoryListItem : TreeListItem
         }
     }
 
-    public override bool IsSelected(ISelectionService selection) => false;
+    public override bool IsSelected(ISelectionService selection)
+    {
+        // If this category maps to a single bone, check that bone
+        if (_matchingBone != null)
+        {
+            return selection.IsSelected(_matchingBone);
+        }
+
+        // If we have a virtual bone, check if it's selected
+        if (_virtualBone != null && selection.IsSelected(_virtualBone))
+        {
+            return true;
+        }
+
+        // Fallback: category is selected if all its bones are selected
+        var bones = GetAllBones().ToList();
+        return bones.Count > 0 && bones.All(b => selection.IsSelected(b));
+    }
 
     protected override void HandleResult(EntityListItemResult result, ISelectionService selection)
     {
@@ -116,14 +147,25 @@ public class BoneCategoryListItem : TreeListItem
 
         if (result.Clicked)
         {
-            // Select all bones in this category
-            var bones = GetAllBones().ToList();
-            if (bones.Count > 0)
+            // If this category maps to a single matching bone, select it directly
+            if (_matchingBone != null)
             {
-                selection.Select(bones[0]);
-                for (int i = 1; i < bones.Count; i++)
+                if (result.CtrlHeld)
+                    selection.ToggleSelection(_matchingBone);
+                else
+                    selection.Select(_matchingBone);
+            }
+            else
+            {
+                // Multi-bone category: use virtual bone as pivot
+                var bones = GetAllBones().ToList();
+                if (bones.Count > 0)
                 {
-                    selection.AddToSelection(bones[i]);
+                    var virtualBone = GetOrCreateVirtualBone(bones);
+                    if (result.CtrlHeld)
+                        selection.ToggleSelection(virtualBone);
+                    else
+                        selection.Select(virtualBone);
                 }
             }
         }
@@ -135,6 +177,21 @@ public class BoneCategoryListItem : TreeListItem
                 bone.IsVisible = result.NewVisibilityValue;
             }
         }
+    }
+
+    /// <summary>
+    /// Gets or creates a virtual bone for this category.
+    /// </summary>
+    private VirtualBone GetOrCreateVirtualBone(List<Bone> bones)
+    {
+        if (_virtualBone == null)
+        {
+            _virtualBone = new VirtualBone(
+                _category.DisplayName,
+                _skeleton,
+                bones.Cast<IBone>());
+        }
+        return _virtualBone;
     }
 
     /// <summary>

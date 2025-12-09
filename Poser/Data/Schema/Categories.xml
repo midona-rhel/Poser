@@ -1,8 +1,8 @@
 <Categories>
 	<Category Id="Head">
 		<Bones>
-			j_kao
 			j_kubi
+			j_kao
 			j_head
 		</Bones>
 		<Category Id="Hair">

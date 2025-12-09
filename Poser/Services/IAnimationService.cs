@@ -104,6 +104,11 @@ public interface IAnimationService : IDisposable
     bool HasBaseOverride(IActor actor);
 
     /// <summary>
+    /// Gets the current base animation timeline ID, or null if not available.
+    /// </summary>
+    ushort? GetCurrentBaseAnimation(IActor actor);
+
+    /// <summary>
     /// Plays a blend animation on top of the current animation.
     /// </summary>
     void PlayBlendAnimation(IActor actor, ushort timelineId);

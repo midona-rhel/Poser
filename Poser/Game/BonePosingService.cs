@@ -101,25 +101,8 @@ public unsafe class BonePosingService : IBonePosingService
 
         _framework.Update += OnFrameworkUpdate;
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
-        _eventBus.Subscribe<PosingModeChangedEvent>(OnPosingModeChanged);
 
         _log.Debug("BonePosingService initialized");
-    }
-
-    private void OnPosingModeChanged(PosingModeChangedEvent e)
-    {
-        if (e.IsPosingMode)
-        {
-            // Snapshot all actor skeletons when entering posing mode
-            foreach (var actor in _actorManager.Actors)
-            {
-                var skeleton = _skeletonService.GetSkeleton(actor);
-                if (skeleton != null)
-                {
-                    SnapshotSkeleton(skeleton);
-                }
-            }
-        }
     }
 
     private nint UpdateBonePhysicsDetour(nint a1)
@@ -351,11 +334,33 @@ public unsafe class BonePosingService : IBonePosingService
                 if (bone.IsPartialRoot && !bone.IsSkeletonRoot && bone.ParentBone != null)
                 {
                     var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.Propagate);
-                    var parent = bone.ParentBone.LastTransform;
 
-                    var pos = parent.Position;
-                    var rot = parent.Rotation;
-                    var scale = parent.Scale;
+                    // Read the ACTUAL current transform from the parent bone's havok pose
+                    // Don't use LastTransform cache - it may be stale if parent wasn't explicitly modified
+                    var parentBone = bone.ParentBone;
+                    var parentPartial = &gameSkeleton->PartialSkeletons[parentBone.PartialId];
+                    var parentPose = parentPartial->GetHavokPose(0);
+
+                    Vector3 pos;
+                    Quaternion rot;
+                    Vector3 scale;
+
+                    if (parentPose != null)
+                    {
+                        // Read actual game state - includes all propagated transforms
+                        var parentModelSpace = parentPose->AccessBoneModelSpace(parentBone.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
+                        pos = new Vector3(parentModelSpace->Translation.X, parentModelSpace->Translation.Y, parentModelSpace->Translation.Z);
+                        rot = new Quaternion(parentModelSpace->Rotation.X, parentModelSpace->Rotation.Y, parentModelSpace->Rotation.Z, parentModelSpace->Rotation.W);
+                        scale = new Vector3(parentModelSpace->Scale.X, parentModelSpace->Scale.Y, parentModelSpace->Scale.Z);
+                    }
+                    else
+                    {
+                        // Fallback to cached transform if pose unavailable
+                        var parent = parentBone.LastTransform;
+                        pos = parent.Position;
+                        rot = parent.Rotation;
+                        scale = parent.Scale;
+                    }
 
                     modelSpace->Translation = *(hkVector4f*)(&pos);
                     modelSpace->Rotation = *(hkQuaternionf*)(&rot);
@@ -464,6 +469,13 @@ public unsafe class BonePosingService : IBonePosingService
 
     public void ApplyTransform(IBone bone, Transform transform, Transform? originalTransform = null, TransformComponents propagate = TransformComponents.Position | TransformComponents.Rotation, bool? accumulate = null)
     {
+        // Skip virtual bones - they don't correspond to real game bones
+        if (bone is VirtualBone)
+        {
+            _log.Debug($"[ApplyTransform] Skipping virtual bone: {bone.BoneName}");
+            return;
+        }
+
         _log.Debug($"[ApplyTransform] Bone={bone.BoneName}");
         _log.Debug($"  New Transform: Pos={transform.Position}, Rot={transform.Rotation}, Scale={transform.Scale}");
         _log.Debug($"  Original: {(originalTransform.HasValue ? $"Pos={originalTransform.Value.Position}, Rot={originalTransform.Value.Rotation}, Scale={originalTransform.Value.Scale}" : "NULL")}");
@@ -639,7 +651,6 @@ public unsafe class BonePosingService : IBonePosingService
         _finalizeSkeletonsHook?.Dispose();
         _framework.Update -= OnFrameworkUpdate;
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
-        _eventBus.Unsubscribe<PosingModeChangedEvent>(OnPosingModeChanged);
         _poseInfos.Clear();
         GC.SuppressFinalize(this);
     }

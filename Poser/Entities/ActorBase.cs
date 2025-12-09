@@ -9,7 +9,6 @@ public class ActorBase : EntityBase, IActor
 {
     public nint Address { get; }
     public bool IsPosing { get; private set; }
-    public bool IsEditMode { get; set; }
     public ActorKind ActorKind { get; }
 
     #region ITransformable

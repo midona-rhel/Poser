@@ -86,6 +86,11 @@ public class EntityList
                     {
                         if (child is SkeletonListItem skeletonItem)
                         {
+                            // If NSFW is being disabled, hide any visible NSFW bones first
+                            if (!currentShowNsfw)
+                            {
+                                skeletonItem.HideNsfwBones();
+                            }
                             skeletonItem.RebuildCategories();
                         }
                     }
@@ -170,7 +175,7 @@ public class EntityList
         ImGui.TextDisabled($"Entities ({totalEntities})");
 
         ImGui.TableNextColumn();
-        ImPoser.CenterIconInCell(FontAwesomeIcon.Snowflake, null, "Freeze animation");
+        ImPoser.CenterIconInCell(FontAwesomeIcon.Lock, null, "Lock animation");
 
         ImGui.TableNextColumn();
         ImPoser.CenterIconInCell(FontAwesomeIcon.Eye, null, "Visibility");

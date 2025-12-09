@@ -22,11 +22,6 @@ public record GPoseStateChangedEvent(bool IsGPosing) : IEvent;
 /// </summary>
 public record ActorListChangedEvent(IReadOnlyList<IActor> Actors) : IEvent;
 
-/// <summary>
-/// Published when posing mode is entered or exited.
-/// </summary>
-public record PosingModeChangedEvent(bool IsPosingMode) : IEvent;
-
 #endregion
 
 #region Selection Events

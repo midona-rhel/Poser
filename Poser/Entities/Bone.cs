@@ -84,8 +84,9 @@ public class Bone : EntityBase, IBone
         BoneIndex = boneIndex;
         BoneName = boneName;
 
-        // Start collapsed by default
+        // Start collapsed and hidden by default
         IsCollapsed = true;
+        IsVisible = false;
     }
 
     /// <summary>
