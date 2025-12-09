@@ -288,13 +288,11 @@ public class GizmoOverlayWindow : Window
         if (newTransform != null && isFrozen)
         {
             // Expand virtual bones to their constituent bones
+            // (deduplicates pivot bones to prevent double-transform when category + its bone are both selected)
             var expandedBones = ExpandVirtualBones(selectedBones);
 
-            // Filter to only "root" bones - bones that don't have an ancestor also in the selection.
-            var rootBones = GetSelectionRootBones(expandedBones);
-
             // Apply transform based on pivot mode
-            ApplyBonePivotTransform(rootBones, lastObserved, newTransform.Value);
+            ApplyBonePivotTransform(expandedBones, lastObserved, newTransform.Value);
         }
 
         // Finish drag - emit event for history
@@ -355,32 +353,27 @@ public class GizmoOverlayWindow : Window
         var positionDelta = newPivot.Position - oldPivot.Position;
         var rotationDelta = newPivot.Rotation * Quaternion.Inverse(oldPivot.Rotation);
 
-        // For Local pivot, each bone transforms around itself
+        // Scale should never propagate to children
+        const TransformComponents propagate = TransformComponents.Position | TransformComponents.Rotation;
+
+        // For single bone with Local pivot, apply transform directly
         if (_editorState.TransformPivot == TransformPivot.Local && bones.Count == 1)
         {
-            // Single bone: apply transform directly
-            _bonePosingService.ApplyTransform(bones[0], newPivot, oldPivot, TransformComponents.All, accumulate: true);
+            _bonePosingService.ApplyTransform(bones[0], newPivot, oldPivot, propagate, accumulate: true);
             return;
         }
 
-        // For Average/Parent pivot (or multi-selection with Local), bones orbit the pivot
+        // For multi-bone selection:
+        // - Translation: apply position delta directly to each bone
+        // - Rotation: apply rotation delta to each bone's rotation (no position orbiting)
+        // This avoids drift when rotating parent-child bones together
         foreach (var bone in bones)
         {
-            // Get bone's position relative to pivot
-            var relativePos = bone.LastTransform.Position - oldPivot.Position;
-
-            // Rotate position around pivot
-            var rotatedRelativePos = Vector3.Transform(relativePos, rotationDelta);
-
-            // New position = new pivot position + rotated relative position
-            var newPosition = newPivot.Position + rotatedRelativePos;
-
-            // Apply rotation to bone's own rotation
+            var newPosition = bone.LastTransform.Position + positionDelta;
             var newRotation = rotationDelta * bone.LastTransform.Rotation;
 
-            // Create new transform and apply
             var newBoneTransform = new Transform(newPosition, newRotation, bone.LastTransform.Scale);
-            _bonePosingService.ApplyTransform(bone, newBoneTransform, bone.LastTransform, TransformComponents.All, accumulate: true);
+            _bonePosingService.ApplyTransform(bone, newBoneTransform, bone.LastTransform, propagate, accumulate: true);
         }
     }
 
@@ -469,65 +462,43 @@ public class GizmoOverlayWindow : Window
     }
 
     /// <summary>
-    /// Expands virtual bones into their constituent real bones.
+    /// Expands virtual bones to their pivot bone only (not all constituents).
     /// Regular bones are passed through unchanged.
+    /// Deduplicates: if a VirtualBone's PivotBone is also directly selected, skip it.
     /// </summary>
     private static List<IBone> ExpandVirtualBones(IReadOnlyList<IBone> selectedBones)
     {
+        // Collect pivot bones from VirtualBones for deduplication
+        var pivotBones = new HashSet<IBone>();
+        foreach (var bone in selectedBones)
+        {
+            if (bone is VirtualBone vb && vb.PivotBone != null)
+                pivotBones.Add(vb.PivotBone);
+        }
+
         var expandedBones = new List<IBone>();
 
         foreach (var bone in selectedBones)
         {
             if (bone is VirtualBone virtualBone)
             {
-                // Add all constituent bones
-                expandedBones.AddRange(virtualBone.ConstituentBones);
+                // VirtualBone: only transform the pivot bone (e.g., "Head" → neck only)
+                if (virtualBone.PivotBone != null)
+                {
+                    expandedBones.Add(virtualBone.PivotBone);
+                }
+                // If no pivot bone, this is an averaged category - skip transform
+                // (user must select individual bones to transform)
             }
             else
             {
-                // Regular bone - add as-is
-                expandedBones.Add(bone);
+                // Regular bone - skip if it's a pivot bone of a selected VirtualBone
+                // (already added via the VirtualBone above)
+                if (!pivotBones.Contains(bone))
+                    expandedBones.Add(bone);
             }
         }
 
         return expandedBones;
-    }
-
-    /// <summary>
-    /// Filters a list of selected bones to only include "root" bones -
-    /// bones that don't have an ancestor also in the selection.
-    /// This prevents double-applying transforms through the bone hierarchy.
-    /// </summary>
-    private static List<IBone> GetSelectionRootBones(IReadOnlyList<IBone> selectedBones)
-    {
-        if (selectedBones.Count <= 1)
-            return selectedBones.ToList();
-
-        var selectedSet = new HashSet<IBone>(selectedBones);
-        var rootBones = new List<IBone>();
-
-        foreach (var bone in selectedBones)
-        {
-            // Check if any ancestor of this bone is also selected
-            bool hasSelectedAncestor = false;
-            var parent = bone.ParentBone;
-            while (parent != null)
-            {
-                if (selectedSet.Contains(parent))
-                {
-                    hasSelectedAncestor = true;
-                    break;
-                }
-                parent = parent.ParentBone;
-            }
-
-            // Only include if no ancestor is selected
-            if (!hasSelectedAncestor)
-            {
-                rootBones.Add(bone);
-            }
-        }
-
-        return rootBones;
     }
 }

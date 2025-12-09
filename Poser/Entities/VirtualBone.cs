@@ -8,14 +8,15 @@ namespace Poser.Entities;
 
 /// <summary>
 /// A virtual bone representing a calculated pivot point for a group of bones.
-/// Used when selecting bone categories that don't map to a single physical bone.
-/// The position is dynamically calculated as the average of constituent bones.
+/// Used when selecting bone categories.
+/// Position comes from the pivot bone (if set) or average of constituent bones.
 /// </summary>
 public class VirtualBone : EntityBase, IBone, ITransformable
 {
     private readonly List<IBone> _constituentBones;
     private readonly ISkeleton _skeleton;
     private readonly string _boneName;
+    private readonly IBone? _pivotBone;
 
     /// <summary>
     /// Creates a virtual bone from a collection of constituent bones.
@@ -23,18 +24,19 @@ public class VirtualBone : EntityBase, IBone, ITransformable
     /// <param name="name">Display name for this virtual bone.</param>
     /// <param name="skeleton">The skeleton this virtual bone belongs to.</param>
     /// <param name="constituentBones">The real bones this virtual bone represents.</param>
-    public VirtualBone(string name, ISkeleton skeleton, IEnumerable<IBone> constituentBones)
+    /// <param name="pivotBone">Optional bone to use for pivot position (e.g., neck for Head category).</param>
+    public VirtualBone(string name, ISkeleton skeleton, IEnumerable<IBone> constituentBones, IBone? pivotBone = null)
         : base(EntityId.New(), name)
     {
         _skeleton = skeleton;
         _boneName = name;
         _constituentBones = constituentBones.ToList();
+        _pivotBone = pivotBone;
     }
 
     /// <summary>
-    /// Gets the transform dynamically calculated from constituent bones.
-    /// Position is the average of all constituent bone positions.
-    /// Rotation uses the first bone's rotation as reference.
+    /// Gets the transform dynamically calculated.
+    /// If pivot bone is set, uses its position; otherwise averages constituent bones.
     /// </summary>
     public override Transform Transform
     {
@@ -43,11 +45,19 @@ public class VirtualBone : EntityBase, IBone, ITransformable
             if (_constituentBones.Count == 0)
                 return new Transform(Vector3.Zero, Quaternion.Identity, Vector3.One);
 
+            // Use pivot bone if available
+            if (_pivotBone != null)
+            {
+                return new Transform(
+                    _pivotBone.LastTransform.Position,
+                    _pivotBone.LastTransform.Rotation,
+                    Vector3.One);
+            }
+
             // Calculate average position from constituent bones' LastTransform
             var avgPos = Vector3.Zero;
             foreach (var bone in _constituentBones)
             {
-                // Use LastTransform directly to get the cached bone position
                 avgPos += bone.LastTransform.Position;
             }
             avgPos /= _constituentBones.Count;
@@ -60,9 +70,13 @@ public class VirtualBone : EntityBase, IBone, ITransformable
         set
         {
             // Virtual bones don't store transforms - they're calculated
-            // Transform application is handled by the transform service
         }
     }
+
+    /// <summary>
+    /// The pivot bone used for gizmo position (may be null for averaged categories).
+    /// </summary>
+    public IBone? PivotBone => _pivotBone;
 
     /// <summary>
     /// The bones this virtual bone represents.

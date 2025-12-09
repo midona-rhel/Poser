@@ -124,21 +124,9 @@ public class BoneCategoryListItem : TreeListItem
 
     public override bool IsSelected(ISelectionService selection)
     {
-        // If this category maps to a single bone, check that bone
-        if (_matchingBone != null)
-        {
-            return selection.IsSelected(_matchingBone);
-        }
-
-        // If we have a virtual bone, check if it's selected
-        if (_virtualBone != null && selection.IsSelected(_virtualBone))
-        {
-            return true;
-        }
-
-        // Fallback: category is selected if all its bones are selected
-        var bones = GetAllBones().ToList();
-        return bones.Count > 0 && bones.All(b => selection.IsSelected(b));
+        // Category is selected only if its VirtualBone is selected
+        // (not if the matching bone is selected directly - those are independent)
+        return _virtualBone != null && selection.IsSelected(_virtualBone);
     }
 
     protected override void HandleResult(EntityListItemResult result, ISelectionService selection)
@@ -147,26 +135,16 @@ public class BoneCategoryListItem : TreeListItem
 
         if (result.Clicked)
         {
-            // If this category maps to a single matching bone, select it directly
-            if (_matchingBone != null)
+            // Always use VirtualBone for category selection
+            // _matchingBone is used as pivot for gizmo position, not for selection
+            var bones = GetAllBones().ToList();
+            if (bones.Count > 0)
             {
+                var virtualBone = GetOrCreateVirtualBone(bones);
                 if (result.CtrlHeld)
-                    selection.ToggleSelection(_matchingBone);
+                    selection.ToggleSelection(virtualBone);
                 else
-                    selection.Select(_matchingBone);
-            }
-            else
-            {
-                // Multi-bone category: use virtual bone as pivot
-                var bones = GetAllBones().ToList();
-                if (bones.Count > 0)
-                {
-                    var virtualBone = GetOrCreateVirtualBone(bones);
-                    if (result.CtrlHeld)
-                        selection.ToggleSelection(virtualBone);
-                    else
-                        selection.Select(virtualBone);
-                }
+                    selection.Select(virtualBone);
             }
         }
 
@@ -181,6 +159,7 @@ public class BoneCategoryListItem : TreeListItem
 
     /// <summary>
     /// Gets or creates a virtual bone for this category.
+    /// Uses _matchingBone as pivot if available (for categories that map to a single bone).
     /// </summary>
     private VirtualBone GetOrCreateVirtualBone(List<Bone> bones)
     {
@@ -189,7 +168,8 @@ public class BoneCategoryListItem : TreeListItem
             _virtualBone = new VirtualBone(
                 _category.DisplayName,
                 _skeleton,
-                bones.Cast<IBone>());
+                bones.Cast<IBone>(),
+                _matchingBone);  // Pass matching bone as pivot
         }
         return _virtualBone;
     }
