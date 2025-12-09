@@ -130,6 +130,16 @@ public class TopBar
                 ImGui.SetTooltip("Show IVCS genitalia and other adult content bones");
             }
 
+            var anonymousMode = PoserSettings.Instance.AnonymousMode;
+            if (ImGui.Checkbox("Anonymous Mode", ref anonymousMode))
+            {
+                PoserSettings.Instance.AnonymousMode = anonymousMode;
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("Replace actor names with random 5-character codes");
+            }
+
             ImGui.EndPopup();
         }
     }

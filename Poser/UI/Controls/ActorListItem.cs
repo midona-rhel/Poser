@@ -56,7 +56,7 @@ public class ActorListItem : TreeListItem
     }
 
     public override string Id => _actor.Id.ToString();
-    public override string Name => _actor.Name;
+    public override string Name => PoserSettings.Instance.GetDisplayName(_actor);
 
     public override FontAwesomeIcon Icon => _actor.ActorKind switch
     {

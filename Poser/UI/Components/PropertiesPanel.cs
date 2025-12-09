@@ -7,6 +7,7 @@ using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Poser.Core;
+using Poser.Data.Config;
 using Poser.Entities;
 using Poser.Entities.Capabilities;
 using Poser.History;
@@ -249,7 +250,7 @@ public class PropertiesPanel : IDisposable
             return "Properties";
 
         if (entities.Count == 1)
-            return entities[0].Name;
+            return PoserSettings.Instance.GetDisplayName(entities[0]);
 
         // Check if all entities are the same type
         // Note: Bone and VirtualBone are both IBone, BoneCategory is separate
@@ -262,16 +263,16 @@ public class PropertiesPanel : IDisposable
         {
             // Two entities: show both names
             if (allSameType)
-                return $"{entities[0].Name}, {entities[1].Name}";
+                return $"{PoserSettings.Instance.GetDisplayName(entities[0])}, {PoserSettings.Instance.GetDisplayName(entities[1])}";
             else
-                return $"{entities[0].Name} + 1 entity";
+                return $"{PoserSettings.Instance.GetDisplayName(entities[0])} + 1 entity";
         }
 
         // 3+ entities
         int otherCount = entities.Count - 1;
         string typeName = allSameType ? GetTypePluralName(firstType, otherCount) : "entities";
 
-        return $"{first.Name} + {otherCount} {typeName}";
+        return $"{PoserSettings.Instance.GetDisplayName(first)} + {otherCount} {typeName}";
     }
 
     /// <summary>
@@ -790,13 +791,14 @@ public class PropertiesPanel : IDisposable
                 var currentTarget = gazeState.TargetEntity;
 
                 ImGui.SetNextItemWidth(comboWidth);
-                if (ImGui.BeginCombo("##gaze_target", currentTarget?.Name ?? "Select..."))
+                string targetDisplayName = currentTarget != null ? PoserSettings.Instance.GetDisplayName(currentTarget) : "Select...";
+                if (ImGui.BeginCombo("##gaze_target", targetDisplayName))
                 {
                     foreach (var targetActor in actors)
                     {
                         if (targetActor == actor) continue; // Can't look at self
                         bool isSelected = currentTarget == targetActor;
-                        if (ImGui.Selectable(targetActor.Name, isSelected))
+                        if (ImGui.Selectable(PoserSettings.Instance.GetDisplayName(targetActor), isSelected))
                         {
                             _gazeService.SetGazeTarget(actor, targetActor);
                         }
