@@ -2,8 +2,10 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
+using Poser.Entities;
 using Poser.Services;
 using Poser.UI.Components;
+using Poser.UI.Modals;
 
 namespace Poser.UI;
 
@@ -13,16 +15,36 @@ public class HotbarWindow : Window
     private const float SidebarWidth = 560f;
 
     private readonly IGPoseService _gPoseService;
+    private readonly IEditorState _editorState;
     private readonly Hotbar _hotbar;
+    private readonly TargetSelectionModal _targetModal;
 
-    public HotbarWindow(IGPoseService gPoseService, IEditorState editorState)
+    public HotbarWindow(
+        IGPoseService gPoseService,
+        IEditorState editorState,
+        IActorManager actorManager,
+        ISkeletonService skeletonService)
         : base("###poser_hotbar_window",
             ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoDecoration |
             ImGuiWindowFlags.NoBringToFrontOnFocus)
     {
         _gPoseService = gPoseService;
+        _editorState = editorState;
         _hotbar = new Hotbar(editorState);
+        _targetModal = new TargetSelectionModal(actorManager, skeletonService, editorState);
+
+        // Wire up hotbar event to open modal
+        _hotbar.OnSelectTargetRequested += () => _targetModal.Open(OnTargetSelected);
+    }
+
+    private void OnTargetSelected(IEntity? target)
+    {
+        _editorState.OrbitTarget = target;
+        if (target != null)
+        {
+            _editorState.TransformPivot = TransformPivot.Target;
+        }
     }
 
     public override void PreDraw()
@@ -51,5 +73,6 @@ public class HotbarWindow : Window
     public override void Draw()
     {
         _hotbar.Draw();
+        _targetModal.Draw();
     }
 }

@@ -89,7 +89,7 @@ public class UIManager : IUIManager
         _windowSystem.AddWindow(_gizmoOverlay);
 
         // Hotbar (above gizmo)
-        _hotbarWindow = new HotbarWindow(gPoseService, editorState);
+        _hotbarWindow = new HotbarWindow(gPoseService, editorState, actorManager, skeletonService);
         _windowSystem.AddWindow(_hotbarWindow);
 
         // Main sidebar (highest z-order, on top)

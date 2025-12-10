@@ -96,11 +96,12 @@ public class BonePoseInfo
             finalTransform = delta;
         }
 
-        // Validate for NaN
-        if (float.IsNaN(finalTransform.Rotation.X) || float.IsNaN(finalTransform.Rotation.Y) ||
-            float.IsNaN(finalTransform.Rotation.Z) || float.IsNaN(finalTransform.Rotation.W))
+        // Validate for NaN - reject entire transform if ANY component is NaN
+        // This prevents NaN from getting stored and propagating to future frames
+        if (HasNaN(finalTransform))
         {
-            finalTransform.Rotation = Quaternion.Identity;
+            // Don't update the stack, return null to indicate rejection
+            return null;
         }
 
         _stacks[transformIndex] = new BonePoseTransformInfo(prop, BoneIKInfo.Disabled, finalTransform);
@@ -183,6 +184,16 @@ public class BonePoseInfo
             Rotation = Quaternion.Normalize(a.Rotation * b.Rotation),
             Scale = a.Scale + b.Scale
         };
+    }
+
+    /// <summary>
+    /// Checks if any component of the transform contains NaN.
+    /// </summary>
+    private static bool HasNaN(Transform t)
+    {
+        return float.IsNaN(t.Position.X) || float.IsNaN(t.Position.Y) || float.IsNaN(t.Position.Z) ||
+               float.IsNaN(t.Rotation.X) || float.IsNaN(t.Rotation.Y) || float.IsNaN(t.Rotation.Z) || float.IsNaN(t.Rotation.W) ||
+               float.IsNaN(t.Scale.X) || float.IsNaN(t.Scale.Y) || float.IsNaN(t.Scale.Z);
     }
 }
 

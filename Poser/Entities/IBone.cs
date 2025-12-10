@@ -56,7 +56,13 @@ public interface IBone : IEntity, ITransformable
     bool IsHiddenBone { get; }
 
     /// <summary>
-    /// The last cached transform of this bone.
+    /// The last cached transform of this bone (after partial reparenting).
     /// </summary>
     Transform LastTransform { get; }
+
+    /// <summary>
+    /// Raw transform before partial reparenting. For body bones (partial 0), equals LastTransform.
+    /// For face bones (partial 1+), this is the transform before ReparentPartials() adjusts positions.
+    /// </summary>
+    Transform LastRawTransform { get; }
 }

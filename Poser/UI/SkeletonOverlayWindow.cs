@@ -29,6 +29,8 @@ public class SkeletonOverlayWindow : Window
     private const float JointCircleSize = 8f;
     private const float LineThickness = 1.5f;
     private const float OctahedraWidth = 4f;
+    private const float PivotPointSize = 8f;
+    private const float PivotPointSelectedSize = 10f;
 
     // Overlap detection (as fraction of screen height)
     private const float OverlapThreshold = 0.01f; // 1% of screen height - bones closer than this overlap
@@ -44,6 +46,8 @@ public class SkeletonOverlayWindow : Window
     private static readonly Vector4 DotOutlineColorVec = new(0.0f, 0.0f, 0.0f, 0.8f);
     private static readonly Vector4 TextColorVec = new(1.0f, 1.0f, 1.0f, 1.0f);
     private static readonly Vector4 TextOutlineColorVec = new(0.0f, 0.0f, 0.0f, 1.0f);
+    private static readonly Vector4 PivotPointColorVec = new(1.0f, 0.5f, 0.0f, 0.9f); // Orange
+    private static readonly Vector4 PivotPointSelectedColorVec = new(1.0f, 0.8f, 0.0f, 1.0f); // Yellow-orange
 
     // Bone display data
     private class BoneDisplayData
@@ -264,6 +268,114 @@ public class SkeletonOverlayWindow : Window
 
         // Draw context menu if open
         DrawBoneContextMenu(drawList);
+
+        // Draw pivot points
+        DrawPivotPoints(drawList, viewportPos, mousePos);
+    }
+
+    private void DrawPivotPoints(ImDrawListPtr drawList, Vector2 viewportPos, Vector2 mousePos)
+    {
+        var pivotPoints = _editorState.PivotPoints;
+        if (pivotPoints.Count == 0)
+            return;
+
+        var pivotColor = ImGui.GetColorU32(PivotPointColorVec);
+        var pivotSelectedColor = ImGui.GetColorU32(PivotPointSelectedColorVec);
+        var outlineColor = ImGui.GetColorU32(DotOutlineColorVec);
+
+        foreach (var pivot in pivotPoints)
+        {
+            // Convert world position to screen
+            if (!_cameraService.WorldToScreen(pivot.WorldPosition, out var screenPos))
+                continue;
+
+            var finalScreenPos = viewportPos + screenPos;
+            var isSelected = pivot == _editorState.OrbitTarget;
+            var size = (isSelected ? PivotPointSelectedSize : PivotPointSize) * ImGuiHelpers.GlobalScale;
+
+            // Check hover
+            var isHovered = Vector2.Distance(finalScreenPos, mousePos) <= size + 2f;
+
+            // Handle click
+            if (isHovered)
+            {
+                ImGui.SetNextFrameWantCaptureMouse(true);
+
+                if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+                {
+                    _editorState.OrbitTarget = pivot;
+                    _editorState.TransformPivot = TransformPivot.Target;
+                }
+                else if (ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+                {
+                    // Right-click to delete
+                    _editorState.DeletePivotPoint(pivot);
+                    return; // Exit since collection changed
+                }
+            }
+
+            // Draw pivot point as diamond/cross shape
+            var color = isSelected ? pivotSelectedColor : (isHovered ? pivotSelectedColor : pivotColor);
+
+            // Diamond shape
+            var halfSize = size * 0.7f;
+            var top = finalScreenPos + new Vector2(0, -halfSize);
+            var right = finalScreenPos + new Vector2(halfSize, 0);
+            var bottom = finalScreenPos + new Vector2(0, halfSize);
+            var left = finalScreenPos + new Vector2(-halfSize, 0);
+
+            // Filled diamond
+            drawList.AddQuadFilled(top, right, bottom, left, color);
+
+            // Outline
+            drawList.AddQuad(top, right, bottom, left, outlineColor, 2f * ImGuiHelpers.GlobalScale);
+
+            // Draw line to parent bone if parented
+            if (pivot.ParentBone != null)
+            {
+                var parentWorldPos = pivot.ParentBone.LastTransform.Position;
+
+                // Need to transform through model matrix - find the skeleton
+                foreach (var actor in _actorManager.Actors)
+                {
+                    var skeleton = _skeletonService.GetSkeleton(actor) as Skeleton;
+                    if (skeleton == null || !skeleton.IsValid)
+                        continue;
+
+                    if (skeleton.Bones.Contains(pivot.ParentBone))
+                    {
+                        var modelMatrix = skeleton.GetModelMatrix();
+                        var parentWorld = Vector3.Transform(parentWorldPos, modelMatrix);
+
+                        if (_cameraService.WorldToScreen(parentWorld, out var parentScreenPos))
+                        {
+                            var parentFinalPos = viewportPos + parentScreenPos;
+                            var lineColor = ImGui.GetColorU32(PivotPointColorVec with { W = 0.5f });
+                            drawList.AddLine(parentFinalPos, finalScreenPos, lineColor, 1.5f * ImGuiHelpers.GlobalScale);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            // Draw name tooltip if hovered
+            if (isHovered)
+            {
+                var textPos = finalScreenPos + new Vector2(size + 4f, -8f);
+                var textColor = ImGui.GetColorU32(TextColorVec);
+                var textOutline = ImGui.GetColorU32(TextOutlineColorVec);
+                var name = pivot.Name;
+
+                // Outline
+                drawList.AddText(textPos + new Vector2(-1, 0), textOutline, name);
+                drawList.AddText(textPos + new Vector2(1, 0), textOutline, name);
+                drawList.AddText(textPos + new Vector2(0, -1), textOutline, name);
+                drawList.AddText(textPos + new Vector2(0, 1), textOutline, name);
+
+                // Text
+                drawList.AddText(textPos, textColor, name);
+            }
+        }
     }
 
     private int GetHierarchyDepth(IBone bone)

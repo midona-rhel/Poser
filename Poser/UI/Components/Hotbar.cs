@@ -1,3 +1,4 @@
+using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
@@ -14,10 +15,16 @@ public class Hotbar
 {
     private readonly IEditorState _editorState;
 
-    private static readonly string[] PivotNames = { "Local", "Parent", "Average" };
+    private static readonly string[] PivotNames = { "Local", "Parent", "Average", "Target" };
     private static readonly string[] OrientationNames = { "Local", "Global", "Parent" };
     private static readonly string[] SymmetryNames = { "Off", "Copy", "Mirror" };
     private static readonly string[] ViewModeNames = { "Dots", "Octahedra", "Joints" };
+
+    /// <summary>
+    /// Event raised when "Select Target" button is clicked.
+    /// UI should open the target selection modal.
+    /// </summary>
+    public event Action? OnSelectTargetRequested;
 
     public Hotbar(IEditorState editorState)
     {
@@ -30,32 +37,7 @@ public class Hotbar
         float comboWidth = 100f;
         float buttonSpacing = 2f;
 
-        // Transform Pivot selector
-        ImGui.AlignTextToFramePadding();
-        ImGui.Text("Pivot:");
-        ImGui.SameLine();
-
-        ImGui.SetNextItemWidth(comboWidth);
-        int currentPivot = (int)_editorState.TransformPivot;
-        if (ImGui.Combo("##pivot", ref currentPivot, PivotNames, PivotNames.Length))
-        {
-            _editorState.TransformPivot = (TransformPivot)currentPivot;
-        }
-
-        if (ImGui.IsItemHovered())
-        {
-            ImGui.SetTooltip(_editorState.TransformPivot switch
-            {
-                TransformPivot.Local => "Gizmo on first selected entity's position",
-                TransformPivot.Parent => "Gizmo on parent of first selected (fallback to entity if no parent)",
-                TransformPivot.Average => "Gizmo at average position of all selected entities",
-                _ => ""
-            });
-        }
-
-        ImGui.SameLine();
-
-        // Transform Orientation selector
+        // Transform Orientation selector (moved first per user request)
         ImGui.AlignTextToFramePadding();
         ImGui.Text("Orientation:");
         ImGui.SameLine();
@@ -80,15 +62,62 @@ public class Hotbar
 
         ImGui.SameLine();
 
+        // Transform Pivot selector
+        ImGui.AlignTextToFramePadding();
+        ImGui.Text("Pivot:");
+        ImGui.SameLine();
+
+        ImGui.SetNextItemWidth(comboWidth);
+        int currentPivot = (int)_editorState.TransformPivot;
+        if (ImGui.Combo("##pivot", ref currentPivot, PivotNames, PivotNames.Length))
+        {
+            _editorState.TransformPivot = (TransformPivot)currentPivot;
+        }
+
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip(_editorState.TransformPivot switch
+            {
+                TransformPivot.Local => "Gizmo on first selected entity's position",
+                TransformPivot.Parent => "Gizmo on parent of first selected (fallback to entity if no parent)",
+                TransformPivot.Average => "Gizmo at average position of all selected entities",
+                TransformPivot.Target => "Gizmo at selected orbit target entity",
+                _ => ""
+            });
+        }
+
+        ImGui.SameLine();
+
+        // Select Target button
+        var hasTarget = _editorState.OrbitTarget != null;
+        var targetButtonColor = hasTarget
+            ? UIConstants.SkeletonColor
+            : UIConstants.DisabledTextColor;
+        var targetTooltip = hasTarget
+            ? $"Orbit Target: {_editorState.OrbitTarget!.Name} (click to change)"
+            : "Select Orbit Target";
+
+        using (ImRaii.PushColor(ImGuiCol.Text, targetButtonColor))
+        {
+            if (ImPoser.IconButton("select_target", FontAwesomeIcon.Crosshairs, new Vector2(buttonSize, buttonSize), targetTooltip))
+            {
+                OnSelectTargetRequested?.Invoke();
+            }
+        }
+
+        ImGui.SameLine();
+
         // Reset pivot/orientation button
         bool isDefault = _editorState.TransformPivot == TransformPivot.Local &&
-                         _editorState.TransformOrientation == TransformOrientation.Local;
+                         _editorState.TransformOrientation == TransformOrientation.Local &&
+                         _editorState.OrbitTarget == null;
         using (ImRaii.Disabled(isDefault))
         {
-            if (ImPoser.IconButton("reset_pivot", FontAwesomeIcon.Undo, new Vector2(buttonSize, buttonSize), "Reset to Local/Local"))
+            if (ImPoser.IconButton("reset_pivot", FontAwesomeIcon.Undo, new Vector2(buttonSize, buttonSize), "Reset to Local/Local and clear target"))
             {
                 _editorState.TransformPivot = TransformPivot.Local;
                 _editorState.TransformOrientation = TransformOrientation.Local;
+                _editorState.OrbitTarget = null;
             }
         }
 

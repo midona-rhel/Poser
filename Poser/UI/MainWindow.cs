@@ -63,7 +63,8 @@ public class MainWindow : Window
             skeletonService,
             gPoseService,
             editorState,
-            spawnService);
+            spawnService,
+            cameraService);
 
         _propertiesPanel = new PropertiesPanel(
             selectionService,

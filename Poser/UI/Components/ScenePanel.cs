@@ -17,6 +17,8 @@ public class ScenePanel
 {
     private readonly ISelectionService _selectionService;
     private readonly IActorSpawnService _spawnService;
+    private readonly IEditorState _editorState;
+    private readonly ICameraService _cameraService;
     private readonly EntityList _entityList;
 
     public ScenePanel(
@@ -26,10 +28,13 @@ public class ScenePanel
         ISkeletonService skeletonService,
         IGPoseService gPoseService,
         IEditorState editorState,
-        IActorSpawnService spawnService)
+        IActorSpawnService spawnService,
+        ICameraService cameraService)
     {
         _selectionService = selectionService;
         _spawnService = spawnService;
+        _editorState = editorState;
+        _cameraService = cameraService;
 
         _entityList = new EntityList(
             actorManager,
@@ -77,14 +82,30 @@ public class ScenePanel
         float offsetX = cellPadding + (cellContentWidth - buttonSize) / 2;
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
 
-        // Plus button - spawn clone
+        // Plus button with popup menu
         if (ImPoser.CenteredIconButton(
-            "spawn_clone",
+            "add_entity",
             FontAwesomeIcon.Plus,
             new Vector2(buttonSize, buttonSize),
-            "Spawn clone of player"))
+            "Add entity"))
         {
-            _spawnService.SpawnPlayerClone();
+            ImGui.OpenPopup("##add_entity_popup");
+        }
+
+        // Popup menu for add options
+        if (ImGui.BeginPopup("##add_entity_popup"))
+        {
+            if (ImGui.MenuItem("Spawn Actor Clone"))
+            {
+                _spawnService.SpawnPlayerClone();
+            }
+
+            if (ImGui.MenuItem("Create Pivot Point"))
+            {
+                CreatePivotPoint();
+            }
+
+            ImGui.EndPopup();
         }
 
         ImGui.SameLine();
@@ -93,8 +114,16 @@ public class ScenePanel
         float trashButtonWidth = buttonSize * 4;
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - trashButtonWidth);
 
-        // Only allow deleting spawned actors
-        bool canDelete = primarySelected != null && _spawnService.IsSpawnedActor(primarySelected);
+        // Only allow deleting spawned actors or pivot points
+        bool canDeleteActor = primarySelected != null && _spawnService.IsSpawnedActor(primarySelected);
+        bool canDeletePivot = _editorState.OrbitTarget is PivotPoint;
+        bool canDelete = canDeleteActor || canDeletePivot;
+
+        string deleteTooltip = canDeleteActor
+            ? "Delete selected entity"
+            : canDeletePivot
+                ? "Delete selected pivot point"
+                : "Can only delete spawned entities or pivot points";
 
         using (ImRaii.Disabled(!canDelete))
         {
@@ -102,14 +131,37 @@ public class ScenePanel
                 "delete_selected",
                 FontAwesomeIcon.Trash,
                 new Vector2(trashButtonWidth, buttonSize),
-                canDelete ? "Delete selected entity" : "Can only delete spawned entities",
+                deleteTooltip,
                 canDelete))
             {
-                if (primarySelected != null)
+                if (canDeleteActor && primarySelected != null)
                 {
                     _spawnService.DestroyActor(primarySelected);
                 }
+                else if (canDeletePivot && _editorState.OrbitTarget is PivotPoint pivot)
+                {
+                    _editorState.DeletePivotPoint(pivot);
+                }
             }
         }
+    }
+
+    private void CreatePivotPoint()
+    {
+        // Spawn pivot point in front of camera
+        var cameraPos = _cameraService.GetCameraPosition();
+
+        // Get camera forward direction from view matrix
+        var viewMatrix = _cameraService.GetViewMatrix();
+        // Forward vector is -Z axis of view matrix (camera looks down -Z)
+        var forward = new Vector3(-viewMatrix.M13, -viewMatrix.M23, -viewMatrix.M33);
+        forward = Vector3.Normalize(forward);
+
+        // Position pivot 3 units in front of camera
+        var pivotPos = cameraPos + forward * 3f;
+
+        var pivot = _editorState.CreatePivotPoint(pivotPos);
+        _editorState.OrbitTarget = pivot;
+        _editorState.TransformPivot = TransformPivot.Target;
     }
 }

@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using Poser.Entities;
+
 namespace Poser.Services;
 
 /// <summary>
@@ -10,7 +13,9 @@ public enum TransformPivot
     /// <summary>Gizmo on parent of first selected (fallback to entity if no parent).</summary>
     Parent,
     /// <summary>Gizmo at average position of all selected entities.</summary>
-    Average
+    Average,
+    /// <summary>Gizmo at selected orbit target entity.</summary>
+    Target
 }
 
 /// <summary>
@@ -109,4 +114,16 @@ public interface IEditorState
 
     /// <summary>When true, only show selected bones and their symmetry pairs in the overlay.</summary>
     bool ShowSelectedBonesOnly { get; set; }
+
+    /// <summary>The entity to orbit around when using Target pivot mode.</summary>
+    IEntity? OrbitTarget { get; set; }
+
+    /// <summary>All pivot points in the scene.</summary>
+    IReadOnlyList<PivotPoint> PivotPoints { get; }
+
+    /// <summary>Creates a new pivot point at the specified position.</summary>
+    PivotPoint CreatePivotPoint(System.Numerics.Vector3 position, IBone? parentBone = null, string? name = null);
+
+    /// <summary>Deletes a pivot point.</summary>
+    void DeletePivotPoint(PivotPoint pivotPoint);
 }

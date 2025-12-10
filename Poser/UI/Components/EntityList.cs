@@ -27,11 +27,14 @@ public class EntityList
     private readonly IAnimationService _animationService;
     private readonly ISkeletonService _skeletonService;
     private readonly IGPoseService _gPoseService;
+    private readonly IEditorState _editorState;
     private readonly CategoryConfig _categoryConfig;
 
     // Cached tree items - rebuilt when actors change
     private readonly List<TreeListItem> _items = new();
+    private readonly List<PivotPointListItem> _pivotItems = new();
     private int _lastActorCount = -1;
+    private int _lastPivotCount = -1;
     private bool _lastShowNsfw = false;
 
     // Local UI state only
@@ -50,6 +53,7 @@ public class EntityList
         _animationService = animationService;
         _skeletonService = skeletonService;
         _gPoseService = gPoseService;
+        _editorState = editorState;
         _categoryConfig = CategoryReader.ReadEmbeddedResource();
     }
 
@@ -63,13 +67,21 @@ public class EntityList
         var tabActive = ImPoser.GetTabActiveColor();
 
         var actors = _actorManager.Actors;
-        int totalEntities = actors.Count + (_gPoseService.IsGPosing ? 1 : 0); // +1 for camera
+        var pivotCount = _editorState.PivotPoints.Count;
+        int totalEntities = actors.Count + pivotCount + (_gPoseService.IsGPosing ? 1 : 0); // +1 for camera
 
         // Rebuild tree items only if actor count changed
         if (actors.Count != _lastActorCount)
         {
             RebuildItems(actors);
             _lastActorCount = actors.Count;
+        }
+
+        // Rebuild pivot items if count changed
+        if (pivotCount != _lastPivotCount)
+        {
+            RebuildPivotItems();
+            _lastPivotCount = pivotCount;
         }
 
         // Check if NSFW setting changed - update category visibility without full rebuild
@@ -126,6 +138,13 @@ public class EntityList
                         DrawCameraRow(tabHovered, tabActive);
                     }
 
+                    // Draw pivot points first (at root level)
+                    foreach (var pivotItem in _pivotItems)
+                    {
+                        pivotItem.Draw(tabHovered, tabActive, _selectionService);
+                    }
+
+                    // Draw actors
                     foreach (var item in _items)
                     {
                         item.Draw(tabHovered, tabActive, _selectionService);
@@ -156,6 +175,21 @@ public class EntityList
                 _selectionService,
                 _categoryConfig);
             _items.Add(actorItem);
+        }
+    }
+
+    private void RebuildPivotItems()
+    {
+        _pivotItems.Clear();
+
+        foreach (var pivot in _editorState.PivotPoints)
+        {
+            var pivotItem = new PivotPointListItem(
+                pivot,
+                0,
+                _selectionService,
+                _editorState);
+            _pivotItems.Add(pivotItem);
         }
     }
 

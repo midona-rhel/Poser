@@ -22,6 +22,13 @@ public class Bone : EntityBase, IBone
     public bool IsSkeletonRoot { get; internal set; }
     public Transform LastTransform { get; internal set; } = Transform.Identity;
 
+    /// <summary>
+    /// Raw transform before partial reparenting. For body bones (partial 0), this equals LastTransform.
+    /// For face bones (partial 1+), this is the transform before ReparentPartials() adjusts positions.
+    /// Used for calculating deltas in the correct coordinate space.
+    /// </summary>
+    public Transform LastRawTransform { get; internal set; } = Transform.Identity;
+
     #region ITransformable
 
     /// <summary>

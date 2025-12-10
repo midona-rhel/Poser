@@ -160,8 +160,6 @@ public unsafe class BonePosingService : IBonePosingService
 
     private void ApplyAllBoneTransforms()
     {
-        _debugLogCounter++;
-
         foreach (var actorAddress in _skeletonsToUpdate)
         {
             if (!_poseInfos.TryGetValue(actorAddress, out var poseInfo))
@@ -254,12 +252,55 @@ public unsafe class BonePosingService : IBonePosingService
             }
         }
 
-        // Second pass: Reparent partial skeleton roots to follow their parent bones
+        // Second pass: Capture raw transforms BEFORE reparenting (for all bones)
+        // This is needed for cross-partial bones (face) to calculate correct deltas
+        CaptureRawTransforms(skeleton, gameSkeleton);
+
+        // Third pass: Reparent partial skeleton roots to follow their parent bones
         // This makes face bones follow head movement (face is in a different partial skeleton)
         ReparentPartials(skeleton, gameSkeleton);
 
-        // Third pass: Update cached transforms for reparented bones
+        // Fourth pass: Update cached transforms for reparented bones (LastTransform only)
         UpdateCachedTransformsAfterReparent(skeleton, gameSkeleton);
+    }
+
+    /// <summary>
+    /// Captures LastRawTransform for all bones before reparenting.
+    /// This preserves the pre-reparent coordinate space for delta calculations.
+    /// </summary>
+    private void CaptureRawTransforms(Skeleton skeleton, GameSkeleton* gameSkeleton)
+    {
+        var partialCount = gameSkeleton->PartialSkeletonCount;
+
+        for (int partialIdx = 0; partialIdx < partialCount; partialIdx++)
+        {
+            var partial = &gameSkeleton->PartialSkeletons[partialIdx];
+            var pose = partial->GetHavokPose(0);
+            if (pose == null)
+                continue;
+
+            var boneCount = pose->Skeleton->Bones.Length;
+            for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
+            {
+                var rawBone = pose->Skeleton->Bones[boneIdx];
+                var boneName = rawBone.Name.String ?? $"bone_{partialIdx}_{boneIdx}";
+
+                var bone = skeleton.GetBoneByName(boneName, partialIdx);
+                if (bone == null)
+                    continue;
+
+                var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
+                if (modelSpace != null)
+                {
+                    bone.LastRawTransform = new Transform
+                    {
+                        Position = new Vector3(modelSpace->Translation.X, modelSpace->Translation.Y, modelSpace->Translation.Z),
+                        Rotation = new Quaternion(modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W),
+                        Scale = new Vector3(modelSpace->Scale.X, modelSpace->Scale.Y, modelSpace->Scale.Z)
+                    };
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -300,10 +341,6 @@ public unsafe class BonePosingService : IBonePosingService
             }
         }
     }
-
-    // Debug logging - only log once per bone per few frames to avoid spam
-    private int _debugLogCounter = 0;
-    private const int DebugLogInterval = 60; // Log every 60 frames
 
     /// <summary>
     /// Reparent partial skeleton roots to follow their parent bones.
@@ -365,12 +402,6 @@ public unsafe class BonePosingService : IBonePosingService
                     modelSpace->Translation = *(hkVector4f*)(&pos);
                     modelSpace->Rotation = *(hkQuaternionf*)(&rot);
                     modelSpace->Scale = *(hkVector4f*)(&scale);
-
-                    if (_debugLogCounter % DebugLogInterval == 0)
-                    {
-                        _log.Debug($"[ReparentPartials] Bone={boneName} (partial {partialIdx}) → Parent={bone.ParentBone.BoneName}");
-                        _log.Debug($"  Copied transform: Pos={pos}, Rot={rot}, Scale={scale}");
-                    }
                 }
             }
         }
@@ -417,15 +448,6 @@ public unsafe class BonePosingService : IBonePosingService
         var tempScale = beforeScale + info.Transform.Scale;
         modelSpace->Scale = *(hkVector4f*)(&tempScale);
 
-        // Debug logging
-        if (_debugLogCounter % DebugLogInterval == 0)
-        {
-            _log.Debug($"[ApplyBoneTransform] boneIdx={boneIdx}, IK={info.IKInfo.Enabled}");
-            _log.Debug($"  Delta: Pos={info.Transform.Position}, Rot={info.Transform.Rotation}, Scale={info.Transform.Scale}");
-            _log.Debug($"  Before: Pos={beforePos}, Rot={beforeRot}, Scale={beforeScale}");
-            _log.Debug($"  After: Pos={tempPos}, Rot={tempRot}, Scale={tempScale}");
-            _log.Debug($"  Propagate: {info.PropagateComponents}");
-        }
     }
 
     public SkeletonPoseInfo GetPoseInfo(ISkeleton skeleton)
@@ -471,21 +493,12 @@ public unsafe class BonePosingService : IBonePosingService
     {
         // Skip virtual bones - they don't correspond to real game bones
         if (bone is VirtualBone)
-        {
-            _log.Debug($"[ApplyTransform] Skipping virtual bone: {bone.BoneName}");
             return;
-        }
-
-        _log.Debug($"[ApplyTransform] Bone={bone.BoneName}");
-        _log.Debug($"  New Transform: Pos={transform.Position}, Rot={transform.Rotation}, Scale={transform.Scale}");
-        _log.Debug($"  Original: {(originalTransform.HasValue ? $"Pos={originalTransform.Value.Position}, Rot={originalTransform.Value.Rotation}, Scale={originalTransform.Value.Scale}" : "NULL")}");
-        _log.Debug($"  Propagate: {propagate}, Accumulate: {accumulate}");
 
         var poseInfo = GetPoseInfo(bone.Skeleton);
         var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
 
-        var result = bonePoseInfo.Apply(transform, originalTransform, propagate, accumulate);
-        _log.Debug($"  Result: {(result.HasValue ? $"Pos={result.Value.Position}, Rot={result.Value.Rotation}, Scale={result.Value.Scale}" : "NULL")}");
+        bonePoseInfo.Apply(transform, originalTransform, propagate, accumulate);
 
         OnBoneTransformChanged?.Invoke(bone);
     }
@@ -626,12 +639,16 @@ public unsafe class BonePosingService : IBonePosingService
                 var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
                 if (modelSpace != null)
                 {
-                    bone.LastTransform = new Transform
+                    var transform = new Transform
                     {
                         Position = new Vector3(modelSpace->Translation.X, modelSpace->Translation.Y, modelSpace->Translation.Z),
                         Rotation = new Quaternion(modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W),
                         Scale = new Vector3(modelSpace->Scale.X, modelSpace->Scale.Y, modelSpace->Scale.Z)
                     };
+                    bone.LastTransform = transform;
+                    // For skeletons updated via cache (not through ApplySkeletonTransforms),
+                    // raw and post-reparent are the same since we didn't do any reparenting
+                    bone.LastRawTransform = transform;
                 }
             }
         }
