@@ -254,11 +254,11 @@ internal class TransformHistoryAction : IHistoryAction
             if (entity is IBone bone)
             {
                 // For bones, we need to set the modification directly
-                // The current implementation applies deltas, so we reset and apply
+                // Reset and apply delta from identity
                 _bonePosingService.ResetBone(bone);
                 if (transform != Transform.Identity)
                 {
-                    _bonePosingService.ApplyTransform(bone, transform, null, TransformComponents.All);
+                    _bonePosingService.ApplyTransform(bone, transform, Transform.Identity);
                 }
             }
             else if (entity is IActor actor)

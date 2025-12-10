@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Interface;
 using Poser.Entities;
@@ -39,10 +41,20 @@ public class BoneListItem : TreeListItem
 
         if (result.Clicked)
         {
-            if (result.CtrlHeld)
+            if (result.ShiftHeld && selection.LastClicked is IBone lastBone && lastBone.Skeleton == Bone.Skeleton)
+            {
+                // Shift-select: range within same skeleton only
+                var displayOrder = Bone.Skeleton.Bones.Cast<IEntity>();
+                selection.SelectRange(lastBone, Bone, displayOrder);
+            }
+            else if (result.CtrlHeld)
+            {
                 selection.ToggleSelection(Bone);
+            }
             else
+            {
                 selection.Select(Bone);
+            }
         }
 
         if (result.VisibilityToggled)

@@ -431,10 +431,9 @@ public class PropertiesPanel : IDisposable
                 _lastFrameTransform = bone.Transform;
             }
 
-            // Use gizmo-style incremental deltas: compare to last frame, accumulate
-            // This prevents losing existing modifications when we start editing
+            // Use gizmo-style incremental deltas: compare to last frame
             var lastObserved = _lastFrameTransform ?? bone.Transform;
-            _bonePosingService.ApplyTransform(bone, transform, lastObserved, TransformComponents.All, accumulate: true);
+            _bonePosingService.ApplyTransform(bone, transform, lastObserved);
 
             // Update last frame transform for next iteration
             _lastFrameTransform = transform;

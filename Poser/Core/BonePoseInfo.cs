@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using Poser.Entities;
 
 namespace Poser.Core;
 
@@ -20,14 +19,15 @@ public enum TransformComponents
 
 /// <summary>
 /// Stores transform information for a bone pose modification.
+/// Simple delta-based system - all transforms are additive.
 /// </summary>
 public record struct BonePoseTransformInfo(
     TransformComponents PropagateComponents,
-    BoneIKInfo IKInfo,
     Transform Transform);
 
 /// <summary>
 /// Tracks pose modifications for a single bone.
+/// Simple delta-based stacking like Brio.
 /// </summary>
 public class BonePoseInfo
 {
@@ -58,19 +58,18 @@ public class BonePoseInfo
     }
 
     /// <summary>
-    /// Apply a transform delta to this bone.
+    /// Apply a transform to this bone. Calculates delta from original and stacks it.
     /// </summary>
-    /// <param name="transform">The new absolute transform.</param>
+    /// <param name="newTransform">The new transform.</param>
     /// <param name="original">The original transform before modification.</param>
     /// <param name="propagation">Which components to propagate.</param>
-    /// <param name="accumulate">If true, add to existing delta. If false (default when original is provided), REPLACE existing delta.</param>
-    /// <returns>The final transform, or null if no change.</returns>
-    public Transform? Apply(Transform transform, Transform? original = null, TransformComponents? propagation = null, bool? accumulate = null)
+    /// <returns>The final transform, or null if rejected due to NaN or near-identity.</returns>
+    public Transform? Apply(Transform newTransform, Transform original, TransformComponents? propagation = null)
     {
         var prop = propagation ?? DefaultPropagation;
 
         // Calculate delta from original
-        var delta = original.HasValue ? CalculateDiff(transform, original.Value) : transform;
+        var delta = CalculateDiff(newTransform, original);
 
         // Find or create stack entry with matching propagation
         var transformIndex = GetTransformIndex(prop);
@@ -78,33 +77,14 @@ public class BonePoseInfo
         // Get existing transform at this index
         var existing = _stacks[transformIndex].Transform;
 
-        // Determine whether to accumulate or replace:
-        // - If accumulate is explicitly set, use that
-        // - If original is provided, REPLACE (UI/gizmo passes original = should replace)
-        // - If no original (raw delta), ACCUMULATE
-        bool shouldAccumulate = accumulate ?? !original.HasValue;
+        // Combine with existing delta
+        var finalTransform = CombineTransforms(existing, delta);
 
-        Transform finalTransform;
-        if (shouldAccumulate)
-        {
-            // Accumulate: add delta to existing (for incremental changes)
-            finalTransform = CombineTransforms(existing, delta);
-        }
-        else
-        {
-            // Replace: use delta directly (for absolute target from original)
-            finalTransform = delta;
-        }
-
-        // Validate for NaN - reject entire transform if ANY component is NaN
-        // This prevents NaN from getting stored and propagating to future frames
+        // Validate for NaN
         if (HasNaN(finalTransform))
-        {
-            // Don't update the stack, return null to indicate rejection
             return null;
-        }
 
-        _stacks[transformIndex] = new BonePoseTransformInfo(prop, BoneIKInfo.Disabled, finalTransform);
+        _stacks[transformIndex] = new BonePoseTransformInfo(prop, finalTransform);
         return finalTransform;
     }
 
@@ -114,15 +94,6 @@ public class BonePoseInfo
     public void ClearStacks()
     {
         _stacks.Clear();
-    }
-
-    /// <summary>
-    /// Remove the last transform stack.
-    /// </summary>
-    public void RemoveLastStack()
-    {
-        if (_stacks.Count > 0)
-            _stacks.RemoveAt(_stacks.Count - 1);
     }
 
     /// <summary>
@@ -140,7 +111,6 @@ public class BonePoseInfo
 
     private int GetTransformIndex(TransformComponents components)
     {
-        // Identity for additive deltas: Zero position, Identity rotation, Zero scale (not One!)
         var identityDelta = new Transform
         {
             Position = Vector3.Zero,
@@ -150,17 +120,15 @@ public class BonePoseInfo
 
         if (_stacks.Count == 0)
         {
-            _stacks.Add(new BonePoseTransformInfo(components, BoneIKInfo.Disabled, identityDelta));
+            _stacks.Add(new BonePoseTransformInfo(components, identityDelta));
             return 0;
         }
 
-        // Check if last stack has same propagation
         var lastEntry = _stacks[^1];
         if (lastEntry.PropagateComponents == components)
             return _stacks.Count - 1;
 
-        // Create new stack
-        _stacks.Add(new BonePoseTransformInfo(components, BoneIKInfo.Disabled, identityDelta));
+        _stacks.Add(new BonePoseTransformInfo(components, identityDelta));
         return _stacks.Count - 1;
     }
 
@@ -177,7 +145,6 @@ public class BonePoseInfo
 
     private static Transform CombineTransforms(Transform a, Transform b)
     {
-        // Match Brio's + operator - normalizes quaternion to prevent drift
         return new Transform
         {
             Position = a.Position + b.Position,
@@ -186,9 +153,6 @@ public class BonePoseInfo
         };
     }
 
-    /// <summary>
-    /// Checks if any component of the transform contains NaN.
-    /// </summary>
     private static bool HasNaN(Transform t)
     {
         return float.IsNaN(t.Position.X) || float.IsNaN(t.Position.Y) || float.IsNaN(t.Position.Z) ||
@@ -204,9 +168,6 @@ public class SkeletonPoseInfo
 {
     private readonly Dictionary<(string boneName, int partialId), BonePoseInfo> _poses = new();
 
-    /// <summary>
-    /// Get or create pose info for a bone.
-    /// </summary>
     public BonePoseInfo GetPoseInfo(string boneName, int partialId)
     {
         var key = (boneName, partialId);
@@ -216,19 +177,10 @@ public class SkeletonPoseInfo
         return _poses[key] = new BonePoseInfo(boneName, partialId);
     }
 
-    /// <summary>
-    /// Whether any bones have modifications.
-    /// </summary>
     public bool IsOverridden => _poses.Count > 0 && HasAnyStacks();
 
-    /// <summary>
-    /// All bone poses with modifications.
-    /// </summary>
     public IEnumerable<BonePoseInfo> AllPoses => _poses.Values;
 
-    /// <summary>
-    /// Clear all bone poses.
-    /// </summary>
     public void Clear()
     {
         foreach (var pose in _poses.Values)
@@ -237,9 +189,6 @@ public class SkeletonPoseInfo
         }
     }
 
-    /// <summary>
-    /// Clone this skeleton pose info.
-    /// </summary>
     public SkeletonPoseInfo Clone()
     {
         var clone = new SkeletonPoseInfo();

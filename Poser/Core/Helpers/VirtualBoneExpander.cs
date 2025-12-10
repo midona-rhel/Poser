@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using Poser.Entities;
 
-namespace Poser.UI.Gizmo.Helpers;
+namespace Poser.Core.Helpers;
 
 /// <summary>
 /// Expands virtual bones (bone categories) to their constituent bones for transformation.

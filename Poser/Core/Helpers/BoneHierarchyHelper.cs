@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using Poser.Entities;
 
-namespace Poser.UI.Gizmo.Helpers;
+namespace Poser.Core.Helpers;
 
 /// <summary>
 /// Utilities for bone hierarchy traversal and analysis.

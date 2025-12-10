@@ -19,7 +19,7 @@ namespace Poser.Game;
 
 /// <summary>
 /// Service for manipulating bone transforms using game hooks.
-/// Hooks into the skeleton update pipeline to apply bone pose modifications.
+/// Simple delta-based system like Brio - bones rotate around themselves.
 /// </summary>
 public unsafe class BonePosingService : IBonePosingService
 {
@@ -29,7 +29,6 @@ public unsafe class BonePosingService : IBonePosingService
     private readonly ISkeletonService _skeletonService;
     private readonly IActorManager _actorManager;
     private readonly IEventBus _eventBus;
-    private readonly IIKService _ikService;
 
     // Hook for intercepting bone physics updates
     private delegate nint UpdateBonePhysicsDelegate(nint a1);
@@ -59,7 +58,6 @@ public unsafe class BonePosingService : IBonePosingService
         ISkeletonService skeletonService,
         IActorManager actorManager,
         IEventBus eventBus,
-        IIKService ikService,
         IGameInteropProvider hooking,
         ISigScanner scanner)
     {
@@ -69,10 +67,8 @@ public unsafe class BonePosingService : IBonePosingService
         _skeletonService = skeletonService;
         _actorManager = actorManager;
         _eventBus = eventBus;
-        _ikService = ikService;
 
         // Hook UpdateBonePhysics - this is called during skeleton updates
-        // Signature from Brio - MUST use the complete signature including "45 33 E4" (xor r12d, r12d) to match the correct function
         try
         {
             var updateBonePhysicsAddress = scanner.ScanText("48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 41 54 41 56 48 83 EC ?? 48 8B 59 ?? 45 33 E4");
@@ -86,7 +82,6 @@ public unsafe class BonePosingService : IBonePosingService
         }
 
         // Hook FinalizeSkeletons - called before rendering, takes final snapshot
-        // Signature from Brio: "40 53 55 57 41 55 48 83 EC 68"
         try
         {
             var finalizeSkeletonsAddress = scanner.ScanText("40 53 55 57 41 55 48 83 EC 68");
@@ -107,7 +102,6 @@ public unsafe class BonePosingService : IBonePosingService
 
     private nint UpdateBonePhysicsDetour(nint a1)
     {
-        // Call original first
         var result = _updateBonePhysicsHook!.Original(a1);
 
         if (!_gPoseService.IsGPosing || _isUpdating)
@@ -116,7 +110,6 @@ public unsafe class BonePosingService : IBonePosingService
         _isUpdating = true;
         try
         {
-            // Apply our bone transforms after the game's physics update
             ApplyAllBoneTransforms();
         }
         finally
@@ -129,7 +122,6 @@ public unsafe class BonePosingService : IBonePosingService
 
     private void OnFrameworkUpdate(IFramework framework)
     {
-        // Mark all actors with pose modifications for update
         _skeletonsToUpdate.Clear();
         foreach (var (actorAddress, poseInfo) in _poseInfos)
         {
@@ -139,7 +131,6 @@ public unsafe class BonePosingService : IBonePosingService
             }
         }
 
-        // Clear cache update registrations (they're re-registered each frame by the overlay)
         _skeletonsToUpdateCache.Clear();
     }
 
@@ -152,7 +143,6 @@ public unsafe class BonePosingService : IBonePosingService
     {
         if (!e.IsGPosing)
         {
-            // Clear all pose modifications when exiting GPose
             _poseInfos.Clear();
             _skeletonsToUpdate.Clear();
         }
@@ -165,7 +155,6 @@ public unsafe class BonePosingService : IBonePosingService
             if (!_poseInfos.TryGetValue(actorAddress, out var poseInfo))
                 continue;
 
-            // Find the actor and skeleton
             IActor? actor = null;
             foreach (var a in _actorManager.Actors)
             {
@@ -187,6 +176,13 @@ public unsafe class BonePosingService : IBonePosingService
         }
     }
 
+    /// <summary>
+    /// Apply skeleton transforms following Brio's exact pattern:
+    /// 1. Apply transforms with per-bone LastTransform update
+    /// 2. Full cache update after apply
+    /// 3. Reparent partials
+    /// 4. Full cache update after reparent
+    /// </summary>
     private void ApplySkeletonTransforms(IActor actor, Skeleton skeleton, SkeletonPoseInfo poseInfo)
     {
         var character = (Character*)actor.Address;
@@ -205,70 +201,25 @@ public unsafe class BonePosingService : IBonePosingService
             return;
 
         var gameSkeleton = charaBase->Skeleton;
-        var partialCount = gameSkeleton->PartialSkeletonCount;
 
-        // First pass: Apply all bone transform modifications
-        for (int partialIdx = 0; partialIdx < partialCount; partialIdx++)
-        {
-            var partial = &gameSkeleton->PartialSkeletons[partialIdx];
-            var pose = partial->GetHavokPose(0);
-            if (pose == null)
-                continue;
+        // STEP 1: Apply transforms AND update LastTransform per-bone (like Brio ApplyBrioTransforms)
+        ApplyTransformsWithPerBoneUpdate(skeleton, gameSkeleton, poseInfo);
 
-            var boneCount = pose->Skeleton->Bones.Length;
-            for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
-            {
-                var rawBone = pose->Skeleton->Bones[boneIdx];
-                var boneName = rawBone.Name.String ?? $"bone_{partialIdx}_{boneIdx}";
+        // STEP 2: Full cache update after apply (like Brio line 242)
+        UpdateAllLastTransforms(skeleton, gameSkeleton);
 
-                var bonePoseInfo = poseInfo.GetPoseInfo(boneName, partialIdx);
-                if (!bonePoseInfo.HasStacks)
-                    continue;
-
-                // Get the bone reference for IK
-                var bone = skeleton.GetBoneByName(boneName, partialIdx);
-
-                // Apply all stacks for this bone
-                foreach (var stack in bonePoseInfo.Stacks)
-                {
-                    ApplyBoneTransform(pose, boneIdx, stack, bone);
-                }
-
-                // Update LastTransform AFTER applying modifications (like Brio)
-                // This ensures the gizmo sees our modified position, not the game's original
-                if (bone != null)
-                {
-                    var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
-                    if (modelSpace != null)
-                    {
-                        bone.LastTransform = new Transform
-                        {
-                            Position = new Vector3(modelSpace->Translation.X, modelSpace->Translation.Y, modelSpace->Translation.Z),
-                            Rotation = new Quaternion(modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W),
-                            Scale = new Vector3(modelSpace->Scale.X, modelSpace->Scale.Y, modelSpace->Scale.Z)
-                        };
-                    }
-                }
-            }
-        }
-
-        // Second pass: Capture raw transforms BEFORE reparenting (for all bones)
-        // This is needed for cross-partial bones (face) to calculate correct deltas
-        CaptureRawTransforms(skeleton, gameSkeleton);
-
-        // Third pass: Reparent partial skeleton roots to follow their parent bones
-        // This makes face bones follow head movement (face is in a different partial skeleton)
+        // STEP 3: Reparent partials (like Brio line 243)
         ReparentPartials(skeleton, gameSkeleton);
 
-        // Fourth pass: Update cached transforms for reparented bones (LastTransform only)
-        UpdateCachedTransformsAfterReparent(skeleton, gameSkeleton);
+        // STEP 4: Full cache update after reparent (like Brio line 244)
+        UpdateAllLastTransforms(skeleton, gameSkeleton);
     }
 
     /// <summary>
-    /// Captures LastRawTransform for all bones before reparenting.
-    /// This preserves the pre-reparent coordinate space for delta calculations.
+    /// Apply transforms with per-bone LastTransform update - exactly like Brio's ApplyBrioTransforms.
+    /// Updates LastTransform IMMEDIATELY after applying each bone's stacks.
     /// </summary>
-    private void CaptureRawTransforms(Skeleton skeleton, GameSkeleton* gameSkeleton)
+    private void ApplyTransformsWithPerBoneUpdate(Skeleton skeleton, GameSkeleton* gameSkeleton, SkeletonPoseInfo poseInfo)
     {
         var partialCount = gameSkeleton->PartialSkeletonCount;
 
@@ -289,10 +240,19 @@ public unsafe class BonePosingService : IBonePosingService
                 if (bone == null)
                     continue;
 
+                var bonePoseInfo = poseInfo.GetPoseInfo(boneName, partialIdx);
+
+                // Apply ALL stacks for this bone (like Brio lines 108-112)
+                foreach (var stack in bonePoseInfo.Stacks)
+                {
+                    ApplyBoneTransform(pose, boneIdx, stack);
+                }
+
+                // IMMEDIATELY update LastTransform (like Brio lines 114-116)
                 var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
                 if (modelSpace != null)
                 {
-                    bone.LastRawTransform = new Transform
+                    bone.LastTransform = new Transform
                     {
                         Position = new Vector3(modelSpace->Translation.X, modelSpace->Translation.Y, modelSpace->Translation.Z),
                         Rotation = new Quaternion(modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W),
@@ -304,10 +264,11 @@ public unsafe class BonePosingService : IBonePosingService
     }
 
     /// <summary>
-    /// Updates LastTransform for all bones after reparenting partials.
-    /// This ensures face bones have correct cached transforms after following head.
+    /// Updates LastTransform for ALL bones in the skeleton.
+    /// Called ONCE after all modifications and reparenting are complete.
+    /// This matches Brio's pattern - single source of truth for LastTransform.
     /// </summary>
-    private void UpdateCachedTransformsAfterReparent(Skeleton skeleton, GameSkeleton* gameSkeleton)
+    private void UpdateAllLastTransforms(Skeleton skeleton, GameSkeleton* gameSkeleton)
     {
         var partialCount = gameSkeleton->PartialSkeletonCount;
 
@@ -342,10 +303,6 @@ public unsafe class BonePosingService : IBonePosingService
         }
     }
 
-    /// <summary>
-    /// Reparent partial skeleton roots to follow their parent bones.
-    /// This is critical for face bones to follow head movement - face skeleton is separate from body skeleton.
-    /// </summary>
     private void ReparentPartials(Skeleton skeleton, GameSkeleton* gameSkeleton)
     {
         var partialCount = gameSkeleton->PartialSkeletonCount;
@@ -367,13 +324,10 @@ public unsafe class BonePosingService : IBonePosingService
                 if (bone == null)
                     continue;
 
-                // Partial roots (not skeleton root) should follow their parent bone
                 if (bone.IsPartialRoot && !bone.IsSkeletonRoot && bone.ParentBone != null)
                 {
                     var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.Propagate);
 
-                    // Read the ACTUAL current transform from the parent bone's havok pose
-                    // Don't use LastTransform cache - it may be stale if parent wasn't explicitly modified
                     var parentBone = bone.ParentBone;
                     var parentPartial = &gameSkeleton->PartialSkeletons[parentBone.PartialId];
                     var parentPose = parentPartial->GetHavokPose(0);
@@ -384,7 +338,6 @@ public unsafe class BonePosingService : IBonePosingService
 
                     if (parentPose != null)
                     {
-                        // Read actual game state - includes all propagated transforms
                         var parentModelSpace = parentPose->AccessBoneModelSpace(parentBone.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
                         pos = new Vector3(parentModelSpace->Translation.X, parentModelSpace->Translation.Y, parentModelSpace->Translation.Z);
                         rot = new Quaternion(parentModelSpace->Rotation.X, parentModelSpace->Rotation.Y, parentModelSpace->Rotation.Z, parentModelSpace->Rotation.W);
@@ -392,7 +345,6 @@ public unsafe class BonePosingService : IBonePosingService
                     }
                     else
                     {
-                        // Fallback to cached transform if pose unavailable
                         var parent = parentBone.LastTransform;
                         pos = parent.Position;
                         rot = parent.Rotation;
@@ -407,47 +359,30 @@ public unsafe class BonePosingService : IBonePosingService
         }
     }
 
-    private void ApplyBoneTransform(hkaPose* pose, int boneIdx, BonePoseTransformInfo info, IBone? bone)
+    private void ApplyBoneTransform(hkaPose* pose, int boneIdx, BonePoseTransformInfo info)
     {
-        // Position - match Brio's ApplySnapshot exactly
+        // Delta mode: ADD to Havok state (like Brio)
+
+        // Position
         var prop = info.PropagateComponents.HasFlag(TransformComponents.Position);
         var modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
         var beforePos = new Vector3(modelSpace->Translation.X, modelSpace->Translation.Y, modelSpace->Translation.Z);
         var tempPos = beforePos + info.Transform.Position;
+        modelSpace->Translation = *(hkVector4f*)(&tempPos);
 
-        // Apply IK for position if enabled
-        if (info.IKInfo.Enabled && bone != null)
-        {
-            // Solve IK to reach target position
-            _ikService.SolveIK(pose, info.IKInfo, bone, tempPos);
-
-            // If not enforcing constraints, override with exact position after IK
-            if (!info.IKInfo.EnforceConstraints)
-            {
-                modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
-                modelSpace->Translation = *(hkVector4f*)(&tempPos);
-            }
-        }
-        else
-        {
-            // No IK - direct position write
-            modelSpace->Translation = *(hkVector4f*)(&tempPos);
-        }
-
-        // Rotation - match Brio's ApplySnapshot exactly (NO normalize!)
+        // Rotation
         prop = info.PropagateComponents.HasFlag(TransformComponents.Rotation);
         modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
         var beforeRot = new Quaternion(modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W);
-        var tempRot = beforeRot * info.Transform.Rotation;  // Quaternion multiply, no normalize
+        var tempRot = beforeRot * info.Transform.Rotation;
         modelSpace->Rotation = *(hkQuaternionf*)(&tempRot);
 
-        // Scale - match Brio's ApplySnapshot exactly
+        // Scale
         prop = info.PropagateComponents.HasFlag(TransformComponents.Scale);
         modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
         var beforeScale = new Vector3(modelSpace->Scale.X, modelSpace->Scale.Y, modelSpace->Scale.Z);
         var tempScale = beforeScale + info.Transform.Scale;
         modelSpace->Scale = *(hkVector4f*)(&tempScale);
-
     }
 
     public SkeletonPoseInfo GetPoseInfo(ISkeleton skeleton)
@@ -461,44 +396,15 @@ public unsafe class BonePosingService : IBonePosingService
         return poseInfo;
     }
 
-    public void ApplyRotation(IBone bone, Quaternion rotationDelta, bool propagate = true)
+    public void ApplyTransform(IBone bone, Transform newTransform, Transform originalTransform)
     {
-        var poseInfo = GetPoseInfo(bone.Skeleton);
-        var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
-
-        var components = propagate ? TransformComponents.Rotation : TransformComponents.None;
-        bonePoseInfo.Apply(
-            new Transform { Position = Vector3.Zero, Rotation = rotationDelta, Scale = Vector3.Zero },
-            Transform.Identity,
-            components);
-
-        OnBoneTransformChanged?.Invoke(bone);
-    }
-
-    public void ApplyPosition(IBone bone, Vector3 positionDelta, bool propagate = true)
-    {
-        var poseInfo = GetPoseInfo(bone.Skeleton);
-        var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
-
-        var components = propagate ? TransformComponents.Position : TransformComponents.None;
-        bonePoseInfo.Apply(
-            new Transform { Position = positionDelta, Rotation = Quaternion.Identity, Scale = Vector3.Zero },
-            Transform.Identity,
-            components);
-
-        OnBoneTransformChanged?.Invoke(bone);
-    }
-
-    public void ApplyTransform(IBone bone, Transform transform, Transform? originalTransform = null, TransformComponents propagate = TransformComponents.Position | TransformComponents.Rotation, bool? accumulate = null)
-    {
-        // Skip virtual bones - they don't correspond to real game bones
         if (bone is VirtualBone)
             return;
 
         var poseInfo = GetPoseInfo(bone.Skeleton);
         var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
 
-        bonePoseInfo.Apply(transform, originalTransform, propagate, accumulate);
+        bonePoseInfo.Apply(newTransform, originalTransform);
 
         OnBoneTransformChanged?.Invoke(bone);
     }
@@ -539,7 +445,6 @@ public unsafe class BonePosingService : IBonePosingService
         if (!bonePoseInfo.HasStacks)
             return null;
 
-        // Combine all stacks into a single transform
         var combined = Transform.Identity;
         foreach (var stack in bonePoseInfo.Stacks)
         {
@@ -553,25 +458,25 @@ public unsafe class BonePosingService : IBonePosingService
         return combined;
     }
 
+    /// <summary>
+    /// FinalizeSkeletonsDetour - matches Brio's FinalizeSkeletonUpdate exactly.
+    /// STEP 5: Final update for ALL modified skeletons after engine is done.
+    /// </summary>
     private void FinalizeSkeletonsDetour(nint a1)
     {
-        _finalizeSkeletonsHook!.Original(a1);  // Let game finalize first
+        _finalizeSkeletonsHook!.Original(a1);
 
         if (!_gPoseService.IsGPosing)
             return;
 
-        // DON'T re-apply transforms here - transforms are applied ONCE in UpdateBonePhysicsDetour
-        // Re-applying would double the delta (Brio only applies once and caches here)
-
-        // Take final snapshot of all skeletons that need cache updates
-        // This includes: skeletons with modifications + skeletons with visible overlays/gizmos
-        // Combine both sets to ensure all relevant skeletons are updated
+        // STEP 5: Final update for ALL modified skeletons (like Brio line 263)
+        // This takes a final snapshot now the engine is done touching skeletons.
         foreach (var actorAddress in _skeletonsToUpdate)
         {
             UpdateSkeletonCache(actorAddress);
         }
 
-        // Also update skeletons registered for cache updates (even without modifications)
+        // Also update overlay-only skeletons that don't have modifications
         foreach (var actorAddress in _skeletonsToUpdateCache)
         {
             if (!_skeletonsToUpdate.Contains(actorAddress))
@@ -617,7 +522,6 @@ public unsafe class BonePosingService : IBonePosingService
 
         var gameSkeleton = charaBase->Skeleton;
 
-        // Update LastTransform for ALL bones in modified skeletons (like Brio's UpdateCachedTransforms)
         for (int partialIdx = 0; partialIdx < gameSkeleton->PartialSkeletonCount; partialIdx++)
         {
             var partial = &gameSkeleton->PartialSkeletons[partialIdx];
@@ -635,20 +539,15 @@ public unsafe class BonePosingService : IBonePosingService
                 if (bone == null)
                     continue;
 
-                // Read with DontPropagate - get the CURRENT state, don't cascade
                 var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
                 if (modelSpace != null)
                 {
-                    var transform = new Transform
+                    bone.LastTransform = new Transform
                     {
                         Position = new Vector3(modelSpace->Translation.X, modelSpace->Translation.Y, modelSpace->Translation.Z),
                         Rotation = new Quaternion(modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W),
                         Scale = new Vector3(modelSpace->Scale.X, modelSpace->Scale.Y, modelSpace->Scale.Z)
                     };
-                    bone.LastTransform = transform;
-                    // For skeletons updated via cache (not through ApplySkeletonTransforms),
-                    // raw and post-reparent are the same since we didn't do any reparenting
-                    bone.LastRawTransform = transform;
                 }
             }
         }
@@ -656,9 +555,6 @@ public unsafe class BonePosingService : IBonePosingService
 
     public void SnapshotSkeleton(ISkeleton skeleton)
     {
-        // Just mark skeleton for update - the freeze already stops animations
-        // We don't need to apply any transforms until the user actually modifies a bone
-        // This matches Brio's approach: freezing + zero deltas = preserved state
         _skeletonsToUpdate.Add(skeleton.Actor.Address);
     }
 

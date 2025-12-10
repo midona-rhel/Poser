@@ -1,3 +1,4 @@
+using Poser.Core;
 using Poser.Entities;
 using Poser.Services;
 
@@ -29,11 +30,15 @@ public class TransformBoneAction : IHistoryAction
 
     public void Execute()
     {
-        _bonePosingService.ApplyTransform(_bone, _newTransform);
+        // Reset and apply the new transform as a delta from identity
+        _bonePosingService.ResetBone(_bone);
+        _bonePosingService.ApplyTransform(_bone, _newTransform, Transform.Identity);
     }
 
     public void Undo()
     {
-        _bonePosingService.ApplyTransform(_bone, _oldTransform);
+        // Reset and apply the old transform as a delta from identity
+        _bonePosingService.ResetBone(_bone);
+        _bonePosingService.ApplyTransform(_bone, _oldTransform, Transform.Identity);
     }
 }

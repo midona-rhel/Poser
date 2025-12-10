@@ -1,9 +1,8 @@
 using System.Collections.Generic;
 using System.Numerics;
-using Poser.Core;
 using Poser.Entities;
 
-namespace Poser.UI.Gizmo;
+namespace Poser.Core;
 
 /// <summary>
 /// Shared state for bone gizmo drag operations.

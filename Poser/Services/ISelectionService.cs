@@ -20,6 +20,11 @@ public interface ISelectionService
     IEntity? Primary { get; }
 
     /// <summary>
+    /// The last clicked entity, used for shift-select range operations.
+    /// </summary>
+    IEntity? LastClicked { get; }
+
+    /// <summary>
     /// Clear current selection and select a single entity.
     /// </summary>
     void Select(IEntity entity);

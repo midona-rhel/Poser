@@ -1,22 +1,4 @@
-using System.Collections.Generic;
-using Poser.Entities;
-
 namespace Poser.Services;
-
-/// <summary>
-/// Transform pivot - the center point around which transforms occur.
-/// </summary>
-public enum TransformPivot
-{
-    /// <summary>Gizmo on first selected entity's position.</summary>
-    Local,
-    /// <summary>Gizmo on parent of first selected (fallback to entity if no parent).</summary>
-    Parent,
-    /// <summary>Gizmo at average position of all selected entities.</summary>
-    Average,
-    /// <summary>Gizmo at selected orbit target entity.</summary>
-    Target
-}
 
 /// <summary>
 /// Transform orientation - which coordinate axes to use for transforms.
@@ -26,9 +8,7 @@ public enum TransformOrientation
     /// <summary>Use the object's local coordinate axes.</summary>
     Local,
     /// <summary>Use world coordinate axes.</summary>
-    Global,
-    /// <summary>Use the parent bone's coordinate axes.</summary>
-    Parent
+    Global
 }
 
 /// <summary>
@@ -58,29 +38,29 @@ public enum TransformTool
 }
 
 /// <summary>
-/// Symmetry mode for paired bones (left/right).
-/// </summary>
-public enum SymmetryMode
-{
-    /// <summary>No symmetry - only transform selected bone.</summary>
-    Off,
-    /// <summary>Copy - paired bone gets the same transform.</summary>
-    Copy,
-    /// <summary>Mirror - paired bone gets mirrored transform across body center.</summary>
-    Mirror
-}
-
-/// <summary>
 /// Skeleton visualization mode for the overlay.
 /// </summary>
 public enum SkeletonViewMode
 {
-    /// <summary>Simple dots with lines (Ktisis-style, default).</summary>
-    Dots,
+    /// <summary>Simple dots with lines (Ktisis/Brio-style, default).</summary>
+    Default,
     /// <summary>Blender-style bone shapes (diamond/octahedra pointing to child).</summary>
     Octahedra,
     /// <summary>Only balls at joint positions, no connecting geometry.</summary>
     Joints
+}
+
+/// <summary>
+/// Symmetry mode for paired bone transforms (_l/_r suffix bones).
+/// </summary>
+public enum SymmetryMode
+{
+    /// <summary>No symmetry - only transform selected bones.</summary>
+    Off,
+    /// <summary>Paired bone receives the same transform (both arms up identically).</summary>
+    Copy,
+    /// <summary>Paired bone receives mirrored transform (left arm up = right arm down).</summary>
+    Mirror
 }
 
 /// <summary>
@@ -91,9 +71,6 @@ public enum SkeletonViewMode
 /// </summary>
 public interface IEditorState
 {
-    /// <summary>Transform pivot - the center point for transforms.</summary>
-    TransformPivot TransformPivot { get; set; }
-
     /// <summary>Transform orientation - which axes to use for transforms.</summary>
     TransformOrientation TransformOrientation { get; set; }
 
@@ -106,24 +83,12 @@ public interface IEditorState
     /// <summary>Bone display mode - hierarchy or category grouping.</summary>
     BoneDisplayMode BoneDisplayMode { get; set; }
 
-    /// <summary>Symmetry mode for paired bones (left/right).</summary>
-    SymmetryMode SymmetryMode { get; set; }
-
     /// <summary>Skeleton visualization mode for the overlay.</summary>
     SkeletonViewMode SkeletonViewMode { get; set; }
 
-    /// <summary>When true, only show selected bones and their symmetry pairs in the overlay.</summary>
+    /// <summary>When true, only show selected bones in the overlay.</summary>
     bool ShowSelectedBonesOnly { get; set; }
 
-    /// <summary>The entity to orbit around when using Target pivot mode.</summary>
-    IEntity? OrbitTarget { get; set; }
-
-    /// <summary>All pivot points in the scene.</summary>
-    IReadOnlyList<PivotPoint> PivotPoints { get; }
-
-    /// <summary>Creates a new pivot point at the specified position.</summary>
-    PivotPoint CreatePivotPoint(System.Numerics.Vector3 position, IBone? parentBone = null, string? name = null);
-
-    /// <summary>Deletes a pivot point.</summary>
-    void DeletePivotPoint(PivotPoint pivotPoint);
+    /// <summary>Symmetry mode for paired bone transforms.</summary>
+    SymmetryMode SymmetryMode { get; set; }
 }

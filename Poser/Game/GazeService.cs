@@ -499,6 +499,11 @@ public unsafe class GazeService : IGazeService, IDisposable
             Eyes = new LookAtType { LookAtTarget = new LookAtTarget { LookMode = LookMode.Position, Position = cameraPos } },
         };
 
+        // Also update gaze state so subsequent SetGazeTargetType calls don't reset to None mode
+        var state = GetGazeState(actor);
+        state.Mode = GazeTargetMode.Camera;
+        state.TargetType = GazeTargetType.All;
+
         _log.Debug($"GazeService: Enabled gaze for actor {gameObject.GameObjectId}");
     }
 

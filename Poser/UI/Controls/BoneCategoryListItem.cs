@@ -124,8 +124,7 @@ public class BoneCategoryListItem : TreeListItem
 
     public override bool IsSelected(ISelectionService selection)
     {
-        // Category is selected only if its VirtualBone is selected
-        // (not if the matching bone is selected directly - those are independent)
+        // Check if our virtual bone is selected
         return _virtualBone != null && selection.IsSelected(_virtualBone);
     }
 

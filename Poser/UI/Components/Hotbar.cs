@@ -1,4 +1,3 @@
-using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
@@ -15,16 +14,9 @@ public class Hotbar
 {
     private readonly IEditorState _editorState;
 
-    private static readonly string[] PivotNames = { "Local", "Parent", "Average", "Target" };
-    private static readonly string[] OrientationNames = { "Local", "Global", "Parent" };
-    private static readonly string[] SymmetryNames = { "Off", "Copy", "Mirror" };
-    private static readonly string[] ViewModeNames = { "Dots", "Octahedra", "Joints" };
-
-    /// <summary>
-    /// Event raised when "Select Target" button is clicked.
-    /// UI should open the target selection modal.
-    /// </summary>
-    public event Action? OnSelectTargetRequested;
+    private static readonly string[] OrientationNames = { "Local", "Global" };
+    private static readonly string[] ViewModeNames = { "Default", "Octahedra", "Joints" };
+    private static readonly string[] SymmetryModeNames = { "Off", "Copy", "Mirror" };
 
     public Hotbar(IEditorState editorState)
     {
@@ -37,7 +29,7 @@ public class Hotbar
         float comboWidth = 100f;
         float buttonSpacing = 2f;
 
-        // Transform Orientation selector (moved first per user request)
+        // Transform Orientation selector
         ImGui.AlignTextToFramePadding();
         ImGui.Text("Orientation:");
         ImGui.SameLine();
@@ -55,82 +47,20 @@ public class Hotbar
             {
                 TransformOrientation.Local => "Use the object's local coordinate axes",
                 TransformOrientation.Global => "Use world coordinate axes",
-                TransformOrientation.Parent => "Use the parent bone's coordinate axes",
                 _ => ""
             });
         }
 
-        ImGui.SameLine();
+        ImGui.SameLine(0, 12f);
 
-        // Transform Pivot selector
-        ImGui.AlignTextToFramePadding();
-        ImGui.Text("Pivot:");
-        ImGui.SameLine();
-
-        ImGui.SetNextItemWidth(comboWidth);
-        int currentPivot = (int)_editorState.TransformPivot;
-        if (ImGui.Combo("##pivot", ref currentPivot, PivotNames, PivotNames.Length))
-        {
-            _editorState.TransformPivot = (TransformPivot)currentPivot;
-        }
-
-        if (ImGui.IsItemHovered())
-        {
-            ImGui.SetTooltip(_editorState.TransformPivot switch
-            {
-                TransformPivot.Local => "Gizmo on first selected entity's position",
-                TransformPivot.Parent => "Gizmo on parent of first selected (fallback to entity if no parent)",
-                TransformPivot.Average => "Gizmo at average position of all selected entities",
-                TransformPivot.Target => "Gizmo at selected orbit target entity",
-                _ => ""
-            });
-        }
-
-        ImGui.SameLine();
-
-        // Select Target button
-        var hasTarget = _editorState.OrbitTarget != null;
-        var targetButtonColor = hasTarget
-            ? UIConstants.SkeletonColor
-            : UIConstants.DisabledTextColor;
-        var targetTooltip = hasTarget
-            ? $"Orbit Target: {_editorState.OrbitTarget!.Name} (click to change)"
-            : "Select Orbit Target";
-
-        using (ImRaii.PushColor(ImGuiCol.Text, targetButtonColor))
-        {
-            if (ImPoser.IconButton("select_target", FontAwesomeIcon.Crosshairs, new Vector2(buttonSize, buttonSize), targetTooltip))
-            {
-                OnSelectTargetRequested?.Invoke();
-            }
-        }
-
-        ImGui.SameLine();
-
-        // Reset pivot/orientation button
-        bool isDefault = _editorState.TransformPivot == TransformPivot.Local &&
-                         _editorState.TransformOrientation == TransformOrientation.Local &&
-                         _editorState.OrbitTarget == null;
-        using (ImRaii.Disabled(isDefault))
-        {
-            if (ImPoser.IconButton("reset_pivot", FontAwesomeIcon.Undo, new Vector2(buttonSize, buttonSize), "Reset to Local/Local and clear target"))
-            {
-                _editorState.TransformPivot = TransformPivot.Local;
-                _editorState.TransformOrientation = TransformOrientation.Local;
-                _editorState.OrbitTarget = null;
-            }
-        }
-
-        ImGui.SameLine(0, 16f); // Gap before symmetry
-
-        // Symmetry mode dropdown
+        // Symmetry mode selector
         ImGui.AlignTextToFramePadding();
         ImGui.Text("Symmetry:");
         ImGui.SameLine();
 
         ImGui.SetNextItemWidth(comboWidth);
         int currentSymmetry = (int)_editorState.SymmetryMode;
-        if (ImGui.Combo("##symmetry", ref currentSymmetry, SymmetryNames, SymmetryNames.Length))
+        if (ImGui.Combo("##symmetry", ref currentSymmetry, SymmetryModeNames, SymmetryModeNames.Length))
         {
             _editorState.SymmetryMode = (SymmetryMode)currentSymmetry;
         }
@@ -139,22 +69,11 @@ public class Hotbar
         {
             ImGui.SetTooltip(_editorState.SymmetryMode switch
             {
-                SymmetryMode.Off => "No symmetry - only transform selected bone",
-                SymmetryMode.Copy => "Paired bone gets the same transform (both arms up)",
-                SymmetryMode.Mirror => "Paired bone gets mirrored transform (left up = right down)",
+                SymmetryMode.Off => "No symmetry - only selected bones transform",
+                SymmetryMode.Copy => "Copy - paired bone (_l/_r) gets same transform",
+                SymmetryMode.Mirror => "Mirror - paired bone gets mirrored transform",
                 _ => ""
             });
-        }
-
-        ImGui.SameLine();
-
-        // Reset symmetry button
-        using (ImRaii.Disabled(_editorState.SymmetryMode == SymmetryMode.Off))
-        {
-            if (ImPoser.IconButton("reset_symmetry", FontAwesomeIcon.Undo, new Vector2(buttonSize, buttonSize), "Reset Symmetry to Off"))
-            {
-                _editorState.SymmetryMode = SymmetryMode.Off;
-            }
         }
 
         ImGui.SameLine(0, 16f); // Gap before tool buttons
@@ -192,7 +111,7 @@ public class Hotbar
         {
             ImGui.SetTooltip(_editorState.SkeletonViewMode switch
             {
-                SkeletonViewMode.Dots => "Skeleton View: Dots with lines",
+                SkeletonViewMode.Default => "Skeleton View: Dots with lines",
                 SkeletonViewMode.Octahedra => "Skeleton View: Blender-style bone shapes",
                 SkeletonViewMode.Joints => "Skeleton View: Joints only (no lines)",
                 _ => ""

@@ -17,8 +17,6 @@ public class ScenePanel
 {
     private readonly ISelectionService _selectionService;
     private readonly IActorSpawnService _spawnService;
-    private readonly IEditorState _editorState;
-    private readonly ICameraService _cameraService;
     private readonly EntityList _entityList;
 
     public ScenePanel(
@@ -33,8 +31,6 @@ public class ScenePanel
     {
         _selectionService = selectionService;
         _spawnService = spawnService;
-        _editorState = editorState;
-        _cameraService = cameraService;
 
         _entityList = new EntityList(
             actorManager,
@@ -100,11 +96,6 @@ public class ScenePanel
                 _spawnService.SpawnPlayerClone();
             }
 
-            if (ImGui.MenuItem("Create Pivot Point"))
-            {
-                CreatePivotPoint();
-            }
-
             ImGui.EndPopup();
         }
 
@@ -114,16 +105,12 @@ public class ScenePanel
         float trashButtonWidth = buttonSize * 4;
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - trashButtonWidth);
 
-        // Only allow deleting spawned actors or pivot points
-        bool canDeleteActor = primarySelected != null && _spawnService.IsSpawnedActor(primarySelected);
-        bool canDeletePivot = _editorState.OrbitTarget is PivotPoint;
-        bool canDelete = canDeleteActor || canDeletePivot;
+        // Only allow deleting spawned actors
+        bool canDelete = primarySelected != null && _spawnService.IsSpawnedActor(primarySelected);
 
-        string deleteTooltip = canDeleteActor
+        string deleteTooltip = canDelete
             ? "Delete selected entity"
-            : canDeletePivot
-                ? "Delete selected pivot point"
-                : "Can only delete spawned entities or pivot points";
+            : "Can only delete spawned entities";
 
         using (ImRaii.Disabled(!canDelete))
         {
@@ -134,34 +121,11 @@ public class ScenePanel
                 deleteTooltip,
                 canDelete))
             {
-                if (canDeleteActor && primarySelected != null)
+                if (canDelete && primarySelected != null)
                 {
                     _spawnService.DestroyActor(primarySelected);
                 }
-                else if (canDeletePivot && _editorState.OrbitTarget is PivotPoint pivot)
-                {
-                    _editorState.DeletePivotPoint(pivot);
-                }
             }
         }
-    }
-
-    private void CreatePivotPoint()
-    {
-        // Spawn pivot point in front of camera
-        var cameraPos = _cameraService.GetCameraPosition();
-
-        // Get camera forward direction from view matrix
-        var viewMatrix = _cameraService.GetViewMatrix();
-        // Forward vector is -Z axis of view matrix (camera looks down -Z)
-        var forward = new Vector3(-viewMatrix.M13, -viewMatrix.M23, -viewMatrix.M33);
-        forward = Vector3.Normalize(forward);
-
-        // Position pivot 3 units in front of camera
-        var pivotPos = cameraPos + forward * 3f;
-
-        var pivot = _editorState.CreatePivotPoint(pivotPos);
-        _editorState.OrbitTarget = pivot;
-        _editorState.TransformPivot = TransformPivot.Target;
     }
 }

@@ -8,9 +8,6 @@ using Dalamud.Interface.Windowing;
 using Poser.Core;
 using Poser.Entities;
 using Poser.Services;
-using Poser.UI.Gizmo;
-using Poser.UI.Gizmo.Helpers;
-using Poser.UI.Gizmo.Pivot;
 
 namespace Poser.UI;
 
@@ -26,7 +23,7 @@ internal enum GizmoTargetType
 
 /// <summary>
 /// Unified gizmo overlay window that handles both actor and bone transforms.
-/// Delegates to pivot strategies for transform application.
+/// Simple delta-based system like Brio - bones rotate around themselves.
 /// </summary>
 public class GizmoOverlayWindow : Window
 {
@@ -38,21 +35,13 @@ public class GizmoOverlayWindow : Window
     private readonly IPosingService _posingService;
     private readonly IBonePosingService _bonePosingService;
 
-    // Pivot strategies
-    private readonly LocalPivotStrategy _localPivot;
-    private readonly ParentPivotStrategy _parentPivot;
-    private readonly AveragePivotStrategy _averagePivot;
-    private readonly TargetPivotStrategy _targetPivot;
-    private readonly BoneSymmetryHandler _symmetryHandler;
-
     private const int GizmoId = 142857;
 
     // Actor gizmo state
     private Dictionary<IActor, Transform>? _actorDragStartTransforms;
 
-    // Bone gizmo state
-    private Transform? _lastFrameBoneGizmo;
-    private readonly DragState _dragState = new();
+    // Bone gizmo state - tracks transform per bone for delta calculation
+    private Dictionary<IBone, Transform>? _boneTrackingTransforms;
 
     public GizmoOverlayWindow(
         IEventBus eventBus,
@@ -79,13 +68,6 @@ public class GizmoOverlayWindow : Window
         _cameraService = cameraService;
         _posingService = posingService;
         _bonePosingService = bonePosingService;
-
-        // Initialize strategies
-        _symmetryHandler = new BoneSymmetryHandler(editorState, bonePosingService);
-        _localPivot = new LocalPivotStrategy(bonePosingService);
-        _parentPivot = new ParentPivotStrategy(bonePosingService);
-        _averagePivot = new AveragePivotStrategy(bonePosingService);
-        _targetPivot = new TargetPivotStrategy(bonePosingService, editorState);
 
         RespectCloseHotkey = false;
     }
@@ -146,9 +128,8 @@ public class GizmoOverlayWindow : Window
         var viewMatrix = _cameraService.GetViewMatrix();
         var projectionMatrix = _cameraService.GetProjectionMatrix();
 
-        var (pivotPosition, pivotRotation) = CalculateActorPivot(selectedActors, primaryActor);
-        var pivotTransform = new Transform(pivotPosition, pivotRotation, Vector3.One);
-        var modelMatrix = pivotTransform.ToMatrix();
+        var actorTransform = _posingService.GetEffectiveTransform(primaryActor);
+        var modelMatrix = actorTransform.ToMatrix();
 
         ImGuizmo.Enable(true);
         var viewMatrixCopy = viewMatrix;
@@ -162,16 +143,16 @@ public class GizmoOverlayWindow : Window
             _eventBus.Publish(new TransformDragStartedEvent(selectedActors.Cast<IEntity>().ToList()));
         }
 
-        var gizmoMode = _editorState.TransformOrientation == TransformOrientation.Local
-            ? ImGuizmoMode.Local
-            : ImGuizmoMode.World;
+        var gizmoMode = _editorState.TransformOrientation == TransformOrientation.Global
+            ? ImGuizmoMode.World
+            : ImGuizmoMode.Local;
 
         var gizmoOperation = GetGizmoOperation();
 
         if (ImGuizmo.Manipulate(ref viewMatrixCopy, ref projectionMatrix, gizmoOperation, gizmoMode, ref modelMatrix))
         {
-            var newPivotTransform = Transform.FromMatrix(modelMatrix);
-            ApplyActorPivotTransform(selectedActors, primaryActor, pivotTransform, newPivotTransform);
+            var newTransform = Transform.FromMatrix(modelMatrix);
+            _posingService.SetTransformOverride(primaryActor, newTransform);
         }
 
         if (!isUsing && _actorDragStartTransforms != null)
@@ -183,10 +164,53 @@ public class GizmoOverlayWindow : Window
 
     private void DrawBoneGizmo()
     {
+        // Get all selected bones and virtual bones
         var selectedBones = _selectionService.GetSelected<IBone>().ToList();
         if (selectedBones.Count == 0)
             return;
 
+        // Separate VirtualBones from regular bones
+        var virtualBones = selectedBones.OfType<VirtualBone>().ToList();
+        var regularBones = selectedBones.Where(b => b is not VirtualBone).ToList();
+        var explicitlySelectedNames = regularBones.Select(b => b.BoneName).ToHashSet();
+
+        // Expand virtual bones to their constituent bones
+        // Track by bone name to handle deduplication
+        var addedBoneNames = new HashSet<string>();
+        var expandedBones = new List<IBone>();
+
+        foreach (var vb in virtualBones)
+        {
+            foreach (var constituent in vb.ConstituentBones)
+            {
+                if (addedBoneNames.Add(constituent.BoneName))
+                    expandedBones.Add(constituent);
+            }
+        }
+
+        // Add regular bones that aren't already covered by a VirtualBone (by name)
+        foreach (var bone in regularBones)
+        {
+            if (addedBoneNames.Add(bone.BoneName))
+                expandedBones.Add(bone);
+        }
+
+        if (expandedBones.Count == 0)
+            return;
+
+        // Filter to root bones for VirtualBone constituents only
+        // Explicitly selected bones are always transformed, even if their parent is also selected
+        var rootBones = expandedBones.Where(b =>
+        {
+            // Always include explicitly selected bones
+            if (explicitlySelectedNames.Contains(b.BoneName))
+                return true;
+
+            // For VirtualBone constituents, only include if parent is not in selection
+            return b.ParentBone == null || !addedBoneNames.Contains(b.ParentBone.BoneName);
+        }).ToList();
+
+        // Use first selected bone for gizmo display (could be VirtualBone's pivot or first regular)
         var primaryBone = selectedBones[0];
         var skeleton = primaryBone.Skeleton as Skeleton;
         if (skeleton == null || !skeleton.IsValid)
@@ -203,20 +227,31 @@ public class GizmoOverlayWindow : Window
         var modelMatrix = skeleton.GetModelMatrix();
         worldViewMatrix = Matrix4x4.Multiply(modelMatrix, worldViewMatrix);
 
-        var (pivotPosition, pivotOrientation) = CalculateBonePivot(selectedBones, primaryBone);
-        var gizmoTransform = new Transform(pivotPosition, pivotOrientation, Vector3.One);
+        // Get primary bone's ACTUAL current transform for gizmo - always use real position, not cached
+        var currentTransform = primaryBone.LastTransform;
 
-        var lastObserved = _lastFrameBoneGizmo ?? gizmoTransform;
-        var lastMatrix = lastObserved.ToMatrix();
+        // Track per-bone for drag events only (not for baseline calculation)
+        if (_boneTrackingTransforms == null)
+        {
+            _boneTrackingTransforms = new Dictionary<IBone, Transform>();
+        }
+
+        // Gizmo always uses current actual position - no stale baseline
+        var lastMatrix = currentTransform.ToMatrix();
 
         ImGuizmo.Enable(isFrozen);
 
         bool isUsing = ImGuizmo.IsUsing();
 
-        // Capture drag start state
-        if (isUsing && !_dragState.IsActive && isFrozen)
+        // Publish drag start event
+        if (isUsing && _boneTrackingTransforms.Count == 0 && isFrozen)
         {
-            CaptureDragStartState(selectedBones, skeleton, gizmoTransform);
+            foreach (var bone in rootBones)
+            {
+                _boneTrackingTransforms[bone] = bone.LastTransform;
+            }
+            _boneTrackingTransforms[primaryBone] = currentTransform;
+            _eventBus.Publish(new TransformDragStartedEvent(rootBones.Cast<IEntity>().ToList()));
         }
 
         var gizmoMode = _editorState.TransformOrientation == TransformOrientation.Global
@@ -224,87 +259,139 @@ public class GizmoOverlayWindow : Window
             : ImGuizmoMode.Local;
 
         var gizmoOperation = GetGizmoOperation();
-        Transform? newTransform = null;
 
         if (ImGuizmo.Manipulate(ref worldViewMatrix, ref projectionMatrix, gizmoOperation, gizmoMode, ref lastMatrix))
         {
-            newTransform = Transform.FromMatrix(lastMatrix);
-            _lastFrameBoneGizmo = newTransform;
-        }
+            var newTransform = Transform.FromMatrix(lastMatrix);
 
-        // Apply transform
-        if (newTransform != null && isFrozen)
-        {
-            var expandedBones = VirtualBoneExpander.Expand(selectedBones);
-            var selectedBoneNames = new HashSet<string>(expandedBones.Select(b => b.BoneName));
-
-            var strategy = GetPivotStrategy();
-            strategy.Apply(expandedBones, skeleton, lastObserved, newTransform.Value, _dragState, _symmetryHandler, selectedBoneNames);
-        }
-
-        // Finish drag
-        if (_lastFrameBoneGizmo.HasValue && !isUsing)
-        {
-            if (_dragState.IsActive)
-                _eventBus.Publish(new TransformDragEndedEvent());
-
-            _lastFrameBoneGizmo = null;
-            _dragState.Clear();
-        }
-    }
-
-    private void CaptureDragStartState(List<IBone> selectedBones, Skeleton skeleton, Transform gizmoTransform)
-    {
-        _dragState.Initialize(gizmoTransform);
-
-        var expandedForHistory = VirtualBoneExpander.Expand(selectedBones);
-
-        // Capture relative positions, rotations, parent positions, and full transforms
-        foreach (var bone in expandedForHistory)
-        {
-            if (CrossPartialHelper.IsCrossPartialBone(bone) && bone is Bone boneEntity)
+            if (isFrozen)
             {
-                // Use raw space for cross-partial bones
-                var rawParentPos = CrossPartialHelper.GetEffectiveParentRawPosition(bone);
-                _dragState.RelativePositions![bone] = boneEntity.LastRawTransform.Position - rawParentPos;
-                _dragState.RelativeToGizmo![bone] = boneEntity.LastRawTransform.Position - gizmoTransform.Position;
-                _dragState.BoneRotations![bone] = boneEntity.LastRawTransform.Rotation;
-                _dragState.ParentPositions![bone] = rawParentPos;
-                _dragState.BoneTransforms![bone] = boneEntity.LastRawTransform;
-            }
-            else
-            {
-                var parentPos = CrossPartialHelper.GetEffectiveParentPosition(bone);
-                _dragState.RelativePositions![bone] = bone.LastTransform.Position - parentPos;
-                _dragState.RelativeToGizmo![bone] = bone.LastTransform.Position - gizmoTransform.Position;
-                _dragState.BoneRotations![bone] = bone.LastTransform.Rotation;
-                _dragState.ParentPositions![bone] = parentPos;
-                _dragState.BoneTransforms![bone] = bone.LastTransform;
+                // Primary bone: use ACTUAL current position as baseline (not cached)
+                _bonePosingService.ApplyTransform(primaryBone, newTransform, currentTransform);
+
+                // Secondary bones: apply same relative change using their ACTUAL positions
+                foreach (var bone in rootBones.Where(b => b != primaryBone))
+                {
+                    var boneCurrentTransform = bone.LastTransform;  // ACTUAL position, not cached
+                    var boneNewTransform = CalculateSecondaryBoneTransform(
+                        currentTransform, newTransform, boneCurrentTransform);
+                    _bonePosingService.ApplyTransform(bone, boneNewTransform, boneCurrentTransform);
+                }
+
+                // Apply symmetry transforms using actual positions
+                ApplySymmetryTransforms(primaryBone, currentTransform, newTransform, skeleton, addedBoneNames);
             }
         }
 
-        // Include paired bones for history
-        var allBonesForHistory = new List<IBone>(expandedForHistory);
-        allBonesForHistory.AddRange(_symmetryHandler.GetPairedBones(expandedForHistory, skeleton));
-
-        foreach (var bone in allBonesForHistory)
+        // End drag
+        if (_boneTrackingTransforms.Count > 0 && !isUsing)
         {
-            var mod = _bonePosingService.GetModification(bone);
-            _dragState.StartModifications![bone] = mod ?? new Transform { Position = Vector3.Zero, Rotation = Quaternion.Identity, Scale = Vector3.Zero };
+            _eventBus.Publish(new TransformDragEndedEvent());
+            _boneTrackingTransforms.Clear();
         }
-
-        _eventBus.Publish(new TransformDragStartedEvent(allBonesForHistory.Cast<IEntity>().ToList()));
     }
 
-    private IPivotStrategy GetPivotStrategy()
+    /// <summary>
+    /// Calculate the new transform for a secondary bone based on primary bone's change.
+    /// Uses Brio's formulas: additive position/scale, Conjugate multiplication for rotation.
+    /// </summary>
+    private static Transform CalculateSecondaryBoneTransform(
+        Transform primaryBefore, Transform primaryAfter, Transform secondaryBefore)
     {
-        return _editorState.TransformPivot switch
+        // Position: add the same offset (ADDITIVE)
+        var positionDelta = primaryAfter.Position - primaryBefore.Position;
+
+        // Rotation: apply the same rotation delta using Brio's formula
+        // Conjugate(before) * after gives the relative rotation
+        var rotationDelta = Quaternion.Normalize(
+            Quaternion.Conjugate(primaryBefore.Rotation) * primaryAfter.Rotation);
+
+        // Scale: add the same scale change (ADDITIVE, not ratio!)
+        var scaleDelta = primaryAfter.Scale - primaryBefore.Scale;
+
+        return new Transform
         {
-            TransformPivot.Local => _localPivot,
-            TransformPivot.Parent => _parentPivot,
-            TransformPivot.Average => _averagePivot,
-            TransformPivot.Target => _targetPivot,
-            _ => _localPivot
+            Position = secondaryBefore.Position + positionDelta,
+            Rotation = Quaternion.Normalize(secondaryBefore.Rotation * rotationDelta),
+            Scale = secondaryBefore.Scale + scaleDelta
+        };
+    }
+
+    /// <summary>
+    /// Gets the paired bone name for symmetry (swaps _l/_r suffix).
+    /// </summary>
+    private static string? GetPairedBoneName(string boneName)
+    {
+        if (boneName.EndsWith("_l")) return boneName[..^2] + "_r";
+        if (boneName.EndsWith("_r")) return boneName[..^2] + "_l";
+        return null;
+    }
+
+    /// <summary>
+    /// Apply symmetry transforms to the paired bone.
+    /// </summary>
+    private void ApplySymmetryTransforms(
+        IBone primaryBone,
+        Transform primaryBefore,
+        Transform primaryAfter,
+        Skeleton skeleton,
+        HashSet<string> allSelectedBoneNames)
+    {
+        if (_editorState.SymmetryMode == SymmetryMode.Off)
+            return;
+
+        var pairedName = GetPairedBoneName(primaryBone.BoneName);
+        if (pairedName == null)
+            return;
+
+        // Don't apply if paired bone is already selected
+        if (allSelectedBoneNames.Contains(pairedName))
+            return;
+
+        var pairedBone = skeleton.Bones.FirstOrDefault(b => b.BoneName == pairedName);
+        if (pairedBone == null)
+            return;
+
+        // Use ACTUAL current position, not cached
+        var pairedCurrentTransform = pairedBone.LastTransform;
+
+        Transform pairedNewTransform;
+        if (_editorState.SymmetryMode == SymmetryMode.Copy)
+        {
+            // Copy: apply the same change
+            pairedNewTransform = CalculateSecondaryBoneTransform(
+                primaryBefore, primaryAfter, pairedCurrentTransform);
+        }
+        else
+        {
+            // Mirror: apply mirrored change
+            var mirroredAfter = MirrorTransform(primaryBefore, primaryAfter);
+            pairedNewTransform = CalculateSecondaryBoneTransform(
+                primaryBefore, mirroredAfter, pairedCurrentTransform);
+        }
+
+        _bonePosingService.ApplyTransform(pairedBone, pairedNewTransform, pairedCurrentTransform);
+    }
+
+    /// <summary>
+    /// Mirror a transform change for symmetry mode.
+    /// </summary>
+    private static Transform MirrorTransform(Transform before, Transform after)
+    {
+        // Mirror position delta: negate X
+        var positionDelta = after.Position - before.Position;
+        var mirroredPositionDelta = new Vector3(-positionDelta.X, positionDelta.Y, positionDelta.Z);
+
+        // Mirror rotation using Brio's approach: Conjugate the rotation delta
+        var rotationDelta = Quaternion.Normalize(
+            Quaternion.Conjugate(before.Rotation) * after.Rotation);
+        var mirroredRotationDelta = Quaternion.Conjugate(rotationDelta);
+
+        return new Transform
+        {
+            Position = before.Position + mirroredPositionDelta,
+            Rotation = Quaternion.Normalize(before.Rotation * mirroredRotationDelta),
+            Scale = after.Scale // Scale doesn't need mirroring
         };
     }
 
@@ -318,106 +405,5 @@ public class GizmoOverlayWindow : Window
             TransformTool.Universal => ImGuizmoOperation.Translate | ImGuizmoOperation.Rotate | ImGuizmoOperation.Scale,
             _ => ImGuizmoOperation.Rotate
         };
-    }
-
-    private (Vector3 position, Quaternion rotation) CalculateBonePivot(List<IBone> selectedBones, IBone primaryBone)
-    {
-        Vector3 pivotPosition = _editorState.TransformPivot switch
-        {
-            TransformPivot.Local => primaryBone.LastTransform.Position,
-            TransformPivot.Parent => CrossPartialHelper.GetEffectiveParentPosition(primaryBone),
-            TransformPivot.Average => CalculateAveragePosition(selectedBones),
-            TransformPivot.Target => GetTargetPivotPosition(primaryBone),
-            _ => primaryBone.LastTransform.Position
-        };
-
-        Quaternion pivotOrientation = _editorState.TransformOrientation switch
-        {
-            TransformOrientation.Global => Quaternion.Identity,
-            TransformOrientation.Local => primaryBone.LastTransform.Rotation,
-            TransformOrientation.Parent => CrossPartialHelper.GetEffectiveParentRotation(primaryBone),
-            _ => primaryBone.LastTransform.Rotation
-        };
-
-        return (pivotPosition, pivotOrientation);
-    }
-
-    private Vector3 GetTargetPivotPosition(IBone fallbackBone)
-    {
-        var orbitTarget = _editorState.OrbitTarget;
-        return orbitTarget?.Transform.Position ?? fallbackBone.LastTransform.Position;
-    }
-
-    private static Vector3 CalculateAveragePosition(List<IBone> bones)
-    {
-        if (bones.Count == 0)
-            return Vector3.Zero;
-
-        var average = Vector3.Zero;
-        foreach (var bone in bones)
-            average += bone.LastTransform.Position;
-        return average / bones.Count;
-    }
-
-    private (Vector3 position, Quaternion rotation) CalculateActorPivot(List<IActor> selectedActors, IActor primaryActor)
-    {
-        Vector3 pivotPosition = _editorState.TransformPivot switch
-        {
-            TransformPivot.Local => _posingService.GetEffectiveTransform(primaryActor).Position,
-            TransformPivot.Parent => _posingService.GetEffectiveTransform(primaryActor).Position,
-            TransformPivot.Average => CalculateActorAveragePosition(selectedActors),
-            TransformPivot.Target => _editorState.OrbitTarget?.Transform.Position ?? _posingService.GetEffectiveTransform(primaryActor).Position,
-            _ => _posingService.GetEffectiveTransform(primaryActor).Position
-        };
-
-        Quaternion pivotRotation = _editorState.TransformOrientation switch
-        {
-            TransformOrientation.Global => Quaternion.Identity,
-            TransformOrientation.Local => _posingService.GetEffectiveTransform(primaryActor).Rotation,
-            TransformOrientation.Parent => _posingService.GetEffectiveTransform(primaryActor).Rotation,
-            _ => _posingService.GetEffectiveTransform(primaryActor).Rotation
-        };
-
-        return (pivotPosition, pivotRotation);
-    }
-
-    private Vector3 CalculateActorAveragePosition(List<IActor> actors)
-    {
-        if (actors.Count == 0)
-            return Vector3.Zero;
-
-        var average = Vector3.Zero;
-        foreach (var actor in actors)
-            average += _posingService.GetEffectiveTransform(actor).Position;
-        return average / actors.Count;
-    }
-
-    private void ApplyActorPivotTransform(List<IActor> selectedActors, IActor primaryActor, Transform oldPivot, Transform newPivot)
-    {
-        var positionDelta = newPivot.Position - oldPivot.Position;
-        var rotationDelta = newPivot.Rotation * Quaternion.Inverse(oldPivot.Rotation);
-
-        if (_editorState.TransformPivot == TransformPivot.Local)
-        {
-            foreach (var actor in selectedActors)
-            {
-                var actorTransform = _posingService.GetEffectiveTransform(actor);
-                actorTransform.Position += positionDelta;
-                actorTransform.Rotation = rotationDelta * actorTransform.Rotation;
-                _posingService.SetTransformOverride(actor, actorTransform);
-            }
-        }
-        else
-        {
-            foreach (var actor in selectedActors)
-            {
-                var actorTransform = _posingService.GetEffectiveTransform(actor);
-                var relativePos = actorTransform.Position - oldPivot.Position;
-                var rotatedRelativePos = Vector3.Transform(relativePos, rotationDelta);
-                actorTransform.Position = newPivot.Position + rotatedRelativePos;
-                actorTransform.Rotation = rotationDelta * actorTransform.Rotation;
-                _posingService.SetTransformOverride(actor, actorTransform);
-            }
-        }
     }
 }

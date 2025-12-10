@@ -1,7 +1,7 @@
 using System.Numerics;
 using Poser.Entities;
 
-namespace Poser.UI.Gizmo.Helpers;
+namespace Poser.Core.Helpers;
 
 /// <summary>
 /// Utilities for handling cross-partial bones (e.g., face bones parented to head).

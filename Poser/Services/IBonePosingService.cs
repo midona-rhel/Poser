@@ -6,6 +6,7 @@ namespace Poser.Services;
 
 /// <summary>
 /// Service for manipulating bone transforms.
+/// Simple delta-based system like Brio - bones rotate around themselves.
 /// </summary>
 public interface IBonePosingService : IDisposable
 {
@@ -20,30 +21,12 @@ public interface IBonePosingService : IDisposable
     SkeletonPoseInfo GetPoseInfo(ISkeleton skeleton);
 
     /// <summary>
-    /// Apply a rotation delta to a bone.
-    /// </summary>
-    /// <param name="bone">The bone to rotate.</param>
-    /// <param name="rotationDelta">The rotation delta to apply.</param>
-    /// <param name="propagate">Whether to propagate to child bones.</param>
-    void ApplyRotation(IBone bone, System.Numerics.Quaternion rotationDelta, bool propagate = true);
-
-    /// <summary>
-    /// Apply a position delta to a bone.
-    /// </summary>
-    /// <param name="bone">The bone to move.</param>
-    /// <param name="positionDelta">The position delta to apply.</param>
-    /// <param name="propagate">Whether to propagate to child bones.</param>
-    void ApplyPosition(IBone bone, System.Numerics.Vector3 positionDelta, bool propagate = true);
-
-    /// <summary>
-    /// Apply a full transform to a bone.
+    /// Apply a transform to a bone. Calculates delta from original and stacks it.
     /// </summary>
     /// <param name="bone">The bone to transform.</param>
-    /// <param name="transform">The transform delta to apply.</param>
-    /// <param name="originalTransform">The original transform before modification (pass null to apply delta directly).</param>
-    /// <param name="propagate">Components to propagate.</param>
-    /// <param name="accumulate">If true, accumulate with existing. If false, replace. If null, auto-detect based on whether original is provided.</param>
-    void ApplyTransform(IBone bone, Transform transform, Transform? originalTransform = null, TransformComponents propagate = TransformComponents.Position | TransformComponents.Rotation, bool? accumulate = null);
+    /// <param name="newTransform">The new absolute transform.</param>
+    /// <param name="originalTransform">The original transform before modification.</param>
+    void ApplyTransform(IBone bone, Transform newTransform, Transform originalTransform);
 
     /// <summary>
     /// Reset a bone to its original pose.

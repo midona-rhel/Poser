@@ -15,6 +15,9 @@ public class SelectionService : ISelectionService, IDisposable
     private readonly IEventBus _eventBus;
     private readonly List<IEntity> _selected = new();
 
+    // Track last clicked entity for shift-select range
+    private IEntity? _lastClicked;
+
     public SelectionService(IEventBus eventBus)
     {
         _eventBus = eventBus;
@@ -26,6 +29,11 @@ public class SelectionService : ISelectionService, IDisposable
     public IReadOnlyList<IEntity> Selected => _selected.AsReadOnly();
 
     public IEntity? Primary => _selected.Count > 0 ? _selected[0] : null;
+
+    /// <summary>
+    /// Gets the last clicked entity for shift-select range operations.
+    /// </summary>
+    public IEntity? LastClicked => _lastClicked;
 
     public void Select(IEntity entity)
     {
@@ -39,6 +47,7 @@ public class SelectionService : ISelectionService, IDisposable
         // Select new entity
         _selected.Add(entity);
         entity.IsSelected = true;
+        _lastClicked = entity;
 
         PublishSelectionChanged();
     }
@@ -50,6 +59,7 @@ public class SelectionService : ISelectionService, IDisposable
 
         _selected.Add(entity);
         entity.IsSelected = true;
+        _lastClicked = entity;
 
         PublishSelectionChanged();
     }
