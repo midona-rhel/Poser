@@ -115,14 +115,14 @@ public class TabbedPanel
             }
         }
 
-        // Use foreground draw list so border/shadow render on top of child windows
+        // Use foreground draw list for border and shadow (not clipped to child window)
         var fgDrawList = ImGui.GetForegroundDrawList();
 
         // Draw custom content panel border that skips active tab area
         DrawContentBorder(fgDrawList, contentPanelPos, contentPanelEnd, tabBarStart, availableSize.Y,
             activeTabTop, activeTabBottom, borderColorU32);
 
-        // Draw content panel shadow (outside, all sides)
+        // Draw content panel shadow
         DrawContentPanelShadow(fgDrawList, contentPanelPos, contentPanelEnd, tabBarStart,
             tabHeightScaled, spacingScaled);
     }
@@ -176,6 +176,8 @@ public class TabbedPanel
         drawList.AddRectFilled(tabPos, tabEnd, contentBgU32, roundingScaled, ImDrawFlags.RoundCornersLeft);
 
         // Gradient overlay - SelectionActive fading from left to middle
+        // Clip to rounded rect
+        drawList.PushClipRect(tabPos, tabEnd, true);
         var selectionColor = UIColors.SelectionActive;
         var gradientStart = tabPos;
         var gradientEnd = new Vector2(tabPos.X + tabSize.X * 0.5f, tabEnd.Y);
@@ -184,6 +186,7 @@ public class TabbedPanel
         drawList.AddRectFilledMultiColor(
             gradientStart, gradientEnd,
             gradientColorStart, gradientColorEnd, gradientColorEnd, gradientColorStart);
+        drawList.PopClipRect();
 
         // Outline: top, left, bottom only (no right - connects to content)
         // Top
@@ -218,24 +221,16 @@ public class TabbedPanel
     private static void DrawInactiveTab(ImDrawListPtr drawList, Vector2 tabPos, Vector2 tabEnd, Vector2 tabSize,
         bool isHovered, uint brightBorderU32, float roundingScaled)
     {
-        // Inactive tab: darker background with drop shadow
-        var shadowOffset = new Vector2(2, 2) * ImGuiHelpers.GlobalScale;
-        var shadowColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0, 0, 0.4f));
-        drawList.AddRectFilled(
-            tabPos + shadowOffset,
-            tabEnd + shadowOffset,
-            shadowColor,
-            roundingScaled,
-            ImDrawFlags.RoundCornersLeft);
-
         // Background - 60% opacity of Background color for inactive state
         var bgColor = UIColors.Background with { W = UIColors.Background.W * 0.6f };
         var bgColorU32 = ImGui.ColorConvertFloat4ToU32(bgColor);
         drawList.AddRectFilled(tabPos, tabEnd, bgColorU32, roundingScaled, ImDrawFlags.RoundCornersLeft);
 
         // Gradient overlay on hover - SelectionHovered fading from left to middle
+        // Clip to rounded rect
         if (isHovered)
         {
+            drawList.PushClipRect(tabPos, tabEnd, true);
             var selectionColor = UIColors.SelectionHovered;
             var gradientStart = tabPos;
             var gradientEnd = new Vector2(tabPos.X + tabSize.X * 0.5f, tabEnd.Y);
@@ -244,6 +239,7 @@ public class TabbedPanel
             drawList.AddRectFilledMultiColor(
                 gradientStart, gradientEnd,
                 gradientColorStart, gradientColorEnd, gradientColorEnd, gradientColorStart);
+            drawList.PopClipRect();
         }
 
         // Full outline (all sides) with brighter border

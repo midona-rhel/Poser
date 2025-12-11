@@ -54,7 +54,7 @@ public static class SettingsControls
         ImGui.Text(label);
         ImGui.SameLine(labelWidth * ImGuiHelpers.GlobalScale);
         var colorVec = ImGui.ColorConvertU32ToFloat4(color);
-        if (ImGui.ColorEdit4($"##{label}", ref colorVec, ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.AlphaBar))
+        if (ImGui.ColorEdit4($"##{label}", ref colorVec, ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.NoAlpha))
         {
             color = ImGui.ColorConvertFloat4ToU32(colorVec);
             ConfigurationService.Instance.Save();
@@ -115,7 +115,7 @@ public static class SettingsControls
 
         // Always show editable color picker - switches to custom when edited
         var resolvedColor = entry.Resolve();
-        var flags = ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.AlphaBar;
+        var flags = ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.NoAlpha;
 
         if (ImGui.ColorEdit4($"##color_{label}", ref resolvedColor, flags))
         {
