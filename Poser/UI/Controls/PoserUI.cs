@@ -1,0 +1,413 @@
+using System;
+using System.Numerics;
+using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility;
+using Poser.Config;
+
+namespace Poser.UI.Controls;
+
+/// <summary>
+/// Common UI layout helpers for Poser controls.
+/// </summary>
+public static class PoserUI
+{
+    private const float DefaultLabelWidth = 140f;
+    private const float RowSpacing = 15f;
+    private const float Margin = 16f;
+
+    /// <summary>
+    /// Gets the combined UI scale (GlobalScale * custom scale from config).
+    /// Use this instead of ImGuiHelpers.GlobalScale for Poser UI elements.
+    /// </summary>
+    public static float Scale => ImGuiHelpers.GlobalScale * ConfigurationService.Instance.Config.UI.Scale;
+
+    /// <summary>
+    /// Creates a new row builder for flexible row layouts.
+    /// </summary>
+    /// <param name="height">Height of the row.</param>
+    /// <returns>A RowBuilder that must be disposed.</returns>
+    public static RowBuilder Row(float height) => new(height);
+
+    /// <summary>
+    /// Adds top margin to content. Call at start of content area.
+    /// </summary>
+    public static void TopMargin()
+    {
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + Margin * ImGuiHelpers.GlobalScale);
+    }
+
+    /// <summary>
+    /// Adds bottom margin to content. Call at end of content area.
+    /// </summary>
+    public static void BottomMargin()
+    {
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + Margin * ImGuiHelpers.GlobalScale);
+    }
+
+    /// <summary>
+    /// Gets the scrubber control height.
+    /// </summary>
+    public static float ScrubberHeight => 24f * ImGuiHelpers.GlobalScale;
+
+    /// <summary>
+    /// Gets the standard ImGui frame height (for sliders, checkboxes, color pickers, etc).
+    /// </summary>
+    public static float FrameHeight => ImGui.GetFrameHeight();
+
+    /// <summary>
+    /// Gets the button height.
+    /// </summary>
+    public static float ButtonHeight => 24f * ImGuiHelpers.GlobalScale;
+
+    /// <summary>
+    /// Gets the dropdown height.
+    /// </summary>
+    public static float DropdownHeight => PoserDropdown.Height;
+
+    /// <summary>
+    /// Gets the margin constant.
+    /// </summary>
+    public static float MarginScaled => Margin * ImGuiHelpers.GlobalScale;
+
+    /// <summary>
+    /// Gets the row spacing constant.
+    /// </summary>
+    internal static float RowSpacingScaled => RowSpacing * ImGuiHelpers.GlobalScale;
+}
+
+/// <summary>
+/// Builder for flexible row layouts with multiple cells.
+/// </summary>
+public sealed class RowBuilder : IDisposable
+{
+    private readonly float _height;
+    private readonly Vector2 _startPos;
+    private readonly float _marginScaled;
+    private readonly float _availableWidth;
+    private float _currentX;
+    private float _rightX; // For right-aligned elements after Stretch
+
+    internal RowBuilder(float height)
+    {
+        _height = height;
+        _startPos = ImGui.GetCursorPos();
+        _marginScaled = PoserUI.MarginScaled;
+        _availableWidth = ImGui.GetContentRegionAvail().X - _marginScaled * 2;
+        _currentX = _startPos.X + _marginScaled;
+        _rightX = _startPos.X + _marginScaled + _availableWidth; // Right edge
+    }
+
+    /// <summary>
+    /// Adds a text label, vertically centered.
+    /// </summary>
+    /// <param name="text">Label text.</param>
+    /// <param name="width">Fixed width. If 0, uses text width.</param>
+    public RowBuilder Label(string text, float width = 0)
+    {
+        float w = width > 0 ? width * ImGuiHelpers.GlobalScale : ImGui.CalcTextSize(text).X;
+        float textY = _startPos.Y + (_height - ImGui.GetTextLineHeight()) / 2f;
+        ImGui.SetCursorPos(new Vector2(_currentX, textY));
+        ImGui.Text(text);
+        _currentX += w;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a disabled text label (header style), vertically centered.
+    /// </summary>
+    /// <param name="text">Header text.</param>
+    public RowBuilder Header(string text)
+    {
+        float textY = _startPos.Y + (_height - ImGui.GetTextLineHeight()) / 2f;
+        ImGui.SetCursorPos(new Vector2(_currentX, textY));
+        ImGui.TextDisabled(text);
+        _currentX += ImGui.CalcTextSize(text).X;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a styled checkbox control.
+    /// </summary>
+    /// <param name="id">Unique ImGui ID.</param>
+    /// <param name="value">Checkbox value (ref).</param>
+    /// <returns>True if value changed.</returns>
+    public bool Checkbox(string id, ref bool value)
+    {
+        float w = PoserCheckbox.Size;
+        // Center checkbox vertically
+        float offsetY = (_height - w) / 2f;
+        ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y + offsetY));
+        bool changed = PoserCheckbox.Draw(id, ref value);
+        _currentX += w;
+        return changed;
+    }
+
+    /// <summary>
+    /// Adds a slider control, taking remaining width.
+    /// </summary>
+    /// <param name="id">Unique ImGui ID.</param>
+    /// <param name="value">Slider value (ref).</param>
+    /// <param name="min">Minimum value.</param>
+    /// <param name="max">Maximum value.</param>
+    /// <returns>True if value changed.</returns>
+    public bool Slider(string id, ref float value, float min, float max)
+    {
+        float w = RemainingWidth();
+        ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y));
+        ImGui.SetNextItemWidth(w);
+        bool changed = ImGui.SliderFloat(id, ref value, min, max);
+        _currentX += w;
+        return changed;
+    }
+
+    /// <summary>
+    /// Adds a color picker control.
+    /// </summary>
+    /// <param name="id">Unique ImGui ID.</param>
+    /// <param name="color">Color value as uint ABGR (ref).</param>
+    /// <param name="flags">Color edit flags.</param>
+    /// <returns>True if value changed.</returns>
+    public bool ColorEdit(string id, ref uint color, ImGuiColorEditFlags flags = ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.NoAlpha)
+    {
+        float w = ImGui.GetFrameHeight();
+        ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y));
+        var colorVec = ImGui.ColorConvertU32ToFloat4(color);
+
+        // Add padding to the color picker popup
+        float popupPadding = 8f * ImGuiHelpers.GlobalScale;
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(popupPadding, popupPadding));
+        bool changed = ImGui.ColorEdit4(id, ref colorVec, flags);
+        ImGui.PopStyleVar();
+
+        if (changed)
+            color = ImGui.ColorConvertFloat4ToU32(colorVec);
+        _currentX += w;
+        return changed;
+    }
+
+    /// <summary>
+    /// Adds a color picker control (Vector4 version).
+    /// </summary>
+    /// <param name="id">Unique ImGui ID.</param>
+    /// <param name="color">Color value as Vector4 (ref).</param>
+    /// <param name="flags">Color edit flags.</param>
+    /// <returns>True if value changed.</returns>
+    public bool ColorEdit(string id, ref Vector4 color, ImGuiColorEditFlags flags = ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.NoAlpha)
+    {
+        float w = ImGui.GetFrameHeight();
+        ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y));
+
+        // Add padding to the color picker popup
+        float popupPadding = 8f * ImGuiHelpers.GlobalScale;
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(popupPadding, popupPadding));
+        bool changed = ImGui.ColorEdit4(id, ref color, flags);
+        ImGui.PopStyleVar();
+
+        _currentX += w;
+        return changed;
+    }
+
+    /// <summary>
+    /// Adds a scrubber control, taking remaining width.
+    /// </summary>
+    /// <param name="id">Unique ImGui ID.</param>
+    /// <param name="value">Scrubber value (ref).</param>
+    /// <param name="min">Minimum value.</param>
+    /// <param name="max">Maximum value.</param>
+    /// <param name="step">Step increment for snapping. If 0, no snapping.</param>
+    /// <returns>True if value changed.</returns>
+    public bool Scrubber(string id, ref float value, float min, float max, float step = 0f)
+    {
+        float w = RemainingWidth();
+        ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y));
+        bool changed = Controls.Scrubber.Draw(id, ref value, min, max, step, w);
+        _currentX += w;
+        return changed;
+    }
+
+    /// <summary>
+    /// Adds a dropdown control with fixed width.
+    /// </summary>
+    /// <param name="id">Unique ImGui ID.</param>
+    /// <param name="currentIndex">Current selected index (ref).</param>
+    /// <param name="items">Array of item labels.</param>
+    /// <param name="width">Width of the dropdown.</param>
+    /// <returns>True if selection changed.</returns>
+    public bool Dropdown(string id, ref int currentIndex, string[] items, float width = 150f)
+    {
+        float w = width * ImGuiHelpers.GlobalScale;
+        // Center dropdown vertically
+        float offsetY = (_height - PoserDropdown.Height) / 2f;
+        ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y + offsetY));
+        bool changed = PoserDropdown.Draw(id, ref currentIndex, items, w);
+        _currentX += w;
+        return changed;
+    }
+
+    /// <summary>
+    /// Adds a dropdown control that fills remaining width.
+    /// </summary>
+    /// <param name="id">Unique ImGui ID.</param>
+    /// <param name="currentIndex">Current selected index (ref).</param>
+    /// <param name="items">Array of item labels.</param>
+    /// <returns>True if selection changed.</returns>
+    public bool DropdownFill(string id, ref int currentIndex, string[] items)
+    {
+        float w = RemainingWidth();
+        // Center dropdown vertically
+        float offsetY = (_height - PoserDropdown.Height) / 2f;
+        ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y + offsetY));
+        bool changed = PoserDropdown.Draw(id, ref currentIndex, items, w);
+        _currentX += w;
+        return changed;
+    }
+
+    /// <summary>
+    /// Adds a fixed-width spacer.
+    /// </summary>
+    /// <param name="width">Spacer width in unscaled pixels.</param>
+    public RowBuilder Spacer(float width)
+    {
+        _currentX += width * ImGuiHelpers.GlobalScale;
+        return this;
+    }
+
+    /// <summary>
+    /// Marks a stretch point. Use Right* methods after this to position elements from the right.
+    /// </summary>
+    public RowBuilder Stretch()
+    {
+        // After Stretch(), use Right* methods to draw from the right edge
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a color picker aligned to the right edge.
+    /// </summary>
+    /// <param name="id">Unique ImGui ID.</param>
+    /// <param name="color">Color value as uint ABGR (ref).</param>
+    /// <param name="flags">Color edit flags.</param>
+    /// <returns>True if value changed.</returns>
+    public bool RightColorEdit(string id, ref uint color, ImGuiColorEditFlags flags = ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.NoAlpha)
+    {
+        float w = ImGui.GetFrameHeight();
+        float padding = 4f * ImGuiHelpers.GlobalScale;
+        _rightX -= padding + w; // padding on right, then width
+        ImGui.SetCursorPos(new Vector2(_rightX, _startPos.Y));
+        var colorVec = ImGui.ColorConvertU32ToFloat4(color);
+
+        // Add padding to the color picker popup
+        float popupPadding = 8f * ImGuiHelpers.GlobalScale;
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(popupPadding, popupPadding));
+        bool changed = ImGui.ColorEdit4(id, ref colorVec, flags);
+        ImGui.PopStyleVar();
+
+        if (changed)
+            color = ImGui.ColorConvertFloat4ToU32(colorVec);
+        return changed;
+    }
+
+    /// <summary>
+    /// Adds a styled checkbox aligned to the right edge.
+    /// </summary>
+    /// <param name="id">Unique ImGui ID.</param>
+    /// <param name="value">Checkbox value (ref).</param>
+    /// <returns>True if value changed.</returns>
+    public bool RightCheckbox(string id, ref bool value)
+    {
+        float w = PoserCheckbox.Size;
+        _rightX -= w;
+        // Center checkbox vertically
+        float offsetY = (_height - w) / 2f;
+        ImGui.SetCursorPos(new Vector2(_rightX, _startPos.Y + offsetY));
+        return PoserCheckbox.Draw(id, ref value);
+    }
+
+    /// <summary>
+    /// Adds a styled button aligned to the right edge.
+    /// </summary>
+    /// <param name="id">Unique ImGui ID.</param>
+    /// <param name="label">Button label.</param>
+    /// <returns>True if clicked.</returns>
+    public bool RightButton(string id, string label)
+    {
+        float paddingX = 12f * ImGuiHelpers.GlobalScale;
+        var textSize = ImGui.CalcTextSize(label);
+        float w = textSize.X + paddingX * 2;
+        _rightX -= w;
+        ImGui.SetCursorPos(new Vector2(_rightX, _startPos.Y));
+        return PoserButton.Draw(id, label);
+    }
+
+    /// <summary>
+    /// Adds a fixed-width spacer for right-aligned elements.
+    /// </summary>
+    /// <param name="width">Spacer width in unscaled pixels.</param>
+    public RowBuilder RightSpacer(float width)
+    {
+        _rightX -= width * ImGuiHelpers.GlobalScale;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a styled button.
+    /// </summary>
+    /// <param name="id">Unique ImGui ID.</param>
+    /// <param name="label">Button label.</param>
+    /// <returns>True if clicked.</returns>
+    public bool Button(string id, string label)
+    {
+        float paddingX = 12f * ImGuiHelpers.GlobalScale;
+        var textSize = ImGui.CalcTextSize(label);
+        float w = textSize.X + paddingX * 2;
+        ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y));
+        bool clicked = PoserButton.Draw(id, label);
+        _currentX += w;
+        return clicked;
+    }
+
+    /// <summary>
+    /// Draws custom content at the current position.
+    /// </summary>
+    /// <param name="width">Width to reserve.</param>
+    /// <param name="draw">Drawing action.</param>
+    public RowBuilder Custom(float width, Action draw)
+    {
+        float w = width * ImGuiHelpers.GlobalScale;
+        ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y));
+        draw();
+        _currentX += w;
+        return this;
+    }
+
+    /// <summary>
+    /// Draws custom content that fills remaining width.
+    /// </summary>
+    /// <param name="draw">Drawing action that receives available width.</param>
+    public RowBuilder CustomFill(Action<float> draw)
+    {
+        float w = RemainingWidth();
+        ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y));
+        draw(w);
+        _currentX += w;
+        return this;
+    }
+
+    private float RemainingWidth()
+    {
+        float endX = _startPos.X + _marginScaled + _availableWidth;
+        return endX - _currentX;
+    }
+
+    /// <summary>
+    /// Finalizes the row and advances cursor for next row.
+    /// </summary>
+    public void Dispose()
+    {
+        // If stretch was used, we need to recalculate positions
+        // For now, stretch works by moving currentX to the right edge minus what came after
+        // This is a simplified implementation - full implementation would need two passes
+
+        ImGui.SetCursorPos(new Vector2(_startPos.X, _startPos.Y + _height + PoserUI.RowSpacingScaled));
+    }
+}

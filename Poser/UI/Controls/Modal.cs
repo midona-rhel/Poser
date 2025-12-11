@@ -113,8 +113,10 @@ public class Modal
 
                 // Add internal padding so content doesn't reach modal edges
                 float padding = 12f * ImGuiHelpers.GlobalScale;
+                var available = ImGui.GetContentRegionAvail();
                 ImGui.SetCursorPos(ImGui.GetCursorPos() + new Vector2(padding, padding));
-                using (ImRaii.Child("##modal_content", ImGui.GetContentRegionAvail() - new Vector2(padding, padding), false))
+                var childSize = available - new Vector2(padding * 2, padding * 2);
+                using (ImRaii.Child("##modal_content", childSize, false))
                 {
                     drawContent(modalDrawList);
                 }
@@ -178,8 +180,10 @@ public class Modal
 
                 // Add internal padding so content doesn't reach modal edges
                 float padding = 12f * ImGuiHelpers.GlobalScale;
+                var available = ImGui.GetContentRegionAvail();
                 ImGui.SetCursorPos(ImGui.GetCursorPos() + new Vector2(padding, padding));
-                using (ImRaii.Child("##modal_content", ImGui.GetContentRegionAvail() - new Vector2(padding, padding), false))
+                var childSize = available - new Vector2(padding * 2, padding * 2);
+                using (ImRaii.Child("##modal_content", childSize, false))
                 {
                     drawContent(modalDrawList);
                 }

@@ -8,6 +8,11 @@ namespace Poser.Config;
 /// </summary>
 public class UIConfiguration
 {
+    /// <summary>
+    /// UI scale multiplier (0.5 = 50%, 1.0 = 100%, 2.0 = 200%).
+    /// </summary>
+    public float Scale { get; set; } = 1.0f;
+
     // Background colors
     public UIColorEntry Background { get; set; } = new(ImGuiCol.WindowBg);
     public UIColorEntry ControlBackground { get; set; } = new(ImGuiCol.FrameBg);

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Poser.Config;
@@ -33,16 +32,25 @@ public static class SettingsControls
     /// </summary>
     public static bool SliderRow(string label, ref float value, float min, float max, float labelWidth = DefaultLabelWidth)
     {
-        ImGui.AlignTextToFramePadding();
-        ImGui.Text(label);
-        ImGui.SameLine(labelWidth * ImGuiHelpers.GlobalScale);
-        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X);
-        if (ImGui.SliderFloat($"##{label}", ref value, min, max))
-        {
+        using var row = PoserUI.Row(PoserUI.FrameHeight);
+        row.Label(label, labelWidth);
+        bool changed = row.Slider($"##{label}", ref value, min, max);
+        if (changed)
             ConfigurationService.Instance.Save();
-            return true;
-        }
-        return false;
+        return changed;
+    }
+
+    /// <summary>
+    /// Draws a labeled scrubber row for numerical values.
+    /// </summary>
+    public static bool ScrubberRow(string label, ref float value, float min, float max, float step = 0f, float labelWidth = DefaultLabelWidth)
+    {
+        using var row = PoserUI.Row(PoserUI.ScrubberHeight);
+        row.Label(label, labelWidth);
+        bool changed = row.Scrubber($"##{label}", ref value, min, max, step);
+        if (changed)
+            ConfigurationService.Instance.Save();
+        return changed;
     }
 
     /// <summary>
@@ -50,17 +58,13 @@ public static class SettingsControls
     /// </summary>
     public static bool ColorRow(string label, ref uint color, float labelWidth = DefaultLabelWidth)
     {
-        ImGui.AlignTextToFramePadding();
-        ImGui.Text(label);
-        ImGui.SameLine(labelWidth * ImGuiHelpers.GlobalScale);
-        var colorVec = ImGui.ColorConvertU32ToFloat4(color);
-        if (ImGui.ColorEdit4($"##{label}", ref colorVec, ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.NoAlpha))
-        {
-            color = ImGui.ColorConvertFloat4ToU32(colorVec);
+        using var row = PoserUI.Row(PoserUI.FrameHeight);
+        row.Label(label, labelWidth);
+        row.Stretch();
+        bool changed = row.RightColorEdit($"##{label}", ref color);
+        if (changed)
             ConfigurationService.Instance.Save();
-            return true;
-        }
-        return false;
+        return changed;
     }
 
     /// <summary>
@@ -68,15 +72,12 @@ public static class SettingsControls
     /// </summary>
     public static bool CheckboxRow(string label, ref bool value, float labelWidth = DefaultLabelWidth)
     {
-        ImGui.AlignTextToFramePadding();
-        ImGui.Text(label);
-        ImGui.SameLine(labelWidth * ImGuiHelpers.GlobalScale);
-        if (ImGui.Checkbox($"##{label}", ref value))
-        {
+        using var row = PoserUI.Row(PoserUI.FrameHeight);
+        row.Label(label, labelWidth);
+        bool changed = row.Checkbox($"##{label}", ref value);
+        if (changed)
             ConfigurationService.Instance.Save();
-            return true;
-        }
-        return false;
+        return changed;
     }
 
     /// <summary>
@@ -84,23 +85,18 @@ public static class SettingsControls
     /// </summary>
     public static void ColorEntryRow(string label, UIColorEntry entry, float labelWidth = DefaultLabelWidth)
     {
-        ImGui.AlignTextToFramePadding();
-        ImGui.Text(label);
-        ImGui.SameLine(labelWidth * ImGuiHelpers.GlobalScale);
+        using var row = PoserUI.Row(PoserUI.DropdownHeight);
+        row.Label(label, labelWidth);
 
         // Dropdown index: 0 = Custom, 1+ = ImGuiCol values
         int currentIndex = entry.UseCustomColor ? 0 : entry.ThemeColorIndex + 1;
 
-        ImGui.SetNextItemWidth(120f * ImGuiHelpers.GlobalScale);
-        if (ImGui.Combo($"##combo_{label}", ref currentIndex, ImGuiColNames, ImGuiColNames.Length))
+        if (row.Dropdown($"##combo_{label}", ref currentIndex, ImGuiColNames, 140))
         {
             if (currentIndex == 0)
             {
-                // Switching to custom - copy current resolved color
                 if (!entry.UseCustomColor)
-                {
                     entry.CustomColor = entry.Resolve();
-                }
                 entry.UseCustomColor = true;
             }
             else
@@ -111,15 +107,11 @@ public static class SettingsControls
             ConfigurationService.Instance.Save();
         }
 
-        ImGui.SameLine();
+        row.Spacer(8);
 
-        // Always show editable color picker - switches to custom when edited
         var resolvedColor = entry.Resolve();
-        var flags = ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.NoAlpha;
-
-        if (ImGui.ColorEdit4($"##color_{label}", ref resolvedColor, flags))
+        if (row.ColorEdit($"##color_{label}", ref resolvedColor))
         {
-            // Switch to custom mode and save the new color
             entry.UseCustomColor = true;
             entry.CustomColor = resolvedColor;
             ConfigurationService.Instance.Save();
@@ -127,13 +119,19 @@ public static class SettingsControls
     }
 
     /// <summary>
-    /// Draws a section header (disabled text + separator + spacing).
+    /// Draws a section header row. Adds blank row above if not at the top of content.
     /// </summary>
     public static void SectionHeader(string text)
     {
-        ImGui.TextDisabled(text);
-        ImGui.Separator();
-        ImGui.Spacing();
+        // Add spacing above if not the first element (cursor Y > small threshold)
+        if (ImGui.GetCursorPosY() > 5f)
+        {
+            using var spacer = PoserUI.Row(PoserUI.FrameHeight);
+            // Empty row for spacing
+        }
+
+        using var row = PoserUI.Row(ImGui.GetTextLineHeight());
+        row.Header(text);
     }
 
     /// <summary>

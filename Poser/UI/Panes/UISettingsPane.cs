@@ -20,31 +20,26 @@ public class UISettingsPane : ITabPane
         SettingsControls.ColorEntryRow("Background:", config.Background);
         SettingsControls.ColorEntryRow("Control Bg:", config.ControlBackground);
 
-        ImGui.Spacing();
         SettingsControls.SectionHeader("Text Colors");
 
         SettingsControls.ColorEntryRow("Text:", config.Text);
         SettingsControls.ColorEntryRow("Text Disabled:", config.TextDisabled);
 
-        ImGui.Spacing();
         SettingsControls.SectionHeader("Border");
 
         SettingsControls.ColorEntryRow("Border:", config.Border);
 
-        ImGui.Spacing();
         SettingsControls.SectionHeader("Selection");
 
         SettingsControls.ColorEntryRow("Active:", config.SelectionActive);
         SettingsControls.ColorEntryRow("Active Hovered:", config.SelectionActiveHovered);
         SettingsControls.ColorEntryRow("Hovered:", config.SelectionHovered);
 
-        ImGui.Spacing();
         SettingsControls.SectionHeader("Title Bar");
 
         SettingsControls.ColorEntryRow("Title Bar:", config.TitleBar);
         SettingsControls.ColorEntryRow("Title Bar Active:", config.TitleBarActive);
 
-        ImGui.Spacing();
         SettingsControls.SectionHeader("Buttons");
 
         SettingsControls.ColorEntryRow("Button:", config.Button);
@@ -53,14 +48,14 @@ public class UISettingsPane : ITabPane
 
         SettingsControls.SectionEnd();
 
-        if (ImGui.Button("Reset to Defaults"))
+        using var row = PoserUI.Row(PoserUI.ButtonHeight);
+        row.Stretch();
+        if (row.RightButton("##reset_ui", "Reset to Defaults"))
         {
             ConfigurationService.Instance.ResetUI();
         }
-
-        ImGui.SameLine();
-
-        if (ImGui.Button("Copy from Theme"))
+        row.RightSpacer(8);
+        if (row.RightButton("##copy_theme", "Copy from Theme"))
         {
             CopyColorsFromTheme();
         }

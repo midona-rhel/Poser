@@ -1,4 +1,3 @@
-using Dalamud.Bindings.ImGui;
 using Poser.Config;
 using Poser.UI.Controls;
 
@@ -27,7 +26,9 @@ public class DisplaySettingsPane : ITabPane
 
         SettingsControls.SectionEnd();
 
-        if (ImGui.Button("Reset to Defaults"))
+        using var row = PoserUI.Row(PoserUI.ButtonHeight);
+        row.Stretch();
+        if (row.RightButton("##reset_display", "Reset to Defaults"))
         {
             ConfigurationService.Instance.ResetDisplay();
         }

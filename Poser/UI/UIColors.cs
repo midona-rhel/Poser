@@ -15,6 +15,7 @@ public static class UIColors
     // Background colors
     public static Vector4 Background => Config.Background.Resolve();
     public static Vector4 ControlBackground => Config.ControlBackground.Resolve();
+    public static Vector4 ControlBackgroundHovered => ImGui.GetStyle().Colors[(int)ImGuiCol.FrameBgHovered];
 
     // Text colors
     public static Vector4 Text => Config.Text.Resolve();
@@ -51,4 +52,26 @@ public static class UIColors
     public static uint ButtonU32 => ImGui.ColorConvertFloat4ToU32(Button);
     public static uint ButtonHoveredU32 => ImGui.ColorConvertFloat4ToU32(ButtonHovered);
     public static uint ButtonActiveU32 => ImGui.ColorConvertFloat4ToU32(ButtonActive);
+
+    // Standard colors
+    public static Vector4 Black => new(0f, 0f, 0f, 1f);
+    public static Vector4 White => new(1f, 1f, 1f, 1f);
+    public static Vector4 Red => new(1f, 0f, 0f, 1f);
+    public static Vector4 Green => new(0f, 1f, 0f, 1f);
+    public static Vector4 Blue => new(0f, 0f, 1f, 1f);
+    public static Vector4 Yellow => new(1f, 1f, 0f, 1f);
+    public static Vector4 Purple => new(0.5f, 0f, 0.5f, 1f);
+    public static Vector4 Orange => new(1f, 0.5f, 0f, 1f);
+    public static Vector4 Gray => new(0.5f, 0.5f, 0.5f, 1f);
+
+    // Standard colors U32
+    public static uint BlackU32 => ImGui.ColorConvertFloat4ToU32(Black);
+    public static uint WhiteU32 => ImGui.ColorConvertFloat4ToU32(White);
+    public static uint RedU32 => ImGui.ColorConvertFloat4ToU32(Red);
+    public static uint GreenU32 => ImGui.ColorConvertFloat4ToU32(Green);
+    public static uint BlueU32 => ImGui.ColorConvertFloat4ToU32(Blue);
+    public static uint YellowU32 => ImGui.ColorConvertFloat4ToU32(Yellow);
+    public static uint PurpleU32 => ImGui.ColorConvertFloat4ToU32(Purple);
+    public static uint OrangeU32 => ImGui.ColorConvertFloat4ToU32(Orange);
+    public static uint GrayU32 => ImGui.ColorConvertFloat4ToU32(Gray);
 }

@@ -306,56 +306,29 @@ public static class DrawHelpers
 
     /// <summary>
     /// Draws a left-rounded rectangle border (top, left with curves, bottom, optionally right).
+    /// Uses AddRect for consistent line thickness.
     /// </summary>
+    /// <param name="drawList">The draw list to render to.</param>
+    /// <param name="pos">Top-left position.</param>
+    /// <param name="end">Bottom-right position.</param>
+    /// <param name="rounding">Corner rounding radius.</param>
+    /// <param name="color">Border color.</param>
+    /// <param name="includeRight">If true, draws all 4 sides. If false, hides right edge.</param>
+    /// <param name="bgColor">Background color to use when hiding the right edge (only used when includeRight=false).</param>
     public static void DrawRoundedLeftBorder(ImDrawListPtr drawList, Vector2 pos, Vector2 end,
-        float rounding, uint color, bool includeRight = false)
+        float rounding, uint color, bool includeRight = false, uint bgColor = 0)
     {
-        // Use exact coordinates - lines are drawn centered on these positions
-        float topY = pos.Y;
-        float bottomY = end.Y;
-        float leftX = pos.X;
-        float rightX = end.X;
+        // Use AddRect for consistent line thickness on all edges
+        drawList.AddRect(pos, end, color, rounding, ImDrawFlags.RoundCornersLeft, 1f);
 
-        // Top line
-        drawList.AddLine(
-            new Vector2(pos.X + rounding, topY),
-            new Vector2(rightX, topY),
-            color, 1f);
-
-        // Bottom line
-        drawList.AddLine(
-            new Vector2(pos.X + rounding, bottomY),
-            new Vector2(rightX, bottomY),
-            color, 1f);
-
-        // Right line (optional)
-        if (includeRight)
+        if (!includeRight)
         {
-            drawList.AddLine(
-                new Vector2(rightX, topY),
-                new Vector2(rightX, bottomY),
-                color, 1f);
+            // Hide the right edge by drawing over it with background color
+            drawList.AddRectFilled(
+                new Vector2(end.X - 1, pos.Y + 1),
+                new Vector2(end.X + 1, end.Y - 1),
+                bgColor);
         }
-
-        // Left arc top
-        drawList.AddBezierQuadratic(
-            new Vector2(pos.X + rounding, topY),
-            new Vector2(leftX, topY),
-            new Vector2(leftX, pos.Y + rounding),
-            color, 1f, 8);
-
-        // Left straight
-        drawList.AddLine(
-            new Vector2(leftX, pos.Y + rounding),
-            new Vector2(leftX, end.Y - rounding),
-            color, 1f);
-
-        // Left arc bottom
-        drawList.AddBezierQuadratic(
-            new Vector2(leftX, end.Y - rounding),
-            new Vector2(leftX, bottomY),
-            new Vector2(pos.X + rounding, bottomY),
-            color, 1f, 8);
     }
 
     /// <summary>
@@ -403,6 +376,9 @@ public static class DrawHelpers
     {
         var end = pos + size;
 
+        // Clip to prevent AA fringe from spilling outside bounds
+        drawList.PushClipRect(pos, end, true);
+
         // Get vertex count before drawing
         int vtxStart = drawList.VtxBuffer.Size;
 
@@ -427,6 +403,8 @@ public static class DrawHelpers
                 vtxPtr[i].Col = ImGui.ColorConvertFloat4ToU32(color);
             }
         }
+
+        drawList.PopClipRect();
     }
 
     /// <summary>
@@ -562,6 +540,44 @@ public static class DrawHelpers
                 }
                 break;
         }
+    }
+
+    /// <summary>
+    /// Draws a simple drop shadow for controls (buttons, dropdowns, etc).
+    /// Uses 20% opacity and 50% shorter shadow than window shadows.
+    /// </summary>
+    /// <param name="drawList">The draw list to render to.</param>
+    /// <param name="rectMin">Top-left corner of the control.</param>
+    /// <param name="rectMax">Bottom-right corner of the control.</param>
+    /// <param name="rounding">Corner rounding.</param>
+    /// <param name="opacityModifier">Optional modifier to the default 20% opacity (1.0 = 20%).</param>
+    public static void DrawControlShadow(ImDrawListPtr drawList, Vector2 rectMin, Vector2 rectMax,
+        float rounding = 4f, float opacityModifier = 1f)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        float shadowOffset = 1f * scale; // 50% shorter than button's 2f
+        float opacity = 0.20f * opacityModifier;
+        var shadowColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0, 0, opacity));
+
+        drawList.AddRectFilled(
+            rectMin + new Vector2(shadowOffset, shadowOffset),
+            rectMax + new Vector2(shadowOffset, shadowOffset),
+            shadowColor, rounding * scale);
+    }
+
+    /// <summary>
+    /// Draws a drop shadow for window/panel elements.
+    /// Uses 50% opacity for more prominent shadows.
+    /// </summary>
+    /// <param name="drawList">The draw list to render to.</param>
+    /// <param name="rectMin">Top-left corner.</param>
+    /// <param name="rectMax">Bottom-right corner.</param>
+    /// <param name="shadowSize">Size of the shadow in pixels (before GlobalScale).</param>
+    /// <param name="opacityModifier">Optional modifier to the default 50% opacity (1.0 = 50%).</param>
+    public static void DrawWindowShadow(ImDrawListPtr drawList, Vector2 rectMin, Vector2 rectMax,
+        float shadowSize = 8f, float opacityModifier = 1f)
+    {
+        DrawDropShadow(drawList, rectMin, rectMax, shadowSize, 0.5f * opacityModifier);
     }
 
     /// <summary>

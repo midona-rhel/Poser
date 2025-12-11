@@ -110,26 +110,31 @@ public class TabbedPanel
         var contentPanelEnd = contentPanelPos + new Vector2(contentWidth, availableSize.Y);
 
         // Draw content area
-        float paddingScaled = ContentPadding * ImGuiHelpers.GlobalScale;
-        using (ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, new Vector2(paddingScaled, paddingScaled)))
+        // Outer child: background only, no scroll, no border
         using (ImRaii.PushStyle(ImGuiStyleVar.ChildBorderSize, 0f))
         using (ImRaii.PushColor(ImGuiCol.ChildBg, contentBgColor))
-        using (var child = ImRaii.Child("##tabbed_panel_content", new Vector2(contentWidth, availableSize.Y), true))
+        using (var child = ImRaii.Child("##tabbed_panel_content", new Vector2(contentWidth, availableSize.Y), false))
         {
             if (child.Success)
             {
-                // Draw border inside content panel (before padding)
+                // Draw border inside content panel
                 var contentDrawList = ImGui.GetWindowDrawList();
                 DrawContentBorder(contentDrawList, contentPanelPos, contentPanelEnd, tabBarStart, availableSize.Y,
                     activeTabTop, activeTabBottom, borderColorU32);
 
-                // Apply inner padding - all sides
-                // Reserve space on right for scrollbar + gap between content and scrollbar
-                float scrollbarGap = 4f * ImGuiHelpers.GlobalScale;
-                var innerPadding = new Vector2(paddingScaled, paddingScaled);
-                var innerSize = ImGui.GetContentRegionAvail() - innerPadding - new Vector2(scrollbarGap, 0);
+                // Inner scrollable child with padding around it
+                float paddingScaled = ContentPadding * ImGuiHelpers.GlobalScale;
+                var available = ImGui.GetContentRegionAvail();
+                float scrollbarSize = 12f * ImGuiHelpers.GlobalScale;
 
-                ImGui.SetCursorPos(ImGui.GetCursorPos() + innerPadding);
+                // Offset inner child by padding on all sides (includes 1px for border visibility)
+                float offset = paddingScaled;
+                ImGui.SetCursorPos(ImGui.GetCursorPos() + new Vector2(offset, offset));
+                var innerSize = available - new Vector2(offset * 2, offset * 2);
+
+                using (ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, new Vector2(0, paddingScaled)))
+                using (ImRaii.PushStyle(ImGuiStyleVar.ScrollbarSize, scrollbarSize))
+                using (ImRaii.PushStyle(ImGuiStyleVar.ScrollbarRounding, 6f * ImGuiHelpers.GlobalScale))
                 using (ImRaii.Child("##tabbed_panel_content_inner", innerSize, false))
                 {
                     _panes[_activeTabIndex].Draw();
@@ -201,7 +206,9 @@ public class TabbedPanel
             colorLeft, colorRight, roundingScaled, ImDrawFlags.RoundCornersLeft);
 
         // Outline: top, left, bottom only (no right - connects to content)
-        DrawHelpers.DrawRoundedLeftBorder(drawList, tabPos, tabEnd, roundingScaled, borderColorU32);
+        // Pass contentBgColor to hide the right edge
+        var bgColorU32 = ImGui.ColorConvertFloat4ToU32(contentBgColor);
+        DrawHelpers.DrawRoundedLeftBorder(drawList, tabPos, tabEnd, roundingScaled, borderColorU32, false, bgColorU32);
     }
 
     private static void DrawInactiveTab(ImDrawListPtr drawList, Vector2 tabPos, Vector2 tabEnd, Vector2 tabSize,
@@ -209,6 +216,7 @@ public class TabbedPanel
     {
         // Background - 60% opacity of Background color for inactive state
         var bgColor = UIColors.Background with { W = UIColors.Background.W * 0.6f };
+        var bgColorU32 = ImGui.ColorConvertFloat4ToU32(bgColor);
 
         if (isHovered)
         {
@@ -226,12 +234,11 @@ public class TabbedPanel
         else
         {
             // Solid background
-            var bgColorU32 = ImGui.ColorConvertFloat4ToU32(bgColor);
             drawList.AddRectFilled(tabPos, tabEnd, bgColorU32, roundingScaled, ImDrawFlags.RoundCornersLeft);
         }
 
-        // Full outline (all sides) with brighter border
-        DrawHelpers.DrawRoundedLeftBorder(drawList, tabPos, tabEnd, roundingScaled, brightBorderU32, includeRight: true);
+        // Outline without right edge (tabs connect to content panel)
+        DrawHelpers.DrawRoundedLeftBorder(drawList, tabPos, tabEnd, roundingScaled, brightBorderU32, false, bgColorU32);
     }
 
     private static void DrawContentBorder(ImDrawListPtr drawList, Vector2 contentPanelPos, Vector2 contentPanelEnd,

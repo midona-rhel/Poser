@@ -18,20 +18,20 @@ public class SkeletonSettingsPane : ITabPane
         SettingsControls.SectionHeader("Bone Display");
 
         float dotRadius = config.BoneDotRadius;
-        if (SettingsControls.SliderRow("Dot Radius:", ref dotRadius, 1f, 10f))
+        if (SettingsControls.ScrubberRow("Dot Radius:", ref dotRadius, 1f, 4f, 0.25f))
             config.BoneDotRadius = dotRadius;
 
         float lineThickness = config.BoneLineThickness;
-        if (SettingsControls.SliderRow("Line Thickness:", ref lineThickness, 0.5f, 5f))
+        if (SettingsControls.ScrubberRow("Line Thickness:", ref lineThickness, 0.5f, 2f, 0.25f))
             config.BoneLineThickness = lineThickness;
 
-        float lineOpacity = config.BoneLineOpacity;
-        if (SettingsControls.SliderRow("Line Opacity:", ref lineOpacity, 0f, 1f))
-            config.BoneLineOpacity = lineOpacity;
-
         float octahedraWidth = config.OctahedraWidth;
-        if (SettingsControls.SliderRow("Octahedra Width:", ref octahedraWidth, 1f, 10f))
+        if (SettingsControls.ScrubberRow("Octahedra Width:", ref octahedraWidth, 1f, 4f, 0.25f))
             config.OctahedraWidth = octahedraWidth;
+
+        float lineOpacity = config.BoneLineOpacity;
+        if (SettingsControls.ScrubberRow("Line Opacity:", ref lineOpacity, 0f, 1f, 0.1f))
+            config.BoneLineOpacity = lineOpacity;
 
         ImGui.Spacing();
         SettingsControls.SectionHeader("Colors");
@@ -58,7 +58,9 @@ public class SkeletonSettingsPane : ITabPane
 
         SettingsControls.SectionEnd();
 
-        if (ImGui.Button("Reset to Defaults"))
+        using var row = PoserUI.Row(PoserUI.ButtonHeight);
+        row.Stretch();
+        if (row.RightButton("##reset_skeleton", "Reset to Defaults"))
         {
             ConfigurationService.Instance.ResetSkeleton();
         }
