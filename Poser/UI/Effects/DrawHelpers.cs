@@ -278,6 +278,293 @@ public static class DrawHelpers
     }
 
     /// <summary>
+    /// Draws a drop shadow excluding specified edges.
+    /// </summary>
+    public static void DrawDropShadow(ImDrawListPtr drawList, Vector2 rectMin, Vector2 rectMax,
+        Edge excludeEdge, float shadowSize = 8f, float shadowAlpha = 0.4f)
+    {
+        float size = shadowSize * ImGuiHelpers.GlobalScale;
+        var shadowColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0, 0, shadowAlpha));
+        var transparent = ImGui.ColorConvertFloat4ToU32(Vector4.Zero);
+
+        // Edge shadows (skip excluded)
+        if (excludeEdge != Edge.Left)
+            DrawEdgeShadow(drawList, rectMin, rectMax, size, shadowColor, transparent, Edge.Left);
+        if (excludeEdge != Edge.Top)
+            DrawEdgeShadow(drawList, rectMin, rectMax, size, shadowColor, transparent, Edge.Top);
+        if (excludeEdge != Edge.Right)
+            DrawEdgeShadow(drawList, rectMin, rectMax, size, shadowColor, transparent, Edge.Right);
+        if (excludeEdge != Edge.Bottom)
+            DrawEdgeShadow(drawList, rectMin, rectMax, size, shadowColor, transparent, Edge.Bottom);
+
+        // Corner shadows (all corners still drawn)
+        DrawRadialGradient(drawList, rectMax, size, shadowColor, transparent, Quadrant.BottomRight);
+        DrawRadialGradient(drawList, new Vector2(rectMin.X, rectMax.Y), size, shadowColor, transparent, Quadrant.BottomLeft);
+        DrawRadialGradient(drawList, rectMin, size, shadowColor, transparent, Quadrant.TopLeft);
+        DrawRadialGradient(drawList, new Vector2(rectMax.X, rectMin.Y), size, shadowColor, transparent, Quadrant.TopRight);
+    }
+
+    /// <summary>
+    /// Draws a left-rounded rectangle border (top, left with curves, bottom, optionally right).
+    /// </summary>
+    public static void DrawRoundedLeftBorder(ImDrawListPtr drawList, Vector2 pos, Vector2 end,
+        float rounding, uint color, bool includeRight = false)
+    {
+        // Use exact coordinates - lines are drawn centered on these positions
+        float topY = pos.Y;
+        float bottomY = end.Y;
+        float leftX = pos.X;
+        float rightX = end.X;
+
+        // Top line
+        drawList.AddLine(
+            new Vector2(pos.X + rounding, topY),
+            new Vector2(rightX, topY),
+            color, 1f);
+
+        // Bottom line
+        drawList.AddLine(
+            new Vector2(pos.X + rounding, bottomY),
+            new Vector2(rightX, bottomY),
+            color, 1f);
+
+        // Right line (optional)
+        if (includeRight)
+        {
+            drawList.AddLine(
+                new Vector2(rightX, topY),
+                new Vector2(rightX, bottomY),
+                color, 1f);
+        }
+
+        // Left arc top
+        drawList.AddBezierQuadratic(
+            new Vector2(pos.X + rounding, topY),
+            new Vector2(leftX, topY),
+            new Vector2(leftX, pos.Y + rounding),
+            color, 1f, 8);
+
+        // Left straight
+        drawList.AddLine(
+            new Vector2(leftX, pos.Y + rounding),
+            new Vector2(leftX, end.Y - rounding),
+            color, 1f);
+
+        // Left arc bottom
+        drawList.AddBezierQuadratic(
+            new Vector2(leftX, end.Y - rounding),
+            new Vector2(leftX, bottomY),
+            new Vector2(pos.X + rounding, bottomY),
+            color, 1f, 8);
+    }
+
+    /// <summary>
+    /// Draws a horizontal gradient fading from color at left to transparent.
+    /// </summary>
+    /// <param name="drawList">The draw list to render to.</param>
+    /// <param name="pos">Top-left position.</param>
+    /// <param name="size">Size of the gradient area.</param>
+    /// <param name="color">Color at the left edge.</param>
+    /// <param name="fadeRatio">How far across the gradient extends (0-1).</param>
+    /// <param name="useClipRect">Whether to push a clip rect for the area.</param>
+    public static void DrawHorizontalGradientFade(ImDrawListPtr drawList, Vector2 pos, Vector2 size,
+        Vector4 color, float fadeRatio = 0.5f, bool useClipRect = true)
+    {
+        var end = pos + size;
+
+        if (useClipRect)
+            drawList.PushClipRect(pos, end, true);
+
+        var gradientEnd = new Vector2(pos.X + size.X * fadeRatio, end.Y);
+        var colorStart = ImGui.ColorConvertFloat4ToU32(color);
+        var colorEnd = ImGui.ColorConvertFloat4ToU32(color with { W = 0f });
+
+        drawList.AddRectFilledMultiColor(
+            pos, gradientEnd,
+            colorStart, colorEnd, colorEnd, colorStart);
+
+        if (useClipRect)
+            drawList.PopClipRect();
+    }
+
+    /// <summary>
+    /// Draws a rounded rectangle with a horizontal gradient by manipulating vertices.
+    /// This properly respects rounded corners unlike AddRectFilledMultiColor.
+    /// </summary>
+    /// <param name="drawList">The draw list to render to.</param>
+    /// <param name="pos">Top-left position.</param>
+    /// <param name="size">Size of the rectangle.</param>
+    /// <param name="colorLeft">Color at the left edge.</param>
+    /// <param name="colorRight">Color at the right edge.</param>
+    /// <param name="rounding">Corner rounding radius.</param>
+    /// <param name="roundingFlags">Which corners to round.</param>
+    public static void DrawRoundedRectWithHorizontalGradient(ImDrawListPtr drawList, Vector2 pos, Vector2 size,
+        Vector4 colorLeft, Vector4 colorRight, float rounding, ImDrawFlags roundingFlags = ImDrawFlags.RoundCornersAll)
+    {
+        var end = pos + size;
+
+        // Get vertex count before drawing
+        int vtxStart = drawList.VtxBuffer.Size;
+
+        // Draw rounded rect with white placeholder color (vertices will be recolored)
+        drawList.AddRectFilled(pos, end, 0xFFFFFFFF, rounding, roundingFlags);
+
+        // Get vertex count after drawing
+        int vtxEnd = drawList.VtxBuffer.Size;
+
+        // Shade each vertex based on its X position (horizontal gradient)
+        float minX = pos.X;
+        float width = size.X;
+
+        unsafe
+        {
+            var vtxPtr = (ImDrawVert*)drawList.VtxBuffer.Data;
+            for (int i = vtxStart; i < vtxEnd; i++)
+            {
+                float t = (vtxPtr[i].Pos.X - minX) / width; // 0 at left, 1 at right
+                t = Math.Clamp(t, 0f, 1f);
+                var color = Vector4.Lerp(colorLeft, colorRight, t);
+                vtxPtr[i].Col = ImGui.ColorConvertFloat4ToU32(color);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Draws an inner shadow along one edge of a rectangle, with optional gap.
+    /// </summary>
+    /// <param name="drawList">The draw list to render to.</param>
+    /// <param name="edge">Which edge to draw the shadow on.</param>
+    /// <param name="areaMin">Top-left of the area.</param>
+    /// <param name="areaMax">Bottom-right of the area.</param>
+    /// <param name="shadowSize">Size of the shadow (before GlobalScale).</param>
+    /// <param name="gapStart">Start of gap in screen coords (-1 for no gap).</param>
+    /// <param name="gapEnd">End of gap in screen coords (-1 for no gap).</param>
+    /// <param name="shadowAlpha">Alpha value for shadow.</param>
+    public static void DrawInnerEdgeShadow(ImDrawListPtr drawList, Edge edge, Vector2 areaMin, Vector2 areaMax,
+        float shadowSize, float gapStart = -1, float gapEnd = -1, float shadowAlpha = 0.4f)
+    {
+        float size = shadowSize * ImGuiHelpers.GlobalScale;
+        var shadowColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0, 0, shadowAlpha));
+        var transparent = ImGui.ColorConvertFloat4ToU32(Vector4.Zero);
+
+        bool hasGap = gapStart >= 0 && gapEnd >= 0;
+
+        switch (edge)
+        {
+            case Edge.Right:
+                // Shadow fades from right edge inward (for tab bar right shadow)
+                if (hasGap)
+                {
+                    // Above gap
+                    if (gapStart > areaMin.Y)
+                    {
+                        drawList.AddRectFilledMultiColor(
+                            new Vector2(areaMax.X - size, areaMin.Y),
+                            new Vector2(areaMax.X, gapStart),
+                            transparent, shadowColor, shadowColor, transparent);
+                    }
+                    // Below gap
+                    if (gapEnd < areaMax.Y)
+                    {
+                        drawList.AddRectFilledMultiColor(
+                            new Vector2(areaMax.X - size, gapEnd),
+                            new Vector2(areaMax.X, areaMax.Y),
+                            transparent, shadowColor, shadowColor, transparent);
+                    }
+                }
+                else
+                {
+                    drawList.AddRectFilledMultiColor(
+                        new Vector2(areaMax.X - size, areaMin.Y),
+                        areaMax,
+                        transparent, shadowColor, shadowColor, transparent);
+                }
+                break;
+
+            case Edge.Left:
+                if (hasGap)
+                {
+                    if (gapStart > areaMin.Y)
+                    {
+                        drawList.AddRectFilledMultiColor(
+                            areaMin,
+                            new Vector2(areaMin.X + size, gapStart),
+                            shadowColor, transparent, transparent, shadowColor);
+                    }
+                    if (gapEnd < areaMax.Y)
+                    {
+                        drawList.AddRectFilledMultiColor(
+                            new Vector2(areaMin.X, gapEnd),
+                            new Vector2(areaMin.X + size, areaMax.Y),
+                            shadowColor, transparent, transparent, shadowColor);
+                    }
+                }
+                else
+                {
+                    drawList.AddRectFilledMultiColor(
+                        areaMin,
+                        new Vector2(areaMin.X + size, areaMax.Y),
+                        shadowColor, transparent, transparent, shadowColor);
+                }
+                break;
+
+            case Edge.Top:
+                if (hasGap)
+                {
+                    if (gapStart > areaMin.X)
+                    {
+                        drawList.AddRectFilledMultiColor(
+                            areaMin,
+                            new Vector2(gapStart, areaMin.Y + size),
+                            shadowColor, shadowColor, transparent, transparent);
+                    }
+                    if (gapEnd < areaMax.X)
+                    {
+                        drawList.AddRectFilledMultiColor(
+                            new Vector2(gapEnd, areaMin.Y),
+                            new Vector2(areaMax.X, areaMin.Y + size),
+                            shadowColor, shadowColor, transparent, transparent);
+                    }
+                }
+                else
+                {
+                    drawList.AddRectFilledMultiColor(
+                        areaMin,
+                        new Vector2(areaMax.X, areaMin.Y + size),
+                        shadowColor, shadowColor, transparent, transparent);
+                }
+                break;
+
+            case Edge.Bottom:
+                if (hasGap)
+                {
+                    if (gapStart > areaMin.X)
+                    {
+                        drawList.AddRectFilledMultiColor(
+                            new Vector2(areaMin.X, areaMax.Y - size),
+                            new Vector2(gapStart, areaMax.Y),
+                            transparent, transparent, shadowColor, shadowColor);
+                    }
+                    if (gapEnd < areaMax.X)
+                    {
+                        drawList.AddRectFilledMultiColor(
+                            new Vector2(gapEnd, areaMax.Y - size),
+                            areaMax,
+                            transparent, transparent, shadowColor, shadowColor);
+                    }
+                }
+                else
+                {
+                    drawList.AddRectFilledMultiColor(
+                        new Vector2(areaMin.X, areaMax.Y - size),
+                        areaMax,
+                        transparent, transparent, shadowColor, shadowColor);
+                }
+                break;
+        }
+    }
+
+    /// <summary>
     /// Edge direction for shadows.
     /// </summary>
     public enum Edge

@@ -124,8 +124,13 @@ public class TabbedPanel
                     activeTabTop, activeTabBottom, borderColorU32);
 
                 // Apply inner padding - all sides
-                ImGui.SetCursorPos(ImGui.GetCursorPos() + new Vector2(paddingScaled, paddingScaled));
-                using (ImRaii.Child("##tabbed_panel_content_inner", ImGui.GetContentRegionAvail() - new Vector2(paddingScaled, paddingScaled), false))
+                // Reserve space on right for scrollbar + gap between content and scrollbar
+                float scrollbarGap = 4f * ImGuiHelpers.GlobalScale;
+                var innerPadding = new Vector2(paddingScaled, paddingScaled);
+                var innerSize = ImGui.GetContentRegionAvail() - innerPadding - new Vector2(scrollbarGap, 0);
+
+                ImGui.SetCursorPos(ImGui.GetCursorPos() + innerPadding);
+                using (ImRaii.Child("##tabbed_panel_content_inner", innerSize, false))
                 {
                     _panes[_activeTabIndex].Draw();
                 }
@@ -182,51 +187,21 @@ public class TabbedPanel
     private static void DrawActiveTab(ImDrawListPtr drawList, Vector2 tabPos, Vector2 tabEnd, Vector2 tabSize,
         Vector4 contentBgColor, uint borderColorU32, float roundingScaled)
     {
-        // Active tab: same background as content panel, blends seamlessly
-        var contentBgU32 = ImGui.ColorConvertFloat4ToU32(contentBgColor);
-        drawList.AddRectFilled(tabPos, tabEnd, contentBgU32, roundingScaled, ImDrawFlags.RoundCornersLeft);
+        // Active tab: gradient from selection color to content background
+        // Using vertex manipulation to properly respect rounded corners
+        var colorLeft = UIColors.SelectionActive with { W = 0.5f };
+        colorLeft = new Vector4(
+            contentBgColor.X + (colorLeft.X - contentBgColor.X) * colorLeft.W,
+            contentBgColor.Y + (colorLeft.Y - contentBgColor.Y) * colorLeft.W,
+            contentBgColor.Z + (colorLeft.Z - contentBgColor.Z) * colorLeft.W,
+            contentBgColor.W);
+        var colorRight = contentBgColor;
 
-        // Gradient overlay - SelectionActive fading from left to middle
-        // Clip to rounded rect
-        drawList.PushClipRect(tabPos, tabEnd, true);
-        var selectionColor = UIColors.SelectionActive;
-        var gradientStart = tabPos;
-        var gradientEnd = new Vector2(tabPos.X + tabSize.X * 0.5f, tabEnd.Y);
-        var gradientColorStart = ImGui.ColorConvertFloat4ToU32(selectionColor with { W = 0.5f });
-        var gradientColorEnd = ImGui.ColorConvertFloat4ToU32(selectionColor with { W = 0f });
-        drawList.AddRectFilledMultiColor(
-            gradientStart, gradientEnd,
-            gradientColorStart, gradientColorEnd, gradientColorEnd, gradientColorStart);
-        drawList.PopClipRect();
+        DrawHelpers.DrawRoundedRectWithHorizontalGradient(drawList, tabPos, tabSize,
+            colorLeft, colorRight, roundingScaled, ImDrawFlags.RoundCornersLeft);
 
         // Outline: top, left, bottom only (no right - connects to content)
-        // Top
-        drawList.AddLine(
-            new Vector2(tabPos.X + roundingScaled, tabPos.Y),
-            new Vector2(tabEnd.X, tabPos.Y),
-            borderColorU32, 1f);
-        // Bottom
-        drawList.AddLine(
-            new Vector2(tabPos.X + roundingScaled, tabEnd.Y),
-            new Vector2(tabEnd.X, tabEnd.Y),
-            borderColorU32, 1f);
-        // Left arc top
-        drawList.AddBezierQuadratic(
-            new Vector2(tabPos.X + roundingScaled, tabPos.Y),
-            new Vector2(tabPos.X, tabPos.Y),
-            new Vector2(tabPos.X, tabPos.Y + roundingScaled),
-            borderColorU32, 1f, 8);
-        // Left straight
-        drawList.AddLine(
-            new Vector2(tabPos.X, tabPos.Y + roundingScaled),
-            new Vector2(tabPos.X, tabEnd.Y - roundingScaled),
-            borderColorU32, 1f);
-        // Left arc bottom
-        drawList.AddBezierQuadratic(
-            new Vector2(tabPos.X, tabEnd.Y - roundingScaled),
-            new Vector2(tabPos.X, tabEnd.Y),
-            new Vector2(tabPos.X + roundingScaled, tabEnd.Y),
-            borderColorU32, 1f, 8);
+        DrawHelpers.DrawRoundedLeftBorder(drawList, tabPos, tabEnd, roundingScaled, borderColorU32);
     }
 
     private static void DrawInactiveTab(ImDrawListPtr drawList, Vector2 tabPos, Vector2 tabEnd, Vector2 tabSize,
@@ -234,58 +209,29 @@ public class TabbedPanel
     {
         // Background - 60% opacity of Background color for inactive state
         var bgColor = UIColors.Background with { W = UIColors.Background.W * 0.6f };
-        var bgColorU32 = ImGui.ColorConvertFloat4ToU32(bgColor);
-        drawList.AddRectFilled(tabPos, tabEnd, bgColorU32, roundingScaled, ImDrawFlags.RoundCornersLeft);
 
-        // Gradient overlay on hover - SelectionHovered fading from left to middle
-        // Clip to rounded rect
         if (isHovered)
         {
-            drawList.PushClipRect(tabPos, tabEnd, true);
-            var selectionColor = UIColors.SelectionHovered;
-            var gradientStart = tabPos;
-            var gradientEnd = new Vector2(tabPos.X + tabSize.X * 0.5f, tabEnd.Y);
-            var gradientColorStart = ImGui.ColorConvertFloat4ToU32(selectionColor with { W = 0.5f });
-            var gradientColorEnd = ImGui.ColorConvertFloat4ToU32(selectionColor with { W = 0f });
-            drawList.AddRectFilledMultiColor(
-                gradientStart, gradientEnd,
-                gradientColorStart, gradientColorEnd, gradientColorEnd, gradientColorStart);
-            drawList.PopClipRect();
+            // Gradient from hover color to background using vertex manipulation
+            var colorLeft = UIColors.SelectionHovered with { W = 0.5f };
+            colorLeft = new Vector4(
+                bgColor.X + (colorLeft.X - bgColor.X) * colorLeft.W,
+                bgColor.Y + (colorLeft.Y - bgColor.Y) * colorLeft.W,
+                bgColor.Z + (colorLeft.Z - bgColor.Z) * colorLeft.W,
+                bgColor.W);
+
+            DrawHelpers.DrawRoundedRectWithHorizontalGradient(drawList, tabPos, tabSize,
+                colorLeft, bgColor, roundingScaled, ImDrawFlags.RoundCornersLeft);
+        }
+        else
+        {
+            // Solid background
+            var bgColorU32 = ImGui.ColorConvertFloat4ToU32(bgColor);
+            drawList.AddRectFilled(tabPos, tabEnd, bgColorU32, roundingScaled, ImDrawFlags.RoundCornersLeft);
         }
 
         // Full outline (all sides) with brighter border
-        // Top
-        drawList.AddLine(
-            new Vector2(tabPos.X + roundingScaled, tabPos.Y),
-            new Vector2(tabEnd.X, tabPos.Y),
-            brightBorderU32, 1f);
-        // Bottom
-        drawList.AddLine(
-            new Vector2(tabPos.X + roundingScaled, tabEnd.Y),
-            tabEnd,
-            brightBorderU32, 1f);
-        // Right
-        drawList.AddLine(
-            new Vector2(tabEnd.X, tabPos.Y),
-            tabEnd,
-            brightBorderU32, 1f);
-        // Left arc top
-        drawList.AddBezierQuadratic(
-            new Vector2(tabPos.X + roundingScaled, tabPos.Y),
-            new Vector2(tabPos.X, tabPos.Y),
-            new Vector2(tabPos.X, tabPos.Y + roundingScaled),
-            brightBorderU32, 1f, 8);
-        // Left straight
-        drawList.AddLine(
-            new Vector2(tabPos.X, tabPos.Y + roundingScaled),
-            new Vector2(tabPos.X, tabEnd.Y - roundingScaled),
-            brightBorderU32, 1f);
-        // Left arc bottom
-        drawList.AddBezierQuadratic(
-            new Vector2(tabPos.X, tabEnd.Y - roundingScaled),
-            new Vector2(tabPos.X, tabEnd.Y),
-            new Vector2(tabPos.X + roundingScaled, tabEnd.Y),
-            brightBorderU32, 1f, 8);
+        DrawHelpers.DrawRoundedLeftBorder(drawList, tabPos, tabEnd, roundingScaled, brightBorderU32, includeRight: true);
     }
 
     private static void DrawContentBorder(ImDrawListPtr drawList, Vector2 contentPanelPos, Vector2 contentPanelEnd,
@@ -318,62 +264,18 @@ public class TabbedPanel
 
     private static void DrawContentPanelShadow(ImDrawListPtr drawList, Vector2 contentPos, Vector2 contentEnd)
     {
-        float shadowSize = 8f * ImGuiHelpers.GlobalScale;
-        var shadowColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0, 0, 0.4f));
-        var transparent = ImGui.ColorConvertFloat4ToU32(Vector4.Zero);
-
-        // Top shadow
-        drawList.AddRectFilledMultiColor(
-            new Vector2(contentPos.X, contentPos.Y - shadowSize),
-            new Vector2(contentEnd.X, contentPos.Y),
-            transparent, transparent, shadowColor, shadowColor);
-
-        // Right shadow
-        drawList.AddRectFilledMultiColor(
-            new Vector2(contentEnd.X, contentPos.Y),
-            new Vector2(contentEnd.X + shadowSize, contentEnd.Y),
-            shadowColor, transparent, transparent, shadowColor);
-
-        // Bottom shadow
-        drawList.AddRectFilledMultiColor(
-            new Vector2(contentPos.X, contentEnd.Y),
-            new Vector2(contentEnd.X, contentEnd.Y + shadowSize),
-            shadowColor, shadowColor, transparent, transparent);
-
-        // Outer corner shadows
-        DrawHelpers.DrawRadialGradient(drawList, new Vector2(contentEnd.X, contentPos.Y), shadowSize, shadowColor, transparent, DrawHelpers.Quadrant.TopRight);
-        DrawHelpers.DrawRadialGradient(drawList, contentEnd, shadowSize, shadowColor, transparent, DrawHelpers.Quadrant.BottomRight);
-        DrawHelpers.DrawRadialGradient(drawList, new Vector2(contentPos.X, contentEnd.Y), shadowSize, shadowColor, transparent, DrawHelpers.Quadrant.BottomLeft);
-        DrawHelpers.DrawRadialGradient(drawList, contentPos, shadowSize, shadowColor, transparent, DrawHelpers.Quadrant.TopLeft);
+        // Drop shadow on all sides except left (where tabs connect)
+        DrawHelpers.DrawDropShadow(drawList, contentPos, contentEnd, DrawHelpers.Edge.Left);
     }
 
     private static void DrawTabBarRightShadow(ImDrawListPtr drawList, Vector2 tabBarStart, float tabBarWidth, float tabBarHeight,
         float activeTabTop, float activeTabBottom)
     {
-        float shadowSize = 8f * ImGuiHelpers.GlobalScale;
-        var shadowColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0, 0, 0.4f));
-        var transparent = ImGui.ColorConvertFloat4ToU32(Vector4.Zero);
+        var areaMin = tabBarStart;
+        var areaMax = new Vector2(tabBarStart.X + tabBarWidth, tabBarStart.Y + tabBarHeight);
 
-        float rightEdge = tabBarStart.X + tabBarWidth;
-        float tabBarBottom = tabBarStart.Y + tabBarHeight;
-
-        // Shadow on right edge of tab bar (simulates content panel casting shadow onto tabs)
-        // Above active tab
-        if (activeTabTop > tabBarStart.Y)
-        {
-            drawList.AddRectFilledMultiColor(
-                new Vector2(rightEdge - shadowSize, tabBarStart.Y),
-                new Vector2(rightEdge, activeTabTop),
-                transparent, shadowColor, shadowColor, transparent);
-        }
-
-        // Below active tab
-        if (activeTabBottom < tabBarBottom)
-        {
-            drawList.AddRectFilledMultiColor(
-                new Vector2(rightEdge - shadowSize, activeTabBottom),
-                new Vector2(rightEdge, tabBarBottom),
-                transparent, shadowColor, shadowColor, transparent);
-        }
+        // Inner shadow on right edge of tab bar with gap for active tab
+        DrawHelpers.DrawInnerEdgeShadow(drawList, DrawHelpers.Edge.Right, areaMin, areaMax,
+            8f, activeTabTop, activeTabBottom);
     }
 }
