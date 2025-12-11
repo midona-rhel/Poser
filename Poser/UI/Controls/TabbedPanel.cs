@@ -65,11 +65,11 @@ public class TabbedPanel
         var availableSize = ImGui.GetContentRegionAvail();
         var drawList = ImGui.GetWindowDrawList();
 
-        float tabBarWidthScaled = TabBarWidth * ImGuiHelpers.GlobalScale;
+        float tabBarWidthScaled = TabBarWidth * PoserUI.Scale;
         float contentWidth = availableSize.X - tabBarWidthScaled;
-        float tabHeightScaled = TabHeight * ImGuiHelpers.GlobalScale;
-        float spacingScaled = TabSpacing * ImGuiHelpers.GlobalScale;
-        float roundingScaled = TabRounding * ImGuiHelpers.GlobalScale;
+        float tabHeightScaled = TabHeight * PoserUI.Scale;
+        float spacingScaled = TabSpacing * PoserUI.Scale;
+        float roundingScaled = TabRounding * PoserUI.Scale;
 
         var tabBarStart = ImGui.GetCursorScreenPos();
 
@@ -123,9 +123,9 @@ public class TabbedPanel
                     activeTabTop, activeTabBottom, borderColorU32);
 
                 // Inner scrollable child with padding around it
-                float paddingScaled = ContentPadding * ImGuiHelpers.GlobalScale;
+                float paddingScaled = ContentPadding * PoserUI.Scale;
                 var available = ImGui.GetContentRegionAvail();
-                float scrollbarSize = 12f * ImGuiHelpers.GlobalScale;
+                float scrollbarSize = 12f * PoserUI.Scale;
 
                 // Offset inner child by padding on all sides (includes 1px for border visibility)
                 float offset = paddingScaled;
@@ -134,7 +134,7 @@ public class TabbedPanel
 
                 using (ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, new Vector2(0, paddingScaled)))
                 using (ImRaii.PushStyle(ImGuiStyleVar.ScrollbarSize, scrollbarSize))
-                using (ImRaii.PushStyle(ImGuiStyleVar.ScrollbarRounding, 6f * ImGuiHelpers.GlobalScale))
+                using (ImRaii.PushStyle(ImGuiStyleVar.ScrollbarRounding, 6f * PoserUI.Scale))
                 using (ImRaii.Child("##tabbed_panel_content_inner", innerSize, false))
                 {
                     _panes[_activeTabIndex].Draw();

@@ -2,7 +2,6 @@ using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
-using Poser.Config;
 
 namespace Poser.UI.Controls;
 
@@ -16,10 +15,9 @@ public static class PoserUI
     private const float Margin = 16f;
 
     /// <summary>
-    /// Gets the combined UI scale (GlobalScale * custom scale from config).
-    /// Use this instead of ImGuiHelpers.GlobalScale for Poser UI elements.
+    /// Gets the UI scale.
     /// </summary>
-    public static float Scale => ImGuiHelpers.GlobalScale * ConfigurationService.Instance.Config.UI.Scale;
+    public static float Scale => ImGuiHelpers.GlobalScale;
 
     /// <summary>
     /// Creates a new row builder for flexible row layouts.
@@ -33,7 +31,7 @@ public static class PoserUI
     /// </summary>
     public static void TopMargin()
     {
-        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + Margin * ImGuiHelpers.GlobalScale);
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + Margin * Scale);
     }
 
     /// <summary>
@@ -41,13 +39,13 @@ public static class PoserUI
     /// </summary>
     public static void BottomMargin()
     {
-        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + Margin * ImGuiHelpers.GlobalScale);
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + Margin * Scale);
     }
 
     /// <summary>
     /// Gets the scrubber control height.
     /// </summary>
-    public static float ScrubberHeight => 24f * ImGuiHelpers.GlobalScale;
+    public static float ScrubberHeight => 24f * Scale;
 
     /// <summary>
     /// Gets the standard ImGui frame height (for sliders, checkboxes, color pickers, etc).
@@ -57,7 +55,7 @@ public static class PoserUI
     /// <summary>
     /// Gets the button height.
     /// </summary>
-    public static float ButtonHeight => 24f * ImGuiHelpers.GlobalScale;
+    public static float ButtonHeight => 24f * Scale;
 
     /// <summary>
     /// Gets the dropdown height.
@@ -67,12 +65,12 @@ public static class PoserUI
     /// <summary>
     /// Gets the margin constant.
     /// </summary>
-    public static float MarginScaled => Margin * ImGuiHelpers.GlobalScale;
+    public static float MarginScaled => Margin * Scale;
 
     /// <summary>
     /// Gets the row spacing constant.
     /// </summary>
-    internal static float RowSpacingScaled => RowSpacing * ImGuiHelpers.GlobalScale;
+    internal static float RowSpacingScaled => RowSpacing * Scale;
 }
 
 /// <summary>
@@ -104,7 +102,7 @@ public sealed class RowBuilder : IDisposable
     /// <param name="width">Fixed width. If 0, uses text width.</param>
     public RowBuilder Label(string text, float width = 0)
     {
-        float w = width > 0 ? width * ImGuiHelpers.GlobalScale : ImGui.CalcTextSize(text).X;
+        float w = width > 0 ? width * PoserUI.Scale : ImGui.CalcTextSize(text).X;
         float textY = _startPos.Y + (_height - ImGui.GetTextLineHeight()) / 2f;
         ImGui.SetCursorPos(new Vector2(_currentX, textY));
         ImGui.Text(text);
@@ -174,7 +172,7 @@ public sealed class RowBuilder : IDisposable
         var colorVec = ImGui.ColorConvertU32ToFloat4(color);
 
         // Add padding to the color picker popup
-        float popupPadding = 8f * ImGuiHelpers.GlobalScale;
+        float popupPadding = 8f * PoserUI.Scale;
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(popupPadding, popupPadding));
         bool changed = ImGui.ColorEdit4(id, ref colorVec, flags);
         ImGui.PopStyleVar();
@@ -198,7 +196,7 @@ public sealed class RowBuilder : IDisposable
         ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y));
 
         // Add padding to the color picker popup
-        float popupPadding = 8f * ImGuiHelpers.GlobalScale;
+        float popupPadding = 8f * PoserUI.Scale;
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(popupPadding, popupPadding));
         bool changed = ImGui.ColorEdit4(id, ref color, flags);
         ImGui.PopStyleVar();
@@ -235,7 +233,7 @@ public sealed class RowBuilder : IDisposable
     /// <returns>True if selection changed.</returns>
     public bool Dropdown(string id, ref int currentIndex, string[] items, float width = 150f)
     {
-        float w = width * ImGuiHelpers.GlobalScale;
+        float w = width * PoserUI.Scale;
         // Center dropdown vertically
         float offsetY = (_height - PoserDropdown.Height) / 2f;
         ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y + offsetY));
@@ -268,7 +266,7 @@ public sealed class RowBuilder : IDisposable
     /// <param name="width">Spacer width in unscaled pixels.</param>
     public RowBuilder Spacer(float width)
     {
-        _currentX += width * ImGuiHelpers.GlobalScale;
+        _currentX += width * PoserUI.Scale;
         return this;
     }
 
@@ -291,13 +289,13 @@ public sealed class RowBuilder : IDisposable
     public bool RightColorEdit(string id, ref uint color, ImGuiColorEditFlags flags = ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.NoAlpha)
     {
         float w = ImGui.GetFrameHeight();
-        float padding = 4f * ImGuiHelpers.GlobalScale;
+        float padding = 4f * PoserUI.Scale;
         _rightX -= padding + w; // padding on right, then width
         ImGui.SetCursorPos(new Vector2(_rightX, _startPos.Y));
         var colorVec = ImGui.ColorConvertU32ToFloat4(color);
 
         // Add padding to the color picker popup
-        float popupPadding = 8f * ImGuiHelpers.GlobalScale;
+        float popupPadding = 8f * PoserUI.Scale;
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(popupPadding, popupPadding));
         bool changed = ImGui.ColorEdit4(id, ref colorVec, flags);
         ImGui.PopStyleVar();
@@ -331,7 +329,7 @@ public sealed class RowBuilder : IDisposable
     /// <returns>True if clicked.</returns>
     public bool RightButton(string id, string label)
     {
-        float paddingX = 12f * ImGuiHelpers.GlobalScale;
+        float paddingX = 12f * PoserUI.Scale;
         var textSize = ImGui.CalcTextSize(label);
         float w = textSize.X + paddingX * 2;
         _rightX -= w;
@@ -345,7 +343,7 @@ public sealed class RowBuilder : IDisposable
     /// <param name="width">Spacer width in unscaled pixels.</param>
     public RowBuilder RightSpacer(float width)
     {
-        _rightX -= width * ImGuiHelpers.GlobalScale;
+        _rightX -= width * PoserUI.Scale;
         return this;
     }
 
@@ -357,7 +355,7 @@ public sealed class RowBuilder : IDisposable
     /// <returns>True if clicked.</returns>
     public bool Button(string id, string label)
     {
-        float paddingX = 12f * ImGuiHelpers.GlobalScale;
+        float paddingX = 12f * PoserUI.Scale;
         var textSize = ImGui.CalcTextSize(label);
         float w = textSize.X + paddingX * 2;
         ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y));
@@ -373,7 +371,7 @@ public sealed class RowBuilder : IDisposable
     /// <param name="draw">Drawing action.</param>
     public RowBuilder Custom(float width, Action draw)
     {
-        float w = width * ImGuiHelpers.GlobalScale;
+        float w = width * PoserUI.Scale;
         ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y));
         draw();
         _currentX += w;

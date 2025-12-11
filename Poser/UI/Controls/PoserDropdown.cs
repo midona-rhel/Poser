@@ -35,7 +35,7 @@ public static class PoserDropdown
             return false;
 
         bool changed = false;
-        float scale = ImGuiHelpers.GlobalScale;
+        float scale = PoserUI.Scale;
         float height = DropdownHeight * scale;
         float buttonW = ButtonWidth * scale;
         float rounding = Rounding * scale;
@@ -281,7 +281,7 @@ public static class PoserDropdown
     /// <summary>
     /// Gets the dropdown height (scaled).
     /// </summary>
-    public static float Height => DropdownHeight * ImGuiHelpers.GlobalScale;
+    public static float Height => DropdownHeight * PoserUI.Scale;
 
     /// <summary>
     /// Truncates text to fit within maxWidth, adding ellipsis if needed.

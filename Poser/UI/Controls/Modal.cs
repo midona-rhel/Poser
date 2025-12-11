@@ -1,7 +1,6 @@
 using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 
 namespace Poser.UI.Controls;
@@ -13,30 +12,27 @@ namespace Poser.UI.Controls;
 public delegate void ModalContentDrawer(ImDrawListPtr overlayDrawList);
 
 /// <summary>
-/// Reusable modal popup controller.
+/// Reusable modal window controller (non-blocking, resizable).
 /// Uses UIColors for consistent theming.
 /// </summary>
 public class Modal
 {
     private readonly string _title;
-    private readonly string _popupId;
-    private readonly Vector2 _size;
-    private readonly ImGuiWindowFlags _flags;
+    private readonly string _windowId;
+    private readonly Vector2 _minSize;
 
     private bool _isOpen;
 
     /// <summary>
-    /// Creates a new modal with the specified title and size.
+    /// Creates a new modal with the specified title and minimum size.
     /// </summary>
     /// <param name="title">The modal title displayed in the title bar.</param>
-    /// <param name="size">The modal size (before GlobalScale).</param>
-    /// <param name="flags">Additional window flags (NoResize, NoMove, NoCollapse are always applied).</param>
-    public Modal(string title, Vector2 size, ImGuiWindowFlags flags = ImGuiWindowFlags.None)
+    /// <param name="minSize">The minimum modal size (before GlobalScale). Can resize larger but not smaller.</param>
+    public Modal(string title, Vector2 minSize, ImGuiWindowFlags flags = ImGuiWindowFlags.None)
     {
         _title = title;
-        _popupId = $"{title}##modal_{Guid.NewGuid():N}";
-        _size = size;
-        _flags = flags | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse;
+        _windowId = $"{title}##modal_{Guid.NewGuid():N}";
+        _minSize = minSize;
     }
 
     /// <summary>
@@ -50,7 +46,6 @@ public class Modal
     public void Open()
     {
         _isOpen = true;
-        ImGui.OpenPopup(_popupId);
     }
 
     /// <summary>
@@ -59,7 +54,6 @@ public class Modal
     public void Close()
     {
         _isOpen = false;
-        ImGui.CloseCurrentPopup();
     }
 
     /// <summary>
@@ -78,12 +72,16 @@ public class Modal
             return;
 
         var displaySize = ImGui.GetIO().DisplaySize;
-        var modalSize = _size * ImGuiHelpers.GlobalScale;
+        var minSize = _minSize * PoserUI.Scale;
 
+        // Center on first appearance
         ImGui.SetNextWindowPos(
-            new Vector2((displaySize.X - modalSize.X) / 2, (displaySize.Y - modalSize.Y) / 2),
+            new Vector2((displaySize.X - minSize.X) / 2, (displaySize.Y - minSize.Y) / 2),
             ImGuiCond.Appearing);
-        ImGui.SetNextWindowSize(modalSize, ImGuiCond.Always);
+        ImGui.SetNextWindowSize(minSize, ImGuiCond.Appearing);
+
+        // Allow resizing larger but not smaller
+        ImGui.SetNextWindowSizeConstraints(minSize, new Vector2(float.MaxValue, float.MaxValue));
 
         // Apply UIColors - Background for all surfaces, ControlBackground for inputs
         using (ImRaii.PushColor(ImGuiCol.WindowBg, UIColors.Background))
@@ -105,14 +103,17 @@ public class Modal
         using (ImRaii.PushColor(ImGuiCol.Header, UIColors.SelectionActive))
         using (ImRaii.PushColor(ImGuiCol.HeaderHovered, UIColors.SelectionHovered))
         using (ImRaii.PushColor(ImGuiCol.HeaderActive, UIColors.SelectionActiveHovered))
+        using (ImRaii.PushColor(ImGuiCol.ResizeGrip, UIColors.Border))
+        using (ImRaii.PushColor(ImGuiCol.ResizeGripHovered, UIColors.SelectionHovered))
+        using (ImRaii.PushColor(ImGuiCol.ResizeGripActive, UIColors.SelectionActive))
         {
-            if (ImGui.BeginPopupModal(_popupId, ref _isOpen, _flags))
+            if (ImGui.Begin(_windowId, ref _isOpen, ImGuiWindowFlags.NoCollapse))
             {
                 // Capture modal's draw list before creating child window
                 var modalDrawList = ImGui.GetWindowDrawList();
 
                 // Add internal padding so content doesn't reach modal edges
-                float padding = 12f * ImGuiHelpers.GlobalScale;
+                float padding = 12f * PoserUI.Scale;
                 var available = ImGui.GetContentRegionAvail();
                 ImGui.SetCursorPos(ImGui.GetCursorPos() + new Vector2(padding, padding));
                 var childSize = available - new Vector2(padding * 2, padding * 2);
@@ -120,8 +121,8 @@ public class Modal
                 {
                     drawContent(modalDrawList);
                 }
-                ImGui.EndPopup();
             }
+            ImGui.End();
         }
     }
 
@@ -143,14 +144,18 @@ public class Modal
             return;
 
         var displaySize = ImGui.GetIO().DisplaySize;
-        var modalSize = _size * ImGuiHelpers.GlobalScale;
+        var minSize = _minSize * PoserUI.Scale;
 
+        // Center on first appearance
         ImGui.SetNextWindowPos(
-            new Vector2((displaySize.X - modalSize.X) / 2, (displaySize.Y - modalSize.Y) / 2),
+            new Vector2((displaySize.X - minSize.X) / 2, (displaySize.Y - minSize.Y) / 2),
             ImGuiCond.Appearing);
-        ImGui.SetNextWindowSize(modalSize, ImGuiCond.Always);
+        ImGui.SetNextWindowSize(minSize, ImGuiCond.Appearing);
 
-        var customPopupId = $"{title}##{_popupId}";
+        // Allow resizing larger but not smaller
+        ImGui.SetNextWindowSizeConstraints(minSize, new Vector2(float.MaxValue, float.MaxValue));
+
+        var customWindowId = $"{title}##{_windowId}";
 
         // Apply UIColors - Background for all surfaces, ControlBackground for inputs
         using (ImRaii.PushColor(ImGuiCol.WindowBg, UIColors.Background))
@@ -172,14 +177,17 @@ public class Modal
         using (ImRaii.PushColor(ImGuiCol.Header, UIColors.SelectionActive))
         using (ImRaii.PushColor(ImGuiCol.HeaderHovered, UIColors.SelectionHovered))
         using (ImRaii.PushColor(ImGuiCol.HeaderActive, UIColors.SelectionActiveHovered))
+        using (ImRaii.PushColor(ImGuiCol.ResizeGrip, UIColors.Border))
+        using (ImRaii.PushColor(ImGuiCol.ResizeGripHovered, UIColors.SelectionHovered))
+        using (ImRaii.PushColor(ImGuiCol.ResizeGripActive, UIColors.SelectionActive))
         {
-            if (ImGui.BeginPopupModal(customPopupId, ref _isOpen, _flags))
+            if (ImGui.Begin(customWindowId, ref _isOpen, ImGuiWindowFlags.NoCollapse))
             {
                 // Capture modal's draw list before creating child window
                 var modalDrawList = ImGui.GetWindowDrawList();
 
                 // Add internal padding so content doesn't reach modal edges
-                float padding = 12f * ImGuiHelpers.GlobalScale;
+                float padding = 12f * PoserUI.Scale;
                 var available = ImGui.GetContentRegionAvail();
                 ImGui.SetCursorPos(ImGui.GetCursorPos() + new Vector2(padding, padding));
                 var childSize = available - new Vector2(padding * 2, padding * 2);
@@ -187,8 +195,8 @@ public class Modal
                 {
                     drawContent(modalDrawList);
                 }
-                ImGui.EndPopup();
             }
+            ImGui.End();
         }
     }
 }

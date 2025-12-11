@@ -23,7 +23,7 @@ public static class PoserCheckbox
     /// <returns>True if value changed.</returns>
     public static bool Draw(string id, ref bool value)
     {
-        float scale = ImGuiHelpers.GlobalScale;
+        float scale = PoserUI.Scale;
         float size = CheckboxSize * scale;
         float rounding = CheckboxRounding * scale;
 
@@ -84,5 +84,5 @@ public static class PoserCheckbox
     /// <summary>
     /// Gets the checkbox size (scaled).
     /// </summary>
-    public static float Size => CheckboxSize * ImGuiHelpers.GlobalScale;
+    public static float Size => CheckboxSize * PoserUI.Scale;
 }

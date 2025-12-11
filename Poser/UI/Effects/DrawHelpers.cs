@@ -2,6 +2,7 @@ using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using Poser.UI.Controls;
 
 namespace Poser.UI.Effects;
 
@@ -21,7 +22,7 @@ public static class DrawHelpers
     public static void DrawDropShadow(ImDrawListPtr drawList, Vector2 rectMin, Vector2 rectMax,
         float shadowSize = 8f, float shadowAlpha = 0.4f)
     {
-        float size = shadowSize * ImGuiHelpers.GlobalScale;
+        float size = shadowSize * PoserUI.Scale;
         var shadowColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0, 0, shadowAlpha));
         var transparent = ImGui.ColorConvertFloat4ToU32(Vector4.Zero);
 
@@ -52,7 +53,7 @@ public static class DrawHelpers
     public static void DrawDropShadowWithGap(ImDrawListPtr drawList, Vector2 rectMin, Vector2 rectMax,
         Edge gapEdge, float gapStart, float gapEnd, float shadowSize = 8f, float shadowAlpha = 0.4f)
     {
-        float size = shadowSize * ImGuiHelpers.GlobalScale;
+        float size = shadowSize * PoserUI.Scale;
         var shadowColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0, 0, shadowAlpha));
         var transparent = ImGui.ColorConvertFloat4ToU32(Vector4.Zero);
 
@@ -283,7 +284,7 @@ public static class DrawHelpers
     public static void DrawDropShadow(ImDrawListPtr drawList, Vector2 rectMin, Vector2 rectMax,
         Edge excludeEdge, float shadowSize = 8f, float shadowAlpha = 0.4f)
     {
-        float size = shadowSize * ImGuiHelpers.GlobalScale;
+        float size = shadowSize * PoserUI.Scale;
         var shadowColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0, 0, shadowAlpha));
         var transparent = ImGui.ColorConvertFloat4ToU32(Vector4.Zero);
 
@@ -421,7 +422,7 @@ public static class DrawHelpers
     public static void DrawInnerEdgeShadow(ImDrawListPtr drawList, Edge edge, Vector2 areaMin, Vector2 areaMax,
         float shadowSize, float gapStart = -1, float gapEnd = -1, float shadowAlpha = 0.4f)
     {
-        float size = shadowSize * ImGuiHelpers.GlobalScale;
+        float size = shadowSize * PoserUI.Scale;
         var shadowColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0, 0, shadowAlpha));
         var transparent = ImGui.ColorConvertFloat4ToU32(Vector4.Zero);
 
@@ -554,7 +555,7 @@ public static class DrawHelpers
     public static void DrawControlShadow(ImDrawListPtr drawList, Vector2 rectMin, Vector2 rectMax,
         float rounding = 4f, float opacityModifier = 1f)
     {
-        float scale = ImGuiHelpers.GlobalScale;
+        float scale = PoserUI.Scale;
         float shadowOffset = 1f * scale; // 50% shorter than button's 2f
         float opacity = 0.20f * opacityModifier;
         var shadowColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0, 0, opacity));

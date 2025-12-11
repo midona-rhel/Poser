@@ -22,7 +22,7 @@ public static class PoserButton
     /// <returns>True if button was clicked.</returns>
     public static bool Draw(string id, string label)
     {
-        float scale = ImGuiHelpers.GlobalScale;
+        float scale = PoserUI.Scale;
         float height = ButtonHeight * scale;
         float rounding = ButtonRounding * scale;
         float paddingX = ButtonPaddingX * scale;

@@ -29,12 +29,16 @@ public static class Scrubber
     /// <param name="max">Maximum value.</param>
     /// <param name="step">Step increment for snapping. If 0, no snapping.</param>
     /// <param name="width">Total width including value text. If 0, uses available width.</param>
+    /// <param name="displayMultiplier">Multiplier for display value (e.g., 100 for percentage).</param>
+    /// <param name="displayFormat">Format string for display (e.g., "F0" for no decimals).</param>
+    /// <param name="displaySuffix">Suffix for display (e.g., "%" for percentage).</param>
     /// <returns>True if value was changed.</returns>
-    public static bool Draw(string id, ref float value, float min, float max, float step = 0f, float width = 0f)
+    public static bool Draw(string id, ref float value, float min, float max, float step = 0f, float width = 0f,
+        float displayMultiplier = 1f, string displayFormat = "F2", string displaySuffix = "")
     {
         bool changed = false;
 
-        float scale = ImGuiHelpers.GlobalScale;
+        float scale = PoserUI.Scale;
         float thumbW = ThumbWidth * scale;
         float thumbH = ThumbHeight * scale;
         float trackH = TrackHeight * scale;
@@ -45,7 +49,7 @@ public static class Scrubber
         float controlH = thumbH;
 
         // Calculate text width based on max value format
-        var maxText = max.ToString("F2", CultureInfo.InvariantCulture);
+        var maxText = (max * displayMultiplier).ToString(displayFormat, CultureInfo.InvariantCulture) + displaySuffix;
         float valueTextW = ImGui.CalcTextSize(maxText).X;
 
         // Calculate dimensions
@@ -146,7 +150,7 @@ public static class Scrubber
         drawList.AddRect(thumbPos, thumbEnd, UIColors.BorderU32, rounding, ImDrawFlags.None, 1f);
 
         // Draw value text to the right, vertically centered
-        var valueText = value.ToString("F2", CultureInfo.InvariantCulture);
+        var valueText = (value * displayMultiplier).ToString(displayFormat, CultureInfo.InvariantCulture) + displaySuffix;
         float textOffsetY = (controlH - ImGui.GetTextLineHeight()) / 2f;
         var textPos = new Vector2(cursorScreenPos.X + trackWidth + thumbW + gap, cursorScreenPos.Y + textOffsetY);
         drawList.AddText(textPos, UIColors.TextU32, valueText);
