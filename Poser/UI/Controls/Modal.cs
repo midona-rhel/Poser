@@ -96,7 +96,13 @@ public class Modal
         {
             if (ImGui.BeginPopupModal(_popupId, ref _isOpen, _flags))
             {
-                drawContent();
+                // Add internal padding so content doesn't reach modal edges
+                float padding = 12f * ImGuiHelpers.GlobalScale;
+                ImGui.SetCursorPos(ImGui.GetCursorPos() + new Vector2(padding, padding));
+                using (ImRaii.Child("##modal_content", ImGui.GetContentRegionAvail() - new Vector2(padding, padding), false))
+                {
+                    drawContent();
+                }
                 ImGui.EndPopup();
             }
         }
@@ -145,7 +151,13 @@ public class Modal
         {
             if (ImGui.BeginPopupModal(customPopupId, ref _isOpen, _flags))
             {
-                drawContent();
+                // Add internal padding so content doesn't reach modal edges
+                float padding = 12f * ImGuiHelpers.GlobalScale;
+                ImGui.SetCursorPos(ImGui.GetCursorPos() + new Vector2(padding, padding));
+                using (ImRaii.Child("##modal_content", ImGui.GetContentRegionAvail() - new Vector2(padding, padding), false))
+                {
+                    drawContent();
+                }
                 ImGui.EndPopup();
             }
         }

@@ -115,12 +115,15 @@ public class TabbedPanel
             }
         }
 
+        // Use foreground draw list so border/shadow render on top of child windows
+        var fgDrawList = ImGui.GetForegroundDrawList();
+
         // Draw custom content panel border that skips active tab area
-        DrawContentBorder(drawList, contentPanelPos, contentPanelEnd, tabBarStart, availableSize.Y,
+        DrawContentBorder(fgDrawList, contentPanelPos, contentPanelEnd, tabBarStart, availableSize.Y,
             activeTabTop, activeTabBottom, borderColorU32);
 
-        // Draw content panel shadow over inactive tabs
-        DrawContentPanelShadow(drawList, contentPanelPos, availableSize.Y, tabBarStart,
+        // Draw content panel shadow (outside, all sides)
+        DrawContentPanelShadow(fgDrawList, contentPanelPos, contentPanelEnd, tabBarStart,
             tabHeightScaled, spacingScaled);
     }
 
@@ -302,35 +305,128 @@ public class TabbedPanel
         }
     }
 
-    private void DrawContentPanelShadow(ImDrawListPtr drawList, Vector2 contentPos, float height,
+    private void DrawContentPanelShadow(ImDrawListPtr drawList, Vector2 contentPos, Vector2 contentEnd,
         Vector2 tabBarStart, float tabHeightScaled, float spacingScaled)
     {
         float activeTabTop = tabBarStart.Y + _activeTabIndex * (tabHeightScaled + spacingScaled);
         float activeTabBottom = activeTabTop + tabHeightScaled;
         float shadowSize = 8f * ImGuiHelpers.GlobalScale;
-        float padding = 2f * ImGuiHelpers.GlobalScale;
 
         var shadowColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0, 0, 0.4f));
         var transparent = ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0, 0, 0f));
 
-        float bottomY = tabBarStart.Y + height;
-
-        // Left shadow - above active tab (with padding from edges)
-        if (activeTabTop > tabBarStart.Y + padding)
+        // Left shadow - above active tab
+        if (activeTabTop > contentPos.Y)
         {
             drawList.AddRectFilledMultiColor(
-                new Vector2(contentPos.X - shadowSize, tabBarStart.Y + padding),
+                new Vector2(contentPos.X - shadowSize, contentPos.Y),
                 new Vector2(contentPos.X, activeTabTop),
                 transparent, shadowColor, shadowColor, transparent);
         }
 
-        // Left shadow - below active tab (with padding from edges)
-        if (activeTabBottom < bottomY - padding)
+        // Left shadow - below active tab
+        if (activeTabBottom < contentEnd.Y)
         {
             drawList.AddRectFilledMultiColor(
                 new Vector2(contentPos.X - shadowSize, activeTabBottom),
-                new Vector2(contentPos.X, bottomY - padding),
+                new Vector2(contentPos.X, contentEnd.Y),
                 transparent, shadowColor, shadowColor, transparent);
+        }
+
+        // Top shadow
+        drawList.AddRectFilledMultiColor(
+            new Vector2(contentPos.X, contentPos.Y - shadowSize),
+            new Vector2(contentEnd.X, contentPos.Y),
+            transparent, transparent, shadowColor, shadowColor);
+
+        // Right shadow
+        drawList.AddRectFilledMultiColor(
+            new Vector2(contentEnd.X, contentPos.Y),
+            new Vector2(contentEnd.X + shadowSize, contentEnd.Y),
+            shadowColor, transparent, transparent, shadowColor);
+
+        // Bottom shadow
+        drawList.AddRectFilledMultiColor(
+            new Vector2(contentPos.X, contentEnd.Y),
+            new Vector2(contentEnd.X, contentEnd.Y + shadowSize),
+            shadowColor, shadowColor, transparent, transparent);
+
+        // Corner shadows using radial gradient (quarter circles)
+        // Use same shadowColor (0.4 alpha) - the DrawCornerShadow will fade it radially
+
+        // Top-right corner
+        DrawCornerShadow(drawList, new Vector2(contentEnd.X, contentPos.Y), shadowSize, shadowColor, transparent, 3);
+
+        // Bottom-right corner
+        DrawCornerShadow(drawList, contentEnd, shadowSize, shadowColor, transparent, 0);
+
+        // Bottom-left corner
+        DrawCornerShadow(drawList, new Vector2(contentPos.X, contentEnd.Y), shadowSize, shadowColor, transparent, 1);
+
+        // Top-left corner
+        DrawCornerShadow(drawList, contentPos, shadowSize, shadowColor, transparent, 2);
+    }
+
+    private static void DrawCornerShadow(ImDrawListPtr drawList, Vector2 corner, float radius,
+        uint innerColor, uint outerColor, int quadrant)
+    {
+        // Use triangle fan approach for proper radial gradient
+        // This creates triangles from the corner (inner color) to arc points (outer color)
+        const int segments = 8;
+
+        // Calculate start and end angles for each quadrant
+        float startAngle, endAngle;
+        switch (quadrant)
+        {
+            case 0: // bottom-right: 0 to 90 degrees (right to down)
+                startAngle = 0f;
+                endAngle = MathF.PI * 0.5f;
+                break;
+            case 1: // bottom-left: 90 to 180 degrees (down to left)
+                startAngle = MathF.PI * 0.5f;
+                endAngle = MathF.PI;
+                break;
+            case 2: // top-left: 180 to 270 degrees (left to up)
+                startAngle = MathF.PI;
+                endAngle = MathF.PI * 1.5f;
+                break;
+            case 3: // top-right: 270 to 360 degrees (up to right)
+                startAngle = MathF.PI * 1.5f;
+                endAngle = MathF.PI * 2f;
+                break;
+            default:
+                return;
+        }
+
+        // Get white pixel UV for solid color rendering
+        var uv = ImGui.GetFontTexUvWhitePixel();
+
+        // Reserve vertices: 1 center + (segments + 1) arc points
+        // Reserve indices: segments * 3 (one triangle per segment)
+        int vtxCount = segments + 2;
+        int idxCount = segments * 3;
+
+        uint vtxBase = (uint)drawList.VtxBuffer.Size;
+        drawList.PrimReserve(idxCount, vtxCount);
+
+        // Center vertex (inner color)
+        drawList.PrimWriteVtx(corner, uv, innerColor);
+
+        // Arc vertices (outer color)
+        float angleStep = (endAngle - startAngle) / segments;
+        for (int i = 0; i <= segments; i++)
+        {
+            float angle = startAngle + i * angleStep;
+            var pos = corner + new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * radius;
+            drawList.PrimWriteVtx(pos, uv, outerColor);
+        }
+
+        // Write triangle indices (fan from center)
+        for (int i = 0; i < segments; i++)
+        {
+            drawList.PrimWriteIdx((ushort)vtxBase);           // center
+            drawList.PrimWriteIdx((ushort)(vtxBase + 1 + i)); // current arc point
+            drawList.PrimWriteIdx((ushort)(vtxBase + 2 + i)); // next arc point
         }
     }
 }
