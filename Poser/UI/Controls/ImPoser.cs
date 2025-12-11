@@ -141,8 +141,8 @@ public static class ImPoser
 
         using (ImRaii.PushStyle(ImGuiStyleVar.FramePadding, Vector2.Zero))
         using (ImRaii.PushColor(ImGuiCol.Button, Vector4.Zero))
-        using (ImRaii.PushColor(ImGuiCol.ButtonHovered, ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonHovered] with { W = 0.3f }))
-        using (ImRaii.PushColor(ImGuiCol.ButtonActive, ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive] with { W = 0.5f }))
+        using (ImRaii.PushColor(ImGuiCol.ButtonHovered, UIColors.ButtonHovered with { W = 0.3f }))
+        using (ImRaii.PushColor(ImGuiCol.ButtonActive, UIColors.ButtonActive with { W = 0.5f }))
         using (ImRaii.PushFont(UiBuilder.IconFont))
         {
             clicked = ImGui.Button($"{icon.ToIconString()}##{id}", buttonSize);
@@ -214,8 +214,8 @@ public static class ImPoser
                     startPos.Y + (buttonSize.Y - iconSize.Y) / 2);
 
                 var textColor = enabled
-                    ? ImGui.GetColorU32(ImGuiCol.Text)
-                    : ImGui.GetColorU32(ImGuiCol.TextDisabled);
+                    ? UIColors.TextU32
+                    : UIColors.TextDisabledU32;
                 drawList.AddText(iconPos, textColor, iconStr);
             }
 
@@ -254,8 +254,8 @@ public static class ImPoser
 
         using (ImRaii.PushStyle(ImGuiStyleVar.FramePadding, Vector2.Zero))
         using (ImRaii.PushColor(ImGuiCol.Button, Vector4.Zero))
-        using (ImRaii.PushColor(ImGuiCol.ButtonHovered, ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonHovered] with { W = 0.3f }))
-        using (ImRaii.PushColor(ImGuiCol.ButtonActive, ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive] with { W = 0.5f }))
+        using (ImRaii.PushColor(ImGuiCol.ButtonHovered, UIColors.ButtonHovered with { W = 0.3f }))
+        using (ImRaii.PushColor(ImGuiCol.ButtonActive, UIColors.ButtonActive with { W = 0.5f }))
         using (ImRaii.PushFont(UiBuilder.IconFont))
         {
             // Draw invisible icon button for sizing
@@ -330,7 +330,7 @@ public static class ImPoser
         bool toggleClicked = false;
         bool lockClicked = false;
 
-        using (ImRaii.PushColor(ImGuiCol.ChildBg, ImGui.GetColorU32(ImGuiCol.Tab)))
+        using (ImRaii.PushColor(ImGuiCol.ChildBg, UIColors.ControlBackgroundU32))
         using (ImRaii.PushStyle(ImGuiStyleVar.ChildRounding, ImGui.GetStyle().FrameRounding))
         {
             var height = 25 * ImGuiHelpers.GlobalScale;
@@ -372,7 +372,7 @@ public static class ImPoser
     /// </summary>
     public static bool ToggleButton(string label, Vector2 size, bool isActive)
     {
-        using (ImRaii.PushColor(ImGuiCol.Button, ImGui.GetColorU32(isActive ? ImGuiCol.TabActive : ImGuiCol.Tab)))
+        using (ImRaii.PushColor(ImGuiCol.Button, isActive ? UIColors.SelectionActive : UIColors.ControlBackground))
         {
             return ImGui.Button(label, size);
         }
@@ -509,21 +509,21 @@ public static class ImPoser
     }
 
     /// <summary>
-    /// Gets the tab hovered color for row highlighting.
+    /// Gets the selection hovered color for row highlighting.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static Vector4 GetTabHoveredColor()
+    public static Vector4 GetSelectionHoveredColor()
     {
-        return ImGui.GetStyle().Colors[(int)ImGuiCol.TabHovered];
+        return UIColors.SelectionHovered;
     }
 
     /// <summary>
-    /// Gets the tab active color for selection highlighting.
+    /// Gets the selection color for highlighting.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static Vector4 GetTabActiveColor()
+    public static Vector4 GetSelectionColor()
     {
-        return ImGui.GetStyle().Colors[(int)ImGuiCol.TabActive];
+        return UIColors.SelectionActive;
     }
 
     #endregion

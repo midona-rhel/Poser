@@ -60,6 +60,12 @@ public class ConfigurationService : IDisposable
         ApplyChange();
     }
 
+    public void ResetUI()
+    {
+        Config.UI = new UIConfiguration();
+        ApplyChange();
+    }
+
     public void Dispose()
     {
         Save();

@@ -62,8 +62,8 @@ public class EntityList
         float cellPadding = CellPaddingX * ImGuiHelpers.GlobalScale;
 
         var brighterBg = ImPoser.GetBrighterTableBg();
-        var tabHovered = ImPoser.GetTabHoveredColor();
-        var tabActive = ImPoser.GetTabActiveColor();
+        var tabHovered = ImPoser.GetSelectionHoveredColor();
+        var tabActive = ImPoser.GetSelectionColor();
 
         var actors = _actorManager.Actors;
         int totalEntities = actors.Count + (_gPoseService.IsGPosing ? 1 : 0); // +1 for camera
