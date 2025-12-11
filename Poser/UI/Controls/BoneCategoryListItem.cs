@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Interface;
+using Poser.Config;
 using Poser.Data.Config;
 using Poser.Entities;
 using Poser.Services;
@@ -51,7 +52,7 @@ public class BoneCategoryListItem : TreeListItem
         foreach (var childCategory in category.Children)
         {
             // Skip NSFW categories unless setting is enabled
-            if (childCategory.IsNsfw && !(PoserSettings.Instance?.ShowNsfwBones ?? false))
+            if (childCategory.IsNsfw && !(ConfigurationService.Instance?.Config.Display.ShowNsfwBones ?? false))
                 continue;
 
             var childItem = new BoneCategoryListItem(childCategory, skeleton, depth + 1, selectionService);

@@ -1,5 +1,6 @@
 using System.Numerics;
 using Dalamud.Interface;
+using Poser.Config;
 using Poser.Data.Config;
 using Poser.Entities;
 using Poser.Services;
@@ -56,7 +57,7 @@ public class ActorListItem : TreeListItem
     }
 
     public override string Id => _actor.Id.ToString();
-    public override string Name => PoserSettings.Instance.GetDisplayName(_actor);
+    public override string Name => ConfigurationService.Instance.GetDisplayName(_actor);
 
     public override FontAwesomeIcon Icon => _actor.ActorKind switch
     {

@@ -2,9 +2,9 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility.Raii;
-using Poser.Data.Config;
 using Poser.Services;
 using Poser.UI.Controls;
+using Poser.UI.Modals;
 
 namespace Poser.UI.Components;
 
@@ -17,6 +17,7 @@ public class TopBar
     private readonly IGPoseService _gPoseService;
     private readonly IEditorState _editorState;
     private readonly IHistoryService _historyService;
+    private readonly SettingsModal _settingsModal = new();
 
     public TopBar(
         IGPoseService gPoseService,
@@ -105,7 +106,7 @@ public class TopBar
         {
             if (ImGui.Button(FontAwesomeIcon.Cog.ToIconString(), new Vector2(buttonSize, buttonSize)))
             {
-                ImGui.OpenPopup("##settings_popup");
+                _settingsModal.Open();
             }
         }
 
@@ -114,33 +115,7 @@ public class TopBar
             ImGui.SetTooltip("Settings");
         }
 
-        // Settings popup menu
-        if (ImGui.BeginPopup("##settings_popup"))
-        {
-            ImGui.TextDisabled("Display");
-            ImGui.Separator();
-
-            var showNsfw = PoserSettings.Instance.ShowNsfwBones;
-            if (ImGui.Checkbox("Show NSFW Bones", ref showNsfw))
-            {
-                PoserSettings.Instance.ShowNsfwBones = showNsfw;
-            }
-            if (ImGui.IsItemHovered())
-            {
-                ImGui.SetTooltip("Show IVCS genitalia and other adult content bones");
-            }
-
-            var anonymousMode = PoserSettings.Instance.AnonymousMode;
-            if (ImGui.Checkbox("Anonymous Mode", ref anonymousMode))
-            {
-                PoserSettings.Instance.AnonymousMode = anonymousMode;
-            }
-            if (ImGui.IsItemHovered())
-            {
-                ImGui.SetTooltip("Replace actor names with random 5-character codes");
-            }
-
-            ImGui.EndPopup();
-        }
+        // Draw settings modal
+        _settingsModal.Draw();
     }
 }

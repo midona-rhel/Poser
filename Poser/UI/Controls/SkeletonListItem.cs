@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Interface;
+using Poser.Config;
 using Poser.Data.Config;
 using Poser.Entities;
 using Poser.Services;
@@ -38,7 +39,7 @@ public class SkeletonListItem : TreeListItem
     /// </summary>
     private void BuildCategories()
     {
-        bool showNsfw = PoserSettings.Instance?.ShowNsfwBones ?? false;
+        bool showNsfw = ConfigurationService.Instance?.Config.Display.ShowNsfwBones ?? false;
 
         foreach (var category in _categoryConfig.RootCategories)
         {

@@ -5,6 +5,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
+using Poser.Config;
 using Poser.Data;
 using Poser.Data.Config;
 using Poser.Entities;
@@ -75,7 +76,7 @@ public class EntityList
         }
 
         // Check if NSFW setting changed - update category visibility without full rebuild
-        var currentShowNsfw = PoserSettings.Instance?.ShowNsfwBones ?? false;
+        var currentShowNsfw = ConfigurationService.Instance?.Config.Display.ShowNsfwBones ?? false;
         if (_lastShowNsfw != currentShowNsfw)
         {
             _lastShowNsfw = currentShowNsfw;

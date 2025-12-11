@@ -6,6 +6,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Bindings.ImGuizmo;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
+using Poser.Config;
 using Poser.Entities;
 using Poser.Services;
 
@@ -24,16 +25,20 @@ public class SkeletonOverlayWindow : Window
     private readonly ISelectionService _selectionService;
     private readonly IEditorState _editorState;
 
-    // Configuration (Ktisis-style values)
-    private const float DotRadius = 3.4f;
-    private const float LineThickness = 1.0f;
-    private const float LineOpacity = 0.232f;
-    private const float LineOpacityWhileUsing = 0.150f;
-    private const float OctahedraWidth = 4f;
+    // Configuration from settings
+    private static SkeletonConfiguration Config => ConfigurationService.Instance.Config.Skeleton;
 
-    // Colors (Ktisis defaults)
-    private const uint BoneColor = 0xFFFF9F68; // Ktisis bone blue/orange (ABGR format)
-    private const uint OutlineColor = 0xFF000000; // Black
+    private static float DotRadius => Config.BoneDotRadius;
+    private static float LineThickness => Config.BoneLineThickness;
+    private static float LineOpacity => Config.BoneLineOpacity;
+    private static float LineOpacityWhileUsing => Config.BoneLineOpacityWhileUsing;
+    private static float OctahedraWidth => Config.OctahedraWidth;
+
+    private static uint BoneColor => Config.BoneColor;
+    private static uint OutlineColor => Config.BoneOutlineColor;
+    private static uint SelectedBoneColor => Config.SelectedBoneColor;
+    private static uint ModifiedBoneColor => Config.ModifiedBoneColor;
+    private static uint HoveredBoneColor => Config.HoveredBoneColor;
 
     // Bone display data
     private class BoneDisplayData
@@ -345,7 +350,6 @@ public class SkeletonOverlayWindow : Window
         // Ktisis style: filled circle with bone color, black outline
         // Selected: radius +1, outline thickness 2.5
         // Normal: outline thickness 1.0
-        var selectedColor = ImGui.GetColorU32(ImGui.GetStyle().Colors[(int)ImGuiCol.TabActive]);
 
         foreach (var bone in bones)
         {
@@ -357,7 +361,7 @@ public class SkeletonOverlayWindow : Window
             {
                 radius += 1.0f;
                 outlineThickness = 2.5f;
-                color = selectedColor;
+                color = SelectedBoneColor;
             }
             else
             {
@@ -374,8 +378,6 @@ public class SkeletonOverlayWindow : Window
 
     private void DrawOctahedra(ImDrawListPtr drawList, List<BoneDisplayData> bones, float opacity)
     {
-        var selectedColor = ImGui.GetColorU32(ImGui.GetStyle().Colors[(int)ImGuiCol.TabActive]);
-        var hoveredColor = ImGui.GetColorU32(ImGui.GetStyle().Colors[(int)ImGuiCol.TabHovered]);
         var defaultColor = SetAlpha(BoneColor, 0.6f);
 
         foreach (var bone in bones)
@@ -383,8 +385,8 @@ public class SkeletonOverlayWindow : Window
             if (bone.ParentScreenPos == null) continue;
 
             uint color;
-            if (bone.IsSelected) color = selectedColor;
-            else if (bone.IsHovered) color = hoveredColor;
+            if (bone.IsSelected) color = SelectedBoneColor;
+            else if (bone.IsHovered) color = HoveredBoneColor;
             else color = defaultColor;
 
             var fillColor = SetAlpha(color, GetAlpha(color) * 0.5f * opacity);
@@ -417,9 +419,6 @@ public class SkeletonOverlayWindow : Window
 
     private void DrawJoints(ImDrawListPtr drawList, List<BoneDisplayData> bones)
     {
-        var selectedColor = ImGui.GetColorU32(ImGui.GetStyle().Colors[(int)ImGuiCol.TabActive]);
-        var hoveredColor = ImGui.GetColorU32(ImGui.GetStyle().Colors[(int)ImGuiCol.TabHovered]);
-
         foreach (var bone in bones)
         {
             var radius = 8f * ImGuiHelpers.GlobalScale;
@@ -428,12 +427,12 @@ public class SkeletonOverlayWindow : Window
             uint color;
             if (bone.IsSelected)
             {
-                color = selectedColor;
+                color = SelectedBoneColor;
                 radius += 2f * ImGuiHelpers.GlobalScale;
             }
             else if (bone.IsHovered)
             {
-                color = hoveredColor;
+                color = HoveredBoneColor;
             }
             else
             {

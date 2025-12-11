@@ -4,6 +4,7 @@ using Dalamud.Game.Command;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Poser.Config;
 using Poser.Core;
 using Poser.Core.BoneInfo;
 using Poser.Game;
@@ -53,6 +54,9 @@ public class Poser : IDalamudPlugin
             dataManager,
             keyState);
 
+        // Initialize configuration service (sets static Instance, must be before UI)
+        _ = _serviceProvider.GetRequiredService<ConfigurationService>();
+
         // Initialize UI Manager (triggers subscription to draw events)
         _ = _serviceProvider.GetRequiredService<IUIManager>();
 
@@ -96,6 +100,9 @@ public class Poser : IDalamudPlugin
         services.AddSingleton(commandManager);
         services.AddSingleton(dataManager);
         services.AddSingleton(keyState);
+
+        // Register configuration service (must be early - others depend on it)
+        services.AddSingleton<ConfigurationService>();
 
         // Register core services
         services.AddSingleton<EventBus>();
