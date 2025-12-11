@@ -123,11 +123,22 @@ public class UIManager : IUIManager
         // Subscribe to GPose state changes to auto-open/close UI
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
 
-        // Windows closed by default, opens when entering GPose
-        _mainWindow.IsOpen = false;
-        _gizmoOverlay.IsOpen = false;
-        _skeletonOverlay.IsOpen = false;
-        _hotbarWindow.IsOpen = false;
+        // Check if already in GPose on startup
+        if (_gPoseService.IsGPosing)
+        {
+            _mainWindow.IsOpen = true;
+            _gizmoOverlay.IsOpen = true;
+            _skeletonOverlay.IsOpen = true;
+            _hotbarWindow.IsOpen = true;
+        }
+        else
+        {
+            // Windows closed by default, opens when entering GPose
+            _mainWindow.IsOpen = false;
+            _gizmoOverlay.IsOpen = false;
+            _skeletonOverlay.IsOpen = false;
+            _hotbarWindow.IsOpen = false;
+        }
     }
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent e)

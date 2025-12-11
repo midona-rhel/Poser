@@ -7,6 +7,12 @@ using Dalamud.Interface.Utility.Raii;
 namespace Poser.UI.Controls;
 
 /// <summary>
+/// Delegate for drawing modal content with access to the modal's draw list.
+/// </summary>
+/// <param name="overlayDrawList">The modal's draw list for overlay rendering (shadow/border).</param>
+public delegate void ModalContentDrawer(ImDrawListPtr overlayDrawList);
+
+/// <summary>
 /// Reusable modal popup controller.
 /// Uses UIColors for consistent theming.
 /// </summary>
@@ -60,7 +66,13 @@ public class Modal
     /// Draws the modal with the specified content action.
     /// </summary>
     /// <param name="drawContent">Action to draw the modal content.</param>
-    public void Draw(Action drawContent)
+    public void Draw(Action drawContent) => Draw(dl => drawContent());
+
+    /// <summary>
+    /// Draws the modal with access to the modal's draw list for overlay rendering.
+    /// </summary>
+    /// <param name="drawContent">Delegate to draw the modal content, receives the modal's draw list.</param>
+    public void Draw(ModalContentDrawer drawContent)
     {
         if (!_isOpen)
             return;
@@ -96,12 +108,15 @@ public class Modal
         {
             if (ImGui.BeginPopupModal(_popupId, ref _isOpen, _flags))
             {
+                // Capture modal's draw list before creating child window
+                var modalDrawList = ImGui.GetWindowDrawList();
+
                 // Add internal padding so content doesn't reach modal edges
                 float padding = 12f * ImGuiHelpers.GlobalScale;
                 ImGui.SetCursorPos(ImGui.GetCursorPos() + new Vector2(padding, padding));
                 using (ImRaii.Child("##modal_content", ImGui.GetContentRegionAvail() - new Vector2(padding, padding), false))
                 {
-                    drawContent();
+                    drawContent(modalDrawList);
                 }
                 ImGui.EndPopup();
             }
@@ -113,7 +128,14 @@ public class Modal
     /// </summary>
     /// <param name="title">Custom title to display (overrides constructor title).</param>
     /// <param name="drawContent">Action to draw the modal content.</param>
-    public void Draw(string title, Action drawContent)
+    public void Draw(string title, Action drawContent) => Draw(title, dl => drawContent());
+
+    /// <summary>
+    /// Draws the modal with a custom title and access to the modal's draw list.
+    /// </summary>
+    /// <param name="title">Custom title to display (overrides constructor title).</param>
+    /// <param name="drawContent">Delegate to draw the modal content, receives the modal's draw list.</param>
+    public void Draw(string title, ModalContentDrawer drawContent)
     {
         if (!_isOpen)
             return;
@@ -151,12 +173,15 @@ public class Modal
         {
             if (ImGui.BeginPopupModal(customPopupId, ref _isOpen, _flags))
             {
+                // Capture modal's draw list before creating child window
+                var modalDrawList = ImGui.GetWindowDrawList();
+
                 // Add internal padding so content doesn't reach modal edges
                 float padding = 12f * ImGuiHelpers.GlobalScale;
                 ImGui.SetCursorPos(ImGui.GetCursorPos() + new Vector2(padding, padding));
                 using (ImRaii.Child("##modal_content", ImGui.GetContentRegionAvail() - new Vector2(padding, padding), false))
                 {
-                    drawContent();
+                    drawContent(modalDrawList);
                 }
                 ImGui.EndPopup();
             }

@@ -4,6 +4,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
+using Poser.UI.Effects;
 
 namespace Poser.UI.Controls;
 
@@ -53,7 +54,13 @@ public class TabbedPanel
     /// <summary>
     /// Draws the tabbed panel, filling available space.
     /// </summary>
-    public void Draw()
+    public void Draw() => Draw(null);
+
+    /// <summary>
+    /// Draws the tabbed panel with an optional parent draw list for overlays.
+    /// </summary>
+    /// <param name="overlayDrawList">Draw list to use for border/shadow. If null, uses foreground draw list.</param>
+    public void Draw(ImDrawListPtr? overlayDrawList)
     {
         var availableSize = ImGui.GetContentRegionAvail();
         var drawList = ImGui.GetWindowDrawList();
@@ -89,6 +96,11 @@ public class TabbedPanel
             if (child.Success)
             {
                 DrawTabBar(contentBgColor, brightBorderU32, borderColorU32, roundingScaled, tabHeightScaled, tabBarWidthScaled, spacingScaled);
+
+                // Draw shadow on right edge of tab bar (cast by content panel onto tabs)
+                var tabDrawList = ImGui.GetWindowDrawList();
+                DrawTabBarRightShadow(tabDrawList, tabBarStart, tabBarWidthScaled, availableSize.Y,
+                    activeTabTop, activeTabBottom);
             }
         }
 
@@ -99,13 +111,18 @@ public class TabbedPanel
 
         // Draw content area
         float paddingScaled = ContentPadding * ImGuiHelpers.GlobalScale;
-        using (ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, new Vector2(0, paddingScaled)))
+        using (ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, new Vector2(paddingScaled, paddingScaled)))
         using (ImRaii.PushStyle(ImGuiStyleVar.ChildBorderSize, 0f))
         using (ImRaii.PushColor(ImGuiCol.ChildBg, contentBgColor))
         using (var child = ImRaii.Child("##tabbed_panel_content", new Vector2(contentWidth, availableSize.Y), true))
         {
             if (child.Success)
             {
+                // Draw border inside content panel (before padding)
+                var contentDrawList = ImGui.GetWindowDrawList();
+                DrawContentBorder(contentDrawList, contentPanelPos, contentPanelEnd, tabBarStart, availableSize.Y,
+                    activeTabTop, activeTabBottom, borderColorU32);
+
                 // Apply inner padding - all sides
                 ImGui.SetCursorPos(ImGui.GetCursorPos() + new Vector2(paddingScaled, paddingScaled));
                 using (ImRaii.Child("##tabbed_panel_content_inner", ImGui.GetContentRegionAvail() - new Vector2(paddingScaled, paddingScaled), false))
@@ -115,16 +132,10 @@ public class TabbedPanel
             }
         }
 
-        // Use foreground draw list for border and shadow (not clipped to child window)
-        var fgDrawList = ImGui.GetForegroundDrawList();
-
-        // Draw custom content panel border that skips active tab area
-        DrawContentBorder(fgDrawList, contentPanelPos, contentPanelEnd, tabBarStart, availableSize.Y,
-            activeTabTop, activeTabBottom, borderColorU32);
-
-        // Draw content panel shadow
-        DrawContentPanelShadow(fgDrawList, contentPanelPos, contentPanelEnd, tabBarStart,
-            tabHeightScaled, spacingScaled);
+        // Draw content panel outer shadows (top, right, bottom + corners)
+        // Left shadow is drawn in the tab bar child window above
+        var overlayDL = overlayDrawList ?? ImGui.GetForegroundDrawList();
+        DrawContentPanelShadow(overlayDL, contentPanelPos, contentPanelEnd);
     }
 
     private void DrawTabBar(Vector4 contentBgColor, uint brightBorderU32, uint borderColorU32,
@@ -280,12 +291,16 @@ public class TabbedPanel
     private static void DrawContentBorder(ImDrawListPtr drawList, Vector2 contentPanelPos, Vector2 contentPanelEnd,
         Vector2 tabBarStart, float height, float activeTabTop, float activeTabBottom, uint borderColorU32)
     {
+        // Offset to draw inside clip region
+        float rightX = contentPanelEnd.X - 1;
+        float bottomY = contentPanelEnd.Y - 1;
+
         // Top border
-        drawList.AddLine(contentPanelPos, new Vector2(contentPanelEnd.X, contentPanelPos.Y), borderColorU32, 1f);
+        drawList.AddLine(contentPanelPos, new Vector2(rightX, contentPanelPos.Y), borderColorU32, 1f);
         // Right border
-        drawList.AddLine(new Vector2(contentPanelEnd.X, contentPanelPos.Y), contentPanelEnd, borderColorU32, 1f);
+        drawList.AddLine(new Vector2(rightX, contentPanelPos.Y), new Vector2(rightX, bottomY), borderColorU32, 1f);
         // Bottom border
-        drawList.AddLine(new Vector2(contentPanelPos.X, contentPanelEnd.Y), contentPanelEnd, borderColorU32, 1f);
+        drawList.AddLine(new Vector2(contentPanelPos.X, bottomY), new Vector2(rightX, bottomY), borderColorU32, 1f);
 
         // Left border - skip where active tab is
         if (activeTabTop > tabBarStart.Y)
@@ -296,38 +311,16 @@ public class TabbedPanel
         {
             drawList.AddLine(
                 new Vector2(contentPanelPos.X, activeTabBottom),
-                new Vector2(contentPanelPos.X, contentPanelEnd.Y),
+                new Vector2(contentPanelPos.X, bottomY),
                 borderColorU32, 1f);
         }
     }
 
-    private void DrawContentPanelShadow(ImDrawListPtr drawList, Vector2 contentPos, Vector2 contentEnd,
-        Vector2 tabBarStart, float tabHeightScaled, float spacingScaled)
+    private static void DrawContentPanelShadow(ImDrawListPtr drawList, Vector2 contentPos, Vector2 contentEnd)
     {
-        float activeTabTop = tabBarStart.Y + _activeTabIndex * (tabHeightScaled + spacingScaled);
-        float activeTabBottom = activeTabTop + tabHeightScaled;
         float shadowSize = 8f * ImGuiHelpers.GlobalScale;
-
         var shadowColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0, 0, 0.4f));
-        var transparent = ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0, 0, 0f));
-
-        // Left shadow - above active tab
-        if (activeTabTop > contentPos.Y)
-        {
-            drawList.AddRectFilledMultiColor(
-                new Vector2(contentPos.X - shadowSize, contentPos.Y),
-                new Vector2(contentPos.X, activeTabTop),
-                transparent, shadowColor, shadowColor, transparent);
-        }
-
-        // Left shadow - below active tab
-        if (activeTabBottom < contentEnd.Y)
-        {
-            drawList.AddRectFilledMultiColor(
-                new Vector2(contentPos.X - shadowSize, activeTabBottom),
-                new Vector2(contentPos.X, contentEnd.Y),
-                transparent, shadowColor, shadowColor, transparent);
-        }
+        var transparent = ImGui.ColorConvertFloat4ToU32(Vector4.Zero);
 
         // Top shadow
         drawList.AddRectFilledMultiColor(
@@ -347,82 +340,40 @@ public class TabbedPanel
             new Vector2(contentEnd.X, contentEnd.Y + shadowSize),
             shadowColor, shadowColor, transparent, transparent);
 
-        // Corner shadows using radial gradient (quarter circles)
-        // Use same shadowColor (0.4 alpha) - the DrawCornerShadow will fade it radially
-
-        // Top-right corner
-        DrawCornerShadow(drawList, new Vector2(contentEnd.X, contentPos.Y), shadowSize, shadowColor, transparent, 3);
-
-        // Bottom-right corner
-        DrawCornerShadow(drawList, contentEnd, shadowSize, shadowColor, transparent, 0);
-
-        // Bottom-left corner
-        DrawCornerShadow(drawList, new Vector2(contentPos.X, contentEnd.Y), shadowSize, shadowColor, transparent, 1);
-
-        // Top-left corner
-        DrawCornerShadow(drawList, contentPos, shadowSize, shadowColor, transparent, 2);
+        // Outer corner shadows
+        DrawHelpers.DrawRadialGradient(drawList, new Vector2(contentEnd.X, contentPos.Y), shadowSize, shadowColor, transparent, DrawHelpers.Quadrant.TopRight);
+        DrawHelpers.DrawRadialGradient(drawList, contentEnd, shadowSize, shadowColor, transparent, DrawHelpers.Quadrant.BottomRight);
+        DrawHelpers.DrawRadialGradient(drawList, new Vector2(contentPos.X, contentEnd.Y), shadowSize, shadowColor, transparent, DrawHelpers.Quadrant.BottomLeft);
+        DrawHelpers.DrawRadialGradient(drawList, contentPos, shadowSize, shadowColor, transparent, DrawHelpers.Quadrant.TopLeft);
     }
 
-    private static void DrawCornerShadow(ImDrawListPtr drawList, Vector2 corner, float radius,
-        uint innerColor, uint outerColor, int quadrant)
+    private static void DrawTabBarRightShadow(ImDrawListPtr drawList, Vector2 tabBarStart, float tabBarWidth, float tabBarHeight,
+        float activeTabTop, float activeTabBottom)
     {
-        // Use triangle fan approach for proper radial gradient
-        // This creates triangles from the corner (inner color) to arc points (outer color)
-        const int segments = 8;
+        float shadowSize = 8f * ImGuiHelpers.GlobalScale;
+        var shadowColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0, 0, 0.4f));
+        var transparent = ImGui.ColorConvertFloat4ToU32(Vector4.Zero);
 
-        // Calculate start and end angles for each quadrant
-        float startAngle, endAngle;
-        switch (quadrant)
+        float rightEdge = tabBarStart.X + tabBarWidth;
+        float tabBarBottom = tabBarStart.Y + tabBarHeight;
+
+        // Shadow on right edge of tab bar (simulates content panel casting shadow onto tabs)
+        // Above active tab
+        if (activeTabTop > tabBarStart.Y)
         {
-            case 0: // bottom-right: 0 to 90 degrees (right to down)
-                startAngle = 0f;
-                endAngle = MathF.PI * 0.5f;
-                break;
-            case 1: // bottom-left: 90 to 180 degrees (down to left)
-                startAngle = MathF.PI * 0.5f;
-                endAngle = MathF.PI;
-                break;
-            case 2: // top-left: 180 to 270 degrees (left to up)
-                startAngle = MathF.PI;
-                endAngle = MathF.PI * 1.5f;
-                break;
-            case 3: // top-right: 270 to 360 degrees (up to right)
-                startAngle = MathF.PI * 1.5f;
-                endAngle = MathF.PI * 2f;
-                break;
-            default:
-                return;
+            drawList.AddRectFilledMultiColor(
+                new Vector2(rightEdge - shadowSize, tabBarStart.Y),
+                new Vector2(rightEdge, activeTabTop),
+                transparent, shadowColor, shadowColor, transparent);
         }
 
-        // Get white pixel UV for solid color rendering
-        var uv = ImGui.GetFontTexUvWhitePixel();
-
-        // Reserve vertices: 1 center + (segments + 1) arc points
-        // Reserve indices: segments * 3 (one triangle per segment)
-        int vtxCount = segments + 2;
-        int idxCount = segments * 3;
-
-        uint vtxBase = (uint)drawList.VtxBuffer.Size;
-        drawList.PrimReserve(idxCount, vtxCount);
-
-        // Center vertex (inner color)
-        drawList.PrimWriteVtx(corner, uv, innerColor);
-
-        // Arc vertices (outer color)
-        float angleStep = (endAngle - startAngle) / segments;
-        for (int i = 0; i <= segments; i++)
+        // Below active tab
+        if (activeTabBottom < tabBarBottom)
         {
-            float angle = startAngle + i * angleStep;
-            var pos = corner + new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * radius;
-            drawList.PrimWriteVtx(pos, uv, outerColor);
-        }
-
-        // Write triangle indices (fan from center)
-        for (int i = 0; i < segments; i++)
-        {
-            drawList.PrimWriteIdx((ushort)vtxBase);           // center
-            drawList.PrimWriteIdx((ushort)(vtxBase + 1 + i)); // current arc point
-            drawList.PrimWriteIdx((ushort)(vtxBase + 2 + i)); // next arc point
+            drawList.AddRectFilledMultiColor(
+                new Vector2(rightEdge - shadowSize, activeTabBottom),
+                new Vector2(rightEdge, tabBarBottom),
+                transparent, shadowColor, shadowColor, transparent);
         }
     }
 }

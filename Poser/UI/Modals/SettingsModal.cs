@@ -25,5 +25,5 @@ public class SettingsModal
 
     public void Open() => _modal.Open();
 
-    public void Draw() => _modal.Draw(_tabs.Draw);
+    public void Draw() => _modal.Draw(dl => _tabs.Draw(dl));
 }
