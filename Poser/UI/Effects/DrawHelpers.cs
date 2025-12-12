@@ -581,6 +581,88 @@ public static class DrawHelpers
         DrawDropShadow(drawList, rectMin, rectMax, shadowSize, 0.5f * opacityModifier);
     }
 
+    // Gradient constants
+    private const float GradientHeightRatio = 0.28f;
+    private const float GradientInsetRatio = 0.75f;
+    private const float GradientHighlightOpacity = 0.125f;
+    private const float GradientShadowOpacity = 0.125f;
+
+    /// <summary>
+    /// Draws button-style highlight and shadow gradients on a rectangle.
+    /// Top has white highlight fading down, bottom has black shadow fading up.
+    /// </summary>
+    /// <param name="drawList">The draw list to render to.</param>
+    /// <param name="rectMin">Top-left corner of the button.</param>
+    /// <param name="rectMax">Bottom-right corner of the button.</param>
+    /// <param name="height">Height of the button (for gradient calculation).</param>
+    /// <param name="rounding">Corner rounding (for inset calculation).</param>
+    public static void DrawButtonGradients(ImDrawListPtr drawList, Vector2 rectMin, Vector2 rectMax,
+        float height, float rounding)
+    {
+        float gradientHeight = height * GradientHeightRatio;
+        float inset = rounding * GradientInsetRatio;
+
+        // Top highlight: white fading to transparent
+        var whiteTop = ImGui.ColorConvertFloat4ToU32(new Vector4(1, 1, 1, GradientHighlightOpacity));
+        var transparentWhite = ImGui.ColorConvertFloat4ToU32(new Vector4(1, 1, 1, 0));
+        drawList.AddRectFilledMultiColor(
+            rectMin + new Vector2(inset, 0),
+            new Vector2(rectMax.X - inset, rectMin.Y + gradientHeight),
+            whiteTop, whiteTop, transparentWhite, transparentWhite);
+
+        // Bottom shadow: black fading to transparent
+        var blackBottom = ImGui.ColorConvertFloat4ToU32(new Vector4(0, 0, 0, GradientShadowOpacity));
+        var transparentBlack = ImGui.ColorConvertFloat4ToU32(Vector4.Zero);
+        drawList.AddRectFilledMultiColor(
+            new Vector2(rectMin.X + inset, rectMax.Y - gradientHeight),
+            rectMax - new Vector2(inset, 0),
+            transparentBlack, transparentBlack, blackBottom, blackBottom);
+    }
+
+    /// <summary>
+    /// Draws an icon with a colored outline (drawn in 4 directions behind the main icon).
+    /// </summary>
+    /// <param name="drawList">The draw list to render to.</param>
+    /// <param name="font">The font to use (typically icon font).</param>
+    /// <param name="pos">Position to draw the icon.</param>
+    /// <param name="icon">The icon string to draw.</param>
+    /// <param name="outlineColor">Color of the outline.</param>
+    /// <param name="fillColor">Color of the main icon.</param>
+    /// <param name="outlineOffset">Offset for outline in each direction (already scaled).</param>
+    public static void DrawOutlinedIcon(ImDrawListPtr drawList, ImFontPtr font, Vector2 pos,
+        string icon, uint outlineColor, uint fillColor, float outlineOffset = 1f)
+    {
+        ImGui.PushFont(font);
+        drawList.AddText(pos + new Vector2(-outlineOffset, 0), outlineColor, icon);
+        drawList.AddText(pos + new Vector2(outlineOffset, 0), outlineColor, icon);
+        drawList.AddText(pos + new Vector2(0, -outlineOffset), outlineColor, icon);
+        drawList.AddText(pos + new Vector2(0, outlineOffset), outlineColor, icon);
+        drawList.AddText(pos, fillColor, icon);
+        ImGui.PopFont();
+    }
+
+    /// <summary>
+    /// Calculates the Y position for a popup, preferring below the anchor but moving above or pinning if needed.
+    /// </summary>
+    /// <param name="anchorBottom">Bottom Y of the anchor element.</param>
+    /// <param name="anchorTop">Top Y of the anchor element.</param>
+    /// <param name="popupHeight">Height of the popup.</param>
+    /// <param name="displayHeight">Total display height.</param>
+    /// <param name="gap">Gap between anchor and popup.</param>
+    /// <returns>The Y position for the popup.</returns>
+    public static float CalculatePopupY(float anchorBottom, float anchorTop, float popupHeight, float displayHeight, float gap)
+    {
+        float below = anchorBottom + gap;
+        if (below + popupHeight <= displayHeight)
+            return below;
+
+        float above = anchorTop - popupHeight - gap;
+        if (above >= 0)
+            return above;
+
+        return displayHeight - popupHeight;
+    }
+
     /// <summary>
     /// Edge direction for shadows.
     /// </summary>

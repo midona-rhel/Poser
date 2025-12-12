@@ -122,28 +122,7 @@ public static class Scrubber
         // Add highlight/shadow gradients when not active
         if (!isActive)
         {
-            float gradientHeight = thumbH * 0.28f;
-            float inset = rounding * 0.75f;
-
-            // Top highlight: white 12.5% opacity fading to transparent
-            var whiteTop = UIColors.White with { W = 0.125f };
-            var whiteTopU32 = ImGui.ColorConvertFloat4ToU32(whiteTop);
-            var transparentWhite = UIColors.White with { W = 0f };
-            var transparentWhiteU32 = ImGui.ColorConvertFloat4ToU32(transparentWhite);
-            drawList.AddRectFilledMultiColor(
-                thumbPos + new Vector2(inset, 0),
-                new Vector2(thumbEnd.X - inset, thumbPos.Y + gradientHeight),
-                whiteTopU32, whiteTopU32, transparentWhiteU32, transparentWhiteU32);
-
-            // Bottom shadow: black 12.5% opacity fading to transparent
-            var blackBottom = UIColors.Black with { W = 0.125f };
-            var blackBottomU32 = ImGui.ColorConvertFloat4ToU32(blackBottom);
-            var transparentBlack = UIColors.Black with { W = 0f };
-            var transparentBlackU32 = ImGui.ColorConvertFloat4ToU32(transparentBlack);
-            drawList.AddRectFilledMultiColor(
-                new Vector2(thumbPos.X + inset, thumbEnd.Y - gradientHeight),
-                thumbEnd - new Vector2(inset, 0),
-                transparentBlackU32, transparentBlackU32, blackBottomU32, blackBottomU32);
+            DrawHelpers.DrawButtonGradients(drawList, thumbPos, thumbEnd, thumbH, rounding);
         }
 
         // Draw border

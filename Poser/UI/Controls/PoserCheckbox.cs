@@ -3,6 +3,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Poser.UI;
+using Poser.UI.Effects;
 
 namespace Poser.UI.Controls;
 
@@ -63,19 +64,9 @@ public static class PoserCheckbox
             // Center the icon in the box
             var iconPos = boxPos + (new Vector2(size, size) - iconSize) * 0.5f;
 
-            // Draw black outline by drawing text offset in 4 directions
-            var outlineColor = UIColors.BlackU32;
+            // Draw checkmark with outline
             float outlineOffset = 1f * scale;
-
-            ImGui.PushFont(iconFont);
-            drawList.AddText(iconPos + new Vector2(-outlineOffset, 0), outlineColor, checkIcon);
-            drawList.AddText(iconPos + new Vector2(outlineOffset, 0), outlineColor, checkIcon);
-            drawList.AddText(iconPos + new Vector2(0, -outlineOffset), outlineColor, checkIcon);
-            drawList.AddText(iconPos + new Vector2(0, outlineOffset), outlineColor, checkIcon);
-
-            // Draw white checkmark on top
-            drawList.AddText(iconPos, UIColors.WhiteU32, checkIcon);
-            ImGui.PopFont();
+            DrawHelpers.DrawOutlinedIcon(drawList, iconFont, iconPos, checkIcon, UIColors.BlackU32, UIColors.WhiteU32, outlineOffset);
         }
 
         return clicked;

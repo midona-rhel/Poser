@@ -131,26 +131,7 @@ public static class PoserDropdown
         // Button highlight/shadow gradients (like PoserButton)
         if (!isOpen)
         {
-            float gradientHeight = height * 0.28f;
-            float inset = rounding * 0.75f;
-
-            // Top highlight
-            var whiteTop = UIColors.White with { W = 0.125f };
-            var whiteTopU32 = ImGui.ColorConvertFloat4ToU32(whiteTop);
-            var transparentWhiteU32 = ImGui.ColorConvertFloat4ToU32(UIColors.White with { W = 0f });
-            drawList.AddRectFilledMultiColor(
-                buttonPos + new Vector2(0, 0),
-                new Vector2(buttonEnd.X - inset, buttonPos.Y + gradientHeight),
-                whiteTopU32, whiteTopU32, transparentWhiteU32, transparentWhiteU32);
-
-            // Bottom shadow
-            var blackBottom = UIColors.Black with { W = 0.125f };
-            var blackBottomU32 = ImGui.ColorConvertFloat4ToU32(blackBottom);
-            var transparentBlackU32 = ImGui.ColorConvertFloat4ToU32(UIColors.Black with { W = 0f });
-            drawList.AddRectFilledMultiColor(
-                new Vector2(buttonPos.X, buttonEnd.Y - gradientHeight),
-                buttonEnd - new Vector2(inset, 0),
-                transparentBlackU32, transparentBlackU32, blackBottomU32, blackBottomU32);
+            DrawHelpers.DrawButtonGradients(drawList, buttonPos, buttonEnd, height, rounding);
         }
 
         // Button border (right side with rounded corners)
@@ -165,17 +146,8 @@ public static class PoserDropdown
         ImGui.PopFont();
 
         var iconPos = buttonPos + (new Vector2(buttonW, height) - iconSize) / 2f;
-
-        // Black outline
         float outlineOffset = 1f * scale;
-        ImGui.PushFont(iconFont);
-        drawList.AddText(iconPos + new Vector2(-outlineOffset, 0), UIColors.BlackU32, arrowIcon);
-        drawList.AddText(iconPos + new Vector2(outlineOffset, 0), UIColors.BlackU32, arrowIcon);
-        drawList.AddText(iconPos + new Vector2(0, -outlineOffset), UIColors.BlackU32, arrowIcon);
-        drawList.AddText(iconPos + new Vector2(0, outlineOffset), UIColors.BlackU32, arrowIcon);
-        // White icon
-        drawList.AddText(iconPos, UIColors.WhiteU32, arrowIcon);
-        ImGui.PopFont();
+        DrawHelpers.DrawOutlinedIcon(drawList, iconFont, iconPos, arrowIcon, UIColors.BlackU32, UIColors.WhiteU32, outlineOffset);
 
         // Advance cursor
         ImGui.SetCursorScreenPos(cursorScreenPos + new Vector2(0, height));

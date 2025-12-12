@@ -271,11 +271,11 @@ public sealed class RowBuilder : IDisposable
     }
 
     /// <summary>
-    /// Marks a stretch point. Use Right* methods after this to position elements from the right.
+    /// Semantic marker indicating remaining space should stretch.
+    /// Call Right* methods after this to position elements from the right edge.
     /// </summary>
     public RowBuilder Stretch()
     {
-        // After Stretch(), use Right* methods to draw from the right edge
         return this;
     }
 
@@ -402,10 +402,6 @@ public sealed class RowBuilder : IDisposable
     /// </summary>
     public void Dispose()
     {
-        // If stretch was used, we need to recalculate positions
-        // For now, stretch works by moving currentX to the right edge minus what came after
-        // This is a simplified implementation - full implementation would need two passes
-
         ImGui.SetCursorPos(new Vector2(_startPos.X, _startPos.Y + _height + PoserUI.RowSpacingScaled));
     }
 }
