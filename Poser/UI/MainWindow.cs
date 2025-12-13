@@ -8,14 +8,19 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using Poser.Entities;
+using Poser.IPC;
 using Poser.Services;
 using Poser.UI.Components;
+using Poser.UI.Controls;
 
 namespace Poser.UI;
 
 public class MainWindow : Window
 {
-    private const float SidebarWidth = 560f;
+    private const float DefaultWidth = 560f;
+    private const float DefaultHeight = 800f;
+    private const float MinWidth = 500f;
+    private const float MinHeight = 400f;
     private const float SplitterHeight = 8f;
     private const float MinPanelHeight = 100f;
 
@@ -26,15 +31,36 @@ public class MainWindow : Window
     private readonly ScenePanel _scenePanel;
     private readonly PropertiesPanel _propertiesPanel;
 
-    // Splitter state
-    private float _propertiesRatio = 0.5f; // Properties takes 50% by default
+    // Splitter state - scene has fixed height, properties takes remaining space
+    private float _sceneHeight = 300f;
     private bool _isDraggingSplitter;
-    private float _dragOffset; // Offset from splitter center to mouse when drag started
+    private float _dragStartMouseY;
+    private float _dragStartSceneHeight;
 
     /// <summary>
     /// Event fired when user requests to pop out the properties panel.
     /// </summary>
     public event Action<IReadOnlyList<IEntity>>? OnPropertiesPopOutRequested;
+
+    /// <summary>
+    /// Event fired when user clicks the Environment button.
+    /// </summary>
+    public event Action? OnEnvironmentRequested;
+
+    /// <summary>
+    /// Event fired when user clicks the References button.
+    /// </summary>
+    public event Action? OnReferencesRequested;
+
+    /// <summary>
+    /// Event fired when user clicks the Library button.
+    /// </summary>
+    public event Action? OnLibraryRequested;
+
+    /// <summary>
+    /// Event fired when user clicks the Body Map button.
+    /// </summary>
+    public event Action? OnBodyMapRequested;
 
     public MainWindow(
         IGPoseService gPoseService,
@@ -50,10 +76,17 @@ public class MainWindow : Window
         ICameraService cameraService,
         ISelectionService selectionService,
         IEditorState editorState,
-        ITextureProvider textureProvider)
-        : base($"{Poser.PluginName}###poser_sidebar_window",
-            ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar)
+        ITextureProvider textureProvider,
+        ILightingService? lightingService = null,
+        IPenumbraService? penumbraService = null,
+        IGlamourerService? glamourerService = null,
+        ICustomizePlusService? customizePlusService = null)
+        : base($"{Poser.PluginName}###poser_main_window",
+            ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
     {
+        Size = new Vector2(DefaultWidth, DefaultHeight);
+        SizeCondition = ImGuiCond.FirstUseEver;
+
         _gPoseService = gPoseService;
 
         // Initialize components with their required services
@@ -67,7 +100,8 @@ public class MainWindow : Window
             gPoseService,
             editorState,
             spawnService,
-            cameraService);
+            cameraService,
+            lightingService);
 
         _propertiesPanel = new PropertiesPanel(
             selectionService,
@@ -79,57 +113,115 @@ public class MainWindow : Window
             historyService,
             gazeService,
             cameraService,
-            textureProvider);
+            textureProvider,
+            penumbraService,
+            glamourerService,
+            customizePlusService);
 
         // Forward pop-out requests
         _propertiesPanel.OnPopOutRequested += entities => OnPropertiesPopOutRequested?.Invoke(entities);
+
+        // Forward environment button requests
+        _topBar.OnEnvironmentRequested += () => OnEnvironmentRequested?.Invoke();
+
+        // Forward references button requests
+        _topBar.OnReferencesRequested += () => OnReferencesRequested?.Invoke();
+
+        // Forward library button requests
+        _topBar.OnLibraryRequested += () => OnLibraryRequested?.Invoke();
+
+        // Forward body map button requests
+        _topBar.OnBodyMapRequested += () => OnBodyMapRequested?.Invoke();
     }
 
     public override void PreDraw()
     {
         base.PreDraw();
 
-        var displaySize = ImGui.GetIO().DisplaySize;
+        // Apply our UI colors to the window
+        ImGui.PushStyleColor(ImGuiCol.WindowBg, UIColors.Background);
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, UIColors.Background);
+        ImGui.PushStyleColor(ImGuiCol.Text, UIColors.Text);
+        ImGui.PushStyleColor(ImGuiCol.TextDisabled, UIColors.TextDisabled);
+        ImGui.PushStyleColor(ImGuiCol.Border, UIColors.Border);
+        ImGui.PushStyleColor(ImGuiCol.TitleBg, UIColors.TitleBar);
+        ImGui.PushStyleColor(ImGuiCol.TitleBgActive, UIColors.TitleBarActive);
+        ImGui.PushStyleColor(ImGuiCol.Button, UIColors.Button);
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, UIColors.ButtonHovered);
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, UIColors.ButtonActive);
+        ImGui.PushStyleColor(ImGuiCol.FrameBg, UIColors.ControlBackground);
+        ImGui.PushStyleColor(ImGuiCol.Header, UIColors.SelectionActive);
+        ImGui.PushStyleColor(ImGuiCol.HeaderHovered, UIColors.SelectionHovered);
+        ImGui.PushStyleColor(ImGuiCol.HeaderActive, UIColors.SelectionActiveHovered);
 
-        // Position window at right edge, full height
-        Position = new Vector2(displaySize.X - SidebarWidth, 0);
-        Size = new Vector2(SidebarWidth, displaySize.Y);
+        // Add window padding
+        float padding = Controls.Flex.ContentPadding * ImGuiHelpers.GlobalScale;
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(padding, padding));
 
-        // Lock size constraints
+        // Set size constraints
         SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = new Vector2(SidebarWidth, 100),
-            MaximumSize = new Vector2(SidebarWidth, displaySize.Y)
+            MinimumSize = new Vector2(MinWidth, MinHeight),
+            MaximumSize = new Vector2(float.MaxValue, float.MaxValue)
         };
     }
 
     public override void Draw()
     {
-        _topBar.Draw();
+        // Normal font scale
+        ImGui.SetWindowFontScale(1.0f);
+
+        // Apply internal padding by adjusting available width for child regions
+        float padding = Flex.ContentPadding * ImGuiHelpers.GlobalScale;
+        var windowSize = ImGui.GetContentRegionAvail();
+        float paddedWidth = windowSize.X - padding * 2;
+
+        // Top padding
+        ImGui.Dummy(new Vector2(0, padding));
+
+        // TopBar with horizontal padding
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + padding);
+        using (var topBarRegion = ImRaii.Child("##topbar_region", new Vector2(paddedWidth, Flex.RowHeight * ImGuiHelpers.GlobalScale), false,
+            ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
+        {
+            if (topBarRegion.Success)
+            {
+                _topBar.Draw();
+            }
+        }
+
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + padding);
+        ImGui.PushItemWidth(paddedWidth);
         ImGui.Separator();
+        ImGui.PopItemWidth();
         ImGui.Spacing();
 
         if (!_gPoseService.IsGPosing)
         {
+            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + padding);
             ImGui.TextDisabled("Enter GPose to see scene");
             return;
         }
 
-        float totalHeight = ImGui.GetContentRegionAvail().Y;
+        float totalHeight = ImGui.GetContentRegionAvail().Y - padding; // Reserve bottom padding
         float splitterHeight = SplitterHeight * ImGuiHelpers.GlobalScale;
         float availableHeight = totalHeight - splitterHeight;
-
-        // Calculate heights based on ratio
-        float propertiesHeight = availableHeight * _propertiesRatio;
-        float sceneHeight = availableHeight - propertiesHeight;
-
-        // Clamp to minimums
         float minHeight = MinPanelHeight * ImGuiHelpers.GlobalScale;
-        propertiesHeight = MathF.Max(propertiesHeight, minHeight);
-        sceneHeight = MathF.Max(sceneHeight, minHeight);
 
-        // Scene panel
-        using (var child = ImRaii.Child("scene_region", new Vector2(-1, sceneHeight), false,
+        // Scene has fixed height, properties takes remaining space
+        float sceneHeight = MathF.Max(_sceneHeight, minHeight);
+        float propertiesHeight = MathF.Max(availableHeight - sceneHeight, minHeight);
+
+        // If properties is at minimum, scene takes remaining
+        if (availableHeight - sceneHeight < minHeight)
+        {
+            propertiesHeight = minHeight;
+            sceneHeight = MathF.Max(availableHeight - propertiesHeight, minHeight);
+        }
+
+        // Scene panel with horizontal padding
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + padding);
+        using (var child = ImRaii.Child("scene_region", new Vector2(paddedWidth, sceneHeight), false,
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
         {
             if (child.Success)
@@ -138,16 +230,20 @@ public class MainWindow : Window
             }
         }
 
-        // Draggable splitter
+        // Draggable splitter (full width for easier grabbing)
         DrawSplitter(totalHeight, splitterHeight, minHeight);
 
-        // Properties panel
-        using (var child = ImRaii.Child("properties_region", new Vector2(-1, -1), false,
+        // Properties panel with horizontal padding
+        // Get window draw list BEFORE entering child so shadows aren't clipped
+        var windowDrawList = ImGui.GetWindowDrawList();
+
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + padding);
+        using (var child = ImRaii.Child("properties_region", new Vector2(paddedWidth, propertiesHeight), false,
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
         {
             if (child.Success)
             {
-                _propertiesPanel.Draw();
+                _propertiesPanel.Draw(windowDrawList);
             }
         }
     }
@@ -157,14 +253,17 @@ public class MainWindow : Window
         var cursorPos = ImGui.GetCursorScreenPos();
         var availWidth = ImGui.GetContentRegionAvail().X;
 
+        // Use InvisibleButton for reliable click detection
+        ImGui.InvisibleButton("##splitter", new Vector2(availWidth, splitterHeight));
+        bool isHovered = ImGui.IsItemHovered();
+        bool isClicked = ImGui.IsItemClicked(ImGuiMouseButton.Left);
+
         // Draw splitter bar
         var drawList = ImGui.GetWindowDrawList();
         var splitterMin = cursorPos;
         var splitterMax = new Vector2(cursorPos.X + availWidth, cursorPos.Y + splitterHeight);
         var splitterCenter = cursorPos.Y + splitterHeight / 2;
 
-        // Highlight when hovered or dragging
-        bool isHovered = ImGui.IsMouseHoveringRect(splitterMin, splitterMax);
         var bgColor = (isHovered || _isDraggingSplitter)
             ? ImGui.GetColorU32(ImGuiCol.SeparatorHovered)
             : ImGui.GetColorU32(ImGuiCol.Separator);
@@ -181,17 +280,11 @@ public class MainWindow : Window
             lineThickness);
 
         // Handle dragging
-        if (isHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+        if (isClicked)
         {
             _isDraggingSplitter = true;
-            // Store the current scene height when drag starts
-            float availableHeight = totalHeight - splitterHeight;
-            float currentSceneHeight = availableHeight * (1 - _propertiesRatio);
-            // Calculate where the splitter top is relative to content start
-            float contentStartY = ImGui.GetWindowPos().Y + ImGui.GetCursorStartPos().Y;
-            float splitterTopY = contentStartY + currentSceneHeight;
-            // Store offset: where mouse clicked relative to splitter top
-            _dragOffset = ImGui.GetMousePos().Y - splitterTopY;
+            _dragStartMouseY = ImGui.GetMousePos().Y;
+            _dragStartSceneHeight = _sceneHeight;
         }
 
         if (_isDraggingSplitter)
@@ -203,21 +296,46 @@ public class MainWindow : Window
             else
             {
                 float availableHeight = totalHeight - splitterHeight;
-                float contentStartY = ImGui.GetWindowPos().Y + ImGui.GetCursorStartPos().Y;
+                float mouseDelta = ImGui.GetMousePos().Y - _dragStartMouseY;
+                float newSceneHeight = _dragStartSceneHeight + mouseDelta;
 
-                // Mouse position minus the initial offset gives us where splitter top should be
-                float newSplitterTopY = ImGui.GetMousePos().Y - _dragOffset;
-                float newSceneHeight = newSplitterTopY - contentStartY;
-                float newPropertiesHeight = availableHeight - newSceneHeight;
+                // Clamp scene height to minimum
+                newSceneHeight = MathF.Max(newSceneHeight, minHeight);
 
-                // Clamp and update ratio
-                newPropertiesHeight = Math.Clamp(newPropertiesHeight, minHeight, availableHeight - minHeight);
-                _propertiesRatio = newPropertiesHeight / availableHeight;
+                float heightDelta = newSceneHeight - _sceneHeight;
+
+                if (heightDelta > 0.1f)
+                {
+                    // Dragging down - grow window to keep properties same size
+                    var windowPos = ImGui.GetWindowPos();
+                    var currentSize = ImGui.GetWindowSize();
+                    var displaySize = ImGui.GetIO().DisplaySize;
+
+                    // Don't let window grow past screen bottom
+                    float maxHeight = displaySize.Y - windowPos.Y;
+                    var newSize = new Vector2(currentSize.X, MathF.Min(currentSize.Y + heightDelta, maxHeight));
+
+                    // Only update scene height by what we actually grew
+                    float actualGrowth = newSize.Y - currentSize.Y;
+                    if (actualGrowth > 0.1f)
+                    {
+                        ImGui.SetWindowSize(newSize);
+                        _sceneHeight += actualGrowth;
+                    }
+                }
+                else if (heightDelta < -0.1f)
+                {
+                    // Dragging up - shrink scene, properties grows
+                    _sceneHeight = Math.Clamp(newSceneHeight, minHeight, availableHeight - minHeight);
+                }
             }
         }
-
-        // Reserve space for splitter
-        ImGui.Dummy(new Vector2(availWidth, splitterHeight));
     }
 
+    public override void PostDraw()
+    {
+        ImGui.PopStyleVar(1); // Pop WindowPadding
+        ImGui.PopStyleColor(14); // Pop all colors pushed in PreDraw
+        base.PostDraw();
+    }
 }

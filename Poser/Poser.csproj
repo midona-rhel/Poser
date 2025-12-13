@@ -18,6 +18,8 @@
 
 	<ItemGroup>
 		<EmbeddedResource Include="Data\Schema\Categories.xml" />
+		<EmbeddedResource Include="Data\GraphicalBones\GraphicalBonePosePositions.json" />
+		<EmbeddedResource Include="Data\GraphicalBones\Images\*.png" />
 	</ItemGroup>
 
 </Project>

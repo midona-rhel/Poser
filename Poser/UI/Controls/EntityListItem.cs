@@ -2,6 +2,9 @@ using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
+using Dalamud.Interface.Utility;
+using Dalamud.Interface.Utility.Raii;
+using Poser.UI;
 
 namespace Poser.UI.Controls;
 
@@ -94,34 +97,63 @@ public static class EntityListItem
 {
     /// <summary>
     /// Draws a single entity list item row. Call within a table context.
+    /// Uses UIColors for consistent selection highlighting.
     /// </summary>
-    public static EntityListItemResult Draw(EntityListItemConfig config, Vector4 tabHovered, Vector4 tabActive)
+    public static EntityListItemResult Draw(EntityListItemConfig config)
     {
         var result = new EntityListItemResult();
 
-        // Brighter color for selected+hovered state
-        var selectedHoverColor = new Vector4(
-            Math.Min(1f, tabActive.X * 1.3f),
-            Math.Min(1f, tabActive.Y * 1.3f),
-            Math.Min(1f, tabActive.Z * 1.3f),
-            tabActive.W);
+        // Use UIColors for selection colors
+        var tabHovered = UIColors.SelectionHovered;
+        var tabActive = UIColors.SelectionActive;
+        var selectedHoverColor = UIColors.SelectionActiveHovered;
 
         ImGui.TableNextRow();
-        ImPoser.HighlightRowIfSelected(config.IsSelected, tabActive);
+        float rowHeight = ImGui.GetFrameHeight();
 
         // Column 1: Name (with collapse button, icon, indentation)
         ImGui.TableNextColumn();
 
+        // Get row screen position for background drawing
+        var rowMinY = ImGui.GetCursorScreenPos().Y;
+        var windowPos = ImGui.GetWindowPos();
+        var contentMin = ImGui.GetWindowContentRegionMin();
+        var contentMax = ImGui.GetWindowContentRegionMax();
+        var rowMin = new Vector2(windowPos.X + contentMin.X, rowMinY);
+        var rowMax = new Vector2(windowPos.X + contentMax.X, rowMinY + rowHeight);
+
+        // Check hover state FIRST for background color
+        bool rowHovered = ImGui.IsMouseHoveringRect(rowMin, rowMax);
+
+        // Draw row background using TableSetBgColor (proper table row coloring)
+        if (config.IsSelected && rowHovered)
+        {
+            ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(selectedHoverColor));
+        }
+        else if (config.IsSelected)
+        {
+            ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(tabActive));
+        }
+        else if (rowHovered)
+        {
+            ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(tabHovered));
+        }
+
         float buttonSize = ImGui.GetFrameHeight();
+        float edgeMargin = 8f * ImGuiHelpers.GlobalScale;
+
+        // Add left margin before content
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + edgeMargin);
         ImPoser.ApplyTreeIndentation(config.Depth);
 
         // Collapse/expand button or dot
+        bool collapseClicked = false;
         if (config.IsCollapsible)
         {
             var arrowIcon = config.IsCollapsed ? FontAwesomeIcon.CaretRight : FontAwesomeIcon.CaretDown;
             if (ImPoser.IconButton($"collapse_{config.Id}", arrowIcon, new Vector2(buttonSize, buttonSize)))
             {
-                result = result with { CollapseToggled = true };
+                collapseClicked = true;
             }
         }
         else
@@ -138,13 +170,67 @@ public static class EntityListItem
 
         ImGui.SameLine();
 
-        // Name (selectable)
+        // Name text
         if (config.TextColor.HasValue)
         {
             ImGui.PushStyleColor(ImGuiCol.Text, config.TextColor.Value);
         }
 
-        if (ImPoser.TransparentSelectable($"{config.Name}##{config.Id}", config.IsSelected, tabHovered, selectedHoverColor))
+        ImGui.Text(config.Name);
+
+        if (config.TextColor.HasValue)
+        {
+            ImGui.PopStyleColor();
+        }
+
+        // Column 2: Freeze checkbox (always show, disabled when not applicable)
+        ImGui.TableNextColumn();
+        bool freezeToggled = false;
+        bool newFreezeValue = config.IsFrozen;
+        {
+            bool frozen = config.IsFrozen;
+            bool enabled = config.ShowFreezeCheckbox;
+            if (DrawCenteredCheckbox($"##freeze_{config.Id}", ref frozen, rowHeight, 0, 0, enabled))
+            {
+                freezeToggled = true;
+                newFreezeValue = frozen;
+            }
+        }
+
+        // Column 3: Visibility checkbox (always show, disabled when not applicable)
+        ImGui.TableNextColumn();
+        bool visibilityToggled = false;
+        bool newVisibilityValue = config.IsVisible;
+        {
+            bool visible = config.IsVisible;
+            bool enabled = config.ShowVisibilityCheckbox;
+            if (DrawCenteredCheckbox($"##vis_{config.Id}", ref visible, rowHeight, 0, edgeMargin, enabled))
+            {
+                visibilityToggled = true;
+                newVisibilityValue = visible;
+            }
+        }
+
+        // Tooltip
+        if (config.Tooltip != null && rowHovered)
+        {
+            ImGui.SetTooltip(config.Tooltip);
+        }
+
+        // Check for row click
+        bool rowClicked = rowHovered &&
+                          ImGui.IsMouseClicked(ImGuiMouseButton.Left) &&
+                          !collapseClicked &&
+                          !freezeToggled &&
+                          !visibilityToggled;
+
+        // Determine final result
+        if (collapseClicked)
+        {
+            result = result with { CollapseToggled = true };
+        }
+
+        if (rowClicked)
         {
             var io = ImGui.GetIO();
             result = result with
@@ -155,47 +241,42 @@ public static class EntityListItem
             };
         }
 
-        if (config.TextColor.HasValue)
+        if (freezeToggled)
         {
-            ImGui.PopStyleColor();
-        }
-
-        // Tooltip
-        if (config.Tooltip != null && ImGui.IsItemHovered())
-        {
-            ImGui.SetTooltip(config.Tooltip);
-        }
-
-        // Column 2: Freeze checkbox
-        ImGui.TableNextColumn();
-        if (config.ShowFreezeCheckbox)
-        {
-            bool frozen = config.IsFrozen;
-            if (ImPoser.DrawCenteredCheckbox($"##freeze_{config.Id}", ref frozen))
+            result = result with
             {
-                result = result with
-                {
-                    FreezeToggled = true,
-                    NewFreezeValue = frozen
-                };
-            }
+                FreezeToggled = true,
+                NewFreezeValue = newFreezeValue
+            };
         }
 
-        // Column 3: Visibility checkbox
-        ImGui.TableNextColumn();
-        if (config.ShowVisibilityCheckbox)
+        if (visibilityToggled)
         {
-            bool visible = config.IsVisible;
-            if (ImPoser.DrawCenteredCheckbox($"##vis_{config.Id}", ref visible))
+            result = result with
             {
-                result = result with
-                {
-                    VisibilityToggled = true,
-                    NewVisibilityValue = visible
-                };
-            }
+                VisibilityToggled = true,
+                NewVisibilityValue = newVisibilityValue
+            };
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Draws a PoserCheckbox centered horizontally and vertically in a table cell.
+    /// </summary>
+    private static bool DrawCenteredCheckbox(string id, ref bool value, float rowHeight, float leftMargin = 0, float rightMargin = 0, bool enabled = true)
+    {
+        var checkboxSize = PoserCheckbox.Size;
+        var cellWidth = ImGui.GetContentRegionAvail().X - leftMargin - rightMargin;
+
+        var cursorPos = ImGui.GetCursorPos();
+        ImGui.SetCursorPos(new Vector2(
+            cursorPos.X + leftMargin + (cellWidth - checkboxSize) / 2,
+            cursorPos.Y + (rowHeight - checkboxSize) / 2));
+
+        // Use 10% alpha when disabled for more transparency
+        float alpha = enabled ? 1f : 0.1f;
+        return PoserCheckbox.Draw(id, ref value, alpha);
     }
 }

@@ -8,8 +8,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Poser.Config;
 using Poser.Core;
 using Poser.Core.BoneInfo;
+using Poser.Files;
 using Poser.Game;
 using Poser.History;
+using Poser.IPC;
 using Poser.Services;
 using Poser.UI;
 
@@ -128,6 +130,19 @@ public class Poser : IDalamudPlugin
         services.AddSingleton<IBonePosingService, BonePosingService>();
         services.AddSingleton<ISelectionService, SelectionService>();
         services.AddSingleton<IEditorState, EditorState>();
+        services.AddSingleton<ITimeService, TimeService>();
+        services.AddSingleton<IWeatherService, WeatherService>();
+        services.AddSingleton<ReferenceImageService>();
+        services.AddSingleton<ILibraryService, LibraryService>();
+        services.AddSingleton<ILightingService, LightingService>();
+
+        // Register IPC services (appearance plugins)
+        services.AddSingleton<IPenumbraService, PenumbraService>();
+        services.AddSingleton<IGlamourerService, GlamourerService>();
+        services.AddSingleton<ICustomizePlusService, CustomizePlusService>();
+
+        // Register file services
+        services.AddSingleton<IPoseFileService, PoseFileService>();
 
         // Register UI
         services.AddSingleton<IUIManager, UIManager>();

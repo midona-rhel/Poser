@@ -22,22 +22,22 @@ public static class Flex
     /// <summary>
     /// Vertical spacing between rows.
     /// </summary>
-    public const float RowSpacing = 14f;
+    public const float RowSpacing = 6f;
 
     /// <summary>
     /// Standard label width for labeled rows.
     /// </summary>
-    public const float LabelWidth = 70f;
+    public const float LabelWidth = 60f;
 
     /// <summary>
     /// Horizontal gap between items in a row.
     /// </summary>
-    public const float ItemGap = 12f;
+    public const float ItemGap = 8f;
 
     /// <summary>
     /// Small gap for tightly grouped items.
     /// </summary>
-    public const float SmallGap = 6f;
+    public const float SmallGap = 4f;
 
     /// <summary>
     /// Standard button width (Reset, etc.).
@@ -57,12 +57,12 @@ public static class Flex
     /// <summary>
     /// Standard text padding inside controls.
     /// </summary>
-    public const float TextPadding = 8f;
+    public const float TextPadding = 6f;
 
     /// <summary>
     /// Content padding from container edges.
     /// </summary>
-    public const float ContentPadding = 8f;
+    public const float ContentPadding = 6f;
 
     /// <summary>
     /// Creates a horizontal flex row.
@@ -100,18 +100,17 @@ public sealed class FlexRow : IDisposable
 
         if (width.HasValue)
         {
-            // Explicit width provided (nested row) - use cursor position directly, no content padding
+            // Explicit width provided (nested row) - use cursor position directly
             _startPos = cursorPos;
             _width = width.Value;
         }
         else
         {
-            // Auto width (top-level row) - apply content padding relative to content region
-            float contentPadding = DefaultContentPadding * scale;
+            // Auto width (top-level row) - use full content region (window padding handles edge spacing)
             var contentRegionMin = ImGui.GetWindowContentRegionMin();
             float contentRegionWidth = ImGui.GetWindowContentRegionMax().X - contentRegionMin.X;
-            _startPos = new Vector2(contentRegionMin.X + contentPadding, cursorPos.Y);
-            _width = contentRegionWidth - contentPadding * 2;
+            _startPos = new Vector2(contentRegionMin.X, cursorPos.Y);
+            _width = contentRegionWidth;
         }
     }
 

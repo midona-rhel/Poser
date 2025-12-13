@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Poser.Entities;
 
@@ -9,6 +10,11 @@ namespace Poser.Services;
 /// </summary>
 public interface ISelectionService
 {
+    /// <summary>
+    /// Event fired when selection changes.
+    /// </summary>
+    event Action<IReadOnlyList<IEntity>>? OnSelectionChanged;
+
     /// <summary>
     /// All currently selected entities.
     /// </summary>

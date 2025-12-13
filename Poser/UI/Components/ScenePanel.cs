@@ -4,6 +4,7 @@ using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Poser.Entities;
+using Poser.Game.Structs;
 using Poser.Services;
 using Poser.UI.Controls;
 
@@ -17,6 +18,7 @@ public class ScenePanel
 {
     private readonly ISelectionService _selectionService;
     private readonly IActorSpawnService _spawnService;
+    private readonly ILightingService? _lightingService;
     private readonly EntityList _entityList;
 
     public ScenePanel(
@@ -27,10 +29,12 @@ public class ScenePanel
         IGPoseService gPoseService,
         IEditorState editorState,
         IActorSpawnService spawnService,
-        ICameraService cameraService)
+        ICameraService cameraService,
+        ILightingService? lightingService = null)
     {
         _selectionService = selectionService;
         _spawnService = spawnService;
+        _lightingService = lightingService;
 
         _entityList = new EntityList(
             actorManager,
@@ -38,7 +42,8 @@ public class ScenePanel
             animationService,
             skeletonService,
             gPoseService,
-            editorState);
+            editorState,
+            lightingService);
     }
 
     public void Draw()
@@ -87,16 +92,43 @@ public class ScenePanel
                 _spawnService.SpawnPlayerClone();
             }
 
+            // Light spawning options
+            if (_lightingService != null && _lightingService.IsAvailable)
+            {
+                ImGui.Separator();
+
+                if (ImGui.MenuItem("Spawn Spot Light"))
+                {
+                    var light = _lightingService.SpawnLight(LightType.SpotLight);
+                    if (light != null)
+                        _selectionService.Select(light);
+                }
+
+                if (ImGui.MenuItem("Spawn Point Light"))
+                {
+                    var light = _lightingService.SpawnLight(LightType.AreaLight);
+                    if (light != null)
+                        _selectionService.Select(light);
+                }
+
+                if (ImGui.MenuItem("Spawn Flat Light"))
+                {
+                    var light = _lightingService.SpawnLight(LightType.FlatLight);
+                    if (light != null)
+                        _selectionService.Select(light);
+                }
+            }
+
             ImGui.EndPopup();
         }
 
         row.Spacer();
 
         // Delete button on the right
-        bool canDelete = primarySelected != null && _spawnService.IsSpawnedActor(primarySelected);
-        string deleteTooltip = canDelete
-            ? "Delete selected entity"
-            : "Can only delete spawned entities";
+        var selectedLight = _selectionService.GetFirstSelected<LightEntity>();
+        bool canDeleteActor = primarySelected != null && _spawnService.IsSpawnedActor(primarySelected);
+        bool canDeleteLight = selectedLight != null && _lightingService != null && _lightingService.IsSpawnedLight(selectedLight);
+        bool canDelete = canDeleteActor || canDeleteLight;
 
         row.Fixed(Flex.ButtonWidth, (w, h) =>
         {
@@ -104,7 +136,11 @@ public class ScenePanel
             {
                 if (PoserButton.DrawWithWidth("delete_selected", "Delete", w))
                 {
-                    if (canDelete && primarySelected != null)
+                    if (canDeleteLight && selectedLight != null)
+                    {
+                        _lightingService!.DestroyLight(selectedLight);
+                    }
+                    else if (canDeleteActor && primarySelected != null)
                     {
                         _spawnService.DestroyActor(primarySelected);
                     }

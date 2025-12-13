@@ -13,6 +13,7 @@ using Poser.Data.Config;
 using Poser.Entities;
 using Poser.Entities.Capabilities;
 using Poser.History;
+using Poser.IPC;
 using Poser.Services;
 using Poser.UI.Controls;
 
@@ -33,6 +34,8 @@ public class PropertiesPanel : IDisposable
     // Tab panes
     private readonly TransformTabPane _transformTabPane;
     private readonly AnimationTabPane _animationTabPane;
+    private readonly LightTabPane _lightTabPane;
+    private readonly AppearanceTabPane _appearanceTabPane;
     private readonly TabbedPanel _tabbedPanel;
 
     // Frozen mode: when set, panel shows these entities instead of live selection
@@ -53,16 +56,21 @@ public class PropertiesPanel : IDisposable
         IHistoryService historyService,
         IGazeService gazeService,
         ICameraService cameraService,
-        ITextureProvider textureProvider)
+        ITextureProvider textureProvider,
+        IPenumbraService? penumbraService = null,
+        IGlamourerService? glamourerService = null,
+        ICustomizePlusService? customizePlusService = null)
     {
         _selectionService = selectionService;
 
         // Create tab panes
         _transformTabPane = new TransformTabPane(posingService, bonePosingService, animationService, historyService);
         _animationTabPane = new AnimationTabPane(animationService, animationDataService, historyService, gazeService, actorManager, cameraService, textureProvider);
+        _lightTabPane = new LightTabPane();
+        _appearanceTabPane = new AppearanceTabPane(penumbraService, glamourerService, customizePlusService);
 
         // Create tabbed panel with narrow tabs
-        _tabbedPanel = new TabbedPanel(TabBarWidth, TabHeight, _transformTabPane, _animationTabPane);
+        _tabbedPanel = new TabbedPanel(TabBarWidth, TabHeight, _transformTabPane, _animationTabPane, _lightTabPane, _appearanceTabPane);
     }
 
     /// <summary>
@@ -72,6 +80,14 @@ public class PropertiesPanel : IDisposable
     public void FreezeToEntities(IReadOnlyList<IEntity> entities)
     {
         _frozenEntities = entities.ToList();
+    }
+
+    /// <summary>
+    /// Unfreezes the panel so it follows live selection again.
+    /// </summary>
+    public void Unfreeze()
+    {
+        _frozenEntities = null;
     }
 
     /// <summary>
@@ -94,8 +110,12 @@ public class PropertiesPanel : IDisposable
         return _selectionService.Primary;
     }
 
-    public void Draw()
+    public void Draw() => Draw(null);
+
+    public void Draw(ImDrawListPtr? overlayDrawList)
     {
+        _overlayDrawList = overlayDrawList;
+
         // Push UIColors for consistent theming
         using (ImRaii.PushColor(ImGuiCol.Text, UIColors.Text))
         using (ImRaii.PushColor(ImGuiCol.TextDisabled, UIColors.TextDisabled))
@@ -119,6 +139,9 @@ public class PropertiesPanel : IDisposable
             DrawEntity(entity, entities);
         }
     }
+
+    // Cached draw list for passing to TabbedPanel
+    private ImDrawListPtr? _overlayDrawList;
 
     private void DrawEmptyHeader()
     {
@@ -145,9 +168,11 @@ public class PropertiesPanel : IDisposable
         // Update tab panes with current entity (null renders disabled state)
         _transformTabPane.SetEntity(primaryEntity);
         _animationTabPane.SetEntity(primaryEntity);
+        _lightTabPane.SetEntity(primaryEntity);
+        _appearanceTabPane.SetEntity(primaryEntity);
 
-        // Draw tabbed panel
-        _tabbedPanel.Draw();
+        // Draw tabbed panel with overlay draw list for shadows
+        _tabbedPanel.Draw(_overlayDrawList);
     }
 
     /// <summary>

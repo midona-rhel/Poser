@@ -22,8 +22,9 @@ public static class PoserCheckbox
     /// </summary>
     /// <param name="id">Unique ID for the checkbox.</param>
     /// <param name="value">Current checked state (ref).</param>
+    /// <param name="alpha">Optional alpha multiplier (0-1) for transparency. Default is 1.</param>
     /// <returns>True if value changed.</returns>
-    public static bool Draw(string id, ref bool value)
+    public static bool Draw(string id, ref bool value, float alpha = 1f)
     {
         float scale = PoserUI.Scale;
         float size = CheckboxSize * scale;
@@ -35,21 +36,30 @@ public static class PoserCheckbox
         var boxPos = cursorScreenPos;
         var boxEnd = boxPos + new Vector2(size, size);
 
-        // Handle interaction
+        // Handle interaction (disabled when alpha < 1 typically means disabled)
         ImGui.InvisibleButton(id, new Vector2(size, size));
-        bool clicked = ImGui.IsItemClicked();
-        bool isHovered = ImGui.IsItemHovered();
+        bool clicked = ImGui.IsItemClicked() && alpha >= 1f;
+        bool isHovered = ImGui.IsItemHovered() && alpha >= 1f;
 
         if (clicked)
             value = !value;
 
+        // Helper to apply alpha to a color
+        uint ApplyAlphaToColor(uint color, float a)
+        {
+            var vec = ImGui.ColorConvertU32ToFloat4(color);
+            vec.W *= a;
+            return ImGui.ColorConvertFloat4ToU32(vec);
+        }
+
         // Draw background
         var bgColor = UIColors.ApplyAlpha(isHovered ? UIColors.ControlBackgroundHovered : UIColors.ControlBackground);
+        bgColor.W *= alpha;
         var bgColorU32 = ImGui.ColorConvertFloat4ToU32(bgColor);
         drawList.AddRectFilled(boxPos, boxEnd, bgColorU32, rounding);
 
         // Draw black outline
-        drawList.AddRect(boxPos, boxEnd, UIColors.ApplyAlpha(UIColors.BlackU32), rounding, ImDrawFlags.None, 1f);
+        drawList.AddRect(boxPos, boxEnd, ApplyAlphaToColor(UIColors.ApplyAlpha(UIColors.BlackU32), alpha), rounding, ImDrawFlags.None, 1f);
 
         // Draw checkmark if checked
         if (value)
@@ -67,7 +77,10 @@ public static class PoserCheckbox
 
             // Draw checkmark with outline
             float outlineOffset = 1f * scale;
-            DrawHelpers.DrawOutlinedIcon(drawList, iconFont, iconPos, checkIcon, UIColors.ApplyAlpha(UIColors.BlackU32), UIColors.ApplyAlpha(UIColors.WhiteU32), outlineOffset);
+            DrawHelpers.DrawOutlinedIcon(drawList, iconFont, iconPos, checkIcon,
+                ApplyAlphaToColor(UIColors.ApplyAlpha(UIColors.BlackU32), alpha),
+                ApplyAlphaToColor(UIColors.ApplyAlpha(UIColors.WhiteU32), alpha),
+                outlineOffset);
         }
 
         return clicked;

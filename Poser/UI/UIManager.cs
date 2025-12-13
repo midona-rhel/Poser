@@ -4,8 +4,10 @@ using Dalamud.Interface.Textures;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using Poser.Config;
 using Poser.Core;
 using Poser.Entities;
+using Poser.IPC;
 using Poser.Services;
 using System;
 using System.Collections.Generic;
@@ -23,6 +25,11 @@ public class UIManager : IUIManager
     private readonly GizmoOverlayWindow _gizmoOverlay;
     private readonly SkeletonOverlayWindow _skeletonOverlay;
     private readonly HotbarWindow _hotbarWindow;
+    private readonly EnvironmentWindow _environmentWindow;
+    private readonly ReferenceImagesWindow? _referencesWindow;
+    private readonly ReferenceImageOverlayWindow? _referenceOverlay;
+    private readonly LibraryWindow? _libraryWindow;
+    private readonly GraphicalBoneWindow _graphicalBoneWindow;
 
     // Services needed to create detached property windows
     private readonly ISelectionService _selectionService;
@@ -35,6 +42,16 @@ public class UIManager : IUIManager
     private readonly IGazeService _gazeService;
     private readonly ICameraService _cameraService;
     private readonly ITextureProvider _textureProvider;
+    private readonly ITimeService? _timeService;
+    private readonly IWeatherService? _weatherService;
+    private readonly ReferenceImageService? _referenceImageService;
+    private readonly ILibraryService? _libraryService;
+    private readonly IPoseFileService? _poseFileService;
+    private readonly ConfigurationService? _configService;
+    private readonly ILightingService? _lightingService;
+    private readonly IPenumbraService? _penumbraService;
+    private readonly IGlamourerService? _glamourerService;
+    private readonly ICustomizePlusService? _customizePlusService;
 
     // Track detached windows
     private readonly List<DetachedPropertiesWindow> _detachedWindows = new();
@@ -56,7 +73,17 @@ public class UIManager : IUIManager
         IEditorState editorState,
         IEventBus eventBus,
         IKeyState keyState,
-        ITextureProvider textureProvider)
+        ITextureProvider textureProvider,
+        ITimeService? timeService = null,
+        IWeatherService? weatherService = null,
+        ReferenceImageService? referenceImageService = null,
+        ILibraryService? libraryService = null,
+        IPoseFileService? poseFileService = null,
+        ConfigurationService? configService = null,
+        ILightingService? lightingService = null,
+        IPenumbraService? penumbraService = null,
+        IGlamourerService? glamourerService = null,
+        ICustomizePlusService? customizePlusService = null)
     {
         _pluginInterface = pluginInterface;
         _gPoseService = gPoseService;
@@ -74,6 +101,16 @@ public class UIManager : IUIManager
         _gazeService = gazeService;
         _cameraService = cameraService;
         _textureProvider = textureProvider;
+        _timeService = timeService;
+        _weatherService = weatherService;
+        _referenceImageService = referenceImageService;
+        _libraryService = libraryService;
+        _poseFileService = poseFileService;
+        _configService = configService;
+        _lightingService = lightingService;
+        _penumbraService = penumbraService;
+        _glamourerService = glamourerService;
+        _customizePlusService = customizePlusService;
 
         // Create windows in z-order (last added = drawn on top)
 
@@ -111,11 +148,52 @@ public class UIManager : IUIManager
             cameraService,
             selectionService,
             editorState,
-            textureProvider);
+            textureProvider,
+            lightingService,
+            penumbraService,
+            glamourerService,
+            customizePlusService);
         _windowSystem.AddWindow(_mainWindow);
+
+        // Create environment window
+        _environmentWindow = new EnvironmentWindow(timeService, weatherService);
+        _windowSystem.AddWindow(_environmentWindow);
+
+        // Create reference image windows
+        if (referenceImageService != null)
+        {
+            _referenceOverlay = new ReferenceImageOverlayWindow(referenceImageService);
+            _windowSystem.AddWindow(_referenceOverlay);
+
+            _referencesWindow = new ReferenceImagesWindow(referenceImageService);
+            _windowSystem.AddWindow(_referencesWindow);
+        }
+
+        // Create library window
+        if (libraryService != null && poseFileService != null && configService != null)
+        {
+            _libraryWindow = new LibraryWindow(libraryService, poseFileService, selectionService, configService, textureProvider);
+            _windowSystem.AddWindow(_libraryWindow);
+        }
+
+        // Create graphical bone window
+        _graphicalBoneWindow = new GraphicalBoneWindow(selectionService, actorManager, skeletonService, gPoseService, textureProvider);
+        _windowSystem.AddWindow(_graphicalBoneWindow);
 
         // Subscribe to pop-out requests from properties panel
         _mainWindow.OnPropertiesPopOutRequested += CreateDetachedPropertiesWindow;
+
+        // Subscribe to environment button click
+        _mainWindow.OnEnvironmentRequested += ToggleEnvironmentWindow;
+
+        // Subscribe to references button click
+        _mainWindow.OnReferencesRequested += ToggleReferencesWindow;
+
+        // Subscribe to library button click
+        _mainWindow.OnLibraryRequested += ToggleLibraryWindow;
+
+        // Subscribe to body map button click
+        _mainWindow.OnBodyMapRequested += ToggleGraphicalBoneWindow;
 
         // Hook into Dalamud's UI drawing
         _pluginInterface.UiBuilder.Draw += DrawUI;
@@ -144,6 +222,22 @@ public class UIManager : IUIManager
             _skeletonOverlay.IsOpen = false;
             _hotbarWindow.IsOpen = false;
         }
+
+        // Environment window starts closed
+        _environmentWindow.IsOpen = false;
+
+        // Reference windows start closed
+        if (_referencesWindow != null)
+            _referencesWindow.IsOpen = false;
+        if (_referenceOverlay != null)
+            _referenceOverlay.IsOpen = false;
+
+        // Library window starts closed
+        if (_libraryWindow != null)
+            _libraryWindow.IsOpen = false;
+
+        // Graphical bone window starts closed
+        _graphicalBoneWindow.IsOpen = false;
     }
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent e)
@@ -154,9 +248,17 @@ public class UIManager : IUIManager
         _skeletonOverlay.IsOpen = e.IsGPosing;
         _hotbarWindow.IsOpen = e.IsGPosing;
 
-        // Close all detached windows when leaving GPose
+        // Close all detached windows and environment when leaving GPose
         if (!e.IsGPosing)
         {
+            _environmentWindow.IsOpen = false;
+            if (_referencesWindow != null)
+                _referencesWindow.IsOpen = false;
+            if (_referenceOverlay != null)
+                _referenceOverlay.IsOpen = false;
+            if (_libraryWindow != null)
+                _libraryWindow.IsOpen = false;
+            _graphicalBoneWindow.IsOpen = false;
             CloseAllDetachedWindows();
         }
     }
@@ -174,7 +276,10 @@ public class UIManager : IUIManager
             _historyService,
             _gazeService,
             _cameraService,
-            _textureProvider);
+            _textureProvider,
+            _penumbraService,
+            _glamourerService,
+            _customizePlusService);
 
         window.OnCloseRequested += OnDetachedWindowCloseRequested;
         window.IsOpen = true;
@@ -216,16 +321,55 @@ public class UIManager : IUIManager
         _mainWindow.IsOpen = !_mainWindow.IsOpen;
     }
 
+    private void ToggleEnvironmentWindow()
+    {
+        _environmentWindow.IsOpen = !_environmentWindow.IsOpen;
+    }
+
+    private void ToggleReferencesWindow()
+    {
+        if (_referencesWindow != null)
+        {
+            _referencesWindow.IsOpen = !_referencesWindow.IsOpen;
+
+            // Also toggle the overlay when opening/closing references window
+            if (_referenceOverlay != null)
+                _referenceOverlay.IsOpen = _referencesWindow.IsOpen;
+        }
+    }
+
+    private void ToggleLibraryWindow()
+    {
+        if (_libraryWindow != null)
+        {
+            _libraryWindow.IsOpen = !_libraryWindow.IsOpen;
+        }
+    }
+
+    private void ToggleGraphicalBoneWindow()
+    {
+        _graphicalBoneWindow.IsOpen = !_graphicalBoneWindow.IsOpen;
+    }
+
     public void Dispose()
     {
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _mainWindow.OnPropertiesPopOutRequested -= CreateDetachedPropertiesWindow;
+        _mainWindow.OnEnvironmentRequested -= ToggleEnvironmentWindow;
+        _mainWindow.OnReferencesRequested -= ToggleReferencesWindow;
+        _mainWindow.OnLibraryRequested -= ToggleLibraryWindow;
+        _mainWindow.OnBodyMapRequested -= ToggleGraphicalBoneWindow;
         _pluginInterface.UiBuilder.Draw -= DrawUI;
         _pluginInterface.UiBuilder.OpenMainUi -= ToggleMainWindow;
 
         // Clean up detached windows
         CloseAllDetachedWindows();
 
+        _environmentWindow.Dispose();
+        _referencesWindow?.Dispose();
+        _referenceOverlay?.Dispose();
+        _libraryWindow?.Dispose();
+        _graphicalBoneWindow.Dispose();
         _windowSystem.RemoveAllWindows();
     }
 }

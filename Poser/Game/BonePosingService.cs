@@ -558,6 +558,131 @@ public unsafe class BonePosingService : IBonePosingService
         _skeletonsToUpdate.Add(skeleton.Actor.Address);
     }
 
+    public void FlipBone(IBone bone)
+    {
+        if (bone is VirtualBone)
+            return;
+
+        var poseInfo = GetPoseInfo(bone.Skeleton);
+        var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
+
+        // Get current rotation and convert to euler
+        var currentRotation = bone.LastTransform.Rotation;
+        var euler = QuaternionToEuler(currentRotation);
+
+        // Flip: X = 180 - X, Y = -Y (matching Brio's approach)
+        euler.X = 180f - euler.X;
+        euler.Y = -euler.Y;
+
+        var newRotation = EulerToQuaternion(euler);
+
+        // Create new transform with flipped rotation
+        var newTransform = new Transform
+        {
+            Position = bone.LastTransform.Position,
+            Rotation = newRotation,
+            Scale = bone.LastTransform.Scale
+        };
+
+        // Clear existing stacks and apply fresh - flip is a replacement, not an accumulation
+        bonePoseInfo.ClearStacks();
+        bonePoseInfo.Apply(newTransform, bone.LastRawTransform);
+
+        OnBoneTransformChanged?.Invoke(bone);
+    }
+
+    public void MirrorPose(ISkeleton skeleton)
+    {
+        var poseInfo = GetPoseInfo(skeleton);
+
+        // Collect all bone transforms
+        var transforms = new Dictionary<string, Transform>();
+        var rawTransforms = new Dictionary<string, Transform>();
+        foreach (var bone in skeleton.Bones)
+        {
+            transforms[bone.BoneName] = bone.LastTransform;
+            rawTransforms[bone.BoneName] = bone.LastRawTransform;
+        }
+
+        // Swap left/right bone transforms
+        foreach (var bone in skeleton.Bones)
+        {
+            var mirrorName = GetMirrorBoneName(bone.BoneName);
+            if (mirrorName == null)
+                continue;
+
+            // Only process _l bones, _r will be handled implicitly
+            if (!bone.BoneName.EndsWith("_l"))
+                continue;
+
+            if (!transforms.TryGetValue(mirrorName, out var mirrorTransform))
+                continue;
+
+            var mirrorBone = skeleton.GetBone(mirrorName);
+            if (mirrorBone == null)
+                continue;
+
+            // Get the current transforms
+            var boneTransform = transforms[bone.BoneName];
+
+            // Clear and apply - mirror is a replacement, not an accumulation
+            var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
+            bonePoseInfo.ClearStacks();
+            var invertedMirror = InvertForMirror(mirrorTransform);
+            bonePoseInfo.Apply(invertedMirror, rawTransforms[bone.BoneName]);
+
+            var mirrorPoseInfo = poseInfo.GetPoseInfo(mirrorBone.BoneName, mirrorBone.PartialId);
+            mirrorPoseInfo.ClearStacks();
+            var invertedBone = InvertForMirror(boneTransform);
+            mirrorPoseInfo.Apply(invertedBone, rawTransforms[mirrorName]);
+        }
+    }
+
+    public string? GetMirrorBoneName(string boneName)
+    {
+        if (boneName.EndsWith("_r"))
+        {
+            return string.Concat(boneName.AsSpan(0, boneName.Length - 2), "_l");
+        }
+
+        if (boneName.EndsWith("_l"))
+        {
+            return string.Concat(boneName.AsSpan(0, boneName.Length - 2), "_r");
+        }
+
+        return null;
+    }
+
+    private static Transform InvertForMirror(Transform t)
+    {
+        // For mirroring, we invert the X position and X/W rotation components
+        return new Transform
+        {
+            Position = new Vector3(-t.Position.X, t.Position.Y, t.Position.Z),
+            Rotation = new Quaternion(-t.Rotation.X, t.Rotation.Y, t.Rotation.Z, -t.Rotation.W),
+            Scale = t.Scale
+        };
+    }
+
+    private const float RadiansToDegrees = 180f / MathF.PI;
+    private const float DegreesToRadians = MathF.PI / 180f;
+
+    private static Vector3 QuaternionToEuler(Quaternion r)
+    {
+        float yaw = MathF.Atan2(2.0f * (r.Y * r.W + r.X * r.Z), 1.0f - 2.0f * (r.X * r.X + r.Y * r.Y));
+        float pitch = MathF.Asin(Math.Clamp(2.0f * (r.X * r.W - r.Y * r.Z), -1f, 1f));
+        float roll = MathF.Atan2(2.0f * (r.X * r.Y + r.Z * r.W), 1.0f - 2.0f * (r.X * r.X + r.Z * r.Z));
+
+        return new Vector3(yaw, pitch, roll) * RadiansToDegrees;
+    }
+
+    private static Quaternion EulerToQuaternion(Vector3 euler)
+    {
+        euler *= DegreesToRadians;
+        var quaternion = Quaternion.CreateFromYawPitchRoll(euler.X, euler.Y, euler.Z);
+        return Quaternion.Normalize(quaternion);
+    }
+
     public void Dispose()
     {
         _updateBonePhysicsHook?.Dispose();

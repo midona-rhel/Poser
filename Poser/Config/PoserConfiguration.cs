@@ -13,4 +13,5 @@ public class PoserConfiguration : IPluginConfiguration
     public SkeletonConfiguration Skeleton { get; set; } = new();
     public DisplayConfiguration Display { get; set; } = new();
     public UIConfiguration UI { get; set; } = new();
+    public LibraryConfiguration Library { get; set; } = new();
 }

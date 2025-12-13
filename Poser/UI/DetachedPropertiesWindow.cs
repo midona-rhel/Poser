@@ -9,6 +9,7 @@ using Dalamud.Plugin.Services;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Entities;
+using Poser.IPC;
 using Poser.Services;
 using Poser.UI.Components;
 
@@ -42,7 +43,10 @@ public class DetachedPropertiesWindow : Window, IDisposable
         IHistoryService historyService,
         IGazeService gazeService,
         ICameraService cameraService,
-        ITextureProvider textureProvider)
+        ITextureProvider textureProvider,
+        IPenumbraService? penumbraService = null,
+        IGlamourerService? glamourerService = null,
+        ICustomizePlusService? customizePlusService = null)
         : base($"Properties##detached_{_instanceCounter++}",
             ImGuiWindowFlags.NoCollapse)
     {
@@ -60,7 +64,10 @@ public class DetachedPropertiesWindow : Window, IDisposable
             historyService,
             gazeService,
             cameraService,
-            textureProvider);
+            textureProvider,
+            penumbraService,
+            glamourerService,
+            customizePlusService);
 
         // Freeze it to the captured entities
         _propertiesPanel.FreezeToEntities(entities);

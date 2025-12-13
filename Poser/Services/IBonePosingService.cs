@@ -59,4 +59,21 @@ public interface IBonePosingService : IDisposable
     /// This freezes the entire skeleton including gaze bones.
     /// </summary>
     void SnapshotSkeleton(ISkeleton skeleton);
+
+    /// <summary>
+    /// Flips a bone's rotation (X = 180 - X, Y = -Y).
+    /// Used to mirror pose on a single bone.
+    /// </summary>
+    void FlipBone(IBone bone);
+
+    /// <summary>
+    /// Mirrors the entire pose by swapping left/right bone transforms.
+    /// </summary>
+    void MirrorPose(ISkeleton skeleton);
+
+    /// <summary>
+    /// Gets the mirror bone name for a given bone (swaps _l and _r suffixes).
+    /// Returns null if no mirror exists.
+    /// </summary>
+    string? GetMirrorBoneName(string boneName);
 }

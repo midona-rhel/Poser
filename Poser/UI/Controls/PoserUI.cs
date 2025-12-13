@@ -10,9 +10,9 @@ namespace Poser.UI.Controls;
 /// </summary>
 public static class PoserUI
 {
-    private const float DefaultLabelWidth = 140f;
-    private const float RowSpacing = 15f;
-    private const float Margin = 16f;
+    private const float DefaultLabelWidth = 110f;
+    private const float RowSpacing = 8f;
+    private const float Margin = 10f;
 
     /// <summary>
     /// Gets the UI scale.

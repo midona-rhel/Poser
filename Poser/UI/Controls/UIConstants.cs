@@ -12,7 +12,7 @@ public static class UIConstants
     public const float StandardRowHeight = 24f;
     public const float IconColumnWidth = 24f;
     public const float CheckboxColumnWidth = 24f;
-    public const float ButtonSize = 25f;
+    public const float ButtonSize = 24f;
     public const float HeaderHeight = 24f;
 
     // Scaled sizes - use these in UI code

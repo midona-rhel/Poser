@@ -1,3 +1,4 @@
+using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
@@ -18,6 +19,26 @@ public class TopBar
     private readonly IEditorState _editorState;
     private readonly IHistoryService _historyService;
     private readonly SettingsModal _settingsModal = new();
+
+    /// <summary>
+    /// Event fired when user clicks the Environment button.
+    /// </summary>
+    public event Action? OnEnvironmentRequested;
+
+    /// <summary>
+    /// Event fired when user clicks the References button.
+    /// </summary>
+    public event Action? OnReferencesRequested;
+
+    /// <summary>
+    /// Event fired when user clicks the Library button.
+    /// </summary>
+    public event Action? OnLibraryRequested;
+
+    /// <summary>
+    /// Event fired when user clicks the Body Map button.
+    /// </summary>
+    public event Action? OnBodyMapRequested;
 
     public TopBar(
         IGPoseService gPoseService,
@@ -46,6 +67,58 @@ public class TopBar
             else
             {
                 ImGui.TextDisabled("Not in GPose");
+            }
+        });
+
+        // Library button
+        row.Fixed(Flex.ButtonWidth, (w, h) =>
+        {
+            if (PoserButton.DrawWithWidth("library", "Lib", w))
+            {
+                OnLibraryRequested?.Invoke();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("Pose Library");
+            }
+        });
+
+        // Body Map button
+        row.Fixed(Flex.ButtonWidth, (w, h) =>
+        {
+            if (PoserButton.DrawWithWidth("bodymap", "Body", w))
+            {
+                OnBodyMapRequested?.Invoke();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("Graphical Bone Selection");
+            }
+        });
+
+        // References button
+        row.Fixed(Flex.ButtonWidth, (w, h) =>
+        {
+            if (PoserButton.DrawWithWidth("references", "Ref", w))
+            {
+                OnReferencesRequested?.Invoke();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("Reference Images");
+            }
+        });
+
+        // Environment button
+        row.Fixed(Flex.ButtonWidth, (w, h) =>
+        {
+            if (PoserButton.DrawWithWidth("environment", "Env", w))
+            {
+                OnEnvironmentRequested?.Invoke();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("Time & Weather");
             }
         });
 

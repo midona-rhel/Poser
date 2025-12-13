@@ -1,7 +1,11 @@
+using System;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
+using Dalamud.Interface.Utility.Raii;
 using Poser.Core;
 using Poser.Entities;
 using Poser.Entities.Capabilities;
+using Poser.Files;
 using Poser.History;
 using Poser.Services;
 
@@ -16,7 +20,13 @@ public class TransformTabPane : ITabPane
     private readonly IBonePosingService _bonePosingService;
     private readonly IAnimationService _animationService;
     private readonly IHistoryService _historyService;
+    private readonly IPoseFileService? _poseFileService;
     private readonly TransformWidget _transformWidget;
+
+    // File browsers
+    private readonly FileBrowser _importBrowser;
+    private readonly FileBrowser _exportBrowser;
+    private string _lastPosePath = "";
 
     // Track bone transform frame-by-frame for incremental deltas
     private IBone? _trackingBone;
@@ -32,14 +42,21 @@ public class TransformTabPane : ITabPane
         IPosingService posingService,
         IBonePosingService bonePosingService,
         IAnimationService animationService,
-        IHistoryService historyService)
+        IHistoryService historyService,
+        IPoseFileService? poseFileService = null)
     {
         _posingService = posingService;
         _bonePosingService = bonePosingService;
         _animationService = animationService;
         _historyService = historyService;
+        _poseFileService = poseFileService;
         _transformWidget = new TransformWidget();
         _transformWidget.OnTransformCommit += OnTransformCommit;
+
+        // Initialize file browsers
+        _importBrowser = new FileBrowser("Import Pose", new[] { ".pose" }, isSaveMode: false);
+        _exportBrowser = new FileBrowser("Export Pose", new[] { ".pose" }, isSaveMode: true);
+        _lastPosePath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
     }
 
     /// <summary>
@@ -101,6 +118,164 @@ public class TransformTabPane : ITabPane
                 _lastFrameTransform = null;
             }
         }
+
+        // Draw pose action buttons
+        DrawPoseActions();
+
+        // Draw file browsers (modal overlays)
+        _importBrowser.Draw();
+        _exportBrowser.Draw();
+    }
+
+    private void DrawPoseActions()
+    {
+        var skeleton = GetCurrentSkeleton();
+        var bone = _entity as IBone;
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        // First row: Flip, Mirror, Reset
+        using (var row = Flex.Row(gap: Flex.SmallGap))
+        {
+            // Flip button (works on selected bone)
+            row.Fixed(Flex.ButtonWidth, (w, h) =>
+            {
+                using (ImRaii.Disabled(bone == null))
+                {
+                    if (PoserButton.DrawWithWidth("flip_bone", "Flip", w))
+                    {
+                        if (bone != null)
+                        {
+                            _bonePosingService.FlipBone(bone);
+                        }
+                    }
+                }
+                if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                {
+                    ImGui.SetTooltip(bone != null
+                        ? "Flip bone rotation"
+                        : "Select a bone to flip");
+                }
+            });
+
+            // Mirror button (works on skeleton)
+            row.Fixed(Flex.ButtonWidth, (w, h) =>
+            {
+                using (ImRaii.Disabled(skeleton == null))
+                {
+                    if (PoserButton.DrawWithWidth("mirror_pose", "Mirror", w))
+                    {
+                        if (skeleton != null)
+                        {
+                            _bonePosingService.MirrorPose(skeleton);
+                        }
+                    }
+                }
+                if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                {
+                    ImGui.SetTooltip(skeleton != null
+                        ? "Mirror pose (swap left/right)"
+                        : "Select an actor/bone to mirror pose");
+                }
+            });
+
+            // Reset button
+            row.Fixed(Flex.ButtonWidth, (w, h) =>
+            {
+                bool canReset = bone != null || skeleton != null;
+                using (ImRaii.Disabled(!canReset))
+                {
+                    if (PoserButton.DrawWithWidth("reset_pose", "Reset", w))
+                    {
+                        if (bone != null)
+                        {
+                            _bonePosingService.ResetBone(bone);
+                        }
+                        else if (skeleton != null)
+                        {
+                            _bonePosingService.ResetSkeleton(skeleton);
+                        }
+                    }
+                }
+                if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                {
+                    ImGui.SetTooltip(bone != null
+                        ? "Reset bone to original"
+                        : skeleton != null
+                            ? "Reset skeleton to original"
+                            : "Select a bone/skeleton to reset");
+                }
+            });
+        }
+
+        // Second row: Import, Export
+        if (_poseFileService != null)
+        {
+            using var row = Flex.Row(gap: Flex.SmallGap);
+
+            // Import button
+            row.Fixed(Flex.ButtonWidth, (w, h) =>
+            {
+                using (ImRaii.Disabled(skeleton == null))
+                {
+                    if (PoserButton.DrawWithWidth("import_pose", "Import", w))
+                    {
+                        if (skeleton != null)
+                        {
+                            _importBrowser.Open(_lastPosePath, path =>
+                            {
+                                _lastPosePath = System.IO.Path.GetDirectoryName(path) ?? _lastPosePath;
+                                _poseFileService.ImportPose(skeleton, path);
+                            });
+                        }
+                    }
+                }
+                if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                {
+                    ImGui.SetTooltip(skeleton != null
+                        ? "Import pose from .pose file"
+                        : "Select an actor to import pose");
+                }
+            });
+
+            // Export button
+            row.Fixed(Flex.ButtonWidth, (w, h) =>
+            {
+                using (ImRaii.Disabled(skeleton == null))
+                {
+                    if (PoserButton.DrawWithWidth("export_pose", "Export", w))
+                    {
+                        if (skeleton != null)
+                        {
+                            _exportBrowser.Open(_lastPosePath, path =>
+                            {
+                                _lastPosePath = System.IO.Path.GetDirectoryName(path) ?? _lastPosePath;
+                                _poseFileService.ExportPose(skeleton, path);
+                            });
+                        }
+                    }
+                }
+                if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                {
+                    ImGui.SetTooltip(skeleton != null
+                        ? "Export pose to .pose file"
+                        : "Select an actor to export pose");
+                }
+            });
+        }
+    }
+
+    private ISkeleton? GetCurrentSkeleton()
+    {
+        if (_entity is ISkeleton skeleton)
+            return skeleton;
+
+        if (_entity is IBone bone)
+            return bone.Skeleton;
+
+        return null;
     }
 
     private void ApplyTransform(IEntity entity, Transform transform)

@@ -36,7 +36,7 @@ public abstract class TreeListItem
     /// Draw this item and all children recursively.
     /// Must be called within a table context.
     /// </summary>
-    public void Draw(Vector4 tabHovered, Vector4 tabActive, ISelectionService selection)
+    public void Draw(ISelectionService selection)
     {
         var config = new EntityListItemConfig
         {
@@ -54,7 +54,7 @@ public abstract class TreeListItem
             IsVisible = IsVisible
         };
 
-        var result = EntityListItem.Draw(config, tabHovered, tabActive);
+        var result = EntityListItem.Draw(config);
         HandleResult(result, selection);
 
         // Draw children if not collapsed
@@ -62,7 +62,7 @@ public abstract class TreeListItem
         {
             foreach (var child in Children)
             {
-                child.Draw(tabHovered, tabActive, selection);
+                child.Draw(selection);
             }
         }
     }

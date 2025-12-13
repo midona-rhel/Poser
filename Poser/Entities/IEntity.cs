@@ -25,7 +25,9 @@ public enum EntityType
     /// <summary>Virtual bone (calculated pivot point for bone groups).</summary>
     VirtualBone,
     /// <summary>User-created pivot point for custom orbit centers.</summary>
-    PivotPoint
+    PivotPoint,
+    /// <summary>Scene light.</summary>
+    Light
 }
 
 public interface IEntity
