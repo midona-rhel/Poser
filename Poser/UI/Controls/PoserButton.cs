@@ -11,9 +11,10 @@ namespace Poser.UI.Controls;
 /// </summary>
 public static class PoserButton
 {
-    private const float ButtonHeight = 24f;
+    // Use Flex constants for standardized sizing
+    private static float ButtonHeight => Flex.RowHeight;
     private const float ButtonRounding = 4f;
-    private const float ButtonPaddingX = 12f;
+    private static float ButtonPaddingX => Flex.TextPadding;
 
     /// <summary>
     /// Draws a styled button.
@@ -228,7 +229,7 @@ public static class PoserButton
     }
 
     /// <summary>
-    /// The size of an icon button (same as ButtonHeight).
+    /// The size of an icon button (same as RowHeight).
     /// </summary>
-    public static float IconButtonSize => ButtonHeight;
+    public static float IconButtonSize => Flex.RowHeight;
 }

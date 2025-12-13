@@ -67,28 +67,19 @@ public class ScenePanel
     private void DrawBottomButtons()
     {
         var primarySelected = _selectionService.GetFirstSelected<IActor>();
-        float buttonSize = UIConstants.ScaledButtonSize;
 
-        // Match ActorList constants for alignment
-        float iconColWidth = 32f * ImGuiHelpers.GlobalScale;
-        float cellPadding = 4f * ImGuiHelpers.GlobalScale;
+        using var row = Flex.Row(gap: Flex.ItemGap);
 
-        // Center button like icons in table
-        float cellContentWidth = iconColWidth - (cellPadding * 2);
-        float offsetX = cellPadding + (cellContentWidth - buttonSize) / 2;
-        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
-
-        // Plus button with popup menu
-        if (ImPoser.CenteredIconButton(
-            "add_entity",
-            FontAwesomeIcon.Plus,
-            new Vector2(buttonSize, buttonSize),
-            "Add entity"))
+        // Add button on the left
+        row.Fixed(Flex.RowHeight, () =>
         {
-            ImGui.OpenPopup("##add_entity_popup");
-        }
+            if (PoserButton.DrawIcon("add_entity", FontAwesomeIcon.Plus, "Add entity"))
+            {
+                ImGui.OpenPopup("##add_entity_popup");
+            }
+        });
 
-        // Popup menu for add options
+        // Popup menu for add options (drawn outside Fixed but still works)
         if (ImGui.BeginPopup("##add_entity_popup"))
         {
             if (ImGui.MenuItem("Spawn Actor Clone"))
@@ -99,33 +90,26 @@ public class ScenePanel
             ImGui.EndPopup();
         }
 
-        ImGui.SameLine();
+        row.Spacer();
 
-        // Trash button right-aligned
-        float trashButtonWidth = buttonSize * 4;
-        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - trashButtonWidth);
-
-        // Only allow deleting spawned actors
+        // Delete button on the right
         bool canDelete = primarySelected != null && _spawnService.IsSpawnedActor(primarySelected);
-
         string deleteTooltip = canDelete
             ? "Delete selected entity"
             : "Can only delete spawned entities";
 
-        using (ImRaii.Disabled(!canDelete))
+        row.Fixed(Flex.ButtonWidth, (w, h) =>
         {
-            if (ImPoser.FontIconButton(
-                "delete_selected",
-                FontAwesomeIcon.Trash,
-                new Vector2(trashButtonWidth, buttonSize),
-                deleteTooltip,
-                canDelete))
+            using (ImRaii.Disabled(!canDelete))
             {
-                if (canDelete && primarySelected != null)
+                if (PoserButton.DrawWithWidth("delete_selected", "Delete", w))
                 {
-                    _spawnService.DestroyActor(primarySelected);
+                    if (canDelete && primarySelected != null)
+                    {
+                        _spawnService.DestroyActor(primarySelected);
+                    }
                 }
             }
-        }
+        });
     }
 }

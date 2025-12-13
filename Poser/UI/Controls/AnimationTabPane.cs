@@ -72,7 +72,14 @@ public class AnimationTabPane : ITabPane
         if (!isFirst)
             PoserUI.Separator();
 
-        using var row = PoserUI.Row(ImGui.GetTextLineHeight());
-        row.Header(text);
+        using (var row = Flex.Row())
+        {
+            row.Fill((w, h) =>
+            {
+                float offsetY = (h - ImGui.GetTextLineHeight()) / 2f;
+                if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
+                ImGui.TextColored(UIColors.TextDisabled, text);
+            });
+        }
     }
 }

@@ -1,3 +1,4 @@
+using Dalamud.Bindings.ImGui;
 using Poser.Config;
 using Poser.UI.Controls;
 
@@ -26,11 +27,18 @@ public class DisplaySettingsPane : ITabPane
 
         SettingsControls.SectionEnd();
 
-        using var row = PoserUI.Row(PoserUI.ButtonHeight);
-        row.Stretch();
-        if (row.RightButton("##reset_display", "Reset to Defaults"))
+        using (var row = Flex.Row(gap: Flex.ItemGap))
         {
-            ConfigurationService.Instance.ResetDisplay();
+            row.Spacer();
+
+            float buttonWidth = ImGui.CalcTextSize("Reset to Defaults").X + Flex.TextPadding * 2 * PoserUI.Scale;
+            row.Fixed(buttonWidth / PoserUI.Scale, () =>
+            {
+                if (PoserButton.DrawWithWidth("##reset_display", "Reset to Defaults", buttonWidth))
+                {
+                    ConfigurationService.Instance.ResetDisplay();
+                }
+            });
         }
     }
 }

@@ -31,91 +31,34 @@ public class TopBar
 
     public void Draw()
     {
-        var windowWidth = ImGui.GetContentRegionAvail().X;
+        using var row = Flex.Row(gap: Flex.ItemGap);
 
-        DrawGPoseStatus();
-        ImGui.SameLine();
-        DrawUndoRedoButtons(windowWidth);
-    }
-
-    private void DrawGPoseStatus()
-    {
-        if (_gPoseService.IsGPosing)
+        // GPose status on the left
+        row.Fill((w, h) =>
         {
-            ImGui.TextColored(new Vector4(0.4f, 1.0f, 0.4f, 1.0f), "GPose");
-        }
-        else
-        {
-            ImGui.TextDisabled("Not in GPose");
-        }
-    }
+            float offsetY = (h - ImGui.GetTextLineHeight()) / 2f;
+            if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
 
-    private void DrawUndoRedoButtons(float windowWidth)
-    {
-        float buttonSize = ImGui.GetFrameHeight();
-        float spacing = ImGui.GetStyle().ItemSpacing.X;
-        float buttonsWidth = (buttonSize * 3) + (spacing * 2); // 3 buttons: settings, undo, redo
-        float rightX = windowWidth - buttonsWidth;
-
-        ImGui.SetCursorPosX(rightX);
-
-        // Settings button
-        DrawSettingsButton(buttonSize);
-        ImGui.SameLine();
-
-        // Undo button
-        using (ImRaii.PushFont(UiBuilder.IconFont))
-        {
-            using (ImRaii.Disabled(!_historyService.CanUndo))
+            if (_gPoseService.IsGPosing)
             {
-                if (ImGui.Button(FontAwesomeIcon.Undo.ToIconString(), new Vector2(buttonSize, buttonSize)))
-                {
-                    _historyService.Undo();
-                }
+                ImGui.TextColored(new Vector4(0.4f, 1.0f, 0.4f, 1.0f), "GPose");
             }
-        }
-
-        if (_historyService.CanUndo && ImGui.IsItemHovered())
-        {
-            ImGui.SetTooltip($"Undo: {_historyService.UndoDescription}");
-        }
-
-        ImGui.SameLine();
-
-        // Redo button
-        using (ImRaii.PushFont(UiBuilder.IconFont))
-        {
-            using (ImRaii.Disabled(!_historyService.CanRedo))
+            else
             {
-                if (ImGui.Button(FontAwesomeIcon.Redo.ToIconString(), new Vector2(buttonSize, buttonSize)))
-                {
-                    _historyService.Redo();
-                }
+                ImGui.TextDisabled("Not in GPose");
             }
-        }
+        });
 
-        if (_historyService.CanRedo && ImGui.IsItemHovered())
+        // Settings button on the right
+        row.Fixed(Flex.ButtonWidth, (w, h) =>
         {
-            ImGui.SetTooltip($"Redo: {_historyService.RedoDescription}");
-        }
-    }
-
-    private void DrawSettingsButton(float buttonSize)
-    {
-        using (ImRaii.PushFont(UiBuilder.IconFont))
-        {
-            if (ImGui.Button(FontAwesomeIcon.Cog.ToIconString(), new Vector2(buttonSize, buttonSize)))
+            if (PoserButton.DrawWithWidth("settings", "Settings", w))
             {
                 _settingsModal.Open();
             }
-        }
+        });
 
-        if (ImGui.IsItemHovered())
-        {
-            ImGui.SetTooltip("Settings");
-        }
-
-        // Draw settings modal
+        // Draw settings modal (outside row)
         _settingsModal.Draw();
     }
 }

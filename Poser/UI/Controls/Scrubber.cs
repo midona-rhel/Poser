@@ -14,11 +14,12 @@ public static class Scrubber
 {
     private const float TrackHeight = 2f;
     private const float ThumbWidth = 12f;
-    private const float ThumbHeight = 24f;
     private const float ThumbRounding = 4f;
-    private const float ValueTextGap = 12f;
     private const float TickHeight = 6f;
     private const float TickWidth = 1f;
+    // Use Flex constants for standardized sizing
+    private static float ThumbHeight => Flex.RowHeight;
+    private static float ValueTextGap => Flex.ItemGap;
 
     /// <summary>
     /// Draws a scrubber control.
@@ -52,9 +53,9 @@ public static class Scrubber
         var maxText = (max * displayMultiplier).ToString(displayFormat, CultureInfo.InvariantCulture) + displaySuffix;
         float valueTextW = ImGui.CalcTextSize(maxText).X;
 
-        // Calculate dimensions
+        // Calculate dimensions - include right padding matching the gap
         float totalWidth = width > 0 ? width : ImGui.GetContentRegionAvail().X;
-        float trackWidth = totalWidth - valueTextW - gap - thumbW;
+        float trackWidth = totalWidth - valueTextW - gap - thumbW - gap; // gap on both sides of text
 
         var cursorScreenPos = ImGui.GetCursorScreenPos();
         var drawList = ImGui.GetWindowDrawList();

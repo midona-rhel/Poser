@@ -13,12 +13,9 @@ namespace Poser.UI.Controls;
 
 /// <summary>
 /// Widget for controlling animations (base/blend selection, speed, and time scrubbing).
-/// Uses 40% opacity for disabled state instead of ImGui disabled.
 /// </summary>
 public class AnimationWidget
 {
-    private const float LabelWidth = 50f;
-
     private readonly IAnimationService _animationService;
     private readonly IAnimationDataService _animationDataService;
     private readonly IHistoryService _historyService;
@@ -63,9 +60,6 @@ public class AnimationWidget
     public void DrawAnimationSection(IActor? actor)
     {
         bool enabled = actor != null;
-        float opacity = enabled ? 1f : UIColors.DisabledOpacity;
-        float buttonWidth = PoserButton.IconButtonSize * PoserUI.Scale;
-        float spacing = 4f * PoserUI.Scale;
 
         // Clear state when switching actors
         if (actor != null && actor.Address != _lastActorAddress)
@@ -85,117 +79,103 @@ public class AnimationWidget
             : null;
         var blendDisplayId = _selectedBlendId ?? _appliedBlendId;
 
-        using (PushOpacity(opacity))
+        using (ImRaii.Disabled(!enabled))
         {
             // Current animation row - shows what's actually playing
             {
-                using var row = PoserUI.Row(ImGui.GetTextLineHeight());
-                row.Label("Current:", LabelWidth);
-                row.Text(actor != null ? GetCurrentAnimationText(actor) : "None");
+                using var row = Flex.Row(gap: Flex.ItemGap);
+                row.Label("Current:");
+                row.Fill((w, h) =>
+                {
+                    float offsetY = (h - ImGui.GetTextLineHeight()) / 2f;
+                    if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
+                    ImGui.Text(actor != null ? GetCurrentAnimationText(actor) : "None");
+                });
+                // Spacer to align with play buttons on other rows
+                row.Fixed(Flex.RowHeight, () => { });
             }
 
             // Base Animation row - selector + play button
             {
-                using var row = PoserUI.Row(PoserUI.DropdownHeight);
-                row.Label("Base:", LabelWidth);
-
-                // Calculate selector width: remaining - button - spacing
-                float selectorWidth = row.RemainingWidth() - buttonWidth - spacing;
-                row.Custom(selectorWidth / PoserUI.Scale, () =>
+                using var row = Flex.Row(gap: Flex.ItemGap);
+                row.Label("Base:");
+                row.Fill((w, h) => _baseAnimationSelector.Draw("base_anim", baseDisplayId, id =>
                 {
-                    _baseAnimationSelector.Draw("base_anim", baseDisplayId, id =>
-                    {
-                        if (enabled)
-                        {
-                            _selectedBaseId = id;
-                        }
-                    }, selectorWidth);
-                });
-
-                row.Spacer(spacing / PoserUI.Scale);
-
-                // Play button - use baseDisplayId (what's shown in selector)
-                float basePlayOpacity = baseDisplayId.HasValue ? 1f : UIColors.DisabledOpacity;
-                using (PushOpacity(basePlayOpacity))
+                    _selectedBaseId = id;
+                }, w, h));
+                row.Fixed(Flex.RowHeight, (w, h) =>
                 {
-                    if (row.IconButton("play_base", FontAwesomeIcon.Play, "Play Base Animation"))
+                    using (ImRaii.Disabled(!baseDisplayId.HasValue))
                     {
-                        if (enabled && actor != null && baseDisplayId.HasValue)
+                        if (PoserButton.DrawIcon("play_base", FontAwesomeIcon.Play, "Play Base Animation"))
                         {
-                            ushort? oldId = hasOverride ? _appliedBaseId : null;
-                            _animationService.ApplyBaseAnimation(actor, baseDisplayId.Value, true);
-                            _appliedBaseId = baseDisplayId.Value;
-                            _animationService.SetAnimationTime(actor, 0f);
+                            if (actor != null && baseDisplayId.HasValue)
+                            {
+                                ushort? oldId = hasOverride ? _appliedBaseId : null;
+                                _animationService.ApplyBaseAnimation(actor, baseDisplayId.Value, true);
+                                _appliedBaseId = baseDisplayId.Value;
+                                _animationService.SetAnimationTime(actor, 0f);
 
-                            var action = new BaseAnimationAction(_animationService, actor, oldId, baseDisplayId.Value);
-                            _historyService.Record(action);
+                                var action = new BaseAnimationAction(_animationService, actor, oldId, baseDisplayId.Value);
+                                _historyService.Record(action);
+                            }
                         }
                     }
-                }
+                });
             }
 
             // Blend Animation row - selector + play button
             {
-                using var row = PoserUI.Row(PoserUI.DropdownHeight);
-                row.Label("Blend:", LabelWidth);
-
-                // Calculate selector width: remaining - button - spacing
-                float selectorWidth = row.RemainingWidth() - buttonWidth - spacing;
-                row.Custom(selectorWidth / PoserUI.Scale, () =>
+                using var row = Flex.Row(gap: Flex.ItemGap);
+                row.Label("Blend:");
+                row.Fill((w, h) => _blendAnimationSelector.Draw("blend_anim", blendDisplayId, id =>
                 {
-                    _blendAnimationSelector.Draw("blend_anim", blendDisplayId, id =>
-                    {
-                        if (enabled)
-                        {
-                            _selectedBlendId = id;
-                        }
-                    }, selectorWidth);
-                });
-
-                row.Spacer(spacing / PoserUI.Scale);
-
-                // Play button - use blendDisplayId (what's shown in selector)
-                float blendPlayOpacity = blendDisplayId.HasValue ? 1f : UIColors.DisabledOpacity;
-                using (PushOpacity(blendPlayOpacity))
+                    _selectedBlendId = id;
+                }, w, h));
+                row.Fixed(Flex.RowHeight, (w, h) =>
                 {
-                    if (row.IconButton("play_blend", FontAwesomeIcon.Play, "Play Blend Animation"))
+                    using (ImRaii.Disabled(!blendDisplayId.HasValue))
                     {
-                        if (enabled && actor != null && blendDisplayId.HasValue)
+                        if (PoserButton.DrawIcon("play_blend", FontAwesomeIcon.Play, "Play Blend Animation"))
                         {
-                            _animationService.PlayBlendAnimation(actor, blendDisplayId.Value);
-                            _appliedBlendId = blendDisplayId.Value;
+                            if (actor != null && blendDisplayId.HasValue)
+                            {
+                                _animationService.PlayBlendAnimation(actor, blendDisplayId.Value);
+                                _appliedBlendId = blendDisplayId.Value;
+                            }
                         }
                     }
-                }
+                });
             }
 
-            // Clear button row
+            // Clear button row - right-aligned (right edge aligns with play buttons)
             {
-                float clearOpacity = hasOverride ? 1f : UIColors.DisabledOpacity;
+                using var row = Flex.Row(gap: Flex.ItemGap);
+                row.Spacer();
 
-                using var row = PoserUI.Row(PoserUI.ButtonHeight);
-                row.Label("", LabelWidth); // Empty label for alignment
-
-                // Clear Animations button - resets to original animation
-                using (PushOpacity(clearOpacity))
+                row.Fixed(Flex.ButtonWidth, (w, h) =>
                 {
-                    if (row.Button("clear_animations", "Reset"))
+                    using (ImRaii.Disabled(!hasOverride))
                     {
-                        if (enabled && actor != null && hasOverride)
+                        // Fill allocated width so right edge aligns with row's right edge
+                        if (PoserButton.DrawWithWidth("clear_animations", "Reset", w))
                         {
-                            ushort? oldId = _appliedBaseId;
-                            _animationService.StopBaseAnimation(actor);
+                            if (actor != null && hasOverride)
+                            {
+                                ushort? oldId = _appliedBaseId;
+                                _animationService.StopBaseAnimation(actor);
 
-                            var action = new BaseAnimationAction(_animationService, actor, oldId, null);
-                            _historyService.Record(action);
+                                var action = new BaseAnimationAction(_animationService, actor, oldId, null);
+                                _historyService.Record(action);
 
-                            _selectedBaseId = null;
-                            _selectedBlendId = null;
-                            _appliedBaseId = null;
-                            _appliedBlendId = null;
+                                _selectedBaseId = null;
+                                _selectedBlendId = null;
+                                _appliedBaseId = null;
+                                _appliedBlendId = null;
+                            }
                         }
                     }
-                }
+                });
             }
         }
     }
@@ -232,19 +212,18 @@ public class AnimationWidget
     public void DrawSpeedSection(IActor? actor)
     {
         bool enabled = actor != null;
-        float opacity = enabled ? 1f : UIColors.DisabledOpacity;
         float speed = actor != null ? _animationService.GetSpeed(actor) : 1f;
 
-        using (PushOpacity(opacity))
+        using (ImRaii.Disabled(!enabled))
         {
-            using var row = PoserUI.Row(PoserUI.ScrubberHeight);
-            row.Label("Speed:", LabelWidth);
+            using var row = Flex.Row(gap: Flex.ItemGap);
+            row.Label("Speed:");
 
-            row.CustomFill(width =>
+            row.Fill(w =>
             {
-                if (Scrubber.Draw("##speed", ref speed, 0f, 3f, 0f, width, 1f, "F2", "x"))
+                if (Scrubber.Draw("##speed", ref speed, 0f, 3f, 0f, w, 1f, "F2", "x"))
                 {
-                    if (enabled && actor != null)
+                    if (actor != null)
                     {
                         if (!_isEditingSpeed)
                         {
@@ -283,21 +262,18 @@ public class AnimationWidget
         float maxTime = duration ?? 1f;
         bool canScrub = enabled && isFrozen && duration.HasValue && currentTime.HasValue;
 
-        float scrubOpacity = canScrub ? 1f : UIColors.DisabledOpacity;
-
         // Time scrubber row
-        using (PushOpacity(scrubOpacity))
+        using (ImRaii.Disabled(!canScrub))
         {
-            using var row = PoserUI.Row(PoserUI.ScrubberHeight);
-            row.Label("Time:", LabelWidth);
+            using var row = Flex.Row(gap: Flex.ItemGap);
+            row.Label("Time:");
 
-            row.CustomFill(width =>
+            row.Fill(w =>
             {
-                if (Scrubber.Draw("##time", ref time, 0f, maxTime, 0f, width, 1f, "F2", "s"))
+                if (Scrubber.Draw("##time", ref time, 0f, maxTime, 0f, w, 1f, "F2", "s"))
                 {
-                    if (canScrub && actor != null)
+                    if (actor != null)
                     {
-                        // Clamp time to valid range
                         time = Math.Clamp(time, 0f, maxTime);
                         _animationService.SetAnimationTime(actor, time);
                     }
@@ -306,22 +282,21 @@ public class AnimationWidget
         }
 
         // Playback controls row (below time scrubber)
-        float controlsOpacity = enabled ? 1f : UIColors.DisabledOpacity;
         float speed = actor != null ? _animationService.GetSpeed(actor) : 1f;
         bool isPlaying = speed > 0f;
 
-        using (PushOpacity(controlsOpacity))
+        using (ImRaii.Disabled(!enabled))
         {
-            using var row = PoserUI.Row(PoserUI.ButtonHeight);
-            row.Label("", LabelWidth); // Empty label for alignment
+            using var row = Flex.Row(gap: Flex.ItemGap);
+            row.Label(""); // Dummy label for alignment with scrubbers above
 
-            // Play/Pause button - fixed width so it doesn't change size
-            float playPauseWidth = ImGui.CalcTextSize("Pause").X + 24f * PoserUI.Scale; // "Pause" is wider
-            row.Custom(playPauseWidth / PoserUI.Scale, () =>
+            // Play/Pause button on the left - fixed width so it doesn't change size
+            float playPauseWidth = (ImGui.CalcTextSize("Pause").X + Flex.TextPadding * 2 * PoserUI.Scale) / PoserUI.Scale;
+            row.Fixed(playPauseWidth, () =>
             {
-                if (PoserButton.DrawWithWidth("play_pause", isPlaying ? "Pause" : "Play", playPauseWidth))
+                if (PoserButton.DrawWithWidth("play_pause", isPlaying ? "Pause" : "Play", playPauseWidth * PoserUI.Scale))
                 {
-                    if (enabled && actor != null)
+                    if (actor != null)
                     {
                         float oldSpeed = _animationService.GetSpeed(actor);
                         float newSpeed = isPlaying ? 0f : 1f;
@@ -333,28 +308,23 @@ public class AnimationWidget
                 }
             });
 
-            row.Spacer(8);
+            row.Spacer(); // Push Reset to right
 
-            // Reset button
-            if (row.Button("reset_speed", "Reset"))
+            // Reset button on the right
+            row.Fixed(Flex.ButtonWidth, (w, h) =>
             {
-                if (enabled && actor != null)
+                if (PoserButton.DrawWithWidth("reset_speed", "Reset", w))
                 {
-                    float oldSpeed = _animationService.GetSpeed(actor);
-                    _animationService.ResetSpeed(actor);
+                    if (actor != null)
+                    {
+                        float oldSpeed = _animationService.GetSpeed(actor);
+                        _animationService.ResetSpeed(actor);
 
-                    var action = new SpeedChangeAction(_animationService, actor, oldSpeed, 1f);
-                    _historyService.Record(action);
+                        var action = new SpeedChangeAction(_animationService, actor, oldSpeed, 1f);
+                        _historyService.Record(action);
+                    }
                 }
-            }
+            });
         }
-    }
-
-    /// <summary>
-    /// Pushes ImGui style alpha for opacity-based disabled state.
-    /// </summary>
-    private static ImRaii.Style PushOpacity(float opacity)
-    {
-        return ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * opacity);
     }
 }

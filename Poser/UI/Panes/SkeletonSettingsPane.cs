@@ -58,11 +58,18 @@ public class SkeletonSettingsPane : ITabPane
 
         SettingsControls.SectionEnd();
 
-        using var row = PoserUI.Row(PoserUI.ButtonHeight);
-        row.Stretch();
-        if (row.RightButton("##reset_skeleton", "Reset to Defaults"))
+        using (var row = Flex.Row(gap: Flex.ItemGap))
         {
-            ConfigurationService.Instance.ResetSkeleton();
+            row.Spacer();
+
+            float buttonWidth = ImGui.CalcTextSize("Reset to Defaults").X + Flex.TextPadding * 2 * PoserUI.Scale;
+            row.Fixed(buttonWidth / PoserUI.Scale, () =>
+            {
+                if (PoserButton.DrawWithWidth("##reset_skeleton", "Reset to Defaults", buttonWidth))
+                {
+                    ConfigurationService.Instance.ResetSkeleton();
+                }
+            });
         }
     }
 }

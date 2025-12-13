@@ -48,16 +48,27 @@ public class UISettingsPane : ITabPane
 
         SettingsControls.SectionEnd();
 
-        using var row = PoserUI.Row(PoserUI.ButtonHeight);
-        row.Stretch();
-        if (row.RightButton("##reset_ui", "Reset to Defaults"))
+        using (var row = Flex.Row(gap: Flex.ItemGap))
         {
-            ConfigurationService.Instance.ResetUI();
-        }
-        row.RightSpacer(8);
-        if (row.RightButton("##copy_theme", "Copy from Theme"))
-        {
-            CopyColorsFromTheme();
+            row.Spacer();
+
+            float btn1Width = ImGui.CalcTextSize("Reset to Defaults").X + Flex.TextPadding * 2 * PoserUI.Scale;
+            row.Fixed(btn1Width / PoserUI.Scale, () =>
+            {
+                if (PoserButton.DrawWithWidth("##reset_ui", "Reset to Defaults", btn1Width))
+                {
+                    ConfigurationService.Instance.ResetUI();
+                }
+            });
+
+            float btn2Width = ImGui.CalcTextSize("Copy from Theme").X + Flex.TextPadding * 2 * PoserUI.Scale;
+            row.Fixed(btn2Width / PoserUI.Scale, () =>
+            {
+                if (PoserButton.DrawWithWidth("##copy_theme", "Copy from Theme", btn2Width))
+                {
+                    CopyColorsFromTheme();
+                }
+            });
         }
     }
 

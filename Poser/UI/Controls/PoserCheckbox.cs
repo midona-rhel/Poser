@@ -13,7 +13,8 @@ namespace Poser.UI.Controls;
 /// </summary>
 public static class PoserCheckbox
 {
-    private const float CheckboxSize = 18f;
+    // Use Flex constant for standardized sizing
+    private static float CheckboxSize => Flex.ControlSize;
     private const float CheckboxRounding = 2f;
 
     /// <summary>

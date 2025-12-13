@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Poser.Config;
@@ -32,11 +33,25 @@ public static class SettingsControls
     /// </summary>
     public static bool SliderRow(string label, ref float value, float min, float max, float labelWidth = DefaultLabelWidth)
     {
-        using var row = PoserUI.Row(PoserUI.FrameHeight);
-        row.Label(label, labelWidth);
-        bool changed = row.Slider($"##{label}", ref value, min, max);
+        bool changed = false;
+        float localValue = value;
+
+        using (var row = Flex.Row(gap: Flex.ItemGap))
+        {
+            row.Label(label, labelWidth);
+            row.Fill(w =>
+            {
+                ImGui.SetNextItemWidth(w);
+                if (ImGui.SliderFloat($"##{label}", ref localValue, min, max))
+                    changed = true;
+            });
+        }
+
         if (changed)
+        {
+            value = localValue;
             ConfigurationService.Instance.Save();
+        }
         return changed;
     }
 
@@ -45,11 +60,24 @@ public static class SettingsControls
     /// </summary>
     public static bool ScrubberRow(string label, ref float value, float min, float max, float step = 0f, float labelWidth = DefaultLabelWidth)
     {
-        using var row = PoserUI.Row(PoserUI.ScrubberHeight);
-        row.Label(label, labelWidth);
-        bool changed = row.Scrubber($"##{label}", ref value, min, max, step);
+        bool changed = false;
+        float localValue = value;
+
+        using (var row = Flex.Row(gap: Flex.ItemGap))
+        {
+            row.Label(label, labelWidth);
+            row.Fill(w =>
+            {
+                if (Scrubber.Draw($"##{label}", ref localValue, min, max, step, w))
+                    changed = true;
+            });
+        }
+
         if (changed)
+        {
+            value = localValue;
             ConfigurationService.Instance.Save();
+        }
         return changed;
     }
 
@@ -58,12 +86,29 @@ public static class SettingsControls
     /// </summary>
     public static bool ColorRow(string label, ref uint color, float labelWidth = DefaultLabelWidth)
     {
-        using var row = PoserUI.Row(PoserUI.FrameHeight);
-        row.Label(label, labelWidth);
-        row.Stretch();
-        bool changed = row.RightColorEdit($"##{label}", ref color);
+        bool changed = false;
+        uint localColor = color;
+
+        using (var row = Flex.Row(gap: Flex.ItemGap))
+        {
+            row.Label(label, labelWidth);
+            row.Spacer();
+            row.Fixed(Flex.RowHeight, (w, h) =>
+            {
+                var vec4 = ImGui.ColorConvertU32ToFloat4(localColor);
+                if (ImGui.ColorEdit4($"##{label}", ref vec4, ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.NoLabel))
+                {
+                    localColor = ImGui.ColorConvertFloat4ToU32(vec4);
+                    changed = true;
+                }
+            });
+        }
+
         if (changed)
+        {
+            color = localColor;
             ConfigurationService.Instance.Save();
+        }
         return changed;
     }
 
@@ -72,11 +117,27 @@ public static class SettingsControls
     /// </summary>
     public static bool CheckboxRow(string label, ref bool value, float labelWidth = DefaultLabelWidth)
     {
-        using var row = PoserUI.Row(PoserUI.FrameHeight);
-        row.Label(label, labelWidth);
-        bool changed = row.Checkbox($"##{label}", ref value);
+        bool changed = false;
+        bool localValue = value;
+
+        using (var row = Flex.Row(gap: Flex.ItemGap))
+        {
+            row.Label(label, labelWidth);
+            row.Fixed(PoserCheckbox.Size / PoserUI.Scale, (w, h) =>
+            {
+                float offsetY = (h - PoserCheckbox.Size) / 2f;
+                if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
+
+                if (PoserCheckbox.Draw($"##{label}", ref localValue))
+                    changed = true;
+            });
+        }
+
         if (changed)
+        {
+            value = localValue;
             ConfigurationService.Instance.Save();
+        }
         return changed;
     }
 
@@ -85,36 +146,41 @@ public static class SettingsControls
     /// </summary>
     public static void ColorEntryRow(string label, UIColorEntry entry, float labelWidth = DefaultLabelWidth)
     {
-        using var row = PoserUI.Row(PoserUI.DropdownHeight);
-        row.Label(label, labelWidth);
-
-        // Dropdown index: 0 = Custom, 1+ = ImGuiCol values
         int currentIndex = entry.UseCustomColor ? 0 : entry.ThemeColorIndex + 1;
-
-        if (row.Dropdown($"##combo_{label}", ref currentIndex, ImGuiColNames, 140))
-        {
-            if (currentIndex == 0)
-            {
-                if (!entry.UseCustomColor)
-                    entry.CustomColor = entry.Resolve();
-                entry.UseCustomColor = true;
-            }
-            else
-            {
-                entry.UseCustomColor = false;
-                entry.ThemeColorIndex = currentIndex - 1;
-            }
-            ConfigurationService.Instance.Save();
-        }
-
-        row.Spacer(8);
-
         var resolvedColor = entry.Resolve();
-        if (row.ColorEdit($"##color_{label}", ref resolvedColor))
+
+        using (var row = Flex.Row(gap: Flex.ItemGap))
         {
-            entry.UseCustomColor = true;
-            entry.CustomColor = resolvedColor;
-            ConfigurationService.Instance.Save();
+            row.Label(label, labelWidth);
+
+            row.Fixed(140, (w, h) =>
+            {
+                if (PoserDropdown.Draw($"##combo_{label}", ref currentIndex, ImGuiColNames, w))
+                {
+                    if (currentIndex == 0)
+                    {
+                        if (!entry.UseCustomColor)
+                            entry.CustomColor = entry.Resolve();
+                        entry.UseCustomColor = true;
+                    }
+                    else
+                    {
+                        entry.UseCustomColor = false;
+                        entry.ThemeColorIndex = currentIndex - 1;
+                    }
+                    ConfigurationService.Instance.Save();
+                }
+            });
+
+            row.Fixed(Flex.RowHeight, (w, h) =>
+            {
+                if (ImGui.ColorEdit4($"##color_{label}", ref resolvedColor, ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.NoLabel))
+                {
+                    entry.UseCustomColor = true;
+                    entry.CustomColor = resolvedColor;
+                    ConfigurationService.Instance.Save();
+                }
+            });
         }
     }
 
@@ -123,15 +189,22 @@ public static class SettingsControls
     /// </summary>
     public static void SectionHeader(string text)
     {
-        // Add spacing above if not the first element (cursor Y > small threshold)
+        // Add spacing above if not the first element
         if (ImGui.GetCursorPosY() > 5f)
         {
-            using var spacer = PoserUI.Row(PoserUI.FrameHeight);
+            using var spacer = Flex.Row();
             // Empty row for spacing
         }
 
-        using var row = PoserUI.Row(ImGui.GetTextLineHeight());
-        row.Header(text);
+        using (var row = Flex.Row())
+        {
+            row.Fill((w, h) =>
+            {
+                float offsetY = (h - ImGui.GetTextLineHeight()) / 2f;
+                if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
+                ImGui.TextColored(UIColors.TextDisabled, text);
+            });
+        }
     }
 
     /// <summary>

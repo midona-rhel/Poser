@@ -48,12 +48,13 @@ public class AnimationSelector
     /// <param name="currentId">Currently selected timeline ID (null if none)</param>
     /// <param name="onSelect">Callback when an animation is selected</param>
     /// <param name="width">Width of the selector (-1 for auto)</param>
+    /// <param name="height">Height of the selector (scaled, -1 for default)</param>
     /// <returns>True if an animation was selected this frame</returns>
-    public bool Draw(string id, ushort? currentId, Action<ushort> onSelect, float width = -1)
+    public bool Draw(string id, ushort? currentId, Action<ushort> onSelect, float width = -1, float height = -1)
     {
         bool selected = false;
         float scale = PoserUI.Scale;
-        float height = DropdownHeight * scale;
+        if (height < 0) height = DropdownHeight * scale;
         float buttonW = ButtonWidth * scale;
         float rounding = Rounding * scale;
 

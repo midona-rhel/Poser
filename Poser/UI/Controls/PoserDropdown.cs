@@ -15,8 +15,9 @@ namespace Poser.UI.Controls;
 /// </summary>
 public static class PoserDropdown
 {
-    private const float DropdownHeight = 24f;
-    private const float ButtonWidth = 24f;
+    // Use Flex constants for standardized sizing
+    private static float DropdownHeight => Flex.RowHeight;
+    private static float ButtonWidth => Flex.RowHeight; // Square button
     private const float Rounding = 4f;
     private const float MinValueWidth = 80f;
     private const string Ellipsis = "...";
@@ -99,7 +100,7 @@ public static class PoserDropdown
 
         // Draw current value text
         string currentText = currentIndex >= 0 && currentIndex < items.Length ? items[currentIndex] : "";
-        float textPadding = 8f * scale;
+        float textPadding = Flex.TextPadding * scale;
         float maxTextWidth = valueWidth - textPadding * 2;
 
         string displayText = TruncateText(currentText, maxTextWidth);
@@ -153,7 +154,7 @@ public static class PoserDropdown
         ImGui.SetCursorScreenPos(cursorScreenPos + new Vector2(0, height));
 
         // Draw popup
-        float popupPadding = 4f * scale;
+        float popupPadding = Flex.SmallGap * scale;
         float itemHeight = height;
         int maxVisibleItems = 10;
         int visibleItems = Math.Min(items.Length, maxVisibleItems);
