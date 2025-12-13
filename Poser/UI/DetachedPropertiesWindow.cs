@@ -4,6 +4,8 @@ using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
+using Dalamud.Interface.Textures;
+using Dalamud.Plugin.Services;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Entities;
@@ -39,7 +41,8 @@ public class DetachedPropertiesWindow : Window, IDisposable
         IAnimationDataService animationDataService,
         IHistoryService historyService,
         IGazeService gazeService,
-        ICameraService cameraService)
+        ICameraService cameraService,
+        ITextureProvider textureProvider)
         : base($"Properties##detached_{_instanceCounter++}",
             ImGuiWindowFlags.NoCollapse)
     {
@@ -56,7 +59,8 @@ public class DetachedPropertiesWindow : Window, IDisposable
             animationDataService,
             historyService,
             gazeService,
-            cameraService);
+            cameraService,
+            textureProvider);
 
         // Freeze it to the captured entities
         _propertiesPanel.FreezeToEntities(entities);

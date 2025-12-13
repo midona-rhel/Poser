@@ -642,6 +642,22 @@ public static class DrawHelpers
     }
 
     /// <summary>
+    /// Draws an icon with a colored outline at a specified scale.
+    /// </summary>
+    public static void DrawOutlinedIconScaled(ImDrawListPtr drawList, ImFontPtr font, Vector2 pos,
+        string icon, uint outlineColor, uint fillColor, float outlineOffset, float scale)
+    {
+        ImGui.PushFont(font);
+        float fontSize = font.FontSize * scale;
+        drawList.AddText(font, fontSize, pos + new Vector2(-outlineOffset, 0), outlineColor, icon);
+        drawList.AddText(font, fontSize, pos + new Vector2(outlineOffset, 0), outlineColor, icon);
+        drawList.AddText(font, fontSize, pos + new Vector2(0, -outlineOffset), outlineColor, icon);
+        drawList.AddText(font, fontSize, pos + new Vector2(0, outlineOffset), outlineColor, icon);
+        drawList.AddText(font, fontSize, pos, fillColor, icon);
+        ImGui.PopFont();
+    }
+
+    /// <summary>
     /// Calculates the Y position for a popup, preferring below the anchor but moving above or pinning if needed.
     /// </summary>
     /// <param name="anchorBottom">Bottom Y of the anchor element.</param>

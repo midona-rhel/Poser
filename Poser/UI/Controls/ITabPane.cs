@@ -1,3 +1,5 @@
+using Dalamud.Interface;
+
 namespace Poser.UI.Controls;
 
 /// <summary>
@@ -10,6 +12,17 @@ public interface ITabPane
     /// The display name shown on the tab.
     /// </summary>
     string Name { get; }
+
+    /// <summary>
+    /// Optional icon to display instead of text (for compact tabs).
+    /// </summary>
+    FontAwesomeIcon? Icon => null;
+
+    /// <summary>
+    /// Whether this tab is enabled and can be selected.
+    /// Disabled tabs are shown but cannot be clicked.
+    /// </summary>
+    bool IsEnabled => true;
 
     /// <summary>
     /// Draws the tab content. Called when this tab is active.

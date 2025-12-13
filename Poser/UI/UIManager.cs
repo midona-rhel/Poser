@@ -1,5 +1,6 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Keys;
+using Dalamud.Interface.Textures;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
@@ -33,6 +34,7 @@ public class UIManager : IUIManager
     private readonly IHistoryService _historyService;
     private readonly IGazeService _gazeService;
     private readonly ICameraService _cameraService;
+    private readonly ITextureProvider _textureProvider;
 
     // Track detached windows
     private readonly List<DetachedPropertiesWindow> _detachedWindows = new();
@@ -53,7 +55,8 @@ public class UIManager : IUIManager
         ISelectionService selectionService,
         IEditorState editorState,
         IEventBus eventBus,
-        IKeyState keyState)
+        IKeyState keyState,
+        ITextureProvider textureProvider)
     {
         _pluginInterface = pluginInterface;
         _gPoseService = gPoseService;
@@ -70,6 +73,7 @@ public class UIManager : IUIManager
         _historyService = historyService;
         _gazeService = gazeService;
         _cameraService = cameraService;
+        _textureProvider = textureProvider;
 
         // Create windows in z-order (last added = drawn on top)
 
@@ -106,7 +110,8 @@ public class UIManager : IUIManager
             skeletonService,
             cameraService,
             selectionService,
-            editorState);
+            editorState,
+            textureProvider);
         _windowSystem.AddWindow(_mainWindow);
 
         // Subscribe to pop-out requests from properties panel
@@ -168,7 +173,8 @@ public class UIManager : IUIManager
             _animationDataService,
             _historyService,
             _gazeService,
-            _cameraService);
+            _cameraService,
+            _textureProvider);
 
         window.OnCloseRequested += OnDetachedWindowCloseRequested;
         window.IsOpen = true;

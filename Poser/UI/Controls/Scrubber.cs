@@ -66,9 +66,9 @@ public static class Scrubber
         // Draw track with white highlight on bottom
         var trackStart = new Vector2(cursorScreenPos.X + thumbW / 2f, cursorScreenPos.Y + trackOffsetY);
         var trackEnd = new Vector2(cursorScreenPos.X + thumbW / 2f + trackWidth, cursorScreenPos.Y + trackOffsetY + trackH);
-        drawList.AddRectFilled(trackStart, trackEnd, UIColors.BorderU32, trackH / 2f);
+        drawList.AddRectFilled(trackStart, trackEnd, UIColors.ApplyAlpha(UIColors.BorderU32), trackH / 2f);
         // White highlight on bottom of track
-        var whiteHighlight = UIColors.White with { W = 0.4f };
+        var whiteHighlight = UIColors.ApplyAlpha(UIColors.White with { W = 0.4f });
         var whiteHighlightU32 = ImGui.ColorConvertFloat4ToU32(whiteHighlight);
         drawList.AddLine(
             new Vector2(trackStart.X, trackEnd.Y),
@@ -89,7 +89,7 @@ public static class Scrubber
                 drawList.AddRectFilled(
                     new Vector2(tickX - tickW / 2f, tickY),
                     new Vector2(tickX + tickW / 2f, tickY + tickH),
-                    UIColors.BorderU32);
+                    UIColors.ApplyAlpha(UIColors.BorderU32));
             }
         }
 
@@ -113,9 +113,9 @@ public static class Scrubber
         // Draw drop shadow behind thumb using control shadow helper
         DrawHelpers.DrawControlShadow(drawList, thumbPos, thumbEnd, ThumbRounding);
 
-        // Draw thumb with button styling (force full opacity)
+        // Draw thumb with button styling (apply current alpha for disabled state)
         var buttonColor = isActive ? ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive] : ImGui.GetStyle().Colors[(int)ImGuiCol.Button];
-        buttonColor.W = 1f;
+        buttonColor = UIColors.ApplyAlpha(buttonColor with { W = 1f });
         var buttonColorU32 = ImGui.ColorConvertFloat4ToU32(buttonColor);
         drawList.AddRectFilled(thumbPos, thumbEnd, buttonColorU32, rounding);
 
@@ -126,13 +126,13 @@ public static class Scrubber
         }
 
         // Draw border
-        drawList.AddRect(thumbPos, thumbEnd, UIColors.BorderU32, rounding, ImDrawFlags.None, 1f);
+        drawList.AddRect(thumbPos, thumbEnd, UIColors.ApplyAlpha(UIColors.BorderU32), rounding, ImDrawFlags.None, 1f);
 
         // Draw value text to the right, vertically centered
         var valueText = (value * displayMultiplier).ToString(displayFormat, CultureInfo.InvariantCulture) + displaySuffix;
         float textOffsetY = (controlH - ImGui.GetTextLineHeight()) / 2f;
         var textPos = new Vector2(cursorScreenPos.X + trackWidth + thumbW + gap, cursorScreenPos.Y + textOffsetY);
-        drawList.AddText(textPos, UIColors.TextU32, valueText);
+        drawList.AddText(textPos, UIColors.ApplyAlpha(UIColors.TextU32), valueText);
 
         if (isActive)
         {

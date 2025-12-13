@@ -104,7 +104,8 @@ public class AnimationDataService : IAnimationDataService
                     (ushort)timelineRef.RowId,
                     $"{name}{suffix}",
                     key,
-                    AnimationCategory.Emote);
+                    AnimationCategory.Emote,
+                    emote.Icon);
 
                 AddEntry(entry);
             }
@@ -127,7 +128,8 @@ public class AnimationDataService : IAnimationDataService
                     (ushort)action.AnimationEnd.RowId,
                     name,
                     key,
-                    AnimationCategory.Action);
+                    AnimationCategory.Action,
+                    action.Icon);
 
                 AddEntry(entry);
             }
@@ -148,7 +150,8 @@ public class AnimationDataService : IAnimationDataService
                 (ushort)timeline.RowId,
                 key, // Use key as name for raw timelines
                 key,
-                AnimationCategory.Raw);
+                AnimationCategory.Raw,
+                0); // No icon for raw timelines
 
             AddEntry(entry);
         }

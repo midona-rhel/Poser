@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Textures;
+using Dalamud.Plugin.Services;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
@@ -47,7 +49,8 @@ public class MainWindow : Window
         ISkeletonService skeletonService,
         ICameraService cameraService,
         ISelectionService selectionService,
-        IEditorState editorState)
+        IEditorState editorState,
+        ITextureProvider textureProvider)
         : base($"{Poser.PluginName}###poser_sidebar_window",
             ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar)
     {
@@ -75,7 +78,8 @@ public class MainWindow : Window
             animationDataService,
             historyService,
             gazeService,
-            cameraService);
+            cameraService,
+            textureProvider);
 
         // Forward pop-out requests
         _propertiesPanel.OnPopOutRequested += entities => OnPropertiesPopOutRequested?.Invoke(entities);

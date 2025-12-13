@@ -71,6 +71,41 @@ public static class PoserUI
     /// Gets the row spacing constant.
     /// </summary>
     internal static float RowSpacingScaled => RowSpacing * Scale;
+
+    /// <summary>
+    /// Adds an empty row for vertical spacing between sections.
+    /// </summary>
+    public static void EmptyRow()
+    {
+        using var row = Row(FrameHeight);
+        // Empty row for spacing
+    }
+
+    /// <summary>
+    /// Draws a separator line at 50% border color opacity.
+    /// </summary>
+    public static void Separator()
+    {
+        float spacingBefore = 6f * Scale;
+        float spacingAfter = 10f * Scale;
+
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + spacingBefore);
+
+        var drawList = ImGui.GetWindowDrawList();
+        var cursorPos = ImGui.GetCursorScreenPos();
+        var availWidth = ImGui.GetContentRegionAvail().X;
+
+        var borderColor = UIColors.Border with { W = UIColors.Border.W * 0.5f };
+        var colorU32 = ImGui.ColorConvertFloat4ToU32(borderColor);
+
+        drawList.AddLine(
+            cursorPos,
+            new Vector2(cursorPos.X + availWidth, cursorPos.Y),
+            colorU32,
+            1f);
+
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + spacingAfter + 1f);
+    }
 }
 
 /// <summary>
@@ -95,18 +130,24 @@ public sealed class RowBuilder : IDisposable
         _rightX = _startPos.X + _marginScaled + _availableWidth; // Right edge
     }
 
+    private const float LabelSpacing = 8f;
+
     /// <summary>
-    /// Adds a text label, vertically centered.
+    /// Adds a text label, vertically centered and right-aligned within its width.
+    /// Includes spacing after the label.
     /// </summary>
     /// <param name="text">Label text.</param>
     /// <param name="width">Fixed width. If 0, uses text width.</param>
     public RowBuilder Label(string text, float width = 0)
     {
         float w = width > 0 ? width * PoserUI.Scale : ImGui.CalcTextSize(text).X;
+        float textWidth = ImGui.CalcTextSize(text).X;
         float textY = _startPos.Y + (_height - ImGui.GetTextLineHeight()) / 2f;
-        ImGui.SetCursorPos(new Vector2(_currentX, textY));
+        // Right-align text within the label width
+        float textX = _currentX + w - textWidth;
+        ImGui.SetCursorPos(new Vector2(textX, textY));
         ImGui.Text(text);
-        _currentX += w;
+        _currentX += w + LabelSpacing * PoserUI.Scale;
         return this;
     }
 
@@ -124,6 +165,19 @@ public sealed class RowBuilder : IDisposable
     }
 
     /// <summary>
+    /// Adds inline text, vertically centered.
+    /// </summary>
+    /// <param name="text">Text to display.</param>
+    public RowBuilder Text(string text)
+    {
+        float textY = _startPos.Y + (_height - ImGui.GetTextLineHeight()) / 2f;
+        ImGui.SetCursorPos(new Vector2(_currentX, textY));
+        ImGui.Text(text);
+        _currentX += ImGui.CalcTextSize(text).X;
+        return this;
+    }
+
+    /// <summary>
     /// Adds a styled checkbox control.
     /// </summary>
     /// <param name="id">Unique ImGui ID.</param>
@@ -136,6 +190,26 @@ public sealed class RowBuilder : IDisposable
         float offsetY = (_height - w) / 2f;
         ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y + offsetY));
         bool changed = PoserCheckbox.Draw(id, ref value);
+        _currentX += w;
+        return changed;
+    }
+
+    /// <summary>
+    /// Adds a styled toggle button control.
+    /// </summary>
+    /// <param name="id">Unique ImGui ID.</param>
+    /// <param name="value">Toggle value (ref).</param>
+    /// <param name="iconOff">Icon when value is false.</param>
+    /// <param name="iconOn">Icon when value is true.</param>
+    /// <param name="tooltip">Optional tooltip.</param>
+    /// <returns>True if value changed.</returns>
+    public bool ToggleButton(string id, ref bool value, Dalamud.Interface.FontAwesomeIcon iconOff, Dalamud.Interface.FontAwesomeIcon iconOn, string? tooltip = null)
+    {
+        float w = PoserToggleButton.Size;
+        // Center button vertically
+        float offsetY = (_height - w) / 2f;
+        ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y + offsetY));
+        bool changed = PoserToggleButton.Draw(id, ref value, iconOff, iconOn, tooltip);
         _currentX += w;
         return changed;
     }
@@ -379,6 +453,23 @@ public sealed class RowBuilder : IDisposable
     }
 
     /// <summary>
+    /// Adds an icon button.
+    /// </summary>
+    /// <param name="id">Unique ImGui ID.</param>
+    /// <param name="icon">FontAwesome icon.</param>
+    /// <param name="tooltip">Optional tooltip.</param>
+    /// <returns>True if clicked.</returns>
+    public bool IconButton(string id, Dalamud.Interface.FontAwesomeIcon icon, string? tooltip = null)
+    {
+        float w = PoserButton.IconButtonSize * PoserUI.Scale;
+        float offsetY = (_height - w) / 2f;
+        ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y + offsetY));
+        bool clicked = PoserButton.DrawIcon(id, icon, tooltip);
+        _currentX += w;
+        return clicked;
+    }
+
+    /// <summary>
     /// Draws custom content that fills remaining width.
     /// </summary>
     /// <param name="draw">Drawing action that receives available width.</param>
@@ -391,7 +482,7 @@ public sealed class RowBuilder : IDisposable
         return this;
     }
 
-    private float RemainingWidth()
+    public float RemainingWidth()
     {
         float endX = _startPos.X + _marginScaled + _availableWidth;
         return endX - _currentX;

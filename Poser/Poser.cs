@@ -1,6 +1,7 @@
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.Command;
+using Dalamud.Interface.Textures;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,7 +33,8 @@ public class Poser : IDalamudPlugin
         IGameInteropProvider gameInterop,
         ICommandManager commandManager,
         IDataManager dataManager,
-        IKeyState keyState)
+        IKeyState keyState,
+        ITextureProvider textureProvider)
     {
         log.Info($"Starting {PluginName}...");
 
@@ -52,7 +54,8 @@ public class Poser : IDalamudPlugin
             gameInterop,
             commandManager,
             dataManager,
-            keyState);
+            keyState,
+            textureProvider);
 
         // Initialize configuration service (sets static Instance, must be before UI)
         _ = _serviceProvider.GetRequiredService<ConfigurationService>();
@@ -85,7 +88,8 @@ public class Poser : IDalamudPlugin
         IGameInteropProvider gameInterop,
         ICommandManager commandManager,
         IDataManager dataManager,
-        IKeyState keyState)
+        IKeyState keyState,
+        ITextureProvider textureProvider)
     {
         var services = new ServiceCollection();
 
@@ -100,6 +104,7 @@ public class Poser : IDalamudPlugin
         services.AddSingleton(commandManager);
         services.AddSingleton(dataManager);
         services.AddSingleton(keyState);
+        services.AddSingleton(textureProvider);
 
         // Register configuration service (must be early - others depend on it)
         services.AddSingleton<ConfigurationService>();

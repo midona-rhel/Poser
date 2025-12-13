@@ -83,12 +83,12 @@ public static class PoserDropdown
 
         // Draw value area (left side)
         // Background
-        var bgColor = UIColors.ControlBackground;
+        var bgColor = UIColors.ApplyAlpha(UIColors.ControlBackground);
         var bgColorU32 = ImGui.ColorConvertFloat4ToU32(bgColor);
         drawList.AddRectFilled(valuePos, valueEnd, bgColorU32, rounding, ImDrawFlags.RoundCornersLeft);
 
         // Border (left side with rounded corners)
-        var borderColor = UIColors.BorderU32;
+        var borderColor = UIColors.ApplyAlpha(UIColors.BorderU32);
         drawList.AddRect(valuePos, valueEnd, borderColor, rounding, ImDrawFlags.RoundCornersLeft, 1f);
 
         // Hide right border by drawing over it with background color
@@ -107,7 +107,7 @@ public static class PoserDropdown
 
         var textSize = ImGui.CalcTextSize(displayText);
         var textPos = new Vector2(valuePos.X + textPadding, valuePos.Y + (height - textSize.Y) / 2f);
-        drawList.AddText(textPos, UIColors.TextU32, displayText);
+        drawList.AddText(textPos, UIColors.ApplyAlpha(UIColors.TextU32), displayText);
 
         // Show tooltip if text was truncated and value area is hovered
         if (valueTextTruncated && valueHovered)
@@ -124,7 +124,7 @@ public static class PoserDropdown
             buttonColor = ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonHovered];
         else
             buttonColor = ImGui.GetStyle().Colors[(int)ImGuiCol.Button];
-        buttonColor.W = 1f;
+        buttonColor = UIColors.ApplyAlpha(buttonColor with { W = 1f });
         var buttonColorU32 = ImGui.ColorConvertFloat4ToU32(buttonColor);
         drawList.AddRectFilled(buttonPos, buttonEnd, buttonColorU32, rounding, ImDrawFlags.RoundCornersRight);
 
@@ -147,7 +147,7 @@ public static class PoserDropdown
 
         var iconPos = buttonPos + (new Vector2(buttonW, height) - iconSize) / 2f;
         float outlineOffset = 1f * scale;
-        DrawHelpers.DrawOutlinedIcon(drawList, iconFont, iconPos, arrowIcon, UIColors.BlackU32, UIColors.WhiteU32, outlineOffset);
+        DrawHelpers.DrawOutlinedIcon(drawList, iconFont, iconPos, arrowIcon, UIColors.ApplyAlpha(UIColors.BlackU32), UIColors.ApplyAlpha(UIColors.WhiteU32), outlineOffset);
 
         // Advance cursor
         ImGui.SetCursorScreenPos(cursorScreenPos + new Vector2(0, height));

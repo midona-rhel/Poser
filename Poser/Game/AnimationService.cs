@@ -253,6 +253,32 @@ public class AnimationService : IAnimationService
         if (character == null) return;
 
         character->Timeline.OverallSpeed = speed;
+
+        // Also set speed on all Havok animation controls (fixes breathing during freeze)
+        var drawObj = character->GameObject.DrawObject;
+        if (drawObj == null || drawObj->Object.GetObjectType() != ObjectType.CharacterBase)
+            return;
+
+        var charaBase = (CharacterBase*)drawObj;
+        if (charaBase->Skeleton == null)
+            return;
+
+        var skeleton = charaBase->Skeleton;
+
+        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
+        {
+            var partial = &skeleton->PartialSkeletons[p];
+            var animatedSkele = partial->GetHavokAnimatedSkeleton(0);
+            if (animatedSkele == null) continue;
+
+            for (int c = 0; c < animatedSkele->AnimationControls.Length; c++)
+            {
+                var control = animatedSkele->AnimationControls[c].Value;
+                if (control == null) continue;
+
+                control->PlaybackSpeed = speed;
+            }
+        }
     }
 
     #region Speed Control
@@ -367,16 +393,21 @@ public class AnimationService : IAnimationService
         var skeleton = charaBase->Skeleton;
         if (skeleton->PartialSkeletonCount <= 0) return;
 
-        var partial = &skeleton->PartialSkeletons[0];
-        var animatedSkeleton = partial->GetHavokAnimatedSkeleton(0);
-        if (animatedSkeleton == null) return;
+        // Set time on all animation controls for consistent scrubbing
+        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
+        {
+            var partial = &skeleton->PartialSkeletons[p];
+            var animatedSkeleton = partial->GetHavokAnimatedSkeleton(0);
+            if (animatedSkeleton == null) continue;
 
-        if (animatedSkeleton->AnimationControls.Length <= 0) return;
+            for (int c = 0; c < animatedSkeleton->AnimationControls.Length; c++)
+            {
+                var control = animatedSkeleton->AnimationControls[c].Value;
+                if (control == null) continue;
 
-        var control = animatedSkeleton->AnimationControls[0].Value;
-        if (control == null) return;
-
-        control->hkaAnimationControl.LocalTime = time;
+                control->hkaAnimationControl.LocalTime = time;
+            }
+        }
     }
 
     #endregion

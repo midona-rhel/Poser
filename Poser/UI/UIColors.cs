@@ -43,6 +43,7 @@ public static class UIColors
     public static uint ControlBackgroundU32 => ImGui.ColorConvertFloat4ToU32(ControlBackground);
     public static uint TextU32 => ImGui.ColorConvertFloat4ToU32(Text);
     public static uint TextDisabledU32 => ImGui.ColorConvertFloat4ToU32(TextDisabled);
+    public static uint TextVeryDisabledU32 => ImGui.ColorConvertFloat4ToU32(TextDisabled with { W = TextDisabled.W * 0.5f });
     public static uint BorderU32 => ImGui.ColorConvertFloat4ToU32(Border);
     public static uint SelectionActiveU32 => ImGui.ColorConvertFloat4ToU32(SelectionActive);
     public static uint SelectionActiveHoveredU32 => ImGui.ColorConvertFloat4ToU32(SelectionActiveHovered);
@@ -74,4 +75,51 @@ public static class UIColors
     public static uint PurpleU32 => ImGui.ColorConvertFloat4ToU32(Purple);
     public static uint OrangeU32 => ImGui.ColorConvertFloat4ToU32(Orange);
     public static uint GrayU32 => ImGui.ColorConvertFloat4ToU32(Gray);
+
+    /// <summary>
+    /// Disabled opacity multiplier (40%).
+    /// </summary>
+    public const float DisabledOpacity = 0.4f;
+
+    /// <summary>
+    /// Returns a color with modified alpha.
+    /// </summary>
+    public static Vector4 WithOpacity(this Vector4 color, float opacity)
+    {
+        return color with { W = color.W * opacity };
+    }
+
+    /// <summary>
+    /// Returns a U32 color with modified alpha.
+    /// </summary>
+    public static uint WithOpacityU32(this Vector4 color, float opacity)
+    {
+        return ImGui.ColorConvertFloat4ToU32(color.WithOpacity(opacity));
+    }
+
+    /// <summary>
+    /// Applies the current ImGui style alpha to a U32 color.
+    /// Use this in custom controls that draw directly to ImDrawList.
+    /// </summary>
+    public static uint ApplyAlpha(uint color)
+    {
+        float alpha = ImGui.GetStyle().Alpha;
+        if (alpha >= 1f) return color;
+
+        var vec = ImGui.ColorConvertU32ToFloat4(color);
+        vec.W *= alpha;
+        return ImGui.ColorConvertFloat4ToU32(vec);
+    }
+
+    /// <summary>
+    /// Applies the current ImGui style alpha to a Vector4 color.
+    /// Use this in custom controls that draw directly to ImDrawList.
+    /// </summary>
+    public static Vector4 ApplyAlpha(Vector4 color)
+    {
+        float alpha = ImGui.GetStyle().Alpha;
+        if (alpha >= 1f) return color;
+
+        return color with { W = color.W * alpha };
+    }
 }

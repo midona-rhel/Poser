@@ -43,12 +43,12 @@ public static class PoserCheckbox
             value = !value;
 
         // Draw background
-        var bgColor = isHovered ? UIColors.ControlBackgroundHovered : UIColors.ControlBackground;
+        var bgColor = UIColors.ApplyAlpha(isHovered ? UIColors.ControlBackgroundHovered : UIColors.ControlBackground);
         var bgColorU32 = ImGui.ColorConvertFloat4ToU32(bgColor);
         drawList.AddRectFilled(boxPos, boxEnd, bgColorU32, rounding);
 
         // Draw black outline
-        drawList.AddRect(boxPos, boxEnd, UIColors.BlackU32, rounding, ImDrawFlags.None, 1f);
+        drawList.AddRect(boxPos, boxEnd, UIColors.ApplyAlpha(UIColors.BlackU32), rounding, ImDrawFlags.None, 1f);
 
         // Draw checkmark if checked
         if (value)
@@ -66,7 +66,7 @@ public static class PoserCheckbox
 
             // Draw checkmark with outline
             float outlineOffset = 1f * scale;
-            DrawHelpers.DrawOutlinedIcon(drawList, iconFont, iconPos, checkIcon, UIColors.BlackU32, UIColors.WhiteU32, outlineOffset);
+            DrawHelpers.DrawOutlinedIcon(drawList, iconFont, iconPos, checkIcon, UIColors.ApplyAlpha(UIColors.BlackU32), UIColors.ApplyAlpha(UIColors.WhiteU32), outlineOffset);
         }
 
         return clicked;

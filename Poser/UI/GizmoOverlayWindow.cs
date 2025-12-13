@@ -210,8 +210,9 @@ public class GizmoOverlayWindow : Window
             return b.ParentBone == null || !addedBoneNames.Contains(b.ParentBone.BoneName);
         }).ToList();
 
-        // Use first selected bone for gizmo display (could be VirtualBone's pivot or first regular)
-        var primaryBone = selectedBones[0];
+        // Find the highest bone in the hierarchy for gizmo placement
+        // This prevents the gizmo from moving when rotating parent bones
+        var primaryBone = FindHighestBone(selectedBones);
         var skeleton = primaryBone.Skeleton as Skeleton;
         if (skeleton == null || !skeleton.IsValid)
             return;
@@ -293,7 +294,7 @@ public class GizmoOverlayWindow : Window
 
     /// <summary>
     /// Calculate the new transform for a secondary bone based on primary bone's change.
-    /// Uses Brio's formulas: additive position/scale, Conjugate multiplication for rotation.
+    /// Uses additive position/scale, and applies rotation in each bone's own local space.
     /// </summary>
     private static Transform CalculateSecondaryBoneTransform(
         Transform primaryBefore, Transform primaryAfter, Transform secondaryBefore)
@@ -301,10 +302,20 @@ public class GizmoOverlayWindow : Window
         // Position: add the same offset (ADDITIVE)
         var positionDelta = primaryAfter.Position - primaryBefore.Position;
 
-        // Rotation: apply the same rotation delta using Brio's formula
-        // Conjugate(before) * after gives the relative rotation
+        // Rotation: The delta from primary bone is in primary's local space.
+        // To apply the "same" rotation to secondary bone in its own local space,
+        // we need to transform the delta to secondary's local space.
         var rotationDelta = Quaternion.Normalize(
             Quaternion.Conjugate(primaryBefore.Rotation) * primaryAfter.Rotation);
+
+        // Transform delta from primary's local space to secondary's local space:
+        // 1. Convert delta to world space using primary's orientation
+        // 2. Convert from world space to secondary's local space
+        var deltaInWorld = primaryBefore.Rotation * rotationDelta * Quaternion.Conjugate(primaryBefore.Rotation);
+        var deltaInSecondaryLocal = Quaternion.Conjugate(secondaryBefore.Rotation) * deltaInWorld * secondaryBefore.Rotation;
+
+        // Apply delta in secondary bone's local space
+        var newRotation = Quaternion.Normalize(secondaryBefore.Rotation * deltaInSecondaryLocal);
 
         // Scale: add the same scale change (ADDITIVE, not ratio!)
         var scaleDelta = primaryAfter.Scale - primaryBefore.Scale;
@@ -312,7 +323,7 @@ public class GizmoOverlayWindow : Window
         return new Transform
         {
             Position = secondaryBefore.Position + positionDelta,
-            Rotation = Quaternion.Normalize(secondaryBefore.Rotation * rotationDelta),
+            Rotation = newRotation,
             Scale = secondaryBefore.Scale + scaleDelta
         };
     }
@@ -405,5 +416,45 @@ public class GizmoOverlayWindow : Window
             TransformTool.Universal => ImGuizmoOperation.Translate | ImGuizmoOperation.Rotate | ImGuizmoOperation.Scale,
             _ => ImGuizmoOperation.Rotate
         };
+    }
+
+    /// <summary>
+    /// Finds the highest bone in the hierarchy among the selected bones.
+    /// The highest bone is the one with the fewest ancestors (closest to root).
+    /// </summary>
+    private static IBone FindHighestBone(IReadOnlyList<IBone> bones)
+    {
+        if (bones.Count == 1)
+            return bones[0];
+
+        IBone highest = bones[0];
+        int highestDepth = GetBoneDepth(highest);
+
+        for (int i = 1; i < bones.Count; i++)
+        {
+            int depth = GetBoneDepth(bones[i]);
+            if (depth < highestDepth)
+            {
+                highest = bones[i];
+                highestDepth = depth;
+            }
+        }
+
+        return highest;
+    }
+
+    /// <summary>
+    /// Gets the depth of a bone in the hierarchy (0 = root, higher = deeper).
+    /// </summary>
+    private static int GetBoneDepth(IBone bone)
+    {
+        int depth = 0;
+        var current = bone.ParentBone;
+        while (current != null)
+        {
+            depth++;
+            current = current.ParentBone;
+        }
+        return depth;
     }
 }

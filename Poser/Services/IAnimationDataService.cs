@@ -5,7 +5,7 @@ namespace Poser.Services;
 /// <summary>
 /// Animation entry with ID and display name.
 /// </summary>
-public record AnimationEntry(ushort TimelineId, string Name, string Key, AnimationCategory Category);
+public record AnimationEntry(ushort TimelineId, string Name, string Key, AnimationCategory Category, uint Icon);
 
 /// <summary>
 /// Category of animation for filtering.

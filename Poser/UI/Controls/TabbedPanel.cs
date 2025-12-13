@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Poser.UI.Effects;
@@ -17,28 +18,46 @@ public class TabbedPanel
     private readonly IReadOnlyList<ITabPane> _panes;
     private int _activeTabIndex;
 
-    // Layout constants
-    private const float TabBarWidth = 120f;
-    private const float TabHeight = 32f;
+    // Layout constants (defaults)
+    private const float DefaultTabBarWidth = 120f;
+    private const float DefaultTabHeight = 32f;
     private const float TabRounding = 6f;
     private const float TabSpacing = 4f;
     private const float ContentPadding = 16f;
 
+    // Configurable dimensions
+    private readonly float _tabBarWidth;
+    private readonly float _tabHeight;
+
     public TabbedPanel(params ITabPane[] panes)
+        : this(DefaultTabBarWidth, DefaultTabHeight, panes)
+    {
+    }
+
+    public TabbedPanel(IReadOnlyList<ITabPane> panes)
+        : this(DefaultTabBarWidth, DefaultTabHeight, panes)
+    {
+    }
+
+    public TabbedPanel(float tabBarWidth, float tabHeight, params ITabPane[] panes)
     {
         if (panes.Length == 0)
             throw new ArgumentException("TabbedPanel requires at least one pane", nameof(panes));
 
         _panes = panes;
+        _tabBarWidth = tabBarWidth;
+        _tabHeight = tabHeight;
         _activeTabIndex = 0;
     }
 
-    public TabbedPanel(IReadOnlyList<ITabPane> panes)
+    public TabbedPanel(float tabBarWidth, float tabHeight, IReadOnlyList<ITabPane> panes)
     {
         if (panes.Count == 0)
             throw new ArgumentException("TabbedPanel requires at least one pane", nameof(panes));
 
         _panes = panes;
+        _tabBarWidth = tabBarWidth;
+        _tabHeight = tabHeight;
         _activeTabIndex = 0;
     }
 
@@ -65,9 +84,9 @@ public class TabbedPanel
         var availableSize = ImGui.GetContentRegionAvail();
         var drawList = ImGui.GetWindowDrawList();
 
-        float tabBarWidthScaled = TabBarWidth * PoserUI.Scale;
+        float tabBarWidthScaled = _tabBarWidth * PoserUI.Scale;
         float contentWidth = availableSize.X - tabBarWidthScaled;
-        float tabHeightScaled = TabHeight * PoserUI.Scale;
+        float tabHeightScaled = _tabHeight * PoserUI.Scale;
         float spacingScaled = TabSpacing * PoserUI.Scale;
         float roundingScaled = TabRounding * PoserUI.Scale;
 
@@ -132,7 +151,6 @@ public class TabbedPanel
                 ImGui.SetCursorPos(ImGui.GetCursorPos() + new Vector2(offset, offset));
                 var innerSize = available - new Vector2(offset * 2, offset * 2);
 
-                using (ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, new Vector2(0, paddingScaled)))
                 using (ImRaii.PushStyle(ImGuiStyleVar.ScrollbarSize, scrollbarSize))
                 using (ImRaii.PushStyle(ImGuiStyleVar.ScrollbarRounding, 6f * PoserUI.Scale))
                 using (ImRaii.Child("##tabbed_panel_content_inner", innerSize, false))
@@ -144,7 +162,8 @@ public class TabbedPanel
 
         // Draw content panel outer shadows (top, right, bottom + corners)
         // Left shadow is drawn in the tab bar child window above
-        var overlayDL = overlayDrawList ?? ImGui.GetForegroundDrawList();
+        // Use window draw list (not foreground) so popups render on top
+        var overlayDL = overlayDrawList ?? ImGui.GetWindowDrawList();
         DrawContentPanelShadow(overlayDL, contentPanelPos, contentPanelEnd);
     }
 
@@ -161,7 +180,8 @@ public class TabbedPanel
             var tabEnd = tabPos + tabSize;
 
             bool isActive = _activeTabIndex == i;
-            bool isHovered = ImGui.IsMouseHoveringRect(tabPos, tabEnd);
+            bool isEnabled = _panes[i].IsEnabled;
+            bool isHovered = isEnabled && ImGui.IsMouseHoveringRect(tabPos, tabEnd);
 
             if (isActive)
             {
@@ -172,14 +192,42 @@ public class TabbedPanel
                 DrawInactiveTab(drawList, tabPos, tabEnd, tabSize, isHovered, brightBorderU32, roundingScaled);
             }
 
-            // Draw text
-            var textColor = isActive ? UIColors.TextU32 : UIColors.TextDisabledU32;
-            var textSize = ImGui.CalcTextSize(_panes[i].Name);
-            var textPos = tabPos + (tabSize - textSize) * 0.5f;
-            drawList.AddText(textPos, textColor, _panes[i].Name);
+            // Draw icon or text - disabled tabs use more faded color
+            uint textColor;
+            if (!isEnabled)
+                textColor = UIColors.TextVeryDisabledU32;
+            else if (isActive)
+                textColor = UIColors.TextU32;
+            else
+                textColor = UIColors.TextDisabledU32;
 
-            // Handle click
-            if (isHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+            var icon = _panes[i].Icon;
+            if (icon.HasValue)
+            {
+                // Draw icon centered in tab at 1.33x size (2x * 0.66)
+                var iconFont = UiBuilder.IconFont;
+                var iconStr = icon.Value.ToIconString();
+                float iconScale = 1.33f;
+                float iconFontSize = iconFont.FontSize * iconScale;
+
+                ImGui.PushFont(iconFont);
+                var baseIconSize = ImGui.CalcTextSize(iconStr);
+                ImGui.PopFont();
+
+                var scaledIconSize = baseIconSize * iconScale;
+                var iconPos = tabPos + (tabSize - scaledIconSize) * 0.5f;
+                drawList.AddText(iconFont, iconFontSize, iconPos, textColor, iconStr);
+            }
+            else
+            {
+                // Draw text centered in tab
+                var textSize = ImGui.CalcTextSize(_panes[i].Name);
+                var textPos = tabPos + (tabSize - textSize) * 0.5f;
+                drawList.AddText(textPos, textColor, _panes[i].Name);
+            }
+
+            // Handle click - only for enabled tabs
+            if (isHovered && isEnabled && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
             {
                 _activeTabIndex = i;
             }
