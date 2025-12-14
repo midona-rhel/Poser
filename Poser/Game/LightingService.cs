@@ -47,8 +47,6 @@ public unsafe class LightingService : ILightingService
     public bool IsPlacing => _placingLight != null;
     public LightEntity? PlacingLight => _placingLight;
 
-    public event Action? OnLightsChanged;
-
     public LightingService(
         IPluginLog log,
         IFramework framework,
@@ -280,7 +278,7 @@ public unsafe class LightingService : ILightingService
             _spawnedLights.Add(entity);
 
             _log.Info($"LightingService: Spawned {type} light '{lightName}' at {position}");
-            OnLightsChanged?.Invoke();
+            _eventBus.Publish(new LightsChangedEvent());
 
             return entity;
         }
@@ -327,7 +325,7 @@ public unsafe class LightingService : ILightingService
         light.Dispose();
 
         _log.Info($"LightingService: Destroyed light '{light.Name}'");
-        OnLightsChanged?.Invoke();
+        _eventBus.Publish(new LightsChangedEvent());
     }
 
     public void DestroyAllLights()

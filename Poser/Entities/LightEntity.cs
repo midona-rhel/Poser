@@ -43,6 +43,11 @@ public unsafe class LightEntity : EntityBase, ITransformable
     public bool ShowGizmo => true;
 
     /// <summary>
+    /// Light transforms can be set when the native pointer is valid.
+    /// </summary>
+    public bool CanSetTransform => IsValidLight;
+
+    /// <summary>
     /// Gets the native light pointer for advanced operations.
     /// </summary>
     internal GameLight* NativePtr => _nativePtr;

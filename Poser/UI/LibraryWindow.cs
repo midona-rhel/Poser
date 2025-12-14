@@ -10,6 +10,7 @@ using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using Poser.Config;
+using Poser.Core;
 using Poser.Entities;
 using Poser.Library;
 using Poser.Services;
@@ -33,6 +34,7 @@ public class LibraryWindow : Window, IDisposable
     private readonly ISelectionService _selectionService;
     private readonly ConfigurationService _config;
     private readonly ITextureProvider _textureProvider;
+    private readonly IEventBus _eventBus;
 
     // Texture cache for thumbnails
     private readonly Dictionary<string, IDalamudTextureWrap?> _textureCache = new();
@@ -59,7 +61,8 @@ public class LibraryWindow : Window, IDisposable
         IPoseFileService poseFileService,
         ISelectionService selectionService,
         ConfigurationService config,
-        ITextureProvider textureProvider)
+        ITextureProvider textureProvider,
+        IEventBus eventBus)
         : base($"Pose Library###{Poser.PluginName}_library",
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoCollapse)
     {
@@ -68,15 +71,16 @@ public class LibraryWindow : Window, IDisposable
         _selectionService = selectionService;
         _config = config;
         _textureProvider = textureProvider;
+        _eventBus = eventBus;
 
         Size = new Vector2(DefaultWidth, DefaultHeight);
         SizeCondition = ImGuiCond.FirstUseEver;
         RespectCloseHotkey = true;
 
-        _libraryService.OnLibraryRefreshed += OnLibraryRefreshed;
+        _eventBus.Subscribe<LibraryRefreshedEvent>(OnLibraryRefreshed);
     }
 
-    private void OnLibraryRefreshed()
+    private void OnLibraryRefreshed(LibraryRefreshedEvent e)
     {
         // Reset navigation and clear texture cache
         _navigationStack.Clear();
@@ -899,7 +903,7 @@ public class LibraryWindow : Window, IDisposable
 
     public void Dispose()
     {
-        _libraryService.OnLibraryRefreshed -= OnLibraryRefreshed;
+        _eventBus.Unsubscribe<LibraryRefreshedEvent>(OnLibraryRefreshed);
         ClearTextureCache();
         GC.SuppressFinalize(this);
     }

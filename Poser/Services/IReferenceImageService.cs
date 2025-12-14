@@ -14,10 +14,7 @@ public interface IReferenceImageService : IDisposable
     /// </summary>
     IReadOnlyList<ReferenceImage> Images { get; }
 
-    /// <summary>
-    /// Event fired when the image list changes.
-    /// </summary>
-    event Action? OnImagesChanged;
+    // Image changes are published via EventBus: ImagesChangedEvent
 
     /// <summary>
     /// Loads an image from a file path.

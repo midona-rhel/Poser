@@ -98,7 +98,7 @@ public class AppearanceTabPane : ITabPane
     {
         var isAvailable = _penumbraService!.IsAvailable;
 
-        DrawSectionHeader("Penumbra", isFirst: true);
+        PoserUI.SectionHeader("Penumbra", isFirst: true);
 
         if (!isAvailable)
         {
@@ -150,7 +150,7 @@ public class AppearanceTabPane : ITabPane
     {
         var isAvailable = _glamourerService!.IsAvailable;
 
-        DrawSectionHeader("Glamourer");
+        PoserUI.SectionHeader("Glamourer");
 
         if (!isAvailable)
         {
@@ -192,7 +192,7 @@ public class AppearanceTabPane : ITabPane
     {
         var isAvailable = _customizePlusService!.IsAvailable;
 
-        DrawSectionHeader("CustomizePlus");
+        PoserUI.SectionHeader("CustomizePlus");
 
         if (!isAvailable)
         {
@@ -235,22 +235,6 @@ public class AppearanceTabPane : ITabPane
             {
                 _customizePlusService.ClearProfile(actor);
             }
-        }
-    }
-
-    private static void DrawSectionHeader(string text, bool isFirst = false)
-    {
-        if (!isFirst)
-            PoserUI.Separator();
-
-        using (var row = Flex.Row())
-        {
-            row.Fill((w, h) =>
-            {
-                float offsetY = (h - ImGui.GetTextLineHeight()) / 2f;
-                if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
-                ImGui.TextColored(UIColors.TextDisabled, text);
-            });
         }
     }
 

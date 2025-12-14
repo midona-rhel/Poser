@@ -104,7 +104,7 @@ public class HistoryService : IHistoryService, IDisposable
             if (entity is IBone bone)
             {
                 var mod = _bonePosingService.GetModification(bone);
-                transforms[entity] = mod ?? Transform.Identity;
+                transforms[entity] = mod ?? Transform.Zero;
             }
             else if (entity is IActor actor)
             {
@@ -127,8 +127,6 @@ public class HistoryService : IHistoryService, IDisposable
     public string? UndoDescription => _undoStack.Count > 0 ? _undoStack.Peek().Description : null;
     public string? RedoDescription => _redoStack.Count > 0 ? _redoStack.Peek().Description : null;
 
-    public event Action? OnHistoryChanged;
-
     public void Push(IHistoryAction action)
     {
         // Execute the action
@@ -140,7 +138,7 @@ public class HistoryService : IHistoryService, IDisposable
         // Clear redo stack (new action invalidates redo history)
         _redoStack.Clear();
 
-        OnHistoryChanged?.Invoke();
+        _eventBus.Publish(new HistoryChangedEvent());
     }
 
     public void Record(IHistoryAction action)
@@ -151,7 +149,7 @@ public class HistoryService : IHistoryService, IDisposable
         // Clear redo stack (new action invalidates redo history)
         _redoStack.Clear();
 
-        OnHistoryChanged?.Invoke();
+        _eventBus.Publish(new HistoryChangedEvent());
     }
 
     public void Undo()
@@ -162,7 +160,7 @@ public class HistoryService : IHistoryService, IDisposable
         action.Undo();
         _redoStack.Push(action);
 
-        OnHistoryChanged?.Invoke();
+        _eventBus.Publish(new HistoryChangedEvent());
     }
 
     public void Redo()
@@ -173,14 +171,14 @@ public class HistoryService : IHistoryService, IDisposable
         action.Execute();
         _undoStack.Push(action);
 
-        OnHistoryChanged?.Invoke();
+        _eventBus.Publish(new HistoryChangedEvent());
     }
 
     public void Clear()
     {
         _undoStack.Clear();
         _redoStack.Clear();
-        OnHistoryChanged?.Invoke();
+        _eventBus.Publish(new HistoryChangedEvent());
     }
 
     public void Dispose()
@@ -254,11 +252,11 @@ internal class TransformHistoryAction : IHistoryAction
             if (entity is IBone bone)
             {
                 // For bones, we need to set the modification directly
-                // Reset and apply delta from identity
+                // Reset and apply delta (no propagation)
                 _bonePosingService.ResetBone(bone);
-                if (transform != Transform.Identity)
+                if (transform != Transform.Zero)
                 {
-                    _bonePosingService.ApplyTransform(bone, transform, Transform.Identity);
+                    _bonePosingService.ApplyTransform(bone, transform, Transform.Zero);
                 }
             }
             else if (entity is IActor actor)

@@ -84,7 +84,7 @@ public class CameraTabPane : ITabPane
             }
         }
 
-        DrawSectionHeader("View", isFirst: true);
+        PoserUI.SectionHeader("View", isFirst: true);
 
         // Distance (zoom) with input and reset
         {
@@ -122,7 +122,7 @@ public class CameraTabPane : ITabPane
             }
         }
 
-        DrawSectionHeader("Pan");
+        PoserUI.SectionHeader("Pan");
 
         // Pan X with input and reset
         {
@@ -146,7 +146,7 @@ public class CameraTabPane : ITabPane
             }
         }
 
-        DrawSectionHeader("Options");
+        PoserUI.SectionHeader("Options");
 
         // Delimit Camera (extended zoom)
         using (var row = PoserUI.Row(PoserUI.FrameHeight))
@@ -182,12 +182,12 @@ public class CameraTabPane : ITabPane
             }
         }
 
-        DrawSectionHeader("Target");
+        PoserUI.SectionHeader("Target");
 
         // Orbit Target dropdown
         DrawOrbitTargetDropdown(camera);
 
-        DrawSectionHeader("Actions");
+        PoserUI.SectionHeader("Actions");
 
         // Actions on same row: Sync from Game | Reset All
         using (var row = PoserUI.Row(PoserUI.FrameHeight))
@@ -287,22 +287,6 @@ public class CameraTabPane : ITabPane
         }
 
         return changed;
-    }
-
-    private static void DrawSectionHeader(string text, bool isFirst = false)
-    {
-        if (!isFirst)
-            PoserUI.Separator();
-
-        using (var row = Flex.Row())
-        {
-            row.Fill((w, h) =>
-            {
-                float offsetY = (h - ImGui.GetTextLineHeight()) / 2f;
-                if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
-                ImGui.TextColored(UIColors.TextDisabled, text);
-            });
-        }
     }
 
     private void DrawOrbitTargetDropdown(VirtualCameraEntity camera)

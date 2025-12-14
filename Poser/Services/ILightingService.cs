@@ -32,10 +32,7 @@ public interface ILightingService : IDisposable
     /// </summary>
     LightEntity? PlacingLight { get; }
 
-    /// <summary>
-    /// Event fired when lights are added or removed.
-    /// </summary>
-    event Action? OnLightsChanged;
+    // Light changes are published via EventBus: LightsChangedEvent
 
     /// <summary>
     /// Begins interactive light placement. The light spawns at cursor position

@@ -45,6 +45,11 @@ public class Bone : EntityBase, IBone
     /// </summary>
     public bool ShowGizmo => IsVisible;
 
+    /// <summary>
+    /// Bone transforms can be set directly (updates LastTransform cache).
+    /// </summary>
+    public bool CanSetTransform => true;
+
     #endregion
 
     /// <summary>

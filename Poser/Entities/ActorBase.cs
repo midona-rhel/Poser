@@ -27,6 +27,11 @@ public class ActorBase : EntityBase, IActor
     /// </summary>
     public bool ShowGizmo => true;
 
+    /// <summary>
+    /// Actors use IPosingService for transform changes, not direct assignment.
+    /// </summary>
+    public bool CanSetTransform => false;
+
     #endregion
 
     #region IAnimatable

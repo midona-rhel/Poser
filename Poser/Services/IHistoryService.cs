@@ -37,5 +37,5 @@ public interface IHistoryService : IDisposable
     void Redo();
     void Clear();
 
-    event Action? OnHistoryChanged;
+    // History changes are published via EventBus: HistoryChangedEvent
 }

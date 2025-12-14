@@ -5,6 +5,7 @@ using System.Linq;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
+using Poser.Core;
 using Poser.UI;
 
 namespace Poser.Services;
@@ -16,18 +17,18 @@ public class ReferenceImageService : IReferenceImageService
 {
     private readonly IPluginLog _log;
     private readonly ITextureProvider _textureProvider;
+    private readonly IEventBus _eventBus;
     private readonly List<ReferenceImage> _images = new();
     private readonly Dictionary<int, IDalamudTextureWrap> _textures = new();
     private int _nextLayer = 1;
 
     public IReadOnlyList<ReferenceImage> Images => _images;
 
-    public event Action? OnImagesChanged;
-
-    public ReferenceImageService(IPluginLog log, ITextureProvider textureProvider)
+    public ReferenceImageService(IPluginLog log, ITextureProvider textureProvider, IEventBus eventBus)
     {
         _log = log;
         _textureProvider = textureProvider;
+        _eventBus = eventBus;
     }
 
     public ReferenceImage? LoadImage(string filePath)
@@ -70,7 +71,7 @@ public class ReferenceImageService : IReferenceImageService
             _images.Add(refImage);
 
             _log.Debug($"Loaded reference image: {filePath} ({texture.Width}x{texture.Height})");
-            OnImagesChanged?.Invoke();
+            _eventBus.Publish(new ImagesChangedEvent());
 
             return refImage;
         }
@@ -102,7 +103,7 @@ public class ReferenceImageService : IReferenceImageService
         }
 
         image.Dispose();
-        OnImagesChanged?.Invoke();
+        _eventBus.Publish(new ImagesChangedEvent());
     }
 
     public void ClearAll()
@@ -120,7 +121,7 @@ public class ReferenceImageService : IReferenceImageService
 
         int maxLayer = _images.Max(i => i.Layer);
         image.Layer = maxLayer + 1;
-        OnImagesChanged?.Invoke();
+        _eventBus.Publish(new ImagesChangedEvent());
     }
 
     public void SendToBack(ReferenceImage image)
@@ -130,7 +131,7 @@ public class ReferenceImageService : IReferenceImageService
 
         int minLayer = _images.Min(i => i.Layer);
         image.Layer = minLayer - 1;
-        OnImagesChanged?.Invoke();
+        _eventBus.Publish(new ImagesChangedEvent());
     }
 
     public ReferenceImage? GetImage(int imageId)

@@ -9,6 +9,7 @@ using Dalamud.Plugin.Services;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
+using Poser.Core;
 using Poser.Entities;
 using Poser.IPC;
 using Poser.Services;
@@ -34,6 +35,7 @@ public class PropertiesWindow : Window, IDisposable
 
     private readonly PropertiesPanel _propertiesPanel;
     private readonly ISelectionService _selectionService;
+    private readonly IEventBus _eventBus;
 
     private bool _isEntityPinned;
     private IReadOnlyList<IEntity>? _pinnedEntities;
@@ -88,6 +90,7 @@ public class PropertiesWindow : Window, IDisposable
         IGazeService gazeService,
         ICameraService cameraService,
         ITextureProvider textureProvider,
+        IEventBus eventBus,
         IPenumbraService? penumbraService = null,
         IGlamourerService? glamourerService = null,
         ICustomizePlusService? customizePlusService = null,
@@ -98,6 +101,7 @@ public class PropertiesWindow : Window, IDisposable
     {
         _instanceId = _instanceCounter++;
         _selectionService = selectionService;
+        _eventBus = eventBus;
 
         Size = new Vector2(DefaultWidth, DefaultHeight);
         SizeCondition = ImGuiCond.FirstUseEver;
@@ -120,11 +124,11 @@ public class PropertiesWindow : Window, IDisposable
             virtualCameraService,
             lightingService);
 
-        // Subscribe to selection changes
-        _selectionService.OnSelectionChanged += OnSelectionChanged;
+        // Subscribe to selection changes via EventBus
+        _eventBus.Subscribe<SelectionChangedEvent>(OnSelectionChanged);
     }
 
-    private void OnSelectionChanged(IReadOnlyList<IEntity> newSelection)
+    private void OnSelectionChanged(SelectionChangedEvent e)
     {
         if (!_isEntityPinned)
         {
@@ -133,10 +137,10 @@ public class PropertiesWindow : Window, IDisposable
         }
 
         // Entity-pinned - check if selection changed to a different entity
-        if (newSelection.Count > 0 && !IsSameSelection(newSelection, _pinnedEntities))
+        if (e.Selected.Count > 0 && !IsSameSelection(e.Selected, _pinnedEntities))
         {
             // Request new window for the new selection
-            OnNewWindowRequested?.Invoke(newSelection);
+            OnNewWindowRequested?.Invoke(e.Selected.ToList());
         }
     }
 
@@ -302,7 +306,7 @@ public class PropertiesWindow : Window, IDisposable
 
     public void Dispose()
     {
-        _selectionService.OnSelectionChanged -= OnSelectionChanged;
+        _eventBus.Unsubscribe<SelectionChangedEvent>(OnSelectionChanged);
         _propertiesPanel.Dispose();
         GC.SuppressFinalize(this);
     }

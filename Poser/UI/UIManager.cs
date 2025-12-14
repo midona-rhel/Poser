@@ -176,7 +176,7 @@ public class UIManager : IUIManager
         // Create library window
         if (libraryService != null && poseFileService != null && configService != null)
         {
-            _libraryWindow = new LibraryWindow(libraryService, poseFileService, selectionService, configService, textureProvider);
+            _libraryWindow = new LibraryWindow(libraryService, poseFileService, selectionService, configService, textureProvider, eventBus);
             _windowSystem.AddWindow(_libraryWindow);
         }
 

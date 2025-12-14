@@ -103,6 +103,11 @@ public class VirtualBone : EntityBase, IBone, ITransformable
 
     public bool ShowGizmo => IsVisible;
 
+    /// <summary>
+    /// Virtual bones are computed from constituent bones - transforms cannot be set directly.
+    /// </summary>
+    public bool CanSetTransform => false;
+
     #endregion
 
     #region EntityBase Overrides

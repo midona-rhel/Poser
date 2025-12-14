@@ -73,6 +73,11 @@ public class VirtualCameraEntity : EntityBase, ITransformable
     public bool ShowGizmo => false;
 
     /// <summary>
+    /// Camera transforms can be set (converts to position offset and angles).
+    /// </summary>
+    public bool CanSetTransform => true;
+
+    /// <summary>
     /// Transform derived from camera angles.
     /// Position = PositionOffset, Rotation = derived from Angle (pitch/yaw) and Roll.
     /// </summary>

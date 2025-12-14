@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using Dalamud.Plugin.Services;
 using Poser.Config;
+using Poser.Core;
 using Poser.Library;
 
 namespace Poser.Services;
@@ -15,6 +16,7 @@ public class LibraryService : ILibraryService
 {
     private readonly IPluginLog _log;
     private readonly ConfigurationService _config;
+    private readonly IEventBus _eventBus;
     private readonly List<DirectoryEntry> _rootEntries = new();
     private readonly HashSet<string> _favorites = new();
     private bool _isScanning;
@@ -24,14 +26,11 @@ public class LibraryService : ILibraryService
     public IReadOnlySet<string> Favorites => _favorites;
     public bool IsScanning => _isScanning;
 
-    public event Action? OnLibraryRefreshed;
-    public event Action? OnFavoritesChanged;
-    public event Action<int, int>? OnScanProgress;
-
-    public LibraryService(IPluginLog log, ConfigurationService config)
+    public LibraryService(IPluginLog log, ConfigurationService config, IEventBus eventBus)
     {
         _log = log;
         _config = config;
+        _eventBus = eventBus;
         LoadFavorites();
     }
 
@@ -54,7 +53,7 @@ public class LibraryService : ILibraryService
         if (entry != null)
         {
             _rootEntries.Remove(entry);
-            OnLibraryRefreshed?.Invoke();
+            _eventBus.Publish(new LibraryRefreshedEvent());
         }
     }
 
@@ -70,12 +69,12 @@ public class LibraryService : ILibraryService
         foreach (var source in enabledSources)
         {
             current++;
-            OnScanProgress?.Invoke(current, total);
+            _eventBus.Publish(new ScanProgressEvent((float)current / total, $"Scanning {source.Name}..."));
             RefreshSourceInternal(source);
         }
 
         _isScanning = false;
-        OnLibraryRefreshed?.Invoke();
+        _eventBus.Publish(new LibraryRefreshedEvent());
     }
 
     public void RefreshSource(LibrarySource source)
@@ -90,7 +89,7 @@ public class LibraryService : ILibraryService
         RefreshSourceInternal(source);
 
         _isScanning = false;
-        OnLibraryRefreshed?.Invoke();
+        _eventBus.Publish(new LibraryRefreshedEvent());
     }
 
     private void RefreshSourceInternal(LibrarySource source)
@@ -203,7 +202,7 @@ public class LibraryService : ILibraryService
             _favorites.Remove(entry.Identifier);
 
         SaveFavorites();
-        OnFavoritesChanged?.Invoke();
+        _eventBus.Publish(new FavoritesChangedEvent());
     }
 
     public bool IsFavorite(LibraryEntry entry)

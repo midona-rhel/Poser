@@ -38,8 +38,6 @@ public unsafe class VirtualCameraService : IVirtualCameraService
     public VirtualCameraEntity? CurrentCamera => _currentCamera;
     public IReadOnlyList<VirtualCameraEntity> Cameras => _cameras;
 
-    public event Action? OnCamerasChanged;
-
     public VirtualCameraService(
         IPluginLog log,
         IFramework framework,
@@ -109,7 +107,7 @@ public unsafe class VirtualCameraService : IVirtualCameraService
 
         _cameras.Add(camera);
         _log.Info($"VirtualCameraService: Created camera '{camera.Name}'");
-        OnCamerasChanged?.Invoke();
+        _eventBus.Publish(new CamerasChangedEvent());
 
         return camera;
     }
@@ -129,7 +127,7 @@ public unsafe class VirtualCameraService : IVirtualCameraService
         camera.Dispose();
 
         _log.Info($"VirtualCameraService: Deleted camera '{camera.Name}'");
-        OnCamerasChanged?.Invoke();
+        _eventBus.Publish(new CamerasChangedEvent());
     }
 
     public void DeleteAllCameras()
@@ -143,7 +141,7 @@ public unsafe class VirtualCameraService : IVirtualCameraService
         }
 
         _log.Info("VirtualCameraService: Deleted all cameras");
-        OnCamerasChanged?.Invoke();
+        _eventBus.Publish(new CamerasChangedEvent());
     }
 
     public VirtualCameraEntity CloneCamera(VirtualCameraEntity source)
@@ -152,7 +150,7 @@ public unsafe class VirtualCameraService : IVirtualCameraService
         _cameras.Add(clone);
 
         _log.Info($"VirtualCameraService: Cloned camera '{source.Name}' as '{clone.Name}'");
-        OnCamerasChanged?.Invoke();
+        _eventBus.Publish(new CamerasChangedEvent());
 
         return clone;
     }
@@ -180,7 +178,7 @@ public unsafe class VirtualCameraService : IVirtualCameraService
             ApplyToGame(_currentCamera);
         }
 
-        OnCamerasChanged?.Invoke();
+        _eventBus.Publish(new CamerasChangedEvent());
     }
 
     public void CaptureFromGame(VirtualCameraEntity camera)
@@ -299,7 +297,7 @@ public unsafe class VirtualCameraService : IVirtualCameraService
             var defaultCamera = CreateCamera("Default Camera");
             _currentCamera = defaultCamera;
             _currentCamera.IsActive = true;
-            OnCamerasChanged?.Invoke();
+            _eventBus.Publish(new CamerasChangedEvent());
         }
         else
         {

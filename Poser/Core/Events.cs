@@ -78,3 +78,47 @@ public record PhysicsFreezeStateChangedEvent(bool IsFrozen) : IEvent;
 public record GazeLockChangedEvent(IActor Actor, bool IsLocked) : IEvent;
 
 #endregion
+
+#region Service Events
+
+/// <summary>
+/// Published when virtual camera list changes.
+/// </summary>
+public record CamerasChangedEvent : IEvent;
+
+/// <summary>
+/// Published when history state changes (undo/redo stack modified).
+/// </summary>
+public record HistoryChangedEvent : IEvent;
+
+/// <summary>
+/// Published when light list changes (light spawned/destroyed).
+/// </summary>
+public record LightsChangedEvent : IEvent;
+
+/// <summary>
+/// Published when reference image list changes.
+/// </summary>
+public record ImagesChangedEvent : IEvent;
+
+/// <summary>
+/// Published when a bone's transform changes during posing.
+/// </summary>
+public record BoneTransformChangedEvent(IBone Bone) : IEvent;
+
+/// <summary>
+/// Published when pose library is refreshed.
+/// </summary>
+public record LibraryRefreshedEvent : IEvent;
+
+/// <summary>
+/// Published when library favorites change.
+/// </summary>
+public record FavoritesChangedEvent : IEvent;
+
+/// <summary>
+/// Published during library scan with progress info.
+/// </summary>
+public record ScanProgressEvent(float Progress, string Message) : IEvent;
+
+#endregion

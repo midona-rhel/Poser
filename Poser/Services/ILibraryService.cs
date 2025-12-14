@@ -30,20 +30,10 @@ public interface ILibraryService : IDisposable
     /// </summary>
     bool IsScanning { get; }
 
-    /// <summary>
-    /// Event fired when the library is refreshed.
-    /// </summary>
-    event Action? OnLibraryRefreshed;
-
-    /// <summary>
-    /// Event fired when favorites change.
-    /// </summary>
-    event Action? OnFavoritesChanged;
-
-    /// <summary>
-    /// Event fired when scan progress updates.
-    /// </summary>
-    event Action<int, int>? OnScanProgress;
+    // Library events are published via EventBus:
+    // - LibraryRefreshedEvent: library scan complete
+    // - FavoritesChangedEvent: favorites changed
+    // - ScanProgressEvent(Progress, Message): scan progress updates
 
     /// <summary>
     /// Adds a library source.

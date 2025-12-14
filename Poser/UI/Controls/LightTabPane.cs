@@ -53,18 +53,23 @@ public class LightTabPane : ITabPane
     private void DrawLightControls(LightEntity light)
     {
         // Light On/Off toggle
-        using (var row = PoserUI.Row(PoserUI.FrameHeight))
         {
-            row.Label("Enabled", 80);
             var isOn = light.IsLightOn;
-            if (row.Checkbox("##light_on", ref isOn))
+            using (var row = Flex.Row(Flex.RowHeight, Flex.SmallGap))
             {
-                light.IsLightOn = isOn;
+                row.Label("Enabled", 80);
+                row.Fill((w, h) =>
+                {
+                    if (PoserCheckbox.Draw("##light_on", ref isOn))
+                    {
+                        light.IsLightOn = isOn;
+                    }
+                });
             }
         }
 
         // Light type (read-only)
-        using (var row = PoserUI.Row(PoserUI.FrameHeight))
+        using (var row = Flex.Row(Flex.RowHeight, Flex.SmallGap))
         {
             row.Label("Type", 80);
             row.Text(GetLightTypeName(light.LightType));
@@ -73,59 +78,86 @@ public class LightTabPane : ITabPane
         PoserUI.Separator();
 
         // Color (convert Vector3 RGB to Vector4 for color picker)
-        using (var row = PoserUI.Row(PoserUI.FrameHeight))
         {
-            row.Label("Color", 80);
-            var color = new Vector4(light.Color / 20f, 1f); // Normalize from HDR range
-            if (row.ColorEdit("##light_color", ref color, ImGuiColorEditFlags.NoAlpha))
+            var color = new Vector4(light.Color / 20f, 1f);
+            using (var row = Flex.Row(Flex.RowHeight, Flex.SmallGap))
             {
-                light.Color = new Vector3(color.X, color.Y, color.Z) * 20f;
+                row.Label("Color", 80);
+                row.Fill((w, h) =>
+                {
+                    ImGui.SetNextItemWidth(w);
+                    if (ImGui.ColorEdit3("##light_color", ref color, ImGuiColorEditFlags.NoInputs))
+                    {
+                        light.Color = new Vector3(color.X, color.Y, color.Z) * 20f;
+                    }
+                });
             }
         }
 
         // Intensity
-        using (var row = PoserUI.Row(PoserUI.ScrubberHeight))
         {
-            row.Label("Intensity", 80);
             var intensity = light.Intensity;
-            if (row.Scrubber("##light_intensity", ref intensity, 0f, 10f))
+            using (var row = Flex.Row(Flex.RowHeight, Flex.SmallGap))
             {
-                light.Intensity = intensity;
+                row.Label("Intensity", 80);
+                row.Fill((w, h) =>
+                {
+                    if (Scrubber.Draw("##light_intensity", ref intensity, 0f, 10f, 0f, w))
+                    {
+                        light.Intensity = intensity;
+                    }
+                });
             }
         }
 
         // Range
-        using (var row = PoserUI.Row(PoserUI.ScrubberHeight))
         {
-            row.Label("Range", 80);
             var range = light.Range;
-            if (row.Scrubber("##light_range", ref range, 1f, 200f))
+            using (var row = Flex.Row(Flex.RowHeight, Flex.SmallGap))
             {
-                light.Range = range;
+                row.Label("Range", 80);
+                row.Fill((w, h) =>
+                {
+                    if (Scrubber.Draw("##light_range", ref range, 1f, 200f, 0f, w))
+                    {
+                        light.Range = range;
+                    }
+                });
             }
         }
 
         PoserUI.Separator();
 
         // Falloff Type
-        using (var row = PoserUI.Row(PoserUI.DropdownHeight))
         {
-            row.Label("Falloff Type", 80);
             var falloffIndex = (int)light.FalloffType;
-            if (row.DropdownFill("##light_falloff_type", ref falloffIndex, FalloffTypeNames))
+            using (var row = Flex.Row(Flex.RowHeight, Flex.SmallGap))
             {
-                light.FalloffType = (FalloffType)falloffIndex;
+                row.Label("Falloff Type", 80);
+                row.Fill((w, h) =>
+                {
+                    ImGui.SetNextItemWidth(w);
+                    if (ImGui.Combo("##light_falloff_type", ref falloffIndex, FalloffTypeNames, FalloffTypeNames.Length))
+                    {
+                        light.FalloffType = (FalloffType)falloffIndex;
+                    }
+                });
             }
         }
 
         // Falloff
-        using (var row = PoserUI.Row(PoserUI.ScrubberHeight))
         {
-            row.Label("Falloff", 80);
             var falloff = light.Falloff;
-            if (row.Scrubber("##light_falloff", ref falloff, 0f, 10f))
+            using (var row = Flex.Row(Flex.RowHeight, Flex.SmallGap))
             {
-                light.Falloff = falloff;
+                row.Label("Falloff", 80);
+                row.Fill((w, h) =>
+                {
+                    if (Scrubber.Draw("##light_falloff", ref falloff, 0f, 10f, 0f, w))
+                    {
+                        light.Falloff = falloff;
+                    }
+                });
             }
         }
 
@@ -135,24 +167,34 @@ public class LightTabPane : ITabPane
             PoserUI.Separator();
 
             // Spot Angle
-            using (var row = PoserUI.Row(PoserUI.ScrubberHeight))
             {
-                row.Label("Spot Angle", 80);
                 var spotAngle = light.SpotAngle;
-                if (row.Scrubber("##light_spot_angle", ref spotAngle, 1f, 180f))
+                using (var row = Flex.Row(Flex.RowHeight, Flex.SmallGap))
                 {
-                    light.SpotAngle = spotAngle;
+                    row.Label("Spot Angle", 80);
+                    row.Fill((w, h) =>
+                    {
+                        if (Scrubber.Draw("##light_spot_angle", ref spotAngle, 1f, 180f, 0f, w))
+                        {
+                            light.SpotAngle = spotAngle;
+                        }
+                    });
                 }
             }
 
             // Falloff Angle
-            using (var row = PoserUI.Row(PoserUI.ScrubberHeight))
             {
-                row.Label("Edge Falloff", 80);
                 var falloffAngle = light.FalloffAngle;
-                if (row.Scrubber("##light_falloff_angle", ref falloffAngle, 0f, 1f))
+                using (var row = Flex.Row(Flex.RowHeight, Flex.SmallGap))
                 {
-                    light.FalloffAngle = falloffAngle;
+                    row.Label("Edge Falloff", 80);
+                    row.Fill((w, h) =>
+                    {
+                        if (Scrubber.Draw("##light_falloff_angle", ref falloffAngle, 0f, 1f, 0f, w))
+                        {
+                            light.FalloffAngle = falloffAngle;
+                        }
+                    });
                 }
             }
         }
@@ -160,38 +202,51 @@ public class LightTabPane : ITabPane
         PoserUI.Separator();
 
         // Reflection
-        using (var row = PoserUI.Row(PoserUI.FrameHeight))
         {
-            row.Label("Reflection", 80);
             var hasReflection = light.HasReflection;
-            if (row.Checkbox("##light_reflection", ref hasReflection))
+            using (var row = Flex.Row(Flex.RowHeight, Flex.SmallGap))
             {
-                light.HasReflection = hasReflection;
+                row.Label("Reflection", 80);
+                row.Fill((w, h) =>
+                {
+                    if (PoserCheckbox.Draw("##light_reflection", ref hasReflection))
+                    {
+                        light.HasReflection = hasReflection;
+                    }
+                });
             }
         }
 
         // Character Shadow
-        using (var row = PoserUI.Row(PoserUI.FrameHeight))
         {
-            row.Label("Char Shadow", 80);
             var castsShadow = light.CastsCharacterShadow;
-            if (row.Checkbox("##light_shadow", ref castsShadow))
+            using (var row = Flex.Row(Flex.RowHeight, Flex.SmallGap))
             {
-                light.CastsCharacterShadow = castsShadow;
+                row.Label("Char Shadow", 80);
+                row.Fill((w, h) =>
+                {
+                    if (PoserCheckbox.Draw("##light_shadow", ref castsShadow))
+                    {
+                        light.CastsCharacterShadow = castsShadow;
+                    }
+                });
             }
         }
 
         // Shadow Range (only if shadows enabled)
         if (light.CastsCharacterShadow)
         {
-            using (var row = PoserUI.Row(PoserUI.ScrubberHeight))
+            var shadowRange = light.CharacterShadowRange;
+            using (var row = Flex.Row(Flex.RowHeight, Flex.SmallGap))
             {
                 row.Label("Shadow Range", 80);
-                var shadowRange = light.CharacterShadowRange;
-                if (row.Scrubber("##light_shadow_range", ref shadowRange, 1f, 200f))
+                row.Fill((w, h) =>
                 {
-                    light.CharacterShadowRange = shadowRange;
-                }
+                    if (Scrubber.Draw("##light_shadow_range", ref shadowRange, 1f, 200f, 0f, w))
+                    {
+                        light.CharacterShadowRange = shadowRange;
+                    }
+                });
             }
         }
     }

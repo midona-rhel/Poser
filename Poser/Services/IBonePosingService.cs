@@ -10,10 +10,7 @@ namespace Poser.Services;
 /// </summary>
 public interface IBonePosingService : IDisposable
 {
-    /// <summary>
-    /// Event fired when a bone transform is modified.
-    /// </summary>
-    event Action<IBone>? OnBoneTransformChanged;
+    // Bone transform changes are published via EventBus: BoneTransformChangedEvent
 
     /// <summary>
     /// Get the pose info for a skeleton.

@@ -106,6 +106,27 @@ public static class PoserUI
 
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + spacingAfter + 1f);
     }
+
+    /// <summary>
+    /// Draws a section header with optional separator.
+    /// </summary>
+    /// <param name="text">Header text.</param>
+    /// <param name="isFirst">If true, skips the separator before the header.</param>
+    public static void SectionHeader(string text, bool isFirst = false)
+    {
+        if (!isFirst)
+            Separator();
+
+        using (var row = Flex.Row())
+        {
+            row.Fill((w, h) =>
+            {
+                float offsetY = (h - ImGui.GetTextLineHeight()) / 2f;
+                if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
+                ImGui.TextColored(UIColors.TextDisabled, text);
+            });
+        }
+    }
 }
 
 /// <summary>

@@ -30,15 +30,15 @@ public class TransformBoneAction : IHistoryAction
 
     public void Execute()
     {
-        // Reset and apply the new transform as a delta from identity
+        // Reset and apply the new transform (no propagation delta)
         _bonePosingService.ResetBone(_bone);
-        _bonePosingService.ApplyTransform(_bone, _newTransform, Transform.Identity);
+        _bonePosingService.ApplyTransform(_bone, _newTransform, Transform.Zero);
     }
 
     public void Undo()
     {
-        // Reset and apply the old transform as a delta from identity
+        // Reset and apply the old transform (no propagation delta)
         _bonePosingService.ResetBone(_bone);
-        _bonePosingService.ApplyTransform(_bone, _oldTransform, Transform.Identity);
+        _bonePosingService.ApplyTransform(_bone, _oldTransform, Transform.Zero);
     }
 }

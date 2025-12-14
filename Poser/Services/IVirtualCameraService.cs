@@ -25,10 +25,7 @@ public interface IVirtualCameraService : IDisposable
     /// </summary>
     IReadOnlyList<VirtualCameraEntity> Cameras { get; }
 
-    /// <summary>
-    /// Event fired when cameras are added, removed, or the active camera changes.
-    /// </summary>
-    event Action? OnCamerasChanged;
+    // Camera changes are published via EventBus: CamerasChangedEvent
 
     /// <summary>
     /// Creates a new virtual camera with current game camera settings.

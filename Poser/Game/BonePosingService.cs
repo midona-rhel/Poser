@@ -49,8 +49,6 @@ public unsafe class BonePosingService : IBonePosingService
 
     private bool _isUpdating = false;
 
-    public event Action<IBone>? OnBoneTransformChanged;
-
     public BonePosingService(
         IPluginLog log,
         IFramework framework,
@@ -406,7 +404,7 @@ public unsafe class BonePosingService : IBonePosingService
 
         bonePoseInfo.Apply(newTransform, originalTransform);
 
-        OnBoneTransformChanged?.Invoke(bone);
+        _eventBus.Publish(new BoneTransformChangedEvent(bone));
     }
 
     public void ResetBone(IBone bone)
@@ -415,7 +413,7 @@ public unsafe class BonePosingService : IBonePosingService
         var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
         bonePoseInfo.ClearStacks();
 
-        OnBoneTransformChanged?.Invoke(bone);
+        _eventBus.Publish(new BoneTransformChangedEvent(bone));
     }
 
     public void ResetSkeleton(ISkeleton skeleton)
@@ -445,7 +443,7 @@ public unsafe class BonePosingService : IBonePosingService
         if (!bonePoseInfo.HasStacks)
             return null;
 
-        var combined = Transform.Identity;
+        var combined = Transform.Zero;
         foreach (var stack in bonePoseInfo.Stacks)
         {
             combined = new Transform
@@ -588,7 +586,7 @@ public unsafe class BonePosingService : IBonePosingService
         bonePoseInfo.ClearStacks();
         bonePoseInfo.Apply(newTransform, bone.LastRawTransform);
 
-        OnBoneTransformChanged?.Invoke(bone);
+        _eventBus.Publish(new BoneTransformChangedEvent(bone));
     }
 
     public void MirrorPose(ISkeleton skeleton)

@@ -18,8 +18,6 @@ public class SelectionService : ISelectionService, IDisposable
     // Track last clicked entity for shift-select range
     private IEntity? _lastClicked;
 
-    public event Action<IReadOnlyList<IEntity>>? OnSelectionChanged;
-
     public SelectionService(IEventBus eventBus)
     {
         _eventBus = eventBus;
@@ -168,9 +166,6 @@ public class SelectionService : ISelectionService, IDisposable
         // Also publish bone selection for backwards compatibility
         var selectedBone = _selected.OfType<IBone>().FirstOrDefault();
         _eventBus.Publish(new BoneSelectionChangedEvent(selectedBone));
-
-        // Fire direct event for UI components
-        OnSelectionChanged?.Invoke(selection);
     }
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent e)

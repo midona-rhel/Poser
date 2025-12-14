@@ -6,6 +6,7 @@ using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
+using Poser.Core;
 using Poser.Entities;
 using Poser.Services;
 using Poser.UI.Components;
@@ -27,6 +28,7 @@ public class EntityListWindow : Window
     private readonly IGPoseService _gPoseService;
     private readonly ISelectionService _selectionService;
     private readonly IActorSpawnService _spawnService;
+    private readonly IEventBus _eventBus;
     private readonly EntityList _entityList;
 
     /// <summary>
@@ -41,7 +43,8 @@ public class EntityListWindow : Window
         IAnimationService animationService,
         ISkeletonService skeletonService,
         IEditorState editorState,
-        IActorSpawnService spawnService)
+        IActorSpawnService spawnService,
+        IEventBus eventBus)
         : base($"Scene###{Poser.PluginName}_entity_list",
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
     {
@@ -51,6 +54,7 @@ public class EntityListWindow : Window
         _gPoseService = gPoseService;
         _selectionService = selectionService;
         _spawnService = spawnService;
+        _eventBus = eventBus;
 
         _entityList = new EntityList(
             actorManager,
@@ -60,16 +64,16 @@ public class EntityListWindow : Window
             gPoseService,
             editorState);
 
-        // Subscribe to selection changes
-        _selectionService.OnSelectionChanged += OnSelectionChanged;
+        // Subscribe to selection changes via EventBus
+        _eventBus.Subscribe<SelectionChangedEvent>(OnSelectionChanged);
     }
 
-    private void OnSelectionChanged(IReadOnlyList<IEntity> selection)
+    private void OnSelectionChanged(SelectionChangedEvent e)
     {
         // When selection changes (user clicked an entity), fire activation event
-        if (selection.Count > 0)
+        if (e.Selected.Count > 0)
         {
-            OnEntityActivated?.Invoke(selection[0]);
+            OnEntityActivated?.Invoke(e.Selected[0]);
         }
     }
 
@@ -189,6 +193,6 @@ public class EntityListWindow : Window
 
     public void Dispose()
     {
-        _selectionService.OnSelectionChanged -= OnSelectionChanged;
+        _eventBus.Unsubscribe<SelectionChangedEvent>(OnSelectionChanged);
     }
 }

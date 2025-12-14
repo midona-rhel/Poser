@@ -13,14 +13,25 @@ public struct Transform
     public Vector3 Scale;
 
     /// <summary>
-    /// Identity transform for additive deltas.
-    /// Note: Scale is Zero (not One) because deltas are ADDED to existing scale.
+    /// Zero transform for additive deltas.
+    /// Scale is Zero because deltas are ADDED to existing scale.
+    /// </summary>
+    public static readonly Transform Zero = new()
+    {
+        Position = Vector3.Zero,
+        Rotation = Quaternion.Identity,
+        Scale = Vector3.Zero
+    };
+
+    /// <summary>
+    /// True identity transform with Scale=1.
+    /// Use this for initializing transforms that represent actual positions.
     /// </summary>
     public static readonly Transform Identity = new()
     {
         Position = Vector3.Zero,
         Rotation = Quaternion.Identity,
-        Scale = Vector3.Zero
+        Scale = Vector3.One
     };
 
     public Transform()

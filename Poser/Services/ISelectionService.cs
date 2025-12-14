@@ -10,10 +10,7 @@ namespace Poser.Services;
 /// </summary>
 public interface ISelectionService
 {
-    /// <summary>
-    /// Event fired when selection changes.
-    /// </summary>
-    event Action<IReadOnlyList<IEntity>>? OnSelectionChanged;
+    // Selection changes are published via EventBus: SelectionChangedEvent
 
     /// <summary>
     /// All currently selected entities.

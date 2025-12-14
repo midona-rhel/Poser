@@ -56,30 +56,14 @@ public class AnimationTabPane : ITabPane
         var actor = _entity as IActor;
         bool isFrozen = actor != null && _animationService.IsFrozen(actor);
 
-        DrawSectionHeader("Animation", isFirst: true);
+        PoserUI.SectionHeader("Animation", isFirst: true);
         _animationWidget.DrawAnimationSection(actor);
 
-        DrawSectionHeader("Playback");
+        PoserUI.SectionHeader("Playback");
         _animationWidget.DrawSpeedSection(actor);
         _animationWidget.DrawScrubSection(actor, isFrozen);
 
-        DrawSectionHeader("Gaze");
+        PoserUI.SectionHeader("Gaze");
         _gazeWidget.Draw(actor);
-    }
-
-    private static void DrawSectionHeader(string text, bool isFirst = false)
-    {
-        if (!isFirst)
-            PoserUI.Separator();
-
-        using (var row = Flex.Row())
-        {
-            row.Fill((w, h) =>
-            {
-                float offsetY = (h - ImGui.GetTextLineHeight()) / 2f;
-                if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
-                ImGui.TextColored(UIColors.TextDisabled, text);
-            });
-        }
     }
 }
