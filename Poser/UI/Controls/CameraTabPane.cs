@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
@@ -14,6 +16,8 @@ namespace Poser.UI.Controls;
 public class CameraTabPane : ITabPane
 {
     private readonly IVirtualCameraService? _cameraService;
+    private readonly IActorManager? _actorManager;
+    private readonly ILightingService? _lightingService;
 
     // Current entity context (set before Draw)
     private IEntity? _entity;
@@ -27,9 +31,14 @@ public class CameraTabPane : ITabPane
     public string Name => "Camera";
     public FontAwesomeIcon? Icon => FontAwesomeIcon.Camera;
 
-    public CameraTabPane(IVirtualCameraService? cameraService = null)
+    public CameraTabPane(
+        IVirtualCameraService? cameraService = null,
+        IActorManager? actorManager = null,
+        ILightingService? lightingService = null)
     {
         _cameraService = cameraService;
+        _actorManager = actorManager;
+        _lightingService = lightingService;
     }
 
     /// <summary>
@@ -162,6 +171,22 @@ public class CameraTabPane : ITabPane
             }
         }
 
+        // Lock Position
+        using (var row = PoserUI.Row(PoserUI.FrameHeight))
+        {
+            row.Label("Lock Position", 80);
+            var locked = camera.PositionLocked;
+            if (row.Checkbox("##camera_lock", ref locked))
+            {
+                camera.PositionLocked = locked;
+            }
+        }
+
+        DrawSectionHeader("Target");
+
+        // Orbit Target dropdown
+        DrawOrbitTargetDropdown(camera);
+
         DrawSectionHeader("Actions");
 
         // Actions on same row: Sync from Game | Reset All
@@ -180,6 +205,7 @@ public class CameraTabPane : ITabPane
                 camera.Pan = DefaultPan;
                 camera.DelimitCamera = false;
                 camera.DisableCollision = false;
+                camera.PositionLocked = false;
                 if (camera.IsActive) _cameraService?.ApplyToGame(camera);
             }
         }
@@ -276,6 +302,21 @@ public class CameraTabPane : ITabPane
                 if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
                 ImGui.TextColored(UIColors.TextDisabled, text);
             });
+        }
+    }
+
+    private void DrawOrbitTargetDropdown(VirtualCameraEntity camera)
+    {
+        // Get current GPose target - this is what the camera actually orbits
+        IEntity? currentTarget = _actorManager?.GetGPoseTarget();
+        string currentName = currentTarget?.Name ?? "Unknown";
+
+        using (var row = PoserUI.Row(PoserUI.FrameHeight))
+        {
+            row.Label("Orbit", 80);
+
+            // Display-only - orbit is controlled by GPose target selection, not by us
+            ImGui.TextDisabled(currentName);
         }
     }
 }

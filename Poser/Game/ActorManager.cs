@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -41,6 +42,7 @@ public class ActorManager : IActorManager
     private readonly IGPoseService _gPoseService;
     private readonly IFramework _framework;
     private readonly IEventBus _eventBus;
+    private readonly ITargetManager _targetManager;
 
     private readonly List<IActor> _actors = new();
 
@@ -52,12 +54,13 @@ public class ActorManager : IActorManager
 
     public IReadOnlyList<IActor> Actors => _actors.AsReadOnly();
 
-    public ActorManager(IObjectTable objectTable, IGPoseService gPoseService, IFramework framework, IEventBus eventBus)
+    public ActorManager(IObjectTable objectTable, IGPoseService gPoseService, IFramework framework, IEventBus eventBus, ITargetManager targetManager)
     {
         _objectTable = objectTable;
         _gPoseService = gPoseService;
         _framework = framework;
         _eventBus = eventBus;
+        _targetManager = targetManager;
 
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _framework.Update += OnFrameworkUpdate;
@@ -150,6 +153,15 @@ public class ActorManager : IActorManager
         }
 
         _eventBus.Publish(new ActorListChangedEvent(Actors));
+    }
+
+    public IActor? GetGPoseTarget()
+    {
+        var gposeTarget = _targetManager.GPoseTarget;
+        if (gposeTarget == null)
+            return null;
+
+        return Actors.FirstOrDefault(a => a.Address == gposeTarget.Address);
     }
 
     private void ClearActors()

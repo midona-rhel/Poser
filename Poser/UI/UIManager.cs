@@ -283,7 +283,9 @@ public class UIManager : IUIManager
             _textureProvider,
             _penumbraService,
             _glamourerService,
-            _customizePlusService);
+            _customizePlusService,
+            _virtualCameraService,
+            _lightingService);
 
         window.OnCloseRequested += OnDetachedWindowCloseRequested;
         window.IsOpen = true;

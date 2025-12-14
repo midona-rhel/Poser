@@ -46,7 +46,9 @@ public class DetachedPropertiesWindow : Window, IDisposable
         ITextureProvider textureProvider,
         IPenumbraService? penumbraService = null,
         IGlamourerService? glamourerService = null,
-        ICustomizePlusService? customizePlusService = null)
+        ICustomizePlusService? customizePlusService = null,
+        IVirtualCameraService? virtualCameraService = null,
+        ILightingService? lightingService = null)
         : base($"Properties##detached_{_instanceCounter++}",
             ImGuiWindowFlags.NoCollapse)
     {
@@ -67,7 +69,9 @@ public class DetachedPropertiesWindow : Window, IDisposable
             textureProvider,
             penumbraService,
             glamourerService,
-            customizePlusService);
+            customizePlusService,
+            virtualCameraService,
+            lightingService);
 
         // Freeze it to the captured entities
         _propertiesPanel.FreezeToEntities(entities);

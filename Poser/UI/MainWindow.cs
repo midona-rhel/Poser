@@ -119,7 +119,8 @@ public class MainWindow : Window
             penumbraService,
             glamourerService,
             customizePlusService,
-            virtualCameraService);
+            virtualCameraService,
+            lightingService);
 
         // Forward pop-out requests
         _propertiesPanel.OnPopOutRequested += entities => OnPropertiesPopOutRequested?.Invoke(entities);

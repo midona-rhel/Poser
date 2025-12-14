@@ -114,6 +114,7 @@ public unsafe class LightingService : ILightingService
         _framework.RunOnFrameworkThread(() =>
         {
             // Get position from BrioCamera ON FRAMEWORK THREAD
+            // Use the nested path - same as VirtualCameraService hook
             Vector3 targetPos;
             var cameraManager = CameraManager.Instance();
             if (cameraManager != null)
@@ -121,7 +122,8 @@ public unsafe class LightingService : ILightingService
                 var brioCamera = (BrioCamera*)cameraManager->GetActiveCamera();
                 if (brioCamera != null)
                 {
-                    targetPos = brioCamera->Position;
+                    // Use SceneCamera position - this is the actual world position
+                    targetPos = brioCamera->Camera.CameraBase.SceneCamera.Object.Position;
                 }
                 else
                 {
@@ -194,16 +196,21 @@ public unsafe class LightingService : ILightingService
     {
         try
         {
+            _log.Info($"LightingService: SpawnLightInternal called with position {position}");
+
             // Allocate native memory
             var lightPtr = (GameLight*)NativeMemory.AlignedAlloc((nuint)sizeof(GameLight), 8);
+            _log.Info($"LightingService: Allocated memory at 0x{(nint)lightPtr:X}");
 
             // 1. Initialize the light via native functions
             _spawnGameLight(lightPtr);
             _spawnGameLightCreate(lightPtr);
             _spawnGameLightFinalize(lightPtr);
+            _log.Info($"LightingService: Native spawn functions called, LightRenderObject = {(lightPtr->LightRenderObject != null ? "valid" : "NULL")}");
 
             // 2. SET POSITION FIRST (before Transform pointer!) - Brio's exact order
             lightPtr->Transform.Position = position;
+            _log.Info($"LightingService: Set Transform.Position to {position}, actual value: {lightPtr->Transform.Position}");
             if (copyFrom != null)
             {
                 lightPtr->Transform.Rotation = copyFrom.Transform.Rotation;
@@ -234,29 +241,33 @@ public unsafe class LightingService : ILightingService
                     lightPtr->LightRenderObject->LightAngle = copyFrom.SpotAngle;
                     lightPtr->LightRenderObject->FalloffAngle = copyFrom.FalloffAngle;
                     lightPtr->LightRenderObject->Range = copyFrom.Range;
+                    lightPtr->LightRenderObject->Angle = Vector2.Zero;
                     lightPtr->LightRenderObject->CharacterShadowRange = copyFrom.CharacterShadowRange;
                     lightPtr->LightRenderObject->ShadowPlaneNear = 0.01f;
                     lightPtr->LightRenderObject->ShadowPlaneFar = 17f;
                 }
                 else
                 {
-                    // Default properties
+                    // Default properties - match Brio's exact values
                     lightPtr->LightRenderObject->LightFlags = LightFlags.Reflection;
-                    lightPtr->LightRenderObject->Color = new Vector3(20f, 20f, 20f);
+                    lightPtr->LightRenderObject->Color = new Vector3(20f);
                     lightPtr->LightRenderObject->Intensity = 1f;
                     lightPtr->LightRenderObject->FalloffType = FalloffType.Quadratic;
                     lightPtr->LightRenderObject->Falloff = 1f;
                     lightPtr->LightRenderObject->LightAngle = 45f;
                     lightPtr->LightRenderObject->FalloffAngle = 0.5f;
                     lightPtr->LightRenderObject->Range = 35f;
+                    lightPtr->LightRenderObject->Angle = Vector2.Zero; // Brio sets this
                     lightPtr->LightRenderObject->CharacterShadowRange = 110f;
                     lightPtr->LightRenderObject->ShadowPlaneNear = 0.01f;
                     lightPtr->LightRenderObject->ShadowPlaneFar = 17f;
                 }
             }
 
-            // 4. Enable light
-            lightPtr->LightFlags = 79;
+            // 4. Enable light - native spawn sets LightFlags, but ensure it's on
+            // Brio uses 79 for "on" state in ToggleLight
+            if (lightPtr->LightFlags == 0)
+                lightPtr->LightFlags = 79;
 
             // Update the light IMMEDIATELY (Brio does this right after)
             UpdateNativeLight(lightPtr);
@@ -370,10 +381,12 @@ public unsafe class LightingService : ILightingService
         // Handle placement mode
         if (_placingLight != null)
         {
-            // Skip input handling on the frame placement started (menu click still active)
+            // Skip position update on the frame placement started (menu click still active)
             if (_placementStartedThisFrame)
             {
                 _placementStartedThisFrame = false;
+                // Don't update position on spawn frame - it's already correct
+                // Fall through to light update loop below
             }
             else
             {
@@ -383,24 +396,25 @@ public unsafe class LightingService : ILightingService
                     CancelPlacement();
                     return;
                 }
+
                 // Check for click to confirm (left mouse button, not over ImGui)
-                else if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGui.GetIO().WantCaptureMouse)
+                if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGui.GetIO().WantCaptureMouse)
                 {
                     ConfirmPlacement();
                     return;
                 }
-            }
 
-            // Update light position to follow cursor
-            var mousePos = ImGui.GetMousePos();
-            var worldPos = _cameraService.ScreenToWorld(mousePos, _placementDepth);
+                // Update light position to follow cursor
+                var mousePos = ImGui.GetMousePos();
+                var worldPos = _cameraService.ScreenToWorld(mousePos, _placementDepth);
 
-            // Only update if position is valid (not NaN)
-            if (!float.IsNaN(worldPos.X) && !float.IsNaN(worldPos.Y) && !float.IsNaN(worldPos.Z))
-            {
-                var transform = _placingLight.Transform;
-                transform.Position = worldPos;
-                _placingLight.Transform = transform;
+                // Reject NaN AND Zero (Zero indicates ScreenToWorld failed)
+                if (!float.IsNaN(worldPos.X) && worldPos != Vector3.Zero)
+                {
+                    var transform = _placingLight.Transform;
+                    transform.Position = worldPos;
+                    _placingLight.Transform = transform;
+                }
             }
         }
 

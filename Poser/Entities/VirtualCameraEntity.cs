@@ -58,6 +58,11 @@ public class VirtualCameraEntity : EntityBase, ITransformable
     /// </summary>
     public bool DelimitCamera { get; set; }
 
+    /// <summary>
+    /// Whether position offset is locked (prevents editing).
+    /// </summary>
+    public bool PositionLocked { get; set; }
+
     public override EntityType EntityType => EntityType.Camera;
 
     public override bool IsCollapsible => false;
@@ -128,7 +133,8 @@ public class VirtualCameraEntity : EntityBase, ITransformable
             Roll = Roll,
             Pan = Pan,
             DisableCollision = DisableCollision,
-            DelimitCamera = DelimitCamera
+            DelimitCamera = DelimitCamera,
+            PositionLocked = PositionLocked
         };
     }
 
@@ -146,6 +152,7 @@ public class VirtualCameraEntity : EntityBase, ITransformable
         Pan = state.Pan;
         DisableCollision = state.DisableCollision;
         DelimitCamera = state.DelimitCamera;
+        PositionLocked = state.PositionLocked;
     }
 
     /// <summary>
@@ -162,6 +169,7 @@ public class VirtualCameraEntity : EntityBase, ITransformable
         clone.Pan = Pan;
         clone.DisableCollision = DisableCollision;
         clone.DelimitCamera = DelimitCamera;
+        clone.PositionLocked = PositionLocked;
         return clone;
     }
 }
@@ -180,4 +188,5 @@ public class CameraState
     public Vector2 Pan { get; set; }
     public bool DisableCollision { get; set; }
     public bool DelimitCamera { get; set; }
+    public bool PositionLocked { get; set; }
 }

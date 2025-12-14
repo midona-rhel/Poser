@@ -90,7 +90,9 @@ public class PropertiesWindow : Window, IDisposable
         ITextureProvider textureProvider,
         IPenumbraService? penumbraService = null,
         IGlamourerService? glamourerService = null,
-        ICustomizePlusService? customizePlusService = null)
+        ICustomizePlusService? customizePlusService = null,
+        IVirtualCameraService? virtualCameraService = null,
+        ILightingService? lightingService = null)
         : base($"Properties###{Poser.PluginName}_properties_{_instanceCounter}",
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
     {
@@ -114,7 +116,9 @@ public class PropertiesWindow : Window, IDisposable
             textureProvider,
             penumbraService,
             glamourerService,
-            customizePlusService);
+            customizePlusService,
+            virtualCameraService,
+            lightingService);
 
         // Subscribe to selection changes
         _selectionService.OnSelectionChanged += OnSelectionChanged;

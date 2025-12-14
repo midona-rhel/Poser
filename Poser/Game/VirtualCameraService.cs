@@ -82,7 +82,8 @@ public unsafe class VirtualCameraService : IVirtualCameraService
 
         if (_gPoseService.IsGPosing && _currentCamera != null)
         {
-            // Apply position offset
+            // Apply position offset only (like Brio)
+            // OrbitTarget is display-only - actual orbit is controlled by GPose target
             var offset = _currentCamera.PositionOffset;
             if (offset != Vector3.Zero)
             {
@@ -293,9 +294,12 @@ public unsafe class VirtualCameraService : IVirtualCameraService
     {
         if (e.IsGPosing)
         {
-            // Auto-spawn default camera when entering GPose
+            // Create default camera and capture current state
+            // But DON'T apply - let game camera work normally
             var defaultCamera = CreateCamera("Default Camera");
-            SelectCamera(defaultCamera);
+            _currentCamera = defaultCamera;
+            _currentCamera.IsActive = true;
+            OnCamerasChanged?.Invoke();
         }
         else
         {

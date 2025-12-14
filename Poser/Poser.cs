@@ -36,7 +36,8 @@ public class Poser : IDalamudPlugin
         ICommandManager commandManager,
         IDataManager dataManager,
         IKeyState keyState,
-        ITextureProvider textureProvider)
+        ITextureProvider textureProvider,
+        ITargetManager targetManager)
     {
         log.Info($"Starting {PluginName}...");
 
@@ -57,7 +58,8 @@ public class Poser : IDalamudPlugin
             commandManager,
             dataManager,
             keyState,
-            textureProvider);
+            textureProvider,
+            targetManager);
 
         // Initialize configuration service (sets static Instance, must be before UI)
         _ = _serviceProvider.GetRequiredService<ConfigurationService>();
@@ -91,7 +93,8 @@ public class Poser : IDalamudPlugin
         ICommandManager commandManager,
         IDataManager dataManager,
         IKeyState keyState,
-        ITextureProvider textureProvider)
+        ITextureProvider textureProvider,
+        ITargetManager targetManager)
     {
         var services = new ServiceCollection();
 
@@ -107,6 +110,7 @@ public class Poser : IDalamudPlugin
         services.AddSingleton(dataManager);
         services.AddSingleton(keyState);
         services.AddSingleton(textureProvider);
+        services.AddSingleton(targetManager);
 
         // Register configuration service (must be early - others depend on it)
         services.AddSingleton<ConfigurationService>();

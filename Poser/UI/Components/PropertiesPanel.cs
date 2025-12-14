@@ -61,7 +61,8 @@ public class PropertiesPanel : IDisposable
         IPenumbraService? penumbraService = null,
         IGlamourerService? glamourerService = null,
         ICustomizePlusService? customizePlusService = null,
-        IVirtualCameraService? virtualCameraService = null)
+        IVirtualCameraService? virtualCameraService = null,
+        ILightingService? lightingService = null)
     {
         _selectionService = selectionService;
 
@@ -70,7 +71,7 @@ public class PropertiesPanel : IDisposable
         _animationTabPane = new AnimationTabPane(animationService, animationDataService, historyService, gazeService, actorManager, cameraService, textureProvider);
         _lightTabPane = new LightTabPane();
         _appearanceTabPane = new AppearanceTabPane(penumbraService, glamourerService, customizePlusService);
-        _cameraTabPane = new CameraTabPane(virtualCameraService);
+        _cameraTabPane = new CameraTabPane(virtualCameraService, actorManager, lightingService);
 
         // Create tabbed panel with narrow tabs
         _tabbedPanel = new TabbedPanel(TabBarWidth, TabHeight, _transformTabPane, _animationTabPane, _lightTabPane, _appearanceTabPane, _cameraTabPane);

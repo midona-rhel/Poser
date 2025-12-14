@@ -22,6 +22,11 @@ public interface IActorManager : IDisposable
     /// </summary>
     void RefreshActors();
 
+    /// <summary>
+    /// Gets the actor currently targeted in GPose (the orbit focus).
+    /// </summary>
+    IActor? GetGPoseTarget();
+
     // Events are published via EventBus:
     // - ActorListChangedEvent when actor list changes
 }
