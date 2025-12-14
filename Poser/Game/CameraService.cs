@@ -1,3 +1,4 @@
+using System;
 using System.Numerics;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using Poser.Services;
@@ -51,7 +52,8 @@ public class CameraService : ICameraService
         if (camera == null)
             return Vector3.Zero;
 
-        return camera->CameraBase.SceneCamera.Position;
+        var pos = camera->CameraBase.SceneCamera.Position;
+        return new Vector3(pos.X, pos.Y, pos.Z);
     }
 
     public unsafe bool WorldToScreen(Vector3 worldPos, out Vector2 screenPos)
@@ -103,5 +105,65 @@ public class CameraService : ICameraService
 
         // Only reject if behind camera (w <= 0)
         return w > 0.001f;
+    }
+
+    public unsafe Vector3 ScreenToWorld(Vector2 screenPos, float depth)
+    {
+        var cameraManager = CameraManager.Instance();
+        if (cameraManager == null)
+            return Vector3.Zero;
+
+        var camera = cameraManager->GetActiveCamera();
+        if (camera == null)
+            return Vector3.Zero;
+
+        var sceneCamera = camera->CameraBase.SceneCamera;
+        var renderCamera = sceneCamera.RenderCamera;
+        if (renderCamera == null)
+            return Vector3.Zero;
+
+        var io = Dalamud.Bindings.ImGui.ImGui.GetIO();
+        var displaySize = io.DisplaySize;
+
+        // Convert screen pos to normalized device coordinates (-1 to 1)
+        float ndcX = (2f * screenPos.X / displaySize.X) - 1f;
+        float ndcY = 1f - (2f * screenPos.Y / displaySize.Y);
+
+        // Get inverse view-projection matrix
+        var viewMatrix = sceneCamera.ViewMatrix;
+        viewMatrix.M44 = 1f;
+        var projMatrix = renderCamera->ProjectionMatrix;
+        var viewProj = viewMatrix * projMatrix;
+
+        if (!Matrix4x4.Invert(viewProj, out var invViewProj))
+            return Vector3.Zero;
+
+        // Unproject to get ray direction
+        var nearPoint = Vector4.Transform(new Vector4(ndcX, ndcY, 0f, 1f), invViewProj);
+        if (MathF.Abs(nearPoint.W) < 0.0001f)
+            return Vector3.Zero;
+        nearPoint /= nearPoint.W;
+
+        var farPoint = Vector4.Transform(new Vector4(ndcX, ndcY, 1f, 1f), invViewProj);
+        if (MathF.Abs(farPoint.W) < 0.0001f)
+            return Vector3.Zero;
+        farPoint /= farPoint.W;
+
+        var rayVec = new Vector3(farPoint.X - nearPoint.X, farPoint.Y - nearPoint.Y, farPoint.Z - nearPoint.Z);
+        var rayLength = rayVec.Length();
+        if (rayLength < 0.0001f)
+            return Vector3.Zero;
+
+        var rayDir = rayVec / rayLength;
+        var cameraPos = new Vector3(sceneCamera.Position.X, sceneCamera.Position.Y, sceneCamera.Position.Z);
+
+        // Return point at specified depth along the ray
+        return cameraPos + rayDir * depth;
+    }
+
+    public unsafe float GetDepthToPosition(Vector3 worldPos)
+    {
+        var cameraPos = GetCameraPosition();
+        return Vector3.Distance(cameraPos, worldPos);
     }
 }

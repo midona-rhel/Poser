@@ -19,6 +19,7 @@ public class ScenePanel
     private readonly ISelectionService _selectionService;
     private readonly IActorSpawnService _spawnService;
     private readonly ILightingService? _lightingService;
+    private readonly IVirtualCameraService? _virtualCameraService;
     private readonly EntityList _entityList;
 
     public ScenePanel(
@@ -30,11 +31,13 @@ public class ScenePanel
         IEditorState editorState,
         IActorSpawnService spawnService,
         ICameraService cameraService,
-        ILightingService? lightingService = null)
+        ILightingService? lightingService = null,
+        IVirtualCameraService? virtualCameraService = null)
     {
         _selectionService = selectionService;
         _spawnService = spawnService;
         _lightingService = lightingService;
+        _virtualCameraService = virtualCameraService;
 
         _entityList = new EntityList(
             actorManager,
@@ -43,7 +46,8 @@ public class ScenePanel
             skeletonService,
             gPoseService,
             editorState,
-            lightingService);
+            lightingService,
+            virtualCameraService);
     }
 
     public void Draw()
@@ -92,6 +96,18 @@ public class ScenePanel
                 _spawnService.SpawnPlayerClone();
             }
 
+            // Camera spawning option
+            if (_virtualCameraService != null && _virtualCameraService.IsAvailable)
+            {
+                ImGui.Separator();
+
+                if (ImGui.MenuItem("Create Camera"))
+                {
+                    var camera = _virtualCameraService.CreateCamera();
+                    _selectionService.Select(camera);
+                }
+            }
+
             // Light spawning options
             if (_lightingService != null && _lightingService.IsAvailable)
             {
@@ -99,23 +115,17 @@ public class ScenePanel
 
                 if (ImGui.MenuItem("Spawn Spot Light"))
                 {
-                    var light = _lightingService.SpawnLight(LightType.SpotLight);
-                    if (light != null)
-                        _selectionService.Select(light);
+                    _lightingService.BeginPlacement(LightType.SpotLight);
                 }
 
                 if (ImGui.MenuItem("Spawn Point Light"))
                 {
-                    var light = _lightingService.SpawnLight(LightType.AreaLight);
-                    if (light != null)
-                        _selectionService.Select(light);
+                    _lightingService.BeginPlacement(LightType.AreaLight);
                 }
 
                 if (ImGui.MenuItem("Spawn Flat Light"))
                 {
-                    var light = _lightingService.SpawnLight(LightType.FlatLight);
-                    if (light != null)
-                        _selectionService.Select(light);
+                    _lightingService.BeginPlacement(LightType.FlatLight);
                 }
             }
 
@@ -126,9 +136,11 @@ public class ScenePanel
 
         // Delete button on the right
         var selectedLight = _selectionService.GetFirstSelected<LightEntity>();
+        var selectedCamera = _selectionService.GetFirstSelected<VirtualCameraEntity>();
         bool canDeleteActor = primarySelected != null && _spawnService.IsSpawnedActor(primarySelected);
         bool canDeleteLight = selectedLight != null && _lightingService != null && _lightingService.IsSpawnedLight(selectedLight);
-        bool canDelete = canDeleteActor || canDeleteLight;
+        bool canDeleteCamera = selectedCamera != null && _virtualCameraService != null && _virtualCameraService.IsVirtualCamera(selectedCamera);
+        bool canDelete = canDeleteActor || canDeleteLight || canDeleteCamera;
 
         row.Fixed(Flex.ButtonWidth, (w, h) =>
         {
@@ -136,7 +148,11 @@ public class ScenePanel
             {
                 if (PoserButton.DrawWithWidth("delete_selected", "Delete", w))
                 {
-                    if (canDeleteLight && selectedLight != null)
+                    if (canDeleteCamera && selectedCamera != null)
+                    {
+                        _virtualCameraService!.DeleteCamera(selectedCamera);
+                    }
+                    else if (canDeleteLight && selectedLight != null)
                     {
                         _lightingService!.DestroyLight(selectedLight);
                     }

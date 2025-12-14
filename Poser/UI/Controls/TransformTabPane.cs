@@ -1,6 +1,8 @@
 using System;
+using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
+using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Poser.Core;
 using Poser.Entities;
@@ -88,6 +90,17 @@ public class TransformTabPane : ITabPane
                 ? _lastFrameTransform.Value
                 : bone.Transform;
             canEdit = true;
+        }
+        else if (_entity is LightEntity)
+        {
+            transform = _entity.Transform;
+            canEdit = true; // Lights are always editable
+        }
+        else if (_entity is VirtualCameraEntity camera)
+        {
+            // Cameras use PositionOffset, not Transform
+            DrawCameraPositionOffset(camera);
+            return;
         }
         else if (_entity is ITransformable)
         {
@@ -296,6 +309,10 @@ public class TransformTabPane : ITabPane
             _bonePosingService.ApplyTransform(bone, transform, lastObserved);
             _lastFrameTransform = transform;
         }
+        else if (entity is LightEntity light)
+        {
+            light.Transform = transform;
+        }
     }
 
     private void OnTransformCommit(Transform oldTransform, Transform newTransform)
@@ -309,6 +326,128 @@ public class TransformTabPane : ITabPane
         {
             var action = new TransformBoneAction(_bonePosingService, bone, oldTransform, newTransform);
             _historyService.Record(action);
+        }
+    }
+
+    /// <summary>
+    /// Draws camera-specific position offset controls.
+    /// </summary>
+    private void DrawCameraPositionOffset(VirtualCameraEntity camera)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+
+        DrawSectionHeader("Position Offset", isFirst: true);
+
+        // X offset
+        var offset = camera.PositionOffset;
+        bool changed = false;
+
+        changed |= DrawOffsetRow("X", "##camera_offset_x", ref offset.X);
+        changed |= DrawOffsetRow("Y", "##camera_offset_y", ref offset.Y);
+        changed |= DrawOffsetRow("Z", "##camera_offset_z", ref offset.Z);
+
+        if (changed)
+        {
+            camera.PositionOffset = offset;
+        }
+
+        // Reset button
+        ImGui.Spacing();
+        using (var row = Flex.Row(gap: Flex.SmallGap))
+        {
+            row.Fixed(Flex.ButtonWidth, (w, h) =>
+            {
+                if (PoserButton.DrawWithWidth("reset_offset", "Reset", w))
+                {
+                    camera.PositionOffset = Vector3.Zero;
+                }
+            });
+        }
+    }
+
+    private static bool DrawOffsetRow(string label, string id, ref float value)
+    {
+        bool changed = false;
+        float scale = ImGuiHelpers.GlobalScale;
+
+        using (var row = Flex.Row(Flex.RowHeight, Flex.SmallGap))
+        {
+            row.Label(label, 30);
+
+            // Scrubber (fills remaining space, value hidden since we have separate input)
+            float localValue = value;
+            bool scrubberChanged = false;
+
+            row.Fill((w, h) =>
+            {
+                if (Scrubber.Draw(id, ref localValue, -100f, 100f, 0f, w, hideValue: true))
+                {
+                    scrubberChanged = true;
+                }
+            });
+
+            // Small input field
+            bool inputChanged = false;
+            row.Fixed(50, (w, h) =>
+            {
+                float offsetY = (h - ImGui.GetFrameHeight()) / 2f;
+                if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
+
+                ImGui.PushStyleColor(ImGuiCol.FrameBg, UIColors.ControlBackground);
+                ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(4f * scale, 2f * scale));
+                ImGui.SetNextItemWidth(w);
+
+                if (ImGui.InputFloat($"{id}_input", ref localValue, 0f, 0f, "%.2f", ImGuiInputTextFlags.EnterReturnsTrue))
+                {
+                    inputChanged = true;
+                }
+                if (ImGui.IsItemDeactivatedAfterEdit())
+                {
+                    inputChanged = true;
+                }
+
+                ImGui.PopStyleVar();
+                ImGui.PopStyleColor();
+            });
+
+            // Reset button for this axis
+            bool resetClicked = false;
+            row.Fixed(Flex.RowHeight, (w, h) =>
+            {
+                if (PoserButton.DrawIcon($"{id}_reset", FontAwesomeIcon.Undo, "Reset to 0"))
+                {
+                    resetClicked = true;
+                }
+            });
+
+            if (scrubberChanged || inputChanged)
+            {
+                value = localValue;
+                changed = true;
+            }
+            if (resetClicked)
+            {
+                value = 0f;
+                changed = true;
+            }
+        }
+
+        return changed;
+    }
+
+    private static void DrawSectionHeader(string text, bool isFirst = false)
+    {
+        if (!isFirst)
+            PoserUI.Separator();
+
+        using (var row = Flex.Row())
+        {
+            row.Fill((w, h) =>
+            {
+                float offsetY = (h - ImGui.GetTextLineHeight()) / 2f;
+                if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
+                ImGui.TextColored(UIColors.TextDisabled, text);
+            });
         }
     }
 }

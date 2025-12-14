@@ -49,6 +49,7 @@ public class UIManager : IUIManager
     private readonly IPoseFileService? _poseFileService;
     private readonly ConfigurationService? _configService;
     private readonly ILightingService? _lightingService;
+    private readonly IVirtualCameraService? _virtualCameraService;
     private readonly IPenumbraService? _penumbraService;
     private readonly IGlamourerService? _glamourerService;
     private readonly ICustomizePlusService? _customizePlusService;
@@ -81,6 +82,7 @@ public class UIManager : IUIManager
         IPoseFileService? poseFileService = null,
         ConfigurationService? configService = null,
         ILightingService? lightingService = null,
+        IVirtualCameraService? virtualCameraService = null,
         IPenumbraService? penumbraService = null,
         IGlamourerService? glamourerService = null,
         ICustomizePlusService? customizePlusService = null)
@@ -108,6 +110,7 @@ public class UIManager : IUIManager
         _poseFileService = poseFileService;
         _configService = configService;
         _lightingService = lightingService;
+        _virtualCameraService = virtualCameraService;
         _penumbraService = penumbraService;
         _glamourerService = glamourerService;
         _customizePlusService = customizePlusService;
@@ -150,6 +153,7 @@ public class UIManager : IUIManager
             editorState,
             textureProvider,
             lightingService,
+            _virtualCameraService,
             penumbraService,
             glamourerService,
             customizePlusService);

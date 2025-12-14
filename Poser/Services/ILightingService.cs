@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using Poser.Entities;
 using Poser.Game.Structs;
 
@@ -22,14 +23,41 @@ public interface ILightingService : IDisposable
     IReadOnlyList<LightEntity> SpawnedLights { get; }
 
     /// <summary>
+    /// Whether a light is currently being placed interactively.
+    /// </summary>
+    bool IsPlacing { get; }
+
+    /// <summary>
+    /// The light currently being placed, if any.
+    /// </summary>
+    LightEntity? PlacingLight { get; }
+
+    /// <summary>
     /// Event fired when lights are added or removed.
     /// </summary>
     event Action? OnLightsChanged;
 
     /// <summary>
-    /// Spawns a new light at the camera position.
+    /// Begins interactive light placement. The light spawns at cursor position
+    /// and follows the cursor until confirmed or cancelled.
     /// </summary>
-    LightEntity? SpawnLight(LightType type);
+    void BeginPlacement(LightType type);
+
+    /// <summary>
+    /// Confirms the current placement, finalizing the light's position.
+    /// </summary>
+    void ConfirmPlacement();
+
+    /// <summary>
+    /// Cancels the current placement, destroying the light.
+    /// </summary>
+    void CancelPlacement();
+
+    /// <summary>
+    /// Spawns a new light at the specified position.
+    /// Light is created asynchronously on framework thread.
+    /// </summary>
+    void SpawnLight(LightType type, Vector3 position);
 
     /// <summary>
     /// Destroys a spawned light.
@@ -42,9 +70,10 @@ public interface ILightingService : IDisposable
     void DestroyAllLights();
 
     /// <summary>
-    /// Duplicates an existing light.
+    /// Duplicates an existing light asynchronously.
+    /// Listen to OnLightsChanged for the new light.
     /// </summary>
-    LightEntity? CloneLight(LightEntity source);
+    void CloneLight(LightEntity source);
 
     /// <summary>
     /// Checks if an entity is a spawned light managed by this service.

@@ -78,6 +78,7 @@ public class MainWindow : Window
         IEditorState editorState,
         ITextureProvider textureProvider,
         ILightingService? lightingService = null,
+        IVirtualCameraService? virtualCameraService = null,
         IPenumbraService? penumbraService = null,
         IGlamourerService? glamourerService = null,
         ICustomizePlusService? customizePlusService = null)
@@ -101,7 +102,8 @@ public class MainWindow : Window
             editorState,
             spawnService,
             cameraService,
-            lightingService);
+            lightingService,
+            virtualCameraService);
 
         _propertiesPanel = new PropertiesPanel(
             selectionService,
@@ -116,7 +118,8 @@ public class MainWindow : Window
             textureProvider,
             penumbraService,
             glamourerService,
-            customizePlusService);
+            customizePlusService,
+            virtualCameraService);
 
         // Forward pop-out requests
         _propertiesPanel.OnPopOutRequested += entities => OnPropertiesPopOutRequested?.Invoke(entities);

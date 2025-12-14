@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -9,6 +10,7 @@ using Poser.Config;
 using Poser.Data;
 using Poser.Data.Config;
 using Poser.Entities;
+using Poser.Game.Structs;
 using Poser.Services;
 using Poser.UI.Controls;
 
@@ -31,12 +33,14 @@ public class EntityList
     private readonly IGPoseService _gPoseService;
     private readonly IEditorState _editorState;
     private readonly ILightingService? _lightingService;
+    private readonly IVirtualCameraService? _virtualCameraService;
     private readonly CategoryConfig _categoryConfig;
 
     // Cached tree items - rebuilt when actors change
     private readonly List<TreeListItem> _items = new();
     private int _lastActorCount = -1;
     private int _lastLightCount = -1;
+    private int _lastCameraCount = -1;
     private bool _lastShowNsfw = false;
 
     public EntityList(
@@ -46,7 +50,8 @@ public class EntityList
         ISkeletonService skeletonService,
         IGPoseService gPoseService,
         IEditorState editorState,
-        ILightingService? lightingService = null)
+        ILightingService? lightingService = null,
+        IVirtualCameraService? virtualCameraService = null)
     {
         _actorManager = actorManager;
         _selectionService = selectionService;
@@ -55,6 +60,7 @@ public class EntityList
         _gPoseService = gPoseService;
         _editorState = editorState;
         _lightingService = lightingService;
+        _virtualCameraService = virtualCameraService;
         _categoryConfig = CategoryReader.ReadEmbeddedResource();
     }
 
@@ -65,14 +71,16 @@ public class EntityList
 
         var actors = _actorManager.Actors;
         var lightCount = _lightingService?.SpawnedLights.Count ?? 0;
-        int totalEntities = actors.Count + lightCount + (_gPoseService.IsGPosing ? 1 : 0); // +1 for camera
+        var cameraCount = _virtualCameraService?.Cameras.Count ?? 0;
+        int totalEntities = actors.Count + lightCount + cameraCount;
 
-        // Rebuild tree items only if actor count or light count changed
-        if (actors.Count != _lastActorCount || lightCount != _lastLightCount)
+        // Rebuild tree items only if actor count, light count, or camera count changed
+        if (actors.Count != _lastActorCount || lightCount != _lastLightCount || cameraCount != _lastCameraCount)
         {
             RebuildItems(actors);
             _lastActorCount = actors.Count;
             _lastLightCount = lightCount;
+            _lastCameraCount = cameraCount;
         }
 
         // Check if NSFW setting changed - update category visibility without full rebuild
@@ -140,9 +148,13 @@ public class EntityList
                         ImGui.TableSetupColumn("##freeze", ImGuiTableColumnFlags.WidthFixed, checkboxColWidth);
                         ImGui.TableSetupColumn("##visible", ImGuiTableColumnFlags.WidthFixed, checkboxColWidth);
 
-                        if (_gPoseService.IsGPosing)
+                        // Draw virtual cameras
+                        if (_virtualCameraService != null)
                         {
-                            DrawCameraRow();
+                            foreach (var camera in _virtualCameraService.Cameras)
+                            {
+                                DrawCameraRow(camera);
+                            }
                         }
 
                         // Draw actors
@@ -224,28 +236,38 @@ public class EntityList
         }
     }
 
-    private void DrawCameraRow()
+    private void DrawCameraRow(VirtualCameraEntity camera)
     {
         var config = new EntityListItemConfig
         {
-            Id = "camera",
-            Name = "Camera",
+            Id = camera.Id.Unique,
+            Name = camera.Name,
             Icon = FontAwesomeIcon.Camera,
-            IconColor = UIConstants.DefaultIconColor,
+            IconColor = camera.IsActive ? UIColors.Green : UIConstants.DefaultIconColor,
             Depth = 0,
-            IsSelected = false,
+            IsSelected = _selectionService.IsSelected(camera),
             IsCollapsible = false,
             IsCollapsed = false,
             ShowFreezeCheckbox = false,
-            ShowVisibilityCheckbox = false,
-            Tooltip = "Camera"
+            ShowVisibilityCheckbox = true,
+            IsVisible = camera.IsActive,
+            Tooltip = camera.IsActive ? $"{camera.Name} (Active)" : camera.Name
         };
 
         var result = EntityListItem.Draw(config);
 
         if (result.Clicked)
         {
-            // TODO: Select camera when it's an entity
+            _selectionService.Select(camera);
+        }
+
+        if (result.VisibilityToggled)
+        {
+            // Toggle active state via service
+            if (result.NewVisibilityValue)
+                _virtualCameraService?.SelectCamera(camera);
+            else
+                _virtualCameraService?.SelectCamera(null);
         }
     }
 
@@ -259,12 +281,28 @@ public class EntityList
             _ => FontAwesomeIcon.Lightbulb
         };
 
+        // Use actual light color for the icon (normalize from HDR range)
+        Vector4 iconColor;
+        if (light.IsLightOn)
+        {
+            var lightColor = light.Color;
+            // Normalize from HDR range (typically 0-20+) to 0-1
+            var maxComponent = MathF.Max(lightColor.X, MathF.Max(lightColor.Y, lightColor.Z));
+            if (maxComponent > 1f)
+                lightColor /= maxComponent;
+            iconColor = new Vector4(lightColor.X, lightColor.Y, lightColor.Z, 1f);
+        }
+        else
+        {
+            iconColor = UIConstants.DefaultIconColor;
+        }
+
         var config = new EntityListItemConfig
         {
             Id = light.Id.Unique,
             Name = light.Name,
             Icon = icon,
-            IconColor = light.IsLightOn ? UIColors.Yellow : UIConstants.DefaultIconColor,
+            IconColor = iconColor,
             Depth = 0,
             IsSelected = _selectionService.IsSelected(light),
             IsCollapsible = false,

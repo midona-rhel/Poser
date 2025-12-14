@@ -36,6 +36,7 @@ public class PropertiesPanel : IDisposable
     private readonly AnimationTabPane _animationTabPane;
     private readonly LightTabPane _lightTabPane;
     private readonly AppearanceTabPane _appearanceTabPane;
+    private readonly CameraTabPane _cameraTabPane;
     private readonly TabbedPanel _tabbedPanel;
 
     // Frozen mode: when set, panel shows these entities instead of live selection
@@ -59,7 +60,8 @@ public class PropertiesPanel : IDisposable
         ITextureProvider textureProvider,
         IPenumbraService? penumbraService = null,
         IGlamourerService? glamourerService = null,
-        ICustomizePlusService? customizePlusService = null)
+        ICustomizePlusService? customizePlusService = null,
+        IVirtualCameraService? virtualCameraService = null)
     {
         _selectionService = selectionService;
 
@@ -68,9 +70,10 @@ public class PropertiesPanel : IDisposable
         _animationTabPane = new AnimationTabPane(animationService, animationDataService, historyService, gazeService, actorManager, cameraService, textureProvider);
         _lightTabPane = new LightTabPane();
         _appearanceTabPane = new AppearanceTabPane(penumbraService, glamourerService, customizePlusService);
+        _cameraTabPane = new CameraTabPane(virtualCameraService);
 
         // Create tabbed panel with narrow tabs
-        _tabbedPanel = new TabbedPanel(TabBarWidth, TabHeight, _transformTabPane, _animationTabPane, _lightTabPane, _appearanceTabPane);
+        _tabbedPanel = new TabbedPanel(TabBarWidth, TabHeight, _transformTabPane, _animationTabPane, _lightTabPane, _appearanceTabPane, _cameraTabPane);
     }
 
     /// <summary>
@@ -170,6 +173,7 @@ public class PropertiesPanel : IDisposable
         _animationTabPane.SetEntity(primaryEntity);
         _lightTabPane.SetEntity(primaryEntity);
         _appearanceTabPane.SetEntity(primaryEntity);
+        _cameraTabPane.SetEntity(primaryEntity);
 
         // Draw tabbed panel with overlay draw list for shadows
         _tabbedPanel.Draw(_overlayDrawList);

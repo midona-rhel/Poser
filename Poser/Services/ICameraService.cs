@@ -26,4 +26,17 @@ public interface ICameraService
     /// <param name="screenPos">The resulting screen position.</param>
     /// <returns>True if the conversion succeeded, false if the position is off-screen.</returns>
     bool WorldToScreen(Vector3 worldPos, out Vector2 screenPos);
+
+    /// <summary>
+    /// Converts screen coordinates to a world position at a specific depth from the camera.
+    /// </summary>
+    /// <param name="screenPos">The screen position (in pixels).</param>
+    /// <param name="depth">The distance from the camera.</param>
+    /// <returns>The world position.</returns>
+    Vector3 ScreenToWorld(Vector2 screenPos, float depth);
+
+    /// <summary>
+    /// Gets the distance from the camera to a world position.
+    /// </summary>
+    float GetDepthToPosition(Vector3 worldPos);
 }

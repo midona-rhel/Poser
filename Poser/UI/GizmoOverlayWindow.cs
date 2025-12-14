@@ -18,7 +18,8 @@ internal enum GizmoTargetType
 {
     None,
     Actor,
-    Bone
+    Bone,
+    Light
 }
 
 /// <summary>
@@ -100,6 +101,9 @@ public class GizmoOverlayWindow : Window
             case GizmoTargetType.Actor:
                 DrawActorGizmo();
                 break;
+            case GizmoTargetType.Light:
+                DrawLightGizmo();
+                break;
         }
     }
 
@@ -115,6 +119,8 @@ public class GizmoOverlayWindow : Window
             return GizmoTargetType.Bone;
         if (_selectionService.GetFirstSelected<IActor>() != null)
             return GizmoTargetType.Actor;
+        if (_selectionService.GetFirstSelected<LightEntity>() != null)
+            return GizmoTargetType.Light;
         return GizmoTargetType.None;
     }
 
@@ -456,5 +462,32 @@ public class GizmoOverlayWindow : Window
             current = current.ParentBone;
         }
         return depth;
+    }
+
+    private void DrawLightGizmo()
+    {
+        var light = _selectionService.GetFirstSelected<LightEntity>();
+        if (light == null || !light.IsValidLight)
+            return;
+
+        var viewMatrix = _cameraService.GetViewMatrix();
+        var projectionMatrix = _cameraService.GetProjectionMatrix();
+
+        var lightTransform = light.Transform;
+        var modelMatrix = lightTransform.ToMatrix();
+
+        ImGuizmo.Enable(true);
+
+        var gizmoMode = _editorState.TransformOrientation == TransformOrientation.Global
+            ? ImGuizmoMode.World
+            : ImGuizmoMode.Local;
+
+        var gizmoOperation = GetGizmoOperation();
+
+        if (ImGuizmo.Manipulate(ref viewMatrix, ref projectionMatrix, gizmoOperation, gizmoMode, ref modelMatrix))
+        {
+            var newTransform = Transform.FromMatrix(modelMatrix);
+            light.Transform = newTransform;
+        }
     }
 }

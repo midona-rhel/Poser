@@ -1,6 +1,7 @@
 using System;
 using System.Numerics;
 using Poser.Core;
+using Poser.Entities.Capabilities;
 using Poser.Game.Structs;
 
 namespace Poser.Entities;
@@ -8,7 +9,7 @@ namespace Poser.Entities;
 /// <summary>
 /// Entity representing a spawned scene light.
 /// </summary>
-public unsafe class LightEntity : EntityBase
+public unsafe class LightEntity : EntityBase, ITransformable
 {
     private GameLight* _nativePtr;
 
@@ -39,6 +40,8 @@ public unsafe class LightEntity : EntityBase
 
     public override bool IsCollapsible => false;
 
+    public bool ShowGizmo => true;
+
     /// <summary>
     /// Gets the native light pointer for advanced operations.
     /// </summary>
@@ -67,6 +70,7 @@ public unsafe class LightEntity : EntityBase
         {
             if (IsValidLight)
             {
+                // Assign whole structs - component-by-component doesn't work due to value type semantics
                 _nativePtr->Transform.Position = value.Position;
                 _nativePtr->Transform.Rotation = value.Rotation;
                 _nativePtr->Transform.Scale = value.Scale;

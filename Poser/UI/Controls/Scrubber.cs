@@ -33,9 +33,10 @@ public static class Scrubber
     /// <param name="displayMultiplier">Multiplier for display value (e.g., 100 for percentage).</param>
     /// <param name="displayFormat">Format string for display (e.g., "F0" for no decimals).</param>
     /// <param name="displaySuffix">Suffix for display (e.g., "%" for percentage).</param>
+    /// <param name="hideValue">If true, hides the value text (useful when separate input is provided).</param>
     /// <returns>True if value was changed.</returns>
     public static bool Draw(string id, ref float value, float min, float max, float step = 0f, float width = 0f,
-        float displayMultiplier = 1f, string displayFormat = "F2", string displaySuffix = "")
+        float displayMultiplier = 1f, string displayFormat = "F2", string displaySuffix = "", bool hideValue = false)
     {
         bool changed = false;
 
@@ -49,13 +50,19 @@ public static class Scrubber
         // Use thumb height as control height (no extra padding)
         float controlH = thumbH;
 
-        // Calculate text width based on max value format
-        var maxText = (max * displayMultiplier).ToString(displayFormat, CultureInfo.InvariantCulture) + displaySuffix;
-        float valueTextW = ImGui.CalcTextSize(maxText).X;
+        // Calculate text width based on max value format (0 if hidden)
+        float valueTextW = 0f;
+        if (!hideValue)
+        {
+            var maxText = (max * displayMultiplier).ToString(displayFormat, CultureInfo.InvariantCulture) + displaySuffix;
+            valueTextW = ImGui.CalcTextSize(maxText).X;
+        }
 
         // Calculate dimensions - include right padding matching the gap
         float totalWidth = width > 0 ? width : ImGui.GetContentRegionAvail().X;
-        float trackWidth = totalWidth - valueTextW - gap - thumbW - gap; // gap on both sides of text
+        float trackWidth = hideValue
+            ? totalWidth - thumbW  // No value text, track extends to edge
+            : totalWidth - valueTextW - gap - thumbW - gap; // gap on both sides of text
 
         var cursorScreenPos = ImGui.GetCursorScreenPos();
         var drawList = ImGui.GetWindowDrawList();
@@ -129,11 +136,14 @@ public static class Scrubber
         // Draw border
         drawList.AddRect(thumbPos, thumbEnd, UIColors.ApplyAlpha(UIColors.BorderU32), rounding, ImDrawFlags.None, 1f);
 
-        // Draw value text to the right, vertically centered
-        var valueText = (value * displayMultiplier).ToString(displayFormat, CultureInfo.InvariantCulture) + displaySuffix;
-        float textOffsetY = (controlH - ImGui.GetTextLineHeight()) / 2f;
-        var textPos = new Vector2(cursorScreenPos.X + trackWidth + thumbW + gap, cursorScreenPos.Y + textOffsetY);
-        drawList.AddText(textPos, UIColors.ApplyAlpha(UIColors.TextU32), valueText);
+        // Draw value text to the right, vertically centered (unless hidden)
+        if (!hideValue)
+        {
+            var valueText = (value * displayMultiplier).ToString(displayFormat, CultureInfo.InvariantCulture) + displaySuffix;
+            float textOffsetY = (controlH - ImGui.GetTextLineHeight()) / 2f;
+            var textPos = new Vector2(cursorScreenPos.X + trackWidth + thumbW + gap, cursorScreenPos.Y + textOffsetY);
+            drawList.AddText(textPos, UIColors.ApplyAlpha(UIColors.TextU32), valueText);
+        }
 
         if (isActive)
         {

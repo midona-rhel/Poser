@@ -135,6 +135,7 @@ public class Poser : IDalamudPlugin
         services.AddSingleton<ReferenceImageService>();
         services.AddSingleton<ILibraryService, LibraryService>();
         services.AddSingleton<ILightingService, LightingService>();
+        services.AddSingleton<IVirtualCameraService, VirtualCameraService>();
 
         // Register IPC services (appearance plugins)
         services.AddSingleton<IPenumbraService, PenumbraService>();
