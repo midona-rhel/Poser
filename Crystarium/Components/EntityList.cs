@@ -196,7 +196,7 @@ public class EntityList
         float columnTotalWidth = checkboxColWidth + cellPadding * 2;
 
         // Checkbox size for centering calculation
-        float checkboxSize = PoserCheckbox.Size;
+        float checkboxSize = Crystarium.CheckboxSize;
         float iconSize = ImGui.GetFontSize();
 
         // Position from right edge - account for scrollbar since it's always visible

@@ -7,7 +7,7 @@ namespace Poser.UI.Controls;
 
 /// <summary>
 /// Tab pane for controlling in-game time and weather.
-/// Uses the Crystarium element system with class-based styling.
+/// Uses the typed Crystarium element system.
 /// </summary>
 public class EnvironmentTabPane : ITabPane
 {
@@ -33,17 +33,17 @@ public class EnvironmentTabPane : ITabPane
     public void Draw()
     {
         DrawTimeControls();
-        PoserUI.Separator();
+        Crystarium.Separator();
         DrawWeatherControls();
     }
 
     private void DrawTimeControls()
     {
-        Crystarium.Text("Time", new ElementProps { ClassName = "heading" });
+        Crystarium.Text("Time", Cls.Heading);
 
         if (_timeService == null)
         {
-            Crystarium.Text("Time service unavailable", new ElementProps { ClassName = "disabled-text" });
+            Crystarium.Text("Time service unavailable", Cls.DisabledText);
             return;
         }
 
@@ -53,9 +53,7 @@ public class EnvironmentTabPane : ITabPane
         {
             if (DrawTimeScrubber("time_scrubber", ref minuteOfDay, Crystarium.AvailableWidth))
             {
-                int newHours = (int)(minuteOfDay / 60);
-                int newMinutes = (int)(minuteOfDay % 60);
-                _timeService.SetTimeOfDay(newHours, newMinutes);
+                _timeService.SetTimeOfDay((int)(minuteOfDay / 60), (int)(minuteOfDay % 60));
             }
         });
 
@@ -63,18 +61,22 @@ public class EnvironmentTabPane : ITabPane
         LabelRow("Day", () =>
         {
             float dayFloat = dayOfMonth;
-            if (Crystarium.Scrubber(new ElementProps { Id = "day_scrubber" }, ref dayFloat, 1, 32, 1, 1f, "F0", ""))
+            if (Crystarium.Scrubber("day_scrubber", ref dayFloat, 1, 32, new ScrubberProps
+            {
+                Step = 1,
+                DisplayFormat = "F0",
+            }))
                 _timeService.DayOfMonth = (int)dayFloat;
         });
     }
 
     private void DrawWeatherControls()
     {
-        Crystarium.Text("Weather", new ElementProps { ClassName = "heading" });
+        Crystarium.Text("Weather", Cls.Heading);
 
         if (_weatherService == null)
         {
-            Crystarium.Text("Weather service unavailable", new ElementProps { ClassName = "disabled-text" });
+            Crystarium.Text("Weather service unavailable", Cls.DisabledText);
             return;
         }
 
@@ -82,23 +84,17 @@ public class EnvironmentTabPane : ITabPane
 
         if (_weatherNames == null || _weatherNames.Length == 0)
         {
-            Crystarium.Text("No weathers available", new ElementProps { ClassName = "disabled-text" });
+            Crystarium.Text("No weathers available", Cls.DisabledText);
             return;
         }
 
         uint currentWeatherId = _weatherService.CurrentWeatherId;
         for (int i = 0; i < _weatherIds!.Length; i++)
-        {
-            if (_weatherIds[i] == currentWeatherId)
-            {
-                _selectedWeatherIndex = i;
-                break;
-            }
-        }
+            if (_weatherIds[i] == currentWeatherId) { _selectedWeatherIndex = i; break; }
 
         LabelRow("Weather", () =>
         {
-            if (Crystarium.Dropdown(new ElementProps { Id = "weather_dropdown" }, _weatherNames, ref _selectedWeatherIndex))
+            if (Crystarium.Dropdown("weather_dropdown", _weatherNames, ref _selectedWeatherIndex))
             {
                 if (_selectedWeatherIndex >= 0 && _selectedWeatherIndex < _weatherIds.Length)
                 {
@@ -109,15 +105,12 @@ public class EnvironmentTabPane : ITabPane
         });
 
         // 3-cell row: empty label gutter + checkbox + label text
-        Crystarium.Element(new ElementProps
-        {
-            ClassName = "row",
-        }, () =>
+        Crystarium.Element(new ElementProps { Classes = Cls.Row }, () =>
         {
             Crystarium.Element(new ElementProps { Style = new ElementStyle { Width = Sizing.Fixed(70) } });
             Crystarium.Element(new ElementProps { Style = new ElementStyle { Width = Sizing.Fixed(Crystarium.CheckboxSize / PoserUI.Scale) } }, () =>
             {
-                if (Crystarium.Checkbox(new ElementProps { Id = "show_all_weathers" }, ref _showAllWeathers))
+                if (Crystarium.Checkbox("show_all_weathers", ref _showAllWeathers))
                     _weatherListDirty = true;
             });
             Crystarium.Element(new ElementProps { Style = new ElementStyle { Width = Sizing.Fill } }, () =>
@@ -127,9 +120,9 @@ public class EnvironmentTabPane : ITabPane
 
     private static void LabelRow(string label, Action input)
     {
-        Crystarium.Element(new ElementProps { ClassName = "row" }, () =>
+        Crystarium.Element(new ElementProps { Classes = Cls.Row }, () =>
         {
-            Crystarium.Text(label, new ElementProps { ClassName = "label" });
+            Crystarium.Text(label, Cls.Label);
             Crystarium.Element(new ElementProps { Style = new ElementStyle { Width = Sizing.Fill } }, input);
         });
     }
@@ -139,8 +132,7 @@ public class EnvironmentTabPane : ITabPane
         if (_weatherService == null) return;
 
         var weathers = _showAllWeathers ? _weatherService.AllWeathers : _weatherService.TerritoryWeathers;
-        if (!_weatherListDirty && _weatherNames != null && _weatherNames.Length == weathers.Count)
-            return;
+        if (!_weatherListDirty && _weatherNames != null && _weatherNames.Length == weathers.Count) return;
 
         _weatherListDirty = false;
         _weatherNames = new string[weathers.Count];
@@ -165,9 +157,13 @@ public class EnvironmentTabPane : ITabPane
         float trackWidth = width - textWidth - gap;
 
         var cursorPos = ImGui.GetCursorPos();
-        bool changed = Crystarium.Scrubber(
-            new ElementProps { Id = id, Style = new ElementStyle { Width = Sizing.Fixed(trackWidth / scale) } },
-            ref minuteOfDay, 0, 1439, 0, 1f, "", "");
+        bool changed = Crystarium.Scrubber(id, ref minuteOfDay, 0, 1439, new ScrubberProps
+        {
+            Step = 0,
+            DisplayFormat = "",
+            HideValue = true,
+            Style = new ScrubberStyle { Width = Sizing.Fixed(trackWidth / scale) },
+        });
 
         ImGui.SetCursorPos(cursorPos + new System.Numerics.Vector2(trackWidth + gap, (Flex.RowHeight * scale - ImGui.GetTextLineHeight()) / 2f));
         ImGui.Text(timeText);

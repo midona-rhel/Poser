@@ -43,11 +43,11 @@ public class GazeWidget
         {
             using var row = Flex.Row(gap: Flex.ItemGap);
             row.Label("Enable:");
-            row.Fixed(PoserCheckbox.Size / PoserUI.Scale, (w, h) =>
+            row.Fixed(Crystarium.CheckboxSize / PoserUI.Scale, (w, h) =>
             {
-                float offsetY = (h - PoserCheckbox.Size) / 2f;
+                float offsetY = (h - Crystarium.CheckboxSize) / 2f;
                 if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
-                if (PoserCheckbox.Draw("##enable_gaze", ref gazeEnabled))
+                if (Crystarium.Checkbox("##enable_gaze", ref gazeEnabled))
                 {
                     if (actor != null)
                     {
@@ -73,7 +73,7 @@ public class GazeWidget
             int modeIndex = (int)(gazeState?.Mode ?? GazeTargetMode.None);
             row.Fixed(100, (w, h) =>
             {
-                if (PoserDropdown.Draw("##gaze_mode", ref modeIndex, GazeModeNames, w))
+                if (Crystarium.Dropdown("##gaze_mode", GazeModeNames, ref modeIndex, new DropdownProps { Style = new DropdownStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                 {
                     if (actor != null)
                         _gazeService.SetGazeMode(actor, (GazeTargetMode)modeIndex);
@@ -92,7 +92,7 @@ public class GazeWidget
 
                 row.Fill((w, h) =>
                 {
-                    if (PoserDropdown.Draw("##gaze_target", ref targetIndex, actorNames.Length > 0 ? actorNames : new[] { "No targets" }, w))
+                    if (Crystarium.Dropdown("##gaze_target", actorNames.Length > 0 ? actorNames : new[] { "No targets" }, ref targetIndex, new DropdownProps { Style = new DropdownStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                     {
                         if (actor != null && gazeState?.Mode == GazeTargetMode.Entity && targetIndex >= 0 && targetIndex < actors.Count)
                         {
@@ -122,7 +122,7 @@ public class GazeWidget
             row.Spacer();
             row.Fixed(Flex.ButtonWidth, (w, h) =>
             {
-                if (PoserButton.DrawWithWidth("reset_gaze", "Reset", w))
+                if (Crystarium.Button("Reset", new ButtonProps { Id = "reset_gaze", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                 {
                     if (actor != null)
                         _gazeService.ResetGaze(actor);
@@ -136,8 +136,8 @@ public class GazeWidget
         bool isTracked = currentType.HasFlag(partType);
         bool isLocked = actor != null && _gazeService.IsPartLocked(actor, partType);
 
-        float checkboxSize = PoserCheckbox.Size / PoserUI.Scale;
-        float iconToggleSize = IconToggle.Size / PoserUI.Scale;
+        float checkboxSize = Crystarium.CheckboxSize / PoserUI.Scale;
+        float iconToggleSize = Crystarium.IconToggleSize / PoserUI.Scale;
         string labelText = label + ":";
 
         // Layout: Label (centered in remaining space) | Checkbox | IconToggle (right-aligned)
@@ -159,12 +159,12 @@ public class GazeWidget
         // Checkbox - disabled when locked
         group.Fixed(checkboxSize, (w, h) =>
         {
-            float offsetY = (h - PoserCheckbox.Size) / 2f;
+            float offsetY = (h - Crystarium.CheckboxSize) / 2f;
             if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
 
             using (ImRaii.Disabled(isLocked))
             {
-                if (PoserCheckbox.Draw($"##track_{label}", ref isTracked) && actor != null)
+                if (Crystarium.Checkbox($"##track_{label}", ref isTracked) && actor != null)
                 {
                     var newType = isTracked ? currentType | partType : currentType & ~partType;
                     _gazeService.SetGazeTargetType(actor, newType);
@@ -175,10 +175,10 @@ public class GazeWidget
         // Lock icon toggle
         group.Fixed(iconToggleSize, (w, h) =>
         {
-            float offsetY = (h - IconToggle.Size) / 2f;
+            float offsetY = (h - Crystarium.IconToggleSize) / 2f;
             if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
 
-            if (IconToggle.Draw($"##lock_{label}", ref isLocked, FontAwesomeIcon.Lock, isLocked ? $"Unlock {label}" : $"Lock {label}"))
+            if (Crystarium.IconToggle($"##lock_{label}", ref isLocked, FontAwesomeIcon.Lock, isLocked ? $"Unlock {label}" : $"Lock {label}"))
             {
                 if (actor != null)
                 {

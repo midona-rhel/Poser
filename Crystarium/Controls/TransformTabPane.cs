@@ -157,7 +157,7 @@ public class TransformTabPane : ITabPane
             {
                 using (ImRaii.Disabled(bone == null))
                 {
-                    if (PoserButton.DrawWithWidth("flip_bone", "Flip", w))
+                    if (Crystarium.Button("Flip", new ButtonProps { Id = "flip_bone", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                     {
                         if (bone != null)
                         {
@@ -178,7 +178,7 @@ public class TransformTabPane : ITabPane
             {
                 using (ImRaii.Disabled(skeleton == null))
                 {
-                    if (PoserButton.DrawWithWidth("mirror_pose", "Mirror", w))
+                    if (Crystarium.Button("Mirror", new ButtonProps { Id = "mirror_pose", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                     {
                         if (skeleton != null)
                         {
@@ -200,7 +200,7 @@ public class TransformTabPane : ITabPane
                 bool canReset = bone != null || skeleton != null;
                 using (ImRaii.Disabled(!canReset))
                 {
-                    if (PoserButton.DrawWithWidth("reset_pose", "Reset", w))
+                    if (Crystarium.Button("Reset", new ButtonProps { Id = "reset_pose", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                     {
                         if (bone != null)
                         {
@@ -233,7 +233,7 @@ public class TransformTabPane : ITabPane
             {
                 using (ImRaii.Disabled(skeleton == null))
                 {
-                    if (PoserButton.DrawWithWidth("import_pose", "Import", w))
+                    if (Crystarium.Button("Import", new ButtonProps { Id = "import_pose", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                     {
                         if (skeleton != null)
                         {
@@ -258,7 +258,7 @@ public class TransformTabPane : ITabPane
             {
                 using (ImRaii.Disabled(skeleton == null))
                 {
-                    if (PoserButton.DrawWithWidth("export_pose", "Export", w))
+                    if (Crystarium.Button("Export", new ButtonProps { Id = "export_pose", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                     {
                         if (skeleton != null)
                         {

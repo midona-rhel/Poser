@@ -8,40 +8,72 @@ namespace Poser.UI;
 
 public static partial class Crystarium
 {
-    /// <summary>Styled checkbox. Returns true if value changed.</summary>
-    public static bool Checkbox(ElementProps props, ref bool value)
+    // ---- Short overloads ----
+
+    public static bool Checkbox(string id, ref bool value)
+        => CheckboxCore(id, ref value, default, null, false, null, null);
+    public static bool Checkbox(string id, ref bool value, StyleClassSet classes)
+        => CheckboxCore(id, ref value, classes, null, false, null, null);
+    public static bool Checkbox(string id, ref bool value, in CheckboxProps props)
+        => CheckboxCore(id, ref value, props.Classes, props.Tooltip, props.Disabled, props.OnChange, props.Style);
+
+    public static float CheckboxSize => Flex.ControlSize * PoserUI.Scale;
+
+    private static bool CheckboxCore(string id, ref bool value, StyleClassSet classes,
+        string? tooltip, bool disabled, System.Action<bool>? onChange, CheckboxStyle? inline)
     {
         Stylesheet.EnsureInitialized();
 
+        var classSet = Cls.Checkbox + classes;
+        var preState = (disabled ? PseudoState.Disabled : PseudoState.None) | (value ? PseudoState.Checked : 0);
+
+        // Resolve once early to read size.
+        var pre = Stylesheet.ResolveCheckbox(classSet, preState);
+        if (inline.HasValue) pre = pre.MergedWith(inline.Value);
+
         float scale = PoserUI.Scale;
-        float size = Flex.ControlSize * scale;
-        float rounding = 2f * scale;
+        float size = (pre.Size ?? Sizing.Fixed(Flex.ControlSize)).Value * scale;
+
+        // Auto-center within an ambient row cell.
+        float ambientH = AvailableHeight;
+        if (ambientH > size)
+        {
+            float oy = (ambientH - size) / 2f;
+            if (oy > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + oy);
+        }
 
         var pos = ImGui.GetCursorScreenPos();
         var end = pos + new Vector2(size, size);
 
-        bool disabled = props.Disabled == true;
-        ImGui.InvisibleButton(props.Id ?? "checkbox", new Vector2(size, size));
+        ImGui.InvisibleButton(id, new Vector2(size, size));
         bool clicked = ImGui.IsItemClicked() && !disabled;
         bool hovered = ImGui.IsItemHovered() && !disabled;
+        if (clicked) { value = !value; onChange?.Invoke(value); }
 
-        if (clicked) value = !value;
+        // Re-resolve with hover/active state.
+        var state = preState;
+        if (hovered) state |= PseudoState.Hover;
+        if (value)   state |= PseudoState.Checked;
 
-        var bg = UIColors.ApplyAlpha(hovered ? UIColors.ControlBackgroundHovered : UIColors.ControlBackground);
-        if (disabled) bg.W *= 0.4f;
+        var resolved = Stylesheet.ResolveCheckbox(classSet, state);
+        if (inline.HasValue) resolved = resolved.MergedWith(inline.Value);
 
         var drawList = ImGui.GetWindowDrawList();
+        float rounding = (resolved.BorderRadius ?? 2f) * scale;
+
+        // Background — null-fallback to control bg
+        var bg = resolved.BackgroundColor ?? (hovered ? UIColors.ControlBackgroundHovered : UIColors.ControlBackground);
+        bg = UIColors.ApplyAlpha(bg);
+        if (disabled) bg.W *= resolved.Opacity ?? 0.4f;
         drawList.AddRectFilled(pos, end, ImGui.ColorConvertFloat4ToU32(bg), rounding);
 
-        var border = UIColors.ApplyAlpha(UIColors.BlackU32);
-        if (disabled)
-        {
-            var bv = ImGui.ColorConvertU32ToFloat4(border);
-            bv.W *= 0.4f;
-            border = ImGui.ColorConvertFloat4ToU32(bv);
-        }
-        drawList.AddRect(pos, end, border, rounding, ImDrawFlags.None, 1f);
+        // Border
+        var borderColor = resolved.BorderColor ?? UIColors.Black;
+        var borderU = UIColors.ApplyAlpha(borderColor);
+        if (disabled) borderU.W *= 0.4f;
+        drawList.AddRect(pos, end, ImGui.ColorConvertFloat4ToU32(borderU), rounding, ImDrawFlags.None, (resolved.BorderWidth ?? 1f) * scale);
 
+        // Checkmark
         if (value)
         {
             var iconFont = UiBuilder.IconFont;
@@ -49,27 +81,24 @@ public static partial class Crystarium
             ImGui.PushFont(iconFont);
             var iconSize = ImGui.CalcTextSize(checkIcon);
             ImGui.PopFont();
-
             var iconPos = pos + (new Vector2(size, size) - iconSize) * 0.5f;
             float outlineOffset = 1f * scale;
-            uint white = UIColors.ApplyAlpha(UIColors.WhiteU32);
-            uint black = UIColors.ApplyAlpha(UIColors.BlackU32);
-            if (disabled)
-            {
-                var wv = ImGui.ColorConvertU32ToFloat4(white); wv.W *= 0.4f;
-                var bv = ImGui.ColorConvertU32ToFloat4(black); bv.W *= 0.4f;
-                white = ImGui.ColorConvertFloat4ToU32(wv);
-                black = ImGui.ColorConvertFloat4ToU32(bv);
-            }
-            DrawHelpers.DrawOutlinedIcon(drawList, iconFont, iconPos, checkIcon, black, white, outlineOffset);
+
+            uint fill    = ImGui.ColorConvertFloat4ToU32(UIColors.ApplyAlpha(resolved.CheckmarkColor   ?? UIColors.White));
+            uint outline = ImGui.ColorConvertFloat4ToU32(UIColors.ApplyAlpha(resolved.CheckmarkOutline ?? UIColors.Black));
+            if (disabled) { fill = ApplyAlphaU32(fill, 0.4f); outline = ApplyAlphaU32(outline, 0.4f); }
+
+            DrawHelpers.DrawOutlinedIcon(drawList, iconFont, iconPos, checkIcon, outline, fill, outlineOffset);
         }
 
-        if (hovered && !string.IsNullOrEmpty(props.Tooltip))
-            ImGui.SetTooltip(props.Tooltip);
-
+        if (hovered && !string.IsNullOrEmpty(tooltip)) ImGui.SetTooltip(tooltip);
         return clicked;
     }
 
-    /// <summary>Resolved checkbox size (scaled).</summary>
-    public static float CheckboxSize => Flex.ControlSize * PoserUI.Scale;
+    private static uint ApplyAlphaU32(uint c, float mul)
+    {
+        var v = ImGui.ColorConvertU32ToFloat4(c);
+        v.W *= mul;
+        return ImGui.ColorConvertFloat4ToU32(v);
+    }
 }

@@ -3,16 +3,15 @@ using Poser.UI.Controls;
 namespace Poser.UI;
 
 /// <summary>
-/// Default class definitions for the Crystarium element system.
-/// Installed once on first use; users override by calling Crystarium.Sheet.Define
-/// after the defaults have been applied.
+/// Default class definitions installed on first use. Override any of these
+/// at startup or runtime via <see cref="Crystarium.Sheet"/>.Define(...).
 /// </summary>
 internal static class DefaultStylesheet
 {
     public static void Install()
     {
         // ---- Layout ----
-        Stylesheet.Define(".row", new ElementStyle
+        Stylesheet.Define(Cls.Row, new ElementStyle
         {
             FlexDirection = FlexDirection.Row,
             Gap = Flex.ItemGap,
@@ -20,7 +19,7 @@ internal static class DefaultStylesheet
             Margin = new Spacing(0, 0, 14, 0),
         });
 
-        Stylesheet.Define(".tight-row", new ElementStyle
+        Stylesheet.Define(Cls.TightRow, new ElementStyle
         {
             FlexDirection = FlexDirection.Row,
             Gap = Flex.SmallGap,
@@ -29,24 +28,24 @@ internal static class DefaultStylesheet
         });
 
         // ---- Text ----
-        Stylesheet.Define(".heading", new ElementStyle
+        Stylesheet.Define(Cls.Heading, new TextStyle
         {
             Color = UIColors.Gray,
             Margin = new Spacing(0, 0, 6, 0),
         });
 
-        Stylesheet.Define(".disabled-text", new ElementStyle
+        Stylesheet.Define(Cls.DisabledText, new TextStyle
         {
             Color = UIColors.TextDisabled,
         });
 
-        Stylesheet.Define(".label", new ElementStyle
+        Stylesheet.Define(Cls.Label, new ElementStyle
         {
             Width = Sizing.Fixed(Flex.LabelWidth),
         });
 
         // ---- Button ----
-        Stylesheet.Define(".btn", new ElementStyle
+        Stylesheet.Define(Cls.Btn, new ButtonStyle
         {
             Height = Sizing.Fixed(Flex.RowHeight),
             BorderRadius = 4f,
@@ -55,46 +54,38 @@ internal static class DefaultStylesheet
             BoxShadow = BoxShadow.Soft(),
             RaisedGradient = true,
             Padding = new Spacing(0, Flex.TextPadding),
-            // BackgroundColor + RaisedGradient overridden by tag based on state
         });
 
-        Stylesheet.Define(".btn:active", new ElementStyle
+        Stylesheet.Define(Cls.Btn, PseudoState.Active, new ButtonStyle
         {
             RaisedGradient = false,
         });
 
-        Stylesheet.Define(".btn:disabled", new ElementStyle
+        Stylesheet.Define(Cls.Btn, PseudoState.Disabled, new ButtonStyle
         {
             Opacity = 0.4f,
         });
 
-        Stylesheet.Define(".btn.icon", new ElementStyle
+        Stylesheet.Define(Cls.Btn + Cls.Icon, new ButtonStyle
         {
             Width = Sizing.Fixed(Flex.RowHeight),
             Padding = new Spacing(0),
         });
 
         // ---- Checkbox ----
-        Stylesheet.Define(".checkbox", new ElementStyle
+        Stylesheet.Define(Cls.Checkbox, new CheckboxStyle
         {
-            Width = Sizing.Fixed(Flex.ControlSize),
-            Height = Sizing.Fixed(Flex.ControlSize),
+            Size = Sizing.Fixed(Flex.ControlSize),
             BorderRadius = 2f,
             BorderWidth = 1f,
             BorderColor = UIColors.Black,
             BackgroundColor = UIColors.ControlBackground,
         });
 
-        Stylesheet.Define(".checkbox:hover", new ElementStyle
+        // ---- Toggle ----
+        Stylesheet.Define(Cls.Toggle, new ToggleStyle
         {
-            BackgroundColor = UIColors.ControlBackgroundHovered,
-        });
-
-        // ---- Toggle (switches between two icons; same chrome as button) ----
-        Stylesheet.Define(".toggle", new ElementStyle
-        {
-            Width = Sizing.Fixed(Flex.RowHeight),
-            Height = Sizing.Fixed(Flex.RowHeight),
+            Size = Sizing.Fixed(Flex.RowHeight),
             BorderRadius = 4f,
             BorderWidth = 1f,
             BorderColor = UIColors.Border,
@@ -102,25 +93,19 @@ internal static class DefaultStylesheet
             RaisedGradient = true,
         });
 
-        Stylesheet.Define(".toggle:on", new ElementStyle
+        Stylesheet.Define(Cls.Toggle, PseudoState.On, new ToggleStyle
         {
             RaisedGradient = false,
         });
 
-        Stylesheet.Define(".toggle:active", new ElementStyle
+        // ---- Icon toggle ----
+        Stylesheet.Define(Cls.IconToggle, new IconToggleStyle
         {
-            RaisedGradient = false,
-        });
-
-        // ---- Icon toggle (no chrome, just an outlined icon) ----
-        Stylesheet.Define(".icon-toggle", new ElementStyle
-        {
-            Width = Sizing.Fixed(Flex.LargeIconSize),
-            Height = Sizing.Fixed(Flex.LargeIconSize),
+            Size = Sizing.Fixed(Flex.LargeIconSize),
         });
 
         // ---- Text input ----
-        Stylesheet.Define(".text-input", new ElementStyle
+        Stylesheet.Define(Cls.TextInput, new TextInputStyle
         {
             Height = Sizing.Fixed(Flex.RowHeight),
             BackgroundColor = UIColors.ControlBackground,
@@ -131,22 +116,23 @@ internal static class DefaultStylesheet
         });
 
         // ---- Scrubber ----
-        Stylesheet.Define(".scrubber", new ElementStyle
+        Stylesheet.Define(Cls.Scrubber, new ScrubberStyle
         {
             Height = Sizing.Fixed(Flex.RowHeight),
         });
 
-        // ---- Dropdown (split chrome — handled in tag, just sets baseline) ----
-        Stylesheet.Define(".dropdown", new ElementStyle
+        // ---- Dropdown ----
+        Stylesheet.Define(Cls.Dropdown, new DropdownStyle
         {
             Height = Sizing.Fixed(Flex.RowHeight),
             BorderRadius = 4f,
             BorderWidth = 1f,
             BorderColor = UIColors.Border,
+            ValueBackground = UIColors.ControlBackground,
         });
 
         // ---- Separator ----
-        Stylesheet.Define(".separator", new ElementStyle
+        Stylesheet.Define(Cls.Separator, new ElementStyle
         {
             Height = Sizing.Fixed(1f),
             BackgroundColor = UIColors.Border with { W = UIColors.Border.W * 0.5f },

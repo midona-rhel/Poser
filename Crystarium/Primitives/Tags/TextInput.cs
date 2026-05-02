@@ -1,3 +1,4 @@
+using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Poser.UI.Controls;
@@ -6,27 +7,47 @@ namespace Poser.UI;
 
 public static partial class Crystarium
 {
-    /// <summary>Text input with chrome. Returns true if value changed.</summary>
-    public static bool TextInput(ElementProps props, ref string value, string? placeholder = null)
+    public static bool TextInput(string id, ref string value)
+        => TextInputCore(id, ref value, null, default, null, false, null, null);
+    public static bool TextInput(string id, ref string value, string placeholder)
+        => TextInputCore(id, ref value, placeholder, default, null, false, null, null);
+    public static bool TextInput(string id, ref string value, in TextInputProps props)
+        => TextInputCore(id, ref value, props.Placeholder, props.Classes, props.Tooltip, props.Disabled, props.OnChange, props.Style);
+
+    private static bool TextInputCore(string id, ref string value, string? placeholder,
+        StyleClassSet classes, string? tooltip, bool disabled, Action<string>? onChange, TextInputStyle? inline)
     {
         Stylesheet.EnsureInitialized();
 
-        float scale = PoserUI.Scale;
-        float height = Flex.RowHeight * scale;
-        float widthPx = ResolveAvailableWidth(props.Style.Width);
+        var classSet = Cls.TextInput + classes;
+        var preState = disabled ? PseudoState.Disabled : PseudoState.None;
+        var resolved = Stylesheet.ResolveTextInput(classSet, preState);
+        if (inline.HasValue) resolved = resolved.MergedWith(inline.Value);
 
-        // Push chrome via style colors so ImGui's input draws inside our look.
-        ImGui.PushStyleColor(ImGuiCol.FrameBg, UIColors.ControlBackground);
-        ImGui.PushStyleColor(ImGuiCol.FrameBgHovered, UIColors.ControlBackgroundHovered);
-        ImGui.PushStyleColor(ImGuiCol.FrameBgActive, UIColors.ControlBackground);
-        ImGui.PushStyleColor(ImGuiCol.Border, UIColors.Border);
-        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(Flex.TextPadding * scale, (height - ImGui.GetTextLineHeight()) / 2f));
-        ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 3f * scale);
-        ImGui.PushStyleVar(ImGuiStyleVar.FrameBorderSize, 1f);
+        float scale = PoserUI.Scale;
+        float height = (resolved.Height ?? Sizing.Fixed(Flex.RowHeight)).Value * scale;
+        float widthPx;
+        if (resolved.Width.HasValue && resolved.Width.Value.Mode == SizingMode.Fixed)
+            widthPx = resolved.Width.Value.Value * scale;
+        else
+            widthPx = AvailableWidth;
+
+        var bg = resolved.BackgroundColor ?? UIColors.ControlBackground;
+        var border = resolved.BorderColor ?? UIColors.Border;
+        var pad = resolved.Padding ?? new Spacing(0, Flex.TextPadding);
+        float framePadX = pad.Left * scale;
+        float framePadY = (height - ImGui.GetTextLineHeight()) / 2f;
+
+        ImGui.PushStyleColor(ImGuiCol.FrameBg, bg);
+        ImGui.PushStyleColor(ImGuiCol.FrameBgHovered, bg);
+        ImGui.PushStyleColor(ImGuiCol.FrameBgActive, bg);
+        ImGui.PushStyleColor(ImGuiCol.Border, border);
+        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(framePadX, framePadY));
+        ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, (resolved.BorderRadius ?? 3f) * scale);
+        ImGui.PushStyleVar(ImGuiStyleVar.FrameBorderSize, resolved.BorderWidth ?? 1f);
 
         ImGui.SetNextItemWidth(widthPx);
         bool changed;
-        string id = props.Id ?? "input";
         if (placeholder != null)
             changed = ImGui.InputTextWithHint(id, placeholder, ref value);
         else
@@ -35,16 +56,9 @@ public static partial class Crystarium
         ImGui.PopStyleVar(3);
         ImGui.PopStyleColor(4);
 
-        if (!string.IsNullOrEmpty(props.Tooltip) && ImGui.IsItemHovered())
-            ImGui.SetTooltip(props.Tooltip);
+        if (changed) onChange?.Invoke(value);
+        if (!string.IsNullOrEmpty(tooltip) && ImGui.IsItemHovered()) ImGui.SetTooltip(tooltip);
 
         return changed;
-    }
-
-    private static float ResolveAvailableWidth(Sizing? width)
-    {
-        if (width.HasValue && width.Value.Mode == SizingMode.Fixed)
-            return width.Value.Value * PoserUI.Scale;
-        return AvailableWidth;
     }
 }

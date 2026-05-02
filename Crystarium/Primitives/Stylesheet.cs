@@ -4,25 +4,16 @@ using System.Collections.Generic;
 namespace Poser.UI;
 
 /// <summary>
-/// Global style registry. Define rules with CSS-like selectors; Element resolution
-/// merges all matching rules in (specificity, declaration-order) order.
-///
-/// Supported selector grammar:
-///   `.name`                  — single class
-///   `.foo.bar`               — compound (all listed classes required)
-///   `.name:hover`            — pseudo-class state variant
-///   `.foo.bar:hover`         — compound + pseudo
-///   `.foo:hover.bar`         — pseudo can appear after any token; one pseudo per selector
-///
-/// Pseudo-classes recognized at runtime: hover, active, disabled, focus, on,
-/// checked, open, expanded. Tags push the relevant pseudo state when rendering.
+/// Global style registry. Selectors are typed (<see cref="StyleClass"/> / <see cref="StyleClassSet"/>
+/// + <see cref="PseudoState"/>) but a string overload (CSS-like, e.g. ".btn:hover.primary") is kept
+/// for ergonomics. Resolution merges all matching rules in (specificity, declaration-order) order.
 /// </summary>
 public static class Stylesheet
 {
     private struct Rule
     {
         public string[] Classes;
-        public string? Pseudo;
+        public PseudoState Pseudo;
         public ElementStyle Style;
         public int Specificity;
         public int Order;
@@ -32,22 +23,59 @@ public static class Stylesheet
     private static int _orderCounter = 0;
     private static bool _initialized = false;
 
-    /// <summary>Register or override a style rule.</summary>
+    // ---------- Define overloads ----------
+
+    public static void Define(StyleClass cls, ElementStyle style)
+        => Add(new[] { cls.Name }, PseudoState.None, style);
+
+    public static void Define(StyleClass cls, PseudoState pseudo, ElementStyle style)
+        => Add(new[] { cls.Name }, pseudo, style);
+
+    public static void Define(StyleClassSet classes, ElementStyle style)
+        => Add(classes.Names ?? Array.Empty<string>(), PseudoState.None, style);
+
+    public static void Define(StyleClassSet classes, PseudoState pseudo, ElementStyle style)
+        => Add(classes.Names ?? Array.Empty<string>(), pseudo, style);
+
+    // Tag-typed sugar — lift narrow style into ElementStyle.
+    public static void Define(StyleClass cls, ButtonStyle s) => Define(cls, s.ToElementStyle());
+    public static void Define(StyleClass cls, PseudoState p, ButtonStyle s) => Define(cls, p, s.ToElementStyle());
+    public static void Define(StyleClassSet cls, ButtonStyle s) => Define(cls, s.ToElementStyle());
+    public static void Define(StyleClassSet cls, PseudoState p, ButtonStyle s) => Define(cls, p, s.ToElementStyle());
+
+    public static void Define(StyleClass cls, CheckboxStyle s) => Define(cls, s.ToElementStyle());
+    public static void Define(StyleClass cls, PseudoState p, CheckboxStyle s) => Define(cls, p, s.ToElementStyle());
+    public static void Define(StyleClassSet cls, CheckboxStyle s) => Define(cls, s.ToElementStyle());
+    public static void Define(StyleClassSet cls, PseudoState p, CheckboxStyle s) => Define(cls, p, s.ToElementStyle());
+
+    public static void Define(StyleClass cls, ToggleStyle s) => Define(cls, s.ToElementStyle());
+    public static void Define(StyleClass cls, PseudoState p, ToggleStyle s) => Define(cls, p, s.ToElementStyle());
+
+    public static void Define(StyleClass cls, IconToggleStyle s) => Define(cls, s.ToElementStyle());
+    public static void Define(StyleClass cls, PseudoState p, IconToggleStyle s) => Define(cls, p, s.ToElementStyle());
+
+    public static void Define(StyleClass cls, ScrubberStyle s) => Define(cls, s.ToElementStyle());
+    public static void Define(StyleClass cls, PseudoState p, ScrubberStyle s) => Define(cls, p, s.ToElementStyle());
+
+    public static void Define(StyleClass cls, DropdownStyle s) => Define(cls, s.ToElementStyle());
+    public static void Define(StyleClass cls, PseudoState p, DropdownStyle s) => Define(cls, p, s.ToElementStyle());
+
+    public static void Define(StyleClass cls, TextInputStyle s) => Define(cls, s.ToElementStyle());
+    public static void Define(StyleClass cls, PseudoState p, TextInputStyle s) => Define(cls, p, s.ToElementStyle());
+
+    public static void Define(StyleClass cls, SliderStyle s) => Define(cls, s.ToElementStyle());
+    public static void Define(StyleClass cls, PseudoState p, SliderStyle s) => Define(cls, p, s.ToElementStyle());
+
+    public static void Define(StyleClass cls, TextStyle s) => Define(cls, s.ToElementStyle());
+    public static void Define(StyleClass cls, PseudoState p, TextStyle s) => Define(cls, p, s.ToElementStyle());
+
+    /// <summary>Parse a CSS-like selector string (.btn, .btn:hover, .btn.primary, .btn:hover.primary).</summary>
     public static void Define(string selector, ElementStyle style)
     {
-        EnsureInitialized();
         var (classes, pseudo) = ParseSelector(selector);
-        _rules.Add(new Rule
-        {
-            Classes = classes,
-            Pseudo = pseudo,
-            Style = style,
-            Specificity = classes.Length + (pseudo != null ? 1 : 0),
-            Order = _orderCounter++,
-        });
+        Add(classes, pseudo, style);
     }
 
-    /// <summary>Wipe all rules and re-install the built-in defaults.</summary>
     public static void Reset()
     {
         _rules.Clear();
@@ -63,27 +91,32 @@ public static class Stylesheet
         DefaultStylesheet.Install();
     }
 
-    /// <summary>Resolve a merged ElementStyle for an element with the given classes + active pseudo states.</summary>
-    internal static ElementStyle Resolve(HashSet<string> classes, HashSet<string>? state)
+    // ---------- Internal: register + resolve ----------
+
+    private static void Add(string[] classes, PseudoState pseudo, ElementStyle style)
+    {
+        EnsureInitialized();
+        _rules.Add(new Rule
+        {
+            Classes = classes,
+            Pseudo = pseudo,
+            Style = style,
+            Specificity = classes.Length + (pseudo == PseudoState.None ? 0 : 1),
+            Order = _orderCounter++,
+        });
+    }
+
+    /// <summary>Generic resolve — used by <see cref="Crystarium.Element"/>.</summary>
+    internal static ElementStyle Resolve(StyleClassSet classes, PseudoState state)
     {
         EnsureInitialized();
 
-        // Linear scan; rules are tens-to-hundreds typically.
-        // Collect matches with stable sorting on (specificity asc, order asc).
         var matches = new List<Rule>();
         for (int i = 0; i < _rules.Count; i++)
         {
             var rule = _rules[i];
-
-            bool match = true;
-            for (int j = 0; j < rule.Classes.Length; j++)
-            {
-                if (!classes.Contains(rule.Classes[j])) { match = false; break; }
-            }
-            if (!match) continue;
-
-            if (rule.Pseudo != null && (state == null || !state.Contains(rule.Pseudo))) continue;
-
+            if (!ClassesContainAll(classes, rule.Classes)) continue;
+            if (rule.Pseudo != PseudoState.None && (state & rule.Pseudo) != rule.Pseudo) continue;
             matches.Add(rule);
         }
 
@@ -99,29 +132,45 @@ public static class Stylesheet
         return result;
     }
 
-    private static (string[] classes, string? pseudo) ParseSelector(string selector)
+    // Narrow resolvers — project the resolved ElementStyle into a tag style.
+    internal static ButtonStyle    ResolveButton(StyleClassSet classes, PseudoState state)    => ButtonStyle.From(Resolve(classes, state));
+    internal static CheckboxStyle  ResolveCheckbox(StyleClassSet classes, PseudoState state)  => CheckboxStyle.From(Resolve(classes, state));
+    internal static ToggleStyle    ResolveToggle(StyleClassSet classes, PseudoState state)    => ToggleStyle.From(Resolve(classes, state));
+    internal static IconToggleStyle ResolveIconToggle(StyleClassSet classes, PseudoState state) => IconToggleStyle.From(Resolve(classes, state));
+    internal static ScrubberStyle  ResolveScrubber(StyleClassSet classes, PseudoState state)  => ScrubberStyle.From(Resolve(classes, state));
+    internal static DropdownStyle  ResolveDropdown(StyleClassSet classes, PseudoState state)  => DropdownStyle.From(Resolve(classes, state));
+    internal static TextInputStyle ResolveTextInput(StyleClassSet classes, PseudoState state) => TextInputStyle.From(Resolve(classes, state));
+    internal static SliderStyle    ResolveSlider(StyleClassSet classes, PseudoState state)    => SliderStyle.From(Resolve(classes, state));
+    internal static TextStyle      ResolveText(StyleClassSet classes, PseudoState state)      => TextStyle.From(Resolve(classes, state));
+
+    // ---------- Helpers ----------
+
+    private static bool ClassesContainAll(StyleClassSet candidate, string[] required)
+    {
+        for (int i = 0; i < required.Length; i++)
+            if (!candidate.Contains(required[i])) return false;
+        return true;
+    }
+
+    private static (string[] classes, PseudoState pseudo) ParseSelector(string selector)
     {
         if (string.IsNullOrWhiteSpace(selector) || selector[0] != '.')
             throw new ArgumentException($"Crystarium selectors must start with '.': '{selector}'");
 
         var classes = new List<string>();
-        string? pseudo = null;
-
+        var pseudo = PseudoState.None;
         var parts = selector.Substring(1).Split('.');
+
         foreach (var part in parts)
         {
             if (string.IsNullOrEmpty(part)) continue;
-            var pseudoIdx = part.IndexOf(':');
-            if (pseudoIdx >= 0)
+            int colon = part.IndexOf(':');
+            if (colon >= 0)
             {
-                var className = part.Substring(0, pseudoIdx);
-                var p = part.Substring(pseudoIdx + 1);
-                if (!string.IsNullOrEmpty(className)) classes.Add(className);
-                if (string.IsNullOrEmpty(p))
-                    throw new ArgumentException($"Empty pseudo-class in selector: '{selector}'");
-                if (pseudo != null && pseudo != p)
-                    throw new ArgumentException($"Multiple pseudo-classes in selector not supported: '{selector}'");
-                pseudo = p;
+                var name = part.Substring(0, colon);
+                var p = part.Substring(colon + 1);
+                if (!string.IsNullOrEmpty(name)) classes.Add(name);
+                pseudo |= PseudoStateParser.Parse(p);
             }
             else
             {

@@ -234,7 +234,7 @@ public class CameraTabPane : ITabPane
             // Scrubber (fills remaining space, value hidden since we have separate input)
             row.Fill((w, h) =>
             {
-                if (Scrubber.Draw(id, ref localValue, min, max, 0f, w, hideValue: true))
+                if (Crystarium.Scrubber(id, ref localValue, min, max, new ScrubberProps { Step = 0f, HideValue = true, Style = new ScrubberStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                 {
                     scrubberChanged = true;
                 }
@@ -267,7 +267,7 @@ public class CameraTabPane : ITabPane
             // Reset button (fixed width)
             row.Fixed(Flex.RowHeight, (w, h) =>
             {
-                if (PoserButton.DrawIcon($"{id}_reset", FontAwesomeIcon.Undo, "Reset to default"))
+                if (Crystarium.IconButton(FontAwesomeIcon.Undo, new ButtonProps { Id = $"{id}_reset", Tooltip = "Reset to default" }))
                 {
                     resetClicked = true;
                 }

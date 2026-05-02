@@ -107,7 +107,7 @@ public class AnimationWidget
                 {
                     using (ImRaii.Disabled(!baseDisplayId.HasValue))
                     {
-                        if (PoserButton.DrawIcon("play_base", FontAwesomeIcon.Play, "Play Base Animation"))
+                        if (Crystarium.IconButton(FontAwesomeIcon.Play, new ButtonProps { Id = "play_base", Tooltip = "Play Base Animation" }))
                         {
                             if (actor != null && baseDisplayId.HasValue)
                             {
@@ -136,7 +136,7 @@ public class AnimationWidget
                 {
                     using (ImRaii.Disabled(!blendDisplayId.HasValue))
                     {
-                        if (PoserButton.DrawIcon("play_blend", FontAwesomeIcon.Play, "Play Blend Animation"))
+                        if (Crystarium.IconButton(FontAwesomeIcon.Play, new ButtonProps { Id = "play_blend", Tooltip = "Play Blend Animation" }))
                         {
                             if (actor != null && blendDisplayId.HasValue)
                             {
@@ -158,7 +158,7 @@ public class AnimationWidget
                     using (ImRaii.Disabled(!hasOverride))
                     {
                         // Fill allocated width so right edge aligns with row's right edge
-                        if (PoserButton.DrawWithWidth("clear_animations", "Reset", w))
+                        if (Crystarium.Button("Reset", new ButtonProps { Id = "clear_animations", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                         {
                             if (actor != null && hasOverride)
                             {
@@ -221,7 +221,7 @@ public class AnimationWidget
 
             row.Fill(w =>
             {
-                if (Scrubber.Draw("##speed", ref speed, 0f, 3f, 0f, w, 1f, "F2", "x"))
+                if (Crystarium.Scrubber("##speed", ref speed, 0f, 3f, new ScrubberProps { Step = 0f, DisplayMultiplier = 1f, DisplayFormat = "F2", DisplaySuffix = "x", Style = new ScrubberStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                 {
                     if (actor != null)
                     {
@@ -270,7 +270,7 @@ public class AnimationWidget
 
             row.Fill(w =>
             {
-                if (Scrubber.Draw("##time", ref time, 0f, maxTime, 0f, w, 1f, "F2", "s"))
+                if (Crystarium.Scrubber("##time", ref time, 0f, maxTime, new ScrubberProps { Step = 0f, DisplayMultiplier = 1f, DisplayFormat = "F2", DisplaySuffix = "s", Style = new ScrubberStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                 {
                     if (actor != null)
                     {
@@ -294,7 +294,7 @@ public class AnimationWidget
             float playPauseWidth = (ImGui.CalcTextSize("Pause").X + Flex.TextPadding * 2 * PoserUI.Scale) / PoserUI.Scale;
             row.Fixed(playPauseWidth, () =>
             {
-                if (PoserButton.DrawWithWidth("play_pause", isPlaying ? "Pause" : "Play", playPauseWidth * PoserUI.Scale))
+                if (Crystarium.Button(isPlaying ? "Pause" : "Play", new ButtonProps { Id = "play_pause", Style = new ButtonStyle { Width = Sizing.Fixed(playPauseWidth * PoserUI.Scale / PoserUI.Scale) } }))
                 {
                     if (actor != null)
                     {
@@ -313,7 +313,7 @@ public class AnimationWidget
             // Reset button on the right
             row.Fixed(Flex.ButtonWidth, (w, h) =>
             {
-                if (PoserButton.DrawWithWidth("reset_speed", "Reset", w))
+                if (Crystarium.Button("Reset", new ButtonProps { Id = "reset_speed", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                 {
                     if (actor != null)
                     {

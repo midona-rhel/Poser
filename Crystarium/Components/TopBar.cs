@@ -73,7 +73,7 @@ public class TopBar
         // Library button
         row.Fixed(Flex.ButtonWidth, (w, h) =>
         {
-            if (PoserButton.DrawWithWidth("library", "Lib", w))
+            if (Crystarium.Button("Lib", new ButtonProps { Id = "library", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
             {
                 OnLibraryRequested?.Invoke();
             }
@@ -86,7 +86,7 @@ public class TopBar
         // Body Map button
         row.Fixed(Flex.ButtonWidth, (w, h) =>
         {
-            if (PoserButton.DrawWithWidth("bodymap", "Body", w))
+            if (Crystarium.Button("Body", new ButtonProps { Id = "bodymap", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
             {
                 OnBodyMapRequested?.Invoke();
             }
@@ -99,7 +99,7 @@ public class TopBar
         // References button
         row.Fixed(Flex.ButtonWidth, (w, h) =>
         {
-            if (PoserButton.DrawWithWidth("references", "Ref", w))
+            if (Crystarium.Button("Ref", new ButtonProps { Id = "references", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
             {
                 OnReferencesRequested?.Invoke();
             }
@@ -112,7 +112,7 @@ public class TopBar
         // Environment button
         row.Fixed(Flex.ButtonWidth, (w, h) =>
         {
-            if (PoserButton.DrawWithWidth("environment", "Env", w))
+            if (Crystarium.Button("Env", new ButtonProps { Id = "environment", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
             {
                 OnEnvironmentRequested?.Invoke();
             }
@@ -125,7 +125,7 @@ public class TopBar
         // Settings button on the right
         row.Fixed(Flex.ButtonWidth, (w, h) =>
         {
-            if (PoserButton.DrawWithWidth("settings", "Settings", w))
+            if (Crystarium.Button("Settings", new ButtonProps { Id = "settings", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
             {
                 _settingsModal.Open();
             }

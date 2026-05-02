@@ -267,7 +267,7 @@ public static class EntityListItem
     /// </summary>
     private static bool DrawCenteredCheckbox(string id, ref bool value, float rowHeight, float leftMargin = 0, float rightMargin = 0, bool enabled = true)
     {
-        var checkboxSize = PoserCheckbox.Size;
+        var checkboxSize = Crystarium.CheckboxSize;
         var cellWidth = ImGui.GetContentRegionAvail().X - leftMargin - rightMargin;
 
         var cursorPos = ImGui.GetCursorPos();
@@ -275,8 +275,7 @@ public static class EntityListItem
             cursorPos.X + leftMargin + (cellWidth - checkboxSize) / 2,
             cursorPos.Y + (rowHeight - checkboxSize) / 2));
 
-        // Use 10% alpha when disabled for more transparency
-        float alpha = enabled ? 1f : 0.1f;
-        return PoserCheckbox.Draw(id, ref value, alpha);
+        // Disabled state when not enabled (the legacy alpha=0.1f is approximated by Checkbox's :disabled style).
+        return Crystarium.Checkbox(id, ref value, new CheckboxProps { Disabled = !enabled });
     }
 }

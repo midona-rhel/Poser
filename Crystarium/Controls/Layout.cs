@@ -97,22 +97,18 @@ public sealed class FlexRow : IDisposable
     public FlexRow Checkbox(string id, ref bool value, Action? onChanged = null)
     {
         bool localValue = value;
-        return Fixed(PoserCheckbox.Size / PoserUI.Scale, (w, h) =>
+        return Fixed(Crystarium.CheckboxSize / PoserUI.Scale, (w, h) =>
         {
-            float oy = (h - PoserCheckbox.Size) / 2f;
-            if (oy > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + oy);
-            if (PoserCheckbox.Draw(id, ref localValue)) onChanged?.Invoke();
+            if (Crystarium.Checkbox(id, ref localValue)) onChanged?.Invoke();
         });
     }
 
     public FlexRow IconToggle(string id, ref bool value, Dalamud.Interface.FontAwesomeIcon icon, string? tooltip = null, Action? onChanged = null)
     {
         bool localValue = value;
-        return Fixed(Controls.IconToggle.Size / PoserUI.Scale, (w, h) =>
+        return Fixed(Crystarium.IconToggleSize / PoserUI.Scale, (w, h) =>
         {
-            float oy = (h - Controls.IconToggle.Size) / 2f;
-            if (oy > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + oy);
-            if (Controls.IconToggle.Draw(id, ref localValue, icon, tooltip)) onChanged?.Invoke();
+            if (Crystarium.IconToggle(id, ref localValue, icon, tooltip)) onChanged?.Invoke();
         });
     }
 

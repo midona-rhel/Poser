@@ -13,7 +13,7 @@ namespace Poser.UI;
 /// </summary>
 internal static class Element
 {
-    // ---- Row collection (thread-static; same model as v1) ----
+    // ---- Row collection (thread-static; same model as v2) ----
 
     [ThreadStatic]
     private static Stack<RowContext>? _rowStack;
@@ -36,21 +36,17 @@ internal static class Element
     [ThreadStatic]
     internal static float _ambientHeight;
 
-    // ---- Public Render entry ----
-
-    public static void Render(ElementProps props, Action? children, string? implicitClass = null)
+    public static void Render(ElementProps props, Action? children)
     {
         Stylesheet.EnsureInitialized();
 
-        var classes = BuildClassSet(props.ClassName, implicitClass);
-        var state = new HashSet<string>();
-        if (props.Disabled == true) state.Add("disabled");
+        var state = props.Disabled ? PseudoState.Disabled : PseudoState.None;
 
-        // Resolve once without hover/active to get layout dimensions
-        var resolved0 = Stylesheet.Resolve(classes, state).MergedWith(props.Style);
+        // Resolve once without hover/active to get layout dimensions.
+        var resolved0 = Stylesheet.Resolve(props.Classes, state).MergedWith(props.Style);
 
         var width   = resolved0.Width   ?? Sizing.Fill;
-        var height  = resolved0.Height  ?? Sizing.Auto;
+        var height  = resolved0.Height;
         var direction = resolved0.FlexDirection ?? FlexDirection.Column;
         var padding = resolved0.Padding ?? new Spacing(0);
         var margin  = resolved0.Margin  ?? new Spacing(0);
@@ -61,12 +57,10 @@ internal static class Element
         {
             var capProps = props;
             var capChildren = children;
-            var capClasses = classes;
-            var capImpl = implicitClass;
             _rowStack.Peek().Items.Add(new RowItem
             {
                 Width = width,
-                Render = (w, h) => RenderInline(capProps, capChildren, capImpl, capClasses, w, h),
+                Render = (w, h) => RenderInline(capProps, capChildren, w, h),
             });
             return;
         }
@@ -76,32 +70,30 @@ internal static class Element
         float outerWidth = width.Mode switch
         {
             SizingMode.Fixed => width.Value * scale,
-            SizingMode.Fill => availWidth - margin.Horizontal * scale,
             _ => availWidth - margin.Horizontal * scale,
         };
 
         if (direction == FlexDirection.Row)
         {
-            float outerHeight = height.Mode == SizingMode.Fixed
-                ? height.Value * scale
+            float outerHeight = height.HasValue && height.Value.Mode == SizingMode.Fixed
+                ? height.Value.Value * scale
                 : 24f * scale;
-            RenderRow(props, capChildren: children, classes, state, outerWidth, outerHeight, margin, padding, gap);
+            RenderRow(props, children, outerWidth, outerHeight, margin, padding, gap);
         }
         else
         {
-            RenderColumn(props, capChildren: children, classes, state, outerWidth, margin, padding);
+            RenderColumn(props, children, outerWidth, margin, padding);
         }
     }
 
     // ---- Inline (a row child whose rect was assigned by the parent) ----
 
-    private static void RenderInline(ElementProps props, Action? children, string? implicitClass, HashSet<string> classes, float width, float height)
+    private static void RenderInline(ElementProps props, Action? children, float width, float height)
     {
         var screenMin = ImGui.GetCursorScreenPos();
         var screenMax = screenMin + new Vector2(width, height);
 
-        var state = new HashSet<string>();
-        if (props.Disabled == true) state.Add("disabled");
+        var state = props.Disabled ? PseudoState.Disabled : PseudoState.None;
 
         bool interactive = props.OnClick != null || props.OnContextMenu != null;
         bool clicked = false;
@@ -109,13 +101,13 @@ internal static class Element
         {
             ImGui.SetCursorScreenPos(screenMin);
             ImGui.InvisibleButton(props.Id, new Vector2(width, height));
-            if (ImGui.IsItemHovered()) state.Add("hover");
-            if (ImGui.IsItemActive()) state.Add("active");
+            if (ImGui.IsItemHovered()) state |= PseudoState.Hover;
+            if (ImGui.IsItemActive()) state |= PseudoState.Active;
             if (ImGui.IsItemClicked()) clicked = true;
             ImGui.SetCursorScreenPos(screenMin);
         }
 
-        var resolved = Stylesheet.Resolve(classes, state).MergedWith(props.Style);
+        var resolved = Stylesheet.Resolve(props.Classes, state).MergedWith(props.Style);
         var padding = resolved.Padding ?? new Spacing(0);
         var direction = resolved.FlexDirection ?? FlexDirection.Column;
         var gap = resolved.Gap ?? 0f;
@@ -154,25 +146,23 @@ internal static class Element
             PopCascade(pushes);
         }
 
-        // Reserve the slot in ImGui's layout
         ImGui.SetCursorScreenPos(screenMin);
         ImGui.Dummy(new Vector2(width, height));
 
         if (interactive)
         {
-            if (clicked && props.Disabled != true) props.OnClick?.Invoke();
-            if (!string.IsNullOrEmpty(props.Tooltip) && state.Contains("hover"))
+            if (clicked && !props.Disabled) props.OnClick?.Invoke();
+            if (!string.IsNullOrEmpty(props.Tooltip) && (state & PseudoState.Hover) != 0)
                 ImGui.SetTooltip(props.Tooltip);
         }
     }
 
     // ---- Top-level Row container ----
 
-    private static void RenderRow(ElementProps props, Action? capChildren, HashSet<string> classes, HashSet<string> state,
+    private static void RenderRow(ElementProps props, Action? children,
         float outerWidth, float outerHeight, Spacing margin, Spacing padding, float gap)
     {
         float scale = PoserUI.Scale;
-
         var screenStart = ImGui.GetCursorScreenPos();
         var posStart = ImGui.GetCursorPos();
 
@@ -181,25 +171,26 @@ internal static class Element
 
         var screenEnd = screenStart + new Vector2(outerWidth, outerHeight);
 
+        var state = props.Disabled ? PseudoState.Disabled : PseudoState.None;
         bool interactive = props.OnClick != null || props.OnContextMenu != null;
         bool clicked = false;
         if (interactive && props.Id != null)
         {
             ImGui.SetCursorScreenPos(screenStart);
             ImGui.InvisibleButton(props.Id, new Vector2(outerWidth, outerHeight));
-            if (ImGui.IsItemHovered()) state.Add("hover");
-            if (ImGui.IsItemActive()) state.Add("active");
+            if (ImGui.IsItemHovered()) state |= PseudoState.Hover;
+            if (ImGui.IsItemActive()) state |= PseudoState.Active;
             if (ImGui.IsItemClicked()) clicked = true;
             ImGui.SetCursorScreenPos(screenStart);
         }
 
-        var resolved = Stylesheet.Resolve(classes, state).MergedWith(props.Style);
+        var resolved = Stylesheet.Resolve(props.Classes, state).MergedWith(props.Style);
         DrawChrome(screenStart, screenEnd, resolved);
 
         int pushes = PushCascade(resolved);
         try
         {
-            if (capChildren != null)
+            if (children != null)
             {
                 ImGui.SetCursorScreenPos(new Vector2(screenStart.X + padding.Left * scale, screenStart.Y + padding.Top * scale));
                 float innerWidth = outerWidth - padding.Horizontal * scale;
@@ -210,7 +201,7 @@ internal static class Element
                 _ambientHeight = innerHeight;
                 try
                 {
-                    RunRowChildren(capChildren, innerWidth, innerHeight, gap);
+                    RunRowChildren(children, innerWidth, innerHeight, gap);
                 }
                 finally
                 {
@@ -224,32 +215,31 @@ internal static class Element
             PopCascade(pushes);
         }
 
-        // Advance cursor: below the row + bottom margin, snapped to parent's left edge
         float bottomY = posStart.Y + outerHeight + margin.Bottom * scale;
         ImGui.SetCursorPos(new Vector2(posStart.X - margin.Left * scale, bottomY));
 
         if (interactive)
         {
-            if (clicked && props.Disabled != true) props.OnClick?.Invoke();
-            if (!string.IsNullOrEmpty(props.Tooltip) && state.Contains("hover"))
+            if (clicked && !props.Disabled) props.OnClick?.Invoke();
+            if (!string.IsNullOrEmpty(props.Tooltip) && (state & PseudoState.Hover) != 0)
                 ImGui.SetTooltip(props.Tooltip);
         }
     }
 
     // ---- Top-level Column container ----
 
-    private static void RenderColumn(ElementProps props, Action? capChildren, HashSet<string> classes, HashSet<string> state,
+    private static void RenderColumn(ElementProps props, Action? children,
         float outerWidth, Spacing margin, Spacing padding)
     {
         float scale = PoserUI.Scale;
-
         var screenStart = ImGui.GetCursorScreenPos();
         var posStart = ImGui.GetCursorPos();
 
         screenStart += new Vector2(margin.Left * scale, margin.Top * scale);
         posStart += new Vector2(margin.Left * scale, margin.Top * scale);
 
-        var resolved = Stylesheet.Resolve(classes, state).MergedWith(props.Style);
+        var state = props.Disabled ? PseudoState.Disabled : PseudoState.None;
+        var resolved = Stylesheet.Resolve(props.Classes, state).MergedWith(props.Style);
 
         var drawList = ImGui.GetWindowDrawList();
         bool hasChrome = resolved.BackgroundColor.HasValue || (resolved.BorderWidth ?? 0f) > 0f || resolved.BoxShadow.HasValue;
@@ -265,7 +255,7 @@ internal static class Element
         int pushes = PushCascade(resolved);
         try
         {
-            if (capChildren != null)
+            if (children != null)
             {
                 float innerWidth = outerWidth - padding.Horizontal * scale;
                 float prevW = _ambientWidth, prevH = _ambientHeight;
@@ -273,7 +263,7 @@ internal static class Element
                 _ambientHeight = 0;
                 try
                 {
-                    capChildren();
+                    children();
                 }
                 finally
                 {
@@ -287,12 +277,11 @@ internal static class Element
             PopCascade(pushes);
         }
 
-        // Compute final height
         var posEnd = ImGui.GetCursorPos();
         float contentHeight = (posEnd.Y - posStart.Y) - padding.Top * scale;
         if (contentHeight < 0f) contentHeight = 0f;
 
-        float resolvedHeight = resolved.Height?.Mode == SizingMode.Fixed
+        float resolvedHeight = resolved.Height.HasValue && resolved.Height.Value.Mode == SizingMode.Fixed
             ? resolved.Height.Value.Value * scale
             : contentHeight + padding.Vertical * scale;
 
@@ -338,7 +327,6 @@ internal static class Element
                 case SizingMode.Fixed: totalFixed += item.Width.Value * scale; break;
                 case SizingMode.Flex:  totalWeight += item.Width.Value; break;
                 case SizingMode.Fill:  totalWeight += 1; break;
-                case SizingMode.Auto:  totalWeight += 1; break;
             }
         }
 
@@ -358,7 +346,6 @@ internal static class Element
                 SizingMode.Fixed => item.Width.Value * scale,
                 SizingMode.Flex  => item.Width.Value * perWeight,
                 SizingMode.Fill  => perWeight,
-                SizingMode.Auto  => perWeight,
                 _ => 0f,
             };
 
@@ -386,7 +373,6 @@ internal static class Element
         BoxRenderer.Draw(ImGui.GetWindowDrawList(), min, max, box);
     }
 
-    /// <summary>Push ImGui style/font cascade for this Element. Returns number of color pushes.</summary>
     private static int PushCascade(in ElementStyle resolved)
     {
         int colorPushes = 0;
@@ -410,28 +396,18 @@ internal static class Element
             };
             ImGui.PushFont(font);
         }
-        return PackPushes(colorPushes, resolved.Opacity.HasValue, resolved.FontFamily.HasValue && resolved.FontFamily.Value != FontFamily.Default);
+        return Pack(colorPushes, resolved.Opacity.HasValue, resolved.FontFamily.HasValue && resolved.FontFamily.Value != FontFamily.Default);
     }
 
     private static void PopCascade(int packed)
     {
-        var (colorPushes, hasAlpha, hasFont) = UnpackPushes(packed);
-        if (hasFont) ImGui.PopFont();
-        if (hasAlpha) ImGui.PopStyleVar();
-        if (colorPushes > 0) ImGui.PopStyleColor(colorPushes);
+        var (colors, alpha, font) = Unpack(packed);
+        if (font) ImGui.PopFont();
+        if (alpha) ImGui.PopStyleVar();
+        if (colors > 0) ImGui.PopStyleColor(colors);
     }
 
-    private static int PackPushes(int colorPushes, bool hasAlpha, bool hasFont)
-        => colorPushes | (hasAlpha ? 1 << 8 : 0) | (hasFont ? 1 << 9 : 0);
-    private static (int, bool, bool) UnpackPushes(int p) => (p & 0xFF, (p & (1 << 8)) != 0, (p & (1 << 9)) != 0);
-
-    private static HashSet<string> BuildClassSet(string? classNames, string? implicitClass)
-    {
-        var set = new HashSet<string>();
-        if (!string.IsNullOrEmpty(implicitClass)) set.Add(implicitClass);
-        if (string.IsNullOrEmpty(classNames)) return set;
-        foreach (var part in classNames.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-            set.Add(part);
-        return set;
-    }
+    private static int Pack(int colors, bool alpha, bool font)
+        => colors | (alpha ? 1 << 8 : 0) | (font ? 1 << 9 : 0);
+    private static (int, bool, bool) Unpack(int p) => (p & 0xFF, (p & (1 << 8)) != 0, (p & (1 << 9)) != 0);
 }

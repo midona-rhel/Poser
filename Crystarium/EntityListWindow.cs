@@ -144,7 +144,7 @@ public class EntityListWindow : Window
         // Add button on the left
         row.Fixed(Flex.RowHeight, () =>
         {
-            if (PoserButton.DrawIcon("add_entity", FontAwesomeIcon.Plus, "Add entity"))
+            if (Crystarium.IconButton(FontAwesomeIcon.Plus, new ButtonProps { Id = "add_entity", Tooltip = "Add entity" }))
             {
                 ImGui.OpenPopup("##add_entity_popup");
             }
@@ -173,7 +173,7 @@ public class EntityListWindow : Window
         {
             using (ImRaii.Disabled(!canDelete))
             {
-                if (PoserButton.DrawWithWidth("delete_selected", "Delete", w))
+                if (Crystarium.Button("Delete", new ButtonProps { Id = "delete_selected", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                 {
                     if (canDelete && primarySelected != null)
                     {

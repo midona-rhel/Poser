@@ -293,7 +293,7 @@ public class FileBrowser
 
             row.Fixed(Flex.ButtonWidth, (w, h) =>
             {
-                if (PoserButton.DrawWithWidth("cancel", "Cancel", w))
+                if (Crystarium.Button("Cancel", new ButtonProps { Id = "cancel", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                 {
                     _modal.Close();
                 }
@@ -306,7 +306,7 @@ public class FileBrowser
 
                 using (ImRaii.Disabled(!canSelect))
                 {
-                    if (PoserButton.DrawWithWidth("select", buttonText, w))
+                    if (Crystarium.Button(buttonText, new ButtonProps { Id = "select", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                     {
                         string fullPath = Path.Combine(_currentPath, _fileName);
 

@@ -1,4 +1,4 @@
-using System.Numerics;
+using System;
 using Dalamud.Bindings.ImGui;
 using Poser.UI.Controls;
 
@@ -6,24 +6,39 @@ namespace Poser.UI;
 
 public static partial class Crystarium
 {
-    /// <summary>Standard slider. Wraps ImGui.SliderFloat with consistent chrome.</summary>
-    public static bool Slider(ElementProps props, ref float value, float min, float max, string format = "%.2f")
+    public static bool Slider(string id, ref float value, float min, float max)
+        => SliderCore(id, ref value, min, max, default, null, false, null, "%.2f", null);
+    public static bool Slider(string id, ref float value, float min, float max, in SliderProps props)
+        => SliderCore(id, ref value, min, max, props.Classes, props.Tooltip, props.Disabled, props.OnChange,
+            string.IsNullOrEmpty(props.Format) ? "%.2f" : props.Format, props.Style);
+
+    private static bool SliderCore(string id, ref float value, float min, float max,
+        StyleClassSet classes, string? tooltip, bool disabled, Action<float>? onChange,
+        string format, SliderStyle? inline)
     {
         Stylesheet.EnsureInitialized();
 
-        float widthPx = ResolveAvailableWidth(props.Style.Width);
+        var classSet = Cls.Slider + classes;
+        var resolved = Stylesheet.ResolveSlider(classSet, disabled ? PseudoState.Disabled : PseudoState.None);
+        if (inline.HasValue) resolved = resolved.MergedWith(inline.Value);
 
-        ImGui.PushStyleColor(ImGuiCol.FrameBg, UIColors.ControlBackground);
-        ImGui.PushStyleColor(ImGuiCol.SliderGrab, UIColors.Button);
-        ImGui.PushStyleColor(ImGuiCol.SliderGrabActive, UIColors.ButtonActive);
+        float widthPx;
+        if (resolved.Width.HasValue && resolved.Width.Value.Mode == SizingMode.Fixed)
+            widthPx = resolved.Width.Value.Value * PoserUI.Scale;
+        else
+            widthPx = AvailableWidth;
+
+        ImGui.PushStyleColor(ImGuiCol.FrameBg, resolved.BackgroundColor ?? UIColors.ControlBackground);
+        ImGui.PushStyleColor(ImGuiCol.SliderGrab, resolved.GrabColor ?? UIColors.Button);
+        ImGui.PushStyleColor(ImGuiCol.SliderGrabActive, resolved.GrabActiveColor ?? UIColors.ButtonActive);
 
         ImGui.SetNextItemWidth(widthPx);
-        bool changed = ImGui.SliderFloat(props.Id ?? "slider", ref value, min, max, format);
+        bool changed = ImGui.SliderFloat(id, ref value, min, max, format);
 
         ImGui.PopStyleColor(3);
 
-        if (!string.IsNullOrEmpty(props.Tooltip) && ImGui.IsItemHovered())
-            ImGui.SetTooltip(props.Tooltip);
+        if (changed) onChange?.Invoke(value);
+        if (!string.IsNullOrEmpty(tooltip) && ImGui.IsItemHovered()) ImGui.SetTooltip(tooltip);
 
         return changed;
     }

@@ -4,9 +4,6 @@ using Poser.UI.Controls;
 
 namespace Poser.UI.Panes;
 
-/// <summary>
-/// Settings pane for UI color configuration.
-/// </summary>
 public class UISettingsPane : ITabPane
 {
     public string Name => "UI";
@@ -16,60 +13,40 @@ public class UISettingsPane : ITabPane
         var config = ConfigurationService.Instance.Config.UI;
 
         SettingsControls.SectionHeader("Background Colors");
-
         SettingsControls.ColorEntryRow("Background:", config.Background);
         SettingsControls.ColorEntryRow("Control Bg:", config.ControlBackground);
 
         SettingsControls.SectionHeader("Text Colors");
-
         SettingsControls.ColorEntryRow("Text:", config.Text);
         SettingsControls.ColorEntryRow("Text Disabled:", config.TextDisabled);
 
         SettingsControls.SectionHeader("Border");
-
         SettingsControls.ColorEntryRow("Border:", config.Border);
 
         SettingsControls.SectionHeader("Selection");
-
         SettingsControls.ColorEntryRow("Active:", config.SelectionActive);
         SettingsControls.ColorEntryRow("Active Hovered:", config.SelectionActiveHovered);
         SettingsControls.ColorEntryRow("Hovered:", config.SelectionHovered);
 
         SettingsControls.SectionHeader("Title Bar");
-
         SettingsControls.ColorEntryRow("Title Bar:", config.TitleBar);
         SettingsControls.ColorEntryRow("Title Bar Active:", config.TitleBarActive);
 
         SettingsControls.SectionHeader("Buttons");
-
         SettingsControls.ColorEntryRow("Button:", config.Button);
         SettingsControls.ColorEntryRow("Button Hovered:", config.ButtonHovered);
         SettingsControls.ColorEntryRow("Button Active:", config.ButtonActive);
 
         SettingsControls.SectionEnd();
 
-        using (var row = Flex.Row(gap: Flex.ItemGap))
+        Crystarium.Element(new ElementProps { Classes = Cls.Row }, () =>
         {
-            row.Spacer();
-
-            float btn1Width = ImGui.CalcTextSize("Reset to Defaults").X + Flex.TextPadding * 2 * PoserUI.Scale;
-            row.Fixed(btn1Width / PoserUI.Scale, () =>
-            {
-                if (PoserButton.DrawWithWidth("##reset_ui", "Reset to Defaults", btn1Width))
-                {
-                    ConfigurationService.Instance.ResetUI();
-                }
-            });
-
-            float btn2Width = ImGui.CalcTextSize("Copy from Theme").X + Flex.TextPadding * 2 * PoserUI.Scale;
-            row.Fixed(btn2Width / PoserUI.Scale, () =>
-            {
-                if (PoserButton.DrawWithWidth("##copy_theme", "Copy from Theme", btn2Width))
-                {
-                    CopyColorsFromTheme();
-                }
-            });
-        }
+            Crystarium.Element(new ElementProps { Style = new ElementStyle { Width = Sizing.Fill } });
+            if (Crystarium.Button("Reset to Defaults", new ButtonProps { Id = "##reset_ui" }))
+                ConfigurationService.Instance.ResetUI();
+            if (Crystarium.Button("Copy from Theme", new ButtonProps { Id = "##copy_theme" }))
+                CopyColorsFromTheme();
+        });
     }
 
     private static void CopyColorsFromTheme()

@@ -202,7 +202,7 @@ public class LibraryWindow : Window, IDisposable
                 bool isSelected = _typeFilter == index;
                 using (ImRaii.PushColor(ImGuiCol.Button, isSelected ? UIColors.SelectionActive : UIColors.Button))
                 {
-                    if (PoserButton.DrawWithWidth($"type_{index}", TypeFilterLabels[index], w))
+                    if (Crystarium.Button(TypeFilterLabels[index], new ButtonProps { Id = $"type_{index}", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                     {
                         _typeFilter = index;
                     }
@@ -625,7 +625,7 @@ public class LibraryWindow : Window, IDisposable
         if (_selectedEntry is PoseLibraryEntry applyPose)
         {
             float buttonWidth = ImGui.GetContentRegionAvail().X;
-            if (PoserButton.DrawWithWidth("apply", "Apply Pose", buttonWidth))
+            if (Crystarium.Button("Apply Pose", new ButtonProps { Id = "apply", Style = new ButtonStyle { Width = Sizing.Fixed(buttonWidth / PoserUI.Scale) } }))
             {
                 ApplyPose(applyPose);
             }
@@ -648,7 +648,7 @@ public class LibraryWindow : Window, IDisposable
         row.Fill((w, h) =>
         {
             float iconSize = _config.Config.Library.IconSize;
-            if (Scrubber.Draw("icon_size", ref iconSize, MinIconSize, MaxIconSize, 10f, w, 1f, "F0", "px"))
+            if (Crystarium.Scrubber("icon_size", ref iconSize, MinIconSize, MaxIconSize, new ScrubberProps { Step = 10f, DisplayMultiplier = 1f, DisplayFormat = "F0", DisplaySuffix = "px", Style = new ScrubberStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
             {
                 _config.Config.Library.IconSize = iconSize;
                 _config.ApplyChange();
@@ -692,7 +692,7 @@ public class LibraryWindow : Window, IDisposable
 
             headerRow.Fixed(80f, (w, h) =>
             {
-                if (PoserButton.DrawWithWidth("add_source", "Add", w))
+                if (Crystarium.Button("Add", new ButtonProps { Id = "add_source", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                 {
                     // Add a new empty source
                     sources.Add(new LibrarySource
@@ -734,7 +734,7 @@ public class LibraryWindow : Window, IDisposable
 
             footerRow.Fixed(100f, (w, h) =>
             {
-                if (PoserButton.DrawWithWidth("close_modal", "Done", w))
+                if (Crystarium.Button("Done", new ButtonProps { Id = "close_modal", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                 {
                     _sourcesModal.Close();
                     _libraryService.Refresh(); // Refresh after changes
@@ -817,7 +817,7 @@ public class LibraryWindow : Window, IDisposable
 
                 actionRow.Fixed(60f, (w, h) =>
                 {
-                    if (PoserButton.DrawWithWidth("cancel", "Cancel", w))
+                    if (Crystarium.Button("Cancel", new ButtonProps { Id = "cancel", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                     {
                         _editingSourceIndex = -1;
                     }
@@ -825,7 +825,7 @@ public class LibraryWindow : Window, IDisposable
 
                 actionRow.Fixed(60f, (w, h) =>
                 {
-                    if (PoserButton.DrawWithWidth("save", "Save", w))
+                    if (Crystarium.Button("Save", new ButtonProps { Id = "save", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                     {
                         source.Name = _editSourceName;
                         if (!string.IsNullOrWhiteSpace(_editSourcePath))

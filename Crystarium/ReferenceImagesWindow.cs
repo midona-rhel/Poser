@@ -86,7 +86,7 @@ public class ReferenceImagesWindow : Window, IDisposable
 
         row.Fixed(Flex.ButtonWidth, (w, h) =>
         {
-            if (PoserButton.DrawWithWidth("browse_ref", "Browse", w))
+            if (Crystarium.Button("Browse", new ButtonProps { Id = "browse_ref", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
             {
                 _fileBrowser.Open(_lastImagePath, path =>
                 {
@@ -131,7 +131,7 @@ public class ReferenceImagesWindow : Window, IDisposable
             header.Fixed(Flex.LargeIconSize, (w, h) =>
             {
                 bool visible = image.IsVisible;
-                if (IconToggle.Draw("visible", ref visible, FontAwesomeIcon.Eye, visible ? "Hide" : "Show"))
+                if (Crystarium.IconToggle("visible", ref visible, FontAwesomeIcon.Eye, visible ? "Hide" : "Show"))
                 {
                     image.IsVisible = visible;
                 }
@@ -141,7 +141,7 @@ public class ReferenceImagesWindow : Window, IDisposable
             header.Fixed(Flex.LargeIconSize, (w, h) =>
             {
                 bool locked = image.IsLocked;
-                if (IconToggle.Draw("locked", ref locked, FontAwesomeIcon.Lock, locked ? "Unlock" : "Lock"))
+                if (Crystarium.IconToggle("locked", ref locked, FontAwesomeIcon.Lock, locked ? "Unlock" : "Lock"))
                 {
                     image.IsLocked = locked;
                 }
@@ -183,7 +183,7 @@ public class ReferenceImagesWindow : Window, IDisposable
             opacityRow.Fill(w =>
             {
                 float opacity = image.Opacity;
-                if (Scrubber.Draw($"opacity_{image.Id}", ref opacity, 0f, 1f, 0f, w, 100f, "F0", "%"))
+                if (Crystarium.Scrubber($"opacity_{image.Id}", ref opacity, 0f, 1f, new ScrubberProps { Step = 0f, DisplayMultiplier = 100f, DisplayFormat = "F0", DisplaySuffix = "%", Style = new ScrubberStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                 {
                     image.Opacity = opacity;
                 }
@@ -196,14 +196,14 @@ public class ReferenceImagesWindow : Window, IDisposable
             layerRow.Label("Layer");
             layerRow.Fixed(60, (w, h) =>
             {
-                if (PoserButton.DrawWithWidth($"front_{image.Id}", "Front", w))
+                if (Crystarium.Button("Front", new ButtonProps { Id = $"front_{image.Id}", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                 {
                     _imageService.BringToFront(image);
                 }
             });
             layerRow.Fixed(60, (w, h) =>
             {
-                if (PoserButton.DrawWithWidth($"back_{image.Id}", "Back", w))
+                if (Crystarium.Button("Back", new ButtonProps { Id = $"back_{image.Id}", Style = new ButtonStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                 {
                     _imageService.SendToBack(image);
                 }

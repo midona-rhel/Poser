@@ -60,7 +60,7 @@ public static class PoserUI
     /// <summary>
     /// Gets the dropdown height.
     /// </summary>
-    public static float DropdownHeight => PoserDropdown.Height;
+    public static float DropdownHeight => (Flex.RowHeight * PoserUI.Scale);
 
     /// <summary>
     /// Gets the margin constant.
@@ -206,11 +206,11 @@ public sealed class RowBuilder : IDisposable
     /// <returns>True if value changed.</returns>
     public bool Checkbox(string id, ref bool value)
     {
-        float w = PoserCheckbox.Size;
+        float w = Crystarium.CheckboxSize;
         // Center checkbox vertically
         float offsetY = (_height - w) / 2f;
         ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y + offsetY));
-        bool changed = PoserCheckbox.Draw(id, ref value);
+        bool changed = Crystarium.Checkbox(id, ref value);
         _currentX += w;
         return changed;
     }
@@ -226,11 +226,11 @@ public sealed class RowBuilder : IDisposable
     /// <returns>True if value changed.</returns>
     public bool ToggleButton(string id, ref bool value, Dalamud.Interface.FontAwesomeIcon iconOff, Dalamud.Interface.FontAwesomeIcon iconOn, string? tooltip = null)
     {
-        float w = PoserToggleButton.Size;
+        float w = Crystarium.ToggleSize;
         // Center button vertically
         float offsetY = (_height - w) / 2f;
         ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y + offsetY));
-        bool changed = PoserToggleButton.Draw(id, ref value, iconOff, iconOn, tooltip);
+        bool changed = Crystarium.Toggle(id, ref value, iconOff, iconOn, tooltip);
         _currentX += w;
         return changed;
     }
@@ -313,7 +313,7 @@ public sealed class RowBuilder : IDisposable
     {
         float w = RemainingWidth();
         ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y));
-        bool changed = Controls.Scrubber.Draw(id, ref value, min, max, step, w);
+        bool changed = Crystarium.Scrubber(id, ref value, min, max, new ScrubberProps { Step = step, Style = new ScrubberStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } });
         _currentX += w;
         return changed;
     }
@@ -330,9 +330,9 @@ public sealed class RowBuilder : IDisposable
     {
         float w = width * PoserUI.Scale;
         // Center dropdown vertically
-        float offsetY = (_height - PoserDropdown.Height) / 2f;
+        float offsetY = (_height - (Flex.RowHeight * PoserUI.Scale)) / 2f;
         ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y + offsetY));
-        bool changed = PoserDropdown.Draw(id, ref currentIndex, items, w);
+        bool changed = Crystarium.Dropdown(id, items, ref currentIndex, new DropdownProps { Style = new DropdownStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } });
         _currentX += w;
         return changed;
     }
@@ -348,9 +348,9 @@ public sealed class RowBuilder : IDisposable
     {
         float w = RemainingWidth();
         // Center dropdown vertically
-        float offsetY = (_height - PoserDropdown.Height) / 2f;
+        float offsetY = (_height - (Flex.RowHeight * PoserUI.Scale)) / 2f;
         ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y + offsetY));
-        bool changed = PoserDropdown.Draw(id, ref currentIndex, items, w);
+        bool changed = Crystarium.Dropdown(id, items, ref currentIndex, new DropdownProps { Style = new DropdownStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } });
         _currentX += w;
         return changed;
     }
@@ -408,12 +408,12 @@ public sealed class RowBuilder : IDisposable
     /// <returns>True if value changed.</returns>
     public bool RightCheckbox(string id, ref bool value)
     {
-        float w = PoserCheckbox.Size;
+        float w = Crystarium.CheckboxSize;
         _rightX -= w;
         // Center checkbox vertically
         float offsetY = (_height - w) / 2f;
         ImGui.SetCursorPos(new Vector2(_rightX, _startPos.Y + offsetY));
-        return PoserCheckbox.Draw(id, ref value);
+        return Crystarium.Checkbox(id, ref value);
     }
 
     /// <summary>
@@ -429,7 +429,7 @@ public sealed class RowBuilder : IDisposable
         float w = textSize.X + paddingX * 2;
         _rightX -= w;
         ImGui.SetCursorPos(new Vector2(_rightX, _startPos.Y));
-        return PoserButton.Draw(id, label);
+        return Crystarium.Button(label, new ButtonProps { Id = id });
     }
 
     /// <summary>
@@ -454,7 +454,7 @@ public sealed class RowBuilder : IDisposable
         var textSize = ImGui.CalcTextSize(label);
         float w = textSize.X + paddingX * 2;
         ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y));
-        bool clicked = PoserButton.Draw(id, label);
+        bool clicked = Crystarium.Button(label, new ButtonProps { Id = id });
         _currentX += w;
         return clicked;
     }
@@ -482,10 +482,10 @@ public sealed class RowBuilder : IDisposable
     /// <returns>True if clicked.</returns>
     public bool IconButton(string id, Dalamud.Interface.FontAwesomeIcon icon, string? tooltip = null)
     {
-        float w = PoserButton.IconButtonSize * PoserUI.Scale;
+        float w = Flex.RowHeight * PoserUI.Scale;
         float offsetY = (_height - w) / 2f;
         ImGui.SetCursorPos(new Vector2(_currentX, _startPos.Y + offsetY));
-        bool clicked = PoserButton.DrawIcon(id, icon, tooltip);
+        bool clicked = Crystarium.IconButton(icon, new ButtonProps { Id = id, Tooltip = tooltip });
         _currentX += w;
         return clicked;
     }

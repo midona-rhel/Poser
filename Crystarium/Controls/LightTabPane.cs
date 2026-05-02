@@ -60,7 +60,7 @@ public class LightTabPane : ITabPane
                 row.Label("Enabled", 80);
                 row.Fill((w, h) =>
                 {
-                    if (PoserCheckbox.Draw("##light_on", ref isOn))
+                    if (Crystarium.Checkbox("##light_on", ref isOn))
                     {
                         light.IsLightOn = isOn;
                     }
@@ -102,7 +102,7 @@ public class LightTabPane : ITabPane
                 row.Label("Intensity", 80);
                 row.Fill((w, h) =>
                 {
-                    if (Scrubber.Draw("##light_intensity", ref intensity, 0f, 10f, 0f, w))
+                    if (Crystarium.Scrubber("##light_intensity", ref intensity, 0f, 10f, new ScrubberProps { Step = 0f, Style = new ScrubberStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                     {
                         light.Intensity = intensity;
                     }
@@ -118,7 +118,7 @@ public class LightTabPane : ITabPane
                 row.Label("Range", 80);
                 row.Fill((w, h) =>
                 {
-                    if (Scrubber.Draw("##light_range", ref range, 1f, 200f, 0f, w))
+                    if (Crystarium.Scrubber("##light_range", ref range, 1f, 200f, new ScrubberProps { Step = 0f, Style = new ScrubberStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                     {
                         light.Range = range;
                     }
@@ -153,7 +153,7 @@ public class LightTabPane : ITabPane
                 row.Label("Falloff", 80);
                 row.Fill((w, h) =>
                 {
-                    if (Scrubber.Draw("##light_falloff", ref falloff, 0f, 10f, 0f, w))
+                    if (Crystarium.Scrubber("##light_falloff", ref falloff, 0f, 10f, new ScrubberProps { Step = 0f, Style = new ScrubberStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                     {
                         light.Falloff = falloff;
                     }
@@ -174,7 +174,7 @@ public class LightTabPane : ITabPane
                     row.Label("Spot Angle", 80);
                     row.Fill((w, h) =>
                     {
-                        if (Scrubber.Draw("##light_spot_angle", ref spotAngle, 1f, 180f, 0f, w))
+                        if (Crystarium.Scrubber("##light_spot_angle", ref spotAngle, 1f, 180f, new ScrubberProps { Step = 0f, Style = new ScrubberStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                         {
                             light.SpotAngle = spotAngle;
                         }
@@ -190,7 +190,7 @@ public class LightTabPane : ITabPane
                     row.Label("Edge Falloff", 80);
                     row.Fill((w, h) =>
                     {
-                        if (Scrubber.Draw("##light_falloff_angle", ref falloffAngle, 0f, 1f, 0f, w))
+                        if (Crystarium.Scrubber("##light_falloff_angle", ref falloffAngle, 0f, 1f, new ScrubberProps { Step = 0f, Style = new ScrubberStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                         {
                             light.FalloffAngle = falloffAngle;
                         }
@@ -209,7 +209,7 @@ public class LightTabPane : ITabPane
                 row.Label("Reflection", 80);
                 row.Fill((w, h) =>
                 {
-                    if (PoserCheckbox.Draw("##light_reflection", ref hasReflection))
+                    if (Crystarium.Checkbox("##light_reflection", ref hasReflection))
                     {
                         light.HasReflection = hasReflection;
                     }
@@ -225,7 +225,7 @@ public class LightTabPane : ITabPane
                 row.Label("Char Shadow", 80);
                 row.Fill((w, h) =>
                 {
-                    if (PoserCheckbox.Draw("##light_shadow", ref castsShadow))
+                    if (Crystarium.Checkbox("##light_shadow", ref castsShadow))
                     {
                         light.CastsCharacterShadow = castsShadow;
                     }
@@ -242,7 +242,7 @@ public class LightTabPane : ITabPane
                 row.Label("Shadow Range", 80);
                 row.Fill((w, h) =>
                 {
-                    if (Scrubber.Draw("##light_shadow_range", ref shadowRange, 1f, 200f, 0f, w))
+                    if (Crystarium.Scrubber("##light_shadow_range", ref shadowRange, 1f, 200f, new ScrubberProps { Step = 0f, Style = new ScrubberStyle { Width = Sizing.Fixed(w / PoserUI.Scale) } }))
                     {
                         light.CharacterShadowRange = shadowRange;
                     }

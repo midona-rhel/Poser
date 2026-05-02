@@ -1,12 +1,8 @@
-using Dalamud.Bindings.ImGui;
 using Poser.Config;
 using Poser.UI.Controls;
 
 namespace Poser.UI.Panes;
 
-/// <summary>
-/// Settings pane for display/visibility configuration.
-/// </summary>
 public class DisplaySettingsPane : ITabPane
 {
     public string Name => "Display";
@@ -27,18 +23,11 @@ public class DisplaySettingsPane : ITabPane
 
         SettingsControls.SectionEnd();
 
-        using (var row = Flex.Row(gap: Flex.ItemGap))
+        Crystarium.Element(new ElementProps { Classes = Cls.Row }, () =>
         {
-            row.Spacer();
-
-            float buttonWidth = ImGui.CalcTextSize("Reset to Defaults").X + Flex.TextPadding * 2 * PoserUI.Scale;
-            row.Fixed(buttonWidth / PoserUI.Scale, () =>
-            {
-                if (PoserButton.DrawWithWidth("##reset_display", "Reset to Defaults", buttonWidth))
-                {
-                    ConfigurationService.Instance.ResetDisplay();
-                }
-            });
-        }
+            Crystarium.Element(new ElementProps { Style = new ElementStyle { Width = Sizing.Fill } });
+            if (Crystarium.Button("Reset to Defaults", new ButtonProps { Id = "##reset_display" }))
+                ConfigurationService.Instance.ResetDisplay();
+        });
     }
 }

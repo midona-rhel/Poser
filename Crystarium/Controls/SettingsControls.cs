@@ -2,165 +2,112 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.Utility;
 using Poser.Config;
 
 namespace Poser.UI.Controls;
 
 /// <summary>
-/// Shared helper methods for drawing settings controls.
-/// All controls use UIColors for consistent theming.
+/// Helpers for the Settings modal panes — labelled rows of common controls.
+/// Built on the typed Crystarium element system.
 /// </summary>
 public static class SettingsControls
 {
     private const float DefaultLabelWidth = 140f;
 
-    // ImGuiCol names for dropdown - built once
     private static readonly string[] ImGuiColNames;
 
     static SettingsControls()
     {
         var names = new List<string> { "Custom" };
-        foreach (ImGuiCol col in Enum.GetValues(typeof(ImGuiCol)))
-        {
-            names.Add(col.ToString());
-        }
+        foreach (ImGuiCol col in Enum.GetValues(typeof(ImGuiCol))) names.Add(col.ToString());
         ImGuiColNames = names.ToArray();
     }
 
-    /// <summary>
-    /// Draws a labeled slider row.
-    /// </summary>
     public static bool SliderRow(string label, ref float value, float min, float max, float labelWidth = DefaultLabelWidth)
     {
         bool changed = false;
-        float localValue = value;
-
-        using (var row = Flex.Row(gap: Flex.ItemGap))
+        float v = value;
+        Crystarium.Element(new ElementProps { Classes = Cls.Row }, () =>
         {
-            row.Label(label, labelWidth);
-            row.Fill(w =>
+            DrawLabel(label, labelWidth);
+            Crystarium.Element(new ElementProps { Style = new ElementStyle { Width = Sizing.Fill } }, () =>
             {
-                ImGui.SetNextItemWidth(w);
-                if (ImGui.SliderFloat($"##{label}", ref localValue, min, max))
-                    changed = true;
+                if (Crystarium.Slider($"##{label}", ref v, min, max)) changed = true;
             });
-        }
-
-        if (changed)
-        {
-            value = localValue;
-            ConfigurationService.Instance.Save();
-        }
+        });
+        if (changed) { value = v; ConfigurationService.Instance.Save(); }
         return changed;
     }
 
-    /// <summary>
-    /// Draws a labeled scrubber row for numerical values.
-    /// </summary>
     public static bool ScrubberRow(string label, ref float value, float min, float max, float step = 0f, float labelWidth = DefaultLabelWidth)
     {
         bool changed = false;
-        float localValue = value;
-
-        using (var row = Flex.Row(gap: Flex.ItemGap))
+        float v = value;
+        Crystarium.Element(new ElementProps { Classes = Cls.Row }, () =>
         {
-            row.Label(label, labelWidth);
-            row.Fill(w =>
+            DrawLabel(label, labelWidth);
+            Crystarium.Element(new ElementProps { Style = new ElementStyle { Width = Sizing.Fill } }, () =>
             {
-                if (Scrubber.Draw($"##{label}", ref localValue, min, max, step, w))
-                    changed = true;
+                if (Crystarium.Scrubber($"##{label}", ref v, min, max, step)) changed = true;
             });
-        }
-
-        if (changed)
-        {
-            value = localValue;
-            ConfigurationService.Instance.Save();
-        }
+        });
+        if (changed) { value = v; ConfigurationService.Instance.Save(); }
         return changed;
     }
 
-    /// <summary>
-    /// Draws a labeled color picker row (uint ABGR format).
-    /// </summary>
     public static bool ColorRow(string label, ref uint color, float labelWidth = DefaultLabelWidth)
     {
         bool changed = false;
-        uint localColor = color;
-
-        using (var row = Flex.Row(gap: Flex.ItemGap))
+        uint c = color;
+        Crystarium.Element(new ElementProps { Classes = Cls.Row }, () =>
         {
-            row.Label(label, labelWidth);
-            row.Spacer();
-            row.Fixed(Flex.RowHeight, (w, h) =>
+            DrawLabel(label, labelWidth);
+            Crystarium.Element(new ElementProps { Style = new ElementStyle { Width = Sizing.Fill } });
+            Crystarium.Element(new ElementProps { Style = new ElementStyle { Width = Sizing.Fixed(Flex.RowHeight) } }, () =>
             {
-                var vec4 = ImGui.ColorConvertU32ToFloat4(localColor);
+                var vec4 = ImGui.ColorConvertU32ToFloat4(c);
                 if (ImGui.ColorEdit4($"##{label}", ref vec4, ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.NoLabel))
                 {
-                    localColor = ImGui.ColorConvertFloat4ToU32(vec4);
+                    c = ImGui.ColorConvertFloat4ToU32(vec4);
                     changed = true;
                 }
             });
-        }
-
-        if (changed)
-        {
-            color = localColor;
-            ConfigurationService.Instance.Save();
-        }
+        });
+        if (changed) { color = c; ConfigurationService.Instance.Save(); }
         return changed;
     }
 
-    /// <summary>
-    /// Draws a labeled checkbox row.
-    /// </summary>
     public static bool CheckboxRow(string label, ref bool value, float labelWidth = DefaultLabelWidth)
     {
         bool changed = false;
-        bool localValue = value;
-
-        using (var row = Flex.Row(gap: Flex.ItemGap))
+        bool v = value;
+        Crystarium.Element(new ElementProps { Classes = Cls.Row }, () =>
         {
-            row.Label(label, labelWidth);
-            row.Fixed(PoserCheckbox.Size / PoserUI.Scale, (w, h) =>
+            DrawLabel(label, labelWidth);
+            Crystarium.Element(new ElementProps { Style = new ElementStyle { Width = Sizing.Fixed(Crystarium.CheckboxSize / PoserUI.Scale) } }, () =>
             {
-                float offsetY = (h - PoserCheckbox.Size) / 2f;
-                if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
-
-                if (PoserCheckbox.Draw($"##{label}", ref localValue))
-                    changed = true;
+                if (Crystarium.Checkbox($"##{label}", ref v)) changed = true;
             });
-        }
-
-        if (changed)
-        {
-            value = localValue;
-            ConfigurationService.Instance.Save();
-        }
+        });
+        if (changed) { value = v; ConfigurationService.Instance.Save(); }
         return changed;
     }
 
-    /// <summary>
-    /// Draws a UIColorEntry row with dropdown for theme color or custom.
-    /// </summary>
     public static void ColorEntryRow(string label, UIColorEntry entry, float labelWidth = DefaultLabelWidth)
     {
         int currentIndex = entry.UseCustomColor ? 0 : entry.ThemeColorIndex + 1;
         var resolvedColor = entry.Resolve();
 
-        using (var row = Flex.Row(gap: Flex.ItemGap))
+        Crystarium.Element(new ElementProps { Classes = Cls.Row }, () =>
         {
-            row.Label(label, labelWidth);
-
-            row.Fixed(140, (w, h) =>
+            DrawLabel(label, labelWidth);
+            Crystarium.Element(new ElementProps { Style = new ElementStyle { Width = Sizing.Fixed(140) } }, () =>
             {
-                if (PoserDropdown.Draw($"##combo_{label}", ref currentIndex, ImGuiColNames, w))
+                if (Crystarium.Dropdown($"##combo_{label}", ImGuiColNames, ref currentIndex))
                 {
                     if (currentIndex == 0)
                     {
-                        if (!entry.UseCustomColor)
-                            entry.CustomColor = entry.Resolve();
+                        if (!entry.UseCustomColor) entry.CustomColor = entry.Resolve();
                         entry.UseCustomColor = true;
                     }
                     else
@@ -171,8 +118,7 @@ public static class SettingsControls
                     ConfigurationService.Instance.Save();
                 }
             });
-
-            row.Fixed(Flex.RowHeight, (w, h) =>
+            Crystarium.Element(new ElementProps { Style = new ElementStyle { Width = Sizing.Fixed(Flex.RowHeight) } }, () =>
             {
                 if (ImGui.ColorEdit4($"##color_{label}", ref resolvedColor, ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.NoLabel))
                 {
@@ -181,39 +127,37 @@ public static class SettingsControls
                     ConfigurationService.Instance.Save();
                 }
             });
-        }
+        });
     }
 
-    /// <summary>
-    /// Draws a section header row. Adds blank row above if not at the top of content.
-    /// </summary>
     public static void SectionHeader(string text)
     {
-        // Add spacing above if not the first element
         if (ImGui.GetCursorPosY() > 5f)
         {
-            using var spacer = Flex.Row();
             // Empty row for spacing
+            Crystarium.Element(new ElementProps { Classes = Cls.Row });
         }
-
-        using (var row = Flex.Row())
-        {
-            row.Fill((w, h) =>
-            {
-                float offsetY = (h - ImGui.GetTextLineHeight()) / 2f;
-                if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
-                ImGui.TextColored(UIColors.TextDisabled, text);
-            });
-        }
+        Crystarium.Text(text, Cls.DisabledText);
     }
 
-    /// <summary>
-    /// Draws section spacing (spacing + separator + spacing).
-    /// </summary>
     public static void SectionEnd()
     {
         ImGui.Spacing();
         ImGui.Separator();
         ImGui.Spacing();
+    }
+
+    private static void DrawLabel(string label, float labelWidth)
+    {
+        Crystarium.Element(new ElementProps { Style = new ElementStyle { Width = Sizing.Fixed(labelWidth) } }, () =>
+        {
+            float h = Crystarium.AvailableHeight;
+            if (h > 0)
+            {
+                float oy = (h - ImGui.GetTextLineHeight()) / 2f;
+                if (oy > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + oy);
+            }
+            ImGui.Text(label);
+        });
     }
 }

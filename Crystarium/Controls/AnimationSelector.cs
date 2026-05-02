@@ -183,7 +183,7 @@ public class AnimationSelector
             if (ImGui.BeginPopup(popupId))
             {
                 // Search input
-                if (PoserTextInput.Draw($"{id}_search", ref _searchText, "Search animations...", popupW - popupPadding * 2, false))
+                if (Crystarium.TextInput($"{id}_search", ref _searchText, new TextInputProps { Placeholder = "Search animations...", Style = new TextInputStyle { Width = Sizing.Fixed((popupW - popupPadding * 2) / PoserUI.Scale) } }))
                 {
                     RefreshFilteredAnimations();
                 }
@@ -242,7 +242,7 @@ public class AnimationSelector
 
         // Emotes checkbox
         ImGui.BeginGroup();
-        if (PoserCheckbox.Draw($"{id}_emotes", ref _showEmotes))
+        if (Crystarium.Checkbox($"{id}_emotes", ref _showEmotes))
             RefreshFilteredAnimations();
         ImGui.SameLine();
         ImGui.Text("Emotes");
@@ -253,7 +253,7 @@ public class AnimationSelector
 
         // Actions checkbox
         ImGui.BeginGroup();
-        if (PoserCheckbox.Draw($"{id}_actions", ref _showActions))
+        if (Crystarium.Checkbox($"{id}_actions", ref _showActions))
             RefreshFilteredAnimations();
         ImGui.SameLine();
         ImGui.Text("Actions");
@@ -264,7 +264,7 @@ public class AnimationSelector
 
         // Other checkbox
         ImGui.BeginGroup();
-        if (PoserCheckbox.Draw($"{id}_other", ref _showOther))
+        if (Crystarium.Checkbox($"{id}_other", ref _showOther))
             RefreshFilteredAnimations();
         ImGui.SameLine();
         ImGui.Text("Other");

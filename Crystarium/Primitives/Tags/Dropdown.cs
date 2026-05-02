@@ -10,66 +10,75 @@ namespace Poser.UI;
 
 public static partial class Crystarium
 {
-    /// <summary>Split-button dropdown with popup list. Returns true on selection change.</summary>
-    public static bool Dropdown(ElementProps props, string[] items, ref int currentIndex)
+    public static bool Dropdown(string id, string[] items, ref int selected)
+        => DropdownCore(id, items, ref selected, default, null, false, null, null);
+    public static bool Dropdown(string id, string[] items, ref int selected, in DropdownProps props)
+        => DropdownCore(id, items, ref selected, props.Classes, props.Tooltip, props.Disabled, props.OnChange, props.Style);
+
+    private static bool DropdownCore(string id, string[] items, ref int selected,
+        StyleClassSet classes, string? tooltip, bool disabled, Action<int>? onChange, DropdownStyle? inline)
     {
         Stylesheet.EnsureInitialized();
         if (items.Length == 0) return false;
 
+        var classSet = Cls.Dropdown + classes;
+        string popupId = $"{id}_popup";
+        bool isOpen = ImGui.IsPopupOpen(popupId);
+
+        var preState = disabled ? PseudoState.Disabled : PseudoState.None;
+        if (isOpen) preState |= PseudoState.Open;
+        var resolved = Stylesheet.ResolveDropdown(classSet, preState);
+        if (inline.HasValue) resolved = resolved.MergedWith(inline.Value);
+
         bool changed = false;
         float scale = PoserUI.Scale;
-        float height = Flex.RowHeight * scale;
-        float buttonW = Flex.RowHeight * scale; // square chevron button
-        float rounding = 4f * scale;
+        float height = (resolved.Height ?? Sizing.Fixed(Flex.RowHeight)).Value * scale;
+        float buttonW = Flex.RowHeight * scale; // square chevron
+        float rounding = (resolved.BorderRadius ?? 4f) * scale;
         float minValueW = 80f * scale;
 
-        float totalWidth = ResolveAvailableWidth(props.Style.Width);
+        float totalWidth;
+        if (resolved.Width.HasValue && resolved.Width.Value.Mode == SizingMode.Fixed)
+            totalWidth = resolved.Width.Value.Value * scale;
+        else
+            totalWidth = AvailableWidth;
         if (totalWidth < minValueW + buttonW) totalWidth = minValueW + buttonW;
         float valueWidth = totalWidth - buttonW;
 
         var pos = ImGui.GetCursorScreenPos();
         var drawList = ImGui.GetWindowDrawList();
-
         var valuePos = pos;
         var valueEnd = valuePos + new Vector2(valueWidth, height);
         var btnPos = new Vector2(valueEnd.X, valuePos.Y);
         var btnEnd = btnPos + new Vector2(buttonW, height);
 
-        string id = props.Id ?? "dropdown";
-        string popupId = $"{id}_popup";
-        bool isOpen = ImGui.IsPopupOpen(popupId);
-
-        // Right (chevron) side hit-test
         ImGui.SetCursorScreenPos(btnPos);
         ImGui.InvisibleButton($"{id}_btn", new Vector2(buttonW, height));
-        bool buttonHovered = ImGui.IsItemHovered();
-        if (ImGui.IsItemClicked()) ImGui.OpenPopup(popupId);
+        bool buttonHovered = ImGui.IsItemHovered() && !disabled;
+        if (ImGui.IsItemClicked() && !disabled) ImGui.OpenPopup(popupId);
 
-        // Left (value) side hit-test
         ImGui.SetCursorScreenPos(valuePos);
         ImGui.InvisibleButton($"{id}_value", new Vector2(valueWidth, height));
-        bool valueHovered = ImGui.IsItemHovered();
-        if (ImGui.IsItemClicked()) ImGui.OpenPopup(popupId);
+        bool valueHovered = ImGui.IsItemHovered() && !disabled;
+        if (ImGui.IsItemClicked() && !disabled) ImGui.OpenPopup(popupId);
 
-        // Chrome
         DrawHelpers.DrawControlShadow(drawList, valuePos, btnEnd, 4f);
 
-        var bgColor = UIColors.ApplyAlpha(UIColors.ControlBackground);
-        var bgU32 = ImGui.ColorConvertFloat4ToU32(bgColor);
-        drawList.AddRectFilled(valuePos, valueEnd, bgU32, rounding, ImDrawFlags.RoundCornersLeft);
+        var valueBg = UIColors.ApplyAlpha(resolved.ValueBackground ?? UIColors.ControlBackground);
+        var valueBgU32 = ImGui.ColorConvertFloat4ToU32(valueBg);
+        drawList.AddRectFilled(valuePos, valueEnd, valueBgU32, rounding, ImDrawFlags.RoundCornersLeft);
         drawList.AddRect(valuePos, valueEnd, UIColors.ApplyAlpha(UIColors.BorderU32), rounding, ImDrawFlags.RoundCornersLeft, 1f);
-        drawList.AddLine(new Vector2(valueEnd.X, valuePos.Y + 1), new Vector2(valueEnd.X, valueEnd.Y - 1), bgU32, 1f);
+        drawList.AddLine(new Vector2(valueEnd.X, valuePos.Y + 1), new Vector2(valueEnd.X, valueEnd.Y - 1), valueBgU32, 1f);
 
-        // Current value text
-        string currentText = (currentIndex >= 0 && currentIndex < items.Length) ? items[currentIndex] : "";
+        string currentText = (selected >= 0 && selected < items.Length) ? items[selected] : "";
         float textPadding = Flex.TextPadding * scale;
         string display = TruncateText(currentText, valueWidth - textPadding * 2);
         var textSize = ImGui.CalcTextSize(display);
+        var textColor = UIColors.ApplyAlpha(resolved.Color ?? UIColors.Text);
         var textPos = new Vector2(valuePos.X + textPadding, valuePos.Y + (height - textSize.Y) / 2f);
-        drawList.AddText(textPos, UIColors.ApplyAlpha(UIColors.TextU32), display);
+        drawList.AddText(textPos, ImGui.ColorConvertFloat4ToU32(textColor), display);
         if (display != currentText && valueHovered) ImGui.SetTooltip(currentText);
 
-        // Chevron button
         Vector4 btnColor;
         if (isOpen)                              btnColor = ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive];
         else if (buttonHovered || valueHovered)  btnColor = ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonHovered];
@@ -79,7 +88,6 @@ public static partial class Crystarium
         if (!isOpen) DrawHelpers.DrawButtonGradients(drawList, btnPos, btnEnd, height, 4f);
         drawList.AddRect(btnPos, btnEnd, UIColors.ApplyAlpha(UIColors.BorderU32), rounding, ImDrawFlags.RoundCornersRight, 1f);
 
-        // Chevron icon
         var iconFont = UiBuilder.IconFont;
         var arrowIcon = FontAwesomeIcon.ChevronDown.ToIconString();
         ImGui.PushFont(iconFont);
@@ -89,7 +97,6 @@ public static partial class Crystarium
         DrawHelpers.DrawOutlinedIcon(drawList, iconFont, iconPos, arrowIcon,
             UIColors.ApplyAlpha(UIColors.BlackU32), UIColors.ApplyAlpha(UIColors.WhiteU32), 1f * scale);
 
-        // Advance cursor below the dropdown
         ImGui.SetCursorScreenPos(pos + new Vector2(0, height));
 
         // Popup
@@ -105,9 +112,11 @@ public static partial class Crystarium
             popupY = aboveY >= 0 ? aboveY : displaySize.Y - popupHeight;
         }
 
+        var popupBg = resolved.PopupBackground ?? UIColors.Background;
+
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(popupPadding, popupPadding));
         ImGui.PushStyleVar(ImGuiStyleVar.PopupRounding, rounding);
-        ImGui.PushStyleColor(ImGuiCol.PopupBg, UIColors.Background);
+        ImGui.PushStyleColor(ImGuiCol.PopupBg, popupBg);
         ImGui.PushStyleColor(ImGuiCol.Border, UIColors.Border);
 
         ImGui.SetNextWindowPos(new Vector2(valuePos.X, popupY));
@@ -126,14 +135,14 @@ public static partial class Crystarium
             {
                 for (int i = 0; i < items.Length; i++)
                 {
-                    bool isSelected = i == currentIndex;
+                    bool isSelected = i == selected;
                     var itemPos = ImGui.GetCursorScreenPos();
                     var itemSize = new Vector2(childSize.X - (needsScroll ? scrollbarSize : 0), height);
 
                     ImGui.PushID(i);
                     if (ImGui.Selectable("##item", isSelected, ImGuiSelectableFlags.None, itemSize))
                     {
-                        if (currentIndex != i) { currentIndex = i; changed = true; }
+                        if (selected != i) { selected = i; changed = true; onChange?.Invoke(i); }
                         ImGui.CloseCurrentPopup();
                     }
                     bool itemHovered = ImGui.IsItemHovered();
@@ -155,6 +164,9 @@ public static partial class Crystarium
 
         ImGui.PopStyleColor(2);
         ImGui.PopStyleVar(2);
+
+        if (!string.IsNullOrEmpty(tooltip) && (valueHovered || buttonHovered))
+            ImGui.SetTooltip(tooltip);
 
         return changed;
     }

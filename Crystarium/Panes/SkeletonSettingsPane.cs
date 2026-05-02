@@ -4,9 +4,6 @@ using Poser.UI.Controls;
 
 namespace Poser.UI.Panes;
 
-/// <summary>
-/// Settings pane for skeleton overlay configuration.
-/// </summary>
 public class SkeletonSettingsPane : ITabPane
 {
     public string Name => "Skeleton";
@@ -37,39 +34,23 @@ public class SkeletonSettingsPane : ITabPane
         SettingsControls.SectionHeader("Colors");
 
         uint boneColor = config.BoneColor;
-        if (SettingsControls.ColorRow("Bone Color:", ref boneColor))
-            config.BoneColor = boneColor;
-
+        if (SettingsControls.ColorRow("Bone Color:", ref boneColor)) config.BoneColor = boneColor;
         uint outlineColor = config.BoneOutlineColor;
-        if (SettingsControls.ColorRow("Outline Color:", ref outlineColor))
-            config.BoneOutlineColor = outlineColor;
-
+        if (SettingsControls.ColorRow("Outline Color:", ref outlineColor)) config.BoneOutlineColor = outlineColor;
         uint selectedColor = config.SelectedBoneColor;
-        if (SettingsControls.ColorRow("Selected Bone:", ref selectedColor))
-            config.SelectedBoneColor = selectedColor;
-
+        if (SettingsControls.ColorRow("Selected Bone:", ref selectedColor)) config.SelectedBoneColor = selectedColor;
         uint modifiedColor = config.ModifiedBoneColor;
-        if (SettingsControls.ColorRow("Modified Bone:", ref modifiedColor))
-            config.ModifiedBoneColor = modifiedColor;
-
+        if (SettingsControls.ColorRow("Modified Bone:", ref modifiedColor)) config.ModifiedBoneColor = modifiedColor;
         uint hoveredColor = config.HoveredBoneColor;
-        if (SettingsControls.ColorRow("Hovered Bone:", ref hoveredColor))
-            config.HoveredBoneColor = hoveredColor;
+        if (SettingsControls.ColorRow("Hovered Bone:", ref hoveredColor)) config.HoveredBoneColor = hoveredColor;
 
         SettingsControls.SectionEnd();
 
-        using (var row = Flex.Row(gap: Flex.ItemGap))
+        Crystarium.Element(new ElementProps { Classes = Cls.Row }, () =>
         {
-            row.Spacer();
-
-            float buttonWidth = ImGui.CalcTextSize("Reset to Defaults").X + Flex.TextPadding * 2 * PoserUI.Scale;
-            row.Fixed(buttonWidth / PoserUI.Scale, () =>
-            {
-                if (PoserButton.DrawWithWidth("##reset_skeleton", "Reset to Defaults", buttonWidth))
-                {
-                    ConfigurationService.Instance.ResetSkeleton();
-                }
-            });
-        }
+            Crystarium.Element(new ElementProps { Style = new ElementStyle { Width = Sizing.Fill } });
+            if (Crystarium.Button("Reset to Defaults", new ButtonProps { Id = "##reset_skeleton" }))
+                ConfigurationService.Instance.ResetSkeleton();
+        });
     }
 }
