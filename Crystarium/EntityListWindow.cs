@@ -45,7 +45,7 @@ public class EntityListWindow : Window
         IEditorState editorState,
         IActorSpawnService spawnService,
         IEventBus eventBus)
-        : base($"Scene###{Poser.PluginName}_entity_list",
+        : base($"Scene###{Poser.PluginConstants.PluginName}_entity_list",
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
     {
         Size = new Vector2(DefaultWidth, DefaultHeight);

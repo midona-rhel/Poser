@@ -19,7 +19,7 @@ public class EnvironmentWindow : Window, IDisposable
     private readonly EnvironmentTabPane _environmentPane;
 
     public EnvironmentWindow(ITimeService? timeService, IWeatherService? weatherService)
-        : base($"Environment###{Poser.PluginName}_environment",
+        : base($"Environment###{Poser.PluginConstants.PluginName}_environment",
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse | ImGuiWindowFlags.NoCollapse)
     {
         Size = new Vector2(DefaultWidth, DefaultHeight);

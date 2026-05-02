@@ -45,7 +45,7 @@ public class GraphicalBoneWindow : Window, IDisposable
         ISkeletonService skeletonService,
         IGPoseService gPoseService,
         ITextureProvider textureProvider)
-        : base($"{Poser.PluginName} - Bone Selection###poser_graphical_bone_window",
+        : base($"{Poser.PluginConstants.PluginName} - Bone Selection###poser_graphical_bone_window",
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
     {
         _selectionService = selectionService;

@@ -25,7 +25,7 @@ public class ReferenceImageOverlayWindow : Window, IDisposable
     private const float MinImageSize = 50f;
 
     public ReferenceImageOverlayWindow(ReferenceImageService imageService)
-        : base($"Reference Images###{Poser.PluginName}_refimages",
+        : base($"Reference Images###{Poser.PluginConstants.PluginName}_refimages",
             ImGuiWindowFlags.NoDecoration |
             ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoMove |

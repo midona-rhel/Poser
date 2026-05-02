@@ -96,7 +96,7 @@ public class PropertiesWindow : Window, IDisposable
         ICustomizePlusService? customizePlusService = null,
         IVirtualCameraService? virtualCameraService = null,
         ILightingService? lightingService = null)
-        : base($"Properties###{Poser.PluginName}_properties_{_instanceCounter}",
+        : base($"Properties###{Poser.PluginConstants.PluginName}_properties_{_instanceCounter}",
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
     {
         _instanceId = _instanceCounter++;
@@ -167,7 +167,7 @@ public class PropertiesWindow : Window, IDisposable
 
         // Update window title
         string title = FormatWindowTitle();
-        WindowName = $"{title}###{Poser.PluginName}_properties_{_instanceId}";
+        WindowName = $"{title}###{Poser.PluginConstants.PluginName}_properties_{_instanceId}";
 
         // Apply UI colors
         ImGui.PushStyleColor(ImGuiCol.WindowBg, UIColors.Background);

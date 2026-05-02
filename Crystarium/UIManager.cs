@@ -90,7 +90,7 @@ public class UIManager : IUIManager
         _pluginInterface = pluginInterface;
         _gPoseService = gPoseService;
         _eventBus = eventBus;
-        _windowSystem = new WindowSystem(Poser.PluginName);
+        _windowSystem = new WindowSystem(Poser.PluginConstants.PluginName);
 
         // Store services for creating detached windows
         _selectionService = selectionService;

@@ -63,7 +63,7 @@ public class LibraryWindow : Window, IDisposable
         ConfigurationService config,
         ITextureProvider textureProvider,
         IEventBus eventBus)
-        : base($"Pose Library###{Poser.PluginName}_library",
+        : base($"Pose Library###{Poser.PluginConstants.PluginName}_library",
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoCollapse)
     {
         _libraryService = libraryService;

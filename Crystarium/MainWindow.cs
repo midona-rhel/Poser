@@ -82,7 +82,7 @@ public class MainWindow : Window
         IPenumbraService? penumbraService = null,
         IGlamourerService? glamourerService = null,
         ICustomizePlusService? customizePlusService = null)
-        : base($"{Poser.PluginName}###poser_main_window",
+        : base($"{Poser.PluginConstants.PluginName}###poser_main_window",
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
     {
         Size = new Vector2(DefaultWidth, DefaultHeight);

@@ -24,7 +24,7 @@ public class ReferenceImagesWindow : Window, IDisposable
     private string _lastImagePath = "";
 
     public ReferenceImagesWindow(ReferenceImageService imageService)
-        : base($"Reference Images###{Poser.PluginName}_references",
+        : base($"Reference Images###{Poser.PluginConstants.PluginName}_references",
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoCollapse)
     {
         _imageService = imageService;

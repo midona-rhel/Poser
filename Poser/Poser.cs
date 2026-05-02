@@ -19,7 +19,6 @@ namespace Poser;
 
 public class Poser : IDalamudPlugin
 {
-    public const string PluginName = "Poser";
     private const string CommandName = "/poser";
 
     private readonly ServiceProvider _serviceProvider;
@@ -39,7 +38,7 @@ public class Poser : IDalamudPlugin
         ITextureProvider textureProvider,
         ITargetManager targetManager)
     {
-        log.Info($"Starting {PluginName}...");
+        log.Info($"Starting {PluginConstants.PluginName}...");
 
         _commandManager = commandManager;
 
@@ -73,7 +72,7 @@ public class Poser : IDalamudPlugin
             HelpMessage = "Open the Poser window"
         });
 
-        log.Info($"{PluginName} started successfully!");
+        log.Info($"{PluginConstants.PluginName} started successfully!");
     }
 
     private void OnCommand(string command, string args)
