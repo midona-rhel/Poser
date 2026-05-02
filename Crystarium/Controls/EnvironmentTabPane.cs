@@ -1,3 +1,4 @@
+using System;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Poser.Services;
@@ -6,6 +7,7 @@ namespace Poser.UI.Controls;
 
 /// <summary>
 /// Tab pane for controlling in-game time and weather.
+/// Uses the Crystarium element system with class-based styling.
 /// </summary>
 public class EnvironmentTabPane : ITabPane
 {
@@ -31,79 +33,59 @@ public class EnvironmentTabPane : ITabPane
     public void Draw()
     {
         DrawTimeControls();
-
-        ImGui.Spacing();
-        ImGui.Separator();
-        ImGui.Spacing();
-
+        PoserUI.Separator();
         DrawWeatherControls();
     }
 
     private void DrawTimeControls()
     {
-        ImGui.TextColored(UIColors.Gray, "Time");
-        ImGui.Spacing();
+        Crystarium.Text("Time", new ElementProps { ClassName = "heading" });
 
         if (_timeService == null)
         {
-            ImGui.TextColored(UIColors.TextDisabled, "Time service unavailable");
+            Crystarium.Text("Time service unavailable", new ElementProps { ClassName = "disabled-text" });
             return;
         }
 
-        // Time of day scrubber
         var (hours, minutes) = _timeService.GetTimeOfDay();
         float minuteOfDay = hours * 60 + minutes;
-        using (var row = Flex.Row(gap: Flex.ItemGap))
+        LabelRow("Time", () =>
         {
-            row.Label("Time");
-            row.Fill(w =>
+            if (DrawTimeScrubber("time_scrubber", ref minuteOfDay, Crystarium.AvailableWidth))
             {
-                if (DrawTimeScrubber("time_scrubber", ref minuteOfDay, w))
-                {
-                    int newHours = (int)(minuteOfDay / 60);
-                    int newMinutes = (int)(minuteOfDay % 60);
-                    _timeService.SetTimeOfDay(newHours, newMinutes);
-                }
-            });
-        }
+                int newHours = (int)(minuteOfDay / 60);
+                int newMinutes = (int)(minuteOfDay % 60);
+                _timeService.SetTimeOfDay(newHours, newMinutes);
+            }
+        });
 
-        // Day of month
         int dayOfMonth = _timeService.DayOfMonth;
-        using (var row = Flex.Row(gap: Flex.ItemGap))
+        LabelRow("Day", () =>
         {
-            row.Label("Day");
-            row.Fill(w =>
-            {
-                float dayFloat = dayOfMonth;
-                if (Scrubber.Draw("day_scrubber", ref dayFloat, 1, 32, 1, w, 1f, "F0", ""))
-                {
-                    _timeService.DayOfMonth = (int)dayFloat;
-                }
-            });
-        }
+            float dayFloat = dayOfMonth;
+            if (Crystarium.Scrubber(new ElementProps { Id = "day_scrubber" }, ref dayFloat, 1, 32, 1, 1f, "F0", ""))
+                _timeService.DayOfMonth = (int)dayFloat;
+        });
     }
 
     private void DrawWeatherControls()
     {
-        ImGui.TextColored(UIColors.Gray, "Weather");
-        ImGui.Spacing();
+        Crystarium.Text("Weather", new ElementProps { ClassName = "heading" });
 
         if (_weatherService == null)
         {
-            ImGui.TextColored(UIColors.TextDisabled, "Weather service unavailable");
+            Crystarium.Text("Weather service unavailable", new ElementProps { ClassName = "disabled-text" });
             return;
         }
 
-        // Weather dropdown
         RefreshWeatherList();
 
         if (_weatherNames == null || _weatherNames.Length == 0)
         {
-            ImGui.TextColored(UIColors.TextDisabled, "No weathers available");
+            Crystarium.Text("No weathers available", new ElementProps { ClassName = "disabled-text" });
             return;
         }
 
-        // Update selected index based on current weather
         uint currentWeatherId = _weatherService.CurrentWeatherId;
         for (int i = 0; i < _weatherIds!.Length; i++)
         {
@@ -114,53 +96,49 @@ public class EnvironmentTabPane : ITabPane
             }
         }
 
-        // Weather dropdown - selecting auto-enables override
-        using (var row = Flex.Row(gap: Flex.ItemGap))
+        LabelRow("Weather", () =>
         {
-            row.Label("Weather");
-            row.Fill(w =>
+            if (Crystarium.Dropdown(new ElementProps { Id = "weather_dropdown" }, _weatherNames, ref _selectedWeatherIndex))
             {
-                if (PoserDropdown.Draw("weather_dropdown", ref _selectedWeatherIndex, _weatherNames, w))
+                if (_selectedWeatherIndex >= 0 && _selectedWeatherIndex < _weatherIds.Length)
                 {
-                    if (_selectedWeatherIndex >= 0 && _selectedWeatherIndex < _weatherIds.Length)
-                    {
-                        _weatherService.IsWeatherOverrideEnabled = true;
-                        _weatherService.SetWeather(_weatherIds[_selectedWeatherIndex]);
-                    }
+                    _weatherService.IsWeatherOverrideEnabled = true;
+                    _weatherService.SetWeather(_weatherIds[_selectedWeatherIndex]);
                 }
-            });
-        }
+            }
+        });
 
-        // Show all weathers checkbox
-        using (var row = Flex.Row(gap: Flex.ItemGap))
+        // 3-cell row: empty label gutter + checkbox + label text
+        Crystarium.Element(new ElementProps
         {
-            row.Label("");
-            row.Fixed(PoserCheckbox.Size / PoserUI.Scale, (w, h) =>
+            ClassName = "row",
+        }, () =>
+        {
+            Crystarium.Element(new ElementProps { Style = new ElementStyle { Width = Sizing.Fixed(70) } });
+            Crystarium.Element(new ElementProps { Style = new ElementStyle { Width = Sizing.Fixed(Crystarium.CheckboxSize / PoserUI.Scale) } }, () =>
             {
-                float offsetY = (h - PoserCheckbox.Size) / 2f;
-                if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
-                if (PoserCheckbox.Draw("show_all_weathers", ref _showAllWeathers))
-                {
+                if (Crystarium.Checkbox(new ElementProps { Id = "show_all_weathers" }, ref _showAllWeathers))
                     _weatherListDirty = true;
-                }
             });
-            row.Fill((w, h) =>
-            {
-                float offsetY = (h - ImGui.GetTextLineHeight()) / 2f;
-                if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
-                ImGui.Text("Show all weathers");
-            });
-        }
+            Crystarium.Element(new ElementProps { Style = new ElementStyle { Width = Sizing.Fill } }, () =>
+                Crystarium.Text("Show all weathers"));
+        });
+    }
+
+    private static void LabelRow(string label, Action input)
+    {
+        Crystarium.Element(new ElementProps { ClassName = "row" }, () =>
+        {
+            Crystarium.Text(label, new ElementProps { ClassName = "label" });
+            Crystarium.Element(new ElementProps { Style = new ElementStyle { Width = Sizing.Fill } }, input);
+        });
     }
 
     private void RefreshWeatherList()
     {
-        if (_weatherService == null)
-            return;
+        if (_weatherService == null) return;
 
         var weathers = _showAllWeathers ? _weatherService.AllWeathers : _weatherService.TerritoryWeathers;
-
-        // Only rebuild if dirty or count changed
         if (!_weatherListDirty && _weatherNames != null && _weatherNames.Length == weathers.Count)
             return;
 
@@ -175,12 +153,8 @@ public class EnvironmentTabPane : ITabPane
         }
     }
 
-    /// <summary>
-    /// Draws a time scrubber with formatted HH:MM display.
-    /// </summary>
     private bool DrawTimeScrubber(string id, ref float minuteOfDay, float width)
     {
-        // Format time as HH:MM
         int hours = (int)(minuteOfDay / 60) % 24;
         int minutes = (int)(minuteOfDay % 60);
         string timeText = $"{hours:D2}:{minutes:D2}";
@@ -190,18 +164,11 @@ public class EnvironmentTabPane : ITabPane
         float gap = Flex.ItemGap * scale;
         float trackWidth = width - textWidth - gap;
 
-        bool changed = false;
-
         var cursorPos = ImGui.GetCursorPos();
-        float height = Flex.RowHeight * scale;
+        bool changed = Crystarium.Scrubber(
+            new ElementProps { Id = id, Style = new ElementStyle { Width = Sizing.Fixed(trackWidth / scale) } },
+            ref minuteOfDay, 0, 1439, 0, 1f, "", "");
 
-        // Draw track portion using Scrubber logic
-        if (Scrubber.Draw(id, ref minuteOfDay, 0, 1439, 0, trackWidth, 1f, "", ""))
-        {
-            changed = true;
-        }
-
-        // Draw formatted time text
         ImGui.SetCursorPos(cursorPos + new System.Numerics.Vector2(trackWidth + gap, (Flex.RowHeight * scale - ImGui.GetTextLineHeight()) / 2f));
         ImGui.Text(timeText);
 
