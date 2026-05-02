@@ -28,11 +28,11 @@ public class ActorManager : IActorManager
     /// </summary>
     private static ActorKind ToActorKind(ObjectKind objectKind) => objectKind switch
     {
-        ObjectKind.Player => ActorKind.Player,
+        ObjectKind.Pc => ActorKind.Player,
         ObjectKind.BattleNpc => ActorKind.BattleNpc,
         ObjectKind.EventNpc => ActorKind.EventNpc,
         ObjectKind.Companion => ActorKind.Companion,
-        ObjectKind.MountType => ActorKind.Mount,
+        ObjectKind.Mount => ActorKind.Mount,
         ObjectKind.Ornament => ActorKind.Ornament,
         ObjectKind.Retainer => ActorKind.Retainer,
         _ => ActorKind.None
@@ -117,7 +117,7 @@ public class ActorManager : IActorManager
         {
             var obj = _objectTable[i];
             if (obj != null && (
-                obj.ObjectKind == ObjectKind.Player ||
+                obj.ObjectKind == ObjectKind.Pc ||
                 obj.ObjectKind == ObjectKind.BattleNpc ||
                 obj.ObjectKind == ObjectKind.EventNpc ||
                 obj.ObjectKind == ObjectKind.Companion ||

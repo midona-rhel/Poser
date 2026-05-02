@@ -77,9 +77,9 @@ public class LightTabPane : ITabPane
 
         PoserUI.Separator();
 
-        // Color (convert Vector3 RGB to Vector4 for color picker)
+        // Color (HDR Vector3 RGB, intensity is divided out for the picker)
         {
-            var color = new Vector4(light.Color / 20f, 1f);
+            var color = light.Color / 20f;
             using (var row = Flex.Row(Flex.RowHeight, Flex.SmallGap))
             {
                 row.Label("Color", 80);
@@ -88,7 +88,7 @@ public class LightTabPane : ITabPane
                     ImGui.SetNextItemWidth(w);
                     if (ImGui.ColorEdit3("##light_color", ref color, ImGuiColorEditFlags.NoInputs))
                     {
-                        light.Color = new Vector3(color.X, color.Y, color.Z) * 20f;
+                        light.Color = color * 20f;
                     }
                 });
             }

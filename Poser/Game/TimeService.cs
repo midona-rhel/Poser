@@ -144,7 +144,7 @@ public unsafe class TimeService : ITimeService
         // Do nothing - prevents time from advancing
     }
 
-    private void OnTerritoryChanged(ushort territoryId)
+    private void OnTerritoryChanged(uint territoryId)
     {
         IsTimeFrozen = false;
     }

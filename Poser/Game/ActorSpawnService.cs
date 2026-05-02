@@ -87,7 +87,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
             var newCharacter = (Character*)newObject;
 
             // Set a name for the character (like Brio does)
-            SetName(newObject, ToPoserName(newIndex));
+            SetName((GameObject*)newObject, ToPoserName(newIndex));
 
             // Copy appearance from local player
             var sourceCharacter = (Character*)localPlayer;

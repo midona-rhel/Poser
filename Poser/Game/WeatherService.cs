@@ -26,7 +26,7 @@ public unsafe class WeatherService : IWeatherService
 
     private readonly List<WeatherInfo> _territoryWeathers = new();
     private readonly List<WeatherInfo> _allWeathers = new();
-    private ushort? _cachedTerritoryId;
+    private uint? _cachedTerritoryId;
     private bool _resetOnGPoseExit = true;
 
     private const float DefaultTransitionTime = 0.5f;
@@ -220,7 +220,7 @@ public unsafe class WeatherService : IWeatherService
         // Do nothing - prevents weather from changing
     }
 
-    private void OnTerritoryChanged(ushort territoryId)
+    private void OnTerritoryChanged(uint territoryId)
     {
         UpdateTerritoryWeathers();
         IsWeatherOverrideEnabled = false;
