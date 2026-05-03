@@ -107,7 +107,7 @@ internal static class Element
                 ? height.Value.Value * scale
                 : 24f * scale;
             outerHeight = ApplyMinMaxHeight(outerHeight, resolved, scale);
-            RenderRow(props, children, resolved, outerWidth, outerHeight, margin, padding, gap);
+            RenderRow(props, children, resolved, outerWidth, outerHeight, margin, padding, gap, resolved.AlignItems, resolved.FlexWrap, resolved.RowGap ?? 4f);
         }
         else
         {
@@ -165,7 +165,7 @@ internal static class Element
                 try
                 {
                     if (direction == FlexDirection.Row)
-                        RunRowChildren(children, innerW, innerH, gap);
+                        RunRowChildren(children, innerW, innerH, gap, resolved.AlignItems, resolved.FlexWrap, resolved.RowGap ?? 4f);
                     else
                         children();
                 }
@@ -197,7 +197,8 @@ internal static class Element
     // ---- Top-level Row container ----
 
     private static void RenderRow(ElementProps props, Action? children, ElementStyle resolved,
-        float outerWidth, float outerHeight, Spacing margin, Spacing padding, float gap)
+        float outerWidth, float outerHeight, Spacing margin, Spacing padding, float gap,
+        Align? alignItems = null, FlexWrap? flexWrap = null, float rowGap = 4f)
     {
         float scale = PoserUI.Scale;
         var screenStart = ImGui.GetCursorScreenPos();
@@ -243,7 +244,7 @@ internal static class Element
                 _ambientHeight = innerHeight;
                 try
                 {
-                    RunRowChildren(children, innerWidth, innerHeight, gap);
+                    RunRowChildren(children, innerWidth, innerHeight, gap, alignItems, flexWrap, rowGap);
                 }
                 finally
                 {
@@ -474,7 +475,7 @@ internal static class Element
                 {
                     var direction = resolved.FlexDirection ?? FlexDirection.Column;
                     if (direction == FlexDirection.Row)
-                        RunRowChildren(children, innerW, innerH, resolved.Gap ?? 0f);
+                        RunRowChildren(children, innerW, innerH, resolved.Gap ?? 0f, resolved.AlignItems, resolved.FlexWrap, resolved.RowGap ?? 4f);
                     else
                         children();
                 }
@@ -498,7 +499,8 @@ internal static class Element
 
     // ---- Row child layout ----
 
-    private static void RunRowChildren(Action children, float innerWidth, float innerHeight, float gap)
+    private static void RunRowChildren(Action children, float innerWidth, float innerHeight, float gap,
+        Align? alignItems = null, FlexWrap? flexWrap = null, float rowGap = 4f)
     {
         _rowStack ??= new Stack<RowContext>();
         var ctx = new RowContext { Items = new List<RowItem>() };
@@ -510,63 +512,142 @@ internal static class Element
 
         float scale = PoserUI.Scale;
         float gapScaled = gap * scale;
+        float rowGapScaled = rowGap * scale;
 
-        float totalFixed = 0f;
-        float totalWeight = 0f;
+        // Pass 1: pre-measure Auto items via off-screen BeginGroup so we know their natural width.
+        var natural = new float[ctx.Items.Count];
         for (int i = 0; i < ctx.Items.Count; i++)
         {
             var item = ctx.Items[i];
-            switch (item.Width.Mode)
+            if (item.Width.Mode == SizingMode.Fixed)
             {
-                case SizingMode.Fixed: totalFixed += item.Width.Value * scale; break;
-                case SizingMode.Flex:  totalWeight += item.Width.Value; break;
-                case SizingMode.Fill:  totalWeight += 1; break;
-                case SizingMode.Auto:  totalWeight += 1; break; // best-effort
+                natural[i] = item.Width.Value * scale;
             }
+            else if (item.Width.Mode == SizingMode.Auto)
+            {
+                natural[i] = MeasureItemWidth(item, innerHeight);
+            }
+            // Flex/Fill have no natural width — computed during line layout.
         }
 
-        float totalGaps = gapScaled * (ctx.Items.Count - 1);
-        float remaining = innerWidth - totalFixed - totalGaps;
-        float perWeight = totalWeight > 0f ? remaining / totalWeight : 0f;
+        // Pass 2: pack into lines (NoWrap = single line, Wrap = break when fixed/auto items exceed width).
+        bool wrap = (flexWrap ?? UI.FlexWrap.NoWrap) == UI.FlexWrap.Wrap;
+        var lines = new List<List<int>>();
+        var current = new List<int>();
+        float consumed = 0f;
+        for (int i = 0; i < ctx.Items.Count; i++)
+        {
+            var item = ctx.Items[i];
+            float w = (item.Width.Mode == SizingMode.Fixed || item.Width.Mode == SizingMode.Auto) ? natural[i] : 0f;
+            // Wrap when adding this item (plus gap) would exceed inner width.
+            if (wrap && current.Count > 0 && consumed + gapScaled + w > innerWidth)
+            {
+                lines.Add(current);
+                current = new List<int>();
+                consumed = 0f;
+            }
+            current.Add(i);
+            consumed += (current.Count == 1 ? 0f : gapScaled) + w;
+        }
+        if (current.Count > 0) lines.Add(current);
 
+        // Pass 3: render each line with its own flex math.
         var startScreen = ImGui.GetCursorScreenPos();
-        float x = startScreen.X;
-        float y = startScreen.Y;
+        float lineY = startScreen.Y;
 
-        for (int i = 0; i < ctx.Items.Count; i++)
+        foreach (var line in lines)
         {
-            var item = ctx.Items[i];
-            float w = item.Width.Mode switch
+            // Per-line totals
+            float lineFixed = 0f;
+            float lineWeight = 0f;
+            float lineNaturalAuto = 0f;
+            for (int j = 0; j < line.Count; j++)
             {
-                SizingMode.Fixed => item.Width.Value * scale,
-                SizingMode.Flex  => item.Width.Value * perWeight,
-                SizingMode.Fill  => perWeight,
-                SizingMode.Auto  => perWeight,
-                _ => 0f,
-            };
-
-            // AlignSelf: cross-axis (Y) positioning within the row.
-            // Stretch (default): item gets full innerHeight at row top.
-            // Start/Center/End: item uses its own intrinsic height (from item.Height) and is offset.
-            float itemY = y;
-            float itemHeight = innerHeight;
-            var align = item.AlignSelf ?? UI.AlignSelf.Auto;
-            if (align != UI.AlignSelf.Auto && align != UI.AlignSelf.Stretch && item.Height.HasValue && item.Height.Value.Mode == SizingMode.Fixed)
-            {
-                itemHeight = item.Height.Value.Value * scale;
-                itemY = align switch
+                var item = ctx.Items[line[j]];
+                switch (item.Width.Mode)
                 {
-                    UI.AlignSelf.Start => y,
-                    UI.AlignSelf.Center => y + (innerHeight - itemHeight) / 2f,
-                    UI.AlignSelf.End => y + innerHeight - itemHeight,
-                    _ => y,
-                };
+                    case SizingMode.Fixed: lineFixed += natural[line[j]]; break;
+                    case SizingMode.Auto:  lineNaturalAuto += natural[line[j]]; break;
+                    case SizingMode.Flex:  lineWeight += item.Width.Value; break;
+                    case SizingMode.Fill:  lineWeight += 1; break;
+                }
             }
 
-            ImGui.SetCursorScreenPos(new Vector2(x, itemY));
-            item.Render(w, itemHeight);
-            x += w + gapScaled;
+            float lineGaps = gapScaled * (line.Count - 1);
+            float remaining = innerWidth - lineFixed - lineNaturalAuto - lineGaps;
+            float perWeight = lineWeight > 0f ? remaining / lineWeight : 0f;
+
+            // Justification along the main axis.
+            var justify = (alignItems == null ? Justify.Start : Justify.Start);  // JustifyContent param when wired
+
+            float x = startScreen.X;
+
+            for (int j = 0; j < line.Count; j++)
+            {
+                int idx = line[j];
+                var item = ctx.Items[idx];
+                float w = item.Width.Mode switch
+                {
+                    SizingMode.Fixed => natural[idx],
+                    SizingMode.Auto  => natural[idx],
+                    SizingMode.Flex  => item.Width.Value * perWeight,
+                    SizingMode.Fill  => perWeight,
+                    _ => 0f,
+                };
+
+                // Cross-axis alignment: AlignSelf overrides parent AlignItems.
+                var align = item.AlignSelf ?? UI.AlignSelf.Auto;
+                Align effective = align switch
+                {
+                    UI.AlignSelf.Start   => Align.Start,
+                    UI.AlignSelf.Center  => Align.Center,
+                    UI.AlignSelf.End     => Align.End,
+                    UI.AlignSelf.Stretch => Align.Stretch,
+                    _ => alignItems ?? Align.Stretch,  // Auto: inherit parent's AlignItems
+                };
+
+                float itemY = lineY;
+                float itemHeight = innerHeight;
+                if (effective != Align.Stretch && item.Height.HasValue && item.Height.Value.Mode == SizingMode.Fixed)
+                {
+                    itemHeight = item.Height.Value.Value * scale;
+                    itemY = effective switch
+                    {
+                        Align.Start  => lineY,
+                        Align.Center => lineY + (innerHeight - itemHeight) / 2f,
+                        Align.End    => lineY + innerHeight - itemHeight,
+                        _ => lineY,
+                    };
+                }
+
+                ImGui.SetCursorScreenPos(new Vector2(x, itemY));
+                item.Render(w, itemHeight);
+                x += w + gapScaled;
+            }
+
+            lineY += innerHeight + rowGapScaled;
         }
+
+        // Park cursor below the last line so the parent column advances correctly.
+        if (lines.Count > 1)
+        {
+            ImGui.SetCursorScreenPos(new Vector2(startScreen.X, lineY - rowGapScaled));
+        }
+    }
+
+    /// <summary>Measure an Auto-sized row item by rendering it off-screen inside a BeginGroup.</summary>
+    private static float MeasureItemWidth(RowItem item, float innerHeight)
+    {
+        const float OffscreenX = -100000f;
+        const float OffscreenY = -100000f;
+        var savedCursor = ImGui.GetCursorScreenPos();
+        ImGui.SetCursorScreenPos(new Vector2(OffscreenX, OffscreenY));
+        ImGui.BeginGroup();
+        item.Render(0f, innerHeight);
+        ImGui.EndGroup();
+        var size = ImGui.GetItemRectSize();
+        ImGui.SetCursorScreenPos(savedCursor);
+        return size.X;
     }
 
     // ---- Helpers ----

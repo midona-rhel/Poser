@@ -40,7 +40,9 @@ public record struct ElementStyle
 
     // ---- Layout (non-inherited) ----
     public FlexDirection? FlexDirection;
+    public FlexWrap? FlexWrap;
     public float? Gap;
+    public float? RowGap;     // line spacing when FlexWrap.Wrap creates extra lines
     public Align? AlignItems;
     public Justify? JustifyContent;
     public AlignSelf? AlignSelf;
@@ -78,7 +80,9 @@ public record struct ElementStyle
         if (overlay.Bottom.HasValue)           r.Bottom = overlay.Bottom;
         if (overlay.Left.HasValue)             r.Left = overlay.Left;
         if (overlay.FlexDirection.HasValue)    r.FlexDirection = overlay.FlexDirection;
+        if (overlay.FlexWrap.HasValue)         r.FlexWrap = overlay.FlexWrap;
         if (overlay.Gap.HasValue)              r.Gap = overlay.Gap;
+        if (overlay.RowGap.HasValue)           r.RowGap = overlay.RowGap;
         if (overlay.AlignItems.HasValue)       r.AlignItems = overlay.AlignItems;
         if (overlay.JustifyContent.HasValue)   r.JustifyContent = overlay.JustifyContent;
         if (overlay.AlignSelf.HasValue)        r.AlignSelf = overlay.AlignSelf;
