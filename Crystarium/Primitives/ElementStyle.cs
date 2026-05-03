@@ -29,6 +29,7 @@ public record struct ElementStyle
     public bool? RaisedGradient;
     public float? AspectRatio;
     public Cursor? Cursor;
+    public Transition? Transition;
 
     // ---- Display & flow ----
     public Display? Display;
@@ -51,6 +52,15 @@ public record struct ElementStyle
     public Align? AlignItems;
     public Justify? JustifyContent;
     public AlignSelf? AlignSelf;
+
+    // Grid (display: grid)
+    public Sizing[]? GridTemplateColumns;
+    public float? GridColumnGap;
+    public float? GridRowGap;
+    public int? GridColumn;
+    public int? GridRow;
+    public int? GridColumnSpan;
+    public int? GridRowSpan;
 
     // ---- Inherited ----
     public Vector4? Color;
@@ -87,6 +97,7 @@ public record struct ElementStyle
         if (overlay.RaisedGradient.HasValue)   r.RaisedGradient = overlay.RaisedGradient;
         if (overlay.AspectRatio.HasValue)      r.AspectRatio = overlay.AspectRatio;
         if (overlay.Cursor.HasValue)           r.Cursor = overlay.Cursor;
+        if (overlay.Transition.HasValue)       r.Transition = overlay.Transition;
         if (overlay.Display.HasValue)          r.Display = overlay.Display;
         if (overlay.Overflow.HasValue)         r.Overflow = overlay.Overflow;
         if (overlay.Position.HasValue)         r.Position = overlay.Position;
@@ -101,6 +112,13 @@ public record struct ElementStyle
         if (overlay.AlignItems.HasValue)       r.AlignItems = overlay.AlignItems;
         if (overlay.JustifyContent.HasValue)   r.JustifyContent = overlay.JustifyContent;
         if (overlay.AlignSelf.HasValue)        r.AlignSelf = overlay.AlignSelf;
+        if (overlay.GridTemplateColumns != null) r.GridTemplateColumns = overlay.GridTemplateColumns;
+        if (overlay.GridColumnGap.HasValue)    r.GridColumnGap = overlay.GridColumnGap;
+        if (overlay.GridRowGap.HasValue)       r.GridRowGap = overlay.GridRowGap;
+        if (overlay.GridColumn.HasValue)       r.GridColumn = overlay.GridColumn;
+        if (overlay.GridRow.HasValue)          r.GridRow = overlay.GridRow;
+        if (overlay.GridColumnSpan.HasValue)   r.GridColumnSpan = overlay.GridColumnSpan;
+        if (overlay.GridRowSpan.HasValue)      r.GridRowSpan = overlay.GridRowSpan;
         if (overlay.Color.HasValue)            r.Color = overlay.Color;
         if (overlay.Opacity.HasValue)          r.Opacity = overlay.Opacity;
         if (overlay.FontFamily.HasValue)       r.FontFamily = overlay.FontFamily;

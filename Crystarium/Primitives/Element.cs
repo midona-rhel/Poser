@@ -50,6 +50,26 @@ internal static class Element
         public Vector2 ScreenMax;
     }
 
+    // ---- Grid collection ----
+
+    [ThreadStatic]
+    private static Stack<GridContext>? _gridStack;
+
+    private struct GridContext
+    {
+        public List<GridItem> Items;
+    }
+
+    private struct GridItem
+    {
+        public int? GridColumn;    // 1-based; null = auto-place
+        public int? GridRow;       // 1-based; null = auto-place
+        public int  ColumnSpan;
+        public int  RowSpan;
+        public Sizing? Height;
+        public Action<float, float> Render;
+    }
+
     public static void Render(ElementProps props, Action? children)
     {
         Stylesheet.EnsureInitialized();
@@ -59,6 +79,10 @@ internal static class Element
 
         // ---- Display.None: skip entirely ----
         if (resolved.Display == UI.Display.None) return;
+
+        // ---- Transition: lerp animatable fields toward target values ----
+        if (resolved.Transition.HasValue)
+            resolved = Animator.Step(props.Id, resolved, resolved.Transition.Value);
 
         var pos = resolved.Position ?? UI.Position.Static;
 
@@ -75,6 +99,16 @@ internal static class Element
 
     private static void RenderFlow(ElementProps props, Action? children, ElementStyle resolved)
     {
+        // Grid mode: explicit Display.Grid OR a non-null GridTemplateColumns.
+        if ((resolved.Display ?? Display.Block) == Display.Grid || resolved.GridTemplateColumns != null)
+        {
+            if (resolved.GridTemplateColumns != null)
+            {
+                RenderGrid(props, children, resolved);
+                return;
+            }
+        }
+
         var width   = resolved.Width   ?? Sizing.Fill;
         var height  = resolved.Height;
         var direction = resolved.FlexDirection ?? FlexDirection.Column;
@@ -91,6 +125,22 @@ internal static class Element
                 Width = width,
                 Height = resolved.Height,
                 AlignSelf = resolved.AlignSelf,
+                Render = (w, h) => RenderInline(capProps, capChildren, w, h),
+            });
+            return;
+        }
+
+        if (_gridStack is { Count: > 0 })
+        {
+            var capProps = props;
+            var capChildren = children;
+            _gridStack.Peek().Items.Add(new GridItem
+            {
+                GridColumn = resolved.GridColumn,
+                GridRow = resolved.GridRow,
+                ColumnSpan = resolved.GridColumnSpan ?? 1,
+                RowSpan = resolved.GridRowSpan ?? 1,
+                Height = resolved.Height,
                 Render = (w, h) => RenderInline(capProps, capChildren, w, h),
             });
             return;
@@ -666,6 +716,197 @@ internal static class Element
         {
             ImGui.SetCursorScreenPos(new Vector2(startScreen.X, lineY - rowGapScaled));
         }
+    }
+
+    // ---- Grid layout ----
+
+    private static void RenderGrid(ElementProps props, Action? children, in ElementStyle resolved)
+    {
+        float scale = PoserUI.Scale;
+        var screenStart = ImGui.GetCursorScreenPos();
+        var posStart = ImGui.GetCursorPos();
+        var margin = resolved.Margin ?? new Spacing(0);
+        var padding = resolved.Padding ?? new Spacing(0);
+
+        screenStart += new Vector2(margin.Left * scale, margin.Top * scale);
+        posStart += new Vector2(margin.Left * scale, margin.Top * scale);
+
+        float availWidth = ImGui.GetContentRegionAvail().X;
+        float outerWidth = (resolved.Width.HasValue && resolved.Width.Value.Mode == SizingMode.Fixed)
+            ? resolved.Width.Value.Value * scale
+            : availWidth - margin.Horizontal * scale;
+        outerWidth = ApplyMinMaxWidth(outerWidth, resolved, scale);
+
+        float innerWidth = outerWidth - padding.Horizontal * scale;
+        float colGap = (resolved.GridColumnGap ?? resolved.Gap ?? 0f) * scale;
+        float rowGap = (resolved.GridRowGap ?? resolved.Gap ?? 0f) * scale;
+
+        // Resolve column widths.
+        var template = resolved.GridTemplateColumns ?? Array.Empty<Sizing>();
+        int cols = template.Length;
+        if (cols == 0) cols = 1;
+        var colWidths = new float[cols];
+        float fixedSum = 0f, weightSum = 0f;
+        for (int i = 0; i < cols; i++)
+        {
+            var s = i < template.Length ? template[i] : Sizing.Fill;
+            switch (s.Mode)
+            {
+                case SizingMode.Fixed: colWidths[i] = s.Value * scale; fixedSum += colWidths[i]; break;
+                case SizingMode.Flex:  weightSum += s.Value; break;
+                case SizingMode.Fill:  weightSum += 1f; break;
+                case SizingMode.Auto:  weightSum += 1f; break;
+            }
+        }
+        float gapsTotal = colGap * (cols - 1);
+        float remainingForFlex = innerWidth - fixedSum - gapsTotal;
+        float perWeight = weightSum > 0f ? remainingForFlex / weightSum : 0f;
+        for (int i = 0; i < cols; i++)
+        {
+            var s = i < template.Length ? template[i] : Sizing.Fill;
+            if (s.Mode == SizingMode.Flex) colWidths[i] = s.Value * perWeight;
+            else if (s.Mode == SizingMode.Fill || s.Mode == SizingMode.Auto) colWidths[i] = perWeight;
+        }
+
+        // Column X offsets.
+        var colX = new float[cols];
+        float x = 0f;
+        for (int i = 0; i < cols; i++)
+        {
+            colX[i] = x;
+            x += colWidths[i] + colGap;
+        }
+
+        // Collect children.
+        _gridStack ??= new Stack<GridContext>();
+        var ctx = new GridContext { Items = new List<GridItem>() };
+        _gridStack.Push(ctx);
+
+        DrawChrome(screenStart, screenStart + new Vector2(outerWidth, 0), resolved); // height resolved after layout below
+        bool isPositioningContext = (resolved.Position ?? UI.Position.Static) != UI.Position.Static;
+        if (isPositioningContext) PushPositionContext(screenStart, screenStart + new Vector2(outerWidth, 0));
+
+        int pushes = PushCascade(resolved);
+        try
+        {
+            if (children != null)
+            {
+                float prevW = _ambientWidth, prevH = _ambientHeight;
+                _ambientWidth = innerWidth;
+                _ambientHeight = 0;
+                try { children(); }
+                finally { _ambientWidth = prevW; _ambientHeight = prevH; }
+            }
+        }
+        finally { _gridStack.Pop(); PopCascade(pushes); if (isPositioningContext) PopPositionContext(); }
+
+        // Place items: explicit (GridColumn/GridRow) first; remainder auto-flow row-major.
+        // Track occupied cells.
+        var rowHeights = new List<float>();
+        var occupied = new HashSet<(int c, int r)>();
+        var placed = new (int col, int row, int colSpan, int rowSpan, float height, GridItem item)[ctx.Items.Count];
+
+        // Pass 1: explicit
+        for (int i = 0; i < ctx.Items.Count; i++)
+        {
+            var it = ctx.Items[i];
+            if (it.GridColumn.HasValue && it.GridRow.HasValue)
+            {
+                int c = it.GridColumn.Value - 1;
+                int r = it.GridRow.Value - 1;
+                int cs = Math.Max(1, it.ColumnSpan);
+                int rs = Math.Max(1, it.RowSpan);
+                MarkOccupied(occupied, c, r, cs, rs);
+                float h = (it.Height.HasValue && it.Height.Value.Mode == SizingMode.Fixed) ? it.Height.Value.Value * scale : Flex.RowHeight * scale;
+                EnsureRow(rowHeights, r, h);
+                placed[i] = (c, r, cs, rs, h, it);
+            }
+        }
+
+        // Pass 2: auto-flow
+        int autoCol = 0, autoRow = 0;
+        for (int i = 0; i < ctx.Items.Count; i++)
+        {
+            var it = ctx.Items[i];
+            if (it.GridColumn.HasValue && it.GridRow.HasValue) continue;
+
+            int cs = Math.Max(1, it.ColumnSpan);
+            int rs = Math.Max(1, it.RowSpan);
+            // Find next free slot row-major
+            while (true)
+            {
+                if (autoCol + cs > cols) { autoCol = 0; autoRow++; }
+                if (!IsOccupied(occupied, autoCol, autoRow, cs, rs)) break;
+                autoCol++;
+            }
+            MarkOccupied(occupied, autoCol, autoRow, cs, rs);
+            float h = (it.Height.HasValue && it.Height.Value.Mode == SizingMode.Fixed) ? it.Height.Value.Value * scale : Flex.RowHeight * scale;
+            EnsureRow(rowHeights, autoRow, h);
+            placed[i] = (autoCol, autoRow, cs, rs, h, it);
+            autoCol += cs;
+        }
+
+        // Compute row Y offsets.
+        var rowY = new float[rowHeights.Count];
+        float yAcc = 0f;
+        for (int r = 0; r < rowHeights.Count; r++)
+        {
+            rowY[r] = yAcc;
+            yAcc += rowHeights[r] + rowGap;
+        }
+        float totalHeight = yAcc - (rowHeights.Count > 0 ? rowGap : 0f);
+
+        // Render each placed item.
+        for (int i = 0; i < placed.Length; i++)
+        {
+            var p = placed[i];
+            float cellX = screenStart.X + padding.Left * scale + colX[p.col];
+            float cellY = screenStart.Y + padding.Top * scale + (p.row < rowY.Length ? rowY[p.row] : 0f);
+
+            float spanWidth = 0f;
+            for (int c = p.col; c < p.col + p.colSpan && c < cols; c++) spanWidth += colWidths[c];
+            spanWidth += colGap * (p.colSpan - 1);
+
+            float spanHeight = 0f;
+            for (int r = p.row; r < p.row + p.rowSpan && r < rowHeights.Count; r++) spanHeight += rowHeights[r];
+            spanHeight += rowGap * (p.rowSpan - 1);
+
+            ImGui.SetCursorScreenPos(new Vector2(cellX, cellY));
+            p.item.Render(spanWidth, spanHeight);
+        }
+
+        // Resolve outer height: padding + content + padding.
+        float resolvedHeight = totalHeight + padding.Vertical * scale;
+        if (resolved.Height.HasValue && resolved.Height.Value.Mode == SizingMode.Fixed)
+            resolvedHeight = resolved.Height.Value.Value * scale;
+        resolvedHeight = ApplyMinMaxHeight(resolvedHeight, resolved, scale);
+
+        // Re-paint chrome with the correct height (was zero earlier).
+        DrawChrome(screenStart, screenStart + new Vector2(outerWidth, resolvedHeight), resolved);
+
+        float bottomY = posStart.Y + resolvedHeight + margin.Bottom * scale;
+        ImGui.SetCursorPos(new Vector2(posStart.X - margin.Left * scale, bottomY));
+    }
+
+    private static void MarkOccupied(HashSet<(int c, int r)> set, int c, int r, int cs, int rs)
+    {
+        for (int i = 0; i < cs; i++)
+            for (int j = 0; j < rs; j++)
+                set.Add((c + i, r + j));
+    }
+
+    private static bool IsOccupied(HashSet<(int c, int r)> set, int c, int r, int cs, int rs)
+    {
+        for (int i = 0; i < cs; i++)
+            for (int j = 0; j < rs; j++)
+                if (set.Contains((c + i, r + j))) return true;
+        return false;
+    }
+
+    private static void EnsureRow(List<float> rowHeights, int row, float minHeight)
+    {
+        while (rowHeights.Count <= row) rowHeights.Add(0f);
+        if (rowHeights[row] < minHeight) rowHeights[row] = minHeight;
     }
 
     /// <summary>Measure an Auto-sized row item by rendering it off-screen inside a BeginGroup.</summary>

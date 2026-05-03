@@ -8,4 +8,6 @@ public enum Display
     None,
     /// <summary>Flex layout — pair with FlexDirection. Set automatically when FlexDirection != null.</summary>
     Flex,
+    /// <summary>Grid layout — pair with GridTemplateColumns. Set automatically when GridTemplateColumns is set.</summary>
+    Grid,
 }

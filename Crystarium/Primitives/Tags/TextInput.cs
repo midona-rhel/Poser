@@ -60,6 +60,24 @@ public static partial class Crystarium
         ImGui.PopStyleVar(3);
         ImGui.PopStyleColor(4);
 
+        // Post-draw :focus chrome — overlay an accent outline if the input has keyboard focus.
+        if (ImGui.IsItemFocused() || ImGui.IsItemActive())
+        {
+            var focusedStyle = Stylesheet.ResolveTextInput(classSet, id, preState | PseudoState.Focus);
+            if (inline.HasValue) focusedStyle = focusedStyle.MergedWith(inline.Value);
+            if (focusedStyle.BorderColor.HasValue)
+            {
+                var rectMin = ImGui.GetItemRectMin();
+                var rectMax = ImGui.GetItemRectMax();
+                var focusBorder = UIColors.ApplyAlpha(focusedStyle.BorderColor.Value);
+                var radiusPx = (focusedStyle.BorderRadius ?? resolved.BorderRadius ?? 3f) * scale;
+                ImGui.GetWindowDrawList().AddRect(rectMin, rectMax,
+                    ImGui.ColorConvertFloat4ToU32(focusBorder),
+                    radiusPx, ImDrawFlags.None,
+                    (focusedStyle.BorderWidth ?? 1f) * scale);
+            }
+        }
+
         if (changed) onChange?.Invoke(value);
         if (!string.IsNullOrEmpty(tooltip) && ImGui.IsItemHovered()) ImGui.SetTooltip(tooltip);
 
