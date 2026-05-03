@@ -5,6 +5,7 @@ namespace Poser.UI;
 /// <summary>Style for <see cref="Crystarium.Text"/>. Text isn't interactive — no box chrome fields.</summary>
 public record struct TextStyle
 {
+    public Display? Display;
     public Vector4? Color;
     public float?   Opacity;
     public FontFamily? FontFamily;

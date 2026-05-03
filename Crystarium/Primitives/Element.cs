@@ -9,11 +9,12 @@ namespace Poser.UI;
 
 /// <summary>
 /// Internal core renderer for Crystarium.Element. Handles class+state resolution,
-/// row vs column layout, chrome rendering, and the cascade push/pop on ImGui's style stack.
+/// row vs column layout, chrome rendering, cascade, and the v4 CSS surface
+/// (Display, Position, Overflow, Min/Max, AlignSelf, ZIndex).
 /// </summary>
 internal static class Element
 {
-    // ---- Row collection (thread-static; same model as v2) ----
+    // ---- Row collection (thread-static) ----
 
     [ThreadStatic]
     private static Stack<RowContext>? _rowStack;
@@ -36,23 +37,49 @@ internal static class Element
     [ThreadStatic]
     internal static float _ambientHeight;
 
+    // ---- Positioning ancestor stack ----
+
+    [ThreadStatic]
+    private static Stack<PositionContext>? _positionStack;
+
+    private struct PositionContext
+    {
+        public Vector2 ScreenMin;
+        public Vector2 ScreenMax;
+    }
+
     public static void Render(ElementProps props, Action? children)
     {
         Stylesheet.EnsureInitialized();
 
         var state = props.Disabled ? PseudoState.Disabled : PseudoState.None;
+        var resolved = Stylesheet.Resolve(props.Classes, state).MergedWith(props.Style);
 
-        // Resolve once without hover/active to get layout dimensions.
-        var resolved0 = Stylesheet.Resolve(props.Classes, state).MergedWith(props.Style);
+        // ---- Display.None: skip entirely ----
+        if (resolved.Display == UI.Display.None) return;
 
-        var width   = resolved0.Width   ?? Sizing.Fill;
-        var height  = resolved0.Height;
-        var direction = resolved0.FlexDirection ?? FlexDirection.Column;
-        var padding = resolved0.Padding ?? new Spacing(0);
-        var margin  = resolved0.Margin  ?? new Spacing(0);
-        var gap     = resolved0.Gap     ?? 0f;
+        var pos = resolved.Position ?? UI.Position.Static;
 
-        // If we are inside a row collection, defer to the parent's layout pass.
+        // ---- Position: Absolute / Fixed take a different render path ----
+        if (pos == UI.Position.Absolute || pos == UI.Position.Fixed)
+        {
+            RenderPositioned(props, children, resolved, pos);
+            return;
+        }
+
+        // ---- Standard flow ----
+        RenderFlow(props, children, resolved);
+    }
+
+    private static void RenderFlow(ElementProps props, Action? children, ElementStyle resolved)
+    {
+        var width   = resolved.Width   ?? Sizing.Fill;
+        var height  = resolved.Height;
+        var direction = resolved.FlexDirection ?? FlexDirection.Column;
+        var padding = resolved.Padding ?? new Spacing(0);
+        var margin  = resolved.Margin  ?? new Spacing(0);
+        var gap     = resolved.Gap     ?? 0f;
+
         if (_rowStack is { Count: > 0 })
         {
             var capProps = props;
@@ -67,22 +94,20 @@ internal static class Element
 
         float scale = PoserUI.Scale;
         float availWidth = ImGui.GetContentRegionAvail().X;
-        float outerWidth = width.Mode switch
-        {
-            SizingMode.Fixed => width.Value * scale,
-            _ => availWidth - margin.Horizontal * scale,
-        };
+        float outerWidth = ResolveOuterWidth(width, availWidth - margin.Horizontal * scale, scale);
+        outerWidth = ApplyMinMaxWidth(outerWidth, resolved, scale);
 
         if (direction == FlexDirection.Row)
         {
-            float outerHeight = height.HasValue && height.Value.Mode == SizingMode.Fixed
+            float outerHeight = (height.HasValue && height.Value.Mode == SizingMode.Fixed)
                 ? height.Value.Value * scale
                 : 24f * scale;
-            RenderRow(props, children, outerWidth, outerHeight, margin, padding, gap);
+            outerHeight = ApplyMinMaxHeight(outerHeight, resolved, scale);
+            RenderRow(props, children, resolved, outerWidth, outerHeight, margin, padding, gap);
         }
         else
         {
-            RenderColumn(props, children, outerWidth, margin, padding);
+            RenderColumn(props, children, resolved, outerWidth, margin, padding);
         }
     }
 
@@ -108,13 +133,19 @@ internal static class Element
         }
 
         var resolved = Stylesheet.Resolve(props.Classes, state).MergedWith(props.Style);
+        if (resolved.Display == UI.Display.None) return;
+
         var padding = resolved.Padding ?? new Spacing(0);
         var direction = resolved.FlexDirection ?? FlexDirection.Column;
         var gap = resolved.Gap ?? 0f;
 
         DrawChrome(screenMin, screenMax, resolved);
 
+        bool isPositioningContext = (resolved.Position ?? UI.Position.Static) != UI.Position.Static;
+        if (isPositioningContext) PushPositionContext(screenMin, screenMax);
+
         int pushes = PushCascade(resolved);
+        bool clipPushed = ApplyOverflowClip(resolved, screenMin, screenMax);
         try
         {
             if (children != null)
@@ -143,7 +174,9 @@ internal static class Element
         }
         finally
         {
+            if (clipPushed) ImGui.GetWindowDrawList().PopClipRect();
             PopCascade(pushes);
+            if (isPositioningContext) PopPositionContext();
         }
 
         ImGui.SetCursorScreenPos(screenMin);
@@ -159,7 +192,7 @@ internal static class Element
 
     // ---- Top-level Row container ----
 
-    private static void RenderRow(ElementProps props, Action? children,
+    private static void RenderRow(ElementProps props, Action? children, ElementStyle resolved,
         float outerWidth, float outerHeight, Spacing margin, Spacing padding, float gap)
     {
         float scale = PoserUI.Scale;
@@ -184,10 +217,15 @@ internal static class Element
             ImGui.SetCursorScreenPos(screenStart);
         }
 
-        var resolved = Stylesheet.Resolve(props.Classes, state).MergedWith(props.Style);
+        // Re-resolve with state (hover/active/disabled).
+        resolved = Stylesheet.Resolve(props.Classes, state).MergedWith(props.Style);
         DrawChrome(screenStart, screenEnd, resolved);
 
+        bool isPositioningContext = (resolved.Position ?? UI.Position.Static) != UI.Position.Static;
+        if (isPositioningContext) PushPositionContext(screenStart, screenEnd);
+
         int pushes = PushCascade(resolved);
+        bool clipPushed = ApplyOverflowClip(resolved, screenStart, screenEnd);
         try
         {
             if (children != null)
@@ -212,7 +250,9 @@ internal static class Element
         }
         finally
         {
+            if (clipPushed) ImGui.GetWindowDrawList().PopClipRect();
             PopCascade(pushes);
+            if (isPositioningContext) PopPositionContext();
         }
 
         float bottomY = posStart.Y + outerHeight + margin.Bottom * scale;
@@ -228,7 +268,7 @@ internal static class Element
 
     // ---- Top-level Column container ----
 
-    private static void RenderColumn(ElementProps props, Action? children,
+    private static void RenderColumn(ElementProps props, Action? children, ElementStyle resolved,
         float outerWidth, Spacing margin, Spacing padding)
     {
         float scale = PoserUI.Scale;
@@ -238,32 +278,201 @@ internal static class Element
         screenStart += new Vector2(margin.Left * scale, margin.Top * scale);
         posStart += new Vector2(margin.Left * scale, margin.Top * scale);
 
-        var state = props.Disabled ? PseudoState.Disabled : PseudoState.None;
-        var resolved = Stylesheet.Resolve(props.Classes, state).MergedWith(props.Style);
-
         var drawList = ImGui.GetWindowDrawList();
         bool hasChrome = resolved.BackgroundColor.HasValue || (resolved.BorderWidth ?? 0f) > 0f || resolved.BoxShadow.HasValue;
 
-        if (hasChrome)
+        // Use BeginChild for Scroll/Auto overflow. ChannelsSplit otherwise (for chrome behind children).
+        var overflow = resolved.Overflow ?? UI.Overflow.Visible;
+        bool useBeginChild = overflow == UI.Overflow.Scroll || overflow == UI.Overflow.Auto;
+        bool useChannels = hasChrome && !useBeginChild;
+
+        if (useChannels)
         {
             drawList.ChannelsSplit(2);
             drawList.ChannelsSetCurrent(1);
         }
 
+        bool isPositioningContext = (resolved.Position ?? UI.Position.Static) != UI.Position.Static;
+        if (isPositioningContext) PushPositionContext(screenStart, screenStart + new Vector2(outerWidth, 0));
+
         ImGui.SetCursorScreenPos(new Vector2(screenStart.X + padding.Left * scale, screenStart.Y + padding.Top * scale));
 
         int pushes = PushCascade(resolved);
+        bool clipPushed = false;
+        if (overflow == UI.Overflow.Hidden && !useBeginChild)
+        {
+            // For hidden, we need height first to clip. Pre-compute below; use temporary clip with current pos.
+            // Simpler: clip just the chrome rect with explicit height if known, otherwise no clip.
+            float clipHeight = (resolved.Height.HasValue && resolved.Height.Value.Mode == SizingMode.Fixed)
+                ? resolved.Height.Value.Value * scale
+                : float.MaxValue;
+            if (clipHeight < float.MaxValue)
+            {
+                drawList.PushClipRect(screenStart, screenStart + new Vector2(outerWidth, clipHeight), true);
+                clipPushed = true;
+            }
+        }
+
         try
         {
-            if (children != null)
+            if (useBeginChild)
+            {
+                float bcHeight = (resolved.Height.HasValue && resolved.Height.Value.Mode == SizingMode.Fixed)
+                    ? resolved.Height.Value.Value * scale
+                    : 200f * scale;
+                bcHeight = ApplyMinMaxHeight(bcHeight, resolved, scale);
+
+                var flags = overflow == UI.Overflow.Scroll
+                    ? ImGuiWindowFlags.AlwaysVerticalScrollbar
+                    : ImGuiWindowFlags.None;
+
+                string childId = props.Id ?? "##el_scroll";
+                if (ImGui.BeginChild(childId, new Vector2(outerWidth, bcHeight), false, flags))
+                {
+                    if (children != null)
+                    {
+                        float innerWidth = outerWidth - padding.Horizontal * scale;
+                        float prevW = _ambientWidth, prevH = _ambientHeight;
+                        _ambientWidth = innerWidth;
+                        _ambientHeight = 0;
+                        try { children(); }
+                        finally { _ambientWidth = prevW; _ambientHeight = prevH; }
+                    }
+                }
+                ImGui.EndChild();
+            }
+            else if (children != null)
             {
                 float innerWidth = outerWidth - padding.Horizontal * scale;
                 float prevW = _ambientWidth, prevH = _ambientHeight;
                 _ambientWidth = innerWidth;
                 _ambientHeight = 0;
+                try { children(); }
+                finally { _ambientWidth = prevW; _ambientHeight = prevH; }
+            }
+        }
+        finally
+        {
+            if (clipPushed) drawList.PopClipRect();
+            PopCascade(pushes);
+            if (isPositioningContext) PopPositionContext();
+        }
+
+        var posEnd = ImGui.GetCursorPos();
+        float contentHeight = (posEnd.Y - posStart.Y) - padding.Top * scale;
+        if (contentHeight < 0f) contentHeight = 0f;
+
+        float resolvedHeight;
+        if (useBeginChild)
+        {
+            resolvedHeight = (resolved.Height.HasValue && resolved.Height.Value.Mode == SizingMode.Fixed)
+                ? resolved.Height.Value.Value * scale
+                : 200f * scale;
+        }
+        else
+        {
+            resolvedHeight = (resolved.Height.HasValue && resolved.Height.Value.Mode == SizingMode.Fixed)
+                ? resolved.Height.Value.Value * scale
+                : contentHeight + padding.Vertical * scale;
+        }
+        resolvedHeight = ApplyMinMaxHeight(resolvedHeight, resolved, scale);
+
+        if (useChannels)
+        {
+            drawList.ChannelsSetCurrent(0);
+            DrawChrome(screenStart, screenStart + new Vector2(outerWidth, resolvedHeight), resolved);
+            drawList.ChannelsMerge();
+        }
+        else if (useBeginChild && hasChrome)
+        {
+            DrawChrome(screenStart, screenStart + new Vector2(outerWidth, resolvedHeight), resolved);
+        }
+
+        float bottomY = posStart.Y + resolvedHeight + margin.Bottom * scale;
+        ImGui.SetCursorPos(new Vector2(posStart.X - margin.Left * scale, bottomY));
+    }
+
+    // ---- Position.Absolute / Position.Fixed ----
+
+    private static void RenderPositioned(ElementProps props, Action? children, ElementStyle resolved, Position pos)
+    {
+        float scale = PoserUI.Scale;
+
+        // Anchor: positioning context for Absolute, window content area for Fixed.
+        Vector2 anchorMin, anchorMax;
+        if (pos == UI.Position.Fixed)
+        {
+            var winPos = ImGui.GetWindowPos();
+            anchorMin = winPos + ImGui.GetWindowContentRegionMin();
+            anchorMax = winPos + ImGui.GetWindowContentRegionMax();
+        }
+        else if (_positionStack is { Count: > 0 })
+        {
+            var ctx = _positionStack.Peek();
+            anchorMin = ctx.ScreenMin;
+            anchorMax = ctx.ScreenMax;
+        }
+        else
+        {
+            // No positioning ancestor — fall back to window content area.
+            var winPos = ImGui.GetWindowPos();
+            anchorMin = winPos + ImGui.GetWindowContentRegionMin();
+            anchorMax = winPos + ImGui.GetWindowContentRegionMax();
+        }
+
+        float top = (resolved.Top ?? 0f) * scale;
+        float left = (resolved.Left ?? 0f) * scale;
+        float? right = resolved.Right.HasValue ? resolved.Right.Value * scale : (float?)null;
+        float? bottom = resolved.Bottom.HasValue ? resolved.Bottom.Value * scale : (float?)null;
+
+        float width = ResolveOuterWidth(resolved.Width ?? Sizing.Fixed(0), anchorMax.X - anchorMin.X, scale);
+        float height;
+        if (resolved.Height.HasValue && resolved.Height.Value.Mode == SizingMode.Fixed)
+            height = resolved.Height.Value.Value * scale;
+        else if (resolved.Height.HasValue && resolved.Height.Value.Mode == SizingMode.Fill)
+            height = anchorMax.Y - anchorMin.Y;
+        else
+            height = 24f * scale;
+
+        width = ApplyMinMaxWidth(width, resolved, scale);
+        height = ApplyMinMaxHeight(height, resolved, scale);
+
+        // Compute screen pos: prefer Left/Top, else Right/Bottom.
+        float x = right.HasValue && !resolved.Left.HasValue ? anchorMax.X - right.Value - width : anchorMin.X + left;
+        float y = bottom.HasValue && !resolved.Top.HasValue ? anchorMax.Y - bottom.Value - height : anchorMin.Y + top;
+
+        var screenMin = new Vector2(x, y);
+        var screenMax = screenMin + new Vector2(width, height);
+
+        // Save cursor; render at offset; restore.
+        var savedCursor = ImGui.GetCursorScreenPos();
+        ImGui.SetCursorScreenPos(screenMin);
+
+        DrawChrome(screenMin, screenMax, resolved);
+
+        bool isPositioningContext = true; // positioned elements always create a context
+        PushPositionContext(screenMin, screenMax);
+
+        var padding = resolved.Padding ?? new Spacing(0);
+        int pushes = PushCascade(resolved);
+        bool clipPushed = ApplyOverflowClip(resolved, screenMin, screenMax);
+        try
+        {
+            if (children != null)
+            {
+                ImGui.SetCursorScreenPos(new Vector2(screenMin.X + padding.Left * scale, screenMin.Y + padding.Top * scale));
+                float innerW = width - padding.Horizontal * scale;
+                float innerH = height - padding.Vertical * scale;
+                float prevW = _ambientWidth, prevH = _ambientHeight;
+                _ambientWidth = innerW;
+                _ambientHeight = innerH;
                 try
                 {
-                    children();
+                    var direction = resolved.FlexDirection ?? FlexDirection.Column;
+                    if (direction == FlexDirection.Row)
+                        RunRowChildren(children, innerW, innerH, resolved.Gap ?? 0f);
+                    else
+                        children();
                 }
                 finally
                 {
@@ -274,26 +483,13 @@ internal static class Element
         }
         finally
         {
+            if (clipPushed) ImGui.GetWindowDrawList().PopClipRect();
             PopCascade(pushes);
+            PopPositionContext();
         }
 
-        var posEnd = ImGui.GetCursorPos();
-        float contentHeight = (posEnd.Y - posStart.Y) - padding.Top * scale;
-        if (contentHeight < 0f) contentHeight = 0f;
-
-        float resolvedHeight = resolved.Height.HasValue && resolved.Height.Value.Mode == SizingMode.Fixed
-            ? resolved.Height.Value.Value * scale
-            : contentHeight + padding.Vertical * scale;
-
-        if (hasChrome)
-        {
-            drawList.ChannelsSetCurrent(0);
-            DrawChrome(screenStart, screenStart + new Vector2(outerWidth, resolvedHeight), resolved);
-            drawList.ChannelsMerge();
-        }
-
-        float bottomY = posStart.Y + resolvedHeight + margin.Bottom * scale;
-        ImGui.SetCursorPos(new Vector2(posStart.X - margin.Left * scale, bottomY));
+        // Don't reserve cursor space — Absolute / Fixed are out of flow.
+        ImGui.SetCursorScreenPos(savedCursor);
     }
 
     // ---- Row child layout ----
@@ -303,14 +499,8 @@ internal static class Element
         _rowStack ??= new Stack<RowContext>();
         var ctx = new RowContext { Items = new List<RowItem>() };
         _rowStack.Push(ctx);
-        try
-        {
-            children();
-        }
-        finally
-        {
-            _rowStack.Pop();
-        }
+        try { children(); }
+        finally { _rowStack.Pop(); }
 
         if (ctx.Items.Count == 0) return;
 
@@ -327,6 +517,7 @@ internal static class Element
                 case SizingMode.Fixed: totalFixed += item.Width.Value * scale; break;
                 case SizingMode.Flex:  totalWeight += item.Width.Value; break;
                 case SizingMode.Fill:  totalWeight += 1; break;
+                case SizingMode.Auto:  totalWeight += 1; break; // best-effort
             }
         }
 
@@ -346,6 +537,7 @@ internal static class Element
                 SizingMode.Fixed => item.Width.Value * scale,
                 SizingMode.Flex  => item.Width.Value * perWeight,
                 SizingMode.Fill  => perWeight,
+                SizingMode.Auto  => perWeight,
                 _ => 0f,
             };
 
@@ -356,6 +548,53 @@ internal static class Element
     }
 
     // ---- Helpers ----
+
+    private static float ResolveOuterWidth(Sizing width, float availableWidth, float scale)
+    {
+        return width.Mode switch
+        {
+            SizingMode.Fixed => width.Value * scale,
+            SizingMode.Fill  => availableWidth,
+            SizingMode.Auto  => availableWidth,
+            _ => availableWidth,
+        };
+    }
+
+    private static float ApplyMinMaxWidth(float width, in ElementStyle resolved, float scale)
+    {
+        if (resolved.MinWidth.HasValue && resolved.MinWidth.Value.Mode == SizingMode.Fixed)
+            width = MathF.Max(width, resolved.MinWidth.Value.Value * scale);
+        if (resolved.MaxWidth.HasValue && resolved.MaxWidth.Value.Mode == SizingMode.Fixed)
+            width = MathF.Min(width, resolved.MaxWidth.Value.Value * scale);
+        return width;
+    }
+
+    private static float ApplyMinMaxHeight(float height, in ElementStyle resolved, float scale)
+    {
+        if (resolved.MinHeight.HasValue && resolved.MinHeight.Value.Mode == SizingMode.Fixed)
+            height = MathF.Max(height, resolved.MinHeight.Value.Value * scale);
+        if (resolved.MaxHeight.HasValue && resolved.MaxHeight.Value.Mode == SizingMode.Fixed)
+            height = MathF.Min(height, resolved.MaxHeight.Value.Value * scale);
+        return height;
+    }
+
+    private static bool ApplyOverflowClip(in ElementStyle resolved, Vector2 min, Vector2 max)
+    {
+        if ((resolved.Overflow ?? UI.Overflow.Visible) != UI.Overflow.Hidden) return false;
+        ImGui.GetWindowDrawList().PushClipRect(min, max, true);
+        return true;
+    }
+
+    private static void PushPositionContext(Vector2 min, Vector2 max)
+    {
+        _positionStack ??= new Stack<PositionContext>();
+        _positionStack.Push(new PositionContext { ScreenMin = min, ScreenMax = max });
+    }
+
+    private static void PopPositionContext()
+    {
+        if (_positionStack is { Count: > 0 }) _positionStack.Pop();
+    }
 
     private static void DrawChrome(Vector2 min, Vector2 max, in ElementStyle resolved)
     {

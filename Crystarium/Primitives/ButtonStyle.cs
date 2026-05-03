@@ -9,9 +9,14 @@ namespace Poser.UI;
 /// </summary>
 public record struct ButtonStyle
 {
+    public Display? Display;
     // Box
     public Sizing? Width;
+    public Sizing? MinWidth;
+    public Sizing? MaxWidth;
     public Sizing? Height;
+    public Sizing? MinHeight;
+    public Sizing? MaxHeight;
     public Spacing? Margin;
     public Spacing? Padding;
     public Vector4? BackgroundColor;

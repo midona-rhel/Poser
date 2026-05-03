@@ -4,7 +4,10 @@ namespace Poser.UI;
 
 public record struct ToggleStyle
 {
+    public Display? Display;
     public Sizing? Size;
+    public Sizing? MinSize;
+    public Sizing? MaxSize;
     public Spacing? Margin;
     public Vector4? BackgroundColor;
     public float?   BorderRadius;

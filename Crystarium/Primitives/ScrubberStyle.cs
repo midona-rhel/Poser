@@ -4,8 +4,13 @@ namespace Poser.UI;
 
 public record struct ScrubberStyle
 {
+    public Display? Display;
     public Sizing? Width;
+    public Sizing? MinWidth;
+    public Sizing? MaxWidth;
     public Sizing? Height;
+    public Sizing? MinHeight;
+    public Sizing? MaxHeight;
     public Spacing? Margin;
 
     // Track

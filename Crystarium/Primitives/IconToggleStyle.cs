@@ -5,7 +5,10 @@ namespace Poser.UI;
 /// <summary>Minimal icon toggle: outlined glyph that brightens with state, no chrome.</summary>
 public record struct IconToggleStyle
 {
+    public Display? Display;
     public Sizing? Size;
+    public Sizing? MinSize;
+    public Sizing? MaxSize;
     public Spacing? Margin;
     public Vector4? OnColor;
     public Vector4? OffColor;
