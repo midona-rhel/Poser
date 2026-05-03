@@ -35,20 +35,29 @@ public record struct ScrubberStyle
 
     public ElementStyle ToElementStyle() => new()
     {
-        Width = Width, Height = Height, Margin = Margin,
-        // Other custom track/thumb fields don't map cleanly; ElementStyle keeps the ones it can
+        Display = Display,
+        Width = Width, Height = Height,
+        MinWidth = MinWidth, MaxWidth = MaxWidth, MinHeight = MinHeight, MaxHeight = MaxHeight,
+        Margin = Margin,
         Color = Color, FontFamily = FontFamily, FontSize = FontSize, Opacity = Opacity,
     };
 
     public static ScrubberStyle From(in ElementStyle e) => new()
     {
-        Width = e.Width, Height = e.Height, Margin = e.Margin,
+        Display = e.Display,
+        Width = e.Width, Height = e.Height,
+        MinWidth = e.MinWidth, MaxWidth = e.MaxWidth, MinHeight = e.MinHeight, MaxHeight = e.MaxHeight,
+        Margin = e.Margin,
         Color = e.Color, FontFamily = e.FontFamily, FontSize = e.FontSize, Opacity = e.Opacity,
     };
 
     public ScrubberStyle MergedWith(in ScrubberStyle o) => new()
     {
-        Width = o.Width ?? Width, Height = o.Height ?? Height, Margin = o.Margin ?? Margin,
+        Display = o.Display ?? Display,
+        Width = o.Width ?? Width, Height = o.Height ?? Height,
+        MinWidth = o.MinWidth ?? MinWidth, MaxWidth = o.MaxWidth ?? MaxWidth,
+        MinHeight = o.MinHeight ?? MinHeight, MaxHeight = o.MaxHeight ?? MaxHeight,
+        Margin = o.Margin ?? Margin,
         TrackColor = o.TrackColor ?? TrackColor,
         TrackHeight = o.TrackHeight ?? TrackHeight,
         TickColor = o.TickColor ?? TickColor,

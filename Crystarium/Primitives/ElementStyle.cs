@@ -37,7 +37,6 @@ public record struct ElementStyle
     public float? Right;
     public float? Bottom;
     public float? Left;
-    public int? ZIndex;
 
     // ---- Layout (non-inherited) ----
     public FlexDirection? FlexDirection;
@@ -78,7 +77,6 @@ public record struct ElementStyle
         if (overlay.Right.HasValue)            r.Right = overlay.Right;
         if (overlay.Bottom.HasValue)           r.Bottom = overlay.Bottom;
         if (overlay.Left.HasValue)             r.Left = overlay.Left;
-        if (overlay.ZIndex.HasValue)           r.ZIndex = overlay.ZIndex;
         if (overlay.FlexDirection.HasValue)    r.FlexDirection = overlay.FlexDirection;
         if (overlay.Gap.HasValue)              r.Gap = overlay.Gap;
         if (overlay.AlignItems.HasValue)       r.AlignItems = overlay.AlignItems;

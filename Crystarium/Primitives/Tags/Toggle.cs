@@ -30,8 +30,11 @@ public static partial class Crystarium
         var pre = Stylesheet.ResolveToggle(classSet, preState);
         if (inline.HasValue) pre = pre.MergedWith(inline.Value);
 
+        if (pre.Display == UI.Display.None) return false;
+
         float scale = PoserUI.Scale;
         float size = (pre.Size ?? Sizing.Fixed(Flex.RowHeight)).Value * scale;
+        size = SizeUtil.Clamp(size, pre.MinSize, pre.MaxSize, scale);
 
         float ambientH = AvailableHeight;
         if (ambientH > size)
@@ -127,8 +130,11 @@ public static partial class Crystarium
         var pre = Stylesheet.ResolveIconToggle(classSet, preState);
         if (inline.HasValue) pre = pre.MergedWith(inline.Value);
 
+        if (pre.Display == UI.Display.None) return false;
+
         float scale = PoserUI.Scale;
         float size = (pre.Size ?? Sizing.Fixed(Flex.LargeIconSize)).Value * scale;
+        size = SizeUtil.Clamp(size, pre.MinSize, pre.MaxSize, scale);
 
         float ambientH = AvailableHeight;
         if (ambientH > size)

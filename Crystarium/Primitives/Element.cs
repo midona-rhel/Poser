@@ -27,6 +27,8 @@ internal static class Element
     private struct RowItem
     {
         public Sizing Width;
+        public Sizing? Height;
+        public AlignSelf? AlignSelf;
         public Action<float, float> Render;
     }
 
@@ -87,6 +89,8 @@ internal static class Element
             _rowStack.Peek().Items.Add(new RowItem
             {
                 Width = width,
+                Height = resolved.Height,
+                AlignSelf = resolved.AlignSelf,
                 Render = (w, h) => RenderInline(capProps, capChildren, w, h),
             });
             return;
@@ -541,8 +545,26 @@ internal static class Element
                 _ => 0f,
             };
 
-            ImGui.SetCursorScreenPos(new Vector2(x, y));
-            item.Render(w, innerHeight);
+            // AlignSelf: cross-axis (Y) positioning within the row.
+            // Stretch (default): item gets full innerHeight at row top.
+            // Start/Center/End: item uses its own intrinsic height (from item.Height) and is offset.
+            float itemY = y;
+            float itemHeight = innerHeight;
+            var align = item.AlignSelf ?? UI.AlignSelf.Auto;
+            if (align != UI.AlignSelf.Auto && align != UI.AlignSelf.Stretch && item.Height.HasValue && item.Height.Value.Mode == SizingMode.Fixed)
+            {
+                itemHeight = item.Height.Value.Value * scale;
+                itemY = align switch
+                {
+                    UI.AlignSelf.Start => y,
+                    UI.AlignSelf.Center => y + (innerHeight - itemHeight) / 2f,
+                    UI.AlignSelf.End => y + innerHeight - itemHeight,
+                    _ => y,
+                };
+            }
+
+            ImGui.SetCursorScreenPos(new Vector2(x, itemY));
+            item.Render(w, itemHeight);
             x += w + gapScaled;
         }
     }

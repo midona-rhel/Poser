@@ -15,6 +15,7 @@ public record struct TextStyle
 
     public ElementStyle ToElementStyle() => new()
     {
+        Display = Display,
         Color = Color, Opacity = Opacity,
         FontFamily = FontFamily, FontSize = FontSize,
         TextAlign = TextAlign, Margin = Margin,
@@ -22,6 +23,7 @@ public record struct TextStyle
 
     public static TextStyle From(in ElementStyle e) => new()
     {
+        Display = e.Display,
         Color = e.Color, Opacity = e.Opacity,
         FontFamily = e.FontFamily, FontSize = e.FontSize,
         TextAlign = e.TextAlign, Margin = e.Margin,
@@ -29,6 +31,7 @@ public record struct TextStyle
 
     public TextStyle MergedWith(in TextStyle o) => new()
     {
+        Display = o.Display ?? Display,
         Color = o.Color ?? Color, Opacity = o.Opacity ?? Opacity,
         FontFamily = o.FontFamily ?? FontFamily, FontSize = o.FontSize ?? FontSize,
         TextAlign = o.TextAlign ?? TextAlign, Margin = o.Margin ?? Margin,

@@ -31,6 +31,8 @@ public static partial class Crystarium
         var resolved = Stylesheet.ResolveScrubber(classSet, preState);
         if (inline.HasValue) resolved = resolved.MergedWith(inline.Value);
 
+        if (resolved.Display == UI.Display.None) return false;
+
         bool changed = false;
         float scale = PoserUI.Scale;
         float thumbW = (resolved.ThumbWidth ?? 12f) * scale;
@@ -53,6 +55,7 @@ public static partial class Crystarium
             totalWidth = resolved.Width.Value.Value * scale;
         else
             totalWidth = AvailableWidth;
+        totalWidth = SizeUtil.Clamp(totalWidth, resolved.MinWidth, resolved.MaxWidth, scale);
 
         float trackWidth = hideValue ? totalWidth - thumbW : totalWidth - valueTextW - gap - thumbW - gap;
 

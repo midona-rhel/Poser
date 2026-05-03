@@ -20,19 +20,29 @@ public record struct SliderStyle
 
     public ElementStyle ToElementStyle() => new()
     {
-        Width = Width, Height = Height, Margin = Margin,
+        Display = Display,
+        Width = Width, Height = Height,
+        MinWidth = MinWidth, MaxWidth = MaxWidth, MinHeight = MinHeight, MaxHeight = MaxHeight,
+        Margin = Margin,
         BackgroundColor = BackgroundColor, Color = Color, Opacity = Opacity,
     };
 
     public static SliderStyle From(in ElementStyle e) => new()
     {
-        Width = e.Width, Height = e.Height, Margin = e.Margin,
+        Display = e.Display,
+        Width = e.Width, Height = e.Height,
+        MinWidth = e.MinWidth, MaxWidth = e.MaxWidth, MinHeight = e.MinHeight, MaxHeight = e.MaxHeight,
+        Margin = e.Margin,
         BackgroundColor = e.BackgroundColor, Color = e.Color, Opacity = e.Opacity,
     };
 
     public SliderStyle MergedWith(in SliderStyle o) => new()
     {
-        Width = o.Width ?? Width, Height = o.Height ?? Height, Margin = o.Margin ?? Margin,
+        Display = o.Display ?? Display,
+        Width = o.Width ?? Width, Height = o.Height ?? Height,
+        MinWidth = o.MinWidth ?? MinWidth, MaxWidth = o.MaxWidth ?? MaxWidth,
+        MinHeight = o.MinHeight ?? MinHeight, MaxHeight = o.MaxHeight ?? MaxHeight,
+        Margin = o.Margin ?? Margin,
         BackgroundColor = o.BackgroundColor ?? BackgroundColor,
         GrabColor = o.GrabColor ?? GrabColor,
         GrabActiveColor = o.GrabActiveColor ?? GrabActiveColor,

@@ -14,13 +14,16 @@ public record struct CheckboxStyle
     public float?   BorderWidth;
     public Vector4? BorderColor;
     public BoxShadow? BoxShadow;
-    public Vector4? CheckmarkColor;     // fills the icon (default: white)
-    public Vector4? CheckmarkOutline;   // outline color (default: black)
+    public Vector4? CheckmarkColor;
+    public Vector4? CheckmarkOutline;
     public float?   Opacity;
 
     public ElementStyle ToElementStyle() => new()
     {
-        Width = Size, Height = Size, Margin = Margin,
+        Display = Display,
+        Width = Size, Height = Size,
+        MinWidth = MinSize, MaxWidth = MaxSize, MinHeight = MinSize, MaxHeight = MaxSize,
+        Margin = Margin,
         BackgroundColor = BackgroundColor, BorderRadius = BorderRadius,
         BorderWidth = BorderWidth, BorderColor = BorderColor,
         BoxShadow = BoxShadow, Color = CheckmarkColor, Opacity = Opacity,
@@ -28,7 +31,11 @@ public record struct CheckboxStyle
 
     public static CheckboxStyle From(in ElementStyle e) => new()
     {
-        Size = e.Width ?? e.Height, Margin = e.Margin,
+        Display = e.Display,
+        Size = e.Width ?? e.Height,
+        MinSize = e.MinWidth ?? e.MinHeight,
+        MaxSize = e.MaxWidth ?? e.MaxHeight,
+        Margin = e.Margin,
         BackgroundColor = e.BackgroundColor, BorderRadius = e.BorderRadius,
         BorderWidth = e.BorderWidth, BorderColor = e.BorderColor,
         BoxShadow = e.BoxShadow, CheckmarkColor = e.Color, Opacity = e.Opacity,
@@ -36,7 +43,9 @@ public record struct CheckboxStyle
 
     public CheckboxStyle MergedWith(in CheckboxStyle o) => new()
     {
-        Size = o.Size ?? Size, Margin = o.Margin ?? Margin,
+        Display = o.Display ?? Display,
+        Size = o.Size ?? Size, MinSize = o.MinSize ?? MinSize, MaxSize = o.MaxSize ?? MaxSize,
+        Margin = o.Margin ?? Margin,
         BackgroundColor = o.BackgroundColor ?? BackgroundColor,
         BorderRadius = o.BorderRadius ?? BorderRadius,
         BorderWidth = o.BorderWidth ?? BorderWidth,

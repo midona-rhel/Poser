@@ -31,8 +31,11 @@ public static partial class Crystarium
         var pre = Stylesheet.ResolveCheckbox(classSet, preState);
         if (inline.HasValue) pre = pre.MergedWith(inline.Value);
 
+        if (pre.Display == UI.Display.None) return false;
+
         float scale = PoserUI.Scale;
         float size = (pre.Size ?? Sizing.Fixed(Flex.ControlSize)).Value * scale;
+        size = SizeUtil.Clamp(size, pre.MinSize, pre.MaxSize, scale);
 
         // Auto-center within an ambient row cell.
         float ambientH = AvailableHeight;

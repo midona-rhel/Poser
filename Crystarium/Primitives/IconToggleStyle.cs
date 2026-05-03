@@ -18,20 +18,28 @@ public record struct IconToggleStyle
 
     public ElementStyle ToElementStyle() => new()
     {
-        Width = Size, Height = Size, Margin = Margin,
-        // OnColor/OffColor/HoverColor don't map to ElementStyle — use Color for OnColor as default
+        Display = Display,
+        Width = Size, Height = Size,
+        MinWidth = MinSize, MaxWidth = MaxSize, MinHeight = MinSize, MaxHeight = MaxSize,
+        Margin = Margin,
         Color = OnColor, Opacity = Opacity,
     };
 
     public static IconToggleStyle From(in ElementStyle e) => new()
     {
-        Size = e.Width ?? e.Height, Margin = e.Margin,
+        Display = e.Display,
+        Size = e.Width ?? e.Height,
+        MinSize = e.MinWidth ?? e.MinHeight,
+        MaxSize = e.MaxWidth ?? e.MaxHeight,
+        Margin = e.Margin,
         OnColor = e.Color, Opacity = e.Opacity,
     };
 
     public IconToggleStyle MergedWith(in IconToggleStyle o) => new()
     {
-        Size = o.Size ?? Size, Margin = o.Margin ?? Margin,
+        Display = o.Display ?? Display,
+        Size = o.Size ?? Size, MinSize = o.MinSize ?? MinSize, MaxSize = o.MaxSize ?? MaxSize,
+        Margin = o.Margin ?? Margin,
         OnColor = o.OnColor ?? OnColor,
         OffColor = o.OffColor ?? OffColor,
         HoverColor = o.HoverColor ?? HoverColor,

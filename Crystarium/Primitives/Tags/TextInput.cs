@@ -24,13 +24,17 @@ public static partial class Crystarium
         var resolved = Stylesheet.ResolveTextInput(classSet, preState);
         if (inline.HasValue) resolved = resolved.MergedWith(inline.Value);
 
+        if (resolved.Display == UI.Display.None) return false;
+
         float scale = PoserUI.Scale;
         float height = (resolved.Height ?? Sizing.Fixed(Flex.RowHeight)).Value * scale;
+        height = SizeUtil.Clamp(height, resolved.MinHeight, resolved.MaxHeight, scale);
         float widthPx;
         if (resolved.Width.HasValue && resolved.Width.Value.Mode == SizingMode.Fixed)
             widthPx = resolved.Width.Value.Value * scale;
         else
             widthPx = AvailableWidth;
+        widthPx = SizeUtil.Clamp(widthPx, resolved.MinWidth, resolved.MaxWidth, scale);
 
         var bg = resolved.BackgroundColor ?? UIColors.ControlBackground;
         var border = resolved.BorderColor ?? UIColors.Border;

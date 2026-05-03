@@ -10,6 +10,7 @@ namespace Poser.UI;
 public record struct ButtonStyle
 {
     public Display? Display;
+
     // Box
     public Sizing? Width;
     public Sizing? MinWidth;
@@ -34,7 +35,10 @@ public record struct ButtonStyle
 
     public ElementStyle ToElementStyle() => new()
     {
-        Width = Width, Height = Height, Margin = Margin, Padding = Padding,
+        Display = Display,
+        Width = Width, Height = Height,
+        MinWidth = MinWidth, MaxWidth = MaxWidth, MinHeight = MinHeight, MaxHeight = MaxHeight,
+        Margin = Margin, Padding = Padding,
         BackgroundColor = BackgroundColor, BorderRadius = BorderRadius,
         BorderWidth = BorderWidth, BorderColor = BorderColor,
         BoxShadow = BoxShadow, RaisedGradient = RaisedGradient,
@@ -43,7 +47,10 @@ public record struct ButtonStyle
 
     public static ButtonStyle From(in ElementStyle e) => new()
     {
-        Width = e.Width, Height = e.Height, Margin = e.Margin, Padding = e.Padding,
+        Display = e.Display,
+        Width = e.Width, Height = e.Height,
+        MinWidth = e.MinWidth, MaxWidth = e.MaxWidth, MinHeight = e.MinHeight, MaxHeight = e.MaxHeight,
+        Margin = e.Margin, Padding = e.Padding,
         BackgroundColor = e.BackgroundColor, BorderRadius = e.BorderRadius,
         BorderWidth = e.BorderWidth, BorderColor = e.BorderColor,
         BoxShadow = e.BoxShadow, RaisedGradient = e.RaisedGradient,
@@ -52,7 +59,10 @@ public record struct ButtonStyle
 
     public ButtonStyle MergedWith(in ButtonStyle o) => new()
     {
+        Display = o.Display ?? Display,
         Width = o.Width ?? Width, Height = o.Height ?? Height,
+        MinWidth = o.MinWidth ?? MinWidth, MaxWidth = o.MaxWidth ?? MaxWidth,
+        MinHeight = o.MinHeight ?? MinHeight, MaxHeight = o.MaxHeight ?? MaxHeight,
         Margin = o.Margin ?? Margin, Padding = o.Padding ?? Padding,
         BackgroundColor = o.BackgroundColor ?? BackgroundColor,
         BorderRadius = o.BorderRadius ?? BorderRadius,

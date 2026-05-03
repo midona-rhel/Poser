@@ -24,6 +24,8 @@ public static partial class Crystarium
         var resolved = Stylesheet.ResolveText(classes, PseudoState.None);
         if (inline.HasValue) resolved = resolved.MergedWith(inline.Value);
 
+        if (resolved.Display == UI.Display.None) return;
+
         // Margin top
         float scale = PoserUI.Scale;
         if (resolved.Margin.HasValue && resolved.Margin.Value.Top > 0)

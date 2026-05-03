@@ -37,6 +37,8 @@ public static partial class Crystarium
         var pre = Stylesheet.ResolveButton(Cls.Btn + classes, disabled ? PseudoState.Disabled : PseudoState.None);
         if (inline.HasValue) pre = pre.MergedWith(inline.Value);
 
+        if (pre.Display == UI.Display.None) return false;
+
         float scale = PoserUI.Scale;
         float height = (pre.Height ?? Sizing.Fixed(Flex.RowHeight)).Value * scale;
         Spacing padding = pre.Padding ?? new Spacing(0, Flex.TextPadding);
@@ -47,7 +49,11 @@ public static partial class Crystarium
         else if (pre.Width.HasValue && pre.Width.Value.Mode == SizingMode.Fill)
             width = ImGui.GetContentRegionAvail().X;
         else
+            // Auto / null → fit content
             width = ImGui.CalcTextSize(label).X + padding.Horizontal * scale;
+
+        width = SizeUtil.Clamp(width, pre.MinWidth, pre.MaxWidth, scale);
+        height = SizeUtil.Clamp(height, pre.MinHeight, pre.MaxHeight, scale);
 
         return RenderButton(width, height, padding, label, FontAwesomeIcon.None, false, classes, id ?? label, tooltip, onClick, disabled, inline);
     }
@@ -56,15 +62,21 @@ public static partial class Crystarium
     {
         Stylesheet.EnsureInitialized();
 
-        // Add the .icon variant class
         classes = classes + Cls.Icon;
 
         var pre = Stylesheet.ResolveButton(Cls.Btn + classes, disabled ? PseudoState.Disabled : PseudoState.None);
         if (inline.HasValue) pre = pre.MergedWith(inline.Value);
 
+        if (pre.Display == UI.Display.None) return false;
+
         float scale = PoserUI.Scale;
         float side = (pre.Width ?? Sizing.Fixed(Flex.RowHeight)).Value * scale;
-        return RenderButton(side, side, pre.Padding ?? new Spacing(0), null, icon, true, classes, id ?? icon.ToIconString(), tooltip, onClick, disabled, inline);
+        side = SizeUtil.Clamp(side, pre.MinWidth, pre.MaxWidth, scale);
+
+        float h = (pre.Height ?? Sizing.Fixed(Flex.RowHeight)).Value * scale;
+        h = SizeUtil.Clamp(h, pre.MinHeight, pre.MaxHeight, scale);
+
+        return RenderButton(side, h, pre.Padding ?? new Spacing(0), null, icon, true, classes, id ?? icon.ToIconString(), tooltip, onClick, disabled, inline);
     }
 
     private static bool RenderButton(float width, float height, Spacing padding,

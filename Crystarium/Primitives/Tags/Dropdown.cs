@@ -30,6 +30,8 @@ public static partial class Crystarium
         var resolved = Stylesheet.ResolveDropdown(classSet, preState);
         if (inline.HasValue) resolved = resolved.MergedWith(inline.Value);
 
+        if (resolved.Display == UI.Display.None) return false;
+
         bool changed = false;
         float scale = PoserUI.Scale;
         float height = (resolved.Height ?? Sizing.Fixed(Flex.RowHeight)).Value * scale;
@@ -42,6 +44,7 @@ public static partial class Crystarium
             totalWidth = resolved.Width.Value.Value * scale;
         else
             totalWidth = AvailableWidth;
+        totalWidth = SizeUtil.Clamp(totalWidth, resolved.MinWidth, resolved.MaxWidth, scale);
         if (totalWidth < minValueW + buttonW) totalWidth = minValueW + buttonW;
         float valueWidth = totalWidth - buttonW;
 

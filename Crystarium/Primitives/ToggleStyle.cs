@@ -15,12 +15,15 @@ public record struct ToggleStyle
     public Vector4? BorderColor;
     public BoxShadow? BoxShadow;
     public bool?    RaisedGradient;
-    public Vector4? Color;       // icon color
+    public Vector4? Color;
     public float?   Opacity;
 
     public ElementStyle ToElementStyle() => new()
     {
-        Width = Size, Height = Size, Margin = Margin,
+        Display = Display,
+        Width = Size, Height = Size,
+        MinWidth = MinSize, MaxWidth = MaxSize, MinHeight = MinSize, MaxHeight = MaxSize,
+        Margin = Margin,
         BackgroundColor = BackgroundColor, BorderRadius = BorderRadius,
         BorderWidth = BorderWidth, BorderColor = BorderColor,
         BoxShadow = BoxShadow, RaisedGradient = RaisedGradient,
@@ -29,7 +32,11 @@ public record struct ToggleStyle
 
     public static ToggleStyle From(in ElementStyle e) => new()
     {
-        Size = e.Width ?? e.Height, Margin = e.Margin,
+        Display = e.Display,
+        Size = e.Width ?? e.Height,
+        MinSize = e.MinWidth ?? e.MinHeight,
+        MaxSize = e.MaxWidth ?? e.MaxHeight,
+        Margin = e.Margin,
         BackgroundColor = e.BackgroundColor, BorderRadius = e.BorderRadius,
         BorderWidth = e.BorderWidth, BorderColor = e.BorderColor,
         BoxShadow = e.BoxShadow, RaisedGradient = e.RaisedGradient,
@@ -38,7 +45,9 @@ public record struct ToggleStyle
 
     public ToggleStyle MergedWith(in ToggleStyle o) => new()
     {
-        Size = o.Size ?? Size, Margin = o.Margin ?? Margin,
+        Display = o.Display ?? Display,
+        Size = o.Size ?? Size, MinSize = o.MinSize ?? MinSize, MaxSize = o.MaxSize ?? MaxSize,
+        Margin = o.Margin ?? Margin,
         BackgroundColor = o.BackgroundColor ?? BackgroundColor,
         BorderRadius = o.BorderRadius ?? BorderRadius,
         BorderWidth = o.BorderWidth ?? BorderWidth,

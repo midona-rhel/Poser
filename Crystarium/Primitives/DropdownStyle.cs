@@ -13,28 +13,27 @@ public record struct DropdownStyle
     public Sizing? MaxHeight;
     public Spacing? Margin;
 
-    // Value side (left)
     public Vector4? ValueBackground;
     public Vector4? BorderColor;
     public float?   BorderRadius;
     public float?   BorderWidth;
 
-    // Chevron side (right) — typically uses live ImGui button colors with state
     public bool?    RaisedGradient;
     public BoxShadow? BoxShadow;
 
-    // Text
     public Vector4? Color;
     public FontFamily? FontFamily;
     public float?   FontSize;
     public float?   Opacity;
 
-    // Popup
     public Vector4? PopupBackground;
 
     public ElementStyle ToElementStyle() => new()
     {
-        Width = Width, Height = Height, Margin = Margin,
+        Display = Display,
+        Width = Width, Height = Height,
+        MinWidth = MinWidth, MaxWidth = MaxWidth, MinHeight = MinHeight, MaxHeight = MaxHeight,
+        Margin = Margin,
         BackgroundColor = ValueBackground, BorderColor = BorderColor,
         BorderRadius = BorderRadius, BorderWidth = BorderWidth,
         RaisedGradient = RaisedGradient, BoxShadow = BoxShadow,
@@ -43,7 +42,10 @@ public record struct DropdownStyle
 
     public static DropdownStyle From(in ElementStyle e) => new()
     {
-        Width = e.Width, Height = e.Height, Margin = e.Margin,
+        Display = e.Display,
+        Width = e.Width, Height = e.Height,
+        MinWidth = e.MinWidth, MaxWidth = e.MaxWidth, MinHeight = e.MinHeight, MaxHeight = e.MaxHeight,
+        Margin = e.Margin,
         ValueBackground = e.BackgroundColor, BorderColor = e.BorderColor,
         BorderRadius = e.BorderRadius, BorderWidth = e.BorderWidth,
         RaisedGradient = e.RaisedGradient, BoxShadow = e.BoxShadow,
@@ -52,7 +54,11 @@ public record struct DropdownStyle
 
     public DropdownStyle MergedWith(in DropdownStyle o) => new()
     {
-        Width = o.Width ?? Width, Height = o.Height ?? Height, Margin = o.Margin ?? Margin,
+        Display = o.Display ?? Display,
+        Width = o.Width ?? Width, Height = o.Height ?? Height,
+        MinWidth = o.MinWidth ?? MinWidth, MaxWidth = o.MaxWidth ?? MaxWidth,
+        MinHeight = o.MinHeight ?? MinHeight, MaxHeight = o.MaxHeight ?? MaxHeight,
+        Margin = o.Margin ?? Margin,
         ValueBackground = o.ValueBackground ?? ValueBackground,
         BorderColor = o.BorderColor ?? BorderColor,
         BorderRadius = o.BorderRadius ?? BorderRadius,

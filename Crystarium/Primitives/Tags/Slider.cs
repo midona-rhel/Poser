@@ -22,11 +22,15 @@ public static partial class Crystarium
         var resolved = Stylesheet.ResolveSlider(classSet, disabled ? PseudoState.Disabled : PseudoState.None);
         if (inline.HasValue) resolved = resolved.MergedWith(inline.Value);
 
+        if (resolved.Display == UI.Display.None) return false;
+
+        float scale = PoserUI.Scale;
         float widthPx;
         if (resolved.Width.HasValue && resolved.Width.Value.Mode == SizingMode.Fixed)
-            widthPx = resolved.Width.Value.Value * PoserUI.Scale;
+            widthPx = resolved.Width.Value.Value * scale;
         else
             widthPx = AvailableWidth;
+        widthPx = SizeUtil.Clamp(widthPx, resolved.MinWidth, resolved.MaxWidth, scale);
 
         ImGui.PushStyleColor(ImGuiCol.FrameBg, resolved.BackgroundColor ?? UIColors.ControlBackground);
         ImGui.PushStyleColor(ImGuiCol.SliderGrab, resolved.GrabColor ?? UIColors.Button);
