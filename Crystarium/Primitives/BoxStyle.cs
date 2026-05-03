@@ -10,10 +10,13 @@ namespace Poser.UI;
 public record struct BoxStyle
 {
     public Vector4? BackgroundColor;
+    public Gradient? BackgroundGradient;
     public Vector4? BorderColor;
     public float BorderWidth;
     public float BorderRadius;
     public BoxShadow? BoxShadow;
+    public BoxShadow[]? BoxShadows;
+    public Outline? Outline;
 
     /// <summary>
     /// If true, paints a top-highlight + bottom-shadow gradient inside the box

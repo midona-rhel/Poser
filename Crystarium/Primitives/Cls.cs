@@ -37,4 +37,10 @@ public static class Cls
     // Misc
     public static readonly StyleClass Separator   = new("separator");
     public static readonly StyleClass Tight       = new("tight");
+
+    // Composites
+    public static readonly StyleClass Card        = new("card");
+    public static readonly StyleClass Panel       = new("panel");
+    public static readonly StyleClass Badge       = new("badge");
+    public static readonly StyleClass Tooltip     = new("tooltip");
 }

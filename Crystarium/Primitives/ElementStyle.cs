@@ -23,7 +23,12 @@ public record struct ElementStyle
     public float?   BorderWidth;
     public Vector4? BorderColor;
     public BoxShadow? BoxShadow;
+    public BoxShadow[]? BoxShadows;
+    public Gradient? BackgroundGradient;
+    public Outline? Outline;
     public bool? RaisedGradient;
+    public float? AspectRatio;
+    public Cursor? Cursor;
 
     // ---- Display & flow ----
     public Display? Display;
@@ -53,6 +58,11 @@ public record struct ElementStyle
     public FontFamily? FontFamily;
     public float?   FontSize;
     public TextAlign? TextAlign;
+    public TextOverflow? TextOverflow;
+    public WhiteSpace?   WhiteSpace;
+    public float?        LineHeight;
+    public float?        LetterSpacing;
+    public TextShadow?   TextShadow;
 
     /// <summary>Per-field merge: each field of <paramref name="overlay"/> overwrites this if non-null.</summary>
     public ElementStyle MergedWith(in ElementStyle overlay)
@@ -71,7 +81,12 @@ public record struct ElementStyle
         if (overlay.BorderWidth.HasValue)      r.BorderWidth = overlay.BorderWidth;
         if (overlay.BorderColor.HasValue)      r.BorderColor = overlay.BorderColor;
         if (overlay.BoxShadow.HasValue)        r.BoxShadow = overlay.BoxShadow;
+        if (overlay.BoxShadows != null)        r.BoxShadows = overlay.BoxShadows;
+        if (overlay.BackgroundGradient.HasValue) r.BackgroundGradient = overlay.BackgroundGradient;
+        if (overlay.Outline.HasValue)          r.Outline = overlay.Outline;
         if (overlay.RaisedGradient.HasValue)   r.RaisedGradient = overlay.RaisedGradient;
+        if (overlay.AspectRatio.HasValue)      r.AspectRatio = overlay.AspectRatio;
+        if (overlay.Cursor.HasValue)           r.Cursor = overlay.Cursor;
         if (overlay.Display.HasValue)          r.Display = overlay.Display;
         if (overlay.Overflow.HasValue)         r.Overflow = overlay.Overflow;
         if (overlay.Position.HasValue)         r.Position = overlay.Position;
@@ -91,6 +106,11 @@ public record struct ElementStyle
         if (overlay.FontFamily.HasValue)       r.FontFamily = overlay.FontFamily;
         if (overlay.FontSize.HasValue)         r.FontSize = overlay.FontSize;
         if (overlay.TextAlign.HasValue)        r.TextAlign = overlay.TextAlign;
+        if (overlay.TextOverflow.HasValue)     r.TextOverflow = overlay.TextOverflow;
+        if (overlay.WhiteSpace.HasValue)       r.WhiteSpace = overlay.WhiteSpace;
+        if (overlay.LineHeight.HasValue)       r.LineHeight = overlay.LineHeight;
+        if (overlay.LetterSpacing.HasValue)    r.LetterSpacing = overlay.LetterSpacing;
+        if (overlay.TextShadow.HasValue)       r.TextShadow = overlay.TextShadow;
         return r;
     }
 }

@@ -55,7 +55,7 @@ internal static class Element
         Stylesheet.EnsureInitialized();
 
         var state = props.Disabled ? PseudoState.Disabled : PseudoState.None;
-        var resolved = Stylesheet.Resolve(props.Classes, state).MergedWith(props.Style);
+        var resolved = Stylesheet.Resolve(props.Classes, props.Id, state).MergedWith(props.Style);
 
         // ---- Display.None: skip entirely ----
         if (resolved.Display == UI.Display.None) return;
@@ -101,6 +101,15 @@ internal static class Element
         float outerWidth = ResolveOuterWidth(width, availWidth - margin.Horizontal * scale, scale);
         outerWidth = ApplyMinMaxWidth(outerWidth, resolved, scale);
 
+        // AspectRatio: derive height from width if width is known and height isn't fixed.
+        if (resolved.AspectRatio.HasValue && resolved.AspectRatio.Value > 0f
+            && !(height.HasValue && height.Value.Mode == SizingMode.Fixed))
+        {
+            float ratioHeight = outerWidth / resolved.AspectRatio.Value;
+            // Inject a synthetic Fixed height for the row branch below.
+            height = Sizing.Fixed(ratioHeight / scale);
+        }
+
         if (direction == FlexDirection.Row)
         {
             float outerHeight = (height.HasValue && height.Value.Mode == SizingMode.Fixed)
@@ -136,7 +145,7 @@ internal static class Element
             ImGui.SetCursorScreenPos(screenMin);
         }
 
-        var resolved = Stylesheet.Resolve(props.Classes, state).MergedWith(props.Style);
+        var resolved = Stylesheet.Resolve(props.Classes, props.Id, state).MergedWith(props.Style);
         if (resolved.Display == UI.Display.None) return;
 
         var padding = resolved.Padding ?? new Spacing(0);
@@ -191,7 +200,31 @@ internal static class Element
             if (clicked && !props.Disabled) props.OnClick?.Invoke();
             if (!string.IsNullOrEmpty(props.Tooltip) && (state & PseudoState.Hover) != 0)
                 ImGui.SetTooltip(props.Tooltip);
+
+            // Cursor: default to Pointer for interactive elements; Cursor field overrides.
+            if ((state & PseudoState.Hover) != 0)
+                ApplyCursor(resolved.Cursor ?? UI.Cursor.Pointer);
         }
+        else if (resolved.Cursor.HasValue && (state & PseudoState.Hover) != 0)
+        {
+            ApplyCursor(resolved.Cursor.Value);
+        }
+    }
+
+    private static void ApplyCursor(Cursor c)
+    {
+        var imc = c switch
+        {
+            UI.Cursor.Pointer    => ImGuiMouseCursor.Hand,
+            UI.Cursor.Hand       => ImGuiMouseCursor.Hand,
+            UI.Cursor.TextInput  => ImGuiMouseCursor.TextInput,
+            UI.Cursor.ResizeNS   => ImGuiMouseCursor.ResizeNs,
+            UI.Cursor.ResizeEW   => ImGuiMouseCursor.ResizeEw,
+            UI.Cursor.ResizeAll  => ImGuiMouseCursor.ResizeAll,
+            UI.Cursor.NotAllowed => ImGuiMouseCursor.NotAllowed,
+            _ => ImGuiMouseCursor.Arrow,
+        };
+        ImGui.SetMouseCursor(imc);
     }
 
     // ---- Top-level Row container ----
@@ -223,7 +256,7 @@ internal static class Element
         }
 
         // Re-resolve with state (hover/active/disabled).
-        resolved = Stylesheet.Resolve(props.Classes, state).MergedWith(props.Style);
+        resolved = Stylesheet.Resolve(props.Classes, props.Id, state).MergedWith(props.Style);
         DrawChrome(screenStart, screenEnd, resolved);
 
         bool isPositioningContext = (resolved.Position ?? UI.Position.Static) != UI.Position.Static;
@@ -701,15 +734,23 @@ internal static class Element
 
     private static void DrawChrome(Vector2 min, Vector2 max, in ElementStyle resolved)
     {
-        if (!resolved.BackgroundColor.HasValue && (resolved.BorderWidth ?? 0f) <= 0f && !resolved.BoxShadow.HasValue)
-            return;
+        bool hasChrome = resolved.BackgroundColor.HasValue
+                      || resolved.BackgroundGradient.HasValue
+                      || (resolved.BorderWidth ?? 0f) > 0f
+                      || resolved.BoxShadow.HasValue
+                      || (resolved.BoxShadows != null && resolved.BoxShadows.Length > 0)
+                      || resolved.Outline.HasValue;
+        if (!hasChrome) return;
         var box = new BoxStyle
         {
             BackgroundColor = resolved.BackgroundColor,
+            BackgroundGradient = resolved.BackgroundGradient,
             BorderColor = resolved.BorderColor,
             BorderWidth = resolved.BorderWidth ?? 0f,
             BorderRadius = resolved.BorderRadius ?? 0f,
             BoxShadow = resolved.BoxShadow,
+            BoxShadows = resolved.BoxShadows,
+            Outline = resolved.Outline,
             RaisedGradient = resolved.RaisedGradient ?? false,
         };
         BoxRenderer.Draw(ImGui.GetWindowDrawList(), min, max, box);
