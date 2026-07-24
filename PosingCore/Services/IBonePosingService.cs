@@ -129,7 +129,6 @@ public interface IBonePosingService : IDisposable
     /// each frame. See <see cref="Poser.Core.OrbitStrategy"/> for the
     /// stability model — the default is idempotent by construction.
     /// </summary>
-    Poser.Core.OrbitSession BeginOrbitSession(System.Collections.Generic.IReadOnlyList<IBone> bones, System.Numerics.Vector3 pivot, Poser.Core.OrbitStrategy strategy);
 
     /// <summary>
     /// Linked bones (Anamnesis parity): posing one bone in a link set (both

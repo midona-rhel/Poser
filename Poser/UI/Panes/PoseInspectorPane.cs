@@ -873,13 +873,6 @@ public class PoseInspectorPane
             }
         }
 
-        ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 7f * s), "Math", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
-        ImGui.SetCursorScreenPos(new Vector2(cursor.X + 94f * s, cursor.Y + h));
-        int strategy = (int)_editorState.OrbitStrategy;
-        if (Crystarium.SegmentedControl("##pose-orbit-strategy", new[] { "Snapshot", "Rebase", "Live" }, ref strategy))
-            _editorState.OrbitStrategy = (OrbitStrategy)strategy;
-        h += 34f * s;
-
         return h;
     }
 

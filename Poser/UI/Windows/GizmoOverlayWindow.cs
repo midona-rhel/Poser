@@ -47,20 +47,26 @@ public class GizmoOverlayWindow : Window
 
     private const int GizmoId = 142857;
 
-    // Bone gizmo state - last accepted gizmo target per bone. Keeping this separate
-    // from live Havok memory prevents propagation/cache refreshes feeding back into
-    // the next frame of the same drag.
-    private Dictionary<IBone, Transform>? _boneTrackingTransforms;
+    /// <summary>
+    /// Everything one gizmo gesture froze at Begin: tool, orientation, domain
+    /// space, pivot, and the presentation baseline. Nothing here re-reads
+    /// editor state mid-drag — a mismatch cancels the gesture instead of
+    /// changing its meaning. No native entity is retained.
+    /// </summary>
+    private sealed class GizmoGesture
+    {
+        public required TransformGestureId Id { get; init; }
+        public required ImGuizmoOperation Operation { get; init; }
+        public required ImGuizmoMode Mode { get; init; }
+        public required DomainSpace Space { get; init; }
+        public required LegacyTransform Start { get; init; }
+        public LegacyTransform Current;
+        public PivotMode PivotMode { get; init; } = PivotMode.PerTarget;
+        public Vector3 Pivot { get; init; }
+    }
 
-    // Orbit rotation (rotate around parent/pivot): session snapshot lives in PosingCore
-    private Core.OrbitSession? _orbitSession;
-    private TransformGestureId? _cleanActorGesture;
-    private LegacyTransform? _cleanActorStart;
-    private TransformGestureId? _cleanBoneGesture;
-    private LegacyTransform? _cleanBoneStart;
-    private LegacyTransform? _cleanBoneCurrent;
-    private PivotMode _cleanBonePivotMode = PivotMode.PerTarget;
-    private Vector3 _cleanBonePivot;
+    private GizmoGesture? _actorGesture;
+    private GizmoGesture? _boneGesture;
 
     public GizmoOverlayWindow(
         SelectionSession selection,
@@ -168,6 +174,37 @@ public class GizmoOverlayWindow : Window
         return result;
     }
 
+    /// <summary>
+    /// Enforces the frozen-gesture contract each frame: an externally
+    /// cancelled gesture (selection change, scene invalidation, undo guard)
+    /// clears local presentation state; Escape cancels and restores the
+    /// frozen baseline; a tool or orientation change cancels rather than
+    /// mutating the drag. Returns the surviving gesture or null.
+    /// </summary>
+    private GizmoGesture? GuardGesture(
+        GizmoGesture? gesture,
+        ImGuizmoOperation currentOperation,
+        ImGuizmoMode currentMode)
+    {
+        if (gesture == null)
+            return null;
+        if (_cleanTransforms.ActiveGesture is not { } active ||
+            active != gesture.Id)
+            return null;
+        if (ImGui.IsKeyPressed(ImGuiKey.Escape))
+        {
+            _cleanTransforms.Cancel(gesture.Id);
+            return null;
+        }
+        if (gesture.Operation != currentOperation ||
+            gesture.Mode != currentMode)
+        {
+            _cleanTransforms.Cancel(gesture.Id);
+            return null;
+        }
+        return gesture;
+    }
+
     private void DrawActorGizmo()
     {
         var selectedActors = ResolveSelectedActors();
@@ -178,18 +215,20 @@ public class GizmoOverlayWindow : Window
         var viewMatrix = _cameraService.GetViewMatrix();
         var projectionMatrix = _cameraService.GetProjectionMatrix();
 
-        var actorTransform = _posingService.GetEffectiveTransform(primaryActor);
+        var gizmoMode = _editorState.TransformOrientation == TransformOrientation.Global
+            ? ImGuizmoMode.World
+            : ImGuizmoMode.Local;
+        var gizmoOperation = GetGizmoOperation();
+        _actorGesture = GuardGesture(_actorGesture, gizmoOperation, gizmoMode);
+
+        // Live memory only seeds a gesture; during a drag the frozen
+        // presentation baseline feeds the manipulator.
+        var actorTransform = _actorGesture?.Current
+            ?? _posingService.GetEffectiveTransform(primaryActor);
         var modelMatrix = actorTransform.ToMatrix();
 
         ImGuizmo.Enable(true);
         var viewMatrixCopy = viewMatrix;
-
-
-        var gizmoMode = _editorState.TransformOrientation == TransformOrientation.Global
-            ? ImGuizmoMode.World
-            : ImGuizmoMode.Local;
-
-        var gizmoOperation = GetGizmoOperation();
 
         var wasManipulated = ImGuizmo.Manipulate(
             ref viewMatrixCopy,
@@ -199,7 +238,7 @@ public class GizmoOverlayWindow : Window
             ref modelMatrix);
         var isUsing = ImGuizmo.IsUsing();
 
-        if (isUsing && _cleanActorGesture == null)
+        if (isUsing && _actorGesture == null)
         {
             var begin = _cleanTransforms.Begin(
                 selectedActors
@@ -214,38 +253,45 @@ public class GizmoOverlayWindow : Window
                     $"Transform {selectedActors.Count} actor{(selectedActors.Count == 1 ? "" : "s")}");
             if (begin.Success && begin.GestureId is { } gesture)
             {
-                _cleanActorGesture = gesture;
-                _cleanActorStart = actorTransform;
+                _actorGesture = new GizmoGesture
+                {
+                    Id = gesture,
+                    Operation = gizmoOperation,
+                    Mode = gizmoMode,
+                    Space = ToDomainSpace(gizmoMode),
+                    Start = actorTransform,
+                    Current = actorTransform,
+                };
             }
         }
 
-        if (wasManipulated &&
-            _cleanActorGesture is { } active &&
-            _cleanActorStart is { } start)
+        if (wasManipulated && _actorGesture is { } activeGesture)
         {
             var newTransform = PoseMath.ConstrainToComponents(
-                start,
+                activeGesture.Start,
                 Transform.FromMatrix(modelMatrix),
-                GetAllowedComponents(gizmoOperation));
+                GetAllowedComponents(activeGesture.Operation));
             var update = _cleanTransforms.Update(
-                active,
+                activeGesture.Id,
                 ToDomainDelta(
-                    start,
+                    activeGesture.Start,
                     newTransform,
-                    ToDomainSpace(gizmoMode)));
-            if (!update.Success)
+                    activeGesture.Space));
+            if (update.Success)
             {
-                _cleanTransforms.Cancel(active);
-                _cleanActorGesture = null;
-                _cleanActorStart = null;
+                activeGesture.Current = newTransform;
+            }
+            else
+            {
+                _cleanTransforms.Cancel(activeGesture.Id);
+                _actorGesture = null;
             }
         }
 
-        if (!isUsing && _cleanActorGesture is { } completed)
+        if (!isUsing && _actorGesture is { } completed)
         {
-            _cleanTransforms.Commit(completed);
-            _cleanActorGesture = null;
-            _cleanActorStart = null;
+            _cleanTransforms.Commit(completed.Id);
+            _actorGesture = null;
         }
     }
 
@@ -273,7 +319,6 @@ public class GizmoOverlayWindow : Window
             }
         }
 
-        // Add regular bones that aren't already covered by a VirtualBone (by name)
         foreach (var bone in regularBones)
         {
             if (addedBones.Add((bone.BoneName, bone.PartialId)))
@@ -294,12 +339,6 @@ public class GizmoOverlayWindow : Window
         if (skeleton == null || !skeleton.IsValid)
             return;
 
-        bool snapshotOrbit =
-            _editorState.OrbitBoneRotation &&
-            _editorState.OrbitStrategy ==
-                OrbitStrategy.SnapshotAbsolute;
-        bool useCleanGesture =
-            (!_editorState.OrbitBoneRotation || snapshotOrbit);
         _bonePosingService.RegisterSkeletonForCacheUpdate(skeleton);
 
         var projectionMatrix = _cameraService.GetProjectionMatrix();
@@ -309,31 +348,23 @@ public class GizmoOverlayWindow : Window
         var modelMatrix = skeleton.GetModelMatrix();
         worldViewMatrix = Matrix4x4.Multiply(modelMatrix, worldViewMatrix);
 
-        // Live memory is only the initial value for a gesture. During a drag, use
-        // the last accepted gizmo result as Brio does; reading Havok model-space
-        // back every frame can turn a rotation into an apparent orbit.
+        var gizmoMode = _editorState.TransformOrientation == TransformOrientation.Global
+            ? ImGuizmoMode.World
+            : ImGuizmoMode.Local;
+        var gizmoOperation = GetGizmoOperation();
+        _boneGesture = GuardGesture(_boneGesture, gizmoOperation, gizmoMode);
+
+        // Live memory only seeds a gesture. During a drag the frozen
+        // presentation baseline feeds the manipulator, exactly like Brio's
+        // tracking transform — reading Havok model-space back every frame can
+        // turn a rotation into an apparent orbit.
         var currentTransform = primaryBone.LastTransform;
-
-        if (_boneTrackingTransforms == null)
-            _boneTrackingTransforms = new Dictionary<IBone, Transform>();
-
-        var trackedPrimary = useCleanGesture && _cleanBoneCurrent is { } cleanCurrent
-            ? cleanCurrent
-            : _boneTrackingTransforms.TryGetValue(primaryBone, out var tracked)
-                ? tracked
-                : currentTransform;
-        var lastMatrix = _orbitSession != null
-            ? _orbitSession.CurrentPrimaryTarget.ToMatrix()
-            : trackedPrimary.ToMatrix();
+        var lastMatrix = (_boneGesture?.Current ?? currentTransform).ToMatrix();
 
         // Brio-style posing composes persistent bone deltas after the game's
         // animation update, so animation playback does not gate manipulation.
         ImGuizmo.Enable(true);
 
-        var gizmoMode = _editorState.TransformOrientation == TransformOrientation.Global
-            ? ImGuizmoMode.World
-            : ImGuizmoMode.Local;
-        var gizmoOperation = GetGizmoOperation();
         var wasManipulated = ImGuizmo.Manipulate(
             ref worldViewMatrix,
             ref projectionMatrix,
@@ -342,196 +373,135 @@ public class GizmoOverlayWindow : Window
             ref lastMatrix);
         var isUsing = ImGuizmo.IsUsing();
 
-        // IsUsing must be sampled after Manipulate. On the first changed frame the
-        // pre-call value still describes the previous frame, which used to let one
-        // transform write escape both the stable baseline and history snapshot.
-        if (isUsing &&
-            _boneTrackingTransforms.Count == 0 &&
-            _cleanBoneGesture == null)
+        // IsUsing must be sampled after Manipulate. On the first changed frame
+        // the pre-call value still describes the previous frame.
+        if (isUsing && _boneGesture == null)
         {
-            if (!_editorState.OrbitBoneRotation)
+            var ik = _editorState.IkEnabled
+                ? BoneIKInfo.CalculateDefault(primaryBone.BoneName)
+                : BoneIKInfo.Disabled;
+            ik.Enabled = _editorState.IkEnabled;
+            _bonePosingService.SetBoneIK(primaryBone, ik);
+
+            // Every orbit pivot routes through the clean gesture with a frozen
+            // custom pivot; there is no second orbit session.
+            var cleanPivotMode = PivotMode.PerTarget;
+            Vector3? cleanCustomPivot = null;
+            if (_editorState.OrbitBoneRotation &&
+                gizmoOperation == ImGuizmoOperation.Rotate)
             {
-                var ik = _editorState.IkEnabled
-                    ? BoneIKInfo.CalculateDefault(primaryBone.BoneName)
-                    : BoneIKInfo.Disabled;
-                ik.Enabled = _editorState.IkEnabled;
-                _bonePosingService.SetBoneIK(primaryBone, ik);
+                cleanPivotMode = PivotMode.Custom;
+                cleanCustomPivot = _editorState.OrbitPivot switch
+                {
+                    Core.OrbitPivotMode.SelectionCenter =>
+                        SelectionCenter(rootBones),
+                    Core.OrbitPivotMode.Custom =>
+                        _editorState.CustomOrbitPivot,
+                    _ =>
+                        primaryBone.ParentBone?.LastTransform.Position ??
+                        currentTransform.Position,
+                };
             }
 
-            if (useCleanGesture)
+            var orderedIds = new List<TransformTargetId>();
+            if (_bindings.GetBoneId(primaryBone) is { } primaryId)
+                orderedIds.Add(TransformTargetId.ForBone(primaryId));
+            foreach (var bone in rootBones)
             {
-                var cleanPivotMode = PivotMode.PerTarget;
-                Vector3? cleanCustomPivot = null;
-                if (_editorState.OrbitBoneRotation &&
-                    gizmoOperation == ImGuizmoOperation.Rotate)
+                if (ReferenceEquals(bone, primaryBone))
+                    continue;
+                if (_bindings.GetBoneId(bone) is { } rootId)
+                    orderedIds.Add(TransformTargetId.ForBone(rootId));
+            }
+            if (orderedIds.Count == 0)
+                return;
+
+            var space = _editorState.OrbitBoneRotation
+                ? DomainSpace.World
+                : ToDomainSpace(gizmoMode);
+            var begin = _cleanTransforms.Begin(
+                orderedIds,
+                ToDomainOperation(gizmoOperation),
+                space,
+                cleanPivotMode,
+                cleanCustomPivot,
+                description:
+                    $"Transform {orderedIds.Count} bone{(orderedIds.Count == 1 ? "" : "s")}",
+                includeLinkedBones:
+                    _bonePosingService.LinkedBonesEnabled,
+                symmetry: _editorState.SymmetryMode switch
                 {
-                    switch (_editorState.OrbitPivot)
-                    {
-                        case Core.OrbitPivotMode.SelectionCenter:
-                            cleanPivotMode = PivotMode.Custom;
-                            cleanCustomPivot = SelectionCenter(rootBones);
-                            break;
-                        case Core.OrbitPivotMode.Custom:
-                            cleanPivotMode = PivotMode.Custom;
-                            cleanCustomPivot =
-                                _editorState.CustomOrbitPivot;
-                            break;
-                        default:
-                            cleanPivotMode = PivotMode.Custom;
-                            cleanCustomPivot =
-                                primaryBone.ParentBone?.LastTransform.Position ??
-                                currentTransform.Position;
-                            break;
-                    }
-                }
-                var orderedIds = new List<TransformTargetId>();
-                if (_bindings.GetBoneId(primaryBone) is { } primaryId)
-                    orderedIds.Add(TransformTargetId.ForBone(primaryId));
-                foreach (var bone in rootBones)
+                    SymmetryMode.Copy =>
+                        TransformDeltaMode.Direct,
+                    SymmetryMode.Mirror =>
+                        TransformDeltaMode.Mirrored,
+                    _ => null,
+                });
+            if (begin.Success && begin.GestureId is { } gesture)
+            {
+                _boneGesture = new GizmoGesture
                 {
-                    if (ReferenceEquals(bone, primaryBone))
-                        continue;
-                    if (_bindings.GetBoneId(bone) is { } rootId)
-                        orderedIds.Add(TransformTargetId.ForBone(rootId));
-                }
-                if (orderedIds.Count == 0)
-                    return;
-                var ordered = orderedIds;
-                var begin = _cleanTransforms.Begin(
-                    ordered,
-                    ToDomainOperation(gizmoOperation),
-                    _editorState.OrbitBoneRotation
-                        ? DomainSpace.World
-                        : ToDomainSpace(gizmoMode),
-                    cleanPivotMode,
-                    cleanCustomPivot,
-                    description:
-                        $"Transform {ordered.Count} bone{(ordered.Count == 1 ? "" : "s")}",
-                    includeLinkedBones:
-                        _bonePosingService.LinkedBonesEnabled,
-                    symmetry: _editorState.SymmetryMode switch
+                    Id = gesture,
+                    Operation = gizmoOperation,
+                    Mode = gizmoMode,
+                    Space = space,
+                    Start = currentTransform,
+                    Current = currentTransform,
+                    PivotMode = cleanPivotMode,
+                    Pivot = cleanPivotMode switch
                     {
-                        SymmetryMode.Copy =>
-                            TransformDeltaMode.Direct,
-                        SymmetryMode.Mirror =>
-                            TransformDeltaMode.Mirrored,
-                        _ => null,
-                    });
-                if (begin.Success && begin.GestureId is { } gesture)
-                {
-                    _cleanBoneGesture = gesture;
-                    _cleanBoneStart = currentTransform;
-                    _cleanBoneCurrent = currentTransform;
-                    _cleanBonePivotMode = cleanPivotMode;
-                    _cleanBonePivot = cleanPivotMode switch
-                    {
-                        PivotMode.SelectionCenter =>
-                            cleanCustomPivot ??
-                            SelectionCenter(rootBones),
                         PivotMode.Custom =>
-                            cleanCustomPivot ??
-                            currentTransform.Position,
+                            cleanCustomPivot ?? currentTransform.Position,
                         _ => currentTransform.Position,
+                    },
+                };
+            }
+        }
+
+        if (wasManipulated && _boneGesture is { } activeGesture)
+        {
+            var newTransform = PoseMath.ConstrainToComponents(
+                activeGesture.Start,
+                Transform.FromMatrix(lastMatrix),
+                GetAllowedComponents(activeGesture.Operation));
+            var update = _cleanTransforms.Update(
+                activeGesture.Id,
+                ToDomainDelta(
+                    activeGesture.Start,
+                    newTransform,
+                    activeGesture.Space));
+            if (update.Success)
+            {
+                if (activeGesture.PivotMode is
+                    PivotMode.Custom or
+                    PivotMode.SelectionCenter)
+                {
+                    var total = ToDomainDelta(
+                        activeGesture.Start,
+                        newTransform,
+                        DomainSpace.World);
+                    newTransform = newTransform with
+                    {
+                        Position = activeGesture.Pivot +
+                            Vector3.Transform(
+                                activeGesture.Start.Position -
+                                activeGesture.Pivot,
+                                total.Rotation),
                     };
-                    trackedPrimary = currentTransform;
                 }
+                activeGesture.Current = newTransform;
             }
             else
             {
-                foreach (var bone in rootBones)
-                    _boneTrackingTransforms[bone] = bone.LastTransform;
-                _boneTrackingTransforms[primaryBone] = currentTransform;
-                trackedPrimary = currentTransform;
-
-                // Orbit rotation is an explicit alternate tool. Normal Rotate never
-                // enters this branch and therefore keeps the bone at its own origin.
-                if (_editorState.OrbitBoneRotation && gizmoOperation == ImGuizmoOperation.Rotate)
-                {
-                    var pivot = _editorState.OrbitPivot switch
-                    {
-                        Core.OrbitPivotMode.Parent => primaryBone.ParentBone?.LastTransform.Position ?? currentTransform.Position,
-                        Core.OrbitPivotMode.SelectionCenter => SelectionCenter(rootBones),
-                        Core.OrbitPivotMode.Custom => _editorState.CustomOrbitPivot,
-                        _ => currentTransform.Position,
-                    };
-                    var orbitBones = new List<IBone> { primaryBone };
-                    orbitBones.AddRange(rootBones.Where(b => b != primaryBone));
-                    _orbitSession = _bonePosingService.BeginOrbitSession(
-                        orbitBones,
-                        pivot,
-                        _editorState.OrbitStrategy);
-                }
+                _cleanTransforms.Cancel(activeGesture.Id);
+                _boneGesture = null;
             }
         }
 
-        if (wasManipulated)
+        if (!isUsing && _boneGesture is { } completed)
         {
-            var newTransform = Transform.FromMatrix(lastMatrix);
-
-            if (useCleanGesture)
-            {
-                if (_cleanBoneGesture is { } cleanGesture &&
-                    _cleanBoneStart is { } cleanStart)
-                {
-                    newTransform = PoseMath.ConstrainToComponents(
-                        cleanStart,
-                        newTransform,
-                        GetAllowedComponents(gizmoOperation));
-                    var update = _cleanTransforms.Update(
-                        cleanGesture,
-                        ToDomainDelta(
-                            cleanStart,
-                            newTransform,
-                            _editorState.OrbitBoneRotation
-                                ? DomainSpace.World
-                                : ToDomainSpace(gizmoMode)));
-                    if (update.Success)
-                    {
-                        if (_cleanBonePivotMode is
-                            PivotMode.Custom or
-                            PivotMode.SelectionCenter)
-                        {
-                            var total = ToDomainDelta(
-                                cleanStart,
-                                newTransform,
-                                DomainSpace.World);
-                            newTransform = newTransform with
-                            {
-                                Position = _cleanBonePivot +
-                                    Vector3.Transform(
-                                        cleanStart.Position -
-                                        _cleanBonePivot,
-                                        total.Rotation),
-                            };
-                        }
-                        _cleanBoneCurrent = newTransform;
-                    }
-                    else
-                    {
-                        _cleanTransforms.Cancel(cleanGesture);
-                        ClearCleanBoneGesture();
-                    }
-                }
-            }
-            else if (_orbitSession != null)
-            {
-                var frameDelta = Quaternion.Normalize(
-                    newTransform.Rotation
-                    * Quaternion.Conjugate(_orbitSession.CurrentPrimaryTarget.Rotation));
-                _orbitSession.Update(Quaternion.Normalize(frameDelta * _orbitSession.TotalRotation));
-            }
-        }
-
-        // End drag
-        if (_cleanBoneGesture is { } cleanCompleted && !isUsing)
-        {
-            _cleanTransforms.Commit(cleanCompleted);
-            ClearCleanBoneGesture();
-        }
-        else if (_boneTrackingTransforms.Count > 0 && !isUsing)
-        {
-            _boneTrackingTransforms.Clear();
-            _orbitSession = null; // result stays in the stacks; history captured via drag events
+            _cleanTransforms.Commit(completed.Id);
+            _boneGesture = null;
         }
     }
 
@@ -543,15 +513,6 @@ public class GizmoOverlayWindow : Window
         foreach (var bone in bones)
             sum += bone.LastTransform.Position;
         return sum / bones.Count;
-    }
-
-    private void ClearCleanBoneGesture()
-    {
-        _cleanBoneGesture = null;
-        _cleanBoneStart = null;
-        _cleanBoneCurrent = null;
-        _cleanBonePivotMode = PivotMode.PerTarget;
-        _cleanBonePivot = Vector3.Zero;
     }
 
     private static TransformDelta ToDomainDelta(

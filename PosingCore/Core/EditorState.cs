@@ -25,5 +25,4 @@ public class EditorState : IEditorState
     public bool OrbitBoneRotation { get; set; }
     public OrbitPivotMode OrbitPivot { get; set; } = OrbitPivotMode.Parent;
     public Vector3 CustomOrbitPivot { get; set; }
-    public OrbitStrategy OrbitStrategy { get; set; } = OrbitStrategy.SnapshotAbsolute;
 }

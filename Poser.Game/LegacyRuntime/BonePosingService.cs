@@ -23,7 +23,7 @@ namespace Poser.Game;
 /// Service for manipulating bone transforms using game hooks.
 /// Simple delta-based system like Brio - bones rotate around themselves.
 /// </summary>
-public unsafe class BonePosingService : IBonePosingService, IOrbitWriter
+public unsafe class BonePosingService : IBonePosingService
 {
     private readonly IPluginLog _log;
     private readonly IFramework _framework;
@@ -511,31 +511,6 @@ public unsafe class BonePosingService : IBonePosingService, IOrbitWriter
 
         _eventBus.Publish(new BoneTransformChangedEvent(bone));
     }
-
-    public OrbitSession BeginOrbitSession(System.Collections.Generic.IReadOnlyList<IBone> bones, System.Numerics.Vector3 pivot, OrbitStrategy strategy)
-    {
-        var states = new System.Collections.Generic.List<OrbitSession.BoneState>();
-        foreach (var bone in bones)
-        {
-            if (bone is VirtualBone)
-                continue;
-            var baseline = GetModification(bone) ?? Transform.Zero;
-            states.Add(new OrbitSession.BoneState(bone, bone.LastTransform, baseline, null));
-        }
-        return new OrbitSession(states, pivot, strategy, this);
-    }
-
-    void IOrbitWriter.SetAbsolute(IBone bone, Transform absoluteDelta)
-    {
-        if (bone is VirtualBone)
-            return;
-        var poseInfo = GetPoseInfo(bone.Skeleton);
-        if (poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId).SetStackTransform(absoluteDelta))
-            _eventBus.Publish(new BoneTransformChangedEvent(bone));
-    }
-
-    void IOrbitWriter.ApplyIncrement(IBone bone, Transform target, Transform baseline)
-        => ApplyTransform(bone, target, baseline);
 
     private static readonly string[] IkChainEnds = { "j_te_l", "j_te_r", "j_asi_d_l", "j_asi_d_r" };
 

@@ -107,6 +107,4 @@ public interface IEditorState
     /// <summary>User-defined model-space pivot used when OrbitPivot is Custom.</summary>
     Vector3 CustomOrbitPivot { get; set; }
 
-    /// <summary>Orbit computation strategy — switchable in game to compare stability (see OrbitStrategy docs).</summary>
-    Poser.Core.OrbitStrategy OrbitStrategy { get; set; }
 }
