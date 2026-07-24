@@ -19,6 +19,9 @@ public sealed class ShellSidebarRow
     /// children are temporarily unavailable (e.g. skeleton not yet resolved).
     /// The affordance is never erased once a row can disclose children.</summary>
     public bool ExpanderDisabled;
+    /// <summary>Set on a merged category/bone row: the chevron toggles this
+    /// key while the row body still selects the bone in Tag.</summary>
+    public string? ExpandKey;
     public bool Expanded;
     public bool Active;
     public object? Tag;

@@ -85,11 +85,13 @@ public class PoseRailPane
             ImGui.SetCursorScreenPos(cursor);
             if (_inspector.IsActorSelection)
             {
+                // Always clickable: clearing overrides is a safe no-op when
+                // none exist (round-1 feedback — the availability predicate
+                // intermittently disabled a reset the user needed).
                 if (Crystarium.Button("Reset transform", new ButtonProps
                     {
                         Id = "rail-actor-reset",
                         Classes = Cls.Compact,
-                        Disabled = !_inspector.HasActorTransformOverride,
                         Tooltip = "Restore the actor's position, rotation, and scale from before it was moved",
                     }))
                     _inspector.ResetActorTransform();
@@ -104,6 +106,10 @@ public class PoseRailPane
             }
             else
             {
+                if (Crystarium.Button("Reset bone", new ButtonProps { Id = "rail-bone-reset", Classes = Cls.Compact,
+                    Tooltip = "Reset only this bone's pose" }))
+                    _inspector.ResetPrimaryBone();
+                ImGui.SameLine(0f, 6f * s);
                 if (Crystarium.Button("Select children", new ButtonProps { Id = "rail-children", Classes = Cls.Compact,
                     Tooltip = "Add every descendant bone to the selection" }))
                     _inspector.SelectChildren();

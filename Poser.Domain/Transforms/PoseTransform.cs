@@ -122,14 +122,20 @@ public readonly record struct TransformDelta(
 
 public static class TransformMath
 {
+    // Sagittal mirror for symmetry gestures: lateral X negated, rotation via
+    // the X-plane mirror conjugation (−x, y, z, −w) — not the full conjugate,
+    // which inverts the rotation instead of reflecting it.
     public static TransformDelta Mirror(TransformDelta delta) =>
         new(
             new Vector3(
                 -delta.Translation.X,
                 delta.Translation.Y,
                 delta.Translation.Z),
-            Quaternion.Normalize(
-                Quaternion.Conjugate(delta.Rotation)),
+            Quaternion.Normalize(new Quaternion(
+                -delta.Rotation.X,
+                delta.Rotation.Y,
+                delta.Rotation.Z,
+                -delta.Rotation.W)),
             delta.ScaleFactor);
 
     public static PoseTransform Apply(

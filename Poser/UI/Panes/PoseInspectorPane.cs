@@ -601,27 +601,32 @@ public class PoseInspectorPane
             new Vector2(cursor.X + 211f * s, cursor.Y + fy + 20f * s),
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.08f))));
 
-        // Parenting: the Anamnesis CYCLE (Full → Position only → Off)
+        // Parenting: one checkbox per propagated component (round-1 user
+        // feedback replaced the Anamnesis three-state cycle button).
         var poseInfo = _bonePosingService.GetPoseInfo(skeleton);
         ViewText.Label(new Vector2(cursor.X + 222f * s, cursor.Y + fy + 6f * s), "Parenting", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
-        string parentingLabel = poseInfo.DefaultPropagation switch
+        float px = cursor.X + 286f * s;
+        foreach (var (label, component) in new[]
         {
-            Core.TransformComponents.None => "Off",
-            Core.TransformComponents.Position => "Position only",
-            _ => "Full",
-        };
-        ImGui.SetCursorScreenPos(new Vector2(cursor.X + 286f * s, cursor.Y + fy));
-        if (Crystarium.Button(parentingLabel, new ButtonProps { Id = "ft-parenting", Classes = Cls.Compact,
-            Tooltip = "Cycle: Full > Position only > Off" }))
+            ("Pos", Core.TransformComponents.Position),
+            ("Rot", Core.TransformComponents.Rotation),
+            ("Scale", Core.TransformComponents.Scale),
+        })
         {
-            poseInfo.DefaultPropagation = poseInfo.DefaultPropagation switch
+            ImGui.SetCursorScreenPos(new Vector2(px, cursor.Y + fy + 4f * s));
+            bool propagates = poseInfo.DefaultPropagation.HasFlag(component);
+            if (Crystarium.Checkbox($"##ft-parenting-{label}", ref propagates))
             {
-                Core.TransformComponents.None => Core.TransformComponents.Position | Core.TransformComponents.Rotation,
-                Core.TransformComponents.Position => Core.TransformComponents.None,
-                _ => Core.TransformComponents.Position,
-            };
+                poseInfo.DefaultPropagation = propagates
+                    ? poseInfo.DefaultPropagation | component
+                    : poseInfo.DefaultPropagation & ~component;
+            }
+            px += 20f * s;
+            ViewText.Label(new Vector2(px, cursor.Y + fy + 6f * s), label, 11f,
+                FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.6f));
+            px += ViewText.Measure(label, 11f) + 8f * s;
         }
-        ImGui.SameLine(0f, 6f * s);
+        ImGui.SetCursorScreenPos(new Vector2(px, cursor.Y + fy));
         if (Crystarium.Button("Clear", new ButtonProps { Id = "ft-clear", Classes = Cls.Compact, Tooltip = "Clear bone selection" }))
             _selection.Clear();
 
@@ -1189,6 +1194,13 @@ public class PoseInspectorPane
         if (!IsActorSelection) return;
         _cleanTransforms.ClearActorOverrides(
             SelectedActorIds().Select(TransformTargetId.ForActor).ToList());
+    }
+
+    /// <summary>Resets only the primary selected bone's pose (rail head).</summary>
+    public void ResetPrimaryBone()
+    {
+        if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } boneId })
+            _cleanPose.ResetBone(TransformTargetId.ForBone(boneId), boneId.CanonicalName);
     }
 
     /// <summary>Adds every descendant of the selected bones to the selection.</summary>

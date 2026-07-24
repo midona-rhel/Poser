@@ -152,9 +152,14 @@ public class MainWindow : Window
         _vm.OnRowClicked = OnRowClicked;
         _vm.OnRowExpandToggled = row =>
         {
-            if (row.Tag is string key && !_collapsedNodes.Add(key))
+            // A merged category/bone row (e.g. the Root bone standing in for
+            // the Root category) carries a selection Tag plus an ExpandKey.
+            if (row.ExpandKey is { } expandKey && !_collapsedNodes.Add(expandKey))
+                _collapsedNodes.Remove(expandKey);
+            else if (row.ExpandKey == null && row.Tag is string key && !_collapsedNodes.Add(key))
                 _collapsedNodes.Remove(key);
-            else if (row.Tag is SelectionId { Kind: SceneEntityKind.Actor, Actor: { } rowActor })
+            else if (row.ExpandKey == null &&
+                row.Tag is SelectionId { Kind: SceneEntityKind.Actor, Actor: { } rowActor })
             {
                 var akey = "actor:" + rowActor.LogicalId;
                 if (!_collapsedNodes.Add(akey)) _collapsedNodes.Remove(akey);
@@ -450,29 +455,58 @@ public class MainWindow : Window
                         _collapsedNodes.Remove(catKey);
                     bool catExpanded = filtering || !_collapsedNodes.Contains(catKey);
                     bool catLast = g == displayedGroups.Count - 1;
-                    actors.Rows.Add(new ShellSidebarRow
+                    string categoryLabel = Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(cat);
+                    // When a category contains a bone whose display name IS
+                    // the category name (Root → n_root "Root"), the two rows
+                    // are redundant: the bone becomes the category row. Its
+                    // body selects the bone (Tag) while its chevron toggles
+                    // the category (ExpandKey) — one Root, not Root > Root.
+                    var mergedBone = allBones.Find(bone => bone.DisplayName == categoryLabel);
+                    if (mergedBone != null)
                     {
-                        Label = Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(cat),
-                        Count = allBones.Count.ToString(),
-                        Depth = 1,
-                        HasChildren = true,
-                        Expanded = catExpanded,
-                        IsLastChild = catLast,
-                        Tag = catKey,
-                    });
-                    if (!catExpanded) continue;
-                    for (int b = 0; b < visibleBones.Count; b++)
-                    {
-                        var boneSelectionId = SelectionId.ForBone(visibleBones[b].Id);
+                        var mergedId = SelectionId.ForBone(mergedBone.Id);
                         actors.Rows.Add(new ShellSidebarRow
                         {
-                            Label = visibleBones[b].DisplayName,
+                            Label = categoryLabel,
+                            Count = (allBones.Count - 1).ToString(),
+                            Depth = 1,
+                            HasChildren = true,
+                            Expanded = catExpanded,
+                            IsLastChild = catLast,
+                            Active = _selection.IsSelected(mergedId),
+                            Tag = mergedId,
+                            ExpandKey = catKey,
+                        });
+                    }
+                    else
+                    {
+                        actors.Rows.Add(new ShellSidebarRow
+                        {
+                            Label = categoryLabel,
+                            Count = allBones.Count.ToString(),
+                            Depth = 1,
+                            HasChildren = true,
+                            Expanded = catExpanded,
+                            IsLastChild = catLast,
+                            Tag = catKey,
+                        });
+                    }
+                    if (!catExpanded) continue;
+                    var childBones = mergedBone == null
+                        ? visibleBones
+                        : visibleBones.FindAll(bone => !bone.Id.Equals(mergedBone.Id));
+                    for (int b = 0; b < childBones.Count; b++)
+                    {
+                        var boneSelectionId = SelectionId.ForBone(childBones[b].Id);
+                        actors.Rows.Add(new ShellSidebarRow
+                        {
+                            Label = childBones[b].DisplayName,
                             // modded/unlocalized bones: DisplayName == canonical — one is enough
-                            Count = visibleBones[b].DisplayName == visibleBones[b].Id.CanonicalName
+                            Count = childBones[b].DisplayName == childBones[b].Id.CanonicalName
                                 ? ""
-                                : visibleBones[b].Id.CanonicalName,
+                                : childBones[b].Id.CanonicalName,
                             Depth = 2,
-                            IsLastChild = b == visibleBones.Count - 1,
+                            IsLastChild = b == childBones.Count - 1,
                             TreeLines = new[] { false, !catLast },
                             Active = _selection.IsSelected(boneSelectionId),
                             Tag = boneSelectionId,
