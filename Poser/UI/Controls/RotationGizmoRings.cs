@@ -16,7 +16,9 @@ public sealed class ProjectedRings
 {
     public bool Valid;
     public Vector2 Center;
+    public Vector3 PivotWorld;
     public Vector2[][] Points = Array.Empty<Vector2[]>();
+    public Vector3[][] WorldPoints = Array.Empty<Vector3[]>();
     public bool[][] Front = Array.Empty<bool[]>();
     public float ScreenRadius;
     public float RollRadius;
@@ -30,7 +32,9 @@ public sealed class ProjectedRings
         {
             Valid = Valid,
             Center = newCenter,
+            PivotWorld = PivotWorld,
             Points = new Vector2[Points.Length][],
+            WorldPoints = WorldPoints,
             Front = Front,
             ScreenRadius = ScreenRadius,
             RollRadius = RollRadius,
@@ -48,7 +52,7 @@ public sealed class ProjectedRings
     }
 }
 
-public readonly record struct RingHit(int Axis, float Distance, Vector2 Tangent);
+public readonly record struct RingHit(int Axis, float Distance, Vector2 Tangent, int SegmentIndex);
 
 /// <summary>
 /// The one shared rotation-gizmo calculation (PBI-002 correction 4C): frame
@@ -135,15 +139,18 @@ public static class RotationGizmoRings
 
         rings.Valid = true;
         rings.Center = center;
+        rings.PivotWorld = pivotWorld;
         rings.ScreenRadius = screenRadius;
         rings.RollRadius = screenRadius + 8f;
         rings.RollAxisWorld = Vector3.Normalize(pivotWorld - cameraPosition);
         rings.Points = new Vector2[3][];
+        rings.WorldPoints = new Vector3[3][];
         rings.Front = new bool[3][];
 
         for (int a = 0; a < 3; a++)
         {
             rings.Points[a] = new Vector2[RingPoints];
+            rings.WorldPoints[a] = new Vector3[RingPoints];
             rings.Front[a] = new bool[RingPoints];
             for (int i = 0; i < RingPoints; i++)
             {
@@ -156,6 +163,7 @@ public static class RotationGizmoRings
                 };
                 var world = pivotWorld +
                     Vector3.Transform(local, frame) * worldRadius;
+                rings.WorldPoints[a][i] = world;
                 if (!camera.WorldToScreen(world, out var screen))
                 {
                     // Behind the camera: reuse the previous point so the
@@ -182,6 +190,7 @@ public static class RotationGizmoRings
         if (!rings.Valid)
             return null;
         int axis = -1;
+        int segment = 0;
         var tangent = Vector2.Zero;
         float best = tolerance;
         for (int a = 0; a < 3; a++)
@@ -196,6 +205,7 @@ public static class RotationGizmoRings
                 {
                     best = dist;
                     axis = a;
+                    segment = i;
                     tangent = Vector2.Normalize(
                         rings.Points[a][i] - rings.Points[a][i - 1]);
                 }
@@ -207,9 +217,10 @@ public static class RotationGizmoRings
             MathF.Abs(radialLength - rings.RollRadius) < best)
         {
             axis = RollAxis;
+            segment = 0;
             tangent = Vector2.Normalize(new Vector2(-radial.Y, radial.X));
         }
-        return axis < 0 ? null : new RingHit(axis, best, tangent);
+        return axis < 0 ? null : new RingHit(axis, best, tangent, segment);
     }
 
     /// <summary>The world-space rotation axis of a ring in the given frame.</summary>
@@ -278,6 +289,41 @@ public static class RotationGizmoRings
         }
     }
 
+    /// <summary>
+    /// The screen-space direction of POSITIVE rotation about the ring's
+    /// axis at the grab point, derived by projecting an epsilon-rotated grab
+    /// point — so the drag direction always matches the applied rotation on
+    /// every ring regardless of winding or view handedness.
+    /// </summary>
+    public static Vector2 PositiveTangent(
+        ICameraService camera,
+        ProjectedRings rings,
+        RingHit hit,
+        Vector2 mouse)
+    {
+        Vector3 grabWorld;
+        if (hit.Axis == RollAxis)
+        {
+            grabWorld = camera.ScreenToWorld(
+                mouse, camera.GetDepthToPosition(rings.PivotWorld));
+        }
+        else
+        {
+            grabWorld = rings.WorldPoints[hit.Axis][hit.SegmentIndex];
+        }
+        var axisWorld = AxisWorld(rings, hit.Axis);
+        var rotated = rings.PivotWorld + Vector3.Transform(
+            grabWorld - rings.PivotWorld,
+            Quaternion.CreateFromAxisAngle(axisWorld, 0.05f));
+        if (!camera.WorldToScreen(grabWorld, out var a) ||
+            !camera.WorldToScreen(rotated, out var b))
+            return hit.Tangent;
+        var tangent = b - a;
+        return tangent.LengthSquared() < 1e-6f
+            ? hit.Tangent
+            : Vector2.Normalize(tangent);
+    }
+
     public static string AxisName(int axis) => axis switch
     {
         0 => "X axis",
@@ -295,4 +341,21 @@ public static class RotationGizmoRings
         float t = Math.Clamp(Vector2.Dot(point - a, ab) / lengthSq, 0f, 1f);
         return Vector2.Distance(point, a + ab * t);
     }
+}
+
+/// <summary>
+/// Shared pointer ownership for custom gizmo gestures: while a ring drag —
+/// or its release frame — owns the pointer, selection surfaces (skeleton
+/// overlay, 3D view) must not treat the click as a bone/actor pick.
+/// </summary>
+public static class GizmoPointerOwnership
+{
+    private static int _ownedUntilFrame = -1;
+
+    /// <summary>Call every frame the pointer engages a custom gizmo.</summary>
+    public static void Hold() =>
+        _ownedUntilFrame = ImGui.GetFrameCount() + 1;
+
+    public static bool Owned =>
+        ImGui.GetFrameCount() <= _ownedUntilFrame;
 }

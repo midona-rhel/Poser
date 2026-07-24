@@ -200,7 +200,8 @@ public class SkeletonOverlayWindow : Window
         }
 
         // Draw skeleton
-        var isGizmoActive = ImGuizmo.IsUsing();
+        var isGizmoActive = ImGuizmo.IsUsing() ||
+            Controls.GizmoPointerOwnership.Owned;
         var lineOpacity = isGizmoActive ? LineOpacityWhileUsing : LineOpacity;
 
         switch (_editorState.SkeletonViewMode)
@@ -237,6 +238,7 @@ public class SkeletonOverlayWindow : Window
         bool actorClicked = hoveredActor != null &&
                             !ImGuizmo.IsUsing() &&
                             !ImGuizmo.IsOver() &&
+                            !Controls.GizmoPointerOwnership.Owned &&
                             ImGui.IsMouseReleased(ImGuiMouseButton.Left);
         if (hoveredActor != null)
             ImGui.SetTooltip($"{hoveredActor.Name}\nActor transform");
@@ -355,7 +357,8 @@ public class SkeletonOverlayWindow : Window
             return false;
 
         // Don't show when gizmo active (Ktisis check)
-        if (ImGuizmo.IsUsing() || ImGuizmo.IsOver())
+        if (ImGuizmo.IsUsing() || ImGuizmo.IsOver() ||
+            Controls.GizmoPointerOwnership.Owned)
             return false;
 
         var begin = false;

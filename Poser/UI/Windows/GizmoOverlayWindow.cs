@@ -89,6 +89,10 @@ public class GizmoOverlayWindow : Window
     private Vector2 _ringOrigin;
     private float _ringDistance;
     private float _ringAngle;
+    // Pivot and frame freeze for the complete drag; rings are not
+    // recalculated from the moving bone until release.
+    private Vector3 _ringPivotWorld;
+    private Quaternion _ringFrame = Quaternion.Identity;
 
     /// <summary>Cancels only when the service still owns the gesture; an
     /// externally/self-cancelled gesture is treated as already cancelled.</summary>
@@ -632,22 +636,29 @@ public class GizmoOverlayWindow : Window
         // presentation result during a drag; applied deltas stay on the
         // frozen gesture-start baseline.
         Quaternion frameWorld;
-        if (primaryBone is { } bone &&
+        Vector3 pivotWorld;
+        if (gesture != null)
+        {
+            // Frozen for the complete drag.
+            frameWorld = _ringFrame;
+            pivotWorld = _ringPivotWorld;
+        }
+        else if (primaryBone is { } bone &&
             pivotChoice == Core.RotationPivot.Parent &&
             _viewport.GetParentModelTransform(bone) is { } parentModel)
         {
             frameWorld = UI.Controls.RotationGizmoRings.RadialFrame(
                 Vector3.Transform(parentModel.Position, modelMatrix),
                 Vector3.Transform(currentTransform.Position, modelMatrix));
+            pivotWorld = Vector3.Transform(pivotModel, modelMatrix);
         }
         else
         {
             frameWorld = gizmoMode == ImGuizmoMode.Local
                 ? Quaternion.Normalize(actorRotation * currentTransform.Rotation)
                 : Quaternion.Identity;
+            pivotWorld = Vector3.Transform(pivotModel, modelMatrix);
         }
-
-        var pivotWorld = Vector3.Transform(pivotModel, modelMatrix);
         var rings = UI.Controls.RotationGizmoRings.Project(
             _cameraService, pivotWorld, frameWorld, 80f * scale);
         if (!rings.Valid)
@@ -656,13 +667,13 @@ public class GizmoOverlayWindow : Window
         var io = ImGui.GetIO();
         var mouse = io.MousePos;
         int hoverAxis = -1;
-        var hoverTangent = System.Numerics.Vector2.Zero;
+        UI.Controls.RingHit? hoverHit = null;
         bool dragging = gesture != null;
         if (!dragging &&
             UI.Controls.RotationGizmoRings.HitTest(rings, mouse, 8f * scale) is { } hit)
         {
             hoverAxis = hit.Axis;
-            hoverTangent = hit.Tangent;
+            hoverHit = hit;
         }
 
         var dl = ImGui.GetWindowDrawList();
@@ -671,9 +682,14 @@ public class GizmoOverlayWindow : Window
             dl, rings, hoverAxis, dragAxisIndex, drawRearArcs: false, scale);
 
         // The overlay window is NoInputs; claim the mouse from the game while
-        // the pointer engages a ring (ImGuizmo does the same internally).
+        // the pointer engages a ring (ImGuizmo does the same internally), and
+        // hold shared ownership so selection surfaces ignore the click and
+        // its release frame.
         if (hoverAxis >= 0 || dragging)
+        {
             ImGui.SetNextFrameWantCaptureMouse(true);
+            UI.Controls.GizmoPointerOwnership.Hold();
+        }
 
         // Begin on ring press.
         if (!dragging && hoverAxis >= 0 &&
@@ -731,10 +747,15 @@ public class GizmoOverlayWindow : Window
                 var axisWorld = UI.Controls.RotationGizmoRings.AxisWorld(rings, hoverAxis);
                 _ringAxisModel = Vector3.Normalize(Vector3.Transform(
                     axisWorld, Quaternion.Inverse(actorRotation)));
-                _ringTangent = hoverTangent;
+                _ringTangent = hoverHit is { } grabHit
+                    ? UI.Controls.RotationGizmoRings.PositiveTangent(
+                        _cameraService, rings, grabHit, mouse)
+                    : System.Numerics.Vector2.Zero;
                 _ringOrigin = mouse;
                 _ringDistance = 0f;
                 _ringAngle = 0f;
+                _ringPivotWorld = pivotWorld;
+                _ringFrame = frameWorld;
             }
         }
 

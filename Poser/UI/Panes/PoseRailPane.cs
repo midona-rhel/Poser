@@ -33,6 +33,11 @@ public class PoseRailPane
     private Vector2 _dragOrigin;
     private float _dragDistance;
     private float _dragAngle;
+    private RingHit? _hoverHit;
+    // Pivot and frame freeze for the complete drag; the rings are not
+    // recalculated from the moving bone until release.
+    private Vector3 _dragPivotWorld;
+    private Quaternion _dragFrame = Quaternion.Identity;
 
     private static readonly Vector4 AxisX = Theme.Palette.AxisX;
     private static readonly Vector4 AxisY = Theme.Palette.AxisY;
@@ -159,6 +164,11 @@ public class PoseRailPane
 
         var (pivotWorld, frameWorld, axisConversion, canEdit) =
             _inspector.GizmoWorldContext();
+        if (active && _dragAxis >= 0)
+        {
+            pivotWorld = _dragPivotWorld;
+            frameWorld = _dragFrame;
+        }
 
         dl.AddCircleFilled(center, widgetRadius + 12f * s,
             ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.30f)));
@@ -170,32 +180,39 @@ public class PoseRailPane
         var rings = projected.Recentered(center);
 
         int hoverAxis = -1;
-        var hoverTangent = Vector2.Zero;
+        _hoverHit = null;
         if (hovered &&
             RotationGizmoRings.HitTest(rings, mouse, pickTolerance) is { } hit)
         {
             hoverAxis = hit.Axis;
-            hoverTangent = hit.Tangent;
+            _hoverHit = hit;
         }
 
         RotationGizmoRings.Draw(
             dl, rings, hoverAxis, active ? _dragAxis : -1,
             drawRearArcs: true, s);
 
-        if (ImGui.IsItemActivated() && canEdit && hoverAxis >= 0)
+        if (ImGui.IsItemActivated() && canEdit && hoverAxis >= 0 &&
+            _hoverHit is { } grabHit)
         {
             _dragAxis = hoverAxis;
             var axisWorld = RotationGizmoRings.AxisWorld(rings, hoverAxis);
             _dragAxisModel = Vector3.Normalize(Vector3.Transform(
                 axisWorld, Quaternion.Inverse(axisConversion)));
-            _dragTangent = hoverTangent;
+            // The widget is recentered 1:1, so world-projected tangent
+            // directions transfer directly.
+            _dragTangent = RotationGizmoRings.PositiveTangent(
+                _camera, projected, grabHit, projected.Center + (mouse - center));
             _dragOrigin = mouse;
             _dragDistance = 0f;
             _dragAngle = 0f;
+            _dragPivotWorld = pivotWorld;
+            _dragFrame = frameWorld;
         }
 
         if (active && _dragAxis >= 0)
         {
+            GizmoPointerOwnership.Hold();
             float newDistance = Vector2.Dot(mouse - _dragOrigin, _dragTangent);
             float delta = (newDistance - _dragDistance) *
                 RotationGizmoRings.ModifierMultiplier(io);
