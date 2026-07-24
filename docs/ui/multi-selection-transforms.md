@@ -40,23 +40,29 @@ the entire group through the same runtime restore path as cancel.
 
 ## Selection boundaries
 
-- Actor edits affect selected actors only.
-- Bone edits affect selected bones only.
-- Mixed selections remain valid, but the inspector transforms only entities matching its primary type.
-- Virtual bones remain a gizmo-specific aggregate and are excluded from direct numeric transform sessions because they cannot accept transforms themselves.
-- During an explicit multi-bone gesture, implicit linked-bone propagation is paused so a selected pair cannot receive the same delta twice. Single-bone gestures retain normal linked editing.
-- Gizmo expansion, root filtering, and symmetry pairing key real bones by
-  `(BoneName, PartialId)`. Name-only identity can merge unrelated body, face,
-  hair, weapon, or accessory bones that happen to share a Havok name.
+- Actor edits affect selected actors only; bone edits affect selected bones
+  only. Mixed selections do not exist: `SelectionSession` keeps the group
+  homogeneous, and incompatible input replaces the selection.
+- Selection-only group identities never enter a transform command; targets
+  are always concrete stable bone ids.
+- Linked partners expand into explicit targets before `Begin` and share the
+  gesture's atomic capture, rollback, commit, and history patch — there is no
+  implicit propagation to pause, so a selected pair can never receive the
+  same delta twice.
+- Root filtering and symmetry pairing key bones by stable
+  `BoneId` (slot, partial, index, canonical name), so duplicate Havok names
+  across body, face, hair, weapon, or accessory partials can never merge.
 
 ## Reference decisions
 
 - **Brio:** its entity manager supports multi-selection and its posing controls propagate a primary edit across selected targets.
 - **Ktisis:** the scene tree selects with modifier modes and `ITransformTarget.Targets` exposes a multi-target transform set to the object editor.
-- **Existing Poser gizmo:** its former private secondary-transform helper supplied the proven delta convention now centralized in `PoseMath.ApplyRelativeDelta`.
+- **Existing Poser gizmo:** its former private secondary-transform helper supplied the proven delta convention now centralized in `TransformGestureService.Update`.
 
 ## Known risks and verification
 
-- Parent-and-child bone selections can intentionally compound through hierarchy updates; compare direct rail edits with the existing gizmo behavior in-game.
-- Verify that the temporary linked-edit pause is restored after multi-bone gestures, including exceptional service paths.
-- In-game verification must cover two actors and multiple bones for drag, wheel, typed input, rotation ball, and one-step undo/redo.
+- Parent-and-child bone selections never compound: `TransformTargetResolver`
+  removes selected descendants before `Begin`, so the descendant's change
+  arrives only once, through the ancestor's propagation. Verify rail edits
+  and gizmo edits agree in-game.
+- In-game verification must cover two actors and multiple bones for drag, wheel, typed input, rotation ball, one-step undo/redo, and Escape cancellation.

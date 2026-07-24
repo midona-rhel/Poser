@@ -13,8 +13,8 @@ state from live transform gestures.
 - Present Full, Body, Expression, and Selected import scopes.
 - Present rotation, position, scale, descendant, and reset-before-import
   options.
-- Build `PoseImportOptions`, including selected-bone filters from
-  `ISelectionService`.
+- Build `PoseImportOptions`, including selected-bone filters from the
+  application `SelectionSession` (canonical names of the selected bone ids).
 - Invoke `IPoseFileService` for import and export.
 
 It does not select actors or bones, manipulate transforms directly, or record

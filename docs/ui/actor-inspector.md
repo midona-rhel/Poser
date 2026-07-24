@@ -20,12 +20,18 @@ The actor inspector is the Pose rail shown when the primary sidebar selection is
 
 ## Actor transform contract
 
-Whole-actor position, rotation, and scale use `IPosingService`:
+Whole-actor position, rotation, and scale run through the clean gesture path:
 
-1. `GetEffectiveTransform` supplies either the current override or the live draw-object transform.
-2. Dragging the rotation ball or an axis well calls `SetTransformOverride` for immediate feedback.
-3. Releasing the drag records a `TransformActorAction`, or one `CompositeAction` for multiple selected actors, so undo and redo replay the complete gesture.
-4. **Reset transform** calls `ClearTransformOverride` for every selected actor, restoring the transforms captured before their first edits.
+1. Rest-state values read through the runtime viewport projection for the
+   effective transform primary.
+2. Dragging the rotation ball or an axis well begins one
+   `TransformGestureService` gesture with the resolver's ordered actor
+   targets; every frame dispatches a total delta from the frozen baseline.
+3. Releasing the drag commits exactly one `TransformPatch` covering the
+   complete group, so undo and redo replay the whole gesture. Escape cancels
+   with no history item and suppresses restart until the pointer releases.
+4. **Reset transform** dispatches the stable-id `ClearActorOverrides`
+   command for every selected actor.
 5. Leaving GPose clears every override. Animation freeze/unfreeze does not clear or gate the model transform.
 
 The last rule is intentional. Brio's `ModelPosingCapability.Transform` and Ktisis' actor `ITransform` target are model-space controls independent from skeleton animation playback. Animation can continue while the entire actor stays translated, rotated, or scaled because `PosingService` enforces the draw-object override.
@@ -41,9 +47,9 @@ When multiple actors or bones are selected, the primary value drives the shared 
 
 | Concern | Actor selection | Bone selection |
 |---|---|---|
-| Transform space | Whole draw object, model/world-facing | Parent-local values converted at the service boundary |
-| Apply service | `IPosingService` | `IBonePosingService` |
-| History action | `TransformActorAction` | `TransformBoneAction` |
+| Transform space | Whole draw object, model/world-facing | Parent-local values composed against the frozen parent captured at Begin |
+| Apply path | `TransformGestureService` via stable actor targets | `TransformGestureService` via stable bone targets |
+| History | One `TransformPatch` per gesture | One `TransformPatch` per gesture |
 | Header actions | Reset transform, Mirror pose | Select children, Flip |
 | Animation warning | None; model transform is independent | Advisory warning while motion is live because game animation can rewrite bone positions |
 

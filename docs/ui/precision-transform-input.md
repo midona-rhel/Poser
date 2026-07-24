@@ -29,12 +29,18 @@ avoided. Both runs share a 7 px top inset within the 26 px well.
 
 `PoseInspectorPane.DrawTransform` retains the semantic responsibility:
 
-1. Read the currently selected entity's transform.
-2. Capture the pre-edit transform on the first change.
-3. Route live values to `IPosingService`, `IBonePosingService`, or the selected transformable entity.
-4. Record one history action when `released` is reported.
+1. Read the effective transform primary's rest-state values through the
+   runtime viewport projection.
+2. Begin one `TransformGestureService` gesture on the first change, with the
+   `TransformTargetResolver` target list; the service freezes every baseline.
+3. Dispatch each frame's value as a total delta from the frozen baseline.
+4. Commit exactly one `TransformPatch` when `released` is reported. Escape
+   cancels the gesture once, restores the frozen baseline, records nothing,
+   and suppresses restart until the pointer interaction deactivates; an
+   externally cancelled gesture clears local state the same way without a
+   second Cancel.
 
-Wheel and typed edits use the same apply/commit path as drag gestures, so undo and redo behavior stays consistent.
+Wheel and typed edits use the same begin/update/commit path as drag gestures, so undo and redo behavior stays consistent.
 
 X, Y, and Z are literal coordinate axes. `PoseMath` accounts for
 `Quaternion.CreateFromYawPitchRoll` taking arguments in Y, X, Z coordinate

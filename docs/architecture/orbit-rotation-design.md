@@ -16,8 +16,7 @@ The blow-up is a property of the COMPUTATION STRUCTURE, not the values:
    rotation the error is small and rotational; for an orbit the POSITION error
    is multiplicative in the radius: radius(n) = radius(0)·k^n. Even k = 1.001
    (0.1% per frame) reaches 7× in 2000 frames — "off to infinity" in seconds
-   of dragging. Encoded as a regression test:
-   `OrbitMathTests.BugReproduction_LiveIncrementalDivergesWhereSnapshotDoesNot`.
+   of dragging.
 2. **Quaternion denormalization scales positions.** A rotation with norm
    1+e applied to an offset scales it by (1+e)^2 per application; incremental
    composition without normalization compounds it.
