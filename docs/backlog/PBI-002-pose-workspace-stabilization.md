@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Ready |
+| Status | Runtime fix round required |
 | Size | Large |
 | Priority | Immediate runtime and retained-UI stabilization |
 | Implementation owner | Claude |
@@ -63,6 +63,165 @@ The user observed the following in game on the PBI-001 branch:
 
 These are observed defects, not permission to redesign unrelated Poser
 surfaces.
+
+## Runtime acceptance round 1 clarification
+
+The first in-game walkthrough at implementation head `df09d66` found eight
+blocking mismatches. These are corrections to PBI-002, not a new feature PBI.
+They supersede any earlier implementation or concept-document wording that
+describes the rejected behavior.
+
+### Actor disclosure affordance
+
+Actor roots remain initially collapsed, as requested before implementation,
+but a collapsed actor with a discoverable skeleton must always render a visible
+and clickable disclosure affordance.
+
+- Use the registered Tabler Chevron Right/Down icons rather than a private
+  hand-drawn triangle.
+- The icon, hover state, and 18 logical-pixel hit target must remain visible in
+  both collapsed and expanded states at every supported UI scale.
+- Clicking the disclosure affordance toggles expansion without selecting the
+  actor. Clicking the actor row selects it without changing expansion.
+- A temporarily unavailable skeleton may disable the affordance, but must not
+  permanently erase it once the scene snapshot exposes skeleton children.
+- Actor and category disclosure use the same icon and interaction primitive.
+
+### Rotation control is an oriented 3D gizmo
+
+The accepted control is not a flat custom diagram with one vertical line, one
+flattened ellipse, and a partial arc. It is the compact camera-relative
+rotation gizmo used conceptually by Ktisis `Gizmo2D` and Brio
+`ImBrioGizmo.DrawRotation`.
+
+- Draw three complete X/Y/Z circles in 3D.
+- Project the circles through the active game camera rotation.
+- In Local mode, orient them from the selected actor/bone's current model
+  rotation. In World mode, use world axes viewed through the camera.
+- The selected transform therefore changes the visible arcs and circle
+  foreshortening. The control is not a fixed screen-space symbol.
+- Render front-facing portions with the normal axis color and rear-facing
+  portions with a restrained low-alpha axis color so every ring remains
+  legible as a complete circle.
+- Hit-test the nearest visible projected ring segment. Hover, active axis,
+  tooltip, and applied quaternion must agree.
+- Drag along the selected ring's projected tangent and apply the resulting
+  quaternion in the selected Local/World frame. Do not map raw screen X/Y
+  deltas directly to Euler components.
+- Use the same immutable clean gesture, effective target resolution,
+  cancellation, rollback, and history path as the in-world gizmo.
+- Do not add another transform state machine merely to embed the gizmo.
+
+Reference implementations:
+
+- `../Ktisis/Ktisis/Interface/Components/Transforms/Gizmo2D.cs`
+- `../Ktisis/Ktisis/Interface/Overlay/Gizmo.cs`
+- `../Brio/Brio/UI/Controls/Stateless/ImBrio.Gizmo.cs`
+- `../Brio/Brio/UI/Windows/Specialized/PosingTransformWindow.cs`
+
+### Transform-field wheel and modifiers
+
+Mouse wheel is navigation while the inspector rail is scrollable. Hovering a
+numeric axis field or the rotation gizmo must not change a transform.
+
+- Remove wheel-to-edit from Position, Rotation, Scale, and the compact rotation
+  gizmo.
+- Do not consume the wheel in those controls; it must continue scrolling the
+  inspector in both directions.
+- Horizontal drag remains the pointer-edit interaction.
+- Ctrl gives fine movement at `0.1×` normal drag sensitivity.
+- Shift gives coarse movement at `10×` normal drag sensitivity.
+- Ctrl+Shift resolves to normal `1×` sensitivity.
+- Apply the policy consistently to the inspector's Position, Rotation, and
+  Scale drag fields. Tooltips must state the same behavior.
+- The modifier scales pointer deltas accumulated from the frozen gesture; no
+  frame may feed a native result back as the next frame's baseline.
+
+This supersedes the earlier precision-field requirement for wheel commits and
+the rejected flat rotation ball's Shift-to-Z free-drag shortcut.
+
+### Skeleton overlay default
+
+The in-world skeleton overlay starts Off on a new GPose/UI session. Opening the
+main window must not force `SkeletonOverlayWindow.IsOpen = true`.
+
+- The toolbar Armature action remains the explicit on/off control.
+- Its active state reflects the actual window state.
+- User toggles persist while the current GPose session remains active.
+- The gizmo overlay remains independently available; disabling skeleton dots
+  must not disable transform manipulation.
+
+### Jaw Open expression
+
+**Jaw Open** at a positive weight must affect the actor's actual face/jaw bones.
+The first walkthrough produced no visible bone change.
+
+- Diagnose the concrete actor catalog and record which of `j_f_dago`,
+  `j_f_hagukidn`, and `j_f_ago` resolve, including their partial ids.
+- Expression lookup must target the face-partial instances that the game
+  evaluates. A first-name-only lookup must not silently bind a duplicate bone
+  from the wrong partial.
+- If multiple valid partial instances intentionally participate, represent
+  each with its complete bone identity; do not collapse them by canonical name.
+- A catalog unit with zero resolvable target bones is unavailable/diagnostic,
+  not an apparently functional slider that performs no work.
+- The fix must preserve Blink, Pucker, simultaneous-unit composition, and
+  manual face-pose layering.
+
+### Gaze release and actor discovery
+
+Turning off Head, Eyes, or Body means Poser immediately relinquishes that
+part. Merely removing the part from the per-frame write mask is insufficient:
+the native look-at controller retains the last target and the visible pose.
+
+- Capture the native pre-Poser `LookAtTarget` for each part when Poser first
+  takes authority over that part.
+- When a part is removed, restore that part's captured target/mode exactly once
+  and allow the original game look-at update to recompute it immediately.
+- Mode Off and `ResetGaze` restore every controlled part and clear locks.
+- Switching Camera ↔ Forward ↔ Actor while a part remains participating changes
+  its source without recapturing the Poser-authored output as a new baseline.
+- Locked parts retain their frozen source only while they remain participating;
+  disabling a locked part still restores its pre-Poser baseline.
+- Restoration must occur on the framework/native thread and may use a
+  transition command or one-shot pending restore consumed by the detour. It
+  must not wait for the inspector to redraw.
+
+Actor targeting is scene membership, not a social feature:
+
+- every valid other actor represented by the current GPose scene is eligible;
+- friend-list status is irrelevant;
+- the source actor is excluded;
+- if the sidebar/`SceneSession` can see another actor but the gaze picker
+  cannot, fix the discovery/read boundary rather than displaying “no other
+  actors”;
+- use stable actor identity for the selection and resolve to the live native
+  object only when applying.
+
+### Reset All means all posing state
+
+The Pose section's **Reset All** is an actor-level reset use case, not an alias
+for clearing only manual skeleton transforms.
+
+One activation must:
+
+1. clear manual pose transforms for all skeleton regions;
+2. clear expression weights and remove the expression layer;
+3. restore and clear all Poser gaze modes, participating parts, targets, and
+   locks;
+4. disarm actor-local IK chains and clear the Live IK state where it would
+   otherwise remain active.
+
+It deliberately preserves:
+
+- actor world/model placement;
+- the pose stash/clipboard;
+- UI tool choice, Local/World choice, and tree disclosure.
+
+Route this through one documented actor-level reset operation. The UI must not
+fire several unrelated callbacks with no failure contract. A partial failure
+is reported and must not leave managed expression/gaze state claiming that a
+layer still exists after its native pose was cleared.
 
 ## Decision and clarification rule
 
@@ -215,12 +374,16 @@ Before changing production behavior, update the applicable concept documents:
 - `docs/ui/pose-surface-layout.md`
 - `docs/ui/scene-tree.md`
 - `docs/ui/rotation-ball.md`
+- `docs/ui/precision-transform-input.md`
 - `docs/services/expression-service.md`
 - `docs/services/gaze-service.md`
 - `docs/ui/gaze-selection.md`
 - `docs/architecture/orbit-rotation-design.md`
 - `docs/ui/bone-gizmo-transforms.md`
 - `docs/ui/pose-action-wrapping.md`
+
+Document the actor-level Reset All operation as its own application concept;
+do not hide its multi-service contract inside a pane document.
 
 Add a separate IK concept document if the final implementation materially
 changes IK ownership or eligibility. Documentation must describe the final
@@ -472,15 +635,26 @@ review round.
 - [ ] Matrix still scrolls when its document exceeds the middle viewport.
 - [ ] Header/footer remain fixed across all four modes.
 - [ ] Actor roots initially appear collapsed.
+- [ ] Every actor/category with children shows the shared disclosure chevron in
+      both collapsed and expanded states.
+- [ ] Disclosure toggles without changing actor/bone selection.
 - [ ] Filtering and external bone selection reveal required ancestors without
       destroying prior user disclosure state.
 
 ### Rotation and pivot
 
-- [ ] X, Y, and Z on the rotation ball are each independently selectable at the
-      user's UI scale.
+- [ ] The compact rotation control renders three complete, camera-projected
+      X/Y/Z rings oriented from the selected transform and Local/World mode.
+- [ ] Front and rear ring segments remain legible with distinct opacity.
+- [ ] X, Y, and Z are each independently selectable at the user's UI scale.
 - [ ] Hovered, active, displayed, and applied axis always agree.
-- [ ] A rotation-ball drag creates one undoable gesture.
+- [ ] Ring-tangent drag applies the correct quaternion without raw
+      screen-delta-to-Euler mapping.
+- [ ] A compact-gizmo drag creates one undoable clean gesture.
+- [ ] Mouse wheel over transform fields/gizmo scrolls the inspector and never
+      edits a value.
+- [ ] Ctrl drag is `0.1×`, Shift drag is `10×`, and Ctrl+Shift is `1×` for
+      Position, Rotation, and Scale fields.
 - [ ] Self rotates in place.
 - [ ] Parent visibly places the gizmo at the parent and preserves radius.
 - [ ] Selection visibly places the gizmo at the effective-root centroid.
@@ -491,6 +665,8 @@ review round.
 
 - [ ] Blink 0 → 1 progressively closes both eyes.
 - [ ] Pucker 0 → 1 produces a centered result without lateral mouth drift.
+- [ ] Jaw Open resolves the evaluated face-partial bones and visibly opens the
+      jaw.
 - [ ] Every shipped unit has been checked through the same catalog conversion
       path for both positive and, where supported, negative weights.
 - [ ] 0 → 1 → 0 and repeated adjustments do not drift.
@@ -501,7 +677,11 @@ review round.
 
 - [ ] Off, Forward, Camera, and Actor each produce their documented behavior.
 - [ ] Off visibly disables parts/locks and performs no override.
+- [ ] Removing Eyes, Head, or Body immediately restores that part's captured
+      pre-Poser look-at target/mode.
 - [ ] Actor mode cannot target the same actor and requires a valid other actor.
+- [ ] Every other actor in the current GPose scene is offered regardless of
+      friend-list status.
 - [ ] Target redraw/despawn safely re-resolves or disables gaze.
 - [ ] Part toggles and locks affect only the intended part.
 - [ ] IK runs only for eligible armed chains and only on translation.
@@ -513,6 +693,9 @@ review round.
 - [ ] Pose and Transfer buttons share one compact style and consistent gaps.
 - [ ] Actions wrap without overflow or invented fixed breaks.
 - [ ] Disabled Apply stash fades text as well as its surface and cannot click.
+- [ ] Reset All clears manual pose, expression, gaze, and actor-local IK state
+      while preserving placement and stash.
+- [ ] Skeleton overlay starts Off and remains controlled by the Armature action.
 - [ ] Reproducing every included interaction emits no Poser error.
 - [ ] No exception was hidden by broad catch/log suppression.
 
@@ -539,23 +722,34 @@ Claude and Codex do not automate this walkthrough. After code review, the user:
 3. Selects a bone externally and confirms only its required tree path reveals.
 4. Switches Body → Face → Matrix → 3D at two window heights; confirms fixed
    header/footer, padded 3D, and no phantom canvas scrollbar.
-5. Drags X, Y, Z, and free space on the rotation ball; verifies matching
-   numeric axes and one-step undo/redo.
-6. Chooses Self, Parent, and Selection in the toolbar; verifies the gizmo
+5. Rotates the game camera and the selected bone, then confirms the compact
+   rotation gizmo's three full rings reproject accordingly in Local and World.
+   Drags X, Y, and Z; verifies matching rotation and one-step undo/redo.
+6. Hovers Position/Rotation/Scale fields and the compact gizmo, wheels up and
+   down, and confirms only the inspector scrolls. Drags fields normally, with
+   Ctrl, with Shift, and with both.
+7. Chooses Self, Parent, and Selection in the toolbar; verifies the gizmo
    visibly moves and the bone follows the displayed pivot without drift.
-7. Moves Blink from 0 → 1 → 0 eight times; verifies close/restore and no drift.
-8. Moves Pucker from 0 → 1 → 0 eight times; verifies centered lips and no
+8. Moves Blink from 0 → 1 → 0 eight times; verifies close/restore and no drift.
+9. Moves Pucker from 0 → 1 → 0 eight times; verifies centered lips and no
    drift.
-9. Combines two expression units, resets expression, and confirms a manual
+10. Moves Jaw Open from 0 → 1 → 0 and confirms the actual evaluated jaw bones
+    move and restore.
+11. Combines two expression units, resets expression, and confirms a manual
    face-bone edit remains.
-10. Tries gaze Off, Forward, Camera, then Actor with a second actor. Toggles and
-    locks Eyes, Head, and Body independently.
-11. Despawns/redraws the gaze target and confirms safe disable/rebind.
-12. Enables Live IK on an eligible hand/foot chain, translates it, then tries
+12. Tries gaze Off, Forward, Camera, then Actor with a second actor regardless
+    of friend-list status. Toggles and locks Eyes, Head, and Body independently;
+    each disabled part immediately returns to its pre-Poser state.
+13. Despawns/redraws the gaze target and confirms safe disable/rebind.
+14. Enables Live IK on an eligible hand/foot chain, translates it, then tries
     rotation and an ineligible bone.
-13. Checks Flip/Mirror, Reset, Stash, and disabled/enabled Apply stash at narrow
+15. Enables an expression, gaze, manual pose, and IK, presses Reset All, and
+    confirms all four clear while actor placement and stash remain.
+16. Checks Flip/Mirror, Reset, Stash, and disabled/enabled Apply stash at narrow
     inspector width.
-14. Reviews the Dalamud log for Poser errors produced by these steps.
+17. Confirms the skeleton overlay starts Off, toggles it twice from the
+    Armature action, and verifies gizmo manipulation remains available.
+18. Reviews the Dalamud log for Poser errors produced by these steps.
 
 The user reports failures with active actor/bone, selected mode/tool/space/
 pivot, exact input sequence, expected result, observed result, and the complete
@@ -583,9 +777,14 @@ Known deviations or open questions:
 The handoff must additionally state:
 
 - the expression transform convention found and why Blink/Pucker were wrong;
+- the resolved catalog, partial ids, and matched targets for Jaw Open;
 - how gaze state and target identity survive/reconcile actor refresh;
+- how each gaze part captures and restores its pre-Poser native baseline;
+- the discovery source used by Actor gaze mode and proof it has no friend-list
+  dependency;
 - whether IK required a behavior change or only eligibility/documentation;
 - which old Orbit/Custom fields and draw paths were deleted;
+- the actor-level Reset All operation and the state it deliberately preserves;
 - whether the current user log was available.
 
 Compilation does not prove visual or native correctness. Claude must not claim
@@ -596,7 +795,7 @@ log is clean unless the user explicitly confirmed it.
 
 | Round | Reviewed range | Blocking findings | Non-blocking findings | Result |
 |---|---|---:|---:|---|
-| 1 | Pending | — | — | Pending |
+| 1 | `3426b5b..df09d66` | 8 | 0 | Runtime fix round required |
 
 ## Definition of done
 
