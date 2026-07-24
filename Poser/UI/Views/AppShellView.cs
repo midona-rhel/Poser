@@ -61,7 +61,7 @@ public sealed class AppShellViewModel
     public int RotationPivot;         // 0 self, 1 parent, 2 selection
     public bool ShowRotationPivot;    // Rotate tool + bone selection only
     public bool RotationPivotParentAvailable;
-    public bool SkeletonOverlayOn = true;
+    public bool SkeletonOverlayOn;
     public bool CanUndo = true;
     public bool CanRedo;
     public bool ShowSpawn;

@@ -19,10 +19,15 @@ not added to the `WindowSystem`.
 
 ## Lifecycle
 
-`SetPrimaryOpen` opens or closes the main surface and both interaction canvases
-with GPose. Settings remains independently user-controlled. The constructor
-wires the main titlebar skeleton toggle to the skeleton canvas. `Dispose`
-unwires that event and clears the window system.
+`SetPrimaryOpen` opens or closes the main surface and the gizmo canvas with
+GPose. The skeleton overlay starts **Off** each GPose/UI session: only the
+toolbar Armature action opens it, its active state reflects the actual window
+state, a user toggle persists while the session remains active, and session
+end closes it so the next session starts Off again. Disabling skeleton dots
+never disables transform manipulation — the gizmo canvas is independent.
+Settings remains independently user-controlled. The constructor wires the main
+titlebar skeleton toggle to the skeleton canvas. `Dispose` unwires that event
+and clears the window system.
 
 Auxiliary close policies, pop-outs, and cross-window inline sharing are not part
 of this class.

@@ -46,7 +46,11 @@ public sealed class UiWindowSet : IDisposable
     {
         Main.IsOpen = isOpen;
         GizmoOverlay.IsOpen = isOpen;
-        SkeletonOverlay.IsOpen = isOpen;
+        // The skeleton overlay starts Off each GPose/UI session: only the
+        // toolbar Armature action opens it, and a user toggle persists for the
+        // session. Session end still closes it so the next session starts Off.
+        if (!isOpen)
+            SkeletonOverlay.IsOpen = false;
     }
 
     private void SetSkeletonOverlayOpen(bool isOpen)
