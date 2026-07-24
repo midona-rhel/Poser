@@ -41,20 +41,45 @@
 **Test coverage:** `GetBonesToDepth` and the enabled/solver-type dispatch guards are headless-testable with fake bones. Everything from pose resolution down (both solvers, struct layouts, sig scans) is in-game-only (docs/process/in-game-verification.md): after each patch verify init succeeds and both CCD and TwoJoint visibly pull a hand chain to a gizmo target without distortion.
 
 
-## Drag-path wiring (Phase C, 2026-07-18)
+## Drag-path wiring and eligibility (PBI-002 audit)
+
 IK is applied Brio-style: **live, every frame, during pose application** —
 `BonePosingService.ApplyBoneTransform` computes the position target as
 `current model position + stored delta` and, when the bone's `BonePoseInfo.IK`
-is enabled, calls `SolveIK(bone, target, ik)` instead of writing the
-translation (with `EnforceConstraints == false` it writes the raw target
-afterwards, matching Brio). Nothing about the chain is persisted: undo/redo
-and .pose export stay pure delta operations.
+is enabled and the stored position delta is non-zero, calls
+`SolveIK(bone, target, ik)` instead of writing the translation (with
+`EnforceConstraints == false` it writes the raw target afterwards, matching
+Brio). Nothing about the chain is persisted: undo/redo and .pose export stay
+pure delta operations. Rotation- and scale-only deltas never enter the solve
+branch.
 
-Arming: `GizmoOverlayWindow` sets the dragged bone's IK at drag start from the
-session toggle `IEditorState.IkEnabled` (Transform pane switch), using
-`BoneIKInfo.CalculateDefault(boneName)` + `Enabled = true` — note the factory
-only selects the solver (TwoJoint for `j_te*`/`j_asi_d*`, CCD otherwise) and
-does NOT arm the chain itself. Limitations: primary drag bone only (symmetry
-pairs keep plain deltas); solve resolves the hkaPose from the bone each call.
-Tests: `IKWiringTests` (solver selection, arming semantics); the solve itself
-is native Havok → in-game checklist P-C-IK.
+### Eligibility
+
+The supported IK chains are the four Havok chain ends with authored solver
+setups: `j_te_l`, `j_te_r` (hands, TwoJoint) and `j_asi_d_l`, `j_asi_d_r`
+(feet, TwoJoint). `BoneIKInfo.CalculateDefault` still selects CCD for other
+names, but no retained UI path arms an unsupported bone: eligibility is the
+supported-chain-end set.
+
+### Arming (session and bulk)
+
+- **Live IK** (`IEditorState.IkEnabled`) is a session switch consumed only at
+  **translate**-gesture begin: when the effective transform primary is a
+  supported chain end, the gesture arms it (`Enabled = true`,
+  `CalculateDefault` solver) when the switch is on and disarms it when the
+  switch is off. Rotate and scale gestures never read or modify IK arming —
+  starting a rotation cannot silently re-arm or disarm a chain.
+- **Arm hands + feet** arms exactly the four supported chain ends on the
+  selected skeleton; **Disarm all** clears `BoneIKInfo` on every bone of that
+  skeleton that currently carries pose info — including bones armed by older
+  builds — so the label is literal. Both are idempotent, actor-local, and
+  touch no transform stacks.
+- An unsupported selection presents a quiet unavailable state in the IK
+  section (the Live IK switch is disabled with an inline explanation); the
+  bulk actions remain available because they act on the skeleton, not the
+  selection.
+
+Limitations (deliberate, documented): arming applies to the primary drag bone
+only — symmetry pairs keep plain deltas; the solve resolves the hkaPose from
+the bone each call. The solve itself is native Havok → in-game checklist
+P-C-IK.

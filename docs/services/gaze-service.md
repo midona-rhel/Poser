@@ -2,47 +2,113 @@
 
 **Source:** `PosingCore/Services/IGazeService.cs`, `Poser.Game/LegacyRuntime/GazeService.cs`
 
-**Purpose:** Controls where actors look, per body part (Body / Head / Eyes flags), by hooking the game's per-actor look-at loop and injecting target positions into the character's `LookAtController` every time the loop runs. Modes: `None` (game default), `Forward` (a computed point 10 units ahead of the actor), `Camera` (live camera position each frame), `Entity` (another actor's position). Individual parts can be *locked* at a fixed world position (freeze gaze while the camera moves), and gaze can be disabled entirely so head/eye bones follow bone posing instead. Based on Brio's `ActorLookAtService`.
+**Purpose:** Controls where actors look, per body part (Body / Head / Eyes),
+by hooking the game's per-actor look-at loop and injecting targets into the
+character's `LookAtController` every time the loop runs. Modes: `None` (game
+default — no Poser override), `Forward` (a computed point ahead of the
+actor), `Camera` (live camera position), `Entity` (another actor, targeted by
+id). Individual participating parts can be *locked* at their current target
+(freeze gaze while the camera or target moves). Based on Brio's
+`ActorLookAtService`.
 
-**Public API:**
+## Identity model (PBI-002)
 
-| Member | Signature | What it does |
-|---|---|---|
-| `GetGazeState` | `GazeState GetGazeState(IActor)` | Gets/creates the managed-side state (Mode, TargetType, TargetEntity). |
-| `SetGazeMode` | `void SetGazeMode(IActor, GazeTargetMode)` | Sets mode and re-applies. |
-| `SetGazeTargetType` | `void SetGazeTargetType(IActor, GazeTargetType)` | Sets affected parts and re-applies. |
-| `SetGazeTarget` | `void SetGazeTarget(IActor, IActor target)` | Sets entity target, switches mode to `Entity`. |
-| `ResetGaze` | `void ResetGaze(IActor)` | Removes state and the native look-at handle — full game default. |
-| `SetGazeState` | `void SetGazeState(IActor, GazeState)` | Replaces the whole state (clone-in); used for undo/history. |
-| `LockGaze` | `void LockGaze(IActor, GazeTargetType = All)` | Freezes the given parts at the *current camera position*; forces mode to `Camera` so the detour applies the locked positions. Publishes `GazeLockChangedEvent(actor, true)`. |
-| `SetTargetLock` | `void SetTargetLock(IActor, bool doLock, GazeTargetType, Vector3 position)` | Brio-style per-part lock/unlock at an explicit position; auto-enables Camera mode if gaze was off. |
-| `DisableGaze` | `void DisableGaze(IActor)` | Mode/type → None, all locks off, `LookMode.None` on all parts; detour passes through to the game. Publishes `GazeLockChangedEvent(actor, false)`. |
-| `UnlockGaze` | `void UnlockGaze(IActor)` | Clears all part locks, restores `LookMode.Position` (camera tracking resumes). |
-| `IsGazeLocked` / `IsPartLocked` | `bool …(IActor[, GazeTargetType])` | Lock queries against the native handle. |
-| `IsGazeEnabled` | `bool IsGazeEnabled(IActor)` | Handle exists and mode != None. |
-| `EnableGaze` | `void EnableGaze(IActor)` | Initializes Camera mode / All parts (Brio's `StartLookAt`), syncs the managed `GazeState` too. |
-| `Dispose` | `void Dispose()` (via `IDisposable` on the class; the interface itself does not extend `IDisposable`) | Disposes the hook, unsubscribes. |
+Managed gaze state survives ordinary actor-list refreshes because nothing in
+it is keyed by wrapper identity:
 
-**Events:**
-- **Published:** `GazeLockChangedEvent(IActor, bool)` — from `LockGaze` (true), `DisableGaze`/`UnlockGaze` (false).
-- **Consumed:** `GPoseStateChangedEvent` — on exit, clears all gaze states and look-at handles.
+- The state map is keyed by **actor lineage** (`Guid`), not by `IActor`
+  reference. `ActorManager` rebuilding wrapper instances on refresh/redraw
+  cannot orphan a state.
+- `GazeState.TargetLineage` stores the target actor's lineage `Guid` — never
+  an `IActor` reference and never a captured native address. The target is
+  resolved lineage → current actor → `GameObjectId` at each state
+  transition.
+- Native look-at holders remain keyed by `GameObjectId` (native truth).
+- On every actor-list change the service reconciles: a source lineage that
+  left the scene drops its state and holder; a target lineage that left the
+  scene transitions that source's gaze to **Off** (one transition, no stale
+  address is ever followed).
 
-**Dependencies:**
-- Dalamud: `IObjectTable` (`CreateObjectReference` for address→GameObjectId mapping), `ISigScanner`, `IGameInteropProvider`, `IPluginLog`.
-- PosingCore: `IGPoseService`, `ICameraService` (camera position each application), `IEventBus`.
+## Native application
 
-**Game surface (WATCH — patch-sensitive):**
-- **Sig scan → function pointer** `_updateLookAt` (update face tracker): `"E8 ?? ?? ?? ?? 8B D7 48 8B CB E8 ?? ?? ?? ?? 41 ?? ?? 8B D7 48 ?? ?? 48 ?? ?? ?? ?? 48 83 ?? ?? 5F"`, called as `(CharacterLookAtController*, LookAtTarget*, uint index, nint)` with indices Body=0, Head=1, Eyes=2.
-- **Sig scan + hook** `_actorLookAtLoop`: `"E8 ?? ?? ?? ?? 48 83 C3 08 48 83 EF 01 75 CF 48 ?? ?? ?? ?? 48"`, detour reads `ContainerInterface->OwnerObject` to identify the actor, injects targets, then always calls the original (which runs the gaze IK).
-- **Deliberately no try/catch** on these scans — if the sigs break, plugin load fails loudly instead of running with silently broken gaze.
-- **Hand-written structs**: `LookAtSource` (Body/Head/Eyes/Unknown), `LookAtType` (`LookAtTarget` at offset **0x30**), `LookAtTarget` (`LookMode` at 0x08, `Position` at 0x10), `LookMode` enum (None/Frozen/Pivot/Position). Native access: `((Character*)addr)->LookAt.Controller`, `GameObject.Position/Rotation`.
+- **Actor mode is id-based.** `LookAtTarget` carries the Brio/Ktisis-verified
+  union at offset 0x10: the position `Vector3` overlaps a `GameObjectId`
+  actor target, and `LookMode` value 1 is **Target** (id-following; the game
+  tracks the object itself). Entity mode writes `LookMode.Target` plus the
+  target's `GameObjectId` once per transition — the detour does not poll a
+  captured address and holds no `GameObject*`. A despawned target id simply
+  stops resolving inside the game's own controller.
+- **Camera** writes the live camera position (`LookMode.Position`) each loop
+  iteration for unlocked participating parts. **Forward** writes a computed
+  point 10 units ahead and 1.5 units up from the actor's own position and
+  facing — an observably different source from Camera.
+- **Off** early-returns to the original function: no Poser write at all.
+- A **lock** freezes one participating part at its actual current target
+  position (`LookMode.Position` with the position captured at lock time). It
+  does not change the mode, the participation mask, or the other parts —
+  Brio's per-part `SetTargetLock` semantics. Unlocking returns the part to
+  the active mode's source. Mode/part transitions never re-seed locked
+  parts.
+- Every UI action is **one state transition**. The detour allocates nothing
+  per frame (the former per-loop `CreateObjectReference` call is gone); the
+  two maps are guarded by one lock shared between the UI thread and the
+  hooked game loop.
 
-**Brio counterpart:** `Brio/Brio/Game/Actor/ActorLookAtService.cs` — same two signatures, same struct offsets, same copy-to-local-`LookAtSource`-before-use trick, same per-part lock concept (`SetTargetLock`). Differences: PosingCore adds the explicit `DisableGaze`/`EnableGaze` pair and the `GazeTargetMode.Forward` computed-point mode, and keys native handles by `GameObjectId` while keeping a separate UI-facing `GazeState` map. Brio ties look-at data to its capability objects instead.
+## Public API
 
-**Known risks:**
-- `_gazeStates` is keyed by `IActor` **reference**. `ActorManager.RefreshActors()` rebuilds actors as new instances, so managed gaze state silently orphans after any actor-list change; the native `_lookAtHandles` (keyed by `GameObjectId`) survive, so behavior persists but the UI-visible `GetGazeState` resets. Real desync hazard.
-- Detour work per actor per frame includes `IObjectTable.CreateObjectReference` (allocation) — runs inside a hot game loop.
-- Struct offsets (0x30 / 0x08 / 0x10) are unverified-by-compiler magic numbers; a layout change misreads without crashing.
-- Fail-fast constructor means a broken sig blocks the whole plugin from loading (accepted trade-off, but different from every other service here).
+| Member | What it does |
+|---|---|
+| `GetGazeState(Guid lineage)` | Gets/creates the managed state (Mode, Parts, TargetLineage). |
+| `SetGazeMode(Guid lineage, GazeTargetMode)` | One transition; entering a non-Off mode with no participating parts defaults to all three; Entity mode without a resolved target writes nothing. |
+| `SetGazeParts(Guid lineage, GazeTargetType)` | Changes participation only. Turning off the final active part transitions the mode to Off. |
+| `SetGazeTarget(Guid lineage, Guid targetLineage)` | Resolves and applies the Entity target; rejects the source's own lineage. |
+| `SetPartLock(Guid lineage, GazeTargetType part, bool locked)` | Freezes/unfreezes one participating part at its actual current target. |
+| `ResetGaze(Guid lineage)` | Removes state and holder — full game default. |
+| `IsPartLocked` / `IsGazeEnabled` | State queries. |
 
-**Test coverage:** Managed-state transitions (`GazeState`, mode/type/lock flag logic) are headless-testable only if the `IObjectTable`/native handle path is faked; as written almost every method dereferences game memory or needs `CreateObjectReference`. Treat the service as in-game-only (docs/process/in-game-verification.md): after each patch verify camera-follow eyes, per-part lock (eyes locked, head free), entity targeting, and that `DisableGaze` lets head bones be posed.
+**Events:** none published. Consumes `GPoseStateChangedEvent` (exit clears all
+state and holders) and `ActorListChangedEvent` (lineage reconciliation above).
+
+**Dependencies:** Dalamud `IObjectTable`, `ISigScanner`,
+`IGameInteropProvider`, `IPluginLog`; PosingCore `IGPoseService`,
+`ICameraService`, `IEventBus`; the actor source used for lineage resolution.
+
+## Game surface (WATCH — patch-sensitive)
+
+- **Sig scan → function pointer** `_updateLookAt` (update face tracker):
+  `"E8 ?? ?? ?? ?? 8B D7 48 8B CB E8 ?? ?? ?? ?? 41 ?? ?? 8B D7 48 ?? ?? 48 ?? ?? ?? ?? 48 83 ?? ?? 5F"`,
+  called as `(CharacterLookAtController*, LookAtTarget*, uint index, nint)`
+  with indices Body=0, Head=1, Eyes=2.
+- **Sig scan + hook** `_actorLookAtLoop`:
+  `"E8 ?? ?? ?? ?? 48 83 C3 08 48 83 EF 01 75 CF 48 ?? ?? ?? ?? 48"`; the
+  detour identifies the actor from `ContainerInterface->OwnerObject`, injects
+  targets, then always calls the original (which runs the gaze IK).
+- **Deliberately no try/catch** on these scans — if the sigs break, plugin
+  load fails loudly instead of running with silently broken gaze.
+- **Hand-written structs**: `LookAtSource` (Body/Head/Eyes/Unknown),
+  `LookAtType` (`LookAtTarget` at offset **0x30**), `LookAtTarget`
+  (`LookMode` at 0x08; **union at 0x10**: `Position` overlapped by the
+  `GameObjectId` actor target — layout corroborated by Brio
+  `ActorLookAtService` and Ktisis `ActorGaze`), `LookMode` enum
+  (None=0 / Target=1 / Pivot=2 / Position=3).
+
+**Brio counterpart:** `Brio/Brio/Game/Actor/ActorLookAtService.cs` — same two
+signatures, same struct offsets, same union, same per-part lock concept.
+Differences: Poser keys managed state by actor lineage and adds the
+`Forward` computed-point mode; Brio ties look-at data to its capability
+objects.
+
+## Known risks
+
+- Struct offsets (0x30 / 0x08 / 0x10) are unverified-by-compiler magic
+  numbers; a layout change misreads without crashing.
+- Fail-fast constructor means a broken sig blocks the whole plugin from
+  loading (accepted trade-off).
+
+## Verification
+
+In-game only: camera-follow eyes; Forward visibly differs from Camera;
+per-part lock (eyes locked, head free) survives mode changes; Entity
+targeting follows a second actor, survives that actor's redraw, and safely
+disables when the target despawns; Off restores game gaze and poseable head
+bones.

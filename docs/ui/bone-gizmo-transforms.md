@@ -4,7 +4,19 @@
 
 `GizmoOverlayWindow` presents ImGuizmo against a bone's Havok model-space transform. The skeleton's actor model matrix is folded into the view matrix, matching Brio's convention, so the matrix passed to ImGuizmo remains bone-model-space while appearing at the correct world-space location.
 
-Normal rotation is an in-place edit: it changes a bone's quaternion and does not change that bone's model-space position or scale. The separately enabled Orbit feature is the only rotation path allowed to change the bone position around a parent, selection, or custom pivot.
+Rotation has one visible pivot choice — the toolbar selector documented in
+`orbit-rotation-design.md`. **Self** is an in-place edit: it changes a bone's
+quaternion and does not change that bone's model-space position or scale.
+**Parent** and **Selection** are the only rotation paths allowed to change
+the bone position, orbiting it around the frozen pivot.
+
+The gizmo is drawn at the point it rotates around. With Self it sits on the
+effective transform primary; with Parent it visibly sits at the parent's
+model-space position; with Selection it sits at the effective-root centroid.
+At rest the pivot position tracks the live scene through the viewport
+projection; at pointer-down it freezes for the whole gesture, and the
+manipulation matrix combines that pivot position with the primary's rotation
+so Local axes stay meaningful.
 
 Bone manipulation remains enabled while the actor's animation is running.
 Animation freeze is an optional precision convenience, not an editing
@@ -64,18 +76,18 @@ complete group to history.
 
 - Brio `PosingOverlayWindow`: uses a tracking transform during a bone gizmo drag instead of re-reading the live bone every frame.
 - Ktisis overlay transform targets: isolate editor manipulation from the underlying target application.
-- Poser `orbit-rotation-design.md`: defines the explicit alternate pivot-orbit workflow (frozen clean-gesture pivot; the strategy machinery is deleted).
+- Poser `orbit-rotation-design.md`: defines the toolbar pivot model (Self/Parent/Selection; frozen clean-gesture pivot; the inspector Orbit switch, Custom pivot editor, and strategy machinery are deleted). Changing pivot, tool, orientation, or selection mid-drag cancels the gesture exactly once, restores the frozen baseline, and suppresses restart until the pointer releases.
 - IK arming is session state configured through the stable-id `CleanPoseFacade.ConfigureIk` at gesture start; no entity leaves the runtime.
 
 ## Verification
 
-- With Orbit off, rotate one non-root bone for several seconds. Its displayed model-space position and scale must remain unchanged while its quaternion changes.
+- With the Self pivot, rotate one non-root bone for several seconds. Its displayed model-space position and scale must remain unchanged while its quaternion changes.
 - Repeat at a non-default actor rotation and scale.
 - Repeat in Local and Global orientation.
 - Repeat while a visible looping animation is running. The bone must follow the
   animation while retaining the additional pose offset.
 - Rotate a multi-selection and confirm no selected root translates.
-- Enable Orbit explicitly and confirm that position changes only in that mode.
+- Choose Parent and Selection explicitly and confirm the gizmo visibly moves to each pivot, that position changes only in those modes, and that the orbit radius does not drift over a long drag.
 - Undo once after each gesture and confirm the exact pre-drag transform is restored.
 
 The rotation runtime slice of live-animation editing was accepted on 2026-07-23

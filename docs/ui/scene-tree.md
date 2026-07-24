@@ -44,7 +44,21 @@ actor context action **Set game target** performs the opposite direction. This
 keeps the two operations explicit instead of overloading one ambiguous
 “Target” command.
 
-Actor roots begin expanded so actor-versus-bone selection is immediately legible. Bone categories begin collapsed to keep large or modded skeletons navigable. When selection originates elsewhere (body map, overlay, gizmo), the selected bone's actor and category are automatically revealed.
+## Disclosure state
+
+- Every actor root first appears **collapsed** in a new `MainWindow` session
+  (PBI-002 supersedes the earlier expanded default). Bone categories also
+  first appear collapsed. Both are seeded into the collapse set on first
+  sight, so newly added or refreshed actors arrive collapsed without touching
+  any existing row's state.
+- A user collapse or expand action persists for the lifetime of the window.
+- When a bone selection originates elsewhere (body map, matrix, 3D, overlay,
+  gizmo), the selected bone's actor and category are revealed **once, at the
+  moment the primary selection changes** — never re-forced on later frames.
+  The user may re-collapse the revealed rows immediately and that choice
+  sticks while the selection is unchanged.
+- Selecting an actor row does not expand the actor.
+- Adding or refreshing another actor does not expand any existing actor.
 
 ## Filtering
 
@@ -53,7 +67,7 @@ The sidebar filter searches the complete scene, case-insensitively:
 - Actors match display names and raw game names.
 - Bones match localized display names, raw bone names, and category display names.
 
-Filtering preserves hierarchy: a matching bone keeps its actor and category ancestors visible. A matching category reveals all bones in that category; matching an actor does not flood the result with every bone. Expansion state is ignored while a filter is active and preserved for when it is cleared.
+Filtering preserves hierarchy: a matching bone keeps its actor and category ancestors visible. A matching category reveals all bones in that category; matching an actor does not flood the result with every bone. Matching ancestors are forced open while the filter is active without mutating the stored disclosure state, so clearing the filter restores the user's prior collapse/expand choices exactly.
 
 The filter uses the shared clearable search-field contract documented in
 `docs/ui/search-fields.md`. Its trailing action empties the live filter
@@ -77,8 +91,8 @@ Every selected row receives the active treatment, while the first selected id re
 - Bone categories are derived in the UI from each descriptor's canonical bone name via the static bone-metadata table; they are presentation grouping, not snapshot or selection identity.
 - `MainWindow.OnRowClicked` interprets keyboard modifiers and delegates selection mutation to `SelectionSession` (`Select`, `Toggle`, `SelectRange` with the visible compatible `SelectionId` order).
 - `AppShellView.DrawSidebar` owns only drawing, scrolling, search-field input, and pointer hit testing.
-- Collapse state belongs to `MainWindow`, not descriptors, because category rows are view-only groupings.
-- External selection reveal resolves the selected bone id against the snapshot to find its actor row and derived category, then expands both.
+- Collapse state belongs to `MainWindow`, not descriptors, because category rows are view-only groupings. Actor and category keys are actor-lineage-based and seeded collapsed on first sight; because the keys survive actor refreshes and redraws, a refresh cannot reset an existing actor's disclosure.
+- External selection reveal resolves the newly selected bone id against the snapshot to find its actor row and derived category, then expands both exactly once per selection change.
 
 ## Reference decisions
 

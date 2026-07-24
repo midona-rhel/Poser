@@ -40,10 +40,23 @@ content cursor. The component remains unchanged in forms where outer-container
 alignment is desired.
 
 The header uses the shell's 44 px toolbar height and paints a full-viewport
-bottom hairline. The internal Pose scrollbar inherits the shell-wide 12 px track
-and rounded-thumb treatment, but no cursor-space sentinel is emitted for a
-canvas that already fits. This prevents Body and Face from showing a permanent
-one-pixel overflow scrollbar.
+bottom hairline.
+
+## Scrolling ownership
+
+The middle child owns scrolling, and its scroll capability follows the
+selected surface:
+
+- **Matrix** is a document: the child allows a vertical scrollbar and wheel
+  input, inherits the shell-wide 12 px track and rounded-thumb treatment, and
+  reserves scroll extent through one cursor sentinel emitted only when the
+  generated document is genuinely taller than the viewport.
+- **Body, Face, and 3D** are bounded canvases: their child explicitly
+  disables the scrollbar and scroll-wheel capture. A canvas mode can never
+  acquire a scrollbar from a one-pixel sentinel, rounding, border, or
+  child-window padding mismatch, because the capability itself is off. All
+  canvas annotations (hint labels, overlays) paint through the draw list
+  inside the canvas rectangle and submit no layout items.
 
 ## Surface behavior
 
@@ -57,8 +70,13 @@ one-pixel overflow scrollbar.
 - **Matrix:** the shared `Crystarium.FilterPill` remains part of the scrolling
   middle surface with the generated matrix below it. The fixed mode selector
   and footer never scroll.
-- **3D:** the skeleton projection fits the middle viewport instead of retaining
-  a hard-coded 430 px height.
+- **3D:** the selection canvas rectangle is the middle viewport inset by
+  12 logical px on every side — the same horizontal inset as the header and
+  footer plus a 12 px top/bottom canvas inset. The inset is applied once;
+  panel chrome, projection scaling, clipping, orbit input, bone-dot hit
+  testing, and the hint label all use the same resulting content rectangle.
+  At very small supported sizes the projection scales down to that rectangle;
+  it never requests a larger scroll extent.
 - **No skeleton:** the selection prompt uses the fixed shell viewport without
   inventing a second scrolling surface.
 
@@ -85,6 +103,7 @@ At multiple Dalamud UI scales and window heights:
    **Pose** label; ignore the segmented control's decorative outer pill.
 5. Resize vertically; Body/Face/3D consume the new middle height and Matrix
    preserves scrolling.
-6. Resize horizontally and repeatedly switch Body → Face → Matrix → Body.
+6. Resize horizontally and repeatedly switch Body → Face → Matrix → 3D → Body.
    Body sections retain the same ordering, both maps remain centered, and no
-   scrollbar appears on Body or Face.
+   scrollbar appears on Body, Face, or 3D at any size.
+7. Confirm the 3D panel border sits 12 px inside the viewport on every side.

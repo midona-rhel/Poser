@@ -1,4 +1,4 @@
-# Orbit rotation — rotating a bone around its parent (or any pivot)
+# Orbit rotation — rotating a bone around a selected pivot
 
 User-requested feature (2026-07-18): pivot a bone around its PARENT's position
 so the bone orbits instead of spinning in place — "something that has never
@@ -30,40 +30,63 @@ The game itself "works fine" because its animation pipeline derives every pose
 from authored data as a function of TIME — never from last frame's output.
 The fix is restoring exactly that property to the drag loop.
 
+## The pivot model (PBI-002)
+
+There is no separate "Orbit" feature. Rotation has exactly one visible pivot
+choice, presented as a compact selector in the top transform toolbar
+immediately after Local/World:
+
+| Choice | Behavior |
+|---|---|
+| **Self** | Normal in-place rotation. The bone's quaternion changes; its position does not. |
+| **Parent** | Rotate around the primary bone parent's model-space position, frozen at gesture begin. |
+| **Selection** | Rotate around the centroid of the effective transform roots, frozen at gesture begin. |
+
+- The selector is visible only where the pivot changes the active transform
+  meaning: the Rotate tool with a bone selection. Actor targets and the
+  Translate/Scale tools do not show it.
+- Parent is unavailable (disabled) when the effective transform primary has
+  no valid parent in the current skeleton descriptor.
+- The editor state holds one value: `RotationPivot { Self, Parent, Selection }`.
+  The former inspector Orbit switch, the Parent/Selection/Custom segmented
+  control, the Custom X/Y/Z rows, `IEditorState.OrbitBoneRotation`,
+  `IEditorState.OrbitPivot`, `IEditorState.CustomOrbitPivot`, and the
+  standalone `OrbitPivotMode` enum are deleted. There is no user-facing
+  custom pivot; `PivotMode.Custom` in the application gesture service remains
+  as the internal mechanism that carries the frozen pivot point.
+
 ## The design (frozen clean gesture)
 
-Orbit is not a second transform system: it is the ordinary
+Pivoted rotation is not a second transform system: it is the ordinary
 `TransformGestureService` gesture with a pivot frozen at Begin.
 
-- With Orbit enabled and the Rotate tool active, the gizmo begins a clean
-  gesture whose `PivotMode` is `Custom` and whose pivot point freezes at
-  pointer-down (parent position, frozen selection centroid, or the
-  user-supplied point). The gesture space is World.
+- With Parent or Selection active and the Rotate tool selected, the gizmo
+  begins a clean gesture whose `PivotMode` is `Custom` and whose pivot point
+  freezes at pointer-down (parent model-space position through the viewport
+  projection, or the frozen centroid of the effective roots). The gesture
+  space is World.
 - Every frame converts the manipulated matrix into a TOTAL delta from the
   frozen Begin baseline and dispatches `Update`; the service recomputes every
   target from its immutable captured state. No frame's output is any frame's
-  input, so the radius cannot compound — the same idempotence-by-construction
-  property the analysis above demands, now provided by the single gesture
-  path instead of a dedicated orbit session.
-- The gizmo adjusts only its own presentation baseline for pivot rotation;
-  it retains no native baselines and no per-bone state.
-- Escape, tool/orientation change, selection change, and scene invalidation
-  cancel the gesture exactly once and restore the frozen baseline; commit
-  writes one history patch.
+  input, so the radius cannot compound — idempotence by construction.
+- **The gizmo is drawn at the pivot it rotates around.** At rest with Parent
+  or Selection active, the gizmo's visible center sits at the current parent
+  position or effective-root centroid; during a drag it stays at the frozen
+  pivot while the bone orbits. With Self it sits on the bone as before. The
+  manipulation matrix combines the pivot position with the primary target's
+  rotation so Local axes remain meaningful.
+- Changing pivot, tool, Local/World, or selection during a gesture cancels
+  once, restores the frozen baseline once, and does not restart until the
+  pointer is released. Commit writes one history patch; Escape writes none.
 
 The former `OrbitSession`/`OrbitMath` strategy machinery (Snapshot / Rebase /
 Live comparison modes) is deleted; the snapshot-absolute computation is the
 only production path.
 
-## Pivots
-
-`Poser.Core.OrbitPivotMode`: **Parent** (headline; parent bone's model-space
-position read through the viewport projection at Begin), **SelectionCenter**
-(frozen centroid of the effective transform targets — group orbits),
-**Custom** (user-supplied world-space point).
-
 ## Limitations (deliberate)
 
-Symmetry pairs and IK participate exactly as in any other gesture (they are
-explicit targets or session state of the same gesture). Undo restores through
-the normal `TransformHistory` patch.
+The inspector rail's rotation ball and numeric wells always rotate in place;
+the pivot selector governs the in-world gizmo. Symmetry pairs and IK
+participate exactly as in any other gesture (they are explicit targets or
+session state of the same gesture). Undo restores through the normal
+`TransformHistory` patch.
