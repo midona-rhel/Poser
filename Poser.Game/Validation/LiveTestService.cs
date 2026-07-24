@@ -14,6 +14,9 @@ using Poser.Game.Transforms;
 using Poser.Services;
 using DomainOperation = Poser.Domain.Transforms.TransformOperation;
 using DomainSpace = Poser.Domain.Transforms.TransformSpace;
+using Poser.Application.Selection;
+using Poser.Domain.Identity;
+using Poser.Game.Bindings;
 
 namespace Poser.Game.Validation;
 
@@ -39,7 +42,8 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
     private readonly ISkeletonService _skeletons;
     private readonly IBonePosingService _posing;
     private readonly IAnimationService _animation;
-    private readonly ISelectionService _selection;
+    private readonly SelectionSession _selection;
+    private readonly StableBindingRegistry _bindings;
     private readonly CleanTransformFacade _cleanTransforms;
     private readonly CleanPoseFacade _cleanPose;
     private readonly LiveTestRunStore _runStore;
@@ -50,7 +54,7 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
     private IActor? _testActor;
     private ISkeleton? _testSkeleton;
     private readonly List<IActor> _ownedActors = new();
-    private readonly List<IEntity> _baselineSelection = new();
+    private readonly List<SelectionId> _baselineSelection = new();
     private int _iteration;
     private string _scenarioId = "";
 
@@ -69,7 +73,8 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
         ISkeletonService skeletons,
         IBonePosingService posing,
         IAnimationService animation,
-        ISelectionService selection,
+        SelectionSession selection,
+        StableBindingRegistry bindings,
         CleanTransformFacade cleanTransforms,
         CleanPoseFacade cleanPose)
     {
@@ -84,6 +89,7 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
         _posing = posing;
         _animation = animation;
         _selection = selection;
+        _bindings = bindings;
         _cleanTransforms = cleanTransforms;
         _cleanPose = cleanPose;
         _runStore = new LiveTestRunStore(
@@ -558,15 +564,20 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
             if (bone == null)
                 return (false, "No stable test bone.");
 
-            _selection.Select(_testActor);
+            if (_bindings.GetActorId(_testActor) is not { } actorId ||
+                _bindings.GetBoneId(bone) is not { } boneId)
+                return (false, "Controlled actor/bone has no stable binding.");
+            var actorSelection = SelectionId.ForActor(actorId);
+            var boneSelection = SelectionId.ForBone(boneId);
+            _selection.Select(actorSelection);
             var actorSelected =
-                _selection.Primary?.Id == _testActor.Id &&
+                _selection.Primary?.Equals(actorSelection) == true &&
                 _selection.Selected.Count == 1;
-            _selection.Select(bone);
+            _selection.Select(boneSelection);
             var boneSelected =
-                _selection.Primary?.Id == bone.Id &&
+                _selection.Primary?.Equals(boneSelection) == true &&
                 _selection.Selected.Count == 1;
-            _selection.ClearSelection();
+            _selection.Clear();
             var cleared =
                 _selection.Primary == null &&
                 _selection.Selected.Count == 0;
@@ -967,7 +978,7 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
             .ToHashSet();
         await _framework.RunOnFrameworkThread(() =>
         {
-            _selection.ClearSelection();
+            _selection.Clear();
             foreach (var actor in _ownedActors.ToArray())
             {
                 _animation.StopBaseAnimation(actor);
@@ -978,13 +989,12 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
 
             foreach (var baseline in _baselineSelection)
             {
-                var current = ResolveCurrentEntity(baseline);
-                if (current == null)
-                    continue;
+                // The session's own reconciliation drops what no longer
+                // resolves; restore attempts are id-based.
                 if (_selection.Selected.Count == 0)
-                    _selection.Select(current);
+                    _selection.Select(baseline);
                 else
-                    _selection.AddToSelection(current);
+                    _selection.Add(baseline);
             }
         });
         await WaitFor(
@@ -1130,8 +1140,14 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
                     LiveTransformState.From(actor.Transform)))
                 .ToArray();
             var selection = _selection.Selected
-                .Select(entity =>
-                    $"{entity.EntityType}:{entity.Id.Unique}")
+                .Select(id => id switch
+                {
+                    { Kind: SceneEntityKind.Actor, Actor: { } actorId } =>
+                        $"Actor:{actorId.LogicalId}g{actorId.Generation}",
+                    { Kind: SceneEntityKind.Bone, Bone: { } boneId } =>
+                        $"Bone:{boneId.Skeleton.Actor.LogicalId}/{boneId.PartialId}/{boneId.BoneIndex}/{boneId.CanonicalName}",
+                    _ => "Unknown",
+                })
                 .ToArray();
             LiveSkeletonState? skeleton = null;
             if (_testSkeleton != null)

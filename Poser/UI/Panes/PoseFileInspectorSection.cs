@@ -5,6 +5,8 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Poser.Entities;
 using Poser.Files;
+using Poser.Application.Selection;
+using Poser.Domain.Identity;
 using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
@@ -15,7 +17,7 @@ namespace Poser.UI;
 public sealed class PoseFileInspectorSection
 {
     private readonly IPoseFileService _poseFiles;
-    private readonly ISelectionService _selection;
+    private readonly SelectionSession _selection;
     private readonly FileBrowser _importBrowser =
         new("Import Pose", new[] { ".pose", ".cmp" }, isSaveMode: false);
     private readonly FileBrowser _exportBrowser =
@@ -28,7 +30,7 @@ public sealed class PoseFileInspectorSection
 
     public PoseFileInspectorSection(
         IPoseFileService poseFiles,
-        ISelectionService selection)
+        SelectionSession selection)
     {
         _poseFiles = poseFiles;
         _selection = selection;
@@ -131,8 +133,9 @@ public sealed class PoseFileInspectorSection
             FilterIncludesDescendants = _descendants,
         };
         if (_scope == 3)
-            options.BoneFilter = _selection.GetSelected<IBone>()
-                .Select(bone => bone.BoneName)
+            options.BoneFilter = _selection.Selected
+                .Where(id => id is { Kind: SceneEntityKind.Bone })
+                .Select(id => id.Bone!.Value.CanonicalName)
                 .ToHashSet(StringComparer.Ordinal);
         return options;
     }
