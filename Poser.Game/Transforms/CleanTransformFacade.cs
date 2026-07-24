@@ -38,6 +38,37 @@ public sealed class CleanTransformFacade
     public string? RedoDescription =>
         _gestures.History.RedoDescription;
 
+    /// <summary>
+    /// Stable-id gesture entry: expands linked-bone and symmetry partners
+    /// from the scene snapshot before <c>Begin</c>, then dispatches to the
+    /// gesture service. Owns no state.
+    /// </summary>
+    public GestureResult Begin(
+        IReadOnlyList<TransformTargetId> targetIds,
+        TransformOperation operation,
+        TransformSpace space,
+        PivotMode pivotMode = PivotMode.PerTarget,
+        Vector3? customPivot = null,
+        string description = "Transform",
+        bool includeLinkedBones = false,
+        TransformDeltaMode? symmetry = null)
+    {
+        var targets = new List<TransformTargetId>(targetIds);
+        if (includeLinkedBones)
+            AddLinkedBoneTargets(targets);
+        var targetModes = symmetry is { } symmetryMode
+            ? AddSymmetryTargets(targets, symmetryMode)
+            : null;
+        return _gestures.Begin(new BeginTransformGesture(
+            targets.Distinct().ToArray(),
+            operation,
+            space,
+            pivotMode,
+            customPivot,
+            description,
+            targetModes));
+    }
+
     public GestureResult Begin(
         IReadOnlyList<IEntity> entities,
         TransformOperation operation,
@@ -57,19 +88,15 @@ public sealed class CleanTransformFacade
                     $"Entity {entity.Name} has no stable transform binding.");
             targets.Add(target.Value);
         }
-        if (includeLinkedBones)
-            AddLinkedBoneTargets(targets);
-        var targetModes = symmetry is { } symmetryMode
-            ? AddSymmetryTargets(targets, symmetryMode)
-            : null;
-        return _gestures.Begin(new BeginTransformGesture(
-            targets.Distinct().ToArray(),
+        return Begin(
+            targets,
             operation,
             space,
             pivotMode,
             customPivot,
             description,
-            targetModes));
+            includeLinkedBones,
+            symmetry);
     }
 
     public GestureResult Update(
@@ -85,6 +112,13 @@ public sealed class CleanTransformFacade
 
     public GestureResult Undo() => _gestures.Undo();
     public GestureResult Redo() => _gestures.Redo();
+
+    /// <summary>Stable-id atomic absolute write (non-interactive command).</summary>
+    public GestureResult SetAbsolute(
+        TransformTargetId target,
+        PoseTransform desired,
+        string description) =>
+        _commands.SetAbsolute(target, desired, description);
 
     public GestureResult SetAbsolute(
         IEntity entity,
@@ -103,10 +137,24 @@ public sealed class CleanTransformFacade
                 out var error))
             return GestureResult.Fail(
                 error ?? "Transform is invalid.");
-        return _commands.SetAbsolute(
-            target.Value,
-            desired,
-            description);
+        return SetAbsolute(target.Value, desired, description);
+    }
+
+    /// <summary>Stable-id actor override reset.</summary>
+    public GestureResult ClearActorOverrides(
+        IReadOnlyList<TransformTargetId> targets)
+    {
+        foreach (var target in targets)
+        {
+            if (target.Kind != TransformTargetKind.Actor)
+                return GestureResult.Fail(
+                    "Only actor targets can clear transform overrides.");
+        }
+        return _commands.ClearActorOverrides(
+            targets,
+            targets.Count == 1
+                ? "Reset actor transform"
+                : $"Reset {targets.Count} actor transforms");
     }
 
     public GestureResult ClearActorOverrides(
@@ -120,11 +168,7 @@ public sealed class CleanTransformFacade
         if (targets.Length != actors.Count)
             return GestureResult.Fail(
                 "One or more actors have no stable transform binding.");
-        return _commands.ClearActorOverrides(
-            targets,
-            targets.Length == 1
-                ? "Reset actor transform"
-                : $"Reset {targets.Length} actor transforms");
+        return ClearActorOverrides(targets);
     }
 
     public TransformTargetId? GetTarget(IEntity entity) =>

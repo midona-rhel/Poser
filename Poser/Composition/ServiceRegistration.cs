@@ -90,6 +90,7 @@ internal static class ServiceRegistration
         services.AddSingleton<PoseEditService>();
         services.AddSingleton<PoseTransferService>();
         services.AddSingleton<CleanTransformFacade>();
+        services.AddSingleton<Game.Viewport.ViewportProjection>();
         services.AddSingleton<CleanPoseFacade>();
         services.AddSingleton<CleanSceneLifecycle>();
         services.AddSingleton<ISelectionService, CleanSelectionServiceAdapter>();
