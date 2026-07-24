@@ -52,19 +52,25 @@ the entire group through the same runtime restore path as cancel.
 - Root filtering and symmetry pairing key bones by stable
   `BoneId` (slot, partial, index, canonical name), so duplicate Havok names
   across body, face, hair, weapon, or accessory partials can never merge.
-- Mirroring is **counterpart-frame aware** (correction round 3B).
+- Mirroring is **counterpart-frame aware**.
   Counterpart bones' bind/animated baselines can differ by ~180°, so a raw
   component flip turns a forward arm backward. Every transferred authored
   adjustment is evaluated relative to its source bone's frozen animated
-  baseline, reflected through the sagittal plane (model-space mirror is the
-  Ktisis FlipPose convention `(−x, −y, z, w)`, lateral position z), and
-  rebased into the destination baseline's frame:
+  baseline, reflected across the sagittal YZ plane (`(x, −y, −z, w)`,
+  lateral position x — Brio's MirrorBoneTransform plane; Ktisis FlipPose
+  nets to the same reflection after its 180° root yaw), and rebased into
+  the destination baseline's frame:
   `d′ = B_dst⁻¹ · M(B_src) · M(d) · M(B_src)⁻¹ · B_dst`. This applies to
   **Mirror edits** (animation-safe: authored layers only, pairs exchange,
   center bones self-mirror, one atomic history entry), **Flip bone**
   (authored adjustment of one bone; clear no-edit result when untouched),
   and live **Symmetry: Mirror** (both counterpart baselines frozen at
   gesture start; model-frame deltas reflect directly).
+- **Symmetry: Link** repeats the primary's motion in the partner's OWN
+  local frame: world-frame rotation deltas rebase through both frozen
+  baselines (`d′ = B_dst · B_src⁻¹ · d · B_src · B_dst⁻¹`); Local-space
+  deltas already act per-bone and copy directly, as do translation and
+  scale.
 
 ## Reference decisions
 

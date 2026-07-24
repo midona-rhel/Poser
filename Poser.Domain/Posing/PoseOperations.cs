@@ -9,8 +9,8 @@ public static class PoseOperations
         new(version: checked(pose.Version + 1));
 
     /// <summary>
-    /// Counterpart-frame-aware sagittal transfer of authored layers
-    /// (PBI-002 correction 3B). Counterpart bones' bind/animated baselines
+    /// Counterpart-frame-aware sagittal transfer of authored layers.
+    /// Counterpart bones' bind/animated baselines
     /// can differ by ~180°, so a raw component flip turns a forward arm into
     /// a backward one. Each delta is evaluated relative to its source bone's
     /// frozen animated baseline, reflected through the sagittal plane, and
@@ -49,12 +49,14 @@ public static class PoseOperations
             delta.Scale);
     }
 
-    /// <summary>Model-space sagittal mirror of a rotation. The plane normal
-    /// is model-space Z — the Ktisis FlipPose convention `(−x, −y, z, w)`.</summary>
+    /// <summary>Model-space sagittal mirror of a rotation: reflection across
+    /// the YZ plane, `(x, −y, −z, w)` — the Brio MirrorBoneTransform plane.
+    /// (Ktisis FlipPose uses the z-plane form but composes it with a 180°
+    /// root yaw, which nets out to this same reflection.)</summary>
     public static Quaternion MirrorRotation(Quaternion value) =>
-        new(-value.X, -value.Y, value.Z, value.W);
+        new(value.X, -value.Y, -value.Z, value.W);
 
-    /// <summary>Model-space sagittal mirror of a translation (lateral Z).</summary>
+    /// <summary>Model-space sagittal mirror of a translation (lateral X).</summary>
     public static Vector3 MirrorPosition(Vector3 value) =>
-        new(value.X, value.Y, -value.Z);
+        new(-value.X, value.Y, value.Z);
 }

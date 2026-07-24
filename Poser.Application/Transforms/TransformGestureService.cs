@@ -126,24 +126,39 @@ public sealed class TransformGestureService : IDisposable
         for (var index = 0; index < active.Before.Count; index++)
         {
             var baseline = active.Before[index];
-            // Mirrored symmetry partners use the counterpart-aware transfer
-            // (PBI-002 correction 3B): Local-space deltas act in each bone's
-            // own frame, so they rebase through BOTH frozen animated
-            // baselines (captured at Begin); model-frame deltas reflect
-            // directly. No frame feeds an applied result back as a baseline.
-            var targetDelta =
-                active.Command.TargetModes != null &&
+            // Symmetry partners transform the delta before it applies.
+            // Mirrored: Local-space deltas act in each bone's own frame, so
+            // they rebase through BOTH frozen animated baselines (captured
+            // at Begin); model-frame deltas reflect directly. Direct (Link):
+            // the partner repeats the primary's motion in its OWN local
+            // frame — world-frame deltas rebase through both baselines,
+            // Local-space deltas already act per-bone. No frame feeds an
+            // applied result back as a baseline.
+            var targetDelta = delta;
+            if (active.Command.TargetModes != null &&
                 active.Command.TargetModes.TryGetValue(
                     baseline.Target,
-                    out var mode) &&
-                mode == TransformDeltaMode.Mirrored
-                    ? active.Command.Space == TransformSpace.Local
-                        ? TransformMath.MirrorRebased(
-                            delta,
-                            active.Before[0].AnimatedBaselineRotation,
-                            baseline.AnimatedBaselineRotation)
-                        : TransformMath.Mirror(delta)
-                    : delta;
+                    out var mode))
+            {
+                targetDelta = mode switch
+                {
+                    TransformDeltaMode.Mirrored =>
+                        active.Command.Space == TransformSpace.Local
+                            ? TransformMath.MirrorRebased(
+                                delta,
+                                active.Before[0].AnimatedBaselineRotation,
+                                baseline.AnimatedBaselineRotation)
+                            : TransformMath.Mirror(delta),
+                    TransformDeltaMode.Direct =>
+                        active.Command.Space == TransformSpace.Local
+                            ? delta
+                            : TransformMath.LinkRebased(
+                                delta,
+                                active.Before[0].AnimatedBaselineRotation,
+                                baseline.AnimatedBaselineRotation),
+                    _ => delta,
+                };
+            }
             var rotatePosition = active.Command.PivotMode switch
             {
                 PivotMode.PerTarget => false,

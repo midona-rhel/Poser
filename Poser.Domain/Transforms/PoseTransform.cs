@@ -122,22 +122,24 @@ public readonly record struct TransformDelta(
 
 public static class TransformMath
 {
-    // Sagittal mirror for model-frame symmetry deltas: lateral Z negated and
-    // rotation via the model-space mirror conjugation (−x, −y, z, w) — the
-    // Ktisis FlipPose convention. Not the full conjugate, which inverts the
-    // rotation instead of reflecting it.
+    // Sagittal mirror for model-frame symmetry deltas: lateral X negated and
+    // rotation reflected across the YZ plane, (x, −y, −z, w) — the Brio
+    // MirrorBoneTransform plane. (Ktisis FlipPose negates x/y instead, but
+    // composes that with a 180° root yaw; the net reflection is the same
+    // YZ plane. Poser mirrors per-pair without turning the root, so the
+    // plane must be applied directly.)
     public static TransformDelta Mirror(TransformDelta delta) =>
         new(
             new Vector3(
-                delta.Translation.X,
+                -delta.Translation.X,
                 delta.Translation.Y,
-                -delta.Translation.Z),
+                delta.Translation.Z),
             Quaternion.Normalize(MirrorRotation(delta.Rotation)),
             delta.ScaleFactor);
 
     /// <summary>
-    /// Counterpart-frame-aware mirror for LOCAL-space symmetry deltas
-    /// (PBI-002 correction 3B): the delta is reflected relative to the
+    /// Counterpart-frame-aware mirror for LOCAL-space symmetry deltas:
+    /// the delta is reflected relative to the
     /// frozen primary baseline and rebased onto the partner's frozen
     /// baseline, so a partner whose bind orientation differs by ~180° still
     /// receives the anatomical mirror instead of a backward rotation.
@@ -156,15 +158,36 @@ public static class TransformMath
             destinationBaseline);
         return new TransformDelta(
             new Vector3(
-                delta.Translation.X,
+                -delta.Translation.X,
                 delta.Translation.Y,
-                -delta.Translation.Z),
+                delta.Translation.Z),
             rotation,
             delta.ScaleFactor);
     }
 
+    /// <summary>
+    /// Same-local-motion transfer for Link symmetry partners: a world-frame
+    /// rotation delta is carried into the source bone's local frame and
+    /// re-expressed in the partner's, so the partner repeats the motion
+    /// about its OWN axes instead of the primary's world axes. Translation
+    /// and scale copy directly.
+    /// </summary>
+    public static TransformDelta LinkRebased(
+        TransformDelta delta,
+        Quaternion sourceBaseline,
+        Quaternion destinationBaseline)
+    {
+        var rotation = Quaternion.Normalize(
+            destinationBaseline *
+            Quaternion.Inverse(sourceBaseline) *
+            delta.Rotation *
+            sourceBaseline *
+            Quaternion.Inverse(destinationBaseline));
+        return delta with { Rotation = rotation };
+    }
+
     private static Quaternion MirrorRotation(Quaternion value) =>
-        new(-value.X, -value.Y, value.Z, value.W);
+        new(value.X, -value.Y, -value.Z, value.W);
 
     public static PoseTransform Apply(
         PoseTransform baseline,
