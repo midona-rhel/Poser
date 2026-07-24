@@ -417,9 +417,16 @@ public class PoseInspectorPane
         ImGui.SetCursorScreenPos(bodyOrigin);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         float bodyContentHeight = bodyHeight;
+        // Matrix is the only document surface; Body, Face, and 3D are bounded
+        // canvases whose child can never scroll — the capability itself is off,
+        // so no sentinel, rounding, or item mismatch can conjure a scrollbar.
+        bool documentSurface = _poseView == 2;
+        var bodyFlags = documentSurface
+            ? ImGuiWindowFlags.None
+            : ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
         if (ImGui.BeginChild("##pose-surface-content",
                 new Vector2(width + AppShellView.ScrollbarWidth * s, bodyHeight),
-                false, ImGuiWindowFlags.None))
+                false, bodyFlags))
         {
             var scrolledOrigin = ImGui.GetCursorScreenPos();
             bodyContentHeight = DrawPoseSurfaceContent(
@@ -427,7 +434,7 @@ public class PoseInspectorPane
             // Body, Face, and 3D are viewport canvases and deliberately leave
             // the child cursor untouched. Reserve extra height only when a
             // document surface (currently Matrix) genuinely overflows.
-            if (bodyContentHeight > bodyHeight + 0.5f * s)
+            if (documentSurface && bodyContentHeight > bodyHeight + 0.5f * s)
             {
                 ImGui.SetCursorScreenPos(
                     scrolledOrigin +
@@ -585,13 +592,22 @@ public class PoseInspectorPane
 
     private float Draw3DView(ImDrawListPtr dl, Vector2 origin, float width, float height, SkeletonDescriptor skeleton, float s)
     {
-        var min = origin;
-        var max = origin + new Vector2(width, height);
+        // The 3D canvas is the middle viewport inset by 12 logical px on every
+        // side — the same horizontal inset as the header/footer plus a matching
+        // top/bottom canvas inset. The inset is applied once; chrome, orbit
+        // input, projection, dot hit testing, and the hint label all use the
+        // same content rectangle.
+        float inset = 12f * s;
+        var min = origin + new Vector2(inset, inset);
+        var max = origin + new Vector2(width, height) - new Vector2(inset, inset);
+        if (max.X <= min.X || max.Y <= min.Y)
+            return height;
+        var canvasSize = max - min;
         dl.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.10f)), 8f * s);
         dl.AddRect(min, max, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.08f))), 8f * s);
 
         ImGui.SetCursorScreenPos(min);
-        ImGui.InvisibleButton("##pose-3d", new Vector2(width, height));
+        ImGui.InvisibleButton("##pose-3d", canvasSize);
         if (ImGui.IsItemActive())
         {
             var d = ImGui.GetIO().MouseDelta;
@@ -611,7 +627,7 @@ public class PoseInspectorPane
         }
         if (positions.Count == 0)
         {
-            ViewText.Label(min + new Vector2(12f, 12f) * s, "No skeleton.", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
+            CanvasLabel(dl, min + new Vector2(12f, 12f) * s, "No skeleton.", 12f, new Vector4(1f, 1f, 1f, 0.4f));
             return height;
         }
         center /= positions.Count;
@@ -619,7 +635,7 @@ public class PoseInspectorPane
         var view = Matrix4x4.CreateTranslation(-center)
                  * Matrix4x4.CreateRotationY(_orbitYaw)
                  * Matrix4x4.CreateRotationX(_orbitPitch);
-        float scalePx = height * 0.42f;
+        float scalePx = canvasSize.Y * 0.42f;
         var mid = (min + max) * 0.5f;
         var selectedIds = _selection.Selected.ToHashSet();
 
@@ -655,10 +671,22 @@ public class PoseInspectorPane
             else if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
                 _selection.Toggle(hoveredId);
         }
-        ViewText.Label(new Vector2(max.X - 150f * s, max.Y - 20f * s), "drag: orbit - click: select", 11f,
-            FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
+        CanvasLabel(dl, new Vector2(max.X - 150f * s, max.Y - 20f * s), "drag: orbit - click: select", 11f,
+            new Vector4(1f, 1f, 1f, 0.4f));
 
         return height;
+    }
+
+    /// <summary>Draw-list-only canvas annotation: canvas surfaces submit no
+    /// layout items, so their labels can never grow the child's scroll
+    /// extent.</summary>
+    private static void CanvasLabel(ImDrawListPtr dl, Vector2 pos, string text, float fontSize, Vector4 color)
+    {
+        var fontHandle = FontRegistry.Resolve(FontFamily.Default, fontSize);
+        bool fontPushed = fontHandle is { Available: true };
+        if (fontPushed) fontHandle!.Push();
+        dl.AddText(pos, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(color)), text);
+        if (fontPushed) fontHandle!.Pop();
     }
 
     private static void StripLabel(Vector2 cursor, float h, float x, string text, float s)
