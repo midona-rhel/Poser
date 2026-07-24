@@ -30,6 +30,8 @@ public class PoseRailPane
     private readonly PoseInspectorPane _inspector;
     private RotationAxis _selectedRotationAxis = RotationAxis.Free;
     private RotationAxis _dragRotationAxis = RotationAxis.Free;
+    // A press on the square item's corner, outside the ball circle, drags nothing.
+    private bool _dragOutsideBall;
 
     private static readonly Vector4 AxisX = Theme.Palette.AxisX;
     private static readonly Vector4 AxisY = Theme.Palette.AxisY;
@@ -133,8 +135,13 @@ public class PoseRailPane
 
         if (ImGui.IsItemActivated())
         {
+            // The reserved item is square; a press on a corner outside the
+            // ball circle starts no rotation at all.
+            _dragOutsideBall =
+                (ImGui.GetMousePos() - center).Length() > r + 7f * s;
             _dragRotationAxis = hoveredAxis;
-            _selectedRotationAxis = hoveredAxis;
+            if (!_dragOutsideBall)
+                _selectedRotationAxis = hoveredAxis;
         }
 
         dl.AddCircleFilled(center, r, ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.30f)));
@@ -159,7 +166,7 @@ public class PoseRailPane
         dl.AddLine(center - new Vector2(0f, r), center + new Vector2(0f, r),
             ImGui.ColorConvertFloat4ToU32(AxisX with { W = AxisAlpha(RotationAxis.X, hoveredAxis) }), xWidth);
 
-        if (active)
+        if (active && !_dragOutsideBall)
         {
             var delta = ImGui.GetIO().MouseDelta;
             if (delta != Vector2.Zero)
@@ -193,6 +200,7 @@ public class PoseRailPane
         {
             _inspector.CommitRotation();
             _dragRotationAxis = RotationAxis.Free;
+            _dragOutsideBall = false;
         }
         if (hovered)
         {
@@ -222,46 +230,72 @@ public class PoseRailPane
         => hoveredAxis == axis || _selectedRotationAxis == axis ? 1f : 0.75f;
 
     /// <summary>
-    /// Resolves the nearest painted axis in screen coordinates. ImGui's Y axis
-    /// points down, so the positive-angle Z arc occupies the lower half.
+    /// Resolves the nearest painted axis stroke in screen pixels, measured
+    /// against the same geometry the ball paints. All eligible axes are
+    /// compared and the closest stroke within the shared tolerance wins; an
+    /// exact-distance tie resolves in the documented deterministic order
+    /// X → Y → Z (ties only). ImGui's Y axis points down, so the
+    /// positive-angle Z arc occupies the lower half.
     /// </summary>
     private static RotationAxis HitTestRotationAxis(Vector2 point, float radius, float scale)
     {
         float tolerance = 7f * scale;
-        float bestDistance = tolerance;
+        if (point.Length() > radius + tolerance)
+            return RotationAxis.Free; // square item corner outside the ball
+
+        float dx = DistanceToXStroke(point, radius);
+        float dy = DistanceToYStroke(point, radius);
+        float dz = DistanceToZStroke(point, radius);
+
         var result = RotationAxis.Free;
+        float best = tolerance;
+        if (dx <= best) { best = dx; result = RotationAxis.X; }
+        if (dy < best) { best = dy; result = RotationAxis.Y; }
+        if (dz < best) { result = RotationAxis.Z; }
+        return result;
+    }
 
-        if (MathF.Abs(point.Y) <= radius + tolerance)
-        {
-            float distance = MathF.Abs(point.X);
-            if (distance <= bestDistance)
-            {
-                bestDistance = distance;
-                result = RotationAxis.X;
-            }
-        }
+    /// <summary>Distance to the painted vertical X segment (x = 0, |y| ≤ r).</summary>
+    private static float DistanceToXStroke(Vector2 point, float radius)
+    {
+        float beyondEnd = MathF.Max(0f, MathF.Abs(point.Y) - radius);
+        return MathF.Sqrt(point.X * point.X + beyondEnd * beyondEnd);
+    }
 
-        float ellipseY = radius * 0.25f;
-        float ellipseLength = MathF.Sqrt(
-            point.X * point.X / (radius * radius) +
-            point.Y * point.Y / (ellipseY * ellipseY));
-        float ellipseDistance = MathF.Abs(ellipseLength - 1f) * ellipseY;
-        if (ellipseDistance < bestDistance)
-        {
-            bestDistance = ellipseDistance;
-            result = RotationAxis.Y;
-        }
+    /// <summary>
+    /// Distance to the painted Y ellipse stroke (semi-axes r, r/4), via the
+    /// first-order estimate |f| / |∇f| of the implicit ellipse equation —
+    /// accurate near the stroke, which is all a pick tolerance needs. The old
+    /// scaled-length metric compressed distances by up to 4× along the wide
+    /// axis and stole overlaps from genuinely closer strokes.
+    /// </summary>
+    private static float DistanceToYStroke(Vector2 point, float radius)
+    {
+        float b = radius * 0.25f;
+        float fx = point.X / radius;
+        float fy = point.Y / b;
+        float f = fx * fx + fy * fy - 1f;
+        float gx = 2f * point.X / (radius * radius);
+        float gy = 2f * point.Y / (b * b);
+        float gradient = MathF.Sqrt(gx * gx + gy * gy);
+        return gradient < 1e-6f ? float.MaxValue : MathF.Abs(f) / gradient;
+    }
 
+    /// <summary>Distance to the painted lower Z arc (radius r, 0.15π–0.85π),
+    /// including its endpoints for pointers outside the angular range.</summary>
+    private static float DistanceToZStroke(Vector2 point, float radius)
+    {
+        const float arcStart = 0.15f * MathF.PI;
+        const float arcEnd = 0.85f * MathF.PI;
         float angle = MathF.Atan2(point.Y, point.X);
         if (angle < 0f)
             angle += MathF.Tau;
-        if (angle >= 0.15f * MathF.PI && angle <= 0.85f * MathF.PI)
-        {
-            float circleDistance = MathF.Abs(point.Length() - radius);
-            if (circleDistance < bestDistance)
-                result = RotationAxis.Z;
-        }
-
-        return result;
+        if (angle >= arcStart && angle <= arcEnd)
+            return MathF.Abs(point.Length() - radius);
+        var startPoint = new Vector2(MathF.Cos(arcStart), MathF.Sin(arcStart)) * radius;
+        var endPoint = new Vector2(MathF.Cos(arcEnd), MathF.Sin(arcEnd)) * radius;
+        return MathF.Min(
+            Vector2.Distance(point, startPoint),
+            Vector2.Distance(point, endPoint));
     }
 }
