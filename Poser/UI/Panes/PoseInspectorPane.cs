@@ -59,6 +59,10 @@ public class PoseInspectorPane
     /// <summary>Renders the Body/Face map inline through GraphicalBonePane.</summary>
     public Func<int, Vector2, bool>? DrawMapInline;
 
+    /// <summary>Mirror selection state on the graphical maps (SidesSwapped).</summary>
+    public Func<bool>? GetMapMirror;
+    public Action<bool>? SetMapMirror;
+
     /// <summary>Resolves the same actor nickname/display name used by the scene tree.</summary>
     public Func<IActor, string>? ActorDisplayNameProvider;
 
@@ -517,6 +521,45 @@ public class PoseInspectorPane
             ref _poseView,
             maxWidth: 0f,
             alignFirstTabToCursor: true);
+
+        // Right-aligned surface chrome: Mirror selection (maps only) ·
+        // Physics · Animation.
+        var chromeActor = skeleton.Actor;
+        float chromeY = cursor.Y + (tabsHeightPx - 20f) * 0.5f * s;
+        float rx = cursor.X + width - 36f * s;
+        ImGui.SetCursorScreenPos(new Vector2(rx, chromeY));
+        bool motion = _animationService.IsFrozen(chromeActor);
+        if (Crystarium.Switch("##ps-motion", ref motion))
+            _animationService.ToggleFreeze(chromeActor);
+        rx -= ViewText.Measure("Animation", 12f) + 6f * s;
+        ViewText.Label(new Vector2(rx, chromeY + 2f * s), "Animation", 12f,
+            FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
+
+        rx -= 14f * s + 36f * s;
+        ImGui.SetCursorScreenPos(new Vector2(rx, chromeY));
+        bool physics = _animationService.IsPhysicsFrozen(chromeActor);
+        if (Crystarium.Switch("##ps-physics", ref physics))
+            _animationService.TogglePhysicsFreeze(chromeActor);
+        rx -= ViewText.Measure("Physics", 12f) + 6f * s;
+        ViewText.Label(new Vector2(rx, chromeY + 2f * s), "Physics", 12f,
+            FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
+
+        if (_poseView is 0 or 1)
+        {
+            rx -= 14f * s + 36f * s;
+            ImGui.SetCursorScreenPos(new Vector2(rx, chromeY));
+            bool swapped = GetMapMirror?.Invoke() ?? false;
+            if (Crystarium.Switch("##ps-mirror", ref swapped))
+                SetMapMirror?.Invoke(swapped);
+            float mirrorLabelX = rx - ViewText.Measure("Mirror", 12f) - 6f * s;
+            ViewText.Label(new Vector2(mirrorLabelX, chromeY + 2f * s), "Mirror",
+                12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
+            if (ImGui.IsMouseHoveringRect(
+                    new Vector2(mirrorLabelX, chromeY),
+                    new Vector2(rx + 36f * s, chromeY + 20f * s)))
+                ImGui.SetTooltip("Swap left/right on the maps");
+        }
+
         dl.AddRectFilled(
             new Vector2(
                 cursor.X - AppShellView.MainHorizontalPadding * s,
@@ -647,34 +690,16 @@ public class PoseInspectorPane
 
     private void DrawPoseFooter(ImDrawListPtr dl, Vector2 cursor, float width, ISkeleton skeleton, float s)
     {
-        // M11 footer: Physics · Animation · | · Parenting cycle · Clear · Flip.
+        // M11 footer: Parenting checkboxes · Clear.
         dl.AddRectFilled(new Vector2(cursor.X, cursor.Y), new Vector2(cursor.X + width, cursor.Y + 1f * s),
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.08f))));
 
-        var actor = skeleton.Actor;
         float fy = 9f * s;
 
-        ImGui.SetCursorScreenPos(new Vector2(cursor.X, cursor.Y + fy + 2f * s));
-        bool physics = _animationService.IsPhysicsFrozen(actor);
-        if (Crystarium.Switch("##ft-physics", ref physics))
-            _animationService.TogglePhysicsFreeze(actor);
-        ViewText.Label(new Vector2(cursor.X + 40f * s, cursor.Y + fy + 6f * s), "Physics", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
-
-        ImGui.SetCursorScreenPos(new Vector2(cursor.X + 100f * s, cursor.Y + fy + 2f * s));
-        bool motion = _animationService.IsFrozen(actor);
-        if (Crystarium.Switch("##ft-motion", ref motion))
-            _animationService.ToggleFreeze(actor);
-        ViewText.Label(new Vector2(cursor.X + 140f * s, cursor.Y + fy + 6f * s), "Animation", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
-
-        dl.AddRectFilled(new Vector2(cursor.X + 210f * s, cursor.Y + fy + 4f * s),
-            new Vector2(cursor.X + 211f * s, cursor.Y + fy + 20f * s),
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.08f))));
-
-        // Parenting: one checkbox per propagated component (round-1 user
-        // feedback replaced the Anamnesis three-state cycle button).
+        // Parenting: one checkbox per propagated component.
         var poseInfo = _bonePosingService.GetPoseInfo(skeleton);
-        ViewText.Label(new Vector2(cursor.X + 222f * s, cursor.Y + fy + 6f * s), "Parenting", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
-        float px = cursor.X + 286f * s;
+        ViewText.Label(new Vector2(cursor.X, cursor.Y + fy + 6f * s), "Parenting", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
+        float px = cursor.X + 64f * s;
         foreach (var (label, component) in new[]
         {
             ("Pos", Core.TransformComponents.Position),
@@ -698,11 +723,6 @@ public class PoseInspectorPane
         ImGui.SetCursorScreenPos(new Vector2(px, cursor.Y + fy));
         if (Crystarium.Button("Clear", new ButtonProps { Id = "ft-clear", Classes = Cls.Compact, Tooltip = "Clear bone selection" }))
             _selection.Clear();
-
-        ImGui.SetCursorScreenPos(new Vector2(cursor.X + width - 56f * s, cursor.Y + fy));
-        if (Crystarium.Button("Flip", new ButtonProps { Id = "ft-flip", Classes = Cls.Compact, Tooltip = "Mirror the whole pose" }))
-            _cleanPose.Mirror(skeleton);
-
     }
 
     /// <summary>3D view: orbitable projection of the skeleton (Anamnesis

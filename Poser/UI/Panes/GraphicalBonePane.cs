@@ -43,6 +43,14 @@ public sealed class GraphicalBonePane : IDisposable
     private readonly GraphicalBoneConfig _config;
     private readonly Dictionary<string, IDalamudTextureWrap?> _textures = new();
 
+    /// <summary>
+    /// Mirror selection (Brio GraphicalSidesSwapped): swaps which side each
+    /// map dot addresses, so the pose can be edited as seen from the front.
+    /// Applies to the graphical maps only — never the tree, matrix, 3D view,
+    /// or overlay.
+    /// </summary>
+    public bool SidesSwapped { get; set; }
+
     private float _closestHoverDistance;
     private SelectionId? _hoveredBone;
     // Rebuilt per frame from the selected actor's snapshot descriptors: the
@@ -295,32 +303,27 @@ public sealed class GraphicalBonePane : IDisposable
         foreach (var graphicBone in section.Bones)
         {
             var bone = skeleton.GetBone(graphicBone.Name);
-            if (bone == null)
-                continue;
+            var mirrorBoneName = drawMirrors ? GetMirrorBoneName(graphicBone.Name) : null;
+            var mirrorBone = mirrorBoneName != null ? skeleton.GetBone(mirrorBoneName) : null;
 
-            float primaryX = graphicBone.PositionVector.X;
+            // Mirror selection swaps which bone each sided dot addresses;
+            // center bones (no counterpart) are unaffected.
+            if (SidesSwapped && mirrorBone != null)
+                (bone, mirrorBone) = (mirrorBone, bone);
+
             var primaryPosition = min + new Vector2(
-                primaryX * scalingFactors.X,
+                graphicBone.PositionVector.X * scalingFactors.X,
                 graphicBone.PositionVector.Y * scalingFactors.Y);
-            DrawBoneAt(bone, primaryPosition);
+            if (bone != null)
+                DrawBoneAt(bone, primaryPosition);
 
-            // Add mirror bone
-            if (drawMirrors)
+            if (mirrorBone != null)
             {
-                var mirrorBoneName = GetMirrorBoneName(graphicBone.Name);
-                if (mirrorBoneName != null)
-                {
-                    var mirrorBone = skeleton.GetBone(mirrorBoneName);
-                    if (mirrorBone != null)
-                    {
-                        float mirrorX =
-                            sourceSize.X - graphicBone.PositionVector.X;
-                        var mirrorPosition = min + new Vector2(
-                            mirrorX * scalingFactors.X,
-                            graphicBone.PositionVector.Y * scalingFactors.Y);
-                        DrawBoneAt(mirrorBone, mirrorPosition);
-                    }
-                }
+                float mirrorX = sourceSize.X - graphicBone.PositionVector.X;
+                var mirrorPosition = min + new Vector2(
+                    mirrorX * scalingFactors.X,
+                    graphicBone.PositionVector.Y * scalingFactors.Y);
+                DrawBoneAt(mirrorBone, mirrorPosition);
             }
         }
     }

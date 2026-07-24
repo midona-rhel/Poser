@@ -266,7 +266,6 @@ public static class AppShellView
         // app name + GPose pill
         ViewText.Label(min + new Vector2(14f, (TitlebarHeight - 16f) / 2f) * s, "Poser", 13f, FontWeight.SemiBold, TextPrimary);
         float appW = ViewText.Measure("Poser", 13f, FontWeight.SemiBold);
-        float identityEnd = min.X + 14f * s + appW;
         if (vm.GPoseActive)
         {
             var pillMin = new Vector2(min.X + 14f * s + appW + 8f * s, min.Y + (h - 20f * s) / 2f);
@@ -276,30 +275,29 @@ public static class AppShellView
             var dotC = new Vector2(pillMin.X + 8f * s + 3.5f * s, pillMin.Y + 10f * s);
             dl.AddCircleFilled(dotC, 3.5f * s, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Success)));
             ViewText.Label(new Vector2(dotC.X + 3.5f * s + 6f * s, pillMin.Y + 4f * s), "GPose", 11f, FontWeight.Medium, Success);
-            identityEnd = pillMax.X;
         }
 
-        // undo/redo live in the sidebar's title cell, directly right of the
-        // Poser/GPose identity area (correction-round finding 6).
-        float undoX = identityEnd + 10f * s;
+        // undo/redo sit right-aligned in the sidebar's title cell, directly
+        // before the spawn button.
         float undoY = min.Y + (h - 28f * s) / 2f;
-        IconButton(dl, new Vector2(undoX, undoY), TablerIcon.ArrowBackUp, false, s, vm.OnUndo, dimmed: !vm.CanUndo);
-        IconButton(dl, new Vector2(undoX + (28f + 4f) * s, undoY), TablerIcon.ArrowBackUp, false, s, vm.OnRedo,
-            dimmed: !vm.CanRedo, flipX: true);
-
+        float titleRight = leftMax.X - 8f * s;
         if (vm.ShowSpawn)
         {
             IconButton(
                 dl,
-                new Vector2(leftMax.X - (8f + 28f) * s, min.Y + (h - 28f * s) / 2f),
+                new Vector2(titleRight - 28f * s, undoY),
                 TablerIcon.Plus,
                 false,
                 s,
                 vm.OnSpawn);
+            titleRight -= (28f + 4f) * s;
         }
+        IconButton(dl, new Vector2(titleRight - 28f * s, undoY), TablerIcon.ArrowBackUp, false, s, vm.OnRedo,
+            dimmed: !vm.CanRedo, flipX: true);
+        IconButton(dl, new Vector2(titleRight - (28f + 4f + 28f) * s, undoY), TablerIcon.ArrowBackUp, false, s,
+            vm.OnUndo, dimmed: !vm.CanUndo);
 
-        // center strip (undo/redo moved to the sidebar statusbar — round-1
-        // user feedback)
+        // center strip
         float x = leftMax.X + 12f * s;
         float cy = min.Y + (h - 28f * s) / 2f;
         if (vm.ShowProject)

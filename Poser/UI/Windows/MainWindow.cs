@@ -114,6 +114,8 @@ public class MainWindow : Window
         _spawnService = spawnService;
         _poseInspector = poseInspector;
         _poseInspector.DrawMapInline = graphicalBonePane.DrawInline;
+        _poseInspector.GetMapMirror = () => graphicalBonePane.SidesSwapped;
+        _poseInspector.SetMapMirror = on => graphicalBonePane.SidesSwapped = on;
         _poseInspector.DescriptorDisplayName = ActorDisplayName;
         // Transitional: the inspector still takes entity display lookups until
         // its own migration; route them through the lineage nickname store.
