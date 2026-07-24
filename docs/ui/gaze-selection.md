@@ -24,12 +24,15 @@ modes for Eyes, Head, and Body.
 - A part switch changes only that part's participation; a lock action is
   enabled only for a participating part and freezes/unfreezes that part's
   actual current target.
-- **Actor** mode requires an explicit target choice. The target dropdown
-  lists only currently valid other actors (the source actor and dead entries
-  are excluded by identity facts — live address / game-object id — never by
-  wrapper reference), shows a placeholder until the user picks one, and
-  **never writes a target from the draw loop** — the only native transition
-  happens on an explicit selection.
+- **Actor** mode requires an explicit target choice. Target discovery is
+  scene membership: the dropdown lists every other actor in the current
+  `SceneSession` snapshot — the same read boundary as the sidebar, so the
+  picker can never disagree with the tree, and friend-list or social status
+  is irrelevant. Candidates are stable actor descriptors excluded by
+  lineage; the live native object is resolved through the binding registry
+  only when matching the current target or applying a selection. The
+  dropdown shows a placeholder until the user picks one and **never writes a
+  target from the draw loop**.
 - With no other actor in the scene, the Actor segment is disabled and a
   quiet inline note explains why; the mode can never silently target self,
   index zero, or null.

@@ -59,11 +59,12 @@ public class PoseInspectorPane
     /// <summary>Renders the Body/Face map inline through GraphicalBonePane.</summary>
     public Func<int, Vector2, bool>? DrawMapInline;
 
-    /// <summary>Scene actors for the gaze "look at actor" target picker (set by MainWindow).</summary>
-    public Func<System.Collections.Generic.IReadOnlyList<IActor>>? ActorsProvider;
-
     /// <summary>Resolves the same actor nickname/display name used by the scene tree.</summary>
     public Func<IActor, string>? ActorDisplayNameProvider;
+
+    /// <summary>Stable-id display name for snapshot actor descriptors (the
+    /// scene tree's display API), used by the gaze target picker.</summary>
+    public Func<Domain.Scene.ActorDescriptor, string>? DescriptorDisplayName;
     private int _poseView = 2; // 0 body, 1 face, 2 bones
 
     // Bones matrix cache (rebuilt when the snapshot revision or actor changes).
@@ -772,13 +773,16 @@ public class PoseInspectorPane
         var state = _gazeService.GetGazeState(actor);
         string[] options = { "Off", "Fwd", "Cam", "Actor" };
 
-        // Valid other actors, excluded by identity facts (never by wrapper
-        // reference): the source itself and dead addresses are out.
-        var others = new System.Collections.Generic.List<IActor>();
-        if (ActorsProvider != null)
-            foreach (var candidate in ActorsProvider())
-                if (candidate.Address != nint.Zero && candidate.Address != actor.Address)
-                    others.Add(candidate);
+        // Target discovery is scene membership: every other actor the
+        // SceneSession snapshot represents is eligible — the same read
+        // boundary as the sidebar, so the picker can never disagree with the
+        // tree. Candidates are stable descriptors excluded by lineage; the
+        // live native object is resolved only when matching or applying.
+        var sourceLineage = _bindings.GetActorId(actor)?.LogicalId;
+        var others = new System.Collections.Generic.List<Domain.Scene.ActorDescriptor>();
+        foreach (var candidate in _scene.Snapshot.Actors)
+            if (sourceLineage is not { } source || candidate.Id.LogicalId != source)
+                others.Add(candidate);
 
         float h = 0f;
         ViewText.Label(cursor + new Vector2(0f, 7f) * s, "Mode", 12f, FontWeight.Regular,
@@ -846,13 +850,17 @@ public class PoseInspectorPane
                 int current = -1; // placeholder until the user picks a target
                 for (int i = 0; i < others.Count; i++)
                 {
-                    names[i] = ActorDisplayName(others[i]);
-                    if (targetAddress != 0 && others[i].Address == targetAddress) current = i;
+                    names[i] = DescriptorDisplayName?.Invoke(others[i]) ?? others[i].Name;
+                    if (targetAddress != 0 &&
+                        _bindings.Resolve(others[i].Id) is { Success: true, Value: { } resolved } &&
+                        resolved.Address == targetAddress)
+                        current = i;
                 }
                 ImGui.SetCursorScreenPos(cursor + new Vector2(46f, h / s) * s);
                 if (Crystarium.Dropdown("##gaze-target", names, ref current) &&
-                    current >= 0 && current < others.Count)
-                    _gazeService.SetGazeTarget(actor, others[current]);
+                    current >= 0 && current < others.Count &&
+                    _bindings.Resolve(others[current].Id) is { Success: true, Value: { } live })
+                    _gazeService.SetGazeTarget(actor, live);
             }
             h += 34f * s;
         }

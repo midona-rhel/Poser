@@ -55,6 +55,17 @@ public unsafe class GazeService : IGazeService, IDisposable
         public bool EyesLocked;
         public bool HeadLocked;
         public bool BodyLocked;
+
+        // Release contract: when Poser first takes authority over a part, the
+        // native pre-Poser LookAtTarget is captured once (never recaptured on
+        // mode/target changes, so Poser output can't become a baseline).
+        // Removing the part queues a one-shot restore consumed by the detour
+        // on the native thread; the original game update then recomputes it.
+        public LookAtTarget EyesBaseline;
+        public LookAtTarget HeadBaseline;
+        public LookAtTarget BodyBaseline;
+        public GazeTargetType CapturedParts;
+        public GazeTargetType PendingRestore;
     }
 
     private readonly object _sync = new();
@@ -109,20 +120,84 @@ public unsafe class GazeService : IGazeService, IDisposable
                 {
                     GazeTargetMode mode = GazeTargetMode.None;
                     GazeTargetType parts = GazeTargetType.None;
+                    GazeTargetType pendingRestore = GazeTargetType.None;
+                    GazeTargetType toCapture = GazeTargetType.None;
                     LookAtSource lookAt = default;
+                    LookAtTarget eyesBaseline = default, headBaseline = default, bodyBaseline = default;
+                    bool known = false;
                     bool eyesLocked = false, headLocked = false, bodyLocked = false;
                     lock (_sync)
                     {
                         if (_entries.TryGetValue(targetActor.GameObjectId, out var entry))
                         {
+                            known = true;
                             mode = EffectiveMode(entry);
                             parts = entry.Parts;
-                            // Copy to a local (like Brio) — the native calls
+                            pendingRestore = entry.PendingRestore & entry.CapturedParts;
+                            toCapture = mode == GazeTargetMode.None
+                                ? GazeTargetType.None
+                                : parts & ~entry.CapturedParts;
+                            // Copy to locals (like Brio) — the native calls
                             // below run outside the lock.
                             lookAt = entry.Target;
+                            eyesBaseline = entry.EyesBaseline;
+                            headBaseline = entry.HeadBaseline;
+                            bodyBaseline = entry.BodyBaseline;
                             eyesLocked = entry.EyesLocked;
                             headLocked = entry.HeadLocked;
                             bodyLocked = entry.BodyLocked;
+                        }
+                    }
+
+                    var lookAtController = known
+                        ? &((Character*)targetActor.Address)->LookAt.Controller
+                        : null;
+
+                    // One-shot restores: write each released part's captured
+                    // pre-Poser target exactly once on the native thread; the
+                    // original update below recomputes it immediately.
+                    if (known && pendingRestore != GazeTargetType.None)
+                    {
+                        if (pendingRestore.HasFlag(GazeTargetType.Body))
+                            _updateLookAt(lookAtController, &bodyBaseline, LookAtIndex_Body, 0);
+                        if (pendingRestore.HasFlag(GazeTargetType.Head))
+                            _updateLookAt(lookAtController, &headBaseline, LookAtIndex_Head, 0);
+                        if (pendingRestore.HasFlag(GazeTargetType.Eyes))
+                            _updateLookAt(lookAtController, &eyesBaseline, LookAtIndex_Eyes, 0);
+                        lock (_sync)
+                        {
+                            if (_entries.TryGetValue(targetActor.GameObjectId, out var entry))
+                            {
+                                entry.PendingRestore &= ~pendingRestore;
+                                entry.CapturedParts &= ~pendingRestore;
+                                if (entry.Mode == GazeTargetMode.None &&
+                                    entry.Parts == GazeTargetType.None &&
+                                    entry.PendingRestore == GazeTargetType.None &&
+                                    entry.CapturedParts == GazeTargetType.None)
+                                    _entries.Remove(targetActor.GameObjectId);
+                            }
+                        }
+                    }
+
+                    // First-authority capture: read the native pre-Poser
+                    // targets for newly participating parts BEFORE this
+                    // frame's Poser write. Never recaptured on mode or target
+                    // changes, so Poser output can't become a baseline.
+                    if (known && toCapture != GazeTargetType.None)
+                    {
+                        var controlParams = (LookAtControlParam*)lookAtController;
+                        lock (_sync)
+                        {
+                            if (_entries.TryGetValue(targetActor.GameObjectId, out var entry))
+                            {
+                                if (toCapture.HasFlag(GazeTargetType.Body))
+                                    entry.BodyBaseline = controlParams[LookAtIndex_Body].Target;
+                                if (toCapture.HasFlag(GazeTargetType.Head))
+                                    entry.HeadBaseline = controlParams[LookAtIndex_Head].Target;
+                                if (toCapture.HasFlag(GazeTargetType.Eyes))
+                                    entry.EyesBaseline = controlParams[LookAtIndex_Eyes].Target;
+                                entry.CapturedParts |= toCapture;
+                            }
                         }
                     }
 
@@ -158,7 +233,6 @@ public unsafe class GazeService : IGazeService, IDisposable
                             lookAt.Body.LookAtTarget.Position = forwardPos;
                     }
 
-                    var lookAtController = &((Character*)targetActor.Address)->LookAt.Controller;
                     if (parts.HasFlag(GazeTargetType.Body))
                         _updateLookAt(lookAtController, &lookAt.Body.LookAtTarget, LookAtIndex_Body, 0);
                     if (parts.HasFlag(GazeTargetType.Head))
@@ -196,8 +270,16 @@ public unsafe class GazeService : IGazeService, IDisposable
         {
             var entry = GetOrCreateEntry(gameObject.GameObjectId);
             entry.Mode = mode;
-            if (mode != GazeTargetMode.None && entry.Parts == GazeTargetType.None)
+            if (mode == GazeTargetMode.None)
+            {
+                // Off restores every controlled part and clears locks.
+                entry.PendingRestore |= entry.CapturedParts;
+                ClearPartLock(entry, GazeTargetType.All);
+            }
+            else if (entry.Parts == GazeTargetType.None)
+            {
                 entry.Parts = GazeTargetType.All;
+            }
             ReseedUnlockedParts(entry);
         }
     }
@@ -209,6 +291,12 @@ public unsafe class GazeService : IGazeService, IDisposable
         lock (_sync)
         {
             var entry = GetOrCreateEntry(gameObject.GameObjectId);
+            // Removing a part relinquishes it immediately: its captured
+            // pre-Poser target is queued for a one-shot native restore, and a
+            // locked part being disabled still restores its baseline.
+            var removed = entry.Parts & ~parts & entry.CapturedParts;
+            entry.PendingRestore |= removed;
+            ClearPartLock(entry, entry.Parts & ~parts);
             entry.Parts = parts;
             // Turning off the final active part returns the mode to Off in the
             // same transition; the handle is kept so re-enabling is symmetric.
@@ -318,7 +406,21 @@ public unsafe class GazeService : IGazeService, IDisposable
             return;
         lock (_sync)
         {
-            _entries.Remove(gameObject.GameObjectId);
+            if (!_entries.TryGetValue(gameObject.GameObjectId, out var entry))
+                return;
+            if (entry.CapturedParts == GazeTargetType.None)
+            {
+                _entries.Remove(gameObject.GameObjectId);
+                return;
+            }
+            // Restore every controlled part before the entry is dropped: the
+            // detour consumes the one-shot restores on the native thread and
+            // removes the fully idle entry itself.
+            entry.Mode = GazeTargetMode.None;
+            entry.Parts = GazeTargetType.None;
+            entry.TargetId = 0;
+            entry.PendingRestore |= entry.CapturedParts;
+            ClearPartLock(entry, GazeTargetType.All);
         }
     }
 
@@ -434,6 +536,8 @@ public unsafe class GazeService : IGazeService, IDisposable
                 {
                     entry.TargetId = 0;
                     entry.Mode = GazeTargetMode.None;
+                    entry.PendingRestore |= entry.CapturedParts;
+                    ClearPartLock(entry, GazeTargetType.All);
                     _log.Debug($"GazeService: gaze target of {id} despawned — gaze off.");
                 }
             }
@@ -466,7 +570,7 @@ internal struct LookAtType
     [FieldOffset(0x30)] public LookAtTarget LookAtTarget;
 }
 
-[StructLayout(LayoutKind.Explicit)]
+[StructLayout(LayoutKind.Explicit, Size = 0x28)]
 internal struct LookAtTarget
 {
     [FieldOffset(0x08)] public LookMode LookMode;
@@ -474,6 +578,23 @@ internal struct LookAtTarget
     // Brio ActorLookAtService.LookAtTarget and Ktisis ActorGaze.Gaze.
     [FieldOffset(0x10)] public Vector3 Position;
     [FieldOffset(0x10)] public ulong ActorTargetId;
+    // Trailing field of the native 0x28 CharacterLookAtTargetParam (Ktisis
+    // Gaze.Unk5). The explicit size keeps captures and native reads
+    // byte-complete instead of over-reading adjacent managed memory.
+    [FieldOffset(0x20)] public uint Unknown20;
+}
+
+/// <summary>
+/// One per-part slot of the native CharacterLookAtController. Slot N's
+/// target param sits at controller + N·0x1E0 + 0x30 (indices Body=0, Head=1,
+/// Eyes=2) — layout corroborated by Ktisis ActorGaze/GazeContainer and
+/// FFXIVClientStructs CharacterLookAtControlParam. Used read-only, to capture
+/// the pre-Poser look-at target when Poser takes authority over a part.
+/// </summary>
+[StructLayout(LayoutKind.Explicit, Size = 0x1E0)]
+internal struct LookAtControlParam
+{
+    [FieldOffset(0x30)] public LookAtTarget Target;
 }
 
 internal enum LookMode

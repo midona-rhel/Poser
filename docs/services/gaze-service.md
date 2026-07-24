@@ -44,6 +44,17 @@ it is keyed by wrapper identity:
   point 10 units ahead and 1.5 units up from the actor's own position and
   facing — an observably different source from Camera.
 - **Off** early-returns to the original function: no Poser write at all.
+- **Release restores the pre-Poser target.** When Poser first takes
+  authority over a part, the detour captures that part's native
+  `LookAtTarget` from the controller (slot N at controller + N·0x1E0 + 0x30,
+  Ktisis/ClientStructs-corroborated) before the first Poser write. The
+  baseline is never recaptured on mode or target changes, so Poser output
+  cannot become a baseline. Removing a part (part switch off, mode Off,
+  `ResetGaze`, target despawn, disabling a locked part) queues a one-shot
+  restore that the detour consumes on the native thread — it writes the
+  captured target exactly once and the original game update recomputes the
+  part immediately, without waiting for any UI redraw. A fully idle entry
+  (Off, no parts, nothing captured or pending) removes itself.
 - A **lock** freezes one participating part at its actual current target
   position (`LookMode.Position` with the position captured at lock time). It
   does not change the mode, the participation mask, or the other parts —
