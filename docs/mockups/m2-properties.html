@@ -1,0 +1,734 @@
+<title>Poser M2 — Properties</title>
+<style>
+/* Tokens verbatim from picto tokens.css — see M7 sheet for the full block */
+:root {
+  --color-primary: #3297FF;
+  --color-primary-10: rgba(50,151,255,.10); --color-primary-30: rgba(50,151,255,.30);
+  --color-primary-50: rgba(50,151,255,.50); --color-primary-60: rgba(50,151,255,.60);
+  --color-bg-app: rgb(24,25,27); --color-surface-1: rgb(36,37,40); --color-surface-2: #2a2a2e;
+  --color-surface-hover: rgba(248,249,251,.05); --color-surface-active: rgba(248,249,251,.10);
+  --color-text-primary: rgba(255,255,255,1); --color-text-secondary: rgba(255,255,255,.72);
+  --color-text-tertiary: rgba(255,255,255,.50); --color-text-disabled: rgba(255,255,255,.22);
+  --color-border-primary: rgba(255,255,255,.14); --color-border-secondary: rgba(255,255,255,.08);
+  --color-black-10: rgba(0,0,0,.10); --color-black-20: rgba(0,0,0,.20);
+  --color-hover-overlay: rgba(255,255,255,.08); --color-active-overlay: rgba(255,255,255,.14);
+  --color-subtle-overlay: rgba(255,255,255,.10);
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-family-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', ui-monospace, monospace;
+  --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px;
+  --shadow-panel: 0 3px 12px rgba(0,0,0,.3), 0 0 0 1px rgba(0,0,0,.5);
+  --glass-bg: rgba(34,35,38,.97);
+  --glass-border-top: 1px solid rgba(255,255,255,.25);
+  --glass-border-side: 1px solid rgba(255,255,255,.12);
+  --glass-border-bottom: 1px solid rgba(0,0,0,.20);
+  --ease-default: cubic-bezier(.4,0,.22,1);
+  --titlebar-height: 48px; --sidebar-width: 280px; --sidebar-row-height: 26px;
+  --color-success: rgb(126,211,160);
+}
+* { box-sizing: border-box; margin: 0; }
+html, body { min-height: 100%; }
+body {
+  font-family: var(--font-family); font-size: 13px; color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  background:
+    radial-gradient(1200px 500px at 70% 10%, #2c3a55 0%, transparent 60%),
+    radial-gradient(900px 600px at 20% 90%, #3a2f45 0%, transparent 55%),
+    linear-gradient(180deg, #131b2a 0%, #1d2433 45%, #2b2633 100%);
+  min-height: 100vh; padding: 64px 24px 48px; display: flex; flex-direction: column; align-items: center; gap: 18px;
+}
+.picker {
+  position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 50;
+  display: inline-flex; padding: 3px; gap: 2px; border-radius: 7px;
+  background: rgba(0,0,0,.45); backdrop-filter: blur(8px);
+}
+.picker button {
+  height: 26px; padding: 0 14px; border: none; border-radius: 5px; background: transparent;
+  color: var(--color-text-secondary); font: 500 12px var(--font-family); cursor: pointer;
+}
+.picker button.-active { background: var(--color-surface-2); color: var(--color-text-primary); box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+.note { font-size: 11px; color: rgba(255,255,255,.55); max-width: 74ch; text-align: center; text-shadow: 0 1px 2px rgba(0,0,0,.5); line-height: 1.5; }
+.stage { position: relative; display: none; }
+.stage.-visible { display: block; }
+
+svg.i { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.75; fill: none; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
+/* shared primitives (specs = M7) */
+.iconBtn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; border-radius: 5px; background: transparent; color: var(--color-text-primary); opacity: .8; cursor: pointer; transition: opacity 150ms var(--ease-default), background 150ms var(--ease-default); }
+.iconBtn:hover { opacity: 1; background: var(--color-hover-overlay); }
+.iconBtn.-on { opacity: 1; background: var(--color-active-overlay); }
+.seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 7px; background: var(--color-black-20); }
+.segTab { height: 24px; padding: 0 10px; display: flex; align-items: center; border: none; border-radius: 5px; background: transparent; color: var(--color-text-secondary); font: 400 12px var(--font-family); cursor: pointer; }
+.segTab.-active { background: var(--color-surface-2); color: var(--color-text-primary); box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+.input { height: 26px; padding: 0 8px; font: 400 12px var(--font-family); color: var(--color-text-primary); border: 1px solid var(--color-border-secondary); background: var(--color-black-20); border-radius: var(--radius-sm); outline: none; }
+.input::placeholder { color: var(--color-text-tertiary); }
+.dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; background: var(--color-success); }
+.btn {
+  height: 32px; display: inline-flex; justify-content: center; align-items: center;
+  gap: 6px; padding: 0 16px; font-size: 13px; font-weight: 400; font-family: var(--font-family);
+  color: var(--color-text-primary); border: 1px solid var(--color-border-primary);
+  background: var(--color-surface-hover); border-radius: var(--radius-md); cursor: pointer;
+  white-space: nowrap; outline: none; appearance: none; transition: background 150ms ease;
+}
+.btn:hover { background: var(--color-subtle-overlay); }
+.toggle { position: relative; display: inline-block; width: 32px; height: 20px; flex-shrink: 0; cursor: pointer; }
+.toggle .track { position: absolute; inset: 0; border-radius: 10px; background-color: rgba(128,128,128,.25); box-shadow: inset 0 1px 2px rgba(0,0,0,.1); transition: background-color .2s ease; }
+.toggle.-on .track { background-color: var(--color-primary); }
+.toggle .knob { position: absolute; bottom: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background-color: #fff; opacity: .6; box-shadow: 0 1px 3px rgba(0,0,0,.2); transform: translateX(0); transition: transform .2s ease, opacity .2s ease; }
+.toggle.-on .knob { transform: translateX(12px); opacity: 1; }
+.selBtn {
+  display: flex; align-items: center; height: 26px; min-height: 26px;
+  padding: 0 6px 0 12px; gap: 6px; border-radius: 6px;
+  background: var(--color-subtle-overlay); border: 1px solid var(--color-border-secondary);
+  color: var(--color-text-primary); font-size: 12px; line-height: 24px;
+  font-family: var(--font-family); cursor: pointer; outline: none; white-space: nowrap;
+}
+.selChevron { flex-shrink: 0; opacity: .5; width: 20px; display: flex; align-items: center; justify-content: center; }
+
+/* content tabs — DisplayFrame MarketModal tab style: 28px, radius-md, active subtle-overlay */
+.tabs { display: flex; gap: 2px; align-items: center; }
+.tab { height: 28px; padding: 0 12px; display: flex; align-items: center; gap: 6px; border: none; border-radius: var(--radius-md); background: transparent; color: var(--color-text-secondary); font: 400 12px var(--font-family); cursor: pointer; }
+.tab:hover { background: var(--color-hover-overlay); color: var(--color-text-primary); }
+.tab.-active { background: var(--color-subtle-overlay); color: var(--color-text-primary); }
+
+/* window chassis */
+.window {
+  background: var(--color-bg-app); border-radius: 10px; overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0,0,0,.5), var(--shadow-panel);
+  border-top: var(--glass-border-top); border-left: var(--glass-border-side);
+  border-right: var(--glass-border-side); border-bottom: var(--glass-border-bottom);
+  display: flex;
+}
+.titlebar { height: var(--titlebar-height); display: flex; flex-shrink: 0; }
+.tb-left { width: var(--sidebar-width); display: flex; align-items: center; gap: 8px; padding: 0 8px 0 14px; background: var(--color-surface-1); border-right: 1px solid var(--color-border-primary); flex-shrink: 0; }
+.tb-left .app { font-weight: 600; font-size: 13px; }
+.gpose { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: 10px; background: rgba(126,211,160,.12); color: var(--color-success); font-size: 11px; font-weight: 500; }
+.tb-center { flex: 1; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: var(--color-bg-app); }
+.spring { flex: 1; }
+
+.sidebar { width: var(--sidebar-width); background: var(--color-surface-1); border-right: 1px solid var(--color-border-primary); display: flex; flex-direction: column; flex-shrink: 0; }
+.sb-scroll { flex: 1; overflow-y: auto; padding: 6px 8px; }
+.sb-scroll::-webkit-scrollbar { width: 8px; }
+.sb-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
+.sbHeader { height: 24px; display: flex; align-items: center; padding: 0 4px; font-size: 12px; font-weight: 500; color: var(--color-text-tertiary); }
+.sbHeader .plus { margin-left: auto; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; border-radius: 4px; opacity: 0; cursor: pointer; }
+.sbHeader:hover .plus { opacity: .7; }
+.sbRow { position: relative; display: flex; align-items: center; height: var(--sidebar-row-height); font-size: 13px; cursor: default; user-select: none; }
+.sbRow::before { content: ""; position: absolute; inset: 0 0 1px var(--row-inset, 1px); border-radius: 5px; opacity: 0; transition: opacity 50ms var(--ease-default); }
+.sbRow:hover::before { background: var(--color-surface-hover); opacity: 1; }
+.sbRow.-active::before { background: var(--color-surface-active); opacity: 1; }
+.sbRow > * { position: relative; z-index: 1; }
+.tri { width: 0; height: 0; border-left: 3.5px solid transparent; border-right: 3.5px solid transparent; border-top: 5px solid var(--color-text-tertiary); transform: rotate(-90deg); }
+.tri.-open { transform: rotate(0); }
+.sbExp { width: 16px; height: 26px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.sbIco { width: 16px; height: 16px; margin-right: 6px; opacity: .85; display: flex; }
+.sbLbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sbCnt { font-family: var(--font-family-mono); font-variant-numeric: tabular-nums; font-size: 11px; color: var(--color-text-secondary); padding-right: 8px; }
+.statusbar { height: 26px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-top: 1px solid var(--color-border-secondary); font: 400 11px var(--font-family-mono); font-variant-numeric: tabular-nums; color: var(--color-text-tertiary); }
+
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--color-bg-app); }
+.main-toolbar { height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-bottom: 1px solid var(--color-border-secondary); flex-shrink: 0; }
+.crumb { font-size: 12px; color: var(--color-text-tertiary); white-space: nowrap; }
+.crumb b { color: var(--color-text-primary); font-weight: 500; }
+.main-scroll { flex: 1; overflow-y: auto; padding: 4px 16px 24px; }
+.main-scroll::-webkit-scrollbar { width: 8px; }
+.main-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
+
+/* Pose matrix (Anamnesis-style reference, picto tokens) */
+.poseMain { display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 12px; }
+.poseGrid { display: flex; gap: 14px; flex: 1; min-height: 0; }
+.mapCol { width: 170px; flex-shrink: 0; background: var(--color-black-10); border: 1px solid var(--color-border-secondary); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.mapCol h4, .bgroup h4 { font-size: 11px; font-weight: 600; letter-spacing: .05em; color: var(--color-text-tertiary); }
+.bodySvg { flex: 1; width: 100%; }
+.mdot { r: 4.5px; fill: rgba(50,151,255,.85); stroke: rgba(50,151,255,.25); stroke-width: 3; cursor: pointer; }
+.mdot.-sel { fill: #fff; stroke: var(--color-primary); stroke-width: 4; }
+.boneMatrix { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 4px; }
+.boneMatrix::-webkit-scrollbar { width: 8px; }
+.boneMatrix::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
+.bgroup h4 { padding-bottom: 5px; border-bottom: 1px solid var(--color-border-secondary); margin-bottom: 6px; }
+.brow { display: flex; align-items: center; gap: 10px; height: 30px; }
+.blabel { width: 110px; text-align: right; font-size: 12px; color: var(--color-text-secondary); flex-shrink: 0; }
+.bdots { display: flex; gap: 6px; }
+.bdot { min-width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--color-border-primary); background: var(--color-surface-hover); font-size: 10px; display: inline-flex; align-items: center; justify-content: center; color: var(--color-text-secondary); cursor: pointer; }
+.bdot:hover { background: var(--color-subtle-overlay); color: var(--color-text-primary); }
+.bdot.-sel { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+.tb-right { width: 280px; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 0 12px; background: var(--color-surface-1); border-left: 1px solid var(--color-border-primary); }
+.rail { width: 280px; flex-shrink: 0; background: var(--color-surface-1); border-left: 1px solid var(--color-border-primary); display: flex; flex-direction: column; overflow-y: auto; padding: 12px; gap: 8px; }
+.railBall { width: 150px; margin: 2px auto; flex-shrink: 0; }
+.railSec { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--color-text-secondary); padding: 8px 0 4px; border-bottom: 1px solid var(--color-border-secondary); flex-shrink: 0; }
+.railAxis { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px; background: var(--color-black-20); border: 1px solid var(--color-border-secondary); border-radius: 4px; font: 400 12px var(--font-family-mono); font-variant-numeric: tabular-nums; cursor: ew-resize; flex-shrink: 0; }
+.railAxis b { font: 600 10px var(--font-family); }
+.railRow3 { display: flex; gap: 6px; flex-shrink: 0; }
+.railRow3 .railAxis { flex: 1; min-width: 0; padding: 0 7px; gap: 4px; font-size: 11px; }
+.railRow3 .railAxis span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.railAxis span { margin-left: auto; }
+.poseFoot { display: flex; align-items: center; gap: 12px; padding-top: 10px; border-top: 1px solid var(--color-border-secondary); flex-shrink: 0; }
+.poseTop { display: flex; align-items: center; gap: 10px; padding: 2px 0 10px; flex-shrink: 0; font-size: 12px; color: var(--color-text-secondary); border-bottom: 1px solid var(--color-border-secondary); }
+.poseTop .sep { width: 1px; height: 16px; background: var(--color-border-secondary); }
+.linkA { color: var(--color-primary); cursor: pointer; }
+/* Bone matrix — Anamnesis PoseMatrixView transcribed to picto tokens. Dynamic
+   columns: auto-fit grid, clusters flow into as many columns as the width allows;
+   5+ button clusters span two tracks. */
+.mxWrap { flex: 1; min-height: 0; overflow-y: auto; width: 100%; padding-right: 4px; }
+.mxHead { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--color-text-secondary); padding: 14px 0 5px; border-bottom: 1px solid var(--color-border-secondary); margin-bottom: 8px; }
+.mxGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(235px, 1fr)); gap: 2px 22px; }
+.mxRow { display: flex; align-items: center; gap: 10px; min-height: 30px; }
+.mxRow.-wide { grid-column: span 2; }
+.mxLbl { flex: 1; min-width: 0; text-align: right; font-size: 12px; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mxPills { display: flex; gap: 6px; flex-shrink: 0; }
+.mxPill { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--color-border-primary); background: transparent; color: var(--color-text-secondary); font: 600 9.5px/1 var(--font-family-mono, monospace); display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; transition: border-color 120ms, color 120ms; }
+.mxPill:hover { border-color: var(--color-primary-50); color: var(--color-text-primary); }
+.mxPill.-sel { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+.poseView { display: none; flex: 1; min-height: 0; align-items: center; justify-content: center; }
+.poseView.-visible { display: flex; }
+#pv-bones.-visible { align-items: stretch; justify-content: flex-start; }
+
+.insp { border-top: 1px solid var(--color-border-secondary); }
+.insp:first-child { border-top: none; }
+.inspHead { height: 30px; display: flex; align-items: center; gap: 6px; color: var(--color-text-tertiary); cursor: pointer; }
+.inspHead:hover { color: var(--color-text-primary); }
+.inspHead .t { font-size: 12px; font-weight: 600; }
+.inspBody { padding: 2px 0 14px; display: flex; flex-direction: column; gap: 8px; }
+.prow { display: flex; align-items: center; gap: 10px; min-height: 26px; }
+.prow .k { width: 84px; font-size: 12px; color: var(--color-text-tertiary); flex-shrink: 0; }
+.scrub { flex: 1; display: flex; gap: 6px; }
+.scrub .axis { flex: 1; height: 26px; display: flex; align-items: center; gap: 6px; padding: 0 8px; background: var(--color-black-20); border: 1px solid var(--color-border-secondary); border-radius: 4px; font: 400 12px var(--font-family-mono); font-variant-numeric: tabular-nums; cursor: ew-resize; }
+.scrub .axis b { font-weight: 600; font-size: 10px; font-family: var(--font-family); }
+.scrub .axis.-x b { color: #ff6b7a; } .scrub .axis.-y b { color: #7ed3a0; } .scrub .axis.-z b { color: #6db3ff; }
+.slider { -webkit-appearance: none; appearance: none; flex: 1; height: 4px; border-radius: 2px; background: var(--color-border-primary); outline: none; }
+.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--color-primary); cursor: pointer; border: none; }
+.mono { font-family: var(--font-family-mono); font-variant-numeric: tabular-nums; font-size: 12px; color: var(--color-text-secondary); }
+.sliderVal { font-family: var(--font-family-mono); font-variant-numeric: tabular-nums; font-size: 12px; color: var(--color-text-secondary); width: 42px; text-align: right; flex-shrink: 0; }
+.hint { font-size: 11px; color: var(--color-text-tertiary); }
+
+/* pane-only placeholders (page chrome, token-derived) */
+.gearIco { width: 28px; height: 28px; border-radius: 5px; background: var(--color-black-20); border: 1px solid var(--color-border-secondary); display: flex; align-items: center; justify-content: center; color: var(--color-text-tertiary); flex-shrink: 0; }
+.dyeChip { width: 14px; height: 14px; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); flex-shrink: 0; cursor: pointer; }
+.dyeChip.-empty { background: transparent; box-shadow: none; border: 1px dashed var(--color-border-primary); }
+.swatch { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
+.swatch.-active { box-shadow: inset 0 0 0 1px rgba(255,255,255,.18), 0 0 0 2px var(--color-bg-app), 0 0 0 4px var(--color-primary); }
+.sbRow { position: relative; }
+.tguide { position: absolute; top: 0; width: 10px; height: 100%; pointer-events: none; }
+.tabDiv { width: 1px; height: 16px; background: var(--color-border-secondary); margin: 0 6px; flex-shrink: 0; }
+</style>
+
+<div class="picker">
+  <button id="btnpose" class="-active" onclick="show('pose')">Pose</button>
+  <button id="btnanim" onclick="show('anim')">Animation</button>
+  <button id="btnlook" onclick="show('look')">Appearance</button>
+  <button id="btncam" onclick="show('cam')">Camera</button>
+  <button id="btnlight" onclick="show('light')">Light</button>
+</div>
+
+<!-- ══════════ POSE PANE ══════════ -->
+<div class="stage -visible" id="stagepose">
+<div class="window" style="width:min(1160px,96vw); height:620px; flex-direction:column">
+  <div class="titlebar">
+    <div class="tb-left">
+      <span class="app">Poser</span>
+      <span class="gpose"><span class="dot"></span>GPose</span>
+      <span style="margin-left:auto"><button class="iconBtn" title="Spawn"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button></span>
+    </div>
+    <div class="tb-center">
+      <button class="iconBtn" title="Undo"><svg class="i" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+      <button class="iconBtn" style="opacity:.35" title="Redo"><svg class="i" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+      <div class="seg"><button class="segTab -active" title="Translate"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M18 9l3 3l-3 3"/><path d="M15 12h6"/><path d="M6 9l-3 3l3 3"/><path d="M3 12h6"/><path d="M9 18l3 3l3 -3"/><path d="M12 15v6"/><path d="M15 6l-3 -3l-3 3"/><path d="M12 3v6"/></svg></button><button class="segTab" title="Rotate"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M19.95 11a8 8 0 1 0 -.5 4m.5 5v-5h-5"/></svg></button><button class="segTab" title="Scale"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M16 4l4 0l0 4"/><path d="M14 10l6 -6"/><path d="M8 20l-4 0l0 -4"/><path d="M4 20l6 -6"/></svg></button></div>
+      <div class="seg"><button class="segTab -active">Local</button><button class="segTab">World</button></div>
+      <span class="spring"></span>
+    </div>
+    <div class="tb-right">
+      <button class="iconBtn -on" title="Skeleton overlay"><svg class="i" viewBox="0 0 24 24"><path d="M12 5.5L5.5 18.5"/><path d="M12 5.5L18.5 18.5"/><path d="M12 5.5m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/><path d="M5.5 18.5m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/><path d="M18.5 18.5m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/></svg></button>
+      <button class="iconBtn" title="Hide UI"><svg class="i" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><path d="m4 4 16 16"/></svg></button>
+      <button class="iconBtn" title="Settings"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+    </div>
+  </div>
+  <div style="flex:1; display:flex; min-height:0">
+    <div class="sidebar">
+      <div class="sb-scroll">
+        <div class="sbHeader">ACTORS<span class="plus"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span></div>
+        <div class="sbRow"><span class="sbExp"><span class="tri -open"></span></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg></span><span class="sbLbl">Midona Rhel</span><span class="sbCnt">you</span></div>
+        <div class="sbRow -active" style="--row-inset:21px"><svg class="tguide" style="left:20.5px" viewBox="0 0 10 26" preserveAspectRatio="none" fill="none"><path d="M3.5 0 V9.5 A3.5 3.5 0 0 0 7 13 H12" stroke="var(--color-text-tertiary)" stroke-width="1" vector-effect="non-scaling-stroke" opacity=".55"/></svg><span style="width:20px"></span><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M7 17L17 7"/><path d="M7 17m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/><path d="M17 7m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/></svg></span><span class="sbLbl">j_te_l — left hand</span></div>
+        <div class="sbRow"><span class="sbExp"><span class="tri"></span></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg></span><span class="sbLbl">Brio One</span><span class="sbCnt">spawned</span></div>
+        <div class="sbRow" style="--row-inset:21px"><svg class="tguide" style="left:20.5px" viewBox="0 0 10 26" preserveAspectRatio="none" fill="none"><path d="M3.5 0 V9.5 A3.5 3.5 0 0 0 7 13 H12" stroke="var(--color-text-tertiary)" stroke-width="1" vector-effect="non-scaling-stroke" opacity=".55"/></svg><span style="width:20px"></span><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M14.7 13.5c-1.1 -2 -1.441 -2.5 -2.7 -2.5c-1.259 0 -1.736 .755 -2.836 2.747c-.942 1.703 -2.846 1.845 -3.321 3.291c-.097 .265 -.145 .677 -.143 .962c0 1.176 .787 2 1.8 2c1.259 0 3 -1 4.5 -1s3.241 1 4.5 1c1.013 0 1.8 -.823 1.8 -2c0 -.285 -.049 -.697 -.146 -.962c-.475 -1.451 -2.512 -1.835 -3.454 -3.538"/><path d="M20.188 8.082a1.039 1.039 0 0 0 -.406 -.082h-.015c-.735 .012 -1.56 .75 -1.993 1.866c-.519 1.335 -.28 2.7 .538 3.052c.129 .055 .267 .082 .406 .082c.739 0 1.575 -.742 2.011 -1.866c.516 -1.335 .273 -2.7 -.54 -3.052l-.001 0"/><path d="M9.474 9c.055 0 .109 0 .163 -.011c.944 -.128 1.533 -1.346 1.32 -2.722c-.203 -1.297 -1.047 -2.267 -1.932 -2.267c-.055 0 -.109 0 -.163 .011c-.944 .128 -1.533 1.346 -1.32 2.722c.204 1.293 1.048 2.267 1.933 2.267"/><path d="M16.456 6.733c.214 -1.376 -.375 -2.594 -1.32 -2.722a1.164 1.164 0 0 0 -.162 -.011c-.885 0 -1.728 .97 -1.93 2.267c-.214 1.376 .375 2.594 1.32 2.722c.054 .007 .108 .011 .162 .011c.885 0 1.73 -.974 1.93 -2.267"/><path d="M5.69 12.918c.816 -.352 1.054 -1.719 .536 -3.052c-.436 -1.124 -1.271 -1.866 -2.009 -1.866c-.14 0 -.277 .027 -.407 .082c-.816 .352 -1.054 1.719 -.536 3.052c.436 1.124 1.271 1.866 2.009 1.866c.14 0 .277 -.027 .407 -.082"/></svg></span><span class="sbLbl">Wind-up Sun</span><span class="sbCnt">minion</span></div>
+        <div class="sbHeader" style="margin-top:8px">OBJECTS<span class="plus"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span></div>
+        <div class="sbRow"><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M5 11a2 2 0 0 1 2 2v2h10v-2a2 2 0 1 1 4 0v4a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-4a2 2 0 0 1 2 -2"/><path d="M5 11v-5a3 3 0 0 1 3 -3h8a3 3 0 0 1 3 3v5"/><path d="M6 19v2"/><path d="M18 19v2"/></svg></span><span class="sbLbl">Riviera Armchair</span><span class="sbCnt">furniture</span></div>
+        <div class="sbHeader" style="margin-top:8px">CAMERAS</div>
+        <div class="sbRow"><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M5 7h1a2 2 0 0 0 2 -2a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1a2 2 0 0 0 2 2h1a2 2 0 0 1 2 2v9a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2"/><path d="M9 13a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg></span><span class="sbLbl">GPose camera</span><span class="sbCnt">active</span></div>
+        <div class="sbHeader" style="margin-top:8px">LIGHTS</div>
+        <div class="sbRow"><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.4 1 2.3h6c0-.9.4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg></span><span class="sbLbl">Key light</span></div>
+      </div>
+      <div class="statusbar"><span class="dot"></span><span>2 actors</span><span style="margin-left:auto">142 bones · 60 fps</span></div>
+    </div>
+    <div class="main">
+      <div class="main-toolbar">
+        <div class="tabs">
+          <button class="tab -active">Pose</button>
+          <span class="tabDiv"></span>
+          <button class="tab">Environment</button>
+          <button class="tab">Library</button>
+        </div>
+        <span class="spring"></span>
+        <button class="iconBtn" title="Pop out this tab"><svg class="i" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></button>
+      </div>
+      <div class="main-scroll poseMain">
+        <!-- Anamnesis-style posing surface: body map | face map | grouped bone matrix
+             (user-approved reference), restyled to picto tokens. -->
+        <!-- Anamnesis-style posing: three TABBED views (user reference) — Body map,
+             Face map, grouped Bones matrix. One visible at a time. -->
+        <div style="flex-shrink:0; padding-bottom:8px">
+          <div class="seg">
+            <button class="segTab" id="pt-body" onclick="poseView('body')">Body</button>
+            <button class="segTab" id="pt-face" onclick="poseView('face')">Face</button>
+            <button class="segTab -active" id="pt-bones" onclick="poseView('bones')">Bones</button>
+          </div>
+        </div>
+        <div class="poseTop">
+          <span class="toggle -on"><span class="track"></span><span class="knob"></span></span><span>Freeze Physics</span>
+          <span class="toggle"><span class="track"></span><span class="knob"></span></span><span>Freeze World State</span>
+          <span class="sep"></span>
+          <span class="hint">Parenting</span>
+          <button class="iconBtn -on" title="Propagate translation"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M18 9l3 3l-3 3"/><path d="M15 12h6"/><path d="M6 9l-3 3l3 3"/><path d="M3 12h6"/><path d="M9 18l3 3l3 -3"/><path d="M12 15v6"/><path d="M15 6l-3 -3l-3 3"/><path d="M12 3v6"/></svg></button>
+          <button class="iconBtn -on" title="Propagate rotation"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M19.95 11a8 8 0 1 0 -.5 4m.5 5v-5h-5"/></svg></button>
+          <button class="iconBtn" title="Propagate scale"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M16 4l4 0l0 4"/><path d="M14 10l6 -6"/><path d="M8 20l-4 0l0 -4"/><path d="M4 20l6 -6"/></svg></button>
+          <div class="seg"><button class="segTab">Flip</button></div>
+          <span class="spring"></span>
+        </div>
+        <div class="poseView" id="pv-body"><svg viewBox="0 0 90 200" class="bodySvg" style="max-width:230px">
+              <path d="M45 14a9 9 0 1 0 0 18a9 9 0 0 0 0-18M32 38h26l6 34l-5 2l-5-22v34l6 62h-9l-7-52l-7 52h-9l6-62v-34l-5 22l-5-2z" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.14)"/>
+              <circle class="mdot" cx="45" cy="23"/><circle class="mdot" cx="45" cy="42"/><circle class="mdot" cx="45" cy="58"/>
+              <circle class="mdot" cx="33" cy="44"/><circle class="mdot" cx="57" cy="44"/>
+              <circle class="mdot" cx="28" cy="66"/><circle class="mdot" cx="62" cy="66"/>
+              <circle class="mdot -sel" cx="25" cy="88"/><circle class="mdot" cx="65" cy="88"/>
+              <circle class="mdot" cx="38" cy="112"/><circle class="mdot" cx="52" cy="112"/>
+              <circle class="mdot" cx="37" cy="156"/><circle class="mdot" cx="53" cy="156"/>
+              <circle class="mdot" cx="36" cy="186"/><circle class="mdot" cx="54" cy="186"/>
+            </svg></div>
+        <div class="poseView" id="pv-face"><svg viewBox="0 0 90 110" class="bodySvg" style="max-width:300px">
+              <ellipse cx="45" cy="52" rx="30" ry="40" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.14)"/>
+              <circle class="mdot" cx="33" cy="42"/><circle class="mdot" cx="57" cy="42"/>
+              <circle class="mdot" cx="30" cy="33"/><circle class="mdot" cx="60" cy="33"/>
+              <circle class="mdot" cx="45" cy="54"/>
+              <circle class="mdot" cx="38" cy="70"/><circle class="mdot" cx="52" cy="70"/>
+              <circle class="mdot" cx="45" cy="76"/>
+              <circle class="mdot" cx="20" cy="52"/><circle class="mdot" cx="70" cy="52"/>
+            </svg></div>
+        <div class="poseView -visible" id="pv-bones"><div class="mxWrap">
+            <div class="mxHead">HEAD</div>
+            <div class="mxGrid"><div class="mxRow"><span class="mxLbl">Head</span><span class="mxPills"><button class="mxPill -sel"></button></span></div><div class="mxRow"><span class="mxLbl">Jaw</span><span class="mxPills"><button class="mxPill">1</button><button class="mxPill">2</button></span></div><div class="mxRow"><span class="mxLbl">Ears</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">Cheeks</span><span class="mxPills"><button class="mxPill -sel">L1</button><button class="mxPill -sel">L2</button><button class="mxPill">R1</button><button class="mxPill">R2</button></span></div><div class="mxRow"><span class="mxLbl">Cheekbones</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">Cheekbone Sides</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">Nose</span><span class="mxPills"><button class="mxPill">C</button><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">Nose Bridge</span><span class="mxPills"><button class="mxPill">L1</button><button class="mxPill">L2</button><button class="mxPill">R1</button><button class="mxPill">R2</button></span></div></div>
+            <div class="mxHead">EYE</div>
+            <div class="mxGrid"><div class="mxRow"><span class="mxLbl">Eyes</span><span class="mxPills"><button class="mxPill">L1</button><button class="mxPill">L2</button><button class="mxPill">R1</button><button class="mxPill">R2</button></span></div><div class="mxRow"><span class="mxLbl">Left Eyelids</span><span class="mxPills"><button class="mxPill">U</button><button class="mxPill">L</button></span></div><div class="mxRow"><span class="mxLbl">Right Eyelids</span><span class="mxPills"><button class="mxPill">U</button><button class="mxPill">L</button></span></div><div class="mxRow"><span class="mxLbl">Eyebrows</span><span class="mxPills"><button class="mxPill">L1</button><button class="mxPill">L2</button><button class="mxPill">R1</button><button class="mxPill">R2</button></span></div><div class="mxRow"><span class="mxLbl">Left Eye Corner</span><span class="mxPills"><button class="mxPill">U1</button><button class="mxPill">U2</button><button class="mxPill">L1</button><button class="mxPill">L2</button></span></div><div class="mxRow"><span class="mxLbl">Right Eye Corner</span><span class="mxPills"><button class="mxPill">U1</button><button class="mxPill">U2</button><button class="mxPill">L1</button><button class="mxPill">L2</button></span></div><div class="mxRow"><span class="mxLbl">Iris</span><span class="mxPills"><button class="mxPill">L1</button><button class="mxPill">L2</button><button class="mxPill">R1</button><button class="mxPill">R2</button></span></div><div class="mxRow"><span class="mxLbl">Eye Socket</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div></div>
+            <div class="mxHead">MOUTH</div>
+            <div class="mxGrid"><div class="mxRow"><span class="mxLbl">Teeth</span><span class="mxPills"><button class="mxPill">1</button><button class="mxPill">2</button></span></div><div class="mxRow"><span class="mxLbl">Tongue</span><span class="mxPills"><button class="mxPill">1</button><button class="mxPill">2</button><button class="mxPill">3</button></span></div><div class="mxRow"><span class="mxLbl">Left Upper Lip</span><span class="mxPills"><button class="mxPill">1</button><button class="mxPill">2</button><button class="mxPill">3</button><button class="mxPill">4</button></span></div><div class="mxRow"><span class="mxLbl">Right Upper Lip</span><span class="mxPills"><button class="mxPill">1</button><button class="mxPill">2</button><button class="mxPill">3</button><button class="mxPill">4</button></span></div><div class="mxRow"><span class="mxLbl">Left Lip Corners</span><span class="mxPills"><button class="mxPill">L1</button><button class="mxPill">L2</button></span></div><div class="mxRow"><span class="mxLbl">Left Lower Lip</span><span class="mxPills"><button class="mxPill">1</button><button class="mxPill">2</button><button class="mxPill">3</button><button class="mxPill">4</button></span></div><div class="mxRow"><span class="mxLbl">Right Lower Lip</span><span class="mxPills"><button class="mxPill">1</button><button class="mxPill">2</button><button class="mxPill">3</button><button class="mxPill">4</button></span></div><div class="mxRow"><span class="mxLbl">Right Lip Corners</span><span class="mxPills"><button class="mxPill">R1</button><button class="mxPill">R2</button></span></div></div>
+            <div class="mxHead">HAIR AND ACCESSORIES</div>
+            <div class="mxGrid"><div class="mxRow"><span class="mxLbl">Earrings</span><span class="mxPills"><button class="mxPill">L1</button><button class="mxPill">L2</button><button class="mxPill">R1</button><button class="mxPill">R2</button></span></div><div class="mxRow"><span class="mxLbl">General</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button><button class="mxPill">1</button><button class="mxPill">2</button></span></div><div class="mxRow"><span class="mxLbl">Unique</span><span class="mxPills"><button class="mxPill"></button><button class="mxPill"></button><button class="mxPill"></button><button class="mxPill"></button></span></div></div>
+            <div class="mxHead">BODY</div>
+            <div class="mxGrid"><div class="mxRow"><span class="mxLbl">Neck</span><span class="mxPills"><button class="mxPill"></button></span></div><div class="mxRow"><span class="mxLbl">Cervical</span><span class="mxPills"><button class="mxPill"></button></span></div><div class="mxRow"><span class="mxLbl">Thoracic</span><span class="mxPills"><button class="mxPill"></button></span></div><div class="mxRow"><span class="mxLbl">Lumbar</span><span class="mxPills"><button class="mxPill"></button></span></div><div class="mxRow"><span class="mxLbl">Scabbards</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">Clavicles</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">Breasts</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">Pauldrons</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">Shields</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">Shoulders</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">Arms</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">Couters</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">Elbows</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">Forearms</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">Wrists</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">IVCS Breasts</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">IVCS Biceps</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div></div>
+            <div class="mxHead">LEFT HAND</div>
+            <div class="mxGrid"><div class="mxRow"><span class="mxLbl">Hand</span><span class="mxPills"><button class="mxPill"></button></span></div><div class="mxRow"><span class="mxLbl">Weapon</span><span class="mxPills"><button class="mxPill"></button></span></div><div class="mxRow"><span class="mxLbl">Thumb</span><span class="mxPills"><button class="mxPill">1</button><button class="mxPill">2</button></span></div><div class="mxRow"><span class="mxLbl">Index</span><span class="mxPills"><button class="mxPill">1</button><button class="mxPill">2</button><button class="mxPill">3</button></span></div><div class="mxRow"><span class="mxLbl">Middle</span><span class="mxPills"><button class="mxPill">1</button><button class="mxPill">2</button><button class="mxPill">3</button></span></div><div class="mxRow"><span class="mxLbl">Ring</span><span class="mxPills"><button class="mxPill">1</button><button class="mxPill">2</button><button class="mxPill">3</button></span></div><div class="mxRow"><span class="mxLbl">Pinky</span><span class="mxPills"><button class="mxPill">1</button><button class="mxPill">2</button><button class="mxPill">3</button></span></div></div>
+            <div class="mxHead">RIGHT HAND</div>
+            <div class="mxGrid"><div class="mxRow"><span class="mxLbl">Hand</span><span class="mxPills"><button class="mxPill"></button></span></div><div class="mxRow"><span class="mxLbl">Weapon</span><span class="mxPills"><button class="mxPill"></button></span></div><div class="mxRow"><span class="mxLbl">Thumb</span><span class="mxPills"><button class="mxPill">1</button><button class="mxPill">2</button></span></div><div class="mxRow"><span class="mxLbl">Index</span><span class="mxPills"><button class="mxPill">1</button><button class="mxPill">2</button><button class="mxPill">3</button></span></div><div class="mxRow"><span class="mxLbl">Middle</span><span class="mxPills"><button class="mxPill">1</button><button class="mxPill">2</button><button class="mxPill">3</button></span></div><div class="mxRow"><span class="mxLbl">Ring</span><span class="mxPills"><button class="mxPill">1</button><button class="mxPill">2</button><button class="mxPill">3</button></span></div><div class="mxRow"><span class="mxLbl">Pinky</span><span class="mxPills"><button class="mxPill">1</button><button class="mxPill">2</button><button class="mxPill">3</button></span></div></div>
+            <div class="mxHead">LEGS</div>
+            <div class="mxGrid"><div class="mxRow"><span class="mxLbl">Legs</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">Poleyns</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">Knees</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">Calves</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">Sheathes</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">Holsters</span><span class="mxPills"><button class="mxPill">L</button><button class="mxPill">R</button></span></div><div class="mxRow"><span class="mxLbl">Waist</span><span class="mxPills"><button class="mxPill"></button></span></div><div class="mxRow"><span class="mxLbl">Tail</span><span class="mxPills"><button class="mxPill">1</button><button class="mxPill">2</button><button class="mxPill">3</button><button class="mxPill">4</button></span></div></div>
+            <div class="mxHead">FEET</div>
+            <div class="mxGrid"><div class="mxRow"><span class="mxLbl">Left Foot</span><span class="mxPills"><button class="mxPill"></button></span></div><div class="mxRow"><span class="mxLbl">Left Toes</span><span class="mxPills"><button class="mxPill"></button></span></div><div class="mxRow"><span class="mxLbl">Right Foot</span><span class="mxPills"><button class="mxPill"></button></span></div><div class="mxRow"><span class="mxLbl">Right Toes</span><span class="mxPills"><button class="mxPill"></button></span></div></div>
+            <div class="mxHead">CLOTHES</div>
+            <div class="mxGrid"><div class="mxRow -wide"><span class="mxLbl">Front</span><span class="mxPills"><button class="mxPill">1</button><button class="mxPill">2</button><button class="mxPill">3</button><button class="mxPill">4</button><button class="mxPill">5</button><button class="mxPill">6</button></span></div><div class="mxRow -wide"><span class="mxLbl">Back</span><span class="mxPills"><button class="mxPill">1</button><button class="mxPill">2</button><button class="mxPill">3</button><button class="mxPill">4</button><button class="mxPill">5</button><button class="mxPill">6</button></span></div><div class="mxRow -wide"><span class="mxLbl">Sides</span><span class="mxPills"><button class="mxPill">L1</button><button class="mxPill">L2</button><button class="mxPill">L3</button><button class="mxPill">R1</button><button class="mxPill">R2</button><button class="mxPill">R3</button></span></div></div>
+          </div></div>
+
+      </div>
+    </div>
+    <div class="rail">
+      <div style="display:flex; align-items:center; gap:8px; flex-shrink:0"><span style="font-size:12px; color:var(--color-text-secondary)">Midona Rhel &middot; <b style="color:var(--color-text-primary)">j_te_l</b></span><span class="spring"></span><span class="hint">2 children</span></div>
+      <!-- Rotation ball (Brio/Anamnesis manipulator): drag on the sphere = free rotate,
+           drag a ring = single axis. Axis colors match the scrubbers below. -->
+      <svg class="railBall" viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r="52" fill="rgba(0,0,0,.30)" stroke="rgba(255,255,255,.10)"/>
+        <path d="M8 60a52 52 0 0 0 104 0" fill="none" stroke="#6db3ff" stroke-width="1.5" opacity=".9"/>
+        <ellipse cx="60" cy="60" rx="52" ry="13" fill="none" stroke="#7ed3a0" stroke-width="1.5" opacity=".9"/>
+        <path d="M60 8v104" stroke="#ff6b7a" stroke-width="1.5" opacity=".9"/>
+      </svg>
+      <div class="railSec">ROTATION</div>
+      <div class="railRow3">
+        <div class="railAxis"><b style="color:#ff6b7a">X</b><span>12.5&#176;</span></div>
+        <div class="railAxis"><b style="color:#7ed3a0">Y</b><span>101.7&#176;</span></div>
+        <div class="railAxis"><b style="color:#6db3ff">Z</b><span>&#8722;4.2&#176;</span></div>
+      </div>
+      <div class="railSec">POSITION</div>
+      <div class="railRow3">
+        <div class="railAxis"><b>X</b><span>&#8722;819.56</span></div>
+        <div class="railAxis"><b>Y</b><span>11.06</span></div>
+        <div class="railAxis"><b>Z</b><span>&#8722;680.47</span></div>
+      </div>
+      <div class="railSec">SCALE</div>
+      <div style="display:flex; gap:8px; align-items:center; flex-shrink:0"><div class="railAxis" style="flex:1"><b>S</b><span>1.000</span></div><button class="iconBtn -on" title="Link axes"><svg class="i" viewBox="0 0 24 24"><path d="M9 15l6 -6"/><path d="M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464"/><path d="M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.524 -.463"/></svg></button></div>
+      <span class="spring"></span>
+      <div style="display:flex; align-items:center; gap:8px; flex-shrink:0"><span class="hint">IK</span><span class="toggle -on"><span class="track"></span><span class="knob"></span></span><span class="spring"></span><span class="hint">per-chain &middot; CCD</span></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ══════════ ANIMATION PANE ══════════ -->
+<div class="stage" id="stageanim">
+<div class="window" style="width:min(1160px,96vw); height:620px; flex-direction:column">
+  <div class="titlebar">
+    <div class="tb-left">
+      <span class="app">Poser</span>
+      <span class="gpose"><span class="dot"></span>GPose</span>
+      <span style="margin-left:auto"><button class="iconBtn" title="Spawn"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button></span>
+    </div>
+    <div class="tb-center">
+      <button class="iconBtn" title="Undo"><svg class="i" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+      <button class="iconBtn" style="opacity:.35" title="Redo"><svg class="i" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+      <div class="seg"><button class="segTab -active" title="Translate"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M18 9l3 3l-3 3"/><path d="M15 12h6"/><path d="M6 9l-3 3l3 3"/><path d="M3 12h6"/><path d="M9 18l3 3l3 -3"/><path d="M12 15v6"/><path d="M15 6l-3 -3l-3 3"/><path d="M12 3v6"/></svg></button><button class="segTab" title="Rotate"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M19.95 11a8 8 0 1 0 -.5 4m.5 5v-5h-5"/></svg></button><button class="segTab" title="Scale"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M16 4l4 0l0 4"/><path d="M14 10l6 -6"/><path d="M8 20l-4 0l0 -4"/><path d="M4 20l6 -6"/></svg></button></div>
+      <div class="seg"><button class="segTab -active">Local</button><button class="segTab">World</button></div>
+      <span class="spring"></span>
+      <button class="iconBtn -on" title="Skeleton overlay"><svg class="i" viewBox="0 0 24 24"><path d="M12 5.5L5.5 18.5"/><path d="M12 5.5L18.5 18.5"/><path d="M12 5.5m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/><path d="M5.5 18.5m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/><path d="M18.5 18.5m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/></svg></button>
+      <button class="iconBtn" title="Hide UI"><svg class="i" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><path d="m4 4 16 16"/></svg></button>
+      <button class="iconBtn" title="Settings"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+    </div>
+  </div>
+  <div style="flex:1; display:flex; min-height:0">
+    <div class="sidebar">
+      <div class="sb-scroll">
+        <div class="sbHeader">ACTORS<span class="plus"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span></div>
+        <div class="sbRow"><span class="sbExp"><span class="tri"></span></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg></span><span class="sbLbl">Midona Rhel</span><span class="sbCnt">you</span></div>
+        <div class="sbRow -active"><span class="sbExp"><span class="tri"></span></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg></span><span class="sbLbl">Brio One</span><span class="sbCnt">spawned</span></div>
+        <div class="sbRow" style="--row-inset:21px"><svg class="tguide" style="left:20.5px" viewBox="0 0 10 26" preserveAspectRatio="none" fill="none"><path d="M3.5 0 V9.5 A3.5 3.5 0 0 0 7 13 H12" stroke="var(--color-text-tertiary)" stroke-width="1" vector-effect="non-scaling-stroke" opacity=".55"/></svg><span style="width:20px"></span><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M14.7 13.5c-1.1 -2 -1.441 -2.5 -2.7 -2.5c-1.259 0 -1.736 .755 -2.836 2.747c-.942 1.703 -2.846 1.845 -3.321 3.291c-.097 .265 -.145 .677 -.143 .962c0 1.176 .787 2 1.8 2c1.259 0 3 -1 4.5 -1s3.241 1 4.5 1c1.013 0 1.8 -.823 1.8 -2c0 -.285 -.049 -.697 -.146 -.962c-.475 -1.451 -2.512 -1.835 -3.454 -3.538"/><path d="M20.188 8.082a1.039 1.039 0 0 0 -.406 -.082h-.015c-.735 .012 -1.56 .75 -1.993 1.866c-.519 1.335 -.28 2.7 .538 3.052c.129 .055 .267 .082 .406 .082c.739 0 1.575 -.742 2.011 -1.866c.516 -1.335 .273 -2.7 -.54 -3.052l-.001 0"/><path d="M9.474 9c.055 0 .109 0 .163 -.011c.944 -.128 1.533 -1.346 1.32 -2.722c-.203 -1.297 -1.047 -2.267 -1.932 -2.267c-.055 0 -.109 0 -.163 .011c-.944 .128 -1.533 1.346 -1.32 2.722c.204 1.293 1.048 2.267 1.933 2.267"/><path d="M16.456 6.733c.214 -1.376 -.375 -2.594 -1.32 -2.722a1.164 1.164 0 0 0 -.162 -.011c-.885 0 -1.728 .97 -1.93 2.267c-.214 1.376 .375 2.594 1.32 2.722c.054 .007 .108 .011 .162 .011c.885 0 1.73 -.974 1.93 -2.267"/><path d="M5.69 12.918c.816 -.352 1.054 -1.719 .536 -3.052c-.436 -1.124 -1.271 -1.866 -2.009 -1.866c-.14 0 -.277 .027 -.407 .082c-.816 .352 -1.054 1.719 -.536 3.052c.436 1.124 1.271 1.866 2.009 1.866c.14 0 .277 -.027 .407 -.082"/></svg></span><span class="sbLbl">Wind-up Sun</span><span class="sbCnt">minion</span></div>
+        <div class="sbHeader" style="margin-top:8px">OBJECTS<span class="plus"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span></div>
+        <div class="sbRow"><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M5 11a2 2 0 0 1 2 2v2h10v-2a2 2 0 1 1 4 0v4a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-4a2 2 0 0 1 2 -2"/><path d="M5 11v-5a3 3 0 0 1 3 -3h8a3 3 0 0 1 3 3v5"/><path d="M6 19v2"/><path d="M18 19v2"/></svg></span><span class="sbLbl">Riviera Armchair</span><span class="sbCnt">furniture</span></div>
+        <div class="sbHeader" style="margin-top:8px">CAMERAS</div>
+        <div class="sbRow"><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M5 7h1a2 2 0 0 0 2 -2a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1a2 2 0 0 0 2 2h1a2 2 0 0 1 2 2v9a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2"/><path d="M9 13a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg></span><span class="sbLbl">GPose camera</span><span class="sbCnt">active</span></div>
+        <div class="sbHeader" style="margin-top:8px">LIGHTS</div>
+        <div class="sbRow"><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.4 1 2.3h6c0-.9.4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg></span><span class="sbLbl">Key light</span></div>
+      </div>
+      <div class="statusbar"><span class="dot"></span><span>2 actors</span><span style="margin-left:auto">142 bones · 60 fps</span></div>
+    </div>
+    <div class="main">
+      <div class="main-toolbar">
+        <div class="tabs">
+          <button class="tab">Pose</button>
+          <button class="tab -active">Animation</button>
+          <button class="tab">Appearance</button>
+          <span class="tabDiv"></span>
+          <button class="tab">Environment</button>
+          <button class="tab">Library</button>
+        </div>
+        <span class="spring"></span>
+        <span class="crumb"><b>Brio One</b></span>
+        <button class="iconBtn" title="Pop out this tab"><svg class="i" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></button>
+      </div>
+      <div class="main-scroll">
+        <div class="prow" style="margin-top:8px">
+          <input class="input" style="flex:1; max-width:360px" placeholder="Search emotes — try /sit, /doze, /playdead">
+          <span class="hint">or paste an action ID</span>
+        </div>
+        <div class="insp" style="margin-top:8px">
+          <div class="inspHead"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="m6 9 6 6 6-9"/></svg><span class="t">PLAYBACK</span></div>
+          <div class="inspBody">
+            <div class="prow"><span class="k">Speed</span><input type="range" class="slider" style="max-width:280px" value="50"><span class="sliderVal">1.00×</span></div>
+            <div class="prow"><span class="k">Scrub</span><input type="range" class="slider" style="max-width:280px" value="32"><span class="sliderVal">0:04.2</span></div>
+            <div class="prow"><span class="k"></span>
+              <button class="iconBtn" title="Play/Pause"><svg class="i" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></button>
+              <button class="iconBtn" title="Step back"><svg class="i" viewBox="0 0 24 24"><path d="M19 20 9 12l10-8z"/><path d="M5 19V5"/></svg></button>
+              <button class="iconBtn" title="Step forward"><svg class="i" viewBox="0 0 24 24"><path d="m5 4 10 8-10 8z"/><path d="M19 5v14"/></svg></button>
+              <span class="hint">freeze on any frame, then pose on top</span>
+            </div>
+          </div>
+        </div>
+        <div class="insp">
+          <div class="inspHead"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="m6 9 6 6 6-9"/></svg><span class="t">SLOTS</span></div>
+          <div class="inspBody">
+            <div class="prow"><span class="k">Base</span>
+              <div class="selBtn" style="flex:1; max-width:280px"><span style="flex:1">/sit — Emote (loop)</span><span class="selChevron"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="m6 9 6 6 6-9"/></svg></span></div>
+              <span class="mono">t=0:04.2</span>
+            </div>
+            <div class="prow"><span class="k">Upper body</span>
+              <div class="selBtn" style="flex:1; max-width:280px"><span style="flex:1; color:var(--color-text-tertiary)">None</span><span class="selChevron"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="m6 9 6 6 6-9"/></svg></span></div>
+            </div>
+            <div class="prow"><span class="k">Facial</span>
+              <div class="selBtn" style="flex:1; max-width:280px"><span style="flex:1">/smile — Expression</span><span class="selChevron"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="m6 9 6 6 6-9"/></svg></span></div>
+            </div>
+            <div class="prow"><span class="k">Lips</span>
+              <div class="selBtn" style="flex:1; max-width:280px"><span style="flex:1; color:var(--color-text-tertiary)">None</span><span class="selChevron"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="m6 9 6 6 6-9"/></svg></span></div>
+            </div>
+            <div class="prow"><span class="k">Lip sync</span><span class="toggle"><span class="track"></span><span class="knob"></span></span><span class="hint">drive the Lips slot from a chat macro's speech pattern</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ══════════ APPEARANCE PANE ══════════ -->
+<div class="stage" id="stagelook">
+<div class="window" style="width:min(1160px,96vw); height:620px; flex-direction:column">
+  <div class="titlebar">
+    <div class="tb-left">
+      <span class="app">Poser</span>
+      <span class="gpose"><span class="dot"></span>GPose</span>
+      <span style="margin-left:auto"><button class="iconBtn" title="Spawn"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button></span>
+    </div>
+    <div class="tb-center">
+      <button class="iconBtn" title="Undo"><svg class="i" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+      <button class="iconBtn" style="opacity:.35" title="Redo"><svg class="i" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+      <div class="seg"><button class="segTab -active" title="Translate"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M18 9l3 3l-3 3"/><path d="M15 12h6"/><path d="M6 9l-3 3l3 3"/><path d="M3 12h6"/><path d="M9 18l3 3l3 -3"/><path d="M12 15v6"/><path d="M15 6l-3 -3l-3 3"/><path d="M12 3v6"/></svg></button><button class="segTab" title="Rotate"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M19.95 11a8 8 0 1 0 -.5 4m.5 5v-5h-5"/></svg></button><button class="segTab" title="Scale"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M16 4l4 0l0 4"/><path d="M14 10l6 -6"/><path d="M8 20l-4 0l0 -4"/><path d="M4 20l6 -6"/></svg></button></div>
+      <div class="seg"><button class="segTab -active">Local</button><button class="segTab">World</button></div>
+      <span class="spring"></span>
+      <button class="iconBtn -on" title="Skeleton overlay"><svg class="i" viewBox="0 0 24 24"><path d="M12 5.5L5.5 18.5"/><path d="M12 5.5L18.5 18.5"/><path d="M12 5.5m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/><path d="M5.5 18.5m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/><path d="M18.5 18.5m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/></svg></button>
+      <button class="iconBtn" title="Hide UI"><svg class="i" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><path d="m4 4 16 16"/></svg></button>
+      <button class="iconBtn" title="Settings"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+    </div>
+  </div>
+  <div style="flex:1; display:flex; min-height:0">
+    <div class="sidebar">
+      <div class="sb-scroll">
+        <div class="sbHeader">ACTORS<span class="plus"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span></div>
+        <div class="sbRow -active"><span class="sbExp"><span class="tri"></span></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg></span><span class="sbLbl">Midona Rhel</span><span class="sbCnt">you</span></div>
+        <div class="sbRow"><span class="sbExp"><span class="tri"></span></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg></span><span class="sbLbl">Brio One</span><span class="sbCnt">spawned</span></div>
+        <div class="sbRow" style="--row-inset:21px"><svg class="tguide" style="left:20.5px" viewBox="0 0 10 26" preserveAspectRatio="none" fill="none"><path d="M3.5 0 V9.5 A3.5 3.5 0 0 0 7 13 H12" stroke="var(--color-text-tertiary)" stroke-width="1" vector-effect="non-scaling-stroke" opacity=".55"/></svg><span style="width:20px"></span><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M14.7 13.5c-1.1 -2 -1.441 -2.5 -2.7 -2.5c-1.259 0 -1.736 .755 -2.836 2.747c-.942 1.703 -2.846 1.845 -3.321 3.291c-.097 .265 -.145 .677 -.143 .962c0 1.176 .787 2 1.8 2c1.259 0 3 -1 4.5 -1s3.241 1 4.5 1c1.013 0 1.8 -.823 1.8 -2c0 -.285 -.049 -.697 -.146 -.962c-.475 -1.451 -2.512 -1.835 -3.454 -3.538"/><path d="M20.188 8.082a1.039 1.039 0 0 0 -.406 -.082h-.015c-.735 .012 -1.56 .75 -1.993 1.866c-.519 1.335 -.28 2.7 .538 3.052c.129 .055 .267 .082 .406 .082c.739 0 1.575 -.742 2.011 -1.866c.516 -1.335 .273 -2.7 -.54 -3.052l-.001 0"/><path d="M9.474 9c.055 0 .109 0 .163 -.011c.944 -.128 1.533 -1.346 1.32 -2.722c-.203 -1.297 -1.047 -2.267 -1.932 -2.267c-.055 0 -.109 0 -.163 .011c-.944 .128 -1.533 1.346 -1.32 2.722c.204 1.293 1.048 2.267 1.933 2.267"/><path d="M16.456 6.733c.214 -1.376 -.375 -2.594 -1.32 -2.722a1.164 1.164 0 0 0 -.162 -.011c-.885 0 -1.728 .97 -1.93 2.267c-.214 1.376 .375 2.594 1.32 2.722c.054 .007 .108 .011 .162 .011c.885 0 1.73 -.974 1.93 -2.267"/><path d="M5.69 12.918c.816 -.352 1.054 -1.719 .536 -3.052c-.436 -1.124 -1.271 -1.866 -2.009 -1.866c-.14 0 -.277 .027 -.407 .082c-.816 .352 -1.054 1.719 -.536 3.052c.436 1.124 1.271 1.866 2.009 1.866c.14 0 .277 -.027 .407 -.082"/></svg></span><span class="sbLbl">Wind-up Sun</span><span class="sbCnt">minion</span></div>
+        <div class="sbHeader" style="margin-top:8px">OBJECTS<span class="plus"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span></div>
+        <div class="sbRow"><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M5 11a2 2 0 0 1 2 2v2h10v-2a2 2 0 1 1 4 0v4a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-4a2 2 0 0 1 2 -2"/><path d="M5 11v-5a3 3 0 0 1 3 -3h8a3 3 0 0 1 3 3v5"/><path d="M6 19v2"/><path d="M18 19v2"/></svg></span><span class="sbLbl">Riviera Armchair</span><span class="sbCnt">furniture</span></div>
+        <div class="sbHeader" style="margin-top:8px">CAMERAS</div>
+        <div class="sbRow"><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M5 7h1a2 2 0 0 0 2 -2a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1a2 2 0 0 0 2 2h1a2 2 0 0 1 2 2v9a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2"/><path d="M9 13a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg></span><span class="sbLbl">GPose camera</span><span class="sbCnt">active</span></div>
+        <div class="sbHeader" style="margin-top:8px">LIGHTS</div>
+        <div class="sbRow"><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.4 1 2.3h6c0-.9.4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg></span><span class="sbLbl">Key light</span></div>
+      </div>
+      <div class="statusbar"><span class="dot"></span><span>2 actors</span><span style="margin-left:auto">142 bones · 60 fps</span></div>
+    </div>
+    <div class="main">
+      <div class="main-toolbar">
+        <div class="tabs">
+          <button class="tab">Pose</button>
+          <button class="tab">Animation</button>
+          <button class="tab -active">Appearance</button>
+          <span class="tabDiv"></span>
+          <button class="tab">Environment</button>
+          <button class="tab">Library</button>
+        </div>
+        <span class="spring"></span>
+        <span class="crumb"><b>Midona Rhel</b></span>
+        <button class="iconBtn" title="Pop out this tab"><svg class="i" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></button>
+      </div>
+      <div class="main-scroll">
+        <div class="insp">
+          <div class="inspHead"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="m6 9 6 6 6-9"/></svg><span class="t">GLAMOURER</span></div>
+          <div class="inspBody">
+            <div class="prow"><span class="k">Design</span>
+              <div class="selBtn" style="width:240px"><span style="flex:1">Warrior of Light — casual</span><span class="selChevron"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M8 9l4 -4l4 4"/><path d="M16 15l-4 4l-4 -4"/></svg></span></div>
+              <button class="btn" style="height:26px; padding:0 12px; font-size:12px">Apply</button>
+              <button class="btn" style="height:26px; padding:0 12px; font-size:12px">Revert</button>
+            </div>
+            <div class="prow" style="min-height:44px">
+              <span class="k"></span>
+              <button class="btn btnPrimary" style="height:26px; padding:0 12px; font-size:12px">Open in Glamourer</button>
+              <span class="hint">appearance editing (gear, dyes, customize) happens in Glamourer, targeting the selected actor &mdash; Poser applies designs and keeps GPose state in sync</span>
+            </div>
+          </div>
+        </div>
+        <div class="insp">
+          <div class="inspHead"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="m6 9 6 6 6-9"/></svg><span class="t">PENUMBRA</span></div>
+          <div class="inspBody">
+            <div class="prow"><span class="k">Collection</span>
+              <div class="selBtn" style="width:240px"><span style="flex:1">Own Character &mdash; Midona</span><span class="selChevron"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M8 9l4 -4l4 4"/><path d="M16 15l-4 4l-4 -4"/></svg></span></div>
+              <span class="hint">mod collection assigned to the selected actor (Ktisis-parity; changing triggers a redraw)</span>
+            </div>
+          </div>
+        </div>
+        <div class="insp">
+          <div class="inspHead"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="m6 9 6 6 6-9"/></svg><span class="t">CUSTOMIZE+</span></div>
+          <div class="inspBody">
+            <div class="prow"><span class="k">Profile</span>
+              <div class="selBtn" style="width:240px"><span style="flex:1; color:var(--color-text-tertiary)">None</span><span class="selChevron"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M8 9l4 -4l4 4"/><path d="M16 15l-4 4l-4 -4"/></svg></span></div>
+              <span class="hint">body-scale profile applied to the selected actor</span>
+            </div>
+          </div>
+        </div>
+        <div class="insp">
+          <div class="inspHead"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="m6 9 6 6 6-9"/></svg><span class="t">MODEL</span></div>
+          <div class="inspBody">
+            <div class="prow"><span class="k">Redraw</span>
+              <button class="btn" style="height:26px; padding:0 12px; font-size:12px">Redraw actor</button>
+              <span class="hint">re-applies mods and appearance state after external changes</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ══════════ CAMERA PANE ══════════ -->
+<div class="stage" id="stagecam">
+<div class="window" style="width:min(1160px,96vw); height:620px; flex-direction:column">
+  <div class="titlebar">
+    <div class="tb-left">
+      <span class="app">Poser</span>
+      <span class="gpose"><span class="dot"></span>GPose</span>
+      <span style="margin-left:auto"><button class="iconBtn" title="Spawn"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button></span>
+    </div>
+    <div class="tb-center">
+      <button class="iconBtn" title="Undo"><svg class="i" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+      <button class="iconBtn" style="opacity:.35" title="Redo"><svg class="i" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+      <div class="seg"><button class="segTab -active" title="Translate"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M18 9l3 3l-3 3"/><path d="M15 12h6"/><path d="M6 9l-3 3l3 3"/><path d="M3 12h6"/><path d="M9 18l3 3l3 -3"/><path d="M12 15v6"/><path d="M15 6l-3 -3l-3 3"/><path d="M12 3v6"/></svg></button><button class="segTab" title="Rotate"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M19.95 11a8 8 0 1 0 -.5 4m.5 5v-5h-5"/></svg></button><button class="segTab" title="Scale"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M16 4l4 0l0 4"/><path d="M14 10l6 -6"/><path d="M8 20l-4 0l0 -4"/><path d="M4 20l6 -6"/></svg></button></div>
+      <div class="seg"><button class="segTab -active">Local</button><button class="segTab">World</button></div>
+      <span class="spring"></span>
+      <button class="iconBtn -on" title="Skeleton overlay"><svg class="i" viewBox="0 0 24 24"><path d="M12 5.5L5.5 18.5"/><path d="M12 5.5L18.5 18.5"/><path d="M12 5.5m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/><path d="M5.5 18.5m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/><path d="M18.5 18.5m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/></svg></button>
+      <button class="iconBtn" title="Hide UI"><svg class="i" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><path d="m4 4 16 16"/></svg></button>
+      <button class="iconBtn" title="Settings"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+    </div>
+  </div>
+  <div style="flex:1; display:flex; min-height:0">
+    <div class="sidebar">
+      <div class="sb-scroll">
+        <div class="sbHeader">ACTORS<span class="plus"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span></div>
+        <div class="sbRow"><span class="sbExp"><span class="tri"></span></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg></span><span class="sbLbl">Midona Rhel</span><span class="sbCnt">you</span></div>
+        <div class="sbRow"><span class="sbExp"><span class="tri"></span></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg></span><span class="sbLbl">Brio One</span><span class="sbCnt">spawned</span></div>
+        <div class="sbRow" style="--row-inset:21px"><svg class="tguide" style="left:20.5px" viewBox="0 0 10 26" preserveAspectRatio="none" fill="none"><path d="M3.5 0 V9.5 A3.5 3.5 0 0 0 7 13 H12" stroke="var(--color-text-tertiary)" stroke-width="1" vector-effect="non-scaling-stroke" opacity=".55"/></svg><span style="width:20px"></span><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M14.7 13.5c-1.1 -2 -1.441 -2.5 -2.7 -2.5c-1.259 0 -1.736 .755 -2.836 2.747c-.942 1.703 -2.846 1.845 -3.321 3.291c-.097 .265 -.145 .677 -.143 .962c0 1.176 .787 2 1.8 2c1.259 0 3 -1 4.5 -1s3.241 1 4.5 1c1.013 0 1.8 -.823 1.8 -2c0 -.285 -.049 -.697 -.146 -.962c-.475 -1.451 -2.512 -1.835 -3.454 -3.538"/><path d="M20.188 8.082a1.039 1.039 0 0 0 -.406 -.082h-.015c-.735 .012 -1.56 .75 -1.993 1.866c-.519 1.335 -.28 2.7 .538 3.052c.129 .055 .267 .082 .406 .082c.739 0 1.575 -.742 2.011 -1.866c.516 -1.335 .273 -2.7 -.54 -3.052l-.001 0"/><path d="M9.474 9c.055 0 .109 0 .163 -.011c.944 -.128 1.533 -1.346 1.32 -2.722c-.203 -1.297 -1.047 -2.267 -1.932 -2.267c-.055 0 -.109 0 -.163 .011c-.944 .128 -1.533 1.346 -1.32 2.722c.204 1.293 1.048 2.267 1.933 2.267"/><path d="M16.456 6.733c.214 -1.376 -.375 -2.594 -1.32 -2.722a1.164 1.164 0 0 0 -.162 -.011c-.885 0 -1.728 .97 -1.93 2.267c-.214 1.376 .375 2.594 1.32 2.722c.054 .007 .108 .011 .162 .011c.885 0 1.73 -.974 1.93 -2.267"/><path d="M5.69 12.918c.816 -.352 1.054 -1.719 .536 -3.052c-.436 -1.124 -1.271 -1.866 -2.009 -1.866c-.14 0 -.277 .027 -.407 .082c-.816 .352 -1.054 1.719 -.536 3.052c.436 1.124 1.271 1.866 2.009 1.866c.14 0 .277 -.027 .407 -.082"/></svg></span><span class="sbLbl">Wind-up Sun</span><span class="sbCnt">minion</span></div>
+        <div class="sbHeader" style="margin-top:8px">OBJECTS<span class="plus"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span></div>
+        <div class="sbRow"><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M5 11a2 2 0 0 1 2 2v2h10v-2a2 2 0 1 1 4 0v4a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-4a2 2 0 0 1 2 -2"/><path d="M5 11v-5a3 3 0 0 1 3 -3h8a3 3 0 0 1 3 3v5"/><path d="M6 19v2"/><path d="M18 19v2"/></svg></span><span class="sbLbl">Riviera Armchair</span><span class="sbCnt">furniture</span></div>
+        <div class="sbHeader" style="margin-top:8px">CAMERAS</div>
+        <div class="sbRow -active"><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M5 7h1a2 2 0 0 0 2 -2a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1a2 2 0 0 0 2 2h1a2 2 0 0 1 2 2v9a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2"/><path d="M9 13a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg></span><span class="sbLbl">GPose camera</span><span class="sbCnt">active</span></div>
+        <div class="sbRow"><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M5 7h1a2 2 0 0 0 2 -2a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1a2 2 0 0 0 2 2h1a2 2 0 0 1 2 2v9a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2"/><path d="M9 13a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg></span><span class="sbLbl">Camera 2</span></div>
+        <div class="sbHeader" style="margin-top:8px">LIGHTS</div>
+        <div class="sbRow"><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.4 1 2.3h6c0-.9.4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg></span><span class="sbLbl">Key light</span></div>
+      </div>
+      <div class="statusbar"><span class="dot"></span><span>2 actors</span><span style="margin-left:auto">2 cameras · 60 fps</span></div>
+    </div>
+    <div class="main">
+      <div class="main-toolbar">
+        <div class="tabs">
+          <button class="tab -active">Camera</button>
+          <span class="tabDiv"></span>
+          <button class="tab">Environment</button>
+          <button class="tab">Library</button>
+        </div>
+        <span class="spring"></span>
+        <span class="crumb"><b>GPose camera</b></span>
+        <button class="iconBtn" title="Pop out this tab"><svg class="i" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></button>
+      </div>
+      <div class="main-scroll">
+        <div class="insp">
+          <div class="inspHead"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="m6 9 6 6 6-9"/></svg><span class="t">LENS</span></div>
+          <div class="inspBody">
+            <div class="prow"><span class="k">FoV</span><input type="range" class="slider" style="max-width:280px" value="62"><span class="sliderVal">78°</span></div>
+            <div class="prow"><span class="k">Zoom</span><input type="range" class="slider" style="max-width:280px" value="28"><span class="sliderVal">2.5m</span></div>
+            <div class="prow"><span class="k">Roll</span><input type="range" class="slider" style="max-width:280px" value="50"><span class="sliderVal">0.0°</span></div>
+          </div>
+        </div>
+        <div class="insp">
+          <div class="inspHead"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="m6 9 6 6 6-9"/></svg><span class="t">BEHAVIOR</span></div>
+          <div class="inspBody">
+            <div class="prow"><span class="k">Collision</span><span class="toggle"><span class="track"></span><span class="knob"></span></span><span class="hint">off = camera clips through walls and floors</span></div>
+            <div class="prow"><span class="k">Delimit</span><span class="toggle -on"><span class="track"></span><span class="knob"></span></span><span class="hint">remove the game's pitch/zoom angle limits</span></div>
+            <div class="prow"><span class="k"></span><button class="btn"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3"/><path d="M6 21v-1a6 6 0 0 1 12 0v1"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>Open portrait mode</button><span class="hint">hands this camera + pose to the portrait editor</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ══════════ LIGHT PANE ══════════ -->
+<div class="stage" id="stagelight">
+<div class="window" style="width:min(1160px,96vw); height:620px; flex-direction:column">
+  <div class="titlebar">
+    <div class="tb-left">
+      <span class="app">Poser</span>
+      <span class="gpose"><span class="dot"></span>GPose</span>
+      <span style="margin-left:auto"><button class="iconBtn" title="Spawn"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button></span>
+    </div>
+    <div class="tb-center">
+      <button class="iconBtn" title="Undo"><svg class="i" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+      <button class="iconBtn" style="opacity:.35" title="Redo"><svg class="i" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+      <div class="seg"><button class="segTab -active" title="Translate"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M18 9l3 3l-3 3"/><path d="M15 12h6"/><path d="M6 9l-3 3l3 3"/><path d="M3 12h6"/><path d="M9 18l3 3l3 -3"/><path d="M12 15v6"/><path d="M15 6l-3 -3l-3 3"/><path d="M12 3v6"/></svg></button><button class="segTab" title="Rotate"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M19.95 11a8 8 0 1 0 -.5 4m.5 5v-5h-5"/></svg></button><button class="segTab" title="Scale"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M16 4l4 0l0 4"/><path d="M14 10l6 -6"/><path d="M8 20l-4 0l0 -4"/><path d="M4 20l6 -6"/></svg></button></div>
+      <div class="seg"><button class="segTab -active">Local</button><button class="segTab">World</button></div>
+      <span class="spring"></span>
+      <button class="iconBtn -on" title="Skeleton overlay"><svg class="i" viewBox="0 0 24 24"><path d="M12 5.5L5.5 18.5"/><path d="M12 5.5L18.5 18.5"/><path d="M12 5.5m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/><path d="M5.5 18.5m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/><path d="M18.5 18.5m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/></svg></button>
+      <button class="iconBtn" title="Hide UI"><svg class="i" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><path d="m4 4 16 16"/></svg></button>
+      <button class="iconBtn" title="Settings"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+    </div>
+  </div>
+  <div style="flex:1; display:flex; min-height:0">
+    <div class="sidebar">
+      <div class="sb-scroll">
+        <div class="sbHeader">ACTORS<span class="plus"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span></div>
+        <div class="sbRow"><span class="sbExp"><span class="tri"></span></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg></span><span class="sbLbl">Midona Rhel</span><span class="sbCnt">you</span></div>
+        <div class="sbRow"><span class="sbExp"><span class="tri"></span></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg></span><span class="sbLbl">Brio One</span><span class="sbCnt">spawned</span></div>
+        <div class="sbRow" style="--row-inset:21px"><svg class="tguide" style="left:20.5px" viewBox="0 0 10 26" preserveAspectRatio="none" fill="none"><path d="M3.5 0 V9.5 A3.5 3.5 0 0 0 7 13 H12" stroke="var(--color-text-tertiary)" stroke-width="1" vector-effect="non-scaling-stroke" opacity=".55"/></svg><span style="width:20px"></span><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M14.7 13.5c-1.1 -2 -1.441 -2.5 -2.7 -2.5c-1.259 0 -1.736 .755 -2.836 2.747c-.942 1.703 -2.846 1.845 -3.321 3.291c-.097 .265 -.145 .677 -.143 .962c0 1.176 .787 2 1.8 2c1.259 0 3 -1 4.5 -1s3.241 1 4.5 1c1.013 0 1.8 -.823 1.8 -2c0 -.285 -.049 -.697 -.146 -.962c-.475 -1.451 -2.512 -1.835 -3.454 -3.538"/><path d="M20.188 8.082a1.039 1.039 0 0 0 -.406 -.082h-.015c-.735 .012 -1.56 .75 -1.993 1.866c-.519 1.335 -.28 2.7 .538 3.052c.129 .055 .267 .082 .406 .082c.739 0 1.575 -.742 2.011 -1.866c.516 -1.335 .273 -2.7 -.54 -3.052l-.001 0"/><path d="M9.474 9c.055 0 .109 0 .163 -.011c.944 -.128 1.533 -1.346 1.32 -2.722c-.203 -1.297 -1.047 -2.267 -1.932 -2.267c-.055 0 -.109 0 -.163 .011c-.944 .128 -1.533 1.346 -1.32 2.722c.204 1.293 1.048 2.267 1.933 2.267"/><path d="M16.456 6.733c.214 -1.376 -.375 -2.594 -1.32 -2.722a1.164 1.164 0 0 0 -.162 -.011c-.885 0 -1.728 .97 -1.93 2.267c-.214 1.376 .375 2.594 1.32 2.722c.054 .007 .108 .011 .162 .011c.885 0 1.73 -.974 1.93 -2.267"/><path d="M5.69 12.918c.816 -.352 1.054 -1.719 .536 -3.052c-.436 -1.124 -1.271 -1.866 -2.009 -1.866c-.14 0 -.277 .027 -.407 .082c-.816 .352 -1.054 1.719 -.536 3.052c.436 1.124 1.271 1.866 2.009 1.866c.14 0 .277 -.027 .407 -.082"/></svg></span><span class="sbLbl">Wind-up Sun</span><span class="sbCnt">minion</span></div>
+        <div class="sbHeader" style="margin-top:8px">OBJECTS<span class="plus"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span></div>
+        <div class="sbRow"><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M5 11a2 2 0 0 1 2 2v2h10v-2a2 2 0 1 1 4 0v4a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-4a2 2 0 0 1 2 -2"/><path d="M5 11v-5a3 3 0 0 1 3 -3h8a3 3 0 0 1 3 3v5"/><path d="M6 19v2"/><path d="M18 19v2"/></svg></span><span class="sbLbl">Riviera Armchair</span><span class="sbCnt">furniture</span></div>
+        <div class="sbHeader" style="margin-top:8px">CAMERAS</div>
+        <div class="sbRow"><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M5 7h1a2 2 0 0 0 2 -2a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1a2 2 0 0 0 2 2h1a2 2 0 0 1 2 2v9a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2"/><path d="M9 13a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg></span><span class="sbLbl">GPose camera</span><span class="sbCnt">active</span></div>
+        <div class="sbHeader" style="margin-top:8px">LIGHTS</div>
+        <div class="sbRow -active"><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.4 1 2.3h6c0-.9.4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg></span><span class="sbLbl">Key light</span><span class="sbCnt">spot</span></div>
+        <div class="sbRow"><span class="sbExp"></span><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.4 1 2.3h6c0-.9.4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg></span><span class="sbLbl">Fill light</span><span class="sbCnt">point</span></div>
+      </div>
+      <div class="statusbar"><span class="dot"></span><span>2 actors</span><span style="margin-left:auto">2 / 3 lights · 60 fps</span></div>
+    </div>
+    <div class="main">
+      <div class="main-toolbar">
+        <div class="tabs">
+          <button class="tab -active">Light</button>
+          <span class="tabDiv"></span>
+          <button class="tab">Environment</button>
+          <button class="tab">Library</button>
+        </div>
+        <span class="spring"></span>
+        <span class="crumb"><b>Key light</b></span>
+        <button class="iconBtn" title="Pop out this tab"><svg class="i" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></button>
+      </div>
+      <div class="main-scroll">
+        <div class="insp">
+          <div class="inspHead"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="m6 9 6 6 6-9"/></svg><span class="t">COLOR</span></div>
+          <div class="inspBody">
+            <div class="prow" style="min-height:34px"><span class="k">Color</span>
+              <span class="swatch -active" style="background:#fff3e0" title="Warm white"></span>
+              <span class="swatch" style="background:#ffffff" title="Neutral"></span>
+              <span class="swatch" style="background:#cfe4ff" title="Cool"></span>
+              <span class="swatch" style="background:#ffd27d" title="Gold"></span>
+              <span class="swatch" style="background:#ff9aa4" title="Rose"></span>
+              <span class="swatch" style="background:#9be8c0" title="Mint"></span>
+              <span class="mono" style="margin-left:6px">#FFF3E0</span>
+            </div>
+          </div>
+        </div>
+        <div class="insp">
+          <div class="inspHead"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="m6 9 6 6 6-9"/></svg><span class="t">SHAPE</span></div>
+          <div class="inspBody">
+            <div class="prow"><span class="k">Intensity</span><input type="range" class="slider" style="max-width:280px" value="53"><span class="sliderVal">1.60</span></div>
+            <div class="prow"><span class="k">Range</span><input type="range" class="slider" style="max-width:280px" value="40"><span class="sliderVal">12.0m</span></div>
+            <div class="prow"><span class="k">Falloff</span><input type="range" class="slider" style="max-width:280px" value="24"><span class="sliderVal">1.20</span></div>
+            <div class="prow"><span class="k">Shadows</span><span class="toggle -on"><span class="track"></span><span class="knob"></span></span><span class="hint">character casts shadows from this light</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<p class="note" id="notepose">TAB MODEL: the tab set is a pure function of the selection TYPE (actor: Pose/Animation/Appearance &middot; bone: Pose &middot; camera: Camera &middot; light: Light), followed by the always-present scene tabs (Environment/Library) after a divider. The sidebar is the only list of entities &mdash; panes never repeat it. Pose &mdash; three tabbed views (Body / Face / Bones, per the Anamnesis reference; matrix transcribed from PoseMatrixView.xaml, dynamic auto-fit columns, multi-select pills + Clear selection). Gizmo mode/space appears ONCE, in the titlebar; a popped-out Pose window grows its own copy. Inspector rail = rotation ball (free-rotate sphere, per-axis rings) + rotation/position/scale scrubbers + IK, like Brio&#8217;s bone widget.</p>
+<p class="note" id="noteanim" style="display:none">Animation — emote search feeds the Base slot; the four slots map to XIV's animation layers (Base / Upper body / Facial / Lips). Scrub freezes a frame to pose on top of.</p>
+<p class="note" id="notelook" style="display:none">Appearance — DELEGATED to Glamourer (user decision 2026-07-16): no native gear/customize editor. Quick design apply/revert + primary "Open in Glamourer" (targets selected actor), Customize+ profile, redraw. Everything else lives in Glamourer itself.</p>
+<p class="note" id="notecam" style="display:none">Camera — selecting a camera in the SIDEBAR (the one and only camera list) shows that camera's properties: lens sliders, collision/delimit behaviors, portrait-mode handoff. Tabs are typed by selection: a camera offers only its Camera tab + the scene tabs.</p>
+<p class="note" id="notelight" style="display:none">Light — the sidebar LIGHTS group is the list; selecting a light edits it directly: color swatches, intensity/range/falloff, shadow toggle. (3-light game cap — Ktisis lifts it; under investigation.)</p>
+
+<script>
+function poseView(v) {
+  for (const k of ['body','face','bones']) {
+    document.getElementById('pv-'+k).classList.toggle('-visible', k===v);
+    document.getElementById('pt-'+k).classList.toggle('-active', k===v);
+  }
+}
+
+function show(v) {
+  for (const s of ['pose','anim','look','cam','light']) {
+    document.getElementById('stage'+s).classList.toggle('-visible', s===v);
+    document.getElementById('btn'+s).classList.toggle('-active', s===v);
+    document.getElementById('note'+s).style.display = s===v ? '' : 'none';
+  }
+}
+</script>

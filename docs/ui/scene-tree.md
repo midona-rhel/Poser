@@ -1,0 +1,95 @@
+# Scene tree
+
+The scroll child always reserves a 12 px right-hand scrollbar gutter without
+forcing a scrollbar thumb when the tree fits. Filtered and collapsed trees
+therefore use the same content width as overflowing trees; showing a scrollbar
+never shifts row labels, right-aligned counts, or section actions. The tree's
+12 px left padding equals its right composite gutter (0 px content gap + 12 px
+scrollbar), and the scrollbar viewport reaches the panel's outer-right edge.
+
+Tree guide columns are anchored to the center of the actor icon: the first
+vertical trunk therefore continues directly beneath that icon, and deeper
+columns repeat on a 20 px grid. Continuation lines, expanding branches, and the
+last child's hard L all use the same guide-coordinate function. The terminal
+connector is a hard 90-degree corner made from two edge-joined filled legs. The
+vertical leg owns the square corner and the horizontal begins at its outer edge,
+so the translucent pieces never overlap. Its horizontal arm ends at the same
+8.5 px coordinate as every non-terminal branch, so terminal rows do not have a
+wider connector. Carried vertical trunks are filled segments whose edges meet
+at row boundaries; there are no overlapping semi-transparent line caps to
+darken the joints.
+
+Nested selection pills begin 10 px to the right of their active guide: 1.5 px
+after the shared branch endpoint and 4 px before the label. Connector ink never
+runs beneath the active background. Section plus actions use the standard 14 px
+Tabler Plus centered in an inset 18 px hitbox, so the scrollbar gutter cannot
+clip the icon.
+
+## Purpose
+
+The scene tree is the left sidebar's primary selection surface. It presents
+actors, actor bone categories, and bones in one stable hierarchy. Selection
+drives the main Pose workspace and adjacent inspector rail; it does not open a
+separate actor-properties workflow.
+
+## Hierarchy
+
+- Actor root rows represent the complete draw object. Selecting one exposes whole-actor transform, animation, and delegated appearance controls.
+- Bone categories are navigation-only grouping rows. They never become the transform target.
+- Bone leaf rows represent parent-local skeleton transforms.
+- Hidden actors remain selectable and carry a **hidden** badge; **Show/Hide** is available from the actor context menu through `IActorSpawnService`.
+
+The titlebar User Circle action selects the current GPose target in Poser. The
+actor context action **Set game target** performs the opposite direction. This
+keeps the two operations explicit instead of overloading one ambiguous
+“Target” command.
+
+Actor roots begin expanded so actor-versus-bone selection is immediately legible. Bone categories begin collapsed to keep large or modded skeletons navigable. When selection originates elsewhere (body map, overlay, gizmo), the selected bone's actor and category are automatically revealed.
+
+## Filtering
+
+The sidebar filter searches the complete scene, case-insensitively:
+
+- Actors match display names and raw game names.
+- Bones match localized display names, raw bone names, and category display names.
+
+Filtering preserves hierarchy: a matching bone keeps its actor and category ancestors visible. A matching category reveals all bones in that category; matching an actor does not flood the result with every bone. Expansion state is ignored while a filter is active and preserved for when it is cleared.
+
+The filter uses the shared clearable search-field contract documented in
+`docs/ui/search-fields.md`. Its trailing action empties the live filter
+immediately and is absent when there is nothing to clear.
+
+## Selection contract
+
+| Input | Result |
+|---|---|
+| Click | Replace the selection and make the clicked entity primary. |
+| Ctrl + click | Toggle the entity in the current selection. |
+| Shift + click | Add the visible range from the selection anchor to the clicked entity. |
+| Click category caret/row | Expand or collapse only; categories are not entities. |
+| Right-click actor | Open target, Hide/Show, rename, clone, companion, and spawned-actor despawn actions without changing transform semantics. |
+
+Every selected row receives the active treatment, while the first selected entity remains the inspector's primary target. Multi-bone rail operations read the complete selection from `ISelectionService`. Incompatible Ctrl/Shift targets replace the selection: actors never coexist with bones, and bones from different actors never form one transform group.
+
+The main window requests each actor's skeleton while assembling the tree.
+Skeleton discovery therefore does not depend on the optional world overlay.
+
+## Ownership and data flow
+
+- `MainWindow.BuildSidebar` converts live services and filter state into `ShellSidebarSection` and `ShellSidebarRow` view models.
+- `MainWindow.OnRowClicked` interprets keyboard modifiers and delegates selection mutation to `ISelectionService`.
+- `AppShellView.DrawSidebar` owns only drawing, scrolling, search-field input, and pointer hit testing.
+- Collapse state belongs to `MainWindow`, not entities, because category rows are view-only groupings and do not exist in the core entity model.
+
+## Reference decisions
+
+- **Ktisis:** `Ktisis/Interface/Components/Workspace/SceneTree.cs` establishes inline scene selection, expansion, modifier-aware multi-select, and adjacent editor routing.
+- **Brio:** `Brio/UI/Entitites/EntityHierarchyView.cs` reinforces Ctrl-toggle selection and entity-local context actions; Brio's bone-search surfaces establish that large skeletons require direct filtering.
+- **Picto:** supplies the compact row, guide-line, and restrained active-state visual grammar used by `AppShellView`.
+
+## Known risks and verification
+
+- Filtering is rebuilt from live entities every frame; verify acceptable cost with several actors and modded skeletons.
+- Range selection follows currently visible compatible entity rows, so collapsed,
+  filtered-out, and differently typed entities are intentionally excluded.
+- In-game verification must cover actor-root selection, category collapse persistence, external bone selection reveal, actor/bone/raw-name searches, Ctrl toggle, Shift range, and right-click actions.

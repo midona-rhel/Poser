@@ -1,0 +1,638 @@
+<title>Poser M7 — Component Sheet</title>
+<style>
+/* ════════════════════════════════════════════════════════════════════
+   TOKENS — transcribed VERBATIM from picto/src/shared/styles/tokens.css
+   (DisplayFrame web/styles/tokens.css is an identical copy.)
+   This sheet is the pixel-verification reference for Crystarium clones.
+   Single dark theme by design: it represents the in-game plugin window.
+   ════════════════════════════════════════════════════════════════════ */
+:root {
+  --color-primary: #3297FF;
+  --color-primary-10: rgba(50, 151, 255, 0.10);
+  --color-primary-20: rgba(50, 151, 255, 0.20);
+  --color-primary-30: rgba(50, 151, 255, 0.30);
+  --color-primary-50: rgba(50, 151, 255, 0.50);
+  --color-primary-60: rgba(50, 151, 255, 0.60);
+  --color-bg-app: rgb(24, 25, 27);
+  --color-surface-1: rgb(36, 37, 40);
+  --color-surface-2: #2a2a2e;
+  --color-surface-hover: rgba(248, 249, 251, 0.05);
+  --color-surface-active: rgba(248, 249, 251, 0.10);
+  --color-surface-drop: var(--color-primary-30);
+  --color-text-primary: rgba(255, 255, 255, 1.0);
+  --color-text-secondary: rgba(255, 255, 255, 0.72);
+  --color-text-tertiary: rgba(255, 255, 255, 0.50);
+  --color-text-disabled: rgba(255, 255, 255, 0.22);
+  --color-border-primary: rgba(255, 255, 255, 0.14);
+  --color-border-secondary: rgba(255, 255, 255, 0.08);
+  --color-border-focus: var(--color-primary-60);
+  --color-black-10: rgba(0, 0, 0, 0.10);
+  --color-black-20: rgba(0, 0, 0, 0.20);
+  --color-black-30: rgba(0, 0, 0, 0.30);
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-family-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', ui-monospace, monospace;
+  --font-size-xs: 10px; --font-size-sm: 12px; --font-size-md: 13px;
+  --font-size-lg: 14px; --font-size-xl: 16px;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px;
+  --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px;
+  --shadow-1: 0 1px 3px var(--color-black-10);
+  --shadow-2: 0 4px 12px var(--color-black-30);
+  --shadow-panel: 0 3px 12px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 0, 0, 0.5);
+  --glass-bg: color-mix(in srgb, var(--color-surface-1) 92%, transparent);
+  --glass-blur: blur(13px) brightness(0.7);
+  --glass-border-top: 1px solid rgba(255, 255, 255, 0.25);
+  --glass-border-side: 1px solid rgba(255, 255, 255, 0.12);
+  --glass-border-bottom: 1px solid rgba(0, 0, 0, 0.20);
+  --color-hover-overlay: rgba(255, 255, 255, 0.08);
+  --color-active-overlay: rgba(255, 255, 255, 0.14);
+  --color-pressed-overlay: rgba(255, 255, 255, 0.20);
+  --color-subtle-overlay: rgba(255, 255, 255, 0.10);
+  --color-strong-overlay: rgba(255, 255, 255, 0.25);
+  --color-negative: #ff4757;
+  --color-menu-hover: var(--color-hover-overlay);
+  --ease-default: cubic-bezier(0.4, 0, 0.22, 1);
+  --duration-fast: 50ms; --duration-normal: 200ms;
+  --titlebar-height: 48px; --sidebar-width: 280px;
+  --sidebar-row-height: 26px; --sidebar-indent: 20px; --sidebar-icon-size: 16px;
+  /* DisplayFrame additions (web/styles/theme tokens) */
+  --color-success: rgb(126, 211, 160);
+  --color-warning: #e8c15a;
+  --color-danger: rgb(232, 108, 108);
+}
+
+/* ── Sheet chrome (not part of the design system; grid + labels only) ── */
+* { box-sizing: border-box; margin: 0; }
+html, body { background: var(--color-bg-app); }
+body {
+  font-family: var(--font-family);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+  -webkit-font-smoothing: antialiased;
+  padding: 32px 40px 80px;
+}
+.sheet-head { max-width: 1200px; margin-bottom: 8px; }
+.sheet-head h1 { font-size: 16px; font-weight: 600; letter-spacing: .01em; }
+.sheet-head p { font-size: 12px; color: var(--color-text-tertiary); margin-top: 4px; max-width: 72ch; }
+.sheet-head code { font-family: var(--font-family-mono); font-size: 11px; color: var(--color-text-secondary); }
+.section { max-width: 1200px; margin-top: 36px; }
+.section > h2 {
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--color-text-tertiary); padding-bottom: 8px; margin-bottom: 14px;
+  border-bottom: 1px solid var(--color-border-secondary);
+}
+.section > h2 code { font-family: var(--font-family-mono); font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--color-text-disabled); margin-left: 8px; }
+.cells { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+.cell { display: flex; flex-direction: column; gap: 8px; }
+.cell > .stage { display: flex; align-items: center; gap: 10px; min-height: 40px; }
+.cell > .tag { font-family: var(--font-family-mono); font-size: 10px; color: var(--color-text-disabled); }
+.on-s1 { background: var(--color-surface-1); padding: 12px; border-radius: 8px; border: 1px solid var(--color-border-secondary); }
+svg.i { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.75; fill: none; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
+/* ════════════════ actionButton.module.css ════════════════ */
+.btn {
+  height: 32px; display: inline-flex; justify-content: center; align-items: center;
+  gap: 6px; padding: 0 16px; font-size: var(--font-size-md); font-weight: 400;
+  font-family: var(--font-family); color: var(--color-text-primary);
+  border: 1px solid var(--color-border-primary); background: var(--color-surface-hover);
+  border-radius: var(--radius-md); cursor: pointer; white-space: nowrap;
+  outline: none; appearance: none; transition: background 150ms ease;
+}
+.btn:hover, .btn.-hover { background: var(--color-subtle-overlay); }
+.btn:focus-visible, .btn.-focus { outline: 2px solid var(--color-primary-60); outline-offset: 1px; }
+.btn:disabled, .btn.-disabled { opacity: 0.35; cursor: default; pointer-events: none; }
+.btnPrimary { background: var(--color-primary); border-color: var(--color-primary); color: white; }
+.btnPrimary:hover, .btnPrimary.-hover { background: var(--color-primary-60); border-color: var(--color-primary-60); }
+.btnDanger { color: #ff9aa4; border-color: rgba(255, 71, 87, 0.35); background: rgba(255, 71, 87, 0.08); }
+.btnDanger:hover, .btnDanger.-hover { background: rgba(255, 71, 87, 0.15); }
+
+/* ════════════════ iconButton.module.css ════════════════ */
+.iconBtn {
+  display: inline-flex; align-items: center; justify-content: center; padding: 0;
+  border: none; border-radius: 5px; background: transparent;
+  color: var(--color-text-primary); opacity: 0.8; cursor: pointer; outline: none;
+  flex-shrink: 0; width: 28px; height: 28px; min-width: 28px;
+  transition: opacity 150ms var(--ease-default), background 150ms var(--ease-default);
+}
+.iconBtn:hover, .iconBtn.-hover { opacity: 1; background: var(--color-hover-overlay); }
+.iconBtn:active, .iconBtn.-active { background: var(--color-active-overlay); }
+.iconBtnActive { opacity: 1; background: var(--color-active-overlay); }
+.iconBtnDisabled { opacity: 0.2; cursor: default; pointer-events: none; }
+
+/* ════════════════ GlassInput.module.css ════════════════ */
+.input {
+  height: 32px; padding: 0 10px; font-size: var(--font-size-md);
+  font-family: var(--font-family); color: var(--color-text-primary);
+  border: 1px solid var(--color-border-primary); background: var(--color-black-20);
+  border-radius: var(--radius-sm); outline: none; width: 200px;
+  transition: border-color 120ms ease;
+}
+.input::placeholder { color: var(--color-text-tertiary); }
+.input:focus, .input.-focus { border-color: var(--color-primary-50); }
+.input:disabled { opacity: 0.5; }
+textarea.input { height: auto; min-height: 60px; padding: 8px 10px; line-height: 1.4; resize: vertical; }
+
+/* ════════════════ CmSelect.module.css ════════════════ */
+.selBtn {
+  display: flex; align-items: center; height: 26px; min-height: 26px;
+  padding: 0 6px 0 12px; gap: 6px; border-radius: 6px;
+  background: var(--color-subtle-overlay); border: 1px solid var(--color-border-secondary);
+  color: var(--color-text-primary); font-size: 12px; line-height: 24px;
+  font-family: var(--font-family); cursor: pointer; outline: none; white-space: nowrap;
+}
+.selChevron { flex-shrink: 0; opacity: 0.5; width: 20px; display: flex; align-items: center; justify-content: center; }
+.selDrop {
+  width: 180px; background: var(--glass-bg); backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--color-border-secondary); border-radius: 6px;
+  padding: 4px; gap: 2px; display: flex; flex-direction: column;
+  box-shadow: var(--shadow-panel);
+  border-top: var(--glass-border-top); border-left: var(--glass-border-side);
+  border-right: var(--glass-border-side); border-bottom: var(--glass-border-bottom);
+}
+.selOpt {
+  display: flex; align-items: center; height: 26px; min-height: 26px; padding: 0 8px;
+  flex-shrink: 0; gap: 6px; border: none; background: none; border-radius: 4px;
+  color: var(--color-text-primary); font-size: 12px; font-family: var(--font-family);
+  cursor: pointer; text-align: left; width: 100%; white-space: nowrap;
+}
+.selOpt:hover, .selOpt.-hover { background: var(--color-menu-hover); }
+.selOpt.-current { background: var(--color-hover-overlay); }
+
+/* ════════════════ ContextMenu.module.css ════════════════ */
+.menu {
+  width: 260px; background: var(--glass-bg); backdrop-filter: var(--glass-blur);
+  border-radius: 8px; box-shadow: var(--shadow-panel); padding: 4px;
+  border-top: var(--glass-border-top); border-left: var(--glass-border-side);
+  border-right: var(--glass-border-side); border-bottom: var(--glass-border-bottom);
+  display: flex; flex-direction: column; gap: 1px;
+}
+.menuItem {
+  display: flex; align-items: center; height: 26px; padding: 0 6px; gap: 8px;
+  border-radius: 6px; font-size: 13px; color: var(--color-text-primary); cursor: pointer;
+}
+.menuItem:hover, .menuItem.-hover { background: var(--color-menu-hover); }
+.menuItem .mi-icon { width: 16px; display: flex; opacity: 0.8; }
+.menuItem .mi-label { flex: 1; }
+.menuItem .mi-kbd { font-size: 11px; opacity: 0.5; }
+.menuItem.-danger { color: var(--color-negative); }
+.menuItem.-danger:hover { background: rgba(255, 71, 87, 0.12); }
+.menuSep { height: 1px; background: var(--color-border-secondary); margin: 3px 6px; }
+
+/* ════════════════ GlassModal.module.css ════════════════ */
+.modal {
+  width: 440px; background: var(--glass-bg); backdrop-filter: var(--glass-blur);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-panel);
+  border-top: var(--glass-border-top); border-left: var(--glass-border-side);
+  border-right: var(--glass-border-side); border-bottom: var(--glass-border-bottom);
+  overflow: hidden;
+}
+.modalHead {
+  height: 44px; display: flex; align-items: center; padding: 0 16px;
+  box-shadow: inset 0 -1px 0 var(--color-border-secondary);
+}
+.modalHead .title { flex: 1; font-size: 14px; font-weight: 500; }
+.modalHead .close { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 5px; opacity: .7; cursor: pointer; }
+.modalHead .close:hover { opacity: 1; background: var(--color-hover-overlay); }
+.modalBody { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.modalFoot {
+  height: 44px; display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+  padding: 0 12px; background: var(--color-black-10);
+  box-shadow: inset 0 1px 0 var(--color-border-secondary);
+}
+.field label { display: block; font-size: 12px; color: var(--color-text-secondary); margin-bottom: 5px; }
+
+/* ════════════════ SidebarRow.module.css ════════════════ */
+.sbList { width: 256px; display: flex; flex-direction: column; }
+.sbRow {
+  position: relative; display: flex; align-items: center;
+  height: var(--sidebar-row-height); line-height: var(--sidebar-row-height);
+  padding: 0; cursor: default; user-select: none;
+  color: var(--color-text-primary); font-size: var(--font-size-md);
+}
+.sbRow::before {
+  content: ""; position: absolute; z-index: 0; top: 0; right: 0; bottom: 1px;
+  left: var(--row-inset, 1px); border-radius: 5px; opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-default); pointer-events: none;
+}
+.sbRow:hover::before, .sbRow.-hover::before { background: var(--color-surface-hover); opacity: 1; }
+.sbRow.-active::before { background: var(--color-surface-active); opacity: 1; }
+.sbRow.-dropInside::before { background: var(--color-primary-10); border: 1px solid var(--color-primary-30); opacity: 1; }
+.sbRow.-dropBefore::after {
+  content: ''; position: absolute; top: -1px; left: var(--row-inset, 1px); right: 0;
+  height: 2px; background: var(--color-primary); border-radius: 1px; z-index: 20;
+}
+.sbRow > * { position: relative; z-index: 1; }
+.sbExpander {
+  width: 16px; height: 26px; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; cursor: pointer;
+}
+.sbExpander .tri {
+  width: 0; height: 0; border-left: 3.5px solid transparent; border-right: 3.5px solid transparent;
+  border-top: 5px solid var(--color-text-tertiary);
+  transform: rotate(-90deg); transition: transform 100ms var(--ease-default);
+}
+.sbExpander.-open .tri { transform: rotate(0deg); }
+.sbIcon { width: 16px; height: 16px; margin-right: 6px; opacity: 0.85; display: flex; }
+.sbRow:hover .sbIcon { opacity: 1; }
+.sbLabel { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sbCount { font-family: var(--font-family-mono); font-variant-numeric: tabular-nums; font-size: 11px; color: var(--color-text-secondary); padding-right: 10px; }
+.sbHeader {
+  height: 24px; display: flex; align-items: center; padding: 0 10px;
+  font-size: 12px; font-weight: 500; color: var(--color-text-tertiary); cursor: default;
+}
+.sbHeader:hover { color: var(--color-text-primary); }
+
+/* ════════════════ ToggleSwitch.module.css ════════════════ */
+.toggle { position: relative; display: inline-block; width: 32px; height: 20px; flex-shrink: 0; cursor: pointer; }
+.toggle .track {
+  position: absolute; inset: 0; border-radius: 10px;
+  background-color: rgba(128, 128, 128, 0.25);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
+  transition: background-color 0.2s ease;
+}
+.toggle.-on .track { background-color: var(--color-primary); }
+.toggle .knob {
+  position: absolute; bottom: 2px; left: 2px; width: 16px; height: 16px;
+  border-radius: 50%; background-color: #fff; opacity: 0.6;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transform: translateX(0); transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.toggle.-on .knob { transform: translateX(12px); opacity: 1; }
+
+/* ════════════════ TagChip.module.css (namespace-tinted) ════════════════ */
+.chip {
+  height: 26px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px;
+  border-radius: 6px; font-size: 12px; cursor: default;
+  transition: background var(--duration-normal) var(--ease-default), border-color var(--duration-normal) var(--ease-default);
+}
+.chip.-default { background: rgba(114,160,193,.10); border: 1px solid rgba(114,160,193,.25); }
+.chip.-default:hover { background: rgba(114,160,193,.20); border-color: rgba(114,160,193,.50); }
+.chip.-character { background: rgba(0,170,0,.10); border: 1px solid rgba(0,170,0,.25); }
+.chip.-series { background: rgba(170,0,170,.10); border: 1px solid rgba(170,0,170,.25); }
+.chip.-meta { background: rgba(160,160,160,.10); border: 1px solid rgba(160,160,160,.25); }
+.chip .x { width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; border-radius: 4px; opacity: .6; cursor: pointer; }
+.chip .x:hover { opacity: 1; background: var(--color-hover-overlay); }
+
+/* ── TagChip overflow treatments (Poser addition — picto has no bounded chip container) ── */
+.chipWrap { display: flex; flex-wrap: wrap; gap: 4px; width: 260px; align-items: center; }
+.chip.-more { background: var(--color-subtle-overlay); border: 1px solid var(--color-border-secondary); color: var(--color-text-secondary); cursor: pointer; }
+.chip.-more:hover { background: var(--color-hover-overlay); color: var(--color-text-primary); }
+.chip .lbl { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chipLine { display: flex; gap: 4px; width: 260px; overflow: hidden; align-items: center; }
+
+/* ════════════════ StarRating.module.css ════════════════ */
+.stars { display: inline-flex; }
+.star { width: 16px; height: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.star svg { width: 14px; height: 14px; }
+.star.-on svg { fill: #FF9F0A; stroke: #FF9F0A; }
+.star.-off svg { fill: none; stroke: var(--color-text-secondary); opacity: 0.25; }
+
+/* ════════════ WorkspaceSwitcher.module.css (segmented) ════════════ */
+.seg {
+  display: inline-flex; padding: 3px; gap: 2px; border-radius: 7px;
+  background: var(--color-black-20);
+}
+.segTab {
+  height: 24px; padding: 0 12px; display: flex; align-items: center; gap: 6px;
+  border-radius: 5px; font-size: 12px; color: var(--color-text-secondary); cursor: pointer;
+}
+.segTab:hover { color: var(--color-text-primary); }
+.segTab.-active {
+  background: var(--color-surface-2); color: var(--color-text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+/* ════════════ StatusIndicator.module.css (DisplayFrame) ════════════ */
+.dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.dot.-fresh { background: var(--color-success); }
+.dot.-stale { background: var(--color-warning); }
+.dot.-error { background: var(--color-danger); }
+.dot.-working { background: var(--color-primary); animation: statusPulse 1.1s ease-in-out infinite; }
+@keyframes statusPulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+.spinner {
+  width: 9px; height: 9px; border-radius: 50%; display: inline-block;
+  border: 1.5px solid var(--color-border-primary); border-top-color: var(--color-primary);
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .dot.-working, .spinner { animation: none; } }
+.statusbar {
+  height: 26px; width: 420px; display: flex; align-items: center; gap: 8px; padding: 0 10px;
+  background: var(--color-surface-1); border-top: 1px solid var(--color-border-secondary);
+  font-family: var(--font-family-mono); font-variant-numeric: tabular-nums;
+  font-size: 11px; color: var(--color-text-tertiary);
+}
+
+/* ════════════════ GlassModal range slider ════════════════ */
+.slider { -webkit-appearance: none; appearance: none; width: 160px; height: 4px; border-radius: 2px; background: var(--color-border-primary); outline: none; }
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--color-primary); cursor: pointer; border: none;
+}
+.sliderRow { display: flex; align-items: center; gap: 10px; }
+.sliderVal { font-family: var(--font-family-mono); font-variant-numeric: tabular-nums; font-size: 12px; color: var(--color-text-secondary); width: 42px; text-align: right; }
+
+/* ════════════════ KbdTooltip.module.css ════════════════ */
+.tooltip {
+  display: inline-flex; align-items: center; gap: 8px; padding: 5px 9px;
+  background: var(--glass-bg); backdrop-filter: var(--glass-blur);
+  border-radius: 6px; box-shadow: var(--shadow-panel); font-size: 12px;
+  border-top: var(--glass-border-top); border-left: var(--glass-border-side);
+  border-right: var(--glass-border-side); border-bottom: var(--glass-border-bottom);
+}
+.kbd {
+  min-width: 16px; height: 16px; padding: 0 4px; display: inline-flex; align-items: center;
+  justify-content: center; border-radius: 3px; background: var(--color-subtle-overlay);
+  font-family: var(--font-family-mono); font-size: 10px; color: var(--color-text-secondary);
+}
+
+/* ════════════ InspectorSection.module.css ════════════ */
+.inspSection { width: 260px; border-top: 1px solid var(--color-border-secondary); }
+.inspHead {
+  height: 26px; display: flex; align-items: center; gap: 6px; padding: 0 4px;
+  color: var(--color-text-tertiary); cursor: pointer;
+}
+.inspHead:hover { color: var(--color-text-primary); }
+.inspHead .chev { display: flex; transition: transform 200ms var(--ease-default); }
+.inspHead.-open .chev { transform: rotate(90deg); opacity: 0; }
+.inspHead .t { font-size: 12px; font-weight: 600; }
+.inspBody { padding: 4px 4px 12px; display: flex; flex-direction: column; gap: 6px; }
+.propRow { display: flex; align-items: center; height: 24px; font-size: 12px; }
+.propRow .k { width: 88px; color: var(--color-text-tertiary); flex-shrink: 0; }
+.propRow .v { color: var(--color-text-secondary); font-family: var(--font-family-mono); font-variant-numeric: tabular-nums; }
+
+/* ════════════ CurrencyTable.module.css (DataGrid) ════════════ */
+.grid { width: 560px; border: 1px solid var(--color-border-secondary); border-radius: 6px; overflow: hidden; font-size: 12px; }
+.gridHead {
+  display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; background: var(--color-surface-2);
+  border-bottom: 1px solid var(--color-border-primary);
+}
+.gridHead .hc {
+  position: relative; padding: 9px 16px; color: var(--color-text-secondary); font-weight: 500;
+}
+.gridHead .hc:not(:last-child)::after {
+  content: ''; position: absolute; right: 0; top: 25%; bottom: 25%; width: 1px;
+  background: var(--color-text-secondary); opacity: 0.5;
+}
+.gridHead .hc.-num, .gridRow .gc.-num { text-align: right; }
+.gridRow { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; border-bottom: 1px solid var(--color-border-secondary); }
+.gridRow:hover { background: var(--color-surface-hover); }
+.gridRow.-selected { background: var(--color-surface-active); }
+.gridRow .gc { padding: 8px 16px; display: flex; align-items: center; gap: 8px; }
+.gridRow .gc.-num { justify-content: flex-end; font-family: var(--font-family-mono); font-variant-numeric: tabular-nums slashed-zero; }
+.gridRow .name { color: var(--color-primary); cursor: pointer; }
+.gridRow .name:hover { text-decoration: underline; }
+
+/* ════════════ Glass composite comparison ════════════ */
+.glassCompare { display: flex; gap: 16px; }
+.glassCompare .panel {
+  width: 200px; height: 90px; border-radius: 8px; box-shadow: var(--shadow-panel);
+  display: flex; align-items: flex-end; padding: 10px;
+  font-family: var(--font-family-mono); font-size: 10px; color: var(--color-text-secondary);
+  border-top: var(--glass-border-top); border-left: var(--glass-border-side);
+  border-right: var(--glass-border-side); border-bottom: var(--glass-border-bottom);
+}
+.glassCompare .-browser { background: var(--glass-bg); backdrop-filter: var(--glass-blur); }
+.glassCompare .-imgui { background: rgb(34, 35, 38); }
+
+/* Scrollbar (picto globals: 8px, thumb white .12→.25, content-box gutter) */
+.scrollDemo { width: 220px; height: 110px; overflow-y: scroll; background: var(--color-surface-1); border: 1px solid var(--color-border-secondary); border-radius: 6px; padding: 8px 10px; font-size: 12px; color: var(--color-text-secondary); line-height: 22px; }
+.scrollDemo::-webkit-scrollbar { width: 8px; }
+.scrollDemo::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
+.scrollDemo::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); border: 2px solid transparent; background-clip: content-box; }
+</style>
+
+<div class="sheet-head">
+  <h1>Poser — M7 Component Sheet</h1>
+  <p>Every Crystarium clone target × every state, on <code>--color-bg-app</code>. All values transcribed from
+  <code>picto/src/shared/styles/*.module.css</code> and <code>tokens.css</code> (DisplayFrame's copy is identical).
+  This page doubles as the pixel-verification reference: each section header cites its source module.
+  Hover/focus states are also rendered as forced variants so they can be screenshot-compared.</p>
+</div>
+
+<div class="section">
+  <h2>Action button <code>shared/styles/actionButton.module.css</code></h2>
+  <div class="cells">
+    <div class="cell"><div class="stage"><button class="btn">Save pose</button></div><div class="tag">default</div></div>
+    <div class="cell"><div class="stage"><button class="btn -hover">Save pose</button></div><div class="tag">:hover</div></div>
+    <div class="cell"><div class="stage"><button class="btn -focus">Save pose</button></div><div class="tag">:focus-visible</div></div>
+    <div class="cell"><div class="stage"><button class="btn -disabled">Save pose</button></div><div class="tag">:disabled (.35)</div></div>
+    <div class="cell"><div class="stage"><button class="btn btnPrimary">Import</button></div><div class="tag">primary</div></div>
+    <div class="cell"><div class="stage"><button class="btn btnPrimary -hover">Import</button></div><div class="tag">primary :hover</div></div>
+    <div class="cell"><div class="stage"><button class="btn btnDanger">Delete actor</button></div><div class="tag">danger</div></div>
+    <div class="cell"><div class="stage"><button class="btn btnDanger -hover">Delete actor</button></div><div class="tag">danger :hover</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Icon button 28×28 <code>shared/styles/iconButton.module.css</code></h2>
+  <div class="cells">
+    <div class="cell"><div class="stage">
+      <button class="iconBtn"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+      <button class="iconBtn -hover"><svg class="i" viewBox="0 0 24 24"><path d="M4 20h16"/><path d="m6 16 6-12 6 12"/><path d="M8 12h8"/></svg></button>
+      <button class="iconBtn iconBtnActive"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg></button>
+      <button class="iconBtn iconBtnDisabled"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="m5 6 1 14a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-14"/></svg></button>
+    </div><div class="tag">default · :hover · active · disabled (.2)</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Inputs <code>shared/ui/GlassInput/GlassInput.module.css</code></h2>
+  <div class="cells">
+    <div class="cell"><div class="stage"><input class="input" placeholder="Actor name"></div><div class="tag">default + placeholder</div></div>
+    <div class="cell"><div class="stage"><input class="input -focus" value="Brio One"></div><div class="tag">:focus (primary-50 border)</div></div>
+    <div class="cell"><div class="stage"><input class="input" disabled value="locked"></div><div class="tag">:disabled (.5)</div></div>
+    <div class="cell"><div class="stage"><textarea class="input" style="width:200px">Scene notes…</textarea></div><div class="tag">textarea</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Select <code>shared/ui/CmSelect/CmSelect.module.css</code></h2>
+  <div class="cells">
+    <div class="cell"><div class="stage">
+      <div class="selBtn"><span style="flex:1">Clear skies</span><span class="selChevron"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="m6 9 6 6 6-9"/></svg></span></div>
+    </div><div class="tag">trigger 26px, closed</div></div>
+    <div class="cell"><div class="stage">
+      <div class="selDrop">
+        <div class="selOpt -current">Clear skies</div>
+        <div class="selOpt -hover">Fair skies</div>
+        <div class="selOpt">Rain</div>
+        <div class="selOpt">Thunderstorms</div>
+        <div class="selOpt">Snow</div>
+      </div>
+    </div><div class="tag">open — glass drop, 26px options (current · hover)</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Context menu 260px <code>shared/ui/ContextMenu/ContextMenu.module.css</code></h2>
+  <div class="cells">
+    <div class="cell"><div class="stage">
+      <div class="menu">
+        <div class="menuItem"><span class="mi-icon"><svg class="i" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></span><span class="mi-label">Clone actor</span><span class="mi-kbd">Ctrl+D</span></div>
+        <div class="menuItem -hover"><span class="mi-icon"><svg class="i" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span><span class="mi-label">Rename…</span><span class="mi-kbd">F2</span></div>
+        <div class="menuItem"><span class="mi-icon"><svg class="i" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></span><span class="mi-label">Export pose…</span></div>
+        <div class="menuSep"></div>
+        <div class="menuItem -danger"><span class="mi-icon"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="m5 6 1 14a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-14"/></svg></span><span class="mi-label">Destroy actor</span></div>
+      </div>
+    </div><div class="tag">items 26px · shortcut hints · separator · danger</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Glass modal (sm 440px) <code>shared/ui/GlassModal/GlassModal.module.css</code></h2>
+  <div class="cells">
+    <div class="cell"><div class="stage">
+      <div class="modal">
+        <div class="modalHead"><span class="title">Import pose</span><span class="close"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></div>
+        <div class="modalBody">
+          <div class="field"><label>Pose file</label><input class="input" style="width:100%" value="C:\poses\heroic-stand.pose"></div>
+          <div class="field"><label>Mode</label>
+            <div class="seg"><div class="segTab -active">Body</div><div class="segTab">Expression</div><div class="segTab">All</div></div>
+          </div>
+          <div class="sliderRow"><span style="font-size:12px;color:var(--color-text-secondary);width:88px">Blend</span><input type="range" class="slider" value="80"><span class="sliderVal">0.80</span></div>
+        </div>
+        <div class="modalFoot"><button class="btn">Cancel</button><button class="btn btnPrimary">Import</button></div>
+      </div>
+    </div><div class="tag">44px header/footer · footer bg black-10 · range slider 4px/14px</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Sidebar rows 26px + tree <code>shared/ui/SidebarRow/SidebarRow.module.css</code></h2>
+  <div class="cells">
+    <div class="cell on-s1" style="background:var(--color-surface-1)"><div class="stage">
+      <div class="sbList">
+        <div class="sbHeader">SCENE</div>
+        <div class="sbRow"><span class="sbExpander -open"><span class="tri"></span></span><span class="sbIcon"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg></span><span class="sbLabel">Midona Rhel</span><span class="sbCount">142</span></div>
+        <div class="sbRow -active" style="--row-inset: 21px"><span style="width:20px"></span><span class="sbExpander"><span class="tri"></span></span><span class="sbIcon"><svg class="i" viewBox="0 0 24 24"><path d="M7 17L17 7"/><path d="M7 17m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/><path d="M17 7m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/></svg></span><span class="sbLabel">j_te_l (hand)</span></div>
+        <div class="sbRow -hover" style="--row-inset: 21px"><span style="width:20px"></span><span class="sbExpander"><span class="tri"></span></span><span class="sbIcon"><svg class="i" viewBox="0 0 24 24"><path d="M7 17L17 7"/><path d="M7 17m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/><path d="M17 7m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/></svg></span><span class="sbLabel">j_te_r (hand)</span></div>
+        <div class="sbRow -dropBefore"><span class="sbExpander"><span class="tri"></span></span><span class="sbIcon"><svg class="i" viewBox="0 0 24 24"><path d="M5 7h1a2 2 0 0 0 2 -2a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1a2 2 0 0 0 2 2h1a2 2 0 0 1 2 2v9a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2"/><path d="M9 13a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg></span><span class="sbLabel">Camera 1</span></div>
+        <div class="sbRow -dropInside"><span class="sbExpander"><span class="tri"></span></span><span class="sbIcon"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.4 1 2.3h6c0-.9.4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg></span><span class="sbLabel">Spot light</span></div>
+      </div>
+    </div><div class="tag">header 24px · default/active/hover (::before pill) · drop-before bar · drop-inside · indent 20px</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Toggle switch 32×20 <code>shared/ui/ToggleSwitch/ToggleSwitch.module.css</code></h2>
+  <div class="cells">
+    <div class="cell"><div class="stage"><span class="toggle"><span class="track"></span><span class="knob"></span></span></div><div class="tag">off (knob .6)</div></div>
+    <div class="cell"><div class="stage"><span class="toggle -on"><span class="track"></span><span class="knob"></span></span></div><div class="tag">on</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Tag chips <code>shared/ui/TagChip/TagChip.module.css</code> · Star rating <code>StarRating.module.css</code></h2>
+  <div class="cells">
+    <div class="cell"><div class="stage">
+      <span class="chip -default">favorite<span class="x"><svg class="i" style="width:11px;height:11px" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></span>
+      <span class="chip -character">character: warrior of light</span>
+      <span class="chip -series">series: endwalker</span>
+      <span class="chip -meta">meta: gpose</span>
+    </div><div class="tag">namespace tints @ .10 bg / .25 border</div></div>
+    <div class="cell"><div class="stage">
+      <div class="chipWrap">
+        <span class="chip -character"><span class="lbl">character: warrior of light</span></span>
+        <span class="chip -series"><span class="lbl">series: endwalker</span></span>
+        <span class="chip -default"><span class="lbl">favorite</span></span>
+        <span class="chip -meta"><span class="lbl">meta: gpose</span></span>
+        <span class="chip -more">+3</span>
+      </div>
+    </div><div class="tag">bounded container: flex-wrap, max 2 rows, remainder collapses to "+N" chip (click = expand)</div></div>
+    <div class="cell"><div class="stage">
+      <div class="chipLine">
+        <span class="chip -character"><span class="lbl">character: a very long character tag name here</span></span>
+        <span class="chip -default"><span class="lbl">favorite</span></span>
+        <span class="chip -more">+5</span>
+      </div>
+    </div><div class="tag">single-line (dense rows): label ellipsis at 120px + "+N"</div></div>
+    <div class="cell"><div class="stage">
+      <span class="stars">
+        <span class="star -on"><svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M12 2l2.9 6.26 6.6.57-5 4.5 1.5 6.67L12 16.77 5.99 20l1.5-6.67-5-4.5 6.61-.57z"/></svg></span>
+        <span class="star -on"><svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M12 2l2.9 6.26 6.6.57-5 4.5 1.5 6.67L12 16.77 5.99 20l1.5-6.67-5-4.5 6.61-.57z"/></svg></span>
+        <span class="star -on"><svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M12 2l2.9 6.26 6.6.57-5 4.5 1.5 6.67L12 16.77 5.99 20l1.5-6.67-5-4.5 6.61-.57z"/></svg></span>
+        <span class="star -off"><svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M12 2l2.9 6.26 6.6.57-5 4.5 1.5 6.67L12 16.77 5.99 20l1.5-6.67-5-4.5 6.61-.57z"/></svg></span>
+        <span class="star -off"><svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M12 2l2.9 6.26 6.6.57-5 4.5 1.5 6.67L12 16.77 5.99 20l1.5-6.67-5-4.5 6.61-.57z"/></svg></span>
+      </span>
+    </div><div class="tag">#FF9F0A active · .25 inactive</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Segmented control <code>WorkspaceSwitcher.module.css</code> · Status <code>StatusIndicator.module.css</code></h2>
+  <div class="cells">
+    <div class="cell"><div class="stage">
+      <div class="seg"><div class="segTab -active">Translate</div><div class="segTab">Rotate</div><div class="segTab">Scale</div></div>
+    </div><div class="tag">pill container black-20 · active surface-2 + shadow</div></div>
+    <div class="cell"><div class="stage" style="gap:14px">
+      <span class="dot -fresh"></span><span class="dot -stale"></span><span class="dot -error"></span><span class="dot -working"></span><span class="spinner"></span>
+    </div><div class="tag">7px dots: fresh · stale · error · working (pulse) · 9px spinner</div></div>
+    <div class="cell"><div class="stage">
+      <div class="statusbar"><span class="dot -fresh"></span><span>GPose active</span><span style="margin-left:auto">3 actors · 142 bones · 60 fps</span></div>
+    </div><div class="tag">status bar: surface-1 · mono tabular-nums</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Tooltip + kbd <code>shared/ui/KbdTooltip/KbdTooltip.module.css</code></h2>
+  <div class="cells">
+    <div class="cell"><div class="stage">
+      <span class="tooltip">Undo last bone edit <span><span class="kbd">Ctrl</span> <span class="kbd">Z</span></span></span>
+    </div><div class="tag">glass surface · kbd chips 16px</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Inspector section + property rows <code>InspectorSection.module.css · PropertyRow.module.css</code></h2>
+  <div class="cells">
+    <div class="cell on-s1"><div class="stage">
+      <div>
+        <div class="inspSection">
+          <div class="inspHead -open"><span class="chev"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></span><span class="t">Transform</span></div>
+          <div class="inspBody">
+            <div class="propRow"><span class="k">Position</span><span class="v">0.124, 1.502, −0.331</span></div>
+            <div class="propRow"><span class="k">Rotation</span><span class="v">12.5°, 0.0°, −4.2°</span></div>
+            <div class="propRow"><span class="k">Scale</span><span class="v">1.000</span></div>
+          </div>
+        </div>
+        <div class="inspSection">
+          <div class="inspHead"><span class="chev"><svg class="i" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></span><span class="t">Appearance</span></div>
+        </div>
+      </div>
+    </div><div class="tag">open + collapsed · header 26px · chevron rotates 90° and fades</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Data grid <code>DisplayFrame web/app/CurrencyTable.module.css</code></h2>
+  <div class="cells">
+    <div class="cell"><div class="stage">
+      <div class="grid">
+        <div class="gridHead"><div class="hc">Pose</div><div class="hc -num">Bones</div><div class="hc -num">Rating</div><div class="hc -num">Modified</div></div>
+        <div class="gridRow -selected"><div class="gc"><span class="dot -fresh"></span><span class="name">heroic-stand.pose</span></div><div class="gc -num">142</div><div class="gc -num">5.0</div><div class="gc -num">07/12</div></div>
+        <div class="gridRow"><div class="gc"><span class="dot -stale"></span><span class="name">sitting-casual.pose</span></div><div class="gc -num">98</div><div class="gc -num">4.0</div><div class="gc -num">07/02</div></div>
+        <div class="gridRow"><div class="gc"><span class="spinner"></span><span class="name">battle-ready.pose</span></div><div class="gc -num">140</div><div class="gc -num">—</div><div class="gc -num">06/28</div></div>
+      </div>
+    </div><div class="tag">header surface-2 · 50%-opacity column separators · mono tabular-nums slashed-zero · selected row</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Scrollbar <code>picto globals — 8px, content-box gutter</code></h2>
+  <div class="cells">
+    <div class="cell"><div class="stage">
+      <div class="scrollDemo">j_kosi<br>j_sebo_a<br>j_sebo_b<br>j_sebo_c<br>j_kubi<br>j_kao<br>j_sako_l<br>j_sako_r<br>j_ude_a_l<br>j_ude_a_r<br>j_te_l<br>j_te_r</div>
+    </div><div class="tag">thumb white .12 → hover .25 · 4px radius</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Glass fidelity — browser vs ImGui composite (documented deviation)</h2>
+  <div class="cells">
+    <div class="cell"><div class="stage glassCompare">
+      <div class="panel -browser">backdrop-filter: blur(13px) brightness(.7)</div>
+      <div class="panel -imgui">precomposited rgb(34, 35, 38)</div>
+    </div><div class="tag">in-game glass gets real backdrop blur through Dalamud's ImGuiHelpers.PrependBlurBehind, the same API used by Brio 0.8</div></div>
+  </div>
+</div>

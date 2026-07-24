@@ -1,0 +1,165 @@
+<title>Poser M5 — Settings</title>
+<style>
+/* Tokens verbatim from picto tokens.css — see M7 sheet for the full block */
+:root {
+  --color-primary: #3297FF;
+  --color-primary-10: rgba(50,151,255,.10); --color-primary-30: rgba(50,151,255,.30);
+  --color-primary-50: rgba(50,151,255,.50); --color-primary-60: rgba(50,151,255,.60);
+  --color-bg-app: rgb(24,25,27); --color-surface-1: rgb(36,37,40); --color-surface-2: #2a2a2e;
+  --color-surface-hover: rgba(248,249,251,.05); --color-surface-active: rgba(248,249,251,.10);
+  --color-text-primary: rgba(255,255,255,1); --color-text-secondary: rgba(255,255,255,.72);
+  --color-text-tertiary: rgba(255,255,255,.50); --color-text-disabled: rgba(255,255,255,.22);
+  --color-border-primary: rgba(255,255,255,.14); --color-border-secondary: rgba(255,255,255,.08);
+  --color-black-10: rgba(0,0,0,.10); --color-black-20: rgba(0,0,0,.20);
+  --color-hover-overlay: rgba(255,255,255,.08); --color-active-overlay: rgba(255,255,255,.14);
+  --color-subtle-overlay: rgba(255,255,255,.10);
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-family-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', ui-monospace, monospace;
+  --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px;
+  --shadow-panel: 0 3px 12px rgba(0,0,0,.3), 0 0 0 1px rgba(0,0,0,.5);
+  --glass-bg: rgba(34,35,38,.97);
+  --glass-border-top: 1px solid rgba(255,255,255,.25);
+  --glass-border-side: 1px solid rgba(255,255,255,.12);
+  --glass-border-bottom: 1px solid rgba(0,0,0,.20);
+  --ease-default: cubic-bezier(.4,0,.22,1);
+  --sidebar-row-height: 26px;
+  --color-success: rgb(126,211,160);
+}
+* { box-sizing: border-box; margin: 0; }
+html, body { min-height: 100%; }
+body {
+  font-family: var(--font-family); font-size: 13px; color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  background:
+    radial-gradient(1200px 500px at 70% 10%, #2c3a55 0%, transparent 60%),
+    radial-gradient(900px 600px at 20% 90%, #3a2f45 0%, transparent 55%),
+    linear-gradient(180deg, #131b2a 0%, #1d2433 45%, #2b2633 100%);
+  min-height: 100vh; padding: 64px 24px 48px; display: flex; flex-direction: column; align-items: center; gap: 18px;
+}
+.note { font-size: 11px; color: rgba(255,255,255,.55); max-width: 74ch; text-align: center; text-shadow: 0 1px 2px rgba(0,0,0,.5); line-height: 1.5; }
+
+svg.i { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.75; fill: none; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
+/* shared primitives (specs = M7) */
+.btn {
+  height: 32px; display: inline-flex; justify-content: center; align-items: center;
+  gap: 6px; padding: 0 16px; font-size: 13px; font-weight: 400; font-family: var(--font-family);
+  color: var(--color-text-primary); border: 1px solid var(--color-border-primary);
+  background: var(--color-surface-hover); border-radius: var(--radius-md); cursor: pointer;
+  white-space: nowrap; outline: none; appearance: none; transition: background 150ms ease;
+}
+.btn:hover { background: var(--color-subtle-overlay); }
+.btnPrimary { background: var(--color-primary); border-color: var(--color-primary); color: white; }
+.btnPrimary:hover { background: var(--color-primary-60); border-color: var(--color-primary-60); }
+.toggle { position: relative; display: inline-block; width: 32px; height: 20px; flex-shrink: 0; cursor: pointer; }
+.toggle .track { position: absolute; inset: 0; border-radius: 10px; background-color: rgba(128,128,128,.25); box-shadow: inset 0 1px 2px rgba(0,0,0,.1); transition: background-color .2s ease; }
+.toggle.-on .track { background-color: var(--color-primary); }
+.toggle .knob { position: absolute; bottom: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background-color: #fff; opacity: .6; box-shadow: 0 1px 3px rgba(0,0,0,.2); transform: translateX(0); transition: transform .2s ease, opacity .2s ease; }
+.toggle.-on .knob { transform: translateX(12px); opacity: 1; }
+.slider { -webkit-appearance: none; appearance: none; height: 4px; border-radius: 2px; background: var(--color-border-primary); outline: none; }
+.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--color-primary); cursor: pointer; border: none; }
+.sliderVal { font-family: var(--font-family-mono); font-variant-numeric: tabular-nums; font-size: 12px; color: var(--color-text-secondary); width: 42px; text-align: right; flex-shrink: 0; }
+.hint { font-size: 11px; color: var(--color-text-tertiary); line-height: 1.4; }
+
+/* modal header/footer (M7 GlassModal metrics on the window chassis) */
+.modalHead { height: 44px; display: flex; align-items: center; padding: 0 16px; box-shadow: inset 0 -1px 0 var(--color-border-secondary); flex-shrink: 0; }
+.modalHead .title { flex: 1; font-size: 14px; font-weight: 500; }
+.modalHead .close { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 5px; opacity: .7; cursor: pointer; }
+.modalHead .close:hover { opacity: 1; background: var(--color-hover-overlay); }
+.modalFoot { height: 44px; display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 0 12px; background: var(--color-black-10); box-shadow: inset 0 1px 0 var(--color-border-secondary); flex-shrink: 0; }
+
+/* window chassis (M1) */
+.window {
+  background: var(--color-bg-app); border-radius: 10px; overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0,0,0,.5), var(--shadow-panel);
+  border-top: var(--glass-border-top); border-left: var(--glass-border-side);
+  border-right: var(--glass-border-side); border-bottom: var(--glass-border-bottom);
+  display: flex;
+}
+
+/* settings nav rail — M7 SidebarRow grammar at 200px */
+.nav { width: 200px; background: var(--color-surface-1); border-right: 1px solid var(--color-border-primary); padding: 8px; flex-shrink: 0; display: flex; flex-direction: column; }
+.sbRow { position: relative; display: flex; align-items: center; height: var(--sidebar-row-height); font-size: 13px; cursor: default; user-select: none; padding: 0 6px; }
+.sbRow::before { content: ""; position: absolute; inset: 0 0 1px 1px; border-radius: 5px; opacity: 0; transition: opacity 50ms var(--ease-default); }
+.sbRow:hover::before { background: var(--color-surface-hover); opacity: 1; }
+.sbRow.-active::before { background: var(--color-surface-active); opacity: 1; }
+.sbRow > * { position: relative; z-index: 1; }
+.sbIco { width: 16px; height: 16px; margin-right: 8px; opacity: .85; display: flex; }
+.sbLbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* settings pane rows — label 13px/600, min-width 130 per spec */
+.pane { flex: 1; overflow-y: auto; padding: 12px 20px 20px; }
+.pane::-webkit-scrollbar { width: 8px; }
+.pane::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
+.ph { height: 26px; display: flex; align-items: center; font-size: 12px; font-weight: 600; color: var(--color-text-tertiary); margin-top: 10px; border-top: 1px solid var(--color-border-secondary); padding-top: 8px; box-sizing: content-box; }
+.ph:first-child { margin-top: 0; border-top: none; padding-top: 0; }
+.setRow { display: flex; align-items: center; gap: 12px; min-height: 34px; }
+.setRow .lbl { font-size: 13px; font-weight: 600; min-width: 130px; flex-shrink: 0; }
+.wellGroup { display: flex; gap: 10px; }
+.wellGroup .stack { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.well { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--color-border-primary); cursor: pointer; }
+.wellCap { font-size: 10px; color: var(--color-text-tertiary); }
+.swatch { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
+.swatch.-active { box-shadow: inset 0 0 0 1px rgba(255,255,255,.18), 0 0 0 2px var(--color-bg-app), 0 0 0 4px var(--color-primary); }
+</style>
+
+<div class="window" style="width:720px; max-width:96vw; height:520px; flex-direction:column">
+  <div class="modalHead">
+    <span class="title">Settings</span>
+    <span class="close"><svg class="i" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>
+  </div>
+  <div style="flex:1; display:flex; min-height:0">
+    <div class="nav">
+      <div class="sbRow"><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M1 14h6"/><path d="M9 8h6"/><path d="M17 16h6"/></svg></span><span class="sbLbl">General</span></div>
+      <div class="sbRow -active"><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg></span><span class="sbLbl">Display</span></div>
+      <div class="sbRow"><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><path d="M7 17L17 7"/><path d="M7 17m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/><path d="M17 7m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0"/></svg></span><span class="sbLbl">Skeleton</span></div>
+      <div class="sbRow"><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg></span><span class="sbLbl">UI</span></div>
+      <div class="sbRow"><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01"/><path d="M10 10h.01"/><path d="M14 10h.01"/><path d="M18 10h.01"/><path d="M7 14h10"/></svg></span><span class="sbLbl">Keybinds</span></div>
+      <div class="sbRow"><span class="sbIco"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span class="sbLbl">About</span></div>
+    </div>
+    <div class="pane">
+      <div class="ph">BONE OVERLAY</div>
+      <div class="setRow">
+        <span class="lbl">Bone dot radius</span>
+        <input type="range" class="slider" style="flex:1; max-width:220px" min="2" max="12" value="5">
+        <span class="sliderVal">5 px</span>
+      </div>
+      <div class="setRow" style="align-items:flex-start; padding-top:6px">
+        <span class="lbl" style="padding-top:6px">Overlay colors</span>
+        <div class="wellGroup">
+          <div class="stack"><span class="well" style="background:#3297FF"></span><span class="wellCap">selected</span></div>
+          <div class="stack"><span class="well" style="background:#ffffff"></span><span class="wellCap">hovered</span></div>
+          <div class="stack"><span class="well" style="background:#6b6e76"></span><span class="wellCap">inactive</span></div>
+          <div class="stack"><span class="well" style="background:#FF9F0A"></span><span class="wellCap">IK chain</span></div>
+          <div class="stack"><span class="well" style="background:#7ed3a0"></span><span class="wellCap">mirrored</span></div>
+        </div>
+      </div>
+      <div class="ph">FILTERS &amp; PRIVACY</div>
+      <div class="setRow">
+        <span class="lbl">NSFW bones</span>
+        <span class="toggle"><span class="track"></span><span class="knob"></span></span>
+        <span class="hint">show IVCS / extended bone groups in the bone map and sidebar tree</span>
+      </div>
+      <div class="setRow">
+        <span class="lbl">Anonymous mode</span>
+        <span class="toggle -on"><span class="track"></span><span class="knob"></span></span>
+        <span class="hint">mask character names ("Actor 1", "Actor 2") in the UI — Midona Rhel never appears in streams or exports</span>
+      </div>
+      <div class="ph">THEME</div>
+      <div class="setRow">
+        <span class="lbl">Accent</span>
+        <span class="swatch -active" style="background:#3297FF" title="Crystarium blue"></span>
+        <span class="swatch" style="background:#7ed3a0" title="Mint"></span>
+        <span class="swatch" style="background:#e8c15a" title="Amber"></span>
+        <span class="swatch" style="background:#b78cff" title="Violet"></span>
+        <span class="swatch" style="background:#ff8fa3" title="Rose"></span>
+      </div>
+    </div>
+  </div>
+  <div class="modalFoot">
+    <button class="btn">Cancel</button>
+    <button class="btn btnPrimary">Save</button>
+  </div>
+</div>
+
+<p class="note">Settings — separate 720×520 window: 44px header, 200px nav rail (26px rows, Display active), pane rows with 130px min-width 13px/600 labels, M7 modal footer (black-10 band, Cancel + primary Save). Overlay colors are click-to-edit color wells; accent swatches use the 28px circle + active-ring treatment.</p>
