@@ -52,13 +52,25 @@ the entire group through the same runtime restore path as cancel.
 - Root filtering and symmetry pairing key bones by stable
   `BoneId` (slot, partial, index, canonical name), so duplicate Havok names
   across body, face, hair, weapon, or accessory partials can never merge.
-- Mirroring — the symmetry gesture mode, whole-pose Mirror, and single-bone
-  Flip — reflects across the **sagittal plane** (lateral X): only the
-  lateral position component negates and the rotation gets the X-plane
-  mirror conjugation `(−x, y, z, −w)`; scale is unchanged. The former
-  negate-everything/conjugate convention was Brio/Ktisis' INVERSE mode — a
-  different feature that produced unrelated poses on the paired bone
-  (round-1 walkthrough finding).
+- Mirroring is **counterpart-frame aware** (correction round 3B).
+  Counterpart bones' bind/animated baselines can differ by ~180°, so a raw
+  component flip turns a forward arm backward. Every transferred authored
+  adjustment is evaluated relative to its source bone's frozen animated
+  baseline, reflected through the sagittal plane (model-space mirror is the
+  Ktisis FlipPose convention `(−x, −y, z, w)`, lateral position z), and
+  rebased into the destination baseline's frame:
+  `d′ = B_dst⁻¹ · M(B_src) · M(d) · M(B_src)⁻¹ · B_dst`. This applies to
+  **Mirror edits** (animation-safe: authored layers only, pairs exchange,
+  center bones self-mirror, one atomic history entry), **Flip bone**
+  (authored adjustment of one bone; clear no-edit result when untouched),
+  and live **Symmetry: Mirror** (both counterpart baselines frozen at
+  gesture start; model-frame deltas reflect directly). The separate
+  **Bake mirrored pose…** action (actor node only, behind a confirmation)
+  mirrors the currently evaluated body pose per Ktisis
+  `EntityPoseConverter.FlipPose` — opposite-name rotation exchange,
+  positions untouched, face/hair/j_ex partials and iv_/ya_ bones excluded,
+  root yaw-corrected and flipped 180° — and materializes it as authored
+  state; it may break animation-relative behavior and says so.
 
 ## Reference decisions
 

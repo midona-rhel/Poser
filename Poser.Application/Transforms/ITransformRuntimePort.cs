@@ -1,3 +1,4 @@
+using System.Numerics;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
@@ -17,7 +18,16 @@ public sealed record TransformTargetState(
     TransformTargetId Target,
     PoseTransform Transform,
     BonePose Pose,
-    bool HasOverride);
+    bool HasOverride)
+{
+    /// <summary>
+    /// The frozen animated/reference model rotation beneath the authored
+    /// layers, captured with the state. Counterpart-aware mirroring rebases
+    /// transferred deltas through these baselines so opposing bind frames
+    /// cannot flip an adjustment backward.
+    /// </summary>
+    public Quaternion AnimatedBaselineRotation { get; init; } = Quaternion.Identity;
+}
 
 public readonly record struct TransformPortResult(
     TransformPortStatus Status,

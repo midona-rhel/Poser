@@ -131,23 +131,24 @@ public static class PoseMath
 
 
     /// <summary>
-    /// Mirrors an additive pose delta across the sagittal plane (lateral X):
-    /// only the lateral position component is negated, the rotation gets the
-    /// X-plane mirror conjugation (−x, y, z, −w), and additive scale is
-    /// unchanged. (The former convention — negate everything and conjugate —
-    /// was Brio/Ktisis' INVERSE mode, a different feature: it produced an
-    /// unrelated pose on the paired bone instead of the anatomical mirror.)
+    /// Mirrors an additive pose delta across the sagittal plane using the
+    /// model-space convention (Ktisis FlipPose: mirror plane normal is model
+    /// Z): lateral position (z) negates, rotation gets the mirror conjugation
+    /// (−x, −y, z, w), and additive scale is unchanged. NOTE: raw component
+    /// mirroring ignores counterpart bind-frame differences; the stable-id
+    /// paths use the baseline-rebased conversion in
+    /// Poser.Domain.Posing.PoseOperations.MirrorRebased instead.
     /// </summary>
     public static Transform MirrorPoseDelta(Transform delta)
     {
         return new Transform
         {
-            Position = new Vector3(-delta.Position.X, delta.Position.Y, delta.Position.Z),
+            Position = new Vector3(delta.Position.X, delta.Position.Y, -delta.Position.Z),
             Rotation = Quaternion.Normalize(new Quaternion(
                 -delta.Rotation.X,
-                delta.Rotation.Y,
+                -delta.Rotation.Y,
                 delta.Rotation.Z,
-                -delta.Rotation.W)),
+                delta.Rotation.W)),
             Scale = delta.Scale
         };
     }

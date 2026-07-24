@@ -151,6 +151,14 @@ public unsafe class BonePosingService : IBonePosingService
         _skeletonsToUpdateCache.Add(skeleton.Actor.Address);
     }
 
+    /// <summary>The frozen animated/reference baseline beneath the authored
+    /// layers; a bone without applied layers has no observation, and its
+    /// current transform IS its baseline.</summary>
+    public Transform GetAnimatedBaseline(IBone bone) =>
+        TryGetEvaluationObservation(bone, out var observation)
+            ? observation.AnimatedBaseline
+            : bone.LastTransform;
+
     public bool TryGetEvaluationObservation(
         IBone bone,
         out BoneEvaluationObservation observation)

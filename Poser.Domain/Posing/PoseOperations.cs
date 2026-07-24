@@ -8,28 +8,53 @@ public static class PoseOperations
     public static BonePose Reset(BonePose pose) =>
         new(version: checked(pose.Version + 1));
 
-    public static BonePose Mirror(BonePose pose) =>
+    /// <summary>
+    /// Counterpart-frame-aware sagittal transfer of authored layers
+    /// (PBI-002 correction 3B). Counterpart bones' bind/animated baselines
+    /// can differ by ~180°, so a raw component flip turns a forward arm into
+    /// a backward one. Each delta is evaluated relative to its source bone's
+    /// frozen animated baseline, reflected through the sagittal plane, and
+    /// rebased into the destination baseline's frame:
+    ///   d' = B_dst⁻¹ · M(B_src) · M(d) · M(B_src)⁻¹ · B_dst
+    /// The conversion preserves post-multiply composition, so converting
+    /// layer-by-layer equals converting the composed total. Positions
+    /// reflect laterally in the model frame; scale transfers unchanged.
+    /// </summary>
+    public static BonePose MirrorRebased(
+        BonePose pose,
+        Quaternion sourceBaseline,
+        Quaternion destinationBaseline) =>
         new(
             pose.Layers.Select(layer => layer with
             {
-                Delta = Mirror(layer.Delta),
+                Delta = MirrorRebased(layer.Delta, sourceBaseline, destinationBaseline),
             }),
             checked(pose.Version + 1));
 
-    // Skeletons are symmetric across exactly one plane: the sagittal plane,
-    // whose normal is the lateral X axis in the applied frame. Mirroring a
-    // delta therefore negates ONLY the lateral position component and applies
-    // the X-plane mirror conjugation (−x, y, z, −w) to the rotation — it is
-    // NOT the full inversion (negate-everything / conjugate) that turns a
-    // raised-forward arm into an unrelated pose on the paired bone. Scale is
-    // unchanged by a reflection.
-    public static PoseDelta Mirror(PoseDelta delta) =>
-        new(
-            new Vector3(-delta.Position.X, delta.Position.Y, delta.Position.Z),
-            Quaternion.Normalize(new Quaternion(
-                -delta.Rotation.X,
-                delta.Rotation.Y,
-                delta.Rotation.Z,
-                -delta.Rotation.W)),
+    public static PoseDelta MirrorRebased(
+        PoseDelta delta,
+        Quaternion sourceBaseline,
+        Quaternion destinationBaseline)
+    {
+        var mirroredSource = MirrorRotation(sourceBaseline);
+        var rotation = Quaternion.Normalize(
+            Quaternion.Inverse(destinationBaseline) *
+            mirroredSource *
+            MirrorRotation(delta.Rotation) *
+            Quaternion.Inverse(mirroredSource) *
+            destinationBaseline);
+        return new PoseDelta(
+            MirrorPosition(delta.Position),
+            rotation,
             delta.Scale);
+    }
+
+    /// <summary>Model-space sagittal mirror of a rotation. The plane normal
+    /// is model-space Z — the Ktisis FlipPose convention `(−x, −y, z, w)`.</summary>
+    public static Quaternion MirrorRotation(Quaternion value) =>
+        new(-value.X, -value.Y, value.Z, value.W);
+
+    /// <summary>Model-space sagittal mirror of a translation (lateral Z).</summary>
+    public static Vector3 MirrorPosition(Vector3 value) =>
+        new(value.X, value.Y, -value.Z);
 }

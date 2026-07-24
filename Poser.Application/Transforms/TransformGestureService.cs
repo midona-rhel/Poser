@@ -126,13 +126,23 @@ public sealed class TransformGestureService : IDisposable
         for (var index = 0; index < active.Before.Count; index++)
         {
             var baseline = active.Before[index];
+            // Mirrored symmetry partners use the counterpart-aware transfer
+            // (PBI-002 correction 3B): Local-space deltas act in each bone's
+            // own frame, so they rebase through BOTH frozen animated
+            // baselines (captured at Begin); model-frame deltas reflect
+            // directly. No frame feeds an applied result back as a baseline.
             var targetDelta =
                 active.Command.TargetModes != null &&
                 active.Command.TargetModes.TryGetValue(
                     baseline.Target,
                     out var mode) &&
                 mode == TransformDeltaMode.Mirrored
-                    ? TransformMath.Mirror(delta)
+                    ? active.Command.Space == TransformSpace.Local
+                        ? TransformMath.MirrorRebased(
+                            delta,
+                            active.Before[0].AnimatedBaselineRotation,
+                            baseline.AnimatedBaselineRotation)
+                        : TransformMath.Mirror(delta)
                     : delta;
             var rotatePosition = active.Command.PivotMode switch
             {

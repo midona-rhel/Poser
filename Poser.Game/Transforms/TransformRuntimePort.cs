@@ -193,7 +193,11 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             target,
             converted.Value,
             pose,
-            layers.Length > 0));
+            layers.Length > 0)
+        {
+            AnimatedBaselineRotation =
+                _bones.GetAnimatedBaseline(bone).Rotation,
+        });
     }
 
     private bool OnFrameworkThread() =>

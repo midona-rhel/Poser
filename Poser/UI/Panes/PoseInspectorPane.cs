@@ -431,6 +431,63 @@ public class PoseInspectorPane
         }
 
         ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
+
+        DrawBakeMirrorConfirm();
+    }
+
+    // Confirmation for the animation-breaking bake (correction 3D): nothing
+    // executes before the explicit confirm; Cancel/Escape change nothing.
+    private bool _bakeMirrorConfirmOpen;
+
+    /// <summary>Whether any bone carries a Poser-authored layer (the
+    /// Mirror edits availability predicate).</summary>
+    public bool HasAuthoredEdits =>
+        OwningSkeleton() is { } skeleton && _cleanPose.HasAuthoredEdits(skeleton);
+
+    private void DrawBakeMirrorConfirm()
+    {
+        if (!_bakeMirrorConfirmOpen)
+            return;
+        var skeleton = OwningSkeleton();
+        if (skeleton == null)
+        {
+            _bakeMirrorConfirmOpen = false;
+            return;
+        }
+        float s = ImGuiHelpers.GlobalScale;
+        Crystarium.Modal("##bake-mirror", ref _bakeMirrorConfirmOpen, "Bake mirrored pose?", () =>
+        {
+            ViewText.Label(ImGui.GetCursorScreenPos(),
+                "This mirrors the actor's currently evaluated pose and writes it", 12f,
+                FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.85f));
+            ImGui.Dummy(new Vector2(0f, 16f * s));
+            ViewText.Label(ImGui.GetCursorScreenPos(),
+                "as an authored pose. Animation-driven motion may no longer", 12f,
+                FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.85f));
+            ImGui.Dummy(new Vector2(0f, 16f * s));
+            ViewText.Label(ImGui.GetCursorScreenPos(),
+                "behave correctly for the affected bones.", 12f,
+                FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.85f));
+            ImGui.Dummy(new Vector2(0f, 20f * s));
+            ViewText.Label(ImGui.GetCursorScreenPos(),
+                "Use Mirror edits instead if you only want to mirror", 11f,
+                FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
+            ImGui.Dummy(new Vector2(0f, 14f * s));
+            ViewText.Label(ImGui.GetCursorScreenPos(),
+                "transformations made in Poser.", 11f,
+                FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
+            ImGui.Dummy(new Vector2(0f, 18f * s));
+
+            // Cancel is the default/safe action; Escape closes via the modal.
+            if (Crystarium.Button("Cancel", new ButtonProps { Id = "bake-cancel", Classes = Cls.Primary }))
+                _bakeMirrorConfirmOpen = false;
+            ImGui.SameLine(0f, 8f * s);
+            if (Crystarium.Button("Bake mirrored pose", new ButtonProps { Id = "bake-confirm" }))
+            {
+                _cleanPose.BakeMirroredPose(skeleton);
+                _bakeMirrorConfirmOpen = false;
+            }
+        });
     }
 
     // ── pose surface: Body/Face/Bones seg + strip + matrix (approved M2) ─
@@ -1044,9 +1101,21 @@ public class PoseInspectorPane
         h += 34f * s;
 
         var poseActions = new List<RailAction>();
+        bool hasAuthoredEdits = _cleanPose.HasAuthoredEdits(skeleton);
         if (bone != null)
-            poseActions.Add(new RailAction("Flip bone", "pose-flip", () => _cleanPose.FlipBone(bone)));
-        poseActions.Add(new RailAction("Mirror pose", "pose-mirror", () => _cleanPose.Mirror(skeleton)));
+            poseActions.Add(new RailAction("Flip bone", "pose-flip", () => _cleanPose.FlipBone(bone),
+                Tooltip: "Reflect this bone's Poser-authored adjustment"));
+        poseActions.Add(new RailAction("Mirror edits", "pose-mirror", () => _cleanPose.Mirror(skeleton),
+            Disabled: !hasAuthoredEdits,
+            Tooltip: hasAuthoredEdits
+                ? "Mirror the Poser-authored bone edits (animation-safe)"
+                : "No Poser-authored bone edits to mirror."));
+        if (bone == null)
+            // Actor node only: the explicit, potentially animation-breaking
+            // bake behind a confirmation dialog (correction 3D).
+            poseActions.Add(new RailAction("Bake mirrored pose…", "pose-bake-mirror",
+                () => _bakeMirrorConfirmOpen = true,
+                Tooltip: "Mirror the currently evaluated pose and write it as an authored pose"));
         h += DrawWrappedActions(new Vector2(cursor.X, cursor.Y + h), width, s, poseActions);
 
         // Reset row

@@ -1,3 +1,4 @@
+using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
@@ -85,6 +86,12 @@ public sealed class PoseEditService
         return Apply(description, before, desired);
     }
 
+    /// <summary>
+    /// Bone-level authored-delta reflection (correction 3C): reflects only
+    /// the selected bone's Poser-authored adjustment through the sagittal
+    /// plane, rebased in its own frozen animated baseline. It never bakes
+    /// animation, and an untouched bone reports a clear no-edit result.
+    /// </summary>
     public PoseEditResult Flip(
         TransformTargetId target,
         string description)
@@ -98,15 +105,28 @@ public sealed class PoseEditService
 
         var before = prepared.States!;
         if (before[0].Pose.Layers.Count == 0)
-            return PoseEditResult.Ok(0);
+            return PoseEditResult.Fail(
+                "No Poser-authored adjustment on this bone to flip.");
         var desired = before.Select(state => state with
         {
-            Pose = PoseOperations.Mirror(state.Pose),
+            Pose = PoseOperations.MirrorRebased(
+                state.Pose,
+                state.AnimatedBaselineRotation,
+                state.AnimatedBaselineRotation),
             HasOverride = state.Pose.Layers.Count > 0,
         }).ToArray();
         return Apply(description, before, desired);
     }
 
+    /// <summary>
+    /// "Mirror edits" (correction 3A): the animation-safe actor operation.
+    /// Only Poser-authored layers move — left/right counterparts exchange
+    /// their authored adjustments (converted counterpart-frame-aware, 3B),
+    /// center/unpaired bones with authored adjustments mirror in place, and
+    /// bones without authored adjustments stay driven by their animation.
+    /// The current evaluated animation is never captured or baked; one
+    /// atomic history entry covers the whole actor.
+    /// </summary>
     public PoseEditResult Mirror(
         IReadOnlyList<TransformTargetId> targets,
         string description)
@@ -125,37 +145,57 @@ public sealed class PoseEditService
                 state => Key(state.Target.Bone!.Value),
                 state => state);
         var desired = new List<TransformTargetState>();
+        var processed = new HashSet<TransformTargetId>();
 
-        foreach (var left in before.Where(state =>
-                     state.Target.Bone is { } bone &&
-                     bone.CanonicalName.EndsWith(
-                         "_l",
-                         StringComparison.Ordinal)))
+        foreach (var state in before)
         {
-            var leftId = left.Target.Bone!.Value;
-            var rightName = string.Concat(
-                leftId.CanonicalName.AsSpan(
-                    0,
-                    leftId.CanonicalName.Length - 2),
-                "_r");
-            if (!byKey.TryGetValue(
-                    (leftId.Slot, leftId.PartialId, rightName),
-                    out var right))
-                continue;
-            if (left.Pose.Layers.Count == 0 &&
-                right.Pose.Layers.Count == 0)
+            if (state.Target.Bone is not { } bone ||
+                !processed.Add(state.Target))
                 continue;
 
-            desired.Add(left with
+            TransformTargetState? partner = null;
+            if (MirrorName(bone.CanonicalName) is { } partnerName &&
+                byKey.TryGetValue(
+                    (bone.Slot, bone.PartialId, partnerName),
+                    out var candidate))
+                partner = candidate;
+
+            if (partner is { } counterpart)
             {
-                Pose = PoseOperations.Mirror(right.Pose),
-                HasOverride = right.Pose.Layers.Count > 0,
-            });
-            desired.Add(right with
+                processed.Add(counterpart.Target);
+                if (state.Pose.Layers.Count == 0 &&
+                    counterpart.Pose.Layers.Count == 0)
+                    continue;
+                desired.Add(state with
+                {
+                    Pose = PoseOperations.MirrorRebased(
+                        counterpart.Pose,
+                        counterpart.AnimatedBaselineRotation,
+                        state.AnimatedBaselineRotation),
+                    HasOverride = counterpart.Pose.Layers.Count > 0,
+                });
+                desired.Add(counterpart with
+                {
+                    Pose = PoseOperations.MirrorRebased(
+                        state.Pose,
+                        state.AnimatedBaselineRotation,
+                        counterpart.AnimatedBaselineRotation),
+                    HasOverride = state.Pose.Layers.Count > 0,
+                });
+            }
+            else if (state.Pose.Layers.Count > 0)
             {
-                Pose = PoseOperations.Mirror(left.Pose),
-                HasOverride = left.Pose.Layers.Count > 0,
-            });
+                // Center or unpaired bone: mirror its own authored
+                // adjustment in place.
+                desired.Add(state with
+                {
+                    Pose = PoseOperations.MirrorRebased(
+                        state.Pose,
+                        state.AnimatedBaselineRotation,
+                        state.AnimatedBaselineRotation),
+                    HasOverride = true,
+                });
+            }
         }
 
         var changedTargets = desired
@@ -165,6 +205,138 @@ public sealed class PoseEditService
             .Where(state => changedTargets.Contains(state.Target))
             .ToArray();
         return Apply(description, changedBefore, desired);
+    }
+
+    /// <summary>
+    /// "Bake mirrored pose" (correction 3D): mirrors the actor's currently
+    /// evaluated body pose — including animation-derived transforms — and
+    /// materializes it as authored pose state. Follows Ktisis
+    /// EntityPoseConverter.FlipPose: opposite-name rotation exchange in
+    /// model space (mirror quaternion (−x, −y, z, w)), positions untouched,
+    /// face/hair/j_ex partials and iv_/ya_ bones excluded, root yaw
+    /// corrected and flipped 180° about Y. All desired results derive from
+    /// one immutable snapshot; the operation is one atomic history entry
+    /// with full rollback on failure.
+    /// </summary>
+    public PoseEditResult BakeMirroredPose(
+        IReadOnlyList<TransformTargetId> targets,
+        string description)
+    {
+        if (_gestures.ActiveGesture != null)
+            return PoseEditResult.Fail(
+                "A transform gesture is active.");
+        var prepared = CaptureBones(targets);
+        if (!prepared.Success)
+            return PoseEditResult.Fail(prepared.Detail!);
+
+        static bool Eligible(BoneId bone) =>
+            bone.PartialId is not (1 or 2 or 4) &&
+            !bone.CanonicalName.StartsWith("iv_", StringComparison.Ordinal) &&
+            !bone.CanonicalName.StartsWith("ya_", StringComparison.Ordinal);
+
+        var before = prepared.States!
+            .Where(state => state.Target.Bone is { } bone && Eligible(bone))
+            .ToArray();
+        if (before.Length == 0)
+            return PoseEditResult.Fail("No body bones available to bake.");
+
+        var byKey = before.ToDictionary(
+            state => Key(state.Target.Bone!.Value),
+            state => state);
+        var rootId = FindSkeletonRoot(before[0].Target.Bone!.Value);
+
+        var desired = new List<(TransformTargetState State, Domain.Transforms.PoseTransform Transform)>(before.Length);
+        foreach (var state in before)
+        {
+            var bone = state.Target.Bone!.Value;
+            var source = state;
+            if (MirrorName(bone.CanonicalName) is { } partnerName &&
+                byKey.TryGetValue(
+                    (bone.Slot, bone.PartialId, partnerName),
+                    out var counterpart))
+                source = counterpart;
+
+            var rotation = PoseOperations.MirrorRotation(source.Transform.Rotation);
+            if (rootId is { } root && bone.Equals(root))
+                rotation = CorrectRootRotation(state.Transform.Rotation, rotation);
+
+            desired.Add((state, state.Transform with { Rotation = Quaternion.Normalize(rotation) }));
+        }
+
+        var appliedCount = 0;
+        foreach (var (state, transform) in desired)
+        {
+            var result = _runtime.ApplyAbsolute(state, transform);
+            if (!result.Success)
+            {
+                RestoreAll(before);
+                return PoseEditResult.Fail(
+                    result.Detail ?? $"Could not bake {state.Target}.");
+            }
+            appliedCount++;
+        }
+
+        var after = new List<TransformTargetState>(before.Length);
+        foreach (var state in before)
+        {
+            var result = _runtime.Capture(state.Target);
+            if (!result.Success || result.State == null)
+            {
+                RestoreAll(before);
+                return PoseEditResult.Fail(
+                    result.Detail ??
+                    $"Could not capture baked pose for {state.Target}.");
+            }
+            after.Add(result.State);
+        }
+
+        _history.Append(new TransformPatch(description, before, after));
+        return PoseEditResult.Ok(appliedCount);
+    }
+
+    private static string? MirrorName(string canonicalName)
+    {
+        if (canonicalName.EndsWith("_l", StringComparison.Ordinal))
+            return string.Concat(
+                canonicalName.AsSpan(0, canonicalName.Length - 2), "_r");
+        if (canonicalName.EndsWith("_r", StringComparison.Ordinal))
+            return string.Concat(
+                canonicalName.AsSpan(0, canonicalName.Length - 2), "_l");
+        return null;
+    }
+
+    private BoneId? FindSkeletonRoot(BoneId sample)
+    {
+        foreach (var actor in _scene.Snapshot.Actors)
+        {
+            if (actor.Id.LogicalId != sample.Skeleton.Actor.LogicalId ||
+                actor.Skeleton is not { } skeleton)
+                continue;
+            foreach (var bone in skeleton.Bones)
+                if (bone.Parent == null && bone.Id.PartialId == 0)
+                    return bone.Id;
+            return null;
+        }
+        return null;
+    }
+
+    /// <summary>Ktisis FlipPose root correction: re-aim the flipped root's
+    /// yaw at the pre-flip forward direction, then flip 180° about Y.</summary>
+    private static Quaternion CorrectRootRotation(
+        Quaternion initial,
+        Quaternion flipped)
+    {
+        static float YawOf(Quaternion rotation)
+        {
+            var forward = Vector3.Transform(Vector3.UnitZ, rotation);
+            return MathF.Atan2(forward.X, forward.Z);
+        }
+
+        var corrected = Quaternion.Normalize(
+            Quaternion.CreateFromAxisAngle(
+                Vector3.UnitY, YawOf(initial) - YawOf(flipped)) * flipped);
+        return Quaternion.Normalize(
+            Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI) * corrected);
     }
 
     public PoseCaptureResult CapturePortable(

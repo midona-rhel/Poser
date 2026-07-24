@@ -122,21 +122,49 @@ public readonly record struct TransformDelta(
 
 public static class TransformMath
 {
-    // Sagittal mirror for symmetry gestures: lateral X negated, rotation via
-    // the X-plane mirror conjugation (−x, y, z, −w) — not the full conjugate,
-    // which inverts the rotation instead of reflecting it.
+    // Sagittal mirror for model-frame symmetry deltas: lateral Z negated and
+    // rotation via the model-space mirror conjugation (−x, −y, z, w) — the
+    // Ktisis FlipPose convention. Not the full conjugate, which inverts the
+    // rotation instead of reflecting it.
     public static TransformDelta Mirror(TransformDelta delta) =>
         new(
             new Vector3(
-                -delta.Translation.X,
+                delta.Translation.X,
                 delta.Translation.Y,
-                delta.Translation.Z),
-            Quaternion.Normalize(new Quaternion(
-                -delta.Rotation.X,
-                delta.Rotation.Y,
-                delta.Rotation.Z,
-                -delta.Rotation.W)),
+                -delta.Translation.Z),
+            Quaternion.Normalize(MirrorRotation(delta.Rotation)),
             delta.ScaleFactor);
+
+    /// <summary>
+    /// Counterpart-frame-aware mirror for LOCAL-space symmetry deltas
+    /// (PBI-002 correction 3B): the delta is reflected relative to the
+    /// frozen primary baseline and rebased onto the partner's frozen
+    /// baseline, so a partner whose bind orientation differs by ~180° still
+    /// receives the anatomical mirror instead of a backward rotation.
+    /// </summary>
+    public static TransformDelta MirrorRebased(
+        TransformDelta delta,
+        Quaternion sourceBaseline,
+        Quaternion destinationBaseline)
+    {
+        var mirroredSource = MirrorRotation(sourceBaseline);
+        var rotation = Quaternion.Normalize(
+            Quaternion.Inverse(destinationBaseline) *
+            mirroredSource *
+            MirrorRotation(delta.Rotation) *
+            Quaternion.Inverse(mirroredSource) *
+            destinationBaseline);
+        return new TransformDelta(
+            new Vector3(
+                delta.Translation.X,
+                delta.Translation.Y,
+                -delta.Translation.Z),
+            rotation,
+            delta.ScaleFactor);
+    }
+
+    private static Quaternion MirrorRotation(Quaternion value) =>
+        new(-value.X, -value.Y, value.Z, value.W);
 
     public static PoseTransform Apply(
         PoseTransform baseline,

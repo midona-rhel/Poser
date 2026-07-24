@@ -177,8 +177,22 @@ public sealed class CleanPoseFacade
         return Report($"Flip {bone.Name}", _edits.Flip(target, $"Flip {bone.Name}"));
     }
 
+    /// <summary>Animation-safe "Mirror edits": mirrors only Poser-authored
+    /// layers (correction 3A).</summary>
     public PoseEditResult Mirror(ISkeleton skeleton) =>
-        Report("Mirror pose", _edits.Mirror(Targets(skeleton), "Mirror pose"));
+        Report("Mirror edits", _edits.Mirror(Targets(skeleton), "Mirror edits"));
+
+    /// <summary>Explicit, potentially animation-breaking bake of the
+    /// mirrored evaluated body pose (correction 3D). UI confirms first.</summary>
+    public PoseEditResult BakeMirroredPose(ISkeleton skeleton) =>
+        Report("Bake mirrored pose",
+            _edits.BakeMirroredPose(Targets(skeleton), "Bake mirrored pose"));
+
+    /// <summary>Whether any bone carries a Poser-authored (unnamed) layer —
+    /// the "Mirror edits" availability predicate.</summary>
+    public bool HasAuthoredEdits(ISkeleton skeleton) =>
+        _bonePosing.GetPoseInfo(skeleton).AllPoses
+            .Any(pose => pose.Stacks.Any(stack => stack.Layer == null));
 
     public PoseCaptureResult Copy(ISkeleton skeleton) =>
         _transfers.Capture(Targets(skeleton));
