@@ -17,7 +17,7 @@ The actor inspector is the Pose rail shown when the primary sidebar selection is
 - `MainWindow.OnRowClicked` sends plain, Ctrl, and Shift clicks to the matching `SelectionSession` operation (`Select`/`Toggle`/`SelectRange` with the visible `SelectionId` order) and keeps the natural tab active.
 - `PoseInspectorPane.SetSelection` receives `SelectionSession.Primary` once per frame; a change cancels the active gesture and typed edit exactly once.
 - Transform values, gesture baselines, and target lists come from the shared `TransformTargetResolver` effective selection — the first surviving root in original selection order — not necessarily the selection primary.
-- `PoseRailPane` branches its header actions using `PoseInspectorPane.IsActorSelection`. Actor selection shows **Reset transform** and **Mirror pose**; bone selection shows **Select children** and **Flip**.
+- `PoseRailPane` branches its header actions using `PoseInspectorPane.IsActorSelection`. Actor selection shows **Reset transform**; bone selection shows **Reset bone** and **Select children**. Mirror edits and Flip bone live only in the rail's POSE section.
 - Every selected entity row is highlighted, while the primary actor or bone retains the semantic distinction that drives the inspector.
 
 ## Actor transform contract
@@ -52,12 +52,12 @@ When multiple actors or bones are selected, the primary value drives the shared 
 | Transform space | Whole draw object, model/world-facing | Parent-local values composed against the frozen parent captured at Begin |
 | Apply path | `TransformGestureService` via stable actor targets | `TransformGestureService` via stable bone targets |
 | History | One `TransformPatch` per gesture | One `TransformPatch` per gesture |
-| Header actions | Reset transform, Mirror pose | Select children, Flip |
+| Header actions | Reset transform | Reset bone, Select children |
 | Animation warning | None; model transform is independent | Advisory warning while motion is live because game animation can rewrite bone positions |
 
 ## Expression action units
 
-Actor selection exposes the complete per-race Ktisis action-unit catalog below the pose controls. The catalog is fixed and small, so it renders directly as 26 px padded rows inside the already-scrollable inspector; it does not add a second search field. Labels, slider tracks, and percentage values share one vertical center.
+Actor selection exposes the per-race action-unit sliders below the pose controls, rendered directly as 26 px padded rows inside the already-scrollable inspector; there is no second search field. Units whose target bones do not resolve on the current skeleton are hidden; when none resolve, the section shows a single "Expressions unavailable" line. Labels, slider tracks, and percentage values share one vertical center.
 
 Each slider calls `IExpressionService.SetWeight`. The service recomputes a named `expression` delta layer and never clears the actor's interactive face-bone stacks. Reset removes only that layer. See [Expression service](../services/expression-service.md) and [Bone pose stacks](../architecture/pose-stacks.md).
 
@@ -79,4 +79,4 @@ Build verification covers the UI/service API boundary. Live scenarios confirm:
 3. Freeze and resume animation and confirm the actor transform remains unchanged.
 4. Undo and redo one drag.
 5. Use **Reset transform** and confirm the actor returns to its pre-edit transform and the button disables.
-6. Select a bone and confirm the header actions change back to **Select children** and **Flip**.
+6. Select a bone and confirm the header actions change back to **Reset bone** and **Select children**.

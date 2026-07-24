@@ -11,7 +11,9 @@ uses the space between them.
 1. A fixed 44 px mode header at the top.
 2. One internal viewport filling the remaining height. It scrolls only when
    the selected surface is a document taller than the viewport.
-3. A fixed 47 px pose footer at the bottom.
+3. A fixed 47 px pose footer at the bottom (Parenting checkboxes and
+   Clear). Mirror selection (Body/Face maps only), Physics, and Animation
+   sit right-aligned in the mode-selector row, not the footer.
 
 This prevents a long bone matrix from pushing global pose controls below the
 window and prevents switching to a shorter Body, Face, or 3D surface from moving

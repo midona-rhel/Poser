@@ -24,6 +24,12 @@ Body images occupy fixed design-space slots so optional tail and toe sections
 cannot rearrange the layout. Face images choose the race-specific source and
 fit it proportionally. Mirrored bone names map `_l` to `_r` and vice versa.
 
+**Mirror selection** (`SidesSwapped`, Brio's GraphicalSidesSwapped): the
+pose-surface header's Mirror switch swaps which side each sided dot
+addresses, so the maps can be read as facing the character. Center bones
+are unaffected, and the swap applies to the graphical maps only — never
+the tree, matrix, 3D view, or overlay.
+
 ## Lifetime
 
 The pane owns loaded textures and disposes them with the DI container. It has no

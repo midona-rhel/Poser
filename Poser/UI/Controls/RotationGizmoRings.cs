@@ -7,8 +7,8 @@ namespace Poser.UI.Controls;
 
 /// <summary>
 /// One projected ring set: the shared rotation-gizmo geometry consumed by
-/// BOTH the inspector widget and the in-world overlay (PBI-002 correction
-/// 4C). Ring points are true world-space circles around the pivot, projected
+/// BOTH the inspector widget and the in-world overlay. Ring points are
+/// true world-space circles around the pivot, projected
 /// through the actual game camera (`ICameraService.WorldToScreen`), so the
 /// red/green/blue rings describe the same real rotation axes everywhere.
 /// </summary>
@@ -55,7 +55,7 @@ public sealed class ProjectedRings
 public readonly record struct RingHit(int Axis, float Distance, Vector2 Tangent, int SegmentIndex);
 
 /// <summary>
-/// The one shared rotation-gizmo calculation (PBI-002 correction 4C): frame
+/// The one shared rotation-gizmo calculation: frame
 /// basis, camera projection, front/rear classification, ring hit testing,
 /// drag tangents, the outer camera-roll axis, and the Ctrl/Shift
 /// sensitivity policy. Both rotation surfaces dispatch results through the
@@ -78,7 +78,7 @@ public static class RotationGizmoRings
     public const float PixelsPerRadian = 200f;
 
     /// <summary>
-    /// The Parent pivot's radial frame (correction 4E): red (X) points along
+    /// The Parent pivot's radial frame: red (X) points along
     /// normalized child − parent; the remaining axes form a stable
     /// orthonormal basis with a deterministic fallback when the radial
     /// direction is near the reference axis. The parent bone's own

@@ -116,8 +116,7 @@ public sealed class CleanPoseFacade
     /// <summary>
     /// Every UI-facing pose edit reports through here: a failed edit is never
     /// a silent no-op — the reason ("A transform gesture is active.", stale
-    /// binding, ...) lands in the log with the attempted description
-    /// (round-1 "reset doesn't seem to work" diagnosis instrumentation).
+    /// binding, ...) lands in the log with the attempted description.
     /// </summary>
     private PoseEditResult Report(string description, PoseEditResult result)
     {

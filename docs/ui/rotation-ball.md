@@ -23,17 +23,21 @@ there is no second gesture state machine.
   (actor ∘ bone model rotation); **World** uses world axes. The **Parent**
   pivot uses the parent→child radial frame: red points along normalized
   `child − parent`, the remaining axes form a stable orthonormal basis with
-  a deterministic fallback near the reference axis, and the frame follows
-  the child as it orbits. The parent bone's own orientation is not the
-  frame source. **Selection** rotates the targets around the
-  multi-selection center with the active Local/World orientation.
+  a deterministic fallback near the reference axis. The parent bone's own
+  orientation is not the frame source.
 - Front segments are those closer to the camera than the pivot. The wide
   outer ring rolls about the camera→pivot axis.
-- A drag projects mouse movement onto the grabbed ring's frozen screen
-  tangent (~200 px/rad); the rotation axis freezes in model space at grab
-  and the applied value is always the TOTAL from drag start against the
-  gesture's frozen baseline. The displayed frame may follow the live
-  presentation during the drag. Ctrl = 0.1×, Shift = 10×, Ctrl+Shift = 1×.
+- **A drag freezes its complete context at grab**: pivot position, ring
+  frame (and therefore every ring plane), rotation axis, and screen
+  tangent. Nothing is re-derived from the moving bone until release; the
+  rings redraw from the frozen context while the bone follows the applied
+  rotation.
+- The frozen tangent is the true positive-rotation direction: the grab
+  point is rotated a small epsilon about the axis and both points are
+  projected, so dragging along the tangent always applies the sign the
+  ring shows, on every ring and from every camera angle (~200 px/rad).
+  The applied value is always the TOTAL from drag start against the
+  gesture's frozen baseline. Ctrl = 0.1×, Shift = 10×, Ctrl+Shift = 1×.
   The mouse wheel is never consumed.
 - Hit testing picks the nearest visible projected ring segment within
   tolerance; exact ties resolve X → Y → Z → Roll. Hover and active rings
@@ -51,6 +55,11 @@ there is no second gesture state machine.
   continue through stock ImGuizmo; only rotation uses the custom renderer.
   The overlay claims the mouse (`SetNextFrameWantCaptureMouse`) while the
   pointer engages a ring.
+- **Pointer ownership**: while either surface's ring drag is engaged — and
+  on its release frame — `GizmoPointerOwnership` marks the pointer owned.
+  Selection surfaces (skeleton overlay actor/bone picking) check it beside
+  the stock `ImGuizmo.IsUsing()/IsOver()` guards, so ending a ring drag
+  never selects whatever bone sits under the cursor.
 
 ## Lifecycle
 

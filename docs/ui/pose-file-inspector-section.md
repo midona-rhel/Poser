@@ -10,7 +10,8 @@ state from live transform gestures.
 
 - Own the Import and Export `FileBrowser` instances.
 - Retain the last pose directory.
-- Present Full, Body, Expression, and Selected import scopes.
+- Present the import scope as one compact **Scope** dropdown
+  (Full default; Body, Expression, Selected).
 - Present rotation, position, scale, descendant, and reset-before-import
   options.
 - Build `PoseImportOptions`, including selected-bone filters from the

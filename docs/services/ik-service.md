@@ -61,23 +61,17 @@ setups: `j_te_l`, `j_te_r` (hands, TwoJoint) and `j_asi_d_l`, `j_asi_d_r`
 names, but no retained UI path arms an unsupported bone: eligibility is the
 supported-chain-end set.
 
-### Arming (session and bulk)
+### Arming (per bone)
 
-- **Live IK** (`IEditorState.IkEnabled`) is a session switch consumed only at
-  **translate**-gesture begin: when the effective transform primary is a
-  supported chain end, the gesture arms it (`Enabled = true`,
-  `CalculateDefault` solver) when the switch is on and disarms it when the
-  switch is off. Rotate and scale gestures never read or modify IK arming —
-  starting a rotation cannot silently re-arm or disarm a chain.
-- **Arm hands + feet** arms exactly the four supported chain ends on the
-  selected skeleton; **Disarm all** clears `BoneIKInfo` on every bone of that
-  skeleton that currently carries pose info — including bones armed by older
-  builds — so the label is literal. Both are idempotent, actor-local, and
-  touch no transform stacks.
-- An unsupported selection presents a quiet unavailable state in the IK
-  section (the Live IK switch is disabled with an inline explanation); the
-  bulk actions remain available because they act on the skeleton, not the
-  selection.
+- IK arming is **per selected bone**: the inspector's IK section shows one
+  compact **Live IK** switch for the selected bone, wired to
+  `CleanPoseFacade.ConfigureIk(target, armed)`. The switch reflects the
+  bone's own `BoneIKInfo.Enabled` state and is disabled with a short
+  tooltip when the bone is not a supported chain end. There is no
+  session-wide switch and no actor-wide arm/disarm action.
+- `ConfigureIk` is eligibility-gated: it refuses to arm a bone outside the
+  supported-chain-end set. Arming is idempotent, actor-local, and touches
+  no transform stacks.
 
 Limitations (deliberate, documented): arming applies to the primary drag bone
 only — symmetry pairs keep plain deltas; the solve resolves the hkaPose from

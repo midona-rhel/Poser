@@ -10,7 +10,7 @@ using Poser.UI.Views;
 namespace Poser.UI;
 
 /// <summary>
-/// The inspector RAIL (approved M2 pose stage, round-2 defect #2): lives in the
+/// The inspector RAIL (approved M2 pose stage): lives in the
 /// shell's 280px right column. Crumb, the compact oriented rotation gizmo,
 /// compact ROTATION / POSITION / SCALE axis rows, IK switch, then the
 /// relocated GAZE / POSE sections. The Pose tab's content column keeps
@@ -120,13 +120,13 @@ public class PoseRailPane
 
     /// <summary>
     /// The compact rotation gizmo, rendered through the SHARED rotation-ring
-    /// module (correction 4C): the same frame basis, camera projection,
+    /// module: the same frame basis, camera projection,
     /// hit-testing, tangents, and sensitivity policy as the in-world gizmo,
     /// so red/green/blue here are the same real axes shown in the world.
     /// Inspector presentation keeps the approved grammar: dark plate, pastel
     /// palette, subdued rear arcs, hover/active ring emphasis, wide outer
-    /// camera-roll ring. No cursor circle and no drag-origin dot are drawn
-    /// (correction finding 5). Returns consumed height.
+    /// camera-roll ring. No cursor circle and no drag-origin dot are
+    /// drawn. Returns consumed height.
     /// </summary>
     private float DrawRotationGizmo(ImDrawListPtr dl, Vector2 cursor, float width, float s)
     {

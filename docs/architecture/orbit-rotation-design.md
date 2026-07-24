@@ -39,40 +39,35 @@ immediately after Local/World:
 | Choice | Behavior |
 |---|---|
 | **Self** | Rotate at the effective primary target using the active Local/World orientation. The bone's position does not change. |
-| **Parent** | Rotate around the parent's model-space position (frozen at gesture begin) using the **parent→child radial frame**: red points along normalized `child − parent`, the remaining axes are a stable orthonormal basis, and the visible frame follows the child as it orbits. The parent bone's own orientation is not the frame source. |
-| **Selection** | Rotate the selected targets around the multi-selection centroid (frozen at gesture begin) with the active Local/World orientation — distinct from Parent. |
+| **Parent** | Rotate around the parent's model-space position (frozen at gesture begin) using the **parent→child radial frame**: red points along normalized `child − parent`, the remaining axes are a stable orthonormal basis. The parent bone's own orientation is not the frame source. |
 
 - The selector is visible only where the pivot changes the active transform
   meaning: the Rotate tool with a bone selection. Actor targets and the
   Translate/Scale tools do not show it.
 - Parent is unavailable (disabled) when the effective transform primary has
   no valid parent in the current skeleton descriptor.
-- The editor state holds one value: `RotationPivot { Self, Parent, Selection }`.
-  The former inspector Orbit switch, the Parent/Selection/Custom segmented
-  control, the Custom X/Y/Z rows, `IEditorState.OrbitBoneRotation`,
-  `IEditorState.OrbitPivot`, `IEditorState.CustomOrbitPivot`, and the
-  standalone `OrbitPivotMode` enum are deleted. There is no user-facing
-  custom pivot; `PivotMode.Custom` in the application gesture service remains
-  as the internal mechanism that carries the frozen pivot point.
+- The editor state holds one value: `RotationPivot { Self, Parent }`.
+  There is no Selection pivot and no user-facing custom pivot;
+  `PivotMode.Custom` in the application gesture service remains as the
+  internal mechanism that carries the frozen pivot point.
 
 ## The design (frozen clean gesture)
 
 Pivoted rotation is not a second transform system: it is the ordinary
 `TransformGestureService` gesture with a pivot frozen at Begin.
 
-- With Parent or Selection active and the Rotate tool selected, the gizmo
-  begins a clean gesture whose `PivotMode` is `Custom` and whose pivot point
-  freezes at pointer-down (parent model-space position through the viewport
-  projection, or the frozen centroid of the effective roots). The gesture
-  space is World.
+- With Parent active and the Rotate tool selected, the gizmo begins a
+  clean gesture whose `PivotMode` is `Custom` and whose pivot point freezes
+  at pointer-down (parent model-space position through the viewport
+  projection). The gesture space is World.
 - Every frame converts the manipulated matrix into a TOTAL delta from the
   frozen Begin baseline and dispatches `Update`; the service recomputes every
   target from its immutable captured state. No frame's output is any frame's
   input, so the radius cannot compound — idempotence by construction.
-- **The gizmo is drawn at the pivot it rotates around.** At rest with Parent
-  or Selection active, the gizmo's visible center sits at the current parent
-  position or effective-root centroid; during a drag it stays at the frozen
-  pivot while the bone orbits. With Self it sits on the bone as before. The
+- **The gizmo is drawn at the pivot it rotates around.** At rest with
+  Parent active, the gizmo's visible center sits at the current parent
+  position; during a drag it stays at the frozen pivot while the bone
+  orbits. With Self it sits on the bone as before. The
   manipulation matrix combines the pivot position with the primary target's
   rotation so Local axes remain meaningful.
 - Changing pivot, tool, Local/World, or selection during a gesture cancels

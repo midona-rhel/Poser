@@ -80,7 +80,7 @@ public class GizmoOverlayWindow : Window
     private GizmoTargetType _gestureTargetType = GizmoTargetType.None;
     private bool _beginSuppressed;
 
-    // Custom rotation-ring drag (correction 4D): the Rotate operation renders
+    // Custom rotation-ring drag: the Rotate operation renders
     // through the shared RotationGizmoRings module instead of stock ImGuizmo.
     // Axis frozen in model space at grab; total angle accumulates from the
     // frozen tangent so no frame feeds a result back as the next baseline.
@@ -609,7 +609,7 @@ public class GizmoOverlayWindow : Window
     }
 
     /// <summary>
-    /// Custom world rotation rings (correction 4D): shared frame/projection/
+    /// Custom world rotation rings: shared frame/projection/
     /// hit-test/tangent math with the inspector, drawn with the inspector's
     /// pastel palette and emphasis but WITHOUT rear arcs, background plate,
     /// or decorative guides. Dispatches through the identical clean gesture

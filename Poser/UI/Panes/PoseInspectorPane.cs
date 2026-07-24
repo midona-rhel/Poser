@@ -299,25 +299,8 @@ public class PoseInspectorPane
         return "";
     }
 
-    /// <summary>Model-space centroid of the effective bone targets.</summary>
-    private Vector3? BoneCentroid(IReadOnlyList<TransformTargetId> targets)
-    {
-        var sum = Vector3.Zero;
-        int count = 0;
-        foreach (var target in targets)
-        {
-            if (target.Bone is { } boneId &&
-                _viewport.GetBoneModelTransform(boneId) is { } model)
-            {
-                sum += model.Position;
-                count++;
-            }
-        }
-        return count == 0 ? null : sum / count;
-    }
-
     /// <summary>
-    /// World-space context for the shared rotation rings (correction 4B/4C):
+    /// World-space context for the shared rotation rings:
     /// pivot position, ring frame, and the world→model axis conversion, all
     /// derived from the same real camera/actor/bone facts the in-world gizmo
     /// consumes — so the inspector's red/green/blue describe the same real
@@ -424,8 +407,7 @@ public class PoseInspectorPane
         // Every rail cluster is a collapsible section; disclosure persists
         // for the pane's lifetime. A COLLAPSED section contributes only its
         // header — the trailing 12px body gap belongs to the expanded state,
-        // so collapsed headers stack tightly (the IK treatment, applied
-        // everywhere per round-1 feedback).
+        // so collapsed headers stack tightly.
         cursor.Y += InspectorLayout.Section(dl, cursor, width, "insp", "TRANSLATION", ref _openTranslation, s, topBorder: true);
         if (_openTranslation)
         {
@@ -1390,8 +1372,8 @@ public class PoseInspectorPane
                 modelStart = primaryModel;
                 pivotMode = DomainPivot.PerTarget;
                 // The toolbar pivot governs every rotation surface through
-                // the one gesture path (correction 4C): Parent/Selection
-                // freeze a custom model-space pivot at Begin.
+                // the one gesture path: Parent freezes a custom model-space
+                // pivot at Begin.
                 if (operation == DomainOperation.Rotate &&
                     _editorState.RotationPivot == Core.RotationPivot.Parent &&
                     ViewportParentModel(primaryBoneId)?.Position is { } frozenPivot)

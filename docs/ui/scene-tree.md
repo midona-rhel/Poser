@@ -64,11 +64,10 @@ keeps the two operations explicit instead of overloading one ambiguous
   a redundant Root > Root pair: the row body selects the bone, its chevron
   discloses the category's remaining bones, and its badge counts them.
 - A user collapse or expand action persists for the lifetime of the window.
-- When a bone selection originates elsewhere (body map, matrix, 3D, overlay,
-  gizmo), the selected bone's actor and category are revealed **once, at the
-  moment the primary selection changes** — never re-forced on later frames.
-  The user may re-collapse the revealed rows immediately and that choice
-  sticks while the selection is unchanged.
+- **Only explicit disclosure clicks change tree state.** A bone selection
+  originating elsewhere (body map, matrix, 3D, overlay, gizmo) never
+  expands the actor or category rows; the tree stays exactly as the user
+  left it. Filtering may temporarily reveal ancestors without persisting.
 - Selecting an actor row does not expand the actor.
 - Adding or refreshing another actor does not expand any existing actor.
 
@@ -103,8 +102,7 @@ Every selected row receives the active treatment, while the first selected id re
 - Bone categories are derived in the UI from each descriptor's canonical bone name via the static bone-metadata table; they are presentation grouping, not snapshot or selection identity.
 - `MainWindow.OnRowClicked` interprets keyboard modifiers and delegates selection mutation to `SelectionSession` (`Select`, `Toggle`, `SelectRange` with the visible compatible `SelectionId` order).
 - `AppShellView.DrawSidebar` owns only drawing, scrolling, search-field input, and pointer hit testing.
-- Collapse state belongs to `MainWindow`, not descriptors, because category rows are view-only groupings. Actor and category keys are actor-lineage-based and seeded collapsed on first sight; because the keys survive actor refreshes and redraws, a refresh cannot reset an existing actor's disclosure.
-- External selection reveal resolves the newly selected bone id against the snapshot to find its actor row and derived category, then expands both exactly once per selection change.
+- Collapse state belongs to `MainWindow`, not descriptors, because category rows are view-only groupings. Actor and category keys are actor-lineage-based and seeded collapsed on first sight; because the keys survive actor refreshes and redraws, a refresh cannot reset an existing actor's disclosure. There is no external-selection reveal mechanism.
 
 ## Reference decisions
 
