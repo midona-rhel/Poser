@@ -13,6 +13,10 @@ using Poser.Game;
 using Poser.Game.Transforms;
 using Poser.Game.Posing;
 using Poser.Services;
+using Poser.Application.Scene;
+using Poser.Application.Selection;
+using Poser.Domain.Identity;
+using Poser.Game.Bindings;
 using Poser.UI.Controls;
 using Poser.UI.Views;
 using DomainOperation = Poser.Domain.Transforms.TransformOperation;
@@ -46,6 +50,8 @@ public class PoseInspectorPane
     private readonly IGazeService _gazeService;
     private readonly IEditorState _editorState;
     private readonly ISelectionService _selectionService;
+    private readonly SelectionSession _selection;
+    private readonly StableBindingRegistry _bindings;
     private readonly ExpressionInspectorSection _expressionSection;
     private readonly PoseFileInspectorSection _poseFileSection;
 
@@ -91,9 +97,13 @@ public class PoseInspectorPane
         IGazeService gazeService,
         IEditorState editorState,
         ISelectionService selectionService,
+        SceneSession scene,
+        StableBindingRegistry bindings,
         ExpressionInspectorSection expressionSection,
         PoseFileInspectorSection poseFileSection)
     {
+        _selection = scene.Selection;
+        _bindings = bindings;
         _expressionSection = expressionSection;
         _poseFileSection = poseFileSection;
         _posingService = posingService;
@@ -105,6 +115,11 @@ public class PoseInspectorPane
         _editorState = editorState;
         _selectionService = selectionService;
     }
+
+    private SelectionId? BoneSelectionId(IBone bone) =>
+        _bindings.GetBoneId(bone) is { } id
+            ? SelectionId.ForBone(id)
+            : null;
 
     public void SetEntity(IEntity? entity)
     {
@@ -345,30 +360,39 @@ public class PoseInspectorPane
                 skeleton,
                 (bone, additive, range) =>
                 {
-                    if (range && _selectionService.LastClicked is IBone anchor)
+                    if (BoneSelectionId(bone) is not { } id)
+                        return;
+                    if (range && _selection.Anchor is { } anchor)
                     {
-                        _selectionService.SelectRange(
-                            anchor,
-                            bone,
-                            BoneMatrixBuilder.EnumerateBones(_matrixVm!));
+                        var order = BoneMatrixBuilder.EnumerateBones(_matrixVm!)
+                            .Select(BoneSelectionId)
+                            .Where(candidate => candidate.HasValue)
+                            .Select(candidate => candidate!.Value)
+                            .ToList();
+                        _selection.SelectRange(anchor, id, order);
                     }
                     else if (additive)
                     {
-                        _selectionService.ToggleSelection(bone);
+                        _selection.Toggle(id);
                     }
                     else
                     {
-                        _selectionService.Select(bone);
+                        _selection.Select(id);
                     }
                 },
                 (bones, additive) =>
                 {
-                    if (bones.Count == 0)
+                    var ids = bones
+                        .Select(BoneSelectionId)
+                        .Where(candidate => candidate.HasValue)
+                        .Select(candidate => candidate!.Value)
+                        .ToList();
+                    if (ids.Count == 0)
                         return;
                     if (!additive)
-                        _selectionService.Select(bones[0]);
-                    foreach (var bone in bones.Skip(additive ? 0 : 1))
-                        _selectionService.AddToSelection(bone);
+                        _selection.Select(ids[0]);
+                    foreach (var id in ids.Skip(additive ? 0 : 1))
+                        _selection.Add(id);
                 },
                 _matrixFilter);
             _matrixSkeleton = skeleton;
@@ -428,7 +452,7 @@ public class PoseInspectorPane
         ImGui.SameLine(0f, 8f * s);
         if (Crystarium.Button("Clear", new ButtonProps { Id = "ft-clear", Classes = Cls.Compact, Tooltip = "Clear bone selection",
             Style = new ButtonStyle { Height = Sizing.Fixed(24f) } }))
-            _selectionService.ClearSelection();
+            _selection.Clear();
 
         ImGui.SetCursorScreenPos(new Vector2(cursor.X + width - 56f * s, cursor.Y + fy));
         if (Crystarium.Button("Flip", new ButtonProps { Id = "ft-flip", Classes = Cls.Compact, Tooltip = "Mirror the whole pose",
@@ -477,7 +501,7 @@ public class PoseInspectorPane
                  * Matrix4x4.CreateRotationX(_orbitPitch);
         float scalePx = height * 0.42f;
         var mid = (min + max) * 0.5f;
-        var selected = _selectionService.GetSelected<IBone>().ToHashSet();
+        var selectedIds = _selection.Selected.ToHashSet();
 
         Vector2 Project(Vector3 p)
         {
@@ -496,7 +520,7 @@ public class PoseInspectorPane
             var p = Project(bone.LastTransform.Position);
             if (bone.ParentBone is { IsHiddenBone: false } parent)
                 dl.AddLine(Project(parent.LastTransform.Position), p, lineCol, 1f * s);
-            bool isSel = selected.Contains(bone);
+            bool isSel = BoneSelectionId(bone) is { } dotId && selectedIds.Contains(dotId);
             dl.AddCircleFilled(p, (isSel ? 4.5f : 3f) * s,
                 ImGui.ColorConvertFloat4ToU32(isSel ? new Vector4(1f, 1f, 1f, 1f) : new Vector4(50 / 255f, 151 / 255f, 1f, 0.85f)));
             float dist = Vector2.Distance(mouse, p);
@@ -505,10 +529,13 @@ public class PoseInspectorPane
         if (hovered != null)
         {
             ImGui.SetTooltip(hovered.Name);
-            if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGui.GetIO().KeyCtrl)
-                _selectionService.Select(hovered);
-            else if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-                _selectionService.ToggleSelection(hovered);
+            if (BoneSelectionId(hovered) is { } hoveredId)
+            {
+                if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGui.GetIO().KeyCtrl)
+                    _selection.Select(hoveredId);
+                else if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+                    _selection.Toggle(hoveredId);
+            }
         }
         ViewText.Label(new Vector2(max.X - 150f * s, max.Y - 20f * s), "drag: orbit - click: select", 11f,
             FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
