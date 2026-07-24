@@ -1,3 +1,4 @@
+using Dalamud.Plugin.Services;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Core;
@@ -20,7 +21,8 @@ public sealed class CleanSceneLifecycle : IDisposable
         SceneSession scene,
         TransformGestureService gestures,
         TransformHistory history,
-        IEventBus events)
+        IEventBus events,
+        IFramework framework)
     {
         _bindings = bindings;
         _scene = scene;
@@ -30,7 +32,13 @@ public sealed class CleanSceneLifecycle : IDisposable
         _events.Subscribe<ActorListChangedEvent>(OnActorListChanged);
         _events.Subscribe<SkeletonChangedEvent>(OnSkeletonChanged);
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseChanged);
-        Refresh();
+        // The plugin constructor runs on a loader task thread, while every
+        // subscribed event publishes from the framework thread. The registry
+        // refresh reads native skeleton data and shared bone-name state, so
+        // the initial discovery must run on the framework thread too — a
+        // concurrent ctor-thread refresh corrupted shared collections and
+        // could fail the whole plugin load.
+        _ = framework.RunOnFrameworkThread(Refresh);
     }
 
     public void Dispose()

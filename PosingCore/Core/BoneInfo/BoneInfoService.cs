@@ -89,8 +89,15 @@ public static class BoneInfoService
             return data.Translation;
         }
 
-        // Log untranslated bone (only once per bone name)
-        if (_log != null && _loggedUntranslated.Add(boneName))
+        // Log untranslated bone (only once per bone name). Multiple threads
+        // resolve display names (framework refreshes and the UI), and an
+        // unsynchronized HashSet corrupts permanently under concurrent Add.
+        var firstSighting = false;
+        lock (_loggedUntranslated)
+        {
+            firstSighting = _loggedUntranslated.Add(boneName);
+        }
+        if (_log != null && firstSighting)
         {
             _log.Warning($"[BoneInfo] Untranslated bone: {boneName}");
         }
