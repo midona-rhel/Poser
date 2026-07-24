@@ -19,6 +19,10 @@ entity references. `Poser.Game` is the anti-corruption boundary.
 ## Migrated production routes
 
 - stable actor and concrete/virtual-bone selection;
+- every retained selection surface (scene tree, Body/Face maps, bone
+  matrix, 3D diagram, skeleton overlay) dispatching SelectionId directly to
+  SelectionSession — ISelectionService and CleanSelectionServiceAdapter are
+  deleted, and no selection mirror events exist;
 - actor and bone translate/rotate/scale from gizmo and inspector;
 - frozen-baseline multi-target gestures;
 - linked-bone and symmetry expansion;
@@ -29,7 +33,10 @@ entity references. `Poser.Game` is the anti-corruption boundary.
 - one command-patch undo/redo journal;
 - actor/skeleton generation invalidation and GPose teardown.
 
-The active UI uses these facades. The removed legacy `HistoryService` and drag
+The active UI uses these facades through stable ids only — the
+entity-accepting CleanTransformFacade entry points are deleted, and
+frame-scoped spatial reads go through Poser.Game/Viewport/ViewportProjection
+(docs/game/viewport-projection.md). The removed legacy `HistoryService` and drag
 events no longer form a second journal.
 
 ## Transform runtime boundary
