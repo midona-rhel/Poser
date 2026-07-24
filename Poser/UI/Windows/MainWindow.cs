@@ -574,10 +574,9 @@ public class MainWindow : Window
             return;
         }
 
-        var primary = _selectionService.Primary;
         ImGui.SetCursorScreenPos(origin);
 
-        _poseInspector.SetEntity(primary);
+        _poseInspector.SetSelection(_selection.Primary);
         _poseInspector.Draw(origin, size);
     }
 

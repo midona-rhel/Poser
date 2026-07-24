@@ -16,6 +16,7 @@ using Poser.Services;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
+using Poser.Domain.Scene;
 using Poser.Game.Bindings;
 using Poser.UI.Controls;
 using Poser.UI.Views;
@@ -51,6 +52,7 @@ public class PoseInspectorPane
     private readonly IEditorState _editorState;
     private readonly ISelectionService _selectionService;
     private readonly SelectionSession _selection;
+    private readonly SceneSession _scene;
     private readonly StableBindingRegistry _bindings;
     private readonly ExpressionInspectorSection _expressionSection;
     private readonly PoseFileInspectorSection _poseFileSection;
@@ -71,8 +73,12 @@ public class PoseInspectorPane
     private ISkeleton? _matrixSkeleton;
     private int _matrixBoneCount;
 
+    // Primary selection identity (stable id). The legacy _entity view is
+    // re-resolved from it once per draw for the retained gaze/IK/pose section
+    // reads; it is never used as selection or transform command identity.
+    private SelectionId? _primary;
     private IEntity? _entity;
-    private IEntity[] _selectionSnapshot = Array.Empty<IEntity>();
+    private SelectionId[] _selectionSnapshot = Array.Empty<SelectionId>();
 
     // Euler cache while a rotation drag is active (avoids quat→euler snap).
     private Vector3? _dragEuler;
@@ -103,6 +109,7 @@ public class PoseInspectorPane
         PoseFileInspectorSection poseFileSection)
     {
         _selection = scene.Selection;
+        _scene = scene;
         _bindings = bindings;
         _expressionSection = expressionSection;
         _poseFileSection = poseFileSection;
@@ -116,25 +123,61 @@ public class PoseInspectorPane
         _selectionService = selectionService;
     }
 
+    private List<BoneId> SelectedBoneIds()
+    {
+        var result = new List<BoneId>();
+        foreach (var id in _selection.Selected)
+            if (id is { Kind: SceneEntityKind.Bone, Bone: { } boneId })
+                result.Add(boneId);
+        return result;
+    }
+
+    private List<ActorId> SelectedActorIds()
+    {
+        var result = new List<ActorId>();
+        foreach (var id in _selection.Selected)
+            if (id is { Kind: SceneEntityKind.Actor, Actor: { } actorId })
+                result.Add(actorId);
+        return result;
+    }
+
+    private IReadOnlyList<BoneDescriptor>? BonesOf(Guid lineage)
+    {
+        foreach (var actor in _scene.Snapshot.Actors)
+            if (actor.Id.LogicalId == lineage)
+                return actor.Skeleton?.Bones;
+        return null;
+    }
+
     private SelectionId? BoneSelectionId(IBone bone) =>
         _bindings.GetBoneId(bone) is { } id
             ? SelectionId.ForBone(id)
             : null;
 
-    public void SetEntity(IEntity? entity)
+    public void SetSelection(SelectionId? primary)
     {
-        var selected = _selectionService.Selected;
+        var selected = _selection.Selected;
         bool selectionChanged = selected.Count != _selectionSnapshot.Length;
         for (int i = 0; !selectionChanged && i < selected.Count; i++)
-            selectionChanged = !ReferenceEquals(selected[i], _selectionSnapshot[i]);
+            selectionChanged = !selected[i].Equals(_selectionSnapshot[i]);
 
-        if (!ReferenceEquals(entity, _entity) || selectionChanged)
+        if (!Nullable.Equals(primary, _primary) || selectionChanged)
         {
             AppShellView.CancelAxisEdit();
             ClearTransformSession(cancel: true);
         }
-        _entity = entity;
+        _primary = primary;
         _selectionSnapshot = selected.ToArray();
+
+        // Frame-scoped legacy view for the retained section reads.
+        _entity = primary switch
+        {
+            { Kind: SceneEntityKind.Actor, Actor: { } actorId } =>
+                _bindings.Resolve(actorId) is { Success: true } actor ? actor.Value : null,
+            { Kind: SceneEntityKind.Bone, Bone: { } boneId } =>
+                _bindings.Resolve(boneId) is { Success: true } bone ? bone.Value : null,
+            _ => null,
+        };
     }
 
     /// <summary>Content column (Pose tab): the Anamnesis surface ONLY —
@@ -173,6 +216,15 @@ public class PoseInspectorPane
 
     private string ActorDisplayName(IActor actor)
         => ActorDisplayNameProvider?.Invoke(actor) ?? StripIndex(actor.Name);
+
+    private string ActorLabel(ActorId id)
+    {
+        foreach (var actor in _scene.Snapshot.Actors)
+            if (actor.Id.Equals(id))
+                return Config.ConfigurationService.Instance.GetNickname(id.LogicalId)
+                    ?? StripIndex(actor.Name);
+        return "";
+    }
 
     /// <summary>Rotation-ball input: euler-degree deltas applied to the selection.</summary>
     public void RotateSelection(float dx, float dy, float dz)
@@ -956,73 +1008,85 @@ public class PoseInspectorPane
     /// of bones an edit applies to (pill hidden below 2).</summary>
     public (string Who, string Sub, int Linked) RailHeader()
     {
-        if (_entity is IBone)
+        if (_primary is { Kind: SceneEntityKind.Bone })
         {
-            var bones = _selectionService.GetSelected<IBone>().ToList();
+            var bones = SelectedBoneIds();
             if (bones.Count > 1)
             {
-                var cats = bones.Select(b => Core.BoneInfo.BoneInfoService.GetCategory(b.BoneName)).Distinct().ToList();
+                var cats = bones.Select(b => Core.BoneInfo.BoneInfoService.GetCategory(b.CanonicalName)).Distinct().ToList();
                 string who = cats.Count == 1
                     ? $"{Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(cats[0])} — {bones.Count} bones"
                     : $"{bones.Count} bones";
-                string sub = string.Join(" · ", bones.Take(3).Select(b => b.BoneName)) + (bones.Count > 3 ? " …" : "");
+                string sub = string.Join(" · ", bones.Take(3).Select(b => b.CanonicalName)) + (bones.Count > 3 ? " …" : "");
                 return (who, sub, bones.Count);
             }
             if (bones.Count == 1)
             {
                 var bone = bones[0];
-                int linked = _bonePosingService.LinkedBonesEnabled
-                    ? 1 + Core.LinkedBones.GetLinks(bone.BoneName).Count(linkName =>
-                        bone.Skeleton.Bones.Any(candidate =>
-                            candidate.BoneName == linkName &&
-                            candidate.PartialId == bone.PartialId))
+                var siblings = BonesOf(bone.Skeleton.Actor.LogicalId);
+                int linked = _bonePosingService.LinkedBonesEnabled && siblings != null
+                    ? 1 + Core.LinkedBones.GetLinks(bone.CanonicalName).Count(linkName =>
+                        siblings.Any(candidate =>
+                            candidate.Id.CanonicalName == linkName &&
+                            candidate.Id.PartialId == bone.PartialId))
                     : 0;
                 if (linked < 2)
                     linked = 0;
-                return (bone.Name, bone.BoneName, linked);
+                var descriptor = siblings?.FirstOrDefault(candidate => candidate.Id.Equals(bone));
+                return (descriptor?.DisplayName ?? bone.CanonicalName, bone.CanonicalName, linked);
             }
         }
-        var actors = _selectionService.GetSelected<IActor>().ToList();
+        var actors = SelectedActorIds();
         if (actors.Count > 1)
         {
-            string names = string.Join(" · ", actors.Take(3).Select(ActorDisplayName))
+            string names = string.Join(" · ", actors.Take(3).Select(ActorLabel))
                 + (actors.Count > 3 ? " …" : "");
             return ($"{actors.Count} actors", names, 0);
         }
-        if (_entity is IActor actor)
-            return (ActorDisplayName(actor), _posingService.HasTransformOverride(actor)
+        if (_primary is { Kind: SceneEntityKind.Actor, Actor: { } primaryActor })
+            return (ActorLabel(primaryActor), HasActorTransformOverride
                 ? "actor \u00b7 transform override"
                 : "actor", 0);
-        return _entity != null ? (StripIndex(_entity.Name), "", 0) : ("", "", 0);
+        return ("", "", 0);
     }
 
-    /// <summary>Whether the inspector is editing the actor entity itself rather than a bone.</summary>
-    public bool IsActorSelection => _entity is IActor;
+    /// <summary>Whether the inspector is editing the actor itself rather than a bone.</summary>
+    public bool IsActorSelection => _primary is { Kind: SceneEntityKind.Actor };
 
-    /// <summary>Whether the selected actor currently has a model-transform override.</summary>
+    /// <summary>Whether any selected actor currently has a model-transform override.</summary>
     public bool HasActorTransformOverride
-        => _entity is IActor && _selectionService.GetSelected<IActor>().Any(_posingService.HasTransformOverride);
+        => IsActorSelection && SelectedActorIds().Any(id =>
+            _bindings.Resolve(id) is { Success: true } actor &&
+            _posingService.HasTransformOverride(actor.Value!));
 
     /// <summary>Restores every selected actor's pre-override model transform.</summary>
     public void ResetActorTransform()
     {
-        if (_entity is not IActor) return;
+        if (!IsActorSelection) return;
         _cleanTransforms.ClearActorOverrides(
-            _selectionService.GetSelected<IActor>().ToList());
+            SelectedActorIds().Select(TransformTargetId.ForActor).ToList());
     }
 
     /// <summary>Adds every descendant of the selected bones to the selection.</summary>
     public void SelectChildren()
     {
-        var selected = _selectionService.GetSelected<IBone>().ToList();
+        var selected = SelectedBoneIds();
         if (selected.Count == 0) return;
-        foreach (var candidate in selected[0].Skeleton.Bones)
+        var bones = BonesOf(selected[0].Skeleton.Actor.LogicalId);
+        if (bones == null) return;
+        var byId = bones.ToDictionary(candidate => candidate.Id);
+        var selectedSet = selected.ToHashSet();
+        foreach (var candidate in bones)
         {
-            if (candidate.IsHiddenBone) continue;
-            for (var parent = candidate.ParentBone; parent != null; parent = parent.ParentBone)
+            if (candidate.IsHidden) continue;
+            for (var parent = candidate.Parent;
+                 parent is { } parentId;
+                 parent = byId.TryGetValue(parentId, out var parentDescriptor)
+                     ? parentDescriptor.Parent
+                     : null)
             {
-                if (!selected.Any(sel => ReferenceEquals(sel, parent))) continue;
-                _selectionService.AddToSelection(candidate);
+                if (!selectedSet.Contains(parentId)) continue;
+                _selection.Add(SelectionId.ForBone(candidate.Id));
                 break;
             }
         }
@@ -1030,14 +1094,15 @@ public class PoseInspectorPane
 
     public void FlipWholePose()
     {
-        if (_entity is IActor)
+        if (IsActorSelection)
         {
-            foreach (var selectedSkeleton in _selectionService.GetSelected<IActor>()
-                         .Where(actor => actor.HasSkeleton)
-                         .Select(actor => actor.Skeleton)
-                         .OfType<ISkeleton>()
-                         .Distinct())
-                _cleanPose.Mirror(selectedSkeleton);
+            foreach (var actorId in SelectedActorIds())
+            {
+                if (_bindings.Resolve(actorId) is { Success: true } actor &&
+                    actor.Value!.HasSkeleton &&
+                    actor.Value.Skeleton is { } selectedSkeleton)
+                    _cleanPose.Mirror(selectedSkeleton);
+            }
             return;
         }
         var skeleton = OwningSkeleton();
@@ -1083,42 +1148,71 @@ public class PoseInspectorPane
         if (_cleanGesture != null || _entity == null)
             return;
 
-        IReadOnlyList<IEntity> targets;
+        IReadOnlyList<TransformTargetId> targets;
         Transform modelStart;
         DomainPivot pivotMode;
 
-        switch (_entity)
+        switch (_primary)
         {
-            case IActor primaryActor:
-                var actors = _selectionService.GetSelected<IActor>()
-                    .Where(actor => !ReferenceEquals(actor, primaryActor))
-                    .Cast<IEntity>()
-                    .ToList();
-                actors.Insert(0, primaryActor);
-                targets = actors;
+            case { Kind: SceneEntityKind.Actor, Actor: { } primaryActor }:
+            {
+                var actorTargets = new List<TransformTargetId>
+                {
+                    TransformTargetId.ForActor(primaryActor),
+                };
+                foreach (var actorId in SelectedActorIds())
+                    if (!actorId.Equals(primaryActor))
+                        actorTargets.Add(TransformTargetId.ForActor(actorId));
+                targets = actorTargets;
                 modelStart = displayedStart;
                 pivotMode = DomainPivot.PerTarget;
                 break;
+            }
 
-            case IBone selectedBone:
-                var primaryBone = selectedBone is VirtualBone group
-                    ? group.PivotBone
-                    : selectedBone;
-                if (primaryBone == null)
+            case { Kind: SceneEntityKind.Bone, Bone: { } primaryBoneId }:
+            {
+                if (_entity is not IBone primaryBone)
                     return;
 
-                var expanded = VirtualBoneExpander.Expand(
-                    _selectionService.GetSelected<IBone>().ToArray());
-                var roots = PoseMath.FilterSelectionRoots(expanded)
-                    .Where(bone => !ReferenceEquals(bone, primaryBone))
-                    .Cast<IEntity>()
-                    .ToList();
-                roots.Insert(0, primaryBone);
-                targets = roots;
+                // Selected descendants drop out when a selected ancestor
+                // already propagates the same edit (functional rule 5),
+                // walking snapshot parent chains.
+                var selectedBones = SelectedBoneIds();
+                var selectedSet = selectedBones.ToHashSet();
+                var bones = BonesOf(primaryBoneId.Skeleton.Actor.LogicalId);
+                var byId = bones?.ToDictionary(candidate => candidate.Id);
+                var boneTargets = new List<TransformTargetId>
+                {
+                    TransformTargetId.ForBone(primaryBoneId),
+                };
+                foreach (var boneId in selectedBones)
+                {
+                    if (boneId.Equals(primaryBoneId))
+                        continue;
+                    bool hasSelectedAncestor = false;
+                    if (byId != null && byId.TryGetValue(boneId, out var descriptor))
+                    {
+                        for (var parent = descriptor.Parent;
+                             parent is { } parentId;
+                             parent = byId.TryGetValue(parentId, out var parentDescriptor)
+                                 ? parentDescriptor.Parent
+                                 : null)
+                        {
+                            if (!selectedSet.Contains(parentId))
+                                continue;
+                            hasSelectedAncestor = true;
+                            break;
+                        }
+                    }
+                    if (!hasSelectedAncestor)
+                        boneTargets.Add(TransformTargetId.ForBone(boneId));
+                }
+                targets = boneTargets;
                 _cleanPrimaryBone = primaryBone;
                 modelStart = ReadBoneModel(primaryBone);
                 pivotMode = DomainPivot.PerTarget;
                 break;
+            }
 
             default:
                 _dragStart ??= displayedStart;
@@ -1131,11 +1225,11 @@ public class PoseInspectorPane
             DomainSpace.World,
             pivotMode,
             description:
-                $"Transform {targets.Count} {(_entity is IActor ? "actor" : "bone")}{(targets.Count == 1 ? "" : "s")}",
+                $"Transform {targets.Count} {(IsActorSelection ? "actor" : "bone")}{(targets.Count == 1 ? "" : "s")}",
             includeLinkedBones:
-                _entity is IBone &&
+                _primary is { Kind: SceneEntityKind.Bone } &&
                 _bonePosingService.LinkedBonesEnabled,
-            symmetry: _entity is IBone
+            symmetry: _primary is { Kind: SceneEntityKind.Bone }
                 ? _editorState.SymmetryMode switch
                 {
                     SymmetryMode.Copy =>
