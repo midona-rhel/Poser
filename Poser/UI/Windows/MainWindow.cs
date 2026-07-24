@@ -137,6 +137,7 @@ public class MainWindow : Window
         _vm.OnTab = OnTabClicked;
         _vm.OnGizmoOperation = i => _editorState.TransformTool = (TransformTool)i;
         _vm.OnGizmoSpace = i => _editorState.TransformOrientation = (TransformOrientation)i;
+        _vm.OnRotationPivot = i => _editorState.RotationPivot = (Core.RotationPivot)i;
         _vm.OnUndo = Undo;
         _vm.OnRedo = Redo;
         _vm.OnSkeletonOverlay = on => OnSkeletonOverlayToggled?.Invoke(on);
@@ -301,6 +302,34 @@ public class MainWindow : Window
         _vm.DrawRail = _collapsed ? null : _poseRail.Draw;
         _vm.GizmoOperation = (int)_editorState.TransformTool;
         _vm.GizmoSpace = (int)_editorState.TransformOrientation;
+        _vm.RotationPivot = (int)_editorState.RotationPivot;
+        // The pivot selector appears only where pivot choice changes the
+        // active transform meaning: Rotate tool with a resolvable bone
+        // selection. Parent needs a valid parent on the effective primary.
+        var effective = Application.Transforms.TransformTargetResolver.Resolve(
+            _selection.Selected, _scene.Snapshot);
+        bool boneRotate = _editorState.TransformTool == TransformTool.Rotate &&
+            effective is { Primary.Kind: Domain.Identity.TransformTargetKind.Bone };
+        _vm.ShowRotationPivot = boneRotate;
+        _vm.RotationPivotParentAvailable = false;
+        if (boneRotate &&
+            effective!.Primary.Bone is { } effectiveBone)
+        {
+            foreach (var actor in _scene.Snapshot.Actors)
+            {
+                if (actor.Id.LogicalId != effectiveBone.Skeleton.Actor.LogicalId ||
+                    actor.Skeleton is not { } skeleton)
+                    continue;
+                foreach (var bone in skeleton.Bones)
+                {
+                    if (!bone.Id.Equals(effectiveBone))
+                        continue;
+                    _vm.RotationPivotParentAvailable = bone.Parent != null;
+                    break;
+                }
+                break;
+            }
+        }
         _vm.SkeletonOverlayOn = GetSkeletonOverlayOn?.Invoke() ?? false;
         _vm.CanUndo = _cleanTransforms.CanUndo;
         _vm.CanRedo = _cleanTransforms.CanRedo;

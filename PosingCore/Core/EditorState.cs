@@ -1,4 +1,3 @@
-using System.Numerics;
 using Poser.Services;
 
 namespace Poser.Core;
@@ -22,7 +21,5 @@ public class EditorState : IEditorState
     public bool ShowSelectedBonesOnly { get; set; } = false;
     public SymmetryMode SymmetryMode { get; set; } = SymmetryMode.Off;
 
-    public bool OrbitBoneRotation { get; set; }
-    public OrbitPivotMode OrbitPivot { get; set; } = OrbitPivotMode.Parent;
-    public Vector3 CustomOrbitPivot { get; set; }
+    public RotationPivot RotationPivot { get; set; } = RotationPivot.Self;
 }

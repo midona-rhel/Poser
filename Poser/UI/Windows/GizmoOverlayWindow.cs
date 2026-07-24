@@ -66,6 +66,9 @@ public class GizmoOverlayWindow : Window
         public LegacyTransform Current;
         public PivotMode PivotMode { get; init; } = PivotMode.PerTarget;
         public Vector3 Pivot { get; init; }
+        // The toolbar pivot choice frozen at Begin: a mid-drag pivot change
+        // cancels the gesture instead of changing its meaning.
+        public Core.RotationPivot PivotChoice { get; init; } = Core.RotationPivot.Self;
     }
 
     // ONE overlay-wide interaction lifecycle: a single gesture slot, the
@@ -207,7 +210,8 @@ public class GizmoOverlayWindow : Window
     /// </summary>
     private GizmoGesture? GuardGesture(
         ImGuizmoOperation currentOperation,
-        ImGuizmoMode currentMode)
+        ImGuizmoMode currentMode,
+        Core.RotationPivot currentPivot)
     {
         if (_gesture is not { } gesture)
             return null;
@@ -224,7 +228,8 @@ public class GizmoOverlayWindow : Window
             return null;
         }
         if (gesture.Operation != currentOperation ||
-            gesture.Mode != currentMode)
+            gesture.Mode != currentMode ||
+            gesture.PivotChoice != currentPivot)
         {
             _cleanTransforms.Cancel(gesture.Id);
             ClearGesture(suppress: true);
@@ -254,7 +259,8 @@ public class GizmoOverlayWindow : Window
             ? ImGuizmoMode.World
             : ImGuizmoMode.Local;
         var gizmoOperation = GetGizmoOperation();
-        var actorGesture = GuardGesture(gizmoOperation, gizmoMode);
+        var actorGesture = GuardGesture(
+            gizmoOperation, gizmoMode, _editorState.RotationPivot);
 
         // Live memory only seeds a gesture; during a drag the frozen
         // presentation baseline feeds the manipulator. Rest state reads
@@ -306,6 +312,9 @@ public class GizmoOverlayWindow : Window
                     Space = ToDomainSpace(gizmoMode),
                     Start = actorTransform,
                     Current = actorTransform,
+                    // Actors never orbit; the choice is stored only so the
+                    // shared guard's pivot comparison stays inert here.
+                    PivotChoice = _editorState.RotationPivot,
                 };
                 _gestureTargetType = GizmoTargetType.Actor;
             }
@@ -370,7 +379,8 @@ public class GizmoOverlayWindow : Window
             ? ImGuizmoMode.World
             : ImGuizmoMode.Local;
         var gizmoOperation = GetGizmoOperation();
-        var boneGesture = GuardGesture(gizmoOperation, gizmoMode);
+        var pivotChoice = _editorState.RotationPivot;
+        var boneGesture = GuardGesture(gizmoOperation, gizmoMode, pivotChoice);
 
         // Live memory only seeds a gesture. During a drag the frozen
         // presentation baseline feeds the manipulator, exactly like Brio's
@@ -389,7 +399,36 @@ public class GizmoOverlayWindow : Window
         {
             return;
         }
-        var lastMatrix = currentTransform.ToMatrix();
+
+        // The gizmo is drawn at the point it rotates around: Parent and
+        // Selection place its visible center and manipulation matrix at the
+        // pivot — tracking the live scene at rest, frozen while dragging.
+        // Rotation-only manipulation never moves the fed matrix, and the
+        // component constraint below re-bases position and scale onto the
+        // bone's frozen Start, so the pivot-positioned matrix still yields a
+        // pure rotation delta. Parent with no valid parent degrades to Self.
+        bool pivotActive = gizmoOperation == ImGuizmoOperation.Rotate &&
+            pivotChoice != Core.RotationPivot.Self;
+        Vector3? restPivot = null;
+        if (pivotActive && boneGesture == null)
+        {
+            restPivot = pivotChoice == Core.RotationPivot.Selection
+                ? SelectionCenter(orderedTargets)
+                : _viewport.GetParentModelTransform(primaryId)?.Position;
+            if (restPivot == null)
+                pivotActive = false;
+        }
+        var displayTransform = currentTransform;
+        if (pivotActive)
+        {
+            displayTransform = currentTransform with
+            {
+                Position = boneGesture is { } frozen
+                    ? frozen.Pivot
+                    : restPivot!.Value,
+            };
+        }
+        var lastMatrix = displayTransform.ToMatrix();
 
         // Brio-style posing composes persistent bone deltas after the game's
         // animation update, so animation playback does not gate manipulation.
@@ -411,29 +450,20 @@ public class GizmoOverlayWindow : Window
                 TransformTargetId.ForBone(primaryId),
                 _editorState.IkEnabled);
 
-            // Every orbit pivot routes through the clean gesture with a frozen
-            // custom pivot; there is no second orbit session.
+            // Parent/Selection pivots route through the clean gesture with a
+            // frozen custom pivot; there is no second orbit session. The pivot
+            // point freezes here, at Begin — the same value the gizmo displays.
             var cleanPivotMode = PivotMode.PerTarget;
             Vector3? cleanCustomPivot = null;
-            if (_editorState.OrbitBoneRotation &&
-                gizmoOperation == ImGuizmoOperation.Rotate)
+            if (pivotActive)
             {
                 cleanPivotMode = PivotMode.Custom;
-                cleanCustomPivot = _editorState.OrbitPivot switch
-                {
-                    Core.OrbitPivotMode.SelectionCenter =>
-                        SelectionCenter(orderedTargets),
-                    Core.OrbitPivotMode.Custom =>
-                        _editorState.CustomOrbitPivot,
-                    _ =>
-                        _viewport.GetParentModelTransform(primaryId)?.Position ??
-                        currentTransform.Position,
-                };
+                cleanCustomPivot = restPivot;
             }
 
             var orderedIds = orderedTargets;
 
-            var space = _editorState.OrbitBoneRotation
+            var space = pivotActive
                 ? DomainSpace.World
                 : ToDomainSpace(gizmoMode);
             var begin = _cleanTransforms.Begin(
@@ -471,6 +501,7 @@ public class GizmoOverlayWindow : Window
                             cleanCustomPivot ?? currentTransform.Position,
                         _ => currentTransform.Position,
                     },
+                    PivotChoice = pivotChoice,
                 };
                 _gestureTargetType = GizmoTargetType.Bone;
             }

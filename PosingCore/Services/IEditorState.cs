@@ -1,7 +1,5 @@
 namespace Poser.Services;
 
-using System.Numerics;
-
 /// <summary>
 /// Transform orientation - which coordinate axes to use for transforms.
 /// </summary>
@@ -94,17 +92,11 @@ public interface IEditorState
     /// <summary>Symmetry mode for paired bone transforms.</summary>
     SymmetryMode SymmetryMode { get; set; }
 
-    /// <summary>When true, translate-dragging an IK-eligible bone (hands/feet/tails)
+    /// <summary>When true, translate-dragging an IK-eligible bone (hands/feet)
     /// solves the chain toward the drag target instead of offsetting the bone alone.</summary>
     bool IkEnabled { get; set; }
 
-    /// <summary>When true, rotate drags ORBIT the bone around the pivot below instead of spinning in place.</summary>
-    bool OrbitBoneRotation { get; set; }
-
-    /// <summary>Pivot source for orbit rotation.</summary>
-    Poser.Core.OrbitPivotMode OrbitPivot { get; set; }
-
-    /// <summary>User-defined model-space pivot used when OrbitPivot is Custom.</summary>
-    Vector3 CustomOrbitPivot { get; set; }
-
+    /// <summary>The rotation pivot for the in-world gizmo: Self rotates in
+    /// place; Parent and Selection orbit around the frozen pivot.</summary>
+    Poser.Core.RotationPivot RotationPivot { get; set; }
 }

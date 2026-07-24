@@ -54,6 +54,9 @@ public sealed class AppShellViewModel
 
     public int GizmoOperation;        // 0 translate, 1 rotate, 2 scale
     public int GizmoSpace;            // 0 local, 1 world
+    public int RotationPivot;         // 0 self, 1 parent, 2 selection
+    public bool ShowRotationPivot;    // Rotate tool + bone selection only
+    public bool RotationPivotParentAvailable;
     public bool SkeletonOverlayOn = true;
     public bool CanUndo = true;
     public bool CanRedo;
@@ -90,6 +93,7 @@ public sealed class AppShellViewModel
     public Action<int>? OnTab;
     public Action<int>? OnGizmoOperation;
     public Action<int>? OnGizmoSpace;
+    public Action<int>? OnRotationPivot;
     public Action? OnUndo, OnRedo, OnSpawn, OnSettings, OnHideUi, OnPopOut, OnProject, OnSelectTarget;
     public Action<bool>? OnSkeletonOverlay;
     public Action<ShellSidebarRow>? OnRowClicked;
@@ -294,6 +298,17 @@ public static class AppShellView
         x += 10f * s;
         x = TextSeg(dl, new Vector2(x, min.Y + (h - 30f * s) / 2f),
             new[] { "Local", "World" }, vm.GizmoSpace, s, i => vm.OnGizmoSpace?.Invoke(i));
+        // rotation pivot seg — visible only where the pivot changes the active
+        // transform meaning (Rotate tool with a bone selection). Parent is
+        // disabled when the effective primary has no valid parent.
+        if (vm.ShowRotationPivot)
+        {
+            x += 10f * s;
+            x = TextSeg(dl, new Vector2(x, min.Y + (h - 30f * s) / 2f),
+                new[] { "Self", "Parent", "Selection" }, vm.RotationPivot, s,
+                i => vm.OnRotationPivot?.Invoke(i),
+                itemDisabled: i => i == 1 && !vm.RotationPivotParentAvailable);
+        }
 
         // tb-right cell: when the rail is present, the right cluster sits on a
         // surface-1 cell continuous with the rail below (shell rule)
@@ -911,7 +926,8 @@ public static class AppShellView
         return max.X;
     }
 
-    private static float TextSeg(ImDrawListPtr dl, Vector2 pos, string[] labels, int active, float s, Action<int> onSelect)
+    private static float TextSeg(ImDrawListPtr dl, Vector2 pos, string[] labels, int active, float s, Action<int> onSelect,
+        Func<int, bool>? itemDisabled = null)
     {
         float x = pos.X + 3f * s;
         float totalW = 6f * s + 2f * s * (labels.Length - 1);
@@ -927,14 +943,18 @@ public static class AppShellView
 
         for (int i = 0; i < labels.Length; i++)
         {
+            bool disabled = itemDisabled?.Invoke(i) == true;
             var tabMin = new Vector2(x, min.Y + 3f * s);
             var tabMax = tabMin + new Vector2(widths[i], 24f * s);
             ImGui.SetCursorScreenPos(tabMin);
-            var hit = Interactive.Reserve($"##tseg-{pos.X:0}-{i}", new Vector2(widths[i] / s, 24f), disabled: false);
+            var hit = Interactive.Reserve($"##tseg-{pos.X:0}-{i}", new Vector2(widths[i] / s, 24f), disabled);
             if (i == active)
                 dl.AddRectFilled(tabMin, tabMax, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Surface2)), 5f * s);
+            var labelColor = i == active ? TextPrimary : TextSecondary;
+            if (disabled)
+                labelColor = labelColor with { W = labelColor.W * 0.35f };
             ViewText.Label(new Vector2(x + 10f * s, min.Y + 3f * s + 5f * s), labels[i], 12f, FontWeight.Regular,
-                i == active ? TextPrimary : TextSecondary);
+                labelColor);
             int capture = i;
             if (hit.Clicked) onSelect(capture);
             x += widths[i] + 2f * s;

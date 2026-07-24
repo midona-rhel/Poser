@@ -37,9 +37,9 @@ namespace Poser.UI;
 /// remain direct until their adapters migrate), GAZE
 /// (eyes/head segs via
 /// IGazeService — one shared mode, the part flags gate what it drives),
-/// IK (session switch + bulk arm/disarm), ORBIT (bone-around-parent toggle +
-/// pivot/strategy — the P-STAB feature), POSE (flip/mirror/reset regions,
-/// stash, import/export .pose via FileBrowser).
+/// IK (session switch + bulk arm/disarm), POSE (flip/mirror/reset regions,
+/// stash, import/export .pose via FileBrowser). The rotation pivot moved to
+/// the toolbar selector beside Local/World (orbit-rotation-design.md).
 /// </summary>
 public class PoseInspectorPane
 {
@@ -125,7 +125,6 @@ public class PoseInspectorPane
 
     private bool _openGaze = true;
     private bool _openIk;
-    private bool _openOrbit;
     private bool _openPose = true;
 
     public PoseInspectorPane(
@@ -356,16 +355,6 @@ public class PoseInspectorPane
             {
                 cursor.Y += InspectorLayout.BodyGap * s;
                 cursor.Y += DrawIk(cursor, width, skeleton, s);
-            }
-
-            if (_entity is IBone)
-            {
-                cursor.Y += InspectorLayout.Section(dl, cursor, width, "insp", "ORBIT", ref _openOrbit, s, topBorder: true);
-                if (_openOrbit)
-                {
-                    cursor.Y += InspectorLayout.BodyGap * s;
-                    cursor.Y += DrawOrbit(cursor, width, s);
-                }
             }
 
             cursor.Y += InspectorLayout.Section(dl, cursor, width, "insp", "POSE", ref _openPose, s, topBorder: true);
@@ -909,55 +898,6 @@ public class PoseInspectorPane
         if (Crystarium.Button("Disarm all", new ButtonProps { Id = "pose-ik-disarm", Classes = Cls.Compact }))
             _bonePosingService.SetAllIk(skeleton, false);
         return h + 34f * s;
-    }
-
-    private float DrawOrbit(Vector2 cursor, float width, float s)
-    {
-        ViewText.Label(cursor + new Vector2(0f, 7f) * s, "Orbit", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
-        ImGui.SetCursorScreenPos(cursor + new Vector2(94f, 4f) * s);
-        bool orbit = _editorState.OrbitBoneRotation;
-        if (Crystarium.Switch("##pose-orbit", ref orbit))
-            _editorState.OrbitBoneRotation = orbit;
-        ViewText.Label(cursor + new Vector2(140f, 7f) * s, "rotations swing around the pivot", 11f,
-            FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
-        float h = 30f * s;
-
-        ViewText.Label(cursor + new Vector2(0f, h / s + 7f) * s, "Pivot", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
-        ImGui.SetCursorScreenPos(new Vector2(cursor.X + 94f * s, cursor.Y + h));
-        int pivot = (int)_editorState.OrbitPivot;
-        if (Crystarium.SegmentedControl("##pose-orbit-pivot", new[] { "Parent", "Selection", "Custom" }, ref pivot))
-        {
-            _editorState.OrbitPivot = (OrbitPivotMode)pivot;
-            if (_editorState.OrbitPivot == OrbitPivotMode.Custom &&
-                _editorState.CustomOrbitPivot == Vector3.Zero &&
-                _entity is IBone selectedBone)
-            {
-                _editorState.CustomOrbitPivot = selectedBone.LastTransform.Position;
-            }
-        }
-        h += 34f * s;
-
-        if (_editorState.OrbitPivot == OrbitPivotMode.Custom)
-        {
-            var custom = _editorState.CustomOrbitPivot;
-            foreach (var (axis, component) in new[] { ("X", 0), ("Y", 1), ("Z", 2) })
-            {
-                ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 7f * s), $"Pivot {axis}", 11f,
-                    FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
-                ImGui.SetCursorScreenPos(new Vector2(cursor.X + 94f * s, cursor.Y + h));
-                float value = component == 0 ? custom.X : component == 1 ? custom.Y : custom.Z;
-                if (Crystarium.Scrubber($"##pose-custom-pivot-{axis}", ref value, -100f, 100f, 0.01f))
-                {
-                    if (component == 0) custom.X = value;
-                    else if (component == 1) custom.Y = value;
-                    else custom.Z = value;
-                    _editorState.CustomOrbitPivot = custom;
-                }
-                h += 30f * s;
-            }
-        }
-
-        return h;
     }
 
     private float DrawPoseActions(Vector2 cursor, float width, ISkeleton skeleton, float s)
