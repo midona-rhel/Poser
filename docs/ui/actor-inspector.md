@@ -34,7 +34,7 @@ Whole-actor position, rotation, and scale run through the clean gesture path:
    command for every selected actor.
 5. Leaving GPose clears every override. Animation freeze/unfreeze does not clear or gate the model transform.
 
-The last rule is intentional. Brio's `ModelPosingCapability.Transform` and Ktisis' actor `ITransform` target are model-space controls independent from skeleton animation playback. Animation can continue while the entire actor stays translated, rotated, or scaled because `PosingService` enforces the draw-object override.
+The last rule is intentional. Brio's `ModelPosingCapability.Transform` and Ktisis' actor `ITransform` target are model-space controls independent from skeleton animation playback. Animation can continue while the entire actor stays translated, rotated, or scaled because the transform runtime keeps the draw-object override applied behind `TransformRuntimePort`.
 
 The axis wells use the shared [precision transform input](precision-transform-input.md) contract: drag for continuous adjustment, wheel for stepped changes, and double-click for exact numeric entry. These interactions all feed the same actor or bone apply-and-history path.
 

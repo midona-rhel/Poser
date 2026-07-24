@@ -59,8 +59,8 @@ only the *rest-state* read path.
 
 ## Documented residual registry resolutions
 
-Three frame-scoped `StableBindingRegistry` resolutions remain in the UI and
-are NOT spatial reads:
+The remaining frame-scoped `StableBindingRegistry` resolutions in the UI are
+NOT spatial reads:
 
 - actor lifetime context actions (`MainWindow`) — outside this PBI's
   transform boundary, resolve a stable `ActorId` for one frame to call the
@@ -70,5 +70,6 @@ are NOT spatial reads:
   variant from actor customize data (display formatting); dot selection
   identity comes from snapshot descriptors, never the registry;
 - `PoseInspectorPane` re-resolves the primary once per selection change to
-  feed the retained gaze/expression sections, which consume entity-based
-  runtime services.
+  feed the retained gaze/expression sections, and resolves selected actors
+  when dispatching the skeleton-shaped whole-pose commands
+  (`CleanPoseFacade.Mirror`) whose stable-id migration is deferred work.

@@ -7,7 +7,7 @@ POCOs in `PosingCore/Config/`: `PoserConfiguration` (root,
 
 ## Purpose
 
-Loads, holds, and persists the plugin configuration through Dalamud's `GetPluginConfig`/`SavePluginConfig`. Also provides per-section reset helpers and "anonymous mode" display-name substitution (stable random 5-char names per `EntityId`, for streaming/screenshots).
+Loads, holds, and persists the plugin configuration through Dalamud's `GetPluginConfig`/`SavePluginConfig`. Also provides per-section reset helpers and "anonymous mode" display-name substitution (stable random 5-char names per actor lineage `Guid`, for streaming/screenshots).
 
 Configuration sections:
 

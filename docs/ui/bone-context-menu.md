@@ -1,7 +1,10 @@
 # Bone context menu
 
-Right-clicking a sidebar bone opens hierarchy and pose actions bound to the same
-the application `SelectionSession` (stable ids, hierarchy from snapshot descriptors) and `IBonePosingService` as every other pose surface.
+Right-clicking a sidebar bone opens hierarchy and pose actions. Selection
+mutations dispatch stable ids to the application `SelectionSession`, hierarchy
+facts come from snapshot descriptors, mirror names resolve through the
+bone-metadata lookup, and Flip/Reset dispatch the stable-id
+`CleanPoseFacade` entries — the same paths as every other pose surface.
 
 - **Select parent** replaces selection with the direct parent.
 - **Select children** selects the bone plus every descendant. Transform
