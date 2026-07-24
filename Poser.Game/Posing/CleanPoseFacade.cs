@@ -1,3 +1,4 @@
+using Dalamud.Plugin.Services;
 using Poser.Application.Posing;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
@@ -18,15 +19,78 @@ public sealed class CleanPoseFacade
         StableBindingRegistry bindings,
         PoseEditService edits,
         PoseTransferService transfers,
-        IBonePosingService bonePosing)
+        IBonePosingService bonePosing,
+        IExpressionService expressions,
+        IGazeService gaze,
+        IEditorState editorState,
+        IPluginLog log)
     {
         _bindings = bindings;
         _edits = edits;
         _transfers = transfers;
         _bonePosing = bonePosing;
+        _expressions = expressions;
+        _gaze = gaze;
+        _editorState = editorState;
+        _log = log;
     }
 
     private readonly IBonePosingService _bonePosing;
+    private readonly IExpressionService _expressions;
+    private readonly IGazeService _gaze;
+    private readonly IEditorState _editorState;
+    private readonly IPluginLog _log;
+
+    /// <summary>
+    /// The one actor-level reset operation behind the Pose section's
+    /// **Reset All**: clears manual pose transforms for all regions,
+    /// expression weights and their layer, every Poser gaze mode / part /
+    /// target / lock (restoring the captured native look-at), and actor-local
+    /// IK arming including the Live IK session switch. It deliberately
+    /// preserves the actor's world/model placement, the pose stash, tool and
+    /// Local/World choices, and tree disclosure. Steps run in an order that
+    /// cannot leave managed expression/gaze state claiming a layer that its
+    /// native pose no longer has: expression weights clear before the pose
+    /// stacks, gaze releases through its native restore path, and every step
+    /// runs even when an earlier one fails. A partial failure is aggregated
+    /// into one reported result and logged.
+    /// </summary>
+    public PoseEditResult ResetAll(ISkeleton skeleton)
+    {
+        var failures = new List<string>();
+        var actor = skeleton.Actor;
+
+        try
+        {
+            _expressions.ResetExpression(actor);
+        }
+        catch (Exception ex)
+        {
+            failures.Add($"expression reset failed: {ex.Message}");
+        }
+
+        try
+        {
+            _gaze.ResetGaze(actor);
+        }
+        catch (Exception ex)
+        {
+            failures.Add($"gaze reset failed: {ex.Message}");
+        }
+
+        var pose = Reset(skeleton, PoseRegion.All);
+        if (!pose.Success && pose.Detail is { } poseDetail)
+            failures.Add(poseDetail);
+
+        _bonePosing.SetAllIk(skeleton, false);
+        _editorState.IkEnabled = false;
+
+        if (failures.Count == 0)
+            return pose;
+        var detail = string.Join(" | ", failures);
+        _log.Warning($"Reset All completed partially: {detail}");
+        return PoseEditResult.Fail(detail);
+    }
 
     /// <summary>
     /// Stable-id IK arming for the next gesture. IK configuration is session

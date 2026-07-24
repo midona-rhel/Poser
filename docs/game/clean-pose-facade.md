@@ -25,3 +25,25 @@ The facade performs no pose math and no native mutation.
 Whole-pose `Copy`, `Paste`, `Stash`, and `ApplyStash` resolve concrete bones and
 delegate to `PoseTransferService`. The facade exposes stash availability and
 time for presentation, while the application service owns the snapshot.
+
+## Reset All (actor-level, PBI-002)
+
+`ResetAll(ISkeleton)` is the one documented actor-level reset operation
+behind the Pose section's **Reset All** button. One activation:
+
+1. clears expression weights and removes the expression layer
+   (`IExpressionService.ResetExpression` — runs before the pose stacks are
+   cleared so managed weights can never outlive their layers);
+2. restores and clears all Poser gaze modes, participating parts, targets,
+   and locks (`IGazeService.ResetGaze`, which routes through the native
+   pre-Poser restore path);
+3. clears manual pose transforms for all skeleton regions
+   (`Reset(skeleton, PoseRegion.All)`, history-aware);
+4. disarms actor-local IK chains (`SetAllIk(false)`) and turns the Live IK
+   session switch off.
+
+It deliberately preserves the actor's world/model placement, the pose
+stash/clipboard, UI tool and Local/World choices, and tree disclosure. Every
+step runs even when an earlier one fails; failures aggregate into one
+returned `PoseEditResult` and one logged warning — the UI never fires several
+unrelated callbacks with no failure contract.

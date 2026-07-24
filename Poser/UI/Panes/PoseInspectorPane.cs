@@ -977,7 +977,11 @@ public class PoseInspectorPane
         resetActions.Add(new RailAction("Body", "pose-reset-body", () => _cleanPose.Reset(skeleton, PoseRegion.Body)));
         resetActions.Add(new RailAction("Face", "pose-reset-face", () => _cleanPose.Reset(skeleton, PoseRegion.Face)));
         resetActions.Add(new RailAction("Hair", "pose-reset-hair", () => _cleanPose.Reset(skeleton, PoseRegion.Hair)));
-        resetActions.Add(new RailAction("All", "pose-reset-all", () => _cleanPose.Reset(skeleton, PoseRegion.All)));
+        resetActions.Add(new RailAction("All", "pose-reset-all",
+            // Actor-level reset: manual pose + expression + gaze + IK in one
+            // documented operation (CleanPoseFacade.ResetAll).
+            () => _cleanPose.ResetAll(skeleton),
+            Tooltip: "Reset pose, expression, gaze, and IK for this actor"));
         h += DrawWrappedActions(new Vector2(cursor.X, cursor.Y + h), width, s, resetActions);
 
         // Clean application-owned transfer slot. It is available independently
