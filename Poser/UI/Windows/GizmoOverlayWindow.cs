@@ -9,7 +9,10 @@ using Dalamud.Interface.Windowing;
 using Poser.Core;
 using Poser.Application.Transforms;
 using Poser.Domain.Transforms;
+using Poser.Application.Selection;
+using Poser.Domain.Identity;
 using Poser.Entities;
+using Poser.Game.Bindings;
 using Poser.Game.Transforms;
 using Poser.Services;
 using DomainOperation = Poser.Domain.Transforms.TransformOperation;
@@ -34,7 +37,8 @@ internal enum GizmoTargetType
 /// </summary>
 public class GizmoOverlayWindow : Window
 {
-    private readonly ISelectionService _selectionService;
+    private readonly SelectionSession _selection;
+    private readonly StableBindingRegistry _bindings;
     private readonly IEditorState _editorState;
     private readonly ICameraService _cameraService;
     private readonly IPosingService _posingService;
@@ -59,7 +63,8 @@ public class GizmoOverlayWindow : Window
     private Vector3 _cleanBonePivot;
 
     public GizmoOverlayWindow(
-        ISelectionService selectionService,
+        SelectionSession selection,
+        StableBindingRegistry bindings,
         IEditorState editorState,
         ICameraService cameraService,
         IPosingService posingService,
@@ -75,7 +80,8 @@ public class GizmoOverlayWindow : Window
             ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoSavedSettings)
     {
-        _selectionService = selectionService;
+        _selection = selection;
+        _bindings = bindings;
         _editorState = editorState;
         _cameraService = cameraService;
         _posingService = posingService;
@@ -124,21 +130,51 @@ public class GizmoOverlayWindow : Window
 
     private GizmoTargetType GetGizmoTargetType()
     {
-        return _selectionService.Primary switch
+        return _selection.Primary switch
         {
-            IBone => GizmoTargetType.Bone,
-            IActor => GizmoTargetType.Actor,
+            { Kind: SceneEntityKind.Bone } => GizmoTargetType.Bone,
+            { Kind: SceneEntityKind.Actor } => GizmoTargetType.Actor,
             _ => GizmoTargetType.None,
         };
     }
 
+    /// <summary>Session actor ids resolved to live views for this frame's
+    /// placement math; unresolved (stale) ids drop out.</summary>
+    private List<(ActorId Id, IActor Actor)> ResolveSelectedActors()
+    {
+        var result = new List<(ActorId, IActor)>();
+        foreach (var id in _selection.Selected)
+        {
+            if (id is not { Kind: SceneEntityKind.Actor, Actor: { } actorId })
+                continue;
+            var resolved = _bindings.Resolve(actorId);
+            if (resolved.Success)
+                result.Add((actorId, resolved.Value!));
+        }
+        return result;
+    }
+
+    private List<IBone> ResolveSelectedBones()
+    {
+        var result = new List<IBone>();
+        foreach (var id in _selection.Selected)
+        {
+            if (id is not { Kind: SceneEntityKind.Bone, Bone: { } boneId })
+                continue;
+            var resolved = _bindings.Resolve(boneId);
+            if (resolved.Success)
+                result.Add(resolved.Value!);
+        }
+        return result;
+    }
+
     private void DrawActorGizmo()
     {
-        var selectedActors = _selectionService.GetSelected<IActor>().ToList();
+        var selectedActors = ResolveSelectedActors();
         if (selectedActors.Count == 0)
             return;
 
-        var primaryActor = selectedActors[0];
+        var primaryActor = selectedActors[0].Actor;
         var viewMatrix = _cameraService.GetViewMatrix();
         var projectionMatrix = _cameraService.GetProjectionMatrix();
 
@@ -166,7 +202,9 @@ public class GizmoOverlayWindow : Window
         if (isUsing && _cleanActorGesture == null)
         {
             var begin = _cleanTransforms.Begin(
-                selectedActors.Cast<IEntity>().ToArray(),
+                selectedActors
+                    .Select(entry => TransformTargetId.ForActor(entry.Id))
+                    .ToList(),
                 ToDomainOperation(gizmoOperation),
                 ToDomainSpace(gizmoMode),
                 selectedActors.Count > 1
@@ -213,8 +251,8 @@ public class GizmoOverlayWindow : Window
 
     private void DrawBoneGizmo()
     {
-        // Get all selected bones and virtual bones
-        var selectedBones = _selectionService.GetSelected<IBone>().ToList();
+        // Session bone ids resolved to live views for this frame's math.
+        var selectedBones = ResolveSelectedBones();
         if (selectedBones.Count == 0)
             return;
 
@@ -346,10 +384,19 @@ public class GizmoOverlayWindow : Window
                             break;
                     }
                 }
-                var ordered = new List<IEntity> { primaryBone };
-                ordered.AddRange(rootBones
-                    .Where(bone => !ReferenceEquals(bone, primaryBone))
-                    .Cast<IEntity>());
+                var orderedIds = new List<TransformTargetId>();
+                if (_bindings.GetBoneId(primaryBone) is { } primaryId)
+                    orderedIds.Add(TransformTargetId.ForBone(primaryId));
+                foreach (var bone in rootBones)
+                {
+                    if (ReferenceEquals(bone, primaryBone))
+                        continue;
+                    if (_bindings.GetBoneId(bone) is { } rootId)
+                        orderedIds.Add(TransformTargetId.ForBone(rootId));
+                }
+                if (orderedIds.Count == 0)
+                    return;
+                var ordered = orderedIds;
                 var begin = _cleanTransforms.Begin(
                     ordered,
                     ToDomainOperation(gizmoOperation),
