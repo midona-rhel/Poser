@@ -126,8 +126,8 @@ public interface IBonePosingService : IDisposable
     /// Begin an orbit drag: the bones rotate around <paramref name="pivot"/>
     /// (typically the primary bone's parent). The session snapshots base
     /// transforms and existing stack deltas; feed it the TOTAL drag rotation
-    /// each frame. See <see cref="Poser.Core.OrbitStrategy"/> for the
-    /// stability model — the default is idempotent by construction.
+    /// each frame. Orbit now runs through the clean transform gesture with a
+    /// frozen pivot; this comment block documents the retained pivot helpers.
     /// </summary>
 
     /// <summary>

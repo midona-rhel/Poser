@@ -53,6 +53,7 @@ public class PoseInspectorPane
     private readonly SelectionSession _selection;
     private readonly SceneSession _scene;
     private readonly StableBindingRegistry _bindings;
+    private readonly Game.Viewport.ViewportProjection _viewport;
     private readonly ExpressionInspectorSection _expressionSection;
     private readonly PoseFileInspectorSection _poseFileSection;
 
@@ -86,7 +87,9 @@ public class PoseInspectorPane
     private Transform? _cleanModelStart;
     private Transform? _cleanDisplayedCurrent;
     private TransformGestureId? _cleanGesture;
-    private IBone? _cleanPrimaryBone;
+    // Immutable parent model transform captured at Begin (bone gestures with
+    // a parent). Composition never re-reads the live animated parent.
+    private Transform? _cleanParentModel;
 
     private bool _openGaze = true;
     private bool _openIk;
@@ -103,12 +106,14 @@ public class PoseInspectorPane
         IEditorState editorState,
         SceneSession scene,
         StableBindingRegistry bindings,
+        Game.Viewport.ViewportProjection viewport,
         ExpressionInspectorSection expressionSection,
         PoseFileInspectorSection poseFileSection)
     {
         _selection = scene.Selection;
         _scene = scene;
         _bindings = bindings;
+        _viewport = viewport;
         _expressionSection = expressionSection;
         _poseFileSection = poseFileSection;
         _posingService = posingService;
@@ -119,6 +124,15 @@ public class PoseInspectorPane
         _gazeService = gazeService;
         _editorState = editorState;
     }
+
+    private static Transform ToLegacy(Domain.Transforms.PoseTransform value) =>
+        new() { Position = value.Position, Rotation = value.Rotation, Scale = value.Scale };
+
+    private Transform? ViewportBoneModel(BoneId id) =>
+        _viewport.GetBoneModelTransform(id) is { } value ? ToLegacy(value) : null;
+
+    private Transform? ViewportParentModel(BoneId id) =>
+        _viewport.GetParentModelTransform(id) is { } value ? ToLegacy(value) : null;
 
     private List<BoneId> SelectedBoneIds()
     {
@@ -1120,26 +1134,25 @@ public class PoseInspectorPane
         if (_cleanGesture != null && _cleanDisplayedCurrent is { } current)
             return (current, true);
 
-        switch (_entity)
+        switch (_primary)
         {
-            case IActor actor:
+            case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
                 // Brio ModelPosingCapability and Ktisis' ITransform target both
                 // allow model transforms while animation is playing. The
                 // override service keeps the draw-object transform stable.
-                return (_posingService.GetEffectiveTransform(actor), true);
-            case VirtualBone group:
-                return (group.Transform, group.PivotBone != null);
-            case IBone bone:
+                return _viewport.GetActorTransform(actorId) is { } actorValue
+                    ? (ToLegacy(actorValue), true)
+                    : (Transform.Identity, false);
+            case { Kind: SceneEntityKind.Bone, Bone: { } boneId }:
                 // Bones display/edit LOCAL (parent-relative) values like
                 // Ktisis/Anamnesis — model-space numbers read as garbage
                 // ("don't represent actual game values"). Tracking stays in
                 // model space; conversion happens only at this boundary.
-                var model = ReadBoneModel(bone);
-                return (bone.ParentBone is { } parent
-                    ? PoseMath.ToLocal(parent.LastTransform, model)
+                if (ViewportBoneModel(boneId) is not { } model)
+                    return (Transform.Identity, false);
+                return (ViewportParentModel(boneId) is { } parentModel
+                    ? PoseMath.ToLocal(parentModel, model)
                     : model, true);
-            case { } e:
-                return (e.Transform, false);
             default:
                 return (Transform.Identity, false);
         }
@@ -1175,7 +1188,7 @@ public class PoseInspectorPane
 
             case { Kind: SceneEntityKind.Bone, Bone: { } primaryBoneId }:
             {
-                if (_entity is not IBone primaryBone)
+                if (ViewportBoneModel(primaryBoneId) is not { } primaryModel)
                     return;
 
                 // Selected descendants drop out when a selected ancestor
@@ -1212,8 +1225,8 @@ public class PoseInspectorPane
                         boneTargets.Add(TransformTargetId.ForBone(boneId));
                 }
                 targets = boneTargets;
-                _cleanPrimaryBone = primaryBone;
-                modelStart = ReadBoneModel(primaryBone);
+                _cleanParentModel = ViewportParentModel(primaryBoneId);
+                modelStart = primaryModel;
                 pivotMode = DomainPivot.PerTarget;
                 break;
             }
@@ -1245,7 +1258,7 @@ public class PoseInspectorPane
                 : null);
         if (!begin.Success || begin.GestureId is not { } gesture)
         {
-            _cleanPrimaryBone = null;
+            _cleanParentModel = null;
             return;
         }
 
@@ -1264,9 +1277,8 @@ public class PoseInspectorPane
             _cleanModelStart is not { } modelStart)
             return;
 
-        var modelAfter = _cleanPrimaryBone is { } primaryBone &&
-                         primaryBone.ParentBone is { } parent
-            ? PoseMath.Compose(parent.LastTransform, displayedAfter)
+        var modelAfter = _cleanParentModel is { } parentModel
+            ? PoseMath.Compose(parentModel, displayedAfter)
             : displayedAfter;
         var delta = new DomainDelta(
             modelAfter.Position - modelStart.Position,
@@ -1299,7 +1311,7 @@ public class PoseInspectorPane
         _cleanGesture = null;
         _cleanModelStart = null;
         _cleanDisplayedCurrent = null;
-        _cleanPrimaryBone = null;
+        _cleanParentModel = null;
     }
 
     private static Vector3 DivideComponents(
@@ -1315,9 +1327,6 @@ public class PoseInspectorPane
             Divide(numerator.Y, denominator.Y),
             Divide(numerator.Z, denominator.Z));
     }
-
-    private Transform ReadBoneModel(IBone bone)
-        => bone.Transform;
 
     private IActor? OwningActor() => _entity switch
     {
