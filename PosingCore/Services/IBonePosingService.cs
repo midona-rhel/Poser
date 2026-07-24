@@ -1,8 +1,22 @@
 using System;
+using System.Collections.Generic;
 using Poser.Core;
 using Poser.Entities;
 
 namespace Poser.Services;
+
+/// <summary>
+/// One post-animation pose evaluation observed at the native boundary.
+/// The animated baseline is captured after the game updates the skeleton and
+/// before Poser applies persistent pose layers. The evaluated transform is
+/// captured after those layers have been applied.
+/// </summary>
+public readonly record struct BoneEvaluationObservation(
+    long Sequence,
+    Transform AnimatedBaseline,
+    Transform EvaluatedTransform,
+    Transform AppliedDelta,
+    int StackCount);
 
 /// <summary>
 /// Service for manipulating bone transforms.
@@ -45,11 +59,45 @@ public interface IBonePosingService : IDisposable
     /// </summary>
     Transform? GetModification(IBone bone);
 
+    /// <summary>Captures the complete ordered pose stack for transform history.</summary>
+    IReadOnlyList<BonePoseTransformInfo> CapturePoseStacks(IBone bone);
+
+    /// <summary>
+    /// Restores interactive stacks from a historical snapshot without replacing
+    /// current named layers such as expression blending.
+    /// </summary>
+    void RestorePoseStacks(IBone bone, IReadOnlyList<BonePoseTransformInfo> stacks);
+
+    /// <summary>
+    /// Set the IK configuration for a bone (see <see cref="BonePoseInfo.IK"/>).
+    /// </summary>
+    void SetBoneIK(IBone bone, BoneIKInfo info);
+
+    /// <summary>
+    /// Get the IK configuration for a bone.
+    /// </summary>
+    BoneIKInfo GetBoneIK(IBone bone);
+
+    /// <summary>
+    /// True when any bone on the skeleton has IK enabled (used to guard the
+    /// post-import face reconcile, which would fight live IK).
+    /// </summary>
+    bool HasEnabledIk(ISkeleton skeleton);
+
     /// <summary>
     /// Register a skeleton for cache updates in the FinalizeSkeletons hook.
     /// Call this for skeletons with visible overlays or active gizmo manipulation.
     /// </summary>
     void RegisterSkeletonForCacheUpdate(ISkeleton skeleton);
+
+    /// <summary>
+    /// Gets the most recent pre-layer/post-layer observation for a modified
+    /// concrete bone. Observations are produced only by the native skeleton
+    /// update hook and therefore prove the runtime application path executed.
+    /// </summary>
+    bool TryGetEvaluationObservation(
+        IBone bone,
+        out BoneEvaluationObservation observation);
 
     /// <summary>
     /// Snapshot all bones in a skeleton at their current transforms.
@@ -73,4 +121,26 @@ public interface IBonePosingService : IDisposable
     /// Returns null if no mirror exists.
     /// </summary>
     string? GetMirrorBoneName(string boneName);
+
+    /// <summary>
+    /// Begin an orbit drag: the bones rotate around <paramref name="pivot"/>
+    /// (typically the primary bone's parent). The session snapshots base
+    /// transforms and existing stack deltas; feed it the TOTAL drag rotation
+    /// each frame. See <see cref="Poser.Core.OrbitStrategy"/> for the
+    /// stability model — the default is idempotent by construction.
+    /// </summary>
+    Poser.Core.OrbitSession BeginOrbitSession(System.Collections.Generic.IReadOnlyList<IBone> bones, System.Numerics.Vector3 pivot, Poser.Core.OrbitStrategy strategy);
+
+    /// <summary>
+    /// Linked bones (Anamnesis parity): posing one bone in a link set (both
+    /// eyes; Viera ear-variant chains) applies the same delta to the others.
+    /// Default on; per-session toggle.
+    /// </summary>
+    bool LinkedBonesEnabled { get; set; }
+
+    /// <summary>Bulk IK (Ktisis parity): arm/disarm IK on every eligible chain end (hands/feet).</summary>
+    int SetAllIk(ISkeleton skeleton, bool enabled);
+
+    /// <summary>Reset only the bones of one region: "body", "face" or "hair" (Anamnesis per-partial reference pose parity).</summary>
+    int ResetRegion(ISkeleton skeleton, string region);
 }

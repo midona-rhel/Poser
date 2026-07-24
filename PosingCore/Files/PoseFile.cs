@@ -70,11 +70,22 @@ public class PoseFile
         }
     }
 
+    // Mirrors Brio/Brio/Core/JsonSerializer.cs so files round-trip byte-compatibly:
+    // numerics as "X, Y, Z" strings, relaxed escaping (smaller Base64Image), trailing commas tolerated.
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
+        AllowTrailingCommas = true,
         PropertyNamingPolicy = null, // Keep PascalCase to match Brio
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        Converters =
+        {
+            new JsonStringEnumConverter(),
+            new Converters.Vector2Converter(),
+            new Converters.Vector3Converter(),
+            new Converters.Vector4Converter(),
+            new Converters.QuaternionConverter()
+        }
     };
 
     /// <summary>
@@ -137,86 +148,5 @@ public class PoseFile
             newBones[AnamnesisBoneNameConverter.ToGame(bone.Key)] = bone.Value;
         }
         Bones = newBones;
-    }
-}
-
-/// <summary>
-/// Converts between Anamnesis bone naming convention and game bone names.
-/// </summary>
-public static class AnamnesisBoneNameConverter
-{
-    private static readonly Dictionary<string, string> AnamnesisToGameMap = new()
-    {
-        // Face bones
-        { "Head", "j_kao" },
-        { "Nose", "j_hana" },
-        { "Jaw", "j_ago" },
-        { "EyelidLowerLeft", "j_f_mayu_l" },
-        { "EyelidLowerRight", "j_f_mayu_r" },
-
-        // Body bones
-        { "Root", "n_root" },
-        { "Abdomen", "j_kosi" },
-        { "Throw", "n_throw" },
-        { "Waist", "j_sebo_a" },
-        { "SpineA", "j_sebo_a" },
-        { "SpineB", "j_sebo_b" },
-        { "SpineC", "j_sebo_c" },
-        { "Neck", "j_kubi" },
-
-        // Arms
-        { "ClavicleLeft", "j_sako_l" },
-        { "ClavicleRight", "j_sako_r" },
-        { "ArmLeft", "j_ude_a_l" },
-        { "ArmRight", "j_ude_a_r" },
-        { "ForearmLeft", "j_ude_b_l" },
-        { "ForearmRight", "j_ude_b_r" },
-        { "HandLeft", "j_te_l" },
-        { "HandRight", "j_te_r" },
-
-        // Legs
-        { "LegLeft", "j_asi_a_l" },
-        { "LegRight", "j_asi_a_r" },
-        { "KneeLeft", "j_asi_b_l" },
-        { "KneeRight", "j_asi_b_r" },
-        { "CalfLeft", "j_asi_c_l" },
-        { "CalfRight", "j_asi_c_r" },
-        { "FootLeft", "j_asi_d_l" },
-        { "FootRight", "j_asi_d_r" },
-        { "ToesLeft", "j_asi_e_l" },
-        { "ToesRight", "j_asi_e_r" },
-    };
-
-    private static readonly Dictionary<string, string> GameToAnamnesisMap;
-
-    static AnamnesisBoneNameConverter()
-    {
-        GameToAnamnesisMap = new Dictionary<string, string>();
-        foreach (var kvp in AnamnesisToGameMap)
-        {
-            GameToAnamnesisMap[kvp.Value] = kvp.Key;
-        }
-    }
-
-    /// <summary>
-    /// Converts an Anamnesis bone name to the game's internal name.
-    /// Returns the original name if no mapping exists.
-    /// </summary>
-    public static string ToGame(string anamnesisName)
-    {
-        return AnamnesisToGameMap.TryGetValue(anamnesisName, out var gameName)
-            ? gameName
-            : anamnesisName;
-    }
-
-    /// <summary>
-    /// Converts a game bone name to Anamnesis format.
-    /// Returns the original name if no mapping exists.
-    /// </summary>
-    public static string ToAnamnesis(string gameName)
-    {
-        return GameToAnamnesisMap.TryGetValue(gameName, out var anamnesisName)
-            ? anamnesisName
-            : gameName;
     }
 }

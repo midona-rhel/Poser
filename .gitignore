@@ -57,3 +57,10 @@ Brio/
 /claude
 .claude/settings.local.json
 CLAUDE.md
+
+# Local ImGui and retired UI-verifier artifacts
+/imgui.ini
+/tools/__pycache__/
+/tools/uiverify/
+/docs/validation/**/*.png
+/PosingCore/Data/GameData/

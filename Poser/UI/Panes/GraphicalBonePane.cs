@@ -1,0 +1,430 @@
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using Dalamud.Bindings.ImGui;
+using Dalamud.Interface;
+using Dalamud.Interface.Textures.TextureWraps;
+using Dalamud.Interface.Utility;
+using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.Game.Character;
+using Poser.Data;
+using Poser.Data.Config;
+using Poser.Entities;
+using Poser.Services;
+using Poser.UI.Controls;
+
+namespace Poser.UI;
+
+/// <summary>
+/// Inline Body and Face graphical bone selection surface. This pane owns its
+/// textures and hit-testing state but has no independent window lifecycle.
+/// </summary>
+public sealed class GraphicalBonePane : IDisposable
+{
+    private const float CircleRadius = 6f;
+    private const float HitRadius = 18f;
+
+    private readonly ISelectionService _selectionService;
+
+    // M11 marquee (Anamnesis MouseCanvas): dot positions recorded per frame,
+    // drag on empty canvas selects everything inside the rectangle.
+    private readonly System.Collections.Generic.List<(IBone Bone, Vector2 Pos)> _frameDots = new();
+    private Vector2? _marqueeStart;
+    private readonly IActorManager _actorManager;
+    private readonly ISkeletonService _skeletonService;
+    private readonly ITextureProvider _textureProvider;
+
+    private readonly GraphicalBoneConfig _config;
+    private readonly Dictionary<string, IDalamudTextureWrap?> _textures = new();
+
+    private float _closestHoverDistance;
+    private IBone? _hoveredBone;
+
+    public GraphicalBonePane(
+        ISelectionService selectionService,
+        IActorManager actorManager,
+        ISkeletonService skeletonService,
+        ITextureProvider textureProvider)
+    {
+        _selectionService = selectionService;
+        _actorManager = actorManager;
+        _skeletonService = skeletonService;
+        _textureProvider = textureProvider;
+
+        _config = GraphicalBoneReader.ReadEmbeddedResource();
+
+    }
+
+    /// <summary>
+    /// Renders the Body (0) or Face (1) map inline inside the AppShell Pose
+    /// surface (M2: the seg swaps the pose surface — no window detour).
+    /// Returns false when there is nothing to draw (no actor/skeleton).
+    /// </summary>
+    public bool DrawInline(int page, Vector2 contentArea)
+    {
+        _closestHoverDistance = float.MaxValue;
+        _hoveredBone = null;
+        _frameDots.Clear();
+
+        var actor = GetSelectedActor();
+        if (actor == null)
+            return false;
+        var skeleton = _skeletonService.GetSkeleton(actor);
+        if (skeleton == null)
+            return false;
+
+        var origin = ImGui.GetCursorScreenPos();
+
+        if (page == 0)
+            DrawBodyPage(skeleton, contentArea);
+        else
+            DrawFacePage(skeleton, actor, contentArea);
+
+        bool hovered = ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows)
+            && ImGui.IsMouseHoveringRect(origin, origin + contentArea);
+
+        if (_hoveredBone != null && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && hovered)
+        {
+            if (ImGui.GetIO().KeyCtrl)
+                _selectionService.ToggleSelection(_hoveredBone);
+            else
+                _selectionService.Select(_hoveredBone);
+        }
+
+        // marquee: press on empty canvas + drag = box select (Ctrl adds)
+        if (_hoveredBone == null && hovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+            _marqueeStart = ImGui.GetMousePos();
+
+        if (_marqueeStart is { } start)
+        {
+            var mouse = ImGui.GetMousePos();
+            var rmin = Vector2.Min(start, mouse);
+            var rmax = Vector2.Max(start, mouse);
+            bool isDrag = (rmax - rmin).LengthSquared() > 16f;
+
+            if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
+            {
+                if (isDrag)
+                {
+                    var fg = ImGui.GetForegroundDrawList();
+                    fg.AddRectFilled(rmin, rmax, ImGui.ColorConvertFloat4ToU32(new Vector4(50 / 255f, 151 / 255f, 1f, 0.12f)));
+                    fg.AddRect(rmin, rmax, ImGui.ColorConvertFloat4ToU32(new Vector4(50 / 255f, 151 / 255f, 1f, 0.65f)));
+                }
+            }
+            else
+            {
+                if (isDrag)
+                {
+                    if (!ImGui.GetIO().KeyCtrl)
+                        _selectionService.ClearSelection();
+                    foreach (var (dotBone, pos) in _frameDots)
+                    {
+                        if (pos.X >= rmin.X && pos.X <= rmax.X && pos.Y >= rmin.Y && pos.Y <= rmax.Y)
+                            _selectionService.AddToSelection(dotBone);
+                    }
+                }
+                _marqueeStart = null;
+            }
+        }
+        return true;
+    }
+
+    private void DrawBodyPage(ISkeleton skeleton, Vector2 contentArea)
+    {
+        // This is a canvas, not a flow layout. Stable design-space slots keep
+        // every image centered and prevent optional tail/toe sections from
+        // rearranging the rest of the map as the viewport changes.
+        const float designWidth = 2054f;
+        const float designHeight = 1147f;
+        float s = ImGuiHelpers.GlobalScale;
+        float margin = 12f * s;
+        var viewportOrigin = ImGui.GetCursorScreenPos();
+        var available = Vector2.Max(
+            Vector2.One,
+            contentArea - new Vector2(margin * 2f));
+        float fit = MathF.Min(
+            available.X / designWidth,
+            available.Y / designHeight);
+        var canvasSize = new Vector2(designWidth, designHeight) * fit;
+        var canvasOrigin =
+            viewportOrigin + (contentArea - canvasSize) * 0.5f;
+
+        Vector4 Slot(float x, float y, float width, float height) =>
+            new(
+                canvasOrigin.X + x * fit,
+                canvasOrigin.Y + y * fit,
+                width * fit,
+                height * fit);
+
+        DrawBoneSectionAt(
+            "body",
+            Slot(0f, 0f, 674f, 1147f),
+            drawMirrors: true,
+            skeleton);
+        DrawBoneSectionAt(
+            "armor",
+            Slot(714f, 0f, 700f, 1147f),
+            drawMirrors: true,
+            skeleton);
+        DrawBoneSectionAt(
+            "hands",
+            Slot(1454f, 0f, 600f, 427f),
+            drawMirrors: true,
+            skeleton);
+
+        if (skeleton.GetBone("n_sippo_a") != null)
+        {
+            DrawBoneSectionAt(
+                "tail",
+                Slot(1529f, 447f, 450f, 464f),
+                drawMirrors: false,
+                skeleton);
+        }
+
+        if (skeleton.GetBone("iv_asi_oya_a_l") != null)
+        {
+            DrawBoneSectionAt(
+                "ivcs_toes",
+                Slot(1454f, 931f, 600f, 216f),
+                drawMirrors: true,
+                skeleton);
+        }
+    }
+
+    private unsafe void DrawFacePage(ISkeleton skeleton, IActor actor, Vector2 contentArea)
+    {
+        string headSection = GetHeadSectionForActor(actor);
+        if (!_config.PoseImages.TryGetValue(headSection, out var section) ||
+            string.IsNullOrEmpty(section.Image))
+            return;
+        var texture = GetTexture(section.Image);
+        if (texture == null)
+            return;
+
+        float s = ImGuiHelpers.GlobalScale;
+        float margin = 12f * s;
+        var viewportOrigin = ImGui.GetCursorScreenPos();
+        var available = Vector2.Max(
+            Vector2.One,
+            contentArea - new Vector2(margin * 2f));
+        var sourceSize = new Vector2(texture.Width, texture.Height);
+        float fit = MathF.Min(
+            available.X / sourceSize.X,
+            available.Y / sourceSize.Y);
+        var imageSize = sourceSize * fit;
+        var imageOrigin =
+            viewportOrigin + (contentArea - imageSize) * 0.5f;
+        DrawBoneSectionAt(
+            headSection,
+            new Vector4(
+                imageOrigin.X,
+                imageOrigin.Y,
+                imageSize.X,
+                imageSize.Y),
+            drawMirrors: true,
+            skeleton);
+    }
+
+    private unsafe string GetHeadSectionForActor(IActor actor)
+    {
+        if (actor.Address == nint.Zero)
+            return "human_head";
+
+        try
+        {
+            var character = (Character*)actor.Address;
+            if (character == null)
+                return "human_head";
+
+            var customize = character->DrawData.CustomizeData;
+            var race = customize.Race;
+
+            return race switch
+            {
+                1 => "human_head",     // Hyur
+                2 => "human_head",     // Elezen
+                3 => "human_head",     // Lalafell
+                4 => "miqote_head",    // Miqo'te
+                5 => "human_head",     // Roegadyn
+                6 => "human_head",     // Au Ra
+                7 => "hrothgar_head",  // Hrothgar
+                8 => "viera_head_a",   // Viera (default ear type)
+                _ => "human_head"
+            };
+        }
+        catch
+        {
+            return "human_head";
+        }
+    }
+
+    private void DrawBoneSectionAt(
+        string sectionName,
+        Vector4 rect,
+        bool drawMirrors,
+        ISkeleton skeleton)
+    {
+        if (!_config.PoseImages.TryGetValue(sectionName, out var section) ||
+            string.IsNullOrEmpty(section.Image))
+            return;
+        var texture = GetTexture(section.Image);
+        if (texture == null)
+            return;
+
+        var min = new Vector2(rect.X, rect.Y);
+        var size = new Vector2(rect.Z, rect.W);
+        var max = min + size;
+        ImGui.GetWindowDrawList().AddImage(texture.Handle, min, max);
+        var sourceSize = new Vector2(texture.Width, texture.Height);
+        var scalingFactors = size / sourceSize;
+
+        foreach (var graphicBone in section.Bones)
+        {
+            var bone = skeleton.GetBone(graphicBone.Name);
+            if (bone == null)
+                continue;
+
+            float primaryX = graphicBone.PositionVector.X;
+            var primaryPosition = min + new Vector2(
+                primaryX * scalingFactors.X,
+                graphicBone.PositionVector.Y * scalingFactors.Y);
+            DrawBoneAt(bone, primaryPosition);
+
+            // Add mirror bone
+            if (drawMirrors)
+            {
+                var mirrorBoneName = GetMirrorBoneName(graphicBone.Name);
+                if (mirrorBoneName != null)
+                {
+                    var mirrorBone = skeleton.GetBone(mirrorBoneName);
+                    if (mirrorBone != null)
+                    {
+                        float mirrorX =
+                            sourceSize.X - graphicBone.PositionVector.X;
+                        var mirrorPosition = min + new Vector2(
+                            mirrorX * scalingFactors.X,
+                            graphicBone.PositionVector.Y * scalingFactors.Y);
+                        DrawBoneAt(mirrorBone, mirrorPosition);
+                    }
+                }
+            }
+        }
+    }
+
+    private void DrawBoneAt(IBone bone, Vector2 screenPos)
+    {
+        bool isSelected = _selectionService.IsSelected(bone);
+        bool isHovered = _hoveredBone == bone;
+        float s = ImGuiHelpers.GlobalScale;
+
+        // Hit detection
+        float mouseDistance = Vector2.Distance(ImGui.GetMousePos(), screenPos);
+        if (mouseDistance < HitRadius * s &&
+            mouseDistance < _closestHoverDistance)
+        {
+            _closestHoverDistance = mouseDistance;
+            _hoveredBone = bone;
+            isHovered = true;
+        }
+
+        _frameDots.Add((bone, screenPos));
+
+        var drawList = ImGui.GetWindowDrawList();
+
+        // Circle colors
+        uint circleColor = ImGui.GetColorU32(ImGuiCol.TextDisabled);
+        if (isSelected)
+        {
+            circleColor = ImGui.GetColorU32(ImGuiCol.CheckMark);
+        }
+        else if (isHovered)
+        {
+            circleColor = ImGui.GetColorU32(ImGuiCol.Text);
+        }
+
+        // Draw circle background
+        drawList.AddCircleFilled(
+            screenPos,
+            CircleRadius * s,
+            ImGui.GetColorU32(ImGuiCol.ChildBg));
+
+        // Draw circle outline
+        drawList.AddCircle(screenPos, CircleRadius * s, circleColor);
+
+        // Draw filled center if selected or hovered
+        if (isSelected || isHovered)
+        {
+            var fillColor = isSelected ? ImGui.GetColorU32(ImGuiCol.CheckMark) : ImGui.GetColorU32(ImGuiCol.TextDisabled);
+            drawList.AddCircleFilled(
+                screenPos,
+                (CircleRadius - 3f) * s,
+                fillColor);
+        }
+
+        // Tooltip
+        if (isHovered && ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows))
+        {
+            ImGui.SetTooltip(bone.Name);
+        }
+    }
+
+    private IDalamudTextureWrap? GetTexture(string imageName)
+    {
+        if (_textures.TryGetValue(imageName, out var cached))
+            return cached;
+
+        var bytes = GraphicalBoneReader.GetImageBytes(imageName);
+        if (bytes == null)
+        {
+            _textures[imageName] = null;
+            return null;
+        }
+
+        try
+        {
+            var task = _textureProvider.CreateFromImageAsync(bytes);
+            task.Wait();
+            var texture = task.Result;
+            _textures[imageName] = texture;
+            return texture;
+        }
+        catch
+        {
+            _textures[imageName] = null;
+            return null;
+        }
+    }
+
+    private IActor? GetSelectedActor()
+    {
+        // Check if an actor is selected
+        var selected = _selectionService.Primary;
+        if (selected is IActor actor)
+            return actor;
+
+        // Check if a bone is selected - get its actor
+        if (selected is IBone bone)
+            return bone.Skeleton.Actor;
+
+        // Fall back to first actor
+        return _actorManager.Actors.Count > 0 ? _actorManager.Actors[0] : null;
+    }
+
+    private static string? GetMirrorBoneName(string boneName)
+    {
+        if (boneName.EndsWith("_l"))
+            return boneName[..^2] + "_r";
+        if (boneName.EndsWith("_r"))
+            return boneName[..^2] + "_l";
+        return null;
+    }
+
+    public void Dispose()
+    {
+        foreach (var texture in _textures.Values)
+        {
+            texture?.Dispose();
+        }
+        _textures.Clear();
+    }
+}

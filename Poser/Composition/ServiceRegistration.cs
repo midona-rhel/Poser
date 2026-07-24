@@ -1,0 +1,131 @@
+using Dalamud.Game;
+using Dalamud.Game.ClientState.Objects;
+using Dalamud.Game.Command;
+using Dalamud.Interface.Textures;
+using Dalamud.Plugin;
+using Dalamud.Plugin.Services;
+using Microsoft.Extensions.DependencyInjection;
+using Poser.Application.Posing;
+using Poser.Application.Scene;
+using Poser.Application.Selection;
+using Poser.Application.Transforms;
+using Poser.Config;
+using Poser.Core;
+using Poser.Files;
+using Poser.Game;
+using Poser.Game.Bindings;
+using Poser.Game.Posing;
+using Poser.Game.Scene;
+using Poser.Game.Selection;
+using Poser.Game.Transforms;
+using Poser.Game.Validation;
+using Poser.Services;
+using Poser.UI;
+using Poser.UI.Composition;
+
+namespace Poser.Composition;
+
+/// <summary>
+/// Explicit composition modules for the plugin executable. These methods only
+/// describe ownership; product behavior remains in the registered services.
+/// </summary>
+internal static class ServiceRegistration
+{
+    public static IServiceCollection AddDalamudDependencies(
+        this IServiceCollection services,
+        IDalamudPluginInterface pluginInterface,
+        IPluginLog log,
+        IClientState clientState,
+        IFramework framework,
+        IObjectTable objectTable,
+        ISigScanner sigScanner,
+        IGameInteropProvider gameInterop,
+        ICommandManager commandManager,
+        IDataManager dataManager,
+        IKeyState keyState,
+        ITextureProvider textureProvider,
+        ITargetManager targetManager,
+        IChatGui chatGui)
+    {
+        services.AddSingleton(pluginInterface);
+        services.AddSingleton(log);
+        services.AddSingleton(clientState);
+        services.AddSingleton(framework);
+        services.AddSingleton(objectTable);
+        services.AddSingleton(sigScanner);
+        services.AddSingleton(gameInterop);
+        services.AddSingleton(commandManager);
+        services.AddSingleton(dataManager);
+        services.AddSingleton(keyState);
+        services.AddSingleton(textureProvider);
+        services.AddSingleton(targetManager);
+        services.AddSingleton(chatGui);
+        return services;
+    }
+
+    public static IServiceCollection AddPoserCore(this IServiceCollection services)
+    {
+        services.AddSingleton<ConfigurationService>();
+        services.AddSingleton<EventBus>();
+        services.AddSingleton<IEventBus>(sp => sp.GetRequiredService<EventBus>());
+
+        services.AddSingleton<IGPoseService, GPoseService>();
+        services.AddSingleton<IActorManager, ActorManager>();
+        services.AddSingleton<PosingService>();
+        services.AddSingleton<IPosingService>(
+            sp => sp.GetRequiredService<PosingService>());
+        services.AddSingleton<ISkeletonService, SkeletonService>();
+        services.AddSingleton<IIKService, IKService>();
+        services.AddSingleton<BonePosingService>();
+        services.AddSingleton<IBonePosingService>(
+            sp => sp.GetRequiredService<BonePosingService>());
+
+        services.AddSingleton<SelectionSession>();
+        services.AddSingleton<SceneSession>();
+        services.AddSingleton<StableBindingRegistry>();
+        services.AddSingleton<ITransformRuntimePort, TransformRuntimePort>();
+        services.AddSingleton<TransformHistory>();
+        services.AddSingleton<TransformGestureService>();
+        services.AddSingleton<TransformCommandService>();
+        services.AddSingleton<PoseEditService>();
+        services.AddSingleton<PoseTransferService>();
+        services.AddSingleton<CleanTransformFacade>();
+        services.AddSingleton<CleanPoseFacade>();
+        services.AddSingleton<CleanSceneLifecycle>();
+        services.AddSingleton<ISelectionService, CleanSelectionServiceAdapter>();
+        services.AddSingleton<IEditorState, EditorState>();
+        return services;
+    }
+
+    public static IServiceCollection AddPoserFeatures(this IServiceCollection services)
+    {
+        services.AddSingleton<ICameraService, CameraService>();
+        services.AddSingleton<IAnimationService, AnimationService>();
+        services.AddSingleton<IActorSpawnService, ActorSpawnService>();
+        services.AddSingleton<IGazeService, GazeService>();
+        services.AddSingleton<ILiveTestService, LiveTestService>();
+        services.AddSingleton<IExpressionService, ExpressionService>();
+        services.AddSingleton<CommandRouter>();
+
+        services.AddSingleton<IPoseFileService, PoseFileService>();
+        return services;
+    }
+
+    public static IServiceCollection AddPoserPresentation(this IServiceCollection services)
+    {
+        services.AddSingleton<ExpressionInspectorSection>();
+        services.AddSingleton<PoseFileInspectorSection>();
+        services.AddSingleton<PoseInspectorPane>();
+        services.AddSingleton<PoseRailPane>();
+        services.AddSingleton<GraphicalBonePane>();
+
+        services.AddSingleton<SkeletonOverlayWindow>();
+        services.AddSingleton<GizmoOverlayWindow>();
+        services.AddSingleton<MainWindow>();
+        services.AddSingleton<SettingsWindow>();
+
+        services.AddSingleton<UiWindowSet>();
+        services.AddSingleton<IUIManager, UIManager>();
+        return services;
+    }
+}

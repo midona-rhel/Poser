@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Plugin.Services;
@@ -15,6 +16,7 @@ public class PoseFileService : IPoseFileService
 {
     private readonly IPluginLog _log;
     private readonly IBonePosingService _bonePosingService;
+    private readonly IPosingService _posingService;
 
     public event Action<ISkeleton>? OnPoseImported;
     public event Action<ISkeleton, string>? OnPoseExported;
@@ -23,57 +25,42 @@ public class PoseFileService : IPoseFileService
 
     public PoseFileService(
         IPluginLog log,
-        IBonePosingService bonePosingService)
+        IBonePosingService bonePosingService,
+        IPosingService posingService)
     {
         _log = log;
         _bonePosingService = bonePosingService;
+        _posingService = posingService;
     }
 
     public PoseFile CreatePoseFile(ISkeleton skeleton)
     {
         var poseFile = new PoseFile();
-        var poseInfo = _bonePosingService.GetPoseInfo(skeleton);
 
+        // Brio parity (SkeletonPosingCapability.ExportSkeletonPose): every partial's bones
+        // (body partial 0 AND face/accessory partials 1+) go into the same Bones dictionary
+        // as absolute model-space snapshots (LastRawTransform, the pre-reparent value).
+        // Partial roots are skipped except the skeleton root, so a partial's attach bone
+        // does not overwrite its partial-0 original.
         foreach (var bone in skeleton.Bones)
         {
-            var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
+            if (bone.IsPartialRoot && !bone.IsSkeletonRoot)
+                continue;
 
-            // Get the combined transform delta
-            var modification = _bonePosingService.GetModification(bone);
-            if (modification != null)
-            {
-                var transform = modification.Value;
-                var boneData = new PoseFile.BoneData
-                {
-                    Position = transform.Position,
-                    Rotation = transform.Rotation,
-                    Scale = transform.Scale
-                };
-
-                // Store in appropriate dictionary based on partial ID
-                // Partial 0 = body bones, Partial 1+ = face/accessories
-                if (bone.PartialId == 0)
-                {
-                    poseFile.Bones[bone.BoneName] = boneData;
-                }
-            }
-            else
-            {
-                // Even bones without modifications should be captured with their current transforms
-                // for full pose preservation (like Brio does)
-                var boneData = new PoseFile.BoneData
-                {
-                    Position = bone.LastTransform.Position,
-                    Rotation = bone.LastTransform.Rotation,
-                    Scale = bone.LastTransform.Scale
-                };
-
-                if (bone.PartialId == 0)
-                {
-                    poseFile.Bones[bone.BoneName] = boneData;
-                }
-            }
+            poseFile.Bones[bone.BoneName] = bone.LastRawTransform;
         }
+
+        // Brio parity (ModelPosingCapability.ExportModelPose): actor transform as both a
+        // difference vs the game-controlled transform and an absolute snapshot, plus the
+        // legacy root-level copy for other pose tools.
+        var actor = skeleton.Actor;
+        var effective = _posingService.GetEffectiveTransform(actor);
+        var original = _posingService.GetOriginalTransform(actor);
+        poseFile.ModelDifference = effective.CalculateDiff(original);
+        poseFile.ModelAbsoluteValues = effective;
+        poseFile.Position = effective.Position;
+        poseFile.Rotation = effective.Rotation;
+        poseFile.Scale = effective.Scale;
 
         return poseFile;
     }
@@ -102,6 +89,23 @@ public class PoseFileService : IPoseFileService
     {
         try
         {
+            // Legacy CMTool .cmp: hex-encoded rotations/scales, NO positions —
+            // convert to a PoseFile and force ApplyPosition off so nothing zeroes.
+            if (path.EndsWith(".cmp", StringComparison.OrdinalIgnoreCase))
+            {
+                var cmp = CMToolPoseFile.Load(path);
+                if (cmp == null)
+                {
+                    _log.Error($"Failed to load CMTool pose file from {path}");
+                    return false;
+                }
+
+                var upgraded = cmp.Upgrade();
+                var cmpOptions = (options ?? DefaultImportOptions).Clone();
+                cmpOptions.ApplyPosition = false;
+                return ImportPose(skeleton, upgraded, cmpOptions);
+            }
+
             var poseFile = PoseFile.Load(path);
             if (poseFile == null)
             {
@@ -127,22 +131,81 @@ public class PoseFileService : IPoseFileService
 
         try
         {
-            // Reset skeleton first if importing fresh
-            _bonePosingService.ResetSkeleton(skeleton);
+            // Brio parity: import does NOT wipe existing modifications (Brio's interactive
+            // import path passes reset: false). File bones are absolute targets, so a
+            // full-skeleton file fully determines the pose anyway; narrow imports (e.g.
+            // face only) must not destroy body edits. Reset only on explicit request.
+            if (options.ResetBeforeImport)
+            {
+                if (options.BoneFilter == null)
+                {
+                    _bonePosingService.ResetSkeleton(skeleton);
+                }
+                else
+                {
+                    foreach (var bone in skeleton.Bones.Where(bone => PassesBoneFilter(bone, options)))
+                        _bonePosingService.ResetBone(bone);
+                }
+            }
 
             int bonesApplied = 0;
 
             // Apply body bones
             if (options.ApplyBody)
             {
-                foreach (var (boneName, boneData) in poseFile.Bones)
+                // Pre-Dawntrail face heuristic (Anamnesis): files with face bones
+                // but no tongue bone predate the DT face rework — importing their
+                // face POSITIONS onto a DT face deforms it. Strip positions for
+                // face bones and log once.
+                bool preDtFace = poseFile.Bones.Keys.Any(IsFaceBone)
+                    && !poseFile.Bones.ContainsKey("j_f_bero_01")
+                    && skeleton.GetBone("j_f_bero_01") != null;
+                if (preDtFace)
+                    _log.Warning("PoseFileService: pre-Dawntrail face detected (no tongue bone) — face positions skipped to protect the DT face");
+
+                foreach (var (rawBoneName, boneData) in poseFile.Bones)
                 {
+                    // old Anamnesis files carry legacy bone names on plain .pose
+                    // too — run the conversion table whenever the raw name misses
+                    var boneName = rawBoneName;
                     var bone = skeleton.GetBone(boneName);
+                    if (bone == null)
+                    {
+                        var modern = AnamnesisBoneNameConverter.ToGame(rawBoneName);
+                        if (modern != null)
+                        {
+                            boneName = modern;
+                            bone = skeleton.GetBone(boneName);
+                        }
+                    }
                     if (bone == null)
                         continue;
 
+                    if (preDtFace && IsFaceBone(boneName) && options.ApplyPosition)
+                    {
+                        var stripped = options.Clone();
+                        stripped.ApplyPosition = false;
+                        ApplyBoneTransform(bone, boneData, stripped);
+                        bonesApplied++;
+                        continue;
+                    }
+
+                    // Expression import (rewritten, single-phase): only face bones,
+                    // and NEVER the head — the file's face orientations land while
+                    // the posed head stays put. Equivalent end state to Brio's
+                    // apply-then-restore without its 4-tick resync hack.
+                    if (options.AsExpression)
+                    {
+                        if (boneName == "j_kao" || !IsFaceBone(boneName))
+                            continue;
+                    }
                     // Filter by face bones if needed
-                    if (!options.ApplyFace && IsFaceBone(boneName))
+                    else if (!options.ApplyFace && IsFaceBone(boneName))
+                        continue;
+
+                    // Selective import (Ktisis/Anamnesis parity): only filtered
+                    // bones (+ descendants when requested)
+                    if (!PassesBoneFilter(bone, options))
                         continue;
 
                     ApplyBoneTransform(bone, boneData, options);
@@ -151,7 +214,7 @@ public class PoseFileService : IPoseFileService
             }
 
             // Apply weapon bones
-            if (options.ApplyMainHand)
+            if (options.ApplyMainHand && !options.AsExpression)
             {
                 foreach (var (boneName, boneData) in poseFile.MainHand)
                 {
@@ -164,7 +227,7 @@ public class PoseFileService : IPoseFileService
                 }
             }
 
-            if (options.ApplyOffHand)
+            if (options.ApplyOffHand && !options.AsExpression)
             {
                 foreach (var (boneName, boneData) in poseFile.OffHand)
                 {
@@ -177,6 +240,33 @@ public class PoseFileService : IPoseFileService
                 }
             }
 
+            // Brio parity (ModelPosingCapability.ImportModelPose, non-scene path):
+            // current actor transform += ModelDifference. Reset first when requested,
+            // mirroring Brio's `if (applyModelTransform && reset) ModelPosing.ResetTransform()`.
+            if (options.ApplyModelTransform && !options.AsExpression)
+            {
+                var actor = skeleton.Actor;
+                if (options.ResetBeforeImport)
+                    _posingService.ClearTransformOverride(actor);
+
+                var current = _posingService.GetEffectiveTransform(actor);
+                Transform difference = poseFile.ModelDifference;
+                _posingService.SetTransformOverride(actor, new Transform
+                {
+                    Position = current.Position + difference.Position,
+                    Rotation = Quaternion.Normalize(current.Rotation * difference.Rotation),
+                    Scale = current.Scale + difference.Scale
+                });
+            }
+
+            // Re-anchor the face after body imports (rewrite of Brio's
+            // ReconcileHead): re-apply the j_kao subtree's current raw transforms
+            // as absolute targets so face stacks stay pinned to the moved head.
+            // Skipped when IK is live anywhere — reconciling would fight the
+            // solver (the exact failure Brio's own comment admits to).
+            if (!options.AsExpression && options.ApplyFace && !_bonePosingService.HasEnabledIk(skeleton))
+                ReconcileFace(skeleton);
+
             _log.Debug($"Imported pose: {bonesApplied} bones applied");
             OnPoseImported?.Invoke(skeleton);
             return true;
@@ -188,10 +278,50 @@ public class PoseFileService : IPoseFileService
         }
     }
 
+    private PoseFile? _stashedPose;
+
+    public DateTime? StashTime { get; private set; }
+
+    public void StashPose(ISkeleton skeleton)
+    {
+        _stashedPose = CreatePoseFile(skeleton);
+        StashTime = DateTime.UtcNow;
+    }
+
+    public bool ApplyStashedPose(ISkeleton skeleton, PoseImportOptions? options = null)
+    {
+        if (_stashedPose == null)
+            return false;
+        return ImportPose(skeleton, _stashedPose, options);
+    }
+
+    /// <summary>Selective-import filter: bone itself, or any ancestor, is in the set.</summary>
+    private static bool PassesBoneFilter(Poser.Entities.IBone bone, PoseImportOptions options)
+    {
+        if (options.BoneFilter == null)
+            return true;
+        if (options.BoneFilter.Contains(bone.BoneName))
+            return true;
+        if (!options.FilterIncludesDescendants)
+            return false;
+
+        var ancestor = bone.ParentBone;
+        int guard = 0;
+        while (ancestor != null && guard++ < 256)
+        {
+            if (options.BoneFilter.Contains(ancestor.BoneName))
+                return true;
+            ancestor = ancestor.ParentBone;
+        }
+        return false;
+    }
+
     private void ApplyBoneTransform(IBone bone, PoseFile.BoneData boneData, PoseImportOptions options)
     {
-        // Get the original transform for delta calculation
-        var original = bone.LastTransform;
+        // File bones are absolute raw (pre-reparent) snapshots, so the delta basis is
+        // LastRawTransform — Brio passes bone.LastRawTransform to BonePoseInfo.Apply.
+        // For partial-0 bones this equals LastTransform; for face partials it differs.
+        var original = bone.LastRawTransform;
 
         // Build the new transform based on options
         var newTransform = new Transform
@@ -203,6 +333,34 @@ public class PoseFileService : IPoseFileService
 
         // Apply via the bone posing service
         _bonePosingService.ApplyTransform(bone, newTransform, original);
+    }
+
+    /// <summary>
+    /// Re-applies the head subtree (j_kao + descendants) at its current raw
+    /// transforms. Near-identity deltas are rejected by BonePoseInfo.Apply, so
+    /// this is a no-op unless an import actually shifted the face's basis.
+    /// </summary>
+    private void ReconcileFace(ISkeleton skeleton)
+    {
+        var head = skeleton.GetBone("j_kao");
+        if (head == null)
+            return;
+
+        foreach (var bone in skeleton.Bones)
+        {
+            if (!IsInSubtree(bone, head))
+                continue;
+            var raw = bone.LastRawTransform;
+            _bonePosingService.ApplyTransform(bone, raw, raw);
+        }
+    }
+
+    private static bool IsInSubtree(IBone bone, IBone root)
+    {
+        for (var b = bone; b != null; b = b.ParentBone)
+            if (ReferenceEquals(b, root) || (b.BoneName == root.BoneName && b.PartialId == root.PartialId))
+                return true;
+        return false;
     }
 
     private static bool IsFaceBone(string boneName)
@@ -219,17 +377,20 @@ public class PoseFileService : IPoseFileService
                boneName.Contains("_kuti");       // Mouth
     }
 
+    // TODO(UI): file dialogs cannot be wired inside PosingCore. There is no dialog
+    // infrastructure anywhere in the plugin yet — Poser/UI opens its own ImGui FileBrowser
+    // (Poser/UI/Controls/TransformTabPane.cs) and calls ImportPose/ExportPose with the
+    // chosen path, so these methods currently have zero callers. Implementing them needs
+    // UI-side work: either Dalamud's FileDialogManager (whose Draw() must be pumped every
+    // frame by the UI loop) injected via an abstraction, or routing through the existing
+    // FileBrowser control. Until then they only log.
     public void ImportPoseWithDialog(ISkeleton skeleton, PoseImportOptions? options = null)
     {
-        // File dialog integration would go here
-        // For now, this is a placeholder - will be implemented when UI is updated
         _log.Warning("ImportPoseWithDialog not yet implemented - use ImportPose with a path directly");
     }
 
     public void ExportPoseWithDialog(ISkeleton skeleton)
     {
-        // File dialog integration would go here
-        // For now, this is a placeholder - will be implemented when UI is updated
         _log.Warning("ExportPoseWithDialog not yet implemented - use ExportPose with a path directly");
     }
 

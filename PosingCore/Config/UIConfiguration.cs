@@ -6,8 +6,17 @@ namespace Poser.Config;
 /// Configuration for Poser UI colors.
 /// Each color can either use a custom value or reference an ImGuiCol from the Dalamud theme.
 /// </summary>
+public enum PanelDock { Left, Right, Floating, Hidden }
+
 public class UIConfiguration
 {
+    // Settings -> Display/UI (Crystarium shell; the ImGuiCol entries below are legacy-window theming)
+    public int AccentIndex { get; set; } = 0;
+    public PanelDock SidebarDock { get; set; } = PanelDock.Left;
+    public PanelDock InspectorDock { get; set; } = PanelDock.Right;
+    public bool ShowTreeGuides { get; set; } = true;
+    public System.Collections.Generic.Dictionary<string, string> Keybinds { get; set; } = new();
+
     // Background colors
     public UIColorEntry Background { get; set; } = new(ImGuiCol.WindowBg);
     public UIColorEntry ControlBackground { get; set; } = new(ImGuiCol.FrameBg);

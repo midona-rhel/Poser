@@ -116,13 +116,16 @@ public struct Transform
 
     /// <summary>
     /// Compares transforms using epsilon tolerance to handle floating-point precision.
+    /// Rotations compare as orientations (q ≡ −q); the component-equality fallback keeps
+    /// Equals reflexive for non-unit quaternions (e.g. default(Transform)'s zero rotation,
+    /// where the dot-product test would otherwise fail).
     /// </summary>
     public override bool Equals(object? obj)
     {
         if (obj is Transform other)
         {
             return Vector3.DistanceSquared(Position, other.Position) < Epsilon &&
-                   MathF.Abs(Quaternion.Dot(Rotation, other.Rotation)) > 1f - Epsilon &&
+                   (MathF.Abs(Quaternion.Dot(Rotation, other.Rotation)) > 1f - Epsilon || Rotation == other.Rotation) &&
                    Vector3.DistanceSquared(Scale, other.Scale) < Epsilon;
         }
         return false;

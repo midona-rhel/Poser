@@ -1,0 +1,1212 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility;
+using Poser.Application.Transforms;
+using Poser.Application.Posing;
+using Poser.Core;
+using Poser.Core.Helpers;
+using Poser.Entities;
+using Poser.Game;
+using Poser.Game.Transforms;
+using Poser.Game.Posing;
+using Poser.Services;
+using Poser.UI.Controls;
+using Poser.UI.Views;
+using DomainOperation = Poser.Domain.Transforms.TransformOperation;
+using DomainSpace = Poser.Domain.Transforms.TransformSpace;
+using DomainDelta = Poser.Domain.Transforms.TransformDelta;
+using DomainPivot = Poser.Domain.Transforms.PivotMode;
+using DomainDeltaMode = Poser.Domain.Transforms.TransformDeltaMode;
+
+namespace Poser.UI;
+
+/// <summary>
+/// The Pose tab of the AppShell — M1 `.insp/.prow/.scrub` grammar (verified by
+/// the main content surface) bound to the live posing stack. Replaces the
+/// legacy TransformTabPane interior. Sections:
+/// TRANSFORM (drag/wheel/type-in position/rotation/scale through stable-id
+/// application gestures for actors and bones; lights/cameras/world objects
+/// remain direct until their adapters migrate), GAZE
+/// (eyes/head segs via
+/// IGazeService — one shared mode, the part flags gate what it drives),
+/// IK (session switch + bulk arm/disarm), ORBIT (bone-around-parent toggle +
+/// pivot/strategy — the P-STAB feature), POSE (flip/mirror/reset regions,
+/// stash, import/export .pose via FileBrowser).
+/// </summary>
+public class PoseInspectorPane
+{
+    private readonly IPosingService _posingService;
+    private readonly IBonePosingService _bonePosingService;
+    private readonly IAnimationService _animationService;
+    private readonly CleanTransformFacade _cleanTransforms;
+    private readonly CleanPoseFacade _cleanPose;
+    private readonly IGazeService _gazeService;
+    private readonly IEditorState _editorState;
+    private readonly ISelectionService _selectionService;
+    private readonly ExpressionInspectorSection _expressionSection;
+    private readonly PoseFileInspectorSection _poseFileSection;
+
+    /// <summary>Renders the Body/Face map inline through GraphicalBonePane.</summary>
+    public Func<int, Vector2, bool>? DrawMapInline;
+
+    /// <summary>Scene actors for the gaze "look at actor" target picker (set by MainWindow).</summary>
+    public Func<System.Collections.Generic.IReadOnlyList<IActor>>? ActorsProvider;
+
+    /// <summary>Resolves the same actor nickname/display name used by the scene tree.</summary>
+    public Func<IActor, string>? ActorDisplayNameProvider;
+    private int _poseView = 2; // 0 body, 1 face, 2 bones
+
+    // Bones matrix cache (rebuilt when the skeleton or its bone count changes).
+    private BoneMatrixViewModel? _matrixVm;
+    private string _matrixFilter = "";
+    private ISkeleton? _matrixSkeleton;
+    private int _matrixBoneCount;
+
+    private IEntity? _entity;
+    private IEntity[] _selectionSnapshot = Array.Empty<IEntity>();
+
+    // Euler cache while a rotation drag is active (avoids quat→euler snap).
+    private Vector3? _dragEuler;
+    // Display and model baselines for one application-owned transform gesture.
+    private Transform? _dragStart;
+    private Transform? _cleanModelStart;
+    private Transform? _cleanDisplayedCurrent;
+    private TransformGestureId? _cleanGesture;
+    private IBone? _cleanPrimaryBone;
+
+    private bool _openGaze = true;
+    private bool _openIk;
+    private bool _openOrbit;
+    private bool _openPose = true;
+
+    public PoseInspectorPane(
+        IPosingService posingService,
+        IBonePosingService bonePosingService,
+        IAnimationService animationService,
+        CleanTransformFacade cleanTransforms,
+        CleanPoseFacade cleanPose,
+        IGazeService gazeService,
+        IEditorState editorState,
+        ISelectionService selectionService,
+        ExpressionInspectorSection expressionSection,
+        PoseFileInspectorSection poseFileSection)
+    {
+        _expressionSection = expressionSection;
+        _poseFileSection = poseFileSection;
+        _posingService = posingService;
+        _bonePosingService = bonePosingService;
+        _animationService = animationService;
+        _cleanTransforms = cleanTransforms;
+        _cleanPose = cleanPose;
+        _gazeService = gazeService;
+        _editorState = editorState;
+        _selectionService = selectionService;
+    }
+
+    public void SetEntity(IEntity? entity)
+    {
+        var selected = _selectionService.Selected;
+        bool selectionChanged = selected.Count != _selectionSnapshot.Length;
+        for (int i = 0; !selectionChanged && i < selected.Count; i++)
+            selectionChanged = !ReferenceEquals(selected[i], _selectionSnapshot[i]);
+
+        if (!ReferenceEquals(entity, _entity) || selectionChanged)
+        {
+            AppShellView.CancelAxisEdit();
+            ClearTransformSession(cancel: true);
+        }
+        _entity = entity;
+        _selectionSnapshot = selected.ToArray();
+    }
+
+    /// <summary>Content column (Pose tab): the Anamnesis surface ONLY —
+    /// seg + strip + matrix. All editing lives in the rail (defect #2).</summary>
+    public void Draw(Vector2 origin, Vector2 size)
+    {
+        float s = ImGuiHelpers.GlobalScale;
+        var dl = ImGui.GetWindowDrawList();
+        var cursor = origin;
+
+        var surfaceSkeleton = OwningSkeleton();
+        if (surfaceSkeleton != null)
+        {
+            cursor.Y += DrawPoseSurface(dl, cursor, size, surfaceSkeleton, s);
+        }
+        else
+        {
+            ViewText.Label(cursor + new Vector2(0f, 8f) * s, "Select an actor or bone in the sidebar.", 12f,
+                FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
+        }
+        ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
+        _poseFileSection.DrawBrowsers();
+    }
+
+    /// <summary>Crumb parts for the rail header.</summary>
+    public (string Prefix, string Bold) CrumbParts() => _entity switch
+    {
+        IBone bone => ($"{ActorDisplayName(bone.Skeleton.Actor)} · ", bone.Name),
+        null => ("", ""),
+        IActor actor => ("", ActorDisplayName(actor)),
+        { } e => ("", StripIndex(e.Name)),
+    };
+
+    private static string StripIndex(string name)
+        => System.Text.RegularExpressions.Regex.Replace(name, @"\s*\(\d+\)$", "");
+
+    private string ActorDisplayName(IActor actor)
+        => ActorDisplayNameProvider?.Invoke(actor) ?? StripIndex(actor.Name);
+
+    /// <summary>Rotation-ball input: euler-degree deltas applied to the selection.</summary>
+    public void RotateSelection(float dx, float dy, float dz)
+    {
+        var (transform, canEdit) = ReadTransform();
+        if (!canEdit) return;
+        BeginTransformSession(transform, DomainOperation.Rotate);
+        var euler = _dragEuler ?? PoseMath.QuaternionToEuler(transform.Rotation);
+        euler += new Vector3(dx, dy, dz);
+        _dragEuler = euler;
+        ApplyTransformSession(transform with { Rotation = PoseMath.EulerToQuaternion(euler) });
+    }
+
+    /// <summary>Rotation-ball drag end: push history.</summary>
+    public void CommitRotation()
+    {
+        CommitTransformSession();
+        ClearTransformSession();
+    }
+
+    /// <summary>The inspector sections, drawn inside the shell rail.</summary>
+    public void DrawRailSections(Vector2 origin, float width)
+    {
+        float s = ImGuiHelpers.GlobalScale;
+        var dl = ImGui.GetWindowDrawList();
+        var cursor = origin;
+
+        // M11: Anamnesis-column value sections (no TRANSFORM header)
+        cursor.Y += DrawTransform(dl, cursor, width, s);
+        cursor.Y += 12f * s;
+
+        var actor = OwningActor();
+        var owningSkeleton = OwningSkeleton();
+        if (actor != null && _expressionSection.CanDraw)
+        {
+            cursor.Y += _expressionSection.Draw(cursor, width, actor, s);
+            cursor.Y += 12f * s;
+        }
+        if (owningSkeleton != null)
+        {
+            cursor.Y += _poseFileSection.Draw(cursor, width, owningSkeleton, s);
+            cursor.Y += 12f * s;
+        }
+        if (actor != null)
+        {
+            cursor.Y += InspectorLayout.Section(dl, cursor, width, "insp", "GAZE", ref _openGaze, s, topBorder: true);
+            if (_openGaze)
+            {
+                cursor.Y += InspectorLayout.BodyGap * s;
+                cursor.Y += DrawGaze(cursor, width, actor, s);
+            }
+            cursor.Y += 12f * s;
+        }
+
+        var skeleton = OwningSkeleton();
+        if (skeleton != null)
+        {
+            cursor.Y += InspectorLayout.Section(dl, cursor, width, "insp", "IK", ref _openIk, s, topBorder: true);
+            if (_openIk)
+            {
+                cursor.Y += InspectorLayout.BodyGap * s;
+                cursor.Y += DrawIk(cursor, width, skeleton, s);
+            }
+
+            if (_entity is IBone)
+            {
+                cursor.Y += InspectorLayout.Section(dl, cursor, width, "insp", "ORBIT", ref _openOrbit, s, topBorder: true);
+                if (_openOrbit)
+                {
+                    cursor.Y += InspectorLayout.BodyGap * s;
+                    cursor.Y += DrawOrbit(cursor, width, s);
+                }
+            }
+
+            cursor.Y += InspectorLayout.Section(dl, cursor, width, "insp", "POSE", ref _openPose, s, topBorder: true);
+            if (_openPose)
+            {
+                cursor.Y += InspectorLayout.BodyGap * s;
+                cursor.Y += DrawPoseActions(cursor, width, skeleton, s);
+            }
+        }
+
+        ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
+    }
+
+    // ── pose surface: Body/Face/Bones seg + strip + matrix (approved M2) ─
+
+    private float DrawPoseSurface(ImDrawListPtr dl, Vector2 cursor, Vector2 size, ISkeleton skeleton, float s)
+    {
+        const float tabsHeightPx = AppShellView.ToolbarHeight;
+        const float footerHeightPx = 47f;
+        float width = size.X;
+        float height = Math.Max(size.Y, (tabsHeightPx + footerHeightPx + 1f) * s);
+        float tabsHeight = tabsHeightPx * s;
+        float footerHeight = footerHeightPx * s;
+        float bodyHeight = Math.Max(1f, height - tabsHeight - footerHeight);
+
+        // The mode selector and footer belong to the viewport chrome. Only the
+        // selected surface between them scrolls.
+        const float segmentedHeightPx = 30f;
+        ImGui.SetCursorScreenPos(cursor + new Vector2(
+            0f,
+            (tabsHeightPx - segmentedHeightPx) * 0.5f * s));
+        Crystarium.SegmentedControl(
+            "##pose-surface",
+            new[] { "Body", "Face", "Matrix", "3D" },
+            ref _poseView,
+            maxWidth: 0f,
+            alignFirstTabToCursor: true);
+        dl.AddRectFilled(
+            new Vector2(
+                cursor.X - AppShellView.MainHorizontalPadding * s,
+                cursor.Y + tabsHeight - 1f * s),
+            new Vector2(
+                cursor.X + width + AppShellView.MainHorizontalPadding * s,
+                cursor.Y + tabsHeight),
+            ImGui.ColorConvertFloat4ToU32(
+                ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.08f))));
+
+        var bodyOrigin = new Vector2(cursor.X, cursor.Y + tabsHeight);
+        ImGui.SetCursorScreenPos(bodyOrigin);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+        float bodyContentHeight = bodyHeight;
+        if (ImGui.BeginChild("##pose-surface-content",
+                new Vector2(width + AppShellView.ScrollbarWidth * s, bodyHeight),
+                false, ImGuiWindowFlags.None))
+        {
+            var scrolledOrigin = ImGui.GetCursorScreenPos();
+            bodyContentHeight = DrawPoseSurfaceContent(
+                ImGui.GetWindowDrawList(), scrolledOrigin, width, bodyHeight, skeleton, s);
+            // Body, Face, and 3D are viewport canvases and deliberately leave
+            // the child cursor untouched. Reserve extra height only when a
+            // document surface (currently Matrix) genuinely overflows.
+            if (bodyContentHeight > bodyHeight + 0.5f * s)
+            {
+                ImGui.SetCursorScreenPos(
+                    scrolledOrigin +
+                    new Vector2(0f, bodyContentHeight - ImGui.GetStyle().ItemSpacing.Y));
+                ImGui.Dummy(Vector2.One);
+            }
+        }
+        ImGui.EndChild();
+        ImGui.PopStyleVar();
+
+        DrawPoseFooter(dl, new Vector2(cursor.X, cursor.Y + height - footerHeight), width, skeleton, s);
+        return height;
+    }
+
+    private float DrawPoseSurfaceContent(
+        ImDrawListPtr dl,
+        Vector2 cursor,
+        float width,
+        float viewportHeight,
+        ISkeleton skeleton,
+        float s)
+    {
+        if (_poseView is 0 or 1)
+        {
+            ImGui.SetCursorScreenPos(cursor);
+            if (DrawMapInline == null || !DrawMapInline(_poseView, new Vector2(width, viewportHeight)))
+                ViewText.Label(new Vector2(cursor.X, cursor.Y + 8f * s),
+                    "Select an actor to use the map.", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
+            return viewportHeight;
+        }
+
+        if (_poseView == 3)
+        {
+            return Draw3DView(dl, cursor, width, viewportHeight, skeleton, s);
+        }
+
+        float h = 0f;
+        h += 12f * s;
+        ImGui.SetCursorScreenPos(new Vector2(cursor.X, cursor.Y + h));
+        if (Crystarium.FilterPill(
+                "##pose-matrix-filter",
+                ref _matrixFilter,
+                "Filter bones…",
+                MathF.Min(260f, width / s)))
+            _matrixVm = null;
+        h += 38f * s;
+
+        if (_matrixVm == null || !ReferenceEquals(_matrixSkeleton, skeleton) || _matrixBoneCount != skeleton.Bones.Count)
+        {
+            _matrixVm = BoneMatrixBuilder.Build(
+                skeleton,
+                (bone, additive, range) =>
+                {
+                    if (range && _selectionService.LastClicked is IBone anchor)
+                    {
+                        _selectionService.SelectRange(
+                            anchor,
+                            bone,
+                            BoneMatrixBuilder.EnumerateBones(_matrixVm!));
+                    }
+                    else if (additive)
+                    {
+                        _selectionService.ToggleSelection(bone);
+                    }
+                    else
+                    {
+                        _selectionService.Select(bone);
+                    }
+                },
+                (bones, additive) =>
+                {
+                    if (bones.Count == 0)
+                        return;
+                    if (!additive)
+                        _selectionService.Select(bones[0]);
+                    foreach (var bone in bones.Skip(additive ? 0 : 1))
+                        _selectionService.AddToSelection(bone);
+                },
+                _matrixFilter);
+            _matrixSkeleton = skeleton;
+            _matrixBoneCount = skeleton.Bones.Count;
+        }
+        BoneMatrixBuilder.SyncSelection(_matrixVm);
+        h += BoneMatrixView.Draw(_matrixVm, new Vector2(cursor.X, cursor.Y + h), width - 8f * s, "livemx");
+        return h;
+    }
+
+    private void DrawPoseFooter(ImDrawListPtr dl, Vector2 cursor, float width, ISkeleton skeleton, float s)
+    {
+        // M11 footer: Physics · Animation · | · Parenting cycle · Clear · Flip.
+        dl.AddRectFilled(new Vector2(cursor.X, cursor.Y), new Vector2(cursor.X + width, cursor.Y + 1f * s),
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.08f))));
+
+        var actor = skeleton.Actor;
+        float fy = 9f * s;
+
+        ImGui.SetCursorScreenPos(new Vector2(cursor.X, cursor.Y + fy + 2f * s));
+        bool physics = _animationService.IsPhysicsFrozen(actor);
+        if (Crystarium.Switch("##ft-physics", ref physics))
+            _animationService.TogglePhysicsFreeze(actor);
+        ViewText.Label(new Vector2(cursor.X + 40f * s, cursor.Y + fy + 6f * s), "Physics", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
+
+        ImGui.SetCursorScreenPos(new Vector2(cursor.X + 100f * s, cursor.Y + fy + 2f * s));
+        bool motion = _animationService.IsFrozen(actor);
+        if (Crystarium.Switch("##ft-motion", ref motion))
+            _animationService.ToggleFreeze(actor);
+        ViewText.Label(new Vector2(cursor.X + 140f * s, cursor.Y + fy + 6f * s), "Animation", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
+
+        dl.AddRectFilled(new Vector2(cursor.X + 210f * s, cursor.Y + fy + 4f * s),
+            new Vector2(cursor.X + 211f * s, cursor.Y + fy + 20f * s),
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.08f))));
+
+        // Parenting: the Anamnesis CYCLE (Full → Position only → Off)
+        var poseInfo = _bonePosingService.GetPoseInfo(skeleton);
+        ViewText.Label(new Vector2(cursor.X + 222f * s, cursor.Y + fy + 6f * s), "Parenting", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
+        string parentingLabel = poseInfo.DefaultPropagation switch
+        {
+            Core.TransformComponents.None => "Off",
+            Core.TransformComponents.Position => "Position only",
+            _ => "Full",
+        };
+        ImGui.SetCursorScreenPos(new Vector2(cursor.X + 286f * s, cursor.Y + fy));
+        if (Crystarium.Button(parentingLabel, new ButtonProps { Id = "ft-parenting", Classes = Cls.Compact,
+            Tooltip = "Cycle: Full > Position only > Off",
+            Style = new ButtonStyle { Height = Sizing.Fixed(24f) } }))
+        {
+            poseInfo.DefaultPropagation = poseInfo.DefaultPropagation switch
+            {
+                Core.TransformComponents.None => Core.TransformComponents.Position | Core.TransformComponents.Rotation,
+                Core.TransformComponents.Position => Core.TransformComponents.None,
+                _ => Core.TransformComponents.Position,
+            };
+        }
+        ImGui.SameLine(0f, 8f * s);
+        if (Crystarium.Button("Clear", new ButtonProps { Id = "ft-clear", Classes = Cls.Compact, Tooltip = "Clear bone selection",
+            Style = new ButtonStyle { Height = Sizing.Fixed(24f) } }))
+            _selectionService.ClearSelection();
+
+        ImGui.SetCursorScreenPos(new Vector2(cursor.X + width - 56f * s, cursor.Y + fy));
+        if (Crystarium.Button("Flip", new ButtonProps { Id = "ft-flip", Classes = Cls.Compact, Tooltip = "Mirror the whole pose",
+            Style = new ButtonStyle { Height = Sizing.Fixed(24f) } }))
+            _cleanPose.Mirror(skeleton);
+
+    }
+
+    /// <summary>3D view: orbitable projection of the skeleton (Anamnesis
+    /// Pose3DView equivalent) — drag orbits, click dots selects.</summary>
+    private float _orbitYaw = 0.6f, _orbitPitch = 0.3f;
+
+    private float Draw3DView(ImDrawListPtr dl, Vector2 origin, float width, float height, ISkeleton skeleton, float s)
+    {
+        var min = origin;
+        var max = origin + new Vector2(width, height);
+        dl.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.10f)), 8f * s);
+        dl.AddRect(min, max, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.08f))), 8f * s);
+
+        ImGui.SetCursorScreenPos(min);
+        ImGui.InvisibleButton("##pose-3d", new Vector2(width, height));
+        if (ImGui.IsItemActive())
+        {
+            var d = ImGui.GetIO().MouseDelta;
+            _orbitYaw += d.X * 0.01f;
+            _orbitPitch = Math.Clamp(_orbitPitch + d.Y * 0.01f, -1.4f, 1.4f);
+        }
+
+        // model-space bones → orbit view → orthographic projection
+        var center = Vector3.Zero;
+        int n = 0;
+        foreach (var bone in skeleton.Bones)
+        {
+            if (bone.IsHiddenBone) continue;
+            center += bone.LastTransform.Position; n++;
+        }
+        if (n == 0)
+        {
+            ViewText.Label(min + new Vector2(12f, 12f) * s, "No skeleton.", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
+            return height;
+        }
+        center /= n;
+
+        var view = Matrix4x4.CreateTranslation(-center)
+                 * Matrix4x4.CreateRotationY(_orbitYaw)
+                 * Matrix4x4.CreateRotationX(_orbitPitch);
+        float scalePx = height * 0.42f;
+        var mid = (min + max) * 0.5f;
+        var selected = _selectionService.GetSelected<IBone>().ToHashSet();
+
+        Vector2 Project(Vector3 p)
+        {
+            var v = Vector3.Transform(p, view);
+            return new Vector2(mid.X + v.X * scalePx, mid.Y - v.Y * scalePx);
+        }
+
+        uint lineCol = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 0.25f));
+        IBone? hovered = null;
+        float bestDist = 8f * s;
+        var mouse = ImGui.GetMousePos();
+
+        foreach (var bone in skeleton.Bones)
+        {
+            if (bone.IsHiddenBone) continue;
+            var p = Project(bone.LastTransform.Position);
+            if (bone.ParentBone is { IsHiddenBone: false } parent)
+                dl.AddLine(Project(parent.LastTransform.Position), p, lineCol, 1f * s);
+            bool isSel = selected.Contains(bone);
+            dl.AddCircleFilled(p, (isSel ? 4.5f : 3f) * s,
+                ImGui.ColorConvertFloat4ToU32(isSel ? new Vector4(1f, 1f, 1f, 1f) : new Vector4(50 / 255f, 151 / 255f, 1f, 0.85f)));
+            float dist = Vector2.Distance(mouse, p);
+            if (dist < bestDist) { bestDist = dist; hovered = bone; }
+        }
+        if (hovered != null)
+        {
+            ImGui.SetTooltip(hovered.Name);
+            if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGui.GetIO().KeyCtrl)
+                _selectionService.Select(hovered);
+            else if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+                _selectionService.ToggleSelection(hovered);
+        }
+        ViewText.Label(new Vector2(max.X - 150f * s, max.Y - 20f * s), "drag: orbit - click: select", 11f,
+            FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
+
+        return height;
+    }
+
+    private static void StripLabel(Vector2 cursor, float h, float x, string text, float s)
+    {
+        ViewText.Label(cursor + new Vector2(x, h / s + 9f) * s, text, 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
+    }
+
+    // ── sections ─────────────────────────────────────────────────────────
+
+    private float DrawTransform(ImDrawListPtr dl, Vector2 cursor, float width, float s)
+    {
+        var (transform, canEdit) = ReadTransform();
+        var pos = transform.Position;
+        var euler = _dragEuler ?? PoseMath.QuaternionToEuler(transform.Rotation);
+        var scale = transform.Scale;
+
+        float h = 0f;
+        bool changed = false, released = false;
+
+        // M11 order (Anamnesis column): Rotation → Position → Scale; bone
+        // values are presented in parent-LOCAL space, hence the label suffix.
+        string space = _entity is IBone ? " · local" : "";
+        h += RailScrub(dl, cursor, width, "pose-rot", "Rotation" + space,
+            ref euler, 0.5f, "0.0", s, out var rotChanged, out var rotReleased);
+        changed |= rotChanged;
+        released |= rotReleased;
+        _dragEuler = rotChanged ? euler : (rotReleased ? null : _dragEuler);
+
+        h += RailScrub(dl, new Vector2(cursor.X, cursor.Y + h), width, "pose-pos", "Position" + space,
+            ref pos, 0.005f, "0.00", s, out var posChanged, out var posReleased);
+        changed |= posChanged;
+        released |= posReleased;
+
+        h += RailScrub(dl, new Vector2(cursor.X, cursor.Y + h), width, "pose-scale", "Scale",
+            ref scale, 0.005f, "0.00", s, out var scaleChanged, out var scaleReleased);
+        changed |= scaleChanged;
+        released |= scaleReleased;
+
+        if (changed && canEdit)
+        {
+            var operation =
+                (rotChanged ? 1 : 0) +
+                (posChanged ? 1 : 0) +
+                (scaleChanged ? 1 : 0) > 1
+                    ? DomainOperation.Universal
+                    : rotChanged
+                        ? DomainOperation.Rotate
+                        : posChanged
+                            ? DomainOperation.Translate
+                            : DomainOperation.Scale;
+            BeginTransformSession(transform, operation);
+            var next = new Transform
+            {
+                Position = pos,
+                Rotation = rotChanged || _dragEuler.HasValue ? PoseMath.EulerToQuaternion(euler) : transform.Rotation,
+                Scale = scale,
+            };
+            ApplyTransformSession(next);
+        }
+
+        if (released)
+        {
+            if (canEdit)
+                CommitTransformSession();
+            ClearTransformSession();
+        }
+
+        if (!canEdit && _entity is IActor)
+        {
+            ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 2f * s),
+                "Freeze the actor's animation to move it.", 11f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
+            h += 18f * s;
+        }
+
+        return h;
+    }
+
+    /// <summary>Compact rail scrub: 16px label line + full-width axis wells.</summary>
+    private static float RailScrub(ImDrawListPtr dl, Vector2 cursor, float width, string id, string label,
+        ref Vector3 value, float perPixel, string fmt, float s, out bool changed, out bool released)
+    {
+        ViewText.Label(cursor, label, 11f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
+        float rowH = AppShellView.ScrubRowDrag(dl, new Vector2(cursor.X - 94f * s, cursor.Y + 16f * s),
+            width + 94f * s, id, "", ref value, perPixel, fmt, s, out changed, out released);
+        return 16f * s + rowH;
+    }
+
+    private float DrawGaze(Vector2 cursor, float width, IActor actor, float s)
+    {
+        var state = _gazeService.GetGazeState(actor);
+        string[] options = { "Off", "Fwd", "Cam", "Actor" };
+
+        float h = 0f;
+        ViewText.Label(cursor + new Vector2(0f, 7f) * s, "Mode", 12f, FontWeight.Regular,
+            new Vector4(1f, 1f, 1f, 0.5f));
+        int mode = state.Mode switch
+        {
+            GazeTargetMode.None => 0,
+            GazeTargetMode.Forward => 1,
+            GazeTargetMode.Camera => 2,
+            _ => 3,
+        };
+        ImGui.SetCursorScreenPos(cursor + new Vector2(46f, 0f) * s);
+        if (Crystarium.SegmentedControl("##gaze-mode", options, ref mode, (width - 46f * s) / s))
+        {
+            if (mode == 0)
+            {
+                _gazeService.ResetGaze(actor);
+            }
+            else
+            {
+                if (state.TargetType == GazeTargetType.None)
+                    _gazeService.SetGazeTargetType(actor, GazeTargetType.All);
+                _gazeService.SetGazeMode(actor, mode switch
+                {
+                    1 => GazeTargetMode.Forward,
+                    2 => GazeTargetMode.Camera,
+                    _ => GazeTargetMode.Entity,
+                });
+            }
+            state = _gazeService.GetGazeState(actor);
+        }
+        h += 34f * s;
+
+        h += GazePartRow(new Vector2(cursor.X, cursor.Y + h), width, "Eyes", GazeTargetType.Eyes, actor, state, s);
+        h += GazePartRow(new Vector2(cursor.X, cursor.Y + h), width, "Head", GazeTargetType.Head, actor, state, s);
+        h += GazePartRow(new Vector2(cursor.X, cursor.Y + h), width, "Body", GazeTargetType.Body, actor, state, s);
+
+        // "look at actor" target picker (Brio SetActorTarget / Anamnesis look-at)
+        if (state.Mode == GazeTargetMode.Entity)
+        {
+            var others = new System.Collections.Generic.List<IActor>();
+            if (ActorsProvider != null)
+                foreach (var candidate in ActorsProvider())
+                    if (!ReferenceEquals(candidate, actor))
+                        others.Add(candidate);
+
+            ViewText.Label(cursor + new Vector2(0f, h / s + 7f) * s, "At", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
+            if (others.Count == 0)
+            {
+                ViewText.Label(cursor + new Vector2(46f, h / s + 7f) * s, "no other actors in the scene", 11f,
+                    FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
+            }
+            else
+            {
+                var names = new string[others.Count];
+                int current = 0;
+                for (int i = 0; i < others.Count; i++)
+                {
+                    names[i] = ActorDisplayName(others[i]);
+                    if (ReferenceEquals(others[i], state.TargetEntity)) current = i;
+                }
+                ImGui.SetCursorScreenPos(cursor + new Vector2(46f, h / s) * s);
+                if (Crystarium.Dropdown("##gaze-target", names, ref current))
+                    _gazeService.SetGazeTarget(actor, others[current]);
+                if (state.TargetEntity == null)
+                    _gazeService.SetGazeTarget(actor, others[current]);
+            }
+            h += 34f * s;
+        }
+        return h;
+    }
+
+    private float GazePartRow(
+        Vector2 cursor,
+        float width,
+        string label,
+        GazeTargetType part,
+        IActor actor,
+        GazeState state,
+        float s)
+    {
+        ViewText.Label(cursor + new Vector2(0f, 7f) * s, label, 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
+
+        bool enabled = state.Mode != GazeTargetMode.None && state.TargetType.HasFlag(part);
+        ImGui.SetCursorScreenPos(new Vector2(cursor.X + 94f * s, cursor.Y + 4f * s));
+        if (Crystarium.Switch($"##gaze-part-{label}", ref enabled))
+        {
+            var flags = enabled ? state.TargetType | part : state.TargetType & ~part;
+            if (flags == GazeTargetType.None)
+                _gazeService.ResetGaze(actor);
+            else
+                _gazeService.SetGazeTargetType(actor, flags);
+        }
+        ViewText.Label(cursor + new Vector2(140f, 7f) * s, enabled ? "driven" : "free", 11f,
+            FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
+
+        // per-part position lock (Brio SetTargetLock): pin where the part looks
+        bool locked = _gazeService.IsPartLocked(actor, part);
+        ImGui.SetCursorScreenPos(new Vector2(cursor.X + width - 24f * s, cursor.Y + 3f * s));
+        var lockHit = Interactive.Reserve($"##gaze-lock-{label}", new Vector2(20f, 20f) * s, disabled: false);
+        ImGui.SetCursorScreenPos(new Vector2(cursor.X + width - 22f * s, cursor.Y + 5f * s));
+        Crystarium.Icon(locked ? TablerIcon.Lock : TablerIcon.LockOpen, 14f * s,
+            ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, locked ? 0.9f : lockHit.Hovered ? 0.7f : 0.35f)));
+        if (lockHit.Clicked)
+        {
+            if (locked) _gazeService.SetTargetLock(actor, false, part, default);
+            else _gazeService.LockGaze(actor, part);
+        }
+
+        return 34f * s;
+    }
+
+    private float DrawIk(Vector2 cursor, float width, ISkeleton skeleton, float s)
+    {
+        ViewText.Label(cursor + new Vector2(0f, 7f) * s, "Live IK", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
+        ImGui.SetCursorScreenPos(cursor + new Vector2(94f, 4f) * s);
+        bool ik = _editorState.IkEnabled;
+        if (Crystarium.Switch("##pose-ik", ref ik))
+            _editorState.IkEnabled = ik;
+        ViewText.Label(cursor + new Vector2(140f, 7f) * s, "translate drags solve the chain", 11f,
+            FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
+        float h = 30f * s;
+
+        ImGui.SetCursorScreenPos(new Vector2(cursor.X, cursor.Y + h));
+        if (Crystarium.Button("Arm hands + feet", new ButtonProps { Id = "pose-ik-arm", Classes = Cls.Compact }))
+            _bonePosingService.SetAllIk(skeleton, true);
+        ImGui.SameLine(0f, 8f * s);
+        if (Crystarium.Button("Disarm all", new ButtonProps { Id = "pose-ik-disarm", Classes = Cls.Compact }))
+            _bonePosingService.SetAllIk(skeleton, false);
+        return h + 34f * s;
+    }
+
+    private float DrawOrbit(Vector2 cursor, float width, float s)
+    {
+        ViewText.Label(cursor + new Vector2(0f, 7f) * s, "Orbit", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
+        ImGui.SetCursorScreenPos(cursor + new Vector2(94f, 4f) * s);
+        bool orbit = _editorState.OrbitBoneRotation;
+        if (Crystarium.Switch("##pose-orbit", ref orbit))
+            _editorState.OrbitBoneRotation = orbit;
+        ViewText.Label(cursor + new Vector2(140f, 7f) * s, "rotations swing around the pivot", 11f,
+            FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
+        float h = 30f * s;
+
+        ViewText.Label(cursor + new Vector2(0f, h / s + 7f) * s, "Pivot", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
+        ImGui.SetCursorScreenPos(new Vector2(cursor.X + 94f * s, cursor.Y + h));
+        int pivot = (int)_editorState.OrbitPivot;
+        if (Crystarium.SegmentedControl("##pose-orbit-pivot", new[] { "Parent", "Selection", "Custom" }, ref pivot))
+        {
+            _editorState.OrbitPivot = (OrbitPivotMode)pivot;
+            if (_editorState.OrbitPivot == OrbitPivotMode.Custom &&
+                _editorState.CustomOrbitPivot == Vector3.Zero &&
+                _entity is IBone selectedBone)
+            {
+                _editorState.CustomOrbitPivot = selectedBone.LastTransform.Position;
+            }
+        }
+        h += 34f * s;
+
+        if (_editorState.OrbitPivot == OrbitPivotMode.Custom)
+        {
+            var custom = _editorState.CustomOrbitPivot;
+            foreach (var (axis, component) in new[] { ("X", 0), ("Y", 1), ("Z", 2) })
+            {
+                ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 7f * s), $"Pivot {axis}", 11f,
+                    FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
+                ImGui.SetCursorScreenPos(new Vector2(cursor.X + 94f * s, cursor.Y + h));
+                float value = component == 0 ? custom.X : component == 1 ? custom.Y : custom.Z;
+                if (Crystarium.Scrubber($"##pose-custom-pivot-{axis}", ref value, -100f, 100f, 0.01f))
+                {
+                    if (component == 0) custom.X = value;
+                    else if (component == 1) custom.Y = value;
+                    else custom.Z = value;
+                    _editorState.CustomOrbitPivot = custom;
+                }
+                h += 30f * s;
+            }
+        }
+
+        ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 7f * s), "Math", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
+        ImGui.SetCursorScreenPos(new Vector2(cursor.X + 94f * s, cursor.Y + h));
+        int strategy = (int)_editorState.OrbitStrategy;
+        if (Crystarium.SegmentedControl("##pose-orbit-strategy", new[] { "Snapshot", "Rebase", "Live" }, ref strategy))
+            _editorState.OrbitStrategy = (OrbitStrategy)strategy;
+        h += 34f * s;
+
+        return h;
+    }
+
+    private float DrawPoseActions(Vector2 cursor, float width, ISkeleton skeleton, float s)
+    {
+        var bone = _entity as IBone;
+        float h = 0f;
+
+        // Symmetry link + flip/mirror
+        ViewText.Label(cursor + new Vector2(0f, 7f) * s, "Linked", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
+        ImGui.SetCursorScreenPos(cursor + new Vector2(94f, 4f) * s);
+        bool linked = _bonePosingService.LinkedBonesEnabled;
+        if (Crystarium.Switch("##pose-linked", ref linked))
+            _bonePosingService.LinkedBonesEnabled = linked;
+        ViewText.Label(cursor + new Vector2(140f, 7f) * s, "eyes / Viera ear variants together", 11f,
+            FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
+        h += 30f * s;
+
+        ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 7f * s), "Symmetry", 12f,
+            FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
+        ImGui.SetCursorScreenPos(new Vector2(cursor.X + 94f * s, cursor.Y + h + 4f * s));
+        int symmetry = (int)_editorState.SymmetryMode;
+        if (Crystarium.SegmentedControl("##pose-symmetry", new[] { "Off", "Copy", "Mirror" }, ref symmetry))
+            _editorState.SymmetryMode = (SymmetryMode)symmetry;
+        h += 34f * s;
+
+        var poseActions = new List<RailAction>();
+        if (bone != null)
+            poseActions.Add(new RailAction("Flip bone", "pose-flip", () => _cleanPose.FlipBone(bone)));
+        poseActions.Add(new RailAction("Mirror pose", "pose-mirror", () => _cleanPose.Mirror(skeleton)));
+        h += DrawWrappedActions(new Vector2(cursor.X, cursor.Y + h), width, s, poseActions);
+
+        // Reset row
+        ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 4f * s), "Reset", 11f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
+        h += 20f * s;
+
+        var resetActions = new List<RailAction>();
+        if (bone != null)
+            resetActions.Add(new RailAction("Bone", "pose-reset-bone", () => _cleanPose.ResetBone(bone)));
+        resetActions.Add(new RailAction("Body", "pose-reset-body", () => _cleanPose.Reset(skeleton, PoseRegion.Body)));
+        resetActions.Add(new RailAction("Face", "pose-reset-face", () => _cleanPose.Reset(skeleton, PoseRegion.Face)));
+        resetActions.Add(new RailAction("Hair", "pose-reset-hair", () => _cleanPose.Reset(skeleton, PoseRegion.Hair)));
+        resetActions.Add(new RailAction("All", "pose-reset-all", () => _cleanPose.Reset(skeleton, PoseRegion.All)));
+        h += DrawWrappedActions(new Vector2(cursor.X, cursor.Y + h), width, s, resetActions);
+
+        // Clean application-owned transfer slot. It is available independently
+        // of the legacy file codec/import browser.
+        ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 4f * s), "Transfer", 11f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
+        h += 20f * s;
+        bool hasStash = _cleanPose.HasStash;
+        h += DrawWrappedActions(new Vector2(cursor.X, cursor.Y + h), width, s, new[]
+        {
+            new RailAction("Stash", "pose-stash", () => _cleanPose.Stash(skeleton),
+                Tooltip: "Copy the current pose to the stash"),
+            new RailAction("Apply stash", "pose-stash-apply", () => _cleanPose.ApplyStash(skeleton),
+                Disabled: !hasStash,
+                Tooltip: hasStash ? $"Stashed {_cleanPose.StashedAt:HH:mm:ss}" : "Nothing stashed yet"),
+        });
+
+        return h;
+    }
+
+    private readonly record struct RailAction(
+        string Label,
+        string Id,
+        Action Invoke,
+        bool Disabled = false,
+        string? Tooltip = null);
+
+    /// <summary>
+    /// Packs compact rail actions from their rendered widths. The final item is
+    /// pulled onto the next row when greedy packing would leave it orphaned.
+    /// </summary>
+    private static float DrawWrappedActions(
+        Vector2 origin,
+        float availableWidth,
+        float scale,
+        IReadOnlyList<RailAction> actions)
+    {
+        if (actions.Count == 0)
+            return 0f;
+
+        float gap = 6f * scale;
+        float rowAdvance = 30f * scale;
+        var widths = new float[actions.Count];
+        for (int i = 0; i < actions.Count; i++)
+            widths[i] = ImGui.CalcTextSize(actions[i].Label).X + 24f * scale;
+
+        int start = 0;
+        int row = 0;
+        while (start < actions.Count)
+        {
+            int end = start;
+            float used = 0f;
+            while (end < actions.Count)
+            {
+                float next = widths[end] + (end > start ? gap : 0f);
+                if (end > start && used + next > availableWidth)
+                    break;
+                used += next;
+                end++;
+            }
+            if (end == start)
+                end++;
+
+            // Avoid the visually accidental-looking 4+1 layout when 3+2 fits.
+            if (actions.Count - end == 1 && end - start > 1)
+                end--;
+
+            float x = 0f;
+            for (int i = start; i < end; i++)
+            {
+                ImGui.SetCursorScreenPos(origin + new Vector2(x, row * rowAdvance));
+                var action = actions[i];
+                if (Crystarium.Button(action.Label, new ButtonProps
+                    {
+                        Id = action.Id,
+                        Classes = Cls.Compact,
+                        Disabled = action.Disabled,
+                        Tooltip = action.Tooltip,
+                    }))
+                    action.Invoke();
+                x += widths[i] + gap;
+            }
+
+            start = end;
+            row++;
+        }
+
+        return row * rowAdvance + 4f * scale;
+    }
+
+    // ── M11 rail helpers (header summary, children, flip, freeze state) ──
+
+    /// <summary>Selected-bones summary for the rail head (Anamnesis right
+    /// column): who = display summary, sub = game bone names, linked = number
+    /// of bones an edit applies to (pill hidden below 2).</summary>
+    public (string Who, string Sub, int Linked) RailHeader()
+    {
+        if (_entity is IBone)
+        {
+            var bones = _selectionService.GetSelected<IBone>().ToList();
+            if (bones.Count > 1)
+            {
+                var cats = bones.Select(b => Core.BoneInfo.BoneInfoService.GetCategory(b.BoneName)).Distinct().ToList();
+                string who = cats.Count == 1
+                    ? $"{Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(cats[0])} — {bones.Count} bones"
+                    : $"{bones.Count} bones";
+                string sub = string.Join(" · ", bones.Take(3).Select(b => b.BoneName)) + (bones.Count > 3 ? " …" : "");
+                return (who, sub, bones.Count);
+            }
+            if (bones.Count == 1)
+            {
+                var bone = bones[0];
+                int linked = _bonePosingService.LinkedBonesEnabled
+                    ? 1 + Core.LinkedBones.GetLinks(bone.BoneName).Count(linkName =>
+                        bone.Skeleton.Bones.Any(candidate =>
+                            candidate.BoneName == linkName &&
+                            candidate.PartialId == bone.PartialId))
+                    : 0;
+                if (linked < 2)
+                    linked = 0;
+                return (bone.Name, bone.BoneName, linked);
+            }
+        }
+        var actors = _selectionService.GetSelected<IActor>().ToList();
+        if (actors.Count > 1)
+        {
+            string names = string.Join(" · ", actors.Take(3).Select(ActorDisplayName))
+                + (actors.Count > 3 ? " …" : "");
+            return ($"{actors.Count} actors", names, 0);
+        }
+        if (_entity is IActor actor)
+            return (ActorDisplayName(actor), _posingService.HasTransformOverride(actor)
+                ? "actor \u00b7 transform override"
+                : "actor", 0);
+        return _entity != null ? (StripIndex(_entity.Name), "", 0) : ("", "", 0);
+    }
+
+    /// <summary>Whether the inspector is editing the actor entity itself rather than a bone.</summary>
+    public bool IsActorSelection => _entity is IActor;
+
+    /// <summary>Whether the selected actor currently has a model-transform override.</summary>
+    public bool HasActorTransformOverride
+        => _entity is IActor && _selectionService.GetSelected<IActor>().Any(_posingService.HasTransformOverride);
+
+    /// <summary>Restores every selected actor's pre-override model transform.</summary>
+    public void ResetActorTransform()
+    {
+        if (_entity is not IActor) return;
+        _cleanTransforms.ClearActorOverrides(
+            _selectionService.GetSelected<IActor>().ToList());
+    }
+
+    /// <summary>Adds every descendant of the selected bones to the selection.</summary>
+    public void SelectChildren()
+    {
+        var selected = _selectionService.GetSelected<IBone>().ToList();
+        if (selected.Count == 0) return;
+        foreach (var candidate in selected[0].Skeleton.Bones)
+        {
+            if (candidate.IsHiddenBone) continue;
+            for (var parent = candidate.ParentBone; parent != null; parent = parent.ParentBone)
+            {
+                if (!selected.Any(sel => ReferenceEquals(sel, parent))) continue;
+                _selectionService.AddToSelection(candidate);
+                break;
+            }
+        }
+    }
+
+    public void FlipWholePose()
+    {
+        if (_entity is IActor)
+        {
+            foreach (var selectedSkeleton in _selectionService.GetSelected<IActor>()
+                         .Where(actor => actor.HasSkeleton)
+                         .Select(actor => actor.Skeleton)
+                         .OfType<ISkeleton>()
+                         .Distinct())
+                _cleanPose.Mirror(selectedSkeleton);
+            return;
+        }
+        var skeleton = OwningSkeleton();
+        if (skeleton != null) _cleanPose.Mirror(skeleton);
+    }
+
+    // ── transform presentation adapter ──────────────────────────────────
+
+    private (Transform, bool) ReadTransform()
+    {
+        if (_cleanGesture != null && _cleanDisplayedCurrent is { } current)
+            return (current, true);
+
+        switch (_entity)
+        {
+            case IActor actor:
+                // Brio ModelPosingCapability and Ktisis' ITransform target both
+                // allow model transforms while animation is playing. The
+                // override service keeps the draw-object transform stable.
+                return (_posingService.GetEffectiveTransform(actor), true);
+            case VirtualBone group:
+                return (group.Transform, group.PivotBone != null);
+            case IBone bone:
+                // Bones display/edit LOCAL (parent-relative) values like
+                // Ktisis/Anamnesis — model-space numbers read as garbage
+                // ("don't represent actual game values"). Tracking stays in
+                // model space; conversion happens only at this boundary.
+                var model = ReadBoneModel(bone);
+                return (bone.ParentBone is { } parent
+                    ? PoseMath.ToLocal(parent.LastTransform, model)
+                    : model, true);
+            case { } e:
+                return (e.Transform, false);
+            default:
+                return (Transform.Identity, false);
+        }
+    }
+
+    private void BeginTransformSession(
+        Transform displayedStart,
+        DomainOperation operation)
+    {
+        if (_cleanGesture != null || _entity == null)
+            return;
+
+        IReadOnlyList<IEntity> targets;
+        Transform modelStart;
+        DomainPivot pivotMode;
+
+        switch (_entity)
+        {
+            case IActor primaryActor:
+                var actors = _selectionService.GetSelected<IActor>()
+                    .Where(actor => !ReferenceEquals(actor, primaryActor))
+                    .Cast<IEntity>()
+                    .ToList();
+                actors.Insert(0, primaryActor);
+                targets = actors;
+                modelStart = displayedStart;
+                pivotMode = DomainPivot.PerTarget;
+                break;
+
+            case IBone selectedBone:
+                var primaryBone = selectedBone is VirtualBone group
+                    ? group.PivotBone
+                    : selectedBone;
+                if (primaryBone == null)
+                    return;
+
+                var expanded = VirtualBoneExpander.Expand(
+                    _selectionService.GetSelected<IBone>().ToArray());
+                var roots = PoseMath.FilterSelectionRoots(expanded)
+                    .Where(bone => !ReferenceEquals(bone, primaryBone))
+                    .Cast<IEntity>()
+                    .ToList();
+                roots.Insert(0, primaryBone);
+                targets = roots;
+                _cleanPrimaryBone = primaryBone;
+                modelStart = ReadBoneModel(primaryBone);
+                pivotMode = DomainPivot.PerTarget;
+                break;
+
+            default:
+                _dragStart ??= displayedStart;
+                return;
+        }
+
+        var begin = _cleanTransforms.Begin(
+            targets,
+            operation,
+            DomainSpace.World,
+            pivotMode,
+            description:
+                $"Transform {targets.Count} {(_entity is IActor ? "actor" : "bone")}{(targets.Count == 1 ? "" : "s")}",
+            includeLinkedBones:
+                _entity is IBone &&
+                _bonePosingService.LinkedBonesEnabled,
+            symmetry: _entity is IBone
+                ? _editorState.SymmetryMode switch
+                {
+                    SymmetryMode.Copy =>
+                        DomainDeltaMode.Direct,
+                    SymmetryMode.Mirror =>
+                        DomainDeltaMode.Mirrored,
+                    _ => null,
+                }
+                : null);
+        if (!begin.Success || begin.GestureId is not { } gesture)
+        {
+            _cleanPrimaryBone = null;
+            return;
+        }
+
+        _dragStart = displayedStart;
+        _cleanModelStart = modelStart;
+        _cleanDisplayedCurrent = displayedStart;
+        _cleanGesture = gesture;
+    }
+
+    private void ApplyTransformSession(Transform displayedAfter)
+    {
+        if (_entity is not (IActor or IBone))
+            return;
+
+        if (_cleanGesture is not { } gesture ||
+            _cleanModelStart is not { } modelStart)
+            return;
+
+        var modelAfter = _cleanPrimaryBone is { } primaryBone &&
+                         primaryBone.ParentBone is { } parent
+            ? PoseMath.Compose(parent.LastTransform, displayedAfter)
+            : displayedAfter;
+        var delta = new DomainDelta(
+            modelAfter.Position - modelStart.Position,
+            Quaternion.Normalize(
+                modelAfter.Rotation *
+                Quaternion.Conjugate(modelStart.Rotation)),
+            DivideComponents(modelAfter.Scale, modelStart.Scale));
+        var update = _cleanTransforms.Update(gesture, delta);
+        if (!update.Success)
+        {
+            ClearTransformSession(cancel: true);
+            return;
+        }
+
+        _cleanDisplayedCurrent = displayedAfter;
+    }
+
+    private void CommitTransformSession()
+    {
+        if (_cleanGesture is { } gesture)
+            _cleanTransforms.Commit(gesture);
+    }
+
+    private void ClearTransformSession(bool cancel = false)
+    {
+        if (cancel && _cleanGesture is { } gesture)
+            _cleanTransforms.Cancel(gesture);
+        _dragStart = null;
+        _dragEuler = null;
+        _cleanGesture = null;
+        _cleanModelStart = null;
+        _cleanDisplayedCurrent = null;
+        _cleanPrimaryBone = null;
+    }
+
+    private static Vector3 DivideComponents(
+        Vector3 numerator,
+        Vector3 denominator)
+    {
+        static float Divide(float left, float right) =>
+            MathF.Abs(right) < 0.00001f
+                ? 1f
+                : left / right;
+        return new Vector3(
+            Divide(numerator.X, denominator.X),
+            Divide(numerator.Y, denominator.Y),
+            Divide(numerator.Z, denominator.Z));
+    }
+
+    private Transform ReadBoneModel(IBone bone)
+        => bone.Transform;
+
+    private IActor? OwningActor() => _entity switch
+    {
+        IActor actor => actor,
+        IBone bone => bone.Skeleton.Actor,
+        _ => null,
+    };
+
+    private ISkeleton? OwningSkeleton() => _entity switch
+    {
+        ISkeleton skeleton => skeleton,
+        IBone bone => bone.Skeleton,
+        IActor { HasSkeleton: true } actor => actor.Skeleton,
+        _ => null,
+    };
+
+}

@@ -113,6 +113,38 @@ public interface IAnimationService : IDisposable
     /// </summary>
     void PlayBlendAnimation(IActor actor, ushort timelineId);
 
+    // ── Phase D: per-slot timeline control (Brio ActionTimelineService parity) ──
+
+    /// <summary>Timeline id currently playing in a slot (0 = none). Slots: 0 Base, 1 UpperBody, 2 Facial, 3 Add, 7 Lips, 8-11 Parts, 12 Overlay.</summary>
+    ushort GetSlotTimeline(IActor actor, int slot);
+
+    /// <summary>Current speed of a slot.</summary>
+    float GetSlotSpeed(IActor actor, int slot);
+
+    /// <summary>Override a slot's speed (persisted through the game's own SetSlotSpeed via hook). 0 pauses just that slot.</summary>
+    void SetSlotSpeedOverride(IActor actor, int slot, float speed);
+
+    /// <summary>Remove a slot speed override (the game resumes control).</summary>
+    void ClearSlotSpeedOverride(IActor actor, int slot);
+
+    bool HasSlotSpeedOverride(IActor actor, int slot);
+
+    /// <summary>Lip-sync override: play a speak/* timeline on the Lips slot (0 clears). Anamnesis/Brio parity.</summary>
+    void SetLipsOverride(IActor actor, ushort timelineId);
+
+    ushort GetLipsOverride(IActor actor);
+
+    /// <summary>Freeze every actor in the scene (Anamnesis Pause All).</summary>
+    void FreezeAll();
+
+    /// <summary>Unfreeze every actor in the scene.</summary>
+    void UnfreezeAll();
+
+    /// <summary>Toggle the weapon-drawn flag (Anamnesis parity).</summary>
+    void SetWeaponDrawn(IActor actor, bool drawn);
+
+    bool IsWeaponDrawn(IActor actor);
+
     #endregion
 
 }

@@ -1,0 +1,335 @@
+using Poser.Application.Scene;
+using Poser.Application.Transforms;
+using Poser.Domain.Identity;
+using Poser.Domain.Posing;
+
+namespace Poser.Application.Posing;
+
+public enum PoseRegion
+{
+    All,
+    Body,
+    Face,
+    Hair,
+}
+
+public readonly record struct PoseEditResult(
+    bool Success,
+    int Affected,
+    string? Detail = null)
+{
+    public static PoseEditResult Ok(int affected) =>
+        new(true, affected);
+
+    public static PoseEditResult Fail(string detail) =>
+        new(false, 0, detail);
+}
+
+public readonly record struct PoseCaptureResult(
+    bool Success,
+    PortablePose? Pose,
+    string? Detail = null)
+{
+    public static PoseCaptureResult Ok(PortablePose pose) =>
+        new(true, pose);
+
+    public static PoseCaptureResult Fail(string detail) =>
+        new(false, null, detail);
+}
+
+/// <summary>Atomic stable-id commands for discrete manual pose edits.</summary>
+public sealed class PoseEditService
+{
+    private readonly SceneSession _scene;
+    private readonly ITransformRuntimePort _runtime;
+    private readonly TransformHistory _history;
+    private readonly TransformGestureService _gestures;
+
+    public PoseEditService(
+        SceneSession scene,
+        ITransformRuntimePort runtime,
+        TransformHistory history,
+        TransformGestureService gestures)
+    {
+        _scene = scene;
+        _runtime = runtime;
+        _history = history;
+        _gestures = gestures;
+    }
+
+    public PoseEditResult Reset(
+        IReadOnlyList<TransformTargetId> targets,
+        PoseRegion region,
+        string description)
+    {
+        if (_gestures.ActiveGesture != null)
+            return PoseEditResult.Fail(
+                "A transform gesture is active.");
+        var prepared = CaptureBones(targets);
+        if (!prepared.Success)
+            return PoseEditResult.Fail(prepared.Detail!);
+
+        var before = prepared.States!
+            .Where(state =>
+                state.Target.Bone is { } bone &&
+                MatchesRegion(bone.CanonicalName, region) &&
+                state.Pose.Layers.Count > 0)
+            .ToArray();
+        var desired = before
+            .Select(state => state with
+            {
+                Pose = PoseOperations.Reset(state.Pose),
+                HasOverride = false,
+            })
+            .ToArray();
+        return Apply(description, before, desired);
+    }
+
+    public PoseEditResult Flip(
+        TransformTargetId target,
+        string description)
+    {
+        if (_gestures.ActiveGesture != null)
+            return PoseEditResult.Fail(
+                "A transform gesture is active.");
+        var prepared = CaptureBones(new[] { target });
+        if (!prepared.Success)
+            return PoseEditResult.Fail(prepared.Detail!);
+
+        var before = prepared.States!;
+        if (before[0].Pose.Layers.Count == 0)
+            return PoseEditResult.Ok(0);
+        var desired = before.Select(state => state with
+        {
+            Pose = PoseOperations.Mirror(state.Pose),
+            HasOverride = state.Pose.Layers.Count > 0,
+        }).ToArray();
+        return Apply(description, before, desired);
+    }
+
+    public PoseEditResult Mirror(
+        IReadOnlyList<TransformTargetId> targets,
+        string description)
+    {
+        if (_gestures.ActiveGesture != null)
+            return PoseEditResult.Fail(
+                "A transform gesture is active.");
+        var prepared = CaptureBones(targets);
+        if (!prepared.Success)
+            return PoseEditResult.Fail(prepared.Detail!);
+
+        var before = prepared.States!;
+        var byKey = before
+            .Where(state => state.Target.Bone != null)
+            .ToDictionary(
+                state => Key(state.Target.Bone!.Value),
+                state => state);
+        var desired = new List<TransformTargetState>();
+
+        foreach (var left in before.Where(state =>
+                     state.Target.Bone is { } bone &&
+                     bone.CanonicalName.EndsWith(
+                         "_l",
+                         StringComparison.Ordinal)))
+        {
+            var leftId = left.Target.Bone!.Value;
+            var rightName = string.Concat(
+                leftId.CanonicalName.AsSpan(
+                    0,
+                    leftId.CanonicalName.Length - 2),
+                "_r");
+            if (!byKey.TryGetValue(
+                    (leftId.Slot, leftId.PartialId, rightName),
+                    out var right))
+                continue;
+            if (left.Pose.Layers.Count == 0 &&
+                right.Pose.Layers.Count == 0)
+                continue;
+
+            desired.Add(left with
+            {
+                Pose = PoseOperations.Mirror(right.Pose),
+                HasOverride = right.Pose.Layers.Count > 0,
+            });
+            desired.Add(right with
+            {
+                Pose = PoseOperations.Mirror(left.Pose),
+                HasOverride = left.Pose.Layers.Count > 0,
+            });
+        }
+
+        var changedTargets = desired
+            .Select(state => state.Target)
+            .ToHashSet();
+        var changedBefore = before
+            .Where(state => changedTargets.Contains(state.Target))
+            .ToArray();
+        return Apply(description, changedBefore, desired);
+    }
+
+    public PoseCaptureResult CapturePortable(
+        IReadOnlyList<TransformTargetId> targets)
+    {
+        if (_gestures.ActiveGesture != null)
+            return PoseCaptureResult.Fail(
+                "A transform gesture is active.");
+        var prepared = CaptureBones(targets);
+        if (!prepared.Success)
+            return PoseCaptureResult.Fail(prepared.Detail!);
+
+        var pose = new PortablePose(
+            prepared.States!.Select(state =>
+                new PortableBonePose(
+                    PortableBoneId.From(state.Target.Bone!.Value),
+                    state.Pose.InteractiveOnly())));
+        return PoseCaptureResult.Ok(pose);
+    }
+
+    public PoseEditResult ApplyPortable(
+        IReadOnlyList<TransformTargetId> targets,
+        PortablePose pose,
+        string description)
+    {
+        ArgumentNullException.ThrowIfNull(pose);
+        if (_gestures.ActiveGesture != null)
+            return PoseEditResult.Fail(
+                "A transform gesture is active.");
+        var prepared = CaptureBones(targets);
+        if (!prepared.Success)
+            return PoseEditResult.Fail(prepared.Detail!);
+
+        var before = prepared.States!
+            .Where(state =>
+                pose.TryGet(
+                    PortableBoneId.From(state.Target.Bone!.Value),
+                    out _))
+            .ToArray();
+        if (before.Length == 0)
+            return PoseEditResult.Fail(
+                "The portable pose has no bones matching this skeleton.");
+
+        var desired = before.Select(state =>
+        {
+            pose.TryGet(
+                PortableBoneId.From(state.Target.Bone!.Value),
+                out var source);
+            var transferred = new BonePose(
+                source.Layers,
+                checked(state.Pose.Version + 1));
+            return state with
+            {
+                Pose = transferred,
+                HasOverride = transferred.Layers.Count > 0,
+            };
+        }).ToArray();
+        return Apply(description, before, desired);
+    }
+
+    private CaptureResult CaptureBones(
+        IReadOnlyList<TransformTargetId> targets)
+    {
+        if (targets.Count == 0)
+            return CaptureResult.Fail("A pose edit requires at least one bone.");
+        if (targets.Any(target => target.Kind != TransformTargetKind.Bone))
+            return CaptureResult.Fail("Pose edits accept bone targets only.");
+        if (targets.Any(target => !_scene.Contains(target)))
+            return CaptureResult.Fail("A pose target is stale.");
+        var lineage = targets[0].ActorLineage;
+        if (targets.Any(target => target.ActorLineage != lineage))
+            return CaptureResult.Fail(
+                "A pose edit cannot span actor lineages.");
+
+        var states = new List<TransformTargetState>(targets.Count);
+        foreach (var target in targets.Distinct())
+        {
+            var captured = _runtime.Capture(target);
+            if (!captured.Success || captured.State == null)
+                return CaptureResult.Fail(
+                    captured.Detail ?? $"Could not capture {target}.");
+            states.Add(captured.State);
+        }
+        return CaptureResult.Ok(states);
+    }
+
+    private PoseEditResult Apply(
+        string description,
+        IReadOnlyList<TransformTargetState> before,
+        IReadOnlyList<TransformTargetState> desired)
+    {
+        if (desired.Count == 0)
+            return PoseEditResult.Ok(0);
+
+        foreach (var state in desired)
+        {
+            var result = _runtime.Restore(state);
+            if (result.Success)
+                continue;
+            RestoreAll(before);
+            return PoseEditResult.Fail(
+                result.Detail ?? $"Could not apply pose to {state.Target}.");
+        }
+
+        var after = new List<TransformTargetState>(desired.Count);
+        foreach (var state in desired)
+        {
+            var result = _runtime.Capture(state.Target);
+            if (!result.Success || result.State == null)
+            {
+                RestoreAll(before);
+                return PoseEditResult.Fail(
+                    result.Detail ??
+                    $"Could not capture final pose for {state.Target}.");
+            }
+            after.Add(result.State);
+        }
+
+        _history.Append(new TransformPatch(description, before, after));
+        return PoseEditResult.Ok(desired.Count);
+    }
+
+    private void RestoreAll(
+        IReadOnlyList<TransformTargetState> states)
+    {
+        foreach (var state in states)
+            _runtime.Restore(state);
+    }
+
+    private static (PoseSlot Slot, int Partial, string Name) Key(
+        BoneId bone) =>
+        (bone.Slot, bone.PartialId, bone.CanonicalName);
+
+    private static bool MatchesRegion(
+        string name,
+        PoseRegion region)
+    {
+        var face =
+            name.StartsWith("j_f_", StringComparison.Ordinal) ||
+            name.Equals("j_kao", StringComparison.Ordinal) ||
+            name.StartsWith("j_ago", StringComparison.Ordinal);
+        var hair =
+            name.StartsWith("j_kami", StringComparison.Ordinal) ||
+            name.StartsWith("j_ex_h", StringComparison.Ordinal) ||
+            name.StartsWith("j_ex_met", StringComparison.Ordinal);
+        return region switch
+        {
+            PoseRegion.All => true,
+            PoseRegion.Face => face,
+            PoseRegion.Hair => hair,
+            PoseRegion.Body => !face && !hair,
+            _ => false,
+        };
+    }
+
+    private sealed record CaptureResult(
+        bool Success,
+        IReadOnlyList<TransformTargetState>? States,
+        string? Detail)
+    {
+        public static CaptureResult Ok(
+            IReadOnlyList<TransformTargetState> states) =>
+            new(true, states, null);
+
+        public static CaptureResult Fail(string detail) =>
+            new(false, null, detail);
+    }
+}

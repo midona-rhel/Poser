@@ -16,8 +16,6 @@ public enum EntityType
     Npc,
     /// <summary>Companion (minion, mount, pet).</summary>
     Companion,
-    /// <summary>Camera entity.</summary>
-    Camera,
     /// <summary>Skeleton root.</summary>
     Skeleton,
     /// <summary>Individual bone.</summary>
@@ -26,8 +24,6 @@ public enum EntityType
     VirtualBone,
     /// <summary>User-created pivot point for custom orbit centers.</summary>
     PivotPoint,
-    /// <summary>Scene light.</summary>
-    Light
 }
 
 public interface IEntity

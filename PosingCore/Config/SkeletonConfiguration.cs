@@ -18,6 +18,8 @@ public class SkeletonConfiguration
     public uint SelectedBoneColor { get; set; } = 0xFF00D9FF; // Cyan/yellow
     public uint ModifiedBoneColor { get; set; } = 0xFF00FF7F; // Green
     public uint HoveredBoneColor { get; set; } = 0xFFFF0073;  // Pink
+    public uint IkChainColor { get; set; } = 0xFF0A9FFF;      // Orange #FF9F0A (ABGR)
+    public uint MirroredBoneColor { get; set; } = 0xFFA0D37E; // Mint #7ED3A0 (ABGR)
 
     // Display options
     public bool ShowSkeletonLines { get; set; } = true;

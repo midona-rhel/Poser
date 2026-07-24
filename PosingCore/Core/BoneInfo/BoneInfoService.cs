@@ -76,14 +76,17 @@ public static class BoneInfoService
     }
 
     /// <summary>
-    /// Gets the display name for a bone: "Translation (internal_name)" or just "internal_name" if no translation.
+    /// Gets the display name for a bone: the translation, or the internal name
+    /// when untranslated. The raw bone name is NOT appended — surfaces that
+    /// want it show a separate mono badge ("Jaw (j_f_ago)" next to a j_f_ago
+    /// badge was the round-4 "name followed by name" defect).
     /// Logs untranslated bones once per session.
     /// </summary>
     public static string GetDisplayName(string boneName)
     {
         if (_boneData.TryGetValue(boneName, out var data))
         {
-            return $"{data.Translation} ({boneName})";
+            return data.Translation;
         }
 
         // Log untranslated bone (only once per bone name)
@@ -172,7 +175,7 @@ public static class BoneInfoService
         BoneCategory.RightArm => "j_ude_a_r",
         BoneCategory.LeftLeg => "j_asi_a_l",
         BoneCategory.RightLeg => "j_asi_a_r",
-        BoneCategory.Tail => "j_sippo_a",
+        BoneCategory.Tail => "n_sippo_a",
         _ => null  // Equipment and Other stay abstract
     };
 

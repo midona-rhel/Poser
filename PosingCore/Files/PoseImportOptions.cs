@@ -49,6 +49,33 @@ public class PoseImportOptions
     public bool ApplyModelTransform { get; set; } = false;
 
     /// <summary>
+    /// Reset existing bone modifications (and, when ApplyModelTransform is set, the actor
+    /// transform override) before applying the file. Mirrors Brio's `reset` import flag,
+    /// which its interactive import path passes as false: file bones are absolute targets,
+    /// so a full-skeleton file determines the pose without wiping unrelated edits first.
+    /// </summary>
+    public bool ResetBeforeImport { get; set; } = false;
+
+    /// <summary>
+    /// Expression import: apply ONLY face bones and EXCLUDE the head bone (j_kao),
+    /// so a face pose lands without turning the posed head. Single-phase rewrite of
+    /// Brio's two-phase apply-then-restore (which needs a 4-tick resync hack and
+    /// "stil breaks IK" per its own comment): skipping j_kao up front reaches the
+    /// same end state — face bones take the file's absolute orientations, the head
+    /// keeps the current pose — with no tick delays.
+    /// </summary>
+    public bool AsExpression { get; set; } = false;
+
+    /// <summary>
+    /// When set, only these bones are applied (selective import — Ktisis/
+    /// Anamnesis parity). Combined with the phase flags above.
+    /// </summary>
+    public System.Collections.Generic.ISet<string>? BoneFilter { get; set; }
+
+    /// <summary>Extend <see cref="BoneFilter"/> to every descendant of the filtered bones.</summary>
+    public bool FilterIncludesDescendants { get; set; }
+
+    /// <summary>
     /// Default options that import everything except model transform.
     /// </summary>
     public static PoseImportOptions Default => new();
@@ -61,6 +88,17 @@ public class PoseImportOptions
         ApplyRotation = true,
         ApplyPosition = false,
         ApplyScale = false
+    };
+
+    /// <summary>Expression preset — face only, head excluded, no model transform.</summary>
+    public static PoseImportOptions Expression => new()
+    {
+        AsExpression = true,
+        ApplyBody = true,
+        ApplyFace = true,
+        ApplyMainHand = false,
+        ApplyOffHand = false,
+        ApplyModelTransform = false
     };
 
     /// <summary>
@@ -85,7 +123,11 @@ public class PoseImportOptions
             ApplyFace = ApplyFace,
             ApplyMainHand = ApplyMainHand,
             ApplyOffHand = ApplyOffHand,
-            ApplyModelTransform = ApplyModelTransform
+            ApplyModelTransform = ApplyModelTransform,
+            ResetBeforeImport = ResetBeforeImport,
+            AsExpression = AsExpression,
+            BoneFilter = BoneFilter == null ? null : new System.Collections.Generic.HashSet<string>(BoneFilter),
+            FilterIncludesDescendants = FilterIncludesDescendants,
         };
     }
 }

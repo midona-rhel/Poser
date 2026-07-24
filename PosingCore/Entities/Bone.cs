@@ -23,9 +23,9 @@ public class Bone : EntityBase, IBone
     public Transform LastTransform { get; internal set; } = Transform.Identity;
 
     /// <summary>
-    /// Raw transform before partial reparenting. For body bones (partial 0), this equals LastTransform.
-    /// For face bones (partial 1+), this is the transform before ReparentPartials() adjusts positions.
-    /// Used for calculating deltas in the correct coordinate space.
+    /// Current Havok model-space baseline captured during the Brio-style apply/cache
+    /// pipeline. Absolute editor and import targets calculate deltas against it.
+    /// Persistent posing state remains in BonePoseInfo, not this observation cache.
     /// </summary>
     public Transform LastRawTransform { get; internal set; } = Transform.Identity;
 
@@ -96,9 +96,12 @@ public class Bone : EntityBase, IBone
         BoneIndex = boneIndex;
         BoneName = boneName;
 
-        // Start collapsed and hidden by default
+        // Collapsed by default (tree semantics). VISIBLE by default — the
+        // overlay must show the skeleton out of the box (Ktisis/Brio parity);
+        // hiding is the opt-out filter, and the legacy tree that used to flip
+        // visibility on is gone. IsHiddenBone still filters curated junk bones.
         IsCollapsed = true;
-        IsVisible = false;
+        IsVisible = true;
     }
 
     /// <summary>

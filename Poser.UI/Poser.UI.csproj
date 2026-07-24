@@ -1,0 +1,20 @@
+<Project Sdk="Dalamud.NET.SDK/15.0.0">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0-windows</TargetFramework>
+		<Platforms>x64</Platforms>
+		<Nullable>enable</Nullable>
+		<LangVersion>preview</LangVersion>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<RootNamespace>Poser.UI</RootNamespace>
+		<AssemblyName>Poser.UI</AssemblyName>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<Use_DalamudPackager>false</Use_DalamudPackager>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!-- The former Norvrandt renderer is now source-owned by this assembly. -->
+		<Compile Remove="Rendering\bin\**\*.cs;Rendering\obj\**\*.cs" />
+	</ItemGroup>
+
+</Project>

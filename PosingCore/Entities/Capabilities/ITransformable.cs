@@ -1,8 +1,8 @@
 namespace Poser.Entities.Capabilities;
 
 /// <summary>
-/// Capability marker interface for entities that can be positioned in 3D space.
-/// Implemented by: IActor, IBone, LightEntity, VirtualCameraEntity
+/// Transitional capability marker for actors, concrete bones, and virtual
+/// bone groups that can participate in transform presentation.
 ///
 /// Note: Transform manipulation is typically done through services (IPosingService, IBonePosingService).
 /// Check CanSetTransform to determine if direct Transform property assignment works.
@@ -18,8 +18,8 @@ public interface ITransformable
 
     /// <summary>
     /// Whether the Transform property setter actually applies changes.
-    /// False for entities like actors (use IPosingService) or virtual bones (computed).
-    /// True for lights, cameras, and bones.
+    /// False for actors (use IPosingService) and virtual bones (computed).
+    /// True only for concrete bones.
     /// </summary>
     bool CanSetTransform { get; }
 }

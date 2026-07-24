@@ -27,6 +27,9 @@ public interface IActorManager : IDisposable
     /// </summary>
     IActor? GetGPoseTarget();
 
+    /// <summary>Make an actor the current GPose target (Brio Target action).</summary>
+    void SetGPoseTarget(IActor actor);
+
     // Events are published via EventBus:
     // - ActorListChangedEvent when actor list changes
 }

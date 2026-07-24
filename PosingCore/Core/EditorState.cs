@@ -1,3 +1,4 @@
+using System.Numerics;
 using Poser.Services;
 
 namespace Poser.Core;
@@ -11,6 +12,8 @@ namespace Poser.Core;
 /// </summary>
 public class EditorState : IEditorState
 {
+    public bool IkEnabled { get; set; }
+
     public TransformOrientation TransformOrientation { get; set; } = TransformOrientation.Local;
     public TransformTool TransformTool { get; set; } = TransformTool.Rotate;
     public bool DebugMode { get; set; } = false;
@@ -18,4 +21,9 @@ public class EditorState : IEditorState
     public SkeletonViewMode SkeletonViewMode { get; set; } = SkeletonViewMode.Default;
     public bool ShowSelectedBonesOnly { get; set; } = false;
     public SymmetryMode SymmetryMode { get; set; } = SymmetryMode.Off;
+
+    public bool OrbitBoneRotation { get; set; }
+    public OrbitPivotMode OrbitPivot { get; set; } = OrbitPivotMode.Parent;
+    public Vector3 CustomOrbitPivot { get; set; }
+    public OrbitStrategy OrbitStrategy { get; set; } = OrbitStrategy.SnapshotAbsolute;
 }

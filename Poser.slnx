@@ -1,5 +1,8 @@
 <Solution>
-  <Project Path="Crystarium/Crystarium.csproj" />
+  <Project Path="Poser.UI/Poser.UI.csproj" />
   <Project Path="Poser/Poser.csproj" />
+  <Project Path="Poser.Application/Poser.Application.csproj" />
+  <Project Path="Poser.Domain/Poser.Domain.csproj" />
+  <Project Path="Poser.Game/Poser.Game.csproj" />
   <Project Path="PosingCore/PosingCore.csproj" />
 </Solution>

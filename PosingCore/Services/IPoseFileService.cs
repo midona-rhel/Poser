@@ -70,4 +70,13 @@ public interface IPoseFileService : IDisposable
     /// </summary>
     /// <param name="skeleton">The skeleton to export.</param>
     void ExportPoseWithDialog(ISkeleton skeleton);
+
+    /// <summary>Stash the skeleton's current pose in memory (Ktisis parity — fast cross-actor transfer).</summary>
+    void StashPose(ISkeleton skeleton);
+
+    /// <summary>When a stash exists: its capture time.</summary>
+    DateTime? StashTime { get; }
+
+    /// <summary>Apply the stashed pose to a (possibly different) skeleton.</summary>
+    bool ApplyStashedPose(ISkeleton skeleton, PoseImportOptions? options = null);
 }

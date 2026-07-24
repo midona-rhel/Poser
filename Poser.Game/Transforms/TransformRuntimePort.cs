@@ -1,0 +1,271 @@
+using Dalamud.Plugin.Services;
+using Poser.Application.Transforms;
+using Poser.Domain.Identity;
+using Poser.Domain.Posing;
+using Poser.Domain.Transforms;
+using Poser.Entities;
+using Poser.Game.Bindings;
+using Poser.Services;
+using DomainComponents = Poser.Domain.Posing.TransformComponents;
+using DomainTransform = Poser.Domain.Transforms.PoseTransform;
+using LegacyComponents = Poser.Core.TransformComponents;
+using LegacyLayer = Poser.Core.BonePoseTransformInfo;
+using LegacyTransform = Poser.Transform;
+
+namespace Poser.Game.Transforms;
+
+/// <summary>
+/// Runtime-owned native boundary for clean actor and bone transform commands.
+/// </summary>
+public sealed class TransformRuntimePort : ITransformRuntimePort
+{
+    private readonly IFramework _framework;
+    private readonly StableBindingRegistry _bindings;
+    private readonly PosingService _actors;
+    private readonly BonePosingService _bones;
+
+    public TransformRuntimePort(
+        IFramework framework,
+        StableBindingRegistry bindings,
+        PosingService actors,
+        BonePosingService bones)
+    {
+        _framework = framework;
+        _bindings = bindings;
+        _actors = actors;
+        _bones = bones;
+    }
+
+    public TransformPortResult Capture(TransformTargetId target)
+    {
+        if (!OnFrameworkThread())
+            return FrameworkThreadFailure();
+
+        return target.Kind switch
+        {
+            TransformTargetKind.Actor when target.Actor is { } actor =>
+                CaptureActor(target, actor),
+            TransformTargetKind.Bone when target.Bone is { } bone =>
+                CaptureBone(target, bone),
+            _ => TransformPortResult.Fail(
+                TransformPortStatus.IdentityMismatch,
+                $"Malformed transform target {target}."),
+        };
+    }
+
+    public TransformPortResult ApplyAbsolute(
+        TransformTargetState baseline,
+        DomainTransform desired)
+    {
+        if (!OnFrameworkThread())
+            return FrameworkThreadFailure();
+        if (!DomainTransform.TryCreate(
+                desired.Position,
+                desired.Rotation,
+                desired.Scale,
+                out desired,
+                out var error))
+            return TransformPortResult.Fail(
+                TransformPortStatus.InvalidTransform,
+                error ?? "Invalid transform.");
+
+        if (baseline.Target.Kind == TransformTargetKind.Actor &&
+            baseline.Target.Actor is { } actorId)
+        {
+            var resolved = _bindings.Resolve(actorId);
+            if (!resolved.Success)
+                return FromBinding(resolved.Status, resolved.Detail);
+            _actors.SetTransformOverride(
+                resolved.Value!,
+                ToLegacy(desired));
+            return TransformPortResult.Ok();
+        }
+
+        if (baseline.Target.Kind == TransformTargetKind.Bone &&
+            baseline.Target.Bone is { } boneId)
+        {
+            var resolved = _bindings.Resolve(boneId);
+            if (!resolved.Success)
+                return FromBinding(resolved.Status, resolved.Detail);
+            var bone = resolved.Value!;
+            var linked = _bones.LinkedBonesEnabled;
+            _bones.LinkedBonesEnabled = false;
+            try
+            {
+                _bones.RestorePoseStacks(
+                    bone,
+                    ToLegacyLayers(baseline.Pose));
+                _bones.ApplyTransform(
+                    bone,
+                    ToLegacy(desired),
+                    ToLegacy(baseline.Transform));
+            }
+            finally
+            {
+                _bones.LinkedBonesEnabled = linked;
+            }
+            return TransformPortResult.Ok();
+        }
+
+        return TransformPortResult.Fail(
+            TransformPortStatus.IdentityMismatch,
+            $"Malformed transform target {baseline.Target}.");
+    }
+
+    public TransformPortResult Restore(TransformTargetState state)
+    {
+        if (!OnFrameworkThread())
+            return FrameworkThreadFailure();
+
+        if (state.Target.Kind == TransformTargetKind.Actor &&
+            state.Target.Actor is { } actorId)
+        {
+            var resolved = _bindings.Resolve(actorId);
+            if (!resolved.Success)
+                return FromBinding(resolved.Status, resolved.Detail);
+            if (state.HasOverride)
+                _actors.SetTransformOverride(
+                    resolved.Value!,
+                    ToLegacy(state.Transform));
+            else
+                _actors.ClearTransformOverride(resolved.Value!);
+            return TransformPortResult.Ok();
+        }
+
+        if (state.Target.Kind == TransformTargetKind.Bone &&
+            state.Target.Bone is { } boneId)
+        {
+            var resolved = _bindings.Resolve(boneId);
+            if (!resolved.Success)
+                return FromBinding(resolved.Status, resolved.Detail);
+            _bones.RestorePoseStacks(
+                resolved.Value!,
+                ToLegacyLayers(state.Pose));
+            return TransformPortResult.Ok();
+        }
+
+        return TransformPortResult.Fail(
+            TransformPortStatus.IdentityMismatch,
+            $"Malformed transform target {state.Target}.");
+    }
+
+    private TransformPortResult CaptureActor(
+        TransformTargetId target,
+        ActorId actorId)
+    {
+        var resolved = _bindings.Resolve(actorId);
+        if (!resolved.Success)
+            return FromBinding(resolved.Status, resolved.Detail);
+        var actor = resolved.Value!;
+        var converted = FromLegacy(_actors.GetEffectiveTransform(actor));
+        if (converted == null)
+            return TransformPortResult.Fail(
+                TransformPortStatus.InvalidTransform,
+                $"Actor {actorId} returned an invalid transform.");
+        return TransformPortResult.Ok(new TransformTargetState(
+            target,
+            converted.Value,
+            new BonePose(),
+            _actors.HasTransformOverride(actor)));
+    }
+
+    private TransformPortResult CaptureBone(
+        TransformTargetId target,
+        BoneId boneId)
+    {
+        var resolved = _bindings.Resolve(boneId);
+        if (!resolved.Success)
+            return FromBinding(resolved.Status, resolved.Detail);
+        var bone = resolved.Value!;
+        var converted = FromLegacy(bone.LastTransform);
+        if (converted == null)
+            return TransformPortResult.Fail(
+                TransformPortStatus.InvalidTransform,
+                $"Bone {boneId} returned an invalid transform.");
+
+        var layers = _bones.CapturePoseStacks(bone)
+            .Select((layer, index) => ToDomainLayer(layer, index))
+            .Where(layer => layer.HasValue)
+            .Select(layer => layer!.Value)
+            .ToArray();
+        var pose = new BonePose(layers);
+        return TransformPortResult.Ok(new TransformTargetState(
+            target,
+            converted.Value,
+            pose,
+            layers.Length > 0));
+    }
+
+    private bool OnFrameworkThread() =>
+        _framework.IsInFrameworkUpdateThread;
+
+    private static TransformPortResult FrameworkThreadFailure() =>
+        TransformPortResult.Fail(
+            TransformPortStatus.NativeUnavailable,
+            "Transform runtime port must execute on the framework thread.");
+
+    private static TransformPortResult FromBinding(
+        BindingStatus status,
+        string? detail) =>
+        TransformPortResult.Fail(
+            status switch
+            {
+                BindingStatus.StaleTarget =>
+                    TransformPortStatus.StaleTarget,
+                BindingStatus.IdentityMismatch =>
+                    TransformPortStatus.IdentityMismatch,
+                _ => TransformPortStatus.NativeUnavailable,
+            },
+            detail ?? "Native binding is unavailable.");
+
+    private static DomainTransform? FromLegacy(LegacyTransform value) =>
+        DomainTransform.TryCreate(
+            value.Position,
+            value.Rotation,
+            value.Scale,
+            out var converted,
+            out _)
+            ? converted
+            : null;
+
+    private static LegacyTransform ToLegacy(DomainTransform value) =>
+        new(value.Position, value.Rotation, value.Scale);
+
+    private static PoseLayer? ToDomainLayer(
+        LegacyLayer layer,
+        int index)
+    {
+        // Manual gesture history intentionally excludes named service layers.
+        if (layer.Layer != null)
+            return null;
+        var delta = new PoseDelta(
+            layer.Transform.Position,
+            layer.Transform.Rotation,
+            layer.Transform.Scale);
+        if (!delta.IsValid)
+            return null;
+        return new PoseLayer(
+            new PoseLayerId(
+                PoseLayerKind.Manual,
+                $"legacy-{index}"),
+            ToDomainComponents(layer.PropagateComponents),
+            delta.Normalized());
+    }
+
+    private static IReadOnlyList<LegacyLayer> ToLegacyLayers(BonePose pose) =>
+        pose.InteractiveOnly().Layers.Select(layer =>
+            new LegacyLayer(
+                ToLegacyComponents(layer.Propagation),
+                new LegacyTransform(
+                    layer.Delta.Position,
+                    layer.Delta.Rotation,
+                    layer.Delta.Scale))).ToArray();
+
+    private static DomainComponents ToDomainComponents(
+        LegacyComponents components) =>
+        (DomainComponents)(int)components;
+
+    private static LegacyComponents ToLegacyComponents(
+        DomainComponents components) =>
+        (LegacyComponents)(int)components;
+}

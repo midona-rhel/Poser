@@ -262,12 +262,14 @@ public class Skeleton : EntityBase, ISkeleton
                     continue;
 
                 ref var boneTransform = ref *boneTransformPtr;
-                bone.LastTransform = new Transform
+                var transform = new Transform
                 {
                     Position = new Vector3(boneTransform.Translation.X, boneTransform.Translation.Y, boneTransform.Translation.Z),
                     Rotation = new Quaternion(boneTransform.Rotation.X, boneTransform.Rotation.Y, boneTransform.Rotation.Z, boneTransform.Rotation.W),
                     Scale = new Vector3(boneTransform.Scale.X, boneTransform.Scale.Y, boneTransform.Scale.Z)
                 };
+                bone.LastRawTransform = transform;
+                bone.LastTransform = transform;
             }
         }
     }

@@ -5,13 +5,11 @@ using Dalamud.Interface.Textures;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Poser.Composition;
 using Poser.Config;
 using Poser.Core;
 using Poser.Core.BoneInfo;
-using Poser.Files;
 using Poser.Game;
-using Poser.History;
-using Poser.IPC;
 using Poser.Services;
 using Poser.UI;
 
@@ -36,7 +34,8 @@ public class Poser : IDalamudPlugin
         IDataManager dataManager,
         IKeyState keyState,
         ITextureProvider textureProvider,
-        ITargetManager targetManager)
+        ITargetManager targetManager,
+        IChatGui chatGui)
     {
         log.Info($"Starting {PluginConstants.PluginName}...");
 
@@ -58,10 +57,23 @@ public class Poser : IDalamudPlugin
             dataManager,
             keyState,
             textureProvider,
-            targetManager);
+            targetManager,
+            chatGui);
 
         // Initialize configuration service (sets static Instance, must be before UI)
-        _ = _serviceProvider.GetRequiredService<ConfigurationService>();
+        var configService = _serviceProvider.GetRequiredService<ConfigurationService>();
+
+        // Bootstrap Norvrandt's font registry — pre-builds IFontHandles for theme typo sizes
+        // (11/13/16/22/32) so ElementStyle.FontSize actually applies.
+        FontRegistry.Register(pluginInterface.UiBuilder.FontAtlas);
+
+        // Dalamud provides real backdrop blur for the retained glass surfaces.
+        GlassChrome.BackdropBlurAvailable = true;
+
+        // Bridge Poser's UIConfiguration into Crystarium's stylesheet theme.
+        // First sync runs on the first draw frame (Resolve() touches ImGui style
+        // colors, which is unsafe outside an ImGui frame).
+        ThemeBridge.Initialize(pluginInterface, configService);
 
         // Initialize UI Manager (triggers subscription to draw events)
         _ = _serviceProvider.GetRequiredService<IUIManager>();
@@ -69,7 +81,7 @@ public class Poser : IDalamudPlugin
         // Register the /poser command
         _commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open the Poser window"
+            HelpMessage = "Open Poser. Use \"/poser test\" for the focused in-game validation harness."
         });
 
         log.Info($"{PluginConstants.PluginName} started successfully!");
@@ -77,8 +89,7 @@ public class Poser : IDalamudPlugin
 
     private void OnCommand(string command, string args)
     {
-        var uiManager = _serviceProvider.GetRequiredService<IUIManager>();
-        uiManager.ToggleMainWindow();
+        _serviceProvider.GetRequiredService<CommandRouter>().Handle(args);
     }
 
     private static ServiceProvider ConfigureServices(
@@ -93,70 +104,39 @@ public class Poser : IDalamudPlugin
         IDataManager dataManager,
         IKeyState keyState,
         ITextureProvider textureProvider,
-        ITargetManager targetManager)
+        ITargetManager targetManager,
+        IChatGui chatGui)
     {
-        var services = new ServiceCollection();
-
-        // Register Dalamud services
-        services.AddSingleton(pluginInterface);
-        services.AddSingleton(log);
-        services.AddSingleton(clientState);
-        services.AddSingleton(framework);
-        services.AddSingleton(objectTable);
-        services.AddSingleton(sigScanner);
-        services.AddSingleton(gameInterop);
-        services.AddSingleton(commandManager);
-        services.AddSingleton(dataManager);
-        services.AddSingleton(keyState);
-        services.AddSingleton(textureProvider);
-        services.AddSingleton(targetManager);
-
-        // Register configuration service (must be early - others depend on it)
-        services.AddSingleton<ConfigurationService>();
-
-        // Register core services
-        services.AddSingleton<EventBus>();
-        services.AddSingleton<IEventBus>(sp => sp.GetRequiredService<EventBus>());
-
-        // Register game services
-        services.AddSingleton<IGPoseService, GPoseService>();
-        services.AddSingleton<IActorManager, ActorManager>();
-        services.AddSingleton<ICameraService, CameraService>();
-        services.AddSingleton<IAnimationService, AnimationService>();
-        services.AddSingleton<IAnimationDataService, AnimationDataService>();
-        services.AddSingleton<IActorSpawnService, ActorSpawnService>();
-        services.AddSingleton<IHistoryService, HistoryService>();
-        services.AddSingleton<IPosingService, PosingService>();
-        services.AddSingleton<IGazeService, GazeService>();
-        services.AddSingleton<ISkeletonService, SkeletonService>();
-        services.AddSingleton<IIKService, IKService>();
-        services.AddSingleton<IBonePosingService, BonePosingService>();
-        services.AddSingleton<ISelectionService, SelectionService>();
-        services.AddSingleton<IEditorState, EditorState>();
-        services.AddSingleton<ITimeService, TimeService>();
-        services.AddSingleton<IWeatherService, WeatherService>();
-        services.AddSingleton<ReferenceImageService>();
-        services.AddSingleton<ILibraryService, LibraryService>();
-        services.AddSingleton<ILightingService, LightingService>();
-        services.AddSingleton<IVirtualCameraService, VirtualCameraService>();
-
-        // Register IPC services (appearance plugins)
-        services.AddSingleton<IPenumbraService, PenumbraService>();
-        services.AddSingleton<IGlamourerService, GlamourerService>();
-        services.AddSingleton<ICustomizePlusService, CustomizePlusService>();
-
-        // Register file services
-        services.AddSingleton<IPoseFileService, PoseFileService>();
-
-        // Register UI
-        services.AddSingleton<IUIManager, UIManager>();
-
-        return services.BuildServiceProvider();
+        return new ServiceCollection()
+            .AddDalamudDependencies(
+                pluginInterface,
+                log,
+                clientState,
+                framework,
+                objectTable,
+                sigScanner,
+                gameInterop,
+                commandManager,
+                dataManager,
+                keyState,
+                textureProvider,
+                targetManager,
+                chatGui)
+            .AddPoserCore()
+            .AddPoserFeatures()
+            .AddPoserPresentation()
+            .BuildServiceProvider(new ServiceProviderOptions
+            {
+                ValidateOnBuild = true,
+                ValidateScopes = true,
+            });
     }
 
     public void Dispose()
     {
         _commandManager.RemoveHandler(CommandName);
+        ThemeBridge.Dispose();
+        FontRegistry.Dispose();
         _serviceProvider.Dispose();
     }
 }

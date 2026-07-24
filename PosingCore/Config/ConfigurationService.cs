@@ -74,6 +74,7 @@ public class ConfigurationService : IDisposable
     #region Anonymous Mode
 
     private readonly Dictionary<EntityId, string> _anonymousNames = new();
+    private readonly Dictionary<EntityId, string> _nicknames = new();
     private static readonly Random _random = new();
 
     /// <summary>
@@ -81,6 +82,11 @@ public class ConfigurationService : IDisposable
     /// </summary>
     public string GetDisplayName(IEntity entity)
     {
+        // user-chosen nicknames always win (rename action; session-scoped like
+        // Brio's RenameActorModal — spawned actors don't outlive the session)
+        if (_nicknames.TryGetValue(entity.Id, out var nickname))
+            return nickname;
+
         if (!Config.Display.AnonymousMode)
             return entity.Name;
 
@@ -91,6 +97,17 @@ public class ConfigurationService : IDisposable
         }
         return anonName;
     }
+
+    /// <summary>Set (or clear, with null/blank) a display nickname for an entity.</summary>
+    public void SetNickname(IEntity entity, string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            _nicknames.Remove(entity.Id);
+        else
+            _nicknames[entity.Id] = name.Trim();
+    }
+
+    public bool HasNickname(IEntity entity) => _nicknames.ContainsKey(entity.Id);
 
     private static string GenerateRandomName()
     {

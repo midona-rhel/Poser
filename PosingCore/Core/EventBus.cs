@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Dalamud.Plugin.Services;
 using Poser.Services;
 
 namespace Poser.Core;
@@ -16,6 +17,14 @@ public class EventBus : IEventBus
 {
     private readonly Dictionary<Type, List<Delegate>> _handlers = new();
     private readonly object _lock = new();
+    private readonly IPluginLog? _log;
+
+    public EventBus() { }
+
+    public EventBus(IPluginLog log)
+    {
+        _log = log;
+    }
 
     /// <summary>
     /// Subscribe to events of type T.
@@ -68,7 +77,16 @@ public class EventBus : IEventBus
 
         foreach (var handler in handlersCopy)
         {
-            ((Action<T>)handler)(evt);
+            try
+            {
+                ((Action<T>)handler)(evt);
+            }
+            catch (Exception ex)
+            {
+                // A faulty subscriber must not break delivery to other subscribers
+                // or crash the publisher (often a framework-tick or hook context).
+                _log?.Error(ex, $"EventBus: handler for {typeof(T).Name} threw");
+            }
         }
     }
 

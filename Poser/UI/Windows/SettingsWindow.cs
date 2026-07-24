@@ -1,0 +1,117 @@
+using System.Diagnostics;
+using System.Numerics;
+using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility;
+using Dalamud.Interface.Windowing;
+using Poser.Config;
+using Poser.UI.Views;
+
+namespace Poser.UI;
+
+/// <summary>
+/// Binder for <see cref="SettingsView"/> (view+binder pattern —
+/// docs/architecture/ui-screens.md): loads a <see cref="SettingsViewModel"/> from
+/// <see cref="ConfigurationService"/> when opened, renders the pure view, and writes
+/// back + saves on Save. Cancel/close discards. Replaces the legacy SettingsModal.
+/// </summary>
+public class SettingsWindow : Window
+{
+    private SettingsViewModel _vm = new();
+
+    public SettingsWindow()
+        : base($"Settings###{PluginConstants.PluginName}_settings",
+            ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
+            ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
+            ImGuiWindowFlags.NoResize)
+    {
+    }
+
+    public override void OnOpen() => LoadFromConfig();
+
+    public override void PreDraw()
+    {
+        Size = new Vector2(SettingsView.DesignWidth, SettingsView.DesignHeight);
+        SizeCondition = ImGuiCond.Always;
+    }
+
+    public override void Draw()
+    {
+        // The view paints its own chassis (bg-app + border trio); the host window is
+        // an undecorated, transparent shell that only supplies position + input.
+        SettingsView.Draw(_vm, ImGui.GetWindowPos());
+    }
+
+    private void LoadFromConfig()
+    {
+        var c = ConfigurationService.Instance.Config;
+        _vm = new SettingsViewModel
+        {
+            Category = 1,
+            OpenOnGPose = c.OpenOnGPoseEnter,
+            CloseWithGPose = c.CloseWithGPose,
+
+            BoneDotRadius = c.Skeleton.BoneDotRadius,
+            OverlaySelected = ImGui.ColorConvertU32ToFloat4(c.Skeleton.SelectedBoneColor),
+            OverlayHovered = ImGui.ColorConvertU32ToFloat4(c.Skeleton.HoveredBoneColor),
+            OverlayInactive = ImGui.ColorConvertU32ToFloat4(c.Skeleton.BoneColor),
+            OverlayIkChain = ImGui.ColorConvertU32ToFloat4(c.Skeleton.IkChainColor),
+            OverlayMirrored = ImGui.ColorConvertU32ToFloat4(c.Skeleton.MirroredBoneColor),
+            ShowSkeletonLines = c.Skeleton.ShowSkeletonLines,
+            BoneLineThickness = c.Skeleton.BoneLineThickness,
+            BoneLineOpacity = c.Skeleton.BoneLineOpacity,
+
+            NsfwBones = c.Display.ShowNsfwBones,
+            AnonymousMode = c.Display.AnonymousMode,
+            AccentIndex = c.UI.AccentIndex,
+
+            SidebarDock = (int)c.UI.SidebarDock,
+            InspectorDock = (int)c.UI.InspectorDock,
+            TreeGuides = c.UI.ShowTreeGuides,
+
+            Version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "dev",
+            OnSave = SaveToConfig,
+            OnCancel = () => IsOpen = false,
+            OnClose = () => IsOpen = false,
+        };
+        _vm.OnOpenRepository = () =>
+            Process.Start(new ProcessStartInfo("https://github.com/midona-rhel/Poser") { UseShellExecute = true });
+
+        // Keybinds: stored overrides on top of the view defaults.
+        for (int i = 0; i < _vm.Keybinds.Length; i++)
+            if (c.UI.Keybinds.TryGetValue(_vm.Keybinds[i].Action, out var bound))
+                _vm.Keybinds[i] = (_vm.Keybinds[i].Action, bound);
+    }
+
+    private void SaveToConfig()
+    {
+        var svc = ConfigurationService.Instance;
+        var c = svc.Config;
+
+        c.OpenOnGPoseEnter = _vm.OpenOnGPose;
+        c.CloseWithGPose = _vm.CloseWithGPose;
+
+        c.Skeleton.BoneDotRadius = _vm.BoneDotRadius;
+        c.Skeleton.SelectedBoneColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlaySelected);
+        c.Skeleton.HoveredBoneColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlayHovered);
+        c.Skeleton.BoneColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlayInactive);
+        c.Skeleton.IkChainColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlayIkChain);
+        c.Skeleton.MirroredBoneColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlayMirrored);
+        c.Skeleton.ShowSkeletonLines = _vm.ShowSkeletonLines;
+        c.Skeleton.BoneLineThickness = _vm.BoneLineThickness;
+        c.Skeleton.BoneLineOpacity = _vm.BoneLineOpacity;
+
+        c.Display.ShowNsfwBones = _vm.NsfwBones;
+        c.Display.AnonymousMode = _vm.AnonymousMode;
+        c.UI.AccentIndex = _vm.AccentIndex;
+
+        c.UI.SidebarDock = (PanelDock)_vm.SidebarDock;
+        c.UI.InspectorDock = (PanelDock)_vm.InspectorDock;
+        c.UI.ShowTreeGuides = _vm.TreeGuides;
+
+        foreach (var (action, binding) in _vm.Keybinds)
+            c.UI.Keybinds[action] = binding;
+
+        svc.ApplyChange();
+        IsOpen = false;
+    }
+}

@@ -61,8 +61,8 @@ public interface IBone : IEntity, ITransformable
     Transform LastTransform { get; }
 
     /// <summary>
-    /// Raw transform before partial reparenting. For body bones (partial 0), equals LastTransform.
-    /// For face bones (partial 1+), this is the transform before ReparentPartials() adjusts positions.
+    /// Current Havok model-space baseline captured by the apply/cache pipeline.
+    /// Used when an absolute editor or import target must be converted to a pose delta.
     /// </summary>
     Transform LastRawTransform { get; }
 }

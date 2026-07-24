@@ -1,0 +1,2 @@
+- document the Poser architecture, classes, interfaces, services and entities thourougly in a docs folder when implementing anything, there should be seperate files for each real concept, clearly describing their purpose, before adding anything consult this and make sure it makes architectural sense
+- Make sure to consult brio and ktisis, brio has a very robust backend and functionality but horrid UI, ktisis is the reverse
