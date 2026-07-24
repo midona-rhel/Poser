@@ -6,17 +6,28 @@ Precision transform input is the shared interaction contract for position, rotat
 
 ## Interaction contract
 
+The mouse wheel is **navigation** while the inspector rail is scrollable:
+hovering a numeric axis field (or the compact rotation gizmo) never changes a
+transform, and the wheel is left unconsumed so it continues scrolling the
+inspector in both directions. (PBI-002 runtime round 1 supersedes the earlier
+wheel-commit rows.)
+
 | Input | Result |
 |---|---|
 | Horizontal drag | Adjusts continuously using the row's per-pixel step. |
-| Mouse wheel | Applies one coarse step (`perPixel × 10`) and commits immediately. |
-| Shift + wheel | Applies ten times the normal wheel step. |
-| Ctrl + wheel | Applies one tenth of the normal wheel step. |
+| Ctrl + drag | Fine movement at `0.1×` the normal drag sensitivity. |
+| Shift + drag | Coarse movement at `10×` the normal drag sensitivity. |
+| Ctrl + Shift + drag | Normal `1×` sensitivity. |
 | Double-click | Replaces the displayed value with an inline numeric field and selects its contents. |
 | Enter or focus loss after editing | Applies the typed value and commits it to history. |
 | Escape | Cancels the typed edit without changing the transform. |
 
-The hover tooltip advertises these controls at the point of use. Selection changes call `AppShellView.CancelAxisEdit`, preventing an unfinished value from being applied to a different entity.
+The modifier scales pointer deltas accumulated from the frozen gesture
+baseline (`AppShellView.DragModifierMultiplier`, shared with the compact
+rotation gizmo); no frame feeds a native result back as the next frame's
+baseline. The hover tooltip advertises the same behavior at the point of use.
+Selection changes call `AppShellView.CancelAxisEdit`, preventing an unfinished
+value from being applied to a different entity.
 
 The X, Y, and Z prefixes use the exact same 12 px regular monospace face and
 baseline as their values. Axis color alone provides the distinction; mixing
@@ -40,7 +51,8 @@ avoided. Both runs share a 7 px top inset within the 26 px well.
    externally cancelled gesture clears local state the same way without a
    second Cancel.
 
-Wheel and typed edits use the same begin/update/commit path as drag gestures, so undo and redo behavior stays consistent.
+Typed edits use the same begin/update/commit path as drag gestures, so undo
+and redo behavior stays consistent.
 
 X, Y, and Z are literal coordinate axes. `PoseMath` accounts for
 `Quaternion.CreateFromYawPitchRoll` taking arguments in Y, X, Z coordinate
@@ -50,10 +62,10 @@ order, so the red X well does not accidentally edit yaw/Y.
 
 - **Brio:** `Brio/Brio/UI/Controls/Editors/PosingTransformEditor.cs` demonstrates axis-colored transform inputs with direct numeric entry. Poser keeps that precision while retaining its narrower custom rail wells.
 - **Ktisis:** `Ktisis/Interface/Components/Widgets/TransformTable.cs` treats precise values as part of the primary transform surface instead of a modal workflow.
-- The wheel modifiers follow common editor conventions and are intentionally shown in the tooltip rather than occupying permanent rail space.
+- The drag modifiers follow common editor conventions and are intentionally shown in the tooltip rather than occupying permanent rail space.
 
 ## Known risks and verification
 
 - The edit state is static because `ScrubRowDrag` is a shared AppShell primitive and the application renders one main shell. A future multi-shell UI should move it into per-shell state.
 - Typed values use ImGui's numeric parsing while display values use invariant formatting; verify decimal input under the user's in-game locale.
-- In-game verification should cover drag, wheel, both wheel modifiers, Enter, click-away commit, Escape, selection changes during editing, and one-step undo/redo for actors and bones.
+- In-game verification should cover drag, Ctrl/Shift/Ctrl+Shift drag, that the wheel scrolls the rail over a hovered field without editing, Enter, click-away commit, Escape, selection changes during editing, and one-step undo/redo for actors and bones.

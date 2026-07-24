@@ -776,20 +776,16 @@ public static class AppShellView
 
         bool changed = false;
         var io = ImGui.GetIO();
-        if (hovered && io.MouseWheel != 0f && _axisEditId == null)
-        {
-            float multiplier = io.KeyShift ? 10f : io.KeyCtrl ? 0.1f : 1f;
-            value += io.MouseWheel * perPixel * 10f * multiplier;
-            changed = true;
-            released = true;
-        }
-        else if (active)
+        // The mouse wheel is navigation: hovering a numeric field never edits
+        // a transform, and the wheel is left unconsumed so it keeps scrolling
+        // the inspector. Horizontal drag is the pointer-edit interaction.
+        if (active)
         {
             ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEw);
             float delta = io.MouseDelta.X;
             if (delta != 0f)
             {
-                value += delta * perPixel;
+                value += delta * perPixel * DragModifierMultiplier(io);
                 changed = true;
             }
         }
@@ -806,11 +802,21 @@ public static class AppShellView
         if (hovered && _axisEditId == null)
         {
             ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEw);
-            ImGui.SetTooltip("Drag to adjust · Wheel to step (Shift ×10, Ctrl ×0.1) · Double-click to type");
+            ImGui.SetTooltip("Drag to adjust (Ctrl fine ×0.1, Shift coarse ×10) · Double-click to type");
         }
 
         return changed;
     }
+
+    /// <summary>
+    /// Shared drag-sensitivity policy: Ctrl fine (0.1×), Shift coarse (10×),
+    /// Ctrl+Shift back to normal (1×). Scales pointer deltas only — the
+    /// gesture still accumulates from its frozen baseline.
+    /// </summary>
+    public static float DragModifierMultiplier(ImGuiIOPtr io) =>
+        io.KeyCtrl && io.KeyShift ? 1f :
+        io.KeyCtrl ? 0.1f :
+        io.KeyShift ? 10f : 1f;
 
     private static bool EditAxisValue(ImDrawListPtr dl, Vector2 pos, float width, string id, string axis,
         ref float value, Vector4 color, string fmt, float s, ref bool released)
