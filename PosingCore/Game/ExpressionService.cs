@@ -13,17 +13,20 @@ namespace Poser.Game;
 
 /// <summary>
 /// Ktisis v0.4.0.0 action-unit expression blending. Per-race catalog deltas are
-/// weighted and written to a named additive pose layer. The layer is replaced on
-/// every slider change and never clears interactive face-bone edits. In particular,
-/// this service does not reconstruct absolute model transforms from cached parents;
-/// doing so mixes raw and reparented partial-skeleton spaces and can catastrophically
-/// amplify face transforms. Race resolves from customize bytes with a Midlander fallback.
+/// weighted and written to one named head-relative pose layer (the source's
+/// verified convention — see docs/services/expression-service.md). The layer is
+/// replaced on every slider change and never clears interactive face-bone
+/// edits. Race/tribe resolve from customize bytes; a combination without a
+/// catalog is quietly unavailable instead of destructively applying another
+/// race's face data.
 /// </summary>
 public interface IExpressionService
 {
     bool IsAvailable { get; }
 
-    /// <summary>Action units for the actor's race catalog (Id, Label, Bidirectional).</summary>
+    /// <summary>Action units for the actor's race catalog (Id, Label,
+    /// Bidirectional); empty when the actor's customize combination has no
+    /// catalog.</summary>
     IReadOnlyList<(string Id, string Label, bool Bidirectional)> GetUnits(IActor actor);
 
     float GetWeight(IActor actor, string unitId);
@@ -77,17 +80,28 @@ public class ExpressionService : IExpressionService
     private readonly IPluginLog _log;
     private readonly ISkeletonService _skeletons;
     private readonly IBonePosingService _posing;
+    private readonly IEventBus _events;
     private readonly Dictionary<string, List<ActionUnit>> _catalogs = new();
     private readonly Dictionary<EntityId, Session> _sessions = new();
 
     public bool IsAvailable => _catalogs.Count > 0;
 
-    public ExpressionService(IPluginLog log, ISkeletonService skeletons, IBonePosingService posing)
+    public ExpressionService(IPluginLog log, ISkeletonService skeletons, IBonePosingService posing, IEventBus events)
     {
         _log = log;
         _skeletons = skeletons;
         _posing = posing;
+        _events = events;
+        // Pose stacks (and with them every expression layer) clear on GPose
+        // exit; the weight sessions must not outlive their layers.
+        _events.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         LoadCatalogs();
+    }
+
+    private void OnGPoseStateChanged(GPoseStateChangedEvent evt)
+    {
+        if (!evt.IsGPosing)
+            _sessions.Clear();
     }
 
     private void LoadCatalogs()
@@ -114,47 +128,52 @@ public class ExpressionService : IExpressionService
         _log.Info($"ExpressionService: {_catalogs.Count} race catalogs loaded (Ktisis v0.4.0.0 data)");
     }
 
-    /// <summary>Race/gender → catalog key; customize read is best-effort with a
-    /// Midlander fallback (wrong catalog degrades gracefully — absent bones skip).</summary>
-    private unsafe string CatalogKeyFor(IActor actor)
+    /// <summary>Race/tribe/gender → catalog key (Ktisis v0.4.0.0 resolution,
+    /// including the Roegadyn Sea Wolf/Hellsguard tribe split). A combination
+    /// without a catalog — or unreadable customize data — returns null: the UI
+    /// shows a quiet unavailable state and no other race's face data is ever
+    /// applied destructively.</summary>
+    private unsafe string? CatalogKeyFor(IActor actor)
     {
         try
         {
             var chara = (FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)actor.Address;
-            if (chara != null)
+            if (chara == null)
+                return null;
+
+            var customize = chara->DrawData.CustomizeData;
+            byte race = customize.Race;
+            byte sex = customize.Sex;      // 0 masculine, 1 feminine
+            byte tribe = customize.Tribe;
+            string gender = sex == 1 ? "Feminine" : "Masculine";
+            string key = (race, tribe) switch
             {
-                var customize = chara->DrawData.CustomizeData;
-                byte race = customize.Race;
-                byte sex = customize.Sex;      // 0 masculine, 1 feminine
-                byte tribe = customize.Tribe;
-                string gender = sex == 1 ? "Feminine" : "Masculine";
-                string key = race switch
-                {
-                    1 => tribe == 2 ? $"Hyur_{gender}_Highlander" : $"Hyur_{gender}_Midlander",
-                    2 => $"Elezen_{gender}",
-                    3 => $"Lalafell_{gender}",
-                    4 => $"Miqote_{gender}",
-                    5 => $"Roegadyn_{gender}",
-                    6 => $"AuRa_{gender}",
-                    7 => $"Hrothgar_{gender}",
-                    8 => $"Viera_{gender}",
-                    _ => $"Hyur_{gender}_Midlander",
-                };
-                if (_catalogs.ContainsKey(key))
-                    return key;
-            }
+                (1, 2) => $"Hyur_{gender}_Highlander",
+                (1, _) => $"Hyur_{gender}_Midlander",
+                (2, _) => $"Elezen_{gender}",
+                (3, _) => $"Lalafell_{gender}",
+                (4, _) => $"Miqote_{gender}",
+                (5, 10) => $"Roegadyn_{gender}_Hellsguard",
+                (5, _) => $"Roegadyn_{gender}_SeaWolf",
+                (6, _) => $"AuRa_{gender}",
+                (7, _) => $"Hrothgar_{gender}",
+                (8, _) => $"Viera_{gender}",
+                _ => "",
+            };
+            return _catalogs.ContainsKey(key) ? key : null;
         }
         catch
         {
-            // fall through to the fallback catalog
+            return null;
         }
-        return _catalogs.ContainsKey("Hyur_Feminine_Midlander") ? "Hyur_Feminine_Midlander" : _catalogs.Keys.First();
     }
 
     public IReadOnlyList<(string Id, string Label, bool Bidirectional)> GetUnits(IActor actor)
     {
         if (!IsAvailable) return Array.Empty<(string, string, bool)>();
-        return _catalogs[CatalogKeyFor(actor)].Select(u => (u.Id, u.Label, u.Bidirectional)).ToList();
+        return CatalogKeyFor(actor) is { } key
+            ? _catalogs[key].Select(u => (u.Id, u.Label, u.Bidirectional)).ToList()
+            : Array.Empty<(string, string, bool)>();
     }
 
     public float GetWeight(IActor actor, string unitId)
@@ -169,7 +188,8 @@ public class ExpressionService : IExpressionService
         if (skeleton is not { IsValid: true })
             return;
 
-        var catalogKey = CatalogKeyFor(actor);
+        if (CatalogKeyFor(actor) is not { } catalogKey)
+            return; // unsupported customize combination — quiet unavailable
         if (_sessions.TryGetValue(actor.Id, out var existing) && existing.CatalogKey != catalogKey)
         {
             RemoveLayers(skeleton, _catalogs[existing.CatalogKey]);
@@ -206,9 +226,13 @@ public class ExpressionService : IExpressionService
     }
 
     /// <summary>
-    /// Recomputes one additive expression layer per affected bone. No cached parent
-    /// transforms or absolute targets are involved, so slider updates are idempotent
-    /// and cannot amplify stale cross-partial coordinates.
+    /// Recomputes one head-relative expression layer per affected bone. No
+    /// cached parent transforms or absolute targets are involved, so slider
+    /// updates are idempotent and cannot amplify stale cross-partial
+    /// coordinates. Units aggregate in catalog order; the source convention is
+    /// a pre-multiply, so a later unit's rotation left-multiplies the
+    /// accumulated head-frame rotation and weighted positions sum — the result
+    /// is deterministic for any slider edit order.
     /// </summary>
     private void Blend(ISkeleton skeleton, Session session, List<ActionUnit> units)
     {
@@ -233,7 +257,7 @@ public class ExpressionService : IExpressionService
                 };
                 var weighted = PoseMath.WeightPoseDelta(source, weight, unit.UsePosition);
                 blended[boneName] = blended.TryGetValue(boneName, out var current)
-                    ? BonePoseInfo.Combine(current, weighted)
+                    ? BonePoseInfo.Combine(weighted, current)
                     : weighted;
             }
         }
@@ -247,7 +271,7 @@ public class ExpressionService : IExpressionService
 
             var info = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
             if (blended.TryGetValue(boneName, out var delta) && !IsIdentityDelta(delta))
-                info.SetLayerTransform(ExpressionLayer, delta, TransformComponents.None);
+                info.SetLayerTransform(ExpressionLayer, delta, TransformComponents.None, TransformFrame.HeadRelative);
             else
                 info.RemoveLayer(ExpressionLayer);
         }

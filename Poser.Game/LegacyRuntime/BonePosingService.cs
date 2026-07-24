@@ -412,11 +412,28 @@ public unsafe class BonePosingService : IBonePosingService
     {
         // Delta mode: ADD to Havok state (like Brio)
 
+        // Ktisis v0.4 action-unit deltas are authored with their axes fixed in
+        // the bone's partial-root ("head") frame, not the bone's own frame.
+        // Rotation applies pre-multiplied conjugated by the head rotation and
+        // the position delta rotates by the head rotation before the model
+        // add. Applying them bone-locally is exactly the defect that made
+        // Blink open the eyes and Pucker shove the mouth sideways.
+        var headRotation = Quaternion.Identity;
+        if (info.Frame == TransformFrame.HeadRelative)
+        {
+            var rootSpace = pose->AccessBoneModelSpace(0, hkaPose.PropagateOrNot.DontPropagate);
+            if (rootSpace != null)
+                headRotation = new Quaternion(rootSpace->Rotation.X, rootSpace->Rotation.Y, rootSpace->Rotation.Z, rootSpace->Rotation.W);
+        }
+
         // Position
         var prop = info.PropagateComponents.HasFlag(TransformComponents.Position);
         var modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
         var beforePos = new Vector3(modelSpace->Translation.X, modelSpace->Translation.Y, modelSpace->Translation.Z);
-        var tempPos = beforePos + info.Transform.Position;
+        var positionDelta = info.Frame == TransformFrame.HeadRelative
+            ? Vector3.Transform(info.Transform.Position, headRotation)
+            : info.Transform.Position;
+        var tempPos = beforePos + positionDelta;
         if (ik.Enabled && info.Transform.Position != Vector3.Zero)
         {
             // Brio-style live IK: the stored delta is the TARGET offset; the chain is
@@ -437,7 +454,11 @@ public unsafe class BonePosingService : IBonePosingService
         prop = info.PropagateComponents.HasFlag(TransformComponents.Rotation);
         modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
         var beforeRot = new Quaternion(modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W);
-        var tempRot = beforeRot * info.Transform.Rotation;
+        var tempRot = info.Frame == TransformFrame.HeadRelative
+            ? Quaternion.Normalize(
+                headRotation * info.Transform.Rotation *
+                Quaternion.Inverse(headRotation) * beforeRot)
+            : beforeRot * info.Transform.Rotation;
         modelSpace->Rotation = *(hkQuaternionf*)(&tempRot);
 
         // Scale

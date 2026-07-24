@@ -18,13 +18,29 @@ public enum TransformComponents
 }
 
 /// <summary>
+/// The frame a stack delta is expressed in when the runtime applies it.
+/// </summary>
+public enum TransformFrame
+{
+    /// <summary>Post-multiply on the bone's model rotation (the bone's own
+    /// axes); position adds raw in model space. The interactive default.</summary>
+    BoneLocal = 0,
+    /// <summary>Ktisis v0.4 action-unit convention: the delta's axes are fixed
+    /// in the bone's partial-root ("head") frame. Rotation pre-multiplies
+    /// conjugated by the head rotation; position rotates by the head rotation
+    /// before the model-space add.</summary>
+    HeadRelative = 1,
+}
+
+/// <summary>
 /// Stores transform information for a bone pose modification.
 /// Simple delta-based system - all transforms are additive.
 /// </summary>
 public record struct BonePoseTransformInfo(
     TransformComponents PropagateComponents,
     Transform Transform,
-    string? Layer = null);
+    string? Layer = null,
+    TransformFrame Frame = TransformFrame.BoneLocal);
 
 /// <summary>
 /// Tracks pose modifications for a single bone.
@@ -180,13 +196,17 @@ public class BonePoseInfo
     /// pose stacks. Named layers let continuously recomputed systems such as
     /// expression blending remain idempotent while normal edits continue to stack.
     /// </summary>
-    public bool SetLayerTransform(string layer, Transform absoluteDelta, TransformComponents propagation)
+    public bool SetLayerTransform(
+        string layer,
+        Transform absoluteDelta,
+        TransformComponents propagation,
+        TransformFrame frame = TransformFrame.BoneLocal)
     {
         if (string.IsNullOrWhiteSpace(layer) || !IsFinite(absoluteDelta))
             return false;
 
         var transformIndex = GetTransformIndex(propagation, layer);
-        _stacks[transformIndex] = new BonePoseTransformInfo(propagation, absoluteDelta, layer);
+        _stacks[transformIndex] = new BonePoseTransformInfo(propagation, absoluteDelta, layer, frame);
         return true;
     }
 

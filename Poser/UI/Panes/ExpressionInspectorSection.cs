@@ -25,6 +25,15 @@ public sealed class ExpressionInspectorSection
         h += 26f * s;
 
         var units = _expressions.GetUnits(actor);
+        if (units.Count == 0)
+        {
+            // Unsupported customize/catalog combination: quiet unavailable
+            // state instead of destructively applying another race's catalog.
+            ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 5f * s),
+                "No expression catalog for this character.", 11f,
+                FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
+            return h + 26f * s;
+        }
         const float sliderX = 106f, valueW = 44f, sliderGap = 6f;
         foreach (var (id, label, bidirectional) in units)
         {
