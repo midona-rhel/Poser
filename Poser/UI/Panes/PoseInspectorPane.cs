@@ -1297,7 +1297,14 @@ public class PoseInspectorPane
         var update = _cleanTransforms.Update(gesture, delta);
         if (!update.Success)
         {
-            ClearTransformSession(cancel: true);
+            // Covers scene-revision self-cancellation, invalid deltas, and
+            // runtime apply failure: Cancel only while the service still owns
+            // this gesture id (otherwise it is already cancelled), always
+            // clear local presentation state, and suppress restart until the
+            // pointer interaction deactivates.
+            ClearTransformSession(cancel:
+                _cleanTransforms.ActiveGesture == gesture);
+            _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
             return;
         }
 
