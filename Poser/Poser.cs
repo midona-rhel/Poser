@@ -10,6 +10,7 @@ using Poser.Config;
 using Poser.Core;
 using Poser.Core.BoneInfo;
 using Poser.Game;
+using Poser.Game.Scene;
 using Poser.Services;
 using Poser.UI;
 
@@ -62,6 +63,11 @@ public class Poser : IDalamudPlugin
 
         // Initialize configuration service (sets static Instance, must be before UI)
         var configService = _serviceProvider.GetRequiredService<ConfigurationService>();
+
+        // Activate the clean scene owner before constructing presentation.
+        // Singleton registration is lazy: without resolving this service its
+        // actor/skeleton subscriptions never run and SceneSession stays empty.
+        _ = _serviceProvider.GetRequiredService<CleanSceneLifecycle>();
 
         // Bootstrap Norvrandt's font registry — pre-builds IFontHandles for theme typo sizes
         // (11/13/16/22/32) so ElementStyle.FontSize actually applies.

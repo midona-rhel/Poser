@@ -11,7 +11,9 @@ The actor inspector is the Pose rail shown when the primary sidebar selection is
 
 ## Selection and routing
 
-- `MainWindow.BuildSidebar` tags each root actor row with its `IActor` and every leaf bone row with its `IBone`.
+- `MainWindow.BuildSidebar` tags actor and bone rows with snapshot-derived
+  `SelectionId` values; native `IActor`/`IBone` objects are not selection
+  identity.
 - `MainWindow.OnRowClicked` sends plain, Ctrl, and Shift clicks to the matching `SelectionSession` operation (`Select`/`Toggle`/`SelectRange` with the visible `SelectionId` order) and keeps the natural tab active.
 - `PoseInspectorPane.SetSelection` receives `SelectionSession.Primary` once per frame; a change cancels the active gesture and typed edit exactly once.
 - Transform values, gesture baselines, and target lists come from the shared `TransformTargetResolver` effective selection — the first surviving root in original selection order — not necessarily the selection primary.

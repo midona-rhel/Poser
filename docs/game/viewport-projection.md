@@ -69,7 +69,7 @@ NOT spatial reads:
   Body/Face maps still render from the live skeleton and read the face-map
   variant from actor customize data (display formatting); dot selection
   identity comes from snapshot descriptors, never the registry;
-- `PoseInspectorPane` re-resolves the primary once per selection change to
-  feed the retained gaze/expression sections, and resolves selected actors
-  when dispatching the skeleton-shaped whole-pose commands
+- `PoseInspectorPane` re-resolves the primary once per frame to feed the
+  retained gaze/expression sections, and resolves selected actors when
+  dispatching the skeleton-shaped whole-pose commands
   (`CleanPoseFacade.Mirror`) whose stable-id migration is deferred work.
