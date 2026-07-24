@@ -173,5 +173,12 @@ public record struct Theme
         public static readonly Vector4 Purple = new(0.5f, 0f, 0.5f, 1f);
         public static readonly Vector4 Orange = new(1f, 0.5f, 0f, 1f);
         public static readonly Vector4 Gray   = new(0.5f, 0.5f, 0.5f, 1f);
+
+        // Shared transform-axis palette: every axis-colored surface (toolbar
+        // axis wells, rotation ball, gizmo accents) consumes these — one
+        // definition, no per-pane copies.
+        public static readonly Vector4 AxisX = new(1f, 107f / 255f, 122f / 255f, 1f);
+        public static readonly Vector4 AxisY = new(126f / 255f, 211f / 255f, 160f / 255f, 1f);
+        public static readonly Vector4 AxisZ = new(109f / 255f, 179f / 255f, 1f, 1f);
     }
 }

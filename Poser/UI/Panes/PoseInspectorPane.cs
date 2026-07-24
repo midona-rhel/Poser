@@ -560,8 +560,7 @@ public class PoseInspectorPane
         };
         ImGui.SetCursorScreenPos(new Vector2(cursor.X + 286f * s, cursor.Y + fy));
         if (Crystarium.Button(parentingLabel, new ButtonProps { Id = "ft-parenting", Classes = Cls.Compact,
-            Tooltip = "Cycle: Full > Position only > Off",
-            Style = new ButtonStyle { Height = Sizing.Fixed(24f) } }))
+            Tooltip = "Cycle: Full > Position only > Off" }))
         {
             poseInfo.DefaultPropagation = poseInfo.DefaultPropagation switch
             {
@@ -570,14 +569,12 @@ public class PoseInspectorPane
                 _ => Core.TransformComponents.Position,
             };
         }
-        ImGui.SameLine(0f, 8f * s);
-        if (Crystarium.Button("Clear", new ButtonProps { Id = "ft-clear", Classes = Cls.Compact, Tooltip = "Clear bone selection",
-            Style = new ButtonStyle { Height = Sizing.Fixed(24f) } }))
+        ImGui.SameLine(0f, 6f * s);
+        if (Crystarium.Button("Clear", new ButtonProps { Id = "ft-clear", Classes = Cls.Compact, Tooltip = "Clear bone selection" }))
             _selection.Clear();
 
         ImGui.SetCursorScreenPos(new Vector2(cursor.X + width - 56f * s, cursor.Y + fy));
-        if (Crystarium.Button("Flip", new ButtonProps { Id = "ft-flip", Classes = Cls.Compact, Tooltip = "Mirror the whole pose",
-            Style = new ButtonStyle { Height = Sizing.Fixed(24f) } }))
+        if (Crystarium.Button("Flip", new ButtonProps { Id = "ft-flip", Classes = Cls.Compact, Tooltip = "Mirror the whole pose" }))
             _cleanPose.Mirror(skeleton);
 
     }
@@ -880,7 +877,7 @@ public class PoseInspectorPane
         ImGui.SetCursorScreenPos(new Vector2(cursor.X, cursor.Y + h));
         if (Crystarium.Button("Arm hands + feet", new ButtonProps { Id = "pose-ik-arm", Classes = Cls.Compact }))
             _bonePosingService.SetAllIk(skeleton, true);
-        ImGui.SameLine(0f, 8f * s);
+        ImGui.SameLine(0f, 6f * s);
         if (Crystarium.Button("Disarm all", new ButtonProps { Id = "pose-ik-disarm", Classes = Cls.Compact }))
             _bonePosingService.SetAllIk(skeleton, false);
         return h + 34f * s;
@@ -1015,10 +1012,11 @@ public class PoseInspectorPane
             return 0f;
 
         float gap = 6f * scale;
-        float rowAdvance = 30f * scale;
+        float rowAdvance = 30f * scale; // 24px compact height + 6px row gap
         var widths = new float[actions.Count];
         for (int i = 0; i < actions.Count; i++)
-            widths[i] = ImGui.CalcTextSize(actions[i].Label).X + 24f * scale;
+            widths[i] = Crystarium.MeasureButton(
+                actions[i].Label, Cls.Compact, actions[i].Disabled).X;
 
         int start = 0;
         int row = 0;

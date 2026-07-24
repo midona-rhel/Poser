@@ -124,9 +124,9 @@ public static class AppShellView
     private static readonly Vector4 SurfaceHover   = new(1f, 1f, 1f, 0.05f);
     private static readonly Vector4 SurfaceActive  = new(1f, 1f, 1f, 0.09f);
     private static readonly Vector4 Success        = new(126 / 255f, 211 / 255f, 160 / 255f, 1f);
-    private static readonly Vector4 AxisX          = new(1f, 107 / 255f, 122 / 255f, 1f);
-    private static readonly Vector4 AxisY          = new(126 / 255f, 211 / 255f, 160 / 255f, 1f);
-    private static readonly Vector4 AxisZ          = new(109 / 255f, 179 / 255f, 1f, 1f);
+    private static readonly Vector4 AxisX          = Theme.Palette.AxisX;
+    private static readonly Vector4 AxisY          = Theme.Palette.AxisY;
+    private static readonly Vector4 AxisZ          = Theme.Palette.AxisZ;
 
     // One inline axis editor may be active at a time. This belongs to the
     // view because the edit surface is an AppShell primitive, not entity state.

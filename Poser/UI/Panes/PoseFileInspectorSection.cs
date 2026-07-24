@@ -80,7 +80,7 @@ public sealed class PoseFileInspectorSection
                 _poseFiles.ImportPose(skeleton, path, BuildOptions());
             });
         }
-        ImGui.SameLine(0f, 8f * s);
+        ImGui.SameLine(0f, 6f * s);
         if (Crystarium.Button("Export…",
                 new ButtonProps { Id = "impex-export", Classes = Cls.Compact }))
         {

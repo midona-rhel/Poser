@@ -31,9 +31,9 @@ public class PoseRailPane
     private RotationAxis _selectedRotationAxis = RotationAxis.Free;
     private RotationAxis _dragRotationAxis = RotationAxis.Free;
 
-    private static readonly Vector4 AxisX = new(1f, 107 / 255f, 122 / 255f, 1f);
-    private static readonly Vector4 AxisY = new(126 / 255f, 211 / 255f, 160 / 255f, 1f);
-    private static readonly Vector4 AxisZ = new(109 / 255f, 179 / 255f, 1f, 1f);
+    private static readonly Vector4 AxisX = Theme.Palette.AxisX;
+    private static readonly Vector4 AxisY = Theme.Palette.AxisY;
+    private static readonly Vector4 AxisZ = Theme.Palette.AxisZ;
     public PoseRailPane(PoseInspectorPane inspector)
     {
         _inspector = inspector;
@@ -82,7 +82,7 @@ public class PoseRailPane
                         Tooltip = "Restore the actor's position, rotation, and scale from before it was moved",
                     }))
                     _inspector.ResetActorTransform();
-                ImGui.SameLine(0f, 8f * s);
+                ImGui.SameLine(0f, 6f * s);
                 if (Crystarium.Button("Mirror pose", new ButtonProps
                     {
                         Id = "rail-actor-mirror",
@@ -96,7 +96,7 @@ public class PoseRailPane
                 if (Crystarium.Button("Select children", new ButtonProps { Id = "rail-children", Classes = Cls.Compact,
                     Tooltip = "Add every descendant bone to the selection" }))
                     _inspector.SelectChildren();
-                ImGui.SameLine(0f, 8f * s);
+                ImGui.SameLine(0f, 6f * s);
                 if (Crystarium.Button("Flip", new ButtonProps { Id = "rail-flip", Classes = Cls.Compact, Tooltip = "Mirror the whole pose" }))
                     _inspector.FlipWholePose();
             }

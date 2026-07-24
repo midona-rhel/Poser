@@ -27,6 +27,40 @@ public static partial class Crystarium
     public static bool IconButton(FontAwesomeIcon icon, in ButtonProps props)
         => IconButtonCore(icon, props.Classes, props.Id, props.Tooltip, props.OnClick, props.Disabled, props.Style);
 
+    // ---- Measurement ----
+
+    /// <summary>
+    /// Measures a text button exactly as it renders: resolved stylesheet
+    /// padding and resolved font. Layout code (wrapping, right-alignment)
+    /// must use this instead of a hand-authored CalcTextSize + constant
+    /// estimate that can drift from the component.
+    /// </summary>
+    public static Vector2 MeasureButton(string label, StyleClassSet classes = default, bool disabled = false)
+    {
+        Stylesheet.EnsureInitialized();
+
+        var pre = Stylesheet.ResolveButton(Cls.Btn + classes, disabled ? PseudoState.Disabled : PseudoState.None);
+        float scale = ImGuiHelpers.GlobalScale;
+        var theme = Norvrandt.Sheet.CurrentTheme;
+        float height = (pre.Height ?? Sizing.Fixed(theme.RowHeight)).Value * scale;
+        Spacing padding = pre.Padding ?? new Spacing(0, Theme.Spacing.Md);
+        float width = MeasureLabel(label, pre).X + padding.Horizontal * scale;
+        width  = SizeUtil.Clamp(width,  pre.MinWidth,  pre.MaxWidth,  scale);
+        height = SizeUtil.Clamp(height, pre.MinHeight, pre.MaxHeight, scale);
+        return new Vector2(width, height);
+    }
+
+    /// <summary>Measures the label under the button's resolved stylesheet font.</summary>
+    private static Vector2 MeasureLabel(string label, in ButtonStyle resolved)
+    {
+        var fontHandle = FontRegistry.Resolve(resolved.FontFamily ?? FontFamily.Default, resolved.FontSize ?? 13f);
+        bool fontPushed = fontHandle is { Available: true };
+        if (fontPushed) fontHandle!.Push();
+        var size = ImGui.CalcTextSize(label);
+        if (fontPushed) fontHandle!.Pop();
+        return size;
+    }
+
     // ---- Core ----
 
     private static bool ButtonCore(string label, StyleClassSet classes, string? id, string? tooltip, Action? onClick, bool disabled, ButtonStyle? inline)
@@ -48,7 +82,7 @@ public static partial class Crystarium
         else if (pre.Width.HasValue && pre.Width.Value.Mode == SizingMode.Fill)
             width = ImGui.GetContentRegionAvail().X;
         else
-            width = ImGui.CalcTextSize(label).X + padding.Horizontal * scale;
+            width = MeasureLabel(label, pre).X + padding.Horizontal * scale;
 
         width  = SizeUtil.Clamp(width,  pre.MinWidth,  pre.MaxWidth,  scale);
         height = SizeUtil.Clamp(height, pre.MinHeight, pre.MaxHeight, scale);
@@ -90,7 +124,13 @@ public static partial class Crystarium
         ChromeBuilder.Paint(hit.ScreenMin, hit.ScreenMax, elemStyle, ChromeBuilder.LiveButtonBg(hit.State));
 
         var drawList = ImGui.GetWindowDrawList();
+        // Element opacity (the stylesheet's disabled fade) applies to the
+        // button's content — label and icon — as well as its chrome, so a
+        // disabled button fades uniformly instead of keeping bright text on
+        // a dimmed fill.
+        float contentOpacity = elemStyle.Opacity ?? 1f;
         var textColor = resolved.Color ?? Norvrandt.Sheet.CurrentTheme.Text;
+        textColor = textColor with { W = textColor.W * contentOpacity };
         uint textU32 = ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(textColor));
         var size = hit.Size;
 
@@ -105,17 +145,27 @@ public static partial class Crystarium
             var scaledIconSize = baseIconSize * iconScale;
             var iconPos = hit.ScreenMin + (size - scaledIconSize) * 0.5f;
             float outlineOffset = 1f * ImGuiHelpers.GlobalScale;
+            var iconOutline = Theme.Palette.Black with { W = Theme.Palette.Black.W * contentOpacity };
+            var iconFill = Theme.Palette.White with { W = Theme.Palette.White.W * contentOpacity };
             DrawHelpers.DrawOutlinedIconScaled(drawList, iconFont, iconPos, iconStr,
-                ColorEx.ApplyAlpha(Theme.Palette.Black.ToU32()), ColorEx.ApplyAlpha(Theme.Palette.White.ToU32()), outlineOffset, iconScale);
+                ColorEx.ApplyAlpha(iconOutline.ToU32()), ColorEx.ApplyAlpha(iconFill.ToU32()), outlineOffset, iconScale);
         }
         else if (label != null)
         {
+            var fontHandle = FontRegistry.Resolve(resolved.FontFamily ?? FontFamily.Default, resolved.FontSize ?? 13f);
+            bool fontPushed = fontHandle is { Available: true };
+            if (fontPushed) fontHandle!.Push();
             var textSize = ImGui.CalcTextSize(label);
             var textPos = hit.ScreenMin + (size - textSize) * 0.5f;
             drawList.AddText(textPos, textU32, label);
+            if (fontPushed) fontHandle!.Pop();
         }
 
-        if (hit.Hovered && !string.IsNullOrEmpty(tooltip)) ImGui.SetTooltip(tooltip);
+        // A disabled reserve reports Hovered = false, but a disabled action may
+        // still explain itself; hover is re-derived geometrically for tooltips.
+        bool tooltipHover = hit.Hovered ||
+            (hit.Disabled && ImGui.IsMouseHoveringRect(hit.ScreenMin, hit.ScreenMax));
+        if (tooltipHover && !string.IsNullOrEmpty(tooltip)) ImGui.SetTooltip(tooltip);
         if (hit.Clicked) onClick?.Invoke();
 
         return hit.Clicked;

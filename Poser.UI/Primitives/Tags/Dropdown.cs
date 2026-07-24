@@ -3,7 +3,6 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility;
-using Dalamud.Interface.Utility.Raii;
 using Poser.UI.Controls;
 using Poser.UI.Effects;
 
@@ -159,12 +158,16 @@ public static partial class Crystarium
             // and an oversized child spawns a stray popup scrollbar. The child itself
             // must have zero padding (it inherits the popup's 4px otherwise, overflowing
             // its own frame and offsetting options by 4px).
+            // EndChild must run BEFORE EndPopup: a `using var` ImRaii.Child here
+            // would dispose (EndChild) at the enclosing block's closing brace,
+            // i.e. after EndPopup, producing crossed Begin/End pairing and the
+            // "EndPopup on non-popup window" / EndChild-mismatch ImGui asserts.
             var childSize = new Vector2(ImGui.GetContentRegionAvail().X, visibleItems * height);
             ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0f, 0f));
-            using var child = ImRaii.Child("##dropdown_scroll", childSize, false,
+            bool childOpen = ImGui.BeginChild("##dropdown_scroll", childSize, false,
                 needsScroll ? ImGuiWindowFlags.AlwaysVerticalScrollbar : ImGuiWindowFlags.NoScrollbar);
             ImGui.PopStyleVar();
-            if (child)
+            if (childOpen)
             {
                 // Options per CmSelect.module.css (.opt): 26px, padding 0 8, radius 4,
                 // 12px text; hover → menu-hover white@.08; current option (.optActive)
@@ -205,6 +208,7 @@ public static partial class Crystarium
 
                 if (optFontPushed) optFont!.Pop();
             }
+            ImGui.EndChild();
 
             ImGui.PopStyleVar(2);
             ImGui.EndPopup();

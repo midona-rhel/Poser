@@ -23,13 +23,20 @@ public static class ChromeBuilder
             ? ColorEx.ApplyAlpha(resolved.BackgroundColor.Value)
             : ColorEx.ApplyAlpha(liveFallbackBg with { W = 1f });
 
-        if (resolved.Opacity.HasValue) bg = bg with { W = bg.W * resolved.Opacity.Value };
+        // Element opacity fades the whole chrome, border included — a disabled
+        // control must not keep a full-strength outline around a faded fill.
+        var border = resolved.BorderColor ?? Norvrandt.Sheet.CurrentTheme.Border;
+        if (resolved.Opacity.HasValue)
+        {
+            bg = bg with { W = bg.W * resolved.Opacity.Value };
+            border = border with { W = border.W * resolved.Opacity.Value };
+        }
 
         Norvrandt.Box(min, max, new BoxStyle
         {
             BackgroundColor = bg,
             BackgroundGradient = resolved.BackgroundGradient,
-            BorderColor = resolved.BorderColor ?? Norvrandt.Sheet.CurrentTheme.Border,
+            BorderColor = border,
             BorderWidth = resolved.BorderWidth ?? 1f,
             BorderRadius = resolved.BorderRadius ?? 4f,
             BoxShadow = resolved.BoxShadow,
