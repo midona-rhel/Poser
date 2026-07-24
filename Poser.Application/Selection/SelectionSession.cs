@@ -75,10 +75,13 @@ public sealed class SelectionSession
     {
         var fromIndex = IndexOf(displayOrder, from);
         var toIndex = IndexOf(displayOrder, to);
-        if (fromIndex < 0 || toIndex < 0)
+
+        // No visible range (the anchor is filtered or collapsed away) or an
+        // incompatible anchor: the clicked target replaces the selection —
+        // the same contract as incompatible Ctrl input.
+        if (fromIndex < 0 || toIndex < 0 || !IsCompatible(to, from))
         {
-            Select(from);
-            Add(to);
+            Select(to);
             return;
         }
 
@@ -88,7 +91,10 @@ public sealed class SelectionSession
         for (var index = start; index <= end; index++)
         {
             var candidate = displayOrder[index];
-            if (_selected.Count == 0 || IsCompatible(_selected[0], candidate))
+            // Compatibility is anchored on the CLICKED target so an
+            // incompatible row inside the span can never redefine the group
+            // or exclude the clicked target itself.
+            if (IsCompatible(to, candidate) && !_selected.Contains(candidate))
                 _selected.Add(candidate);
         }
         Anchor = to;
