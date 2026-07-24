@@ -15,7 +15,7 @@ receive the delta relative to their own frozen baselines — never the primary's
 absolute value.
 
 One shared rule in one service prevents the gizmo, rotation rings, drag wells,
-wheel steps, and typed values from disagreeing.
+modifier drags, and typed values from disagreeing.
 
 ## Inspector session
 
