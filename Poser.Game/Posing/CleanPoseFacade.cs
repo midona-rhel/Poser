@@ -22,7 +22,6 @@ public sealed class CleanPoseFacade
         IBonePosingService bonePosing,
         IExpressionService expressions,
         IGazeService gaze,
-        IEditorState editorState,
         IPluginLog log)
     {
         _bindings = bindings;
@@ -31,14 +30,12 @@ public sealed class CleanPoseFacade
         _bonePosing = bonePosing;
         _expressions = expressions;
         _gaze = gaze;
-        _editorState = editorState;
         _log = log;
     }
 
     private readonly IBonePosingService _bonePosing;
     private readonly IExpressionService _expressions;
     private readonly IGazeService _gaze;
-    private readonly IEditorState _editorState;
     private readonly IPluginLog _log;
 
     /// <summary>
@@ -83,7 +80,6 @@ public sealed class CleanPoseFacade
             failures.Add(poseDetail);
 
         _bonePosing.SetAllIk(skeleton, false);
-        _editorState.IkEnabled = false;
 
         if (failures.Count == 0)
             return pose;

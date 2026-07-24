@@ -92,11 +92,7 @@ public interface IEditorState
     /// <summary>Symmetry mode for paired bone transforms.</summary>
     SymmetryMode SymmetryMode { get; set; }
 
-    /// <summary>When true, translate-dragging an IK-eligible bone (hands/feet)
-    /// solves the chain toward the drag target instead of offsetting the bone alone.</summary>
-    bool IkEnabled { get; set; }
-
-    /// <summary>The rotation pivot for the in-world gizmo: Self rotates in
-    /// place; Parent and Selection orbit around the frozen pivot.</summary>
+    /// <summary>The rotation pivot for the rotation gizmos: Self rotates in
+    /// place; Parent orbits around the frozen parent pivot.</summary>
     Poser.Core.RotationPivot RotationPivot { get; set; }
 }

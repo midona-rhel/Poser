@@ -61,9 +61,11 @@ public sealed class AppShellViewModel
 
     public int GizmoOperation;        // 0 translate, 1 rotate, 2 scale
     public int GizmoSpace;            // 0 local, 1 world
-    public int RotationPivot;         // 0 self, 1 parent, 2 selection
+    public int RotationPivot;         // 0 self, 1 parent
     public bool ShowRotationPivot;    // Rotate tool + bone selection only
     public bool RotationPivotParentAvailable;
+    public int SymmetryMode;          // 0 off, 1 link, 2 mirror
+    public bool LinkedOn;
     public bool SkeletonOverlayOn;
     public bool CanUndo = true;
     public bool CanRedo;
@@ -101,6 +103,8 @@ public sealed class AppShellViewModel
     public Action<int>? OnGizmoOperation;
     public Action<int>? OnGizmoSpace;
     public Action<int>? OnRotationPivot;
+    public Action<int>? OnSymmetry;
+    public Action<bool>? OnLinked;
     public Action? OnUndo, OnRedo, OnSpawn, OnSettings, OnHideUi, OnPopOut, OnProject, OnSelectTarget;
     public Action<bool>? OnSkeletonOverlay;
     public Action<ShellSidebarRow>? OnRowClicked;
@@ -311,17 +315,29 @@ public static class AppShellView
         x += 10f * s;
         x = TextSeg(dl, new Vector2(x, min.Y + (h - 30f * s) / 2f),
             new[] { "Local", "World" }, vm.GizmoSpace, s, i => vm.OnGizmoSpace?.Invoke(i));
-        // rotation pivot seg — visible only where the pivot changes the active
-        // transform meaning (Rotate tool with a bone selection). Parent is
-        // disabled when the effective primary has no valid parent.
+        // pivot seg (Rotate + bone only; Parent disabled without a parent),
+        // then symmetry and linked — kept in the toolbar so they stay
+        // available while the window is collapsed.
         if (vm.ShowRotationPivot)
         {
             x += 10f * s;
             x = TextSeg(dl, new Vector2(x, min.Y + (h - 30f * s) / 2f),
-                new[] { "Self", "Parent", "Selection" }, vm.RotationPivot, s,
+                new[] { "Self", "Parent" }, vm.RotationPivot, s,
                 i => vm.OnRotationPivot?.Invoke(i),
                 itemDisabled: i => i == 1 && !vm.RotationPivotParentAvailable);
         }
+        x += 10f * s;
+        x = TextSeg(dl, new Vector2(x, min.Y + (h - 30f * s) / 2f),
+            new[] { "Off", "Link", "Mirror" }, vm.SymmetryMode, s,
+            i => vm.OnSymmetry?.Invoke(i));
+        x += 10f * s;
+        IconButtonNamed(dl, new Vector2(x, min.Y + (h - 28f * s) / 2f), "link",
+            vm.LinkedOn, s, () => vm.OnLinked?.Invoke(!vm.LinkedOn));
+        if (ImGui.IsMouseHoveringRect(
+                new Vector2(x, min.Y + (h - 28f * s) / 2f),
+                new Vector2(x + 28f * s, min.Y + (h + 28f * s) / 2f)))
+            ImGui.SetTooltip("Linked bones");
+        x += (28f + 10f) * s;
 
         // tb-right cell: when the rail is present, the right cluster sits on a
         // surface-1 cell continuous with the rail below (shell rule)

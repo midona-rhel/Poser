@@ -353,10 +353,6 @@ public class PoseInspectorPane
             }
             else
             {
-                if (_editorState.RotationPivot == Core.RotationPivot.Selection &&
-                    EffectiveSelection() is { } effective &&
-                    BoneCentroid(effective.Targets) is { } centroid)
-                    pivotModel = centroid;
                 frameWorld = _editorState.TransformOrientation == TransformOrientation.Global
                     ? Quaternion.Identity
                     : Quaternion.Normalize(actorRotation * model.Rotation);
@@ -470,11 +466,14 @@ public class PoseInspectorPane
         var skeleton = OwningSkeleton();
         if (skeleton != null)
         {
-            cursor.Y += InspectorLayout.Section(dl, cursor, width, "insp", "IK", ref _openIk, s, topBorder: true);
-            if (_openIk)
+            if (_primary is { Kind: SceneEntityKind.Bone })
             {
-                cursor.Y += InspectorLayout.BodyGap * s;
-                cursor.Y += DrawIk(cursor, width, skeleton, s);
+                cursor.Y += InspectorLayout.Section(dl, cursor, width, "insp", "IK", ref _openIk, s, topBorder: true);
+                if (_openIk)
+                {
+                    cursor.Y += InspectorLayout.BodyGap * s;
+                    cursor.Y += DrawIk(cursor, width, s);
+                }
             }
 
             cursor.Y += InspectorLayout.Section(dl, cursor, width, "insp", "POSE", ref _openPose, s, topBorder: true);
@@ -1046,63 +1045,28 @@ public class PoseInspectorPane
         return 34f * s;
     }
 
-    private float DrawIk(Vector2 cursor, float width, ISkeleton skeleton, float s)
+    private float DrawIk(Vector2 cursor, float width, float s)
     {
-        // The Live IK switch only affects translate gestures on a supported
-        // chain end (hands/feet). An unsupported selection shows an honest
-        // unavailable state; the bulk actions act on the whole skeleton and
-        // stay available.
-        bool eligible = _entity is IBone selectedBone &&
-            Core.BoneIKInfo.IsSupportedChainEnd(selectedBone.BoneName);
+        // One compact Live IK control for the selected bone.
+        if (_entity is not IBone selectedBone ||
+            _primary is not { Kind: SceneEntityKind.Bone, Bone: { } boneId })
+            return 0f;
+        bool eligible = Core.BoneIKInfo.IsSupportedChainEnd(selectedBone.BoneName);
+        bool armed = eligible && _bonePosingService.GetBoneIK(selectedBone).Enabled;
         ViewText.Label(cursor + new Vector2(0f, 7f) * s, "Live IK", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
         ImGui.SetCursorScreenPos(cursor + new Vector2(94f, 4f) * s);
-        bool ik = _editorState.IkEnabled;
-        if (Crystarium.Switch("##pose-ik", ref ik, disabled: !eligible) && eligible)
-            _editorState.IkEnabled = ik;
-        ViewText.Label(cursor + new Vector2(140f, 7f) * s,
-            eligible
-                ? "translate drags solve the armed chain"
-                : "select a hand or foot chain end",
-            11f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
-        float h = 30f * s;
-
-        ImGui.SetCursorScreenPos(new Vector2(cursor.X, cursor.Y + h));
-        if (Crystarium.Button("Arm hands + feet", new ButtonProps { Id = "pose-ik-arm", Classes = Cls.Compact,
-            Tooltip = "Arm the four supported chain ends on this skeleton" }))
-            _bonePosingService.SetAllIk(skeleton, true);
-        ImGui.SameLine(0f, 6f * s);
-        if (Crystarium.Button("Disarm all", new ButtonProps { Id = "pose-ik-disarm", Classes = Cls.Compact,
-            Tooltip = "Clear IK arming on every bone of this skeleton" }))
-            _bonePosingService.SetAllIk(skeleton, false);
-        return h + 34f * s;
+        if (Crystarium.Switch("##pose-ik", ref armed, disabled: !eligible) && eligible)
+            _cleanPose.ConfigureIk(TransformTargetId.ForBone(boneId), armed);
+        if (!eligible && ImGui.IsMouseHoveringRect(
+                cursor, cursor + new Vector2(width, 28f * s)))
+            ImGui.SetTooltip("This bone can't use IK");
+        return 30f * s;
     }
 
     private float DrawPoseActions(Vector2 cursor, float width, ISkeleton skeleton, float s)
     {
         var bone = _entity as IBone;
         float h = 0f;
-
-        // Symmetry link + flip/mirror
-        ViewText.Label(cursor + new Vector2(0f, 7f) * s, "Linked", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
-        ImGui.SetCursorScreenPos(cursor + new Vector2(94f, 4f) * s);
-        bool linked = _bonePosingService.LinkedBonesEnabled;
-        if (Crystarium.Switch("##pose-linked", ref linked))
-            _bonePosingService.LinkedBonesEnabled = linked;
-        ViewText.Label(cursor + new Vector2(140f, 7f) * s, "edit twin bones that always move together (eyes, Viera ears)", 11f,
-            FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
-        h += 30f * s;
-
-        // Symmetry naming per the user's model: None; Link = the paired bone
-        // receives the SAME transformation; Mirror = the sagittal reflection
-        // (raise one arm forward, the other raises forward; move it outward,
-        // the other moves outward).
-        ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 7f * s), "Symmetry", 12f,
-            FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
-        ImGui.SetCursorScreenPos(new Vector2(cursor.X + 94f * s, cursor.Y + h + 4f * s));
-        int symmetry = (int)_editorState.SymmetryMode;
-        if (Crystarium.SegmentedControl("##pose-symmetry", new[] { "None", "Link", "Mirror" }, ref symmetry))
-            _editorState.SymmetryMode = (SymmetryMode)symmetry;
-        h += 34f * s;
 
         var poseActions = new List<RailAction>();
         bool hasAuthoredEdits = _cleanPose.HasAuthoredEdits(skeleton);
@@ -1409,17 +1373,11 @@ public class PoseInspectorPane
                 // the one gesture path (correction 4C): Parent/Selection
                 // freeze a custom model-space pivot at Begin.
                 if (operation == DomainOperation.Rotate &&
-                    _editorState.RotationPivot != Core.RotationPivot.Self)
+                    _editorState.RotationPivot == Core.RotationPivot.Parent &&
+                    ViewportParentModel(primaryBoneId)?.Position is { } frozenPivot)
                 {
-                    Vector3? pivotPoint =
-                        _editorState.RotationPivot == Core.RotationPivot.Selection
-                            ? BoneCentroid(targets)
-                            : ViewportParentModel(primaryBoneId)?.Position;
-                    if (pivotPoint is { } frozenPivot)
-                    {
-                        pivotMode = DomainPivot.Custom;
-                        customPivot = frozenPivot;
-                    }
+                    pivotMode = DomainPivot.Custom;
+                    customPivot = frozenPivot;
                 }
                 break;
             }

@@ -138,6 +138,8 @@ public class MainWindow : Window
         _vm.OnGizmoOperation = i => _editorState.TransformTool = (TransformTool)i;
         _vm.OnGizmoSpace = i => _editorState.TransformOrientation = (TransformOrientation)i;
         _vm.OnRotationPivot = i => _editorState.RotationPivot = (Core.RotationPivot)i;
+        _vm.OnSymmetry = i => _editorState.SymmetryMode = (SymmetryMode)i;
+        _vm.OnLinked = on => _bonePosingService.LinkedBonesEnabled = on;
         _vm.OnUndo = Undo;
         _vm.OnRedo = Redo;
         _vm.OnSkeletonOverlay = on => OnSkeletonOverlayToggled?.Invoke(on);
@@ -308,6 +310,8 @@ public class MainWindow : Window
         _vm.GizmoOperation = (int)_editorState.TransformTool;
         _vm.GizmoSpace = (int)_editorState.TransformOrientation;
         _vm.RotationPivot = (int)_editorState.RotationPivot;
+        _vm.SymmetryMode = (int)_editorState.SymmetryMode;
+        _vm.LinkedOn = _bonePosingService.LinkedBonesEnabled;
         // The pivot selector appears only where pivot choice changes the
         // active transform meaning: Rotate tool with a resolvable bone
         // selection. Parent needs a valid parent on the effective primary.

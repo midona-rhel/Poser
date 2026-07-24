@@ -11,8 +11,6 @@ namespace Poser.Core;
 /// </summary>
 public class EditorState : IEditorState
 {
-    public bool IkEnabled { get; set; }
-
     public TransformOrientation TransformOrientation { get; set; } = TransformOrientation.Local;
     public TransformTool TransformTool { get; set; } = TransformTool.Rotate;
     public bool DebugMode { get; set; } = false;

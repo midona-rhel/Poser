@@ -442,9 +442,7 @@ public class GizmoOverlayWindow : Window
         Vector3? restPivot = null;
         if (pivotActive && boneGesture == null)
         {
-            restPivot = pivotChoice == Core.RotationPivot.Selection
-                ? SelectionCenter(orderedTargets)
-                : _viewport.GetParentModelTransform(primaryId)?.Position;
+            restPivot = _viewport.GetParentModelTransform(primaryId)?.Position;
             if (restPivot == null)
                 pivotActive = false;
         }
@@ -496,16 +494,6 @@ public class GizmoOverlayWindow : Window
         // the pre-call value still describes the previous frame.
         if (isUsing && _gesture == null && !_beginSuppressed)
         {
-            // Only a TRANSLATE gesture consumes the Live IK switch: it arms
-            // the primary when it is a supported chain end and disarms it
-            // when the switch is off. Rotate and scale gestures never touch
-            // IK arming — starting a rotation cannot silently re-arm or
-            // disarm a chain.
-            if (gizmoOperation == ImGuizmoOperation.Translate)
-                _cleanPose.ConfigureIk(
-                    TransformTargetId.ForBone(primaryId),
-                    _editorState.IkEnabled);
-
             // Parent/Selection pivots route through the clean gesture with a
             // frozen custom pivot; there is no second orbit session. The pivot
             // point freezes here, at Begin — the same value the gizmo displays.
@@ -818,22 +806,6 @@ public class GizmoOverlayWindow : Window
             }
         }
         return best < 0 ? UI.Controls.RotationGizmoRings.RollAxis : best;
-    }
-
-    private Vector3 SelectionCenter(IReadOnlyList<TransformTargetId> targets)
-    {
-        var sum = Vector3.Zero;
-        var counted = 0;
-        foreach (var target in targets)
-        {
-            if (target.Bone is not { } id)
-                continue;
-            if (_viewport.GetBoneModelTransform(id) is not { } value)
-                continue;
-            sum += value.Position;
-            counted++;
-        }
-        return counted == 0 ? Vector3.Zero : sum / counted;
     }
 
     private static TransformDelta ToDomainDelta(
