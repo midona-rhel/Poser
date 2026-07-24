@@ -123,7 +123,9 @@ public class SkeletonOverlayWindow : Window
             {
                 actors.Add(new ActorDisplayData
                 {
-                    Name = actor.Name,
+                    // Nickname / anonymous-mask aware, like every surface.
+                    Name = ConfigurationService.Instance.GetDisplayName(
+                        actor.Id.LogicalId, actor.Name),
                     Id = actorSelectionId,
                     ScreenPos = viewportPos + actorScreen,
                     CameraDistance = Vector3.Distance(cameraPosition, actorTransform.Position),
