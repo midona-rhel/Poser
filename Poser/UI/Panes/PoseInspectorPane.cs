@@ -295,27 +295,82 @@ public class PoseInspectorPane
         return "";
     }
 
-    /// <summary>
-    /// Orientation facts for the compact rotation gizmo. Local mode's ring
-    /// frame is the PARENT's model rotation — the frame the displayed
-    /// parent-local rotation (and the numeric X/Y/Z wells) live in — so
-    /// dragging the red ring rotates about the same X the X well shows.
-    /// The parent is frozen while a gesture is live. Actors have no parent:
-    /// their local frame is the world frame.
-    /// </summary>
-    public (Quaternion RingFrame, bool WorldFrame, bool CanEdit) GizmoOrientation()
+    /// <summary>Model-space centroid of the effective bone targets.</summary>
+    private Vector3? BoneCentroid(IReadOnlyList<TransformTargetId> targets)
     {
-        var (_, canEdit) = ReadTransform();
-        var parentRotation = Quaternion.Identity;
+        var sum = Vector3.Zero;
+        int count = 0;
+        foreach (var target in targets)
+        {
+            if (target.Bone is { } boneId &&
+                _viewport.GetBoneModelTransform(boneId) is { } model)
+            {
+                sum += model.Position;
+                count++;
+            }
+        }
+        return count == 0 ? null : sum / count;
+    }
+
+    /// <summary>
+    /// World-space context for the shared rotation rings (correction 4B/4C):
+    /// pivot position, ring frame, and the world→model axis conversion, all
+    /// derived from the same real camera/actor/bone facts the in-world gizmo
+    /// consumes — so the inspector's red/green/blue describe the same real
+    /// rotation axes. Local frames the target's own current world
+    /// orientation; World uses world axes; the Parent pivot uses the
+    /// parent→child radial frame; the frame follows the presentation result
+    /// during a drag while applied deltas stay on the frozen baseline.
+    /// </summary>
+    public (Vector3 PivotWorld, Quaternion FrameWorld, Quaternion AxisConversion, bool CanEdit) GizmoWorldContext()
+    {
+        var (transform, canEdit) = ReadTransform();
         if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } boneId })
         {
-            var parent = _cleanGesture != null
-                ? _cleanParentModel
-                : ViewportParentModel(boneId);
-            parentRotation = parent?.Rotation ?? Quaternion.Identity;
+            if (_viewport.GetSkeletonModelMatrix(boneId) is not { } actorMatrix)
+                return (Vector3.Zero, Quaternion.Identity, Quaternion.Identity, false);
+            Matrix4x4.Decompose(actorMatrix, out _, out var actorRotation, out _);
+
+            Transform model;
+            if (_cleanGesture != null && _cleanParentModel is { } frozenParent)
+                model = PoseMath.Compose(frozenParent, transform);
+            else if (_cleanGesture != null)
+                model = transform;
+            else if (ViewportBoneModel(boneId) is { } live)
+                model = live;
+            else
+                return (Vector3.Zero, Quaternion.Identity, Quaternion.Identity, false);
+
+            var pivotModel = model.Position;
+            Quaternion frameWorld;
+            if (_editorState.RotationPivot == Core.RotationPivot.Parent &&
+                ViewportParentModel(boneId) is { } parent)
+            {
+                pivotModel = parent.Position;
+                frameWorld = Controls.RotationGizmoRings.RadialFrame(
+                    Vector3.Transform(parent.Position, actorMatrix),
+                    Vector3.Transform(model.Position, actorMatrix));
+            }
+            else
+            {
+                if (_editorState.RotationPivot == Core.RotationPivot.Selection &&
+                    EffectiveSelection() is { } effective &&
+                    BoneCentroid(effective.Targets) is { } centroid)
+                    pivotModel = centroid;
+                frameWorld = _editorState.TransformOrientation == TransformOrientation.Global
+                    ? Quaternion.Identity
+                    : Quaternion.Normalize(actorRotation * model.Rotation);
+            }
+            var pivotWorld = Vector3.Transform(pivotModel, actorMatrix);
+            return (pivotWorld, frameWorld, actorRotation, canEdit);
         }
-        bool world = _editorState.TransformOrientation == TransformOrientation.Global;
-        return (world ? Quaternion.Identity : parentRotation, world, canEdit);
+
+        // Actor selection: the displayed transform IS the world transform,
+        // so the axis conversion is identity.
+        var frame = _editorState.TransformOrientation == TransformOrientation.Global
+            ? Quaternion.Identity
+            : Quaternion.Normalize(transform.Rotation);
+        return (transform.Position, frame, Quaternion.Identity, canEdit);
     }
 
     /// <summary>
@@ -1387,6 +1442,7 @@ public class PoseInspectorPane
         IReadOnlyList<TransformTargetId> targets;
         Transform modelStart;
         DomainPivot pivotMode;
+        Vector3? customPivot = null;
 
         switch (effective.Primary)
         {
@@ -1406,6 +1462,22 @@ public class PoseInspectorPane
                 _cleanParentModel = ViewportParentModel(primaryBoneId);
                 modelStart = primaryModel;
                 pivotMode = DomainPivot.PerTarget;
+                // The toolbar pivot governs every rotation surface through
+                // the one gesture path (correction 4C): Parent/Selection
+                // freeze a custom model-space pivot at Begin.
+                if (operation == DomainOperation.Rotate &&
+                    _editorState.RotationPivot != Core.RotationPivot.Self)
+                {
+                    Vector3? pivotPoint =
+                        _editorState.RotationPivot == Core.RotationPivot.Selection
+                            ? BoneCentroid(targets)
+                            : ViewportParentModel(primaryBoneId)?.Position;
+                    if (pivotPoint is { } frozenPivot)
+                    {
+                        pivotMode = DomainPivot.Custom;
+                        customPivot = frozenPivot;
+                    }
+                }
                 break;
             }
 
@@ -1419,6 +1491,7 @@ public class PoseInspectorPane
             operation,
             DomainSpace.World,
             pivotMode,
+            customPivot,
             description:
                 $"Transform {targets.Count} {(IsActorSelection ? "actor" : "bone")}{(targets.Count == 1 ? "" : "s")}",
             includeLinkedBones:

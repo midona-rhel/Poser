@@ -2,7 +2,14 @@
 
 ## Purpose
 
-`GizmoOverlayWindow` presents ImGuizmo against a bone's Havok model-space transform. The skeleton's actor model matrix is folded into the view matrix, matching Brio's convention, so the matrix passed to ImGuizmo remains bone-model-space while appearing at the correct world-space location.
+`GizmoOverlayWindow` presents translate and scale through stock ImGuizmo
+against a bone's Havok model-space transform (the actor model matrix folded
+into the view matrix, Brio's convention). **Rotation renders through the
+shared custom ring module** (`RotationGizmoRings`, see
+`docs/ui/rotation-ball.md`): the inspector's pastel palette, emphasis, and
+outer roll ring at the projected pivot, front arcs only — no rear arcs,
+plate, or decorative guides over the game — with hit-tested ring drags
+dispatched through the same clean gesture lifecycle.
 
 Rotation has one visible pivot choice — the toolbar selector documented in
 `orbit-rotation-design.md`. **Self** is an in-place edit: it changes a bone's

@@ -80,6 +80,16 @@ public class GizmoOverlayWindow : Window
     private GizmoTargetType _gestureTargetType = GizmoTargetType.None;
     private bool _beginSuppressed;
 
+    // Custom rotation-ring drag (correction 4D): the Rotate operation renders
+    // through the shared RotationGizmoRings module instead of stock ImGuizmo.
+    // Axis frozen in model space at grab; total angle accumulates from the
+    // frozen tangent so no frame feeds a result back as the next baseline.
+    private Vector3 _ringAxisModel;
+    private Vector2 _ringTangent;
+    private Vector2 _ringOrigin;
+    private float _ringDistance;
+    private float _ringAngle;
+
     /// <summary>Cancels only when the service still owns the gesture; an
     /// externally/self-cancelled gesture is treated as already cancelled.</summary>
     private void CancelIfOwned(TransformGestureId id)
@@ -107,11 +117,13 @@ public class GizmoOverlayWindow : Window
                     _cleanTransforms.Cancel(gesture.Id);
                 _gesture = null;
                 _gestureTargetType = GizmoTargetType.None;
-                _beginSuppressed = ImGuizmo.IsUsing();
+                _beginSuppressed = ImGuizmo.IsUsing() ||
+                    ImGui.IsMouseDown(ImGuiMouseButton.Left);
             }
         }
 
-        if (_beginSuppressed && !ImGuizmo.IsUsing())
+        if (_beginSuppressed && !ImGuizmo.IsUsing() &&
+            !ImGui.IsMouseDown(ImGuiMouseButton.Left))
             _beginSuppressed = false;
     }
 
@@ -242,8 +254,11 @@ public class GizmoOverlayWindow : Window
     {
         _gesture = null;
         _gestureTargetType = GizmoTargetType.None;
+        _ringAngle = 0f;
+        _ringDistance = 0f;
         if (suppress)
-            _beginSuppressed = ImGuizmo.IsUsing();
+            _beginSuppressed = suppress &&
+            (ImGuizmo.IsUsing() || ImGui.IsMouseDown(ImGuiMouseButton.Left));
     }
 
     private void DrawActorGizmo()
@@ -278,6 +293,21 @@ public class GizmoOverlayWindow : Window
         {
             return;
         }
+        if (gizmoOperation == ImGuizmoOperation.Rotate)
+        {
+            DrawRotationRings(
+                actorTargets,
+                gizmoMode,
+                _editorState.RotationPivot,
+                actorGesture,
+                actorTransform,
+                pivotActive: false,
+                actorTransform.Position,
+                Matrix4x4.Identity,
+                primaryBone: null);
+            return;
+        }
+
         var modelMatrix = actorTransform.ToMatrix();
 
         ImGuizmo.Enable(true);
@@ -428,6 +458,26 @@ public class GizmoOverlayWindow : Window
                     : restPivot!.Value,
             };
         }
+        if (gizmoOperation == ImGuizmoOperation.Rotate)
+        {
+            // Correction 4D: the world ROTATION gizmo is the shared custom
+            // ring renderer with the inspector's approved styling; translate
+            // and scale continue through stock ImGuizmo below.
+            DrawRotationRings(
+                orderedTargets,
+                gizmoMode,
+                pivotChoice,
+                boneGesture,
+                currentTransform,
+                pivotActive,
+                boneGesture is { } frozenGesture && pivotActive
+                    ? frozenGesture.Pivot
+                    : restPivot ?? currentTransform.Position,
+                modelMatrix,
+                primaryId);
+            return;
+        }
+
         var lastMatrix = displayTransform.ToMatrix();
 
         // Brio-style posing composes persistent bone deltas after the game's
@@ -564,6 +614,210 @@ public class GizmoOverlayWindow : Window
             }
             _beginSuppressed = false;
         }
+    }
+
+    /// <summary>
+    /// Custom world rotation rings (correction 4D): shared frame/projection/
+    /// hit-test/tangent math with the inspector, drawn with the inspector's
+    /// pastel palette and emphasis but WITHOUT rear arcs, background plate,
+    /// or decorative guides. Dispatches through the identical clean gesture
+    /// lifecycle the ImGuizmo path uses. `modelMatrix` is identity for
+    /// actors (their model space IS world space).
+    /// </summary>
+    private void DrawRotationRings(
+        IReadOnlyList<TransformTargetId> targets,
+        ImGuizmoMode gizmoMode,
+        Core.RotationPivot pivotChoice,
+        GizmoGesture? gesture,
+        Transform currentTransform,
+        bool pivotActive,
+        Vector3 pivotModel,
+        Matrix4x4 modelMatrix,
+        BoneId? primaryBone)
+    {
+        float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+        Matrix4x4.Decompose(modelMatrix, out _, out var actorRotation, out _);
+
+        // Ring frame (world): Parent pivot uses the parent→child radial
+        // frame; otherwise Local frames the target's own current world
+        // orientation and World uses world axes. The frame follows the
+        // presentation result during a drag; applied deltas stay on the
+        // frozen gesture-start baseline.
+        Quaternion frameWorld;
+        if (primaryBone is { } bone &&
+            pivotChoice == Core.RotationPivot.Parent &&
+            _viewport.GetParentModelTransform(bone) is { } parentModel)
+        {
+            frameWorld = UI.Controls.RotationGizmoRings.RadialFrame(
+                Vector3.Transform(parentModel.Position, modelMatrix),
+                Vector3.Transform(currentTransform.Position, modelMatrix));
+        }
+        else
+        {
+            frameWorld = gizmoMode == ImGuizmoMode.Local
+                ? Quaternion.Normalize(actorRotation * currentTransform.Rotation)
+                : Quaternion.Identity;
+        }
+
+        var pivotWorld = Vector3.Transform(pivotModel, modelMatrix);
+        var rings = UI.Controls.RotationGizmoRings.Project(
+            _cameraService, pivotWorld, frameWorld, 80f * scale);
+        if (!rings.Valid)
+            return;
+
+        var io = ImGui.GetIO();
+        var mouse = io.MousePos;
+        int hoverAxis = -1;
+        var hoverTangent = System.Numerics.Vector2.Zero;
+        bool dragging = gesture != null;
+        if (!dragging &&
+            UI.Controls.RotationGizmoRings.HitTest(rings, mouse, 8f * scale) is { } hit)
+        {
+            hoverAxis = hit.Axis;
+            hoverTangent = hit.Tangent;
+        }
+
+        var dl = ImGui.GetWindowDrawList();
+        int dragAxisIndex = dragging ? AxisIndexFromModel(rings, actorRotation) : -1;
+        UI.Controls.RotationGizmoRings.Draw(
+            dl, rings, hoverAxis, dragAxisIndex, drawRearArcs: false, scale);
+
+        // The overlay window is NoInputs; claim the mouse from the game while
+        // the pointer engages a ring (ImGuizmo does the same internally).
+        if (hoverAxis >= 0 || dragging)
+            ImGui.SetNextFrameWantCaptureMouse(true);
+
+        // Begin on ring press.
+        if (!dragging && hoverAxis >= 0 &&
+            ImGui.IsMouseClicked(ImGuiMouseButton.Left) &&
+            _gesture == null && !_beginSuppressed)
+        {
+            var cleanPivotMode = PivotMode.PerTarget;
+            Vector3? cleanCustomPivot = null;
+            if (primaryBone != null && pivotActive)
+            {
+                cleanPivotMode = PivotMode.Custom;
+                cleanCustomPivot = pivotModel;
+            }
+            else if (primaryBone == null && targets.Count > 1)
+            {
+                cleanPivotMode = PivotMode.Primary;
+            }
+
+            var begin = _cleanTransforms.Begin(
+                targets,
+                DomainOperation.Rotate,
+                DomainSpace.World,
+                cleanPivotMode,
+                cleanCustomPivot,
+                description: primaryBone != null
+                    ? $"Transform {targets.Count} bone{(targets.Count == 1 ? "" : "s")}"
+                    : $"Transform {targets.Count} actor{(targets.Count == 1 ? "" : "s")}",
+                includeLinkedBones: primaryBone != null &&
+                    _bonePosingService.LinkedBonesEnabled,
+                symmetry: primaryBone != null
+                    ? _editorState.SymmetryMode switch
+                    {
+                        SymmetryMode.Copy => TransformDeltaMode.Direct,
+                        SymmetryMode.Mirror => TransformDeltaMode.Mirrored,
+                        _ => null,
+                    }
+                    : null);
+            if (begin.Success && begin.GestureId is { } gestureId)
+            {
+                _gesture = new GizmoGesture
+                {
+                    Id = gestureId,
+                    Operation = ImGuizmoOperation.Rotate,
+                    Mode = gizmoMode,
+                    Space = DomainSpace.World,
+                    Start = currentTransform,
+                    Current = currentTransform,
+                    PivotMode = cleanPivotMode,
+                    Pivot = cleanCustomPivot ?? currentTransform.Position,
+                    PivotChoice = pivotChoice,
+                };
+                _gestureTargetType = primaryBone != null
+                    ? GizmoTargetType.Bone
+                    : GizmoTargetType.Actor;
+                var axisWorld = UI.Controls.RotationGizmoRings.AxisWorld(rings, hoverAxis);
+                _ringAxisModel = Vector3.Normalize(Vector3.Transform(
+                    axisWorld, Quaternion.Inverse(actorRotation)));
+                _ringTangent = hoverTangent;
+                _ringOrigin = mouse;
+                _ringDistance = 0f;
+                _ringAngle = 0f;
+            }
+        }
+
+        // Drag update from the frozen tangent/axis; total from Start only.
+        if (_gesture is { } activeGesture && ImGui.IsMouseDown(ImGuiMouseButton.Left))
+        {
+            float newDistance = Vector2.Dot(mouse - _ringOrigin, _ringTangent);
+            float delta = (newDistance - _ringDistance) *
+                UI.Controls.RotationGizmoRings.ModifierMultiplier(io);
+            _ringDistance = newDistance;
+            if (delta != 0f)
+            {
+                _ringAngle += delta / UI.Controls.RotationGizmoRings.PixelsPerRadian;
+                var totalRotation = Quaternion.CreateFromAxisAngle(_ringAxisModel, _ringAngle);
+                var newTransform = activeGesture.Start with
+                {
+                    Rotation = Quaternion.Normalize(totalRotation * activeGesture.Start.Rotation),
+                };
+                var update = _cleanTransforms.Update(
+                    activeGesture.Id,
+                    ToDomainDelta(activeGesture.Start, newTransform, DomainSpace.World));
+                if (update.Success)
+                {
+                    if (activeGesture.PivotMode is
+                        PivotMode.Custom or PivotMode.SelectionCenter)
+                    {
+                        newTransform = newTransform with
+                        {
+                            Position = activeGesture.Pivot +
+                                Vector3.Transform(
+                                    activeGesture.Start.Position - activeGesture.Pivot,
+                                    totalRotation),
+                        };
+                    }
+                    activeGesture.Current = newTransform;
+                }
+                else
+                {
+                    CancelIfOwned(activeGesture.Id);
+                    ClearGesture(suppress: true);
+                }
+            }
+        }
+
+        // Commit exactly once on release.
+        if (_gesture is { } completed && !ImGui.IsMouseDown(ImGuiMouseButton.Left))
+        {
+            _cleanTransforms.Commit(completed.Id);
+            ClearGesture(suppress: false);
+            _beginSuppressed = false;
+        }
+    }
+
+    /// <summary>The dragged ring's axis index for emphasis, recovered from
+    /// the frozen model-space axis.</summary>
+    private int AxisIndexFromModel(UI.Controls.ProjectedRings rings, Quaternion actorRotation)
+    {
+        var axisWorld = Vector3.Normalize(Vector3.Transform(_ringAxisModel, actorRotation));
+        int best = -1;
+        float bestDot = 0.9f;
+        for (int a = 0; a < 3; a++)
+        {
+            float dot = MathF.Abs(Vector3.Dot(
+                axisWorld, UI.Controls.RotationGizmoRings.AxisWorld(rings, a)));
+            if (dot > bestDot)
+            {
+                bestDot = dot;
+                best = a;
+            }
+        }
+        return best < 0 ? UI.Controls.RotationGizmoRings.RollAxis : best;
     }
 
     private Vector3 SelectionCenter(IReadOnlyList<TransformTargetId> targets)

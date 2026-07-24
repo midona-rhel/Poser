@@ -1,85 +1,71 @@
-# Inspector rotation gizmo
+# Rotation gizmo (inspector + world)
 
 ## Purpose
 
-The compact rotation control in the Pose inspector rail is an **oriented 3D
-rotation gizmo**, not a flat screen-space symbol (PBI-002 runtime round 1
-superseded the earlier flat ball). It edits the same actor or bone transform
-as the numeric rotation wells through the same clean gesture, and is the
-conceptual sibling of Ktisis `Gizmo2D` and Brio `ImBrioGizmo.DrawRotation`.
+Poser has ONE rotation-gizmo system (`RotationGizmoRings`), consumed by two
+surfaces: the compact inspector widget and the in-world overlay. The shared
+module owns the frame basis, axis handedness, camera projection of the ring
+geometry, front/rear classification, hit testing, projected drag tangents,
+the Ctrl/Shift sensitivity policy, the outer camera-roll axis, and the
+total-delta calculation from the frozen drag baseline. Both surfaces
+dispatch through the existing clean `TransformGestureService` lifecycle —
+there is no second gesture state machine.
 
-## Rendering contract
+## Shared geometry and alignment
 
-- Three complete X/Y/Z circles are generated in 3D and projected through the
-  active game camera's rotation (orientation only — the widget has fixed
-  size and no perspective; the camera view matrix is decomposed to its
-  rotation and X-mirrored for the game's view handedness, Brio's
-  convention).
-- In **Local** mode the rings are oriented from the selected bone's
-  **parent frame** — the frame the displayed parent-local rotation and the
-  numeric X/Y/Z wells live in — so the red ring always rotates about the
-  same X the X well edits (round-1 user feedback: rings oriented from the
-  bone's own rotated axes drifted apart from the wells). The parent is
-  frozen during a gesture; actors, having no parent, use the world frame.
-  In **World** mode the rings are world axes viewed through the camera.
-  Rotating the camera or the parent visibly changes the arcs and circle
-  foreshortening.
-- Front-facing ring segments use the shared transform-axis palette at full
-  strength; rear-facing segments use the same hue at a restrained low alpha,
-  so every ring stays legible as a complete circle. Front segments draw over
-  rear segments.
-- A **wide outer roll ring** — slightly larger than the axis rings — rolls
-  the target about the axis the camera points along, always applied in the
-  world frame (round-1 user request).
-- During a drag the rings rotate live with the accumulated delta so the
-  widget visibly follows the gesture like the in-world gizmo; on release
-  they re-derive from the static frame (a parent-frame widget snaps back by
-  construction, since rotating a bone does not move its parent).
-
-## Interaction contract
-
-- Hit testing picks the **nearest visible (front-facing) projected ring
-  segment** within the pick tolerance, measured in screen pixels against the
-  same geometry that is painted. Exact-distance ties resolve in the
-  documented deterministic order X → Y → Z (ties only).
-- Hover marks the grab point in the axis color, names the axis in the
-  tooltip, and always agrees with the axis a press would drag and the
-  quaternion a drag applies.
+- Ring points are true world-space circles around the pivot, projected
+  through the actual game camera (`WorldToScreen`); the inspector re-centers
+  the projection into its fixed widget circle. For the same actor, bone,
+  camera, Local/World setting, and pivot, red/green/blue in the inspector
+  are the SAME real rotation axes as in the world, and rotating the camera
+  updates both consistently.
+- **Local** frames the target's own current world orientation
+  (actor ∘ bone model rotation); **World** uses world axes. The **Parent**
+  pivot uses the parent→child radial frame: red points along normalized
+  `child − parent`, the remaining axes form a stable orthonormal basis with
+  a deterministic fallback near the reference axis, and the frame follows
+  the child as it orbits. The parent bone's own orientation is not the
+  frame source. **Selection** rotates the targets around the
+  multi-selection center with the active Local/World orientation.
+- Front segments are those closer to the camera than the pivot. The wide
+  outer ring rolls about the camera→pivot axis.
 - A drag projects mouse movement onto the grabbed ring's frozen screen
-  tangent (~200 px per radian) and composes an axis-angle quaternion about
-  that ring's axis. The applied value is always the TOTAL rotation from drag
-  start, dispatched against the clean gesture's frozen baseline — raw screen
-  X/Y deltas are never mapped to Euler components, and no frame feeds a
-  native result back as the next frame's baseline.
-- The shared drag-modifier policy applies (Ctrl fine 0.1×, Shift coarse
-  10×, Ctrl+Shift 1×). The mouse wheel is never consumed and never edits —
-  it keeps scrolling the inspector rail.
-- Local applies the delta in the parent frame (pre-multiplying the frozen
-  drag-start local rotation); World conjugates the delta through the frozen
-  parent rotation so it acts about world axes.
-- One drag produces one clean gesture and one history item via
-  `PoseInspectorPane.RotateSelectionGizmo`/`CommitRotation`; Escape,
-  selection change, and external cancellation restore the frozen baseline
-  exactly once and record nothing, with restart suppressed until the pointer
-  releases. No second transform state machine exists.
+  tangent (~200 px/rad); the rotation axis freezes in model space at grab
+  and the applied value is always the TOTAL from drag start against the
+  gesture's frozen baseline. The displayed frame may follow the live
+  presentation during the drag. Ctrl = 0.1×, Shift = 10×, Ctrl+Shift = 1×.
+  The mouse wheel is never consumed.
+- Hit testing picks the nearest visible projected ring segment within
+  tolerance; exact ties resolve X → Y → Z → Roll. Hover and active rings
+  brighten and thicken; there is NO cursor-following circle and NO
+  drag-origin dot.
 
-`PoseRailPane` owns only projection, hit testing, and per-drag tangent
-state. `PoseInspectorPane` owns the gesture session, target resolution,
-service routing, and history — identical to the numeric wells.
+## Surface presentation
 
-## Reference decisions
+- **Inspector**: the approved visual reference — dark circular plate,
+  pastel axis palette, subdued rear arcs, hover/active emphasis, outer roll
+  ring, fixed widget size.
+- **World**: same palette, line style, emphasis, and roll ring, drawn at the
+  projected pivot — but only meaningful front-facing arcs: no rear arcs, no
+  background plate, no decorative guides over the game. Translate and scale
+  continue through stock ImGuizmo; only rotation uses the custom renderer.
+  The overlay claims the mouse (`SetNextFrameWantCaptureMouse`) while the
+  pointer engages a ring.
 
-- Brio `ImBrio.Gizmo.DrawRotation` supplies the ring generation,
-  camera-rotation projection, front/back split, and tangent-projection drag
-  math (Ktisis `Gizmo2D` embeds stock ImGuizmo and has no ring source).
-- Brio's wheel-to-rotate and right-click axis lock are deliberately not
-  ported: the wheel is navigation, and axis choice is hover-based.
+## Lifecycle
+
+One drag produces one clean gesture and one history item. Escape, selection
+changes, target invalidation, scene changes, failed updates, and pointer
+release keep the once-only cancel/commit guarantees: no double rollback, no
+same-drag restart (suppression covers both ImGuizmo and ring drags while
+the pointer is down), no stale local state, no history item after
+cancellation.
 
 ## Verification
 
-In-game at multiple UI scales: rotate the camera and confirm the rings
-foreshorten; switch Local/World and confirm ring orientation follows the
-documented frame; drag each ring and confirm the matching numeric well
-changes and hover/tooltip/applied axis agree; confirm a wheel over the gizmo
-scrolls the rail; verify Ctrl/Shift drag sensitivities and one-step
-undo/redo for both an actor and a bone.
+In-game: compare inspector and world red/green/blue on the same bone in
+Local and World; rotate the camera and confirm both stay aligned; select
+Parent pivot and confirm origin and radial axes update while the frame
+follows the orbiting child; drag each axis with normal/Ctrl/Shift; confirm
+no cursor markers appear; confirm world rings show no rear arcs or plate;
+one-step undo/redo for both surfaces.

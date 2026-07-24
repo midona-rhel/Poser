@@ -38,9 +38,9 @@ immediately after Local/World:
 
 | Choice | Behavior |
 |---|---|
-| **Self** | Normal in-place rotation. The bone's quaternion changes; its position does not. |
-| **Parent** | Rotate around the primary bone parent's model-space position, frozen at gesture begin. |
-| **Selection** | Rotate around the centroid of the effective transform roots, frozen at gesture begin. |
+| **Self** | Rotate at the effective primary target using the active Local/World orientation. The bone's position does not change. |
+| **Parent** | Rotate around the parent's model-space position (frozen at gesture begin) using the **parent→child radial frame**: red points along normalized `child − parent`, the remaining axes are a stable orthonormal basis, and the visible frame follows the child as it orbits. The parent bone's own orientation is not the frame source. |
+| **Selection** | Rotate the selected targets around the multi-selection centroid (frozen at gesture begin) with the active Local/World orientation — distinct from Parent. |
 
 - The selector is visible only where the pivot changes the active transform
   meaning: the Rotate tool with a bone selection. Actor targets and the
