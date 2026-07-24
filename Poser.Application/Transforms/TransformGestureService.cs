@@ -161,10 +161,20 @@ public sealed class TransformGestureService : IDisposable
             if (result.Success)
                 continue;
 
-            RestoreAll(active.Before);
-            return GestureResult.Fail(
+            // A runtime apply failure ends the gesture: restore the captured
+            // Before states exactly once and clear the active gesture before
+            // returning, so callers observe it as already cancelled and never
+            // restore again. The original apply detail is preserved; a failed
+            // rollback appends its own detail.
+            var rollback = RestoreAll(active.Before);
+            _active = null;
+            var applyDetail =
                 result.Detail ??
-                $"Runtime rejected target {active.Before[index].Target}.");
+                $"Runtime rejected target {active.Before[index].Target}.";
+            return GestureResult.Fail(
+                rollback.Success
+                    ? applyDetail
+                    : $"{applyDetail} Rollback also failed: {rollback.Detail}");
         }
 
         return GestureResult.Ok(gestureId);
