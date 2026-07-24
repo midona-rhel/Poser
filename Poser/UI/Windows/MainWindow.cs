@@ -412,7 +412,10 @@ public class MainWindow : Window
                 Label = actorLabel,
                 Count = actor.IsHidden ? "hidden" : ActorCount(actor),
                 Icon = actor.IsCompanion ? TablerIcon.Paw : TablerIcon.User,
-                HasChildren = skeleton != null,
+                // The disclosure affordance is permanent; an unresolved
+                // skeleton only disables it until the snapshot exposes bones.
+                HasChildren = true,
+                ExpanderDisabled = skeleton == null,
                 Expanded = expanded,
                 Active = _selection.IsSelected(actorSelectionId),
                 Tag = actorSelectionId,

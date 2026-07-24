@@ -15,6 +15,10 @@ public sealed class ShellSidebarRow
     public string? IconName;
     public int Depth;              // 0 root, 1+ nested (20px indent per level)
     public bool HasChildren;
+    /// <summary>Disclosure affordance shown but faded and inert — the row's
+    /// children are temporarily unavailable (e.g. skeleton not yet resolved).
+    /// The affordance is never erased once a row can disclose children.</summary>
+    public bool ExpanderDisabled;
     public bool Expanded;
     public bool Active;
     public object? Tag;
@@ -446,7 +450,7 @@ public static class AppShellView
             arrowMinX = gx - 8f * s;
             arrowMaxX = gx + 10f * s;
         }
-        bool overArrow = row.HasChildren && hit.Hovered
+        bool overArrow = row.HasChildren && !row.ExpanderDisabled && hit.Hovered
             && ImGui.GetMousePos().X >= arrowMinX && ImGui.GetMousePos().X <= arrowMaxX;
 
         // Nested pills start after the shared 8.5px branch arm and retain 4px
@@ -500,16 +504,9 @@ public static class AppShellView
                 DrawGuideHorizontal(dl, X(0.5f), X(8.5f), Y(13f), guide, s);
             }
 
-            // expander triangle overlapping the cutout gap (7x5 CSS-border shape)
+            // shared disclosure chevron overlapping the cutout gap
             if (row.HasChildren)
-            {
-                var c = new Vector2(X(0f), Y(13f));
-                uint triColor = ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(TextPrimary with { W = overArrow ? 1f : 0.7f }));
-                if (row.Expanded)
-                    dl.AddTriangleFilled(c + new Vector2(-3.5f, -2.5f) * s, c + new Vector2(3.5f, -2.5f) * s, c + new Vector2(0f, 2.5f) * s, triColor);
-                else
-                    dl.AddTriangleFilled(c + new Vector2(-2.5f, -3.5f) * s, c + new Vector2(2.5f, 0f) * s, c + new Vector2(-2.5f, 3.5f) * s, triColor);
-            }
+                DrawDisclosureChevron(new Vector2(X(0f), Y(13f)), row, overArrow, s);
         }
 
         float x;
@@ -518,14 +515,7 @@ public static class AppShellView
             // root rows keep the icon layout: 16px expander slot + 26px icon cell
             x = cursor.X;
             if (row.HasChildren)
-            {
-                var triCenter = new Vector2(x + 8f * s, cursor.Y + 13f * s);
-                uint triColor = ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(TextPrimary with { W = overArrow ? 1f : 0.7f }));
-                if (row.Expanded)
-                    dl.AddTriangleFilled(triCenter + new Vector2(-3.5f, -2.5f) * s, triCenter + new Vector2(3.5f, -2.5f) * s, triCenter + new Vector2(0f, 2.5f) * s, triColor);
-                else
-                    dl.AddTriangleFilled(triCenter + new Vector2(-2.5f, -3.5f) * s, triCenter + new Vector2(2.5f, 0f) * s, triCenter + new Vector2(-2.5f, 3.5f) * s, triColor);
-            }
+                DrawDisclosureChevron(new Vector2(x + 8f * s, cursor.Y + 13f * s), row, overArrow, s);
             x += 16f * s;
             ImGui.SetCursorScreenPos(new Vector2(x, cursor.Y + 5f * s));
             if (row.IconName != null)
@@ -561,6 +551,21 @@ public static class AppShellView
 
         if (hit.Hovered && ImGui.IsMouseClicked(ImGuiMouseButton.Right))
             vm.OnRowContextMenu?.Invoke(row);
+    }
+
+    /// <summary>
+    /// The one disclosure affordance for actor and category rows: the
+    /// registered Tabler chevron, visible in collapsed and expanded states,
+    /// hover-emphasized over its 18px hit zone, faded and inert while the
+    /// row's children are temporarily unavailable.
+    /// </summary>
+    private static void DrawDisclosureChevron(Vector2 center, ShellSidebarRow row, bool hovered, float s)
+    {
+        float size = 14f * s;
+        ImGui.SetCursorScreenPos(center - new Vector2(size / 2f, size / 2f));
+        float alpha = row.ExpanderDisabled ? 0.25f : hovered ? 1f : 0.7f;
+        Crystarium.Icon(row.Expanded ? TablerIcon.ChevronDown : TablerIcon.ChevronRight,
+            size, ColorEx.ApplyAlpha(TextPrimary with { W = alpha }));
     }
 
     /// <summary>

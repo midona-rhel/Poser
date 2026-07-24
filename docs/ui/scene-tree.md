@@ -51,6 +51,12 @@ keeps the two operations explicit instead of overloading one ambiguous
   first appear collapsed. Both are seeded into the collapse set on first
   sight, so newly added or refreshed actors arrive collapsed without touching
   any existing row's state.
+- Actor and category rows share one disclosure affordance: the registered
+  Tabler Chevron Right/Down icon with an 18 logical-pixel hit zone, visible
+  in both collapsed and expanded states. Clicking the chevron toggles
+  expansion without selecting; clicking the row selects without changing
+  expansion. An actor whose skeleton is temporarily unresolved shows the
+  chevron faded and inert — it is never erased.
 - A user collapse or expand action persists for the lifetime of the window.
 - When a bone selection originates elsewhere (body map, matrix, 3D, overlay,
   gizmo), the selected bone's actor and category are revealed **once, at the
