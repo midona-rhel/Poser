@@ -262,6 +262,7 @@ public static class AppShellView
         // app name + GPose pill
         ViewText.Label(min + new Vector2(14f, (TitlebarHeight - 16f) / 2f) * s, "Poser", 13f, FontWeight.SemiBold, TextPrimary);
         float appW = ViewText.Measure("Poser", 13f, FontWeight.SemiBold);
+        float identityEnd = min.X + 14f * s + appW;
         if (vm.GPoseActive)
         {
             var pillMin = new Vector2(min.X + 14f * s + appW + 8f * s, min.Y + (h - 20f * s) / 2f);
@@ -271,7 +272,16 @@ public static class AppShellView
             var dotC = new Vector2(pillMin.X + 8f * s + 3.5f * s, pillMin.Y + 10f * s);
             dl.AddCircleFilled(dotC, 3.5f * s, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Success)));
             ViewText.Label(new Vector2(dotC.X + 3.5f * s + 6f * s, pillMin.Y + 4f * s), "GPose", 11f, FontWeight.Medium, Success);
+            identityEnd = pillMax.X;
         }
+
+        // undo/redo live in the sidebar's title cell, directly right of the
+        // Poser/GPose identity area (correction-round finding 6).
+        float undoX = identityEnd + 10f * s;
+        float undoY = min.Y + (h - 28f * s) / 2f;
+        IconButton(dl, new Vector2(undoX, undoY), TablerIcon.ArrowBackUp, false, s, vm.OnUndo, dimmed: !vm.CanUndo);
+        IconButton(dl, new Vector2(undoX + (28f + 4f) * s, undoY), TablerIcon.ArrowBackUp, false, s, vm.OnRedo,
+            dimmed: !vm.CanRedo, flipX: true);
 
         if (vm.ShowSpawn)
         {
@@ -416,19 +426,13 @@ public static class AppShellView
         ImGui.EndChild();
         ImGui.PopStyleVar();
 
-        // statusbar (hosts undo/redo — round-1 user feedback moved them here
-        // from the titlebar)
+        // statusbar: status information only (actor count, FPS)
         dl.AddRectFilled(new Vector2(min.X, statusTop), new Vector2(max.X - 1f * s, statusTop + 1f * s),
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderSecondary)));
         var dotCenter = new Vector2(min.X + 10f * s + 3.5f * s, statusTop + StatusbarHeight * s / 2f);
         dl.AddCircleFilled(dotCenter, 3.5f * s, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Success)));
         ViewText.Label(new Vector2(dotCenter.X + 3.5f * s + 8f * s, statusTop + 7f * s), vm.StatusLeft, 11f, FontWeight.Regular, TextTertiary, mono: true);
-        float undoX = max.X - 8f * s - 28f * s * 2f - 4f * s;
-        float undoY = statusTop + (StatusbarHeight - 28f) / 2f * s;
-        IconButton(dl, new Vector2(undoX, undoY), TablerIcon.ArrowBackUp, false, s, vm.OnUndo, dimmed: !vm.CanUndo);
-        IconButton(dl, new Vector2(undoX + (28f + 4f) * s, undoY), TablerIcon.ArrowBackUp, false, s, vm.OnRedo,
-            dimmed: !vm.CanRedo, flipX: true);
-        ViewText.Label(new Vector2(undoX - 8f * s - ViewText.Measure(vm.StatusRight, 11f, mono: true), statusTop + 7f * s),
+        ViewText.Label(new Vector2(max.X - 10f * s - ViewText.Measure(vm.StatusRight, 11f, mono: true), statusTop + 7f * s),
             vm.StatusRight, 11f, FontWeight.Regular, TextTertiary, mono: true);
     }
 
