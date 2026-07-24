@@ -3,6 +3,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Entities;
 using Poser.Game.Bindings;
+using Poser.Services;
 
 namespace Poser.Game.Posing;
 
@@ -16,11 +17,34 @@ public sealed class CleanPoseFacade
     public CleanPoseFacade(
         StableBindingRegistry bindings,
         PoseEditService edits,
-        PoseTransferService transfers)
+        PoseTransferService transfers,
+        IBonePosingService bonePosing)
     {
         _bindings = bindings;
         _edits = edits;
         _transfers = transfers;
+        _bonePosing = bonePosing;
+    }
+
+    private readonly IBonePosingService _bonePosing;
+
+    /// <summary>
+    /// Stable-id IK arming for the next gesture. IK configuration is session
+    /// state owned by the runtime; the id resolves inside this facade and no
+    /// entity reaches the caller.
+    /// </summary>
+    public void ConfigureIk(TransformTargetId target, bool enabled)
+    {
+        if (target.Bone is not { } boneId)
+            return;
+        var bone = _bindings.Resolve(boneId);
+        if (!bone.Success)
+            return;
+        var ik = enabled
+            ? Core.BoneIKInfo.CalculateDefault(boneId.CanonicalName)
+            : Core.BoneIKInfo.Disabled;
+        ik.Enabled = enabled;
+        _bonePosing.SetBoneIK(bone.Value!, ik);
     }
 
     public bool HasStash => _transfers.HasStash;

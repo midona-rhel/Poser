@@ -6,11 +6,10 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Bindings.ImGuizmo;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
+using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Config;
 using Poser.Domain.Identity;
-using Poser.Entities;
-using Poser.Game.Bindings;
 using Poser.Services;
 
 namespace Poser.UI;
@@ -21,12 +20,10 @@ namespace Poser.UI;
 /// </summary>
 public class SkeletonOverlayWindow : Window
 {
-    private readonly IActorManager _actorManager;
     private readonly ICameraService _cameraService;
-    private readonly ISkeletonService _skeletonService;
-    private readonly IBonePosingService _bonePosingService;
     private readonly SelectionSession _selection;
-    private readonly StableBindingRegistry _bindings;
+    private readonly SceneSession _scene;
+    private readonly Game.Viewport.ViewportProjection _viewport;
     private readonly IEditorState _editorState;
 
     // Configuration from settings
@@ -47,7 +44,7 @@ public class SkeletonOverlayWindow : Window
     // Bone display data
     private class BoneDisplayData
     {
-        public IBone Bone { get; init; } = null!;
+        public string Name { get; init; } = "";
         public SelectionId Id { get; init; }
         public Vector2 ScreenPos { get; init; }
         public Vector2? ParentScreenPos { get; init; }
@@ -58,7 +55,7 @@ public class SkeletonOverlayWindow : Window
 
     private sealed class ActorDisplayData
     {
-        public IActor Actor { get; init; } = null!;
+        public string Name { get; init; } = "";
         public SelectionId Id { get; init; }
         public Vector2 ScreenPos { get; init; }
         public float CameraDistance { get; init; }
@@ -70,12 +67,9 @@ public class SkeletonOverlayWindow : Window
     private int _hoverIndex;
 
     public SkeletonOverlayWindow(
-        IActorManager actorManager,
+        SceneSession scene,
+        Game.Viewport.ViewportProjection viewport,
         ICameraService cameraService,
-        ISkeletonService skeletonService,
-        IBonePosingService bonePosingService,
-        SelectionSession selection,
-        StableBindingRegistry bindings,
         IEditorState editorState)
         : base("##poser_skeleton_overlay",
             ImGuiWindowFlags.NoBackground |
@@ -88,12 +82,10 @@ public class SkeletonOverlayWindow : Window
             ImGuiWindowFlags.NoSavedSettings |
             ImGuiWindowFlags.NoBringToFrontOnFocus)
     {
-        _actorManager = actorManager;
+        _scene = scene;
+        _selection = scene.Selection;
+        _viewport = viewport;
         _cameraService = cameraService;
-        _skeletonService = skeletonService;
-        _bonePosingService = bonePosingService;
-        _selection = selection;
-        _bindings = bindings;
         _editorState = editorState;
 
         RespectCloseHotkey = false;
@@ -120,70 +112,68 @@ public class SkeletonOverlayWindow : Window
         var actors = new List<ActorDisplayData>();
         var cameraPosition = _cameraService.GetCameraPosition();
 
-        // Collect all bones that project to screen successfully
-        foreach (var actor in _actorManager.Actors)
+        // Collect all bones that project to screen successfully — snapshot
+        // descriptors give identity/hierarchy, the viewport projection gives
+        // model-space facts, and the camera service projects to screen.
+        foreach (var actor in _scene.Snapshot.Actors)
         {
-            if (_cameraService.WorldToScreen(actor.Transform.Position, out var actorScreen))
+            var actorSelectionId = SelectionId.ForActor(actor.Id);
+            if (_viewport.GetActorTransform(actor.Id) is { } actorTransform &&
+                _cameraService.WorldToScreen(actorTransform.Position, out var actorScreen))
             {
-                if (_bindings.GetActorId(actor) is { } actorId)
+                actors.Add(new ActorDisplayData
                 {
-                    actors.Add(new ActorDisplayData
-                    {
-                        Actor = actor,
-                        Id = SelectionId.ForActor(actorId),
-                        ScreenPos = viewportPos + actorScreen,
-                        CameraDistance = Vector3.Distance(cameraPosition, actor.Transform.Position),
-                    });
-                }
+                    Name = actor.Name,
+                    Id = actorSelectionId,
+                    ScreenPos = viewportPos + actorScreen,
+                    CameraDistance = Vector3.Distance(cameraPosition, actorTransform.Position),
+                });
             }
 
-            var skeleton = _skeletonService.GetSkeleton(actor) as Skeleton;
-            if (skeleton == null || !skeleton.IsValid)
+            var descriptors = actor.Skeleton?.Bones;
+            if (descriptors == null || descriptors.Count == 0)
                 continue;
 
-            skeleton.UpdateBoneTransforms();
-            _bonePosingService.RegisterSkeletonForCacheUpdate(skeleton);
+            // The skeleton-matrix query refreshes/registers skeleton caches
+            // inside the runtime boundary.
+            if (_viewport.GetSkeletonModelMatrix(descriptors[0].Id) is not { } modelMatrix)
+                continue;
 
-            var modelMatrix = skeleton.GetModelMatrix();
-            // Collect screen positions
-            var boneScreenPositions = new Dictionary<IBone, Vector2>();
-
-            foreach (var bone in skeleton.Bones)
+            var boneScreenPositions = new Dictionary<BoneId, Vector2>();
+            var boneWorldPositions = new Dictionary<BoneId, Vector3>();
+            foreach (var bone in descriptors)
             {
-                if (bone.IsHiddenBone || !bone.IsVisible)
+                if (bone.IsHidden)
                     continue;
-
-                var worldPos = Vector3.Transform(bone.LastTransform.Position, modelMatrix);
-
-                // Only include bones that successfully project to screen
-                if (_cameraService.WorldToScreen(worldPos, out var screenPos))
-                {
-                    boneScreenPositions[bone] = viewportPos + screenPos;
-                }
+                if (_viewport.GetBoneModelTransform(bone.Id) is not { } boneTransform)
+                    continue;
+                var worldPos = Vector3.Transform(boneTransform.Position, modelMatrix);
+                if (!_cameraService.WorldToScreen(worldPos, out var screenPos))
+                    continue;
+                boneScreenPositions[bone.Id] = viewportPos + screenPos;
+                boneWorldPositions[bone.Id] = worldPos;
             }
 
-            // Create display data
-            foreach (var (bone, screenPos) in boneScreenPositions)
+            foreach (var bone in descriptors)
             {
+                if (!boneScreenPositions.TryGetValue(bone.Id, out var screenPos))
+                    continue;
+
                 Vector2? parentScreenPos = null;
-                if (bone.ParentBone != null && boneScreenPositions.TryGetValue(bone.ParentBone, out var psp))
+                if (bone.Parent is { } parentId &&
+                    boneScreenPositions.TryGetValue(parentId, out var psp))
                 {
                     parentScreenPos = psp;
                 }
 
-                var worldPos = Vector3.Transform(bone.LastTransform.Position, modelMatrix);
-                var dist = Vector3.Distance(cameraPosition, worldPos);
-
-                if (_bindings.GetBoneId(bone) is not { } boneId)
-                    continue;
-                var selectionId = SelectionId.ForBone(boneId);
+                var selectionId = SelectionId.ForBone(bone.Id);
                 bones.Add(new BoneDisplayData
                 {
-                    Bone = bone,
+                    Name = bone.DisplayName,
                     Id = selectionId,
                     ScreenPos = screenPos,
                     ParentScreenPos = parentScreenPos,
-                    CameraDistance = dist,
+                    CameraDistance = Vector3.Distance(cameraPosition, boneWorldPositions[bone.Id]),
                     IsSelected = selectedIds.Contains(selectionId)
                 });
             }
@@ -242,7 +232,7 @@ public class SkeletonOverlayWindow : Window
                             !ImGuizmo.IsOver() &&
                             ImGui.IsMouseReleased(ImGuiMouseButton.Left);
         if (hoveredActor != null)
-            ImGui.SetTooltip($"{hoveredActor.Actor.Name}\nActor transform");
+            ImGui.SetTooltip($"{hoveredActor.Name}\nActor transform");
 
         // Update hovered bones list and draw hover window (Ktisis style)
         UpdateHoveredBones(bones);
@@ -390,7 +380,7 @@ public class SkeletonOverlayWindow : Window
                 {
                     var bone = _hoveredBones[i];
                     var isSelected = i == _hoverIndex;
-                    ImGui.Selectable(bone.Bone.Name, isSelected);
+                    ImGui.Selectable(bone.Name, isSelected);
                     if (isSelected && isClick)
                         clicked = bone;
                 }

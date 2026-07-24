@@ -45,6 +45,10 @@ public sealed class GraphicalBonePane : IDisposable
 
     private float _closestHoverDistance;
     private SelectionId? _hoveredBone;
+    // Rebuilt per frame from the selected actor's snapshot descriptors: the
+    // maps identify dots by (canonical name, partial) without touching the
+    // binding registry.
+    private readonly Dictionary<(string Canonical, int PartialId), SelectionId> _dotIds = new();
 
     public GraphicalBonePane(
         SceneSession scene,
@@ -74,6 +78,7 @@ public sealed class GraphicalBonePane : IDisposable
         _closestHoverDistance = float.MaxValue;
         _hoveredBone = null;
         _frameDots.Clear();
+        _dotIds.Clear();
 
         var actor = GetSelectedActor();
         if (actor == null)
@@ -322,11 +327,11 @@ public sealed class GraphicalBonePane : IDisposable
 
     private void DrawBoneAt(IBone bone, Vector2 screenPos)
     {
-        // Selection identity is the stable id; the live bone stays inside the
-        // map's rendering walk and never enters a selection command.
-        if (_bindings.GetBoneId(bone) is not { } boneId)
+        // Selection identity is the stable id from the snapshot table; the
+        // live bone stays inside the map's rendering walk and never enters a
+        // selection command.
+        if (!_dotIds.TryGetValue((bone.BoneName, bone.PartialId), out var selectionId))
             return;
-        var selectionId = SelectionId.ForBone(boneId);
         bool isSelected = _selection.IsSelected(selectionId);
         bool isHovered = _hoveredBone?.Equals(selectionId) == true;
         float s = ImGuiHelpers.GlobalScale;
@@ -425,6 +430,15 @@ public sealed class GraphicalBonePane : IDisposable
             {
                 if (descriptor.Id.LogicalId != target)
                     continue;
+                if (descriptor.Skeleton is { } skeletonDescriptor)
+                {
+                    foreach (var bone in skeletonDescriptor.Bones)
+                        _dotIds[(bone.Id.CanonicalName, bone.Id.PartialId)] =
+                            SelectionId.ForBone(bone.Id);
+                }
+                // Residual frame-scoped resolution: the maps still render from
+                // the live skeleton and read the face-map variant from actor
+                // customize data (display formatting, not selection identity).
                 var resolved = _bindings.Resolve(descriptor.Id);
                 return resolved.Success ? resolved.Value : null;
             }

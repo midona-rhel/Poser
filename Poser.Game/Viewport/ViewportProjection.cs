@@ -4,6 +4,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Game.Bindings;
+using Poser.Services;
 
 namespace Poser.Game.Viewport;
 
@@ -24,15 +25,28 @@ public sealed class ViewportProjection
     private readonly IFramework _framework;
     private readonly StableBindingRegistry _bindings;
     private readonly PosingService _actors;
+    private readonly IBonePosingService _bonePosing;
 
     public ViewportProjection(
         IFramework framework,
         StableBindingRegistry bindings,
-        PosingService actors)
+        PosingService actors,
+        IBonePosingService bonePosing)
     {
         _framework = framework;
         _bindings = bindings;
         _actors = actors;
+        _bonePosing = bonePosing;
+    }
+
+    /// <summary>Whether the actor currently carries a model-transform
+    /// override (display badge state).</summary>
+    public bool HasActorOverride(ActorId id)
+    {
+        if (!_framework.IsInFrameworkUpdateThread)
+            return false;
+        var actor = _bindings.Resolve(id);
+        return actor.Success && _actors.HasTransformOverride(actor.Value!);
     }
 
     /// <summary>
@@ -87,7 +101,10 @@ public sealed class ViewportProjection
 
     /// <summary>
     /// Owning skeleton's model→world matrix for a bone target (folded into
-    /// the gizmo view matrix, Brio's convention).
+    /// the gizmo view matrix, Brio's convention). Refreshes the skeleton's
+    /// cached bone transforms and registers it for the runtime's post-frame
+    /// cache update — surfaces reading through this query never touch the
+    /// live skeleton themselves.
     /// </summary>
     public Matrix4x4? GetSkeletonModelMatrix(BoneId id)
     {
@@ -96,9 +113,11 @@ public sealed class ViewportProjection
         var bone = _bindings.Resolve(id);
         if (!bone.Success)
             return null;
-        return bone.Value!.Skeleton is Skeleton skeleton
-            ? skeleton.GetModelMatrix()
-            : null;
+        if (bone.Value!.Skeleton is not Skeleton skeleton || !skeleton.IsValid)
+            return null;
+        skeleton.UpdateBoneTransforms();
+        _bonePosing.RegisterSkeletonForCacheUpdate(skeleton);
+        return skeleton.GetModelMatrix();
     }
 
     private static PoseTransform? ToPoseTransform(Transform transform) =>

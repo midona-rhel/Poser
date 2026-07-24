@@ -176,11 +176,6 @@ public class PoseInspectorPane
         return null;
     }
 
-    private SelectionId? BoneSelectionId(IBone bone) =>
-        _bindings.GetBoneId(bone) is { } id
-            ? SelectionId.ForBone(id)
-            : null;
-
     public void SetSelection(SelectionId? primary)
     {
         var selected = _selection.Selected;
@@ -419,7 +414,9 @@ public class PoseInspectorPane
 
         if (_poseView == 3)
         {
-            return Draw3DView(dl, cursor, width, viewportHeight, skeleton, s);
+            return PrimarySkeletonDescriptor() is { } diagramSkeleton
+                ? Draw3DView(dl, cursor, width, viewportHeight, diagramSkeleton, s)
+                : viewportHeight;
         }
 
         float h = 0f;
@@ -542,7 +539,7 @@ public class PoseInspectorPane
     /// Pose3DView equivalent) — drag orbits, click dots selects.</summary>
     private float _orbitYaw = 0.6f, _orbitPitch = 0.3f;
 
-    private float Draw3DView(ImDrawListPtr dl, Vector2 origin, float width, float height, ISkeleton skeleton, float s)
+    private float Draw3DView(ImDrawListPtr dl, Vector2 origin, float width, float height, SkeletonDescriptor skeleton, float s)
     {
         var min = origin;
         var max = origin + new Vector2(width, height);
@@ -558,20 +555,22 @@ public class PoseInspectorPane
             _orbitPitch = Math.Clamp(_orbitPitch + d.Y * 0.01f, -1.4f, 1.4f);
         }
 
-        // model-space bones → orbit view → orthographic projection
+        // model-space bones (viewport projection) → orbit view → orthographic
+        var positions = new Dictionary<BoneId, Vector3>();
         var center = Vector3.Zero;
-        int n = 0;
         foreach (var bone in skeleton.Bones)
         {
-            if (bone.IsHiddenBone) continue;
-            center += bone.LastTransform.Position; n++;
+            if (bone.IsHidden) continue;
+            if (_viewport.GetBoneModelTransform(bone.Id) is not { } value) continue;
+            positions[bone.Id] = value.Position;
+            center += value.Position;
         }
-        if (n == 0)
+        if (positions.Count == 0)
         {
             ViewText.Label(min + new Vector2(12f, 12f) * s, "No skeleton.", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
             return height;
         }
-        center /= n;
+        center /= positions.Count;
 
         var view = Matrix4x4.CreateTranslation(-center)
                  * Matrix4x4.CreateRotationY(_orbitYaw)
@@ -587,17 +586,17 @@ public class PoseInspectorPane
         }
 
         uint lineCol = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 0.25f));
-        IBone? hovered = null;
+        BoneDescriptor? hovered = null;
         float bestDist = 8f * s;
         var mouse = ImGui.GetMousePos();
 
         foreach (var bone in skeleton.Bones)
         {
-            if (bone.IsHiddenBone) continue;
-            var p = Project(bone.LastTransform.Position);
-            if (bone.ParentBone is { IsHiddenBone: false } parent)
-                dl.AddLine(Project(parent.LastTransform.Position), p, lineCol, 1f * s);
-            bool isSel = BoneSelectionId(bone) is { } dotId && selectedIds.Contains(dotId);
+            if (!positions.TryGetValue(bone.Id, out var position)) continue;
+            var p = Project(position);
+            if (bone.Parent is { } parentId && positions.TryGetValue(parentId, out var parentPosition))
+                dl.AddLine(Project(parentPosition), p, lineCol, 1f * s);
+            bool isSel = selectedIds.Contains(SelectionId.ForBone(bone.Id));
             dl.AddCircleFilled(p, (isSel ? 4.5f : 3f) * s,
                 ImGui.ColorConvertFloat4ToU32(isSel ? new Vector4(1f, 1f, 1f, 1f) : new Vector4(50 / 255f, 151 / 255f, 1f, 0.85f)));
             float dist = Vector2.Distance(mouse, p);
@@ -605,14 +604,12 @@ public class PoseInspectorPane
         }
         if (hovered != null)
         {
-            ImGui.SetTooltip(hovered.Name);
-            if (BoneSelectionId(hovered) is { } hoveredId)
-            {
-                if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGui.GetIO().KeyCtrl)
-                    _selection.Select(hoveredId);
-                else if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-                    _selection.Toggle(hoveredId);
-            }
+            ImGui.SetTooltip(hovered.DisplayName);
+            var hoveredId = SelectionId.ForBone(hovered.Id);
+            if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGui.GetIO().KeyCtrl)
+                _selection.Select(hoveredId);
+            else if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+                _selection.Toggle(hoveredId);
         }
         ViewText.Label(new Vector2(max.X - 150f * s, max.Y - 20f * s), "drag: orbit - click: select", 11f,
             FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
@@ -1073,9 +1070,7 @@ public class PoseInspectorPane
 
     /// <summary>Whether any selected actor currently has a model-transform override.</summary>
     public bool HasActorTransformOverride
-        => IsActorSelection && SelectedActorIds().Any(id =>
-            _bindings.Resolve(id) is { Success: true } actor &&
-            _posingService.HasTransformOverride(actor.Value!));
+        => IsActorSelection && SelectedActorIds().Any(_viewport.HasActorOverride);
 
     /// <summary>Restores every selected actor's pre-override model transform.</summary>
     public void ResetActorTransform()

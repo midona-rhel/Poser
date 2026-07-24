@@ -9,9 +9,12 @@ using Dalamud.Interface.Windowing;
 using Poser.Core;
 using Poser.Application.Transforms;
 using Poser.Domain.Transforms;
+using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
+using Poser.Domain.Scene;
 using Poser.Entities;
+using Poser.Game.Posing;
 using Poser.Game.Bindings;
 using Poser.Game.Transforms;
 using Poser.Services;
@@ -38,12 +41,13 @@ internal enum GizmoTargetType
 public class GizmoOverlayWindow : Window
 {
     private readonly SelectionSession _selection;
-    private readonly StableBindingRegistry _bindings;
+    private readonly SceneSession _scene;
+    private readonly Game.Viewport.ViewportProjection _viewport;
     private readonly IEditorState _editorState;
     private readonly ICameraService _cameraService;
-    private readonly IPosingService _posingService;
     private readonly IBonePosingService _bonePosingService;
     private readonly CleanTransformFacade _cleanTransforms;
+    private readonly CleanPoseFacade _cleanPose;
 
     private const int GizmoId = 142857;
 
@@ -69,13 +73,13 @@ public class GizmoOverlayWindow : Window
     private GizmoGesture? _boneGesture;
 
     public GizmoOverlayWindow(
-        SelectionSession selection,
-        StableBindingRegistry bindings,
+        SceneSession scene,
+        Game.Viewport.ViewportProjection viewport,
         IEditorState editorState,
         ICameraService cameraService,
-        IPosingService posingService,
         IBonePosingService bonePosingService,
-        CleanTransformFacade cleanTransforms)
+        CleanTransformFacade cleanTransforms,
+        CleanPoseFacade cleanPose)
         : base("##poser_gizmo_overlay",
             ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoDecoration |
@@ -86,13 +90,14 @@ public class GizmoOverlayWindow : Window
             ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoSavedSettings)
     {
-        _selection = selection;
-        _bindings = bindings;
+        _selection = scene.Selection;
+        _scene = scene;
+        _viewport = viewport;
         _editorState = editorState;
         _cameraService = cameraService;
-        _posingService = posingService;
         _bonePosingService = bonePosingService;
         _cleanTransforms = cleanTransforms;
+        _cleanPose = cleanPose;
 
         RespectCloseHotkey = false;
     }
@@ -144,35 +149,71 @@ public class GizmoOverlayWindow : Window
         };
     }
 
-    /// <summary>Session actor ids resolved to live views for this frame's
-    /// placement math; unresolved (stale) ids drop out.</summary>
-    private List<(ActorId Id, IActor Actor)> ResolveSelectedActors()
+    private List<ActorId> SelectedActorIds()
     {
-        var result = new List<(ActorId, IActor)>();
+        var result = new List<ActorId>();
         foreach (var id in _selection.Selected)
-        {
-            if (id is not { Kind: SceneEntityKind.Actor, Actor: { } actorId })
-                continue;
-            var resolved = _bindings.Resolve(actorId);
-            if (resolved.Success)
-                result.Add((actorId, resolved.Value!));
-        }
+            if (id is { Kind: SceneEntityKind.Actor, Actor: { } actorId })
+                result.Add(actorId);
         return result;
     }
 
-    private List<IBone> ResolveSelectedBones()
+    private List<BoneId> SelectedBoneIds()
     {
-        var result = new List<IBone>();
+        var result = new List<BoneId>();
         foreach (var id in _selection.Selected)
-        {
-            if (id is not { Kind: SceneEntityKind.Bone, Bone: { } boneId })
-                continue;
-            var resolved = _bindings.Resolve(boneId);
-            if (resolved.Success)
-                result.Add(resolved.Value!);
-        }
+            if (id is { Kind: SceneEntityKind.Bone, Bone: { } boneId })
+                result.Add(boneId);
         return result;
     }
+
+    private Dictionary<BoneId, BoneDescriptor>? BoneDescriptorsOf(Guid lineage)
+    {
+        foreach (var actor in _scene.Snapshot.Actors)
+            if (actor.Id.LogicalId == lineage)
+                return actor.Skeleton?.Bones
+                    .ToDictionary(descriptor => descriptor.Id);
+        return null;
+    }
+
+    private static int BoneDepth(
+        BoneId id,
+        Dictionary<BoneId, BoneDescriptor> byId)
+    {
+        var depth = 0;
+        var current = byId.TryGetValue(id, out var descriptor)
+            ? descriptor.Parent
+            : null;
+        while (current is { } parentId &&
+               byId.TryGetValue(parentId, out var parent))
+        {
+            depth++;
+            current = parent.Parent;
+        }
+        return depth;
+    }
+
+    private static bool HasSelectedAncestor(
+        BoneId id,
+        HashSet<BoneId> selected,
+        Dictionary<BoneId, BoneDescriptor> byId)
+    {
+        var current = byId.TryGetValue(id, out var descriptor)
+            ? descriptor.Parent
+            : null;
+        while (current is { } parentId)
+        {
+            if (selected.Contains(parentId))
+                return true;
+            current = byId.TryGetValue(parentId, out var parent)
+                ? parent.Parent
+                : null;
+        }
+        return false;
+    }
+
+    private static Transform ToLegacy(Domain.Transforms.PoseTransform value) =>
+        new() { Position = value.Position, Rotation = value.Rotation, Scale = value.Scale };
 
     /// <summary>
     /// Enforces the frozen-gesture contract each frame: an externally
@@ -207,11 +248,11 @@ public class GizmoOverlayWindow : Window
 
     private void DrawActorGizmo()
     {
-        var selectedActors = ResolveSelectedActors();
+        var selectedActors = SelectedActorIds();
         if (selectedActors.Count == 0)
             return;
 
-        var primaryActor = selectedActors[0].Actor;
+        var primaryActor = selectedActors[0];
         var viewMatrix = _cameraService.GetViewMatrix();
         var projectionMatrix = _cameraService.GetProjectionMatrix();
 
@@ -222,9 +263,21 @@ public class GizmoOverlayWindow : Window
         _actorGesture = GuardGesture(_actorGesture, gizmoOperation, gizmoMode);
 
         // Live memory only seeds a gesture; during a drag the frozen
-        // presentation baseline feeds the manipulator.
-        var actorTransform = _actorGesture?.Current
-            ?? _posingService.GetEffectiveTransform(primaryActor);
+        // presentation baseline feeds the manipulator. Rest state reads
+        // through the viewport projection.
+        Transform actorTransform;
+        if (_actorGesture is { } presented)
+        {
+            actorTransform = presented.Current;
+        }
+        else if (_viewport.GetActorTransform(primaryActor) is { } rest)
+        {
+            actorTransform = ToLegacy(rest);
+        }
+        else
+        {
+            return;
+        }
         var modelMatrix = actorTransform.ToMatrix();
 
         ImGuizmo.Enable(true);
@@ -242,7 +295,7 @@ public class GizmoOverlayWindow : Window
         {
             var begin = _cleanTransforms.Begin(
                 selectedActors
-                    .Select(entry => TransformTargetId.ForActor(entry.Id))
+                    .Select(TransformTargetId.ForActor)
                     .ToList(),
                 ToDomainOperation(gizmoOperation),
                 ToDomainSpace(gizmoMode),
@@ -297,55 +350,38 @@ public class GizmoOverlayWindow : Window
 
     private void DrawBoneGizmo()
     {
-        // Session bone ids resolved to live views for this frame's math.
-        var selectedBones = ResolveSelectedBones();
+        // Session bone ids + snapshot descriptors — no live entities.
+        var selectedBones = SelectedBoneIds();
         if (selectedBones.Count == 0)
             return;
 
-        // Separate VirtualBones from regular bones
-        var virtualBones = selectedBones.OfType<VirtualBone>().ToList();
-        var regularBones = selectedBones.Where(b => b is not VirtualBone).ToList();
-        // Expand virtual bones to their constituent bones
-        // Bone names can repeat across Havok partials, so identity includes both.
-        var addedBones = new HashSet<(string BoneName, int PartialId)>();
-        var expandedBones = new List<IBone>();
-
-        foreach (var vb in virtualBones)
-        {
-            foreach (var constituent in vb.ConstituentBones)
-            {
-                if (addedBones.Add((constituent.BoneName, constituent.PartialId)))
-                    expandedBones.Add(constituent);
-            }
-        }
-
-        foreach (var bone in regularBones)
-        {
-            if (addedBones.Add((bone.BoneName, bone.PartialId)))
-                expandedBones.Add(bone);
-        }
-
-        if (expandedBones.Count == 0)
+        var byId = BoneDescriptorsOf(selectedBones[0].Skeleton.Actor.LogicalId);
+        if (byId == null)
             return;
 
-        // Position/rotation propagation already carries root edits to descendants.
-        // Applying the same gesture directly to a selected child compounds it.
-        var rootBones = PoseMath.FilterSelectionRoots(expandedBones).ToList();
-
-        // Find the highest bone in the hierarchy for gizmo placement
-        // This prevents the gizmo from moving when rotating parent bones
-        var primaryBone = FindHighestBone(selectedBones);
-        var skeleton = primaryBone.Skeleton as Skeleton;
-        if (skeleton == null || !skeleton.IsValid)
+        // Position/rotation propagation already carries root edits to
+        // descendants; a selected child of a selected ancestor drops out.
+        var selectedSet = selectedBones.ToHashSet();
+        var rootIds = selectedBones
+            .Where(id => !HasSelectedAncestor(id, selectedSet, byId))
+            .ToList();
+        if (rootIds.Count == 0)
             return;
 
-        _bonePosingService.RegisterSkeletonForCacheUpdate(skeleton);
+        // The highest selected bone anchors gizmo placement — this prevents
+        // the gizmo from moving when rotating parent bones.
+        var primaryId = selectedBones
+            .OrderBy(id => BoneDepth(id, byId))
+            .First();
+
+        // Skeleton matrix query also refreshes/registers the skeleton caches
+        // inside the runtime boundary.
+        if (_viewport.GetSkeletonModelMatrix(primaryId) is not { } modelMatrix)
+            return;
 
         var projectionMatrix = _cameraService.GetProjectionMatrix();
         var worldViewMatrix = _cameraService.GetViewMatrix();
         worldViewMatrix.M44 = 1;
-
-        var modelMatrix = skeleton.GetModelMatrix();
         worldViewMatrix = Matrix4x4.Multiply(modelMatrix, worldViewMatrix);
 
         var gizmoMode = _editorState.TransformOrientation == TransformOrientation.Global
@@ -358,8 +394,20 @@ public class GizmoOverlayWindow : Window
         // presentation baseline feeds the manipulator, exactly like Brio's
         // tracking transform — reading Havok model-space back every frame can
         // turn a rotation into an apparent orbit.
-        var currentTransform = primaryBone.LastTransform;
-        var lastMatrix = (_boneGesture?.Current ?? currentTransform).ToMatrix();
+        Transform currentTransform;
+        if (_boneGesture is { } presented)
+        {
+            currentTransform = presented.Current;
+        }
+        else if (_viewport.GetBoneModelTransform(primaryId) is { } rest)
+        {
+            currentTransform = ToLegacy(rest);
+        }
+        else
+        {
+            return;
+        }
+        var lastMatrix = currentTransform.ToMatrix();
 
         // Brio-style posing composes persistent bone deltas after the game's
         // animation update, so animation playback does not gate manipulation.
@@ -377,11 +425,9 @@ public class GizmoOverlayWindow : Window
         // the pre-call value still describes the previous frame.
         if (isUsing && _boneGesture == null)
         {
-            var ik = _editorState.IkEnabled
-                ? BoneIKInfo.CalculateDefault(primaryBone.BoneName)
-                : BoneIKInfo.Disabled;
-            ik.Enabled = _editorState.IkEnabled;
-            _bonePosingService.SetBoneIK(primaryBone, ik);
+            _cleanPose.ConfigureIk(
+                TransformTargetId.ForBone(primaryId),
+                _editorState.IkEnabled);
 
             // Every orbit pivot routes through the clean gesture with a frozen
             // custom pivot; there is no second orbit session.
@@ -394,27 +440,22 @@ public class GizmoOverlayWindow : Window
                 cleanCustomPivot = _editorState.OrbitPivot switch
                 {
                     Core.OrbitPivotMode.SelectionCenter =>
-                        SelectionCenter(rootBones),
+                        SelectionCenter(rootIds),
                     Core.OrbitPivotMode.Custom =>
                         _editorState.CustomOrbitPivot,
                     _ =>
-                        primaryBone.ParentBone?.LastTransform.Position ??
+                        _viewport.GetParentModelTransform(primaryId)?.Position ??
                         currentTransform.Position,
                 };
             }
 
-            var orderedIds = new List<TransformTargetId>();
-            if (_bindings.GetBoneId(primaryBone) is { } primaryId)
-                orderedIds.Add(TransformTargetId.ForBone(primaryId));
-            foreach (var bone in rootBones)
+            var orderedIds = new List<TransformTargetId>
             {
-                if (ReferenceEquals(bone, primaryBone))
-                    continue;
-                if (_bindings.GetBoneId(bone) is { } rootId)
+                TransformTargetId.ForBone(primaryId),
+            };
+            foreach (var rootId in rootIds)
+                if (!rootId.Equals(primaryId))
                     orderedIds.Add(TransformTargetId.ForBone(rootId));
-            }
-            if (orderedIds.Count == 0)
-                return;
 
             var space = _editorState.OrbitBoneRotation
                 ? DomainSpace.World
@@ -505,14 +546,20 @@ public class GizmoOverlayWindow : Window
         }
     }
 
-    private static Vector3 SelectionCenter(IReadOnlyList<IBone> bones)
+    private Vector3 SelectionCenter(IReadOnlyList<BoneId> boneIds)
     {
-        if (bones.Count == 0)
+        if (boneIds.Count == 0)
             return Vector3.Zero;
         var sum = Vector3.Zero;
-        foreach (var bone in bones)
-            sum += bone.LastTransform.Position;
-        return sum / bones.Count;
+        var counted = 0;
+        foreach (var id in boneIds)
+        {
+            if (_viewport.GetBoneModelTransform(id) is not { } value)
+                continue;
+            sum += value.Position;
+            counted++;
+        }
+        return counted == 0 ? Vector3.Zero : sum / counted;
     }
 
     private static TransformDelta ToDomainDelta(
@@ -587,27 +634,6 @@ public class GizmoOverlayWindow : Window
     /// Finds the highest bone in the hierarchy among the selected bones.
     /// The highest bone is the one with the fewest ancestors (closest to root).
     /// </summary>
-    private static IBone FindHighestBone(IReadOnlyList<IBone> bones)
-    {
-        if (bones.Count == 1)
-            return bones[0];
-
-        IBone highest = bones[0];
-        int highestDepth = GetBoneDepth(highest);
-
-        for (int i = 1; i < bones.Count; i++)
-        {
-            int depth = GetBoneDepth(bones[i]);
-            if (depth < highestDepth)
-            {
-                highest = bones[i];
-                highestDepth = depth;
-            }
-        }
-
-        return highest;
-    }
-
     /// <summary>
     /// Gets the depth of a bone in the hierarchy (0 = root, higher = deeper).
     /// </summary>

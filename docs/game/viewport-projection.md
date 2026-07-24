@@ -31,23 +31,44 @@ entity never leave the runtime boundary.
 
 - current model-space transform of a bone target (display values, gizmo
   placement, 3D diagram points, overlay dots);
+- the bone's parent model transform (parent-local display composition and the
+  frozen parent captured at gesture Begin);
 - the owning skeleton's model matrix (folded into the gizmo view matrix,
-  Brio's convention);
-- current world/model transform of an actor target.
+  Brio's convention) — this query also refreshes the skeleton's cached bone
+  transforms and registers it for the runtime's post-frame cache update, so
+  no surface touches the live skeleton;
+- current world/model transform of an actor target;
+- whether an actor carries a transform override (display badge state).
 
 Camera view/projection matrices remain `ICameraService`'s concern; the
 projection adapter supplies model-space facts and leaves camera composition to
 the caller so overlay and gizmo keep their existing projection math.
 
-## Consumers
+## Consumers (actual dependency path)
 
 | Surface | Use |
 |---|---|
-| `GizmoOverlayWindow` | primary target placement matrix; per-target display baselines during hover (never during a gesture) |
-| `PoseInspectorPane` 3D diagram | per-bone model positions for the projected skeleton |
-| `SkeletonOverlayWindow` | per-bone model positions for dots/lines |
-| `PoseInspectorPane` inspector | displayed absolute values when no gesture is active |
+| `GizmoOverlayWindow` | placement matrix + rest-state primary transform + orbit parent/selection-center pivots; no registry dependency |
+| `SkeletonOverlayWindow` | per-descriptor bone model transforms + skeleton matrix; no registry dependency |
+| `PoseInspectorPane` inspector | rest-state actor/bone display values, frozen parent capture at gesture Begin, actor override badge |
+| `PoseInspectorPane` 3D diagram | per-descriptor bone model positions |
 
 During an active gesture every surface displays values derived from the frozen
 gesture baseline plus the current `TransformDelta`; the viewport adapter is
 only the *rest-state* read path.
+
+## Documented residual registry resolutions
+
+Three frame-scoped `StableBindingRegistry` resolutions remain in the UI and
+are NOT spatial reads:
+
+- actor lifetime context actions (`MainWindow`) — outside this PBI's
+  transform boundary, resolve a stable `ActorId` for one frame to call the
+  legacy lifetime services;
+- `GraphicalBonePane` resolves the selected actor once per frame because the
+  Body/Face maps still render from the live skeleton and read the face-map
+  variant from actor customize data (display formatting); dot selection
+  identity comes from snapshot descriptors, never the registry;
+- `PoseInspectorPane` re-resolves the primary once per selection change to
+  feed the retained gaze/expression sections, which consume entity-based
+  runtime services.
