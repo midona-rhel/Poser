@@ -1,4 +1,3 @@
-using System.Numerics;
 using Poser.Entities;
 
 namespace Poser.Services;
@@ -10,11 +9,11 @@ public enum GazeTargetMode
 {
     /// <summary>No gaze override - use game default.</summary>
     None,
-    /// <summary>Look straight ahead (frozen gaze).</summary>
+    /// <summary>Look at a computed point ahead of the actor.</summary>
     Forward,
-    /// <summary>Look at the camera position.</summary>
+    /// <summary>Look at the live camera position.</summary>
     Camera,
-    /// <summary>Look at a specific entity.</summary>
+    /// <summary>Look at another actor, targeted by stable game-object id.</summary>
     Entity
 }
 
@@ -32,102 +31,68 @@ public enum GazeTargetType
 }
 
 /// <summary>
-/// Gaze state for an actor.
+/// Read snapshot of an actor's managed gaze state. Durable identity is never
+/// an <see cref="IActor"/> reference: the service keys state by the native
+/// GameObjectId and the Entity target is a GameObjectId, both of which
+/// survive ordinary actor-list refreshes.
 /// </summary>
 public class GazeState
 {
     public GazeTargetMode Mode { get; set; } = GazeTargetMode.None;
     public GazeTargetType TargetType { get; set; } = GazeTargetType.All;
-    public IActor? TargetEntity { get; set; }
 
-    /// <summary>
-    /// Creates a copy of this gaze state.
-    /// </summary>
-    public GazeState Clone() => new()
-    {
-        Mode = Mode,
-        TargetType = TargetType,
-        TargetEntity = TargetEntity
-    };
+    /// <summary>The Entity-mode target's GameObjectId; 0 when unset.</summary>
+    public ulong TargetId { get; set; }
 }
 
 /// <summary>
-/// Service for controlling actor gaze (where they look).
+/// Service for controlling actor gaze (where they look). IActor parameters
+/// are frame-scoped resolution inputs only — nothing retains them. Every
+/// setter performs exactly one state transition.
 /// </summary>
 public interface IGazeService
 {
-    /// <summary>
-    /// Gets the current gaze state for an actor.
-    /// </summary>
+    /// <summary>Snapshot of the actor's managed gaze state.</summary>
     GazeState GetGazeState(IActor actor);
 
     /// <summary>
-    /// Sets the gaze mode for an actor.
+    /// One mode transition. Entering a non-Off mode with no participating
+    /// parts enables all three. Entity mode without a chosen target performs
+    /// no native override until a target is set.
     /// </summary>
     void SetGazeMode(IActor actor, GazeTargetMode mode);
 
     /// <summary>
-    /// Sets which body parts are affected by gaze control.
+    /// Changes part participation only. Turning off the final active part
+    /// returns the mode to Off.
     /// </summary>
-    void SetGazeTargetType(IActor actor, GazeTargetType targetType);
+    void SetGazeParts(IActor actor, GazeTargetType parts);
 
     /// <summary>
-    /// Sets an entity for the actor to look at.
+    /// Chooses the Entity-mode target and switches to Entity mode. The
+    /// source actor itself is rejected.
     /// </summary>
     void SetGazeTarget(IActor actor, IActor target);
 
     /// <summary>
-    /// Resets gaze to game default for an actor.
+    /// The current Entity target's live address resolved at call time
+    /// (for display matching); 0 when none or no longer present.
     /// </summary>
-    void ResetGaze(IActor actor);
+    nint GetGazeTargetAddress(IActor actor);
 
     /// <summary>
-    /// Sets the complete gaze state for an actor.
-    /// Used for history/undo support.
+    /// Freezes/unfreezes one participating part at its actual current
+    /// target. Does not change the mode, the participation mask, or other
+    /// parts.
     /// </summary>
-    void SetGazeState(IActor actor, GazeState state);
+    void SetPartLock(IActor actor, GazeTargetType part, bool locked);
 
-    /// <summary>
-    /// Lock an actor's gaze at the current camera position.
-    /// The head/eyes will continue looking at that position even if camera moves.
-    /// </summary>
-    void LockGaze(IActor actor, GazeTargetType targetType = GazeTargetType.All);
+    /// <summary>Whether the given part is frozen.</summary>
+    bool IsPartLocked(IActor actor, GazeTargetType part);
 
-    /// <summary>
-    /// Lock or unlock a specific gaze target type at a position.
-    /// Like Brio's SetTargetLock.
-    /// </summary>
-    void SetTargetLock(IActor actor, bool doLock, GazeTargetType targetType, Vector3 position);
-
-    /// <summary>
-    /// Disable gaze control entirely for an actor.
-    /// Head/eyes will move naturally with parent bones (good for posing mode).
-    /// </summary>
-    void DisableGaze(IActor actor);
-
-    /// <summary>
-    /// Unlock an actor's gaze (allows camera tracking again).
-    /// </summary>
-    void UnlockGaze(IActor actor);
-
-    /// <summary>
-    /// Check if an actor's gaze is locked.
-    /// </summary>
-    bool IsGazeLocked(IActor actor);
-
-    /// <summary>
-    /// Check if a specific gaze part is locked.
-    /// </summary>
-    bool IsPartLocked(IActor actor, GazeTargetType targetType);
-
-    /// <summary>
-    /// Check if gaze control is enabled for an actor.
-    /// </summary>
+    /// <summary>Whether any Poser gaze override is active for the actor.</summary>
     bool IsGazeEnabled(IActor actor);
 
-    /// <summary>
-    /// Enable gaze control for an actor (like Brio's StartLookAt).
-    /// Initializes with Camera mode.
-    /// </summary>
-    void EnableGaze(IActor actor);
+    /// <summary>Removes state and the native handle — full game default.</summary>
+    void ResetGaze(IActor actor);
 }

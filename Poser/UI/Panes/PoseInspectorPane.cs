@@ -764,10 +764,21 @@ public class PoseInspectorPane
         return 16f * s + rowH;
     }
 
+    // Quiet inline note after an Actor-mode click with no valid target actor.
+    private bool _gazeActorUnavailableNote;
+
     private float DrawGaze(Vector2 cursor, float width, IActor actor, float s)
     {
         var state = _gazeService.GetGazeState(actor);
         string[] options = { "Off", "Fwd", "Cam", "Actor" };
+
+        // Valid other actors, excluded by identity facts (never by wrapper
+        // reference): the source itself and dead addresses are out.
+        var others = new System.Collections.Generic.List<IActor>();
+        if (ActorsProvider != null)
+            foreach (var candidate in ActorsProvider())
+                if (candidate.Address != nint.Zero && candidate.Address != actor.Address)
+                    others.Add(candidate);
 
         float h = 0f;
         ViewText.Label(cursor + new Vector2(0f, 7f) * s, "Mode", 12f, FontWeight.Regular,
@@ -782,16 +793,18 @@ public class PoseInspectorPane
         ImGui.SetCursorScreenPos(cursor + new Vector2(46f, 0f) * s);
         if (Crystarium.SegmentedControl("##gaze-mode", options, ref mode, (width - 46f * s) / s))
         {
-            if (mode == 0)
+            if (mode == 3 && others.Count == 0)
             {
-                _gazeService.ResetGaze(actor);
+                // Actor mode needs a valid other actor: reject quietly, never
+                // target self, index zero, or null.
+                _gazeActorUnavailableNote = true;
             }
             else
             {
-                if (state.TargetType == GazeTargetType.None)
-                    _gazeService.SetGazeTargetType(actor, GazeTargetType.All);
+                _gazeActorUnavailableNote = false;
                 _gazeService.SetGazeMode(actor, mode switch
                 {
+                    0 => GazeTargetMode.None,
                     1 => GazeTargetMode.Forward,
                     2 => GazeTargetMode.Camera,
                     _ => GazeTargetMode.Entity,
@@ -800,20 +813,26 @@ public class PoseInspectorPane
             state = _gazeService.GetGazeState(actor);
         }
         h += 34f * s;
+        if (_gazeActorUnavailableNote && others.Count == 0)
+        {
+            ViewText.Label(cursor + new Vector2(46f, h / s + 2f) * s,
+                "actor mode needs another actor in the scene", 11f,
+                FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
+            h += 18f * s;
+        }
+        else
+        {
+            _gazeActorUnavailableNote = false;
+        }
 
         h += GazePartRow(new Vector2(cursor.X, cursor.Y + h), width, "Eyes", GazeTargetType.Eyes, actor, state, s);
         h += GazePartRow(new Vector2(cursor.X, cursor.Y + h), width, "Head", GazeTargetType.Head, actor, state, s);
         h += GazePartRow(new Vector2(cursor.X, cursor.Y + h), width, "Body", GazeTargetType.Body, actor, state, s);
 
-        // "look at actor" target picker (Brio SetActorTarget / Anamnesis look-at)
+        // "look at actor" target picker: explicit choice only — nothing is
+        // auto-targeted from the draw loop.
         if (state.Mode == GazeTargetMode.Entity)
         {
-            var others = new System.Collections.Generic.List<IActor>();
-            if (ActorsProvider != null)
-                foreach (var candidate in ActorsProvider())
-                    if (!ReferenceEquals(candidate, actor))
-                        others.Add(candidate);
-
             ViewText.Label(cursor + new Vector2(0f, h / s + 7f) * s, "At", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
             if (others.Count == 0)
             {
@@ -822,17 +841,17 @@ public class PoseInspectorPane
             }
             else
             {
+                var targetAddress = _gazeService.GetGazeTargetAddress(actor);
                 var names = new string[others.Count];
-                int current = 0;
+                int current = -1; // placeholder until the user picks a target
                 for (int i = 0; i < others.Count; i++)
                 {
                     names[i] = ActorDisplayName(others[i]);
-                    if (ReferenceEquals(others[i], state.TargetEntity)) current = i;
+                    if (targetAddress != 0 && others[i].Address == targetAddress) current = i;
                 }
                 ImGui.SetCursorScreenPos(cursor + new Vector2(46f, h / s) * s);
-                if (Crystarium.Dropdown("##gaze-target", names, ref current))
-                    _gazeService.SetGazeTarget(actor, others[current]);
-                if (state.TargetEntity == null)
+                if (Crystarium.Dropdown("##gaze-target", names, ref current) &&
+                    current >= 0 && current < others.Count)
                     _gazeService.SetGazeTarget(actor, others[current]);
             }
             h += 34f * s;
@@ -851,31 +870,31 @@ public class PoseInspectorPane
     {
         ViewText.Label(cursor + new Vector2(0f, 7f) * s, label, 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
 
-        bool enabled = state.Mode != GazeTargetMode.None && state.TargetType.HasFlag(part);
+        // Off performs no override; part switches and locks are visibly
+        // disabled while Off instead of snapping back silently.
+        bool off = state.Mode == GazeTargetMode.None;
+        bool enabled = !off && state.TargetType.HasFlag(part);
         ImGui.SetCursorScreenPos(new Vector2(cursor.X + 94f * s, cursor.Y + 4f * s));
-        if (Crystarium.Switch($"##gaze-part-{label}", ref enabled))
+        if (Crystarium.Switch($"##gaze-part-{label}", ref enabled, disabled: off) && !off)
         {
             var flags = enabled ? state.TargetType | part : state.TargetType & ~part;
-            if (flags == GazeTargetType.None)
-                _gazeService.ResetGaze(actor);
-            else
-                _gazeService.SetGazeTargetType(actor, flags);
+            _gazeService.SetGazeParts(actor, flags);
         }
-        ViewText.Label(cursor + new Vector2(140f, 7f) * s, enabled ? "driven" : "free", 11f,
+        ViewText.Label(cursor + new Vector2(140f, 7f) * s, off ? "off" : enabled ? "driven" : "free", 11f,
             FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
 
-        // per-part position lock (Brio SetTargetLock): pin where the part looks
+        // per-part lock: freezes the participating part at its actual current
+        // target; enabled only for a participating part of an active mode.
         bool locked = _gazeService.IsPartLocked(actor, part);
+        bool lockAvailable = !off && state.TargetType.HasFlag(part);
         ImGui.SetCursorScreenPos(new Vector2(cursor.X + width - 24f * s, cursor.Y + 3f * s));
-        var lockHit = Interactive.Reserve($"##gaze-lock-{label}", new Vector2(20f, 20f) * s, disabled: false);
+        var lockHit = Interactive.Reserve($"##gaze-lock-{label}", new Vector2(20f, 20f) * s, disabled: !lockAvailable);
         ImGui.SetCursorScreenPos(new Vector2(cursor.X + width - 22f * s, cursor.Y + 5f * s));
+        float lockAlpha = !lockAvailable ? 0.15f : locked ? 0.9f : lockHit.Hovered ? 0.7f : 0.35f;
         Crystarium.Icon(locked ? TablerIcon.Lock : TablerIcon.LockOpen, 14f * s,
-            ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, locked ? 0.9f : lockHit.Hovered ? 0.7f : 0.35f)));
+            ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, lockAlpha)));
         if (lockHit.Clicked)
-        {
-            if (locked) _gazeService.SetTargetLock(actor, false, part, default);
-            else _gazeService.LockGaze(actor, part);
-        }
+            _gazeService.SetPartLock(actor, part, !locked);
 
         return 34f * s;
     }

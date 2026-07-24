@@ -17,8 +17,12 @@ using Poser.Services;
 namespace Poser.Game;
 
 /// <summary>
-/// Service for controlling actor gaze (where they look).
-/// Based on Brio's ActorLookAtService implementation.
+/// Service for controlling actor gaze (where they look). Based on Brio's
+/// ActorLookAtService. One entry per actor, keyed by the native GameObjectId —
+/// there is no second wrapper-keyed map to desync, so an ordinary actor-list
+/// refresh cannot orphan state. The Entity target is a GameObjectId written
+/// natively (LookMode.Target through the Brio/Ktisis-verified id/position
+/// union); no captured address is ever dereferenced.
 /// </summary>
 public unsafe class GazeService : IGazeService, IDisposable
 {
@@ -38,8 +42,23 @@ public unsafe class GazeService : IGazeService, IDisposable
     private delegate nint ActorLookAtLoopDelegate(ContainerInterface* args);
     private Hook<ActorLookAtLoopDelegate> _actorLookAtLoop = null!;
 
-    private readonly Dictionary<IActor, GazeState> _gazeStates = new();
-    private readonly Dictionary<ulong, LookAtDataHolder> _lookAtHandles = new();
+    /// <summary>
+    /// One managed+native entry per actor. Mutated from the UI thread and read
+    /// from the hooked game loop, so every access goes through the sync lock.
+    /// </summary>
+    private sealed class GazeEntry
+    {
+        public GazeTargetMode Mode;
+        public GazeTargetType Parts = GazeTargetType.All;
+        public ulong TargetId;              // Entity-mode target GameObjectId; 0 = unset
+        public LookAtSource Target;         // per-part native write source
+        public bool EyesLocked;
+        public bool HeadLocked;
+        public bool BodyLocked;
+    }
+
+    private readonly object _sync = new();
+    private readonly Dictionary<ulong, GazeEntry> _entries = new();
 
     public GazeService(
         IGPoseService gPoseService,
@@ -65,463 +84,371 @@ public unsafe class GazeService : IGazeService, IDisposable
         _actorLookAtLoop.Enable();
 
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
+        _eventBus.Subscribe<ActorListChangedEvent>(OnActorListChanged);
     }
+
+    /// <summary>Entity mode without a chosen target performs no override.</summary>
+    private static GazeTargetMode EffectiveMode(GazeEntry entry) =>
+        entry.Mode == GazeTargetMode.Entity && entry.TargetId == 0
+            ? GazeTargetMode.None
+            : entry.Mode;
 
     private nint ActorLookAtDetour(ContainerInterface* args)
     {
         if (_gPoseService.IsGPosing)
         {
-            var targetActor = _objectTable.CreateObjectReference((nint)args->OwnerObject);
-            if (targetActor is not null && targetActor.IsValid()
-                && _lookAtHandles.TryGetValue(targetActor.GameObjectId, out var lookAtDataHolder))
+            bool any;
+            lock (_sync)
             {
-                // Skip processing if gaze mode is None - let game handle normally
-                if (lookAtDataHolder.TargetMode == GazeTargetMode.None)
+                any = _entries.Count > 0;
+            }
+            if (any)
+            {
+                var targetActor = _objectTable.CreateObjectReference((nint)args->OwnerObject);
+                if (targetActor is not null && targetActor.IsValid())
                 {
-                    return _actorLookAtLoop.Original(args);
+                    GazeTargetMode mode = GazeTargetMode.None;
+                    GazeTargetType parts = GazeTargetType.None;
+                    LookAtSource lookAt = default;
+                    bool eyesLocked = false, headLocked = false, bodyLocked = false;
+                    lock (_sync)
+                    {
+                        if (_entries.TryGetValue(targetActor.GameObjectId, out var entry))
+                        {
+                            mode = EffectiveMode(entry);
+                            parts = entry.Parts;
+                            // Copy to a local (like Brio) — the native calls
+                            // below run outside the lock.
+                            lookAt = entry.Target;
+                            eyesLocked = entry.EyesLocked;
+                            headLocked = entry.HeadLocked;
+                            bodyLocked = entry.BodyLocked;
+                        }
+                    }
+
+                    // Off performs no Poser write at all.
+                    if (mode == GazeTargetMode.None)
+                        return _actorLookAtLoop.Original(args);
+
+                    // Camera and Forward are position sources refreshed each
+                    // loop for unlocked parts; Entity carries the target id in
+                    // the union and needs no per-loop position poll.
+                    if (mode == GazeTargetMode.Camera)
+                    {
+                        var cameraPos = _cameraService.GetCameraPosition();
+                        if (parts.HasFlag(GazeTargetType.Eyes) && !eyesLocked)
+                            lookAt.Eyes.LookAtTarget.Position = cameraPos;
+                        if (parts.HasFlag(GazeTargetType.Head) && !headLocked)
+                            lookAt.Head.LookAtTarget.Position = cameraPos;
+                        if (parts.HasFlag(GazeTargetType.Body) && !bodyLocked)
+                            lookAt.Body.LookAtTarget.Position = cameraPos;
+                    }
+                    else if (mode == GazeTargetMode.Forward)
+                    {
+                        var nativeObj = (GameObject*)targetActor.Address;
+                        var position = new Vector3(nativeObj->Position.X, nativeObj->Position.Y, nativeObj->Position.Z);
+                        var rotation = nativeObj->Rotation;
+                        var forwardDir = new Vector3(MathF.Sin(rotation), 0f, MathF.Cos(rotation));
+                        var forwardPos = position + forwardDir * 10f + new Vector3(0, 1.5f, 0);
+                        if (parts.HasFlag(GazeTargetType.Eyes) && !eyesLocked)
+                            lookAt.Eyes.LookAtTarget.Position = forwardPos;
+                        if (parts.HasFlag(GazeTargetType.Head) && !headLocked)
+                            lookAt.Head.LookAtTarget.Position = forwardPos;
+                        if (parts.HasFlag(GazeTargetType.Body) && !bodyLocked)
+                            lookAt.Body.LookAtTarget.Position = forwardPos;
+                    }
+
+                    var lookAtController = &((Character*)targetActor.Address)->LookAt.Controller;
+                    if (parts.HasFlag(GazeTargetType.Body))
+                        _updateLookAt(lookAtController, &lookAt.Body.LookAtTarget, LookAtIndex_Body, 0);
+                    if (parts.HasFlag(GazeTargetType.Head))
+                        _updateLookAt(lookAtController, &lookAt.Head.LookAtTarget, LookAtIndex_Head, 0);
+                    if (parts.HasFlag(GazeTargetType.Eyes))
+                        _updateLookAt(lookAtController, &lookAt.Eyes.LookAtTarget, LookAtIndex_Eyes, 0);
                 }
-
-                // Copy to local variable (like Brio does) to avoid issues with managed memory
-                LookAtSource lookAt = lookAtDataHolder.Target;
-
-                // Update target positions based on mode (only for unlocked parts)
-                if (lookAtDataHolder.TargetMode == GazeTargetMode.Camera)
-                {
-                    var cameraPos = _cameraService.GetCameraPosition();
-                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Eyes) && !lookAtDataHolder.EyesLocked)
-                        lookAt.Eyes.LookAtTarget.Position = cameraPos;
-                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Head) && !lookAtDataHolder.HeadLocked)
-                        lookAt.Head.LookAtTarget.Position = cameraPos;
-                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Body) && !lookAtDataHolder.BodyLocked)
-                        lookAt.Body.LookAtTarget.Position = cameraPos;
-                }
-                else if (lookAtDataHolder.TargetMode == GazeTargetMode.Entity && lookAtDataHolder.TargetEntityAddress != nint.Zero)
-                {
-                    var targetPos = GetEntityPosition(lookAtDataHolder.TargetEntityAddress);
-                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Eyes) && !lookAtDataHolder.EyesLocked)
-                        lookAt.Eyes.LookAtTarget.Position = targetPos;
-                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Head) && !lookAtDataHolder.HeadLocked)
-                        lookAt.Head.LookAtTarget.Position = targetPos;
-                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Body) && !lookAtDataHolder.BodyLocked)
-                        lookAt.Body.LookAtTarget.Position = targetPos;
-                }
-                else if (lookAtDataHolder.TargetMode == GazeTargetMode.Forward)
-                {
-                    // Forward mode - calculate a position in front of the character
-                    var nativeObj = (GameObject*)targetActor.Address;
-                    var position = new Vector3(nativeObj->Position.X, nativeObj->Position.Y, nativeObj->Position.Z);
-                    var rotation = nativeObj->Rotation;
-
-                    var forwardDir = new Vector3(
-                        MathF.Sin(rotation),
-                        0f,
-                        MathF.Cos(rotation)
-                    );
-
-                    var forwardPos = position + forwardDir * 10f + new Vector3(0, 1.5f, 0);
-                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Eyes) && !lookAtDataHolder.EyesLocked)
-                        lookAt.Eyes.LookAtTarget.Position = forwardPos;
-                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Head) && !lookAtDataHolder.HeadLocked)
-                        lookAt.Head.LookAtTarget.Position = forwardPos;
-                    if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Body) && !lookAtDataHolder.BodyLocked)
-                        lookAt.Body.LookAtTarget.Position = forwardPos;
-                }
-
-                // Apply the look-at updates for parts that are enabled in TargetType
-                var lookAtController = &((Character*)targetActor.Address)->LookAt.Controller;
-
-                if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Body))
-                    _updateLookAt(lookAtController, &lookAt.Body.LookAtTarget, LookAtIndex_Body, 0);
-                if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Head))
-                    _updateLookAt(lookAtController, &lookAt.Head.LookAtTarget, LookAtIndex_Head, 0);
-                if (lookAtDataHolder.TargetType.HasFlag(GazeTargetType.Eyes))
-                    _updateLookAt(lookAtController, &lookAt.Eyes.LookAtTarget, LookAtIndex_Eyes, 0);
             }
         }
 
         // Call original - this runs gaze IK and modifies bones
-        // Note: In Brio, gaze and bone posing are mutually exclusive for gaze bones
-        // We don't re-apply bone transforms here - if user wants to pose gaze bones,
-        // they should disable gaze first
         return _actorLookAtLoop.Original(args);
     }
 
-    private Vector3 GetEntityPosition(nint address)
-    {
-        if (address == nint.Zero)
-            return Vector3.Zero;
-
-        var gameObject = (GameObject*)address;
-        return gameObject->Position;
-    }
+    private IGameObject? Resolve(IActor actor) =>
+        actor.Address != nint.Zero ? _objectTable.CreateObjectReference(actor.Address) : null;
 
     public GazeState GetGazeState(IActor actor)
     {
-        if (!_gazeStates.TryGetValue(actor, out var state))
+        if (Resolve(actor) is not { } gameObject)
+            return new GazeState();
+        lock (_sync)
         {
-            state = new GazeState();
-            _gazeStates[actor] = state;
+            return _entries.TryGetValue(gameObject.GameObjectId, out var entry)
+                ? new GazeState { Mode = entry.Mode, TargetType = entry.Parts, TargetId = entry.TargetId }
+                : new GazeState();
         }
-        return state;
     }
 
     public void SetGazeMode(IActor actor, GazeTargetMode mode)
     {
-        var state = GetGazeState(actor);
-        state.Mode = mode;
-        ApplyGaze(actor, state);
+        if (Resolve(actor) is not { } gameObject)
+            return;
+        lock (_sync)
+        {
+            var entry = GetOrCreateEntry(gameObject.GameObjectId);
+            entry.Mode = mode;
+            if (mode != GazeTargetMode.None && entry.Parts == GazeTargetType.None)
+                entry.Parts = GazeTargetType.All;
+            ReseedUnlockedParts(entry);
+        }
     }
 
-    public void SetGazeTargetType(IActor actor, GazeTargetType targetType)
+    public void SetGazeParts(IActor actor, GazeTargetType parts)
     {
-        var state = GetGazeState(actor);
-        state.TargetType = targetType;
-        ApplyGaze(actor, state);
+        if (Resolve(actor) is not { } gameObject)
+            return;
+        lock (_sync)
+        {
+            var entry = GetOrCreateEntry(gameObject.GameObjectId);
+            entry.Parts = parts;
+            // Turning off the final active part returns the mode to Off in the
+            // same transition; the handle is kept so re-enabling is symmetric.
+            if (parts == GazeTargetType.None)
+                entry.Mode = GazeTargetMode.None;
+            ReseedUnlockedParts(entry);
+        }
     }
 
     public void SetGazeTarget(IActor actor, IActor target)
     {
-        var state = GetGazeState(actor);
-        state.TargetEntity = target;
-        state.Mode = GazeTargetMode.Entity;
-        ApplyGaze(actor, state);
+        if (Resolve(actor) is not { } gameObject || Resolve(target) is not { } targetObject)
+            return;
+        if (gameObject.GameObjectId == targetObject.GameObjectId)
+        {
+            _log.Warning("GazeService: an actor cannot gaze at itself.");
+            return;
+        }
+        lock (_sync)
+        {
+            var entry = GetOrCreateEntry(gameObject.GameObjectId);
+            entry.TargetId = targetObject.GameObjectId;
+            entry.Mode = GazeTargetMode.Entity;
+            if (entry.Parts == GazeTargetType.None)
+                entry.Parts = GazeTargetType.All;
+            ReseedUnlockedParts(entry);
+        }
+        // Brio parity (SetActorTarget): the character's own target id backs
+        // the game's id-based look tracking.
+        ((Character*)actor.Address)->SetTargetId(targetObject.GameObjectId);
     }
 
-    public void ResetGaze(IActor actor)
+    public nint GetGazeTargetAddress(IActor actor)
     {
-        _gazeStates.Remove(actor);
-        if (actor.Address != nint.Zero)
+        ulong targetId;
+        if (Resolve(actor) is not { } gameObject)
+            return 0;
+        lock (_sync)
         {
-            var gameObject = _objectTable.CreateObjectReference(actor.Address);
-            if (gameObject != null)
+            if (!_entries.TryGetValue(gameObject.GameObjectId, out var entry) || entry.TargetId == 0)
+                return 0;
+            targetId = entry.TargetId;
+        }
+        return _objectTable.SearchById(targetId)?.Address ?? 0;
+    }
+
+    public void SetPartLock(IActor actor, GazeTargetType part, bool locked)
+    {
+        if (Resolve(actor) is not { } gameObject)
+            return;
+        lock (_sync)
+        {
+            if (!_entries.TryGetValue(gameObject.GameObjectId, out var entry))
+                return;
+            var mode = EffectiveMode(entry);
+            if (mode == GazeTargetMode.None || !entry.Parts.HasFlag(part))
+                return; // locks act only on participating parts of an active mode
+
+            if (locked)
             {
-                _lookAtHandles.Remove(gameObject.GameObjectId);
+                // Freeze the part at its ACTUAL current target.
+                var freezePos = mode switch
+                {
+                    GazeTargetMode.Camera => _cameraService.GetCameraPosition(),
+                    GazeTargetMode.Forward => ForwardPoint(actor),
+                    _ => _objectTable.SearchById(entry.TargetId)?.Position ?? _cameraService.GetCameraPosition(),
+                };
+                ApplyPartLock(entry, part, freezePos);
+            }
+            else
+            {
+                ClearPartLock(entry, part);
+                ReseedPart(entry, part);
             }
         }
     }
 
-    public void SetGazeState(IActor actor, GazeState state)
+    public bool IsPartLocked(IActor actor, GazeTargetType part)
     {
-        // Clone the state so we own it
-        var clonedState = state.Clone();
-        _gazeStates[actor] = clonedState;
-        ApplyGaze(actor, clonedState);
-    }
-
-    private void ApplyGaze(IActor actor, GazeState state)
-    {
-        if (actor.Address == nint.Zero)
-            return;
-
-        var gameObject = _objectTable.CreateObjectReference(actor.Address);
-        if (gameObject == null)
-            return;
-
-        if (!_lookAtHandles.TryGetValue(gameObject.GameObjectId, out var holder))
+        if (Resolve(actor) is not { } gameObject)
+            return false;
+        lock (_sync)
         {
-            holder = new LookAtDataHolder();
-            _lookAtHandles[gameObject.GameObjectId] = holder;
+            if (!_entries.TryGetValue(gameObject.GameObjectId, out var entry))
+                return false;
+            if (part.HasFlag(GazeTargetType.Eyes) && entry.EyesLocked) return true;
+            if (part.HasFlag(GazeTargetType.Head) && entry.HeadLocked) return true;
+            if (part.HasFlag(GazeTargetType.Body) && entry.BodyLocked) return true;
+            return false;
         }
-
-        holder.TargetMode = state.Mode;
-        holder.TargetType = state.TargetType;
-        holder.TargetEntityAddress = state.TargetEntity?.Address ?? nint.Zero;
-
-        // Initialize look-at targets
-        var cameraPos = _cameraService.GetCameraPosition();
-        holder.Target = new LookAtSource
-        {
-            Body = new LookAtType { LookAtTarget = new LookAtTarget { LookMode = LookMode.Position, Position = cameraPos } },
-            Head = new LookAtType { LookAtTarget = new LookAtTarget { LookMode = LookMode.Position, Position = cameraPos } },
-            Eyes = new LookAtType { LookAtTarget = new LookAtTarget { LookMode = LookMode.Position, Position = cameraPos } },
-        };
     }
+
+    public bool IsGazeEnabled(IActor actor)
+    {
+        if (Resolve(actor) is not { } gameObject)
+            return false;
+        lock (_sync)
+        {
+            return _entries.TryGetValue(gameObject.GameObjectId, out var entry) &&
+                EffectiveMode(entry) != GazeTargetMode.None;
+        }
+    }
+
+    public void ResetGaze(IActor actor)
+    {
+        if (Resolve(actor) is not { } gameObject)
+            return;
+        lock (_sync)
+        {
+            _entries.Remove(gameObject.GameObjectId);
+        }
+    }
+
+    // ── entry maintenance (all callers hold _sync) ───────────────────────
+
+    private GazeEntry GetOrCreateEntry(ulong gameObjectId)
+    {
+        if (_entries.TryGetValue(gameObjectId, out var entry))
+            return entry;
+        return _entries[gameObjectId] = new GazeEntry();
+    }
+
+    /// <summary>
+    /// Reseeds every UNLOCKED participating part for the entry's effective
+    /// mode. Locked parts keep their frozen position and mode — a transition
+    /// never silently moves a locked part.
+    /// </summary>
+    private void ReseedUnlockedParts(GazeEntry entry)
+    {
+        if (!entry.EyesLocked) ReseedPart(entry, GazeTargetType.Eyes);
+        if (!entry.HeadLocked) ReseedPart(entry, GazeTargetType.Head);
+        if (!entry.BodyLocked) ReseedPart(entry, GazeTargetType.Body);
+    }
+
+    private void ReseedPart(GazeEntry entry, GazeTargetType part)
+    {
+        var target = new LookAtTarget();
+        switch (EffectiveMode(entry))
+        {
+            case GazeTargetMode.Camera:
+            case GazeTargetMode.Forward:
+                // Position source; the detour refreshes the position per loop.
+                target.LookMode = LookMode.Position;
+                target.Position = _cameraService.GetCameraPosition();
+                break;
+            case GazeTargetMode.Entity:
+                // Id source through the union — the game follows the object.
+                target.LookMode = LookMode.Target;
+                target.ActorTargetId = entry.TargetId;
+                break;
+            default:
+                target.LookMode = LookMode.None;
+                break;
+        }
+        WritePart(entry, part, target);
+    }
+
+    private static void ApplyPartLock(GazeEntry entry, GazeTargetType part, Vector3 position)
+    {
+        var target = new LookAtTarget { LookMode = LookMode.Position, Position = position };
+        if (part.HasFlag(GazeTargetType.Eyes)) entry.EyesLocked = true;
+        if (part.HasFlag(GazeTargetType.Head)) entry.HeadLocked = true;
+        if (part.HasFlag(GazeTargetType.Body)) entry.BodyLocked = true;
+        WritePart(entry, part, target);
+    }
+
+    private static void ClearPartLock(GazeEntry entry, GazeTargetType part)
+    {
+        if (part.HasFlag(GazeTargetType.Eyes)) entry.EyesLocked = false;
+        if (part.HasFlag(GazeTargetType.Head)) entry.HeadLocked = false;
+        if (part.HasFlag(GazeTargetType.Body)) entry.BodyLocked = false;
+    }
+
+    private static void WritePart(GazeEntry entry, GazeTargetType part, LookAtTarget target)
+    {
+        if (part.HasFlag(GazeTargetType.Eyes)) entry.Target.Eyes.LookAtTarget = target;
+        if (part.HasFlag(GazeTargetType.Head)) entry.Target.Head.LookAtTarget = target;
+        if (part.HasFlag(GazeTargetType.Body)) entry.Target.Body.LookAtTarget = target;
+    }
+
+    private static Vector3 ForwardPoint(IActor actor)
+    {
+        var nativeObj = (GameObject*)actor.Address;
+        var position = new Vector3(nativeObj->Position.X, nativeObj->Position.Y, nativeObj->Position.Z);
+        var forwardDir = new Vector3(MathF.Sin(nativeObj->Rotation), 0f, MathF.Cos(nativeObj->Rotation));
+        return position + forwardDir * 10f + new Vector3(0, 1.5f, 0);
+    }
+
+    // ── lifecycle reconciliation ─────────────────────────────────────────
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent e)
     {
         if (!e.IsGPosing)
         {
-            _lookAtHandles.Clear();
-            _gazeStates.Clear();
+            lock (_sync)
+            {
+                _entries.Clear();
+            }
         }
-    }
-
-    public void LockGaze(IActor actor, GazeTargetType targetType = GazeTargetType.All)
-    {
-        if (actor.Address == nint.Zero)
-            return;
-
-        var gameObject = _objectTable.CreateObjectReference(actor.Address);
-        if (gameObject == null)
-            return;
-
-        if (!_lookAtHandles.TryGetValue(gameObject.GameObjectId, out var holder))
-        {
-            holder = new LookAtDataHolder();
-            _lookAtHandles[gameObject.GameObjectId] = holder;
-        }
-
-        // Get current camera position to freeze at
-        var cameraPos = _cameraService.GetCameraPosition();
-
-        // Set lock flags and initialize positions to camera
-        if (targetType.HasFlag(GazeTargetType.Eyes))
-        {
-            holder.EyesLocked = true;
-            holder.Target.Eyes.LookAtTarget.Position = cameraPos;
-            holder.Target.Eyes.LookAtTarget.LookMode = LookMode.Position;
-        }
-        if (targetType.HasFlag(GazeTargetType.Head))
-        {
-            holder.HeadLocked = true;
-            holder.Target.Head.LookAtTarget.Position = cameraPos;
-            holder.Target.Head.LookAtTarget.LookMode = LookMode.Position;
-        }
-        if (targetType.HasFlag(GazeTargetType.Body))
-        {
-            holder.BodyLocked = true;
-            holder.Target.Body.LookAtTarget.Position = cameraPos;
-            holder.Target.Body.LookAtTarget.LookMode = LookMode.Position;
-        }
-
-        // Set target mode to Camera so the detour processes it (applies our locked positions)
-        holder.TargetMode = GazeTargetMode.Camera;
-        holder.TargetType = targetType;
-
-        _log.Debug($"GazeService: Locked gaze for actor {gameObject.GameObjectId}, type={targetType}");
     }
 
     /// <summary>
-    /// Disables gaze control for an actor, letting bones move naturally with their parents.
-    /// Use this for posing mode where gaze should not override bone positions.
+    /// Actor-list reconciliation by stable id: a departed source drops its
+    /// entry; a departed Entity target transitions its source to Off. Nothing
+    /// ever follows a reused address.
     /// </summary>
-    public void DisableGaze(IActor actor)
+    private void OnActorListChanged(ActorListChangedEvent _)
     {
-        if (actor.Address == nint.Zero)
-            return;
-
-        var gameObject = _objectTable.CreateObjectReference(actor.Address);
-        if (gameObject == null)
-            return;
-
-        if (!_lookAtHandles.TryGetValue(gameObject.GameObjectId, out var holder))
+        lock (_sync)
         {
-            holder = new LookAtDataHolder();
-            _lookAtHandles[gameObject.GameObjectId] = holder;
-        }
-
-        // Set to None mode - this makes the detour skip our processing entirely
-        // The original hook is still called, but since we have no handle with None mode,
-        // the game's default behavior (bones follow animation) is preserved
-        holder.TargetMode = GazeTargetMode.None;
-        holder.TargetType = GazeTargetType.None;
-        holder.EyesLocked = false;
-        holder.HeadLocked = false;
-        holder.BodyLocked = false;
-
-        // Set LookMode to None to disable gaze tracking entirely
-        holder.Target.Eyes.LookAtTarget.LookMode = LookMode.None;
-        holder.Target.Head.LookAtTarget.LookMode = LookMode.None;
-        holder.Target.Body.LookAtTarget.LookMode = LookMode.None;
-
-        _log.Debug($"GazeService: Disabled gaze for actor {gameObject.GameObjectId}");
-    }
-
-    public void UnlockGaze(IActor actor)
-    {
-        if (actor.Address == nint.Zero)
-            return;
-
-        var gameObject = _objectTable.CreateObjectReference(actor.Address);
-        if (gameObject == null)
-            return;
-
-        if (_lookAtHandles.TryGetValue(gameObject.GameObjectId, out var holder))
-        {
-            holder.EyesLocked = false;
-            holder.HeadLocked = false;
-            holder.BodyLocked = false;
-
-            // Reset to position tracking mode
-            holder.Target.Eyes.LookAtTarget.LookMode = LookMode.Position;
-            holder.Target.Head.LookAtTarget.LookMode = LookMode.Position;
-            holder.Target.Body.LookAtTarget.LookMode = LookMode.Position;
-
-            _log.Debug($"GazeService: Unlocked gaze for actor {gameObject.GameObjectId}");
-        }
-
-    }
-
-    /// <summary>
-    /// Lock or unlock a specific gaze target type at a position.
-    /// Matches Brio's SetTargetLock API.
-    /// </summary>
-    public void SetTargetLock(IActor actor, bool doLock, GazeTargetType targetType, Vector3 position)
-    {
-        if (actor.Address == nint.Zero)
-            return;
-
-        var gameObject = _objectTable.CreateObjectReference(actor.Address);
-        if (gameObject == null)
-            return;
-
-        if (!_lookAtHandles.TryGetValue(gameObject.GameObjectId, out var holder))
-        {
-            holder = new LookAtDataHolder();
-            _lookAtHandles[gameObject.GameObjectId] = holder;
-        }
-
-        // Ensure gaze is active (Camera mode)
-        if (holder.TargetMode == GazeTargetMode.None)
-        {
-            holder.TargetMode = GazeTargetMode.Camera;
-            holder.TargetType = GazeTargetType.All;
-        }
-
-        // Set/unset lock for specific part
-        if (targetType.HasFlag(GazeTargetType.Eyes))
-        {
-            holder.EyesLocked = doLock;
-            if (doLock)
+            if (_entries.Count == 0)
+                return;
+            List<ulong>? removed = null;
+            foreach (var (id, entry) in _entries)
             {
-                holder.Target.Eyes.LookAtTarget.Position = position;
-                holder.Target.Eyes.LookAtTarget.LookMode = LookMode.Position;
+                if (_objectTable.SearchById(id) == null)
+                {
+                    (removed ??= new List<ulong>()).Add(id);
+                    continue;
+                }
+                if (entry.Mode == GazeTargetMode.Entity && entry.TargetId != 0 &&
+                    _objectTable.SearchById(entry.TargetId) == null)
+                {
+                    entry.TargetId = 0;
+                    entry.Mode = GazeTargetMode.None;
+                    _log.Debug($"GazeService: gaze target of {id} despawned — gaze off.");
+                }
             }
+            if (removed != null)
+                foreach (var id in removed)
+                    _entries.Remove(id);
         }
-        if (targetType.HasFlag(GazeTargetType.Head))
-        {
-            holder.HeadLocked = doLock;
-            if (doLock)
-            {
-                holder.Target.Head.LookAtTarget.Position = position;
-                holder.Target.Head.LookAtTarget.LookMode = LookMode.Position;
-            }
-        }
-        if (targetType.HasFlag(GazeTargetType.Body))
-        {
-            holder.BodyLocked = doLock;
-            if (doLock)
-            {
-                holder.Target.Body.LookAtTarget.Position = position;
-                holder.Target.Body.LookAtTarget.LookMode = LookMode.Position;
-            }
-        }
-
-        _log.Debug($"GazeService: SetTargetLock for actor {gameObject.GameObjectId}, doLock={doLock}, type={targetType}");
-    }
-
-    public bool IsGazeLocked(IActor actor)
-    {
-        if (actor.Address == nint.Zero)
-            return false;
-
-        var gameObject = _objectTable.CreateObjectReference(actor.Address);
-        if (gameObject == null)
-            return false;
-
-        if (_lookAtHandles.TryGetValue(gameObject.GameObjectId, out var holder))
-        {
-            return holder.EyesLocked || holder.HeadLocked || holder.BodyLocked;
-        }
-
-        return false;
-    }
-
-    public bool IsPartLocked(IActor actor, GazeTargetType targetType)
-    {
-        if (actor.Address == nint.Zero)
-            return false;
-
-        var gameObject = _objectTable.CreateObjectReference(actor.Address);
-        if (gameObject == null)
-            return false;
-
-        if (_lookAtHandles.TryGetValue(gameObject.GameObjectId, out var holder))
-        {
-            if (targetType.HasFlag(GazeTargetType.Eyes) && holder.EyesLocked)
-                return true;
-            if (targetType.HasFlag(GazeTargetType.Head) && holder.HeadLocked)
-                return true;
-            if (targetType.HasFlag(GazeTargetType.Body) && holder.BodyLocked)
-                return true;
-        }
-
-        return false;
-    }
-
-    public bool IsGazeEnabled(IActor actor)
-    {
-        if (actor.Address == nint.Zero)
-            return false;
-
-        var gameObject = _objectTable.CreateObjectReference(actor.Address);
-        if (gameObject == null)
-            return false;
-
-        if (_lookAtHandles.TryGetValue(gameObject.GameObjectId, out var holder))
-        {
-            return holder.TargetMode != GazeTargetMode.None;
-        }
-
-        return false;
-    }
-
-    public void EnableGaze(IActor actor)
-    {
-        if (actor.Address == nint.Zero)
-            return;
-
-        var gameObject = _objectTable.CreateObjectReference(actor.Address);
-        if (gameObject == null)
-            return;
-
-        if (!_lookAtHandles.TryGetValue(gameObject.GameObjectId, out var holder))
-        {
-            holder = new LookAtDataHolder();
-            _lookAtHandles[gameObject.GameObjectId] = holder;
-        }
-
-        // Initialize with Camera mode like Brio
-        var cameraPos = _cameraService.GetCameraPosition();
-        holder.TargetMode = GazeTargetMode.Camera;
-        holder.TargetType = GazeTargetType.All;
-        holder.EyesLocked = false;
-        holder.HeadLocked = false;
-        holder.BodyLocked = false;
-
-        holder.Target = new LookAtSource
-        {
-            Body = new LookAtType { LookAtTarget = new LookAtTarget { LookMode = LookMode.Position, Position = cameraPos } },
-            Head = new LookAtType { LookAtTarget = new LookAtTarget { LookMode = LookMode.Position, Position = cameraPos } },
-            Eyes = new LookAtType { LookAtTarget = new LookAtTarget { LookMode = LookMode.Position, Position = cameraPos } },
-        };
-
-        // Also update gaze state so subsequent SetGazeTargetType calls don't reset to None mode
-        var state = GetGazeState(actor);
-        state.Mode = GazeTargetMode.Camera;
-        state.TargetType = GazeTargetType.All;
-
-        _log.Debug($"GazeService: Enabled gaze for actor {gameObject.GameObjectId}");
     }
 
     public void Dispose()
     {
         _actorLookAtLoop.Dispose();
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
+        _eventBus.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
     }
-}
-
-internal class LookAtDataHolder
-{
-    public GazeTargetMode TargetMode;
-    public GazeTargetType TargetType;
-    public nint TargetEntityAddress;
-    public LookAtSource Target;
-
-    // Lock state - when locked, gaze is frozen at current position
-    public bool EyesLocked;
-    public bool HeadLocked;
-    public bool BodyLocked;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -543,13 +470,18 @@ internal struct LookAtType
 internal struct LookAtTarget
 {
     [FieldOffset(0x08)] public LookMode LookMode;
+    // Position and the actor-target id are a union at 0x10 — corroborated by
+    // Brio ActorLookAtService.LookAtTarget and Ktisis ActorGaze.Gaze.
     [FieldOffset(0x10)] public Vector3 Position;
+    [FieldOffset(0x10)] public ulong ActorTargetId;
 }
 
 internal enum LookMode
 {
     None = 0,
-    Frozen = 1,
+    // Value 1 is id-based object tracking (Brio LookMode.Target / Ktisis
+    // GazeMode.Object) — previously mislabeled "Frozen".
+    Target = 1,
     Pivot = 2,
     Position = 3,
 }
