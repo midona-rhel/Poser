@@ -141,7 +141,14 @@ public static class BoneMatrixView
 
             ImGui.SetCursorScreenPos(new Vector2(x, pos.Y + (RowH - PillSize) / 2f * s));
             ImGui.InvisibleButton($"##{id}-p{i}", new Vector2(PillSize, PillSize) * s);
+            // Capture ALL item state for THIS pill immediately after its
+            // InvisibleButton: the label below submits another ImGui item, so
+            // a later IsItemClicked() would belong to it — the round-1
+            // "clicking a pill selects the previous pill" defect.
             bool hovered = ImGui.IsItemHovered();
+            bool clicked = ImGui.IsItemClicked();
+            bool ctrl = ImGui.GetIO().KeyCtrl;
+            bool shift = ImGui.GetIO().KeyShift;
 
             if (pill.Selected)
             {
@@ -163,8 +170,8 @@ public static class BoneMatrixView
                     FontWeight.SemiBold, pill.Selected ? TextPrimary : hovered ? TextPrimary : TextSecondary, mono: true);
             }
 
-            if (ImGui.IsItemClicked())
-                vm.OnPill?.Invoke(pill, ImGui.GetIO().KeyCtrl, ImGui.GetIO().KeyShift);
+            if (clicked)
+                vm.OnPill?.Invoke(pill, ctrl, shift);
 
             x += (PillSize + PillGap) * s;
             i++;
