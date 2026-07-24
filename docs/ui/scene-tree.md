@@ -57,6 +57,10 @@ keeps the two operations explicit instead of overloading one ambiguous
   expansion without selecting; clicking the row selects without changing
   expansion. An actor whose skeleton is temporarily unresolved shows the
   chevron faded and inert — it is never erased.
+- A category containing a bone whose display name IS the category name
+  (Root → `n_root` "Root") renders that bone AS the category row instead of
+  a redundant Root > Root pair: the row body selects the bone, its chevron
+  discloses the category's remaining bones, and its badge counts them.
 - A user collapse or expand action persists for the lifetime of the window.
 - When a bone selection originates elsewhere (body map, matrix, 3D, overlay,
   gizmo), the selected bone's actor and category are revealed **once, at the

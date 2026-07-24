@@ -23,7 +23,9 @@ not added to the `WindowSystem`.
 GPose. The skeleton overlay starts **Off** each GPose/UI session: only the
 toolbar Armature action opens it, its active state reflects the actual window
 state, a user toggle persists while the session remains active, and session
-end closes it so the next session starts Off again. Disabling skeleton dots
+end closes it so the next session starts Off again. While the overlay is
+open, holding **Alt** temporarily hides the skeleton dots for an
+unobstructed view; drawing resumes on release. Disabling skeleton dots
 never disables transform manipulation — the gizmo canvas is independent.
 Settings remains independently user-controlled. The constructor wires the main
 titlebar skeleton toggle to the skeleton canvas. `Dispose` unwires that event

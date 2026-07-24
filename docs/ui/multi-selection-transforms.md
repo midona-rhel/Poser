@@ -52,6 +52,13 @@ the entire group through the same runtime restore path as cancel.
 - Root filtering and symmetry pairing key bones by stable
   `BoneId` (slot, partial, index, canonical name), so duplicate Havok names
   across body, face, hair, weapon, or accessory partials can never merge.
+- Mirroring — the symmetry gesture mode, whole-pose Mirror, and single-bone
+  Flip — reflects across the **sagittal plane** (lateral X): only the
+  lateral position component negates and the rotation gets the X-plane
+  mirror conjugation `(−x, y, z, −w)`; scale is unchanged. The former
+  negate-everything/conjugate convention was Brio/Ktisis' INVERSE mode — a
+  different feature that produced unrelated poses on the paired bone
+  (round-1 walkthrough finding).
 
 ## Reference decisions
 
