@@ -20,9 +20,6 @@ public sealed class ExpressionInspectorSection
     public float Draw(Vector2 cursor, float width, IActor actor, float s)
     {
         float h = 0f;
-        ViewText.Label(cursor, "Expression · Ktisis blending", 11f,
-            FontWeight.Regular, InspectorLayout.LabelColor);
-        h += 26f * s;
 
         var units = _expressions.GetUnits(actor);
         if (units.Count == 0)

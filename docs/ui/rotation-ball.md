@@ -15,10 +15,14 @@ conceptual sibling of Ktisis `Gizmo2D` and Brio `ImBrioGizmo.DrawRotation`.
   size and no perspective; the camera view matrix is decomposed to its
   rotation and X-mirrored for the game's view handedness, Brio's
   convention).
-- In **Local** mode the rings are oriented from the selected target's current
-  model rotation (parent-composed for bones, frozen parent during a
-  gesture). In **World** mode they are world axes viewed through the camera.
-  Rotating the camera or the target visibly changes the arcs and circle
+- In **Local** mode the rings are oriented from the selected bone's
+  **parent frame** — the frame the displayed parent-local rotation and the
+  numeric X/Y/Z wells live in — so the red ring always rotates about the
+  same X the X well edits (round-1 user feedback: rings oriented from the
+  bone's own rotated axes drifted apart from the wells). The parent is
+  frozen during a gesture; actors, having no parent, use the world frame.
+  In **World** mode the rings are world axes viewed through the camera.
+  Rotating the camera or the parent visibly changes the arcs and circle
   foreshortening.
 - Front-facing ring segments use the shared transform-axis palette at full
   strength; rear-facing segments use the same hue at a restrained low alpha,
@@ -43,8 +47,9 @@ conceptual sibling of Ktisis `Gizmo2D` and Brio `ImBrioGizmo.DrawRotation`.
 - The shared drag-modifier policy applies (Ctrl fine 0.1×, Shift coarse
   10×, Ctrl+Shift 1×). The mouse wheel is never consumed and never edits —
   it keeps scrolling the inspector rail.
-- Local applies the delta about the target's own axes; World conjugates the
-  delta through the frozen parent rotation so it acts about world axes.
+- Local applies the delta in the parent frame (pre-multiplying the frozen
+  drag-start local rotation); World conjugates the delta through the frozen
+  parent rotation so it acts about world axes.
 - One drag produces one clean gesture and one history item via
   `PoseInspectorPane.RotateSelectionGizmo`/`CommitRotation`; Escape,
   selection change, and external cancellation restore the frozen baseline

@@ -124,6 +124,8 @@ public class PoseInspectorPane
         }
     }
 
+    private bool _openTranslation = true;
+    private bool _openExpression = true;
     private bool _openGaze = true;
     private bool _openIk;
     private bool _openPose = true;
@@ -293,14 +295,16 @@ public class PoseInspectorPane
     }
 
     /// <summary>
-    /// Orientation facts for the compact rotation gizmo: the effective
-    /// primary's current model rotation (parent-composed for bones — frozen
-    /// parent while a gesture is live), the selected Local/World frame, and
-    /// editability.
+    /// Orientation facts for the compact rotation gizmo. Local mode's ring
+    /// frame is the PARENT's model rotation — the frame the displayed
+    /// parent-local rotation (and the numeric X/Y/Z wells) live in — so
+    /// dragging the red ring rotates about the same X the X well shows.
+    /// The parent is frozen while a gesture is live. Actors have no parent:
+    /// their local frame is the world frame.
     /// </summary>
-    public (Quaternion ModelRotation, bool WorldFrame, bool CanEdit) GizmoOrientation()
+    public (Quaternion RingFrame, bool WorldFrame, bool CanEdit) GizmoOrientation()
     {
-        var (transform, canEdit) = ReadTransform();
+        var (_, canEdit) = ReadTransform();
         var parentRotation = Quaternion.Identity;
         if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } boneId })
         {
@@ -310,14 +314,15 @@ public class PoseInspectorPane
             parentRotation = parent?.Rotation ?? Quaternion.Identity;
         }
         bool world = _editorState.TransformOrientation == TransformOrientation.Global;
-        return (Quaternion.Normalize(parentRotation * transform.Rotation), world, canEdit);
+        return (world ? Quaternion.Identity : parentRotation, world, canEdit);
     }
 
     /// <summary>
     /// Compact ring-gizmo input: the TOTAL rotation from drag start, applied
-    /// in the selected Local/World frame through the same clean gesture as
-    /// every other rotation surface. Local composes about the target's own
-    /// axes on the frozen drag-start rotation; World conjugates through the
+    /// in the selected frame through the same clean gesture as every other
+    /// rotation surface. Local deltas act in the parent frame — the frame
+    /// the rings display and the numeric wells edit — so they pre-multiply
+    /// the frozen drag-start local rotation; World conjugates through the
     /// frozen parent so the delta acts about world axes. No frame feeds a
     /// native result back as the next frame's baseline.
     /// </summary>
@@ -340,7 +345,7 @@ public class PoseInspectorPane
         }
         else
         {
-            rotation = Quaternion.Normalize(start.Rotation * totalDelta);
+            rotation = Quaternion.Normalize(totalDelta * start.Rotation);
         }
         _dragEuler = null; // the numeric wells re-derive from the quaternion
         ApplyTransformSession(transform with { Rotation = rotation });
@@ -360,15 +365,26 @@ public class PoseInspectorPane
         var dl = ImGui.GetWindowDrawList();
         var cursor = origin;
 
-        // M11: Anamnesis-column value sections (no TRANSFORM header)
-        cursor.Y += DrawTransform(dl, cursor, width, s);
+        // Every rail cluster is a collapsible section; disclosure persists
+        // for the pane's lifetime like GAZE/IK/POSE.
+        cursor.Y += InspectorLayout.Section(dl, cursor, width, "insp", "TRANSLATION", ref _openTranslation, s, topBorder: true);
+        if (_openTranslation)
+        {
+            cursor.Y += InspectorLayout.BodyGap * s;
+            cursor.Y += DrawTransform(dl, cursor, width, s);
+        }
         cursor.Y += 12f * s;
 
         var actor = OwningActor();
         var owningSkeleton = OwningSkeleton();
         if (actor != null && _expressionSection.CanDraw)
         {
-            cursor.Y += _expressionSection.Draw(cursor, width, actor, s);
+            cursor.Y += InspectorLayout.Section(dl, cursor, width, "insp", "EXPRESSION", ref _openExpression, s, topBorder: true);
+            if (_openExpression)
+            {
+                cursor.Y += InspectorLayout.BodyGap * s;
+                cursor.Y += _expressionSection.Draw(cursor, width, actor, s);
+            }
             cursor.Y += 12f * s;
         }
         if (owningSkeleton != null)

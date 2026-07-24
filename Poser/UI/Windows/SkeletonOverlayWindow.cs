@@ -107,6 +107,11 @@ public class SkeletonOverlayWindow : Window
         var io = ImGui.GetIO();
         var mousePos = io.MousePos;
 
+        // Holding Alt temporarily hides the skeleton dots for an unobstructed
+        // view; the window stays open and interaction resumes on release.
+        if (io.KeyAlt)
+            return;
+
         var selectedIds = _selection.Selected.ToHashSet();
         var bones = new List<BoneDisplayData>();
         var actors = new List<ActorDisplayData>();
