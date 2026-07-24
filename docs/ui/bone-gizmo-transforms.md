@@ -47,9 +47,14 @@ This is a correctness boundary, not merely an epsilon cleanup. It prevents matri
 The primary bone's constrained change becomes the gesture's single
 `TransformDelta`; `TransformGestureService.Update` applies it to every frozen
 secondary baseline. Selected descendants are removed before `Begin` whenever a
-selected ancestor already propagates the same edit (`PoseMath.FilterSelectionRoots`
-semantics applied to snapshot descriptors). Virtual-bone constituents pass
-through the same root filter.
+selected ancestor already propagates the same edit. The shared
+`TransformTargetResolver` produces the effective transform selection from the
+ordered session and the snapshot: the first surviving root in original
+selection order is the effective primary that anchors gizmo placement and
+supplies the gesture baseline — the inspector consumes the identical
+resolution, so the two surfaces can never disagree. Parent/child selections
+therefore never compound: the descendant's edit arrives only once, through
+the ancestor's propagation.
 
 Actor gizmos use the same component constraint and relative-delta contract. A
 multi-actor world-gizmo gesture edits every selected actor and publishes the
@@ -59,7 +64,8 @@ complete group to history.
 
 - Brio `PosingOverlayWindow`: uses a tracking transform during a bone gizmo drag instead of re-reading the live bone every frame.
 - Ktisis overlay transform targets: isolate editor manipulation from the underlying target application.
-- Poser `orbit-rotation-design.md`: defines the explicit alternate pivot-orbit workflow.
+- Poser `orbit-rotation-design.md`: defines the explicit alternate pivot-orbit workflow (frozen clean-gesture pivot; the strategy machinery is deleted).
+- IK arming is session state configured through the stable-id `CleanPoseFacade.ConfigureIk` at gesture start; no entity leaves the runtime.
 
 ## Verification
 

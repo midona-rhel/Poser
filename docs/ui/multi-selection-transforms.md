@@ -20,8 +20,9 @@ wheel steps, and typed values from disagreeing.
 ## Inspector session
 
 The inspector opens one gesture per field interaction. At pointer-down (or
-typed-edit start) it dispatches `Begin` with the complete compatible target
-list as `TransformTargetId` values; each frame it converts the current UI
+typed-edit start) it dispatches `Begin` with the `TransformTargetResolver`
+effective target list (selected descendants removed; the first surviving root
+in original selection order is the effective primary and display source); each frame it converts the current UI
 value into a total `TransformDelta` from the gesture's pointer-down value and
 dispatches `Update`; release commits, Escape cancels. The gesture service owns
 the frozen baselines — the pane retains only display values.

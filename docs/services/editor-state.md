@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Plain property bag for editor-wide *tool* settings — gizmo mode, orientation, overlay display mode, symmetry. Explicitly **not** selection (that is `ISelectionService`) and **not** persisted configuration (that is `ConfigurationService`). UI reads/writes properties directly each frame.
+Plain property bag for editor-wide *tool* settings — gizmo mode, orientation, overlay display mode, symmetry. Explicitly **not** selection (that is the application `SelectionSession`) and **not** persisted configuration (that is `ConfigurationService`). UI reads/writes properties directly each frame.
 
 ## Public API
 

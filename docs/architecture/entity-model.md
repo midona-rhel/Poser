@@ -32,9 +32,9 @@ An entity instance is a current binding, not stable identity.
 store those ids. Every native operation resolves the id again immediately
 before use.
 
-`CleanSelectionServiceAdapter` is the remaining compatibility projection from
-stable selection ids back to `IEntity` objects required by existing UI
-callers. New application code must not accept `IEntity`.
+The legacy selection projection is gone: retained surfaces dispatch
+`SelectionId` to `SelectionSession` directly, and spatial reads resolve
+through the runtime viewport projection for one frame at a time.
 
 ## Ownership and invalidation
 

@@ -58,8 +58,10 @@ active, but they do not retain native baselines or calculate incremental native
 writes. They convert the current UI value to a total `TransformDelta` from the
 gesture's pointer-down value and dispatch `Update`.
 
-Presentation supplies targets as `TransformTargetId` values derived from
-`SelectionSession.Selected`. The plugin-side `CleanTransformFacade` is a
+Presentation supplies targets as `TransformTargetId` values from the shared
+`TransformTargetResolver` (ordered effective selection: selected descendants
+removed, first surviving root in original selection order as the effective
+primary). The plugin-side `CleanTransformFacade` is a
 stateless convenience over this service: it accepts stable ids only, expands
 linked-bone and symmetry partners from the scene snapshot and
 `BoneLinkCatalog` before `Begin`, and owns no gesture, selection, or history
@@ -79,6 +81,7 @@ When linked editing is enabled, `BoneLinkCatalog` expansion also happens before
 side-effects.
 Copy/mirror symmetry is represented by a per-target `TransformDeltaMode`.
 Mirrored partners enter the same capture, rollback, commit, and history patch.
+IK arms per gesture through the stable-id `CleanPoseFacade.ConfigureIk`.
 When IK is armed, the game adapter evaluates the resulting clean translation
 layer through its native IK solver. IK configuration is session state; the
 gesture and its history still contain only stable targets and pose layers.

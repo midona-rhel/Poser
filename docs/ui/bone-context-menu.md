@@ -1,7 +1,7 @@
 # Bone context menu
 
 Right-clicking a sidebar bone opens hierarchy and pose actions bound to the same
-`ISelectionService` and `IBonePosingService` as every other pose surface.
+the application `SelectionSession` (stable ids, hierarchy from snapshot descriptors) and `IBonePosingService` as every other pose surface.
 
 - **Select parent** replaces selection with the direct parent.
 - **Select children** selects the bone plus every descendant. Transform

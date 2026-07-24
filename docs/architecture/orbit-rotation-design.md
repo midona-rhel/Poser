@@ -31,53 +31,40 @@ The game itself "works fine" because its animation pipeline derives every pose
 from authored data as a function of TIME — never from last frame's output.
 The fix is restoring exactly that property to the drag loop.
 
-## The design (three strategies, switchable in game)
+## The design (frozen clean gesture)
 
-`Poser.Core.OrbitMath` (pure) + `OrbitSession` (drag transaction) +
-`IBonePosingService.BeginOrbitSession`. Gizmo wiring: with orbit enabled and
-the Rotate operation, the drag creates a session at drag start; the gizmo is
-fed the session's pure-math target (never live memory); each frame's gizmo
-delta composes into a running TOTAL rotation; the session evaluates targets
-from the immutable snapshot.
+Orbit is not a second transform system: it is the ordinary
+`TransformGestureService` gesture with a pivot frozen at Begin.
 
-- **SnapshotAbsolute (default)** — target = pivot + R_total·(base − pivot),
-  rot = R_total·base_rot, everything derived from the drag-start snapshot; the
-  session's stack contribution is REPLACED each frame
-  (`BonePoseInfo.SetStackTransform`), not accumulated. Idempotent by
-  construction: error cannot compound because no frame's output is any
-  frame's input. Radius preserved exactly (normalization inside Evaluate).
-- **PureIncrementalRebase** — increments still accumulate in the stack, but
-  each increment is computed between two exact snapshot evaluations. Additive
-  float error only. Exists for comparison.
-- **LiveIncremental (control)** — deliberately reproduces the broken
-  structure (per-frame base = live transform) so the difference can be
-  DEMONSTRATED in game. Clearly labeled in the command output.
+- With Orbit enabled and the Rotate tool active, the gizmo begins a clean
+  gesture whose `PivotMode` is `Custom` and whose pivot point freezes at
+  pointer-down (parent position, frozen selection centroid, or the
+  user-supplied point). The gesture space is World.
+- Every frame converts the manipulated matrix into a TOTAL delta from the
+  frozen Begin baseline and dispatches `Update`; the service recomputes every
+  target from its immutable captured state. No frame's output is any frame's
+  input, so the radius cannot compound — the same idempotence-by-construction
+  property the analysis above demands, now provided by the single gesture
+  path instead of a dedicated orbit session.
+- The gizmo adjusts only its own presentation baseline for pivot rotation;
+  it retains no native baselines and no per-bone state.
+- Escape, tool/orientation change, selection change, and scene invalidation
+  cancel the gesture exactly once and restore the frozen baseline; commit
+  writes one history patch.
 
-Safety net regardless of strategy: `OrbitMath.IsSane` (NaN/Inf/magnitude
-guard) — a failed frame is dropped and counted (`RejectedFrames`), never
-written. A bone can lag a frame; it can never fly away.
+The former `OrbitSession`/`OrbitMath` strategy machinery (Snapshot / Rebase /
+Live comparison modes) is deleted; the snapshot-absolute computation is the
+only production path.
 
 ## Pivots
 
-`OrbitPivotMode`: **Parent** (headline; parent bone's model-space position),
-**SelectionCenter** (centroid — group orbits), **Custom** (reserved for the
-user-placed pivot-point entity, `EntityType.PivotPoint`, when its UI lands).
+`Poser.Core.OrbitPivotMode`: **Parent** (headline; parent bone's model-space
+position read through the viewport projection at Begin), **SelectionCenter**
+(frozen centroid of the effective transform targets — group orbits),
+**Custom** (user-supplied world-space point).
 
-## Usage (until the pane control lands)
+## Limitations (deliberate)
 
-`/poser orbit on` · `/poser orbit pivot parent|center` ·
-`/poser orbit strategy snapshot|rebase|live` — then rotate-drag as usual.
-
-## v1 limitations (deliberate)
-
-Symmetry pairs and IK do not participate in orbit drags (plain rotations
-only); undo works through the normal drag-session history events. Local-space
-authoring (writing the orbit as local pose so Havok propagates it) is a
-possible fourth strategy if model-space writing shows interference in game —
-tracked in the checklist notes.
-
-## Verification
-
-The live orbit scenarios cover radius preservation, idempotence, full-circle,
-denormalized-input resistance, repeated-step boundedness, the divergence repro,
-and the sanity guard. See P-STAB item 9.
+Symmetry pairs and IK participate exactly as in any other gesture (they are
+explicit targets or session state of the same gesture). Undo restores through
+the normal `TransformHistory` patch.

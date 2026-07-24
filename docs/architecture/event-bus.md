@@ -14,8 +14,6 @@ results directly.
 | `GPoseStateChangedEvent` | GPose was entered or left. |
 | `ActorListChangedEvent` | The current native actor projection changed. |
 | `SkeletonChangedEvent` | An actor's skeleton was created or replaced. |
-| `SelectionChangedEvent` | Compatibility projection of the complete stable-id selection changed. |
-| `BoneSelectionChangedEvent` | Compatibility projection of the first selected bone changed. |
 | `BoneTransformChangedEvent` | A retained runtime path changed a bone transform. |
 
 The event definitions live in `PosingCore/Core/Events.cs`. Publishing and

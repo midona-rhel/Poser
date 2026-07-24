@@ -2,7 +2,7 @@
 
 **Source:** `PosingCore/Services/IActorManager.cs`, `Poser.Game/LegacyRuntime/ActorManager.cs`
 
-**Purpose:** Tracks the lifecycle of actors visible in GPose — discovery, refresh, and teardown. It scans the Dalamud object table's GPose slot range (indices 201–439) each frame, rebuilds its `IActor` list when the set of native addresses changes, and clears everything on GPose exit. Selection is explicitly out of scope (that is `ISelectionService`); this service is purely "what actors exist right now".
+**Purpose:** Tracks the lifecycle of actors visible in GPose — discovery, refresh, and teardown. It scans the Dalamud object table's GPose slot range (indices 201–439) each frame, rebuilds its `IActor` list when the set of native addresses changes, and clears everything on GPose exit. Selection is explicitly out of scope (that is the application `SelectionSession`); this service is purely "what actors exist right now".
 
 **Public API:**
 
