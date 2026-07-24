@@ -69,17 +69,16 @@ immediately and is absent when there is nothing to clear.
 | Click category caret/row | Expand or collapse only; categories are not entities. |
 | Right-click actor | Open target, Hide/Show, rename, clone, companion, and spawned-actor despawn actions without changing transform semantics. |
 
-Every selected row receives the active treatment, while the first selected entity remains the inspector's primary target. Multi-bone rail operations read the complete selection from `ISelectionService`. Incompatible Ctrl/Shift targets replace the selection: actors never coexist with bones, and bones from different actors never form one transform group.
-
-The main window requests each actor's skeleton while assembling the tree.
-Skeleton discovery therefore does not depend on the optional world overlay.
+Every selected row receives the active treatment, while the first selected id remains the inspector's primary target. Multi-bone rail operations read the complete selection from `SelectionSession.Selected`. Incompatible Ctrl/Shift targets replace the selection: actors never coexist with bones, and bones from different actors never form one transform group. The session enforces this; the tree does not pre-filter.
 
 ## Ownership and data flow
 
-- `MainWindow.BuildSidebar` converts live services and filter state into `ShellSidebarSection` and `ShellSidebarRow` view models.
-- `MainWindow.OnRowClicked` interprets keyboard modifiers and delegates selection mutation to `ISelectionService`.
+- `MainWindow.BuildSidebar` converts `SceneSession.Snapshot` descriptors and filter state into `ShellSidebarSection` and `ShellSidebarRow` view models. Actor rows carry `SelectionId.ForActor`, bone rows carry `SelectionId.ForBone`; category rows carry a UI-only string key and never a selection id.
+- Bone categories are derived in the UI from each descriptor's canonical bone name via the static bone-metadata table; they are presentation grouping, not snapshot or selection identity.
+- `MainWindow.OnRowClicked` interprets keyboard modifiers and delegates selection mutation to `SelectionSession` (`Select`, `Toggle`, `SelectRange` with the visible compatible `SelectionId` order).
 - `AppShellView.DrawSidebar` owns only drawing, scrolling, search-field input, and pointer hit testing.
-- Collapse state belongs to `MainWindow`, not entities, because category rows are view-only groupings and do not exist in the core entity model.
+- Collapse state belongs to `MainWindow`, not descriptors, because category rows are view-only groupings.
+- External selection reveal resolves the selected bone id against the snapshot to find its actor row and derived category, then expands both.
 
 ## Reference decisions
 
@@ -89,7 +88,7 @@ Skeleton discovery therefore does not depend on the optional world overlay.
 
 ## Known risks and verification
 
-- Filtering is rebuilt from live entities every frame; verify acceptable cost with several actors and modded skeletons.
+- Filtering is rebuilt from the scene snapshot every frame; verify acceptable cost with several actors and modded skeletons.
 - Range selection follows currently visible compatible entity rows, so collapsed,
   filtered-out, and differently typed entities are intentionally excluded.
 - In-game verification must cover actor-root selection, category collapse persistence, external bone selection reveal, actor/bone/raw-name searches, Ctrl toggle, Shift range, and right-click actions.

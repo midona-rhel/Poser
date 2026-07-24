@@ -6,28 +6,36 @@ Multi-selection transforms make Ctrl/Shift scene-tree selection meaningful: edit
 
 ## Relative-delta contract
 
-`PoseMath.ApplyRelativeDelta(primaryBefore, primaryAfter, secondaryBefore)` transfers a primary edit to another transform:
+A gesture carries one domain `TransformDelta` derived from the primary's
+frozen baseline. `TransformGestureService.Update` applies that delta to every
+frozen target baseline (position additive, rotation composed, scale
+multiplicative, per-target `TransformDeltaMode` for mirrored partners). The
+primary receives its absolute edited value by construction; secondaries
+receive the delta relative to their own frozen baselines — never the primary's
+absolute value.
 
-- Position uses the primary's additive offset.
-- Scale uses the primary's additive offset.
-- Rotation computes the primary's quaternion delta, moves it through world orientation, and applies it in the secondary transform's local orientation.
-
-This is the same rule previously embedded in `GizmoOverlayWindow`. Moving it to `PoseMath` prevents the gizmo, rotation ball, drag wells, wheel steps, and typed values from disagreeing; the gizmo now calls the shared helper too.
+One shared rule in one service prevents the gizmo, rotation ball, drag wells,
+wheel steps, and typed values from disagreeing.
 
 ## Inspector session
 
-At the first changed frame, `PoseInspectorPane` snapshots every selected actor or bone of the primary type. On each subsequent frame it:
+The inspector opens one gesture per field interaction. At pointer-down (or
+typed-edit start) it dispatches `Begin` with the complete compatible target
+list as `TransformTargetId` values; each frame it converts the current UI
+value into a total `TransformDelta` from the gesture's pointer-down value and
+dispatches `Update`; release commits, Escape cancels. The gesture service owns
+the frozen baselines — the pane retains only display values.
 
-1. Applies the requested value to the primary.
-2. Computes the relative change from the primary's previous value.
-3. Applies that change to each secondary entity from its own previous value.
-4. Retains the resulting values as the next frame's baseline.
-
-The session is cleared on release, selection change, or cancellation. Bone snapshots and application values are model-space even though the primary rail displays parent-local values.
+Selection change, tool/space change, and scene invalidation cancel the active
+gesture before the new target is shown. Bone values display parent-local; the
+pane composes the edited local value to an absolute model transform once and
+derives the domain delta from the frozen model transform.
 
 ## History
 
-A multi-entity gesture records one `CompositeAction`, containing one `TransformActorAction` or `TransformBoneAction` per changed entity. One Undo therefore restores the entire group. Single-entity gestures retain the existing individual history action.
+A completed gesture — single- or multi-target — commits exactly one
+`TransformPatch` holding every target's before/after state. One undo restores
+the entire group through the same runtime restore path as cancel.
 
 ## Selection boundaries
 

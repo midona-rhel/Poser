@@ -3,8 +3,9 @@
 ## Purpose
 
 The matrix is a compact, complete selection surface for standard and modded
-bones. It shares `ISelectionService` with the scene tree, maps, 3D diagram, and
-world overlay.
+bones. It shares `SelectionSession` with the scene tree, maps, 3D diagram, and
+skeleton overlay: pills carry `SelectionId` values built from snapshot bone
+descriptors, and every mutation goes to the session directly.
 
 ## Interaction
 

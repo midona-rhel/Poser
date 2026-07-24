@@ -1,49 +1,40 @@
-# Selection authority and compatibility adapter
+# Selection authority (legacy projection removed)
 
 ## Purpose
 
-`Poser.Application.Selection.SelectionSession` is the sole selection authority.
-It stores generation-aware `SelectionId` values rather than native entity
-objects. The UI still consumes `ISelectionService`, so
-`CleanSelectionServiceAdapter` projects the stable selection onto current
-`IEntity` bindings.
+`Poser.Application.Selection.SelectionSession` is the sole selection
+authority (`docs/application/selection-session.md`). This document records the
+end-state of the legacy projection that used to sit between it and the UI.
 
-## SelectionSession
+## Removed compatibility surface
 
-The session owns:
+PBI-001 removed the two-representation boundary:
 
-- ordered selected ids, with the first item as primary;
-- an anchor for range selection;
-- select, add, remove, toggle, promote, range, and clear operations;
-- compatibility rules that keep a selection homogeneous;
-- lifecycle reconciliation through an id resolver.
+- `PosingCore.Services.ISelectionService` — the `IEntity`-based selection
+  interface — is deleted;
+- `Poser.Game.Selection.CleanSelectionServiceAdapter` — the projection of the
+  stable selection onto live `IEntity` bindings — is deleted, along with its
+  `ISelectionService` registration;
+- the mirrored `SelectionChangedEvent` / `BoneSelectionChangedEvent`
+  publications are deleted; no consumer observes selection through the event
+  bus.
 
-Actors group with actors. Concrete bones group only with bones from the same
-actor lineage. Virtual bone groups use external selection ids and follow their
-own compatible kind. A conflicting selection replaces the current group.
-
-## CleanSelectionServiceAdapter
-
-The adapter:
-
-1. maps current actors/bones through `StableBindingRegistry`;
-2. delegates every mutation to `SelectionSession`;
-3. resolves stable ids back to the latest live entity projection;
-4. updates transitional `IsSelected`/selection lifecycle hooks;
-5. publishes `SelectionChangedEvent` and `BoneSelectionChangedEvent` for
-   existing UI consumers.
-
-The adapter owns no independent list or selection policy. Its `_resolved`
-collection is a replaceable projection of the application session.
+Retained surfaces (main tree, Body/Face maps, matrix, 3D diagram, skeleton
+overlay, inspector, gizmo, pose-file filtering, live test harness) consume
+`SelectionSession` directly with `SelectionId` values and read scene rows from
+`SceneSession.Snapshot`.
 
 ## Lifecycle
 
-`CleanSceneLifecycle` reconciles selection when actors disappear, skeletons are
-rebuilt, or GPose ends. An unresolved or stale generation is removed instead of
-retaining a dead native reference.
+`CleanSceneLifecycle` still reconciles selection when actors disappear,
+skeletons are rebuilt, or GPose ends. An unresolved or stale generation is
+removed instead of retaining a dead native reference. Nothing changed here —
+reconciliation always lived in the clean session.
 
-## Migration rule
+## Rule
 
-New application/runtime workflows consume `SelectionSession` and stable ids
-directly. `ISelectionService` remains only until the main window, inspector,
-graphical pane, and viewport overlays no longer require `IEntity`.
+No new code may reintroduce an entity-based selection interface, a selection
+mirror event, or a second selected-item collection. A surface that needs
+selection data reads the session; a surface that needs spatial data for a
+selected id uses the runtime viewport projection
+(`docs/game/viewport-projection.md`).

@@ -35,6 +35,28 @@ not receive other windows. A piece of main content that needs independent
 lifetime or state becomes a pane/component first; adding a new product window
 requires an explicit product-scope update.
 
+## State ownership
+
+The UI projects session state and dispatches commands. It may own:
+
+- filter text;
+- category expansion state;
+- active Body/Face/Matrix/3D mode;
+- hover state;
+- typed-field and pointer-drag widget state;
+- display formatting.
+
+It must not own:
+
+- another selected-entity collection (selection is `SelectionSession`);
+- native transform baselines (gestures freeze baselines in
+  `TransformGestureService`);
+- incremental pose accumulation;
+- undo/redo state (`TransformHistory` is the only journal);
+- a cached native entity or pointer used as command identity — rows and
+  targets carry `SelectionId`/`TransformTargetId`, and spatial reads go
+  through the runtime viewport projection for one frame at a time.
+
 ## Physical project
 
 The former renderer and widget projects are one physical `Poser.UI` assembly.

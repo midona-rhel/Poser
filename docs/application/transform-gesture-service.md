@@ -58,6 +58,15 @@ active, but they do not retain native baselines or calculate incremental native
 writes. They convert the current UI value to a total `TransformDelta` from the
 gesture's pointer-down value and dispatch `Update`.
 
+Presentation supplies targets as `TransformTargetId` values derived from
+`SelectionSession.Selected`. The plugin-side `CleanTransformFacade` is a
+stateless convenience over this service: it accepts stable ids only, expands
+linked-bone and symmetry partners from the scene snapshot and
+`BoneLinkCatalog` before `Begin`, and owns no gesture, selection, or history
+state. Entity-accepting entry points do not exist; rest-state display values
+come from the runtime viewport projection
+(`docs/game/viewport-projection.md`), never from retained entities.
+
 Inspector bone values are parent-local for readability. Its adapter composes
 the edited local value into an absolute model transform once, then derives the
 domain delta from the frozen model transform. This prevents parent rotation or

@@ -14,9 +14,20 @@ gesture snapshot.
 
 ## Stable drag baseline
 
-At the start of a gesture the window captures each affected bone's current model-space transform. After each accepted frame, the resulting target transform becomes that bone's next gizmo baseline.
+At pointer-down the window dispatches `TransformGestureService.Begin` with the
+selection's `TransformTargetId` list; the service captures every target once.
+Each subsequent frame converts the manipulated matrix into a **total**
+`TransformDelta` from the frozen pointer-down baseline and dispatches
+`Update`. Rest-state placement reads model transforms through the runtime
+viewport projection (`docs/game/viewport-projection.md`).
 
-The drag loop must not reconstruct its next input from `IBone.LastTransform`. Havok propagation and cache refreshes can alter live model-space data between frames. Feeding that data back through matrix decomposition makes an in-place rotation accumulate position changes and visually orbit an unrelated pivot. Brio avoids this feedback with its tracking transform; Poser uses the per-bone `_boneTrackingTransforms` dictionary for the same contract.
+The drag loop must not reconstruct its next input from live bone data. Havok
+propagation and cache refreshes can alter live model-space data between
+frames; feeding that back through matrix decomposition makes an in-place
+rotation accumulate position changes and visually orbit an unrelated pivot.
+Brio avoids this feedback with its tracking transform; Poser's equivalent is
+the gesture's frozen baseline — the window retains no per-bone native
+baseline dictionary of its own.
 
 `ImGuizmo.IsUsing()` is sampled after `ImGuizmo.Manipulate(...)`. This is required because the first call that begins a drag can change the matrix while the pre-call `IsUsing` value still describes the previous frame. Poser publishes `TransformDragStartedEvent` after that detection but before applying the first result, allowing history to capture the true pre-drag state.
 
@@ -33,7 +44,12 @@ This is a correctness boundary, not merely an epsilon cleanup. It prevents matri
 
 ## Multi-selection
 
-The primary bone's constrained change is transferred to every selected root bone with `PoseMath.ApplyRelativeDelta`. Each secondary uses its own last accepted target as the baseline, and that target is updated after every accepted frame. `PoseMath.FilterSelectionRoots` removes selected descendants whenever a selected ancestor will already propagate the edit. Virtual-bone constituents pass through the same root filter.
+The primary bone's constrained change becomes the gesture's single
+`TransformDelta`; `TransformGestureService.Update` applies it to every frozen
+secondary baseline. Selected descendants are removed before `Begin` whenever a
+selected ancestor already propagates the same edit (`PoseMath.FilterSelectionRoots`
+semantics applied to snapshot descriptors). Virtual-bone constituents pass
+through the same root filter.
 
 Actor gizmos use the same component constraint and relative-delta contract. A
 multi-actor world-gizmo gesture edits every selected actor and publishes the
