@@ -67,9 +67,6 @@ public class MainWindow : Window
     private readonly HashSet<string> _collapsedNodes = new();
     private readonly HashSet<string> _knownCategoryNodes = new();
     private readonly HashSet<string> _knownActorNodes = new();
-    // The bone whose actor/category were last revealed by an external
-    // selection; reveal fires only when the primary bone changes.
-    private Domain.Identity.BoneId? _lastRevealedBone;
     private float _sidebarWidth = 280f;
     private readonly AppShellViewModel _vm = new();
     private string _activeTab = "Pose";
@@ -366,15 +363,6 @@ public class MainWindow : Window
     private void BuildSidebar(SelectionId? primary)
     {
         _vm.Sections.Clear();
-        BoneId? selectedBone = primary is { Kind: SceneEntityKind.Bone, Bone: { } primaryBone }
-            ? primaryBone
-            : null;
-        // External bone selection reveals its actor and category exactly once,
-        // at the moment the primary bone changes. Re-forcing the reveal every
-        // frame would undo a user's collapse while the selection is unchanged.
-        bool revealNow = selectedBone is { } newBone &&
-            !(_lastRevealedBone is { } lastBone && lastBone.Equals(newBone));
-        _lastRevealedBone = selectedBone;
         string filter = _vm.SidebarSearch.Trim();
         bool filtering = filter.Length > 0;
 
@@ -406,14 +394,12 @@ public class MainWindow : Window
             if (filtering && !actorMatches && !hasMatchingBone)
                 continue;
 
-            bool ownsSelectedBone = selectedBone is { } ownedBone &&
-                ownedBone.Skeleton.Actor.LogicalId == actor.Id.LogicalId;
             // Actor roots first appear collapsed; lineage keys survive
             // refreshes, so a scene refresh cannot reset existing disclosure.
-            if (_knownActorNodes.Add(actorKey) && !(revealNow && ownsSelectedBone))
+            // Only explicit disclosure clicks expand — external bone selection
+            // (map, matrix, overlay, gizmo) never changes tree disclosure.
+            if (_knownActorNodes.Add(actorKey))
                 _collapsedNodes.Add(actorKey);
-            if (revealNow && ownsSelectedBone)
-                _collapsedNodes.Remove(actorKey);
             bool expanded = filtering || !_collapsedNodes.Contains(actorKey);
             var actorSelectionId = SelectionId.ForActor(actor.Id);
             actors.Rows.Add(new ShellSidebarRow
@@ -451,12 +437,8 @@ public class MainWindow : Window
                 {
                     var (cat, visibleBones, allBones) = displayedGroups[g];
                     var catKey = actorKey + "/cat:" + cat;
-                    bool containsSelectedBone = selectedBone is { } revealBone &&
-                        allBones.Exists(bone => bone.Id.Equals(revealBone));
-                    if (_knownCategoryNodes.Add(catKey) && !(revealNow && containsSelectedBone))
+                    if (_knownCategoryNodes.Add(catKey))
                         _collapsedNodes.Add(catKey);
-                    if (revealNow && containsSelectedBone)
-                        _collapsedNodes.Remove(catKey);
                     bool catExpanded = filtering || !_collapsedNodes.Contains(catKey);
                     bool catLast = g == displayedGroups.Count - 1;
                     string categoryLabel = Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(cat);

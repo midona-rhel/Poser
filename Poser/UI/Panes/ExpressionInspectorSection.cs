@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Poser.Entities;
@@ -21,32 +22,24 @@ public sealed class ExpressionInspectorSection
     {
         float h = 0f;
 
-        var units = _expressions.GetUnits(actor);
+        // Units without resolvable target bones on this skeleton are hidden
+        // rather than shown as dead rows.
+        var units = _expressions.GetUnits(actor)
+            .Where(u => u.Available)
+            .ToList();
         if (units.Count == 0)
         {
-            // Unsupported customize/catalog combination: quiet unavailable
-            // state instead of destructively applying another race's catalog.
             ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 5f * s),
-                "No expression catalog for this character.", 11f,
+                "Expressions unavailable", 11f,
                 FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
             return h + 26f * s;
         }
         const float sliderX = 106f, valueW = 44f, sliderGap = 6f;
-        foreach (var (id, label, bidirectional, available) in units)
+        foreach (var (id, label, bidirectional, _) in units)
         {
             float weight = _expressions.GetWeight(actor, id);
             ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 5f * s), label,
-                11f, FontWeight.Regular, new Vector4(1f, 1f, 1f, available ? 0.72f : 0.3f));
-            if (!available)
-            {
-                // Zero resolvable target bones on this skeleton: the unit is
-                // presented as unavailable, never as a slider that does nothing.
-                ViewText.Label(new Vector2(cursor.X + sliderX * s, cursor.Y + h + 5f * s),
-                    "no matching bones", 11f, FontWeight.Regular,
-                    new Vector4(1f, 1f, 1f, 0.3f));
-                h += 26f * s;
-                continue;
-            }
+                11f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
             ImGui.SetCursorScreenPos(new Vector2(
                 cursor.X + sliderX * s, cursor.Y + h + 5f * s));
             if (Crystarium.Slider($"##au-{id}", ref weight,
@@ -66,11 +59,7 @@ public sealed class ExpressionInspectorSection
             h += 26f * s;
         }
 
-        ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 6f * s),
-            $"{units.Count} action units · per-race catalog", 11f,
-            FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.35f));
-        h += 28f * s;
-
+        h += 6f * s;
         ImGui.SetCursorScreenPos(new Vector2(cursor.X, cursor.Y + h));
         bool active = _expressions.HasActiveExpression(actor);
         if (Crystarium.Button("Reset", new ButtonProps

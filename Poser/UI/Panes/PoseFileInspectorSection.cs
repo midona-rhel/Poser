@@ -45,14 +45,12 @@ public sealed class PoseFileInspectorSection
     public float Draw(Vector2 cursor, float width, ISkeleton skeleton, float s)
     {
         float h = 0f;
-        ViewText.Label(cursor, "Import / Export", 11f, FontWeight.Regular,
-            InspectorLayout.LabelColor);
-        h += 20f * s;
-
-        ImGui.SetCursorScreenPos(new Vector2(cursor.X, cursor.Y + h));
-        Crystarium.SegmentedControl("##impex-scope",
+        ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 5f * s), "Scope",
+            11f, FontWeight.Regular, InspectorLayout.LabelColor);
+        ImGui.SetCursorScreenPos(new Vector2(cursor.X + 46f * s, cursor.Y + h));
+        Crystarium.Dropdown("##impex-scope",
             new[] { "Full", "Body", "Expression", "Selected" }, ref _scope);
-        h += 34f * s;
+        h += 32f * s;
 
         if (_scope == 3)
         {

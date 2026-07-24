@@ -1072,12 +1072,12 @@ public class PoseInspectorPane
         bool hasAuthoredEdits = _cleanPose.HasAuthoredEdits(skeleton);
         if (bone != null)
             poseActions.Add(new RailAction("Flip bone", "pose-flip", () => _cleanPose.FlipBone(bone),
-                Tooltip: "Reflect this bone's Poser-authored adjustment"));
+                Tooltip: "Flip this bone's edit to the other side"));
         poseActions.Add(new RailAction("Mirror edits", "pose-mirror", () => _cleanPose.Mirror(skeleton),
             Disabled: !hasAuthoredEdits,
             Tooltip: hasAuthoredEdits
-                ? "Mirror the Poser-authored bone edits (animation-safe)"
-                : "No Poser-authored bone edits to mirror."));
+                ? "Mirror your edits to the other side"
+                : "No edits to mirror"));
         h += DrawWrappedActions(new Vector2(cursor.X, cursor.Y + h), width, s, poseActions);
 
         // Reset row

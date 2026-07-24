@@ -85,44 +85,24 @@ public class PoseRailPane
             if (_inspector.IsActorSelection)
             {
                 // Always clickable: clearing overrides is a safe no-op when
-                // none exist (round-1 feedback — the availability predicate
-                // intermittently disabled a reset the user needed).
+                // none exist.
                 if (Crystarium.Button("Reset transform", new ButtonProps
                     {
                         Id = "rail-actor-reset",
                         Classes = Cls.Compact,
-                        Tooltip = "Restore the actor's position, rotation, and scale from before it was moved",
+                        Tooltip = "Restore the actor's original transform",
                     }))
                     _inspector.ResetActorTransform();
-                ImGui.SameLine(0f, 6f * s);
-                bool hasEdits = _inspector.HasAuthoredEdits;
-                if (Crystarium.Button("Mirror edits", new ButtonProps
-                    {
-                        Id = "rail-actor-mirror",
-                        Classes = Cls.Compact,
-                        Disabled = !hasEdits,
-                        Tooltip = hasEdits
-                            ? "Mirror the Poser-authored bone edits (animation-safe)"
-                            : "No Poser-authored bone edits to mirror.",
-                    }))
-                    _inspector.FlipWholePose();
             }
             else
             {
                 if (Crystarium.Button("Reset bone", new ButtonProps { Id = "rail-bone-reset", Classes = Cls.Compact,
-                    Tooltip = "Reset only this bone's pose" }))
+                    Tooltip = "Reset this bone's pose" }))
                     _inspector.ResetPrimaryBone();
                 ImGui.SameLine(0f, 6f * s);
                 if (Crystarium.Button("Select children", new ButtonProps { Id = "rail-children", Classes = Cls.Compact,
-                    Tooltip = "Add every descendant bone to the selection" }))
+                    Tooltip = "Add descendant bones to the selection" }))
                     _inspector.SelectChildren();
-                ImGui.SameLine(0f, 6f * s);
-                if (Crystarium.Button("Mirror edits", new ButtonProps { Id = "rail-flip", Classes = Cls.Compact,
-                    Disabled = !_inspector.HasAuthoredEdits,
-                    Tooltip = _inspector.HasAuthoredEdits
-                        ? "Mirror the Poser-authored bone edits (animation-safe)"
-                        : "No Poser-authored bone edits to mirror." }))
-                    _inspector.FlipWholePose();
             }
             cursor.Y += 36f * s;
         }
