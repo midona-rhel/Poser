@@ -26,14 +26,15 @@ Implementation starts from a clean baseline identified by an immutable annotated
 Git tag. The PBI records:
 
 ```text
-BASE_REF=pbi-<id>-base
-BRANCH=feature/pbi-<id>-<short-name>
+Base ref: pbi-<id>-base
+Feature branch: feature/pbi-<id>-<short-name>
 ```
 
 The implementer resolves and reports the full commit with:
 
-```text
-git rev-parse --verify BASE_REF^{commit}
+```powershell
+$baseRef = '<exact Base ref value from the PBI control table>'
+git rev-parse --verify "$baseRef^{commit}"
 ```
 
 The tag avoids the impossible requirement for a versioned PBI to contain the

@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Ready after baseline commit |
+| Status | Ready |
 | Size | Large |
 | Priority | First clean-core UI vertical slice |
 | Implementation owner | Claude |
