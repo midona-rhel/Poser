@@ -4,25 +4,21 @@ using Poser.Application.Scene;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
-using Poser.Game.Bindings;
 
 namespace Poser.Game.Transforms;
 
 /// <summary>Legacy UI bridge into the clean transform gesture application API.</summary>
 public sealed class CleanTransformFacade
 {
-    private readonly StableBindingRegistry _bindings;
     private readonly SceneSession _scene;
     private readonly TransformGestureService _gestures;
     private readonly TransformCommandService _commands;
 
     public CleanTransformFacade(
-        StableBindingRegistry bindings,
         SceneSession scene,
         TransformGestureService gestures,
         TransformCommandService commands)
     {
-        _bindings = bindings;
         _scene = scene;
         _gestures = gestures;
         _commands = commands;

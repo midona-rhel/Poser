@@ -15,7 +15,6 @@ using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Game.Posing;
-using Poser.Game.Bindings;
 using Poser.Game.Transforms;
 using Poser.Services;
 using DomainOperation = Poser.Domain.Transforms.TransformOperation;
@@ -577,16 +576,4 @@ public class GizmoOverlayWindow : Window
     /// <summary>
     /// Gets the depth of a bone in the hierarchy (0 = root, higher = deeper).
     /// </summary>
-    private static int GetBoneDepth(IBone bone)
-    {
-        int depth = 0;
-        var current = bone.ParentBone;
-        while (current != null)
-        {
-            depth++;
-            current = current.ParentBone;
-        }
-        return depth;
-    }
-
 }

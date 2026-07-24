@@ -43,7 +43,6 @@ namespace Poser.UI;
 /// </summary>
 public class PoseInspectorPane
 {
-    private readonly IPosingService _posingService;
     private readonly IBonePosingService _bonePosingService;
     private readonly IAnimationService _animationService;
     private readonly CleanTransformFacade _cleanTransforms;
@@ -130,7 +129,6 @@ public class PoseInspectorPane
     private bool _openPose = true;
 
     public PoseInspectorPane(
-        IPosingService posingService,
         IBonePosingService bonePosingService,
         IAnimationService animationService,
         CleanTransformFacade cleanTransforms,
@@ -149,7 +147,6 @@ public class PoseInspectorPane
         _viewport = viewport;
         _expressionSection = expressionSection;
         _poseFileSection = poseFileSection;
-        _posingService = posingService;
         _bonePosingService = bonePosingService;
         _animationService = animationService;
         _cleanTransforms = cleanTransforms;
