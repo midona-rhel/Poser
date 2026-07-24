@@ -126,6 +126,7 @@ public class PoseInspectorPane
 
     private bool _openTranslation = true;
     private bool _openExpression = true;
+    private bool _openFiles = true;
     private bool _openGaze = true;
     private bool _openIk;
     private bool _openPose = true;
@@ -366,14 +367,17 @@ public class PoseInspectorPane
         var cursor = origin;
 
         // Every rail cluster is a collapsible section; disclosure persists
-        // for the pane's lifetime like GAZE/IK/POSE.
+        // for the pane's lifetime. A COLLAPSED section contributes only its
+        // header — the trailing 12px body gap belongs to the expanded state,
+        // so collapsed headers stack tightly (the IK treatment, applied
+        // everywhere per round-1 feedback).
         cursor.Y += InspectorLayout.Section(dl, cursor, width, "insp", "TRANSLATION", ref _openTranslation, s, topBorder: true);
         if (_openTranslation)
         {
             cursor.Y += InspectorLayout.BodyGap * s;
             cursor.Y += DrawTransform(dl, cursor, width, s);
+            cursor.Y += 12f * s;
         }
-        cursor.Y += 12f * s;
 
         var actor = OwningActor();
         var owningSkeleton = OwningSkeleton();
@@ -384,13 +388,18 @@ public class PoseInspectorPane
             {
                 cursor.Y += InspectorLayout.BodyGap * s;
                 cursor.Y += _expressionSection.Draw(cursor, width, actor, s);
+                cursor.Y += 12f * s;
             }
-            cursor.Y += 12f * s;
         }
         if (owningSkeleton != null)
         {
-            cursor.Y += _poseFileSection.Draw(cursor, width, owningSkeleton, s);
-            cursor.Y += 12f * s;
+            cursor.Y += InspectorLayout.Section(dl, cursor, width, "insp", "FILES", ref _openFiles, s, topBorder: true);
+            if (_openFiles)
+            {
+                cursor.Y += InspectorLayout.BodyGap * s;
+                cursor.Y += _poseFileSection.Draw(cursor, width, owningSkeleton, s);
+                cursor.Y += 12f * s;
+            }
         }
         if (actor != null)
         {
@@ -399,8 +408,8 @@ public class PoseInspectorPane
             {
                 cursor.Y += InspectorLayout.BodyGap * s;
                 cursor.Y += DrawGaze(cursor, width, actor, s);
+                cursor.Y += 12f * s;
             }
-            cursor.Y += 12f * s;
         }
 
         var skeleton = OwningSkeleton();
@@ -664,6 +673,15 @@ public class PoseInspectorPane
             _orbitYaw += d.X * 0.01f;
             _orbitPitch = Math.Clamp(_orbitPitch + d.Y * 0.01f, -1.4f, 1.4f);
         }
+
+        // Keep the skeleton caches fresh regardless of what the gizmo
+        // targets: with an ACTOR selected the bone-gizmo path (which folds
+        // the per-frame UpdateBoneTransforms/cache registration) never runs,
+        // and with the skeleton overlay defaulting Off nothing else
+        // refreshed either — the 3D view froze. One skeleton-matrix query
+        // performs that refresh.
+        if (skeleton.Bones.Count > 0)
+            _viewport.GetSkeletonModelMatrix(skeleton.Bones[0].Id);
 
         // model-space bones (viewport projection) → orbit view → orthographic
         var positions = new Dictionary<BoneId, Vector3>();
@@ -1009,15 +1027,19 @@ public class PoseInspectorPane
         bool linked = _bonePosingService.LinkedBonesEnabled;
         if (Crystarium.Switch("##pose-linked", ref linked))
             _bonePosingService.LinkedBonesEnabled = linked;
-        ViewText.Label(cursor + new Vector2(140f, 7f) * s, "eyes / Viera ear variants together", 11f,
+        ViewText.Label(cursor + new Vector2(140f, 7f) * s, "edit twin bones that always move together (eyes, Viera ears)", 11f,
             FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
         h += 30f * s;
 
+        // Symmetry naming per the user's model: None; Link = the paired bone
+        // receives the SAME transformation; Mirror = the sagittal reflection
+        // (raise one arm forward, the other raises forward; move it outward,
+        // the other moves outward).
         ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 7f * s), "Symmetry", 12f,
             FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
         ImGui.SetCursorScreenPos(new Vector2(cursor.X + 94f * s, cursor.Y + h + 4f * s));
         int symmetry = (int)_editorState.SymmetryMode;
-        if (Crystarium.SegmentedControl("##pose-symmetry", new[] { "Off", "Copy", "Mirror" }, ref symmetry))
+        if (Crystarium.SegmentedControl("##pose-symmetry", new[] { "None", "Link", "Mirror" }, ref symmetry))
             _editorState.SymmetryMode = (SymmetryMode)symmetry;
         h += 34f * s;
 
@@ -1120,6 +1142,10 @@ public class PoseInspectorPane
                         Classes = Cls.Compact,
                         Disabled = action.Disabled,
                         Tooltip = action.Tooltip,
+                        // The measured width is also the rendered width, so
+                        // the 6px gaps can never collapse from any
+                        // measure/render drift.
+                        Style = new ButtonStyle { Width = Sizing.Fixed(widths[i] / scale) },
                     }))
                     action.Invoke();
                 x += widths[i] + gap;

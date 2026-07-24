@@ -68,8 +68,9 @@ the entire group through the same runtime restore path as cancel.
 
 ## Known risks and verification
 
-- Parent-and-child bone selections never compound: `TransformTargetResolver`
-  removes selected descendants before `Begin`, so the descendant's change
-  arrives only once, through the ancestor's propagation. Verify rail edits
-  and gizmo edits agree in-game.
+- Parent-and-child bone selections both transform (user-requested reversal
+  of the PBI-001 descendant filter): each target recomputes absolutely from
+  its own frozen Begin baseline, so an ancestor's propagation cannot
+  feedback-compound — the descendant's own absolute write lands last within
+  the update. Verify rail edits and gizmo edits agree in-game.
 - In-game verification must cover two actors and multiple bones for drag, typed input, the rotation gizmo, one-step undo/redo, and Escape cancellation.

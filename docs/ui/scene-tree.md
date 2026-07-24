@@ -51,12 +51,14 @@ keeps the two operations explicit instead of overloading one ambiguous
   first appear collapsed. Both are seeded into the collapse set on first
   sight, so newly added or refreshed actors arrive collapsed without touching
   any existing row's state.
-- Actor and category rows share one disclosure affordance: the registered
-  Tabler Chevron Right/Down icon with an 18 logical-pixel hit zone, visible
-  in both collapsed and expanded states. Clicking the chevron toggles
-  expansion without selecting; clicking the row selects without changing
-  expansion. An actor whose skeleton is temporarily unresolved shows the
-  chevron faded and inert — it is never erased.
+- Actor and category rows share one disclosure affordance — the compact
+  filled triangle — with an 18 logical-pixel hit zone, visible in both
+  collapsed and expanded states. (PBI-002 runtime round 1 specified Tabler
+  chevrons; the user explicitly requested the triangle affordance back in
+  the 2026-07-24 in-game session, superseding that line.) Clicking the
+  triangle toggles expansion without selecting; clicking the row selects
+  without changing expansion. An actor whose skeleton is temporarily
+  unresolved shows the affordance faded and inert — it is never erased.
 - A category containing a bone whose display name IS the category name
   (Root → `n_root` "Root") renders that bone AS the category row instead of
   a redundant Root > Root pair: the row body selects the bone, its chevron

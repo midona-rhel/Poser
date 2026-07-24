@@ -58,15 +58,15 @@ This is a correctness boundary, not merely an epsilon cleanup. It prevents matri
 
 The primary bone's constrained change becomes the gesture's single
 `TransformDelta`; `TransformGestureService.Update` applies it to every frozen
-secondary baseline. Selected descendants are removed before `Begin` whenever a
-selected ancestor already propagates the same edit. The shared
+secondary baseline. Every selected bone is a target — including same-chain
+pairs like knee + calf (user-requested reversal of the PBI-001 descendant
+filter): each target recomputes absolutely from its own frozen baseline, so
+an ancestor's propagation cannot feedback-compound. The shared
 `TransformTargetResolver` produces the effective transform selection from the
-ordered session and the snapshot: the first surviving root in original
-selection order is the effective primary that anchors gizmo placement and
-supplies the gesture baseline — the inspector consumes the identical
-resolution, so the two surfaces can never disagree. Parent/child selections
-therefore never compound: the descendant's edit arrives only once, through
-the ancestor's propagation.
+ordered session and the snapshot: the first selected bone is the effective
+primary that anchors gizmo placement and supplies the gesture baseline — the
+inspector consumes the identical resolution, so the two surfaces can never
+disagree.
 
 Actor gizmos use the same component constraint and relative-delta contract. A
 multi-actor world-gizmo gesture edits every selected actor and publishes the

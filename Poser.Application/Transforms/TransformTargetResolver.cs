@@ -16,10 +16,12 @@ public sealed record EffectiveTransformSelection(
 /// <summary>
 /// One shared resolution of "what does a transform act on" for the inspector
 /// and the gizmo (PBI-001 clarification: selection primary vs effective
-/// transform primary). Selected descendants of selected ancestors drop out —
-/// propagation already carries the ancestor's edit — and a filtered
-/// descendant, including a filtered selection primary, never re-enters the
-/// target list.
+/// transform primary). Every selected bone is a target — the user explicitly
+/// reversed PBI-001's descendant filtering in the 2026-07-24 walkthrough:
+/// selecting a knee and its calf must transform BOTH from their own frozen
+/// baselines (the gesture applies each target absolutely from its captured
+/// state, so an ancestor's propagation cannot compound into a feedback
+/// loop).
 /// </summary>
 public static class TransformTargetResolver
 {
@@ -75,38 +77,20 @@ public static class TransformTargetResolver
         }
         // Every selected bone must exist exactly in its current skeleton
         // descriptor. A missing skeleton or an absent (stale-generation) bone
-        // makes the selection unresolvable — an unknown bone is never treated
-        // as a root.
+        // makes the selection unresolvable — an unknown bone is never a
+        // target.
         if (descriptors == null)
             return null;
         var byId = descriptors.ToDictionary(descriptor => descriptor.Id);
 
-        var selectedSet = bones.ToHashSet();
-        var roots = new List<TransformTargetId>();
+        var targets = new List<TransformTargetId>();
         foreach (var boneId in bones)
         {
-            if (!byId.TryGetValue(boneId, out var descriptor))
+            if (!byId.ContainsKey(boneId))
                 return null;
-
-            var hasSelectedAncestor = false;
-            var parent = descriptor.Parent;
-            while (parent is { } parentId)
-            {
-                if (selectedSet.Contains(parentId))
-                {
-                    hasSelectedAncestor = true;
-                    break;
-                }
-                parent = byId.TryGetValue(parentId, out var parentDescriptor)
-                    ? parentDescriptor.Parent
-                    : null;
-            }
-            if (!hasSelectedAncestor)
-                roots.Add(TransformTargetId.ForBone(boneId));
+            targets.Add(TransformTargetId.ForBone(boneId));
         }
 
-        return roots.Count == 0
-            ? null
-            : new EffectiveTransformSelection(roots[0], roots);
+        return new EffectiveTransformSelection(targets[0], targets);
     }
 }

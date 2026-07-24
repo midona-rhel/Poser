@@ -28,6 +28,13 @@ conceptual sibling of Ktisis `Gizmo2D` and Brio `ImBrioGizmo.DrawRotation`.
   strength; rear-facing segments use the same hue at a restrained low alpha,
   so every ring stays legible as a complete circle. Front segments draw over
   rear segments.
+- A **wide outer roll ring** — slightly larger than the axis rings — rolls
+  the target about the axis the camera points along, always applied in the
+  world frame (round-1 user request).
+- During a drag the rings rotate live with the accumulated delta so the
+  widget visibly follows the gesture like the in-world gizmo; on release
+  they re-derive from the static frame (a parent-frame widget snaps back by
+  construction, since rotating a bone does not move its parent).
 
 ## Interaction contract
 

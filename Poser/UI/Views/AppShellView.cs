@@ -284,14 +284,10 @@ public static class AppShellView
                 vm.OnSpawn);
         }
 
-        // center strip
+        // center strip (undo/redo moved to the sidebar statusbar — round-1
+        // user feedback)
         float x = leftMax.X + 12f * s;
         float cy = min.Y + (h - 28f * s) / 2f;
-        IconButton(dl, new Vector2(x, cy), TablerIcon.ArrowBackUp, false, s, vm.OnUndo, dimmed: !vm.CanUndo);
-        x += (28f + 10f) * s;
-        IconButton(dl, new Vector2(x, cy), TablerIcon.ArrowBackUp, false, s, vm.OnRedo,
-            dimmed: !vm.CanRedo, flipX: true);
-        x += (28f + 10f) * s;
         if (vm.ShowProject)
         {
             IconButton(dl, new Vector2(x, cy), TablerIcon.Folder, false, s, vm.OnProject);
@@ -420,13 +416,19 @@ public static class AppShellView
         ImGui.EndChild();
         ImGui.PopStyleVar();
 
-        // statusbar
+        // statusbar (hosts undo/redo — round-1 user feedback moved them here
+        // from the titlebar)
         dl.AddRectFilled(new Vector2(min.X, statusTop), new Vector2(max.X - 1f * s, statusTop + 1f * s),
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderSecondary)));
         var dotCenter = new Vector2(min.X + 10f * s + 3.5f * s, statusTop + StatusbarHeight * s / 2f);
         dl.AddCircleFilled(dotCenter, 3.5f * s, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Success)));
         ViewText.Label(new Vector2(dotCenter.X + 3.5f * s + 8f * s, statusTop + 7f * s), vm.StatusLeft, 11f, FontWeight.Regular, TextTertiary, mono: true);
-        ViewText.Label(new Vector2(max.X - 10f * s - ViewText.Measure(vm.StatusRight, 11f, mono: true), statusTop + 7f * s),
+        float undoX = max.X - 8f * s - 28f * s * 2f - 4f * s;
+        float undoY = statusTop + (StatusbarHeight - 28f) / 2f * s;
+        IconButton(dl, new Vector2(undoX, undoY), TablerIcon.ArrowBackUp, false, s, vm.OnUndo, dimmed: !vm.CanUndo);
+        IconButton(dl, new Vector2(undoX + (28f + 4f) * s, undoY), TablerIcon.ArrowBackUp, false, s, vm.OnRedo,
+            dimmed: !vm.CanRedo, flipX: true);
+        ViewText.Label(new Vector2(undoX - 8f * s - ViewText.Measure(vm.StatusRight, 11f, mono: true), statusTop + 7f * s),
             vm.StatusRight, 11f, FontWeight.Regular, TextTertiary, mono: true);
     }
 
@@ -507,9 +509,9 @@ public static class AppShellView
                 DrawGuideHorizontal(dl, X(0.5f), X(8.5f), Y(13f), guide, s);
             }
 
-            // shared disclosure chevron overlapping the cutout gap
+            // shared disclosure affordance overlapping the cutout gap
             if (row.HasChildren)
-                DrawDisclosureChevron(new Vector2(X(0f), Y(13f)), row, overArrow, s);
+                DrawDisclosureChevron(dl, new Vector2(X(0f), Y(13f)), row, overArrow, s);
         }
 
         float x;
@@ -518,7 +520,7 @@ public static class AppShellView
             // root rows keep the icon layout: 16px expander slot + 26px icon cell
             x = cursor.X;
             if (row.HasChildren)
-                DrawDisclosureChevron(new Vector2(x + 8f * s, cursor.Y + 13f * s), row, overArrow, s);
+                DrawDisclosureChevron(dl, new Vector2(x + 8f * s, cursor.Y + 13f * s), row, overArrow, s);
             x += 16f * s;
             ImGui.SetCursorScreenPos(new Vector2(x, cursor.Y + 5f * s));
             if (row.IconName != null)
@@ -557,18 +559,28 @@ public static class AppShellView
     }
 
     /// <summary>
-    /// The one disclosure affordance for actor and category rows: the
-    /// registered Tabler chevron, visible in collapsed and expanded states,
+    /// The one disclosure affordance for actor and category rows: the compact
+    /// filled triangle, visible in collapsed and expanded states,
     /// hover-emphasized over its 18px hit zone, faded and inert while the
-    /// row's children are temporarily unavailable.
+    /// row's children are temporarily unavailable. NOTE: PBI-002 runtime
+    /// round 1 specified Tabler chevrons here; the user explicitly requested
+    /// the original triangle affordance back during the 2026-07-24 in-game
+    /// session — this supersedes that clarification line.
     /// </summary>
-    private static void DrawDisclosureChevron(Vector2 center, ShellSidebarRow row, bool hovered, float s)
+    private static void DrawDisclosureChevron(ImDrawListPtr dl, Vector2 center, ShellSidebarRow row, bool hovered, float s)
     {
-        float size = 14f * s;
-        ImGui.SetCursorScreenPos(center - new Vector2(size / 2f, size / 2f));
         float alpha = row.ExpanderDisabled ? 0.25f : hovered ? 1f : 0.7f;
-        Crystarium.Icon(row.Expanded ? TablerIcon.ChevronDown : TablerIcon.ChevronRight,
-            size, ColorEx.ApplyAlpha(TextPrimary with { W = alpha }));
+        uint color = ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(TextPrimary with { W = alpha }));
+        if (row.Expanded)
+            dl.AddTriangleFilled(
+                center + new Vector2(-3.5f, -2.5f) * s,
+                center + new Vector2(3.5f, -2.5f) * s,
+                center + new Vector2(0f, 2.5f) * s, color);
+        else
+            dl.AddTriangleFilled(
+                center + new Vector2(-2.5f, -3.5f) * s,
+                center + new Vector2(2.5f, 0f) * s,
+                center + new Vector2(-2.5f, 3.5f) * s, color);
     }
 
     /// <summary>

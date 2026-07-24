@@ -117,16 +117,29 @@ public sealed class CleanPoseFacade
     public bool HasStash => _transfers.HasStash;
     public DateTimeOffset? StashedAt => _transfers.StashedAt;
 
+    /// <summary>
+    /// Every UI-facing pose edit reports through here: a failed edit is never
+    /// a silent no-op — the reason ("A transform gesture is active.", stale
+    /// binding, ...) lands in the log with the attempted description
+    /// (round-1 "reset doesn't seem to work" diagnosis instrumentation).
+    /// </summary>
+    private PoseEditResult Report(string description, PoseEditResult result)
+    {
+        if (!result.Success)
+            _log.Warning($"Pose edit '{description}' failed: {result.Detail}");
+        return result;
+    }
+
     /// <summary>Stable-id bone reset (selection/transform identity path).</summary>
     public PoseEditResult ResetBone(TransformTargetId target, string boneName) =>
-        _edits.Reset(
+        Report($"Reset {boneName}", _edits.Reset(
             new[] { target },
             PoseRegion.All,
-            $"Reset {boneName}");
+            $"Reset {boneName}"));
 
     /// <summary>Stable-id bone flip.</summary>
     public PoseEditResult FlipBone(TransformTargetId target, string boneName) =>
-        _edits.Flip(target, $"Flip {boneName}");
+        Report($"Flip {boneName}", _edits.Flip(target, $"Flip {boneName}"));
 
     public PoseEditResult ResetBone(IBone bone)
     {
@@ -134,12 +147,12 @@ public sealed class CleanPoseFacade
             ? group.PivotBone
             : bone;
         if (concrete == null || Target(concrete) is not { } target)
-            return PoseEditResult.Fail(
-                $"Bone {bone.Name} has no stable pose binding.");
-        return _edits.Reset(
+            return Report($"Reset {bone.Name}", PoseEditResult.Fail(
+                $"Bone {bone.Name} has no stable pose binding."));
+        return Report($"Reset {bone.Name}", _edits.Reset(
             new[] { target },
             PoseRegion.All,
-            $"Reset {bone.Name}");
+            $"Reset {bone.Name}"));
     }
 
     public PoseEditResult Reset(
@@ -147,12 +160,10 @@ public sealed class CleanPoseFacade
         PoseRegion region)
     {
         var targets = Targets(skeleton);
-        return _edits.Reset(
-            targets,
-            region,
-            region == PoseRegion.All
-                ? "Reset pose"
-                : $"Reset {region.ToString().ToLowerInvariant()}");
+        var description = region == PoseRegion.All
+            ? "Reset pose"
+            : $"Reset {region.ToString().ToLowerInvariant()}";
+        return Report(description, _edits.Reset(targets, region, description));
     }
 
     public PoseEditResult FlipBone(IBone bone)
@@ -161,13 +172,13 @@ public sealed class CleanPoseFacade
             ? group.PivotBone
             : bone;
         if (concrete == null || Target(concrete) is not { } target)
-            return PoseEditResult.Fail(
-                $"Bone {bone.Name} has no stable pose binding.");
-        return _edits.Flip(target, $"Flip {bone.Name}");
+            return Report($"Flip {bone.Name}", PoseEditResult.Fail(
+                $"Bone {bone.Name} has no stable pose binding."));
+        return Report($"Flip {bone.Name}", _edits.Flip(target, $"Flip {bone.Name}"));
     }
 
     public PoseEditResult Mirror(ISkeleton skeleton) =>
-        _edits.Mirror(Targets(skeleton), "Mirror pose");
+        Report("Mirror pose", _edits.Mirror(Targets(skeleton), "Mirror pose"));
 
     public PoseCaptureResult Copy(ISkeleton skeleton) =>
         _transfers.Capture(Targets(skeleton));
@@ -175,13 +186,13 @@ public sealed class CleanPoseFacade
     public PoseEditResult Paste(
         ISkeleton skeleton,
         PortablePose pose) =>
-        _transfers.Apply(Targets(skeleton), pose);
+        Report("Paste pose", _transfers.Apply(Targets(skeleton), pose));
 
     public PoseEditResult Stash(ISkeleton skeleton) =>
-        _transfers.Stash(Targets(skeleton));
+        Report("Stash pose", _transfers.Stash(Targets(skeleton)));
 
     public PoseEditResult ApplyStash(ISkeleton skeleton) =>
-        _transfers.ApplyStash(Targets(skeleton));
+        Report("Apply stash", _transfers.ApplyStash(Targets(skeleton)));
 
     private IReadOnlyList<TransformTargetId> Targets(
         ISkeleton skeleton) =>

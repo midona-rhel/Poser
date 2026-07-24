@@ -24,20 +24,24 @@ public class PoseRailPane
         X,
         Y,
         Z,
+        // The wide outer ring: roll about the axis the camera points along,
+        // always applied in the world frame (round-1 user request).
+        Roll,
     }
 
     private readonly PoseInspectorPane _inspector;
     private readonly ICameraService _camera;
 
-    // One ring drag: axis, frozen screen tangent at the grab point, frozen
-    // Local/World frame, accumulated tangent distance, and the TOTAL rotation
-    // from drag start (every frame re-derives from this total — no frame
-    // feeds a result back as the next baseline).
+    // One ring drag: axis, frozen rotation axis vector + application frame,
+    // frozen screen tangent at the grab point, accumulated tangent distance,
+    // and the TOTAL rotation from drag start (every frame re-derives from
+    // this total — no frame feeds a result back as the next baseline).
     private RotationAxis? _dragAxis;
+    private Vector3 _dragAxisVector;
+    private bool _dragApplyWorld;
     private Vector2 _dragTangent;
     private Vector2 _dragOrigin;
     private float _dragDistance;
-    private bool _dragWorldFrame;
     private Quaternion _dragTotal = Quaternion.Identity;
 
     private static readonly Vector4 AxisX = Theme.Palette.AxisX;
@@ -133,23 +137,24 @@ public class PoseRailPane
 
     /// <summary>
     /// The compact oriented rotation gizmo (Brio ImBrioGizmo.DrawRotation
-    /// concept): three complete X/Y/Z circles in 3D, projected through the
-    /// active game camera rotation — oriented from the target's current model
-    /// rotation in Local mode, world axes in World mode. Front-facing arc
-    /// segments use the shared axis palette; rear-facing segments a
-    /// restrained low alpha, so every ring stays legible as a complete
-    /// circle. Hit testing picks the nearest visible projected ring segment
-    /// (ties resolve X → Y → Z); a drag projects mouse movement onto the
-    /// ring's frozen screen tangent and applies the resulting quaternion in
-    /// the selected Local/World frame through the same clean gesture as the
-    /// in-world gizmo. The wheel is never consumed. Returns consumed height.
+    /// concept): three complete X/Y/Z circles in 3D projected through the
+    /// active game camera rotation — oriented from the target's parent frame
+    /// in Local mode, world axes in World mode — plus a wide outer ring that
+    /// rolls about the camera's view axis. Front-facing arc segments use the
+    /// shared axis palette; rear-facing segments a restrained low alpha.
+    /// During a drag the rings rotate live with the accumulated delta, and
+    /// the applied value is always the TOTAL from drag start through the
+    /// same clean gesture as the in-world gizmo. Hit testing picks the
+    /// nearest visible projected ring segment (ties X → Y → Z → Roll). The
+    /// wheel is never consumed. Returns consumed height.
     /// </summary>
     private float DrawRotationGizmo(ImDrawListPtr dl, Vector2 cursor, float width, float s)
     {
         const int ringPoints = 96;
-        float d = 150f * s;
+        float d = 158f * s;
         var center = new Vector2(cursor.X + width / 2f, cursor.Y + d / 2f);
-        float r = d / 2f - 10f * s;
+        float rOuter = d / 2f - 6f * s;   // camera-roll ring (wide, outermost)
+        float r = rOuter - 8f * s;        // X/Y/Z rings sit inside it
         float pickTolerance = 8f * s;
 
         ImGui.SetCursorScreenPos(new Vector2(center.X - d / 2f, cursor.Y));
@@ -159,7 +164,7 @@ public class PoseRailPane
         var io = ImGui.GetIO();
         var mouse = ImGui.GetMousePos();
 
-        var (modelRotation, worldFrame, canEdit) = _inspector.GizmoOrientation();
+        var (ringFrame, worldFrame, canEdit) = _inspector.GizmoOrientation();
 
         // Camera orientation only (Brio's convention): rotation extracted
         // from the live view matrix, X mirrored for the game's view
@@ -169,13 +174,21 @@ public class PoseRailPane
         Matrix4x4.Decompose(viewMatrix, out _, out var cameraRotation, out _);
         var view = Matrix4x4.CreateFromQuaternion(cameraRotation) *
             Matrix4x4.CreateScale(-1f, 1f, 1f);
-        var ringMatrix = Matrix4x4.CreateFromQuaternion(
-            worldFrame ? Quaternion.Identity : modelRotation);
 
-        dl.AddCircleFilled(center, r + 6f * s,
+        // Live drag feedback: the rings rotate with the accumulated total so
+        // the widget visibly follows the drag (like the in-world gizmo). On
+        // release they re-derive from the static frame.
+        var displayRing = _dragAxis != null && active
+            ? (_dragApplyWorld
+                ? Quaternion.Normalize(_dragTotal * ringFrame)
+                : Quaternion.Normalize(ringFrame * _dragTotal))
+            : ringFrame;
+        var ringMatrix = Matrix4x4.CreateFromQuaternion(displayRing);
+
+        dl.AddCircleFilled(center, rOuter + 4f * s,
             ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.30f)));
 
-        // Project all three rings once.
+        // Project the three axis rings; the roll ring is pure screen space.
         var screens = new Vector2[3][];
         var fronts = new bool[3][];
         for (int a = 0; a < 3; a++)
@@ -197,11 +210,10 @@ public class PoseRailPane
             }
         }
 
-        // Nearest visible (front-facing) projected ring segment wins; a
-        // later axis must be STRICTLY closer, so exact ties resolve X → Y → Z.
+        // Nearest visible (front-facing) projected ring segment wins; a later
+        // axis must be STRICTLY closer, so ties resolve X → Y → Z → Roll.
         int hoverAxis = -1;
         var hoverTangent = Vector2.Zero;
-        var hoverPoint = Vector2.Zero;
         float bestDistance = pickTolerance;
         if (hovered)
         {
@@ -217,13 +229,29 @@ public class PoseRailPane
                         bestDistance = dist;
                         hoverAxis = a;
                         hoverTangent = Vector2.Normalize(screens[a][i] - screens[a][i - 1]);
-                        hoverPoint = mouse;
                     }
                 }
             }
+            var radial = mouse - center;
+            float radialLength = radial.Length();
+            if (radialLength > 1e-3f &&
+                MathF.Abs(radialLength - rOuter) < bestDistance)
+            {
+                hoverAxis = (int)RotationAxis.Roll;
+                hoverTangent = Vector2.Normalize(new Vector2(-radial.Y, radial.X));
+            }
         }
 
-        // Rear arcs first, front arcs after, so front stays legible on top.
+        // The wide roll ring first (always "front"), then rear arcs, then
+        // front arcs, so the axis rings stay legible on top.
+        {
+            bool hot = hoverAxis == (int)RotationAxis.Roll ||
+                _dragAxis == RotationAxis.Roll;
+            var rollColor = new Vector4(1f, 1f, 1f, 1f) with { W = hot ? 0.95f : 0.55f };
+            dl.AddCircle(center, rOuter,
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(rollColor)),
+                0, (hot ? 4.5f : 3.5f) * s);
+        }
         for (int pass = 0; pass < 2; pass++)
         {
             bool frontPass = pass == 1;
@@ -250,16 +278,36 @@ public class PoseRailPane
             _dragTangent = hoverTangent;
             _dragOrigin = mouse;
             _dragDistance = 0f;
-            _dragWorldFrame = worldFrame;
             _dragTotal = Quaternion.Identity;
+            switch (_dragAxis)
+            {
+                case RotationAxis.X:
+                    _dragAxisVector = Vector3.UnitX;
+                    _dragApplyWorld = worldFrame;
+                    break;
+                case RotationAxis.Y:
+                    _dragAxisVector = -Vector3.UnitY; // Brio's handedness sign
+                    _dragApplyWorld = worldFrame;
+                    break;
+                case RotationAxis.Z:
+                    _dragAxisVector = Vector3.UnitZ;
+                    _dragApplyWorld = worldFrame;
+                    break;
+                default:
+                    // Roll about the camera's view axis, in world space.
+                    _dragAxisVector = Vector3.Normalize(
+                        Vector3.Transform(-Vector3.UnitZ, Quaternion.Inverse(cameraRotation)));
+                    _dragApplyWorld = true;
+                    break;
+            }
         }
 
-        if (active && _dragAxis is { } dragAxis)
+        if (active && _dragAxis != null)
         {
             // Drag along the frozen screen tangent of the grabbed ring. The
             // shared modifier policy scales the pointer delta; the applied
-            // rotation is always the TOTAL from drag start, dispatched through
-            // the clean gesture's frozen baseline.
+            // rotation is always the TOTAL from drag start, dispatched
+            // through the clean gesture's frozen baseline.
             float newDistance = Vector2.Dot(mouse - _dragOrigin, _dragTangent);
             float delta = (newDistance - _dragDistance) *
                 AppShellView.DragModifierMultiplier(io);
@@ -267,16 +315,17 @@ public class PoseRailPane
             if (delta != 0f)
             {
                 float angle = delta / 200f;
-                var axisRotation = dragAxis switch
-                {
-                    RotationAxis.X => Quaternion.CreateFromAxisAngle(Vector3.UnitX, angle),
-                    RotationAxis.Y => Quaternion.CreateFromAxisAngle(Vector3.UnitY, -angle),
-                    _ => Quaternion.CreateFromAxisAngle(Vector3.UnitZ, angle),
-                };
+                var axisRotation = Quaternion.CreateFromAxisAngle(_dragAxisVector, angle);
                 _dragTotal = Quaternion.Normalize(_dragTotal * axisRotation);
-                _inspector.RotateSelectionGizmo(_dragTotal, _dragWorldFrame);
+                _inspector.RotateSelectionGizmo(_dragTotal, _dragApplyWorld);
             }
-            var dragColor = dragAxis switch { RotationAxis.X => AxisX, RotationAxis.Y => AxisY, _ => AxisZ };
+            var dragColor = _dragAxis switch
+            {
+                RotationAxis.X => AxisX,
+                RotationAxis.Y => AxisY,
+                RotationAxis.Z => AxisZ,
+                _ => new Vector4(1f, 1f, 1f, 1f),
+            };
             dl.AddCircleFilled(_dragOrigin, 3.5f * s,
                 ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(dragColor)));
         }
@@ -291,15 +340,16 @@ public class PoseRailPane
 
         if (hovered && !active && hoverAxis >= 0)
         {
-            var hoverColor = hoverAxis switch { 0 => AxisX, 1 => AxisY, _ => AxisZ };
-            dl.AddCircle(hoverPoint, 5f * s,
+            var hoverColor = hoverAxis switch { 0 => AxisX, 1 => AxisY, 2 => AxisZ, _ => new Vector4(1f, 1f, 1f, 1f) };
+            dl.AddCircle(mouse, 5f * s,
                 ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(hoverColor)), 0, 1.5f * s);
             ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
             ImGui.SetTooltip(hoverAxis switch
             {
                 0 => "X axis · drag along the ring",
                 1 => "Y axis · drag along the ring",
-                _ => "Z axis · drag along the ring",
+                2 => "Z axis · drag along the ring",
+                _ => "Roll · rotate about the camera axis",
             });
         }
 
