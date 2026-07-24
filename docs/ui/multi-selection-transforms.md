@@ -64,13 +64,7 @@ the entire group through the same runtime restore path as cancel.
   center bones self-mirror, one atomic history entry), **Flip bone**
   (authored adjustment of one bone; clear no-edit result when untouched),
   and live **Symmetry: Mirror** (both counterpart baselines frozen at
-  gesture start; model-frame deltas reflect directly). The separate
-  **Bake mirrored pose…** action (actor node only, behind a confirmation)
-  mirrors the currently evaluated body pose per Ktisis
-  `EntityPoseConverter.FlipPose` — opposite-name rotation exchange,
-  positions untouched, face/hair/j_ex partials and iv_/ya_ bones excluded,
-  root yaw-corrected and flipped 180° — and materializes it as authored
-  state; it may break animation-relative behavior and says so.
+  gesture start; model-frame deltas reflect directly).
 
 ## Reference decisions
 

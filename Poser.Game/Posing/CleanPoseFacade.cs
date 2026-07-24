@@ -182,12 +182,6 @@ public sealed class CleanPoseFacade
     public PoseEditResult Mirror(ISkeleton skeleton) =>
         Report("Mirror edits", _edits.Mirror(Targets(skeleton), "Mirror edits"));
 
-    /// <summary>Explicit, potentially animation-breaking bake of the
-    /// mirrored evaluated body pose (correction 3D). UI confirms first.</summary>
-    public PoseEditResult BakeMirroredPose(ISkeleton skeleton) =>
-        Report("Bake mirrored pose",
-            _edits.BakeMirroredPose(Targets(skeleton), "Bake mirrored pose"));
-
     /// <summary>Whether any bone carries a Poser-authored (unnamed) layer —
     /// the "Mirror edits" availability predicate.</summary>
     public bool HasAuthoredEdits(ISkeleton skeleton) =>
