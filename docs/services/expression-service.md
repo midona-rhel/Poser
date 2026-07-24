@@ -70,6 +70,18 @@ Expression blending owns the named stack layer `expression` on affected bones:
 6. Bones missing from the current skeleton are skipped without aborting the
    remaining bones; non-finite transforms are rejected before any native
    write.
+7. **Bone resolution is by complete identity, per partial.** The game
+   evaluates face data on the face/accessory partials (partial id ≥ 1), and
+   `ISkeleton.GetBone(name)` is first-writer-wins across ascending partials —
+   a name that also exists in partial 0 would silently bind the duplicate the
+   evaluated partial never reads (the round-1 "Jaw Open does nothing"
+   defect). The service resolves every instance of each catalog name,
+   applies the layer to each evaluated-partial instance keyed
+   `(name, partialId)`, and uses the partial-0 instance only when no
+   higher-partial instance exists. A unit with zero resolvable bones is
+   surfaced as unavailable in the UI (no functional-looking slider) and never
+   stores a weight; one diagnostic log per catalog records each unit's
+   resolved partials and any unresolvable units.
 
 The layer uses `TransformComponents.None` propagation because the catalogs
 already contain a delta for each affected facial bone; parent propagation

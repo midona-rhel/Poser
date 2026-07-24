@@ -35,11 +35,21 @@ public sealed class ExpressionInspectorSection
             return h + 26f * s;
         }
         const float sliderX = 106f, valueW = 44f, sliderGap = 6f;
-        foreach (var (id, label, bidirectional) in units)
+        foreach (var (id, label, bidirectional, available) in units)
         {
             float weight = _expressions.GetWeight(actor, id);
             ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 5f * s), label,
-                11f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
+                11f, FontWeight.Regular, new Vector4(1f, 1f, 1f, available ? 0.72f : 0.3f));
+            if (!available)
+            {
+                // Zero resolvable target bones on this skeleton: the unit is
+                // presented as unavailable, never as a slider that does nothing.
+                ViewText.Label(new Vector2(cursor.X + sliderX * s, cursor.Y + h + 5f * s),
+                    "no matching bones", 11f, FontWeight.Regular,
+                    new Vector4(1f, 1f, 1f, 0.3f));
+                h += 26f * s;
+                continue;
+            }
             ImGui.SetCursorScreenPos(new Vector2(
                 cursor.X + sliderX * s, cursor.Y + h + 5f * s));
             if (Crystarium.Slider($"##au-{id}", ref weight,

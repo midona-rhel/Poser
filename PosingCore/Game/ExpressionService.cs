@@ -25,9 +25,12 @@ public interface IExpressionService
     bool IsAvailable { get; }
 
     /// <summary>Action units for the actor's race catalog (Id, Label,
-    /// Bidirectional); empty when the actor's customize combination has no
-    /// catalog.</summary>
-    IReadOnlyList<(string Id, string Label, bool Bidirectional)> GetUnits(IActor actor);
+    /// Bidirectional, Available); empty when the actor's customize
+    /// combination has no catalog. A unit with zero resolvable target bones
+    /// on the actor's current skeleton reports Available = false — it is
+    /// presented as unavailable, never as a functional slider that performs
+    /// no work.</summary>
+    IReadOnlyList<(string Id, string Label, bool Bidirectional, bool Available)> GetUnits(IActor actor);
 
     float GetWeight(IActor actor, string unitId);
 
@@ -168,12 +171,56 @@ public class ExpressionService : IExpressionService
         }
     }
 
-    public IReadOnlyList<(string Id, string Label, bool Bidirectional)> GetUnits(IActor actor)
+    public IReadOnlyList<(string Id, string Label, bool Bidirectional, bool Available)> GetUnits(IActor actor)
     {
-        if (!IsAvailable) return Array.Empty<(string, string, bool)>();
-        return CatalogKeyFor(actor) is { } key
-            ? _catalogs[key].Select(u => (u.Id, u.Label, u.Bidirectional)).ToList()
-            : Array.Empty<(string, string, bool)>();
+        if (!IsAvailable || CatalogKeyFor(actor) is not { } key)
+            return Array.Empty<(string, string, bool, bool)>();
+
+        var units = _catalogs[key];
+        var skeleton = _skeletons.GetSkeleton(actor);
+        if (skeleton is not { IsValid: true })
+            return units.Select(u => (u.Id, u.Label, u.Bidirectional, true)).ToList();
+
+        var byName = BuildBoneLookup(skeleton);
+        return units
+            .Select(u => (
+                u.Id,
+                u.Label,
+                u.Bidirectional,
+                u.Bones.Keys.Any(name => ResolveExpressionBones(byName, name).Count > 0)))
+            .ToList();
+    }
+
+    /// <summary>All bone instances per canonical name, by complete identity.</summary>
+    private static Dictionary<string, List<IBone>> BuildBoneLookup(ISkeleton skeleton)
+    {
+        var byName = new Dictionary<string, List<IBone>>(StringComparer.Ordinal);
+        foreach (var bone in skeleton.Bones)
+        {
+            if (!byName.TryGetValue(bone.BoneName, out var list))
+                byName[bone.BoneName] = list = new List<IBone>();
+            list.Add(bone);
+        }
+        return byName;
+    }
+
+    /// <summary>
+    /// Resolves the instances an expression delta targets. The game evaluates
+    /// face data on the face/accessory partials (partial id ≥ 1);
+    /// <c>ISkeleton.GetBone(name)</c> is first-writer-wins across ascending
+    /// partials and can silently bind a partial-0 duplicate that the
+    /// evaluated face partial never reads — the "Jaw Open does nothing"
+    /// defect. Every evaluated-partial instance participates with its
+    /// complete bone identity; partial 0 is used only when no higher-partial
+    /// instance exists.
+    /// </summary>
+    private static List<IBone> ResolveExpressionBones(
+        Dictionary<string, List<IBone>> byName, string boneName)
+    {
+        if (!byName.TryGetValue(boneName, out var instances))
+            return new List<IBone>();
+        var evaluated = instances.FindAll(bone => bone.PartialId > 0);
+        return evaluated.Count > 0 ? evaluated : instances;
     }
 
     public float GetWeight(IActor actor, string unitId)
@@ -202,6 +249,11 @@ public class ExpressionService : IExpressionService
         var units = _catalogs[session.CatalogKey];
         var unit = units.FirstOrDefault(candidate => candidate.Id == unitId);
         if (unit == null)
+            return;
+        // An unavailable unit (zero resolvable target bones) stores no weight:
+        // the UI presents it as unavailable and it must never look functional.
+        var lookup = BuildBoneLookup(skeleton);
+        if (unit.Bones.Keys.All(name => ResolveExpressionBones(lookup, name).Count == 0))
             return;
 
         var clamped = Math.Clamp(weight, unit.Bidirectional ? -1f : 0f, 1f);
@@ -262,29 +314,58 @@ public class ExpressionService : IExpressionService
             }
         }
 
+        var byName = BuildBoneLookup(skeleton);
+        DiagnoseResolutionOnce(session.CatalogKey, units, byName);
         var poseInfo = _posing.GetPoseInfo(skeleton);
         foreach (var boneName in affected)
         {
-            var bone = skeleton.GetBone(boneName);
-            if (bone == null)
-                continue;
-
-            var info = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
-            if (blended.TryGetValue(boneName, out var delta) && !IsIdentityDelta(delta))
-                info.SetLayerTransform(ExpressionLayer, delta, TransformComponents.None, TransformFrame.HeadRelative);
-            else
-                info.RemoveLayer(ExpressionLayer);
+            foreach (var bone in ResolveExpressionBones(byName, boneName))
+            {
+                var info = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
+                if (blended.TryGetValue(boneName, out var delta) && !IsIdentityDelta(delta))
+                    info.SetLayerTransform(ExpressionLayer, delta, TransformComponents.None, TransformFrame.HeadRelative);
+                else
+                    info.RemoveLayer(ExpressionLayer);
+            }
         }
     }
 
     private void RemoveLayers(ISkeleton skeleton, IEnumerable<ActionUnit> units)
     {
+        var byName = BuildBoneLookup(skeleton);
         var poseInfo = _posing.GetPoseInfo(skeleton);
         foreach (var boneName in units.SelectMany(unit => unit.Bones.Keys).Distinct(StringComparer.Ordinal))
-        {
-            var bone = skeleton.GetBone(boneName);
-            if (bone != null)
+            foreach (var bone in ResolveExpressionBones(byName, boneName))
                 poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId).RemoveLayer(ExpressionLayer);
+    }
+
+    private readonly HashSet<string> _diagnosedCatalogs = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// One diagnostic record per catalog per session: which instances each
+    /// catalog bone resolves to (with partial ids) and which units have no
+    /// resolvable target at all — the PBI-002 round-1 Jaw Open diagnosis.
+    /// </summary>
+    private void DiagnoseResolutionOnce(
+        string catalogKey, List<ActionUnit> units, Dictionary<string, List<IBone>> byName)
+    {
+        if (!_diagnosedCatalogs.Add(catalogKey))
+            return;
+        foreach (var unit in units)
+        {
+            var parts = unit.Bones.Keys
+                .Select(name =>
+                {
+                    var resolved = ResolveExpressionBones(byName, name);
+                    return resolved.Count == 0
+                        ? $"{name}: unresolved"
+                        : $"{name}: [{string.Join(", ", resolved.Select(b => $"p{b.PartialId}"))}]";
+                });
+            var line = string.Join("  ", parts);
+            if (unit.Bones.Keys.All(name => ResolveExpressionBones(byName, name).Count == 0))
+                _log.Warning($"ExpressionService: unit {unit.Id} ({catalogKey}) has no resolvable bones — {line}");
+            else
+                _log.Debug($"ExpressionService: {unit.Id} ({catalogKey}) resolves {line}");
         }
     }
 
