@@ -6,8 +6,11 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Bindings.ImGuizmo;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
+using Poser.Application.Selection;
 using Poser.Config;
+using Poser.Domain.Identity;
 using Poser.Entities;
+using Poser.Game.Bindings;
 using Poser.Services;
 
 namespace Poser.UI;
@@ -22,7 +25,8 @@ public class SkeletonOverlayWindow : Window
     private readonly ICameraService _cameraService;
     private readonly ISkeletonService _skeletonService;
     private readonly IBonePosingService _bonePosingService;
-    private readonly ISelectionService _selectionService;
+    private readonly SelectionSession _selection;
+    private readonly StableBindingRegistry _bindings;
     private readonly IEditorState _editorState;
 
     // Configuration from settings
@@ -44,6 +48,7 @@ public class SkeletonOverlayWindow : Window
     private class BoneDisplayData
     {
         public IBone Bone { get; init; } = null!;
+        public SelectionId Id { get; init; }
         public Vector2 ScreenPos { get; init; }
         public Vector2? ParentScreenPos { get; init; }
         public float CameraDistance { get; init; }
@@ -54,6 +59,7 @@ public class SkeletonOverlayWindow : Window
     private sealed class ActorDisplayData
     {
         public IActor Actor { get; init; } = null!;
+        public SelectionId Id { get; init; }
         public Vector2 ScreenPos { get; init; }
         public float CameraDistance { get; init; }
         public bool IsHovered { get; set; }
@@ -68,7 +74,8 @@ public class SkeletonOverlayWindow : Window
         ICameraService cameraService,
         ISkeletonService skeletonService,
         IBonePosingService bonePosingService,
-        ISelectionService selectionService,
+        SelectionSession selection,
+        StableBindingRegistry bindings,
         IEditorState editorState)
         : base("##poser_skeleton_overlay",
             ImGuiWindowFlags.NoBackground |
@@ -85,7 +92,8 @@ public class SkeletonOverlayWindow : Window
         _cameraService = cameraService;
         _skeletonService = skeletonService;
         _bonePosingService = bonePosingService;
-        _selectionService = selectionService;
+        _selection = selection;
+        _bindings = bindings;
         _editorState = editorState;
 
         RespectCloseHotkey = false;
@@ -107,7 +115,7 @@ public class SkeletonOverlayWindow : Window
         var io = ImGui.GetIO();
         var mousePos = io.MousePos;
 
-        var selectedBones = _selectionService.GetSelected<IBone>().ToHashSet();
+        var selectedIds = _selection.Selected.ToHashSet();
         var bones = new List<BoneDisplayData>();
         var actors = new List<ActorDisplayData>();
         var cameraPosition = _cameraService.GetCameraPosition();
@@ -117,12 +125,16 @@ public class SkeletonOverlayWindow : Window
         {
             if (_cameraService.WorldToScreen(actor.Transform.Position, out var actorScreen))
             {
-                actors.Add(new ActorDisplayData
+                if (_bindings.GetActorId(actor) is { } actorId)
                 {
-                    Actor = actor,
-                    ScreenPos = viewportPos + actorScreen,
-                    CameraDistance = Vector3.Distance(cameraPosition, actor.Transform.Position),
-                });
+                    actors.Add(new ActorDisplayData
+                    {
+                        Actor = actor,
+                        Id = SelectionId.ForActor(actorId),
+                        ScreenPos = viewportPos + actorScreen,
+                        CameraDistance = Vector3.Distance(cameraPosition, actor.Transform.Position),
+                    });
+                }
             }
 
             var skeleton = _skeletonService.GetSkeleton(actor) as Skeleton;
@@ -162,13 +174,17 @@ public class SkeletonOverlayWindow : Window
                 var worldPos = Vector3.Transform(bone.LastTransform.Position, modelMatrix);
                 var dist = Vector3.Distance(cameraPosition, worldPos);
 
+                if (_bindings.GetBoneId(bone) is not { } boneId)
+                    continue;
+                var selectionId = SelectionId.ForBone(boneId);
                 bones.Add(new BoneDisplayData
                 {
                     Bone = bone,
+                    Id = selectionId,
                     ScreenPos = screenPos,
                     ParentScreenPos = parentScreenPos,
                     CameraDistance = dist,
-                    IsSelected = selectedBones.Contains(bone)
+                    IsSelected = selectedIds.Contains(selectionId)
                 });
             }
         }
@@ -209,7 +225,7 @@ public class SkeletonOverlayWindow : Window
         // world-space route back from bone posing to whole-actor selection.
         foreach (var actor in actors)
         {
-            bool selected = _selectionService.IsSelected(actor.Actor);
+            bool selected = _selection.IsSelected(actor.Id);
             uint color = selected ? SelectedBoneColor : BoneColor;
             float radius = selected || actor.IsHovered ? actorRadius + 2f : actorRadius;
             drawList.AddCircleFilled(actor.ScreenPos, radius, color, 20);
@@ -233,16 +249,16 @@ public class SkeletonOverlayWindow : Window
         if (actorClicked)
         {
             if (io.KeyCtrl)
-                _selectionService.ToggleSelection(hoveredActor!.Actor);
+                _selection.Toggle(hoveredActor!.Id);
             else
-                _selectionService.Select(hoveredActor!.Actor);
+                _selection.Select(hoveredActor!.Id);
         }
         else if (DrawHoverWindow(out var clickedBone) && clickedBone != null)
         {
             if (ImGui.GetIO().KeyCtrl)
-                _selectionService.ToggleSelection(clickedBone);
+                _selection.Toggle(clickedBone.Id);
             else
-                _selectionService.Select(clickedBone);
+                _selection.Select(clickedBone.Id);
         }
     }
 
@@ -335,7 +351,7 @@ public class SkeletonOverlayWindow : Window
             _hoverIndex = 0;
     }
 
-    private bool DrawHoverWindow(out IBone? clicked)
+    private bool DrawHoverWindow(out BoneDisplayData? clicked)
     {
         clicked = null;
         if (_hoveredBones == null || _hoveredBones.Count == 0)
@@ -376,7 +392,7 @@ public class SkeletonOverlayWindow : Window
                     var isSelected = i == _hoverIndex;
                     ImGui.Selectable(bone.Bone.Name, isSelected);
                     if (isSelected && isClick)
-                        clicked = bone.Bone;
+                        clicked = bone;
                 }
             }
         }

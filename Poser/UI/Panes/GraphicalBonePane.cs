@@ -7,9 +7,13 @@ using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Utility;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
+using Poser.Application.Scene;
+using Poser.Application.Selection;
 using Poser.Data;
 using Poser.Data.Config;
+using Poser.Domain.Identity;
 using Poser.Entities;
+using Poser.Game.Bindings;
 using Poser.Services;
 using Poser.UI.Controls;
 
@@ -24,11 +28,13 @@ public sealed class GraphicalBonePane : IDisposable
     private const float CircleRadius = 6f;
     private const float HitRadius = 18f;
 
-    private readonly ISelectionService _selectionService;
+    private readonly SelectionSession _selection;
+    private readonly SceneSession _scene;
+    private readonly StableBindingRegistry _bindings;
 
     // M11 marquee (Anamnesis MouseCanvas): dot positions recorded per frame,
     // drag on empty canvas selects everything inside the rectangle.
-    private readonly System.Collections.Generic.List<(IBone Bone, Vector2 Pos)> _frameDots = new();
+    private readonly System.Collections.Generic.List<(SelectionId Id, Vector2 Pos)> _frameDots = new();
     private Vector2? _marqueeStart;
     private readonly IActorManager _actorManager;
     private readonly ISkeletonService _skeletonService;
@@ -38,15 +44,18 @@ public sealed class GraphicalBonePane : IDisposable
     private readonly Dictionary<string, IDalamudTextureWrap?> _textures = new();
 
     private float _closestHoverDistance;
-    private IBone? _hoveredBone;
+    private SelectionId? _hoveredBone;
 
     public GraphicalBonePane(
-        ISelectionService selectionService,
+        SceneSession scene,
+        StableBindingRegistry bindings,
         IActorManager actorManager,
         ISkeletonService skeletonService,
         ITextureProvider textureProvider)
     {
-        _selectionService = selectionService;
+        _scene = scene;
+        _selection = scene.Selection;
+        _bindings = bindings;
         _actorManager = actorManager;
         _skeletonService = skeletonService;
         _textureProvider = textureProvider;
@@ -83,12 +92,12 @@ public sealed class GraphicalBonePane : IDisposable
         bool hovered = ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows)
             && ImGui.IsMouseHoveringRect(origin, origin + contentArea);
 
-        if (_hoveredBone != null && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && hovered)
+        if (_hoveredBone is { } hoveredId && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && hovered)
         {
             if (ImGui.GetIO().KeyCtrl)
-                _selectionService.ToggleSelection(_hoveredBone);
+                _selection.Toggle(hoveredId);
             else
-                _selectionService.Select(_hoveredBone);
+                _selection.Select(hoveredId);
         }
 
         // marquee: press on empty canvas + drag = box select (Ctrl adds)
@@ -116,11 +125,11 @@ public sealed class GraphicalBonePane : IDisposable
                 if (isDrag)
                 {
                     if (!ImGui.GetIO().KeyCtrl)
-                        _selectionService.ClearSelection();
-                    foreach (var (dotBone, pos) in _frameDots)
+                        _selection.Clear();
+                    foreach (var (dotId, pos) in _frameDots)
                     {
                         if (pos.X >= rmin.X && pos.X <= rmax.X && pos.Y >= rmin.Y && pos.Y <= rmax.Y)
-                            _selectionService.AddToSelection(dotBone);
+                            _selection.Add(dotId);
                     }
                 }
                 _marqueeStart = null;
@@ -313,8 +322,13 @@ public sealed class GraphicalBonePane : IDisposable
 
     private void DrawBoneAt(IBone bone, Vector2 screenPos)
     {
-        bool isSelected = _selectionService.IsSelected(bone);
-        bool isHovered = _hoveredBone == bone;
+        // Selection identity is the stable id; the live bone stays inside the
+        // map's rendering walk and never enters a selection command.
+        if (_bindings.GetBoneId(bone) is not { } boneId)
+            return;
+        var selectionId = SelectionId.ForBone(boneId);
+        bool isSelected = _selection.IsSelected(selectionId);
+        bool isHovered = _hoveredBone?.Equals(selectionId) == true;
         float s = ImGuiHelpers.GlobalScale;
 
         // Hit detection
@@ -323,11 +337,11 @@ public sealed class GraphicalBonePane : IDisposable
             mouseDistance < _closestHoverDistance)
         {
             _closestHoverDistance = mouseDistance;
-            _hoveredBone = bone;
+            _hoveredBone = selectionId;
             isHovered = true;
         }
 
-        _frameDots.Add((bone, screenPos));
+        _frameDots.Add((selectionId, screenPos));
 
         var drawList = ImGui.GetWindowDrawList();
 
@@ -397,14 +411,24 @@ public sealed class GraphicalBonePane : IDisposable
 
     private IActor? GetSelectedActor()
     {
-        // Check if an actor is selected
-        var selected = _selectionService.Primary;
-        if (selected is IActor actor)
-            return actor;
-
-        // Check if a bone is selected - get its actor
-        if (selected is IBone bone)
-            return bone.Skeleton.Actor;
+        // Primary selection decides which actor's maps draw. The stable id
+        // resolves to a live actor for this frame's rendering walk only.
+        var lineage = _selection.Primary switch
+        {
+            { Kind: SceneEntityKind.Actor, Actor: { } actorId } => actorId.LogicalId,
+            { Kind: SceneEntityKind.Bone, Bone: { } boneId } => boneId.Skeleton.Actor.LogicalId,
+            _ => (Guid?)null,
+        };
+        if (lineage is { } target)
+        {
+            foreach (var descriptor in _scene.Snapshot.Actors)
+            {
+                if (descriptor.Id.LogicalId != target)
+                    continue;
+                var resolved = _bindings.Resolve(descriptor.Id);
+                return resolved.Success ? resolved.Value : null;
+            }
+        }
 
         // Fall back to first actor
         return _actorManager.Actors.Count > 0 ? _actorManager.Actors[0] : null;

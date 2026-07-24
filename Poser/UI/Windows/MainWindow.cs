@@ -5,9 +5,15 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
+using Poser.Application.Scene;
+using Poser.Application.Selection;
 using Poser.Core;
+using Poser.Domain.Identity;
+using Poser.Domain.Scene;
+using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Game;
+using Poser.Game.Bindings;
 using Poser.Game.Transforms;
 using Poser.Game.Posing;
 using Poser.Services;
@@ -32,17 +38,21 @@ public class MainWindow : Window
 
     private readonly IGPoseService _gPoseService;
     private readonly IActorManager _actorManager;
-    private readonly ISkeletonService _skeletonService;
     private readonly IActorSpawnService _spawnService;
+    private readonly SceneSession _scene;
+    private readonly SelectionSession _selection;
+    private readonly StableBindingRegistry _bindings;
 
-    // actor context menu + rename modal (M12: lifetime actions)
-    private IActor? _ctxActor;
+    // actor context menu + rename modal: stable ids only; the lifetime
+    // services still take legacy actors, so ids resolve per frame through the
+    // binding registry and the pointer never persists in UI state.
+    private ActorId? _ctxActorId;
     private bool _ctxOpenRequested;
-    private IBone? _ctxBone;
+    private BoneId? _ctxBoneId;
     private bool _boneCtxOpenRequested;
     private bool _renameOpen;
     private string _renameValue = "";
-    private IActor? _renameTarget;
+    private ActorId? _renameTarget;
     private readonly ISelectionService _selectionService;
     private readonly IEditorState _editorState;
     private readonly CleanTransformFacade _cleanTransforms;
@@ -74,7 +84,8 @@ public class MainWindow : Window
         IActorManager actorManager,
         IBonePosingService bonePosingService,
         IActorSpawnService spawnService,
-        ISkeletonService skeletonService,
+        SceneSession scene,
+        StableBindingRegistry bindings,
         ISelectionService selectionService,
         IEditorState editorState,
         CleanTransformFacade cleanTransforms,
@@ -93,7 +104,9 @@ public class MainWindow : Window
 
         _gPoseService = gPoseService;
         _actorManager = actorManager;
-        _skeletonService = skeletonService;
+        _scene = scene;
+        _selection = scene.Selection;
+        _bindings = bindings;
         _selectionService = selectionService;
         _editorState = editorState;
         _cleanTransforms = cleanTransforms;
@@ -104,7 +117,13 @@ public class MainWindow : Window
         _poseInspector = poseInspector;
         _poseInspector.DrawMapInline = graphicalBonePane.DrawInline;
         _poseInspector.ActorsProvider = () => _actorManager.Actors;
-        _poseInspector.ActorDisplayNameProvider = ActorDisplayName;
+        // Transitional: the inspector still takes entity display lookups until
+        // its own migration; route them through the lineage nickname store.
+        _poseInspector.ActorDisplayNameProvider = actor =>
+            _bindings.GetActorId(actor) is { } displayId
+                ? Config.ConfigurationService.Instance.GetNickname(displayId.LogicalId)
+                    ?? DisplayName(actor.Name)
+                : DisplayName(actor.Name);
 
         _poseRail = poseRail;
         _vm.OnCollapse = collapsed =>
@@ -124,32 +143,32 @@ public class MainWindow : Window
         _vm.OnHideUi = () => IsOpen = false;
         _vm.OnSelectTarget = () =>
         {
-            var target = _actorManager.GetGPoseTarget();
-            if (target != null)
-                _selectionService.Select(target);
+            if (_actorManager.GetGPoseTarget() is { } target &&
+                _bindings.GetActorId(target) is { } targetId)
+                _selection.Select(SelectionId.ForActor(targetId));
         };
         _vm.OnRowClicked = OnRowClicked;
         _vm.OnRowExpandToggled = row =>
         {
             if (row.Tag is string key && !_collapsedNodes.Add(key))
                 _collapsedNodes.Remove(key);
-            else if (row.Tag is IActor actor)
+            else if (row.Tag is SelectionId { Kind: SceneEntityKind.Actor, Actor: { } rowActor })
             {
-                var akey = "actor:" + actor.Id.Unique;
+                var akey = "actor:" + rowActor.LogicalId;
                 if (!_collapsedNodes.Add(akey)) _collapsedNodes.Remove(akey);
             }
         };
         _vm.OnSidebarResize = w => _sidebarWidth = w;
         _vm.OnRowContextMenu = row =>
         {
-            if (row.Tag is IActor ctxActor)
+            if (row.Tag is SelectionId { Kind: SceneEntityKind.Actor, Actor: { } ctxActor })
             {
-                _ctxActor = ctxActor;
+                _ctxActorId = ctxActor;
                 _ctxOpenRequested = true;
             }
-            else if (row.Tag is IBone ctxBone)
+            else if (row.Tag is SelectionId { Kind: SceneEntityKind.Bone, Bone: { } ctxBone })
             {
-                _ctxBone = ctxBone;
+                _ctxBoneId = ctxBone;
                 _boneCtxOpenRequested = true;
             }
         };
@@ -272,7 +291,7 @@ public class MainWindow : Window
 
     private void BuildViewModel()
     {
-        var primary = _selectionService.Primary;
+        var primary = _selection.Primary;
 
         _vm.GPoseActive = _gPoseService.IsGPosing;
         _vm.SidebarWidthPx = _sidebarWidth;
@@ -305,33 +324,31 @@ public class MainWindow : Window
             _cleanTransforms.Redo();
     }
 
-    private void BuildSidebar(IEntity? primary)
+    private void BuildSidebar(SelectionId? primary)
     {
         _vm.Sections.Clear();
-        var selectedBone = primary as IBone;
+        BoneId? selectedBone = primary is { Kind: SceneEntityKind.Bone, Bone: { } primaryBone }
+            ? primaryBone
+            : null;
         string filter = _vm.SidebarSearch.Trim();
         bool filtering = filter.Length > 0;
 
         var actors = new ShellSidebarSection { Title = "ACTORS", ShowPlus = false };
-        foreach (var actor in _actorManager.Actors)
+        foreach (var actor in _scene.Snapshot.Actors)
         {
-            var actorKey = "actor:" + actor.Id.Unique;
+            var actorKey = "actor:" + actor.Id.LogicalId;
             string actorLabel = ActorDisplayName(actor);
 
-            var groups = new List<(Core.BoneInfo.BoneCategory Cat, List<IBone> Bones)>();
-            // The main selection surface owns skeleton discovery. The optional
-            // world overlay must never be required for bones to appear.
-            var skeleton = _skeletonService.GetSkeleton(actor) is { IsValid: true } validSkeleton
-                ? validSkeleton
-                : null;
+            var groups = new List<(Core.BoneInfo.BoneCategory Cat, List<BoneDescriptor> Bones)>();
+            var skeleton = actor.Skeleton;
             if (skeleton != null)
             {
                 foreach (var bone in skeleton.Bones)
                 {
-                    if (bone.IsHiddenBone) continue;
-                    var cat = Core.BoneInfo.BoneInfoService.GetCategory(bone.BoneName);
+                    if (bone.IsHidden) continue;
+                    var cat = Core.BoneInfo.BoneInfoService.GetCategory(bone.Id.CanonicalName);
                     var slot = groups.FindIndex(g => g.Cat == cat);
-                    if (slot < 0) { groups.Add((cat, new List<IBone>())); slot = groups.Count - 1; }
+                    if (slot < 0) { groups.Add((cat, new List<BoneDescriptor>())); slot = groups.Count - 1; }
                     groups[slot].Bones.Add(bone);
                 }
                 groups.Sort((a, b) => ((int)a.Cat).CompareTo((int)b.Cat));
@@ -340,23 +357,25 @@ public class MainWindow : Window
             bool actorMatches = MatchesSidebarFilter(filter, actorLabel, actor.Name);
             bool hasMatchingBone = groups.Exists(group =>
                 MatchesSidebarFilter(filter, Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(group.Cat), group.Cat.ToString())
-                || group.Bones.Exists(bone => MatchesSidebarFilter(filter, bone.Name, bone.BoneName)));
+                || group.Bones.Exists(bone => MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName)));
             if (filtering && !actorMatches && !hasMatchingBone)
                 continue;
 
-            bool ownsSelectedBone = selectedBone != null && ReferenceEquals(selectedBone.Skeleton.Actor, actor);
+            bool ownsSelectedBone = selectedBone is { } ownedBone &&
+                ownedBone.Skeleton.Actor.LogicalId == actor.Id.LogicalId;
             if (ownsSelectedBone)
                 _collapsedNodes.Remove(actorKey);
             bool expanded = filtering || !_collapsedNodes.Contains(actorKey);
+            var actorSelectionId = SelectionId.ForActor(actor.Id);
             actors.Rows.Add(new ShellSidebarRow
             {
                 Label = actorLabel,
-                Count = !_spawnService.IsVisible(actor) ? "hidden" : ActorCount(actor),
+                Count = actor.IsHidden ? "hidden" : ActorCount(actor),
                 Icon = actor.IsCompanion ? TablerIcon.Paw : TablerIcon.User,
                 HasChildren = skeleton != null,
                 Expanded = expanded,
-                Active = _selectionService.IsSelected(actor),
-                Tag = actor,
+                Active = _selection.IsSelected(actorSelectionId),
+                Tag = actorSelectionId,
             });
 
             // M11: the actor folds DIRECTLY into bone categories (no skeleton
@@ -364,14 +383,14 @@ public class MainWindow : Window
             // the Ktisis-definitions toggle swaps the set once its data lands.
             if (expanded && skeleton != null && (!filtering || hasMatchingBone))
             {
-                var displayedGroups = new List<(Core.BoneInfo.BoneCategory Cat, List<IBone> Visible, List<IBone> All)>();
+                var displayedGroups = new List<(Core.BoneInfo.BoneCategory Cat, List<BoneDescriptor> Visible, List<BoneDescriptor> All)>();
                 foreach (var (cat, bones) in groups)
                 {
                     string categoryLabel = Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(cat);
                     bool categoryMatches = filtering && MatchesSidebarFilter(filter, categoryLabel, cat.ToString());
                     var visibleBones = !filtering || categoryMatches
                         ? bones
-                        : bones.FindAll(bone => MatchesSidebarFilter(filter, bone.Name, bone.BoneName));
+                        : bones.FindAll(bone => MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName));
                     if (!filtering || visibleBones.Count > 0)
                         displayedGroups.Add((cat, visibleBones, bones));
                 }
@@ -380,7 +399,8 @@ public class MainWindow : Window
                 {
                     var (cat, visibleBones, allBones) = displayedGroups[g];
                     var catKey = actorKey + "/cat:" + cat;
-                    bool containsSelectedBone = selectedBone != null && allBones.Exists(bone => ReferenceEquals(bone, selectedBone));
+                    bool containsSelectedBone = selectedBone is { } revealBone &&
+                        allBones.Exists(bone => bone.Id.Equals(revealBone));
                     if (_knownCategoryNodes.Add(catKey) && !containsSelectedBone)
                         _collapsedNodes.Add(catKey);
                     if (containsSelectedBone)
@@ -400,16 +420,19 @@ public class MainWindow : Window
                     if (!catExpanded) continue;
                     for (int b = 0; b < visibleBones.Count; b++)
                     {
+                        var boneSelectionId = SelectionId.ForBone(visibleBones[b].Id);
                         actors.Rows.Add(new ShellSidebarRow
                         {
-                            Label = visibleBones[b].Name,
-                            // modded/unlocalized bones: Name == BoneName — one is enough
-                            Count = visibleBones[b].Name == visibleBones[b].BoneName ? "" : visibleBones[b].BoneName,
+                            Label = visibleBones[b].DisplayName,
+                            // modded/unlocalized bones: DisplayName == canonical — one is enough
+                            Count = visibleBones[b].DisplayName == visibleBones[b].Id.CanonicalName
+                                ? ""
+                                : visibleBones[b].Id.CanonicalName,
                             Depth = 2,
                             IsLastChild = b == visibleBones.Count - 1,
                             TreeLines = new[] { false, !catLast },
-                            Active = _selectionService.IsSelected(visibleBones[b]),
-                            Tag = visibleBones[b],
+                            Active = _selection.IsSelected(boneSelectionId),
+                            Tag = boneSelectionId,
                         });
                     }
                 }
@@ -427,64 +450,75 @@ public class MainWindow : Window
         return false;
     }
 
-    /// <summary>Returns the configured nickname or the cleaned live actor name.</summary>
-    private static string ActorDisplayName(IActor actor)
-        => Config.ConfigurationService.Instance.HasNickname(actor)
-            ? Config.ConfigurationService.Instance.GetDisplayName(actor)
-            : DisplayName(actor.Name);
+    /// <summary>Returns the configured nickname or the cleaned snapshot name.</summary>
+    private static string ActorDisplayName(ActorDescriptor actor)
+        => Config.ConfigurationService.Instance.GetNickname(actor.Id.LogicalId)
+            ?? DisplayName(actor.Name);
 
     /// <summary>Strips the raw object-index suffix ("Name (201)") for display.</summary>
     private static string DisplayName(string name)
         => System.Text.RegularExpressions.Regex.Replace(name, @"\s*\(\d+\)$", "");
 
-    private static string ActorCount(IActor actor)
+    private static string ActorCount(ActorDescriptor actor)
     {
         if (actor.IsCompanion) return "minion";
         if (actor.IsPlayer) return "player";
         return "npc";
     }
 
-    private void BuildTabs(IEntity? primary)
+    private void BuildTabs(SelectionId? primary)
     {
         _vm.Tabs.Clear();
         _activeTab = "Pose";
         _vm.Tabs.Add(new ShellTab { Label = "Pose", Active = true });
     }
 
-    private void BuildCrumbAndStatus(IEntity? primary)
+    private void BuildCrumbAndStatus(SelectionId? primary)
     {
-        switch (primary)
+        ActorDescriptor? crumbActor = null;
+        BoneDescriptor? crumbBone = null;
+        if (primary is { Kind: SceneEntityKind.Bone, Bone: { } bone })
         {
-            case IBone bone:
-                _vm.CrumbPrefix = $"{ActorDisplayName(bone.Skeleton.Actor)} · ";
-                _vm.CrumbBold = bone.Name;
-                break;
-            case null:
-                _vm.CrumbPrefix = "";
-                _vm.CrumbBold = "";
-                break;
-            case IActor actor:
-                _vm.CrumbPrefix = "";
-                _vm.CrumbBold = ActorDisplayName(actor);
-                break;
-            default:
-                _vm.CrumbPrefix = "";
-                _vm.CrumbBold = DisplayName(primary.Name);
-                break;
+            crumbActor = FindActor(bone.Skeleton.Actor.LogicalId);
+            crumbBone = crumbActor?.Skeleton?.Bones
+                .FirstOrDefault(candidate => candidate.Id.Equals(bone));
+        }
+        else if (primary is { Kind: SceneEntityKind.Actor, Actor: { } actorId })
+        {
+            crumbActor = FindActor(actorId.LogicalId);
         }
 
-        int actorCount = _actorManager.Actors.Count;
+        if (crumbBone != null && crumbActor != null)
+        {
+            _vm.CrumbPrefix = $"{ActorDisplayName(crumbActor)} · ";
+            _vm.CrumbBold = crumbBone.DisplayName;
+        }
+        else if (crumbActor != null)
+        {
+            _vm.CrumbPrefix = "";
+            _vm.CrumbBold = ActorDisplayName(crumbActor);
+        }
+        else
+        {
+            _vm.CrumbPrefix = "";
+            _vm.CrumbBold = "";
+        }
+
+        int actorCount = _scene.Snapshot.Actors.Count;
         _vm.StatusLeft = actorCount == 1 ? "1 actor" : $"{actorCount} actors";
 
-        int bones = 0;
-        var skeletonOwner = primary as ISkeleton
-            ?? (primary as IBone)?.Skeleton
-            ?? (primary as IActor)?.Skeleton;
-        if (skeletonOwner is { IsValid: true })
-            bones = skeletonOwner.Bones.Count;
+        int bones = crumbActor?.Skeleton?.Bones.Count ?? 0;
         _vm.StatusRight = bones > 0
             ? $"{bones} bones · {ImGui.GetIO().Framerate:0} fps"
             : $"{ImGui.GetIO().Framerate:0} fps";
+    }
+
+    private ActorDescriptor? FindActor(Guid lineage)
+    {
+        foreach (var actor in _scene.Snapshot.Actors)
+            if (actor.Id.LogicalId == lineage)
+                return actor;
+        return null;
     }
 
     // ── shell callbacks ──────────────────────────────────────────────────
@@ -505,27 +539,27 @@ public class MainWindow : Window
             return;
         }
 
-        if (row.Tag is not IEntity entity) return;
+        if (row.Tag is not SelectionId id) return;
 
         var io = ImGui.GetIO();
-        if (io.KeyShift && _selectionService.LastClicked is { } anchor)
+        if (io.KeyShift && _selection.Anchor is { } anchor)
         {
             // Range order follows the rows currently visible to the user;
-            // collapsed and filtered-out entities are deliberately excluded.
-            var displayOrder = new List<IEntity>();
+            // collapsed and filtered-out entries are deliberately excluded.
+            var displayOrder = new List<SelectionId>();
             foreach (var section in _vm.Sections)
                 foreach (var visibleRow in section.Rows)
-                    if (visibleRow.Tag is IEntity visibleEntity)
-                        displayOrder.Add(visibleEntity);
-            _selectionService.SelectRange(anchor, entity, displayOrder);
+                    if (visibleRow.Tag is SelectionId visibleId)
+                        displayOrder.Add(visibleId);
+            _selection.SelectRange(anchor, id, displayOrder);
         }
         else if (io.KeyCtrl)
         {
-            _selectionService.ToggleSelection(entity);
+            _selection.Toggle(id);
         }
         else
         {
-            _selectionService.Select(entity);
+            _selection.Select(id);
         }
     }
 
@@ -548,7 +582,10 @@ public class MainWindow : Window
     }
 
     /// <summary>Right-click actor menu: the lifetime actions that were stranded
-    /// without a sidebar affordance (target / visibility / rename / clone / companion / despawn).</summary>
+    /// without a sidebar affordance (target / visibility / rename / clone / companion / despawn).
+    /// The menu state is a stable ActorId; the legacy lifetime services still
+    /// take live actors, so the id resolves through the binding registry for
+    /// the duration of one frame and is dropped when resolution fails.</summary>
     private void DrawActorContextMenu()
     {
         if (_ctxOpenRequested)
@@ -556,9 +593,16 @@ public class MainWindow : Window
             ImGui.OpenPopup("##actor-ctx");
             _ctxOpenRequested = false;
         }
-        if (_ctxActor is not { } actor) return;
+        if (_ctxActorId is not { } actorId) return;
+        var resolved = _bindings.Resolve(actorId);
+        if (!resolved.Success)
+        {
+            _ctxActorId = null;
+            return;
+        }
+        var actor = resolved.Value!;
 
-        var items = new System.Collections.Generic.List<ContextMenuItem>
+        var items = new List<ContextMenuItem>
         {
             new("Set game target", TablerIcon.Eye),
             new(!_spawnService.IsVisible(actor) ? "Show" : "Hide", !_spawnService.IsVisible(actor) ? TablerIcon.Eye : TablerIcon.EyeOff),
@@ -567,22 +611,22 @@ public class MainWindow : Window
             ContextMenuItem.Separator,
             new("Detach companion", TablerIcon.X),
         };
-        var actions = new System.Collections.Generic.List<Action?>
+        var actions = new List<Action?>
         {
             () => _actorManager.SetGPoseTarget(actor),
             () => _spawnService.SetVisibility(actor, !_spawnService.IsVisible(actor)),
             () =>
             {
-                _renameTarget = actor;
-                _renameValue = Config.ConfigurationService.Instance.HasNickname(actor)
-                    ? Config.ConfigurationService.Instance.GetDisplayName(actor)
-                    : DisplayName(actor.Name);
+                _renameTarget = actorId;
+                _renameValue = Config.ConfigurationService.Instance.GetNickname(actorId.LogicalId)
+                    ?? DisplayName(actor.Name);
                 _renameOpen = true;
             },
             () =>
             {
                 var clone = _spawnService.CloneActor(actor);
-                if (clone != null) _selectionService.Select(clone);
+                if (clone != null && _bindings.GetActorId(clone) is { } cloneId)
+                    _selection.Select(SelectionId.ForActor(cloneId));
             },
             null, // separator
             () => _spawnService.DestroyCompanion(actor),
@@ -596,7 +640,7 @@ public class MainWindow : Window
             actions.Add(() =>
             {
                 _spawnService.DestroyActor(actor);
-                _selectionService.ClearSelection();
+                _selection.Clear();
             });
         }
 
@@ -606,9 +650,9 @@ public class MainWindow : Window
     }
 
     /// <summary>
-    /// Right-click bone menu for hierarchy navigation and bone-local operations.
-    /// These actions retain the same selection service and posing stack used by
-    /// the matrix, overlay, and inspector.
+    /// Right-click bone menu for hierarchy navigation and bone-local
+    /// operations. Hierarchy facts come from the scene snapshot; selection and
+    /// pose commands dispatch stable ids only.
     /// </summary>
     private void DrawBoneContextMenu()
     {
@@ -617,20 +661,30 @@ public class MainWindow : Window
             ImGui.OpenPopup("##bone-ctx");
             _boneCtxOpenRequested = false;
         }
-        if (_ctxBone is not { } bone)
+        if (_ctxBoneId is not { } boneId)
             return;
 
-        var mirrorName = _bonePosingService.GetMirrorBoneName(bone.BoneName);
+        var owner = FindActor(boneId.Skeleton.Actor.LogicalId);
+        var bones = owner?.Skeleton?.Bones;
+        var descriptor = bones?.FirstOrDefault(candidate => candidate.Id.Equals(boneId));
+        if (bones == null || descriptor == null)
+        {
+            _ctxBoneId = null;
+            return;
+        }
+
+        var mirrorName = _bonePosingService.GetMirrorBoneName(boneId.CanonicalName);
         var mirror = mirrorName == null
             ? null
-            : bone.Skeleton.Bones.FirstOrDefault(candidate =>
-                candidate.BoneName == mirrorName &&
-                candidate.PartialId == bone.PartialId);
+            : bones.FirstOrDefault(candidate =>
+                candidate.Id.CanonicalName == mirrorName &&
+                candidate.Id.PartialId == boneId.PartialId);
+        bool hasChildren = bones.Any(candidate => candidate.Parent?.Equals(boneId) == true);
 
         var items = new[]
         {
-            new ContextMenuItem("Select parent", TablerIcon.ArrowUp, disabled: bone.ParentBone == null),
-            new ContextMenuItem("Select children", TablerIcon.Sitemap, disabled: bone.ChildBones.Count == 0),
+            new ContextMenuItem("Select parent", TablerIcon.ArrowUp, disabled: descriptor.Parent == null),
+            new ContextMenuItem("Select children", TablerIcon.Sitemap, disabled: !hasChildren),
             new ContextMenuItem("Select mirrored bone", TablerIcon.ArrowsMove, disabled: mirror == null),
             ContextMenuItem.Separator,
             new ContextMenuItem("Flip bone", TablerIcon.Rotate),
@@ -640,30 +694,41 @@ public class MainWindow : Window
         int clicked = Crystarium.ContextMenu("##bone-ctx", items);
         switch (clicked)
         {
-            case 0 when bone.ParentBone != null:
-                _selectionService.Select(bone.ParentBone);
+            case 0 when descriptor.Parent is { } parent:
+                _selection.Select(SelectionId.ForBone(parent));
                 break;
             case 1:
-                _selectionService.Select(bone);
-                foreach (var candidate in bone.Skeleton.Bones)
+            {
+                _selection.Select(SelectionId.ForBone(boneId));
+                var byId = bones.ToDictionary(candidate => candidate.Id);
+                foreach (var candidate in bones)
                 {
-                    for (var parent = candidate.ParentBone; parent != null; parent = parent.ParentBone)
+                    for (var parent = candidate.Parent;
+                         parent is { } parentId;
+                         parent = byId.TryGetValue(parentId, out var parentDescriptor)
+                             ? parentDescriptor.Parent
+                             : null)
                     {
-                        if (!ReferenceEquals(parent, bone))
+                        if (!parentId.Equals(boneId))
                             continue;
-                        _selectionService.AddToSelection(candidate);
+                        _selection.Add(SelectionId.ForBone(candidate.Id));
                         break;
                     }
                 }
                 break;
+            }
             case 2 when mirror != null:
-                _selectionService.Select(mirror);
+                _selection.Select(SelectionId.ForBone(mirror.Id));
                 break;
             case 4:
-                _cleanPose.FlipBone(bone);
+                _cleanPose.FlipBone(
+                    TransformTargetId.ForBone(boneId),
+                    descriptor.DisplayName);
                 break;
             case 5:
-                _cleanPose.ResetBone(bone);
+                _cleanPose.ResetBone(
+                    TransformTargetId.ForBone(boneId),
+                    descriptor.DisplayName);
                 break;
         }
     }
@@ -677,14 +742,14 @@ public class MainWindow : Window
             ImGui.Dummy(new Vector2(0f, 8f * ImGuiHelpers.GlobalScale));
             if (Crystarium.Button("Save", new ButtonProps { Id = "rename-save", Classes = Cls.Primary }))
             {
-                Config.ConfigurationService.Instance.SetNickname(target, _renameValue);
+                Config.ConfigurationService.Instance.SetNickname(target.LogicalId, _renameValue);
                 _renameOpen = false;
             }
             ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
             if (Crystarium.Button("Clear", new ButtonProps { Id = "rename-clear",
                 Tooltip = "Remove the nickname and show the real name" }))
             {
-                Config.ConfigurationService.Instance.SetNickname(target, null);
+                Config.ConfigurationService.Instance.SetNickname(target.LogicalId, null);
                 _renameOpen = false;
             }
         });
