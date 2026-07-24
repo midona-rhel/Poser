@@ -1,3 +1,4 @@
+using System.Text;
 using Dalamud.Plugin.Services;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
@@ -7,14 +8,32 @@ using Poser.Services;
 
 namespace Poser.Game.Scene;
 
-/// <summary>Owns native discovery refresh and clean GPose-session teardown.</summary>
+/// <summary>
+/// Owns native discovery refresh and clean GPose-session teardown. Skeleton
+/// discovery belongs HERE, not to any inspector section: an actor whose draw
+/// object or Havok skeleton is not ready at first discovery is retried on
+/// the framework thread at a bounded backoff cadence while it remains
+/// present. Refreshes are coalesced through a structural signature — an
+/// attempt that finds no change publishes nothing, increments no scene
+/// revision, and cancels no active transform gesture.
+/// </summary>
 public sealed class CleanSceneLifecycle : IDisposable
 {
+    private static readonly TimeSpan InitialRetryInterval = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan MaxRetryInterval = TimeSpan.FromSeconds(5);
+
     private readonly StableBindingRegistry _bindings;
     private readonly SceneSession _scene;
     private readonly TransformGestureService _gestures;
     private readonly TransformHistory _history;
     private readonly IEventBus _events;
+    private readonly IFramework _framework;
+
+    private string? _lastSignature;
+    private bool _refreshing;
+    private bool _retryPending;
+    private TimeSpan _retryInterval = TimeSpan.FromMilliseconds(500);
+    private DateTime _nextRetryUtc = DateTime.MinValue;
 
     public CleanSceneLifecycle(
         StableBindingRegistry bindings,
@@ -29,20 +48,22 @@ public sealed class CleanSceneLifecycle : IDisposable
         _gestures = gestures;
         _history = history;
         _events = events;
+        _framework = framework;
         _events.Subscribe<ActorListChangedEvent>(OnActorListChanged);
         _events.Subscribe<SkeletonChangedEvent>(OnSkeletonChanged);
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseChanged);
-        // The plugin constructor runs on a loader task thread, while every
-        // subscribed event publishes from the framework thread. The registry
-        // refresh reads native skeleton data and shared bone-name state, so
-        // the initial discovery must run on the framework thread too — a
-        // concurrent ctor-thread refresh corrupted shared collections and
-        // could fail the whole plugin load.
+        // Discovery, retries, and refreshes all run on the framework thread:
+        // the registry refresh reads native skeleton data and shared
+        // bone-name state, while events publish from the framework thread —
+        // a concurrent ctor-thread refresh corrupted shared collections.
+        _framework.Update += OnFrameworkUpdate;
         _ = framework.RunOnFrameworkThread(Refresh);
     }
 
     public void Dispose()
     {
+        // Unhooking the pump stops any pending missing-skeleton retries.
+        _framework.Update -= OnFrameworkUpdate;
         _events.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
         _events.Unsubscribe<SkeletonChangedEvent>(OnSkeletonChanged);
         _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseChanged);
@@ -50,11 +71,80 @@ public sealed class CleanSceneLifecycle : IDisposable
 
     private void Refresh()
     {
+        // The registry refresh itself creates missing skeletons, and
+        // SkeletonService publishes SkeletonChangedEvent synchronously while
+        // doing so — suppress the nested re-entry it would trigger.
+        if (_refreshing)
+            return;
+        _refreshing = true;
+        try
+        {
+            RefreshCore();
+        }
+        finally
+        {
+            _refreshing = false;
+        }
+    }
+
+    private void RefreshCore()
+    {
+        var snapshot = _bindings.Refresh();
+        // One structural signature coalesces every refresh source (events,
+        // retries, session transitions): identical scenes publish nothing —
+        // no snapshot churn, no revision increment, no gesture cancellation.
+        var signature = Signature(snapshot);
+        _retryPending = snapshot.Actors.Any(actor => actor.Skeleton == null);
+        if (!_retryPending)
+            _retryInterval = InitialRetryInterval;
+        if (signature == _lastSignature)
+            return;
+        _lastSignature = signature;
+        _retryInterval = InitialRetryInterval;
+
         // Restore through the still-current bindings before replacing the
-        // registry generation map.
+        // scene: a REAL structural change invalidates gesture baselines.
         if (_gestures.ActiveGesture is { } gesture)
             _gestures.Cancel(gesture);
-        _scene.Refresh(_bindings.Refresh());
+        _scene.Refresh(snapshot);
+    }
+
+    /// <summary>
+    /// Bounded retry pump for actors whose skeletons were not ready at
+    /// discovery: retries at a backoff cadence (0.5 s doubling to 5 s) while
+    /// such an actor remains present. Runs only on the framework tick.
+    /// </summary>
+    private void OnFrameworkUpdate(IFramework framework)
+    {
+        if (!_retryPending)
+            return;
+        var now = DateTime.UtcNow;
+        if (now < _nextRetryUtc)
+            return;
+        _nextRetryUtc = now + _retryInterval;
+        var doubled = _retryInterval + _retryInterval;
+        _retryInterval = doubled > MaxRetryInterval ? MaxRetryInterval : doubled;
+        Refresh();
+    }
+
+    private static string Signature(Poser.Domain.Scene.SceneSnapshot snapshot)
+    {
+        var builder = new StringBuilder();
+        foreach (var actor in snapshot.Actors)
+        {
+            builder.Append(actor.Id.LogicalId);
+            builder.Append(':');
+            builder.Append(actor.Id.Generation);
+            builder.Append(':');
+            if (actor.Skeleton is { } skeleton)
+            {
+                builder.Append(skeleton.Id.Generation);
+                builder.Append(':');
+                builder.Append(skeleton.Bones.Count);
+            }
+            builder.Append('|');
+        }
+        return builder.ToString();
     }
 
     private void OnActorListChanged(ActorListChangedEvent _) =>

@@ -17,6 +17,19 @@ replaces the registry and then reconciles application selection:
   match;
 - missing targets are removed.
 
+## Discovery lifecycle (runtime side)
+
+Skeleton discovery is owned by `CleanSceneLifecycle` on the framework
+thread — no inspector section plays any role in runtime initialization. An
+actor whose draw object or Havok skeleton is not ready at first discovery is
+retried at a bounded backoff cadence (0.5 s doubling to 5 s) while it
+remains present. Every refresh source — events, retries, session
+transitions — coalesces through one structural signature: an attempt that
+finds no change publishes no snapshot, increments no scene revision, and
+cancels no active transform gesture. When a skeleton becomes valid, exactly
+one structural update publishes its descriptors. Leaving GPose and disposal
+stop pending retries.
+
 ## Descriptors
 
 Descriptors contain names, hierarchy, and capabilities needed by application
