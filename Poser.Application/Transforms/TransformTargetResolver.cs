@@ -34,8 +34,24 @@ public static class TransformTargetResolver
         {
             var actorTargets = new List<TransformTargetId>();
             foreach (var id in selected)
-                if (id is { Kind: SceneEntityKind.Actor, Actor: { } actorId })
-                    actorTargets.Add(TransformTargetId.ForActor(actorId));
+            {
+                if (id is not { Kind: SceneEntityKind.Actor, Actor: { } actorId })
+                    continue;
+                // Every selected actor must exist exactly (generation included)
+                // in the snapshot; a stale target makes the whole selection
+                // unresolvable rather than silently shrinking the gesture.
+                var exists = false;
+                foreach (var actor in snapshot.Actors)
+                {
+                    if (!actor.Id.Equals(actorId))
+                        continue;
+                    exists = true;
+                    break;
+                }
+                if (!exists)
+                    return null;
+                actorTargets.Add(TransformTargetId.ForActor(actorId));
+            }
             return actorTargets.Count == 0
                 ? null
                 : new EffectiveTransformSelection(actorTargets[0], actorTargets);
@@ -57,27 +73,33 @@ public static class TransformTargetResolver
             descriptors = actor.Skeleton?.Bones;
             break;
         }
-        var byId = descriptors?.ToDictionary(descriptor => descriptor.Id);
+        // Every selected bone must exist exactly in its current skeleton
+        // descriptor. A missing skeleton or an absent (stale-generation) bone
+        // makes the selection unresolvable — an unknown bone is never treated
+        // as a root.
+        if (descriptors == null)
+            return null;
+        var byId = descriptors.ToDictionary(descriptor => descriptor.Id);
 
         var selectedSet = bones.ToHashSet();
         var roots = new List<TransformTargetId>();
         foreach (var boneId in bones)
         {
+            if (!byId.TryGetValue(boneId, out var descriptor))
+                return null;
+
             var hasSelectedAncestor = false;
-            if (byId != null && byId.TryGetValue(boneId, out var descriptor))
+            var parent = descriptor.Parent;
+            while (parent is { } parentId)
             {
-                var parent = descriptor.Parent;
-                while (parent is { } parentId)
+                if (selectedSet.Contains(parentId))
                 {
-                    if (selectedSet.Contains(parentId))
-                    {
-                        hasSelectedAncestor = true;
-                        break;
-                    }
-                    parent = byId.TryGetValue(parentId, out var parentDescriptor)
-                        ? parentDescriptor.Parent
-                        : null;
+                    hasSelectedAncestor = true;
+                    break;
                 }
+                parent = byId.TryGetValue(parentId, out var parentDescriptor)
+                    ? parentDescriptor.Parent
+                    : null;
             }
             if (!hasSelectedAncestor)
                 roots.Add(TransformTargetId.ForBone(boneId));
