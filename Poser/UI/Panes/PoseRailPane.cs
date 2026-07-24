@@ -11,9 +11,9 @@ namespace Poser.UI;
 
 /// <summary>
 /// The inspector RAIL (approved M2 pose stage, round-2 defect #2): lives in the
-/// shell's 280px right column. Crumb, axis-selectable rotation ball, compact
-/// ROTATION / POSITION / SCALE axis rows, IK switch, then the
-/// relocated GAZE / ORBIT / POSE sections. The Pose tab's content column keeps
+/// shell's 280px right column. Crumb, the compact oriented rotation gizmo,
+/// compact ROTATION / POSITION / SCALE axis rows, IK switch, then the
+/// relocated GAZE / POSE sections. The Pose tab's content column keeps
 /// ONLY the Anamnesis surface (seg + strip + matrix) — everything editable
 /// about the selection lives here.
 /// </summary>
@@ -21,24 +21,33 @@ public class PoseRailPane
 {
     private enum RotationAxis
     {
-        Free,
         X,
         Y,
         Z,
     }
 
     private readonly PoseInspectorPane _inspector;
-    private RotationAxis _selectedRotationAxis = RotationAxis.Free;
-    private RotationAxis _dragRotationAxis = RotationAxis.Free;
-    // A press on the square item's corner, outside the ball circle, drags nothing.
-    private bool _dragOutsideBall;
+    private readonly ICameraService _camera;
+
+    // One ring drag: axis, frozen screen tangent at the grab point, frozen
+    // Local/World frame, accumulated tangent distance, and the TOTAL rotation
+    // from drag start (every frame re-derives from this total — no frame
+    // feeds a result back as the next baseline).
+    private RotationAxis? _dragAxis;
+    private Vector2 _dragTangent;
+    private Vector2 _dragOrigin;
+    private float _dragDistance;
+    private bool _dragWorldFrame;
+    private Quaternion _dragTotal = Quaternion.Identity;
 
     private static readonly Vector4 AxisX = Theme.Palette.AxisX;
     private static readonly Vector4 AxisY = Theme.Palette.AxisY;
     private static readonly Vector4 AxisZ = Theme.Palette.AxisZ;
-    public PoseRailPane(PoseInspectorPane inspector)
+
+    public PoseRailPane(PoseInspectorPane inspector, ICameraService camera)
     {
         _inspector = inspector;
+        _camera = camera;
     }
 
     public void Draw(Vector2 origin, Vector2 size)
@@ -110,192 +119,194 @@ public class PoseRailPane
             cursor.Y += 22f * s;
         }
 
-        cursor.Y += DrawRotationBall(dl, cursor, width, s);
+        cursor.Y += DrawRotationGizmo(dl, cursor, width, s);
 
         // relocated inspector sections (compact width)
         _inspector.DrawRailSections(cursor, width);
     }
 
-    /// <summary>M2 .railBall: sphere + three selectable axis rings. A drag that
-    /// starts on a colored axis is constrained to that axis; the remaining
-    /// surface retains free X/Y rotation. Returns consumed height.</summary>
-    private float DrawRotationBall(ImDrawListPtr dl, Vector2 cursor, float width, float s)
+    /// <summary>
+    /// The compact oriented rotation gizmo (Brio ImBrioGizmo.DrawRotation
+    /// concept): three complete X/Y/Z circles in 3D, projected through the
+    /// active game camera rotation — oriented from the target's current model
+    /// rotation in Local mode, world axes in World mode. Front-facing arc
+    /// segments use the shared axis palette; rear-facing segments a
+    /// restrained low alpha, so every ring stays legible as a complete
+    /// circle. Hit testing picks the nearest visible projected ring segment
+    /// (ties resolve X → Y → Z); a drag projects mouse movement onto the
+    /// ring's frozen screen tangent and applies the resulting quaternion in
+    /// the selected Local/World frame through the same clean gesture as the
+    /// in-world gizmo. The wheel is never consumed. Returns consumed height.
+    /// </summary>
+    private float DrawRotationGizmo(ImDrawListPtr dl, Vector2 cursor, float width, float s)
     {
+        const int ringPoints = 96;
         float d = 150f * s;
         var center = new Vector2(cursor.X + width / 2f, cursor.Y + d / 2f);
-        float r = d / 2f - 8f * s;
+        float r = d / 2f - 10f * s;
+        float pickTolerance = 8f * s;
 
-        ImGui.SetCursorScreenPos(new Vector2(center.X - r, center.Y - r));
-        ImGui.InvisibleButton("##rail-ball", new Vector2(r * 2f, r * 2f));
+        ImGui.SetCursorScreenPos(new Vector2(center.X - d / 2f, cursor.Y));
+        ImGui.InvisibleButton("##rail-gizmo", new Vector2(d, d));
         bool active = ImGui.IsItemActive();
         bool hovered = ImGui.IsItemHovered();
-        var hoveredAxis = hovered
-            ? HitTestRotationAxis(ImGui.GetMousePos() - center, r, s)
-            : RotationAxis.Free;
+        var io = ImGui.GetIO();
+        var mouse = ImGui.GetMousePos();
 
-        if (ImGui.IsItemActivated())
+        var (modelRotation, worldFrame, canEdit) = _inspector.GizmoOrientation();
+
+        // Camera orientation only (Brio's convention): rotation extracted
+        // from the live view matrix, X mirrored for the game's view
+        // handedness. The gizmo is a fixed-size orientation widget.
+        var viewMatrix = _camera.GetViewMatrix();
+        viewMatrix.M44 = 1f;
+        Matrix4x4.Decompose(viewMatrix, out _, out var cameraRotation, out _);
+        var view = Matrix4x4.CreateFromQuaternion(cameraRotation) *
+            Matrix4x4.CreateScale(-1f, 1f, 1f);
+        var ringMatrix = Matrix4x4.CreateFromQuaternion(
+            worldFrame ? Quaternion.Identity : modelRotation);
+
+        dl.AddCircleFilled(center, r + 6f * s,
+            ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.30f)));
+
+        // Project all three rings once.
+        var screens = new Vector2[3][];
+        var fronts = new bool[3][];
+        for (int a = 0; a < 3; a++)
         {
-            // The reserved item is square; a press on a corner outside the
-            // ball circle starts no rotation at all.
-            _dragOutsideBall =
-                (ImGui.GetMousePos() - center).Length() > r + 7f * s;
-            _dragRotationAxis = hoveredAxis;
-            if (!_dragOutsideBall)
-                _selectedRotationAxis = hoveredAxis;
-        }
-
-        dl.AddCircleFilled(center, r, ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.30f)));
-        float outerWidth = _selectedRotationAxis == RotationAxis.Free && active ? 1.5f : 1f;
-        dl.AddCircle(center, r, ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, active ? 0.25f : 0.10f)), 0, outerWidth * s);
-
-        float xWidth = AxisWidth(RotationAxis.X, hoveredAxis, active, s);
-        float yWidth = AxisWidth(RotationAxis.Y, hoveredAxis, active, s);
-        float zWidth = AxisWidth(RotationAxis.Z, hoveredAxis, active, s);
-
-        // Z ring: lower arc (blue)
-        dl.PathArcTo(center, r, 0.15f * MathF.PI, 0.85f * MathF.PI, 24);
-        dl.PathStroke(ImGui.ColorConvertFloat4ToU32(AxisZ with { W = AxisAlpha(RotationAxis.Z, hoveredAxis) }), ImDrawFlags.None, zWidth);
-        // Y ring: horizontal ellipse (green)
-        for (int i = 0; i <= 32; i++)
-        {
-            float a = i / 32f * MathF.Tau;
-            dl.PathLineTo(center + new Vector2(MathF.Cos(a) * r, MathF.Sin(a) * r * 0.25f));
-        }
-        dl.PathStroke(ImGui.ColorConvertFloat4ToU32(AxisY with { W = AxisAlpha(RotationAxis.Y, hoveredAxis) }), ImDrawFlags.Closed, yWidth);
-        // X axis: vertical line (red)
-        dl.AddLine(center - new Vector2(0f, r), center + new Vector2(0f, r),
-            ImGui.ColorConvertFloat4ToU32(AxisX with { W = AxisAlpha(RotationAxis.X, hoveredAxis) }), xWidth);
-
-        if (active && !_dragOutsideBall)
-        {
-            var delta = ImGui.GetIO().MouseDelta;
-            if (delta != Vector2.Zero)
+            screens[a] = new Vector2[ringPoints];
+            fronts[a] = new bool[ringPoints];
+            for (int i = 0; i < ringPoints; i++)
             {
-                float amountX = delta.Y * 0.4f;
-                float amountY = delta.X * 0.4f;
-                float amountZ = delta.X * 0.4f;
-                switch (_dragRotationAxis)
+                float t = i / (float)(ringPoints - 1) * MathF.Tau;
+                var p = a switch
                 {
-                    case RotationAxis.X:
-                        _inspector.RotateSelection(amountX, 0f, 0f);
-                        break;
-                    case RotationAxis.Y:
-                        _inspector.RotateSelection(0f, amountY, 0f);
-                        break;
-                    case RotationAxis.Z:
-                        _inspector.RotateSelection(0f, 0f, amountZ);
-                        break;
-                    default:
-                        bool roll = ImGui.GetIO().KeyShift;
-                        _inspector.RotateSelection(
-                            roll ? 0f : amountX,
-                            roll ? 0f : amountY,
-                            roll ? amountZ : 0f);
-                        break;
-                }
-                dl.AddCircle(center, r + 2f * s, ImGui.ColorConvertFloat4ToU32(new Vector4(50 / 255f, 151 / 255f, 1f, 0.6f)), 0, 1.5f * s);
+                    0 => new Vector3(0f, MathF.Cos(t) * r, MathF.Sin(t) * r),
+                    1 => new Vector3(MathF.Cos(t) * r, 0f, MathF.Sin(t) * r),
+                    _ => new Vector3(MathF.Cos(t) * r, MathF.Sin(t) * r, 0f),
+                };
+                var v = Vector3.Transform(Vector3.Transform(p, ringMatrix), view);
+                screens[a][i] = center + new Vector2(v.X, v.Y);
+                fronts[a][i] = v.Z < 0f;
             }
         }
+
+        // Nearest visible (front-facing) projected ring segment wins; a
+        // later axis must be STRICTLY closer, so exact ties resolve X → Y → Z.
+        int hoverAxis = -1;
+        var hoverTangent = Vector2.Zero;
+        var hoverPoint = Vector2.Zero;
+        float bestDistance = pickTolerance;
+        if (hovered)
+        {
+            for (int a = 0; a < 3; a++)
+            {
+                for (int i = 1; i < ringPoints; i++)
+                {
+                    if (!fronts[a][i])
+                        continue;
+                    float dist = DistanceToSegment(mouse, screens[a][i - 1], screens[a][i]);
+                    if (dist < bestDistance)
+                    {
+                        bestDistance = dist;
+                        hoverAxis = a;
+                        hoverTangent = Vector2.Normalize(screens[a][i] - screens[a][i - 1]);
+                        hoverPoint = mouse;
+                    }
+                }
+            }
+        }
+
+        // Rear arcs first, front arcs after, so front stays legible on top.
+        for (int pass = 0; pass < 2; pass++)
+        {
+            bool frontPass = pass == 1;
+            for (int a = 0; a < 3; a++)
+            {
+                var axisColor = a switch { 0 => AxisX, 1 => AxisY, _ => AxisZ };
+                bool hot = hoverAxis == a || (_dragAxis is { } dragging && (int)dragging == a);
+                float alpha = frontPass ? (hot ? 1f : 0.85f) : 0.12f;
+                float thickness = (frontPass && hot ? 3f : 2f) * s;
+                uint color = ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(axisColor with { W = alpha }));
+                for (int i = 1; i < ringPoints; i++)
+                {
+                    if (fronts[a][i] != frontPass)
+                        continue;
+                    dl.AddLine(screens[a][i - 1], screens[a][i], color, thickness);
+                }
+            }
+        }
+
+        if (ImGui.IsItemActivated() && canEdit && hoverAxis >= 0)
+        {
+            _dragAxis = (RotationAxis)hoverAxis;
+            _dragTangent = hoverTangent;
+            _dragOrigin = mouse;
+            _dragDistance = 0f;
+            _dragWorldFrame = worldFrame;
+            _dragTotal = Quaternion.Identity;
+        }
+
+        if (active && _dragAxis is { } dragAxis)
+        {
+            // Drag along the frozen screen tangent of the grabbed ring. The
+            // shared modifier policy scales the pointer delta; the applied
+            // rotation is always the TOTAL from drag start, dispatched through
+            // the clean gesture's frozen baseline.
+            float newDistance = Vector2.Dot(mouse - _dragOrigin, _dragTangent);
+            float delta = (newDistance - _dragDistance) *
+                AppShellView.DragModifierMultiplier(io);
+            _dragDistance = newDistance;
+            if (delta != 0f)
+            {
+                float angle = delta / 200f;
+                var axisRotation = dragAxis switch
+                {
+                    RotationAxis.X => Quaternion.CreateFromAxisAngle(Vector3.UnitX, angle),
+                    RotationAxis.Y => Quaternion.CreateFromAxisAngle(Vector3.UnitY, -angle),
+                    _ => Quaternion.CreateFromAxisAngle(Vector3.UnitZ, angle),
+                };
+                _dragTotal = Quaternion.Normalize(_dragTotal * axisRotation);
+                _inspector.RotateSelectionGizmo(_dragTotal, _dragWorldFrame);
+            }
+            var dragColor = dragAxis switch { RotationAxis.X => AxisX, RotationAxis.Y => AxisY, _ => AxisZ };
+            dl.AddCircleFilled(_dragOrigin, 3.5f * s,
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(dragColor)));
+        }
+
         if (ImGui.IsItemDeactivated())
         {
             _inspector.CommitRotation();
-            _dragRotationAxis = RotationAxis.Free;
-            _dragOutsideBall = false;
+            _dragAxis = null;
+            _dragTotal = Quaternion.Identity;
+            _dragDistance = 0f;
         }
-        if (hovered)
+
+        if (hovered && !active && hoverAxis >= 0)
         {
-            ImGui.SetMouseCursor(hoveredAxis == RotationAxis.Free
-                ? ImGuiMouseCursor.ResizeAll
-                : ImGuiMouseCursor.Hand);
-            ImGui.SetTooltip(hoveredAxis switch
+            var hoverColor = hoverAxis switch { 0 => AxisX, 1 => AxisY, _ => AxisZ };
+            dl.AddCircle(hoverPoint, 5f * s,
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(hoverColor)), 0, 1.5f * s);
+            ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
+            ImGui.SetTooltip(hoverAxis switch
             {
-                RotationAxis.X => "X axis · drag vertically to rotate",
-                RotationAxis.Y => "Y axis · drag horizontally to rotate",
-                RotationAxis.Z => "Z axis · drag horizontally to rotate",
-                _ => "Drag: free X/Y rotation · Shift+drag: Z",
+                0 => "X axis · drag along the ring",
+                1 => "Y axis · drag along the ring",
+                _ => "Z axis · drag along the ring",
             });
         }
 
         return d + 8f * s;
     }
 
-    private float AxisWidth(RotationAxis axis, RotationAxis hoveredAxis, bool active, float s)
+    private static float DistanceToSegment(Vector2 point, Vector2 a, Vector2 b)
     {
-        bool selected = _selectedRotationAxis == axis;
-        bool hot = hoveredAxis == axis || (active && _dragRotationAxis == axis);
-        return (hot ? 3f : selected ? 2.25f : 1.5f) * s;
-    }
-
-    private float AxisAlpha(RotationAxis axis, RotationAxis hoveredAxis)
-        => hoveredAxis == axis || _selectedRotationAxis == axis ? 1f : 0.75f;
-
-    /// <summary>
-    /// Resolves the nearest painted axis stroke in screen pixels, measured
-    /// against the same geometry the ball paints. All eligible axes are
-    /// compared and the closest stroke within the shared tolerance wins; an
-    /// exact-distance tie resolves in the documented deterministic order
-    /// X → Y → Z (ties only). ImGui's Y axis points down, so the
-    /// positive-angle Z arc occupies the lower half.
-    /// </summary>
-    private static RotationAxis HitTestRotationAxis(Vector2 point, float radius, float scale)
-    {
-        float tolerance = 7f * scale;
-        if (point.Length() > radius + tolerance)
-            return RotationAxis.Free; // square item corner outside the ball
-
-        float dx = DistanceToXStroke(point, radius);
-        float dy = DistanceToYStroke(point, radius);
-        float dz = DistanceToZStroke(point, radius);
-
-        var result = RotationAxis.Free;
-        float best = tolerance;
-        if (dx <= best) { best = dx; result = RotationAxis.X; }
-        if (dy < best) { best = dy; result = RotationAxis.Y; }
-        if (dz < best) { result = RotationAxis.Z; }
-        return result;
-    }
-
-    /// <summary>Distance to the painted vertical X segment (x = 0, |y| ≤ r).</summary>
-    private static float DistanceToXStroke(Vector2 point, float radius)
-    {
-        float beyondEnd = MathF.Max(0f, MathF.Abs(point.Y) - radius);
-        return MathF.Sqrt(point.X * point.X + beyondEnd * beyondEnd);
-    }
-
-    /// <summary>
-    /// Distance to the painted Y ellipse stroke (semi-axes r, r/4), via the
-    /// first-order estimate |f| / |∇f| of the implicit ellipse equation —
-    /// accurate near the stroke, which is all a pick tolerance needs. The old
-    /// scaled-length metric compressed distances by up to 4× along the wide
-    /// axis and stole overlaps from genuinely closer strokes.
-    /// </summary>
-    private static float DistanceToYStroke(Vector2 point, float radius)
-    {
-        float b = radius * 0.25f;
-        float fx = point.X / radius;
-        float fy = point.Y / b;
-        float f = fx * fx + fy * fy - 1f;
-        float gx = 2f * point.X / (radius * radius);
-        float gy = 2f * point.Y / (b * b);
-        float gradient = MathF.Sqrt(gx * gx + gy * gy);
-        return gradient < 1e-6f ? float.MaxValue : MathF.Abs(f) / gradient;
-    }
-
-    /// <summary>Distance to the painted lower Z arc (radius r, 0.15π–0.85π),
-    /// including its endpoints for pointers outside the angular range.</summary>
-    private static float DistanceToZStroke(Vector2 point, float radius)
-    {
-        const float arcStart = 0.15f * MathF.PI;
-        const float arcEnd = 0.85f * MathF.PI;
-        float angle = MathF.Atan2(point.Y, point.X);
-        if (angle < 0f)
-            angle += MathF.Tau;
-        if (angle >= arcStart && angle <= arcEnd)
-            return MathF.Abs(point.Length() - radius);
-        var startPoint = new Vector2(MathF.Cos(arcStart), MathF.Sin(arcStart)) * radius;
-        var endPoint = new Vector2(MathF.Cos(arcEnd), MathF.Sin(arcEnd)) * radius;
-        return MathF.Min(
-            Vector2.Distance(point, startPoint),
-            Vector2.Distance(point, endPoint));
+        var ab = b - a;
+        float lengthSq = ab.LengthSquared();
+        if (lengthSq < 1e-6f)
+            return Vector2.Distance(point, a);
+        float t = Math.Clamp(Vector2.Dot(point - a, ab) / lengthSq, 0f, 1f);
+        return Vector2.Distance(point, a + ab * t);
     }
 }

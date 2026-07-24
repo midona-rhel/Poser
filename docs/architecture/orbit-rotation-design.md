@@ -85,7 +85,7 @@ only production path.
 
 ## Limitations (deliberate)
 
-The inspector rail's rotation ball and numeric wells always rotate in place;
+The inspector rail's rotation gizmo and numeric wells always rotate in place;
 the pivot selector governs the in-world gizmo. Symmetry pairs and IK
 participate exactly as in any other gesture (they are explicit targets or
 session state of the same gesture). Undo restores through the normal

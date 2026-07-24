@@ -14,7 +14,7 @@ primary receives its absolute edited value by construction; secondaries
 receive the delta relative to their own frozen baselines — never the primary's
 absolute value.
 
-One shared rule in one service prevents the gizmo, rotation ball, drag wells,
+One shared rule in one service prevents the gizmo, rotation rings, drag wells,
 wheel steps, and typed values from disagreeing.
 
 ## Inspector session
@@ -65,4 +65,4 @@ the entire group through the same runtime restore path as cancel.
   removes selected descendants before `Begin`, so the descendant's change
   arrives only once, through the ancestor's propagation. Verify rail edits
   and gizmo edits agree in-game.
-- In-game verification must cover two actors and multiple bones for drag, wheel, typed input, rotation ball, one-step undo/redo, and Escape cancellation.
+- In-game verification must cover two actors and multiple bones for drag, typed input, the rotation gizmo, one-step undo/redo, and Escape cancellation.

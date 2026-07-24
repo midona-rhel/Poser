@@ -292,8 +292,36 @@ public class PoseInspectorPane
         return "";
     }
 
-    /// <summary>Rotation-ball input: euler-degree deltas applied to the selection.</summary>
-    public void RotateSelection(float dx, float dy, float dz)
+    /// <summary>
+    /// Orientation facts for the compact rotation gizmo: the effective
+    /// primary's current model rotation (parent-composed for bones — frozen
+    /// parent while a gesture is live), the selected Local/World frame, and
+    /// editability.
+    /// </summary>
+    public (Quaternion ModelRotation, bool WorldFrame, bool CanEdit) GizmoOrientation()
+    {
+        var (transform, canEdit) = ReadTransform();
+        var parentRotation = Quaternion.Identity;
+        if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } boneId })
+        {
+            var parent = _cleanGesture != null
+                ? _cleanParentModel
+                : ViewportParentModel(boneId);
+            parentRotation = parent?.Rotation ?? Quaternion.Identity;
+        }
+        bool world = _editorState.TransformOrientation == TransformOrientation.Global;
+        return (Quaternion.Normalize(parentRotation * transform.Rotation), world, canEdit);
+    }
+
+    /// <summary>
+    /// Compact ring-gizmo input: the TOTAL rotation from drag start, applied
+    /// in the selected Local/World frame through the same clean gesture as
+    /// every other rotation surface. Local composes about the target's own
+    /// axes on the frozen drag-start rotation; World conjugates through the
+    /// frozen parent so the delta acts about world axes. No frame feeds a
+    /// native result back as the next frame's baseline.
+    /// </summary>
+    public void RotateSelectionGizmo(Quaternion totalDelta, bool worldFrame)
     {
         UpdateGestureGuards();
         if (_gestureRestartSuppressed)
@@ -301,13 +329,24 @@ public class PoseInspectorPane
         var (transform, canEdit) = ReadTransform();
         if (!canEdit) return;
         BeginTransformSession(transform, DomainOperation.Rotate);
-        var euler = _dragEuler ?? PoseMath.QuaternionToEuler(transform.Rotation);
-        euler += new Vector3(dx, dy, dz);
-        _dragEuler = euler;
-        ApplyTransformSession(transform with { Rotation = PoseMath.EulerToQuaternion(euler) });
+        if (_cleanGesture == null || _dragStart is not { } start)
+            return;
+        Quaternion rotation;
+        if (worldFrame)
+        {
+            var parentRotation = _cleanParentModel?.Rotation ?? Quaternion.Identity;
+            rotation = Quaternion.Normalize(
+                Quaternion.Inverse(parentRotation) * totalDelta * parentRotation * start.Rotation);
+        }
+        else
+        {
+            rotation = Quaternion.Normalize(start.Rotation * totalDelta);
+        }
+        _dragEuler = null; // the numeric wells re-derive from the quaternion
+        ApplyTransformSession(transform with { Rotation = rotation });
     }
 
-    /// <summary>Rotation-ball drag end: push history.</summary>
+    /// <summary>Rotation-gizmo drag end: push history.</summary>
     public void CommitRotation()
     {
         CommitTransformSession();

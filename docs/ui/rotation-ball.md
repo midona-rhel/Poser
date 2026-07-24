@@ -1,77 +1,73 @@
-# Inspector rotation ball
+# Inspector rotation gizmo
 
 ## Purpose
 
-The rotation ball is the compact pointer-driven rotation control in the Pose
-inspector rail. It edits the same actor or bone transform as the numeric
-rotation wells, but exposes direct free rotation and X/Y/Z-constrained gestures.
+The compact rotation control in the Pose inspector rail is an **oriented 3D
+rotation gizmo**, not a flat screen-space symbol (PBI-002 runtime round 1
+superseded the earlier flat ball). It edits the same actor or bone transform
+as the numeric rotation wells through the same clean gesture, and is the
+conceptual sibling of Ktisis `Gizmo2D` and Brio `ImBrioGizmo.DrawRotation`.
+
+## Rendering contract
+
+- Three complete X/Y/Z circles are generated in 3D and projected through the
+  active game camera's rotation (orientation only — the widget has fixed
+  size and no perspective; the camera view matrix is decomposed to its
+  rotation and X-mirrored for the game's view handedness, Brio's
+  convention).
+- In **Local** mode the rings are oriented from the selected target's current
+  model rotation (parent-composed for bones, frozen parent during a
+  gesture). In **World** mode they are world axes viewed through the camera.
+  Rotating the camera or the target visibly changes the arcs and circle
+  foreshortening.
+- Front-facing ring segments use the shared transform-axis palette at full
+  strength; rear-facing segments use the same hue at a restrained low alpha,
+  so every ring stays legible as a complete circle. Front segments draw over
+  rear segments.
 
 ## Interaction contract
 
-- The red vertical control selects X and a vertical drag changes only X.
-- The green ellipse selects Y and a horizontal drag changes only Y.
-- The blue lower arc selects Z and a horizontal drag changes only Z.
-- A drag beginning on the remaining sphere surface changes X and Y together.
-- Shift while free-dragging constrains the gesture to Z.
-- The selected axis remains visually emphasized after release; hover and active
-  axes use a stronger stroke.
-- Releasing any drag commits exactly one history patch through the shared
-  clean-gesture session; Escape, selection change, and external cancellation
-  restore the frozen baseline exactly once and record nothing.
+- Hit testing picks the **nearest visible (front-facing) projected ring
+  segment** within the pick tolerance, measured in screen pixels against the
+  same geometry that is painted. Exact-distance ties resolve in the
+  documented deterministic order X → Y → Z (ties only).
+- Hover marks the grab point in the axis color, names the axis in the
+  tooltip, and always agrees with the axis a press would drag and the
+  quaternion a drag applies.
+- A drag projects mouse movement onto the grabbed ring's frozen screen
+  tangent (~200 px per radian) and composes an axis-angle quaternion about
+  that ring's axis. The applied value is always the TOTAL rotation from drag
+  start, dispatched against the clean gesture's frozen baseline — raw screen
+  X/Y deltas are never mapped to Euler components, and no frame feeds a
+  native result back as the next frame's baseline.
+- The shared drag-modifier policy applies (Ctrl fine 0.1×, Shift coarse
+  10×, Ctrl+Shift 1×). The mouse wheel is never consumed and never edits —
+  it keeps scrolling the inspector rail.
+- Local applies the delta about the target's own axes; World conjugates the
+  delta through the frozen parent rotation so it acts about world axes.
+- One drag produces one clean gesture and one history item via
+  `PoseInspectorPane.RotateSelectionGizmo`/`CommitRotation`; Escape,
+  selection change, and external cancellation restore the frozen baseline
+  exactly once and record nothing, with restart suppressed until the pointer
+  releases. No second transform state machine exists.
 
-`PoseRailPane` owns only pointer hit testing and visual axis state.
-`PoseInspectorPane.RotateSelection` owns the gesture session, multi-selection
-delta transfer, service routing, and history. The inspector's rotation
-controls always rotate in place (the toolbar pivot selector governs the
-in-world gizmo, not the rail; see `orbit-rotation-design.md`).
-
-## Hit testing
-
-Axis selection is computed in screen pixels from the same geometry that is
-painted, at the moment the pointer activates the control:
-
-1. Every eligible axis stroke is measured as a true point-to-stroke screen
-   distance: the X segment as distance to the painted vertical line segment,
-   the Y ellipse as distance to the painted ellipse stroke, and the Z arc as
-   distance to the painted lower arc (angular range included).
-2. All eligible axes are compared and the nearest stroke within the shared
-   pick tolerance wins. No fixed `if` order may steal an overlap from a
-   closer axis.
-3. Exact-distance ties resolve in the documented deterministic order
-   X → Y → Z. This order applies only to ties.
-4. A pointer outside every stroke's tolerance starts a free X/Y drag; points
-   outside the ball circle (the reserved item is square) select nothing.
-
-Hover, pointer-down, active drag, retained selection emphasis, tooltip, and
-the numeric axis wells that change all name the same axis: the axis is frozen
-at activation and drives the entire drag.
-
-## Axis palette
-
-The red/green/blue axis strokes use the shared transform-axis palette that
-also colors the toolbar axis wells — one definition, consumed by every
-axis-colored surface. Alpha/width emphasis is local presentation state.
-
-## Coordinate convention
-
-The labels are coordinate axes, not the parameter order of
-`Quaternion.CreateFromYawPitchRoll`. `PoseMath` therefore maps inspector
-`(X, Y, Z)` to `(pitch, yaw, roll)` when calling that API and maps the inverse
-conversion back the same way. This ensures red X rotates around `Vector3.UnitX`,
-green Y around `Vector3.UnitY`, and blue Z around `Vector3.UnitZ`.
+`PoseRailPane` owns only projection, hit testing, and per-drag tangent
+state. `PoseInspectorPane` owns the gesture session, target resolution,
+service routing, and history — identical to the numeric wells.
 
 ## Reference decisions
 
-- Ktisis' `Gizmo2D` uses a real rotation gizmo whose colored rings are selectable.
-  Poser keeps its narrower custom rail rendering but adopts the same constrained
-  axis interaction and its nearest-visible-stroke selection rule.
-- Brio's transform editor keeps one stable Euler value for the duration of a
-  gesture. Poser follows that stability rule in `PoseInspectorPane`.
+- Brio `ImBrio.Gizmo.DrawRotation` supplies the ring generation,
+  camera-rotation projection, front/back split, and tangent-projection drag
+  math (Ktisis `Gizmo2D` embeds stock ImGuizmo and has no ring source).
+- Brio's wheel-to-rotate and right-click axis lock are deliberately not
+  ported: the wheel is navigation, and axis choice is hover-based.
 
 ## Verification
 
-In-game verification must click-drag each colored control at multiple UI
-scales, confirm only its matching numeric well changes, confirm hover and
-tooltip name the axis that a click would select, release, and verify one-step
-undo/redo for both an actor and a bone. Free-space drags change X and Y;
-Shift-constrained free drags change only Z.
+In-game at multiple UI scales: rotate the camera and confirm the rings
+foreshorten; switch Local/World and confirm ring orientation follows the
+documented frame; drag each ring and confirm the matching numeric well
+changes and hover/tooltip/applied axis agree; confirm a wheel over the gizmo
+scrolls the rail; verify Ctrl/Shift drag sensitivities and one-step
+undo/redo for both an actor and a bone.

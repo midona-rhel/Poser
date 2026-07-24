@@ -26,7 +26,7 @@ Whole-actor position, rotation, and scale run through the clean gesture path:
 
 1. Rest-state values read through the runtime viewport projection for the
    effective transform primary.
-2. Dragging the rotation ball or an axis well begins one
+2. Dragging the rotation gizmo or an axis well begins one
    `TransformGestureService` gesture with the resolver's ordered actor
    targets; every frame dispatches a total delta from the frozen baseline.
 3. Releasing the drag commits exactly one `TransformPatch` covering the
@@ -40,7 +40,7 @@ The last rule is intentional. Brio's `ModelPosingCapability.Transform` and Ktisi
 
 The axis wells use the shared [precision transform input](precision-transform-input.md) contract: drag for continuous adjustment, wheel for stepped changes, and double-click for exact numeric entry. These interactions all feed the same actor or bone apply-and-history path.
 
-The colored controls on the [rotation ball](rotation-ball.md) are also interactive:
+The colored rings of the [rotation gizmo](rotation-ball.md) are also interactive:
 red, green, and blue constrain the gesture to X, Y, and Z respectively.
 
 When multiple actors or bones are selected, the primary value drives the shared [multi-selection transform](multi-selection-transforms.md) delta and the complete group is recorded as one undo step.
