@@ -68,14 +68,49 @@ public class GizmoOverlayWindow : Window
         public Vector3 Pivot { get; init; }
     }
 
-    private GizmoGesture? _actorGesture;
-    private GizmoGesture? _boneGesture;
+    // ONE overlay-wide interaction lifecycle: a single gesture slot, the
+    // target kind that owns it, and one suppression flag. A cancelled or
+    // superseded gesture (Escape, tool/space change, target-kind change,
+    // external cancellation, failed update) must not allow ANY new Begin —
+    // actor or bone — while the same ImGuizmo interaction is still active.
+    private GizmoGesture? _gesture;
+    private GizmoTargetType _gestureTargetType = GizmoTargetType.None;
+    private bool _beginSuppressed;
 
-    // A cancelled gesture (Escape, tool/space change, external cancellation,
-    // failed update) must not re-Begin while the same ImGuizmo drag is still
-    // active: suppression holds until IsUsing() goes false.
-    private bool _actorBeginSuppressed;
-    private bool _boneBeginSuppressed;
+    /// <summary>Cancels only when the service still owns the gesture; an
+    /// externally/self-cancelled gesture is treated as already cancelled.</summary>
+    private void CancelIfOwned(TransformGestureId id)
+    {
+        if (_cleanTransforms.ActiveGesture == id)
+            _cleanTransforms.Cancel(id);
+    }
+
+    /// <summary>
+    /// Reconciles the overlay lifecycle BEFORE the target-type branch runs:
+    /// a selection-kind change (Actor↔Bone↔None) or an external cancellation
+    /// clears stale local gesture state and suppresses every new Begin until
+    /// the original ImGuizmo interaction ends.
+    /// </summary>
+    private void ReconcileInteractionLifecycle(GizmoTargetType currentTarget)
+    {
+        if (_gesture is { } gesture)
+        {
+            bool externallyCancelled =
+                _cleanTransforms.ActiveGesture != gesture.Id;
+            bool targetKindChanged = _gestureTargetType != currentTarget;
+            if (externallyCancelled || targetKindChanged)
+            {
+                if (!externallyCancelled)
+                    _cleanTransforms.Cancel(gesture.Id);
+                _gesture = null;
+                _gestureTargetType = GizmoTargetType.None;
+                _beginSuppressed = ImGuizmo.IsUsing();
+            }
+        }
+
+        if (_beginSuppressed && !ImGuizmo.IsUsing())
+            _beginSuppressed = false;
+    }
 
     public GizmoOverlayWindow(
         SceneSession scene,
@@ -127,6 +162,7 @@ public class GizmoOverlayWindow : Window
         ImGuizmo.SetDrawlist();
 
         var targetType = GetGizmoTargetType();
+        ReconcileInteractionLifecycle(targetType);
         switch (targetType)
         {
             case GizmoTargetType.Bone:
@@ -170,35 +206,39 @@ public class GizmoOverlayWindow : Window
     /// mutating the drag. Returns the surviving gesture or null.
     /// </summary>
     private GizmoGesture? GuardGesture(
-        GizmoGesture? gesture,
         ImGuizmoOperation currentOperation,
-        ImGuizmoMode currentMode,
-        ref bool beginSuppressed)
+        ImGuizmoMode currentMode)
     {
-        if (gesture == null)
+        if (_gesture is not { } gesture)
             return null;
-        if (_cleanTransforms.ActiveGesture is not { } active ||
-            active != gesture.Id)
+        if (_cleanTransforms.ActiveGesture != gesture.Id)
         {
-            // Externally cancelled (selection change, scene invalidation) —
-            // the service already restored; only local state clears here.
-            beginSuppressed = true;
+            // Externally cancelled — the service already restored.
+            ClearGesture(suppress: true);
             return null;
         }
         if (ImGui.IsKeyPressed(ImGuiKey.Escape))
         {
             _cleanTransforms.Cancel(gesture.Id);
-            beginSuppressed = true;
+            ClearGesture(suppress: true);
             return null;
         }
         if (gesture.Operation != currentOperation ||
             gesture.Mode != currentMode)
         {
             _cleanTransforms.Cancel(gesture.Id);
-            beginSuppressed = true;
+            ClearGesture(suppress: true);
             return null;
         }
         return gesture;
+    }
+
+    private void ClearGesture(bool suppress)
+    {
+        _gesture = null;
+        _gestureTargetType = GizmoTargetType.None;
+        if (suppress)
+            _beginSuppressed = ImGuizmo.IsUsing();
     }
 
     private void DrawActorGizmo()
@@ -214,13 +254,13 @@ public class GizmoOverlayWindow : Window
             ? ImGuizmoMode.World
             : ImGuizmoMode.Local;
         var gizmoOperation = GetGizmoOperation();
-        _actorGesture = GuardGesture(_actorGesture, gizmoOperation, gizmoMode, ref _actorBeginSuppressed);
+        var actorGesture = GuardGesture(gizmoOperation, gizmoMode);
 
         // Live memory only seeds a gesture; during a drag the frozen
         // presentation baseline feeds the manipulator. Rest state reads
         // through the viewport projection.
         Transform actorTransform;
-        if (_actorGesture is { } presented)
+        if (actorGesture is { } presented)
         {
             actorTransform = presented.Current;
         }
@@ -245,7 +285,7 @@ public class GizmoOverlayWindow : Window
             ref modelMatrix);
         var isUsing = ImGuizmo.IsUsing();
 
-        if (isUsing && _actorGesture == null && !_actorBeginSuppressed)
+        if (isUsing && _gesture == null && !_beginSuppressed)
         {
             var begin = _cleanTransforms.Begin(
                 actorTargets,
@@ -258,7 +298,7 @@ public class GizmoOverlayWindow : Window
                     $"Transform {actorTargets.Count} actor{(actorTargets.Count == 1 ? "" : "s")}");
             if (begin.Success && begin.GestureId is { } gesture)
             {
-                _actorGesture = new GizmoGesture
+                _gesture = new GizmoGesture
                 {
                     Id = gesture,
                     Operation = gizmoOperation,
@@ -267,10 +307,11 @@ public class GizmoOverlayWindow : Window
                     Start = actorTransform,
                     Current = actorTransform,
                 };
+                _gestureTargetType = GizmoTargetType.Actor;
             }
         }
 
-        if (wasManipulated && _actorGesture is { } activeGesture)
+        if (wasManipulated && _gesture is { } activeGesture)
         {
             var newTransform = PoseMath.ConstrainToComponents(
                 activeGesture.Start,
@@ -288,20 +329,21 @@ public class GizmoOverlayWindow : Window
             }
             else
             {
-                _cleanTransforms.Cancel(activeGesture.Id);
-                _actorGesture = null;
-                _actorBeginSuppressed = true;
+                // Covers scene-revision self-cancellation, invalid deltas,
+                // and runtime apply failure without double restoration.
+                CancelIfOwned(activeGesture.Id);
+                ClearGesture(suppress: true);
             }
         }
 
         if (!isUsing)
         {
-            if (_actorGesture is { } completed)
+            if (_gesture is { } completed)
             {
                 _cleanTransforms.Commit(completed.Id);
-                _actorGesture = null;
+                ClearGesture(suppress: false);
             }
-            _actorBeginSuppressed = false;
+            _beginSuppressed = false;
         }
     }
 
@@ -328,14 +370,14 @@ public class GizmoOverlayWindow : Window
             ? ImGuizmoMode.World
             : ImGuizmoMode.Local;
         var gizmoOperation = GetGizmoOperation();
-        _boneGesture = GuardGesture(_boneGesture, gizmoOperation, gizmoMode, ref _boneBeginSuppressed);
+        var boneGesture = GuardGesture(gizmoOperation, gizmoMode);
 
         // Live memory only seeds a gesture. During a drag the frozen
         // presentation baseline feeds the manipulator, exactly like Brio's
         // tracking transform — reading Havok model-space back every frame can
         // turn a rotation into an apparent orbit.
         Transform currentTransform;
-        if (_boneGesture is { } presented)
+        if (boneGesture is { } presented)
         {
             currentTransform = presented.Current;
         }
@@ -363,7 +405,7 @@ public class GizmoOverlayWindow : Window
 
         // IsUsing must be sampled after Manipulate. On the first changed frame
         // the pre-call value still describes the previous frame.
-        if (isUsing && _boneGesture == null && !_boneBeginSuppressed)
+        if (isUsing && _gesture == null && !_beginSuppressed)
         {
             _cleanPose.ConfigureIk(
                 TransformTargetId.ForBone(primaryId),
@@ -414,7 +456,7 @@ public class GizmoOverlayWindow : Window
                 });
             if (begin.Success && begin.GestureId is { } gesture)
             {
-                _boneGesture = new GizmoGesture
+                _gesture = new GizmoGesture
                 {
                     Id = gesture,
                     Operation = gizmoOperation,
@@ -430,10 +472,11 @@ public class GizmoOverlayWindow : Window
                         _ => currentTransform.Position,
                     },
                 };
+                _gestureTargetType = GizmoTargetType.Bone;
             }
         }
 
-        if (wasManipulated && _boneGesture is { } activeGesture)
+        if (wasManipulated && _gesture is { } activeGesture)
         {
             var newTransform = PoseMath.ConstrainToComponents(
                 activeGesture.Start,
@@ -468,20 +511,21 @@ public class GizmoOverlayWindow : Window
             }
             else
             {
-                _cleanTransforms.Cancel(activeGesture.Id);
-                _boneGesture = null;
-                _boneBeginSuppressed = true;
+                // Covers scene-revision self-cancellation, invalid deltas,
+                // and runtime apply failure without double restoration.
+                CancelIfOwned(activeGesture.Id);
+                ClearGesture(suppress: true);
             }
         }
 
         if (!isUsing)
         {
-            if (_boneGesture is { } completed)
+            if (_gesture is { } completed)
             {
                 _cleanTransforms.Commit(completed.Id);
-                _boneGesture = null;
+                ClearGesture(suppress: false);
             }
-            _boneBeginSuppressed = false;
+            _beginSuppressed = false;
         }
     }
 
