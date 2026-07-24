@@ -38,5 +38,6 @@ bugs and makes repeated gesture evaluation idempotent.
 - scale: component-wise multiplication;
 - position: translation plus optional rotation around an explicit pivot.
 
-Ordinary bone rotation uses `PivotMode.PerTarget`, so the bone's position does
-not orbit. Orbit mode must explicitly request a shared or custom pivot.
+Ordinary (Self-pivot) bone rotation uses `PivotMode.PerTarget`, so the bone's
+position does not orbit. The Parent and Selection pivots explicitly request a
+frozen custom pivot (`orbit-rotation-design.md`).

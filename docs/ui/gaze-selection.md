@@ -25,20 +25,22 @@ modes for Eyes, Head, and Body.
   enabled only for a participating part and freezes/unfreezes that part's
   actual current target.
 - **Actor** mode requires an explicit target choice. The target dropdown
-  lists only currently valid other actors (the source actor and stale
-  entries are excluded by lineage, not by wrapper reference), shows a
-  placeholder until the user picks one, and **never writes a target from the
-  draw loop** — the only native transition happens on an explicit selection.
+  lists only currently valid other actors (the source actor and dead entries
+  are excluded by identity facts — live address / game-object id — never by
+  wrapper reference), shows a placeholder until the user picks one, and
+  **never writes a target from the draw loop** — the only native transition
+  happens on an explicit selection.
 - With no other actor in the scene, the Actor segment is disabled and a
   quiet inline note explains why; the mode can never silently target self,
   index zero, or null.
-- If the chosen target despawns or redraws, the state re-resolves by lineage
-  or safely returns to Off; the dropdown never silently re-points at an
-  unrelated actor.
+- If the chosen target despawns or redraws, the state re-resolves by stable
+  game-object id or safely returns to Off; the dropdown never silently
+  re-points at an unrelated actor (the current selection is matched through
+  `GetGazeTargetAddress`, resolved at draw time from the stored id).
 
 ## Ownership
 
-The pane retains no gaze state of its own: every row renders from
-`GazeService.GetGazeState(lineage)` and dispatches one service call per user
-action. Target rows resolve display names from the scene snapshot
-descriptors.
+The pane retains no gaze state of its own beyond the transient
+"actor mode needs another actor" note: every row renders from
+`GazeService.GetGazeState` and dispatches one service call per user action.
+Target rows use the same configured display-name provider as the scene tree.
