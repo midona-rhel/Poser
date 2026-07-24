@@ -66,11 +66,11 @@ public class PoseInspectorPane
     public Func<IActor, string>? ActorDisplayNameProvider;
     private int _poseView = 2; // 0 body, 1 face, 2 bones
 
-    // Bones matrix cache (rebuilt when the skeleton or its bone count changes).
+    // Bones matrix cache (rebuilt when the snapshot revision or actor changes).
     private BoneMatrixViewModel? _matrixVm;
     private string _matrixFilter = "";
-    private ISkeleton? _matrixSkeleton;
-    private int _matrixBoneCount;
+    private ulong _matrixRevision;
+    private Guid _matrixLineage;
 
     // Primary selection identity (stable id). The legacy _entity view is
     // re-resolved from it once per draw for the retained gaze/IK/pose section
@@ -136,6 +136,22 @@ public class PoseInspectorPane
             if (id is { Kind: SceneEntityKind.Actor, Actor: { } actorId })
                 result.Add(actorId);
         return result;
+    }
+
+    private SkeletonDescriptor? PrimarySkeletonDescriptor()
+    {
+        var lineage = _primary switch
+        {
+            { Kind: SceneEntityKind.Actor, Actor: { } actorId } => actorId.LogicalId,
+            { Kind: SceneEntityKind.Bone, Bone: { } boneId } => boneId.Skeleton.Actor.LogicalId,
+            _ => (Guid?)null,
+        };
+        if (lineage is not { } target)
+            return null;
+        foreach (var actor in _scene.Snapshot.Actors)
+            if (actor.Id.LogicalId == target)
+                return actor.Skeleton;
+        return null;
     }
 
     private IReadOnlyList<BoneDescriptor>? BonesOf(Guid lineage)
@@ -403,22 +419,25 @@ public class PoseInspectorPane
             _matrixVm = null;
         h += 38f * s;
 
-        if (_matrixVm == null || !ReferenceEquals(_matrixSkeleton, skeleton) || _matrixBoneCount != skeleton.Bones.Count)
+        var matrixSkeleton = PrimarySkeletonDescriptor();
+        if (matrixSkeleton == null)
+            return h;
+        var matrixLineage = matrixSkeleton.Id.Actor.LogicalId;
+        if (_matrixVm == null ||
+            _matrixRevision != _scene.Revision ||
+            _matrixLineage != matrixLineage)
         {
             _matrixVm = BoneMatrixBuilder.Build(
-                skeleton,
-                (bone, additive, range) =>
+                matrixSkeleton,
+                _selection,
+                (id, additive, range) =>
                 {
-                    if (BoneSelectionId(bone) is not { } id)
-                        return;
                     if (range && _selection.Anchor is { } anchor)
                     {
-                        var order = BoneMatrixBuilder.EnumerateBones(_matrixVm!)
-                            .Select(BoneSelectionId)
-                            .Where(candidate => candidate.HasValue)
-                            .Select(candidate => candidate!.Value)
-                            .ToList();
-                        _selection.SelectRange(anchor, id, order);
+                        _selection.SelectRange(
+                            anchor,
+                            id,
+                            BoneMatrixBuilder.EnumerateSelectionIds(_matrixVm!));
                     }
                     else if (additive)
                     {
@@ -429,13 +448,8 @@ public class PoseInspectorPane
                         _selection.Select(id);
                     }
                 },
-                (bones, additive) =>
+                (ids, additive) =>
                 {
-                    var ids = bones
-                        .Select(BoneSelectionId)
-                        .Where(candidate => candidate.HasValue)
-                        .Select(candidate => candidate!.Value)
-                        .ToList();
                     if (ids.Count == 0)
                         return;
                     if (!additive)
@@ -444,10 +458,10 @@ public class PoseInspectorPane
                         _selection.Add(id);
                 },
                 _matrixFilter);
-            _matrixSkeleton = skeleton;
-            _matrixBoneCount = skeleton.Bones.Count;
+            _matrixRevision = _scene.Revision;
+            _matrixLineage = matrixLineage;
         }
-        BoneMatrixBuilder.SyncSelection(_matrixVm);
+        BoneMatrixBuilder.SyncSelection(_matrixVm, _selection);
         h += BoneMatrixView.Draw(_matrixVm, new Vector2(cursor.X, cursor.Y + h), width - 8f * s, "livemx");
         return h;
     }

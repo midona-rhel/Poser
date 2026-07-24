@@ -2,23 +2,25 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
+using Poser.Application.Selection;
 using Poser.Core.BoneInfo;
+using Poser.Domain.Identity;
+using Poser.Domain.Scene;
 using Poser.Files;
-using Poser.Entities;
-using Poser.Services;
 using Poser.UI.Views;
 
 namespace Poser.UI;
 
 /// <summary>
-/// Builds the Anamnesis-style bone matrix from a live skeleton. Instead of a
-/// hand-transcribed bone table (which would be wrong for Viera ears, tails,
-/// IVCS, modded skeletons), rows are DERIVED from the skeleton's actual bones
-/// via the curated BoneInfoService data: bones cluster on their base name
-/// (side/number suffixes stripped), the row label is the shared curated
-/// translation, pills are the concrete bones (L/R/numbered). Sections follow
-/// the curated category/subcategory grouping — same information as Anamnesis
-/// PoseMatrixView, generated instead of transcribed.
+/// Builds the Anamnesis-style bone matrix from the scene snapshot's skeleton
+/// descriptor. Instead of a hand-transcribed bone table (which would be wrong
+/// for Viera ears, tails, IVCS, modded skeletons), rows are DERIVED from the
+/// descriptor's actual bones via the curated BoneInfoService data: bones
+/// cluster on their base name (side/number suffixes stripped), the row label
+/// is the shared curated translation, pills are the concrete bones
+/// (L/R/numbered). Pills carry <see cref="MatrixPillTag"/> — a stable
+/// <see cref="SelectionId"/> plus display/canonical names for filtering; no
+/// legacy entity enters the matrix.
 /// </summary>
 public static class BoneMatrixBuilder
 {
@@ -30,20 +32,28 @@ public static class BoneMatrixBuilder
 
     private static readonly Regex LabelTail = new(@"\s+([A-E]|\d+)$", RegexOptions.Compiled);
 
-    private sealed record PillInfo(IBone Bone, string Side, string Ordinal);
+    /// <summary>Pill payload: stable selection id + names for filter matching.</summary>
+    public sealed record MatrixPillTag(
+        SelectionId Id,
+        string DisplayName,
+        string CanonicalName);
+
+    private sealed record PillInfo(BoneDescriptor Bone, string Side, string Ordinal);
 
     public static BoneMatrixViewModel Build(
-        ISkeleton skeleton,
-        Action<IBone, bool, bool> onBone,
-        Action<IReadOnlyList<IBone>, bool> onGroup,
+        SkeletonDescriptor skeleton,
+        SelectionSession selection,
+        Action<SelectionId, bool, bool> onBone,
+        Action<IReadOnlyList<SelectionId>, bool> onGroup,
         string? filter = null)
     {
         var vm = new BoneMatrixViewModel
         {
-            OnPill = (pill, additive, range) => onBone((IBone)pill.Tag!, additive, range),
+            OnPill = (pill, additive, range) =>
+                onBone(((MatrixPillTag)pill.Tag!).Id, additive, range),
             OnSection = (section, additive) => onGroup(
                 section.Rows.SelectMany(row => row.Pills)
-                    .Select(pill => (IBone)pill.Tag!)
+                    .Select(pill => ((MatrixPillTag)pill.Tag!).Id)
                     .ToList(),
                 additive),
         };
@@ -60,15 +70,15 @@ public static class BoneMatrixBuilder
             {
                 var gameName = AnamnesisBoneNameConverter.ToGame(name);
                 var matches = skeleton.Bones.Where(bone =>
-                    !bone.IsHiddenBone &&
-                    (bone.BoneName == gameName || bone.BoneName == name));
+                    !bone.IsHidden &&
+                    (bone.Id.CanonicalName == gameName || bone.Id.CanonicalName == name));
                 foreach (var bone in matches)
                 {
-                    covered.Add((bone.BoneName, bone.PartialId));
+                    covered.Add((bone.Id.CanonicalName, bone.Id.PartialId));
                     string label = pillLabel;
                     if (pills.Any(pill => pill.Label == label))
-                        label = label.Length == 0 ? $"P{bone.PartialId}" : $"{label}{bone.PartialId}";
-                    pills.Add(new BoneMatrixPill { Label = label, Selected = bone.IsSelected, Tag = bone });
+                        label = label.Length == 0 ? $"P{bone.Id.PartialId}" : $"{label}{bone.Id.PartialId}";
+                    pills.Add(MakePill(bone, label, selection));
                 }
             }
             if (pills.Count == 0)
@@ -85,14 +95,29 @@ public static class BoneMatrixBuilder
         }
 
         // ── trailing fallback: curated-but-uncovered bones, generated clustering
-        AppendGenerated(vm, skeleton, covered);
+        AppendGenerated(vm, skeleton, selection, covered);
         ApplyFilter(vm, filter);
         return vm;
     }
 
+    private static BoneMatrixPill MakePill(
+        BoneDescriptor bone,
+        string label,
+        SelectionSession selection)
+    {
+        var id = SelectionId.ForBone(bone.Id);
+        return new BoneMatrixPill
+        {
+            Label = label,
+            Selected = selection.IsSelected(id),
+            Tag = new MatrixPillTag(id, bone.DisplayName, bone.Id.CanonicalName),
+        };
+    }
+
     private static void AppendGenerated(
         BoneMatrixViewModel vm,
-        ISkeleton skeleton,
+        SkeletonDescriptor skeleton,
+        SelectionSession selection,
         HashSet<(string BoneName, int PartialId)> covered)
     {
         // cluster: (category, subcategory, base name) → pills
@@ -101,14 +126,14 @@ public static class BoneMatrixBuilder
 
         foreach (var bone in skeleton.Bones)
         {
-            if (bone.IsHiddenBone || covered.Contains((bone.BoneName, bone.PartialId))) continue;
+            if (bone.IsHidden || covered.Contains((bone.Id.CanonicalName, bone.Id.PartialId))) continue;
 
-            var data = BoneInfoService.GetBoneData(bone.BoneName);
+            var data = BoneInfoService.GetBoneData(bone.Id.CanonicalName);
             var category = data?.Category ?? BoneCategory.Other;
             var subcategory = data?.Subcategory ?? BoneSubcategory.None;
 
-            var m = Suffix.Match(bone.BoneName);
-            string baseName = m.Success ? m.Groups["base"].Value : bone.BoneName;
+            var m = Suffix.Match(bone.Id.CanonicalName);
+            string baseName = m.Success ? m.Groups["base"].Value : bone.Id.CanonicalName;
             string side = m.Groups["side"].Value;
             string ordinal = m.Groups["num"].Value.TrimStart('0');
             if (ordinal.Length == 0 && m.Groups["let"].Success)
@@ -116,7 +141,7 @@ public static class BoneMatrixBuilder
 
             string label = data != null
                 ? LabelTail.Replace(data.Value.Translation, "")
-                : bone.Name;
+                : bone.DisplayName;
 
             var key = (category, subcategory, baseName);
             if (!clusters.TryGetValue(key, out var cluster))
@@ -152,21 +177,17 @@ public static class BoneMatrixBuilder
                          .OrderBy(p => p.Side == "l" ? 0 : p.Side == "r" ? 1 : 2)
                          .ThenBy(p => p.Ordinal.Length == 0 ? 0 : int.Parse(p.Ordinal)))
             {
-                row.Pills.Add(new BoneMatrixPill
-                {
-                    Label = PillLabel(pill, pills),
-                    Selected = pill.Bone.IsSelected,
-                    Tag = pill.Bone,
-                });
+                row.Pills.Add(MakePill(pill.Bone, PillLabel(pill, pills), selection));
             }
             section.Rows.Add(row);
         }
     }
 
-    public static IReadOnlyList<IBone> EnumerateBones(BoneMatrixViewModel vm) =>
+    /// <summary>Visible matrix order as stable ids (range-selection order).</summary>
+    public static IReadOnlyList<SelectionId> EnumerateSelectionIds(BoneMatrixViewModel vm) =>
         vm.Sections.SelectMany(section => section.Rows)
             .SelectMany(row => row.Pills)
-            .Select(pill => (IBone)pill.Tag!)
+            .Select(pill => ((MatrixPillTag)pill.Tag!).Id)
             .ToList();
 
     private static void ApplyFilter(BoneMatrixViewModel vm, string? filter)
@@ -183,9 +204,9 @@ public static class BoneMatrixBuilder
                 if (!rowMatches)
                 {
                     row.Pills.RemoveAll(pill =>
-                        pill.Tag is not IBone bone ||
-                        (!bone.Name.Contains(filter, StringComparison.OrdinalIgnoreCase) &&
-                         !bone.BoneName.Contains(filter, StringComparison.OrdinalIgnoreCase)));
+                        pill.Tag is not MatrixPillTag tag ||
+                        (!tag.DisplayName.Contains(filter, StringComparison.OrdinalIgnoreCase) &&
+                         !tag.CanonicalName.Contains(filter, StringComparison.OrdinalIgnoreCase)));
                 }
 
                 if (row.Pills.Count == 0)
@@ -197,13 +218,14 @@ public static class BoneMatrixBuilder
         }
     }
 
-    /// <summary>Refreshes only the Selected flags (cheap per-frame sync).</summary>
-    public static void SyncSelection(BoneMatrixViewModel vm)
+    /// <summary>Refreshes only the Selected flags from the selection session
+    /// (cheap per-frame sync).</summary>
+    public static void SyncSelection(BoneMatrixViewModel vm, SelectionSession selection)
     {
         foreach (var section in vm.Sections)
             foreach (var row in section.Rows)
                 foreach (var pill in row.Pills)
-                    pill.Selected = pill.Tag is IBone { IsSelected: true };
+                    pill.Selected = pill.Tag is MatrixPillTag tag && selection.IsSelected(tag.Id);
     }
 
     private static string PillLabel(PillInfo pill, List<PillInfo> cluster)
