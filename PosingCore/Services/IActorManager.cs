@@ -7,7 +7,7 @@ namespace Poser.Services;
 /// <summary>
 /// Manages the lifecycle of actors in GPose.
 ///
-/// NOTE: Selection is handled by ISelectionService, not here.
+/// NOTE: Selection is handled by the application SelectionSession, not here.
 /// This interface only tracks actor lifecycle (discovery, refresh).
 /// </summary>
 public interface IActorManager : IDisposable

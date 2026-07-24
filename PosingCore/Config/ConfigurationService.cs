@@ -98,17 +98,6 @@ public class ConfigurationService : IDisposable
         return anonName;
     }
 
-    /// <summary>Set (or clear, with null/blank) a display nickname for an entity.</summary>
-    public void SetNickname(IEntity entity, string? name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-            _nicknames.Remove(entity.Id);
-        else
-            _nicknames[entity.Id] = name.Trim();
-    }
-
-    public bool HasNickname(IEntity entity) => _nicknames.ContainsKey(entity.Id);
-
     // Lineage-keyed nicknames: the stable-id UI keys display names by the
     // actor's logical lineage Guid instead of a legacy entity id.
     private readonly Dictionary<Guid, string> _lineageNicknames = new();

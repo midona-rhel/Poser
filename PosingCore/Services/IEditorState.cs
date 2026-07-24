@@ -68,7 +68,7 @@ public enum SymmetryMode
 /// <summary>
 /// Tracks editor-wide state: gizmo settings.
 ///
-/// NOTE: Selection is handled by ISelectionService, not here.
+/// NOTE: Selection is handled by the application SelectionSession, not here.
 /// This interface only tracks editor tool settings.
 /// </summary>
 public interface IEditorState

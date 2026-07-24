@@ -53,7 +53,6 @@ public class MainWindow : Window
     private bool _renameOpen;
     private string _renameValue = "";
     private ActorId? _renameTarget;
-    private readonly ISelectionService _selectionService;
     private readonly IEditorState _editorState;
     private readonly CleanTransformFacade _cleanTransforms;
     private readonly CleanPoseFacade _cleanPose;
@@ -86,7 +85,6 @@ public class MainWindow : Window
         IActorSpawnService spawnService,
         SceneSession scene,
         StableBindingRegistry bindings,
-        ISelectionService selectionService,
         IEditorState editorState,
         CleanTransformFacade cleanTransforms,
         CleanPoseFacade cleanPose,
@@ -107,7 +105,6 @@ public class MainWindow : Window
         _scene = scene;
         _selection = scene.Selection;
         _bindings = bindings;
-        _selectionService = selectionService;
         _editorState = editorState;
         _cleanTransforms = cleanTransforms;
         _cleanPose = cleanPose;

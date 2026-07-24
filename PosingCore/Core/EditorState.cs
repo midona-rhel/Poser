@@ -7,7 +7,7 @@ namespace Poser.Core;
 /// Tracks editor-wide state: gizmo settings.
 /// UI components call methods directly.
 ///
-/// NOTE: Selection is handled by ISelectionService, not here.
+/// NOTE: Selection is handled by the application SelectionSession, not here.
 /// This class only tracks editor tool settings.
 /// </summary>
 public class EditorState : IEditorState

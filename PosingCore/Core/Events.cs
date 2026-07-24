@@ -36,13 +36,11 @@ public record SkeletonChangedEvent(IActor Actor, ISkeleton? Skeleton) : IEvent;
 /// Published when selection changes. Contains ALL currently selected entities.
 /// Used by components that need to react to selection changes (e.g., skeleton overlay).
 /// </summary>
-public record SelectionChangedEvent(IReadOnlyList<IEntity> Selected) : IEvent;
 
 /// <summary>
 /// Published when bone selection changes specifically.
 /// Used for backwards compatibility and focused bone selection handling.
 /// </summary>
-public record BoneSelectionChangedEvent(IBone? SelectedBone) : IEvent;
 
 #endregion
 

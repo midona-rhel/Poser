@@ -16,7 +16,6 @@ using Poser.Game;
 using Poser.Game.Bindings;
 using Poser.Game.Posing;
 using Poser.Game.Scene;
-using Poser.Game.Selection;
 using Poser.Game.Transforms;
 using Poser.Game.Validation;
 using Poser.Services;
@@ -93,7 +92,6 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Viewport.ViewportProjection>();
         services.AddSingleton<CleanPoseFacade>();
         services.AddSingleton<CleanSceneLifecycle>();
-        services.AddSingleton<ISelectionService, CleanSelectionServiceAdapter>();
         services.AddSingleton<IEditorState, EditorState>();
         return services;
     }

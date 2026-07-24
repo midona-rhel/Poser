@@ -4,7 +4,6 @@ using Poser.Application.Scene;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Game.Bindings;
 
 namespace Poser.Game.Transforms;
@@ -69,36 +68,6 @@ public sealed class CleanTransformFacade
             targetModes));
     }
 
-    public GestureResult Begin(
-        IReadOnlyList<IEntity> entities,
-        TransformOperation operation,
-        TransformSpace space,
-        PivotMode pivotMode = PivotMode.PerTarget,
-        Vector3? customPivot = null,
-        string description = "Transform",
-        bool includeLinkedBones = false,
-        TransformDeltaMode? symmetry = null)
-    {
-        var targets = new List<TransformTargetId>(entities.Count);
-        foreach (var entity in entities)
-        {
-            var target = GetTarget(entity);
-            if (target == null)
-                return GestureResult.Fail(
-                    $"Entity {entity.Name} has no stable transform binding.");
-            targets.Add(target.Value);
-        }
-        return Begin(
-            targets,
-            operation,
-            space,
-            pivotMode,
-            customPivot,
-            description,
-            includeLinkedBones,
-            symmetry);
-    }
-
     public GestureResult Update(
         TransformGestureId id,
         TransformDelta delta) =>
@@ -120,26 +89,6 @@ public sealed class CleanTransformFacade
         string description) =>
         _commands.SetAbsolute(target, desired, description);
 
-    public GestureResult SetAbsolute(
-        IEntity entity,
-        Poser.Transform transform,
-        string description)
-    {
-        var target = GetTarget(entity);
-        if (target == null)
-            return GestureResult.Fail(
-                $"Entity {entity.Name} has no stable transform binding.");
-        if (!PoseTransform.TryCreate(
-                transform.Position,
-                transform.Rotation,
-                transform.Scale,
-                out var desired,
-                out var error))
-            return GestureResult.Fail(
-                error ?? "Transform is invalid.");
-        return SetAbsolute(target.Value, desired, description);
-    }
-
     /// <summary>Stable-id actor override reset.</summary>
     public GestureResult ClearActorOverrides(
         IReadOnlyList<TransformTargetId> targets)
@@ -156,31 +105,6 @@ public sealed class CleanTransformFacade
                 ? "Reset actor transform"
                 : $"Reset {targets.Count} actor transforms");
     }
-
-    public GestureResult ClearActorOverrides(
-        IReadOnlyList<IActor> actors)
-    {
-        var targets = actors
-            .Select(GetTarget)
-            .Where(target => target.HasValue)
-            .Select(target => target!.Value)
-            .ToArray();
-        if (targets.Length != actors.Count)
-            return GestureResult.Fail(
-                "One or more actors have no stable transform binding.");
-        return ClearActorOverrides(targets);
-    }
-
-    public TransformTargetId? GetTarget(IEntity entity) =>
-        entity switch
-        {
-            IActor actor when _bindings.GetActorId(actor) is { } id =>
-                TransformTargetId.ForActor(id),
-            IBone bone when bone is not VirtualBone &&
-                            _bindings.GetBoneId(bone) is { } id =>
-                TransformTargetId.ForBone(id),
-            _ => null,
-        };
 
     private void AddLinkedBoneTargets(
         ICollection<TransformTargetId> targets)

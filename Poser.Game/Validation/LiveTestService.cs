@@ -592,7 +592,10 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
             if (_testActor == null)
                 return (false, "Controlled actor is unavailable.");
             var actor = _testActor;
-            var cleared = _cleanTransforms.ClearActorOverrides([actor]);
+            if (_bindings.GetActorId(actor) is not { } clearActorId)
+                return (false, "Controlled actor has no stable binding.");
+            var cleared = _cleanTransforms.ClearActorOverrides(
+                new[] { TransformTargetId.ForActor(clearActorId) });
             if (!cleared.Success)
                 return (false, cleared.Detail ?? "Actor reset failed.");
 
@@ -926,8 +929,18 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
         TransformDelta delta,
         string description)
     {
+        TransformTargetId? target = entity switch
+        {
+            IActor actor when _bindings.GetActorId(actor) is { } actorId =>
+                TransformTargetId.ForActor(actorId),
+            IBone bone when _bindings.GetBoneId(bone) is { } boneId =>
+                TransformTargetId.ForBone(boneId),
+            _ => null,
+        };
+        if (target is not { } targetId)
+            return (false, "Entity has no stable transform binding.");
         var begin = _cleanTransforms.Begin(
-            [entity],
+            [targetId],
             operation,
             space,
             description: description);
@@ -1003,22 +1016,6 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
             5000);
         _testActor = null;
         _testSkeleton = null;
-    }
-
-    private IEntity? ResolveCurrentEntity(IEntity baseline)
-    {
-        if (baseline is IActor)
-            return _actors.Actors.FirstOrDefault(
-                actor => actor.Id == baseline.Id);
-        if (baseline is not IBone bone)
-            return null;
-        var actor = _actors.Actors.FirstOrDefault(
-            candidate => candidate.Id == bone.Skeleton.Actor.Id);
-        return actor == null
-            ? null
-            : _skeletons.GetSkeleton(actor)?.GetBone(
-                bone.PartialId,
-                bone.BoneIndex);
     }
 
     private IBone? StableTestBone(ISkeleton skeleton) =>

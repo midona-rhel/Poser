@@ -50,7 +50,6 @@ public class PoseInspectorPane
     private readonly CleanPoseFacade _cleanPose;
     private readonly IGazeService _gazeService;
     private readonly IEditorState _editorState;
-    private readonly ISelectionService _selectionService;
     private readonly SelectionSession _selection;
     private readonly SceneSession _scene;
     private readonly StableBindingRegistry _bindings;
@@ -102,7 +101,6 @@ public class PoseInspectorPane
         CleanPoseFacade cleanPose,
         IGazeService gazeService,
         IEditorState editorState,
-        ISelectionService selectionService,
         SceneSession scene,
         StableBindingRegistry bindings,
         ExpressionInspectorSection expressionSection,
@@ -120,7 +118,6 @@ public class PoseInspectorPane
         _cleanPose = cleanPose;
         _gazeService = gazeService;
         _editorState = editorState;
-        _selectionService = selectionService;
     }
 
     private List<BoneId> SelectedBoneIds()
