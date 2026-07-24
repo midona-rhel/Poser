@@ -109,6 +109,21 @@ public class ConfigurationService : IDisposable
 
     public bool HasNickname(IEntity entity) => _nicknames.ContainsKey(entity.Id);
 
+    // Lineage-keyed nicknames: the stable-id UI keys display names by the
+    // actor's logical lineage Guid instead of a legacy entity id.
+    private readonly Dictionary<Guid, string> _lineageNicknames = new();
+
+    public void SetNickname(Guid actorLineage, string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            _lineageNicknames.Remove(actorLineage);
+        else
+            _lineageNicknames[actorLineage] = name.Trim();
+    }
+
+    public string? GetNickname(Guid actorLineage) =>
+        _lineageNicknames.TryGetValue(actorLineage, out var name) ? name : null;
+
     private static string GenerateRandomName()
     {
         const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";

@@ -5,7 +5,8 @@ namespace Poser.Domain.Scene;
 public sealed record BoneDescriptor(
     BoneId Id,
     string DisplayName,
-    BoneId? Parent);
+    BoneId? Parent,
+    bool IsHidden = false);
 
 public sealed record SkeletonDescriptor(
     SkeletonId Id,
@@ -14,7 +15,10 @@ public sealed record SkeletonDescriptor(
 public sealed record ActorDescriptor(
     ActorId Id,
     string Name,
-    SkeletonDescriptor? Skeleton);
+    SkeletonDescriptor? Skeleton,
+    bool IsPlayer = false,
+    bool IsCompanion = false,
+    bool IsHidden = false);
 
 public sealed record SceneSnapshot(
     ulong Revision,

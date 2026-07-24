@@ -26,6 +26,17 @@ public sealed class CleanPoseFacade
     public bool HasStash => _transfers.HasStash;
     public DateTimeOffset? StashedAt => _transfers.StashedAt;
 
+    /// <summary>Stable-id bone reset (selection/transform identity path).</summary>
+    public PoseEditResult ResetBone(TransformTargetId target, string boneName) =>
+        _edits.Reset(
+            new[] { target },
+            PoseRegion.All,
+            $"Reset {boneName}");
+
+    /// <summary>Stable-id bone flip.</summary>
+    public PoseEditResult FlipBone(TransformTargetId target, string boneName) =>
+        _edits.Flip(target, $"Flip {boneName}");
+
     public PoseEditResult ResetBone(IBone bone)
     {
         var concrete = bone is VirtualBone group

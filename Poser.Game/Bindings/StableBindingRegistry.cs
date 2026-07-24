@@ -30,6 +30,7 @@ public sealed class StableBindingRegistry
 {
     private readonly IActorManager _actors;
     private readonly ISkeletonService _skeletons;
+    private readonly IActorSpawnService _spawn;
     private readonly Dictionary<string, ActorLineage> _lineages =
         new(StringComparer.Ordinal);
     private Dictionary<ActorId, IActor> _actorBindings = new();
@@ -42,10 +43,12 @@ public sealed class StableBindingRegistry
 
     public StableBindingRegistry(
         IActorManager actors,
-        ISkeletonService skeletons)
+        ISkeletonService skeletons,
+        IActorSpawnService spawn)
     {
         _actors = actors;
         _skeletons = skeletons;
+        _spawn = spawn;
     }
 
     public SceneSnapshot CurrentSnapshot { get; private set; } =
@@ -137,7 +140,8 @@ public sealed class StableBindingRegistry
                     bones.Add(new BoneDescriptor(
                         boneId,
                         bone.Name,
-                        parent));
+                        parent,
+                        bone.IsHiddenBone));
                 }
                 skeletonDescriptor = new SkeletonDescriptor(
                     skeletonId,
@@ -148,7 +152,10 @@ public sealed class StableBindingRegistry
             actorDescriptors.Add(new ActorDescriptor(
                 actorId,
                 actor.Name,
-                skeletonDescriptor));
+                skeletonDescriptor,
+                actor.IsPlayer,
+                actor.IsCompanion,
+                !_spawn.IsVisible(actor)));
         }
 
         foreach (var lineage in _lineages.Values)

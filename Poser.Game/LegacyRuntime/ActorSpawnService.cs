@@ -253,6 +253,10 @@ public unsafe class ActorSpawnService : IActorSpawnService
         {
             _log.Error($"ActorSpawnService: Failed to set visibility: {ex.Message}");
         }
+
+        // The hidden badge lives in the scene snapshot; visibility changes
+        // must reconcile it the same way spawn/despawn do.
+        _eventBus.Publish(new ActorListChangedEvent(_actorManager.Actors));
     }
 
     public bool IsVisible(IActor actor)
