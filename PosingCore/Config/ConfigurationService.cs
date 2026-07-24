@@ -73,27 +73,27 @@ public class ConfigurationService : IDisposable
 
     #region Anonymous Mode
 
-    private readonly Dictionary<EntityId, string> _anonymousNames = new();
-    private readonly Dictionary<EntityId, string> _nicknames = new();
-    private static readonly Random _random = new();
+    // Lineage-keyed anonymous masks: stable per logical actor for one
+    // session, so the same masked actor keeps the same masked name.
+    private readonly Dictionary<Guid, string> _lineageAnonymousNames = new();
 
     /// <summary>
-    /// Gets the display name for an entity. Returns anonymous name if AnonymousMode is enabled.
+    /// Stable-id display name: the user nickname wins, then the anonymous
+    /// mask when <c>Display.AnonymousMode</c> is enabled, then the raw scene
+    /// name. The caller supplies the raw name from the scene snapshot.
     /// </summary>
-    public string GetDisplayName(IEntity entity)
+    public string GetDisplayName(Guid actorLineage, string rawName)
     {
-        // user-chosen nicknames always win (rename action; session-scoped like
-        // Brio's RenameActorModal — spawned actors don't outlive the session)
-        if (_nicknames.TryGetValue(entity.Id, out var nickname))
+        if (_lineageNicknames.TryGetValue(actorLineage, out var nickname))
             return nickname;
 
         if (!Config.Display.AnonymousMode)
-            return entity.Name;
+            return rawName;
 
-        if (!_anonymousNames.TryGetValue(entity.Id, out var anonName))
+        if (!_lineageAnonymousNames.TryGetValue(actorLineage, out var anonName))
         {
             anonName = GenerateRandomName();
-            _anonymousNames[entity.Id] = anonName;
+            _lineageAnonymousNames[actorLineage] = anonName;
         }
         return anonName;
     }
@@ -112,6 +112,8 @@ public class ConfigurationService : IDisposable
 
     public string? GetNickname(Guid actorLineage) =>
         _lineageNicknames.TryGetValue(actorLineage, out var name) ? name : null;
+
+    private static readonly Random _random = new();
 
     private static string GenerateRandomName()
     {

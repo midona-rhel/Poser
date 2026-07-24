@@ -26,7 +26,9 @@ Configuration sections:
 | `Save` | `void` | `SavePluginConfig` + fires `OnConfigurationChanged` |
 | `ApplyChange` | `void (bool save = true)` | Optional save, fires `OnConfigurationChanged` |
 | `Reset` / `ResetSkeleton` / `ResetDisplay` / `ResetUI` | `void` | Replace root or one section with defaults |
-| `GetDisplayName` | `string (IEntity)` | Real name, or stable anonymous name when `Display.AnonymousMode` |
+| `GetDisplayName` | `string (Guid actorLineage, string rawName)` | Nickname first, then a session-stable anonymous mask per lineage when `Display.AnonymousMode`, then the caller-supplied raw scene name |
+| `SetNickname` | `void (Guid actorLineage, string? name)` | Set/clear the session display nickname for a logical actor |
+| `GetNickname` | `string? (Guid actorLineage)` | The raw nickname, ignoring anonymous mode (rename modal seed) |
 
 ## Events
 

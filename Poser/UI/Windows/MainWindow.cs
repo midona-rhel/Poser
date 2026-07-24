@@ -118,8 +118,8 @@ public class MainWindow : Window
         // its own migration; route them through the lineage nickname store.
         _poseInspector.ActorDisplayNameProvider = actor =>
             _bindings.GetActorId(actor) is { } displayId
-                ? Config.ConfigurationService.Instance.GetNickname(displayId.LogicalId)
-                    ?? DisplayName(actor.Name)
+                ? Config.ConfigurationService.Instance.GetDisplayName(
+                    displayId.LogicalId, DisplayName(actor.Name))
                 : DisplayName(actor.Name);
 
         _poseRail = poseRail;
@@ -447,10 +447,11 @@ public class MainWindow : Window
         return false;
     }
 
-    /// <summary>Returns the configured nickname or the cleaned snapshot name.</summary>
+    /// <summary>Nickname, else the anonymous mask when enabled, else the
+    /// cleaned snapshot name — one stable-id display API for every surface.</summary>
     private static string ActorDisplayName(ActorDescriptor actor)
-        => Config.ConfigurationService.Instance.GetNickname(actor.Id.LogicalId)
-            ?? DisplayName(actor.Name);
+        => Config.ConfigurationService.Instance.GetDisplayName(
+            actor.Id.LogicalId, DisplayName(actor.Name));
 
     /// <summary>Strips the raw object-index suffix ("Name (201)") for display.</summary>
     private static string DisplayName(string name)

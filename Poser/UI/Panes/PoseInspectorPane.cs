@@ -243,8 +243,8 @@ public class PoseInspectorPane
     {
         foreach (var actor in _scene.Snapshot.Actors)
             if (actor.Id.Equals(id))
-                return Config.ConfigurationService.Instance.GetNickname(id.LogicalId)
-                    ?? StripIndex(actor.Name);
+                return Config.ConfigurationService.Instance.GetDisplayName(
+                    id.LogicalId, StripIndex(actor.Name));
         return "";
     }
 
