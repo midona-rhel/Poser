@@ -31,7 +31,9 @@ public sealed class CleanPoseFacade
     /// <summary>
     /// Stable-id IK arming for the next gesture. IK configuration is session
     /// state owned by the runtime; the id resolves inside this facade and no
-    /// entity reaches the caller.
+    /// entity reaches the caller. Arming is limited to the supported chain
+    /// ends (hands + feet) so no gesture path can ever arm an unsupported
+    /// bone; disarming always passes through.
     /// </summary>
     public void ConfigureIk(TransformTargetId target, bool enabled)
     {
@@ -40,10 +42,11 @@ public sealed class CleanPoseFacade
         var bone = _bindings.Resolve(boneId);
         if (!bone.Success)
             return;
-        var ik = enabled
+        var arm = enabled && Core.BoneIKInfo.IsSupportedChainEnd(boneId.CanonicalName);
+        var ik = arm
             ? Core.BoneIKInfo.CalculateDefault(boneId.CanonicalName)
             : Core.BoneIKInfo.Disabled;
-        ik.Enabled = enabled;
+        ik.Enabled = arm;
         _bonePosing.SetBoneIK(bone.Value!, ik);
     }
 

@@ -901,20 +901,31 @@ public class PoseInspectorPane
 
     private float DrawIk(Vector2 cursor, float width, ISkeleton skeleton, float s)
     {
+        // The Live IK switch only affects translate gestures on a supported
+        // chain end (hands/feet). An unsupported selection shows an honest
+        // unavailable state; the bulk actions act on the whole skeleton and
+        // stay available.
+        bool eligible = _entity is IBone selectedBone &&
+            Core.BoneIKInfo.IsSupportedChainEnd(selectedBone.BoneName);
         ViewText.Label(cursor + new Vector2(0f, 7f) * s, "Live IK", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
         ImGui.SetCursorScreenPos(cursor + new Vector2(94f, 4f) * s);
         bool ik = _editorState.IkEnabled;
-        if (Crystarium.Switch("##pose-ik", ref ik))
+        if (Crystarium.Switch("##pose-ik", ref ik, disabled: !eligible) && eligible)
             _editorState.IkEnabled = ik;
-        ViewText.Label(cursor + new Vector2(140f, 7f) * s, "translate drags solve the chain", 11f,
-            FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
+        ViewText.Label(cursor + new Vector2(140f, 7f) * s,
+            eligible
+                ? "translate drags solve the armed chain"
+                : "select a hand or foot chain end",
+            11f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
         float h = 30f * s;
 
         ImGui.SetCursorScreenPos(new Vector2(cursor.X, cursor.Y + h));
-        if (Crystarium.Button("Arm hands + feet", new ButtonProps { Id = "pose-ik-arm", Classes = Cls.Compact }))
+        if (Crystarium.Button("Arm hands + feet", new ButtonProps { Id = "pose-ik-arm", Classes = Cls.Compact,
+            Tooltip = "Arm the four supported chain ends on this skeleton" }))
             _bonePosingService.SetAllIk(skeleton, true);
         ImGui.SameLine(0f, 6f * s);
-        if (Crystarium.Button("Disarm all", new ButtonProps { Id = "pose-ik-disarm", Classes = Cls.Compact }))
+        if (Crystarium.Button("Disarm all", new ButtonProps { Id = "pose-ik-disarm", Classes = Cls.Compact,
+            Tooltip = "Clear IK arming on every bone of this skeleton" }))
             _bonePosingService.SetAllIk(skeleton, false);
         return h + 34f * s;
     }

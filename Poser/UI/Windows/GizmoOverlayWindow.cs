@@ -446,9 +446,15 @@ public class GizmoOverlayWindow : Window
         // the pre-call value still describes the previous frame.
         if (isUsing && _gesture == null && !_beginSuppressed)
         {
-            _cleanPose.ConfigureIk(
-                TransformTargetId.ForBone(primaryId),
-                _editorState.IkEnabled);
+            // Only a TRANSLATE gesture consumes the Live IK switch: it arms
+            // the primary when it is a supported chain end and disarms it
+            // when the switch is off. Rotate and scale gestures never touch
+            // IK arming — starting a rotation cannot silently re-arm or
+            // disarm a chain.
+            if (gizmoOperation == ImGuizmoOperation.Translate)
+                _cleanPose.ConfigureIk(
+                    TransformTargetId.ForBone(primaryId),
+                    _editorState.IkEnabled);
 
             // Parent/Selection pivots route through the clean gesture with a
             // frozen custom pivot; there is no second orbit session. The pivot

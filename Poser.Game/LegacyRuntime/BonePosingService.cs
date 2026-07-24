@@ -533,27 +533,35 @@ public unsafe class BonePosingService : IBonePosingService
         _eventBus.Publish(new BoneTransformChangedEvent(bone));
     }
 
-    private static readonly string[] IkChainEnds = { "j_te_l", "j_te_r", "j_asi_d_l", "j_asi_d_r" };
-
     public int SetAllIk(ISkeleton skeleton, bool enabled)
     {
         int touched = 0;
-        foreach (var name in IkChainEnds)
+        if (enabled)
         {
-            var bone = skeleton.GetBone(name);
-            if (bone == null)
-                continue;
-
-            if (enabled)
+            // Arm exactly the supported chain ends (hands + feet).
+            foreach (var name in BoneIKInfo.SupportedChainEnds)
             {
+                var bone = skeleton.GetBone(name);
+                if (bone == null)
+                    continue;
                 var info = BoneIKInfo.CalculateDefault(name);
                 info.Enabled = true;
                 SetBoneIK(bone, info);
+                touched++;
             }
-            else
-            {
-                SetBoneIK(bone, BoneIKInfo.Disabled);
-            }
+            return touched;
+        }
+
+        // "Disarm all" is literal: clear IK on every bone of this skeleton
+        // that currently carries pose info, including bones armed by older
+        // builds outside the supported set. Idempotent, actor-local, and it
+        // touches no transform stacks.
+        var poseInfo = GetPoseInfo(skeleton);
+        foreach (var pose in poseInfo.AllPoses)
+        {
+            if (!pose.IK.Enabled)
+                continue;
+            pose.IK = BoneIKInfo.Disabled;
             touched++;
         }
         return touched;

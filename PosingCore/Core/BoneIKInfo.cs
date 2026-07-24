@@ -1,3 +1,4 @@
+using System;
 using System.Numerics;
 
 namespace Poser.Core;
@@ -44,6 +45,19 @@ public struct BoneIKInfo
     /// </summary>
     public static bool CanUseJoint(string boneName) =>
         boneName.StartsWith("j_te") || boneName.StartsWith("j_asi_d");
+
+    /// <summary>
+    /// The supported IK chain ends: the four bones with authored solver
+    /// setups (hands and feet). Every retained arming path — the Live IK
+    /// translate gesture and the bulk arm action — is limited to this set;
+    /// no UI path arms any other bone.
+    /// </summary>
+    public static readonly string[] SupportedChainEnds =
+        { "j_te_l", "j_te_r", "j_asi_d_l", "j_asi_d_r" };
+
+    /// <summary>Whether the bone is one of the supported chain ends.</summary>
+    public static bool IsSupportedChainEnd(string boneName) =>
+        Array.IndexOf(SupportedChainEnds, boneName) >= 0;
 
     /// <summary>
     /// Calculates the default IK configuration for a bone based on its name.
