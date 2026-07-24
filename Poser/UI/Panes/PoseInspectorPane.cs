@@ -158,6 +158,12 @@ public class PoseInspectorPane
         _editorState = editorState;
     }
 
+    /// <summary>The shared effective transform selection (resolver): first
+    /// surviving root in original selection order is the primary; the
+    /// inspector and gizmo consume the same resolution.</summary>
+    private EffectiveTransformSelection? EffectiveSelection() =>
+        TransformTargetResolver.Resolve(_selection.Selected, _scene.Snapshot);
+
     private static Transform ToLegacy(Domain.Transforms.PoseTransform value) =>
         new() { Position = value.Position, Rotation = value.Rotation, Scale = value.Scale };
 
@@ -1174,16 +1180,16 @@ public class PoseInspectorPane
         if (_cleanGesture != null && _cleanDisplayedCurrent is { } current)
             return (current, true);
 
-        switch (_primary)
+        switch (EffectiveSelection()?.Primary)
         {
-            case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+            case { Kind: TransformTargetKind.Actor, Actor: { } actorId }:
                 // Brio ModelPosingCapability and Ktisis' ITransform target both
                 // allow model transforms while animation is playing. The
                 // override service keeps the draw-object transform stable.
                 return _viewport.GetActorTransform(actorId) is { } actorValue
                     ? (ToLegacy(actorValue), true)
                     : (Transform.Identity, false);
-            case { Kind: SceneEntityKind.Bone, Bone: { } boneId }:
+            case { Kind: TransformTargetKind.Bone, Bone: { } boneId }:
                 // Bones display/edit LOCAL (parent-relative) values like
                 // Ktisis/Anamnesis — model-space numbers read as garbage
                 // ("don't represent actual game values"). Tracking stays in
@@ -1205,66 +1211,31 @@ public class PoseInspectorPane
         if (_cleanGesture != null || _gestureRestartSuppressed || _primary == null)
             return;
 
+        if (EffectiveSelection() is not { } effective)
+        {
+            _dragStart ??= displayedStart;
+            return;
+        }
+
         IReadOnlyList<TransformTargetId> targets;
         Transform modelStart;
         DomainPivot pivotMode;
 
-        switch (_primary)
+        switch (effective.Primary)
         {
-            case { Kind: SceneEntityKind.Actor, Actor: { } primaryActor }:
+            case { Kind: TransformTargetKind.Actor }:
             {
-                var actorTargets = new List<TransformTargetId>
-                {
-                    TransformTargetId.ForActor(primaryActor),
-                };
-                foreach (var actorId in SelectedActorIds())
-                    if (!actorId.Equals(primaryActor))
-                        actorTargets.Add(TransformTargetId.ForActor(actorId));
-                targets = actorTargets;
+                targets = effective.Targets;
                 modelStart = displayedStart;
                 pivotMode = DomainPivot.PerTarget;
                 break;
             }
 
-            case { Kind: SceneEntityKind.Bone, Bone: { } primaryBoneId }:
+            case { Kind: TransformTargetKind.Bone, Bone: { } primaryBoneId }:
             {
                 if (ViewportBoneModel(primaryBoneId) is not { } primaryModel)
                     return;
-
-                // Selected descendants drop out when a selected ancestor
-                // already propagates the same edit (functional rule 5),
-                // walking snapshot parent chains.
-                var selectedBones = SelectedBoneIds();
-                var selectedSet = selectedBones.ToHashSet();
-                var bones = BonesOf(primaryBoneId.Skeleton.Actor.LogicalId);
-                var byId = bones?.ToDictionary(candidate => candidate.Id);
-                var boneTargets = new List<TransformTargetId>
-                {
-                    TransformTargetId.ForBone(primaryBoneId),
-                };
-                foreach (var boneId in selectedBones)
-                {
-                    if (boneId.Equals(primaryBoneId))
-                        continue;
-                    bool hasSelectedAncestor = false;
-                    if (byId != null && byId.TryGetValue(boneId, out var descriptor))
-                    {
-                        for (var parent = descriptor.Parent;
-                             parent is { } parentId;
-                             parent = byId.TryGetValue(parentId, out var parentDescriptor)
-                                 ? parentDescriptor.Parent
-                                 : null)
-                        {
-                            if (!selectedSet.Contains(parentId))
-                                continue;
-                            hasSelectedAncestor = true;
-                            break;
-                        }
-                    }
-                    if (!hasSelectedAncestor)
-                        boneTargets.Add(TransformTargetId.ForBone(boneId));
-                }
-                targets = boneTargets;
+                targets = effective.Targets;
                 _cleanParentModel = ViewportParentModel(primaryBoneId);
                 modelStart = primaryModel;
                 pivotMode = DomainPivot.PerTarget;
@@ -1284,9 +1255,9 @@ public class PoseInspectorPane
             description:
                 $"Transform {targets.Count} {(IsActorSelection ? "actor" : "bone")}{(targets.Count == 1 ? "" : "s")}",
             includeLinkedBones:
-                _primary is { Kind: SceneEntityKind.Bone } &&
+                targets[0].Kind == TransformTargetKind.Bone &&
                 _bonePosingService.LinkedBonesEnabled,
-            symmetry: _primary is { Kind: SceneEntityKind.Bone }
+            symmetry: targets[0].Kind == TransformTargetKind.Bone
                 ? _editorState.SymmetryMode switch
                 {
                     SymmetryMode.Copy =>

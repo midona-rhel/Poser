@@ -324,6 +324,19 @@ Keep `docs/ui/precision-transform-input.md`:
     without a native write.
 11. Animation freeze remains optional.
 
+### Clarification: selection primary vs effective transform primary
+
+`SelectionSession.Primary` remains the selection primary used for selection
+display (rail header, tree highlight). Transform surfaces derive an
+**effective transform selection** from the ordered selection and the scene
+snapshot through one shared resolver (`TransformTargetResolver`): selected
+descendants of selected ancestors are removed, and the first surviving root
+in **original selection order** becomes the effective transform primary.
+Inspector displayed values, gesture baselines, ordered target lists, and
+gizmo placement all consume this one resolution. The resolver never selects
+an unrelated globally shallowest bone and never re-adds a filtered
+descendant — including a filtered selection primary.
+
 ## Implementation sequence
 
 Claude should implement in this order:

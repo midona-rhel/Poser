@@ -155,68 +155,10 @@ public class GizmoOverlayWindow : Window
         };
     }
 
-    private List<ActorId> SelectedActorIds()
-    {
-        var result = new List<ActorId>();
-        foreach (var id in _selection.Selected)
-            if (id is { Kind: SceneEntityKind.Actor, Actor: { } actorId })
-                result.Add(actorId);
-        return result;
-    }
-
-    private List<BoneId> SelectedBoneIds()
-    {
-        var result = new List<BoneId>();
-        foreach (var id in _selection.Selected)
-            if (id is { Kind: SceneEntityKind.Bone, Bone: { } boneId })
-                result.Add(boneId);
-        return result;
-    }
-
-    private Dictionary<BoneId, BoneDescriptor>? BoneDescriptorsOf(Guid lineage)
-    {
-        foreach (var actor in _scene.Snapshot.Actors)
-            if (actor.Id.LogicalId == lineage)
-                return actor.Skeleton?.Bones
-                    .ToDictionary(descriptor => descriptor.Id);
-        return null;
-    }
-
-    private static int BoneDepth(
-        BoneId id,
-        Dictionary<BoneId, BoneDescriptor> byId)
-    {
-        var depth = 0;
-        var current = byId.TryGetValue(id, out var descriptor)
-            ? descriptor.Parent
-            : null;
-        while (current is { } parentId &&
-               byId.TryGetValue(parentId, out var parent))
-        {
-            depth++;
-            current = parent.Parent;
-        }
-        return depth;
-    }
-
-    private static bool HasSelectedAncestor(
-        BoneId id,
-        HashSet<BoneId> selected,
-        Dictionary<BoneId, BoneDescriptor> byId)
-    {
-        var current = byId.TryGetValue(id, out var descriptor)
-            ? descriptor.Parent
-            : null;
-        while (current is { } parentId)
-        {
-            if (selected.Contains(parentId))
-                return true;
-            current = byId.TryGetValue(parentId, out var parent)
-                ? parent.Parent
-                : null;
-        }
-        return false;
-    }
+    /// <summary>The shared effective transform selection: same resolver the
+    /// inspector consumes, so primary, order, baseline, and placement agree.</summary>
+    private EffectiveTransformSelection? EffectiveSelection() =>
+        TransformTargetResolver.Resolve(_selection.Selected, _scene.Snapshot);
 
     private static Transform ToLegacy(Domain.Transforms.PoseTransform value) =>
         new() { Position = value.Position, Rotation = value.Rotation, Scale = value.Scale };
@@ -262,11 +204,10 @@ public class GizmoOverlayWindow : Window
 
     private void DrawActorGizmo()
     {
-        var selectedActors = SelectedActorIds();
-        if (selectedActors.Count == 0)
+        if (EffectiveSelection() is not
+            { Primary: { Kind: TransformTargetKind.Actor, Actor: { } primaryActor } } actorSelection)
             return;
-
-        var primaryActor = selectedActors[0];
+        var actorTargets = actorSelection.Targets;
         var viewMatrix = _cameraService.GetViewMatrix();
         var projectionMatrix = _cameraService.GetProjectionMatrix();
 
@@ -308,16 +249,14 @@ public class GizmoOverlayWindow : Window
         if (isUsing && _actorGesture == null && !_actorBeginSuppressed)
         {
             var begin = _cleanTransforms.Begin(
-                selectedActors
-                    .Select(TransformTargetId.ForActor)
-                    .ToList(),
+                actorTargets,
                 ToDomainOperation(gizmoOperation),
                 ToDomainSpace(gizmoMode),
-                selectedActors.Count > 1
+                actorTargets.Count > 1
                     ? PivotMode.Primary
                     : PivotMode.PerTarget,
                 description:
-                    $"Transform {selectedActors.Count} actor{(selectedActors.Count == 1 ? "" : "s")}");
+                    $"Transform {actorTargets.Count} actor{(actorTargets.Count == 1 ? "" : "s")}");
             if (begin.Success && begin.GestureId is { } gesture)
             {
                 _actorGesture = new GizmoGesture
@@ -369,29 +308,12 @@ public class GizmoOverlayWindow : Window
 
     private void DrawBoneGizmo()
     {
-        // Session bone ids + snapshot descriptors — no live entities.
-        var selectedBones = SelectedBoneIds();
-        if (selectedBones.Count == 0)
+        // The shared effective resolution anchors placement and targets: the
+        // first surviving root in original selection order is the primary.
+        if (EffectiveSelection() is not
+            { Primary: { Kind: TransformTargetKind.Bone, Bone: { } primaryId } } boneSelection)
             return;
-
-        var byId = BoneDescriptorsOf(selectedBones[0].Skeleton.Actor.LogicalId);
-        if (byId == null)
-            return;
-
-        // Position/rotation propagation already carries root edits to
-        // descendants; a selected child of a selected ancestor drops out.
-        var selectedSet = selectedBones.ToHashSet();
-        var rootIds = selectedBones
-            .Where(id => !HasSelectedAncestor(id, selectedSet, byId))
-            .ToList();
-        if (rootIds.Count == 0)
-            return;
-
-        // The highest selected bone anchors gizmo placement — this prevents
-        // the gizmo from moving when rotating parent bones.
-        var primaryId = selectedBones
-            .OrderBy(id => BoneDepth(id, byId))
-            .First();
+        var orderedTargets = boneSelection.Targets;
 
         // Skeleton matrix query also refreshes/registers the skeleton caches
         // inside the runtime boundary.
@@ -459,7 +381,7 @@ public class GizmoOverlayWindow : Window
                 cleanCustomPivot = _editorState.OrbitPivot switch
                 {
                     Core.OrbitPivotMode.SelectionCenter =>
-                        SelectionCenter(rootIds),
+                        SelectionCenter(orderedTargets),
                     Core.OrbitPivotMode.Custom =>
                         _editorState.CustomOrbitPivot,
                     _ =>
@@ -468,13 +390,7 @@ public class GizmoOverlayWindow : Window
                 };
             }
 
-            var orderedIds = new List<TransformTargetId>
-            {
-                TransformTargetId.ForBone(primaryId),
-            };
-            foreach (var rootId in rootIds)
-                if (!rootId.Equals(primaryId))
-                    orderedIds.Add(TransformTargetId.ForBone(rootId));
+            var orderedIds = orderedTargets;
 
             var space = _editorState.OrbitBoneRotation
                 ? DomainSpace.World
@@ -570,14 +486,14 @@ public class GizmoOverlayWindow : Window
         }
     }
 
-    private Vector3 SelectionCenter(IReadOnlyList<BoneId> boneIds)
+    private Vector3 SelectionCenter(IReadOnlyList<TransformTargetId> targets)
     {
-        if (boneIds.Count == 0)
-            return Vector3.Zero;
         var sum = Vector3.Zero;
         var counted = 0;
-        foreach (var id in boneIds)
+        foreach (var target in targets)
         {
+            if (target.Bone is not { } id)
+                continue;
             if (_viewport.GetBoneModelTransform(id) is not { } value)
                 continue;
             sum += value.Position;
