@@ -91,6 +91,39 @@ public class PoseInspectorPane
     // a parent). Composition never re-reads the live animated parent.
     private Transform? _cleanParentModel;
 
+    // A cancelled scrub/ball gesture (Escape, selection change, scene
+    // invalidation) must not re-Begin while the same pointer interaction is
+    // still active: suppression holds until the pointer deactivates.
+    private bool _gestureRestartSuppressed;
+
+    /// <summary>
+    /// Per-frame gesture guard for the drag wells and the rotation ball:
+    /// clears suppression when the pointer released, drops local state when
+    /// the service cancelled the gesture externally, and cancels exactly once
+    /// on Escape, restoring the frozen baseline with no history item.
+    /// </summary>
+    private void UpdateGestureGuards()
+    {
+        if (_gestureRestartSuppressed &&
+            !ImGui.IsMouseDown(ImGuiMouseButton.Left))
+            _gestureRestartSuppressed = false;
+
+        if (_cleanGesture is not { } gesture)
+            return;
+
+        if (_cleanTransforms.ActiveGesture != gesture)
+        {
+            // Externally cancelled — the service already restored.
+            ClearTransformSession();
+            _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
+        }
+        else if (ImGui.IsKeyPressed(ImGuiKey.Escape))
+        {
+            ClearTransformSession(cancel: true);
+            _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
+        }
+    }
+
     private bool _openGaze = true;
     private bool _openIk;
     private bool _openOrbit;
@@ -186,7 +219,15 @@ public class PoseInspectorPane
         if (!Nullable.Equals(primary, _primary) || selectionChanged)
         {
             AppShellView.CancelAxisEdit();
-            ClearTransformSession(cancel: true);
+            bool hadGesture = _cleanGesture != null;
+            // Cancel exactly once: when the service already cancelled the
+            // gesture (its own SelectionChanged subscription), only local
+            // state clears here.
+            ClearTransformSession(cancel:
+                _cleanGesture is { } liveGesture &&
+                _cleanTransforms.ActiveGesture == liveGesture);
+            if (hadGesture)
+                _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
         }
         _primary = primary;
         _selectionSnapshot = selected.ToArray();
@@ -251,6 +292,9 @@ public class PoseInspectorPane
     /// <summary>Rotation-ball input: euler-degree deltas applied to the selection.</summary>
     public void RotateSelection(float dx, float dy, float dz)
     {
+        UpdateGestureGuards();
+        if (_gestureRestartSuppressed)
+            return;
         var (transform, canEdit) = ReadTransform();
         if (!canEdit) return;
         BeginTransformSession(transform, DomainOperation.Rotate);
@@ -626,6 +670,7 @@ public class PoseInspectorPane
 
     private float DrawTransform(ImDrawListPtr dl, Vector2 cursor, float width, float s)
     {
+        UpdateGestureGuards();
         var (transform, canEdit) = ReadTransform();
         var pos = transform.Position;
         var euler = _dragEuler ?? PoseMath.QuaternionToEuler(transform.Rotation);
@@ -653,7 +698,7 @@ public class PoseInspectorPane
         changed |= scaleChanged;
         released |= scaleReleased;
 
-        if (changed && canEdit)
+        if (changed && canEdit && !_gestureRestartSuppressed)
         {
             var operation =
                 (rotChanged ? 1 : 0) +
@@ -1157,7 +1202,7 @@ public class PoseInspectorPane
         Transform displayedStart,
         DomainOperation operation)
     {
-        if (_cleanGesture != null || _entity == null)
+        if (_cleanGesture != null || _gestureRestartSuppressed || _primary == null)
             return;
 
         IReadOnlyList<TransformTargetId> targets;
