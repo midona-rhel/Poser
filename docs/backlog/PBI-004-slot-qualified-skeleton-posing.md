@@ -4,14 +4,14 @@
 
 | Field | Value |
 |---|---|
-| Status | Ready |
+| Status | Complete |
 | Size | Large |
 | Implementation owner | Claude |
 | Review owner | Codex |
 | Acceptance owner | User, in game |
 | Base ref | `pbi-004-base` (immutable annotated Git tag) |
 | Feature branch | `feature/pbi-004-slot-skeleton-posing` |
-| Accepted head | Not accepted |
+| Accepted head | `93c7d82` |
 
 ## Outcome
 
