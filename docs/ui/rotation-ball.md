@@ -20,7 +20,9 @@ there is no second gesture state machine.
   are the SAME real rotation axes as in the world, and rotating the camera
   updates both consistently.
 - **Local** frames the target's own current world orientation
-  (actor ∘ bone model rotation); **World** uses world axes. The **Parent**
+  (actor ∘ bone model rotation); **World** uses the character's MODEL axes
+  (Brio parity: numbers and World gizmo share one frame; for actors the
+  model frame IS world). The **Parent**
   pivot uses the parent→child radial frame: red points along normalized
   `child − parent`, the remaining axes form a stable orthonormal basis with
   a deterministic fallback near the reference axis. The parent bone's own

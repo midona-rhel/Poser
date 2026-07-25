@@ -93,7 +93,6 @@ public class PoseInspectorPane
     private TransformGestureId? _cleanGesture;
     // Immutable parent model transform captured at Begin (bone gestures with
     // a parent). Composition never re-reads the live animated parent.
-    private Transform? _cleanParentModel;
 
     // A cancelled scrub/ball gesture (Escape, selection change, scene
     // invalidation) must not re-Begin while the same pointer interaction is
@@ -319,9 +318,7 @@ public class PoseInspectorPane
             Matrix4x4.Decompose(actorMatrix, out _, out var actorRotation, out _);
 
             Transform model;
-            if (_cleanGesture != null && _cleanParentModel is { } frozenParent)
-                model = PoseMath.Compose(frozenParent, transform);
-            else if (_cleanGesture != null)
+            if (_cleanGesture != null)
                 model = transform;
             else if (ViewportBoneModel(boneId) is { } live)
                 model = live;
@@ -340,8 +337,11 @@ public class PoseInspectorPane
             }
             else
             {
+                // Brio parity: World mode manipulates the character's MODEL
+                // axes (Brio feeds ImGuizmo through the model matrix), the
+                // same frame the numeric wells edit.
                 frameWorld = _editorState.TransformOrientation == TransformOrientation.Global
-                    ? Quaternion.Identity
+                    ? actorRotation
                     : Quaternion.Normalize(actorRotation * model.Rotation);
             }
             var pivotWorld = Vector3.Transform(pivotModel, actorMatrix);
@@ -357,15 +357,13 @@ public class PoseInspectorPane
     }
 
     /// <summary>
-    /// Compact ring-gizmo input: the TOTAL rotation from drag start, applied
-    /// in the selected frame through the same clean gesture as every other
-    /// rotation surface. Local deltas act in the parent frame — the frame
-    /// the rings display and the numeric wells edit — so they pre-multiply
-    /// the frozen drag-start local rotation; World conjugates through the
-    /// frozen parent so the delta acts about world axes. No frame feeds a
-    /// native result back as the next frame's baseline.
+    /// Compact ring-gizmo input: the TOTAL model-frame rotation from drag
+    /// start, applied through the same clean gesture as every other rotation
+    /// surface. The displayed values are model-space, so the delta
+    /// pre-multiplies the frozen drag-start rotation directly. No frame
+    /// feeds a native result back as the next frame's baseline.
     /// </summary>
-    public void RotateSelectionGizmo(Quaternion totalDelta, bool worldFrame)
+    public void RotateSelectionGizmo(Quaternion totalDelta)
     {
         UpdateGestureGuards();
         if (_gestureRestartSuppressed)
@@ -375,17 +373,7 @@ public class PoseInspectorPane
         BeginTransformSession(transform, DomainOperation.Rotate);
         if (_cleanGesture == null || _dragStart is not { } start)
             return;
-        Quaternion rotation;
-        if (worldFrame)
-        {
-            var parentRotation = _cleanParentModel?.Rotation ?? Quaternion.Identity;
-            rotation = Quaternion.Normalize(
-                Quaternion.Inverse(parentRotation) * totalDelta * parentRotation * start.Rotation);
-        }
-        else
-        {
-            rotation = Quaternion.Normalize(totalDelta * start.Rotation);
-        }
+        var rotation = Quaternion.Normalize(totalDelta * start.Rotation);
         _dragEuler = null; // the numeric wells re-derive from the quaternion
         ApplyTransformSession(transform with { Rotation = rotation });
     }
@@ -1321,15 +1309,13 @@ public class PoseInspectorPane
                     ? (ToLegacy(actorValue), true)
                     : (Transform.Identity, false);
             case { Kind: TransformTargetKind.Bone, Bone: { } boneId }:
-                // Bones display/edit LOCAL (parent-relative) values like
-                // Ktisis/Anamnesis — model-space numbers read as garbage
-                // ("don't represent actual game values"). Tracking stays in
-                // model space; conversion happens only at this boundary.
-                if (ViewportBoneModel(boneId) is not { } model)
-                    return (Transform.Identity, false);
-                return (ViewportParentModel(boneId) is { } parentModel
-                    ? PoseMath.ToLocal(parentModel, model)
-                    : model, true);
+                // Brio parity: bones display and edit MODEL-space values —
+                // the frame Brio's PosingTransformEditor edits (LastTransform)
+                // and the same frame the gizmo's World mode manipulates, so
+                // dragging a number moves exactly along a World-gizmo axis.
+                return ViewportBoneModel(boneId) is { } model
+                    ? (model, true)
+                    : (Transform.Identity, false);
             default:
                 return (Transform.Identity, false);
         }
@@ -1368,7 +1354,6 @@ public class PoseInspectorPane
                 if (ViewportBoneModel(primaryBoneId) is not { } primaryModel)
                     return;
                 targets = effective.Targets;
-                _cleanParentModel = ViewportParentModel(primaryBoneId);
                 modelStart = primaryModel;
                 pivotMode = DomainPivot.PerTarget;
                 // The toolbar pivot governs every rotation surface through
@@ -1411,10 +1396,7 @@ public class PoseInspectorPane
                 }
                 : null);
         if (!begin.Success || begin.GestureId is not { } gesture)
-        {
-            _cleanParentModel = null;
             return;
-        }
 
         _dragStart = displayedStart;
         _cleanModelStart = modelStart;
@@ -1431,9 +1413,7 @@ public class PoseInspectorPane
             _cleanModelStart is not { } modelStart)
             return;
 
-        var modelAfter = _cleanParentModel is { } parentModel
-            ? PoseMath.Compose(parentModel, displayedAfter)
-            : displayedAfter;
+        var modelAfter = displayedAfter;
         var delta = new DomainDelta(
             modelAfter.Position - modelStart.Position,
             Quaternion.Normalize(
@@ -1472,7 +1452,6 @@ public class PoseInspectorPane
         _cleanGesture = null;
         _cleanModelStart = null;
         _cleanDisplayedCurrent = null;
-        _cleanParentModel = null;
     }
 
     private static Vector3 DivideComponents(

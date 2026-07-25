@@ -208,8 +208,7 @@ public class PoseRailPane
             {
                 _dragAngle += delta / RotationGizmoRings.PixelsPerRadian;
                 _inspector.RotateSelectionGizmo(
-                    Quaternion.CreateFromAxisAngle(_dragAxisModel, _dragAngle),
-                    worldFrame: true);
+                    Quaternion.CreateFromAxisAngle(_dragAxisModel, _dragAngle));
             }
         }
 

@@ -28,7 +28,7 @@ dispatches `Update`; release commits, Escape cancels. The gesture service owns
 the frozen baselines — the pane retains only display values.
 
 Selection change, tool/space change, and scene invalidation cancel the active
-gesture before the new target is shown. Bone values display parent-local; the
+gesture before the new target is shown. Bone values display model-space; the
 pane composes the edited local value to an absolute model transform once and
 derives the domain delta from the frozen model transform.
 

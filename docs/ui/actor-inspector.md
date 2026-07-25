@@ -49,7 +49,7 @@ When multiple actors or bones are selected, the primary value drives the shared 
 
 | Concern | Actor selection | Bone selection |
 |---|---|---|
-| Transform space | Whole draw object, model/world-facing | Parent-local values composed against the frozen parent captured at Begin |
+| Transform space | Whole draw object, model/world-facing | Model-space values (Brio parity) — the frame the World-mode gizmo manipulates |
 | Apply path | `TransformGestureService` via stable actor targets | `TransformGestureService` via stable bone targets |
 | History | One `TransformPatch` per gesture | One `TransformPatch` per gesture |
 | Header actions | Reset transform | Reset bone, Select children |

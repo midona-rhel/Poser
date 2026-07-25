@@ -654,9 +654,11 @@ public class GizmoOverlayWindow : Window
         }
         else
         {
+            // Brio parity: World mode rotates about the character's MODEL
+            // axes (identity model matrix for actors keeps world axes).
             frameWorld = gizmoMode == ImGuizmoMode.Local
                 ? Quaternion.Normalize(actorRotation * currentTransform.Rotation)
-                : Quaternion.Identity;
+                : actorRotation;
             pivotWorld = Vector3.Transform(pivotModel, modelMatrix);
         }
         var rings = UI.Controls.RotationGizmoRings.Project(
