@@ -91,8 +91,7 @@ internal static class ServiceRegistration
         services.AddSingleton<CleanTransformFacade>();
         services.AddSingleton<Game.Viewport.ViewportProjection>();
         services.AddSingleton<CleanPoseFacade>();
-        services.AddSingleton<Poser.Application.Posing.IIkConfigurationPort,
-            Poser.Game.Posing.IkConfigurationPort>();
+        services.AddSingleton<IIkConfigurationPort, IkConfigurationPort>();
         services.AddSingleton<CleanSceneLifecycle>();
         services.AddSingleton<IEditorState, EditorState>();
         return services;
