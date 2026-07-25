@@ -4,14 +4,14 @@
 
 | Field | Value |
 |---|---|
-| Status | Ready |
+| Status | Complete |
 | Size | Large |
 | Implementation owner | Claude |
 | Review owner | Codex |
 | Acceptance owner | User, in game |
 | Base ref | `pbi-005-base` |
 | Feature branch | `feature/pbi-005-advanced-ik` |
-| Accepted head | Not accepted |
+| Accepted head | `63816eb` |
 
 ## Outcome
 
