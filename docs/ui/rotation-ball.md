@@ -29,9 +29,11 @@ there is no second gesture state machine.
   outer ring rolls about the camera→pivot axis.
 - **A drag freezes its complete context at grab**: pivot position, ring
   frame (and therefore every ring plane), rotation axis, and screen
-  tangent. Nothing is re-derived from the moving bone until release; the
-  rings redraw from the frozen context while the bone follows the applied
-  rotation.
+  tangent. Nothing is re-derived from the moving bone until release. The
+  inspector's DISPLAYED rings still animate: they rotate by the
+  accumulated drag angle about the frozen axis — presentation computed
+  from the frozen frame plus the drag total, never from the live bone —
+  and hand back to the live frame at release without a snap.
 - The frozen tangent is the true positive-rotation direction: the grab
   point is rotated a small epsilon about the axis and both points are
   projected, so dragging along the tangent always applies the sign the

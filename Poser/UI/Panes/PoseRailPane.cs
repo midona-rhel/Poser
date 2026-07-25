@@ -34,10 +34,14 @@ public class PoseRailPane
     private float _dragDistance;
     private float _dragAngle;
     private RingHit? _hoverHit;
-    // Pivot and frame freeze for the complete drag; the rings are not
-    // recalculated from the moving bone until release.
+    // Pivot and frame freeze for the complete drag; the rings are never
+    // recalculated from the moving bone until release. The DISPLAYED frame
+    // rotates by the accumulated drag angle about the frozen axis so the
+    // widget still animates — presentation derived from frozen state, not
+    // from the bone, so no frame feeds back into the interaction math.
     private Vector3 _dragPivotWorld;
     private Quaternion _dragFrame = Quaternion.Identity;
+    private Vector3 _dragAxisWorld;
 
     private static readonly Vector4 AxisX = Theme.Palette.AxisX;
     private static readonly Vector4 AxisY = Theme.Palette.AxisY;
@@ -147,7 +151,9 @@ public class PoseRailPane
         if (active && _dragAxis >= 0)
         {
             pivotWorld = _dragPivotWorld;
-            frameWorld = _dragFrame;
+            frameWorld = Quaternion.Normalize(
+                Quaternion.CreateFromAxisAngle(_dragAxisWorld, _dragAngle) *
+                _dragFrame);
         }
 
         dl.AddCircleFilled(center, widgetRadius + 12f * s,
@@ -188,6 +194,7 @@ public class PoseRailPane
             _dragAngle = 0f;
             _dragPivotWorld = pivotWorld;
             _dragFrame = frameWorld;
+            _dragAxisWorld = axisWorld;
         }
 
         if (active && _dragAxis >= 0)
