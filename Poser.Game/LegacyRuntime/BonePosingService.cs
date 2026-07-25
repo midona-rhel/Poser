@@ -167,7 +167,7 @@ public unsafe class BonePosingService : IBonePosingService
         _skeletonsToUpdate.Clear();
         foreach (var (slotKey, poseInfo) in _poseInfos)
         {
-            if (poseInfo.IsOverridden)
+            if (poseInfo.IsOverridden || HasEnabledChains(slotKey))
             {
                 _skeletonsToUpdate.Add(slotKey);
                 continue;
@@ -344,7 +344,15 @@ public unsafe class BonePosingService : IBonePosingService
                     continue;
 
                 var bonePoseInfo = poseInfo.GetPoseInfo(boneName, partialIdx);
-                if (!bonePoseInfo.HasStacks)
+                _ikChains.TryGetValue(
+                    (slotKey, partialIdx, boneIdx), out var chainState);
+                bool fixedHold = chainState is
+                {
+                    Config.Enabled: true,
+                    Config.TargetMode: Poser.Domain.Posing.IkTargetMode.Fixed,
+                    FixedCapture: not null,
+                };
+                if (!bonePoseInfo.HasStacks && !fixedHold)
                     continue;
 
                 var baselineSpace = pose->AccessBoneModelSpace(
@@ -354,10 +362,19 @@ public unsafe class BonePosingService : IBonePosingService
                     continue;
                 var animatedBaseline = ReadTransform(baselineSpace);
 
-                // Apply ALL stacks for this bone (like Brio lines 108-112)
-                foreach (var stack in bonePoseInfo.Stacks)
+                if (bonePoseInfo.HasStacks)
                 {
-                    ApplyBoneTransform(pose, boneIdx, stack, bone, bonePoseInfo.IK);
+                    // Apply ALL stacks for this bone (like Brio lines 108-112)
+                    foreach (var stack in bonePoseInfo.Stacks)
+                    {
+                        ApplyBoneTransform(pose, boneIdx, stack, bone, chainState);
+                    }
+                }
+                else
+                {
+                    // An armed Fixed chain with no authored stack still holds
+                    // its captured target against the running animation.
+                    ApplyFixedHold(pose, boneIdx, bone, chainState!);
                 }
 
                 // Brio captures both caches immediately after applying each bone.
@@ -475,7 +492,26 @@ public unsafe class BonePosingService : IBonePosingService
         }
     }
 
-    private void ApplyBoneTransform(hkaPose* pose, int boneIdx, BonePoseTransformInfo info, IBone bone, BoneIKInfo ik)
+    /// <summary>Solves the chain toward a Fixed capture when no authored
+    /// stack exists: target = captured target + (0 − captured translation).</summary>
+    private void ApplyFixedHold(hkaPose* pose, int boneIdx, IBone bone, IkChainState ik)
+    {
+        var capture = ik.FixedCapture!.Value;
+        var target = capture.Target - capture.Translation;
+        var rotSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
+        var currentRotation = new Quaternion(
+            rotSpace->Rotation.X, rotSpace->Rotation.Y,
+            rotSpace->Rotation.Z, rotSpace->Rotation.W);
+        _ikService.Solve(bone, new Poser.Domain.Posing.IkSolveRequest(
+            target, currentRotation, ik.Config, ik.Chain));
+        if (!ik.Config.EnforceConstraints)
+        {
+            var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
+            modelSpace->Translation = *(hkVector4f*)(&target);
+        }
+    }
+
+    private void ApplyBoneTransform(hkaPose* pose, int boneIdx, BonePoseTransformInfo info, IBone bone, IkChainState? ik)
     {
         // Delta mode: ADD to Havok state (like Brio)
 
@@ -501,15 +537,45 @@ public unsafe class BonePosingService : IBonePosingService
             ? Vector3.Transform(info.Transform.Position, headRotation)
             : info.Transform.Position;
         var tempPos = beforePos + positionDelta;
-        if (ik.Enabled && info.Transform.Position != Vector3.Zero)
+        bool armed = ik is { Config.Enabled: true };
+        bool fixedMode = armed &&
+            ik!.Config.TargetMode == Poser.Domain.Posing.IkTargetMode.Fixed;
+        bool rotationEnforcedByIk = false;
+        if (armed && (fixedMode || info.Transform.Position != Vector3.Zero))
         {
-            // Brio-style live IK: the stored delta is the TARGET offset; the chain is
-            // solved every frame, so undo/redo stay pure delta operations.
-            _ikService.SolveIK(bone, tempPos, ik);
-            if (!ik.EnforceConstraints)
+            // Brio-style live IK: the stored delta is the TARGET offset; the
+            // chain is solved every frame, so undo/redo stay pure delta
+            // operations. Fixed mode targets the captured model-space point
+            // shifted by the authored translation moved since capture, so
+            // mode changes never jump or double-apply an existing edit.
+            var target = tempPos;
+            if (fixedMode && ik!.FixedCapture is { } capture)
+                target = capture.Target +
+                    (info.Transform.Position - capture.Translation);
+
+            // Requested end rotation, computed BEFORE the solve so optional
+            // enforcement receives the value the direct apply would produce.
+            var rotSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
+            var rotBefore = new Quaternion(
+                rotSpace->Rotation.X, rotSpace->Rotation.Y,
+                rotSpace->Rotation.Z, rotSpace->Rotation.W);
+            var requestedRotation = info.Frame == TransformFrame.HeadRelative
+                ? Quaternion.Normalize(
+                    headRotation * info.Transform.Rotation *
+                    Quaternion.Inverse(headRotation) * rotBefore)
+                : Quaternion.Normalize(rotBefore * info.Transform.Rotation);
+
+            _ikService.Solve(bone, new Poser.Domain.Posing.IkSolveRequest(
+                target, requestedRotation, ik!.Config, ik.Chain));
+            // When the solver enforces the end rotation, it is not applied a
+            // second time below.
+            rotationEnforcedByIk =
+                ik.Config.Solver == Poser.Domain.Posing.IkSolver.TwoJoint &&
+                ik.Config.EnforceEndRotation;
+            if (!ik.Config.EnforceConstraints)
             {
                 modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
-                modelSpace->Translation = *(hkVector4f*)(&tempPos);
+                modelSpace->Translation = *(hkVector4f*)(&target);
             }
         }
         else
@@ -517,16 +583,19 @@ public unsafe class BonePosingService : IBonePosingService
             modelSpace->Translation = *(hkVector4f*)(&tempPos);
         }
 
-        // Rotation
-        prop = info.PropagateComponents.HasFlag(TransformComponents.Rotation);
-        modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
-        var beforeRot = new Quaternion(modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W);
-        var tempRot = info.Frame == TransformFrame.HeadRelative
-            ? Quaternion.Normalize(
-                headRotation * info.Transform.Rotation *
-                Quaternion.Inverse(headRotation) * beforeRot)
-            : beforeRot * info.Transform.Rotation;
-        modelSpace->Rotation = *(hkQuaternionf*)(&tempRot);
+        // Rotation (skipped when the Two Joint solver enforced it)
+        if (!rotationEnforcedByIk)
+        {
+            prop = info.PropagateComponents.HasFlag(TransformComponents.Rotation);
+            modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
+            var beforeRot = new Quaternion(modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W);
+            var tempRot = info.Frame == TransformFrame.HeadRelative
+                ? Quaternion.Normalize(
+                    headRotation * info.Transform.Rotation *
+                    Quaternion.Inverse(headRotation) * beforeRot)
+                : beforeRot * info.Transform.Rotation;
+            modelSpace->Rotation = *(hkQuaternionf*)(&tempRot);
+        }
 
         // Scale
         prop = info.PropagateComponents.HasFlag(TransformComponents.Scale);
@@ -662,7 +731,9 @@ public unsafe class BonePosingService : IBonePosingService
         }
 
         _ikChains[key] = state;
-        MirrorLegacyIk(bone, state.Config);
+        // Materialize the pose-info entry so the per-frame update loop
+        // visits this skeleton even before any stack exists.
+        GetPoseInfo(bone.Skeleton);
         return null;
     }
 
@@ -682,14 +753,16 @@ public unsafe class BonePosingService : IBonePosingService
                      .ToArray())
             _ikChains.Remove(chainKey);
 
-        // Clear the per-stack solve inputs too, including bones armed by
-        // older paths. Idempotent, actor-local, no transform stacks touched.
-        var poseInfo = GetPoseInfo(skeleton);
-        foreach (var pose in poseInfo.AllPoses)
+    }
+
+    private bool HasEnabledChains(SkeletonKey key)
+    {
+        foreach (var (chainKey, state) in _ikChains)
         {
-            if (pose.IK.Enabled)
-                pose.IK = BoneIKInfo.Disabled;
+            if (chainKey.Skeleton == key && state.Config.Enabled)
+                return true;
         }
+        return false;
     }
 
     private static (SkeletonKey Skeleton, int Partial, int Bone) ChainKey(IBone bone) =>
@@ -719,22 +792,7 @@ public unsafe class BonePosingService : IBonePosingService
             (short)endpoint.BoneIndex);
     }
 
-    /// <summary>TRANSITIONAL (removed with the native mapping step): the
-    /// per-stack solve still consumes the legacy BoneIKInfo, so the stored
-    /// configuration mirrors its understood subset.</summary>
-    private void MirrorLegacyIk(IBone bone, Poser.Domain.Posing.IkChainConfig config)
-    {
-        var legacy = BoneIKInfo.CalculateDefault(bone.BoneName);
-        legacy.Enabled = config.Enabled;
-        legacy.EnforceConstraints = config.EnforceConstraints;
-        legacy.SolverType = config.Solver == Poser.Domain.Posing.IkSolver.Ccd
-            ? IKSolverType.CCD
-            : IKSolverType.TwoJoint;
-        legacy.CCD.Depth = config.CcdDepth;
-        legacy.CCD.Iterations = config.CcdIterations;
-        var poseInfo = GetPoseInfo(bone.Skeleton);
-        poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId).IK = legacy;
-    }
+
 
     public int ResetRegion(ISkeleton skeleton, string region)
     {
@@ -760,12 +818,8 @@ public unsafe class BonePosingService : IBonePosingService
         return reset;
     }
 
-    public bool HasEnabledIk(ISkeleton skeleton)
-    {
-        if (!_poseInfos.TryGetValue(SkeletonKey.Of(skeleton), out var poseInfo))
-            return false;
-        return poseInfo.AnyIkEnabled;
-    }
+    public bool HasEnabledIk(ISkeleton skeleton) =>
+        HasEnabledChains(SkeletonKey.Of(skeleton));
 
     public void ResetBone(IBone bone)
     {

@@ -9,6 +9,7 @@ using FFXIVClientStructs.Havok.Animation.Rig;
 using FFXIVClientStructs.Havok.Common.Base.Container.Array;
 using FFXIVClientStructs.Havok.Common.Base.Math.Vector;
 using Poser.Core;
+using Poser.Domain.Posing;
 using Poser.Entities;
 using Poser.Services;
 
@@ -68,29 +69,26 @@ public unsafe class IKService : IIKService
     }
 
     /// <summary>
-    /// Solves IK for a bone chain to reach a target position.
-    /// The havok pose is resolved from the bone's skeleton, keeping raw pointers out of the public API.
+    /// Solves the endpoint's chain toward the request. The havok pose is
+    /// resolved from the endpoint's own slot skeleton, keeping raw pointers
+    /// out of the public API.
     /// </summary>
-    public void SolveIK(IBone bone, Vector3 target, BoneIKInfo ikInfo)
+    public void Solve(IBone endpoint, in IkSolveRequest request)
     {
-        if (!_initialized || !ikInfo.Enabled)
+        if (!_initialized || !request.Config.Enabled)
             return;
 
-        var pose = GetHavokPose(bone);
+        var pose = GetHavokPose(endpoint);
         if (pose == null)
         {
-            _log.Debug($"IKService: No havok pose for bone {bone.BoneName} (partial {bone.PartialId})");
+            _log.Debug($"IKService: No havok pose for bone {endpoint.BoneName} (partial {endpoint.PartialId})");
             return;
         }
 
-        if (ikInfo.SolverType == IKSolverType.CCD)
-        {
-            SolveCCD(pose, ikInfo.CCD, bone, target);
-        }
-        else if (ikInfo.SolverType == IKSolverType.TwoJoint)
-        {
-            SolveTwoJoint(pose, ikInfo.TwoJoint, bone, target);
-        }
+        if (request.Config.Solver == IkSolver.Ccd)
+            SolveCcd(pose, endpoint, request);
+        else if (request.Chain.TwoJointAvailable)
+            SolveTwoJoint(pose, request);
     }
 
     /// <summary>
@@ -114,24 +112,30 @@ public unsafe class IKService : IIKService
         return gameSkeleton->PartialSkeletons[bone.PartialId].GetHavokPose(0);
     }
 
-    private void SolveCCD(hkaPose* pose, CCDOptions options, IBone bone, Vector3 target)
+    private void SolveCcd(hkaPose* pose, IBone endpoint, in IkSolveRequest request)
     {
-        var boneList = GetBonesToDepth(bone, options.Depth, true);
+        // CCD walks same-slot parents from the endpoint; depth clamps to
+        // the available chain.
+        var boneList = GetBonesToDepth(endpoint, request.Config.CcdDepth, true);
         if (boneList.Count <= 1)
             return;
 
         var startBone = (short)boneList[^1].BoneIndex;
         var endBone = (short)boneList[0].BoneIndex;
 
+        // The solver receives the CONFIGURED gain; the constraint buffer is
+        // fully rewritten so nothing leaks from a previous solve.
         hkaCCDSolver* ccdSolver = (hkaCCDSolver*)_solverAddr.Aligned;
-        _ccdSolverCtr(ccdSolver, options.Iterations, 1f);
+        _ccdSolverCtr(ccdSolver, request.Config.CcdIterations, request.Config.CcdGain);
 
         CCDIKConstraint* constraint = (CCDIKConstraint*)_ccdConstraintAddr.Aligned;
+        *constraint = default;
         constraint->StartBone = startBone;
         constraint->EndBone = endBone;
-        constraint->Target.X = target.X;
-        constraint->Target.Y = target.Y;
-        constraint->Target.Z = target.Z;
+        constraint->Target.X = request.Target.X;
+        constraint->Target.Y = request.Target.Y;
+        constraint->Target.Z = request.Target.Z;
+        constraint->Target.W = 0f;
 
         var constraints = new hkArray<CCDIKConstraint>
         {
@@ -144,18 +148,33 @@ public unsafe class IKService : IIKService
         _ccdSolverSolve(ccdSolver, &notSure, &constraints, pose);
     }
 
-    private void SolveTwoJoint(hkaPose* pose, TwoJointOptions options, IBone bone, Vector3 target)
+    private void SolveTwoJoint(hkaPose* pose, in IkSolveRequest request)
     {
-        var boneList = GetBonesToDepth(bone, options.FirstBone, true);
-        if (boneList.Count < options.FirstBone)
-            return;
+        var config = request.Config;
+        var chain = request.Chain;
 
+        // EVERY field is re-initialized per solve (indices, twists, gains,
+        // hinge cosines, axis, targets, enforcement) — the shared buffer can
+        // never carry a previous chain's values.
         TwoJointIKSetup* setup = (TwoJointIKSetup*)_twoJointSetupAddr.Aligned;
-        setup->FirstJointIdx = (short)boneList[options.FirstBone].BoneIndex;
-        setup->SecondJointIdx = (short)boneList[options.SecondBone].BoneIndex;
-        setup->EndBoneIdx = (short)boneList[options.EndBone].BoneIndex;
-        setup->EndTargetMS = new Vector4(target, 0);
-        setup->HingeAxisLS = new Vector4(options.RotationAxis, 0);
+        *setup = new TwoJointIKSetup();
+        setup->FirstJointIdx = chain.FirstJoint;
+        setup->SecondJointIdx = chain.SecondJoint;
+        setup->EndBoneIdx = chain.EndBone;
+        setup->FirstJointTwistIdx = chain.FirstTwist;
+        setup->SecondJointTwistIdx = chain.SecondTwist;
+        setup->FirstJointIkGain = config.FirstJointGain;
+        setup->SecondJointIkGain = config.SecondJointGain;
+        setup->EndJointIkGain = config.EndJointGain;
+        // Havok stores hinge limits as cosines: cos(min°) and cos(max°) —
+        // the 0..180° defaults produce the native 1/-1 defaults exactly.
+        setup->CosineMinHingeAngle = MathF.Cos(config.HingeMinDegrees * MathF.PI / 180f);
+        setup->CosineMaxHingeAngle = MathF.Cos(config.HingeMaxDegrees * MathF.PI / 180f);
+        setup->HingeAxisLS = new Vector4(config.HingeAxis, 0);
+        setup->EndTargetMS = new Vector4(request.Target, 0);
+        setup->EndTargetRotationMS = request.TargetRotation;
+        setup->EnforceEndPosition = true;
+        setup->EnforceEndRotation = config.EnforceEndRotation;
 
         byte notSure = 0;
         _twoJointSolverSolve(&notSure, setup, pose);

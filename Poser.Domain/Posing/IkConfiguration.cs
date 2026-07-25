@@ -158,6 +158,14 @@ public static class IkChains
         ForEndpoint(boneName) != null;
 }
 
+/// <summary>One immutable solve request: target, optional end rotation,
+/// the validated configuration, and the resolved chain.</summary>
+public readonly record struct IkSolveRequest(
+    Vector3 Target,
+    Quaternion TargetRotation,
+    IkChainConfig Config,
+    IkResolvedChain Chain);
+
 /// <summary>Native bone indices of one resolved chain (same skeleton, same
 /// partial as the endpoint); -1 marks a missing optional twist.</summary>
 public readonly record struct IkResolvedChain(
