@@ -3,20 +3,24 @@ using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Plugin.Services;
 using Poser.Core;
+using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Services;
 
 namespace Poser.Game;
 
 /// <summary>
-/// Service for managing actor skeletons.
+/// Slot-aware skeleton discovery and caching. Skeletons cache per
+/// (actor, slot); an entry is reused only while its actor binding AND its
+/// slot's native CharacterBase are unchanged, so sheathing, redraws, and
+/// equipment replacement release exactly that slot.
 /// </summary>
 public class SkeletonService : ISkeletonService
 {
     private readonly IPluginLog _log;
     private readonly IGPoseService _gPoseService;
     private readonly IEventBus _eventBus;
-    private readonly Dictionary<EntityId, Skeleton> _skeletons = new();
+    private readonly Dictionary<(EntityId Actor, PoseSlot Slot), Skeleton> _skeletons = new();
 
     public SkeletonService(IPluginLog log, IGPoseService gPoseService, IEventBus eventBus)
     {
@@ -28,56 +32,76 @@ public class SkeletonService : ISkeletonService
         _eventBus.Subscribe<ActorListChangedEvent>(OnActorListChanged);
     }
 
-    public ISkeleton? GetSkeleton(IActor actor)
+    public ISkeleton? GetSkeleton(IActor actor) =>
+        GetSkeleton(actor, PoseSlot.Character);
+
+    public unsafe ISkeleton? GetSkeleton(IActor actor, PoseSlot slot)
     {
-        if (actor.Address == nint.Zero)
+        if (actor.Address == nint.Zero || slot == PoseSlot.Unknown)
             return null;
 
-        if (_skeletons.TryGetValue(actor.Id, out var skeleton))
+        var currentBase = (nint)SlotCharacterBases.Resolve(actor.Address, slot);
+        var key = (actor.Id, slot);
+        if (_skeletons.TryGetValue(key, out var skeleton))
         {
             if (ReferenceEquals(skeleton.Actor, actor) &&
                 skeleton.Actor.Address == actor.Address &&
-                skeleton.IsValid)
+                skeleton.IsValid &&
+                currentBase != nint.Zero &&
+                skeleton.CharacterBaseAddress == currentBase)
             {
                 return skeleton;
             }
 
+            // The slot vanished or was replaced: release only this entry.
             skeleton.Dispose();
-            _skeletons.Remove(actor.Id);
+            _skeletons.Remove(key);
+            _eventBus.Publish(new SkeletonChangedEvent(actor, null));
         }
 
-        // Create new skeleton
+        if (currentBase == nint.Zero)
+            return null;
+
         try
         {
-            skeleton = new Skeleton(actor);
+            skeleton = new Skeleton(actor, slot);
             if (skeleton.IsValid)
             {
-                _skeletons[actor.Id] = skeleton;
+                _skeletons[key] = skeleton;
 
-                // Attach skeleton as child of actor
-                if (actor is ActorBase actorBase)
-                {
+                if (slot == PoseSlot.Character && actor is ActorBase actorBase)
                     actorBase.AttachChild(skeleton);
-                }
 
-                _log.Debug($"Created skeleton for {actor.Name} with {skeleton.Bones.Count} bones");
+                _log.Debug($"Created {slot} skeleton for {actor.Name} with {skeleton.Bones.Count} bones");
                 _eventBus.Publish(new SkeletonChangedEvent(actor, skeleton));
                 return skeleton;
             }
         }
         catch (Exception ex)
         {
-            _log.Warning($"Failed to create skeleton for {actor.Name}: {ex.Message}");
+            _log.Warning($"Failed to create {slot} skeleton for {actor.Name}: {ex.Message}");
         }
 
         return null;
     }
 
+    public IReadOnlyList<ISkeleton> GetSkeletons(IActor actor)
+    {
+        var result = new List<ISkeleton>();
+        foreach (var slot in SlotCharacterBases.SupportedSlots)
+        {
+            if (GetSkeleton(actor, slot) is { } skeleton)
+                result.Add(skeleton);
+        }
+        return result;
+    }
+
     public void RefreshSkeleton(IActor actor)
     {
-        if (_skeletons.TryGetValue(actor.Id, out var skeleton) &&
-            ReferenceEquals(skeleton.Actor, actor))
+        foreach (var (key, skeleton) in _skeletons.ToArray())
         {
+            if (!key.Actor.Equals(actor.Id) || !ReferenceEquals(skeleton.Actor, actor))
+                continue;
             skeleton.Refresh();
             _eventBus.Publish(new SkeletonChangedEvent(actor, skeleton.IsValid ? skeleton : null));
         }
@@ -104,9 +128,9 @@ public class SkeletonService : ISkeletonService
     private void OnActorListChanged(ActorListChangedEvent e)
     {
         var liveActors = e.Actors.ToDictionary(actor => actor.Id);
-        foreach (var (id, skeleton) in _skeletons.ToArray())
+        foreach (var (key, skeleton) in _skeletons.ToArray())
         {
-            if (liveActors.TryGetValue(id, out var actor) &&
+            if (liveActors.TryGetValue(key.Actor, out var actor) &&
                 ReferenceEquals(skeleton.Actor, actor) &&
                 skeleton.Actor.Address == actor.Address)
             {
@@ -114,7 +138,7 @@ public class SkeletonService : ISkeletonService
             }
 
             skeleton.Dispose();
-            _skeletons.Remove(id);
+            _skeletons.Remove(key);
         }
     }
 

@@ -29,11 +29,14 @@ public sealed class CleanSceneLifecycle : IDisposable
     private readonly IEventBus _events;
     private readonly IFramework _framework;
 
+    private static readonly TimeSpan SlotPollInterval = TimeSpan.FromSeconds(1);
+
     private string? _lastSignature;
     private bool _refreshing;
     private bool _retryPending;
     private TimeSpan _retryInterval = TimeSpan.FromMilliseconds(500);
     private DateTime _nextRetryUtc = DateTime.MinValue;
+    private DateTime _nextSlotPollUtc = DateTime.MinValue;
 
     public CleanSceneLifecycle(
         StableBindingRegistry bindings,
@@ -117,9 +120,22 @@ public sealed class CleanSceneLifecycle : IDisposable
     /// </summary>
     private void OnFrameworkUpdate(IFramework framework)
     {
-        if (!_retryPending)
-            return;
         var now = DateTime.UtcNow;
+
+        // Auxiliary slot changes (sheathe/unsheathe, equipment or prop
+        // replacement, ornament spawn/despawn) fire none of our events, so
+        // slot presence is polled at a steady cadence. The structural
+        // signature makes an unchanged scene free: no snapshot, no
+        // revision, no gesture cancellation.
+        if (!_retryPending)
+        {
+            if (now < _nextSlotPollUtc)
+                return;
+            _nextSlotPollUtc = now + SlotPollInterval;
+            Refresh();
+            return;
+        }
+
         if (now < _nextRetryUtc)
             return;
         _nextRetryUtc = now + _retryInterval;

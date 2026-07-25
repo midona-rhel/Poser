@@ -28,6 +28,8 @@ public class Skeleton : EntityBase, ISkeleton
     private readonly Dictionary<(int, int), Bone> _bonesByIndex = new();
 
     public IActor Actor { get; }
+    public Poser.Domain.Identity.PoseSlot Slot { get; }
+    public nint CharacterBaseAddress { get; private set; }
     public IBone? RootBone { get; private set; }
     public IReadOnlyList<IBone> Bones => _bones.AsReadOnly();
     public bool IsValid { get; private set; }
@@ -42,10 +44,11 @@ public class Skeleton : EntityBase, ISkeleton
     /// </summary>
     public override EntityType EntityType => EntityType.Skeleton;
 
-    public Skeleton(IActor actor)
+    public Skeleton(IActor actor, Poser.Domain.Identity.PoseSlot slot)
         : base(EntityId.New(), "Skeleton")
     {
         Actor = actor;
+        Slot = slot;
         IsCollapsed = true; // Start collapsed by default
         IsVisible = false; // Start unchecked (not visible in overlay)
         BuildSkeleton();
@@ -104,23 +107,19 @@ public class Skeleton : EntityBase, ISkeleton
 
     private unsafe GameSkeleton* GetGameSkeleton()
     {
-        if (Actor.Address == nint.Zero)
+        // Slot-exact resolution: this skeleton reads ONLY its own slot's
+        // CharacterBase; there is no fallback to the Character slot.
+        var charaBase = SlotCharacterBases.Resolve(Actor.Address, Slot);
+        if (charaBase == null)
             return null;
-
-        var character = (Character*)Actor.Address;
-        if (character == null)
-            return null;
-
-        var drawObject = character->GameObject.DrawObject;
-        if (drawObject == null)
-            return null;
-
-        if (drawObject->Object.GetObjectType() != FFXIVClientStructs.FFXIV.Client.Graphics.Scene.ObjectType.CharacterBase)
-            return null;
-
-        var charaBase = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)drawObject;
+        CharacterBaseAddress = (nint)charaBase;
         return charaBase->Skeleton;
     }
+
+    /// <summary>The current native skeleton pointer for this slot, or null
+    /// when the slot is absent. Runtime apply paths use this so a weapon or
+    /// ornament stack can never be written through the Character skeleton.</summary>
+    internal unsafe GameSkeleton* GetGameSkeletonPointer() => GetGameSkeleton();
 
     private unsafe void BuildFromGameSkeleton(GameSkeleton* gameSkeleton)
     {
@@ -280,27 +279,17 @@ public class Skeleton : EntityBase, ISkeleton
     /// </summary>
     public unsafe Matrix4x4 GetModelMatrix()
     {
-        if (Actor.Address == nint.Zero)
+        // The matrix comes from THIS slot's draw object: a weapon's model
+        // moves with the hand, not with the actor origin.
+        var charaBase = SlotCharacterBases.Resolve(Actor.Address, Slot);
+        if (charaBase == null)
             return Matrix4x4.Identity;
 
-        var character = (Character*)Actor.Address;
-        if (character == null)
-            return Matrix4x4.Identity;
-
-        var drawObject = character->GameObject.DrawObject;
-        if (drawObject == null)
-            return Matrix4x4.Identity;
-
-        if (drawObject->Object.GetObjectType() != FFXIVClientStructs.FFXIV.Client.Graphics.Scene.ObjectType.CharacterBase)
-            return Matrix4x4.Identity;
-
-        var charaBase = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)drawObject;
-
-        var position = drawObject->Object.Position;
-        var rotation = drawObject->Object.Rotation;
+        var position = charaBase->DrawObject.Object.Position;
+        var rotation = charaBase->DrawObject.Object.Rotation;
         // Include ScaleFactor like Brio does (ScaleFactor1 * ScaleFactor2 at offsets 0x2A0 and 0x2A4)
         var scaleFactor = GetScaleFactor(charaBase);
-        var scale = drawObject->Object.Scale * scaleFactor;
+        var scale = charaBase->DrawObject.Object.Scale * scaleFactor;
 
         return Matrix4x4.CreateScale(scale) *
                Matrix4x4.CreateFromQuaternion(rotation) *

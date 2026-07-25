@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
+using Poser.Domain.Identity;
 
 namespace Poser.Entities;
 
 /// <summary>
-/// Represents a skeleton attached to an actor.
+/// Represents one slot skeleton attached to an actor. One actor owns
+/// independently replaceable Character, MainHand, OffHand, Prop, and
+/// Ornament skeletons; a slot is never another actor.
 /// </summary>
 public interface ISkeleton : IEntity
 {
@@ -12,6 +15,15 @@ public interface ISkeleton : IEntity
     /// The actor this skeleton belongs to.
     /// </summary>
     IActor Actor { get; }
+
+    /// <summary>The pose slot this skeleton occupies.</summary>
+    PoseSlot Slot { get; }
+
+    /// <summary>
+    /// The native CharacterBase this skeleton was built from. A different
+    /// current pointer for the same slot means the skeleton was replaced.
+    /// </summary>
+    nint CharacterBaseAddress { get; }
 
     /// <summary>
     /// The root bone of the skeleton.

@@ -37,7 +37,7 @@ public sealed class StableBindingRegistry
     private Dictionary<BoneId, IBone> _boneBindings = new();
     private Dictionary<string, ActorId> _legacyActorIds =
         new(StringComparer.Ordinal);
-    private Dictionary<(string Actor, int Partial, int Index), BoneId>
+    private Dictionary<(string Actor, PoseSlot Slot, int Partial, int Index), BoneId>
         _legacyBoneIds = new();
     private ulong _revision;
 
@@ -59,7 +59,8 @@ public sealed class StableBindingRegistry
         foreach (var lineage in _lineages.Values)
         {
             lineage.Present = false;
-            lineage.SkeletonPresent = false;
+            foreach (var slot in lineage.Slots.Values)
+                slot.Present = false;
         }
 
         var actorBindings = new Dictionary<ActorId, IActor>();
@@ -67,7 +68,7 @@ public sealed class StableBindingRegistry
         var legacyActorIds = new Dictionary<string, ActorId>(
             StringComparer.Ordinal);
         var legacyBoneIds =
-            new Dictionary<(string Actor, int Partial, int Index), BoneId>();
+            new Dictionary<(string Actor, PoseSlot Slot, int Partial, int Index), BoneId>();
         var actorDescriptors = new List<ActorDescriptor>();
 
         foreach (var actor in _actors.Actors)
@@ -91,26 +92,36 @@ public sealed class StableBindingRegistry
                 lineage.LogicalId,
                 lineage.ActorGeneration);
 
-            var skeleton = _skeletons.GetSkeleton(actor);
-            SkeletonDescriptor? skeletonDescriptor = null;
-            if (skeleton is { IsValid: true })
+            // Every present slot skeleton binds independently: replacing a
+            // weapon bumps only that slot's generation and rebuilds only
+            // that slot's bone bindings.
+            var skeletonDescriptors = new List<SkeletonDescriptor>();
+            foreach (var skeleton in _skeletons.GetSkeletons(actor))
             {
+                if (!skeleton.IsValid)
+                    continue;
+                if (!lineage.Slots.TryGetValue(skeleton.Slot, out var slotState))
+                {
+                    slotState = new SlotState();
+                    lineage.Slots.Add(skeleton.Slot, slotState);
+                }
+
                 var skeletonKey = skeleton.Id.Unique;
-                if (lineage.HasEverHadSkeleton &&
-                    (!lineage.SkeletonPresentBeforeScan ||
+                if (slotState.HasEverBeenPresent &&
+                    (!slotState.PresentBeforeScan ||
                      !string.Equals(
-                         lineage.LastSkeletonKey,
+                         slotState.LastKey,
                          skeletonKey,
                          StringComparison.Ordinal)))
-                    lineage.SkeletonGeneration++;
-                lineage.LastSkeletonKey = skeletonKey;
-                lineage.SkeletonPresent = true;
-                lineage.HasEverHadSkeleton = true;
+                    slotState.Generation++;
+                slotState.LastKey = skeletonKey;
+                slotState.Present = true;
+                slotState.HasEverBeenPresent = true;
 
                 var skeletonId = new SkeletonId(
                     actorId,
-                    PoseSlot.Character,
-                    lineage.SkeletonGeneration);
+                    skeleton.Slot,
+                    slotState.Generation);
                 var bones = new List<BoneDescriptor>(skeleton.Bones.Count);
                 foreach (var bone in skeleton.Bones)
                 {
@@ -124,6 +135,7 @@ public sealed class StableBindingRegistry
                     boneBindings[boneId] = bone;
                     legacyBoneIds[(
                         legacyKey,
+                        skeleton.Slot,
                         bone.PartialId,
                         bone.BoneIndex)] = boneId;
 
@@ -142,18 +154,16 @@ public sealed class StableBindingRegistry
                         parent,
                         bone.IsHiddenBone));
                 }
-                skeletonDescriptor = new SkeletonDescriptor(
+                skeletonDescriptors.Add(new SkeletonDescriptor(
                     skeletonId,
-                    bones);
+                    bones));
             }
             actorBindings[actorId] = actor;
             legacyActorIds[legacyKey] = actorId;
             actorDescriptors.Add(new ActorDescriptor(
                 actorId,
                 actor.Name,
-                skeletonDescriptor is { } present
-                    ? new[] { present }
-                    : Array.Empty<SkeletonDescriptor>(),
+                skeletonDescriptors,
                 actor.IsPlayer,
                 actor.IsCompanion,
                 !_spawn.IsVisible(actor)));
@@ -162,8 +172,8 @@ public sealed class StableBindingRegistry
         foreach (var lineage in _lineages.Values)
         {
             lineage.PresentBeforeScan = lineage.Present;
-            lineage.SkeletonPresentBeforeScan =
-                lineage.SkeletonPresent;
+            foreach (var slot in lineage.Slots.Values)
+                slot.PresentBeforeScan = slot.Present;
         }
 
         _actorBindings = actorBindings;
@@ -185,7 +195,7 @@ public sealed class StableBindingRegistry
     {
         var actorKey = bone.Skeleton.Actor.Id.Unique;
         return _legacyBoneIds.TryGetValue(
-            (actorKey, bone.PartialId, bone.BoneIndex),
+            (actorKey, bone.Skeleton.Slot, bone.PartialId, bone.BoneIndex),
             out var id) &&
             id.CanonicalName.Equals(
                 bone.BoneName,
@@ -249,14 +259,22 @@ public sealed class StableBindingRegistry
     {
         public Guid LogicalId { get; } = logicalId;
         public uint ActorGeneration { get; set; }
-        public uint SkeletonGeneration { get; set; }
         public nint LastAddress { get; set; }
-        public string? LastSkeletonKey { get; set; }
         public bool Present { get; set; }
         public bool PresentBeforeScan { get; set; }
         public bool HasEverBeenPresent { get; set; }
-        public bool SkeletonPresent { get; set; }
-        public bool SkeletonPresentBeforeScan { get; set; }
-        public bool HasEverHadSkeleton { get; set; }
+        public Dictionary<PoseSlot, SlotState> Slots { get; } = new();
+    }
+
+    /// <summary>Per-slot skeleton lineage: each slot generation advances
+    /// independently, so replacing a weapon never invalidates Character or
+    /// the other auxiliary slots.</summary>
+    private sealed class SlotState
+    {
+        public uint Generation { get; set; }
+        public string? LastKey { get; set; }
+        public bool Present { get; set; }
+        public bool PresentBeforeScan { get; set; }
+        public bool HasEverBeenPresent { get; set; }
     }
 }
