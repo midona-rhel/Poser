@@ -1050,8 +1050,9 @@ public class PoseInspectorPane
         return 34f * s;
     }
 
-    // IK hinge-axis wells edit a scratch copy while dragging; the value
-    // commits through the port on release.
+    // Preserve the raw hinge-axis wells while dragging. Valid intermediate
+    // values are sent through the port immediately so the solver follows the
+    // scrub; the runtime keeps the normalized configuration.
     private Vector3? _ikAxisScratch;
 
     private float DrawIk(Vector2 cursor, float width, float s)
@@ -1213,17 +1214,19 @@ public class PoseInspectorPane
                     HingeMinDegrees = MathF.Min(hingeMax, config.HingeMinDegrees),
                 });
 
-            // Hinge axis X/Y/Z wells; the value commits on release so a
-            // transiently zero axis is never rejected mid-drag.
+            // Hinge axis X/Y/Z wells. The port rejects a transiently zero
+            // vector, while every valid intermediate value updates live.
             var axis = _ikAxisScratch ?? config.HingeAxis;
             h += RailScrub(dl, new Vector2(cursor.X, cursor.Y + h), width,
                 "ik-axis", "Hinge axis", ref axis, 0.005f, "0.00", s,
                 out var axisChanged, out var axisReleased);
             if (axisChanged)
+            {
                 _ikAxisScratch = axis;
+                Apply(config with { HingeAxis = axis });
+            }
             if (axisReleased)
             {
-                Apply(config with { HingeAxis = axis });
                 _ikAxisScratch = null;
             }
         }

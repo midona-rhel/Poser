@@ -90,7 +90,9 @@ public static partial class Crystarium
         string display = TruncateText(currentText, textAvail);
         var textSize = ImGui.CalcTextSize(display);
         var textColor = ColorEx.ApplyAlpha(resolved.Color ?? Norvrandt.Sheet.CurrentTheme.Text);
-        var textPos = new Vector2(valuePos.X + padLeft, valuePos.Y + (height - textSize.Y) / 2f);
+        // Optical baseline: the font's reported bounds sit one pixel above
+        // the visual center of the pill.
+        var textPos = new Vector2(valuePos.X + padLeft, valuePos.Y + (height - textSize.Y) / 2f + scale);
         drawList.AddText(textPos, ImGui.ColorConvertFloat4ToU32(textColor), display);
 
         if (fontPushed) fontHandle!.Pop();
@@ -122,7 +124,10 @@ public static partial class Crystarium
         float popupPadding = Theme.Spacing.Sm * scale;
         const int maxVisibleItems = 10;
         int visibleItems = Math.Min(items.Length, maxVisibleItems);
-        float popupHeight = visibleItems * height + popupPadding * 2;
+        float itemSeparator = scale;
+        float itemListHeight = visibleItems * height +
+                               Math.Max(0, visibleItems - 1) * itemSeparator;
+        float popupHeight = itemListHeight + popupPadding * 2;
         float popupY = valueEnd.Y + 2f * scale;
         var displaySize = ImGui.GetIO().DisplaySize;
         if (popupY + popupHeight > displaySize.Y)
@@ -153,6 +158,7 @@ public static partial class Crystarium
             bool needsScroll = items.Length > maxVisibleItems;
             ImGui.PushStyleVar(ImGuiStyleVar.ScrollbarSize, scrollbarSize);
             ImGui.PushStyleVar(ImGuiStyleVar.ScrollbarRounding, 4f * scale);
+            ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(0f, itemSeparator));
 
             // Use the real content region: window padding + border eat into totalWidth,
             // and an oversized child spawns a stray popup scrollbar. The child itself
@@ -162,7 +168,7 @@ public static partial class Crystarium
             // would dispose (EndChild) at the enclosing block's closing brace,
             // i.e. after EndPopup, producing crossed Begin/End pairing and the
             // "EndPopup on non-popup window" / EndChild-mismatch ImGui asserts.
-            var childSize = new Vector2(ImGui.GetContentRegionAvail().X, visibleItems * height);
+            var childSize = new Vector2(ImGui.GetContentRegionAvail().X, itemListHeight);
             ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0f, 0f));
             bool childOpen = ImGui.BeginChild("##dropdown_scroll", childSize, false,
                 needsScroll ? ImGuiWindowFlags.AlwaysVerticalScrollbar : ImGuiWindowFlags.NoScrollbar);
@@ -199,7 +205,9 @@ public static partial class Crystarium
 
                     string itemDisplay = TruncateText(items[i], itemSize.X - optPad * 2);
                     var itemTextSize = ImGui.CalcTextSize(itemDisplay);
-                    var itemTextPos = new Vector2(itemPos.X + optPad, itemPos.Y + (height - itemTextSize.Y) / 2f);
+                    var itemTextPos = new Vector2(
+                        itemPos.X + optPad,
+                        itemPos.Y + (height - itemTextSize.Y) / 2f + scale);
                     popupDrawList.AddText(itemTextPos, ColorEx.ApplyAlpha(Norvrandt.Sheet.CurrentTheme.Text).ToU32(), itemDisplay);
                     if (itemDisplay != items[i] && itemHovered) ImGui.SetTooltip(items[i]);
 
@@ -210,7 +218,7 @@ public static partial class Crystarium
             }
             ImGui.EndChild();
 
-            ImGui.PopStyleVar(2);
+            ImGui.PopStyleVar(3);
             ImGui.EndPopup();
         }
 
