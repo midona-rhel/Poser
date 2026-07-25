@@ -24,8 +24,25 @@ target transitions to Off. Reset restores every part and clears gaze state.
 ## IK
 
 Calls the game's own Havok solvers (Brio) — engine-identical results, applied
-live during pose application: an armed bone's translation delta becomes a
-solver target; rotation/scale never solve. The solved chain is never baked —
-undo and export stay pure deltas — but per-bone arming state persists for the
-session. Arming is per selected bone via `ConfigureIk`, gated to the four
-chain ends (`j_te_l/r`, `j_asi_d_l/r`); no actor-wide arming exists.
+live during pose application: an armed chain's translation delta becomes the
+solver target; rotation/scale never start a solve. The solved chain is never
+baked — undo and export stay pure deltas — while per-chain configuration
+persists for the session, keyed by the exact skeleton instance (a replacement
+never inherits it). The four endpoints (`j_te_l/r`, `j_asi_d_l/r`) resolve
+their Ktisis chains inside their own slot; no actor-wide arming exists.
+
+- One validated `IkChainConfig` per chain carries BOTH solver settings
+  (switching never discards tuning); invalid values never reach the native
+  boundary, and changes are rejected during an active gesture. All reads and
+  writes go through the stable-id `IIkConfigurationPort`.
+- Two Joint (offered only when its mandatory chain resolves): Relative
+  target follows animation; Fixed captures `(effective target, authored
+  translation)` and later targets `capture + (delta − captured delta)`, so
+  mode changes never jump and undo/redo still moves the target. Joint
+  gains, cosine-converted hinge limits, normalized axis, twist bones, and
+  optional end-rotation enforcement (never applied a second time). CCD:
+  depth clamped to the chain, iterations, configured gain.
+- Disabling keeps tuning but clears the fixed capture; Reset Defaults
+  restores chain defaults preserving Enabled; Reset Bone keeps IK; Reset
+  All disables and clears every chain. Defaults reproduce the pre-advanced
+  Live IK behavior exactly.
