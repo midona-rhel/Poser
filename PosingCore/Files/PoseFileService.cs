@@ -325,14 +325,9 @@ public class PoseFileService : IPoseFileService
             if (bone == null)
                 continue;
 
-            if (preDtFace && IsFaceBone(boneName) && options.ApplyPosition)
-            {
-                var stripped = options.Clone();
-                stripped.ApplyPosition = false;
-                ApplyBoneTransform(bone, boneData, stripped);
-                bonesApplied++;
-                continue;
-            }
+            // Scope decides FIRST; the pre-Dawntrail protection can only
+            // modify how an accepted bone applies, never smuggle an
+            // out-of-scope bone past AsExpression/ApplyFace/the filter.
 
             // Expression import (rewritten, single-phase): only face bones,
             // and NEVER the head — the file's face orientations land while
@@ -352,7 +347,15 @@ public class PoseFileService : IPoseFileService
             if (!PassesBoneFilter(bone, options))
                 continue;
 
-            ApplyBoneTransform(bone, boneData, options);
+            var effective = options;
+            if (preDtFace && IsFaceBone(boneName) && options.ApplyPosition)
+            {
+                var stripped = options.Clone();
+                stripped.ApplyPosition = false;
+                effective = stripped;
+            }
+
+            ApplyBoneTransform(bone, boneData, effective);
             bonesApplied++;
         }
 
