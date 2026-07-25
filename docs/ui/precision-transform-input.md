@@ -9,8 +9,7 @@ Precision transform input is the shared interaction contract for position, rotat
 The mouse wheel is **navigation** while the inspector rail is scrollable:
 hovering a numeric axis field (or the compact rotation gizmo) never changes a
 transform, and the wheel is left unconsumed so it continues scrolling the
-inspector in both directions. (PBI-002 runtime round 1 supersedes the earlier
-wheel-commit rows.)
+inspector in both directions.
 
 | Input | Result |
 |---|---|

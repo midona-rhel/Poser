@@ -26,7 +26,7 @@ Whole-pose `Copy`, `Paste`, `Stash`, and `ApplyStash` resolve concrete bones and
 delegate to `PoseTransferService`. The facade exposes stash availability and
 time for presentation, while the application service owns the snapshot.
 
-## Reset All (actor-level, PBI-002)
+## Reset All (actor-level)
 
 `ResetAll(ISkeleton)` is the one documented actor-level reset operation
 behind the Pose section's **Reset All** button. One activation:

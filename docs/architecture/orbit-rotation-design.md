@@ -30,7 +30,7 @@ The game itself "works fine" because its animation pipeline derives every pose
 from authored data as a function of TIME — never from last frame's output.
 The fix is restoring exactly that property to the drag loop.
 
-## The pivot model (PBI-002)
+## The pivot model
 
 There is no separate "Orbit" feature. Rotation has exactly one visible pivot
 choice, presented as a compact selector in the top transform toolbar

@@ -4,12 +4,12 @@
 
 | Field | Value |
 |---|---|
-| Status | Blocked until PBI-002 is accepted |
+| Status | Ready |
 | Size | Medium |
 | Implementation owner | Claude |
 | Review owner | Codex |
 | Acceptance owner | User |
-| Base ref | Assign from the accepted PBI-002 head |
+| Base ref | `8ae2b62062d888a25ed87ee5718c0a27aca5401c` |
 | Feature branch | `feature/pbi-003-documentation-reset` |
 | Accepted head | Not accepted |
 
@@ -167,7 +167,8 @@ match this sketch.
 - [ ] Gaze and similarly small features are concise rather than service essays.
 - [ ] No active class-by-class service catalog remains.
 - [ ] No active migration-status or superseded-design document remains.
-- [ ] Completed PBI-001 and PBI-002 are reduced to concise historical records.
+- [ ] PBI-001 is reduced to a concise historical record; the completed
+      pose-workspace stabilization backlog is removed.
 - [ ] `AGENTS.md` requires documentation only for durable concepts and
       non-obvious invariants.
 - [ ] Every surviving local Markdown link resolves.

@@ -24,8 +24,10 @@ Read these before changing the corresponding area:
   boundary.
 - [External implementation and review](process/external-implementation-review-loop.md)
   defines the Claude implementation, Codex review, and user acceptance loop.
-- [PBI-001](backlog/PBI-001-unified-selection-transform-workspace.md) is the
-  first large clean-core UI vertical slice.
+- [PBI-001](backlog/PBI-001-unified-selection-transform-workspace.md) records
+  the completed clean-core UI slice.
+- [PBI-003](backlog/PBI-003-documentation-reset.md) is the next active
+  documentation-reduction task.
 
 ## Documentation rules
 

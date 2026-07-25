@@ -81,5 +81,5 @@ Migration acceptance:
 ```
 
 The verdict comes from `run.json`, not command duration or chat text. The
-clean-core slice was accepted by PBI-001; later pose-workspace behavior is
-tracked by PBI-002.
+clean-core slice was accepted by PBI-001. Later pose-workspace refinements are
+reflected directly in the current concept documents.

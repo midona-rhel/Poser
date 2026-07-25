@@ -490,7 +490,7 @@ Claude must not claim user acceptance or visual correctness.
 | Round | Reviewed range | Blocking findings | Non-blocking findings | Result |
 |---|---|---:|---:|---|
 | 1–3 | `192fe8ac..102eee9` | 0 after correction | 0 | Accepted |
-| Live follow-up | `102eee9..8cdf22a` | 0 carried into PBI-001 | PBI-002 owns remaining pose-workspace refinements | Accepted |
+| Live follow-up | `102eee9..8cdf22a` | 0 carried into PBI-001 | Later pose-workspace refinements accepted | Accepted |
 
 ## Definition of done
 

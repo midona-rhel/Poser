@@ -14,7 +14,7 @@ Presenting a separate mode on each part is intentionally avoided because the
 backend and game controller cannot represent different simultaneous target
 modes for Eyes, Head, and Body.
 
-## Interaction contract (PBI-002)
+## Interaction contract
 
 - While the mode is **Off**, the part switches and lock actions are drawn
   visibly disabled and reject input; Off performs no Poser override.

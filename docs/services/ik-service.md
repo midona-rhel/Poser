@@ -41,7 +41,7 @@
 **Test coverage:** `GetBonesToDepth` and the enabled/solver-type dispatch guards are headless-testable with fake bones. Everything from pose resolution down (both solvers, struct layouts, sig scans) is in-game-only (docs/process/in-game-verification.md): after each patch verify init succeeds and both CCD and TwoJoint visibly pull a hand chain to a gizmo target without distortion.
 
 
-## Drag-path wiring and eligibility (PBI-002 audit)
+## Drag-path wiring and eligibility
 
 IK is applied Brio-style: **live, every frame, during pose application** —
 `BonePosingService.ApplyBoneTransform` computes the position target as

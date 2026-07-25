@@ -11,7 +11,7 @@ id). Individual participating parts can be *locked* at their current target
 (freeze gaze while the camera or target moves). Based on Brio's
 `ActorLookAtService`.
 
-## Identity model (PBI-002)
+## Identity model
 
 Managed gaze state survives ordinary actor-list refreshes because nothing in
 it is keyed by wrapper identity:
