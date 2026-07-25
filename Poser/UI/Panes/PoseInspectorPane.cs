@@ -194,19 +194,23 @@ public class PoseInspectorPane
         return result;
     }
 
+    /// <summary>Matrix and 3D operate on the primary bone's slot skeleton;
+    /// an actor primary uses the Character slot.</summary>
     private SkeletonDescriptor? PrimarySkeletonDescriptor()
     {
-        var lineage = _primary switch
+        var (lineage, slot) = _primary switch
         {
-            { Kind: SceneEntityKind.Actor, Actor: { } actorId } => actorId.LogicalId,
-            { Kind: SceneEntityKind.Bone, Bone: { } boneId } => boneId.Skeleton.Actor.LogicalId,
-            _ => (Guid?)null,
+            { Kind: SceneEntityKind.Actor, Actor: { } actorId } =>
+                ((Guid?)actorId.LogicalId, PoseSlot.Character),
+            { Kind: SceneEntityKind.Bone, Bone: { } boneId } =>
+                (boneId.Skeleton.Actor.LogicalId, boneId.Slot),
+            _ => ((Guid?)null, PoseSlot.Character),
         };
         if (lineage is not { } target)
             return null;
         foreach (var actor in _scene.Snapshot.Actors)
             if (actor.Id.LogicalId == target)
-                return actor.Skeleton;
+                return actor.GetSkeleton(slot);
         return null;
     }
 
@@ -214,7 +218,7 @@ public class PoseInspectorPane
     {
         foreach (var actor in _scene.Snapshot.Actors)
             if (actor.Id.LogicalId == lineage)
-                return actor.Skeleton?.Bones;
+                return actor.CharacterSkeleton?.Bones;
         return null;
     }
 

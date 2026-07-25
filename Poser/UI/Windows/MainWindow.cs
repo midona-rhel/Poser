@@ -326,7 +326,7 @@ public class MainWindow : Window
             foreach (var actor in _scene.Snapshot.Actors)
             {
                 if (actor.Id.LogicalId != effectiveBone.Skeleton.Actor.LogicalId ||
-                    actor.Skeleton is not { } skeleton)
+                    actor.GetSkeleton(effectiveBone.Slot) is not { } skeleton)
                     continue;
                 foreach (var bone in skeleton.Bones)
                 {
@@ -375,7 +375,7 @@ public class MainWindow : Window
             string actorLabel = ActorDisplayName(actor);
 
             var groups = new List<(Core.BoneInfo.BoneCategory Cat, List<BoneDescriptor> Bones)>();
-            var skeleton = actor.Skeleton;
+            var skeleton = actor.CharacterSkeleton;
             if (skeleton != null)
             {
                 foreach (var bone in skeleton.Bones)
@@ -546,7 +546,7 @@ public class MainWindow : Window
         if (primary is { Kind: SceneEntityKind.Bone, Bone: { } bone })
         {
             crumbActor = FindActor(bone.Skeleton.Actor.LogicalId);
-            crumbBone = crumbActor?.Skeleton?.Bones
+            crumbBone = crumbActor?.GetSkeleton(bone.Slot)?.Bones
                 .FirstOrDefault(candidate => candidate.Id.Equals(bone));
         }
         else if (primary is { Kind: SceneEntityKind.Actor, Actor: { } actorId })
@@ -573,7 +573,7 @@ public class MainWindow : Window
         int actorCount = _scene.Snapshot.Actors.Count;
         _vm.StatusLeft = actorCount == 1 ? "1 actor" : $"{actorCount} actors";
 
-        int bones = crumbActor?.Skeleton?.Bones.Count ?? 0;
+        int bones = crumbActor?.Skeletons.Sum(s => s.Bones.Count) ?? 0;
         _vm.StatusRight = bones > 0
             ? $"{bones} bones · {ImGui.GetIO().Framerate:0} fps"
             : $"{ImGui.GetIO().Framerate:0} fps";
@@ -730,7 +730,7 @@ public class MainWindow : Window
             return;
 
         var owner = FindActor(boneId.Skeleton.Actor.LogicalId);
-        var bones = owner?.Skeleton?.Bones;
+        var bones = owner?.GetSkeleton(boneId.Slot)?.Bones;
         var descriptor = bones?.FirstOrDefault(candidate => candidate.Id.Equals(boneId));
         if (bones == null || descriptor == null)
         {

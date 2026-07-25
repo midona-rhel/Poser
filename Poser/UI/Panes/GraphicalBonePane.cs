@@ -433,7 +433,10 @@ public sealed class GraphicalBonePane : IDisposable
             {
                 if (descriptor.Id.LogicalId != target)
                     continue;
-                if (descriptor.Skeleton is { } skeletonDescriptor)
+                // The Body/Face maps are Character-only: dot identity comes
+                // from the Character slot so a same-named auxiliary bone can
+                // never be highlighted or selected from a map.
+                if (descriptor.CharacterSkeleton is { } skeletonDescriptor)
                 {
                     foreach (var bone in skeletonDescriptor.Bones)
                         _dotIds[(bone.Id.CanonicalName, bone.Id.PartialId)] =

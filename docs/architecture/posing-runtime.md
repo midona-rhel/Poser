@@ -6,8 +6,15 @@ Native boundary in `Poser.Game`; framework thread only; pointers never escape.
   reapplies persistent layers in the skeleton hook, cache → reparent →
   cache → finalize snapshot. Never Ktisis-style suppression; freeze is a
   convenience, not a precondition.
-- Pose deltas key by `(BoneName, PartialId)`; name-only keying is a bug.
-  Named layers (expression) are replaced in place, never accumulated.
+- Slot discovery follows Brio `GetCharacterBases`: Character from the actor
+  draw object, MainHand/OffHand/Prop from weapon draw data, Ornament from
+  the ornament object. Missing slots are normal; every present slot joins
+  the same per-frame apply ordering, and slot replacement releases only
+  that slot's bindings, caches, and pose state.
+- Pose deltas key by `(Slot, BoneName, PartialId)`; slot-blind or name-only
+  keying is a bug — a Character stack must never reach a same-named
+  weapon/ornament bone. Named layers (expression) are replaced in place,
+  never accumulated.
   Normal reset and history restore interactive layers while preserving the
   current named producer layers; only **Reset All** explicitly resets
   expression, gaze, manual regions, and IK.

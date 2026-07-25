@@ -22,6 +22,8 @@
 - Symmetry adds the `_l`/`_r` partner as an explicit target (Mirror =
   reflected, Link = same-local-motion; math in
   [pose operations](pose-operations.md)). Linked bones is the separate
-  Anamnesis eyes/Viera-ears catalog, resolved per partial.
+  Anamnesis eyes/Viera-ears catalog, resolved per partial. Ctrl selection
+  may span slots of one actor; symmetry, linked lookup, ancestry, and
+  parent traversal never cross a slot boundary.
 - Precision wells: drag with modifiers, double-click for numeric entry,
   Escape cancels, the wheel only scrolls. X/Y/Z are literal axes.

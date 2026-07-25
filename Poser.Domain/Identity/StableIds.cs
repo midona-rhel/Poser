@@ -8,13 +8,6 @@ public readonly record struct ActorId(Guid LogicalId, uint Generation)
     public override string ToString() => $"{LogicalId:N}@{Generation}";
 }
 
-/// <summary>One exact skeleton generation belonging to one exact actor generation.</summary>
-public readonly record struct SkeletonId(ActorId Actor, uint Generation)
-{
-    public SkeletonId NextGeneration() => new(Actor, checked(Generation + 1));
-    public override string ToString() => $"{Actor}/s{Generation}";
-}
-
 public enum PoseSlot
 {
     Character,
@@ -26,23 +19,41 @@ public enum PoseSlot
 }
 
 /// <summary>
+/// One exact skeleton generation of one slot belonging to one exact actor
+/// generation. Slots are independently replaceable native skeletons of the
+/// SAME actor: replacing a weapon bumps only that slot's generation.
+/// </summary>
+public readonly record struct SkeletonId(
+    ActorId Actor,
+    PoseSlot Slot,
+    uint Generation)
+{
+    public SkeletonId NextGeneration() =>
+        new(Actor, Slot, checked(Generation + 1));
+    public override string ToString() => $"{Actor}/{Slot}/s{Generation}";
+}
+
+/// <summary>
 /// Stable bone identity. Partial/index is the native lookup key and canonical
-/// name is an independent mismatch guard.
+/// name is an independent mismatch guard. The slot lives ONLY on the owning
+/// skeleton id, so bone and skeleton slots can never disagree.
 /// </summary>
 public readonly record struct BoneId(
     SkeletonId Skeleton,
-    PoseSlot Slot,
     int PartialId,
     int BoneIndex,
     string CanonicalName)
 {
+    public PoseSlot Slot => Skeleton.Slot;
+
     public bool IsValid =>
         PartialId >= 0 &&
         BoneIndex >= 0 &&
+        Skeleton.Slot != PoseSlot.Unknown &&
         !string.IsNullOrWhiteSpace(CanonicalName);
 
     public override string ToString() =>
-        $"{Skeleton}/{Slot}/{PartialId}:{BoneIndex}:{CanonicalName}";
+        $"{Skeleton}/{PartialId}:{BoneIndex}:{CanonicalName}";
 }
 
 public enum SceneEntityKind

@@ -94,7 +94,8 @@ public sealed class CleanSceneLifecycle : IDisposable
         // retries, session transitions): identical scenes publish nothing —
         // no snapshot churn, no revision increment, no gesture cancellation.
         var signature = Signature(snapshot);
-        _retryPending = snapshot.Actors.Any(actor => actor.Skeleton == null);
+        _retryPending = snapshot.Actors.Any(
+            actor => actor.CharacterSkeleton == null);
         if (!_retryPending)
             _retryInterval = InitialRetryInterval;
         if (signature == _lastSignature)
@@ -136,11 +137,17 @@ public sealed class CleanSceneLifecycle : IDisposable
             builder.Append(':');
             builder.Append(actor.Id.Generation);
             builder.Append(':');
-            if (actor.Skeleton is { } skeleton)
+            // Slot presence and each slot's structural identity participate
+            // in the signature: an appearing/vanishing/replaced slot is a
+            // structural change; identical scenes still publish nothing.
+            foreach (var skeleton in actor.Skeletons)
             {
+                builder.Append((int)skeleton.Id.Slot);
+                builder.Append('=');
                 builder.Append(skeleton.Id.Generation);
                 builder.Append(':');
                 builder.Append(skeleton.Bones.Count);
+                builder.Append(',');
             }
             builder.Append('|');
         }

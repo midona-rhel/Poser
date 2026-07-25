@@ -109,13 +109,13 @@ public sealed class StableBindingRegistry
 
                 var skeletonId = new SkeletonId(
                     actorId,
+                    PoseSlot.Character,
                     lineage.SkeletonGeneration);
                 var bones = new List<BoneDescriptor>(skeleton.Bones.Count);
                 foreach (var bone in skeleton.Bones)
                 {
                     var boneId = new BoneId(
                         skeletonId,
-                        PoseSlot.Character,
                         bone.PartialId,
                         bone.BoneIndex,
                         bone.BoneName);
@@ -132,7 +132,6 @@ public sealed class StableBindingRegistry
                     {
                         parent = new BoneId(
                             skeletonId,
-                            PoseSlot.Character,
                             parentBone.PartialId,
                             parentBone.BoneIndex,
                             parentBone.BoneName);
@@ -152,7 +151,9 @@ public sealed class StableBindingRegistry
             actorDescriptors.Add(new ActorDescriptor(
                 actorId,
                 actor.Name,
-                skeletonDescriptor,
+                skeletonDescriptor is { } present
+                    ? new[] { present }
+                    : Array.Empty<SkeletonDescriptor>(),
                 actor.IsPlayer,
                 actor.IsCompanion,
                 !_spawn.IsVisible(actor)));

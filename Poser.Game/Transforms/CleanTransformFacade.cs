@@ -112,7 +112,9 @@ public sealed class CleanTransformFacade
             var actor = _scene.Snapshot.Actors.FirstOrDefault(
                 candidate =>
                     candidate.Id == bone.Skeleton.Actor);
-            var skeleton = actor?.Skeleton;
+            // Linked lookup never crosses a slot boundary: partners resolve
+            // only inside the source bone's own slot skeleton.
+            var skeleton = actor?.GetSkeleton(bone.Slot);
             if (skeleton == null)
                 continue;
 
@@ -121,7 +123,6 @@ public sealed class CleanTransformFacade
             foreach (var linkedName in linkedNames)
             {
                 var linked = skeleton.Bones.FirstOrDefault(candidate =>
-                    candidate.Id.Slot == bone.Slot &&
                     candidate.Id.PartialId == bone.PartialId &&
                     candidate.Id.CanonicalName.Equals(
                         linkedName,
@@ -150,8 +151,9 @@ public sealed class CleanTransformFacade
             var actor = _scene.Snapshot.Actors.FirstOrDefault(
                 candidate =>
                     candidate.Id == bone.Skeleton.Actor);
-            var partner = actor?.Skeleton?.Bones.FirstOrDefault(candidate =>
-                candidate.Id.Slot == bone.Slot &&
+            // Symmetry pairing happens within the source slot only.
+            var partner = actor?.GetSkeleton(bone.Slot)?.Bones
+                .FirstOrDefault(candidate =>
                 candidate.Id.PartialId == bone.PartialId &&
                 candidate.Id.CanonicalName.Equals(
                     partnerName,

@@ -65,21 +65,23 @@ public static class TransformTargetResolver
             return null;
 
         var lineage = bones[0].Skeleton.Actor.LogicalId;
-        IReadOnlyList<BoneDescriptor>? descriptors = null;
+        // A bone selection may span slots of the same actor; every selected
+        // bone must exist exactly in its OWN slot's current descriptor. A
+        // missing slot or an absent (stale-generation) bone makes the
+        // selection unresolvable — an unknown bone is never a target.
+        Dictionary<BoneId, BoneDescriptor>? byId = null;
         foreach (var actor in snapshot.Actors)
         {
             if (actor.Id.LogicalId != lineage)
                 continue;
-            descriptors = actor.Skeleton?.Bones;
+            byId = new Dictionary<BoneId, BoneDescriptor>();
+            foreach (var skeleton in actor.Skeletons)
+            foreach (var descriptor in skeleton.Bones)
+                byId[descriptor.Id] = descriptor;
             break;
         }
-        // Every selected bone must exist exactly in its current skeleton
-        // descriptor. A missing skeleton or an absent (stale-generation) bone
-        // makes the selection unresolvable — an unknown bone is never a
-        // target.
-        if (descriptors == null)
+        if (byId == null)
             return null;
-        var byId = descriptors.ToDictionary(descriptor => descriptor.Id);
 
         var targets = new List<TransformTargetId>();
         foreach (var boneId in bones)

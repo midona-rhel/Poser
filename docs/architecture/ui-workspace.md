@@ -16,10 +16,17 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
 - Scene tree: click selects, Ctrl toggles, Shift range-selects visible order,
   category rows navigate only. Everything seeds **collapsed**; only explicit
   disclosure clicks change tree state — external selection never expands.
+  One row per actor: Character categories appear directly (no wrapper row);
+  each present auxiliary slot adds one collapsed group (Main Hand, Off
+  Hand, Prop, Ornament) showing its real bone hierarchy, absent when the
+  skeleton is absent.
 - Pose surface: fixed mode header (Body/Face/Matrix/3D left; Mirror
   selection, Physics, Animation right), middle viewport, fixed footer.
-  Matrix is the only scrolling document. Mirror selection (Brio
-  `GraphicalSidesSwapped`) swaps sided dots on the maps only.
+  Matrix is the only scrolling document; Matrix and 3D operate on the
+  primary bone's slot skeleton. Body/Face maps are Character-only and never
+  highlight a same-named auxiliary bone; the skeleton overlay projects
+  every present slot with that slot's own model matrix. Mirror selection
+  (Brio `GraphicalSidesSwapped`) swaps sided dots on the maps only.
 - Icons: `TablerSvgSources.cs` is generated — never hand-edit;
   `PoserIconSources` wins. Mirrored pairs reuse one glyph with `flipX`
   (undo/redo). Fonts: CSS-size conversion + glyph offset live in

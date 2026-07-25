@@ -137,8 +137,13 @@ public class SkeletonOverlayWindow : Window
                 });
             }
 
-            var descriptors = actor.Skeleton?.Bones;
-            if (descriptors == null || descriptors.Count == 0)
+            // The overlay projects every present slot skeleton; each slot has
+            // its own model matrix (a weapon's draw object moves with the
+            // hand, not the actor origin).
+            foreach (var slotSkeleton in actor.Skeletons)
+            {
+            var descriptors = slotSkeleton.Bones;
+            if (descriptors.Count == 0)
                 continue;
 
             // The skeleton-matrix query refreshes/registers skeleton caches
@@ -183,6 +188,7 @@ public class SkeletonOverlayWindow : Window
                     CameraDistance = Vector3.Distance(cameraPosition, boneWorldPositions[bone.Id]),
                     IsSelected = selectedIds.Contains(selectionId)
                 });
+            }
             }
         }
 

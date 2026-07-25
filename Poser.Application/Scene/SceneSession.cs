@@ -31,9 +31,8 @@ public sealed class SceneSession
         foreach (var actor in snapshot.Actors)
         {
             _actors[actor.Id.LogicalId] = actor;
-            if (actor.Skeleton == null)
-                continue;
-            foreach (var bone in actor.Skeleton.Bones)
+            foreach (var skeleton in actor.Skeletons)
+            foreach (var bone in skeleton.Bones)
                 _bones[BoneLineage.From(bone.Id)] = bone;
         }
 
