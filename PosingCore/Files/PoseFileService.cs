@@ -245,34 +245,41 @@ public class PoseFileService : IPoseFileService
         }
     }
 
-    /// <summary>Reset-before-import touches only the slots/bones inside the
-    /// chosen scope: the Character skeleton when body applies, each enabled
-    /// auxiliary slot, and only filtered bones when a filter is set.</summary>
+    /// <summary>Reset-before-import touches EXACTLY the imported scope, bone
+    /// by bone: Expression resets applicable face bones but never j_kao;
+    /// Body (face off) resets only non-face bones; Full resets everything;
+    /// Selected follows the slot-qualified filter; auxiliary slots reset
+    /// only when their collection would apply. Unrelated edits survive.</summary>
     private void ResetScope(
         IReadOnlyDictionary<PoseSlot, ISkeleton> bySlot,
         ISkeleton? character,
         PoseImportOptions options)
     {
-        void ResetSkeletonScope(ISkeleton skeleton)
+        bool InCharacterScope(IBone bone)
         {
-            if (options.BoneFilter == null)
-            {
-                _bonePosingService.ResetSkeleton(skeleton);
-                return;
-            }
-            foreach (var bone in skeleton.Bones.Where(bone => PassesBoneFilter(bone, options)))
-                _bonePosingService.ResetBone(bone);
+            if (!PassesBoneFilter(bone, options))
+                return false;
+            if (options.AsExpression)
+                return IsFaceBone(bone.BoneName) && bone.BoneName != "j_kao";
+            if (!options.ApplyFace && IsFaceBone(bone.BoneName))
+                return false;
+            return true;
         }
 
         if (options.ApplyBody && character != null)
-            ResetSkeletonScope(character);
+        {
+            foreach (var bone in character.Bones.Where(InCharacterScope))
+                _bonePosingService.ResetBone(bone);
+        }
+
         if (options.AsExpression)
             return;
         foreach (var (slot, skeleton) in bySlot)
         {
             if (slot == PoseSlot.Character || !SlotEnabled(slot, options))
                 continue;
-            ResetSkeletonScope(skeleton);
+            foreach (var bone in skeleton.Bones.Where(bone => PassesBoneFilter(bone, options)))
+                _bonePosingService.ResetBone(bone);
         }
     }
 
