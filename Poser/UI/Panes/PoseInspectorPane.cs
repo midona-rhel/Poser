@@ -217,11 +217,19 @@ public class PoseInspectorPane
         return null;
     }
 
-    private IReadOnlyList<BoneDescriptor>? BonesOf(Guid lineage)
+    /// <summary>Bones of the EXACT skeleton (slot and generations) owning
+    /// the given bone — never a Character fallback or cross-slot set.</summary>
+    private IReadOnlyList<BoneDescriptor>? SlotBonesOf(BoneId bone)
     {
         foreach (var actor in _scene.Snapshot.Actors)
-            if (actor.Id.LogicalId == lineage)
-                return actor.CharacterSkeleton?.Bones;
+        {
+            if (actor.Id.LogicalId != bone.Skeleton.Actor.LogicalId)
+                continue;
+            foreach (var skeleton in actor.Skeletons)
+                if (skeleton.Id == bone.Skeleton)
+                    return skeleton.Bones;
+            return null;
+        }
         return null;
     }
 
@@ -1205,7 +1213,8 @@ public class PoseInspectorPane
             if (bones.Count == 1)
             {
                 var bone = bones[0];
-                var siblings = BonesOf(bone.Skeleton.Actor.LogicalId);
+                // Linked partners resolve within the primary bone's OWN slot.
+                var siblings = SlotBonesOf(bone);
                 int linked = _bonePosingService.LinkedBonesEnabled && siblings != null
                     ? 1 + Core.LinkedBones.GetLinks(bone.CanonicalName).Count(linkName =>
                         siblings.Any(candidate =>
@@ -1254,27 +1263,32 @@ public class PoseInspectorPane
             _cleanPose.ResetBone(TransformTargetId.ForBone(boneId), boneId.CanonicalName);
     }
 
-    /// <summary>Adds every descendant of the selected bones to the selection.</summary>
+    /// <summary>Adds every descendant of the selected bones to the
+    /// selection, each traversed within its OWN slot skeleton — multi-slot
+    /// selections included, and never across a slot boundary.</summary>
     public void SelectChildren()
     {
         var selected = SelectedBoneIds();
         if (selected.Count == 0) return;
-        var bones = BonesOf(selected[0].Skeleton.Actor.LogicalId);
-        if (bones == null) return;
-        var byId = bones.ToDictionary(candidate => candidate.Id);
         var selectedSet = selected.ToHashSet();
-        foreach (var candidate in bones)
+        foreach (var group in selected.GroupBy(bone => bone.Skeleton))
         {
-            if (candidate.IsHidden) continue;
-            for (var parent = candidate.Parent;
-                 parent is { } parentId;
-                 parent = byId.TryGetValue(parentId, out var parentDescriptor)
-                     ? parentDescriptor.Parent
-                     : null)
+            var bones = SlotBonesOf(group.First());
+            if (bones == null) continue;
+            var byId = bones.ToDictionary(candidate => candidate.Id);
+            foreach (var candidate in bones)
             {
-                if (!selectedSet.Contains(parentId)) continue;
-                _selection.Add(SelectionId.ForBone(candidate.Id));
-                break;
+                if (candidate.IsHidden) continue;
+                for (var parent = candidate.Parent;
+                     parent is { } parentId;
+                     parent = byId.TryGetValue(parentId, out var parentDescriptor)
+                         ? parentDescriptor.Parent
+                         : null)
+                {
+                    if (!selectedSet.Contains(parentId)) continue;
+                    _selection.Add(SelectionId.ForBone(candidate.Id));
+                    break;
+                }
             }
         }
     }
