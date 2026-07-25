@@ -393,7 +393,7 @@ public class GizmoOverlayWindow : Window
     private void DrawBoneGizmo()
     {
         // The shared effective resolution anchors placement and targets: the
-        // first surviving root in original selection order is the primary.
+        // first selected target is the primary.
         if (EffectiveSelection() is not
             { Primary: { Kind: TransformTargetKind.Bone, Bone: { } primaryId } } boneSelection)
             return;
@@ -498,8 +498,8 @@ public class GizmoOverlayWindow : Window
         // the pre-call value still describes the previous frame.
         if (isUsing && _gesture == null && !_beginSuppressed)
         {
-            // Parent/Selection pivots route through the clean gesture with a
-            // frozen custom pivot; there is no second orbit session. The pivot
+            // Parent pivot routes through the clean gesture with a frozen
+            // custom pivot; there is no second orbit session. The pivot
             // point freezes here, at Begin — the same value the gizmo displays.
             var cleanPivotMode = PivotMode.PerTarget;
             Vector3? cleanCustomPivot = null;
@@ -569,9 +569,7 @@ public class GizmoOverlayWindow : Window
                     activeGesture.Space));
             if (update.Success)
             {
-                if (activeGesture.PivotMode is
-                    PivotMode.Custom or
-                    PivotMode.SelectionCenter)
+                if (activeGesture.PivotMode == PivotMode.Custom)
                 {
                     var total = ToDomainDelta(
                         activeGesture.Start,
@@ -781,8 +779,7 @@ public class GizmoOverlayWindow : Window
                     ToDomainDelta(activeGesture.Start, newTransform, DomainSpace.World));
                 if (update.Success)
                 {
-                    if (activeGesture.PivotMode is
-                        PivotMode.Custom or PivotMode.SelectionCenter)
+                    if (activeGesture.PivotMode == PivotMode.Custom)
                     {
                         newTransform = newTransform with
                         {

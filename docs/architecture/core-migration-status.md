@@ -26,7 +26,7 @@ entity references. `Poser.Game` is the anti-corruption boundary.
 - actor and bone translate/rotate/scale from gizmo and inspector;
 - frozen-baseline multi-target gestures;
 - linked-bone and symmetry expansion;
-- snapshot parent, selection, and custom-pivot orbit;
+- frozen Parent-pivot rotation through the shared transform gesture;
 - actor, bone, region, selection, and whole-skeleton reset;
 - bone flip, whole-pose mirror, copy/paste, and in-memory stash;
 - pose capture and actor-independent transfer;
@@ -81,5 +81,5 @@ Migration acceptance:
 ```
 
 The verdict comes from `run.json`, not command duration or chat text. The
-replacement still requires its own post-change 56/56 run before this migration
-slice is closed.
+clean-core slice was accepted by PBI-001; later pose-workspace behavior is
+tracked by PBI-002.

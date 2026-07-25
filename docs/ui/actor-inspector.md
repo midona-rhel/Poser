@@ -16,7 +16,9 @@ The actor inspector is the Pose rail shown when the primary sidebar selection is
   identity.
 - `MainWindow.OnRowClicked` sends plain, Ctrl, and Shift clicks to the matching `SelectionSession` operation (`Select`/`Toggle`/`SelectRange` with the visible `SelectionId` order) and keeps the natural tab active.
 - `PoseInspectorPane.SetSelection` receives `SelectionSession.Primary` once per frame; a change cancels the active gesture and typed edit exactly once.
-- Transform values, gesture baselines, and target lists come from the shared `TransformTargetResolver` effective selection — the first surviving root in original selection order — not necessarily the selection primary.
+- Transform values, gesture baselines, and target lists come from the shared
+  `TransformTargetResolver`: every selected target in order, with the first as
+  primary.
 - `PoseRailPane` branches its header actions using `PoseInspectorPane.IsActorSelection`. Actor selection shows **Reset transform**; bone selection shows **Reset bone** and **Select children**. Mirror edits and Flip bone live only in the rail's POSE section.
 - Every selected entity row is highlighted, while the primary actor or bone retains the semantic distinction that drives the inspector.
 

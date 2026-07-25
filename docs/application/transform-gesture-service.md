@@ -36,12 +36,11 @@ invalidation, or new selection cancels it.
 
 - `PerTarget` rotates each target around itself. This is the default for bones.
 - `Primary` rotates secondary target positions around the primary target.
-- `SelectionCenter` uses the frozen average starting position.
 - `Custom` uses a supplied frozen world-space point.
 
 The pivot never comes from a live, already-mutated transform.
-Snapshot-mode bone orbit is the same command with `SelectionCenter` or
-`Custom` pivot mode; it no longer owns a second incremental orbit session.
+Parent-pivot bone rotation uses `Custom`; there is no separate orbit session
+or Selection-center pivot.
 
 ## History
 
@@ -59,9 +58,9 @@ writes. They convert the current UI value to a total `TransformDelta` from the
 gesture's pointer-down value and dispatch `Update`.
 
 Presentation supplies targets as `TransformTargetId` values from the shared
-`TransformTargetResolver` (ordered effective selection: selected descendants
-removed, first surviving root in original selection order as the effective
-primary). The plugin-side `CleanTransformFacade` is a
+`TransformTargetResolver`. It validates the ordered selection against the
+snapshot, preserves every selected target, and uses the first as primary. The
+plugin-side `CleanTransformFacade` is a
 stateless convenience over this service: it accepts stable ids only, expands
 linked-bone and symmetry partners from the scene snapshot and
 `BoneLinkCatalog` before `Begin`, and owns no gesture, selection, or history
@@ -69,10 +68,9 @@ state. Entity-accepting entry points do not exist; rest-state display values
 come from the runtime viewport projection
 (`docs/game/viewport-projection.md`), never from retained entities.
 
-Inspector bone values are parent-local for readability. Its adapter composes
-the edited local value into an absolute model transform once, then derives the
-domain delta from the frozen model transform. This prevents parent rotation or
-scale from being mistaken for a bone-local translation.
+Inspector bone values use Brio's model-space convention. World gizmo axes and
+numeric X/Y/Z therefore describe the same model frame; Local retains the
+bone's own axes.
 
 Virtual bone/category rows are expanded to concrete pivot bones before
 `Begin`; selection-only group identities can never enter a transform command.

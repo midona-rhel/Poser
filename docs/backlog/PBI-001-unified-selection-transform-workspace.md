@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Ready |
+| Status | Complete |
 | Size | Large |
 | Priority | First clean-core UI vertical slice |
 | Implementation owner | Claude |
@@ -12,10 +12,17 @@
 | Acceptance owner | User, in game |
 | Base ref | `pbi-001-base` (immutable annotated Git tag) |
 | Feature branch | `feature/pbi-001-stable-selection-transform` |
-| Accepted head | Not yet accepted |
+| Accepted head | `8cdf22aa3e0cc677f8bcf85d258496d898542224` |
+| Closed | 2026-07-25 |
 
 The implementation and review process is
 `docs/process/external-implementation-review-loop.md`.
+
+The accepted head includes the later live-feedback corrections that changed
+some original interaction requirements. The final contract below is
+authoritative: wheel input scrolls, tree disclosure is user-owned, every
+selected bone is an explicit transform target, and rotation offers Self or
+Parent rather than a separate Orbit or Selection-center mode.
 
 ## User outcome
 
@@ -285,8 +292,8 @@ reuse the stylesheet and shared input/icon paths.
 Keep `docs/ui/precision-transform-input.md`:
 
 - horizontal drag is continuous;
-- wheel commits one step;
-- Shift and Ctrl adjust wheel precision;
+- wheel remains navigation and never changes a transform;
+- Shift and Ctrl adjust drag precision;
 - double-click opens exact numeric input;
 - Enter/focus loss commits;
 - Escape cancels;
@@ -301,8 +308,9 @@ Keep `docs/ui/precision-transform-input.md`:
   `LastTransform` or the prior rendered frame.
 - Move preserves rotation/scale, rotate preserves position/scale, and scale
   preserves position/rotation.
-- Normal bone rotation is in place. Position changes during rotation only when
-  the explicit Orbit mode is enabled.
+- Self rotation is in place. Parent rotation uses the parent position as a
+  frozen custom pivot and may change the selected bone's position.
+- There is no separate Orbit switch or Selection-center pivot.
 - Local/World and tool changes outside a gesture affect the next gesture.
   Changing either during a gesture cancels the gesture rather than changing its
   meaning mid-drag.
@@ -313,8 +321,8 @@ Keep `docs/ui/precision-transform-input.md`:
 2. Range order is the visible compatible row order at the time of the click.
 3. A gesture target list is frozen at begin.
 4. Linked and symmetry partners expand into explicit targets before capture.
-5. Selected descendants are removed when a selected ancestor already
-   propagates the same edit.
+5. Every selected bone remains an explicit target, including parent/child
+   pairs; each is evaluated from its own frozen baseline.
 6. Partial capture/apply failure rolls every target back.
 7. Commit writes one history patch; cancel writes none.
 8. Undo/redo use the same restore path as gesture rollback.
@@ -324,18 +332,11 @@ Keep `docs/ui/precision-transform-input.md`:
     without a native write.
 11. Animation freeze remains optional.
 
-### Clarification: selection primary vs effective transform primary
+### Clarification: transform targets
 
-`SelectionSession.Primary` remains the selection primary used for selection
-display (rail header, tree highlight). Transform surfaces derive an
-**effective transform selection** from the ordered selection and the scene
-snapshot through one shared resolver (`TransformTargetResolver`): selected
-descendants of selected ancestors are removed, and the first surviving root
-in **original selection order** becomes the effective transform primary.
-Inspector displayed values, gesture baselines, ordered target lists, and
-gizmo placement all consume this one resolution. The resolver never selects
-an unrelated globally shallowest bone and never re-adds a filtered
-descendant — including a filtered selection primary.
+`TransformTargetResolver` validates the ordered session selection against the
+current scene snapshot. Its first target is the primary used by the inspector
+and gizmo, and every selected bone remains in the ordered target list.
 
 ## Implementation sequence
 
@@ -380,63 +381,65 @@ compatibility deletion must remain reviewable.
 
 ### Selection
 
-- [ ] Actor click selects exactly that actor and shows actor inspector state.
-- [ ] Bone click selects exactly that character bone and shows bone state.
-- [ ] Ctrl toggles compatible actor or same-actor bone membership.
-- [ ] Shift selects the visible compatible range using the current anchor.
-- [ ] Actor/bone and cross-actor bone mixtures are rejected by replacement.
-- [ ] Category rows never enter selection.
-- [ ] Filter, collapse, and mode changes do not mutate selection.
-- [ ] External bone selection reveals the corresponding tree branch.
-- [ ] A redraw/rebind either preserves logical selection at the new generation
+- [x] Actor click selects exactly that actor and shows actor inspector state.
+- [x] Bone click selects exactly that character bone and shows bone state.
+- [x] Ctrl toggles compatible actor or same-actor bone membership.
+- [x] Shift selects the visible compatible range using the current anchor.
+- [x] Actor/bone and cross-actor bone mixtures are rejected by replacement.
+- [x] Category rows never enter selection.
+- [x] Filter, collapse, and mode changes do not mutate selection.
+- [x] External bone selection does not expand categories; disclosure remains
+      user-owned.
+- [x] A redraw/rebind either preserves logical selection at the new generation
       or removes it; it never binds to an unrelated reused address.
 
 ### Cross-surface behavior
 
-- [ ] Tree, Body, Face, Matrix, 3D, and overlay display the same selection.
-- [ ] Each surface applies identical Ctrl behavior.
-- [ ] Matrix and map multi-selection show every selected compatible bone.
-- [ ] Selection changes immediately update inspector header, values, and gizmo.
-- [ ] Empty selection leaves no stale inspector/gizmo target.
+- [x] Tree, Body, Face, Matrix, 3D, and overlay display the same selection.
+- [x] Each surface applies identical Ctrl behavior.
+- [x] Matrix and map multi-selection show every selected compatible bone.
+- [x] Selection changes immediately update inspector header, values, and gizmo.
+- [x] Empty selection leaves no stale inspector/gizmo target.
 
 ### Transform behavior
 
-- [ ] Actor move/rotate/scale works in Local and World space.
-- [ ] Bone move/rotate/scale works in Local and World space.
-- [ ] Multi-target changes preserve each secondary target's relative baseline.
-- [ ] Normal rotation never moves the selected bone.
-- [ ] Orbit changes position only when explicitly enabled.
-- [ ] Precision drag, wheel, typed commit, and Escape follow their documented
+- [x] Actor move/rotate/scale works in Local and World space.
+- [x] Bone move/rotate/scale works in Local and World space.
+- [x] Multi-target changes preserve each target's frozen baseline.
+- [x] Self rotation never moves the selected bone.
+- [x] Parent rotation uses the frozen parent pivot; no other bone pivot mode
+      changes position.
+- [x] Precision drag, navigation wheel, typed commit, and Escape follow their documented
       contract.
-- [ ] Selection/tool/space/invalidation changes cancel an active gesture.
-- [ ] One completed gesture produces one undo step.
-- [ ] Undo and redo restore exact before/after state for every target.
-- [ ] Linked/symmetry targets participate in the same atomic patch.
-- [ ] IK-enabled translation remains atomic with the gesture.
+- [x] Selection/tool/space/invalidation changes cancel an active gesture.
+- [x] One completed gesture produces one undo step.
+- [x] Undo and redo restore exact before/after state for every target.
+- [x] Linked/symmetry targets participate in the same atomic patch.
+- [x] IK-enabled translation remains atomic with the gesture.
 
 ### Live runtime
 
-- [ ] A visible looping animation continues while the authored bone offset
+- [x] A visible looping animation continues while the authored bone offset
       remains applied.
-- [ ] Physics may continue without revoking bone edit authority.
-- [ ] Stale generation produces an explicit failure and no native write.
-- [ ] Partial multi-target failure restores all targets.
-- [ ] All native capture/apply/restore work remains on the framework thread.
+- [x] Physics may continue without revoking bone edit authority.
+- [x] Stale generation produces an explicit failure and no native write.
+- [x] Partial multi-target failure restores all targets.
+- [x] All native capture/apply/restore work remains on the framework thread.
 
 ### Architecture and cleanup
 
-- [ ] Retained UI selection consumers no longer depend on
+- [x] Retained UI selection consumers no longer depend on
       `ISelectionService`.
-- [ ] Selection and transform command identity contains no `IEntity`, `IActor`,
+- [x] Selection and transform command identity contains no `IEntity`, `IActor`,
       or `IBone`.
-- [ ] There is one selection, one active gesture, and one transform history.
-- [ ] `CleanSelectionServiceAdapter` and its registration are deleted.
-- [ ] Entity-accepting `CleanTransformFacade` entry points are deleted or
+- [x] There is one selection, one active gesture, and one transform history.
+- [x] `CleanSelectionServiceAdapter` and its registration are deleted.
+- [x] Entity-accepting `CleanTransformFacade` entry points are deleted or
       replaced by stable-id entry points.
-- [ ] No new generic event bus, mediator, UI framework, or test framework was
+- [x] No new generic event bus, mediator, UI framework, or test framework was
       added.
-- [ ] Concept documentation matches the final code.
-- [ ] Production `Poser/Poser.csproj` builds with zero errors.
+- [x] Concept documentation matches the final code.
+- [x] Production `Poser/Poser.csproj` builds with zero errors.
 
 ## User in-game walkthrough
 
@@ -457,7 +460,7 @@ The user performs this after Claude's implementation and Codex's code review:
    item.
 9. Begin a drag and change selection; confirm cancellation before the new
    target becomes active.
-10. Toggle Local/World, linked bones, symmetry, IK, and explicit Orbit one at a
+10. Toggle Local/World, Self/Parent, linked bones, symmetry, and IK one at a
     time; confirm each affects only its documented behavior.
 11. Trigger an actor redraw if available; confirm selection safely rebinds or
     clears and never jumps to another actor.
@@ -486,7 +489,8 @@ Claude must not claim user acceptance or visual correctness.
 
 | Round | Reviewed range | Blocking findings | Non-blocking findings | Result |
 |---|---|---:|---:|---|
-| 1 | Pending | — | — | Pending |
+| 1–3 | `192fe8ac..102eee9` | 0 after correction | 0 | Accepted |
+| Live follow-up | `102eee9..8cdf22a` | 0 carried into PBI-001 | PBI-002 owns remaining pose-workspace refinements | Accepted |
 
 ## Definition of done
 

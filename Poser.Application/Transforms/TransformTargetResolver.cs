@@ -5,9 +5,8 @@ namespace Poser.Application.Transforms;
 
 /// <summary>
 /// The effective transform selection derived from the ordered selection and
-/// the scene snapshot. <c>Primary</c> is the first surviving root in original
-/// selection order; <c>Targets</c> keeps original selection order with the
-/// primary first.
+/// the scene snapshot. <c>Primary</c> is the first selected target and
+/// <c>Targets</c> preserves selection order.
 /// </summary>
 public sealed record EffectiveTransformSelection(
     TransformTargetId Primary,
@@ -15,8 +14,7 @@ public sealed record EffectiveTransformSelection(
 
 /// <summary>
 /// One shared resolution of "what does a transform act on" for the inspector
-/// and the gizmo (PBI-001 clarification: selection primary vs effective
-/// transform primary). Every selected bone is a target — the user explicitly
+/// and the gizmo. Every selected bone is a target — the user explicitly
 /// reversed PBI-001's descendant filtering in the 2026-07-24 walkthrough:
 /// selecting a knee and its calf must transform BOTH from their own frozen
 /// baselines (the gesture applies each target absolutely from its captured

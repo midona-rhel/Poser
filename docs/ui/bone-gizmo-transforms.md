@@ -14,12 +14,12 @@ dispatched through the same clean gesture lifecycle.
 Rotation has one visible pivot choice — the toolbar selector documented in
 `orbit-rotation-design.md`. **Self** is an in-place edit: it changes a bone's
 quaternion and does not change that bone's model-space position or scale.
-**Parent** and **Selection** are the only rotation paths allowed to change
-the bone position, orbiting it around the frozen pivot.
+**Parent** is the only bone-rotation path allowed to change position, orbiting
+around the frozen parent pivot.
 
 The gizmo is drawn at the point it rotates around. With Self it sits on the
 effective transform primary; with Parent it visibly sits at the parent's
-model-space position; with Selection it sits at the effective-root centroid.
+model-space position.
 At rest the pivot position tracks the live scene through the viewport
 projection; at pointer-down it freezes for the whole gesture, and the
 manipulation matrix combines that pivot position with the primary's rotation
@@ -83,7 +83,8 @@ complete group to history.
 
 - Brio `PosingOverlayWindow`: uses a tracking transform during a bone gizmo drag instead of re-reading the live bone every frame.
 - Ktisis overlay transform targets: isolate editor manipulation from the underlying target application.
-- Poser `orbit-rotation-design.md`: defines the toolbar pivot model (Self/Parent/Selection; frozen clean-gesture pivot; the inspector Orbit switch, Custom pivot editor, and strategy machinery are deleted). Changing pivot, tool, orientation, or selection mid-drag cancels the gesture exactly once, restores the frozen baseline, and suppresses restart until the pointer releases.
+- Poser `orbit-rotation-design.md`: defines the Self/Parent toolbar pivot,
+  frozen clean-gesture pivot, and once-only cancellation rule.
 - IK arming is session state configured through the stable-id `CleanPoseFacade.ConfigureIk` at gesture start; no entity leaves the runtime.
 
 ## Verification
@@ -94,7 +95,8 @@ complete group to history.
 - Repeat while a visible looping animation is running. The bone must follow the
   animation while retaining the additional pose offset.
 - Rotate a multi-selection and confirm no selected root translates.
-- Choose Parent and Selection explicitly and confirm the gizmo visibly moves to each pivot, that position changes only in those modes, and that the orbit radius does not drift over a long drag.
+- Choose Parent and confirm the gizmo moves to the parent pivot, position
+  changes only in that mode, and the orbit radius does not drift.
 - Undo once after each gesture and confirm the exact pre-drag transform is restored.
 
 The rotation runtime slice of live-animation editing was accepted on 2026-07-23

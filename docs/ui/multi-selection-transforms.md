@@ -21,11 +21,11 @@ modifier drags, and typed values from disagreeing.
 
 The inspector opens one gesture per field interaction. At pointer-down (or
 typed-edit start) it dispatches `Begin` with the `TransformTargetResolver`
-effective target list (selected descendants removed; the first surviving root
-in original selection order is the effective primary and display source); each frame it converts the current UI
-value into a total `TransformDelta` from the gesture's pointer-down value and
-dispatches `Update`; release commits, Escape cancels. The gesture service owns
-the frozen baselines — the pane retains only display values.
+target list (every selected target in original order, first selected as
+primary and display source). Each frame it converts the current UI value into
+a total `TransformDelta` from the gesture's pointer-down value and dispatches
+`Update`; release commits, Escape cancels. The gesture service owns the frozen
+baselines — the pane retains only display values.
 
 Selection change, tool/space change, and scene invalidation cancel the active
 gesture before the new target is shown. Bone values display model-space; the
@@ -49,8 +49,8 @@ the entire group through the same runtime restore path as cancel.
   gesture's atomic capture, rollback, commit, and history patch — there is no
   implicit propagation to pause, so a selected pair can never receive the
   same delta twice.
-- Root filtering and symmetry pairing key bones by stable
-  `BoneId` (slot, partial, index, canonical name), so duplicate Havok names
+- Selection and symmetry pairing key bones by stable `BoneId` (slot, partial,
+  index, canonical name), so duplicate Havok names
   across body, face, hair, weapon, or accessory partials can never merge.
 - Mirroring is **counterpart-frame aware**.
   Counterpart bones' bind/animated baselines can differ by ~180°, so a raw

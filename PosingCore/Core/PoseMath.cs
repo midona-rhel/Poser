@@ -1,8 +1,5 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
-using Poser.Entities;
 
 namespace Poser.Core;
 
@@ -14,26 +11,6 @@ public static class PoseMath
 {
     private const float RadiansToDegrees = 180f / MathF.PI;
     private const float DegreesToRadians = MathF.PI / 180f;
-
-    /// <summary>
-    /// Removes selected descendants whose ancestor is already selected. Applying
-    /// a propagated transform to both would compound the descendant's delta.
-    /// Input order is preserved so the caller's primary root remains primary.
-    /// </summary>
-    public static IReadOnlyList<IBone> FilterSelectionRoots(IEnumerable<IBone> bones)
-    {
-        var ordered = bones.Distinct().ToList();
-        var selected = ordered.ToHashSet();
-        return ordered.Where(bone =>
-        {
-            for (var parent = bone.ParentBone; parent != null; parent = parent.ParentBone)
-            {
-                if (selected.Contains(parent))
-                    return false;
-            }
-            return true;
-        }).ToList();
-    }
 
     /// <summary>model = parent COMPOSED WITH local (scale-then-rotate-then-translate).</summary>
     public static Transform Compose(in Transform parent, in Transform local) => new()

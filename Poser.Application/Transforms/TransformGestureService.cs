@@ -89,10 +89,6 @@ public sealed class TransformGestureService : IDisposable
         {
             PivotMode.PerTarget => captured[0].Transform.Position,
             PivotMode.Primary => captured[0].Transform.Position,
-            PivotMode.SelectionCenter => new Vector3(
-                captured.Average(state => state.Transform.Position.X),
-                captured.Average(state => state.Transform.Position.Y),
-                captured.Average(state => state.Transform.Position.Z)),
             PivotMode.Custom => command.CustomPivot!.Value,
             _ => captured[0].Transform.Position,
         };
@@ -163,7 +159,6 @@ public sealed class TransformGestureService : IDisposable
             {
                 PivotMode.PerTarget => false,
                 PivotMode.Primary => index != 0,
-                PivotMode.SelectionCenter => true,
                 PivotMode.Custom => true,
                 _ => false,
             };

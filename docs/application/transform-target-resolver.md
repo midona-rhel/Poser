@@ -23,12 +23,10 @@ displayed values, gesture baselines, ordered target lists, and placement.
 4. The **first selected bone** is the effective transform primary.
 5. `Targets` preserves original selection order with the primary first.
 
-## Selection primary vs effective transform primary
+## Primary
 
-`SelectionSession.Primary` remains the selection primary used for selection
-display (rail header, tree highlight). The effective transform primary may
-differ when the selection primary is a descendant of another selected bone;
-the PBI-001 clarification section records this distinction.
+The first ordered selection item is both `SelectionSession.Primary` and the
+transform primary used for display, gesture baselines, and gizmo placement.
 
 ## Ownership
 
