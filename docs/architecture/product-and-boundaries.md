@@ -3,7 +3,8 @@
 Poser is a focused FFXIV posing tool. Anything not listed as retained is not
 in the active UI or dependency closure.
 
-- Retained: GPose lifecycle, actor discovery/clone/visibility; stable ids;
+- Retained: GPose lifecycle, actor discovery and lifetime actions (clone,
+  despawn, visibility, rename, target, companion detach); stable ids;
   selection (tree, maps, matrix, 3D, overlay); local/world gestures with
   Self/Parent pivot, symmetry, linked bones, IK; reset/mirror/flip/stash/
   import/export; one undo journal; expression, gaze, animation/physics

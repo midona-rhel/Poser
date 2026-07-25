@@ -8,7 +8,9 @@ Native boundary in `Poser.Game`; framework thread only; pointers never escape.
   convenience, not a precondition.
 - Pose deltas key by `(BoneName, PartialId)`; name-only keying is a bug.
   Named layers (expression) are replaced in place, never accumulated.
-  Reset clears all stacks; transform undo keeps current named layers.
+  Normal reset and history restore interactive layers while preserving the
+  current named producer layers; only **Reset All** explicitly resets
+  expression, gaze, manual regions, and IK.
 - `LastTransform`/`LastRawTransform` are observations, not storage; an
   identity-default `LastRawTransform` = exploded skeleton; never mix caches
   across partials for absolute targets.
