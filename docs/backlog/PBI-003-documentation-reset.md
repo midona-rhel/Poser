@@ -4,14 +4,15 @@
 
 | Field | Value |
 |---|---|
-| Status | Ready |
+| Status | Complete |
 | Size | Medium |
 | Implementation owner | Claude |
 | Review owner | Codex |
 | Acceptance owner | User |
 | Base ref | `pbi-003-base` (immutable annotated Git tag) |
 | Feature branch | `feature/pbi-003-documentation-reset` |
-| Accepted head | Not accepted |
+| Accepted head | `0fd7b460f55acc86ba13efbac7cf2ca56db43dae` |
+| Closed | 2026-07-25 |
 
 ## Outcome
 
