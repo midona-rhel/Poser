@@ -10,7 +10,7 @@ namespace Poser.Game.Viewport;
 
 /// <summary>
 /// Frame-scoped stable-id spatial reads for presentation surfaces
-/// (docs/game/viewport-projection.md). Every query resolves a stable id
+/// (docs/architecture/posing-runtime.md). Every query resolves a stable id
 /// through <see cref="StableBindingRegistry"/> for exactly one read and
 /// returns an immutable value; pointers and legacy entities never leave the
 /// runtime boundary, and stale generations yield no result instead of a value

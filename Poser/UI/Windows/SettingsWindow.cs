@@ -10,7 +10,7 @@ namespace Poser.UI;
 
 /// <summary>
 /// Binder for <see cref="SettingsView"/> (view+binder pattern —
-/// docs/architecture/ui-screens.md): loads a <see cref="SettingsViewModel"/> from
+/// docs/architecture/ui-workspace.md): loads a <see cref="SettingsViewModel"/> from
 /// <see cref="ConfigurationService"/> when opened, renders the pure view, and writes
 /// back + saves on Save. Cancel/close discards. Replaces the legacy SettingsModal.
 /// </summary>

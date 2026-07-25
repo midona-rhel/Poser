@@ -7,7 +7,7 @@ namespace Poser.UI.Views;
 /// <summary>
 /// Shared text/chrome helpers for U5 views (Settings, Environment, …):
 /// absolute-positioned styled text runs and the 24px window-header close box.
-/// Views are Dalamud-service-free — see docs/architecture/ui-screens.md.
+/// Views are Dalamud-service-free — see docs/architecture/ui-workspace.md.
 /// </summary>
 internal static class ViewText
 {

@@ -14,7 +14,7 @@ namespace Poser.Game;
 /// <summary>
 /// Ktisis v0.4.0.0 action-unit expression blending. Per-race catalog deltas are
 /// weighted and written to one named head-relative pose layer (the source's
-/// verified convention — see docs/services/expression-service.md). The layer is
+/// verified convention — see docs/features/expression-gaze-and-ik.md). The layer is
 /// replaced on every slider change and never clears interactive face-bone
 /// edits. Race/tribe resolve from customize bytes; a combination without a
 /// catalog is quietly unavailable instead of destructively applying another

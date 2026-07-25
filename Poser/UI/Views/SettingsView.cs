@@ -7,7 +7,7 @@ namespace Poser.UI.Views;
 
 /// <summary>
 /// Bindable state for <see cref="SettingsView"/>. The plugin binder maps it to
-/// ConfigurationService (see docs/architecture/ui-screens.md).
+/// ConfigurationService (see docs/architecture/ui-workspace.md).
 /// </summary>
 public sealed class SettingsViewModel
 {
