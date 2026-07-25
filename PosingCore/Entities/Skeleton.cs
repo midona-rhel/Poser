@@ -44,11 +44,20 @@ public class Skeleton : EntityBase, ISkeleton
     /// </summary>
     public override EntityType EntityType => EntityType.Skeleton;
 
-    public Skeleton(IActor actor, Poser.Domain.Identity.PoseSlot slot)
+    // Slot-native discovery is OWNED by Poser.Game: this transitional entity
+    // receives only a resolver returning the slot's current CharacterBase
+    // address (zero when the slot is absent).
+    private readonly Func<nint> _resolveCharacterBase;
+
+    public Skeleton(
+        IActor actor,
+        Poser.Domain.Identity.PoseSlot slot,
+        Func<nint> resolveCharacterBase)
         : base(EntityId.New(), "Skeleton")
     {
         Actor = actor;
         Slot = slot;
+        _resolveCharacterBase = resolveCharacterBase;
         IsCollapsed = true; // Start collapsed by default
         IsVisible = false; // Start unchecked (not visible in overlay)
         BuildSkeleton();
@@ -109,7 +118,8 @@ public class Skeleton : EntityBase, ISkeleton
     {
         // Slot-exact resolution: this skeleton reads ONLY its own slot's
         // CharacterBase; there is no fallback to the Character slot.
-        var charaBase = SlotCharacterBases.Resolve(Actor.Address, Slot);
+        var charaBase = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)
+            _resolveCharacterBase();
         if (charaBase == null)
             return null;
         CharacterBaseAddress = (nint)charaBase;
@@ -281,7 +291,8 @@ public class Skeleton : EntityBase, ISkeleton
     {
         // The matrix comes from THIS slot's draw object: a weapon's model
         // moves with the hand, not with the actor origin.
-        var charaBase = SlotCharacterBases.Resolve(Actor.Address, Slot);
+        var charaBase = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)
+            _resolveCharacterBase();
         if (charaBase == null)
             return Matrix4x4.Identity;
 

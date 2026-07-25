@@ -4,14 +4,15 @@ using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 
 using CSCharacter = FFXIVClientStructs.FFXIV.Client.Game.Character.Character;
 
-namespace Poser.Entities;
+namespace Poser.Game;
 
 /// <summary>
 /// Resolves the native <see cref="CharacterBase"/> for one pose slot of one
 /// actor — Brio's <c>GetCharacterBases</c> discovery: Character from the
 /// actor draw object, MainHand/OffHand/Prop from the weapon draw-data
 /// entries, Ornament from the ornament object's draw object. A missing slot
-/// resolves to null and is normal.
+/// resolves to null and is normal. Slot-native discovery lives HERE, in the
+/// game layer; transitional entities receive only a resolver delegate.
 /// </summary>
 public static unsafe class SlotCharacterBases
 {

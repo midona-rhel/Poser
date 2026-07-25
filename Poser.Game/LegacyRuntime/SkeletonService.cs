@@ -64,7 +64,10 @@ public class SkeletonService : ISkeletonService
 
         try
         {
-            skeleton = new Skeleton(actor, slot);
+            skeleton = new Skeleton(
+                actor,
+                slot,
+                () => (nint)SlotCharacterBases.Resolve(actor.Address, slot));
             if (skeleton.IsValid)
             {
                 _skeletons[key] = skeleton;
