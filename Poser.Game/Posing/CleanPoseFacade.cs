@@ -92,28 +92,6 @@ public sealed class CleanPoseFacade
         return PoseEditResult.Fail(detail);
     }
 
-    /// <summary>
-    /// Stable-id IK arming for the next gesture. IK configuration is session
-    /// state owned by the runtime; the id resolves inside this facade and no
-    /// entity reaches the caller. Arming is limited to the supported chain
-    /// ends (hands + feet) so no gesture path can ever arm an unsupported
-    /// bone; disarming always passes through.
-    /// </summary>
-    public void ConfigureIk(TransformTargetId target, bool enabled)
-    {
-        if (target.Bone is not { } boneId)
-            return;
-        var bone = _bindings.Resolve(boneId);
-        if (!bone.Success)
-            return;
-        var current = _bonePosing.GetIkConfiguration(bone.Value!);
-        if (current == null)
-            return;
-        _bonePosing.SetIkConfiguration(
-            bone.Value!,
-            current with { Enabled = enabled });
-    }
-
     public bool HasStash => _transfers.HasStash;
     public DateTimeOffset? StashedAt => _transfers.StashedAt;
 

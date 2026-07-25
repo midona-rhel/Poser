@@ -45,6 +45,7 @@ public class PoseInspectorPane
 {
     private readonly IBonePosingService _bonePosingService;
     private readonly IAnimationService _animationService;
+    private readonly Application.Posing.IIkConfigurationPort _ikPort;
     private readonly CleanTransformFacade _cleanTransforms;
     private readonly CleanPoseFacade _cleanPose;
     private readonly IGazeService _gazeService;
@@ -148,8 +149,10 @@ public class PoseInspectorPane
         StableBindingRegistry bindings,
         Game.Viewport.ViewportProjection viewport,
         ExpressionInspectorSection expressionSection,
-        PoseFileInspectorSection poseFileSection)
+        PoseFileInspectorSection poseFileSection,
+        Application.Posing.IIkConfigurationPort ikPort)
     {
+        _ikPort = ikPort;
         _selection = scene.Selection;
         _scene = scene;
         _bindings = bindings;
@@ -1049,17 +1052,18 @@ public class PoseInspectorPane
 
     private float DrawIk(Vector2 cursor, float width, float s)
     {
-        // One compact Live IK control for the selected bone.
-        if (_entity is not IBone selectedBone ||
-            _primary is not { Kind: SceneEntityKind.Bone, Bone: { } boneId })
+        // One compact Live IK control for the selected bone, read and
+        // written through the one stable-id configuration path.
+        if (_primary is not { Kind: SceneEntityKind.Bone, Bone: { } boneId })
             return 0f;
-        bool eligible = Domain.Posing.IkChains.IsSupportedEndpoint(selectedBone.BoneName);
-        bool armed = eligible &&
-            _bonePosingService.GetIkConfiguration(selectedBone)?.Enabled == true;
+        var ikTarget = TransformTargetId.ForBone(boneId);
+        var config = _ikPort.Get(ikTarget);
+        bool eligible = config != null;
+        bool armed = config?.Enabled == true;
         ViewText.Label(cursor + new Vector2(0f, 7f) * s, "Live IK", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
         ImGui.SetCursorScreenPos(cursor + new Vector2(94f, 4f) * s);
-        if (Crystarium.Switch("##pose-ik", ref armed, disabled: !eligible) && eligible)
-            _cleanPose.ConfigureIk(TransformTargetId.ForBone(boneId), armed);
+        if (Crystarium.Switch("##pose-ik", ref armed, disabled: !eligible) && config != null)
+            _ikPort.Set(ikTarget, config with { Enabled = armed });
         if (!eligible && ImGui.IsMouseHoveringRect(
                 cursor, cursor + new Vector2(width, 28f * s)))
             ImGui.SetTooltip("This bone can't use IK");
