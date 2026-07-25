@@ -68,9 +68,6 @@ public interface IBonePosingService : IDisposable
     /// </summary>
     void RestorePoseStacks(IBone bone, IReadOnlyList<BonePoseTransformInfo> stacks);
 
-    /// <summary>
-    /// Set the IK configuration for a bone (see <see cref="BonePoseInfo.IK"/>).
-    /// </summary>
     /// <summary>The bone's current chain configuration (stored value or
     /// chain defaults); null when the bone is not a supported, resolvable
     /// IK endpoint on its own skeleton.</summary>

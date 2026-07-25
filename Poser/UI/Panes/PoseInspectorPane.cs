@@ -1050,24 +1050,201 @@ public class PoseInspectorPane
         return 34f * s;
     }
 
+    // IK hinge-axis wells edit a scratch copy while dragging; the value
+    // commits through the port on release.
+    private Vector3? _ikAxisScratch;
+
     private float DrawIk(Vector2 cursor, float width, float s)
     {
-        // One compact Live IK control for the selected bone, read and
-        // written through the one stable-id configuration path.
+        // The selected bone's chain, read and written through the one
+        // stable-id configuration path.
         if (_primary is not { Kind: SceneEntityKind.Bone, Bone: { } boneId })
             return 0f;
+        var dl = ImGui.GetWindowDrawList();
         var ikTarget = TransformTargetId.ForBone(boneId);
         var config = _ikPort.Get(ikTarget);
+        float h = 0f;
+
+        void Apply(Domain.Posing.IkChainConfig next)
+        {
+            if (_ikPort.Set(ikTarget, next).Success)
+                config = _ikPort.Get(ikTarget);
+        }
+
+        // Row 1: Live IK switch, Reset Defaults right-aligned.
         bool eligible = config != null;
         bool armed = config?.Enabled == true;
         ViewText.Label(cursor + new Vector2(0f, 7f) * s, "Live IK", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
         ImGui.SetCursorScreenPos(cursor + new Vector2(94f, 4f) * s);
         if (Crystarium.Switch("##pose-ik", ref armed, disabled: !eligible) && config != null)
-            _ikPort.Set(ikTarget, config with { Enabled = armed });
-        if (!eligible && ImGui.IsMouseHoveringRect(
-                cursor, cursor + new Vector2(width, 28f * s)))
-            ImGui.SetTooltip("This bone can't use IK");
-        return 30f * s;
+            Apply(config with { Enabled = armed });
+        if (eligible)
+        {
+            var resetSize = Crystarium.MeasureButton("Reset defaults", Cls.Compact);
+            ImGui.SetCursorScreenPos(new Vector2(
+                cursor.X + width - resetSize.X, cursor.Y + 2f * s));
+            if (Crystarium.Button("Reset defaults", new ButtonProps
+                {
+                    Id = "ik-reset-defaults",
+                    Classes = Cls.Compact,
+                    Tooltip = "Restore this chain's IK defaults",
+                }))
+            {
+                _ikPort.ResetDefaults(ikTarget);
+                config = _ikPort.Get(ikTarget);
+            }
+        }
+        h += 30f * s;
+        if (config == null)
+        {
+            // One quiet unavailable row.
+            if (ImGui.IsMouseHoveringRect(
+                    cursor, cursor + new Vector2(width, 28f * s)))
+                ImGui.SetTooltip("This bone can't use IK");
+            return h;
+        }
+
+        void RowLabel(string label) =>
+            ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 6f * s),
+                label, 11f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
+
+        bool SliderRow(string id, string label, ref float value, float min, float max, string fmt)
+        {
+            RowLabel(label);
+            ImGui.SetCursorScreenPos(new Vector2(
+                cursor.X + 94f * s, cursor.Y + h + 4f * s));
+            bool moved = Crystarium.Slider(id, ref value, min, max, new SliderProps
+            {
+                Style = new SliderStyle
+                {
+                    Width = Sizing.Fixed(width / s - 94f - 44f),
+                },
+            });
+            ViewText.Label(new Vector2(
+                    cursor.X + width - 36f * s, cursor.Y + h + 6f * s),
+                string.Format(fmt, value), 11f, FontWeight.Regular,
+                InspectorLayout.LabelColor, mono: true);
+            h += 28f * s;
+            return moved;
+        }
+
+        bool SwitchRow(string id, string label, bool value, out bool next)
+        {
+            RowLabel(label);
+            ImGui.SetCursorScreenPos(new Vector2(
+                cursor.X + 94f * s, cursor.Y + h + 3f * s));
+            next = value;
+            bool moved = Crystarium.Switch(id, ref next);
+            h += 26f * s;
+            return moved;
+        }
+
+        // Solver: the shared compact combo. Two Joint is offered only when
+        // its mandatory chain resolves.
+        bool twoJointAvailable = _ikPort.IsTwoJointAvailable(ikTarget);
+        RowLabel("Solver");
+        ImGui.SetCursorScreenPos(new Vector2(
+            cursor.X + 94f * s, cursor.Y + h + 2f * s));
+        var solverItems = twoJointAvailable
+            ? new[] { "Two Joint", "CCD" }
+            : new[] { "CCD" };
+        int solverIndex = config.Solver == Domain.Posing.IkSolver.Ccd
+            ? solverItems.Length - 1
+            : 0;
+        if (Crystarium.Dropdown("##ik-solver", solverItems, ref solverIndex))
+        {
+            var solver = twoJointAvailable && solverIndex == 0
+                ? Domain.Posing.IkSolver.TwoJoint
+                : Domain.Posing.IkSolver.Ccd;
+            Apply(config with { Solver = solver });
+        }
+        h += 30f * s;
+
+        if (config.Solver == Domain.Posing.IkSolver.TwoJoint)
+        {
+            // Target mode.
+            RowLabel("Target");
+            ImGui.SetCursorScreenPos(new Vector2(
+                cursor.X + 94f * s, cursor.Y + h + 2f * s));
+            int modeIndex = config.TargetMode == Domain.Posing.IkTargetMode.Fixed ? 1 : 0;
+            if (Crystarium.Dropdown("##ik-target",
+                    new[] { "Relative", "Fixed" }, ref modeIndex))
+                Apply(config with
+                {
+                    TargetMode = modeIndex == 1
+                        ? Domain.Posing.IkTargetMode.Fixed
+                        : Domain.Posing.IkTargetMode.Relative,
+                });
+            h += 30f * s;
+
+            if (SwitchRow("##ik-constraints", "Constraints",
+                    config.EnforceConstraints, out var constraints))
+                Apply(config with { EnforceConstraints = constraints });
+            if (SwitchRow("##ik-endrot", "End rotation",
+                    config.EnforceEndRotation, out var endRotation))
+                Apply(config with { EnforceEndRotation = endRotation });
+
+            var definition = Domain.Posing.IkChains.ForEndpoint(boneId.CanonicalName)!;
+            var (firstLabel, secondLabel, endLabel) = definition.IsArm
+                ? ("Shoulder", "Elbow", "Hand")
+                : ("Hip", "Knee", "Foot");
+            float firstGain = config.FirstJointGain;
+            if (SliderRow("##ik-gain1", firstLabel, ref firstGain, 0f, 1f, "{0:0.00}"))
+                Apply(config with { FirstJointGain = firstGain });
+            float secondGain = config.SecondJointGain;
+            if (SliderRow("##ik-gain2", secondLabel, ref secondGain, 0f, 1f, "{0:0.00}"))
+                Apply(config with { SecondJointGain = secondGain });
+            float endGain = config.EndJointGain;
+            if (SliderRow("##ik-gain3", endLabel, ref endGain, 0f, 1f, "{0:0.00}"))
+                Apply(config with { EndJointGain = endGain });
+
+            float hingeMin = config.HingeMinDegrees;
+            if (SliderRow("##ik-hmin", "Hinge min", ref hingeMin, 0f, 180f, "{0:0}°"))
+                Apply(config with
+                {
+                    HingeMinDegrees = hingeMin,
+                    HingeMaxDegrees = MathF.Max(hingeMin, config.HingeMaxDegrees),
+                });
+            float hingeMax = config.HingeMaxDegrees;
+            if (SliderRow("##ik-hmax", "Hinge max", ref hingeMax, 0f, 180f, "{0:0}°"))
+                Apply(config with
+                {
+                    HingeMaxDegrees = hingeMax,
+                    HingeMinDegrees = MathF.Min(hingeMax, config.HingeMinDegrees),
+                });
+
+            // Hinge axis X/Y/Z wells; the value commits on release so a
+            // transiently zero axis is never rejected mid-drag.
+            var axis = _ikAxisScratch ?? config.HingeAxis;
+            h += RailScrub(dl, new Vector2(cursor.X, cursor.Y + h), width,
+                "ik-axis", "Hinge axis", ref axis, 0.005f, "0.00", s,
+                out var axisChanged, out var axisReleased);
+            if (axisChanged)
+                _ikAxisScratch = axis;
+            if (axisReleased)
+            {
+                Apply(config with { HingeAxis = axis });
+                _ikAxisScratch = null;
+            }
+        }
+        else
+        {
+            if (SwitchRow("##ik-constraints", "Constraints",
+                    config.EnforceConstraints, out var constraints))
+                Apply(config with { EnforceConstraints = constraints });
+
+            float depth = config.CcdDepth;
+            if (SliderRow("##ik-depth", "Depth", ref depth, 1f, 20f, "{0:0}"))
+                Apply(config with { CcdDepth = (int)MathF.Round(depth) });
+            float iterations = config.CcdIterations;
+            if (SliderRow("##ik-iter", "Iterations", ref iterations, 1f, 60f, "{0:0}"))
+                Apply(config with { CcdIterations = (int)MathF.Round(iterations) });
+            float gain = config.CcdGain;
+            if (SliderRow("##ik-gain", "Gain", ref gain, 0f, 1f, "{0:0.00}"))
+                Apply(config with { CcdGain = gain });
+        }
+
+        return h;
     }
 
     private float DrawPoseActions(Vector2 cursor, float width, ISkeleton skeleton, float s)

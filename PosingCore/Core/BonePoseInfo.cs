@@ -64,8 +64,6 @@ public class BonePoseInfo
     /// directly (Brio-style live IK: deltas stay undoable, the chain is never
     /// stored). Deviation from Brio: per-bone, not captured per stack snapshot.
     /// </summary>
-    public BoneIKInfo IK { get; set; } = BoneIKInfo.Disabled;
-
     /// <summary>
     /// All transform stacks applied to this bone.
     /// </summary>
@@ -343,17 +341,6 @@ public class SkeletonPoseInfo
 
     public IEnumerable<BonePoseInfo> AllPoses => _poses.Values;
 
-    /// <summary>True when any bone has IK enabled (guards the face reconcile).</summary>
-    public bool AnyIkEnabled
-    {
-        get
-        {
-            foreach (var pose in _poses.Values)
-                if (pose.IK.Enabled)
-                    return true;
-            return false;
-        }
-    }
 
     public void Clear()
     {
