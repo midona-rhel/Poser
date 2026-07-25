@@ -94,24 +94,19 @@ public unsafe class IKService : IIKService
     }
 
     /// <summary>
-    /// Resolves the havok pose that owns the given bone, via its skeleton's actor draw object.
-    /// Same resolution path as Skeleton.GetGameSkeleton; pose 0 matches BonePosingService's usage.
+    /// Resolves the havok pose that owns the given bone through its OWN slot
+    /// skeleton (slot-exact — an armed weapon bone solves against the weapon
+    /// skeleton, never the Character skeleton). Pose 0 matches
+    /// BonePosingService's usage.
     /// </summary>
     private static hkaPose* GetHavokPose(IBone bone)
     {
-        var address = bone.Skeleton.Actor.Address;
-        if (address == nint.Zero)
+        var charaBase = SlotCharacterBases.Resolve(
+            bone.Skeleton.Actor.Address,
+            bone.Skeleton.Slot);
+        if (charaBase == null)
             return null;
 
-        var character = (Character*)address;
-        var drawObject = character->GameObject.DrawObject;
-        if (drawObject == null)
-            return null;
-
-        if (drawObject->Object.GetObjectType() != FFXIVClientStructs.FFXIV.Client.Graphics.Scene.ObjectType.CharacterBase)
-            return null;
-
-        var charaBase = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)drawObject;
         var gameSkeleton = charaBase->Skeleton;
         if (gameSkeleton == null || bone.PartialId >= gameSkeleton->PartialSkeletonCount)
             return null;

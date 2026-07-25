@@ -73,6 +73,10 @@ public sealed class PoseEditService
         var before = prepared.States!
             .Where(state =>
                 state.Target.Bone is { } bone &&
+                // Body/Face/Hair regions are Character-only by contract; a
+                // region reset can never touch a same-named auxiliary bone.
+                (region == PoseRegion.All ||
+                 bone.Slot == PoseSlot.Character) &&
                 MatchesRegion(bone.CanonicalName, region) &&
                 state.Pose.Layers.Count > 0)
             .ToArray();

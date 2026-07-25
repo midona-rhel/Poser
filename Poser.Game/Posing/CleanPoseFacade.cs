@@ -20,6 +20,7 @@ public sealed class CleanPoseFacade
         PoseEditService edits,
         PoseTransferService transfers,
         IBonePosingService bonePosing,
+        ISkeletonService skeletons,
         IExpressionService expressions,
         IGazeService gaze,
         IPluginLog log)
@@ -28,10 +29,13 @@ public sealed class CleanPoseFacade
         _edits = edits;
         _transfers = transfers;
         _bonePosing = bonePosing;
+        _skeletons = skeletons;
         _expressions = expressions;
         _gaze = gaze;
         _log = log;
     }
+
+    private readonly ISkeletonService _skeletons;
 
     private readonly IBonePosingService _bonePosing;
     private readonly IExpressionService _expressions;
@@ -52,10 +56,9 @@ public sealed class CleanPoseFacade
     /// runs even when an earlier one fails. A partial failure is aggregated
     /// into one reported result and logged.
     /// </summary>
-    public PoseEditResult ResetAll(ISkeleton skeleton)
+    public PoseEditResult ResetAll(IActor actor)
     {
         var failures = new List<string>();
-        var actor = skeleton.Actor;
 
         try
         {
@@ -75,11 +78,12 @@ public sealed class CleanPoseFacade
             failures.Add($"gaze reset failed: {ex.Message}");
         }
 
-        var pose = Reset(skeleton, PoseRegion.All);
+        var pose = Reset(actor, PoseRegion.All);
         if (!pose.Success && pose.Detail is { } poseDetail)
             failures.Add(poseDetail);
 
-        _bonePosing.SetAllIk(skeleton, false);
+        foreach (var slotSkeleton in _skeletons.GetSkeletons(actor))
+            _bonePosing.SetAllIk(slotSkeleton, false);
 
         if (failures.Count == 0)
             return pose;
@@ -151,10 +155,14 @@ public sealed class CleanPoseFacade
     }
 
     public PoseEditResult Reset(
-        ISkeleton skeleton,
+        IActor actor,
         PoseRegion region)
     {
-        var targets = Targets(skeleton);
+        // Body/Face/Hair regions are Character-only; only All spans every
+        // present slot.
+        var targets = region == PoseRegion.All
+            ? Targets(actor)
+            : CharacterTargets(actor);
         var description = region == PoseRegion.All
             ? "Reset pose"
             : $"Reset {region.ToString().ToLowerInvariant()}";
@@ -173,31 +181,43 @@ public sealed class CleanPoseFacade
     }
 
     /// <summary>Animation-safe "Mirror edits": mirrors only Poser-authored
-    /// layers (correction 3A).</summary>
-    public PoseEditResult Mirror(ISkeleton skeleton) =>
-        Report("Mirror edits", _edits.Mirror(Targets(skeleton), "Mirror edits"));
+    /// layers, across every present slot; pairing stays within each slot.</summary>
+    public PoseEditResult Mirror(IActor actor) =>
+        Report("Mirror edits", _edits.Mirror(Targets(actor), "Mirror edits"));
 
-    /// <summary>Whether any bone carries a Poser-authored (unnamed) layer —
-    /// the "Mirror edits" availability predicate.</summary>
-    public bool HasAuthoredEdits(ISkeleton skeleton) =>
-        _bonePosing.GetPoseInfo(skeleton).AllPoses
-            .Any(pose => pose.Stacks.Any(stack => stack.Layer == null));
+    /// <summary>Whether any bone of any present slot carries a
+    /// Poser-authored (unnamed) layer — the "Mirror edits" predicate.</summary>
+    public bool HasAuthoredEdits(IActor actor) =>
+        _skeletons.GetSkeletons(actor).Any(skeleton =>
+            _bonePosing.GetPoseInfo(skeleton).AllPoses
+                .Any(pose => pose.Stacks.Any(stack => stack.Layer == null)));
 
-    public PoseCaptureResult Copy(ISkeleton skeleton) =>
-        _transfers.Capture(Targets(skeleton));
+    public PoseCaptureResult Copy(IActor actor) =>
+        _transfers.Capture(Targets(actor));
 
     public PoseEditResult Paste(
-        ISkeleton skeleton,
+        IActor actor,
         PortablePose pose) =>
-        Report("Paste pose", _transfers.Apply(Targets(skeleton), pose));
+        Report("Paste pose", _transfers.Apply(Targets(actor), pose));
 
-    public PoseEditResult Stash(ISkeleton skeleton) =>
-        Report("Stash pose", _transfers.Stash(Targets(skeleton)));
+    public PoseEditResult Stash(IActor actor) =>
+        Report("Stash pose", _transfers.Stash(Targets(actor)));
 
-    public PoseEditResult ApplyStash(ISkeleton skeleton) =>
-        Report("Apply stash", _transfers.ApplyStash(Targets(skeleton)));
+    public PoseEditResult ApplyStash(IActor actor) =>
+        Report("Apply stash", _transfers.ApplyStash(Targets(actor)));
 
-    private IReadOnlyList<TransformTargetId> Targets(
+    /// <summary>Concrete bone targets across every present slot skeleton.</summary>
+    private IReadOnlyList<TransformTargetId> Targets(IActor actor) =>
+        _skeletons.GetSkeletons(actor)
+            .SelectMany(SkeletonTargets)
+            .ToArray();
+
+    private IReadOnlyList<TransformTargetId> CharacterTargets(IActor actor) =>
+        _skeletons.GetSkeleton(actor) is { } character
+            ? SkeletonTargets(character)
+            : Array.Empty<TransformTargetId>();
+
+    private IReadOnlyList<TransformTargetId> SkeletonTargets(
         ISkeleton skeleton) =>
         skeleton.Bones
             .Where(bone => bone is not VirtualBone)

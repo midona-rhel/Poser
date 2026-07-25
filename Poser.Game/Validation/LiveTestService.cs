@@ -857,7 +857,7 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
             if (!applied.Success)
                 return (false, applied.Detail);
             var reset = _cleanPose.Reset(
-                _testSkeleton,
+                _testSkeleton.Actor,
                 PoseRegion.All);
             return reset.Success &&
                    _posing.GetModification(bone) == null
@@ -882,17 +882,17 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
                 TransformDelta.Identity with { Rotation = expected });
             if (!applied.Success)
                 return (false, applied.Detail);
-            var copied = _cleanPose.Copy(_testSkeleton);
+            var copied = _cleanPose.Copy(_testSkeleton.Actor);
             if (!copied.Success || copied.Pose == null)
                 return (false, copied.Detail ??
                     "Portable pose capture failed.");
             var reset = _cleanPose.Reset(
-                _testSkeleton,
+                _testSkeleton.Actor,
                 PoseRegion.All);
             if (!reset.Success)
                 return (false, reset.Detail ?? "Pose reset failed.");
             var pasted = _cleanPose.Paste(
-                _testSkeleton,
+                _testSkeleton.Actor,
                 copied.Pose);
             var actual = _posing.GetModification(bone);
             return pasted.Success &&

@@ -469,7 +469,7 @@ public class PoseInspectorPane
     /// <summary>Whether any bone carries a Poser-authored layer (the
     /// Mirror edits availability predicate).</summary>
     public bool HasAuthoredEdits =>
-        OwningSkeleton() is { } skeleton && _cleanPose.HasAuthoredEdits(skeleton);
+        OwningSkeleton() is { } skeleton && _cleanPose.HasAuthoredEdits(skeleton.Actor);
 
     // ── pose surface: Body/Face/Bones seg + strip + matrix (approved M2) ─
 
@@ -1061,11 +1061,11 @@ public class PoseInspectorPane
         float h = 0f;
 
         var poseActions = new List<RailAction>();
-        bool hasAuthoredEdits = _cleanPose.HasAuthoredEdits(skeleton);
+        bool hasAuthoredEdits = _cleanPose.HasAuthoredEdits(skeleton.Actor);
         if (bone != null)
             poseActions.Add(new RailAction("Flip bone", "pose-flip", () => _cleanPose.FlipBone(bone),
                 Tooltip: "Flip this bone's edit to the other side"));
-        poseActions.Add(new RailAction("Mirror edits", "pose-mirror", () => _cleanPose.Mirror(skeleton),
+        poseActions.Add(new RailAction("Mirror edits", "pose-mirror", () => _cleanPose.Mirror(skeleton.Actor),
             Disabled: !hasAuthoredEdits,
             Tooltip: hasAuthoredEdits
                 ? "Mirror your edits to the other side"
@@ -1079,13 +1079,13 @@ public class PoseInspectorPane
         var resetActions = new List<RailAction>();
         if (bone != null)
             resetActions.Add(new RailAction("Bone", "pose-reset-bone", () => _cleanPose.ResetBone(bone)));
-        resetActions.Add(new RailAction("Body", "pose-reset-body", () => _cleanPose.Reset(skeleton, PoseRegion.Body)));
-        resetActions.Add(new RailAction("Face", "pose-reset-face", () => _cleanPose.Reset(skeleton, PoseRegion.Face)));
-        resetActions.Add(new RailAction("Hair", "pose-reset-hair", () => _cleanPose.Reset(skeleton, PoseRegion.Hair)));
+        resetActions.Add(new RailAction("Body", "pose-reset-body", () => _cleanPose.Reset(skeleton.Actor, PoseRegion.Body)));
+        resetActions.Add(new RailAction("Face", "pose-reset-face", () => _cleanPose.Reset(skeleton.Actor, PoseRegion.Face)));
+        resetActions.Add(new RailAction("Hair", "pose-reset-hair", () => _cleanPose.Reset(skeleton.Actor, PoseRegion.Hair)));
         resetActions.Add(new RailAction("All", "pose-reset-all",
             // Actor-level reset: manual pose + expression + gaze + IK in one
             // documented operation (CleanPoseFacade.ResetAll).
-            () => _cleanPose.ResetAll(skeleton),
+            () => _cleanPose.ResetAll(skeleton.Actor),
             Tooltip: "Reset pose, expression, gaze, and IK for this actor"));
         h += DrawWrappedActions(new Vector2(cursor.X, cursor.Y + h), width, s, resetActions);
 
@@ -1096,9 +1096,9 @@ public class PoseInspectorPane
         bool hasStash = _cleanPose.HasStash;
         h += DrawWrappedActions(new Vector2(cursor.X, cursor.Y + h), width, s, new[]
         {
-            new RailAction("Stash", "pose-stash", () => _cleanPose.Stash(skeleton),
+            new RailAction("Stash", "pose-stash", () => _cleanPose.Stash(skeleton.Actor),
                 Tooltip: "Copy the current pose to the stash"),
-            new RailAction("Apply stash", "pose-stash-apply", () => _cleanPose.ApplyStash(skeleton),
+            new RailAction("Apply stash", "pose-stash-apply", () => _cleanPose.ApplyStash(skeleton.Actor),
                 Disabled: !hasStash,
                 Tooltip: hasStash ? $"Stashed {_cleanPose.StashedAt:HH:mm:ss}" : "Nothing stashed yet"),
         });
@@ -1283,15 +1283,13 @@ public class PoseInspectorPane
         {
             foreach (var actorId in SelectedActorIds())
             {
-                if (_bindings.Resolve(actorId) is { Success: true } actor &&
-                    actor.Value!.HasSkeleton &&
-                    actor.Value.Skeleton is { } selectedSkeleton)
-                    _cleanPose.Mirror(selectedSkeleton);
+                if (_bindings.Resolve(actorId) is { Success: true } actor)
+                    _cleanPose.Mirror(actor.Value!);
             }
             return;
         }
         var skeleton = OwningSkeleton();
-        if (skeleton != null) _cleanPose.Mirror(skeleton);
+        if (skeleton != null) _cleanPose.Mirror(skeleton.Actor);
     }
 
     // ── transform presentation adapter ──────────────────────────────────
