@@ -42,19 +42,34 @@ public unsafe class BonePosingService : IBonePosingService
     private delegate void FinalizeSkeletonsDelegate(nint a1);
     private readonly Hook<FinalizeSkeletonsDelegate>? _finalizeSkeletonsHook;
 
-    // Pose info per SLOT skeleton: a Character stack can never reach a
-    // same-named weapon/ornament bone because the store itself is keyed by
-    // (actor address, slot).
-    private readonly Dictionary<(nint Actor, PoseSlot Slot), SkeletonPoseInfo> _poseInfos = new();
+    /// <summary>
+    /// EXACT runtime skeleton identity: actor address, slot, and the built
+    /// skeleton instance's unique id. Replacing a slot creates a new
+    /// skeleton instance, so the replacement can never inherit the old
+    /// skeleton's pose state through a reused (address, slot) pair.
+    /// </summary>
+    private readonly record struct SkeletonKey(
+        nint Actor,
+        PoseSlot Slot,
+        string Skeleton)
+    {
+        public static SkeletonKey Of(ISkeleton skeleton) => new(
+            skeleton.Actor.Address,
+            skeleton.Slot,
+            skeleton.Id.Unique);
+    }
+
+    // Pose info per exact slot-skeleton instance.
+    private readonly Dictionary<SkeletonKey, SkeletonPoseInfo> _poseInfos = new();
 
     // Track which slot skeletons need updating this frame (have modifications)
-    private readonly HashSet<(nint Actor, PoseSlot Slot)> _skeletonsToUpdate = new();
+    private readonly HashSet<SkeletonKey> _skeletonsToUpdate = new();
 
     // Track which slot skeletons need cache updates (visible overlays, active gizmo, etc.)
-    private readonly HashSet<(nint Actor, PoseSlot Slot)> _skeletonsToUpdateCache = new();
+    private readonly HashSet<SkeletonKey> _skeletonsToUpdateCache = new();
 
     // Native-boundary observations used by the live acceptance harness.
-    private readonly Dictionary<(nint Actor, PoseSlot Slot, int Partial, int Bone), BoneEvaluationObservation>
+    private readonly Dictionary<(SkeletonKey Skeleton, int Partial, int Bone), BoneEvaluationObservation>
         _evaluationObservations = new();
     private long _evaluationSequence;
 
@@ -107,6 +122,7 @@ public unsafe class BonePosingService : IBonePosingService
 
         _framework.Update += OnFrameworkUpdate;
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
+        _eventBus.Subscribe<ActorListChangedEvent>(OnActorListChanged);
 
         _log.Debug("BonePosingService initialized");
     }
@@ -151,7 +167,7 @@ public unsafe class BonePosingService : IBonePosingService
 
     public void RegisterSkeletonForCacheUpdate(ISkeleton skeleton)
     {
-        _skeletonsToUpdateCache.Add((skeleton.Actor.Address, skeleton.Slot));
+        _skeletonsToUpdateCache.Add(SkeletonKey.Of(skeleton));
     }
 
     /// <summary>The frozen animated/reference baseline beneath the authored
@@ -173,8 +189,29 @@ public unsafe class BonePosingService : IBonePosingService
         }
 
         return _evaluationObservations.TryGetValue(
-            (bone.Skeleton.Actor.Address, bone.Skeleton.Slot, bone.PartialId, bone.BoneIndex),
+            (SkeletonKey.Of(bone.Skeleton), bone.PartialId, bone.BoneIndex),
             out observation);
+    }
+
+    /// <summary>Actor teardown: purge every runtime pose store belonging to
+    /// an address that no longer hosts a live actor.</summary>
+    private void OnActorListChanged(ActorListChangedEvent e)
+    {
+        var live = new HashSet<nint>();
+        foreach (var actor in e.Actors)
+            live.Add(actor.Address);
+        foreach (var key in _poseInfos.Keys.Where(key => !live.Contains(key.Actor)).ToArray())
+            PurgeSkeletonState(key);
+    }
+
+    /// <summary>Removes one exact skeleton instance's pose state, update
+    /// registrations, and observations.</summary>
+    private void PurgeSkeletonState(SkeletonKey key)
+    {
+        _poseInfos.Remove(key);
+        _skeletonsToUpdate.Remove(key);
+        _skeletonsToUpdateCache.Remove(key);
+        RemoveEvaluationObservations(key);
     }
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent e)
@@ -189,7 +226,7 @@ public unsafe class BonePosingService : IBonePosingService
 
     private void ApplyAllBoneTransforms()
     {
-        foreach (var slotKey in _skeletonsToUpdate)
+        foreach (var slotKey in _skeletonsToUpdate.ToArray())
         {
             if (!_poseInfos.TryGetValue(slotKey, out var poseInfo))
                 continue;
@@ -205,11 +242,21 @@ public unsafe class BonePosingService : IBonePosingService
             }
 
             if (actor == null)
+            {
+                PurgeSkeletonState(slotKey);
                 continue;
+            }
 
             var skeleton = _skeletonService.GetSkeleton(actor, slotKey.Slot) as Skeleton;
-            if (skeleton == null || !skeleton.IsValid)
+            if (skeleton == null || !skeleton.IsValid ||
+                skeleton.Id.Unique != slotKey.Skeleton)
+            {
+                // The slot vanished or was REPLACED: the stored pose belongs
+                // to the old skeleton instance and must never be applied to
+                // its replacement.
+                PurgeSkeletonState(slotKey);
                 continue;
+            }
 
             ApplySkeletonTransforms(slotKey, skeleton, poseInfo);
         }
@@ -222,7 +269,7 @@ public unsafe class BonePosingService : IBonePosingService
     /// 3. Reparent partials
     /// 4. Full cache update after reparent
     /// </summary>
-    private void ApplySkeletonTransforms((nint Actor, PoseSlot Slot) slotKey, Skeleton skeleton, SkeletonPoseInfo poseInfo)
+    private void ApplySkeletonTransforms(SkeletonKey slotKey, Skeleton skeleton, SkeletonPoseInfo poseInfo)
     {
         // The slot skeleton resolves its OWN native pointer; a weapon or
         // ornament stack is applied through that slot's skeleton only.
@@ -252,7 +299,7 @@ public unsafe class BonePosingService : IBonePosingService
     /// Updates LastTransform IMMEDIATELY after applying each bone's stacks.
     /// </summary>
     private void ApplyTransformsWithPerBoneUpdate(
-        (nint Actor, PoseSlot Slot) slotKey,
+        SkeletonKey slotKey,
         Skeleton skeleton,
         GameSkeleton* gameSkeleton,
         SkeletonPoseInfo poseInfo)
@@ -301,7 +348,7 @@ public unsafe class BonePosingService : IBonePosingService
                     bone.LastRawTransform = transform;
                     bone.LastTransform = transform;
                     _evaluationObservations[
-                        (slotKey.Actor, slotKey.Slot, partialIdx, boneIdx)] =
+                        (slotKey, partialIdx, boneIdx)] =
                         new BoneEvaluationObservation(
                             _evaluationSequence,
                             animatedBaseline,
@@ -471,9 +518,16 @@ public unsafe class BonePosingService : IBonePosingService
 
     public SkeletonPoseInfo GetPoseInfo(ISkeleton skeleton)
     {
-        var slotKey = (skeleton.Actor.Address, skeleton.Slot);
+        var slotKey = SkeletonKey.Of(skeleton);
         if (!_poseInfos.TryGetValue(slotKey, out var poseInfo))
         {
+            // A replaced slot skeleton gets a FRESH store; any state still
+            // keyed to the old instance of the same (actor, slot) is purged.
+            foreach (var stale in _poseInfos.Keys
+                         .Where(key => key.Actor == slotKey.Actor &&
+                                       key.Slot == slotKey.Slot)
+                         .ToArray())
+                PurgeSkeletonState(stale);
             poseInfo = new SkeletonPoseInfo();
             _poseInfos[slotKey] = poseInfo;
         }
@@ -599,14 +653,14 @@ public unsafe class BonePosingService : IBonePosingService
 
     public BoneIKInfo GetBoneIK(IBone bone)
     {
-        if (!_poseInfos.TryGetValue((bone.Skeleton.Actor.Address, bone.Skeleton.Slot), out var poseInfo))
+        if (!_poseInfos.TryGetValue(SkeletonKey.Of(bone.Skeleton), out var poseInfo))
             return BoneIKInfo.Disabled;
         return poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId).IK;
     }
 
     public bool HasEnabledIk(ISkeleton skeleton)
     {
-        if (!_poseInfos.TryGetValue((skeleton.Actor.Address, skeleton.Slot), out var poseInfo))
+        if (!_poseInfos.TryGetValue(SkeletonKey.Of(skeleton), out var poseInfo))
             return false;
         return poseInfo.AnyIkEnabled;
     }
@@ -617,14 +671,14 @@ public unsafe class BonePosingService : IBonePosingService
         var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
         bonePoseInfo.ClearStacks();
         _evaluationObservations.Remove(
-            (bone.Skeleton.Actor.Address, bone.Skeleton.Slot, bone.PartialId, bone.BoneIndex));
+            (SkeletonKey.Of(bone.Skeleton), bone.PartialId, bone.BoneIndex));
 
         _eventBus.Publish(new BoneTransformChangedEvent(bone));
     }
 
     public void ResetSkeleton(ISkeleton skeleton)
     {
-        var slotKey = (skeleton.Actor.Address, skeleton.Slot);
+        var slotKey = SkeletonKey.Of(skeleton);
         if (_poseInfos.TryGetValue(slotKey, out var poseInfo))
         {
             poseInfo.Clear();
@@ -634,7 +688,7 @@ public unsafe class BonePosingService : IBonePosingService
 
     public bool HasModifications(IBone bone)
     {
-        if (!_poseInfos.TryGetValue((bone.Skeleton.Actor.Address, bone.Skeleton.Slot), out var poseInfo))
+        if (!_poseInfos.TryGetValue(SkeletonKey.Of(bone.Skeleton), out var poseInfo))
             return false;
 
         var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
@@ -643,7 +697,7 @@ public unsafe class BonePosingService : IBonePosingService
 
     public Transform? GetModification(IBone bone)
     {
-        if (!_poseInfos.TryGetValue((bone.Skeleton.Actor.Address, bone.Skeleton.Slot), out var poseInfo))
+        if (!_poseInfos.TryGetValue(SkeletonKey.Of(bone.Skeleton), out var poseInfo))
             return null;
 
         var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
@@ -665,7 +719,7 @@ public unsafe class BonePosingService : IBonePosingService
 
     public IReadOnlyList<BonePoseTransformInfo> CapturePoseStacks(IBone bone)
     {
-        if (!_poseInfos.TryGetValue((bone.Skeleton.Actor.Address, bone.Skeleton.Slot), out var poseInfo))
+        if (!_poseInfos.TryGetValue(SkeletonKey.Of(bone.Skeleton), out var poseInfo))
             return Array.Empty<BonePoseTransformInfo>();
 
         return poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId).Stacks.ToArray();
@@ -707,7 +761,7 @@ public unsafe class BonePosingService : IBonePosingService
         }
     }
 
-    private void UpdateSkeletonCache((nint Actor, PoseSlot Slot) slotKey)
+    private void UpdateSkeletonCache(SkeletonKey slotKey)
     {
         IActor? actor = null;
         foreach (var a in _actorManager.Actors)
@@ -723,7 +777,8 @@ public unsafe class BonePosingService : IBonePosingService
             return;
 
         var skeleton = _skeletonService.GetSkeleton(actor, slotKey.Slot) as Skeleton;
-        if (skeleton == null || !skeleton.IsValid)
+        if (skeleton == null || !skeleton.IsValid ||
+            skeleton.Id.Unique != slotKey.Skeleton)
             return;
 
         var gameSkeleton = skeleton.GetGameSkeletonPointer();
@@ -763,7 +818,7 @@ public unsafe class BonePosingService : IBonePosingService
 
     public void SnapshotSkeleton(ISkeleton skeleton)
     {
-        _skeletonsToUpdate.Add((skeleton.Actor.Address, skeleton.Slot));
+        _skeletonsToUpdate.Add(SkeletonKey.Of(skeleton));
     }
 
     public void FlipBone(IBone bone)
@@ -872,10 +927,10 @@ public unsafe class BonePosingService : IBonePosingService
         return combined;
     }
 
-    private void RemoveEvaluationObservations((nint Actor, PoseSlot Slot) slotKey)
+    private void RemoveEvaluationObservations(SkeletonKey slotKey)
     {
         foreach (var key in _evaluationObservations.Keys
-                     .Where(key => key.Actor == slotKey.Actor && key.Slot == slotKey.Slot)
+                     .Where(key => key.Skeleton == slotKey)
                      .ToArray())
         {
             _evaluationObservations.Remove(key);
@@ -888,6 +943,7 @@ public unsafe class BonePosingService : IBonePosingService
         _finalizeSkeletonsHook?.Dispose();
         _framework.Update -= OnFrameworkUpdate;
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
+        _eventBus.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
         _poseInfos.Clear();
         _evaluationObservations.Clear();
         GC.SuppressFinalize(this);
