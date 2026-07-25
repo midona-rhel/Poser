@@ -194,12 +194,19 @@ public sealed class StableBindingRegistry
     public BoneId? GetBoneId(IBone bone)
     {
         var actorKey = bone.Skeleton.Actor.Id.Unique;
-        return _legacyBoneIds.TryGetValue(
-            (actorKey, bone.Skeleton.Slot, bone.PartialId, bone.BoneIndex),
-            out var id) &&
-            id.CanonicalName.Equals(
+        if (!_legacyBoneIds.TryGetValue(
+                (actorKey, bone.Skeleton.Slot, bone.PartialId, bone.BoneIndex),
+                out var id) ||
+            !id.CanonicalName.Equals(
                 bone.BoneName,
-                StringComparison.Ordinal)
+                StringComparison.Ordinal))
+            return null;
+        // Exact skeleton instance required: the id must currently bind to
+        // THIS bone object. A bone from a released/replaced skeleton shares
+        // the reverse key with its replacement but is a different instance —
+        // it maps to null, never to the replacement's identity.
+        return _boneBindings.TryGetValue(id, out var bound) &&
+               ReferenceEquals(bound, bone)
             ? id
             : null;
     }
