@@ -1,54 +1,24 @@
 # Poser documentation
 
-This directory describes the product that Poser is building now. Git history is
-the archive; superseded parity plans and completed migration diaries do not
-remain in the active documentation tree.
+Durable contracts only, stated once. Git history is the archive; source and
+XML comments carry implementation detail.
 
-## Authoritative documents
+| Concept | Normative home |
+|---|---|
+| Product scope, layers, startup | [architecture/product-and-boundaries.md](architecture/product-and-boundaries.md) |
+| Posing runtime (native boundary) | [architecture/posing-runtime.md](architecture/posing-runtime.md) |
+| Scene/selection/gesture/history state | [architecture/application-state.md](architecture/application-state.md) |
+| Retained UI workspace | [architecture/ui-workspace.md](architecture/ui-workspace.md) |
+| Selection + transform interaction | [features/selection-and-transforms.md](features/selection-and-transforms.md) |
+| Pose operations (mirror/flip/reset/stash) | [features/pose-operations.md](features/pose-operations.md) |
+| Expression, gaze, IK | [features/expression-gaze-and-ik.md](features/expression-gaze-and-ik.md) |
+| Pose files and transfer | [features/files-and-transfer.md](features/files-and-transfer.md) |
+| Implementation/review loop | [process/external-implementation-review-loop.md](process/external-implementation-review-loop.md) |
+| Live testing gate | [process/testing.md](process/testing.md) |
+| Dependency updates | [process/dependency-currency.md](process/dependency-currency.md) |
+| Backlog | `backlog/PBI-*.md` |
 
-Read these before changing the corresponding area:
-
-- [Product scope](architecture/product-scope.md) defines retained and deferred
-  behavior.
-- [Architecture overview](architecture/overview.md) defines ownership and the
-  target project shape.
-- [Clean posing core](architecture/clean-break-core.md) defines identity,
-  command, gesture, history, and native evaluation rules.
-- [Reset workflow](process/reset-workflow.md) defines the safe deletion and
-  migration order.
-- [Main window](ui/main-window.md), [pose workspace](ui/pose-workspace.md), and
-  [UI runtime](architecture/ui-runtime.md) define the retained presentation.
-- [Brio and Ktisis posing reference](reference/brio-ktisis-posing.md) records
-  the reference behavior that matters to the reduced product.
-- [Testing](process/testing.md) defines the live gate and manual UI-review
-  boundary.
-- [External implementation and review](process/external-implementation-review-loop.md)
-  defines the Claude implementation, Codex review, and user acceptance loop.
-- [PBI-001](backlog/PBI-001-unified-selection-transform-workspace.md) records
-  the completed clean-core UI slice.
-- [PBI-003](backlog/PBI-003-documentation-reset.md) is the next active
-  documentation-reduction task.
-
-## Documentation rules
-
-1. One file documents one real concept: an entity, service, workflow, format,
-   runtime boundary, or UI surface.
-2. A class, interface, service, or entity is documented before it is added.
-3. Code, documentation, and the relevant acceptance workflow change together.
-4. Historical plans are deleted when superseded. They are not active
-   architecture.
-5. Brio is consulted for native behavior and Ktisis for posing interaction,
-   but neither project's structure is copied wholesale.
-
-## Active product shape
-
-The retained product UI is one main posing workspace, one settings window, and
-two viewport interaction canvases for skeleton picking and gizmo manipulation.
-The retained backend is actor and skeleton lifetime, stable selection, pose
-evaluation, transform commands, one history journal, pose files, and the focused
-live harness.
-
-Camera, lighting, environment, world-object, library, reference-image,
-appearance-editor, status/VFX, project, and animation-browser workflows are
-deferred. They return only as isolated vertical slices with their own acceptance
-diagnostics.
+Rules: one normative home per contract — link, never restate. New documents
+only for durable concepts with non-obvious invariants (see `AGENTS.md`).
+Brio/Ktisis references only where they explain an intentional compatibility
+decision. Delete superseded prose; do not archive it.
