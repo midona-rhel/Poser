@@ -68,6 +68,20 @@ public unsafe class BonePosingService : IBonePosingService
     // Track which slot skeletons need cache updates (visible overlays, active gizmo, etc.)
     private readonly HashSet<SkeletonKey> _skeletonsToUpdateCache = new();
 
+    /// <summary>Session IK state per exact endpoint: validated chain
+    /// configuration, resolved native chain, and the Fixed-mode capture.
+    /// Keyed by the exact skeleton instance, so a replacement never
+    /// inherits configuration or targets.</summary>
+    private sealed class IkChainState
+    {
+        public required Poser.Domain.Posing.IkChainConfig Config;
+        public Poser.Domain.Posing.IkResolvedChain Chain;
+        public (Vector3 Target, Vector3 Translation)? FixedCapture;
+    }
+
+    private readonly Dictionary<(SkeletonKey Skeleton, int Partial, int Bone), IkChainState>
+        _ikChains = new();
+
     // Native-boundary observations used by the live acceptance harness.
     private readonly Dictionary<(SkeletonKey Skeleton, int Partial, int Bone), BoneEvaluationObservation>
         _evaluationObservations = new();
@@ -205,13 +219,18 @@ public unsafe class BonePosingService : IBonePosingService
     }
 
     /// <summary>Removes one exact skeleton instance's pose state, update
-    /// registrations, and observations.</summary>
+    /// registrations, observations, and IK chain state (a replacement never
+    /// inherits configuration or fixed targets).</summary>
     private void PurgeSkeletonState(SkeletonKey key)
     {
         _poseInfos.Remove(key);
         _skeletonsToUpdate.Remove(key);
         _skeletonsToUpdateCache.Remove(key);
         RemoveEvaluationObservations(key);
+        foreach (var chainKey in _ikChains.Keys
+                     .Where(chainKey => chainKey.Skeleton == key)
+                     .ToArray())
+            _ikChains.Remove(chainKey);
     }
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent e)
@@ -221,6 +240,7 @@ public unsafe class BonePosingService : IBonePosingService
             _poseInfos.Clear();
             _skeletonsToUpdate.Clear();
             _evaluationObservations.Clear();
+            _ikChains.Clear();
         }
     }
 
@@ -587,38 +607,133 @@ public unsafe class BonePosingService : IBonePosingService
         _eventBus.Publish(new BoneTransformChangedEvent(bone));
     }
 
-    public int SetAllIk(ISkeleton skeleton, bool enabled)
+    public Poser.Domain.Posing.IkChainConfig? GetIkConfiguration(IBone bone)
     {
-        int touched = 0;
-        if (enabled)
+        if (bone is VirtualBone)
+            return null;
+        var definition = Poser.Domain.Posing.IkChains.ForEndpoint(bone.BoneName);
+        if (definition == null)
+            return null;
+        var key = ChainKey(bone);
+        return _ikChains.TryGetValue(key, out var state)
+            ? state.Config
+            : Poser.Domain.Posing.IkChainConfig.DefaultsFor(definition.IsArm);
+    }
+
+    public string? SetIkConfiguration(IBone bone, Poser.Domain.Posing.IkChainConfig config)
+    {
+        if (bone is VirtualBone)
+            return "Virtual bones cannot use IK.";
+        var definition = Poser.Domain.Posing.IkChains.ForEndpoint(bone.BoneName);
+        if (definition == null)
+            return $"{bone.BoneName} is not a supported IK endpoint.";
+        if (config.Validate() is { } invalid)
+            return invalid;
+        var chain = ResolveChain(bone, definition);
+        if (config.Solver == Poser.Domain.Posing.IkSolver.TwoJoint &&
+            !chain.TwoJointAvailable)
+            return "The Two Joint chain does not resolve on this skeleton.";
+
+        var key = ChainKey(bone);
+        _ikChains.TryGetValue(key, out var previous);
+        var state = previous ?? new IkChainState { Config = config };
+        state.Config = config.Normalized();
+        state.Chain = chain;
+
+        // Fixed-target lifecycle: capture on entering Fixed or enabling a
+        // Fixed chain; disabling retains tuning but clears the capture.
+        if (!config.Enabled)
         {
-            // Arm exactly the supported chain ends (hands + feet).
-            foreach (var name in BoneIKInfo.SupportedChainEnds)
-            {
-                var bone = skeleton.GetBone(name);
-                if (bone == null)
-                    continue;
-                var info = BoneIKInfo.CalculateDefault(name);
-                info.Enabled = true;
-                SetBoneIK(bone, info);
-                touched++;
-            }
-            return touched;
+            state.FixedCapture = null;
+        }
+        else if (config.TargetMode == Poser.Domain.Posing.IkTargetMode.Fixed &&
+                 (previous == null ||
+                  previous.Config.TargetMode != Poser.Domain.Posing.IkTargetMode.Fixed ||
+                  !previous.Config.Enabled ||
+                  state.FixedCapture == null))
+        {
+            state.FixedCapture = (
+                bone.LastTransform.Position,
+                GetModification(bone)?.Position ?? Vector3.Zero);
+        }
+        else if (config.TargetMode == Poser.Domain.Posing.IkTargetMode.Relative)
+        {
+            state.FixedCapture = null;
         }
 
-        // "Disarm all" is literal: clear IK on every bone of this skeleton
-        // that currently carries pose info, including bones armed by older
-        // builds outside the supported set. Idempotent, actor-local, and it
-        // touches no transform stacks.
+        _ikChains[key] = state;
+        MirrorLegacyIk(bone, state.Config);
+        return null;
+    }
+
+    public bool IsIkTwoJointAvailable(IBone bone)
+    {
+        if (bone is VirtualBone)
+            return false;
+        var definition = Poser.Domain.Posing.IkChains.ForEndpoint(bone.BoneName);
+        return definition != null && ResolveChain(bone, definition).TwoJointAvailable;
+    }
+
+    public void ClearIkConfigurations(ISkeleton skeleton)
+    {
+        var key = SkeletonKey.Of(skeleton);
+        foreach (var chainKey in _ikChains.Keys
+                     .Where(chainKey => chainKey.Skeleton == key)
+                     .ToArray())
+            _ikChains.Remove(chainKey);
+
+        // Clear the per-stack solve inputs too, including bones armed by
+        // older paths. Idempotent, actor-local, no transform stacks touched.
         var poseInfo = GetPoseInfo(skeleton);
         foreach (var pose in poseInfo.AllPoses)
         {
-            if (!pose.IK.Enabled)
-                continue;
-            pose.IK = BoneIKInfo.Disabled;
-            touched++;
+            if (pose.IK.Enabled)
+                pose.IK = BoneIKInfo.Disabled;
         }
-        return touched;
+    }
+
+    private static (SkeletonKey Skeleton, int Partial, int Bone) ChainKey(IBone bone) =>
+        (SkeletonKey.Of(bone.Skeleton), bone.PartialId, bone.BoneIndex);
+
+    /// <summary>Resolves the chain inside the endpoint's OWN skeleton and
+    /// partial; missing optional twists resolve to native index -1 and a
+    /// missing mandatory joint makes Two Joint unavailable.</summary>
+    private static Poser.Domain.Posing.IkResolvedChain ResolveChain(
+        IBone endpoint,
+        Poser.Domain.Posing.IkChainDefinition definition)
+    {
+        short Index(string? name)
+        {
+            if (name == null)
+                return -1;
+            var resolved = (endpoint.Skeleton as Skeleton)?
+                .GetBoneByName(name, endpoint.PartialId);
+            return resolved == null ? (short)-1 : (short)resolved.BoneIndex;
+        }
+
+        return new Poser.Domain.Posing.IkResolvedChain(
+            Index(definition.FirstJoint),
+            Index(definition.FirstTwist),
+            Index(definition.SecondJoint),
+            Index(definition.SecondTwist),
+            (short)endpoint.BoneIndex);
+    }
+
+    /// <summary>TRANSITIONAL (removed with the native mapping step): the
+    /// per-stack solve still consumes the legacy BoneIKInfo, so the stored
+    /// configuration mirrors its understood subset.</summary>
+    private void MirrorLegacyIk(IBone bone, Poser.Domain.Posing.IkChainConfig config)
+    {
+        var legacy = BoneIKInfo.CalculateDefault(bone.BoneName);
+        legacy.Enabled = config.Enabled;
+        legacy.EnforceConstraints = config.EnforceConstraints;
+        legacy.SolverType = config.Solver == Poser.Domain.Posing.IkSolver.Ccd
+            ? IKSolverType.CCD
+            : IKSolverType.TwoJoint;
+        legacy.CCD.Depth = config.CcdDepth;
+        legacy.CCD.Iterations = config.CcdIterations;
+        var poseInfo = GetPoseInfo(bone.Skeleton);
+        poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId).IK = legacy;
     }
 
     public int ResetRegion(ISkeleton skeleton, string region)
@@ -643,19 +758,6 @@ public unsafe class BonePosingService : IBonePosingService
             reset++;
         }
         return reset;
-    }
-
-    public void SetBoneIK(IBone bone, BoneIKInfo info)
-    {
-        var poseInfo = GetPoseInfo(bone.Skeleton);
-        poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId).IK = info;
-    }
-
-    public BoneIKInfo GetBoneIK(IBone bone)
-    {
-        if (!_poseInfos.TryGetValue(SkeletonKey.Of(bone.Skeleton), out var poseInfo))
-            return BoneIKInfo.Disabled;
-        return poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId).IK;
     }
 
     public bool HasEnabledIk(ISkeleton skeleton)

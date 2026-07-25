@@ -83,7 +83,7 @@ public sealed class CleanPoseFacade
             failures.Add(poseDetail);
 
         foreach (var slotSkeleton in _skeletons.GetSkeletons(actor))
-            _bonePosing.SetAllIk(slotSkeleton, false);
+            _bonePosing.ClearIkConfigurations(slotSkeleton);
 
         if (failures.Count == 0)
             return pose;
@@ -106,12 +106,12 @@ public sealed class CleanPoseFacade
         var bone = _bindings.Resolve(boneId);
         if (!bone.Success)
             return;
-        var arm = enabled && Core.BoneIKInfo.IsSupportedChainEnd(boneId.CanonicalName);
-        var ik = arm
-            ? Core.BoneIKInfo.CalculateDefault(boneId.CanonicalName)
-            : Core.BoneIKInfo.Disabled;
-        ik.Enabled = arm;
-        _bonePosing.SetBoneIK(bone.Value!, ik);
+        var current = _bonePosing.GetIkConfiguration(bone.Value!);
+        if (current == null)
+            return;
+        _bonePosing.SetIkConfiguration(
+            bone.Value!,
+            current with { Enabled = enabled });
     }
 
     public bool HasStash => _transfers.HasStash;

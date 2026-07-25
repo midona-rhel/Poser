@@ -788,7 +788,7 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
             var reset = _cleanPose.ResetBone(bone);
             if (!reset.Success)
                 return (false, reset.Detail ?? "Bone reset failed.");
-            _posing.SetBoneIK(bone, BoneIKInfo.Disabled);
+            _posing.ClearIkConfigurations(bone.Skeleton);
             _animation.Unfreeze(actor);
             _animation.ResetSpeed(actor);
             _animation.ApplyBaseAnimation(actor, 253, interrupt: true);

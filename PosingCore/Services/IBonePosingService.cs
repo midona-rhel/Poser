@@ -71,13 +71,28 @@ public interface IBonePosingService : IDisposable
     /// <summary>
     /// Set the IK configuration for a bone (see <see cref="BonePoseInfo.IK"/>).
     /// </summary>
-    void SetBoneIK(IBone bone, BoneIKInfo info);
+    /// <summary>The bone's current chain configuration (stored value or
+    /// chain defaults); null when the bone is not a supported, resolvable
+    /// IK endpoint on its own skeleton.</summary>
+    Poser.Domain.Posing.IkChainConfig? GetIkConfiguration(IBone bone);
+
+    /// <summary>Validates and stores the chain configuration; returns null
+    /// on success or the rejection reason. Entering Fixed mode or enabling
+    /// a Fixed chain captures the current effective target; disabling
+    /// retains tuning but clears the capture.</summary>
+    string? SetIkConfiguration(IBone bone, Poser.Domain.Posing.IkChainConfig config);
+
+    /// <summary>Whether the endpoint's mandatory Two Joint chain resolves
+    /// exactly on its own skeleton and partial.</summary>
+    bool IsIkTwoJointAvailable(IBone bone);
+
+    /// <summary>Disables and clears every chain configuration of the
+    /// skeleton (Reset All).</summary>
+    void ClearIkConfigurations(ISkeleton skeleton);
 
     /// <summary>
     /// Get the IK configuration for a bone.
     /// </summary>
-    BoneIKInfo GetBoneIK(IBone bone);
-
     /// <summary>
     /// True when any bone on the skeleton has IK enabled (used to guard the
     /// post-import face reconcile, which would fight live IK).
@@ -138,7 +153,7 @@ public interface IBonePosingService : IDisposable
     bool LinkedBonesEnabled { get; set; }
 
     /// <summary>Bulk IK (Ktisis parity): arm/disarm IK on every eligible chain end (hands/feet).</summary>
-    int SetAllIk(ISkeleton skeleton, bool enabled);
+
 
     /// <summary>Reset only the bones of one region: "body", "face" or "hair" (Anamnesis per-partial reference pose parity).</summary>
     int ResetRegion(ISkeleton skeleton, string region);

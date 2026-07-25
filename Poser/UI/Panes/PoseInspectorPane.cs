@@ -1053,8 +1053,9 @@ public class PoseInspectorPane
         if (_entity is not IBone selectedBone ||
             _primary is not { Kind: SceneEntityKind.Bone, Bone: { } boneId })
             return 0f;
-        bool eligible = Core.BoneIKInfo.IsSupportedChainEnd(selectedBone.BoneName);
-        bool armed = eligible && _bonePosingService.GetBoneIK(selectedBone).Enabled;
+        bool eligible = Domain.Posing.IkChains.IsSupportedEndpoint(selectedBone.BoneName);
+        bool armed = eligible &&
+            _bonePosingService.GetIkConfiguration(selectedBone)?.Enabled == true;
         ViewText.Label(cursor + new Vector2(0f, 7f) * s, "Live IK", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
         ImGui.SetCursorScreenPos(cursor + new Vector2(94f, 4f) * s);
         if (Crystarium.Switch("##pose-ik", ref armed, disabled: !eligible) && eligible)
