@@ -263,6 +263,16 @@ public sealed class PoseEditService
             return PoseEditResult.Fail(
                 "The portable pose has no bones matching this skeleton.");
 
+        // Source bones whose slot-qualified identity has no destination are
+        // REPORTED, never redirected to another slot; the matching set still
+        // applies atomically.
+        var destinations = prepared.States!
+            .Select(state => PortableBoneId.From(state.Target.Bone!.Value))
+            .ToHashSet();
+        var unmatched = pose.Bones
+            .Where(entry => !destinations.Contains(entry.Bone))
+            .ToArray();
+
         var desired = before.Select(state =>
         {
             pose.TryGet(
@@ -277,7 +287,17 @@ public sealed class PoseEditService
                 HasOverride = transferred.Layers.Count > 0,
             };
         }).ToArray();
-        return Apply(description, before, desired);
+        var result = Apply(description, before, desired);
+        if (!result.Success || unmatched.Length == 0)
+            return result;
+        var bySlot = unmatched
+            .GroupBy(entry => entry.Bone.Slot)
+            .OrderBy(group => (int)group.Key)
+            .Select(group => $"{group.Key} ×{group.Count()}");
+        return result with
+        {
+            Detail = $"Unmatched (destination slot/bone absent): {string.Join(", ", bySlot)}.",
+        };
     }
 
     private CaptureResult CaptureBones(
