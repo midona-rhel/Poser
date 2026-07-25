@@ -242,6 +242,28 @@ public sealed class TransformGestureService : IDisposable
         return result;
     }
 
+    /// <summary>
+    /// Reconciles the active gesture against a completed structural scene
+    /// refresh. When every gesture target remains current at its exact
+    /// generation, the gesture SURVIVES and accepts the new revision — an
+    /// unrelated actor or slot appearing, vanishing, or changing does not
+    /// end a drag. When any target is stale it cancels once: every
+    /// still-current target restores from the frozen baseline (stale
+    /// restores fail individually without a write) and no history entry is
+    /// created.
+    /// </summary>
+    public void ReconcileScene(Func<TransformTargetId, bool> isCurrent)
+    {
+        if (_active is not { } active)
+            return;
+        if (active.Command.Targets.All(isCurrent))
+        {
+            _active = active with { SceneRevision = _scene.Revision };
+            return;
+        }
+        Cancel(active.Id);
+    }
+
     public GestureResult Undo()
     {
         if (_active != null)

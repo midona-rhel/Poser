@@ -106,14 +106,14 @@ public sealed class CleanSceneLifecycle : IDisposable
         _lastSignature = signature;
         _retryInterval = InitialRetryInterval;
 
-        // Restore through the still-current bindings before replacing the
-        // scene: a REAL structural change invalidates gesture baselines.
-        if (_gestures.ActiveGesture is { } gesture)
-            _gestures.Cancel(gesture);
         _scene.Refresh(snapshot);
-        // Drop history patches whose targets went stale with this structural
-        // change (whole patch when any target is stale); patches touching
-        // only unaffected slots and actors survive.
+        // Selective reconciliation against the refreshed exact-generation
+        // scene: a gesture whose every target is still current survives and
+        // accepts the new revision (unrelated actors/slots may come and go
+        // mid-drag); any stale target cancels it once through the rebuilt
+        // bindings with no history entry. History patches follow the same
+        // rule per patch.
+        _gestures.ReconcileScene(_scene.Contains);
         _history.Reconcile(_scene.Contains);
     }
 
