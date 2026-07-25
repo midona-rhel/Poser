@@ -54,8 +54,7 @@ public class SkeletonService : ISkeletonService
             }
 
             // The slot vanished or was replaced: release only this entry.
-            skeleton.Dispose();
-            _skeletons.Remove(key);
+            ReleaseSkeleton(key, skeleton);
             _eventBus.Publish(new SkeletonChangedEvent(actor, null));
         }
 
@@ -110,14 +109,25 @@ public class SkeletonService : ISkeletonService
         }
     }
 
+    /// <summary>
+    /// The ONE release path for every cached skeleton — replacement, actor
+    /// removal, ClearAll, and disposal. Detaches the entity from its
+    /// ActorBase BEFORE disposal so <c>IActor.Skeleton</c> (first attached
+    /// skeleton child) can never return a disposed instance; after a
+    /// replacement it returns only the newly attached Character skeleton.
+    /// </summary>
+    private void ReleaseSkeleton((EntityId Actor, PoseSlot Slot) key, Skeleton skeleton)
+    {
+        if (skeleton.Actor is ActorBase actorBase)
+            actorBase.DetachChild(skeleton);
+        skeleton.Dispose();
+        _skeletons.Remove(key);
+    }
+
     public void ClearAll()
     {
-        foreach (var skeleton in _skeletons.Values)
-        {
-            if (skeleton is IDisposable disposable)
-                disposable.Dispose();
-        }
-        _skeletons.Clear();
+        foreach (var (key, skeleton) in _skeletons.ToArray())
+            ReleaseSkeleton(key, skeleton);
     }
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent e)
@@ -140,8 +150,7 @@ public class SkeletonService : ISkeletonService
                 continue;
             }
 
-            skeleton.Dispose();
-            _skeletons.Remove(key);
+            ReleaseSkeleton(key, skeleton);
         }
     }
 
