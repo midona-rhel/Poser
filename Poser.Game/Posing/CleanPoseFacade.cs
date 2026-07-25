@@ -126,6 +126,8 @@ public sealed class CleanPoseFacade
     {
         if (!result.Success)
             _log.Warning($"Pose edit '{description}' failed: {result.Detail}");
+        else if (!string.IsNullOrEmpty(result.Detail))
+            _log.Information($"Pose edit '{description}': {result.Detail}");
         return result;
     }
 
