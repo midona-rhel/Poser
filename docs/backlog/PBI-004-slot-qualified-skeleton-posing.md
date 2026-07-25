@@ -144,9 +144,10 @@ PBI-001 gesture contracts.
 - Import each collection only into its matching live slot. Unknown and
   unavailable slots are skipped and reported; no name-based cross-slot
   fallback is allowed.
-- Add explicit Prop and Ornament import options beside the existing weapon
-  options. Full includes every slot; Body and Expression remain
-  Character-only; Selected uses the selected bones' exact slots.
+- Prop and Ornament application are internal import options beside the
+  existing weapon options, driven by the Full/Selected scopes rather than
+  individual UI controls. Full includes every slot; Body and Expression
+  remain Character-only; Selected uses the selected bones' exact slots.
 - Reset-before-import applies only to the slots/bones in the chosen scope.
   Model transform is applied once to the owning actor. Face compatibility and
   reconcile logic remain Character-only; `.cmp` remains Character-only.
