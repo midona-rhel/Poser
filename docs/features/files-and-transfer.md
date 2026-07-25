@@ -20,12 +20,13 @@ interchange with Brio and (via name conversion) Anamnesis.
 - Hazard: pre-2026-07-15 Poser exports stored deltas in `Bones` and import
   incorrectly; they are indistinguishable from absolute files.
 - Import UI: one Scope dropdown (Full/Body/Expression/Selected) plus
-  component, weapon/prop/ornament, descendant, and reset-before-import
-  options. Full includes every slot; Body and Expression are
-  Character-only; Selected uses the selected bones' exact slots.
-  Reset-before-import touches only the chosen scope; the model transform
-  applies once to the owning actor. The Expression preset applies face
-  bones with `j_kao` excluded; face reconcile and `.cmp` remain
-  Character-only.
+  component, descendant, and reset-before-import options. Weapon, prop,
+  and ornament application are internal import options selected by the
+  Full/Selected scopes, not individual controls. Full includes every
+  slot; Body and Expression are Character-only; Selected uses the
+  selected bones' exact slots. Reset-before-import touches only the
+  chosen scope; the model transform applies once to the owning actor.
+  The Expression preset applies face bones with `j_kao` excluded; face
+  reconcile and `.cmp` remain Character-only.
 - File import is not undoable (known gap). In-memory copy/stash uses
   `PortablePose` and is fully history-integrated.

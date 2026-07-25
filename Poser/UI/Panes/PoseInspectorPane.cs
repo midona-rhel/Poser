@@ -75,7 +75,10 @@ public class PoseInspectorPane
     private BoneMatrixViewModel? _matrixVm;
     private string _matrixFilter = "";
     private ulong _matrixRevision;
-    private Guid _matrixLineage;
+    // Complete skeleton identity (actor generation, SLOT, slot generation):
+    // switching the primary to another slot of the same actor on an
+    // unchanged scene must rebuild the matrix.
+    private SkeletonId? _matrixSkeletonId;
 
     // Primary selection identity (stable id). The legacy _entity view is
     // re-resolved from it once per draw for the retained gaze/IK/pose section
@@ -618,10 +621,9 @@ public class PoseInspectorPane
         var matrixSkeleton = PrimarySkeletonDescriptor();
         if (matrixSkeleton == null)
             return h;
-        var matrixLineage = matrixSkeleton.Id.Actor.LogicalId;
         if (_matrixVm == null ||
             _matrixRevision != _scene.Revision ||
-            _matrixLineage != matrixLineage)
+            _matrixSkeletonId != matrixSkeleton.Id)
         {
             _matrixVm = BoneMatrixBuilder.Build(
                 matrixSkeleton,
@@ -655,7 +657,7 @@ public class PoseInspectorPane
                 },
                 _matrixFilter);
             _matrixRevision = _scene.Revision;
-            _matrixLineage = matrixLineage;
+            _matrixSkeletonId = matrixSkeleton.Id;
         }
         BoneMatrixBuilder.SyncSelection(_matrixVm, _selection);
         h += BoneMatrixView.Draw(_matrixVm, new Vector2(cursor.X, cursor.Y + h), width - 8f * s, "livemx");

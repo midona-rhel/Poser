@@ -615,6 +615,9 @@ public class MainWindow : Window
             {
                 bool hasKids = children.ContainsKey(bone.Id);
                 var boneKey = slotKey + "/bone:" + bone.Id.PartialId + ":" + bone.Id.BoneIndex;
+                // Every disclosure seeds COLLAPSED, hierarchy nodes included.
+                if (hasKids && _knownCategoryNodes.Add(boneKey))
+                    _collapsedNodes.Add(boneKey);
                 bool boneExpanded = !_collapsedNodes.Contains(boneKey);
                 section.Rows.Add(BoneRow(
                     bone, depth, isLast, lines,
