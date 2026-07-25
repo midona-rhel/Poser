@@ -825,16 +825,14 @@ public class PoseInspectorPane
         float h = 0f;
         bool changed = false, released = false;
 
-        // M11 order (Anamnesis column): Rotation → Position → Scale; bone
-        // values are presented in parent-LOCAL space, hence the label suffix.
-        string space = _entity is IBone ? " · local" : "";
-        h += RailScrub(dl, cursor, width, "pose-rot", "Rotation" + space,
+        // M11 order (Anamnesis column): Rotation → Position → Scale.
+        h += RailScrub(dl, cursor, width, "pose-rot", "Rotation",
             ref euler, 0.5f, "0.0", s, out var rotChanged, out var rotReleased);
         changed |= rotChanged;
         released |= rotReleased;
         _dragEuler = rotChanged ? euler : (rotReleased ? null : _dragEuler);
 
-        h += RailScrub(dl, new Vector2(cursor.X, cursor.Y + h), width, "pose-pos", "Position" + space,
+        h += RailScrub(dl, new Vector2(cursor.X, cursor.Y + h), width, "pose-pos", "Position",
             ref pos, 0.005f, "0.00", s, out var posChanged, out var posReleased);
         changed |= posChanged;
         released |= posReleased;
