@@ -9,7 +9,7 @@
 | Implementation owner | Claude |
 | Review owner | Codex |
 | Acceptance owner | User |
-| Base ref | `8ae2b62062d888a25ed87ee5718c0a27aca5401c` |
+| Base ref | `pbi-003-base` (immutable annotated Git tag) |
 | Feature branch | `feature/pbi-003-documentation-reset` |
 | Accepted head | Not accepted |
 
@@ -25,7 +25,7 @@ historical reasoning.
 
 ## Why
 
-The current `docs/` tree contains 91 Markdown files and roughly 6,105 lines.
+The current `docs/` tree contains 91 Markdown files and roughly 4,270 lines.
 Many files repeat:
 
 - method and constructor inventories already visible in source;
