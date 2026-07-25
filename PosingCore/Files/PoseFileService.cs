@@ -4,22 +4,22 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Plugin.Services;
 using Poser.Core;
+using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Services;
 
 namespace Poser.Files;
 
 /// <summary>
-/// Service for importing and exporting Brio-compatible pose files.
+/// Brio-compatible .pose import/export over an actor's slot skeleton set.
+/// Each slot maps to exactly one file collection; unknown or unavailable
+/// slots are skipped and reported — never redirected by bone name.
 /// </summary>
 public class PoseFileService : IPoseFileService
 {
     private readonly IPluginLog _log;
     private readonly IBonePosingService _bonePosingService;
     private readonly IPosingService _posingService;
-
-    public event Action<ISkeleton>? OnPoseImported;
-    public event Action<ISkeleton, string>? OnPoseExported;
 
     public PoseImportOptions DefaultImportOptions { get; } = PoseImportOptions.Default;
 
@@ -33,47 +33,75 @@ public class PoseFileService : IPoseFileService
         _posingService = posingService;
     }
 
-    public PoseFile CreatePoseFile(ISkeleton skeleton)
+    private static Dictionary<string, PoseFile.BoneData>? CollectionFor(
+        PoseFile poseFile,
+        PoseSlot slot) => slot switch
+    {
+        PoseSlot.Character => poseFile.Bones,
+        PoseSlot.MainHand => poseFile.MainHand,
+        PoseSlot.OffHand => poseFile.OffHand,
+        PoseSlot.Prop => poseFile.Prop,
+        PoseSlot.Ornament => poseFile.Ornament,
+        _ => null,
+    };
+
+    private static bool SlotEnabled(PoseSlot slot, PoseImportOptions options) => slot switch
+    {
+        PoseSlot.MainHand => options.ApplyMainHand,
+        PoseSlot.OffHand => options.ApplyOffHand,
+        PoseSlot.Prop => options.ApplyProp,
+        PoseSlot.Ornament => options.ApplyOrnament,
+        _ => false,
+    };
+
+    public PoseFile CreatePoseFile(IReadOnlyList<ISkeleton> slots)
     {
         var poseFile = new PoseFile();
+        IActor? actor = null;
 
-        // Brio parity (SkeletonPosingCapability.ExportSkeletonPose): every partial's bones
-        // (body partial 0 AND face/accessory partials 1+) go into the same Bones dictionary
-        // as absolute model-space snapshots (LastRawTransform, the pre-reparent value).
-        // Partial roots are skipped except the skeleton root, so a partial's attach bone
-        // does not overwrite its partial-0 original.
-        foreach (var bone in skeleton.Bones)
+        // Brio parity (SkeletonPosingCapability.ExportSkeletonPose): every
+        // partial's bones go into the slot's matching collection as absolute
+        // model-space snapshots (LastRawTransform). Partial roots are skipped
+        // except the skeleton root.
+        foreach (var skeleton in slots)
         {
-            if (bone.IsPartialRoot && !bone.IsSkeletonRoot)
+            actor ??= skeleton.Actor;
+            var collection = CollectionFor(poseFile, skeleton.Slot);
+            if (collection == null)
                 continue;
+            foreach (var bone in skeleton.Bones)
+            {
+                if (bone.IsPartialRoot && !bone.IsSkeletonRoot)
+                    continue;
 
-            poseFile.Bones[bone.BoneName] = bone.LastRawTransform;
+                collection[bone.BoneName] = bone.LastRawTransform;
+            }
         }
 
-        // Brio parity (ModelPosingCapability.ExportModelPose): actor transform as both a
-        // difference vs the game-controlled transform and an absolute snapshot, plus the
-        // legacy root-level copy for other pose tools.
-        var actor = skeleton.Actor;
-        var effective = _posingService.GetEffectiveTransform(actor);
-        var original = _posingService.GetOriginalTransform(actor);
-        poseFile.ModelDifference = effective.CalculateDiff(original);
-        poseFile.ModelAbsoluteValues = effective;
-        poseFile.Position = effective.Position;
-        poseFile.Rotation = effective.Rotation;
-        poseFile.Scale = effective.Scale;
+        // Brio parity (ModelPosingCapability.ExportModelPose): the OWNING
+        // ACTOR's transform, written once regardless of slot count.
+        if (actor != null)
+        {
+            var effective = _posingService.GetEffectiveTransform(actor);
+            var original = _posingService.GetOriginalTransform(actor);
+            poseFile.ModelDifference = effective.CalculateDiff(original);
+            poseFile.ModelAbsoluteValues = effective;
+            poseFile.Position = effective.Position;
+            poseFile.Rotation = effective.Rotation;
+            poseFile.Scale = effective.Scale;
+        }
 
         return poseFile;
     }
 
-    public bool ExportPose(ISkeleton skeleton, string path)
+    public bool ExportPose(IReadOnlyList<ISkeleton> slots, string path)
     {
         try
         {
-            var poseFile = CreatePoseFile(skeleton);
+            var poseFile = CreatePoseFile(slots);
             if (poseFile.Save(path))
             {
-                _log.Debug($"Exported pose to {path}");
-                OnPoseExported?.Invoke(skeleton, path);
+                _log.Debug($"Exported pose ({slots.Count} slots) to {path}");
                 return true;
             }
             return false;
@@ -85,12 +113,13 @@ public class PoseFileService : IPoseFileService
         }
     }
 
-    public bool ImportPose(ISkeleton skeleton, string path, PoseImportOptions? options = null)
+    public bool ImportPose(IReadOnlyList<ISkeleton> slots, string path, PoseImportOptions? options = null)
     {
         try
         {
             // Legacy CMTool .cmp: hex-encoded rotations/scales, NO positions —
-            // convert to a PoseFile and force ApplyPosition off so nothing zeroes.
+            // convert to a PoseFile and force ApplyPosition off so nothing
+            // zeroes. .cmp is Character-only by format.
             if (path.EndsWith(".cmp", StringComparison.OrdinalIgnoreCase))
             {
                 var cmp = CMToolPoseFile.Load(path);
@@ -103,7 +132,7 @@ public class PoseFileService : IPoseFileService
                 var upgraded = cmp.Upgrade();
                 var cmpOptions = (options ?? DefaultImportOptions).Clone();
                 cmpOptions.ApplyPosition = false;
-                return ImportPose(skeleton, upgraded, cmpOptions);
+                return ImportPose(slots, upgraded, cmpOptions);
             }
 
             var poseFile = PoseFile.Load(path);
@@ -116,7 +145,7 @@ public class PoseFileService : IPoseFileService
             // Sanitize bone names for Anamnesis compatibility
             poseFile.SanitizeBoneNames();
 
-            return ImportPose(skeleton, poseFile, options);
+            return ImportPose(slots, poseFile, options);
         }
         catch (Exception ex)
         {
@@ -125,127 +154,67 @@ public class PoseFileService : IPoseFileService
         }
     }
 
-    public bool ImportPose(ISkeleton skeleton, PoseFile poseFile, PoseImportOptions? options = null)
+    public bool ImportPose(IReadOnlyList<ISkeleton> slots, PoseFile poseFile, PoseImportOptions? options = null)
     {
         options ??= DefaultImportOptions;
 
         try
         {
-            // Brio parity: import does NOT wipe existing modifications (Brio's interactive
-            // import path passes reset: false). File bones are absolute targets, so a
-            // full-skeleton file fully determines the pose anyway; narrow imports (e.g.
-            // face only) must not destroy body edits. Reset only on explicit request.
+            var bySlot = slots
+                .Where(s => s.Slot != PoseSlot.Unknown)
+                .ToDictionary(s => s.Slot);
+            bySlot.TryGetValue(PoseSlot.Character, out var character);
+
+            // Brio parity: import does NOT wipe existing modifications (Brio's
+            // interactive import passes reset: false). Reset only on explicit
+            // request and only within the chosen scope.
             if (options.ResetBeforeImport)
-            {
-                if (options.BoneFilter == null)
-                {
-                    _bonePosingService.ResetSkeleton(skeleton);
-                }
-                else
-                {
-                    foreach (var bone in skeleton.Bones.Where(bone => PassesBoneFilter(bone, options)))
-                        _bonePosingService.ResetBone(bone);
-                }
-            }
+                ResetScope(bySlot, character, options);
 
             int bonesApplied = 0;
 
-            // Apply body bones
-            if (options.ApplyBody)
+            // Character collection → Character slot only.
+            if (options.ApplyBody && character != null)
+                bonesApplied += ApplyCharacterCollection(character, poseFile, options);
+
+            // Each auxiliary collection imports only into its matching live
+            // slot; a missing slot is reported, never redirected by name.
+            if (!options.AsExpression)
             {
-                // Pre-Dawntrail face heuristic (Anamnesis): files with face bones
-                // but no tongue bone predate the DT face rework — importing their
-                // face POSITIONS onto a DT face deforms it. Strip positions for
-                // face bones and log once.
-                bool preDtFace = poseFile.Bones.Keys.Any(IsFaceBone)
-                    && !poseFile.Bones.ContainsKey("j_f_bero_01")
-                    && skeleton.GetBone("j_f_bero_01") != null;
-                if (preDtFace)
-                    _log.Warning("PoseFileService: pre-Dawntrail face detected (no tongue bone) — face positions skipped to protect the DT face");
-
-                foreach (var (rawBoneName, boneData) in poseFile.Bones)
+                foreach (var slot in new[]
+                         {
+                             PoseSlot.MainHand,
+                             PoseSlot.OffHand,
+                             PoseSlot.Prop,
+                             PoseSlot.Ornament,
+                         })
                 {
-                    // old Anamnesis files carry legacy bone names on plain .pose
-                    // too — run the conversion table whenever the raw name misses
-                    var boneName = rawBoneName;
-                    var bone = skeleton.GetBone(boneName);
-                    if (bone == null)
-                    {
-                        var modern = AnamnesisBoneNameConverter.ToGame(rawBoneName);
-                        if (modern != null)
-                        {
-                            boneName = modern;
-                            bone = skeleton.GetBone(boneName);
-                        }
-                    }
-                    if (bone == null)
+                    var collection = CollectionFor(poseFile, slot)!;
+                    if (collection.Count == 0 || !SlotEnabled(slot, options))
                         continue;
-
-                    if (preDtFace && IsFaceBone(boneName) && options.ApplyPosition)
+                    if (!bySlot.TryGetValue(slot, out var slotSkeleton))
                     {
-                        var stripped = options.Clone();
-                        stripped.ApplyPosition = false;
-                        ApplyBoneTransform(bone, boneData, stripped);
-                        bonesApplied++;
+                        _log.Info($"Pose import: {slot} collection skipped — slot not present on this actor.");
                         continue;
                     }
-
-                    // Expression import (rewritten, single-phase): only face bones,
-                    // and NEVER the head — the file's face orientations land while
-                    // the posed head stays put. Equivalent end state to Brio's
-                    // apply-then-restore without its 4-tick resync hack.
-                    if (options.AsExpression)
+                    foreach (var (boneName, boneData) in collection)
                     {
-                        if (boneName == "j_kao" || !IsFaceBone(boneName))
+                        var bone = slotSkeleton.GetBone(boneName);
+                        if (bone == null || !PassesBoneFilter(bone, options))
                             continue;
-                    }
-                    // Filter by face bones if needed
-                    else if (!options.ApplyFace && IsFaceBone(boneName))
-                        continue;
-
-                    // Selective import (Ktisis/Anamnesis parity): only filtered
-                    // bones (+ descendants when requested)
-                    if (!PassesBoneFilter(bone, options))
-                        continue;
-
-                    ApplyBoneTransform(bone, boneData, options);
-                    bonesApplied++;
-                }
-            }
-
-            // Apply weapon bones
-            if (options.ApplyMainHand && !options.AsExpression)
-            {
-                foreach (var (boneName, boneData) in poseFile.MainHand)
-                {
-                    var bone = skeleton.GetBone(boneName);
-                    if (bone != null)
-                    {
                         ApplyBoneTransform(bone, boneData, options);
                         bonesApplied++;
                     }
                 }
             }
 
-            if (options.ApplyOffHand && !options.AsExpression)
+            // Brio parity (ModelPosingCapability.ImportModelPose, non-scene
+            // path): current actor transform += ModelDifference, applied ONCE
+            // to the owning actor.
+            if (options.ApplyModelTransform && !options.AsExpression &&
+                slots.Count > 0)
             {
-                foreach (var (boneName, boneData) in poseFile.OffHand)
-                {
-                    var bone = skeleton.GetBone(boneName);
-                    if (bone != null)
-                    {
-                        ApplyBoneTransform(bone, boneData, options);
-                        bonesApplied++;
-                    }
-                }
-            }
-
-            // Brio parity (ModelPosingCapability.ImportModelPose, non-scene path):
-            // current actor transform += ModelDifference. Reset first when requested,
-            // mirroring Brio's `if (applyModelTransform && reset) ModelPosing.ResetTransform()`.
-            if (options.ApplyModelTransform && !options.AsExpression)
-            {
-                var actor = skeleton.Actor;
+                var actor = slots[0].Actor;
                 if (options.ResetBeforeImport)
                     _posingService.ClearTransformOverride(actor);
 
@@ -260,15 +229,13 @@ public class PoseFileService : IPoseFileService
             }
 
             // Re-anchor the face after body imports (rewrite of Brio's
-            // ReconcileHead): re-apply the j_kao subtree's current raw transforms
-            // as absolute targets so face stacks stay pinned to the moved head.
-            // Skipped when IK is live anywhere — reconciling would fight the
-            // solver (the exact failure Brio's own comment admits to).
-            if (!options.AsExpression && options.ApplyFace && !_bonePosingService.HasEnabledIk(skeleton))
-                ReconcileFace(skeleton);
+            // ReconcileHead) — Character-only. Skipped when IK is live on the
+            // Character skeleton because reconciling would fight the solver.
+            if (!options.AsExpression && options.ApplyFace && character != null &&
+                !_bonePosingService.HasEnabledIk(character))
+                ReconcileFace(character);
 
             _log.Debug($"Imported pose: {bonesApplied} bones applied");
-            OnPoseImported?.Invoke(skeleton);
             return true;
         }
         catch (Exception ex)
@@ -278,29 +245,114 @@ public class PoseFileService : IPoseFileService
         }
     }
 
-    private PoseFile? _stashedPose;
-
-    public DateTime? StashTime { get; private set; }
-
-    public void StashPose(ISkeleton skeleton)
+    /// <summary>Reset-before-import touches only the slots/bones inside the
+    /// chosen scope: the Character skeleton when body applies, each enabled
+    /// auxiliary slot, and only filtered bones when a filter is set.</summary>
+    private void ResetScope(
+        IReadOnlyDictionary<PoseSlot, ISkeleton> bySlot,
+        ISkeleton? character,
+        PoseImportOptions options)
     {
-        _stashedPose = CreatePoseFile(skeleton);
-        StashTime = DateTime.UtcNow;
+        void ResetSkeletonScope(ISkeleton skeleton)
+        {
+            if (options.BoneFilter == null)
+            {
+                _bonePosingService.ResetSkeleton(skeleton);
+                return;
+            }
+            foreach (var bone in skeleton.Bones.Where(bone => PassesBoneFilter(bone, options)))
+                _bonePosingService.ResetBone(bone);
+        }
+
+        if (options.ApplyBody && character != null)
+            ResetSkeletonScope(character);
+        if (options.AsExpression)
+            return;
+        foreach (var (slot, skeleton) in bySlot)
+        {
+            if (slot == PoseSlot.Character || !SlotEnabled(slot, options))
+                continue;
+            ResetSkeletonScope(skeleton);
+        }
     }
 
-    public bool ApplyStashedPose(ISkeleton skeleton, PoseImportOptions? options = null)
+    private int ApplyCharacterCollection(
+        ISkeleton skeleton,
+        PoseFile poseFile,
+        PoseImportOptions options)
     {
-        if (_stashedPose == null)
-            return false;
-        return ImportPose(skeleton, _stashedPose, options);
+        int bonesApplied = 0;
+
+        // Pre-Dawntrail face heuristic (Anamnesis): files with face bones
+        // but no tongue bone predate the DT face rework — importing their
+        // face POSITIONS onto a DT face deforms it. Strip positions for
+        // face bones and log once.
+        bool preDtFace = poseFile.Bones.Keys.Any(IsFaceBone)
+            && !poseFile.Bones.ContainsKey("j_f_bero_01")
+            && skeleton.GetBone("j_f_bero_01") != null;
+        if (preDtFace)
+            _log.Warning("PoseFileService: pre-Dawntrail face detected (no tongue bone) — face positions skipped to protect the DT face");
+
+        foreach (var (rawBoneName, boneData) in poseFile.Bones)
+        {
+            // old Anamnesis files carry legacy bone names on plain .pose
+            // too — run the conversion table whenever the raw name misses
+            var boneName = rawBoneName;
+            var bone = skeleton.GetBone(boneName);
+            if (bone == null)
+            {
+                var modern = AnamnesisBoneNameConverter.ToGame(rawBoneName);
+                if (modern != null)
+                {
+                    boneName = modern;
+                    bone = skeleton.GetBone(boneName);
+                }
+            }
+            if (bone == null)
+                continue;
+
+            if (preDtFace && IsFaceBone(boneName) && options.ApplyPosition)
+            {
+                var stripped = options.Clone();
+                stripped.ApplyPosition = false;
+                ApplyBoneTransform(bone, boneData, stripped);
+                bonesApplied++;
+                continue;
+            }
+
+            // Expression import (rewritten, single-phase): only face bones,
+            // and NEVER the head — the file's face orientations land while
+            // the posed head stays put. Equivalent end state to Brio's
+            // apply-then-restore without its 4-tick resync hack.
+            if (options.AsExpression)
+            {
+                if (boneName == "j_kao" || !IsFaceBone(boneName))
+                    continue;
+            }
+            // Filter by face bones if needed
+            else if (!options.ApplyFace && IsFaceBone(boneName))
+                continue;
+
+            // Selective import (Ktisis/Anamnesis parity): only filtered
+            // bones (+ descendants when requested)
+            if (!PassesBoneFilter(bone, options))
+                continue;
+
+            ApplyBoneTransform(bone, boneData, options);
+            bonesApplied++;
+        }
+
+        return bonesApplied;
     }
 
-    /// <summary>Selective-import filter: bone itself, or any ancestor, is in the set.</summary>
+    /// <summary>Selective-import filter: the slot-qualified bone itself, or
+    /// any same-slot ancestor, is in the set.</summary>
     private static bool PassesBoneFilter(Poser.Entities.IBone bone, PoseImportOptions options)
     {
         if (options.BoneFilter == null)
             return true;
-        if (options.BoneFilter.Contains(bone.BoneName))
+        var slot = bone.Skeleton.Slot;
+        if (options.BoneFilter.Contains((slot, bone.BoneName)))
             return true;
         if (!options.FilterIncludesDescendants)
             return false;
@@ -309,7 +361,7 @@ public class PoseFileService : IPoseFileService
         int guard = 0;
         while (ancestor != null && guard++ < 256)
         {
-            if (options.BoneFilter.Contains(ancestor.BoneName))
+            if (options.BoneFilter.Contains((slot, ancestor.BoneName)))
                 return true;
             ancestor = ancestor.ParentBone;
         }
@@ -375,23 +427,6 @@ public class PoseFileService : IPoseFileService
                boneName.Contains("_mayu") ||     // Eyebrows
                boneName.Contains("_hoho") ||     // Cheeks
                boneName.Contains("_kuti");       // Mouth
-    }
-
-    // TODO(UI): file dialogs cannot be wired inside PosingCore. There is no dialog
-    // infrastructure anywhere in the plugin yet — Poser/UI opens its own ImGui FileBrowser
-    // (Poser/UI/Controls/TransformTabPane.cs) and calls ImportPose/ExportPose with the
-    // chosen path, so these methods currently have zero callers. Implementing them needs
-    // UI-side work: either Dalamud's FileDialogManager (whose Draw() must be pumped every
-    // frame by the UI loop) injected via an abstraction, or routing through the existing
-    // FileBrowser control. Until then they only log.
-    public void ImportPoseWithDialog(ISkeleton skeleton, PoseImportOptions? options = null)
-    {
-        _log.Warning("ImportPoseWithDialog not yet implemented - use ImportPose with a path directly");
-    }
-
-    public void ExportPoseWithDialog(ISkeleton skeleton)
-    {
-        _log.Warning("ExportPoseWithDialog not yet implemented - use ExportPose with a path directly");
     }
 
     public void Dispose()

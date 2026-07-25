@@ -44,6 +44,16 @@ public class PoseImportOptions
     public bool ApplyOffHand { get; set; } = true;
 
     /// <summary>
+    /// Import prop (system weapon slot) bones.
+    /// </summary>
+    public bool ApplyProp { get; set; } = true;
+
+    /// <summary>
+    /// Import ornament bones.
+    /// </summary>
+    public bool ApplyOrnament { get; set; } = true;
+
+    /// <summary>
     /// Import model position/rotation (actor transform).
     /// </summary>
     public bool ApplyModelTransform { get; set; } = false;
@@ -67,10 +77,11 @@ public class PoseImportOptions
     public bool AsExpression { get; set; } = false;
 
     /// <summary>
-    /// When set, only these bones are applied (selective import — Ktisis/
-    /// Anamnesis parity). Combined with the phase flags above.
+    /// When set, only these slot-qualified bones are applied (selective
+    /// import — Ktisis/Anamnesis parity). A filter entry names the bone's
+    /// EXACT slot; a name alone can never match across slots.
     /// </summary>
-    public System.Collections.Generic.ISet<string>? BoneFilter { get; set; }
+    public System.Collections.Generic.ISet<(Poser.Domain.Identity.PoseSlot Slot, string Name)>? BoneFilter { get; set; }
 
     /// <summary>Extend <see cref="BoneFilter"/> to every descendant of the filtered bones.</summary>
     public bool FilterIncludesDescendants { get; set; }
@@ -98,6 +109,8 @@ public class PoseImportOptions
         ApplyFace = true,
         ApplyMainHand = false,
         ApplyOffHand = false,
+        ApplyProp = false,
+        ApplyOrnament = false,
         ApplyModelTransform = false
     };
 
@@ -123,10 +136,14 @@ public class PoseImportOptions
             ApplyFace = ApplyFace,
             ApplyMainHand = ApplyMainHand,
             ApplyOffHand = ApplyOffHand,
+            ApplyProp = ApplyProp,
+            ApplyOrnament = ApplyOrnament,
             ApplyModelTransform = ApplyModelTransform,
             ResetBeforeImport = ResetBeforeImport,
             AsExpression = AsExpression,
-            BoneFilter = BoneFilter == null ? null : new System.Collections.Generic.HashSet<string>(BoneFilter),
+            BoneFilter = BoneFilter == null
+                ? null
+                : new System.Collections.Generic.HashSet<(Poser.Domain.Identity.PoseSlot Slot, string Name)>(BoneFilter),
             FilterIncludesDescendants = FilterIncludesDescendants,
         };
     }

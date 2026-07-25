@@ -1,82 +1,40 @@
 using System;
+using System.Collections.Generic;
 using Poser.Entities;
 using Poser.Files;
 
 namespace Poser.Services;
 
 /// <summary>
-/// Service for importing and exporting pose files.
-/// Supports Brio-compatible .pose format.
+/// Brio-compatible .pose import/export over an actor's slot skeleton set.
+/// Each slot maps to exactly its file collection (Character→Bones,
+/// MainHand→MainHand, OffHand→OffHand, Prop→Prop, Ornament→Ornament); no
+/// name-based cross-slot fallback exists.
 /// </summary>
 public interface IPoseFileService : IDisposable
 {
-    /// <summary>
-    /// Event fired when a pose import completes.
-    /// </summary>
-    event Action<ISkeleton>? OnPoseImported;
-
-    /// <summary>
-    /// Event fired when a pose export completes.
-    /// </summary>
-    event Action<ISkeleton, string>? OnPoseExported;
-
     /// <summary>
     /// Default import options used when none specified.
     /// </summary>
     PoseImportOptions DefaultImportOptions { get; }
 
     /// <summary>
-    /// Exports the current pose of a skeleton to a file.
+    /// Exports the current pose of every supplied slot skeleton to a file.
     /// </summary>
-    /// <param name="skeleton">The skeleton to export.</param>
-    /// <param name="path">File path to save to.</param>
-    /// <returns>True if successful.</returns>
-    bool ExportPose(ISkeleton skeleton, string path);
+    bool ExportPose(IReadOnlyList<ISkeleton> slots, string path);
 
     /// <summary>
-    /// Creates a PoseFile from a skeleton's current pose (in-memory, no file write).
+    /// Creates a PoseFile from the slot set's current pose (in-memory).
     /// </summary>
-    /// <param name="skeleton">The skeleton to capture.</param>
-    /// <returns>The pose file data.</returns>
-    PoseFile CreatePoseFile(ISkeleton skeleton);
+    PoseFile CreatePoseFile(IReadOnlyList<ISkeleton> slots);
 
     /// <summary>
-    /// Imports a pose from file onto a skeleton.
+    /// Imports a pose from file onto the matching slots of the supplied set.
     /// </summary>
-    /// <param name="skeleton">The skeleton to apply the pose to.</param>
-    /// <param name="path">File path to load from.</param>
-    /// <param name="options">Import options. Uses defaults if null.</param>
-    /// <returns>True if successful.</returns>
-    bool ImportPose(ISkeleton skeleton, string path, PoseImportOptions? options = null);
+    bool ImportPose(IReadOnlyList<ISkeleton> slots, string path, PoseImportOptions? options = null);
 
     /// <summary>
-    /// Imports a pose file onto a skeleton.
+    /// Imports a pose file onto the matching slots of the supplied set.
     /// </summary>
-    /// <param name="skeleton">The skeleton to apply the pose to.</param>
-    /// <param name="poseFile">The pose data to apply.</param>
-    /// <param name="options">Import options. Uses defaults if null.</param>
-    /// <returns>True if successful.</returns>
-    bool ImportPose(ISkeleton skeleton, PoseFile poseFile, PoseImportOptions? options = null);
-
-    /// <summary>
-    /// Opens a file dialog for the user to select a pose file to import.
-    /// </summary>
-    /// <param name="skeleton">The skeleton to apply the pose to.</param>
-    /// <param name="options">Import options. Uses defaults if null.</param>
-    void ImportPoseWithDialog(ISkeleton skeleton, PoseImportOptions? options = null);
-
-    /// <summary>
-    /// Opens a file dialog for the user to save the current pose.
-    /// </summary>
-    /// <param name="skeleton">The skeleton to export.</param>
-    void ExportPoseWithDialog(ISkeleton skeleton);
-
-    /// <summary>Stash the skeleton's current pose in memory (Ktisis parity — fast cross-actor transfer).</summary>
-    void StashPose(ISkeleton skeleton);
-
-    /// <summary>When a stash exists: its capture time.</summary>
-    DateTime? StashTime { get; }
-
-    /// <summary>Apply the stashed pose to a (possibly different) skeleton.</summary>
-    bool ApplyStashedPose(ISkeleton skeleton, PoseImportOptions? options = null);
+    bool ImportPose(IReadOnlyList<ISkeleton> slots, PoseFile poseFile, PoseImportOptions? options = null);
 }

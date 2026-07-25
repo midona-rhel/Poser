@@ -18,6 +18,7 @@ public sealed class PoseFileInspectorSection
 {
     private readonly IPoseFileService _poseFiles;
     private readonly SelectionSession _selection;
+    private readonly ISkeletonService _skeletons;
     private readonly FileBrowser _importBrowser =
         new("Import Pose", new[] { ".pose", ".cmp" }, isSaveMode: false);
     private readonly FileBrowser _exportBrowser =
@@ -30,10 +31,12 @@ public sealed class PoseFileInspectorSection
 
     public PoseFileInspectorSection(
         IPoseFileService poseFiles,
-        SelectionSession selection)
+        SelectionSession selection,
+        ISkeletonService skeletons)
     {
         _poseFiles = poseFiles;
         _selection = selection;
+        _skeletons = skeletons;
     }
 
     public void DrawBrowsers()
@@ -75,7 +78,8 @@ public sealed class PoseFileInspectorSection
             _importBrowser.Open(_lastPath, path =>
             {
                 _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
-                _poseFiles.ImportPose(skeleton, path, BuildOptions());
+                _poseFiles.ImportPose(
+                    _skeletons.GetSkeletons(skeleton.Actor), path, BuildOptions());
             });
         }
         ImGui.SameLine(0f, 6f * s);
@@ -85,7 +89,8 @@ public sealed class PoseFileInspectorSection
             _exportBrowser.Open(_lastPath, path =>
             {
                 _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
-                _poseFiles.ExportPose(skeleton, path);
+                _poseFiles.ExportPose(
+                    _skeletons.GetSkeletons(skeleton.Actor), path);
             });
         }
         return h + 34f * s;
@@ -118,23 +123,30 @@ public sealed class PoseFileInspectorSection
 
     private PoseImportOptions BuildOptions()
     {
+        // Scopes: 0 Full (every slot), 1 Body and 2 Expression
+        // (Character-only), 3 Selected (the selected bones' exact slots via
+        // the slot-qualified filter).
+        bool full = _scope == 0, expression = _scope == 2, selected = _scope == 3;
         var options = new PoseImportOptions
         {
             ApplyRotation = _rotation,
             ApplyPosition = _position,
             ApplyScale = _scale,
-            ApplyBody = _scope is 0 or 1 or 3,
-            ApplyMainHand = _scope == 0,
-            ApplyOffHand = _scope == 0,
-            ApplyFace = _scope is 0 or 2 or 3,
+            ApplyBody = true,
+            AsExpression = expression,
+            ApplyFace = full || selected,
+            ApplyMainHand = full || selected,
+            ApplyOffHand = full || selected,
+            ApplyProp = full || selected,
+            ApplyOrnament = full || selected,
             ResetBeforeImport = _reset,
             FilterIncludesDescendants = _descendants,
         };
-        if (_scope == 3)
+        if (selected)
             options.BoneFilter = _selection.Selected
-                .Where(id => id is { Kind: SceneEntityKind.Bone })
-                .Select(id => id.Bone!.Value.CanonicalName)
-                .ToHashSet(StringComparer.Ordinal);
+                .Where(id => id is { Kind: SceneEntityKind.Bone, Bone: not null })
+                .Select(id => (id.Bone!.Value.Slot, id.Bone!.Value.CanonicalName))
+                .ToHashSet();
         return options;
     }
 }
