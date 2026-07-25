@@ -311,18 +311,8 @@ public static class AppShellView
             new[] { TablerIcon.ArrowsMove, TablerIcon.Rotate, TablerIcon.ArrowsDiagonal },
             vm.GizmoOperation, s, i => vm.OnGizmoOperation?.Invoke(i));
         x += 10f * s;
-        // Coordinate mode is a single icon toggle (Brio): the icon previews
-        // the mode a click switches TO — globe while in Local, atom while
-        // in World. No mode text.
-        bool inLocal = vm.GizmoSpace == 0;
-        IconButtonNamed(dl, new Vector2(x, min.Y + (h - 28f * s) / 2f),
-            inLocal ? "world" : "atom", false, s,
-            () => vm.OnGizmoSpace?.Invoke(inLocal ? 1 : 0));
-        if (ImGui.IsMouseHoveringRect(
-                new Vector2(x, min.Y + (h - 28f * s) / 2f),
-                new Vector2(x + 28f * s, min.Y + (h + 28f * s) / 2f)))
-            ImGui.SetTooltip(inLocal ? "Switch to World" : "Switch to Local");
-        x += 28f * s;
+        x = TextSeg(dl, new Vector2(x, min.Y + (h - 30f * s) / 2f),
+            new[] { "Local", "World" }, vm.GizmoSpace, s, i => vm.OnGizmoSpace?.Invoke(i));
         // pivot seg (Rotate + bone only; Parent disabled without a parent),
         // then symmetry and linked — kept in the toolbar so they stay
         // available while the window is collapsed.
