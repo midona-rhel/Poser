@@ -111,6 +111,10 @@ public sealed class CleanSceneLifecycle : IDisposable
         if (_gestures.ActiveGesture is { } gesture)
             _gestures.Cancel(gesture);
         _scene.Refresh(snapshot);
+        // Drop history patches whose targets went stale with this structural
+        // change (whole patch when any target is stale); patches touching
+        // only unaffected slots and actors survive.
+        _history.Reconcile(_scene.Contains);
     }
 
     /// <summary>

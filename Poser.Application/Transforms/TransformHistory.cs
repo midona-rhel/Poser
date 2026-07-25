@@ -59,6 +59,22 @@ public sealed class TransformHistory
         _undo.Add(patch);
     }
 
+    /// <summary>
+    /// Drops every patch touching a target that is no longer current. A
+    /// patch is removed whole when ANY of its targets is stale (its restore
+    /// could never succeed); patches whose targets all remain current
+    /// survive, so replacing one slot never discards history that involves
+    /// only unaffected slots or actors.
+    /// </summary>
+    public void Reconcile(Func<Poser.Domain.Identity.TransformTargetId, bool> isCurrent)
+    {
+        bool Stale(TransformPatch patch) =>
+            patch.Before.Any(state => !isCurrent(state.Target)) ||
+            patch.After.Any(state => !isCurrent(state.Target));
+        _undo.RemoveAll(patch => Stale(patch));
+        _redo.RemoveAll(patch => Stale(patch));
+    }
+
     public void Clear()
     {
         _undo.Clear();
