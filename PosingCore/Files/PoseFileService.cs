@@ -169,7 +169,7 @@ public class PoseFileService : IPoseFileService
             // interactive import passes reset: false). Reset only on explicit
             // request and only within the chosen scope.
             if (options.ResetBeforeImport)
-                ResetScope(bySlot, character, options);
+                ResetScope(bySlot, character, poseFile, options);
 
             int bonesApplied = 0;
 
@@ -245,14 +245,17 @@ public class PoseFileService : IPoseFileService
         }
     }
 
-    /// <summary>Reset-before-import touches EXACTLY the imported scope, bone
-    /// by bone: Expression resets applicable face bones but never j_kao;
-    /// Body (face off) resets only non-face bones; Full resets everything;
-    /// Selected follows the slot-qualified filter; auxiliary slots reset
-    /// only when their collection would apply. Unrelated edits survive.</summary>
+    /// <summary>Reset-before-import touches EXACTLY what the importer could
+    /// apply, bone by bone: Expression resets applicable face bones but
+    /// never j_kao; Body (face off) resets only non-face bones; Full resets
+    /// everything present in the file; Selected follows the slot-qualified
+    /// filter. A slot resets ONLY under the same collection-present/enabled
+    /// gate the application loop uses — a selected auxiliary bone is never
+    /// erased when nothing from its slot can apply.</summary>
     private void ResetScope(
         IReadOnlyDictionary<PoseSlot, ISkeleton> bySlot,
         ISkeleton? character,
+        PoseFile poseFile,
         PoseImportOptions options)
     {
         bool InCharacterScope(IBone bone)
@@ -266,7 +269,7 @@ public class PoseFileService : IPoseFileService
             return true;
         }
 
-        if (options.ApplyBody && character != null)
+        if (options.ApplyBody && character != null && poseFile.Bones.Count > 0)
         {
             foreach (var bone in character.Bones.Where(InCharacterScope))
                 _bonePosingService.ResetBone(bone);
@@ -276,7 +279,11 @@ public class PoseFileService : IPoseFileService
             return;
         foreach (var (slot, skeleton) in bySlot)
         {
-            if (slot == PoseSlot.Character || !SlotEnabled(slot, options))
+            // Same gate as application: enabled AND its collection is
+            // actually present in the file.
+            if (slot == PoseSlot.Character ||
+                !SlotEnabled(slot, options) ||
+                CollectionFor(poseFile, slot) is not { Count: > 0 })
                 continue;
             foreach (var bone in skeleton.Bones.Where(bone => PassesBoneFilter(bone, options)))
                 _bonePosingService.ResetBone(bone);
