@@ -87,6 +87,16 @@ public class GizmoOverlayWindow : Window
     // Drag state frozen at Begin. The engaged handle's mapping (axis,
     // plane, tangent) never re-derives mid-drag; presentation may follow
     // the camera and, for translate, the moving target.
+    //
+    // The projection is part of that frozen mapping. Translate and Scale
+    // convert mouse position into a world point by intersecting the view
+    // ray with the drag plane, so a LIVE camera would move that
+    // intersection while the mouse is still — orbiting or panning
+    // mid-drag would inject a delta the user never asked for. The frozen
+    // copy keeps one mouse position meaning one world point for the whole
+    // gesture; the camera still moves the drawn handles, because
+    // presentation is rebuilt from the live camera every frame.
+    private WorldGizmoProjection? _dragProjection;
     private Vector3 _dragPivotWorld;
     private Quaternion _dragRingFrame = Quaternion.Identity;
     private Vector3 _dragAxisWorld;
@@ -265,6 +275,7 @@ public class GizmoOverlayWindow : Window
     {
         _gesture = null;
         _gestureTargetType = GizmoTargetType.None;
+        _dragProjection = null;
         _ringAngle = 0f;
         _ringDistance = 0f;
         _dragAccumWorld = Vector3.Zero;
@@ -441,8 +452,9 @@ public class GizmoOverlayWindow : Window
                 translateFrame, scaleFrame, ringFrame, mouse);
         }
 
+        // The drag consumes the FROZEN projection, never this frame's.
         if (_gesture is { } active && ImGui.IsMouseDown(ImGuiMouseButton.Left))
-            UpdateGesture(active, projection, io, mouse);
+            UpdateGesture(active, _dragProjection, io, mouse);
 
         // Commit exactly once on release.
         if (_gesture is { } completed && !ImGui.IsMouseDown(ImGuiMouseButton.Left))
@@ -611,6 +623,7 @@ public class GizmoOverlayWindow : Window
         };
         _gestureTargetType = targetType;
 
+        _dragProjection = projection;
         _dragInvModel = invModel;
         _dragPivotWorld = pivotWorld;
         _dragRingFrame = ringFrame;
@@ -634,8 +647,10 @@ public class GizmoOverlayWindow : Window
     /// One frame of the engaged handle's drag: every kind accumulates
     /// modifier-scaled increments against its frozen mapping and dispatches
     /// the TOTAL delta from the frozen Start — no frame feeds a result back
-    /// as the next baseline. Ray handles skip the frame (holding the last
-    /// value) when the pivot is momentarily unprojectable.
+    /// as the next baseline. <paramref name="projection"/> is the camera
+    /// frozen at Begin, so mouse-to-world conversion is independent of
+    /// camera movement during the gesture; a degenerate ray holds the last
+    /// value rather than jumping.
     /// </summary>
     private void UpdateGesture(
         GizmoGesture gesture,
