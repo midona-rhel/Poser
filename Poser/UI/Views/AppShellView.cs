@@ -816,6 +816,20 @@ public static class AppShellView
         return changed;
     }
 
+    /// <summary>
+    /// One axis well with its letter and axis color — the same cell the
+    /// transform rows use, exported so a form row can lay several across
+    /// one control region without ScrubRowDrag's own label column.
+    /// </summary>
+    public static bool DragAxisWell(ImDrawListPtr dl, Vector2 pos, float width, string id, string axis,
+        ref float value, Vector4 color, float perPixel, string fmt, float s, out bool released)
+    {
+        bool wasReleased = false;
+        bool changed = DragAxis(dl, pos, width, id, axis, ref value, color, perPixel, fmt, s, ref wasReleased);
+        released = wasReleased;
+        return changed;
+    }
+
     /// <summary>Cancels an in-progress numeric axis edit, for example when selection changes.</summary>
     public static void CancelAxisEdit()
     {

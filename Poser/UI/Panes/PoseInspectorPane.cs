@@ -470,6 +470,9 @@ public class PoseInspectorPane
                 {
                     cursor.Y += InspectorLayout.BodyGap * s;
                     cursor.Y += DrawIk(cursor, width, s);
+                    // The same trailing breath every other open section
+                    // gets; IK previously ran flush into the next header.
+                    cursor.Y += 12f * s;
                 }
             }
 
@@ -1085,6 +1088,14 @@ public class PoseInspectorPane
     // scrub; the runtime keeps the normalized configuration.
     private Vector3? _ikAxisScratch;
 
+    /// <summary>
+    /// The IK section on the ONE shared form-row geometry
+    /// (InspectorLayout.Form*): every row is FormRowHeight tall with the
+    /// 94px label column, controls sit at the shared per-control origins
+    /// and are sized from the passed width — never ambient available
+    /// width — and slider rows reserve the one right-aligned value
+    /// column. Returns the exact consumed height; nothing overflows.
+    /// </summary>
     private float DrawIk(Vector2 cursor, float width, float s)
     {
         // The selected bone's chain, read and written through the one
@@ -1095,6 +1106,8 @@ public class PoseInspectorPane
         var ikTarget = TransformTargetId.ForBone(boneId);
         var config = _ikPort.Get(ikTarget);
         float h = 0f;
+        float controlX = InspectorLayout.FormControlX(cursor.X, s);
+        float controlW = InspectorLayout.FormControlWidth(width, s);
 
         void Apply(Domain.Posing.IkChainConfig next)
         {
@@ -1102,18 +1115,21 @@ public class PoseInspectorPane
                 config = _ikPort.Get(ikTarget);
         }
 
-        // Row 1: Live IK switch, Reset Defaults right-aligned.
+        // Header/action row: Live IK plus right-aligned Reset defaults,
+        // on the same outer geometry as every form row beneath it.
         bool eligible = config != null;
         bool armed = config?.Enabled == true;
-        ViewText.Label(cursor + new Vector2(0f, 7f) * s, "Live IK", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
-        ImGui.SetCursorScreenPos(cursor + new Vector2(94f, 4f) * s);
+        InspectorLayout.FormLabel(cursor, "Live IK", s);
+        ImGui.SetCursorScreenPos(new Vector2(
+            controlX, cursor.Y + InspectorLayout.FormSwitchY * s));
         if (Crystarium.Switch("##pose-ik", ref armed, disabled: !eligible) && config != null)
             Apply(config with { Enabled = armed });
         if (eligible)
         {
             var resetSize = Crystarium.MeasureButton("Reset defaults", Cls.Compact);
             ImGui.SetCursorScreenPos(new Vector2(
-                cursor.X + width - resetSize.X, cursor.Y + 2f * s));
+                cursor.X + width - resetSize.X,
+                cursor.Y + InspectorLayout.FormButtonY * s));
             if (Crystarium.Button("Reset defaults", new ButtonProps
                 {
                     Id = "ik-reset-defaults",
@@ -1125,37 +1141,38 @@ public class PoseInspectorPane
                 config = _ikPort.Get(ikTarget);
             }
         }
-        h += 30f * s;
+        h += InspectorLayout.FormRowHeight * s;
         if (config == null)
         {
-            // One quiet unavailable row.
+            // One quiet unavailable row, the same height it reports.
             if (ImGui.IsMouseHoveringRect(
-                    cursor, cursor + new Vector2(width, 28f * s)))
+                    cursor, cursor + new Vector2(width, InspectorLayout.FormRowHeight * s)))
                 ImGui.SetTooltip("This bone can't use IK");
             return h;
         }
 
         void RowLabel(string label) =>
-            ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 6f * s),
-                label, 11f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
+            InspectorLayout.FormLabel(new Vector2(cursor.X, cursor.Y + h), label, s);
 
         bool SliderRow(string id, string label, ref float value, float min, float max, string fmt)
         {
             RowLabel(label);
             ImGui.SetCursorScreenPos(new Vector2(
-                cursor.X + 94f * s, cursor.Y + h + 4f * s));
+                controlX, cursor.Y + h + InspectorLayout.FormSliderY * s));
             bool moved = Crystarium.Slider(id, ref value, min, max, new SliderProps
             {
                 Style = new SliderStyle
                 {
-                    Width = Sizing.Fixed(width / s - 94f - 44f),
+                    Width = Sizing.Fixed(controlW - InspectorLayout.FormValueColumnWidth),
                 },
             });
+            string readout = string.Format(fmt, value);
             ViewText.Label(new Vector2(
-                    cursor.X + width - 36f * s, cursor.Y + h + 6f * s),
-                string.Format(fmt, value), 11f, FontWeight.Regular,
+                    cursor.X + width - ViewText.Measure(readout, 11f, mono: true),
+                    cursor.Y + h + InspectorLayout.FormLabelY * s),
+                readout, 11f, FontWeight.Regular,
                 InspectorLayout.LabelColor, mono: true);
-            h += 28f * s;
+            h += InspectorLayout.FormRowHeight * s;
             return moved;
         }
 
@@ -1163,42 +1180,49 @@ public class PoseInspectorPane
         {
             RowLabel(label);
             ImGui.SetCursorScreenPos(new Vector2(
-                cursor.X + 94f * s, cursor.Y + h + 3f * s));
+                controlX, cursor.Y + h + InspectorLayout.FormSwitchY * s));
             next = value;
             bool moved = Crystarium.Switch(id, ref next);
-            h += 26f * s;
+            h += InspectorLayout.FormRowHeight * s;
             return moved;
         }
 
-        // Solver: the shared compact combo. Two Joint is offered only when
-        // its mandatory chain resolves.
+        bool DropdownRow(string id, string label, string[] items, ref int index)
+        {
+            RowLabel(label);
+            ImGui.SetCursorScreenPos(new Vector2(
+                controlX, cursor.Y + h + InspectorLayout.FormTallControlY * s));
+            // The control region's width, explicitly: ambient available
+            // width overshoots the rail into the scrollbar gutter.
+            bool moved = Crystarium.Dropdown(id, items, ref index, new DropdownProps
+            {
+                Style = new DropdownStyle { Width = Sizing.Fixed(controlW) },
+            });
+            h += InspectorLayout.FormRowHeight * s;
+            return moved;
+        }
+
+        // Solver: Two Joint is offered only when its mandatory chain
+        // resolves.
         bool twoJointAvailable = _ikPort.IsTwoJointAvailable(ikTarget);
-        RowLabel("Solver");
-        ImGui.SetCursorScreenPos(new Vector2(
-            cursor.X + 94f * s, cursor.Y + h + 2f * s));
         var solverItems = twoJointAvailable
             ? new[] { "Two Joint", "CCD" }
             : new[] { "CCD" };
         int solverIndex = config.Solver == Domain.Posing.IkSolver.Ccd
             ? solverItems.Length - 1
             : 0;
-        if (Crystarium.Dropdown("##ik-solver", solverItems, ref solverIndex))
+        if (DropdownRow("##ik-solver", "Solver", solverItems, ref solverIndex))
         {
             var solver = twoJointAvailable && solverIndex == 0
                 ? Domain.Posing.IkSolver.TwoJoint
                 : Domain.Posing.IkSolver.Ccd;
             Apply(config with { Solver = solver });
         }
-        h += 30f * s;
 
         if (config.Solver == Domain.Posing.IkSolver.TwoJoint)
         {
-            // Target mode.
-            RowLabel("Target");
-            ImGui.SetCursorScreenPos(new Vector2(
-                cursor.X + 94f * s, cursor.Y + h + 2f * s));
             int modeIndex = config.TargetMode == Domain.Posing.IkTargetMode.Fixed ? 1 : 0;
-            if (Crystarium.Dropdown("##ik-target",
+            if (DropdownRow("##ik-target", "Target",
                     new[] { "Relative", "Fixed" }, ref modeIndex))
                 Apply(config with
                 {
@@ -1206,7 +1230,6 @@ public class PoseInspectorPane
                         ? Domain.Posing.IkTargetMode.Fixed
                         : Domain.Posing.IkTargetMode.Relative,
                 });
-            h += 30f * s;
 
             if (SwitchRow("##ik-constraints", "Constraints",
                     config.EnforceConstraints, out var constraints))
@@ -1244,18 +1267,29 @@ public class PoseInspectorPane
                     HingeMinDegrees = MathF.Min(hingeMax, config.HingeMinDegrees),
                 });
 
-            // Hinge axis X/Y/Z wells. The port rejects a transiently zero
-            // vector, while every valid intermediate value updates live.
+            // Hinge axis: ONE form row — label left, the X/Y/Z wells laid
+            // across the control region with the standard gaps. The port
+            // rejects a transiently zero vector, while every valid
+            // intermediate value updates live.
+            RowLabel("Hinge axis");
             var axis = _ikAxisScratch ?? config.HingeAxis;
-            h += RailScrub(dl, new Vector2(cursor.X, cursor.Y + h), width,
-                "ik-axis", "Hinge axis", ref axis, 0.005f, "0.00", s,
-                out var axisChanged, out var axisReleased);
+            float wellW = (controlW * s - 2f * InspectorLayout.FormAxisGap * s) / 3f;
+            float wellY = cursor.Y + h + InspectorLayout.FormTallControlY * s;
+            float wellStep = wellW + InspectorLayout.FormAxisGap * s;
+            bool axisChanged = false;
+            axisChanged |= AppShellView.DragAxisWell(dl, new Vector2(controlX, wellY), wellW,
+                "ik-axis-x", "X", ref axis.X, Theme.Palette.AxisX, 0.005f, "0.00", s, out var releasedX);
+            axisChanged |= AppShellView.DragAxisWell(dl, new Vector2(controlX + wellStep, wellY), wellW,
+                "ik-axis-y", "Y", ref axis.Y, Theme.Palette.AxisY, 0.005f, "0.00", s, out var releasedY);
+            axisChanged |= AppShellView.DragAxisWell(dl, new Vector2(controlX + wellStep * 2f, wellY), wellW,
+                "ik-axis-z", "Z", ref axis.Z, Theme.Palette.AxisZ, 0.005f, "0.00", s, out var releasedZ);
+            h += InspectorLayout.FormRowHeight * s;
             if (axisChanged)
             {
                 _ikAxisScratch = axis;
                 Apply(config with { HingeAxis = axis });
             }
-            if (axisReleased)
+            if (releasedX || releasedY || releasedZ)
             {
                 _ikAxisScratch = null;
             }
