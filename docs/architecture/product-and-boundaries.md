@@ -8,10 +8,15 @@ in the active UI or dependency closure.
   selection (tree, maps, matrix, 3D, overlay); local/world gestures with
   Self/Parent pivot, symmetry, linked bones, IK; reset/mirror/flip/stash/
   import/export; one undo journal; expression, gaze, animation/physics
-  freeze; settings; the live harness. Animation may run while posing.
-- Deferred (no dormant UI or registrations): appearance, animation
+  freeze; settings; the live harness; runtime appearance (opacity,
+  whole-model tint, granular wetness — [features/runtime-appearance.md](
+  ../features/runtime-appearance.md)) with its narrow OUTBOUND
+  Open-in-Glamourer navigation, the one allowed IPC use. Animation may
+  run while posing.
+- Deferred (no dormant UI or registrations): animation
   authoring, cameras, lights, environment, world objects, references,
-  libraries/projects, autosave, status/VFX, IPC/web API.
+  libraries/projects, autosave, status/VFX, and any general IPC/web API
+  beyond the outbound Glamourer navigation above.
 - Layers: Domain → nothing; Application → Domain; Game → Domain+Application+
   PosingCore; UI → rendering only; Poser composes. Domain/Application never
   touch Dalamud/ImGui/pointers; addresses never leave `Poser.Game`; UI owns
