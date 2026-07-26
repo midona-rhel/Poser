@@ -124,11 +124,7 @@ public sealed class AnimationPane
 
         if (TargetActor() is not { } actor)
         {
-            // Word-for-word the Pose inspector's empty state: the two tabs
-            // ask for the same thing, so they say the same thing.
-            ViewText.Label(origin + new Vector2(0f, 8f) * s,
-                "Select an actor or bone in the sidebar.", 12f,
-                FontWeight.Regular, InspectorLayout.HintColor);
+            InspectorLayout.EmptyState(origin, s);
             return;
         }
 

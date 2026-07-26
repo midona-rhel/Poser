@@ -18,6 +18,13 @@ internal static class InspectorLayout
     public static readonly Vector4 HintColor = new(1f, 1f, 1f, 0.4f);
     public static readonly Vector4 ValueColor = new(1f, 1f, 1f, 0.9f);
 
+    /// <summary>THE no-selection line, one wording and one position, so
+    /// switching tabs can never make it move or reword.</summary>
+    public static void EmptyState(Vector2 origin, float s) =>
+        ViewText.Label(origin + new Vector2(0f, 8f) * s,
+            "Select an actor or bone in the sidebar.", 12f,
+            FontWeight.Regular, HintColor);
+
     public static float ClampContentWidth(float width, float s)
         => MathF.Min(width, MaximumContentWidth * s);
 

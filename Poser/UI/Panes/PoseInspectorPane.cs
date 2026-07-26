@@ -285,8 +285,7 @@ public class PoseInspectorPane
         }
         else
         {
-            ViewText.Label(cursor + new Vector2(0f, 8f) * s, "Select an actor or bone in the sidebar.", 12f,
-                FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
+            InspectorLayout.EmptyState(cursor, s);
         }
         ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
         _poseFileSection.DrawBrowsers();

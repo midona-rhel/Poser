@@ -709,14 +709,22 @@ public static class AppShellView
         // Toolbar and content share one 12px horizontal inset. The viewport
         // still reaches the outer-right glass edge, and content width always
         // excludes the 12px scrollbar gutter so overflow cannot cause reflow.
-        float contentTopGap = vm.ContentOwnsViewport ? 0f : 4f * s;
-        var childOrigin = new Vector2(min.X, toolbarBottom + contentTopGap);
-        float contentWidth = max.X - min.X - MainHorizontalPadding * 2f * s;
-        ImGui.SetCursorScreenPos(childOrigin);
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+        // ONE content origin for every tab. The old 4px gap applied only
+        // to tabs that scroll in this child, so the same empty-state line
+        // sat 4px lower on one tab than the other and jumped on switch.
+        // Panes own their breathing room; the shell owns the origin.
+        var childOrigin = new Vector2(min.X, toolbarBottom);
         var childSize = new Vector2(
             max.X - min.X - 1f * s,
-            max.Y - toolbarBottom - contentTopGap - 1f * s);
+            max.Y - toolbarBottom - 1f * s);
+        // The inset is measured from the CHILD, not the panel: the child is
+        // 1px narrower than the panel (the glass border pixel), and the
+        // scrollbar hugs the child's right edge. Deriving content width
+        // from the panel put the content's right edge 1px INTO the
+        // scrollbar band, so flush-right controls overlapped the thumb.
+        float contentWidth = childSize.X - MainHorizontalPadding * 2f * s;
+        ImGui.SetCursorScreenPos(childOrigin);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         var childFlags = vm.ContentOwnsViewport
             ? ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse
             : ImGuiWindowFlags.None;
