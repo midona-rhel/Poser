@@ -187,8 +187,24 @@ public class GizmoOverlayWindow : Window
         var targetType = GetGizmoTargetType();
         ReconcileInteractionLifecycle(targetType);
         if (targetType != GizmoTargetType.None)
-            DrawWorldGizmo(targetType);
+            DrawWorldGizmo(targetType, PointerOverInterface());
     }
+
+    /// <summary>
+    /// True when a real interactive surface — the main window, settings,
+    /// any popup/dropdown/modal, the bone hover list — owns the pointer.
+    /// The overlay is NoInputs, so ImGui's hover test never resolves to it
+    /// and any hovered window is by definition something in front of the
+    /// game that must own the click instead of the gizmo. An open popup
+    /// blocks regardless of pointer position because it is modal to the
+    /// click that dismisses it.
+    /// </summary>
+    private static bool PointerOverInterface() =>
+        ImGui.IsWindowHovered(
+            ImGuiHoveredFlags.AnyWindow |
+            ImGuiHoveredFlags.AllowWhenBlockedByPopup |
+            ImGuiHoveredFlags.AllowWhenBlockedByActiveItem) ||
+        ImGui.IsPopupOpen(string.Empty, ImGuiPopupFlags.AnyPopup);
 
     private GizmoTargetType GetGizmoTargetType()
     {
@@ -265,7 +281,7 @@ public class GizmoOverlayWindow : Window
     /// through the clean gesture lifecycle. Actor targets use an identity
     /// model matrix (their model space IS world space).
     /// </summary>
-    private void DrawWorldGizmo(GizmoTargetType targetType)
+    private void DrawWorldGizmo(GizmoTargetType targetType, bool occluded)
     {
         bool isBone = targetType == GizmoTargetType.Bone;
         if (EffectiveSelection() is not { } selection)
@@ -387,20 +403,29 @@ public class GizmoOverlayWindow : Window
         var io = ImGui.GetIO();
         var mouse = io.MousePos;
         WorldHandleHit? hover = null;
-        if (gesture == null && layout != null)
+        // Interface occlusion suppresses hover and Begin, never an active
+        // drag: once engaged, the handle keeps the pointer until release
+        // even if the cursor crosses a window.
+        if (gesture == null && layout != null && !occluded)
             hover = WorldGizmo.HitTest(layout, mouse, 8f * uiScale);
 
-        if (layout != null)
+        // An occluded gizmo does not draw either — nothing of the overlay
+        // paints over the window that owns the pointer.
+        if (layout != null && (!occluded || gesture != null))
             WorldGizmo.Draw(
                 ImGui.GetWindowDrawList(), layout,
                 hover?.Handle, gesture?.Handle);
 
-        // The overlay window is NoInputs; claim the mouse from the game
-        // while the pointer engages a handle, and hold shared ownership so
-        // selection surfaces ignore the click and its release frame.
+        // The overlay window is NoInputs, so it claims the mouse from the
+        // game itself. This sets the CURRENT frame's capture flag, which
+        // Dalamud reads after the frame is built — the click that starts a
+        // drag is owned on the same frame it arrives, with no one-frame
+        // window in which the game also sees it. GizmoPointerOwnership
+        // additionally stops Poser's own selection surfaces from treating
+        // the click, or its release frame, as a pick.
         if (hover != null || gesture != null)
         {
-            ImGui.SetNextFrameWantCaptureMouse(true);
+            io.WantCaptureMouse = true;
             GizmoPointerOwnership.Hold();
         }
 
