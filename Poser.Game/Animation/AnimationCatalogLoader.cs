@@ -19,6 +19,12 @@ namespace Poser.Game.Animation;
 /// The admission rules are the filter: an entry only exists if it has a
 /// name, a non-zero timeline, and a slot the runtime is willing to write.
 /// Nothing that reaches the UI can therefore fail after selection.
+///
+/// The slot comes from the sheet's STANCE column, as Ktisis derives it in
+/// all three entry types. The sheet also has a column literally named
+/// Slot, and it is the wrong one: deriving from it left every facial
+/// timeline unclassified, so the Expression picker found nothing and a
+/// facial-layer pick offered timelines the sequencer then ignored.
 /// </summary>
 public sealed class AnimationCatalogLoader
 {
@@ -127,13 +133,13 @@ public sealed class AnimationCatalogLoader
                 continue;
 
             var row = action.AnimationEnd.Value;
-            if (!AnimationSlots.IsKnown(row.Slot))
+            if (!AnimationSlots.IsKnown(row.Stance))
                 continue;
             entries.Add(new TimelineEntry(
                 action.AnimationEnd.RowId,
                 name,
                 AnimationKind.Action,
-                (AnimationSlot)row.Slot,
+                (AnimationSlot)row.Stance,
                 action.Icon));
         }
     }
@@ -146,13 +152,13 @@ public sealed class AnimationCatalogLoader
             var key = timeline.Key.ExtractText();
             if (string.IsNullOrWhiteSpace(key))
                 continue;
-            if (!AnimationSlots.IsKnown(timeline.Slot))
+            if (!AnimationSlots.IsKnown(timeline.Stance))
                 continue;
             entries.Add(new TimelineEntry(
                 timeline.RowId,
                 key,
                 AnimationKind.RawTimeline,
-                (AnimationSlot)timeline.Slot));
+                (AnimationSlot)timeline.Stance));
         }
     }
 
@@ -161,9 +167,9 @@ public sealed class AnimationCatalogLoader
     {
         slot = AnimationSlot.Base;
         var row = timelines.GetRowOrDefault(rowId);
-        if (row == null || !AnimationSlots.IsKnown(row.Value.Slot))
+        if (row == null || !AnimationSlots.IsKnown(row.Value.Stance))
             return false;
-        slot = (AnimationSlot)row.Value.Slot;
+        slot = (AnimationSlot)row.Value.Stance;
         return true;
     }
 }
