@@ -78,9 +78,15 @@
   "Add layer…", and continuity is the loop system — the transport Loop
   switch plus per-layer loop switches on the Time rows, which are ALWAYS
   present (disabled when nothing plays) so the switches do not vanish
-  with the animation. Speed controls are scrubbers
-  with a live readout: overall −5..10 with 0 and 1 notched, per-layer 0..2
-  with 1 notched. The pose cycler disables itself while a picked
+  with the animation. Speed and time lines are
+  Ktisis' number-plus-slider pairing in this product's vocabulary: the
+  transform drag well (drag, Ctrl fine / Shift coarse, double-click to
+  type) beside the ONE flat Slider — the Scrubber component and its
+  second look are deleted; the Slider owns opt-in readout and
+  non-snapping track notches (overall speed marks 0 and 1 in −5..10,
+  layer speed marks 1 in 0..2). The time well commits through the same
+  scrub gesture as its slider and both disable together when nothing
+  plays. The pose cycler disables itself while a picked
   animation plays or the family has a single pose. Parts/Overlay and
   arbitrary Havok controls live
   under collapsed Advanced disclosures — empty engine slots are not the

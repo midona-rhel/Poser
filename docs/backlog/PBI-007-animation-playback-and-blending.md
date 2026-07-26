@@ -116,8 +116,9 @@ the engine's slot array. It is not a slot debugger and not a keyframe editor.
   available, so the minimum width equals Pose-with-inspector and switching
   tabs never resizes the window.
 - Transport: current animation (opens the picker), play/pause, replay,
-  restore; speed as a scrubber with a live readout, 0 and 1 notched, and a
-  Reset; a compact glass scene-actions menu. The status line renders
+  restore; speed as a drag-well number paired with the shared flat
+  slider (0 and 1 notched) and a Reset; a compact glass scene-actions
+  menu. The status line renders
   directly under the transport so failures are visible without scrolling.
 - Stance: a combo whose trigger shows the TRUE family (Battle, Umbrella,
   Accessory included) and fires on re-pick, so Idle is reachable from a
@@ -126,13 +127,15 @@ the engine's slot array. It is not a slot debugger and not a keyframe editor.
   pick releases a latched base animation first, or the latch re-drives it
   within a frame. Disabled when the stance-transition functions are missing.
 - Layers: compact rows for Full body, Upper body, Facial and Additive —
-  name opens the picker for that destination, then pause, speed (scrubber,
-  0..2, 1 notched), reset (speed only). There is no separate Blend row: a
+  name opens the picker for that destination, then pause, speed
+  (drag-well number + slider, 0..2, 1 notched), reset (speed only). There is no separate Blend row: a
   Full body pick IS the one-shot-over-base operation. An
   inactive optional layer offers "Add layer" rather than an empty slot.
   Parts 1–4 and Overlay live under one collapsed Advanced disclosure.
-- Scrub: inline time rows under the Full body and Upper body layers;
-  arbitrary Havok partial/control scrubbing under Advanced.
+- Scrub: inline time rows under the Full body and Upper body layers —
+  drag-well time + slider + per-layer loop switch + duration readout,
+  always present and disabled together when nothing plays; arbitrary
+  Havok partial/control scrubbing under Advanced.
 - Face and lips are separate catalogs: the expression is HELD (played, then
   the facial layer pinned at 0) with preview/release/apply, and
   lips enumerated from the known speech timelines rather than searched.
