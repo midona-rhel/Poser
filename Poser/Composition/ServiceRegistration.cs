@@ -100,6 +100,8 @@ internal static class ServiceRegistration
         services.AddSingleton<IAnimationRuntimePort>(
             sp => sp.GetRequiredService<Game.Animation.AnimationRuntimePort>());
         services.AddSingleton<AnimationSession>();
+        services.AddSingleton<AnimationCatalog>();
+        services.AddSingleton<Game.Animation.AnimationCatalogLoader>();
         services.AddSingleton<CleanSceneLifecycle>();
         services.AddSingleton<IEditorState, EditorState>();
         return services;

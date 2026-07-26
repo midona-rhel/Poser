@@ -148,6 +148,49 @@ public sealed class AnimationSession
             : AnimationResult.Fail(result.Detail ?? "Base restore failed.");
     }
 
+    /// <summary>
+    /// Plays a catalog entry the way the references do, choosing the
+    /// native route from the entry rather than from a UI flag:
+    ///
+    /// Base latches the timeline so the game re-drives it as the actor's
+    /// idle; Blend hands the timeline to the sequencer, which picks the
+    /// slot and performs the engine's own blend. An emote asked to play
+    /// from the start goes through the game's emote entry point, the only
+    /// route that plays intro-then-loop; anything else, and any emote
+    /// that has no intro, falls back to the sequencer.
+    ///
+    /// Force loop is applied last so it wraps whichever route ran.
+    /// </summary>
+    public AnimationResult PlayEntry(
+        ActorId actor, TimelineEntry entry, bool asBase, bool interrupt,
+        bool playFromStart, bool forceLoop)
+    {
+        var timeline = (ushort)entry.TimelineId;
+        AnimationResult result;
+
+        if (asBase)
+        {
+            result = PlayBase(actor, timeline, interrupt);
+        }
+        else if (playFromStart && entry.CanPlayFromStart)
+        {
+            result = PlayEmote(actor, entry.EmoteId);
+            if (!result.Success)
+                result = Blend(actor, timeline);
+        }
+        else
+        {
+            result = Blend(actor, timeline);
+        }
+
+        if (!result.Success)
+            return result;
+
+        return forceLoop
+            ? SetForceLoop(actor, timeline)
+            : AnimationResult.Ok();
+    }
+
     public AnimationResult SetForceLoop(ActorId actor, ushort timeline)
     {
         var result = _port.SetForceLoop(actor, timeline);
