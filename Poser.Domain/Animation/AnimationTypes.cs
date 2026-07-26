@@ -260,21 +260,15 @@ public sealed record AnimationOverrides
 }
 
 /// <summary>
-/// Selection state the Animation tab keeps per actor: what the user picked,
-/// as distinct from what is applied. Session-only — never a pose layer,
-/// history entry, or file payload.
+/// Playback options the Animation tab keeps per actor, so switching actors
+/// cannot carry one actor's choices onto another. Session-only — never a
+/// pose layer, history entry, or file payload.
+///
+/// Search state is deliberately NOT here: it belongs to the act of
+/// picking, lives in the picker, and is cleared each time it opens.
 /// </summary>
 public sealed record AnimationSelection
 {
-    public string Search { get; init; } = string.Empty;
-    public AnimationKind Kind { get; init; } = AnimationKind.Emote;
-    public AnimationSlot? SlotFilter { get; init; }
-
-    /// <summary>When set, a catalog pick replaces THAT slot's timeline
-    /// instead of playing as base or blend. Armed by a slot row's search
-    /// button; cleared by choosing Base/Blend again.</summary>
-    public AnimationSlot? TargetSlot { get; init; }
-
     public bool PlayAsBase { get; init; } = true;
     public bool Interrupt { get; init; } = true;
     public bool PlayFromStart { get; init; } = true;
