@@ -5,25 +5,45 @@
   solely in `AnimationRuntimePort` — the speed detours need an address index,
   so it is DERIVED from the stable-id table and rebuilt on every override
   change and structural scene change.
-- Restoration is per item, exactly once (the entry is removed as it restores):
-  base → the mode/param/timeline captured before the FIRST override; speed and
-  slot speeds → stop enforcing, so the game's own recalculation wins again;
-  lips → the captured timeline; loop → 0; position lock → released; physics →
-  released by the last owner. Runs on Reset Animation, Reset All, GPose exit,
-  and disposal. An actor that no longer resolves is dropped, not written.
+- Restoration is per item, from a capture taken once before the first change
+  of that kind: base → captured mode/param/timeline; speed and slot speeds →
+  stop enforcing, so the game's own recalculation wins again; slot timelines →
+  the captured incoming timeline; lips → the captured timeline (NOT 0, which
+  only means "no speech timeline"); stance/pose and weapon → their captured
+  values; position lock → released; physics → released by the last owner.
+  Each aspect is released only when its own restore succeeded, so a failure on
+  a live actor stays owned and the next Reset retries it. An actor that no
+  longer resolves is dropped, not written.
 - Speed is enforced, not written once: the game recalculates every frame, so
   the overall detour stomps its result and the slot detour substitutes the
   argument. Range −5..10, normal 1; reset drops the override.
-- Blending is the game's sequencer (`PlayTimeline`) — there is no blend weight
-  anywhere. Base latches `BaseOverride` + AnimLock; loop uses the game's own
-  intro/loop entry point; only an emote with an intro takes the emote path.
+- Blending is the game's sequencer (`PlayTimeline`) — no blend weight anywhere.
+  Base latches `BaseOverride` + AnimLock. Stance runs Ktisis' full transition
+  (cancel timeline → set emote mode → write pose type/index → drive the idle or
+  emote), preserving draw and camera offsets across a sit-chair change. Weapon
+  plays the draw/sheathe timeline **and** sets the weapon-state flag, which the
+  game does not update for a forced timeline.
+- **Force loop is not implemented.** The game's forced-timeline field is not
+  mapped for the current client and could not be proven; approximating it with
+  `BaseOverride` would collapse Blend into Base. `SupportsForceLoop` is false,
+  the call fails explicitly, and no control is offered.
 - Catalog (Emote / Action / Expression / Raw) admits an entry only with a
   name, non-zero timeline, and known slot, so nothing fails after selection.
-  Search matches name or a bare id; kind and slot filters compose.
+  Search matches name or a bare id; kind and slot filters compose. Selection,
+  filters and play mode are per actor and never leak between actors.
 - Slots are the game's indices; 4–6 are absent from the enum, not filtered.
-  Scrubbing is a gesture: freeze, captured duration and skeleton token at
-  Begin, release leaves the actor paused on that frame, and a token mismatch
-  cancels rather than writing through a replaced skeleton.
+  Every slot has search/play, pause/resume, speed and reset. Scrubbing is a
+  gesture: freeze, captured duration and skeleton token at Begin, release
+  leaves the actor paused on that frame, and a token mismatch cancels rather
+  than writing through a replaced skeleton. Friendly Full/Upper scrubbing
+  resolves its control by slot index across partials, not by list position;
+  the scrub carries its actor so a value cannot enter another's gesture.
 - Animation state is session-only — never history, pose-file payload, or a
-  pose layer. The exception is **Apply to face pose**, which bakes the live
-  face into manual bone values as one undoable edit and touches nothing else.
+  pose layer. The exception is **Apply face to pose**: a two-phase bake that
+  captures the visible face, stops only the facial slot, lets the baseline
+  settle, then applies the capture against the settled baseline as one
+  undoable edit. Expression and gaze appear in both phases and cancel.
+- UI: Pose and Animation share one window width — the right column is always
+  spent, on the Pose rail or on Animation content — so navigating never
+  resizes the frame. Crystarium controls ignore `ImGui.SetNextItemWidth`;
+  widths come from `Style.Width` in unscaled units.
