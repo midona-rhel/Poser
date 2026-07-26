@@ -160,6 +160,7 @@ public class MainWindow : Window
         // thing will appear (approved shell mockup M1 §4), so the ACTORS
         // header owns it rather than a separate spawn menu.
         _vm.OnSectionPlus = _ => _addOpenRequested = true;
+        _vm.OnSpawn = () => _addOpenRequested = true;
         _vm.OnRowClicked = OnRowClicked;
         _vm.OnRowExpandToggled = row =>
         {
@@ -253,11 +254,6 @@ public class MainWindow : Window
     private float _lastWidth = DefaultWidth;
     private float _lastHeight = DefaultHeight;
 
-    /// <summary>The Pose rail is the only surface that occupies the right
-    /// column; Animation spends the same width on content instead. This is
-    /// the single predicate for BOTH the window's minimum width and the
-    /// shell's rail reservation, so the two can never disagree.</summary>
-    private bool ShowsPoseRail => _activeTab == "Pose";
 
     private static WindowSizeConstraints ExpandedSizeConstraints()
         => new()
@@ -297,11 +293,14 @@ public class MainWindow : Window
         _vm.GPoseActive = _gPoseService.IsGPosing;
         _vm.SidebarWidthPx = _sidebarWidth;
         _vm.Collapsed = _collapsed;
-        // Both tabs own their viewport: Pose bounds its canvases, Animation
-        // owns exactly one scroll region, so the shell never adds a second
-        // page scrollbar.
+        // The inspector rail stays on BOTH tabs: bone selection and posing
+        // remain available while animation plays, so the right column is
+        // never reclaimed and the window width never depends on the tab.
+        // Both tabs own their viewport, so the shell never adds a second
+        // page scrollbar under a pane that already scrolls.
         _vm.ContentOwnsViewport = true;
-        _vm.DrawRail = _collapsed || !ShowsPoseRail ? null : _poseRail.Draw;
+        _vm.DrawRail = _collapsed ? null : _poseRail.Draw;
+
         _vm.GizmoOperation = (int)_editorState.TransformTool;
         _vm.GizmoSpace = (int)_editorState.TransformOrientation;
         _vm.RotationPivot = (int)_editorState.RotationPivot;
@@ -338,7 +337,9 @@ public class MainWindow : Window
         _vm.CanUndo = _cleanTransforms.CanUndo;
         _vm.CanRedo = _cleanTransforms.CanRedo;
         _vm.ShowPopOut = false;
-        _vm.ShowSpawn = false;
+        // Entity creation has two entry points by design (approved shell):
+        // the titlebar action and the ACTORS header. Both open the same menu.
+        _vm.ShowSpawn = true;
         _vm.ShowProject = false;
 
         BuildSidebar(primary);

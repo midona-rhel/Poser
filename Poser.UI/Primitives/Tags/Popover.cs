@@ -73,17 +73,7 @@ public static partial class Crystarium
         {
             var winMin = ImGui.GetWindowPos();
             var winMax = winMin + ImGui.GetWindowSize();
-            var dl = ImGui.GetWindowDrawList();
-            GlassChrome.PrependBlur(dl, winMin, winMax, radius);
-            Norvrandt.Box(winMin, winMax, new BoxStyle
-            {
-                BorderWidth = 1f,
-                BorderRadius = 8f,
-                BorderTopColor = Theme.Glass.BorderTop,
-                BorderLeftColor = Theme.Glass.BorderSide,
-                BorderRightColor = Theme.Glass.BorderSide,
-                BorderBottomColor = Theme.Glass.BorderBottom,
-            });
+            GlassChrome.DrawSurface(ImGui.GetWindowDrawList(), winMin, winMax, 8f);
 
             body();
             ImGui.EndPopup();

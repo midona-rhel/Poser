@@ -42,7 +42,7 @@ public static partial class Crystarium
         float scale = ImGuiHelpers.GlobalScale;
         float width = 260f * scale;
         float pad = 4f * scale;
-        float gap = 1f * scale;
+        float gap = 2f * scale;
         float itemHeight = 26f * scale;
         float sepHeight = 7f * scale; // 1px line + 3px margins
 
@@ -67,26 +67,16 @@ public static partial class Crystarium
             var winMin = ImGui.GetWindowPos();
             var winMax = winMin + ImGui.GetWindowSize();
 
-            // Real backdrop blur behind the glass when Dalamud supports it.
-            GlassChrome.PrependBlur(dl, winMin, winMax, 8f * scale);
-
-            // Glass border trio over the popup chrome.
-            Norvrandt.Box(winMin, winMax, new BoxStyle
-            {
-                BorderWidth = 1f,
-                BorderRadius = 8f,
-                BorderTopColor = Theme.Glass.BorderTop,
-                BorderLeftColor = Theme.Glass.BorderSide,
-                BorderRightColor = Theme.Glass.BorderSide,
-                BorderBottomColor = Theme.Glass.BorderBottom,
-            });
+            // Blur + directional glass border + the black outer ring, so a
+            // menu over bright content still reads as a separate surface.
+            GlassChrome.DrawSurface(dl, winMin, winMax, 8f);
 
             var theme = Norvrandt.Sheet.CurrentTheme;
             float innerWidth = width - pad * 2f;
 
             for (int i = 0; i < items.Length; i++)
             {
-                // .menu gap: 1px between every child (counted in totalHeight above).
+                // .menu gap: 2px between every child (counted in totalHeight above).
                 if (i > 0) ImGui.Dummy(new Vector2(0f, gap));
 
                 var item = items[i];

@@ -41,4 +41,44 @@ public static class GlassChrome
             luminosityColor: new Vector4(0f, 0f, 0f, 0.30f), // brightness(.7)
             noiseOpacity: 0f); // picto glass has no noise
     }
+
+    /// <summary>
+    /// The complete floating-surface chrome, in one place: backdrop blur,
+    /// the directional glass border trio, and the black outer ring
+    /// (tokens.css --shadow-panel `0 0 0 1px rgba(0,0,0,.5)` plus the panel
+    /// drop shadow). Popups previously drew only the trio, which leaves a
+    /// glass panel with no separation from bright content behind it.
+    ///
+    /// The ring is drawn OUTSIDE the window rect, so callers must reserve
+    /// a pixel of margin or accept ImGui clipping it — see
+    /// <see cref="RingInset"/>.
+    /// </summary>
+    public static void DrawSurface(
+        ImDrawListPtr drawList, Vector2 min, Vector2 max, float roundingUnscaled)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        float rounding = roundingUnscaled * scale;
+        PrependBlur(drawList, min, max, rounding);
+
+        // Outer ring first so the glass border sits on top of it.
+        float inset = RingInset * scale;
+        drawList.AddRect(
+            min + new Vector2(inset, inset), max - new Vector2(inset, inset),
+            ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.50f)),
+            rounding, ImDrawFlags.None, 1f * scale);
+
+        Norvrandt.Box(min, max, new BoxStyle
+        {
+            BorderWidth = 1f,
+            BorderRadius = roundingUnscaled,
+            BorderTopColor = Theme.Glass.BorderTop,
+            BorderLeftColor = Theme.Glass.BorderSide,
+            BorderRightColor = Theme.Glass.BorderSide,
+            BorderBottomColor = Theme.Glass.BorderBottom,
+        });
+    }
+
+    /// <summary>ImGui clips draw commands to the popup rect, so the outer
+    /// ring is drawn just inside the edge rather than outside it. Unscaled.</summary>
+    public const float RingInset = 0.5f;
 }
