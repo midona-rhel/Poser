@@ -27,10 +27,10 @@ public readonly record struct WorldHandle(WorldHandleKind Kind, int Axis);
 public readonly record struct WorldHandleHit(WorldHandle Handle, float Distance, RingHit? Ring);
 
 /// <summary>
-/// Perspective-correct projection for the IN-WORLD gizmo, distinct from the
-/// inspector's direction-only basis by design (Brio splits them the same
-/// way: ImBrio.Gizmo for the widget, real view/projection matrices for the
-/// overlay). All geometry is built in world space at the pivot, sized so it
+/// Perspective-correct projection for the IN-WORLD gizmo, distinct from
+/// the inspector's direction-only basis by design — Brio splits them the
+/// same way: ImBrio.Gizmo for the widget, real view/projection matrices for
+/// the overlay. All geometry is built in world space at the pivot, sized so it
 /// keeps a stable perceived pixel size at the pivot's depth, and projected
 /// through the active camera's real view and projection matrices — so
 /// placement and orientation stay perspective-correct anywhere on screen
@@ -165,10 +165,12 @@ public sealed class WorldGizmoProjection
 
 /// <summary>
 /// The in-world gizmo geometry built on <see cref="WorldGizmoProjection"/>.
-/// Ring drawing and segment hit-testing are shared with the inspector
-/// through <see cref="ProjectedRings"/>/<see cref="RotationGizmoRings"/> —
-/// only the projection that fills the geometry differs between the two
-/// surfaces, which is the deliberate Brio split.
+/// It fills the same screen-space <see cref="ProjectedRings"/> container
+/// the inspector uses, so ring DRAWING, segment hit-testing, the camera
+/// view axis, and the roll tangent are common code. The projection filling
+/// it is not: this class is perspective, <see cref="
+/// RotationGizmoRings.Project"/> is direction-only, and that split is the
+/// deliberate Brio behaviour rather than duplication to be merged away.
 /// </summary>
 public static class WorldGizmo
 {

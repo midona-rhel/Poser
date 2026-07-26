@@ -22,7 +22,7 @@ public class PoseRailPane
     private readonly PoseInspectorPane _inspector;
     private readonly ICameraService _camera;
 
-    // One ring drag through the shared rotation-gizmo module: hit axis,
+    // One ring drag through the inspector's rotation-gizmo projection: hit axis,
     // frozen model-space rotation axis, frozen screen tangent at the grab
     // point, accumulated tangent distance, and the TOTAL angle from drag
     // start (every frame re-derives from this total — no frame feeds a
@@ -122,10 +122,12 @@ public class PoseRailPane
     }
 
     /// <summary>
-    /// The compact rotation gizmo, rendered through the SHARED rotation-ring
-    /// module: the same frame basis, camera projection,
-    /// hit-testing, tangents, and sensitivity policy as the in-world gizmo,
-    /// so red/green/blue here are the same real axes shown in the world.
+    /// The compact rotation gizmo. It takes the same frame basis, ring
+    /// hit-testing, roll convention, and sensitivity policy as the in-world
+    /// gizmo, so red/green/blue here are the same real axes shown in the
+    /// world — but its own direction-only projection, which is why the
+    /// widget keeps one shape and radius while the world gizmo obeys
+    /// perspective.
     /// Inspector presentation keeps the approved grammar: dark plate, pastel
     /// palette, subdued rear arcs, hover/active ring emphasis, wide outer
     /// camera-roll ring. No cursor circle and no drag-origin dot are
@@ -157,9 +159,10 @@ public class PoseRailPane
         dl.AddCircleFilled(center, widgetRadius + 12f * s,
             ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.30f)));
 
-        // Direction-only projection straight at the fixed widget centre —
-        // no perspective and no recentring, so the widget's shape and size
-        // never depend on where the actor stands on screen.
+        // The inspector's own direction-only projection, straight at the
+        // fixed widget centre — no perspective and no recentring, so the
+        // widget's shape and size never depend on where the actor stands
+        // on screen. The world overlay deliberately does the opposite.
         var rings = RotationGizmoRings.Project(
             _camera, center, frameWorld, widgetRadius);
         if (!rings.Valid)

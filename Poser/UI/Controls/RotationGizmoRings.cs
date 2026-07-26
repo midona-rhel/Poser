@@ -6,11 +6,13 @@ using Poser.Services;
 namespace Poser.UI.Controls;
 
 /// <summary>
-/// One projected ring set: the shared rotation-gizmo geometry consumed by
-/// BOTH the inspector widget and the in-world overlay. Ring points are
-/// DIRECTION-ONLY projections (camera rotation, no translation,
-/// perspective, FOV, or depth), so shape and pixel radius are identical
-/// anywhere on screen; only the centre moves with the pivot.
+/// One projected ring set: screen points, front/rear flags, and the frame
+/// they came from. This is a RESULT container, filled by two different
+/// projections — the inspector's direction-only basis (<see cref="
+/// RotationGizmoRings.Project"/>) and the world overlay's perspective path
+/// (<see cref="WorldGizmo.ProjectRings"/>). Consumers that only read
+/// screen geometry — drawing, segment hit-testing — work on either; the
+/// projections themselves are deliberately not interchangeable.
 /// </summary>
 public sealed class ProjectedRings
 {
@@ -28,12 +30,14 @@ public sealed class ProjectedRings
 public readonly record struct RingHit(int Axis, float Distance, Vector2 Tangent, int SegmentIndex);
 
 /// <summary>
-/// The one shared rotation-gizmo calculation: frame
-/// basis, camera projection, front/rear classification, ring hit testing,
-/// drag tangents, the outer camera-roll axis, and the Ctrl/Shift
-/// sensitivity policy. Both rotation surfaces dispatch results through the
-/// existing clean TransformGestureService lifecycle — this class owns no
-/// gesture state.
+/// The INSPECTOR's rotation-ring projection, plus the ring calculations
+/// both surfaces share: frame basis, segment hit testing, ring drawing,
+/// the camera view axis and roll tangent conventions, and the Ctrl/Shift
+/// sensitivity policy. The world overlay projects its own ring points
+/// through real view/projection matrices (<see cref="WorldGizmo"/>) and
+/// only borrows what is genuinely common. Both surfaces dispatch results
+/// through the existing clean TransformGestureService lifecycle — this
+/// class owns no gesture state.
 /// </summary>
 public static class RotationGizmoRings
 {
@@ -77,8 +81,9 @@ public static class RotationGizmoRings
     }
 
     /// <summary>
-    /// Projects the three axis rings around the given SCREEN centre using
-    /// only the camera's rotation (Brio ImBrio.Gizmo compatibility): each
+    /// THE INSPECTOR PROJECTION ONLY — the world overlay must not call
+    /// this. Projects the three axis rings around the given SCREEN centre
+    /// using only the camera's rotation (Brio ImBrio.Gizmo parity): each
     /// unit ring direction is rotated by the gizmo frame and the view
     /// rotation, then its camera-space X/Y maps straight to the requested
     /// pixel radius. No translation, perspective, FOV, pivot depth, or
@@ -248,10 +253,11 @@ public static class RotationGizmoRings
                 rings.Frame));
 
     /// <summary>
-    /// Draws the ring set with the inspector's approved grammar: pastel axis
-    /// palette, hover/active emphasis, wide outer roll ring. The world
-    /// overlay passes <paramref name="drawRearArcs"/> = false so only
-    /// meaningful front arcs appear over the game.
+    /// Draws the ring set with the approved pastel grammar: axis palette,
+    /// hover/active emphasis, wide outer roll ring. Purely screen-space, so
+    /// it serves either projection's output; the world overlay passes
+    /// <paramref name="drawRearArcs"/> = false so only meaningful front
+    /// arcs appear over the game.
     /// </summary>
     public static void Draw(
         ImDrawListPtr dl,
@@ -303,9 +309,10 @@ public static class RotationGizmoRings
     /// <summary>
     /// The screen-space direction of POSITIVE rotation about the ring's
     /// axis at the grab point, derived by epsilon-rotating the grab
-    /// DIRECTION and re-projecting through the same direction-only basis —
-    /// drag direction always matches the applied rotation on every ring
-    /// with no perspective projection involved.
+    /// DIRECTION and re-projecting through the inspector's own
+    /// direction-only basis, so drag direction matches the applied
+    /// rotation on every ring. The world overlay has its own perspective
+    /// equivalent; only the roll branch below is common to both.
     /// </summary>
     public static Vector2 PositiveTangent(
         ProjectedRings rings,

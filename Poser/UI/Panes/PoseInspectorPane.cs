@@ -317,11 +317,11 @@ public class PoseInspectorPane
     }
 
     /// <summary>
-    /// World-space context for the shared rotation rings:
-    /// pivot position, ring frame, and the world→model axis conversion, all
-    /// derived from the same real camera/actor/bone facts the in-world gizmo
-    /// consumes — so the inspector's red/green/blue describe the same real
-    /// rotation axes. Local frames the target's own current world
+    /// World-space context for the inspector's rotation rings: ring frame
+    /// and the world→model axis conversion, derived from the same real
+    /// actor/bone facts the in-world gizmo consumes — so the inspector's
+    /// red/green/blue describe the same real rotation axes, even though the
+    /// two surfaces project them differently. Local frames the target's own current world
     /// orientation; World uses world axes; the Parent pivot uses the
     /// parent→child radial frame; the frame follows the presentation result
     /// during a drag while applied deltas stay on the frozen baseline.
