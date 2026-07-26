@@ -136,6 +136,7 @@ internal static class ServiceRegistration
         services.AddSingleton<PoseRailPane>();
         services.AddSingleton<UI.Controls.AnimationPicker>();
         services.AddSingleton<AnimationPane>();
+        services.AddSingleton<AppearancePane>();
         services.AddSingleton<GraphicalBonePane>();
 
         services.AddSingleton<SkeletonOverlayWindow>();

@@ -62,6 +62,7 @@ public class MainWindow : Window
     // M2 panes on the verified grammar (Migrations #7-#11).
     private readonly PoseInspectorPane _poseInspector;
     private readonly AnimationPane _animationPane;
+    private readonly AppearancePane _appearancePane;
     private readonly Game.Animation.AnimationCatalogLoader _animationCatalog;
     private readonly PoseRailPane _poseRail;
     private bool _collapsed;
@@ -93,6 +94,7 @@ public class MainWindow : Window
         CleanPoseFacade cleanPose,
         PoseInspectorPane poseInspector,
         AnimationPane animationPane,
+        AppearancePane appearancePane,
         Game.Animation.AnimationCatalogLoader animationCatalog,
         PoseRailPane poseRail,
         GraphicalBonePane graphicalBonePane)
@@ -118,6 +120,7 @@ public class MainWindow : Window
         _spawnService = spawnService;
         _poseInspector = poseInspector;
         _animationPane = animationPane;
+        _appearancePane = appearancePane;
         _animationCatalog = animationCatalog;
         _poseInspector.DrawMapInline = graphicalBonePane.DrawInline;
         _poseInspector.GetMapMirror = () => graphicalBonePane.SidesSwapped;
@@ -305,7 +308,9 @@ public class MainWindow : Window
         // that reserved band instead of over the content. A pane that
         // opens its own child inside the inset content loses the gutter.
         _vm.ContentOwnsViewport = _activeTab == "Pose";
-        _vm.DrawRail = _collapsed ? null : _poseRail.Draw;
+        // Appearance has no pose rail; its content takes the released
+        // width. The outer window size is untouched by tab changes.
+        _vm.DrawRail = _collapsed || _activeTab == "Appearance" ? null : _poseRail.Draw;
 
         _vm.GizmoOperation = (int)_editorState.TransformTool;
         _vm.GizmoSpace = (int)_editorState.TransformOrientation;
@@ -697,10 +702,11 @@ public class MainWindow : Window
         // Tabs are rebuilt each frame; the active one is preserved so a
         // selection change cannot silently throw the user back to Pose.
         _vm.Tabs.Clear();
-        if (_activeTab is not ("Pose" or "Animation"))
+        if (_activeTab is not ("Pose" or "Animation" or "Appearance"))
             _activeTab = "Pose";
         _vm.Tabs.Add(new ShellTab { Label = "Pose", Active = _activeTab == "Pose" });
         _vm.Tabs.Add(new ShellTab { Label = "Animation", Active = _activeTab == "Animation" });
+        _vm.Tabs.Add(new ShellTab { Label = "Appearance", Active = _activeTab == "Appearance" });
     }
 
     private void BuildCrumbAndStatus(SelectionId? primary)
@@ -810,6 +816,12 @@ public class MainWindow : Window
         {
             _animationCatalog.EnsureLoaded();
             _animationPane.Draw(origin, size);
+            return;
+        }
+
+        if (_activeTab == "Appearance")
+        {
+            _appearancePane.Draw(origin, size);
             return;
         }
 

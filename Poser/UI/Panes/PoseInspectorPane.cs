@@ -1416,7 +1416,7 @@ public class PoseInspectorPane
             // Actor-level reset: manual pose + expression + gaze + IK in one
             // documented operation (CleanPoseFacade.ResetAll).
             () => _cleanPose.ResetAll(skeleton.Actor),
-            Tooltip: "Reset pose, expression, gaze, IK, and animation for this actor"));
+            Tooltip: "Reset pose, expression, gaze, IK, animation, and appearance for this actor"));
         h += DrawWrappedActions(new Vector2(cursor.X, cursor.Y + h), width, s, resetActions);
 
         // Clean application-owned transfer slot. It is available independently

@@ -43,6 +43,7 @@ public sealed class CleanPoseFacade
     private readonly IExpressionService _expressions;
     private readonly IGazeService _gaze;
     private readonly Poser.Application.Animation.AnimationSession _animation;
+    private readonly Poser.Application.Presentation.ActorPresentationSession _presentation;
     private readonly IPluginLog _log;
 
     /// <summary>
@@ -95,6 +96,10 @@ public sealed class CleanPoseFacade
             var animation = _animation.ResetActor(animationActor);
             if (!animation.Success && animation.Detail is { } animationDetail)
                 failures.Add($"animation reset failed: {animationDetail}");
+
+            var presentation = _presentation.ResetActor(animationActor);
+            if (!presentation.Success && presentation.Detail is { } presentationDetail)
+                failures.Add($"appearance reset failed: {presentationDetail}");
         }
 
         if (failures.Count == 0)
