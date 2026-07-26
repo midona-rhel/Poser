@@ -428,15 +428,19 @@ public class GizmoOverlayWindow : Window
                 hover?.Handle, gesture?.Handle);
 
         // The overlay window is NoInputs, so it claims the mouse from the
-        // game itself. This sets the CURRENT frame's capture flag, which
-        // Dalamud reads after the frame is built — the click that starts a
-        // drag is owned on the same frame it arrives, with no one-frame
-        // window in which the game also sees it. GizmoPointerOwnership
-        // additionally stops Poser's own selection surfaces from treating
-        // the click, or its release frame, as a pick.
+        // game itself. BOTH capture calls are required and cover different
+        // intervals: the direct assignment owns events arriving after this
+        // draw within the current frame, and the next-frame override owns
+        // events arriving after the next NewFrame but before this window
+        // draws again — NewFrame otherwise recomputes the flag from hovered
+        // windows, and the overlay is not one. Dropping either reopens a
+        // window in which the game also sees the click.
+        // GizmoPointerOwnership additionally stops Poser's own selection
+        // surfaces from treating the click, or its release frame, as a pick.
         if (hover != null || gesture != null)
         {
             io.WantCaptureMouse = true;
+            ImGui.SetNextFrameWantCaptureMouse(true);
             GizmoPointerOwnership.Hold();
         }
 
