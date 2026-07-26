@@ -29,8 +29,13 @@
   the call fails explicitly, and no control is offered.
 - Catalog (Emote / Action / Expression / Raw) admits an entry only with a
   name, non-zero timeline, and known slot, so nothing fails after selection.
-  Search matches name or a bare id; kind and slot filters compose. Selection,
-  filters and play mode are per actor and never leak between actors.
+  Search matches name or a bare id; kind and slot filters compose.
+- Choosing an animation is ONE surface: a glass `Popover` picker opened from
+  Base, Blend, Lips and each slot's Select, with the caller supplying the
+  destination. The page itself is compact sections with no list. A slot pick
+  is restricted to that slot, so a body timeline cannot land in the face.
+  Search state lives in the picker and clears on open; only play mode,
+  interrupt, from-start and the direct id are per actor.
 - Slots are the game's indices; 4–6 are absent from the enum, not filtered.
   Every slot has search/play, pause/resume, speed and reset. Scrubbing is a
   gesture: freeze, captured duration and skeleton token at Begin, release
@@ -46,4 +51,5 @@
 - UI: Pose and Animation share one window width — the right column is always
   spent, on the Pose rail or on Animation content — so navigating never
   resizes the frame. Crystarium controls ignore `ImGui.SetNextItemWidth`;
-  widths come from `Style.Width` in unscaled units.
+  widths come from `Style.Width` in unscaled units. The sidebar ACTORS `+`
+  opens the same glass menu the row context menus use.
