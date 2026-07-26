@@ -659,13 +659,18 @@ public class GizmoOverlayWindow : Window
                 : actorRotation;
             pivotWorld = Vector3.Transform(pivotModel, modelMatrix);
         }
-        // One perspective projection locates the CENTRE only; the ring
-        // geometry itself is direction-only and screen-stable. A pivot
-        // outside the projectable viewport does not draw.
-        if (!_cameraService.WorldToScreen(pivotWorld, out var ringCenter))
+        // The world overlay is perspective-correct (Brio's overlay path):
+        // the real view/projection matrices place and orient the rings at
+        // the pivot's actual world position, sized in world units that keep
+        // a stable perceived radius at the pivot's depth. Only the
+        // inspector keeps the direction-only basis.
+        var projection = UI.Controls.WorldGizmoProjection.Create(
+            _cameraService, ImGui.GetIO().DisplaySize, pivotWorld, 80f * scale);
+        if (projection == null)
             return;
-        var rings = UI.Controls.RotationGizmoRings.Project(
-            _cameraService, ringCenter, frameWorld, 80f * scale);
+        float ringWorldRadius = projection.WorldScale;
+        var rings = UI.Controls.WorldGizmo.ProjectRings(
+            projection, frameWorld, ringWorldRadius, scale);
         if (!rings.Valid)
             return;
 
@@ -753,8 +758,8 @@ public class GizmoOverlayWindow : Window
                 _ringAxisModel = Vector3.Normalize(Vector3.Transform(
                     axisWorld, Quaternion.Inverse(actorRotation)));
                 _ringTangent = hoverHit is { } grabHit
-                    ? UI.Controls.RotationGizmoRings.PositiveTangent(
-                        rings, grabHit, mouse)
+                    ? UI.Controls.WorldGizmo.PositiveTangentPerspective(
+                        projection, rings, grabHit, mouse, ringWorldRadius)
                     : System.Numerics.Vector2.Zero;
                 _ringOrigin = mouse;
                 _ringDistance = 0f;
