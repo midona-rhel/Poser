@@ -141,7 +141,9 @@ public sealed class AppearancePane
                 // 28px well centred in the 30px form row.
                 ImGui.SetCursorScreenPos(new Vector2(controlX, rowTop + 1f * s));
                 var edit = tint;
-                if (Crystarium.ColorWell(id, ref edit))
+                // RGB only: the tint's alpha channel is the model's own
+                // and is preserved exactly.
+                if (Crystarium.ColorWell(id, ref edit, rgbOnly: true))
                     Report(_presentation.SetTint(actor, model, edit), label);
             }
             else

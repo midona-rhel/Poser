@@ -14,6 +14,14 @@ public static partial class Crystarium
     /// Returns true while the color is being edited.
     /// </summary>
     public static bool ColorWell(string id, ref Vector4 color)
+        => ColorWell(id, ref color, rgbOnly: false);
+
+    /// <summary>
+    /// Color well with an RGB-only option: the picker hides alpha and the
+    /// value's EXISTING alpha channel is preserved exactly — for values
+    /// like whole-model tints whose alpha belongs to the game.
+    /// </summary>
+    public static bool ColorWell(string id, ref Vector4 color, bool rgbOnly)
     {
         Stylesheet.EnsureInitialized();
         float scale = ImGuiHelpers.GlobalScale;
@@ -54,8 +62,15 @@ public static partial class Crystarium
                 BorderBottomColor = Theme.Glass.BorderBottom,
             });
             ImGui.SetNextItemWidth(200f * scale);
-            changed = ImGui.ColorPicker4(id + "_pk", ref color,
-                ImGuiColorEditFlags.NoSidePreview | ImGuiColorEditFlags.NoSmallPreview);
+            var flags = ImGuiColorEditFlags.NoSidePreview | ImGuiColorEditFlags.NoSmallPreview;
+            if (rgbOnly)
+                flags |= ImGuiColorEditFlags.NoAlpha;
+            float keepAlpha = color.W;
+            changed = ImGui.ColorPicker4(id + "_pk", ref color, flags);
+            // NoAlpha hides the channel; preserving the incoming value is
+            // this overload's contract, whatever the picker left in W.
+            if (rgbOnly)
+                color.W = keepAlpha;
             ImGui.EndPopup();
         }
         ImGui.PopStyleColor();
