@@ -35,9 +35,13 @@ objects, pointers, hooks, and addresses remain in `Poser.Game`.
 
 For each actor, the session owns only Poser-authored overrides:
 
-- selected base and blend timeline, base interrupt, play-from-start, force loop;
+- the played base timeline and the held facial expression;
 - overall speed and per-slot speed overrides;
 - lip override, position lock, and the incoming state needed for restoration.
+
+(As built: interrupt and play-from-start are fixed defaults — no per-actor
+selection record survived, since nothing ever wrote one — and force loop was
+withdrawn because the field is unproven on the current client.)
 
 Actor replacement invalidates the old generation without touching the new
 actor. Reset, GPose exit, plugin disposal, and removal while still resolvable
@@ -70,7 +74,9 @@ Support:
 Expose Brio's known slots: Full Body/Base `0`, Upper Body `1`, Facial `2`,
 Additive `3`, Lips `7`, Parts `8..11`, and Overlay `12`; hide unknown `4..6`.
 Each row shows current id/name and effective speed, with play/search,
-pause/resume, override reset, and exact-slot replacement where valid.
+pause/resume, and speed reset. There is no exact-slot replacement: neither
+reference ever writes a slot's timeline — a pick plays through the sequencer
+and the timeline's own slot tag routes it.
 
 Provide friendly time/duration scrubbing for Full Body and Upper Body. An
 Advanced disclosure exposes every currently valid Havok partial/control
@@ -106,18 +112,27 @@ the engine's slot array. It is not a slot debugger and not a keyframe editor.
   available, so the minimum width equals Pose-with-inspector and switching
   tabs never resizes the window.
 - Transport: current animation (opens the picker), play/pause, replay,
-  restore; speed with a reset and a compact glass scene-actions menu.
-- Stance: family, a wrapping pose stepper, weapon and position-lock switches.
-- Layers: compact rows for Base, Blend, Upper body, Facial and Additive —
-  name opens the picker for that destination, then pause, speed, reset. An
+  restore; speed as a scrubber with a live readout, 0 and 1 notched, and a
+  Reset; a compact glass scene-actions menu. The status line renders
+  directly under the transport so failures are visible without scrolling.
+- Stance: a combo whose trigger shows the TRUE family (Battle, Umbrella,
+  Accessory included) and fires on re-pick, so Idle is reachable from a
+  weapon-drawn state; a wrapping pose stepper; weapon and position-lock
+  switches. Disabled when the stance-transition functions are missing.
+- Layers: compact rows for Full body, Upper body, Facial and Additive —
+  name opens the picker for that destination, then pause, speed (scrubber,
+  0..2, 1 notched), reset (speed only). There is no separate Blend row: a
+  Full body pick IS the one-shot-over-base operation. An
   inactive optional layer offers "Add layer" rather than an empty slot.
   Parts 1–4 and Overlay live under one collapsed Advanced disclosure.
-- Scrub: friendly Full body and Upper body rows; arbitrary Havok
-  partial/control scrubbing under Advanced.
-- Face and lips are separate catalogs: expression choose/preview/apply, and
+- Scrub: inline time rows under the Full body and Upper body layers;
+  arbitrary Havok partial/control scrubbing under Advanced.
+- Face and lips are separate catalogs: the expression is HELD (played, then
+  the facial layer pinned at 0) with preview/release/apply, and
   lips enumerated from the known speech timelines rather than searched.
 - ONE shared picker serves every destination — anchored glass popover,
-  search by name or id, kind filter, icon/name/id rows with
+  search by name or id, kind filter with All, a Sheathed/Drawn tri-filter
+  for Base picks, icon/name/id rows with
   destination-relevant metadata, only the list scrolling, height shrinking
   to the results, and play-when-selected in its footer. No separate
   developer id field on the page.
