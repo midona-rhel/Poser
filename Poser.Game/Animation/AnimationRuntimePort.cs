@@ -351,6 +351,63 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             : CollectControls(character, out token);
     }
 
+    /// <summary>
+    /// The control that actually drives a slot, using Ktisis' lookup: the
+    /// control INDEX equals the slot index, and the partials are searched
+    /// for the first one holding a valid control at that index. Labelling
+    /// the first two flattened controls "Full body" and "Upper body" is
+    /// not the same thing and is wrong whenever a partial contributes a
+    /// different number of controls.
+    ///
+    /// Gated on the slot actually playing something, because an empty slot
+    /// has no meaningful time to scrub. Only Base and UpperBody are
+    /// offered: Ktisis notes the index-equals-slot correspondence does not
+    /// hold for the facial, additive, and lip slots, which live on other
+    /// partials.
+    /// </summary>
+    public ScrubControlReading? FindSlotControl(
+        ActorId actor, AnimationSlot slot, out ulong token)
+    {
+        token = 0;
+        var character = Resolve(actor, out _);
+        if (character == null)
+            return null;
+        if (slot is not (AnimationSlot.Base or AnimationSlot.UpperBody))
+            return null;
+        int index = (int)slot;
+        if (character->Timeline.TimelineSequencer.TimelineIds[index] == 0)
+            return null;
+
+        var drawObject = character->GameObject.DrawObject;
+        if (drawObject == null || drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
+            return null;
+        var charaBase = (CharacterBase*)drawObject;
+        if (charaBase->Skeleton == null)
+            return null;
+        var skeleton = charaBase->Skeleton;
+        token = CurrentToken(skeleton);
+
+        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
+        {
+            var partial = &skeleton->PartialSkeletons[p];
+            var animated = partial->GetHavokAnimatedSkeleton(0);
+            if (animated == null || index >= animated->AnimationControls.Length)
+                continue;
+            var control = animated->AnimationControls[index].Value;
+            if (control == null)
+                continue;
+            var binding = control->hkaAnimationControl.Binding;
+            if (binding.ptr == null || binding.ptr->Animation.ptr == null)
+                continue;
+            return new ScrubControlReading(
+                new ScrubControlId(p, index),
+                control->hkaAnimationControl.LocalTime,
+                binding.ptr->Animation.ptr->Duration,
+                control->PlaybackSpeed);
+        }
+        return null;
+    }
+
     // ── Base, blend, loop ─────────────────────────────────────────────
 
     public AnimationPortResult ApplyBase(

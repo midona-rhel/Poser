@@ -24,19 +24,29 @@ public readonly record struct AnimationResult(bool Success, string? Detail = nul
 ///
 /// RESTORATION CONTRACT. An actor's entry records only what Poser
 /// authored, and each authored thing has exactly one undo:
-///   base override  → the mode/mode-param/base-timeline captured before
-///                    the FIRST override, replayed once, then dropped;
-///   overall speed  → stop enforcing, so the game's own per-frame
-///                    recalculation wins again (there is no remembered
-///                    value to write back, by design);
-///   slot speeds    → stop enforcing and hand each touched slot back;
-///   lips           → the timeline captured before the first override;
-///   force loop     → cleared to 0;
-///   position lock  → released;
-///   physics        → released when the last owner lets go.
-/// Restore runs exactly once per entry because the entry is removed in
-/// the same step. Actors that no longer resolve are dropped without a
-/// native write — there is nothing left to restore into.
+///   base override   → the mode/mode-param/base-timeline captured before
+///                     the FIRST override;
+///   overall speed   → stop enforcing, so the game's own per-frame
+///                     recalculation wins again (there is no remembered
+///                     value to write back, by design);
+///   slot speeds     → stop enforcing and hand each touched slot back;
+///   slot timelines  → the timeline each slot held before Poser replaced
+///                     it; also how a facial preview is removed without
+///                     disturbing base or upper body;
+///   lips            → the captured timeline (NOT 0, which merely means
+///                     "no speech timeline");
+///   stance and pose → the family and index captured before the first
+///                     stance change;
+///   weapon          → the drawn state captured before the first change;
+///   position lock   → released;
+///   physics         → released when the last owner lets go.
+///
+/// Every capture is taken once, before the first change of its kind, so
+/// restore targets what Poser FOUND rather than an intermediate state it
+/// created. Each aspect is released only when its own restore succeeded:
+/// a failure on a still-live actor stays owned and the next Reset retries
+/// it. An actor that no longer resolves is dropped without a native
+/// write — there is nothing left to restore into.
 ///
 /// Animation state is session-only: it is not transform history, not
 /// pose-file payload, and not a named pose layer.
@@ -333,25 +343,36 @@ public sealed class AnimationSession
 
     // ── Physics (global patch, reference-counted by actor) ────────────
 
+    /// <summary>
+    /// Physics is one global code patch shared by every actor, so the
+    /// session reference-counts who asked for it. The ownership set is
+    /// mutated ONLY after the patch itself succeeded: a failed patch that
+    /// had already registered an owner would report the scene as frozen
+    /// while it was still running, and the last release would then try to
+    /// undo a patch that was never applied.
+    /// </summary>
     public AnimationResult SetPhysicsFrozen(ActorId actor, bool frozen)
     {
+        bool alreadyOwned = _physicsOwners.Contains(actor);
+        if (frozen == alreadyOwned)
+            return AnimationResult.Ok();
+
+        int othersOwning = _physicsOwners.Count - (alreadyOwned ? 1 : 0);
+        bool shouldFreeze = frozen || othersOwning > 0;
+
+        if (shouldFreeze != _port.IsPhysicsFrozen)
+        {
+            var result = _port.SetPhysicsFrozen(shouldFreeze);
+            if (!result.Success)
+                return AnimationResult.Fail(result.Detail ?? "Physics freeze failed.");
+        }
+
         if (frozen)
             _physicsOwners.Add(actor);
         else
             _physicsOwners.Remove(actor);
-
-        bool shouldFreeze = _physicsOwners.Count > 0;
-        if (shouldFreeze == _port.IsPhysicsFrozen)
-        {
-            Changed?.Invoke();
-            return AnimationResult.Ok();
-        }
-
-        var result = _port.SetPhysicsFrozen(shouldFreeze);
         Changed?.Invoke();
-        return result.Success
-            ? AnimationResult.Ok()
-            : AnimationResult.Fail(result.Detail ?? "Physics freeze failed.");
+        return AnimationResult.Ok();
     }
 
     public bool OwnsPhysics(ActorId actor) => _physicsOwners.Contains(actor);
@@ -380,6 +401,17 @@ public sealed class AnimationSession
     public IReadOnlyList<ScrubControlReading> EnumerateControls(ActorId actor, out ulong token) =>
         _port.EnumerateControls(actor, out token);
 
+    /// <summary>The control that drives a slot, by the reference lookup.</summary>
+    public ScrubControlReading? FindSlotControl(ActorId actor, AnimationSlot slot) =>
+        _port.FindSlotControl(actor, slot, out _);
+
+    /// <summary>The actor whose scrub is in flight, if any. Surfaces must
+    /// compare against this before feeding a slider value into an update:
+    /// a value from a newly selected actor must never land in the previous
+    /// actor's gesture.</summary>
+    public ActorId? ScrubActor => _scrub?.Actor;
+    public ScrubControlId? ScrubControl => _scrub?.Control;
+
     /// <summary>
     /// Freezes playback and captures the drag's whole mapping. Fails when
     /// the control is not present, so a scrub never starts against
@@ -394,6 +426,11 @@ public sealed class AnimationSession
                 target = reading;
         if (target == null)
             return AnimationResult.Fail("That animation control is no longer present.");
+
+        // A scrub in flight for a DIFFERENT actor ends here rather than
+        // being silently retargeted.
+        if (_scrub is { } existing && !existing.Actor.Equals(actor))
+            EndScrub();
 
         bool wasPaused = IsPaused(actor);
         if (!wasPaused)

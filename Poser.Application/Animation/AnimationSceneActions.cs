@@ -26,17 +26,30 @@ public sealed class AnimationSceneActions
         _animation = animation;
     }
 
+    /// <summary>
+    /// Skipped actors are reported separately from failures and are NOT
+    /// counted as attempted: an actor that cannot be animated at all was
+    /// never a target, and folding it into the attempt count makes a
+    /// complete run look partial.
+    /// </summary>
     public readonly record struct SceneActionReport(
         int Attempted,
         int Succeeded,
-        IReadOnlyList<string> Failures)
+        IReadOnlyList<string> Failures,
+        IReadOnlyList<string> Skipped)
     {
         public bool Success => Failures.Count == 0;
 
-        public string Summary(string verb) =>
-            Failures.Count == 0
+        public string Summary(string verb)
+        {
+            var text = Failures.Count == 0
                 ? $"{verb} {Succeeded} actor{(Succeeded == 1 ? "" : "s")}."
                 : $"{verb} {Succeeded} of {Attempted}: {string.Join("; ", Failures)}";
+            if (Skipped.Count > 0)
+                text += $" Skipped {Skipped.Count} without animation control " +
+                    $"({string.Join(", ", Skipped)}).";
+            return text;
+        }
     }
 
     /// <summary>The actor set this command owns, frozen before any work.</summary>
@@ -55,18 +68,24 @@ public sealed class AnimationSceneActions
         System.Func<ActorId, AnimationResult> action)
     {
         var failures = new List<string>();
+        var skipped = new List<string>();
+        int attempted = 0;
         int succeeded = 0;
         foreach (var target in targets)
         {
             if (!_animation.IsSupported(target.Id))
+            {
+                skipped.Add(target.Name);
                 continue;
+            }
+            attempted++;
             var result = action(target.Id);
             if (result.Success)
                 succeeded++;
             else
                 failures.Add($"{target.Name}: {result.Detail ?? "failed"}");
         }
-        return new SceneActionReport(targets.Count, succeeded, failures);
+        return new SceneActionReport(attempted, succeeded, failures, skipped);
     }
 
     public SceneActionReport FreezeAll() =>
