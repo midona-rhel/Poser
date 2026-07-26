@@ -1,125 +1,155 @@
-# PBI-006 — Screen-stable rotation gizmo
+# PBI-006 — Brio-parity inspector and world gizmos
 
 ## Control
 
 | Field | Value |
 |---|---|
 | Status | Ready |
-| Size | Medium |
+| Size | Large |
 | Implementation owner | Claude |
 | Review owner | Codex |
 | Acceptance owner | User, in game |
-| Base ref | `pbi-006-base` |
-| Feature branch | `feature/pbi-006-screen-stable-gizmo` |
+| Base ref | `pbi-006-base-v2` |
+| Feature branch | `feature/pbi-006-brio-gizmos` |
 | Accepted head | Not accepted |
 
 ## Outcome
 
-The inspector and in-world rotation gizmos retain one stable shape and size
-wherever the actor appears on screen. Moving a pivot away from screen centre
-must translate the world gizmo, not shear, stretch, or squash its rings.
-Camera rotation still changes the apparent axis orientation, and every ring
-continues to rotate around the axis it depicts.
+Match Brio's two deliberately different gizmo projections:
 
-## Confirmed cause and reference
+- The inspector rotation ball is a fixed, camera-relative screen-space widget.
+- The in-world gizmo uses the real camera view/projection and remains
+  perspective-correct.
 
-`RotationGizmoRings.Project` currently constructs metre-sized world circles
-and calls `WorldToScreen` for every point. Perspective projection therefore
-changes their local shape with screen position. `PoseRailPane` then recentres
-that already-distorted result inside the inspector.
+Translate, Rotate, Scale, and Universal share Poser's approved pastel visual
+grammar in-world. Moving a gizmo away from viewport centre must not produce
+the current unnatural shear/stretch.
 
-Brio's inspector gizmo is the compatibility reference:
-`Brio/UI/Controls/Stateless/ImBrio.Gizmo.cs`. It removes camera translation
-and perspective, uses camera rotation only, and projects a constant-radius
-screen-space sphere. Brio's stock ImGuizmo world overlay likewise remains
-screen-stable away from the viewport centre.
+## Confirmed problem and references
 
-## Projection contract
+Poser's custom `RotationGizmoRings.Project` creates a fixed metre-sized world
+circle and perspective-projects all 96 points. Its apparent shape therefore
+changes with screen position. `PoseRailPane` then recentres that already
+distorted world projection inside the inspector.
 
-- Use one shared direction-only ring projection for the inspector and world
-  rotation overlay. Do not maintain separate visual or hit-test geometry.
-- Obtain the active camera's rotation basis without translation, perspective,
-  pivot position, FOV scaling, or depth scaling.
-- Transform each unit ring direction by the selected gizmo frame and camera
-  rotation, then map its camera-space X/Y to the requested pixel radius.
-- The world overlay uses `WorldToScreen` only once to locate the pivot centre.
-  The inspector uses its fixed widget centre directly.
-- Ring radius is expressed in UI pixels and respects global UI scale. It is
-  independent of pivot depth, screen position, camera FOV, and actor scale.
-- Front/rear classification comes from the same direction-only camera-space
-  geometry. The inspector retains subdued rear arcs; the world overlay draws
-  front arcs only.
-- The roll ring remains a true screen-space circle about the camera view axis.
-- A pivot outside the projectable viewport does not draw. A valid gizmo near
-  an edge clips normally; its visible geometry must not deform.
+Brio is authoritative for the split:
 
-The camera/view handedness must be established once from Brio and the game's
-matrix convention. Do not repair individual axes with unrelated sign flips.
+- Inspector: `Brio/UI/Controls/Stateless/ImBrio.Gizmo.cs` removes camera
+  translation and perspective, uses camera rotation only, and draws at a
+  fixed pixel radius.
+- World: `Brio/UI/Windows/Specialized/PosingOverlayWindow.cs` passes the real
+  view matrix, projection matrix, and target/model matrix to ImGuizmo.
+
+Do not reuse one projection implementation for both surfaces.
+
+## Inspector rotation contract
+
+- Keep the current Poser plate, pastel X/Y/Z arcs, subdued rear arcs, hover
+  emphasis, and outer Roll ring.
+- Use only the active camera's rotation basis plus the selected Local,
+  World/model, or Parent-radial frame.
+- Do not use camera translation, perspective, FOV, actor depth, pivot screen
+  position, world radius, or per-point `WorldToScreen`.
+- Draw directly around the inspector widget centre at its fixed UI-scaled
+  radius. The result changes with camera rotation, never actor screen position.
+- Hit testing, front/rear classification, and positive drag tangent come from
+  exactly that screen-space geometry.
+
+## In-world projection contract
+
+- Match Brio's perspective path: active camera view and projection matrices,
+  with the target/model transform composed using the same matrix convention.
+- The pivot and axis orientation must be perspective-correct at their actual
+  world position. Do not recenter inspector geometry into the viewport.
+- Match Brio/ImGuizmo's stable perceived handle size. Do not achieve size by
+  projecting a fixed metre-radius circle, which caused the reported
+  off-centre deformation.
+- Camera pan, orbit, distance, and FOV changes must behave like Brio: correct
+  perspective orientation and placement without unnatural shear or stretching.
+- Near viewport edges, valid geometry clips normally. Behind-camera or
+  non-projectable targets do not draw or accept input.
+
+## World tools and visual grammar
+
+Provide the same pastel axis palette, line weight, and hover/active emphasis
+for every toolbar operation:
+
+- **Translate:** X/Y/Z shafts and arrowheads, plus the expected planar handles.
+- **Rotate:** perspective-correct X/Y/Z arcs and camera Roll ring.
+- **Scale:** X/Y/Z shafts with scale endpoints and uniform centre control.
+- **Universal:** one coherent combined Translate/Rotate/Scale gizmo with the
+  same geometry and interaction meanings, not stacked duplicate widgets.
+
+The in-world overlay omits the inspector's dark plate, faded rear arcs, and
+decorative guides. It must not draw cursor circles, click-origin dots, or
+stock ImGuizmo underneath custom geometry.
+
+The current Dalamud ImGuizmo binding exposes no style/color API. Do not merely
+draw pastel lines over a still-visible stock gizmo. Either own the complete
+presentation/hit-test layer while retaining Brio's view/projection semantics,
+or use a verified binding path that genuinely replaces the stock styling.
 
 ## Interaction invariants
 
-- Hit testing uses the exact screen-space segments that were drawn.
-- Positive drag tangents derive from the same direction-only projection; do
-  not call perspective `WorldToScreen` on an epsilon-rotated ring point.
-- X, Y, Z, and Roll retain their current domain axes in Local, World/model,
-  and Parent-radial modes. This PBI changes presentation projection only.
-- Freeze axis, pivot, frame, baseline, and tangent at gesture begin. Camera
-  movement or selection refresh during a drag must not bend the active ring,
-  change its sign, restart it, or create a second history entry.
-- Preserve pointer ownership, release suppression, Escape cancellation,
-  modifier sensitivity, multi-selection targeting, and symmetry behavior.
-- Inspector and world gizmos must show the same axis orientation for the same
-  target/frame. Their only intentional visual differences are the inspector
-  plate/rear arcs and the world overlay's omitted decoration.
+- Drawn geometry and hit geometry are identical. Hover priority is
+  deterministic where Universal handles overlap; the engaged handle owns the
+  pointer until release/cancel.
+- X/Y/Z manipulate the axis displayed. Roll uses the camera view axis.
+- Preserve Local, World/model, and Parent-radial semantics. Presentation must
+  not change transform-domain math.
+- Freeze tool, axis/plane, pivot, frame, baseline, and drag mapping at gesture
+  begin. Camera or selection changes must not bend or restart an active drag.
+- Preserve one history item per drag, Escape restoration, restart suppression,
+  modifier sensitivity, symmetry, multi-selection, and release-frame selection
+  suppression.
+- Inspector and world axes represent the same selected frame. Their different
+  projections are intentional; their axis identities and applied results match.
 
-## Scope and cleanup
+## Architecture and cleanup
 
-Refactor the existing `RotationGizmoRings` projection rather than adding a
-second gizmo framework. Remove obsolete world-radius, pixels-per-metre,
-per-point world projection, and recenter-after-perspective paths. Keep stock
-ImGuizmo translation/scale behavior and the established pastel ring styling
-unchanged.
+Extend the existing gizmo module and clean gesture lifecycle; do not introduce
+a second selection, transform, or history authority. Remove superseded
+world-radius/pixels-per-metre and inspector-recentring paths once unused.
 
-Update only the rotation-gizmo portion of
-`docs/features/selection-and-transforms.md`. Explain the screen-stable
-camera-rotation contract there once; implementation math belongs in tight
-source comments.
+Update only the gizmo contract in
+`docs/features/selection-and-transforms.md`. Keep projection handedness and
+surprising matrix/sign decisions in tight comments beside the code.
 
 ## Excluded
 
-- New gizmo modes, palette redesign, camera controls, selection changes, or
-  transform-core changes.
+- New transform operations, camera controls, palette redesign, transform
+  clipboard, or selection changes.
 - DevHost, npm, IPC, screenshots, a new test framework, or broad documentation.
 
 ## Implementation order
 
-1. Introduce the direction-only camera basis and projected ring geometry.
-2. Migrate front/rear classification, hit testing, and positive tangents.
-3. Use the shared geometry directly in the inspector and world overlay.
-4. Remove the superseded perspective/recentring code and update the one
-   normative document.
+1. Separate inspector camera-rotation projection from world perspective input.
+2. Correct the inspector rotation ball and its hit/tangent math.
+3. Implement the styled perspective-correct world Translate, Rotate, and Scale.
+4. Compose those primitives into Universal with one interaction owner.
+5. Remove superseded/double-render paths and update the normative contract.
 
 Use reviewable commits without amend or rebase after review starts.
 
 ## Acceptance
 
-- With one bone selected, move or pan the actor from viewport centre to the
-  left, right, top, bottom, and corners: ring shape and pixel radius remain
-  stable; only the world-gizmo centre moves.
-- Orbiting the camera changes axis orientation smoothly without changing the
-  gizmo's radius or introducing off-axis shear.
-- Changing camera distance or FOV does not resize the rings.
-- Inspector and world X/Y/Z orientation match in Local, World/model, and
-  Parent-radial modes; Roll remains circular.
-- Every ring can be dragged while off-centre with the expected direction,
-  frozen-axis behavior, one history item, and no selection click on release.
-- Existing move, scale, Universal, symmetry, multi-selection, cancel, and
-  modifier behavior does not regress.
-- Claude runs only the game-loaded Debug build for handoff. Codex runs the
-  Release build once, after live acceptance, as the closure gate.
+- Inspector shape and radius are unchanged when the actor moves from viewport
+  centre to every edge/corner; camera rotation alone reorients its axes.
+- World gizmo matches Brio when centred and off-centre: perspective-correct
+  placement/orientation, stable perceived size, and no unnatural deformation.
+- Translate, Rotate, Scale, and Universal all use the approved pastel styling,
+  have correct hover/active feedback, and expose every expected handle.
+- Local, World/model, and Parent-radial axes match between inspector and world;
+  dragging every axis/plane/roll handle produces the depicted result.
+- Off-centre drags, camera movement, cancel, modifiers, symmetry,
+  multi-selection, undo/redo, and release selection suppression do not regress.
+- No stock/custom double drawing and no permanent scrollbar or overlay input
+  leak is introduced.
+- Claude runs only the game-loaded Debug build for handoff. Codex runs Release
+  once after live acceptance as the closure gate.
 
 ## Handoff
 
-Report base/head, commit map, changed paths, the camera-basis and handedness
-decision, removed perspective paths, Debug build result, and remaining
-in-game checks. Make no runtime or visual claim from compilation.
+Report base/head, commit map, changed paths, the distinct inspector/world
+projection decisions, world styling approach, removed legacy paths, Debug
+build result, and remaining in-game checks. Compilation is not visual proof.
