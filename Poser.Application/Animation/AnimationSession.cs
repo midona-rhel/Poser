@@ -330,6 +330,19 @@ public sealed class AnimationSession
         if (capture == null && _port.Read(actor) is { } reading)
             capture = new StanceCapture(reading.Stance, reading.Pose);
 
+        // A latched base animation re-drives its override the moment the
+        // stance transition settles, reverting the pick within a frame.
+        // Choosing a stance IS leaving the animation, so the latch is
+        // released first — Ktisis has no latch to fight, which is why its
+        // pose changes stick.
+        var owned = OverridesFor(actor);
+        if (owned.BaseCapture != null || owned.BaseTimeline != null)
+        {
+            var released = StopBase(actor);
+            if (!released.Success)
+                return released;
+        }
+
         var result = _port.SetStance(actor, stance, pose);
         if (!result.Success)
             return AnimationResult.Fail(result.Detail ?? "Stance failed.");

@@ -33,7 +33,9 @@
   the idle or emote), preserving draw and camera offsets across a sit-chair
   change; the read-back reports the RAW family (Battle, Umbrella, Accessory)
   so the UI never lies about the current state, and `SupportsStance` is false
-  when the transition functions were not found. Weapon
+  when the transition functions were not found. A stance pick RELEASES a
+  latched base animation first — the latch re-drives its override within a
+  frame otherwise, silently reverting the stance. Weapon
   plays the draw/sheathe timeline **and** sets the weapon-state flag, which the
   game does not update for a forced timeline.
 - **Force loop is not implemented.** The game's forced-timeline field is not
@@ -59,7 +61,11 @@
   under the Full body and Upper body layer rows, as Ktisis places it.
   Stance is a combo whose trigger shows the true family even when it is not
   in the list, and re-picking the shown entry fires — that is what makes
-  Idle reachable from a weapon-drawn actor. Speed controls are scrubbers
+  Idle reachable from a weapon-drawn actor; the pose cycler (number, −/+)
+  sits on the same row. Layer rows remember the last pick: a finished
+  one-shot swaps Pause for Replay instead of collapsing back to
+  "Add layer…" — continuity beyond that is force loop, which stays
+  withdrawn (the field is unproven for the current client). Speed controls are scrubbers
   with a live readout: overall −5..10 with 0 and 1 notched, per-layer 0..2
   with 1 notched. Parts/Overlay and arbitrary Havok controls live
   under collapsed Advanced disclosures — empty engine slots are not the

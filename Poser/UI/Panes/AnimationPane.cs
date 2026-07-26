@@ -45,6 +45,11 @@ public sealed class AnimationPane
     private bool _openAdvancedScrub;
 
     private (ActorId Actor, ScrubControlId Control)? _scrub;
+    /// <summary>Last animation picked into each layer. A one-shot ends in
+    /// the game and the slot reads 0 again; without this the row collapses
+    /// back to "Add layer…" the moment the animation finishes, taking its
+    /// controls with it mid-use.</summary>
+    private readonly Dictionary<(ActorId, AnimationSlot), ushort> _layerPicks = new();
     // The advanced list's IDENTITY is frozen while a scrub is in flight:
     // pausing the actor can change which Havok controls exist, and a list
     // that gains or loses rows under the pointer moves the slider being
@@ -409,34 +414,31 @@ public sealed class AnimationPane
             int pose = StanceValues[picked] == reading.Stance ? reading.Pose : 0;
             Report(_animation.SetStance(actor, StanceValues[picked], pose), "Stance");
         }
-        y += Row * s;
 
-        // Pose stepper: previous / number / next, both directions wrapping.
-        // Non-selectable families (Battle, Umbrella…) step through Idle,
-        // whose native path already routes to the battle variants when the
-        // weapon is drawn.
+        // The pose cycler lives ON the stance row — number, then the same
+        // − / + icon buttons the rest of the product uses. Non-selectable
+        // families (Battle, Umbrella…) step through Idle, whose native
+        // path already routes to the battle variants when the weapon is
+        // drawn.
         var poseFamily = stanceIndex >= 0 ? reading.Stance : AnimationStance.Idle;
-        row = cursor + new Vector2(0f, y);
-        valueX = LabelCell(row, "Pose", s);
-        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y + ButtonY * s));
-        if (Crystarium.IconButton(TablerIcon.ChevronRight, new ButtonProps
+        float poseX = valueX + (160f + 16f) * s;
+        ViewText.Label(new Vector2(poseX, row.Y + TextY * s),
+            reading.Pose.ToString(), 12f, FontWeight.Medium,
+            InspectorLayout.ValueColor, mono: true);
+        ImGui.SetCursorScreenPos(new Vector2(poseX + 14f * s, row.Y + ButtonY * s));
+        if (Crystarium.IconButton(TablerIcon.Minus, new ButtonProps
             {
                 Id = "anim-pose-prev",
                 Classes = Cls.Compact,
                 Tooltip = "Previous pose (wraps)",
-                FlipX = true,
                 Disabled = !supportsStance,
                 Style = new ButtonStyle { Width = Sizing.Fixed(24f), Height = Sizing.Fixed(24f) },
             }))
             Report(
                 _animation.SetStance(actor, poseFamily, reading.Pose - 1),
                 "Pose");
-        float numberX = valueX + (24f + Gap) * s;
-        ViewText.Label(new Vector2(numberX, row.Y + TextY * s),
-            reading.Pose.ToString(), 12f, FontWeight.Medium,
-            InspectorLayout.ValueColor, mono: true);
-        ImGui.SetCursorScreenPos(new Vector2(numberX + 20f * s, row.Y + ButtonY * s));
-        if (Crystarium.IconButton(TablerIcon.ChevronRight, new ButtonProps
+        ImGui.SetCursorScreenPos(new Vector2(poseX + (14f + 24f + 4f) * s, row.Y + ButtonY * s));
+        if (Crystarium.IconButton(TablerIcon.Plus, new ButtonProps
             {
                 Id = "anim-pose-next",
                 Classes = Cls.Compact,
@@ -523,7 +525,13 @@ public sealed class AnimationPane
         Vector2 cursor, float width, float s, float y,
         AnimationSlot slot, string label, bool alwaysShow)
     {
-        ushort timeline = reading.TimelineFor(slot);
+        // The live timeline while one plays, else the last pick made here:
+        // the game reads 0 again the moment a one-shot ends, and the row
+        // must not forget what it was playing.
+        ushort live = reading.TimelineFor(slot);
+        ushort timeline = live != 0
+            ? live
+            : _layerPicks.TryGetValue((actor, slot), out var remembered) ? remembered : (ushort)0;
         bool active = timeline != 0;
         var row = cursor + new Vector2(0f, y);
         float valueX = LabelCell(row, label, s);
@@ -583,12 +591,26 @@ public sealed class AnimationPane
                 }))
             Report(_animation.SetSlotSpeed(actor, captured, slotSpeed), "Layer speed");
 
-        float pauseWidth = MathF.Max(
+        float pauseWidth = MathF.Max(MathF.Max(
             Crystarium.MeasureButton("Pause", Cls.Compact).X,
-            Crystarium.MeasureButton("Play", Cls.Compact).X);
+            Crystarium.MeasureButton("Play", Cls.Compact).X),
+            Crystarium.MeasureButton("Replay", Cls.Compact).X);
         x -= (Gap * s) + pauseWidth;
         ImGui.SetCursorScreenPos(new Vector2(x, row.Y + ButtonY * s));
-        if (Crystarium.Button(slotPaused ? "Play" : "Pause", new ButtonProps
+        if (live == 0)
+        {
+            // The one-shot ended, so there is nothing to pause — the slot
+            // holds the pick instead, ready to play again.
+            if (Crystarium.Button("Replay", new ButtonProps
+                {
+                    Id = $"anim-layer-replay-{(int)slot}",
+                    Classes = Cls.Compact,
+                    Tooltip = "Play this animation again",
+                    Style = new ButtonStyle { Width = Sizing.Fixed(pauseWidth / s) },
+                }))
+                Report(_animation.Blend(actor, timeline), label);
+        }
+        else if (Crystarium.Button(slotPaused ? "Play" : "Pause", new ButtonProps
             {
                 Id = $"anim-layer-pause-{(int)slot}",
                 Classes = Cls.Compact,
@@ -804,6 +826,7 @@ public sealed class AnimationPane
             case AnimationPickTarget.Slot:
                 // The generic play: the timeline's own slot tag routes it
                 // onto its layer -- the references never write a slot.
+                _layerPicks[(actor, pick.Slot)] = timeline;
                 Report(_animation.Blend(actor, timeline),
                     AnimationSlots.DisplayName(pick.Slot));
                 break;

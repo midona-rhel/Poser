@@ -117,8 +117,10 @@ the engine's slot array. It is not a slot debugger and not a keyframe editor.
   directly under the transport so failures are visible without scrolling.
 - Stance: a combo whose trigger shows the TRUE family (Battle, Umbrella,
   Accessory included) and fires on re-pick, so Idle is reachable from a
-  weapon-drawn state; a wrapping pose stepper; weapon and position-lock
-  switches. Disabled when the stance-transition functions are missing.
+  weapon-drawn state; the wrapping pose cycler (number, −/+ icon buttons)
+  on the same row; weapon and position-lock switches on the next. A stance
+  pick releases a latched base animation first, or the latch re-drives it
+  within a frame. Disabled when the stance-transition functions are missing.
 - Layers: compact rows for Full body, Upper body, Facial and Additive —
   name opens the picker for that destination, then pause, speed (scrubber,
   0..2, 1 notched), reset (speed only). There is no separate Blend row: a
