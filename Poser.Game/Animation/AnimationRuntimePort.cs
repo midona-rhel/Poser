@@ -63,6 +63,12 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     private delegate void SetSlotSpeedDelegate(ActionTimelineSequencer* sequencer, uint slot, float speed);
     private readonly Hook<SetSlotSpeedDelegate>? _slotSpeedHook;
 
+    // Non-null is NOT enabled: a hook object can exist while its Enable
+    // (or the other hook's construction) failed. Commands gate on these,
+    // set only after the matching Enable returned.
+    private readonly bool _overallSpeedHookEnabled;
+    private readonly bool _slotSpeedHookEnabled;
+
     // Stance transition natives (Ktisis AnimationModule). ClientStructs maps
     // the structs but not these three entry points, so they are sig-scanned.
     // Every struct member they touch is a verified ClientStructs symbol.
@@ -118,23 +124,34 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         _playEmote = ScanDelegate<PlayEmoteDelegate>(
             sigScanner, "E8 ?? ?? ?? ?? 88 45 68", "PlayEmote");
 
+        // Each hook is constructed AND enabled independently, and only a
+        // completed Enable sets its flag: a failure in either step, or in
+        // the other hook, can never leave a command believing a non-null
+        // but inactive hook is enforcing anything.
         try
         {
             var speedAddress = sigScanner.ScanText(
                 "E8 ?? ?? ?? ?? 48 8D 8B ?? ?? ?? ?? 48 8B 01 FF 50 ?? 48 8D 8B ?? ?? ?? ?? 48 8B 01 FF 50 ?? F6 83");
             _speedHook = hooking.HookFromAddress<CalculateAndApplyOverallSpeedDelegate>(
                 speedAddress, OverallSpeedDetour);
-            _slotSpeedHook = hooking.HookFromAddress<SetSlotSpeedDelegate>(
-                ActionTimelineSequencer.Addresses.SetSlotSpeed.Value, SlotSpeedDetour);
             _speedHook.Enable();
-            _slotSpeedHook.Enable();
+            _overallSpeedHookEnabled = true;
         }
         catch (Exception ex)
         {
-            // Without the hooks the game wins every recalculation; say so
-            // loudly rather than silently degrading to a value that sticks
-            // for one frame.
-            _log.Error($"Animation speed hooks unavailable; speed overrides will not hold: {ex.Message}");
+            _log.Error($"Overall-speed hook unavailable; overall speed overrides will fail explicitly: {ex.Message}");
+        }
+
+        try
+        {
+            _slotSpeedHook = hooking.HookFromAddress<SetSlotSpeedDelegate>(
+                ActionTimelineSequencer.Addresses.SetSlotSpeed.Value, SlotSpeedDetour);
+            _slotSpeedHook.Enable();
+            _slotSpeedHookEnabled = true;
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"Slot-speed hook unavailable; layer speed overrides will fail explicitly: {ex.Message}");
         }
 
         try
@@ -697,12 +714,12 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             return AnimationPortResult.Fail(detail!);
         if (!float.IsFinite(speed))
             return AnimationPortResult.Fail("Speed must be a finite number.");
-        // Without the hook the game re-wins every recalculation: the value
-        // would hold for one frame and silently drift back. Refuse rather
-        // than pretend.
-        if (_speedHook == null)
+        // Without the ENABLED hook the game re-wins every recalculation:
+        // the value would hold for one frame and silently drift back.
+        // Refuse rather than pretend; non-null alone proves nothing.
+        if (!_overallSpeedHookEnabled)
             return AnimationPortResult.Fail(
-                "Speed is unavailable: the game's speed hook was not found.");
+                "Speed is unavailable: the game's speed hook is not active.");
 
         EnforcementFor(actor).OverallSpeed = speed;
         SyncEnforcementIndex();
@@ -761,9 +778,9 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             return AnimationPortResult.Fail(detail!);
         if (!float.IsFinite(speed))
             return AnimationPortResult.Fail("Speed must be a finite number.");
-        if (_slotSpeedHook == null)
+        if (!_slotSpeedHookEnabled)
             return AnimationPortResult.Fail(
-                "Layer speed is unavailable: the game's slot-speed hook was not found.");
+                "Layer speed is unavailable: the game's slot-speed hook is not active.");
 
         EnforcementFor(actor).SlotSpeeds[(int)slot] = speed;
         SyncEnforcementIndex();
