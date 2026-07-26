@@ -1,5 +1,6 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
@@ -9,6 +10,14 @@ public enum SidebarExpander { None, Collapsed, Open }
 public record struct SidebarRowProps
 {
     public TablerIcon Icon;
+    /// <summary>
+    /// Optional game-supplied icon drawn in the icon slot INSTEAD of
+    /// <see cref="Icon"/>. The caller owns resolution and lifetime —
+    /// Dalamud's shared textures must be re-resolved every frame and
+    /// never cached — so this takes an already-resolved wrap rather than
+    /// an icon id.
+    /// </summary>
+    public IDalamudTextureWrap? IconTexture;
     /// <summary>Right-aligned mono badge (counts, "you", "spawned").</summary>
     public string? Badge;
     public bool Selected;
@@ -16,6 +25,10 @@ public record struct SidebarRowProps
     public float Inset;
     public SidebarExpander Expander;
     public bool DropTarget;
+    /// <summary>Hides the reserved expander slot. Tree rows keep it so
+    /// siblings stay aligned; a flat list has nothing to align to and the
+    /// 16px would just be dead space.</summary>
+    public bool NoExpanderSlot;
 }
 
 public static partial class Crystarium
@@ -90,15 +103,26 @@ public static partial class Crystarium
                     slotCenter + new Vector2(-2.5f, 3.5f) * scale, tri);
             }
         }
-        x += 16f * scale; // expander slot is reserved either way (keeps siblings aligned)
+        // The expander slot is reserved either way in a tree, so siblings
+        // stay aligned whether or not they have children.
+        if (!props.NoExpanderSlot)
+            x += 16f * scale;
 
         // Icon 16px, opacity .85 → 1 on hover
         float iconSize = 16f * scale;
         var iconTint = theme.Text with { W = hit.Hovered ? 1f : 0.85f };
-        var savedCursor = ImGui.GetCursorScreenPos();
-        ImGui.SetCursorScreenPos(new Vector2(x, hit.ScreenMin.Y + (height - iconSize) * 0.5f));
-        Icon(props.Icon, iconSize, ColorEx.ApplyAlpha(iconTint));
-        ImGui.SetCursorScreenPos(savedCursor);
+        var iconPos = new Vector2(x, hit.ScreenMin.Y + (height - iconSize) * 0.5f);
+        if (props.IconTexture is { } texture)
+        {
+            dl.AddImage(texture.Handle, iconPos, iconPos + new Vector2(iconSize, iconSize));
+        }
+        else
+        {
+            var savedCursor = ImGui.GetCursorScreenPos();
+            ImGui.SetCursorScreenPos(iconPos);
+            Icon(props.Icon, iconSize, ColorEx.ApplyAlpha(iconTint));
+            ImGui.SetCursorScreenPos(savedCursor);
+        }
         x += iconSize + 6f * scale;
 
         // Label 13px text-primary

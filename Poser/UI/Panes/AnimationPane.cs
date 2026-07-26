@@ -248,6 +248,17 @@ public sealed class AnimationPane
         return null;
     }
 
+    /// <summary>Glyph for rows the game gives no icon for — raw timelines
+    /// never have one. Keyed by kind so the column still reads at a
+    /// glance instead of showing an anonymous placeholder.</summary>
+    private static TablerIcon FallbackIcon(AnimationKind kind) => kind switch
+    {
+        AnimationKind.Emote => TablerIcon.MoodSmile,
+        AnimationKind.Expression => TablerIcon.MoodSmile,
+        AnimationKind.Action => TablerIcon.Bolt,
+        _ => TablerIcon.Movie,
+    };
+
     private static int IndexOfSlot(AnimationSlot slot)
     {
         for (int i = 0; i < AnimationSlots.All.Count; i++)
@@ -278,37 +289,26 @@ public sealed class AnimationPane
             return;
         }
 
-        float rowH = 26f * s;
-        var dl = ImGui.GetWindowDrawList();
+        // Rows are the shared SidebarRow: the same 26px pill, hover and
+        // selection states, icon slot and right-aligned mono badge the
+        // scene tree uses. It also advances the cursor itself, which the
+        // previous hand-drawn row did not — ViewText.Label moves the ImGui
+        // cursor to wherever it drew, so drawing a right-aligned id left
+        // the cursor at the right edge and every following row started
+        // further right. That was the growing indent.
         foreach (var entry in results)
         {
-            var rowMin = ImGui.GetCursorScreenPos();
-            if (ImGui.Selectable($"##anim-row-{entry.TimelineId}-{(int)entry.Slot}",
-                    false, ImGuiSelectableFlags.None, new Vector2(width * s, rowH)))
+            if (Crystarium.SidebarRow(
+                    $"##anim-row-{entry.TimelineId}-{(int)entry.Slot}",
+                    entry.Name,
+                    new SidebarRowProps
+                    {
+                        Icon = FallbackIcon(entry.Kind),
+                        IconTexture = ResolveIcon(entry.Icon),
+                        Badge = entry.TimelineId.ToString(),
+                        NoExpanderSlot = true,
+                    }))
                 PlayEntry(actor, selection, entry);
-
-            float iconSize = 18f * s;
-            var iconPos = rowMin + new Vector2(2f * s, (rowH - iconSize) / 2f);
-            if (ResolveIcon(entry.Icon) is { } wrap)
-            {
-                dl.AddImage(wrap.Handle, iconPos, iconPos + new Vector2(iconSize, iconSize));
-            }
-            else
-            {
-                // No icon, or one the game cannot supply; a neutral glyph
-                // keeps the name column aligned instead of ragged.
-                dl.AddCircle(iconPos + new Vector2(iconSize / 2f, iconSize / 2f),
-                    iconSize * 0.3f,
-                    ImGui.ColorConvertFloat4ToU32(InspectorLayout.HintColor),
-                    12, 1.5f * s);
-            }
-
-            float idWidth = 46f * s;
-            ViewText.Label(rowMin + new Vector2(iconSize + 8f * s, (rowH - 14f * s) / 2f),
-                entry.Name, 12f, FontWeight.Regular, InspectorLayout.ValueColor);
-            ViewText.Label(rowMin + new Vector2(width * s - idWidth, (rowH - 13f * s) / 2f),
-                entry.TimelineId.ToString(), 11f, FontWeight.Regular,
-                InspectorLayout.HintColor, mono: true);
         }
     }
 
