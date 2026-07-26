@@ -29,6 +29,10 @@ public record struct SidebarRowProps
     /// siblings stay aligned; a flat list has nothing to align to and the
     /// 16px would just be dead space.</summary>
     public bool NoExpanderSlot;
+    /// <summary>Explicit row width, unscaled; 0 fills the available width.
+    /// A scrolling list sets this to reserve a stable scrollbar gutter, so
+    /// rows do not change width the moment the list starts scrolling.</summary>
+    public float Width;
 }
 
 public static partial class Crystarium
@@ -45,7 +49,7 @@ public static partial class Crystarium
     {
         float scale = ImGuiHelpers.GlobalScale;
         float height = 26f * scale;
-        float width = Norvrandt.AvailableWidth;
+        float width = props.Width > 0f ? props.Width * scale : Norvrandt.AvailableWidth;
 
         // Rows stack seamlessly at exactly 26px (picto sidebar rhythm) — suppress
         // ImGui's ambient vertical ItemSpacing for the reserve.

@@ -113,7 +113,12 @@ public sealed class AnimationPane
     public void Draw(Vector2 origin, Vector2 size)
     {
         float s = ImGuiHelpers.GlobalScale;
-        float width = InspectorLayout.ClampContentWidth(size.X, s);
+        // `scrollbar-gutter: stable`, as the shell reserves it: take the
+        // scrollbar's width out of the layout measure ALWAYS, so trailing
+        // actions never sit under the scrollbar and nothing shifts when
+        // the page starts scrolling.
+        float width = InspectorLayout.ClampContentWidth(
+            size.X - Views.AppShellView.ScrollbarWidth * s, s);
 
         if (TargetActor() is not { } actor)
         {

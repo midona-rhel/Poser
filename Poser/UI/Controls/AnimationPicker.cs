@@ -190,6 +190,10 @@ public sealed class AnimationPicker
     {
         float s = ImGuiHelpers.GlobalScale;
         float inner = Width - 16f;
+        // `scrollbar-gutter: stable` — the rows reserve the scrollbar's
+        // 12px whether or not it is showing, so the list does not reflow
+        // the instant it starts scrolling.
+        float rowWidth = inner - Views.AppShellView.ScrollbarWidth;
         var origin = ImGui.GetCursorScreenPos();
         var cursor = origin;
 
@@ -248,6 +252,7 @@ public sealed class AnimationPicker
                             IconTexture = ResolveIcon(entry.Icon),
                             Badge = Metadata(entry),
                             NoExpanderSlot = true,
+                            Width = rowWidth,
                         }))
                 {
                     picked = new AnimationPick(entry, _target, _slot, _playOnSelect);
