@@ -17,22 +17,18 @@ namespace Poser.UI;
 /// The Animation tab: a compact live mixer for the selected actor, not a
 /// timeline-slot debugger.
 ///
-/// It is organised by what the user is doing — transport, stance, the
-/// layers that are actually active, scrubbing, face and lips — rather than
-/// by the engine's slot array. Empty engine slots are not the interface:
-/// Parts and Overlay live behind one collapsed Advanced disclosure, which
-/// is the same presentation split the native reference makes between
-/// ordinary controls and raw slots.
+/// Sections follow the task — transport, stance, layers, scrub, face and
+/// lips. Choosing an animation is always the shared
+/// <see cref="AnimationPicker"/>, with the CALLER supplying the
+/// destination.
 ///
-/// Choosing an animation is always the shared <see cref="AnimationPicker"/>,
-/// opened from whichever row wants it, with the CALLER supplying the
-/// destination. Searching a numeric id in that picker is how a raw id is
-/// played; the page carries no developer id field.
-///
-/// Every control's width comes from its own style — Crystarium controls
-/// size themselves and ignore <c>ImGui.SetNextItemWidth</c>. Widths are
-/// declared UNSCALED. One alignment grid throughout: label, flexible
-/// value, trailing actions.
+/// LAYOUT DISCIPLINE. One 30px row grid; every control is vertically
+/// centred in its row by its own real height (buttons 24, sliders 14,
+/// switches 20, segmented pills 30). Trailing actions are placed from the
+/// RIGHT edge at MEASURED widths, so they end flush at the content edge
+/// and never overlap or fall short regardless of label length; the value
+/// control fills whatever remains. Nothing uses hand-summed trailing
+/// constants — that is what produced the earlier overlaps.
 /// </summary>
 public sealed class AnimationPane
 {
@@ -49,16 +45,24 @@ public sealed class AnimationPane
     private bool _openAdvancedScrub;
 
     private (ActorId Actor, ScrubControlId Control)? _scrub;
+    // The advanced list's IDENTITY is frozen while a scrub is in flight:
+    // pausing the actor can change which Havok controls exist, and a list
+    // that gains or loses rows under the pointer moves the slider being
+    // dragged. Readings are still merged live so times keep updating.
+    private IReadOnlyList<ScrubControlReading>? _scrubFrozenControls;
     private string _status = string.Empty;
+    private bool _sceneMenuRequested;
 
     // One grid for every row in the pane.
-    /// <summary>Vertical breathing room above and below the page, matching
-    /// the shell's horizontal content inset.</summary>
     private const float ContentPadding = 12f;
-    private const float Row = 26f;
-    private const float RowGap = 4f;
+    private const float Row = 30f;
     private const float LabelColumn = 92f;
-    private const float ActionWidth = 60f;
+    private const float Gap = 8f;
+    // Per-control vertical centring inside the 30px row.
+    private const float ButtonY = 3f;   // 24px compact button
+    private const float SliderY = 8f;   // 14px slider
+    private const float SwitchY = 5f;   // 20px switch
+    private const float TextY = 9f;     // 11-12px text
 
     /// <summary>The layers a user actually mixes. Parts and Overlay are
     /// engine slots and live under Advanced.</summary>
@@ -116,14 +120,14 @@ public sealed class AnimationPane
     public void Draw(Vector2 origin, Vector2 size)
     {
         float s = ImGuiHelpers.GlobalScale;
-        // The shell has already excluded its scrollbar gutter from this
-        // width, so nothing further is reserved here.
         float width = InspectorLayout.ClampContentWidth(size.X, s);
 
         if (TargetActor() is not { } actor)
         {
+            // Word-for-word the Pose inspector's empty state: the two tabs
+            // ask for the same thing, so they say the same thing.
             ViewText.Label(origin + new Vector2(0f, 8f) * s,
-                "Select an actor to mix its animation.", 12f,
+                "Select an actor or bone in the sidebar.", 12f,
                 FontWeight.Regular, InspectorLayout.HintColor);
             return;
         }
@@ -140,27 +144,18 @@ public sealed class AnimationPane
         // so its slider values cannot reach the previous gesture.
         if (_scrub is { } active && !active.Actor.Equals(actor))
         {
-            _animation.EndScrub();
-            _scrub = null;
+            EndScrub();
         }
 
         var reading = _animation.Read(actor) ?? ActorAnimationReading.Empty;
         var owned = _animation.OverridesFor(actor);
         var selection = _animation.SelectionFor(actor);
 
-        // No scroll child of its own: the shell's content child scrolls,
-        // and it is the thing that reserves the gutter. Opening a child
-        // inside the already-inset content would put this page's scrollbar
-        // over its own trailing actions.
-        //
-        // The shell insets content 12px HORIZONTALLY only — its vertical
-        // gap is 4px at the top and nothing at the bottom — so the page
-        // supplies its own vertical padding to match, the same 12px the
-        // rail uses above and below its content.
+        // The shell's content child scrolls and owns the gutter; the page
+        // supplies only its own vertical padding.
         ImGui.SetCursorScreenPos(origin + new Vector2(0f, ContentPadding * s));
         DrawPage(actor, reading, owned, width, s);
 
-        // The picker is a popup and so is unaffected by the shell's scroll.
         if (_picker.Draw() is { } pick)
             Apply(actor, selection, pick);
     }
@@ -187,12 +182,11 @@ public sealed class AnimationPane
         {
             ViewText.Label(new Vector2(origin.X, y + 6f * s), _status, 11f,
                 FontWeight.Regular, InspectorLayout.HintColor);
-            y += (Row + RowGap) * s;
+            y += Row * s;
         }
 
         // Register the content extent, including the trailing padding, so
-        // scrolling to the bottom leaves the last row clear of the edge
-        // rather than flush against it.
+        // scrolling to the bottom leaves the last row clear of the edge.
         ImGui.SetCursorScreenPos(origin);
         ImGui.Dummy(new Vector2(width, (y - origin.Y) + ContentPadding * s));
     }
@@ -209,9 +203,69 @@ public sealed class AnimationPane
     /// <summary>Label cell for a row; returns the x where the value starts.</summary>
     private static float LabelCell(Vector2 rowOrigin, string label, float s)
     {
-        ViewText.Label(rowOrigin + new Vector2(0f, 6f * s), label, 11f,
+        ViewText.Label(rowOrigin + new Vector2(0f, TextY * s), label, 11f,
             FontWeight.Regular, InspectorLayout.LabelColor);
         return rowOrigin.X + LabelColumn * s;
+    }
+
+    private readonly record struct TrailingAction(
+        string Label, string Id, string? Tip, bool Disabled, Action Click)
+    {
+        /// <summary>Reserve the width of the WIDEST alternative label so a
+        /// button whose label toggles (Play/Pause) keeps one slot width and
+        /// nothing to its left shifts when it toggles.</summary>
+        public string? WidthLabel { get; init; }
+    }
+
+    /// <summary>
+    /// Places buttons right-to-left from the row's right edge at MEASURED
+    /// widths with uniform gaps, so trailing actions end flush at the
+    /// content edge no matter what their labels measure. Returns the x
+    /// where the trailing block begins; the value control fills up to it.
+    /// </summary>
+    private static float TrailingButtons(
+        Vector2 rowOrigin, float width, float s, params TrailingAction[] actions)
+    {
+        float x = rowOrigin.X + width;
+        for (int i = actions.Length - 1; i >= 0; i--)
+        {
+            var action = actions[i];
+            float w = Crystarium.MeasureButton(action.Label, Cls.Compact).X;
+            if (action.WidthLabel is { } alt)
+                w = MathF.Max(w, Crystarium.MeasureButton(alt, Cls.Compact).X);
+            x -= w;
+            ImGui.SetCursorScreenPos(new Vector2(x, rowOrigin.Y + ButtonY * s));
+            if (Crystarium.Button(action.Label, new ButtonProps
+                {
+                    Id = action.Id,
+                    Classes = Cls.Compact,
+                    Tooltip = action.Tip,
+                    Disabled = action.Disabled,
+                    Style = new ButtonStyle { Width = Sizing.Fixed(w / s) },
+                }) && !action.Disabled)
+                action.Click();
+            x -= Gap * s;
+        }
+        return x;
+    }
+
+    /// <summary>The value-cell button that fills from the label column to
+    /// the trailing block. Returns true when clicked.</summary>
+    private static bool ValueButton(
+        float valueX, float rowY, float rightEdge, float s,
+        string label, string id, string? tip)
+    {
+        ImGui.SetCursorScreenPos(new Vector2(valueX, rowY + ButtonY * s));
+        return Crystarium.Button(label, new ButtonProps
+        {
+            Id = id,
+            Classes = Cls.Compact,
+            Tooltip = tip,
+            Style = new ButtonStyle
+            {
+                Width = Sizing.Fixed(MathF.Max(70f, (rightEdge - valueX) / ImGuiHelpers.GlobalScale)),
+            },
+        });
     }
 
     // ── A. Transport ──────────────────────────────────────────────────
@@ -222,111 +276,65 @@ public sealed class AnimationPane
     {
         float y = Caption(cursor, Describe(actor)?.Name ?? "ACTOR", s);
 
-        // Current animation, opening the picker; then the transport
-        // actions, trailing-aligned.
         ushort current = reading.BaseTimeline != 0
             ? reading.BaseTimeline
             : reading.TimelineFor(AnimationSlot.Base);
         var row = cursor + new Vector2(0f, y);
         float valueX = LabelCell(row, "Animation", s);
 
-        float actionsWidth = (ActionWidth * 3f + 12f) * s;
-        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y));
-        if (Crystarium.Button(NameFor(current, "Choose…"), new ButtonProps
-            {
-                Id = "anim-choose-base",
-                Classes = Cls.Compact,
-                Tooltip = "Choose the animation this actor plays",
-                Style = new ButtonStyle
-                {
-                    Width = Sizing.Fixed(
-                        MathF.Max(80f, (width - actionsWidth) / s - LabelColumn - 8f)),
-                },
-            }))
+        bool paused = _animation.IsPaused(actor);
+        float trailingX = TrailingButtons(row, width, s,
+            new TrailingAction(paused ? "Play" : "Pause", "anim-play",
+                paused ? "Resume from the current frame" : "Hold the current frame",
+                false, () => Report(
+                    paused ? _animation.Resume(actor) : _animation.Pause(actor),
+                    "Playback"))
+            { WidthLabel = "Pause" },
+            new TrailingAction("Replay", "anim-replay",
+                "Restart the current animation", current == 0,
+                () => Report(_animation.Blend(actor, current), "Replay")),
+            new TrailingAction("Restore", "anim-restore",
+                "Restore this actor's incoming animation state", false,
+                () => Report(_animation.ResetActor(actor), "Restore")));
+
+        if (ValueButton(valueX, row.Y, trailingX, s,
+                NameFor(current, "Choose…"), "anim-choose-base",
+                "Choose the animation this actor plays"))
             _picker.Open(AnimationPickTarget.Base, AnimationSlot.Base,
                 restrictToSlot: null, caption: "Animation");
+        y += Row * s;
 
-        float ax = cursor.X + width - actionsWidth;
-        bool paused = _animation.IsPaused(actor);
-        ImGui.SetCursorScreenPos(new Vector2(ax, row.Y));
-        if (Crystarium.Button(paused ? "Play" : "Pause", new ButtonProps
-            {
-                Id = "anim-play",
-                Classes = Cls.Compact,
-                Tooltip = paused ? "Resume from the current frame" : "Hold the current frame",
-                Style = new ButtonStyle { Width = Sizing.Fixed(ActionWidth) },
-            }))
-            Report(paused ? _animation.Resume(actor) : _animation.Pause(actor), "Playback");
-
-        ImGui.SameLine(0f, 6f * s);
-        if (Crystarium.Button("Replay", new ButtonProps
-            {
-                Id = "anim-replay",
-                Classes = Cls.Compact,
-                Disabled = current == 0,
-                Tooltip = "Restart the current animation",
-                Style = new ButtonStyle { Width = Sizing.Fixed(ActionWidth) },
-            }) && current != 0)
-            Report(_animation.Blend(actor, current), "Replay");
-
-        ImGui.SameLine(0f, 6f * s);
-        if (Crystarium.Button("Restore", new ButtonProps
-            {
-                Id = "anim-restore",
-                Classes = Cls.Compact,
-                Tooltip = "Restore this actor's incoming animation state",
-                Style = new ButtonStyle { Width = Sizing.Fixed(ActionWidth) },
-            }))
-            Report(_animation.ResetActor(actor), "Restore");
-        y += (Row + RowGap) * s;
-
-        // Speed, with the scene actions trailing right.
+        // Speed row: slider fills to the trailing 1× reset and the
+        // scene-wide menu, whose label says what it is about.
         row = cursor + new Vector2(0f, y);
         valueX = LabelCell(row, "Speed", s);
-        float sceneWidth = 86f;
-        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y + 6f * s));
+        trailingX = TrailingButtons(row, width, s,
+            new TrailingAction("1×", "anim-speed-reset",
+                "Hand playback speed back to the game", false,
+                () => Report(_animation.ClearSpeed(actor), "Speed")),
+            new TrailingAction("All actors…", "anim-scene",
+                "Freeze, resume, replay or restore every actor in the scene",
+                false, () => _sceneMenuRequested = true));
+
         float speed = owned.OverallSpeed ?? reading.OverallSpeed;
+        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y + SliderY * s));
         if (Crystarium.Slider("##anim-speed", ref speed, -5f, 10f, new SliderProps
             {
                 Style = new SliderStyle
                 {
                     Width = Sizing.Fixed(MathF.Max(
-                        80f, (width / s) - LabelColumn - sceneWidth - 60f)),
+                        80f, (trailingX - valueX) / s - Gap)),
                 },
             }))
             Report(_animation.SetSpeed(actor, speed), "Speed");
-
-        ImGui.SetCursorScreenPos(
-            new Vector2(cursor.X + width - (sceneWidth + 48f) * s, row.Y));
-        if (Crystarium.Button("1×", new ButtonProps
-            {
-                Id = "anim-speed-reset",
-                Classes = Cls.Compact,
-                Tooltip = "Hand playback speed back to the game",
-                Style = new ButtonStyle { Width = Sizing.Fixed(42f) },
-            }))
-            Report(_animation.ClearSpeed(actor), "Speed");
-
-        ImGui.SetCursorScreenPos(new Vector2(cursor.X + width - sceneWidth * s, row.Y));
-        if (Crystarium.Button("Scene ⋯", new ButtonProps
-            {
-                Id = "anim-scene",
-                Classes = Cls.Compact,
-                Tooltip = "Freeze, resume, replay or restore every actor",
-                Style = new ButtonStyle { Width = Sizing.Fixed(sceneWidth) },
-            }))
-            _sceneMenuRequested = true;
-        y += (Row + RowGap) * s;
+        y += Row * s;
 
         DrawSceneMenu();
         return y;
     }
 
-    private bool _sceneMenuRequested;
-
-    /// <summary>Scene-wide actions as a menu rather than a button strip:
-    /// they are secondary, and a strip of four competes with the actor's
-    /// own transport for the same row.</summary>
+    /// <summary>Scene-wide actions as a menu: they are secondary, and four
+    /// labelled buttons compete with the actor's own transport.</summary>
     private void DrawSceneMenu()
     {
         if (_sceneMenuRequested)
@@ -362,61 +370,65 @@ public sealed class AnimationPane
             stanceIndex = 0;
         var row = cursor + new Vector2(0f, y);
         float valueX = LabelCell(row, "Stance", s);
-        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y + 1f * s));
+        // The pill is exactly row height and its first tab LABEL sits on
+        // the value column — the dark chrome is decoration, not padding,
+        // same as the inspector's surface pill.
+        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y));
         if (Crystarium.SegmentedControl("##anim-stance", StanceLabels, ref stanceIndex,
-                MathF.Min(240f, width / s - LabelColumn)))
+                maxWidth: MathF.Min(240f, width / s - LabelColumn),
+                alignFirstTabToCursor: true))
             Report(_animation.SetStance(actor, StanceValues[stanceIndex], 0), "Stance");
-        y += (Row + RowGap) * s;
+        y += Row * s;
 
-        // Pose stepper: previous / number / next on the shared grid, with
-        // both directions wrapping against the game's own pose count.
+        // Pose stepper: previous / number / next, both directions wrapping.
         row = cursor + new Vector2(0f, y);
         valueX = LabelCell(row, "Pose", s);
-        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y));
+        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y + ButtonY * s));
         if (Crystarium.IconButton(TablerIcon.ChevronRight, new ButtonProps
             {
                 Id = "anim-pose-prev",
                 Classes = Cls.Compact,
                 Tooltip = "Previous pose (wraps)",
                 FlipX = true,
-                Style = new ButtonStyle { Width = Sizing.Fixed(Row), Height = Sizing.Fixed(Row) },
+                Style = new ButtonStyle { Width = Sizing.Fixed(24f), Height = Sizing.Fixed(24f) },
             }))
             Report(
                 _animation.SetStance(actor, StanceValues[stanceIndex], reading.Pose - 1),
                 "Pose");
-        ViewText.Label(new Vector2(valueX + (Row + 10f) * s, row.Y + 6f * s),
+        float numberX = valueX + (24f + Gap) * s;
+        ViewText.Label(new Vector2(numberX, row.Y + TextY * s),
             reading.Pose.ToString(), 12f, FontWeight.Medium,
             InspectorLayout.ValueColor, mono: true);
-        ImGui.SetCursorScreenPos(new Vector2(valueX + (Row + 34f) * s, row.Y));
+        ImGui.SetCursorScreenPos(new Vector2(numberX + 20f * s, row.Y + ButtonY * s));
         if (Crystarium.IconButton(TablerIcon.ChevronRight, new ButtonProps
             {
                 Id = "anim-pose-next",
                 Classes = Cls.Compact,
                 Tooltip = "Next pose (wraps)",
-                Style = new ButtonStyle { Width = Sizing.Fixed(Row), Height = Sizing.Fixed(Row) },
+                Style = new ButtonStyle { Width = Sizing.Fixed(24f), Height = Sizing.Fixed(24f) },
             }))
             Report(
                 _animation.SetStance(actor, StanceValues[stanceIndex], reading.Pose + 1),
                 "Pose");
-        y += (Row + RowGap) * s;
+        y += Row * s;
 
         row = cursor + new Vector2(0f, y);
         valueX = LabelCell(row, "Weapon", s);
         bool drawn = reading.WeaponDrawn;
-        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y + 3f * s));
+        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y + SwitchY * s));
         if (Crystarium.Switch("##anim-weapon", ref drawn))
             Report(_animation.SetWeaponDrawn(actor, drawn), "Weapon");
 
-        ViewText.Label(new Vector2(valueX + 56f * s, row.Y + 6f * s), "Lock position", 11f,
-            FontWeight.Regular, InspectorLayout.LabelColor);
+        ViewText.Label(new Vector2(valueX + 56f * s, row.Y + TextY * s), "Lock position",
+            11f, FontWeight.Regular, InspectorLayout.LabelColor);
         bool locked = _animation.OverridesFor(actor).PositionLock;
-        ImGui.SetCursorScreenPos(new Vector2(valueX + 148f * s, row.Y + 3f * s));
+        ImGui.SetCursorScreenPos(new Vector2(valueX + 148f * s, row.Y + SwitchY * s));
         if (Crystarium.Switch("##anim-poslock", ref locked))
             Report(_animation.SetPositionLock(actor, locked), "Position lock");
-        return y + (Row + RowGap) * s;
+        return y + Row * s;
     }
 
-    // ── C. Active layers ──────────────────────────────────────────────
+    // ── C. Layers ─────────────────────────────────────────────────────
 
     private float DrawLayers(
         ActorId actor, ActorAnimationReading reading, AnimationOverrides owned,
@@ -428,24 +440,15 @@ public sealed class AnimationPane
             AnimationSlot.Base, "Base", alwaysShow: true);
 
         // Blend has no slot of its own — it is whatever the sequencer is
-        // currently blending — so its row offers the action rather than a
-        // slot's state.
+        // blending — so its row offers the action rather than slot state.
         var row = cursor + new Vector2(0f, y);
         float valueX = LabelCell(row, "Blend", s);
-        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y));
-        if (Crystarium.Button("Add blend…", new ButtonProps
-            {
-                Id = "anim-add-blend",
-                Classes = Cls.Compact,
-                Tooltip = "Blend an animation through the game's sequencer",
-                Style = new ButtonStyle
-                {
-                    Width = Sizing.Fixed(MathF.Max(80f, width / s - LabelColumn - 8f)),
-                },
-            }))
+        if (ValueButton(valueX, row.Y, row.X + width, s,
+                "Add blend…", "anim-add-blend",
+                "Blend an animation through the game's sequencer"))
             _picker.Open(AnimationPickTarget.Blend, AnimationSlot.Base,
                 restrictToSlot: null, caption: "Blend");
-        y += (Row + RowGap) * s;
+        y += Row * s;
 
         foreach (var slot in PrimaryLayers)
             y += DrawLayerRow(actor, reading, owned, cursor, width, s, y,
@@ -461,11 +464,10 @@ public sealed class AnimationPane
     }
 
     /// <summary>
-    /// One layer row on the shared grid: label, the animation name as the
-    /// button that opens the picker for THAT destination, then pause,
-    /// speed and reset. An inactive optional layer shows "Add layer"
-    /// instead of a name, so the row is an invitation rather than an empty
-    /// engine slot.
+    /// One layer row: label, the animation name opening the picker for
+    /// THAT destination, then pause, speed and reset placed from the right
+    /// at measured widths. An inactive optional layer shows one "Add
+    /// layer" invitation instead of controls for an empty engine slot.
     /// </summary>
     private float DrawLayerRow(
         ActorId actor, ActorAnimationReading reading, AnimationOverrides owned,
@@ -474,87 +476,76 @@ public sealed class AnimationPane
     {
         ushort timeline = reading.TimelineFor(slot);
         bool active = timeline != 0;
-        if (!active && !alwaysShow && !owned.SlotSpeeds.ContainsKey(slot))
-        {
-            // Optional and inactive: one invitation row, no controls.
-            var empty = cursor + new Vector2(0f, y);
-            float emptyX = LabelCell(empty, label, s);
-            ImGui.SetCursorScreenPos(new Vector2(emptyX, empty.Y));
-            if (Crystarium.Button("Add layer…", new ButtonProps
-                {
-                    Id = $"anim-add-{(int)slot}",
-                    Classes = Cls.Compact,
-                    Tooltip = $"Play an animation on the {label.ToLowerInvariant()} layer",
-                    Style = new ButtonStyle
-                    {
-                        Width = Sizing.Fixed(MathF.Max(80f, width / s - LabelColumn - 8f)),
-                    },
-                }))
-                _picker.Open(AnimationPickTarget.Slot, slot, slot,
-                    $"{label} layer");
-            return (Row + RowGap) * s;
-        }
-
         var row = cursor + new Vector2(0f, y);
         float valueX = LabelCell(row, label, s);
-        float trailing = (ActionWidth + 96f + ActionWidth + 18f) * s;
 
-        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y));
-        if (Crystarium.Button(NameFor(timeline, "Choose…"), new ButtonProps
-            {
-                Id = $"anim-layer-{(int)slot}",
-                Classes = Cls.Compact,
-                Tooltip = "Choose an animation for this layer",
-                Style = new ButtonStyle
-                {
-                    Width = Sizing.Fixed(MathF.Max(
-                        70f, (width - trailing) / s - LabelColumn - 8f)),
-                },
-            }))
-            _picker.Open(AnimationPickTarget.Slot, slot, slot, $"{label} layer");
+        if (!active && !alwaysShow && !owned.SlotSpeeds.ContainsKey(slot))
+        {
+            var capturedEmpty = slot;
+            if (ValueButton(valueX, row.Y, row.X + width, s,
+                    "Add layer…", $"anim-add-{(int)slot}",
+                    $"Play an animation on the {label.ToLowerInvariant()} layer"))
+                _picker.Open(AnimationPickTarget.Slot, capturedEmpty, capturedEmpty,
+                    $"{label} layer");
+            return Row * s;
+        }
 
-        float tx = cursor.X + width - trailing;
+        var captured = slot;
         bool slotPaused = owned.SlotSpeeds.TryGetValue(slot, out var ownedSpeed)
             && ownedSpeed == 0f;
-        ImGui.SetCursorScreenPos(new Vector2(tx, row.Y));
+
+        // Right-to-left: Reset, speed slider, Pause — then the name fills.
+        float x = row.X + width;
+        float resetWidth = Crystarium.MeasureButton("Reset", Cls.Compact).X;
+        x -= resetWidth;
+        ImGui.SetCursorScreenPos(new Vector2(x, row.Y + ButtonY * s));
+        bool resetDisabled = !owned.SlotSpeeds.ContainsKey(slot) &&
+            _animation.CapturedSlotTimeline(actor, slot) == null;
+        if (Crystarium.Button("Reset", new ButtonProps
+            {
+                Id = $"anim-layer-reset-{(int)slot}",
+                Classes = Cls.Compact,
+                Disabled = resetDisabled,
+                Tooltip = "Restore this layer's incoming animation and speed",
+                Style = new ButtonStyle { Width = Sizing.Fixed(resetWidth / s) },
+            }) && !resetDisabled)
+        {
+            Report(_animation.ClearSlotSpeed(actor, captured), "Layer speed");
+            Report(_animation.RestoreSlotTimeline(actor, captured), "Layer");
+        }
+
+        x -= (Gap + 90f) * s;
+        float slotSpeed = owned.SlotSpeeds.TryGetValue(slot, out var over)
+            ? over
+            : reading.SpeedFor(slot);
+        ImGui.SetCursorScreenPos(new Vector2(x, row.Y + SliderY * s));
+        if (Crystarium.Slider($"##anim-layer-speed-{(int)slot}", ref slotSpeed, 0f, 2f,
+                new SliderProps { Style = new SliderStyle { Width = Sizing.Fixed(90f) } }))
+            Report(_animation.SetSlotSpeed(actor, captured, slotSpeed), "Layer speed");
+
+        float pauseWidth = MathF.Max(
+            Crystarium.MeasureButton("Pause", Cls.Compact).X,
+            Crystarium.MeasureButton("Play", Cls.Compact).X);
+        x -= (Gap * s) + pauseWidth;
+        ImGui.SetCursorScreenPos(new Vector2(x, row.Y + ButtonY * s));
         if (Crystarium.Button(slotPaused ? "Play" : "Pause", new ButtonProps
             {
                 Id = $"anim-layer-pause-{(int)slot}",
                 Classes = Cls.Compact,
                 Tooltip = "Hold or release only this layer",
-                Style = new ButtonStyle { Width = Sizing.Fixed(ActionWidth) },
+                Style = new ButtonStyle { Width = Sizing.Fixed(pauseWidth / s) },
             }))
             Report(
                 slotPaused
-                    ? _animation.ClearSlotSpeed(actor, slot)
-                    : _animation.SetSlotSpeed(actor, slot, 0f),
+                    ? _animation.ClearSlotSpeed(actor, captured)
+                    : _animation.SetSlotSpeed(actor, captured, 0f),
                 "Layer playback");
 
-        float slotSpeed = owned.SlotSpeeds.TryGetValue(slot, out var over)
-            ? over
-            : reading.SpeedFor(slot);
-        ImGui.SetCursorScreenPos(
-            new Vector2(tx + (ActionWidth + 6f) * s, row.Y + 6f * s));
-        if (Crystarium.Slider($"##anim-layer-speed-{(int)slot}", ref slotSpeed, 0f, 2f,
-                new SliderProps { Style = new SliderStyle { Width = Sizing.Fixed(90f) } }))
-            Report(_animation.SetSlotSpeed(actor, slot, slotSpeed), "Layer speed");
-
-        ImGui.SetCursorScreenPos(
-            new Vector2(tx + (ActionWidth + 102f) * s, row.Y));
-        if (Crystarium.Button("Reset", new ButtonProps
-            {
-                Id = $"anim-layer-reset-{(int)slot}",
-                Classes = Cls.Compact,
-                Disabled = !owned.SlotSpeeds.ContainsKey(slot) &&
-                    _animation.CapturedSlotTimeline(actor, slot) == null,
-                Tooltip = "Restore this layer's incoming animation and speed",
-                Style = new ButtonStyle { Width = Sizing.Fixed(ActionWidth) },
-            }))
-        {
-            Report(_animation.ClearSlotSpeed(actor, slot), "Layer speed");
-            Report(_animation.RestoreSlotTimeline(actor, slot), "Layer");
-        }
-        return (Row + RowGap) * s;
+        if (ValueButton(valueX, row.Y, x - Gap * s, s,
+                NameFor(timeline, "Choose…"), $"anim-layer-{(int)slot}",
+                "Choose an animation for this layer"))
+            _picker.Open(AnimationPickTarget.Slot, captured, captured, $"{label} layer");
+        return Row * s;
     }
 
     // ── D. Scrub ──────────────────────────────────────────────────────
@@ -571,7 +562,7 @@ public sealed class AnimationPane
             if (_animation.FindSlotControl(actor, slot) is not { } control)
                 continue;
             any = true;
-            y += DrawScrubRow(actor, cursor, width, s, y,
+            y += DrawScrubRow(actor, reading, cursor, width, s, y,
                 AnimationSlots.DisplayName(slot), control);
         }
 
@@ -580,40 +571,73 @@ public sealed class AnimationPane
             ViewText.Label(cursor + new Vector2(0f, y + 4f * s),
                 "Nothing playing on the body layers.", 11f,
                 FontWeight.Regular, InspectorLayout.HintColor);
-            y += (Row + RowGap) * s;
+            y += Row * s;
         }
 
-        // Every Havok control the actor reports, for the cases the friendly
-        // rows cannot cover.
         y += InspectorLayout.Section(dl, cursor + new Vector2(0f, y), width,
             "anim", "ADVANCED CONTROLS", ref _openAdvancedScrub, s, topBorder: false);
         if (_openAdvancedScrub)
         {
-            foreach (var control in reading.Controls)
-                y += DrawScrubRow(actor, cursor, width, s, y,
+            var controls = AdvancedControls(reading);
+            foreach (var control in controls)
+                y += DrawScrubRow(actor, reading, cursor, width, s, y,
                     control.Id.ToString(), control);
-            if (reading.Controls.Count == 0)
+            if (controls.Count == 0)
             {
                 ViewText.Label(cursor + new Vector2(0f, y + 4f * s),
                     "No animation controls.", 11f,
                     FontWeight.Regular, InspectorLayout.HintColor);
-                y += (Row + RowGap) * s;
+                y += Row * s;
             }
         }
         return y;
     }
 
+    /// <summary>
+    /// The advanced list, with its identity frozen during a drag. Pausing
+    /// the actor changes which Havok controls the game keeps, so a live
+    /// list gains rows the moment a drag begins — a new slider appearing
+    /// under the pointer. Rows are frozen to the set captured at Begin;
+    /// their READINGS are merged from the live enumeration so times keep
+    /// moving.
+    /// </summary>
+    private IReadOnlyList<ScrubControlReading> AdvancedControls(
+        ActorAnimationReading reading)
+    {
+        if (_scrub == null || _scrubFrozenControls == null)
+            return reading.Controls;
+        var merged = new List<ScrubControlReading>(_scrubFrozenControls.Count);
+        foreach (var frozen in _scrubFrozenControls)
+        {
+            ScrubControlReading current = frozen;
+            foreach (var live in reading.Controls)
+                if (live.Id.Equals(frozen.Id))
+                    current = live;
+            merged.Add(current);
+        }
+        return merged;
+    }
+
     private float DrawScrubRow(
-        ActorId actor, Vector2 cursor, float width, float s, float y,
+        ActorId actor, ActorAnimationReading reading,
+        Vector2 cursor, float width, float s, float y,
         string label, ScrubControlReading control)
     {
         var row = cursor + new Vector2(0f, y);
         float valueX = LabelCell(row, label, s);
         float time = control.Time;
         float duration = MathF.Max(control.Duration, 0.0001f);
-        float readoutWidth = 76f;
 
-        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y + 6f * s));
+        // Fixed readout slot, text right-aligned inside it by measure, so
+        // the slider's width does not jitter with the digit count.
+        const float readoutSlot = 80f;
+        string readout = $"{control.Time:0.00}/{control.Duration:0.00}";
+        float readoutWidth = ViewText.Measure(readout, 11f, mono: true);
+        ViewText.Label(
+            new Vector2(row.X + width - readoutWidth, row.Y + TextY * s),
+            readout, 11f, FontWeight.Regular, InspectorLayout.HintColor, mono: true);
+
+        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y + SliderY * s));
         bool changed = Crystarium.Slider(
             $"##anim-scrub-{control.Id.Partial}-{control.Id.Control}",
             ref time, 0f, duration, new SliderProps
@@ -621,7 +645,7 @@ public sealed class AnimationPane
                 Style = new SliderStyle
                 {
                     Width = Sizing.Fixed(MathF.Max(
-                        80f, width / s - LabelColumn - readoutWidth - 8f)),
+                        80f, width / s - LabelColumn - readoutSlot - Gap)),
                 },
             });
 
@@ -634,21 +658,23 @@ public sealed class AnimationPane
             {
                 Report(_animation.BeginScrub(actor, control.Id), "Scrub");
                 _scrub = (actor, control.Id);
+                _scrubFrozenControls = reading.Controls;
             }
             Report(_animation.UpdateScrub(time), "Scrub");
         }
         if (_scrub is { } current && current.Actor.Equals(actor) &&
             current.Control.Equals(control.Id) && ImGui.IsItemDeactivated())
         {
-            _animation.EndScrub();
-            _scrub = null;
+            EndScrub();
         }
+        return Row * s;
+    }
 
-        ViewText.Label(
-            new Vector2(cursor.X + width - readoutWidth * s, row.Y + 6f * s),
-            $"{control.Time:0.00}/{control.Duration:0.00}", 11f,
-            FontWeight.Regular, InspectorLayout.HintColor, mono: true);
-        return (Row + RowGap) * s;
+    private void EndScrub()
+    {
+        _animation.EndScrub();
+        _scrub = null;
+        _scrubFrozenControls = null;
     }
 
     // ── E. Face and lips ──────────────────────────────────────────────
@@ -658,90 +684,49 @@ public sealed class AnimationPane
     {
         float y = Caption(cursor, "FACE & LIPS", s);
 
-        // Expression: the Expression catalog, previewed on the facial slot.
         var row = cursor + new Vector2(0f, y);
         float valueX = LabelCell(row, "Expression", s);
-        float trailing = (ActionWidth + 110f + 12f) * s;
         ushort facial = reading.TimelineFor(AnimationSlot.Facial);
-        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y));
-        if (Crystarium.Button(NameFor(facial, "Choose expression…"), new ButtonProps
-            {
-                Id = "anim-expression",
-                Classes = Cls.Compact,
-                Tooltip = "Preview a facial expression",
-                Style = new ButtonStyle
+        float trailingX = TrailingButtons(row, width, s,
+            new TrailingAction("Preview", "anim-expression-preview",
+                "Replay the current expression", facial == 0,
+                () => Report(
+                    _animation.SetSlotTimeline(actor, AnimationSlot.Facial, facial),
+                    "Expression")),
+            new TrailingAction("Apply to face", "anim-apply-face",
+                "Keep this face after the preview stops, as one undoable pose edit",
+                _facialCapture.IsPending,
+                () =>
                 {
-                    Width = Sizing.Fixed(MathF.Max(
-                        90f, (width - trailing) / s - LabelColumn - 8f)),
-                },
-            }))
+                    var descriptor = Describe(actor);
+                    _status = descriptor == null
+                        ? "Apply to face: actor is no longer in the scene."
+                        : _facialCapture.Begin(actor, descriptor) is { Success: false } failed
+                            ? $"Apply to face: {failed.Detail}"
+                            : string.Empty;
+                }));
+        if (ValueButton(valueX, row.Y, trailingX, s,
+                NameFor(facial, "Choose expression…"), "anim-expression",
+                "Preview a facial expression"))
             _picker.Open(AnimationPickTarget.Expression, AnimationSlot.Facial,
                 AnimationSlot.Facial, "Expression", AnimationKind.Expression);
-
-        float tx = cursor.X + width - trailing;
-        ImGui.SetCursorScreenPos(new Vector2(tx, row.Y));
-        if (Crystarium.Button("Preview", new ButtonProps
-            {
-                Id = "anim-expression-preview",
-                Classes = Cls.Compact,
-                Disabled = facial == 0,
-                Tooltip = "Replay the current expression",
-                Style = new ButtonStyle { Width = Sizing.Fixed(ActionWidth) },
-            }) && facial != 0)
-            Report(_animation.SetSlotTimeline(actor, AnimationSlot.Facial, facial),
-                "Expression");
-
-        ImGui.SetCursorScreenPos(new Vector2(tx + (ActionWidth + 6f) * s, row.Y));
-        if (Crystarium.Button("Apply to face", new ButtonProps
-            {
-                Id = "anim-apply-face",
-                Classes = Cls.Compact,
-                Disabled = _facialCapture.IsPending,
-                Tooltip = "Keep this face after the preview stops, as one undoable pose edit",
-                Style = new ButtonStyle { Width = Sizing.Fixed(104f) },
-            }))
-        {
-            var descriptor = Describe(actor);
-            _status = descriptor == null
-                ? "Apply to face: actor is no longer in the scene."
-                : _facialCapture.Begin(actor, descriptor) is { Success: false } failed
-                    ? $"Apply to face: {failed.Detail}"
-                    : string.Empty;
-        }
-        y += (Row + RowGap) * s;
+        y += Row * s;
 
         // Lips: a known enumeration of speech timelines, not a catalog
-        // query — the sheet's own slot data does not classify them as lip
-        // animations, so a generic search returns nothing.
+        // query — the sheet does not classify them by slot.
         row = cursor + new Vector2(0f, y);
         valueX = LabelCell(row, "Lips", s);
-        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y));
-        if (Crystarium.Button(NameFor(reading.LipsOverride, "None"), new ButtonProps
-            {
-                Id = "anim-lips",
-                Classes = Cls.Compact,
-                Tooltip = "Choose a speech animation",
-                Style = new ButtonStyle
-                {
-                    Width = Sizing.Fixed(MathF.Max(
-                        90f, (width - (ActionWidth + 12f) * s) / s - LabelColumn - 8f)),
-                },
-            }))
+        trailingX = TrailingButtons(row, width, s,
+            new TrailingAction("None", "anim-lips-clear",
+                "Restore the lip animation this actor arrived with",
+                reading.LipsOverride == 0,
+                () => Report(_animation.SetLips(actor, 0), "Lips")));
+        if (ValueButton(valueX, row.Y, trailingX, s,
+                NameFor(reading.LipsOverride, "Choose speech…"), "anim-lips",
+                "Choose a speech animation"))
             _picker.Open(AnimationPickTarget.Lips, AnimationSlot.Lips, AnimationSlot.Lips,
                 "Lips", entries: LipsEntries());
-
-        ImGui.SetCursorScreenPos(
-            new Vector2(cursor.X + width - ActionWidth * s, row.Y));
-        if (Crystarium.Button("None", new ButtonProps
-            {
-                Id = "anim-lips-clear",
-                Classes = Cls.Compact,
-                Disabled = reading.LipsOverride == 0,
-                Tooltip = "Restore the lip animation this actor arrived with",
-                Style = new ButtonStyle { Width = Sizing.Fixed(ActionWidth) },
-            }))
-            Report(_animation.SetLips(actor, 0), "Lips");
-        return y + (Row + RowGap) * s;
+        return y + Row * s;
     }
 
     /// <summary>The valid speech timelines, enumerated from the known

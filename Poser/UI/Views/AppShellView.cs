@@ -662,33 +662,29 @@ public static class AppShellView
         dl.AddRectFilled(new Vector2(min.X, toolbarBottom - 1f * s), new Vector2(max.X, toolbarBottom),
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderSecondary)));
 
-        float x = min.X + MainHorizontalPadding * s;
-        int tabIndex = 0;
-        bool dividerDrawn = false;
-        foreach (var tab in vm.Tabs)
+        // The tab strip is the SAME segmented pill every other mode
+        // selector uses (Body/Face/Matrix/3D), not hand-drawn buttons.
+        // alignFirstTabToCursor puts the first tab's LABEL on the content
+        // inset — the pill's dark chrome is decoration, not padding, so it
+        // hangs left of the alignment line exactly as the inspector's does.
+        if (vm.Tabs.Count > 0)
         {
-            if (tab.SceneTab && !dividerDrawn && tabIndex > 0)
+            var labels = new string[vm.Tabs.Count];
+            int active = 0;
+            for (int i = 0; i < vm.Tabs.Count; i++)
             {
-                dl.AddRectFilled(new Vector2(x + 6f * s, min.Y + (ToolbarHeight - 16f) / 2f * s),
-                    new Vector2(x + 7f * s, min.Y + (ToolbarHeight + 16f) / 2f * s),
-                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderSecondary)));
-                x += 13f * s;
-                dividerDrawn = true;
+                labels[i] = vm.Tabs[i].Label;
+                if (vm.Tabs[i].Active)
+                    active = i;
             }
-
-            float w = ViewText.Measure(tab.Label, 12f) + 24f * s;
-            ImGui.SetCursorScreenPos(new Vector2(x, min.Y + (ToolbarHeight - 28f) / 2f * s));
-            var hit = Interactive.Reserve($"##tab-{tabIndex}", new Vector2(w / s, 28f) , disabled: false);
-            if (tab.Active)
-                dl.AddRectFilled(hit.ScreenMin, hit.ScreenMax, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(SubtleOverlay)), 6f * s);
-            else if (hit.Hovered)
-                dl.AddRectFilled(hit.ScreenMin, hit.ScreenMax, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(HoverOverlay)), 6f * s);
-            ViewText.Label(new Vector2(x + 12f * s, min.Y + (ToolbarHeight - 28f) / 2f * s + 7f * s), tab.Label, 12f,
-                FontWeight.Regular, tab.Active ? TextPrimary : TextSecondary);
-            int capture = tabIndex;
-            if (hit.Clicked) vm.OnTab?.Invoke(capture);
-            x += w + 2f * s;
-            tabIndex++;
+            const float segmentedHeightPx = 30f;
+            ImGui.SetCursorScreenPos(new Vector2(
+                min.X + MainHorizontalPadding * s,
+                min.Y + (ToolbarHeight - segmentedHeightPx) / 2f * s));
+            int chosen = active;
+            if (Crystarium.SegmentedControl("##shell-tabs", labels, ref chosen,
+                    maxWidth: 0f, alignFirstTabToCursor: true) && chosen != active)
+                vm.OnTab?.Invoke(chosen);
         }
 
         // crumb + optional pop-out. Only tabs with a faithful standalone view
