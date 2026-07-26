@@ -27,6 +27,7 @@ public sealed class CleanSceneLifecycle : IDisposable
     private readonly TransformGestureService _gestures;
     private readonly TransformHistory _history;
     private readonly Poser.Application.Animation.AnimationSession _animation;
+    private readonly Poser.Application.Presentation.ActorPresentationSession _presentation;
     private readonly Poser.Game.Animation.AnimationRuntimePort _animationPort;
     private readonly IEventBus _events;
     private readonly IFramework _framework;
@@ -49,6 +50,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         TransformGestureService gestures,
         TransformHistory history,
         Poser.Application.Animation.AnimationSession animation,
+        Poser.Application.Presentation.ActorPresentationSession presentation,
         Poser.Game.Animation.AnimationRuntimePort animationPort,
         IEventBus events,
         IFramework framework)
@@ -58,6 +60,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         _gestures = gestures;
         _history = history;
         _animation = animation;
+        _presentation = presentation;
         _animationPort = animationPort;
         _events = events;
         _framework = framework;
@@ -94,6 +97,7 @@ public sealed class CleanSceneLifecycle : IDisposable
                 // inline — no waiting, no queue.
                 _animation.ResumeCommands();
                 _animation.ResetAll();
+                _presentation.ResetAll();
             }
             else
             {
@@ -112,6 +116,7 @@ public sealed class CleanSceneLifecycle : IDisposable
                             return;
                         _animation.ResumeCommands();
                         _animation.ResetAll();
+                        _presentation.ResetAll();
                     }
                 });
                 if (!task.Wait(TimeSpan.FromSeconds(2)))
@@ -180,6 +185,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         // surviving stable ids in the same step, so a redrawn actor can
         // never inherit the previous body's speed enforcement.
         _animation.Reconcile(_scene.Snapshot);
+        _presentation.Reconcile(_scene.Snapshot);
         _animationPort.SyncEnforcementIndex();
     }
 
@@ -257,6 +263,7 @@ public sealed class CleanSceneLifecycle : IDisposable
             // are still resolvable, so every animation override is put
             // back here rather than dropped when they disappear.
             _animation.ResetAll();
+            _presentation.ResetAll();
         }
         Refresh();
     }
