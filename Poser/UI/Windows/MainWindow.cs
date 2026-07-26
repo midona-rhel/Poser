@@ -126,6 +126,7 @@ public class MainWindow : Window
         _poseInspector.GetMapMirror = () => graphicalBonePane.SidesSwapped;
         _poseInspector.SetMapMirror = on => graphicalBonePane.SidesSwapped = on;
         _poseInspector.DescriptorDisplayName = ActorDisplayName;
+        appearancePane.DisplayNameProvider = ActorDisplayName;
         // Transitional: the inspector still takes entity display lookups until
         // its own migration; route them through the lineage nickname store.
         _poseInspector.ActorDisplayNameProvider = actor =>

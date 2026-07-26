@@ -33,6 +33,12 @@ public sealed class AppearancePane
     private string _status = string.Empty;
     private const float ContentPadding = 12f;
 
+    /// <summary>The ONE stable-id display lookup every surface uses
+    /// (nickname, else anonymous mask, else the cleaned snapshot name) --
+    /// wired by the window so this pane shows exactly what the sidebar
+    /// and crumb show.</summary>
+    public Func<ActorDescriptor, string>? DisplayNameProvider;
+
     public AppearancePane(
         ActorPresentationSession presentation,
         GlamourerBridge glamourer,
@@ -159,8 +165,12 @@ public sealed class AppearancePane
 
         // ── Header: actor name, Open in Glamourer, Reset appearance ───
         float headerTop = cursor.Y + y;
+        var descriptor = Describe(actor);
+        string headerName = descriptor is { } described
+            ? DisplayNameProvider?.Invoke(described) ?? described.Name
+            : "Actor";
         ViewText.Label(new Vector2(cursor.X, headerTop + InspectorLayout.FormLabelY * s),
-            Describe(actor)?.Name ?? "Actor", 11f, FontWeight.SemiBold, InspectorLayout.LabelColor);
+            headerName, 11f, FontWeight.SemiBold, InspectorLayout.LabelColor);
         bool glamAvailable = _glamourer.IsAvailable(out var glamReason);
         float bx = cursor.X + width;
         var resetSize = Crystarium.MeasureButton("Reset appearance", Cls.Compact);
