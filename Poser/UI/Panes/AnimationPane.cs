@@ -113,12 +113,9 @@ public sealed class AnimationPane
     public void Draw(Vector2 origin, Vector2 size)
     {
         float s = ImGuiHelpers.GlobalScale;
-        // `scrollbar-gutter: stable`, as the shell reserves it: take the
-        // scrollbar's width out of the layout measure ALWAYS, so trailing
-        // actions never sit under the scrollbar and nothing shifts when
-        // the page starts scrolling.
-        float width = InspectorLayout.ClampContentWidth(
-            size.X - Views.AppShellView.ScrollbarWidth * s, s);
+        // The shell has already excluded its scrollbar gutter from this
+        // width, so nothing further is reserved here.
+        float width = InspectorLayout.ClampContentWidth(size.X, s);
 
         if (TargetActor() is not { } actor)
         {
@@ -148,20 +145,14 @@ public sealed class AnimationPane
         var owned = _animation.OverridesFor(actor);
         var selection = _animation.SelectionFor(actor);
 
+        // No scroll child of its own: the shell's content child scrolls,
+        // and it is the thing that reserves the gutter. Opening a child
+        // inside the already-inset content would put this page's scrollbar
+        // over its own trailing actions.
         ImGui.SetCursorScreenPos(origin);
-        Crystarium.PushScrollbarStyle();
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
-        if (ImGui.BeginChild("##anim-page", size, false, ImGuiWindowFlags.NoSavedSettings))
-        {
-            DrawPage(actor, reading, owned, width, s);
-        }
-        ImGui.EndChild();
-        ImGui.PopStyleVar();
-        Crystarium.PopScrollbarStyle();
+        DrawPage(actor, reading, owned, width, s);
 
-        // The picker draws at the pane's top level, OUTSIDE the scroll
-        // child: a popup opened inside a child parents to it and closes on
-        // the same frame.
+        // The picker is a popup and so is unaffected by the shell's scroll.
         if (_picker.Draw() is { } pick)
             Apply(actor, selection, pick);
     }

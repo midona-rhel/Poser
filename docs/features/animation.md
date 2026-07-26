@@ -56,7 +56,10 @@
 - UI: Pose and Animation share one window width — the right column is always
   spent, on the Pose rail or on Animation content — so navigating never
   resizes the frame. Crystarium controls ignore `ImGui.SetNextItemWidth`;
-  widths come from `Style.Width` in unscaled units. The inspector stays on
+  widths come from `Style.Width` in unscaled units. The Animation page uses
+  the SHELL's scroll rather than its own child — the shell child spans the
+  full panel width while the content it hands out is already inset, which is
+  what puts the scrollbar in a reserved gutter. The inspector stays on
   BOTH tabs, so the right column is never reclaimed and width never depends
   on the tab. The titlebar action and the ACTORS `+` both open the same
   glass spawn menu. The Pose Animation switch reads ON = animating from the

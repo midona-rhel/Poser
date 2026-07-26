@@ -296,9 +296,15 @@ public class MainWindow : Window
         // The inspector rail stays on BOTH tabs: bone selection and posing
         // remain available while animation plays, so the right column is
         // never reclaimed and the window width never depends on the tab.
-        // Both tabs own their viewport, so the shell never adds a second
-        // page scrollbar under a pane that already scrolls.
-        _vm.ContentOwnsViewport = true;
+        //
+        // Only Pose owns its viewport, because its surfaces are bounded
+        // canvases that must not scroll. Animation is a document and uses
+        // the SHELL's scroll, which is what reserves the 12px scrollbar
+        // gutter: the shell child spans the full panel width while the
+        // content it hands out is already inset, so the scrollbar lands in
+        // that reserved band instead of over the content. A pane that
+        // opens its own child inside the inset content loses the gutter.
+        _vm.ContentOwnsViewport = _activeTab == "Pose";
         _vm.DrawRail = _collapsed ? null : _poseRail.Draw;
 
         _vm.GizmoOperation = (int)_editorState.TransformTool;
