@@ -12,6 +12,7 @@ XML comments carry implementation detail.
 | Selection + transform interaction | [features/selection-and-transforms.md](features/selection-and-transforms.md) |
 | Pose operations (mirror/flip/reset/stash) | [features/pose-operations.md](features/pose-operations.md) |
 | Expression, gaze, IK | [features/expression-gaze-and-ik.md](features/expression-gaze-and-ik.md) |
+| Animation playback and blending | [features/animation.md](features/animation.md) |
 | Pose files and transfer | [features/files-and-transfer.md](features/files-and-transfer.md) |
 | Implementation/review loop | [process/external-implementation-review-loop.md](process/external-implementation-review-loop.md) |
 | Live testing gate | [process/testing.md](process/testing.md) |

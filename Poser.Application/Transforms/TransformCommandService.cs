@@ -57,6 +57,63 @@ public sealed class TransformCommandService
         return GestureResult.Ok();
     }
 
+    /// <summary>
+    /// Writes several absolute transforms as ONE history entry. Used
+    /// where a single user act moves many bones at once — baking a facial
+    /// animation into the pose, for example — so undo puts all of them
+    /// back together instead of unwinding bone by bone.
+    ///
+    /// Every target is captured before anything is written, and any
+    /// failure restores what was already applied, so the edit either
+    /// lands whole or not at all. Targets not supplied are untouched,
+    /// which is what leaves expression, gaze, and unrelated manual edits
+    /// intact.
+    /// </summary>
+    public GestureResult SetAbsoluteMany(
+        IReadOnlyList<(TransformTargetId Target, PoseTransform Desired)> writes,
+        string description)
+    {
+        if (_gestures.ActiveGesture != null)
+            return GestureResult.Fail("A transform gesture is active.");
+        if (writes.Count == 0)
+            return GestureResult.Fail("Nothing to apply.");
+
+        var before = new List<TransformTargetState>(writes.Count);
+        foreach (var (target, _) in writes)
+        {
+            var captured = Capture(target);
+            if (!captured.Success || captured.State == null)
+                return GestureResult.Fail(captured.Detail!);
+            before.Add(captured.State);
+        }
+
+        for (int i = 0; i < writes.Count; i++)
+        {
+            var applied = _runtime.ApplyAbsolute(before[i], writes[i].Desired);
+            if (applied.Success)
+                continue;
+            RestoreAll(before);
+            return GestureResult.Fail(
+                applied.Detail ?? $"Could not transform {writes[i].Target}.");
+        }
+
+        var after = new List<TransformTargetState>(before.Count);
+        foreach (var state in before)
+        {
+            var captured = _runtime.Capture(state.Target);
+            if (!captured.Success || captured.State == null)
+            {
+                RestoreAll(before);
+                return GestureResult.Fail(
+                    captured.Detail ?? $"Could not capture {state.Target}.");
+            }
+            after.Add(captured.State);
+        }
+
+        _history.Append(new TransformPatch(description, before, after));
+        return GestureResult.Ok();
+    }
+
     public GestureResult ClearActorOverrides(
         IReadOnlyList<TransformTargetId> targets,
         string description)

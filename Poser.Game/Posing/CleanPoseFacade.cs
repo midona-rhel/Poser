@@ -23,6 +23,7 @@ public sealed class CleanPoseFacade
         ISkeletonService skeletons,
         IExpressionService expressions,
         IGazeService gaze,
+        Poser.Application.Animation.AnimationSession animation,
         IPluginLog log)
     {
         _bindings = bindings;
@@ -32,6 +33,7 @@ public sealed class CleanPoseFacade
         _skeletons = skeletons;
         _expressions = expressions;
         _gaze = gaze;
+        _animation = animation;
         _log = log;
     }
 
@@ -40,6 +42,7 @@ public sealed class CleanPoseFacade
     private readonly IBonePosingService _bonePosing;
     private readonly IExpressionService _expressions;
     private readonly IGazeService _gaze;
+    private readonly Poser.Application.Animation.AnimationSession _animation;
     private readonly IPluginLog _log;
 
     /// <summary>
@@ -84,6 +87,15 @@ public sealed class CleanPoseFacade
 
         foreach (var slotSkeleton in _skeletons.GetSkeletons(actor))
             _bonePosing.ClearIkConfigurations(slotSkeleton);
+
+        // Animation and physics restore LAST: the steps above move bones,
+        // and an actor left frozen would hide the result of its own reset.
+        if (_bindings.GetActorId(actor) is { } animationActor)
+        {
+            var animation = _animation.ResetActor(animationActor);
+            if (!animation.Success && animation.Detail is { } animationDetail)
+                failures.Add($"animation reset failed: {animationDetail}");
+        }
 
         if (failures.Count == 0)
             return pose;

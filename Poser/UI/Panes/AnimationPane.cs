@@ -27,6 +27,7 @@ public sealed class AnimationPane
     private readonly AnimationSession _animation;
     private readonly AnimationCatalog _catalog;
     private readonly AnimationSceneActions _sceneActions;
+    private readonly Game.Animation.FacialPoseCapture _facialCapture;
     private readonly SceneSession _scene;
 
     private string _search = string.Empty;
@@ -60,11 +61,13 @@ public sealed class AnimationPane
         AnimationSession animation,
         AnimationCatalog catalog,
         AnimationSceneActions sceneActions,
+        Game.Animation.FacialPoseCapture facialCapture,
         SceneSession scene)
     {
         _animation = animation;
         _catalog = catalog;
         _sceneActions = sceneActions;
+        _facialCapture = facialCapture;
         _scene = scene;
     }
 
@@ -550,6 +553,25 @@ public sealed class AnimationPane
         ImGui.SetNextItemWidth(width * 0.5f);
         if (Crystarium.Dropdown("##anim-lips", labels.ToArray(), ref selected))
             Report(_animation.SetLips(actor, ids[selected]), "Lips");
+
+        // Baking the previewed face into the pose is a POSE edit, not an
+        // animation override, so it lives next to the facial controls but
+        // commits through the transform history like any other edit.
+        ImGui.SameLine(0f, 10f * s);
+        if (Crystarium.Button("Apply to face pose", new ButtonProps
+            {
+                Id = "anim-apply-face",
+                Classes = Cls.Compact,
+                Tooltip = "Keep the face exactly as it looks now, as one undoable pose edit",
+            }))
+        {
+            var descriptor = Describe(actor);
+            _status = descriptor == null
+                ? "Apply to face pose: actor is no longer in the scene."
+                : _facialCapture.ApplyToFacePose(descriptor) is { Success: false } failed
+                    ? $"Apply to face pose: {failed.Detail}"
+                    : string.Empty;
+        }
 
         return 44f * s;
     }
