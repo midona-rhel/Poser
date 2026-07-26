@@ -4,8 +4,9 @@ namespace Poser.Entities.Capabilities;
 /// Capability marker interface for entities that can be animated.
 /// Implemented by: IActor
 ///
-/// Note: Animation control is done through IAnimationService.
-/// This interface marks entities that support animation operations.
+/// Note: animation control runs through AnimationSession and the stable-id
+/// IAnimationRuntimePort. This interface only marks which entities the
+/// runtime will accept animation commands for.
 /// </summary>
 public interface IAnimatable
 {

@@ -5,6 +5,7 @@ using Dalamud.Interface.Textures;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Poser.Application.Animation;
 using Poser.Application.Posing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
@@ -92,6 +93,13 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Viewport.ViewportProjection>();
         services.AddSingleton<CleanPoseFacade>();
         services.AddSingleton<IIkConfigurationPort, IkConfigurationPort>();
+        // Animation joins the clean core, not the legacy feature block:
+        // the port owns the hooks and every address, the session owns
+        // stable-id state and restoration.
+        services.AddSingleton<Game.Animation.AnimationRuntimePort>();
+        services.AddSingleton<IAnimationRuntimePort>(
+            sp => sp.GetRequiredService<Game.Animation.AnimationRuntimePort>());
+        services.AddSingleton<AnimationSession>();
         services.AddSingleton<CleanSceneLifecycle>();
         services.AddSingleton<IEditorState, EditorState>();
         return services;
@@ -100,7 +108,6 @@ internal static class ServiceRegistration
     public static IServiceCollection AddPoserFeatures(this IServiceCollection services)
     {
         services.AddSingleton<ICameraService, CameraService>();
-        services.AddSingleton<IAnimationService, AnimationService>();
         services.AddSingleton<IActorSpawnService, ActorSpawnService>();
         services.AddSingleton<IGazeService, GazeService>();
         services.AddSingleton<ILiveTestService, LiveTestService>();

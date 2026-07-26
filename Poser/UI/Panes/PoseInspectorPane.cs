@@ -44,7 +44,7 @@ namespace Poser.UI;
 public class PoseInspectorPane
 {
     private readonly IBonePosingService _bonePosingService;
-    private readonly IAnimationService _animationService;
+    private readonly Application.Animation.AnimationSession _animation;
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
     private readonly CleanTransformFacade _cleanTransforms;
     private readonly CleanPoseFacade _cleanPose;
@@ -140,7 +140,7 @@ public class PoseInspectorPane
 
     public PoseInspectorPane(
         IBonePosingService bonePosingService,
-        IAnimationService animationService,
+        Application.Animation.AnimationSession animation,
         CleanTransformFacade cleanTransforms,
         CleanPoseFacade cleanPose,
         IGazeService gazeService,
@@ -160,7 +160,7 @@ public class PoseInspectorPane
         _expressionSection = expressionSection;
         _poseFileSection = poseFileSection;
         _bonePosingService = bonePosingService;
-        _animationService = animationService;
+        _animation = animation;
         _cleanTransforms = cleanTransforms;
         _cleanPose = cleanPose;
         _gazeService = gazeService;
@@ -326,6 +326,12 @@ public class PoseInspectorPane
     /// parent→child radial frame; the frame follows the presentation result
     /// during a drag while applied deltas stay on the frozen baseline.
     /// </summary>
+    /// <summary>The stable id of the skeleton's owning actor, for the
+    /// surface chrome's animation switches. A bone selection resolves to
+    /// its actor without disturbing the sidebar selection.</summary>
+    private ActorId? ChromeActorId(ISkeleton skeleton) =>
+        _bindings.GetActorId(skeleton.Actor);
+
     public (Quaternion FrameWorld, Quaternion AxisConversion, bool CanEdit) GizmoWorldContext()
     {
         var (transform, canEdit) = ReadTransform();
@@ -508,23 +514,31 @@ public class PoseInspectorPane
             alignFirstTabToCursor: true);
 
         // Right-aligned surface chrome: Mirror selection (maps only) ·
-        // Physics · Animation.
-        var chromeActor = skeleton.Actor;
+        // Physics · Animation. These are quick controls OVER the animation
+        // session, not a second state: the switch reads the session's own
+        // paused state, so the Pose tab and the Animation tab can never
+        // disagree about whether an actor is frozen.
+        var chromeActorId = ChromeActorId(skeleton);
         float chromeY = cursor.Y + (tabsHeightPx - 20f) * 0.5f * s;
         float rx = cursor.X + width - 36f * s;
         ImGui.SetCursorScreenPos(new Vector2(rx, chromeY));
-        bool motion = _animationService.IsFrozen(chromeActor);
-        if (Crystarium.Switch("##ps-motion", ref motion))
-            _animationService.ToggleFreeze(chromeActor);
+        bool motion = chromeActorId is { } motionId && _animation.IsPaused(motionId);
+        if (Crystarium.Switch("##ps-motion", ref motion) && chromeActorId is { } toggleId)
+        {
+            if (motion)
+                _animation.Pause(toggleId);
+            else
+                _animation.Resume(toggleId);
+        }
         rx -= ViewText.Measure("Animation", 12f) + 6f * s;
         ViewText.Label(new Vector2(rx, chromeY + 2f * s), "Animation", 12f,
             FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
 
         rx -= 14f * s + 36f * s;
         ImGui.SetCursorScreenPos(new Vector2(rx, chromeY));
-        bool physics = _animationService.IsPhysicsFrozen(chromeActor);
-        if (Crystarium.Switch("##ps-physics", ref physics))
-            _animationService.TogglePhysicsFreeze(chromeActor);
+        bool physics = chromeActorId is { } physicsId && _animation.OwnsPhysics(physicsId);
+        if (Crystarium.Switch("##ps-physics", ref physics) && chromeActorId is { } physicsToggle)
+            _animation.SetPhysicsFrozen(physicsToggle, physics);
         rx -= ViewText.Measure("Physics", 12f) + 6f * s;
         ViewText.Label(new Vector2(rx, chromeY + 2f * s), "Physics", 12f,
             FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));

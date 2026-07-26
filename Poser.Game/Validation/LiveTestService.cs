@@ -41,7 +41,7 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
     private readonly IPosingService _actorPosing;
     private readonly ISkeletonService _skeletons;
     private readonly IBonePosingService _posing;
-    private readonly IAnimationService _animation;
+    private readonly Poser.Application.Animation.AnimationSession _animation;
     private readonly SelectionSession _selection;
     private readonly StableBindingRegistry _bindings;
     private readonly CleanTransformFacade _cleanTransforms;
@@ -72,7 +72,7 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
         IPosingService actorPosing,
         ISkeletonService skeletons,
         IBonePosingService posing,
-        IAnimationService animation,
+        Poser.Application.Animation.AnimationSession animation,
         SelectionSession selection,
         StableBindingRegistry bindings,
         CleanTransformFacade cleanTransforms,
@@ -789,9 +789,14 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
             if (!reset.Success)
                 return (false, reset.Detail ?? "Bone reset failed.");
             _posing.ClearIkConfigurations(bone.Skeleton);
-            _animation.Unfreeze(actor);
-            _animation.ResetSpeed(actor);
-            _animation.ApplyBaseAnimation(actor, 253, interrupt: true);
+            // The gate proves a pose layer survives a MOVING baseline,
+            // so it resumes the actor and drives a real base animation
+            // through the stable-id session.
+            if (_bindings.GetActorId(actor) is { } animActor)
+            {
+                _animation.Resume(animActor);
+                _animation.PlayBase(animActor, 253, interrupt: true);
+            }
             return ApplyCleanTransform(
                 bone,
                 DomainOperation.Rotate,
@@ -809,7 +814,8 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
                 minimumSamples: 12,
                 maximumFrames: 90);
             var frozen = await _framework.RunOnFrameworkThread(
-                () => _animation.IsFrozen(actor));
+                () => _bindings.GetActorId(actor) is { } id &&
+                    _animation.IsPaused(id));
             var failures = ValidateAnimationComposition(
                 samples,
                 delta,
@@ -831,7 +837,8 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
         {
             await _framework.RunOnFrameworkThread(() =>
             {
-                _animation.StopBaseAnimation(actor);
+                if (_bindings.GetActorId(actor) is { } animActor)
+                    _animation.ResetActor(animActor);
                 _cleanPose.ResetBone(bone);
             });
         }
@@ -994,7 +1001,8 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
             _selection.Clear();
             foreach (var actor in _ownedActors.ToArray())
             {
-                _animation.StopBaseAnimation(actor);
+                if (_bindings.GetActorId(actor) is { } ownedActor)
+                    _animation.ResetActor(ownedActor);
                 _actorPosing.ClearTransformOverride(actor);
                 if (_spawn.IsSpawnedActor(actor))
                     _spawn.DestroyActor(actor);

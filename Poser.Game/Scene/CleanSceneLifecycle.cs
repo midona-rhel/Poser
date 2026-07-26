@@ -26,6 +26,8 @@ public sealed class CleanSceneLifecycle : IDisposable
     private readonly SceneSession _scene;
     private readonly TransformGestureService _gestures;
     private readonly TransformHistory _history;
+    private readonly Poser.Application.Animation.AnimationSession _animation;
+    private readonly Poser.Game.Animation.AnimationRuntimePort _animationPort;
     private readonly IEventBus _events;
     private readonly IFramework _framework;
 
@@ -43,6 +45,8 @@ public sealed class CleanSceneLifecycle : IDisposable
         SceneSession scene,
         TransformGestureService gestures,
         TransformHistory history,
+        Poser.Application.Animation.AnimationSession animation,
+        Poser.Game.Animation.AnimationRuntimePort animationPort,
         IEventBus events,
         IFramework framework)
     {
@@ -50,6 +54,8 @@ public sealed class CleanSceneLifecycle : IDisposable
         _scene = scene;
         _gestures = gestures;
         _history = history;
+        _animation = animation;
+        _animationPort = animationPort;
         _events = events;
         _framework = framework;
         _events.Subscribe<ActorListChangedEvent>(OnActorListChanged);
@@ -115,6 +121,13 @@ public sealed class CleanSceneLifecycle : IDisposable
         // rule per patch.
         _gestures.ReconcileScene(_scene.Contains);
         _history.Reconcile(_scene.Contains);
+        // Animation follows the same exact-generation rule: a replaced
+        // actor's old entry is released without touching the new body.
+        // The port's detour-facing address index is rebuilt from the
+        // surviving stable ids in the same step, so a redrawn actor can
+        // never inherit the previous body's speed enforcement.
+        _animation.Reconcile(_scene.Snapshot);
+        _animationPort.SyncEnforcementIndex();
     }
 
     /// <summary>
@@ -187,6 +200,10 @@ public sealed class CleanSceneLifecycle : IDisposable
             if (_gestures.ActiveGesture is { } gesture)
                 _gestures.Cancel(gesture);
             _history.Clear();
+            // Leaving GPose is the last moment the actors Poser overrode
+            // are still resolvable, so every animation override is put
+            // back here rather than dropped when they disappear.
+            _animation.ResetAll();
         }
         Refresh();
     }
