@@ -78,14 +78,6 @@ public interface IAnimationRuntimePort
     AnimationPortResult SetSlotSpeed(ActorId actor, AnimationSlot slot, float speed);
     AnimationPortResult ClearSlotSpeed(ActorId actor, AnimationSlot slot);
 
-    /// <summary>
-    /// Replaces exactly one slot's timeline, leaving every other slot
-    /// alone. Refused when the timeline's own slot disagrees with the
-    /// target, because writing a facial timeline into the body slot
-    /// produces a silently wrong actor rather than an error.
-    /// </summary>
-    AnimationPortResult SetSlotTimeline(ActorId actor, AnimationSlot slot, ushort timeline);
-
     // ── Lips, stance, weapon, position ────────────────────────────────
     AnimationPortResult SetLips(ActorId actor, ushort timeline);
     AnimationPortResult SetStance(ActorId actor, AnimationStance stance, int pose);

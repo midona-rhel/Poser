@@ -623,16 +623,6 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         return AnimationPortResult.Ok();
     }
 
-    public AnimationPortResult SetSlotTimeline(
-        ActorId actor, AnimationSlot slot, ushort timeline)
-    {
-        var character = Resolve(actor, out var detail);
-        if (character == null)
-            return AnimationPortResult.Fail(detail!);
-        character->Timeline.TimelineSequencer.SetSlotTimeline((uint)slot, timeline);
-        return AnimationPortResult.Ok();
-    }
-
     // ── Lips, stance, weapon, position ────────────────────────────────
 
     public AnimationPortResult SetLips(ActorId actor, ushort timeline)

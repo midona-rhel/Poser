@@ -495,19 +495,20 @@ public sealed class AnimationPane
         float resetWidth = Crystarium.MeasureButton("Reset", Cls.Compact).X;
         x -= resetWidth;
         ImGui.SetCursorScreenPos(new Vector2(x, row.Y + ButtonY * s));
-        bool resetDisabled = !owned.SlotSpeeds.ContainsKey(slot) &&
-            _animation.CapturedSlotTimeline(actor, slot) == null;
+        bool resetDisabled = !owned.SlotSpeeds.ContainsKey(slot);
         if (Crystarium.Button("Reset", new ButtonProps
             {
                 Id = $"anim-layer-reset-{(int)slot}",
                 Classes = Cls.Compact,
                 Disabled = resetDisabled,
-                Tooltip = "Restore this layer's incoming animation and speed",
+                Tooltip = "Hand this layer's speed back to the game",
                 Style = new ButtonStyle { Width = Sizing.Fixed(resetWidth / s) },
             }) && !resetDisabled)
         {
+            // A layer reset hands the layer's SPEED back; the timeline is
+            // not restorable -- the references never write one, so neither
+            // can we. What plays next is the game's own business.
             Report(_animation.ClearSlotSpeed(actor, captured), "Layer speed");
-            Report(_animation.RestoreSlotTimeline(actor, captured), "Layer");
         }
 
         x -= (Gap + 90f) * s;
@@ -686,9 +687,7 @@ public sealed class AnimationPane
         float trailingX = TrailingButtons(row, width, s,
             new TrailingAction("Preview", "anim-expression-preview",
                 "Replay the current expression", facial == 0,
-                () => Report(
-                    _animation.SetSlotTimeline(actor, AnimationSlot.Facial, facial),
-                    "Expression")),
+                () => Report(_animation.Blend(actor, facial), "Expression")),
             new TrailingAction("Apply to face", "anim-apply-face",
                 "Keep this face after the preview stops, as one undoable pose edit",
                 _facialCapture.IsPending,
@@ -771,7 +770,9 @@ public sealed class AnimationPane
                 break;
             case AnimationPickTarget.Slot:
             case AnimationPickTarget.Expression:
-                Report(_animation.SetSlotTimeline(actor, pick.Slot, timeline),
+                // The generic play: the timeline's own slot tag routes it
+                // onto its layer -- the references never write a slot.
+                Report(_animation.Blend(actor, timeline),
                     AnimationSlots.DisplayName(pick.Slot));
                 break;
             case AnimationPickTarget.Lips:

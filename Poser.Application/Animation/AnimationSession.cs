@@ -30,9 +30,6 @@ public readonly record struct AnimationResult(bool Success, string? Detail = nul
 ///                     recalculation wins again (there is no remembered
 ///                     value to write back, by design);
 ///   slot speeds     → stop enforcing and hand each touched slot back;
-///   slot timelines  → the timeline each slot held before Poser replaced
-///                     it; also how a facial preview is removed without
-///                     disturbing base or upper body;
 ///   lips            → the captured timeline (NOT 0, which merely means
 ///                     "no speech timeline");
 ///   stance and pose → the family and index captured before the first
@@ -506,73 +503,6 @@ public sealed class AnimationSession
         Changed?.Invoke();
     }
 
-    // ── Slot replacement ──────────────────────────────────────────────
-
-    /// <summary>
-    /// Replaces one slot's timeline, leaving every other slot and every
-    /// other override untouched. The slot's INCOMING timeline is captured
-    /// on the first replacement, which is both the restore point and —
-    /// for the Facial slot — the means of removing a preview without
-    /// disturbing base or upper body.
-    /// </summary>
-    public AnimationResult SetSlotTimeline(ActorId actor, AnimationSlot slot, ushort timeline)
-    {
-        if (Suspended() is { } blocked) return blocked;
-        var current = OverridesFor(actor);
-        ushort? capture = current.SlotTimelineCaptures.TryGetValue(slot, out var existing)
-            ? existing
-            : _port.Read(actor)?.TimelineFor(slot);
-
-        var result = _port.SetSlotTimeline(actor, slot, timeline);
-        if (!result.Success)
-            return AnimationResult.Fail(result.Detail ?? "Slot playback failed.");
-
-        if (capture is { } captured)
-        {
-            Mutate(actor, o =>
-            {
-                if (o.SlotTimelineCaptures.ContainsKey(slot))
-                    return o;
-                var captures = new Dictionary<AnimationSlot, ushort>(o.SlotTimelineCaptures)
-                {
-                    [slot] = captured,
-                };
-                return o with { SlotTimelineCaptures = captures };
-            });
-        }
-        return AnimationResult.Ok();
-    }
-
-    /// <summary>The timeline a slot held before Poser first replaced it,
-    /// if it has.</summary>
-    public ushort? CapturedSlotTimeline(ActorId actor, AnimationSlot slot) =>
-        OverridesFor(actor).SlotTimelineCaptures.TryGetValue(slot, out var value)
-            ? value
-            : null;
-
-    /// <summary>
-    /// Puts one slot back to its captured incoming timeline and releases
-    /// the capture. This is how a facial preview is removed: it touches
-    /// exactly that slot, so base and upper body keep playing.
-    /// </summary>
-    public AnimationResult RestoreSlotTimeline(ActorId actor, AnimationSlot slot)
-    {
-        if (CapturedSlotTimeline(actor, slot) is not { } captured)
-            return AnimationResult.Ok();
-
-        var result = _port.SetSlotTimeline(actor, slot, captured);
-        if (!result.Success)
-            return AnimationResult.Fail(result.Detail ?? "Slot restore failed.");
-
-        Mutate(actor, o =>
-        {
-            var captures = new Dictionary<AnimationSlot, ushort>(o.SlotTimelineCaptures);
-            captures.Remove(slot);
-            return o with { SlotTimelineCaptures = captures };
-        });
-        return AnimationResult.Ok();
-    }
-
     // ── Restoration ───────────────────────────────────────────────────
 
     /// <summary>
@@ -621,15 +551,6 @@ public sealed class AnimationSession
                 if (Try(_port.ClearSlotSpeed(actor, slot)))
                     speeds.Remove(slot);
             remaining = remaining with { SlotSpeeds = speeds };
-        }
-
-        if (owned.SlotTimelineCaptures.Count > 0)
-        {
-            var captures = new Dictionary<AnimationSlot, ushort>(remaining.SlotTimelineCaptures);
-            foreach (var (slot, timeline) in owned.SlotTimelineCaptures)
-                if (Try(_port.SetSlotTimeline(actor, slot, timeline)))
-                    captures.Remove(slot);
-            remaining = remaining with { SlotTimelineCaptures = captures };
         }
 
         if (owned.StanceCaptureValue is { } stance &&

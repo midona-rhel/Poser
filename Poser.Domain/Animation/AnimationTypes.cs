@@ -87,6 +87,9 @@ public static class AnimationTimelines
     /// <summary>The idle timeline; blending it is how both references
     /// visibly leave an overridden animation.</summary>
     public const ushort Idle = 3;
+    /// <summary>The "Straight face" timeline Brio plays to clear a held
+    /// expression before returning to idle.</summary>
+    public const ushort StraightFace = 604;
     public const ushort DrawWeapon = 1;
     public const ushort SheatheWeapon = 2;
     /// <summary>Battle idle, used when the weapon is drawn.</summary>
@@ -237,12 +240,6 @@ public sealed record AnimationOverrides
     /// None restores THIS, rather than writing 0 — 0 is "no speech
     /// timeline", which is not necessarily what the actor arrived with.</summary>
     public ushort? LipsCapture { get; init; }
-    /// <summary>Incoming timeline per slot, before Poser first replaced
-    /// that slot. Also the facial-preview restore point: stopping a
-    /// facial preview writes the captured Facial timeline back, which is
-    /// how the preview is removed without touching base or upper body.</summary>
-    public IReadOnlyDictionary<AnimationSlot, ushort> SlotTimelineCaptures { get; init; } =
-        new Dictionary<AnimationSlot, ushort>();
     /// <summary>Stance family and pose index before the first stance change.</summary>
     public StanceCapture? StanceCaptureValue { get; init; }
     /// <summary>Weapon state before Poser first drew or sheathed.</summary>
@@ -253,7 +250,7 @@ public sealed record AnimationOverrides
     /// <summary>True when Poser owns anything that must be restored.</summary>
     public bool HasAny =>
         BaseCapture != null || LipsCapture != null || OverallSpeed != null ||
-        PositionLock || SlotSpeeds.Count > 0 || SlotTimelineCaptures.Count > 0 ||
+        PositionLock || SlotSpeeds.Count > 0 ||
         StanceCaptureValue != null || WeaponCapture != null;
 
     public bool IsPaused => OverallSpeed is 0f;
