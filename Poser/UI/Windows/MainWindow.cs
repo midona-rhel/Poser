@@ -29,10 +29,10 @@ namespace Poser.UI;
 /// </summary>
 public class MainWindow : Window
 {
-    private const float MinimumWidthWithInspector = 1110f;
-    private const float MinimumWidthWithoutInspector =
-        MinimumWidthWithInspector - AppShellView.RailWidth;
-    private const float DefaultWidth = MinimumWidthWithInspector + 50f;
+    // One minimum for every tab: the right column is always spent, either
+    // on the Pose rail or on Animation content.
+    private const float MinimumWidth = 1110f;
+    private const float DefaultWidth = MinimumWidth + 50f;
     private const float DefaultHeight = 660f;
     private const float MinHeight = 520f;
 
@@ -65,7 +65,6 @@ public class MainWindow : Window
     private readonly PoseRailPane _poseRail;
     private bool _collapsed;
     private float _savedHeight = DefaultHeight;
-    private bool _inspectorWasVisible = true;
     private readonly HashSet<string> _collapsedNodes = new();
     private readonly HashSet<string> _knownCategoryNodes = new();
     private readonly HashSet<string> _knownActorNodes = new();
@@ -103,7 +102,7 @@ public class MainWindow : Window
     {
         Size = new Vector2(DefaultWidth, DefaultHeight);
         SizeCondition = ImGuiCond.FirstUseEver;
-        SizeConstraints = ExpandedSizeConstraints(inspectorVisible: true);
+        SizeConstraints = ExpandedSizeConstraints();
 
         _gPoseService = gPoseService;
         _actorManager = actorManager;
@@ -193,30 +192,18 @@ public class MainWindow : Window
     {
         base.PreDraw();
 
-        bool inspectorVisible = HasInspectorForActiveTab();
-        float minimumWidth = MinimumWidthFor(inspectorVisible);
-
-        // A collapsed shell overrides only the vertical constraint so ImGui
-        // cannot hold it open at the normal 520 px minimum.
+        // ONE width for the whole shell. Tabs differ in what they put in the
+        // right column, never in how wide the window is: the Pose rail and
+        // the Animation tab's extra content occupy the same 280 px, so
+        // navigating cannot move the frame. Only collapse and restore are
+        // allowed to write Size.
         SizeConstraints = _collapsed
             ? new WindowSizeConstraints
             {
-                MinimumSize = new Vector2(minimumWidth, AppShellView.TitlebarHeight),
+                MinimumSize = new Vector2(MinimumWidth, AppShellView.TitlebarHeight),
                 MaximumSize = new Vector2(float.MaxValue, AppShellView.TitlebarHeight),
             }
-            : ExpandedSizeConstraints(inspectorVisible);
-
-        // Preserve the editor width across inspector transitions. Constraints
-        // alone can grow a window but never know when to shrink it again.
-        float? inspectorTransitionWidth = null;
-        if (!_collapsed && inspectorVisible != _inspectorWasVisible)
-        {
-            float delta = inspectorVisible
-                ? AppShellView.RailWidth
-                : -AppShellView.RailWidth;
-            inspectorTransitionWidth = Math.Max(minimumWidth, _lastWidth + delta);
-        }
-        _inspectorWasVisible = inspectorVisible;
+            : ExpandedSizeConstraints();
 
         // Collapse and restore go through the Dalamud window size system;
         // ImGui.SetWindowSize inside Draw loses to it.
@@ -230,11 +217,6 @@ public class MainWindow : Window
             Size = new Vector2(_lastWidth, _savedHeight);
             SizeCondition = ImGuiCond.Always;
             _restorePending = false;
-        }
-        else if (inspectorTransitionWidth is { } transitionWidth)
-        {
-            Size = new Vector2(transitionWidth, _lastHeight);
-            SizeCondition = ImGuiCond.Always;
         }
         else
         {
@@ -266,18 +248,16 @@ public class MainWindow : Window
     private float _lastWidth = DefaultWidth;
     private float _lastHeight = DefaultHeight;
 
-    private bool HasInspectorForActiveTab()
-        => _activeTab == "Pose";
+    /// <summary>The Pose rail is the only surface that occupies the right
+    /// column; Animation spends the same width on content instead. This is
+    /// the single predicate for BOTH the window's minimum width and the
+    /// shell's rail reservation, so the two can never disagree.</summary>
+    private bool ShowsPoseRail => _activeTab == "Pose";
 
-    private static float MinimumWidthFor(bool inspectorVisible)
-        => inspectorVisible
-            ? MinimumWidthWithInspector
-            : MinimumWidthWithoutInspector;
-
-    private static WindowSizeConstraints ExpandedSizeConstraints(bool inspectorVisible)
+    private static WindowSizeConstraints ExpandedSizeConstraints()
         => new()
         {
-            MinimumSize = new Vector2(MinimumWidthFor(inspectorVisible), MinHeight),
+            MinimumSize = new Vector2(MinimumWidth, MinHeight),
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue),
         };
 
@@ -310,8 +290,11 @@ public class MainWindow : Window
         _vm.GPoseActive = _gPoseService.IsGPosing;
         _vm.SidebarWidthPx = _sidebarWidth;
         _vm.Collapsed = _collapsed;
-        _vm.ContentOwnsViewport = _activeTab == "Pose";
-        _vm.DrawRail = _collapsed ? null : _poseRail.Draw;
+        // Both tabs own their viewport: Pose bounds its canvases, Animation
+        // owns exactly one scroll region, so the shell never adds a second
+        // page scrollbar.
+        _vm.ContentOwnsViewport = true;
+        _vm.DrawRail = _collapsed || !ShowsPoseRail ? null : _poseRail.Draw;
         _vm.GizmoOperation = (int)_editorState.TransformTool;
         _vm.GizmoSpace = (int)_editorState.TransformOrientation;
         _vm.RotationPivot = (int)_editorState.RotationPivot;
