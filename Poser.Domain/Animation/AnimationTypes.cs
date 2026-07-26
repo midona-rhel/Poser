@@ -235,6 +235,13 @@ public sealed record AnimationOverrides
     /// forced-timeline field is unproven for this client.</summary>
     public IReadOnlyDictionary<AnimationSlot, ushort> LoopedSlots { get; init; } =
         new Dictionary<AnimationSlot, ushort>();
+    /// <summary>Incoming timeline per non-base slot, captured once before
+    /// Poser's first play landed there; 0 records "was empty". Restore
+    /// replays a non-zero capture through the sequencer; an empty slot has
+    /// nothing to replay and is released without a write. The base slot
+    /// belongs to <see cref="BaseCapture"/>.</summary>
+    public IReadOnlyDictionary<AnimationSlot, ushort> SlotCaptures { get; init; } =
+        new Dictionary<AnimationSlot, ushort>();
     public IReadOnlyDictionary<AnimationSlot, float> SlotSpeeds { get; init; } =
         new Dictionary<AnimationSlot, float>();
     public ushort? Lips { get; init; }
@@ -271,7 +278,7 @@ public sealed record AnimationOverrides
     public bool HasAny =>
         BaseCapture != null || LipsCapture != null || OverallSpeed != null ||
         PositionLock || SlotSpeeds.Count > 0 || HeldExpression != null ||
-        LoopedSlots.Count > 0 ||
+        LoopedSlots.Count > 0 || SlotCaptures.Count > 0 ||
         StanceCaptureValue != null || WeaponCapture != null;
 
     public bool IsPaused => OverallSpeed is 0f;

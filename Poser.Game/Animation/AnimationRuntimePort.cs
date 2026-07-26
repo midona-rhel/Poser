@@ -465,6 +465,30 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         return AnimationPortResult.Ok();
     }
 
+    /// <summary>The slot the sheet's Stance column routes a timeline
+    /// onto, or null when the row is missing or unmapped.</summary>
+    public AnimationSlot? TimelineSlot(ushort timeline)
+    {
+        var stance = _timelineSheet?.GetRowOrDefault(timeline)?.Stance;
+        return stance is { } value && AnimationSlots.IsKnown(value)
+            ? (AnimationSlot)value
+            : null;
+    }
+
+    /// <summary>The base restore point as it stands right now, for plays
+    /// that go through the emote entry point rather than Blend.</summary>
+    public BaseAnimationCapture? CaptureBase(ActorId actor)
+    {
+        var character = Resolve(actor, out _);
+        if (character == null)
+            return null;
+        return new BaseAnimationCapture(
+            (byte)character->Mode,
+            character->ModeParam,
+            character->Timeline.BaseOverride,
+            character->Timeline.TimelineSequencer.TimelineIds[0]);
+    }
+
     /// <summary>Ktisis' mode dance around a play. Raw field writes, as the
     /// reference does them; every member is a named ClientStructs symbol.</summary>
     private void PlayWithMode(Character* character, ushort timeline)
@@ -654,6 +678,12 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             return AnimationPortResult.Fail(detail!);
         if (!float.IsFinite(speed))
             return AnimationPortResult.Fail("Speed must be a finite number.");
+        // Without the hook the game re-wins every recalculation: the value
+        // would hold for one frame and silently drift back. Refuse rather
+        // than pretend.
+        if (_speedHook == null)
+            return AnimationPortResult.Fail(
+                "Speed is unavailable: the game's speed hook was not found.");
 
         EnforcementFor(actor).OverallSpeed = speed;
         SyncEnforcementIndex();
@@ -712,6 +742,9 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             return AnimationPortResult.Fail(detail!);
         if (!float.IsFinite(speed))
             return AnimationPortResult.Fail("Speed must be a finite number.");
+        if (_slotSpeedHook == null)
+            return AnimationPortResult.Fail(
+                "Layer speed is unavailable: the game's slot-speed hook was not found.");
 
         EnforcementFor(actor).SlotSpeeds[(int)slot] = speed;
         SyncEnforcementIndex();
@@ -998,16 +1031,19 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             }
             else
             {
-                // Restore BOTH regions even if the first throws; the
-                // original-byte writes are idempotent, so a failed attempt
-                // stays frozen and retries cleanly.
+                // A failed unfreeze returns to the FULLY frozen state, so
+                // _physicsFrozen == true stays truthful: if the second
+                // restore faults after the first landed, the first region
+                // is re-patched before the failure propagates.
+                ReplaceRaw(_physicsAddress, _physicsOriginal1);
                 try
                 {
-                    ReplaceRaw(_physicsAddress, _physicsOriginal1);
-                }
-                finally
-                {
                     ReplaceRaw(_physicsAddress - PhysicsFreezePatchOffset, _physicsOriginal2);
+                }
+                catch
+                {
+                    ReplaceRaw(_physicsAddress, [0x90, 0x90, 0x90, 0x90]);
+                    throw;
                 }
             }
             _physicsFrozen = frozen;

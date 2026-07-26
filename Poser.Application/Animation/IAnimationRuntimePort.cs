@@ -47,9 +47,18 @@ public interface IAnimationRuntimePort
         BaseAnimationCapture? existing, out BaseAnimationCapture? captured);
 
     /// <summary>Puts mode, mode parameter, and the base-override field
-    /// back exactly as captured, then blends idle so the change is
-    /// visible.</summary>
+    /// back exactly as captured, then replays the captured base-slot
+    /// timeline (idle only as fallback).</summary>
     AnimationPortResult RestoreBase(ActorId actor, BaseAnimationCapture capture);
+
+    /// <summary>The slot the sheet's Stance column routes a timeline onto,
+    /// or null when unmapped — how the session knows which slot's incoming
+    /// timeline a play is about to overwrite.</summary>
+    AnimationSlot? TimelineSlot(ushort timeline);
+
+    /// <summary>The base restore point as it stands right now, for plays
+    /// that go through the emote entry point rather than Blend.</summary>
+    BaseAnimationCapture? CaptureBase(ActorId actor);
 
     // ── Loops ───────────────────────────────────────────
     /// <summary>Arms Poser-driven looping for one slot: whenever the slot

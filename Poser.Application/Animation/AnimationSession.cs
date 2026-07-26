@@ -140,21 +140,53 @@ public sealed class AnimationSession
     {
         if (Suspended() is { } blocked) return blocked;
         var current = OverridesFor(actor);
+
+        // Capture the incoming timeline of the slot this play lands on
+        // (the sheet routes it), once per slot, BEFORE it is overwritten.
+        // The base slot is the base capture's job; 0 records "was empty".
+        AnimationSlot? landing = _port.TimelineSlot(timeline);
+        bool captureSlot = landing is { } slot &&
+            slot != AnimationSlot.Base &&
+            !current.SlotCaptures.ContainsKey(slot);
+        ushort incoming = 0;
+        if (captureSlot && _port.Read(actor) is { } reading)
+            incoming = reading.TimelineFor(landing!.Value);
+
         var result = _port.Blend(actor, timeline, current.BaseCapture, out var captured);
         if (!result.Success)
             return AnimationResult.Fail(result.Detail ?? "Blend failed.");
         if (captured is { } taken)
             Mutate(actor, o => o with { BaseCapture = o.BaseCapture ?? taken });
+        if (captureSlot)
+        {
+            var landed = landing!.Value;
+            Mutate(actor, o =>
+            {
+                if (o.SlotCaptures.ContainsKey(landed))
+                    return o;
+                var slots = new Dictionary<AnimationSlot, ushort>(o.SlotCaptures)
+                {
+                    [landed] = incoming,
+                };
+                return o with { SlotCaptures = slots };
+            });
+        }
         return AnimationResult.Ok();
     }
 
     public AnimationResult PlayEmote(ActorId actor, uint emoteId)
     {
         if (Suspended() is { } blocked) return blocked;
+        // The emote entry point drives the base slot too; its restore
+        // point is captured exactly as a direct play's would be.
+        var current = OverridesFor(actor);
+        var captured = current.BaseCapture == null ? _port.CaptureBase(actor) : null;
         var result = _port.PlayEmote(actor, emoteId);
-        return result.Success
-            ? AnimationResult.Ok()
-            : AnimationResult.Fail(result.Detail ?? "Emote failed.");
+        if (!result.Success)
+            return AnimationResult.Fail(result.Detail ?? "Emote failed.");
+        if (captured is { } taken)
+            Mutate(actor, o => o with { BaseCapture = o.BaseCapture ?? taken });
+        return AnimationResult.Ok();
     }
 
     /// <summary>Restores the captured base state and clears the selection;
@@ -650,15 +682,17 @@ public sealed class AnimationSession
 
         // A held expression is released BEFORE the speed loop clears the
         // facial pin, so the face visibly leaves the expression instead of
-        // resuming mid-timeline from an unpinned frame.
-        if (owned.HeldExpression != null)
+        // resuming mid-timeline from an unpinned frame. Ownership is
+        // released only when the WHOLE sequence landed; a partial failure
+        // keeps HeldExpression so the next reset reruns it. The release
+        // plays pass the existing capture so a reset never re-captures
+        // state Poser itself produced.
+        if (owned.HeldExpression != null &&
+            Try(_port.ClearSlotSpeed(actor, AnimationSlot.Facial)) &&
+            Try(_port.Blend(actor, AnimationTimelines.StraightFace, remaining.BaseCapture, out _)) &&
+            Try(_port.ClearSlotSpeed(actor, AnimationSlot.Facial)) &&
+            Try(_port.Blend(actor, AnimationTimelines.Idle, remaining.BaseCapture, out _)))
         {
-            // The release plays pass the existing capture so a reset can
-            // never re-capture state Poser itself produced.
-            _port.ClearSlotSpeed(actor, AnimationSlot.Facial);
-            Try(_port.Blend(actor, AnimationTimelines.StraightFace, remaining.BaseCapture, out _));
-            _port.ClearSlotSpeed(actor, AnimationSlot.Facial);
-            Try(_port.Blend(actor, AnimationTimelines.Idle, remaining.BaseCapture, out _));
             remaining = remaining with { HeldExpression = null };
             if (remaining.SlotSpeeds.ContainsKey(AnimationSlot.Facial))
             {
@@ -666,6 +700,19 @@ public sealed class AnimationSession
                 speeds.Remove(AnimationSlot.Facial);
                 remaining = remaining with { SlotSpeeds = speeds };
             }
+        }
+
+        // Replay each captured incoming slot timeline. An empty capture
+        // (0) has nothing to replay: with loops already disarmed, the
+        // layer one-shot ends on its own, so the record is just released.
+        if (owned.SlotCaptures.Count > 0)
+        {
+            var slots = new Dictionary<AnimationSlot, ushort>(remaining.SlotCaptures);
+            foreach (var (slot, incoming) in owned.SlotCaptures)
+                if (incoming == 0 ||
+                    Try(_port.Blend(actor, incoming, remaining.BaseCapture, out _)))
+                    slots.Remove(slot);
+            remaining = remaining with { SlotCaptures = slots };
         }
 
         if (owned.SlotSpeeds.Count > 0)
