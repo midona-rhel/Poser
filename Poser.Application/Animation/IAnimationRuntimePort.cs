@@ -57,6 +57,15 @@ public interface IAnimationRuntimePort
     /// is the only way to get intro-then-loop playback.</summary>
     AnimationPortResult PlayEmote(ActorId actor, uint emoteId);
 
+    /// <summary>
+    /// False when the game's persistent forced-timeline field is not mapped
+    /// for the running client, in which case <see cref="SetForceLoop"/>
+    /// always fails and surfaces must not offer the control. Reported
+    /// rather than silently approximated, because every approximation
+    /// (latching Base, re-blending idle) changes what the actor is doing.
+    /// </summary>
+    bool SupportsForceLoop { get; }
+
     /// <summary>Writes the forced timeline id the game re-asserts every
     /// frame; 0 clears the loop.</summary>
     AnimationPortResult SetForceLoop(ActorId actor, ushort timeline);

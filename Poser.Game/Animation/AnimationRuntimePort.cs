@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using Dalamud.Game;
 using Dalamud.Hooking;
 using Dalamud.Memory;
@@ -62,6 +63,21 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     private delegate void SetSlotSpeedDelegate(ActionTimelineSequencer* sequencer, uint slot, float speed);
     private readonly Hook<SetSlotSpeedDelegate>? _slotSpeedHook;
 
+    // Stance transition natives (Ktisis AnimationModule). ClientStructs maps
+    // the structs but not these three entry points, so they are sig-scanned.
+    // Every struct member they touch is a verified ClientStructs symbol.
+    private delegate bool SetEmoteModeDelegate(EmoteController* controller, uint mode);
+    private readonly SetEmoteModeDelegate? _setEmoteMode;
+    private delegate nint CancelTimelineDelegate(TimelineContainer* container, nint a2, nint a3);
+    private readonly CancelTimelineDelegate? _cancelTimeline;
+
+    /// <summary>Ktisis' EmoteModeEnum. These are argument VALUES for
+    /// SetEmoteMode, not struct offsets.</summary>
+    private const uint EmoteModeNormal = 0;
+    private const uint EmoteModeSitGround = 1;
+    private const uint EmoteModeSitChair = 2;
+    private const uint EmoteModeSleeping = 3;
+
     private readonly nint _physicsAddress;
     private byte[] _physicsOriginal1 = [];
     private byte[] _physicsOriginal2 = [];
@@ -79,6 +95,13 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         _log = log;
         _bindings = bindings;
         _posing = posing;
+
+        // A missing stance native degrades that one operation to an explicit
+        // failure; it never silently half-applies a transition.
+        _setEmoteMode = ScanDelegate<SetEmoteModeDelegate>(
+            sigScanner, "E8 ?? ?? ?? ?? F6 46 10 01", "SetEmoteMode");
+        _cancelTimeline = ScanDelegate<CancelTimelineDelegate>(
+            sigScanner, "E8 ?? ?? ?? ?? 80 7B 17 01", "CancelTimeline");
 
         try
         {
@@ -112,6 +135,22 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         {
             _log.Warning($"Physics freeze address unavailable: {ex.Message}");
         }
+    }
+
+    private T? ScanDelegate<T>(ISigScanner scanner, string signature, string name)
+        where T : Delegate
+    {
+        try
+        {
+            if (scanner.TryScanText(signature, out var address) && address != nint.Zero)
+                return Marshal.GetDelegateForFunctionPointer<T>(address);
+            _log.Warning($"Animation: {name} signature not found; stance changes will fail explicitly.");
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"Animation: {name} scan failed ({ex.Message}); stance changes will fail explicitly.");
+        }
+        return null;
     }
 
     // ── Resolution ────────────────────────────────────────────────────
@@ -377,24 +416,39 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         return AnimationPortResult.Ok();
     }
 
-    public AnimationPortResult SetForceLoop(ActorId actor, ushort timeline)
-    {
-        var character = Resolve(actor, out var detail);
-        if (character == null)
-            return AnimationPortResult.Fail(detail!);
+    /// <summary>
+    /// NOT IMPLEMENTED on this build, deliberately.
+    ///
+    /// Force loop needs the game's persistent forced-timeline field — the
+    /// one Ktisis calls <c>ActionTimelineId</c> and re-writes so the engine
+    /// keeps re-driving a timeline instead of falling back to idle. That
+    /// field could not be proven for the current client:
+    ///
+    ///  · current ClientStructs maps no such member on TimelineContainer or
+    ///    ActionTimelineSequencer, and exposes no accessor for it (its only
+    ///    member functions are height-adjust, lips, speed, and intro/loop);
+    ///  · the only other <c>ActionTimelineId</c> in ClientStructs belongs to
+    ///    EventFramework's queued-callback payload and is unreachable here;
+    ///  · Ktisis' literal 0x2D0 cannot be inherited. Its checkout is a patch
+    ///    behind (Character.EmoteController 0x620 vs 0x630, Mode 0x2354 vs
+    ///    0x2364), and the offset is inconsistent with its own struct: it
+    ///    declares AnimationTimeline as Size 0x1F0 — which matches the
+    ///    sequencer's real extent, since TimelineTransit follows it — yet
+    ///    places the field at 0x2D0, past that end.
+    ///
+    /// The alternatives are all worse than an honest gap: BaseOverride is
+    /// already the Base latch, so routing loop through it would collapse
+    /// Blend into Base; blending Idle on disable yanks the actor off its
+    /// animation instead of merely un-looping; and probing offsets with
+    /// writes risks corrupting a live game process. So this fails
+    /// explicitly and the UI does not offer the control.
+    /// </summary>
+    public AnimationPortResult SetForceLoop(ActorId actor, ushort timeline) =>
+        AnimationPortResult.Fail(
+            "Force loop is unavailable: the game's forced-timeline field is not " +
+            "mapped for this client version.");
 
-        if (timeline == 0)
-        {
-            character->Timeline.TimelineSequencer.PlayTimeline(AnimationTimelines.Idle, null);
-            return AnimationPortResult.Ok();
-        }
-
-        // The game's own intro/loop entry point: passing the same id as
-        // both intro and loop is how a single timeline is made to repeat
-        // through the scheduler, with no Poser-side re-trigger loop.
-        character->Timeline.PlayActionTimeline(timeline, timeline, null);
-        return AnimationPortResult.Ok();
-    }
+    public bool SupportsForceLoop => false;
 
     // ── Speed ─────────────────────────────────────────────────────────
 
@@ -506,11 +560,27 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         return AnimationPortResult.Ok();
     }
 
+    /// <summary>
+    /// Ktisis' stance transition, which is a sequence rather than a pair of
+    /// field writes: cancel the running timeline, set the emote mode through
+    /// the game's own function, THEN write pose type and pose index, then
+    /// drive the resulting idle or emote.
+    ///
+    /// Sit-chair additionally preserves the draw and camera offsets across
+    /// the change, because the mode switch recomputes them and the actor
+    /// otherwise jumps. Ktisis also clears an unmapped EmoteController flag
+    /// and calls a recompute entry point before restoring; neither could be
+    /// verified on this client, and restoring the saved vectors after the
+    /// transition reaches the same final offsets without an unproven write.
+    /// </summary>
     public AnimationPortResult SetStance(ActorId actor, AnimationStance stance, int pose)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
             return AnimationPortResult.Fail(detail!);
+        if (_setEmoteMode == null || _cancelTimeline == null)
+            return AnimationPortResult.Fail(
+                "Stance changes are unavailable: a required game function was not found.");
 
         var poseType = stance switch
         {
@@ -518,6 +588,13 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             AnimationStance.SitGround => EmoteController.PoseType.GroundSit,
             AnimationStance.Sleeping => EmoteController.PoseType.Doze,
             _ => EmoteController.PoseType.Idle,
+        };
+        uint emoteMode = stance switch
+        {
+            AnimationStance.SitChair => EmoteModeSitChair,
+            AnimationStance.SitGround => EmoteModeSitGround,
+            AnimationStance.Sleeping => EmoteModeSleeping,
+            _ => EmoteModeNormal,
         };
 
         // The game reports how many poses this family actually has, which
@@ -527,28 +604,54 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             available = 1;
         int wrapped = pose < 0 ? available - 1 : pose % available;
 
+        bool preserveOffsets = stance == AnimationStance.SitChair;
+        var drawOffset = preserveOffsets ? character->DrawOffset : default;
+        var cameraOffset = preserveOffsets ? character->CameraOffset : default;
+
+        _cancelTimeline(&character->Timeline, nint.Zero, nint.Zero);
+        _setEmoteMode(&character->EmoteController, emoteMode);
         character->EmoteController.CurrentPoseType = poseType;
         character->EmoteController.CPoseState = (byte)wrapped;
 
+        if (preserveOffsets)
+        {
+            character->DrawOffset = drawOffset;
+            character->CameraOffset = cameraOffset;
+        }
+
+        // Sit and sleep stances are fully carried by the mode change above.
+        // Idle is the one family the game does not drive on its own, so its
+        // poses are played explicitly — as emotes past index 0, since those
+        // poses only exist as emotes.
+        if (stance != AnimationStance.Idle)
+            return AnimationPortResult.Ok();
+
         bool weaponDrawn = character->Timeline.IsWeaponDrawn;
-        if (stance == AnimationStance.Idle && wrapped > 0 &&
-            !weaponDrawn && wrapped < AnimationTimelines.IdlePoses.Count &&
-            AnimationTimelines.IdlePoses[wrapped] is var emote and not 0)
-        {
-            character->EmoteController.PlayEmote(emote, null);
-        }
-        else if (stance == AnimationStance.Idle && wrapped > 0 && weaponDrawn)
-        {
-            character->EmoteController.PlayEmote(AnimationTimelines.BattlePose, null);
-        }
-        else
+        if (wrapped == 0)
         {
             character->Timeline.TimelineSequencer.PlayTimeline(
                 weaponDrawn ? AnimationTimelines.BattleIdle : AnimationTimelines.Idle, null);
         }
+        else if (weaponDrawn)
+        {
+            character->EmoteController.PlayEmote(AnimationTimelines.BattlePose, null);
+        }
+        else if (wrapped < AnimationTimelines.IdlePoses.Count &&
+            AnimationTimelines.IdlePoses[wrapped] is var emote and not 0)
+        {
+            character->EmoteController.PlayEmote(emote, null);
+        }
         return AnimationPortResult.Ok();
     }
 
+    /// <summary>
+    /// Plays the draw or sheathe timeline and then sets the weapon-state
+    /// flag. Both halves are required: the game does not update its own
+    /// flag for a timeline Poser forced, so without the second write the
+    /// actor animates but every later read still reports the old state.
+    /// Ktisis XORs a raw CombatFlags byte; ClientStructs exposes the same
+    /// state as a settable member, which needs no offset.
+    /// </summary>
     public AnimationPortResult SetWeaponDrawn(ActorId actor, bool drawn)
     {
         var character = Resolve(actor, out var detail);
@@ -558,6 +661,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             return AnimationPortResult.Ok();
         character->Timeline.TimelineSequencer.PlayTimeline(
             drawn ? AnimationTimelines.DrawWeapon : AnimationTimelines.SheatheWeapon, null);
+        character->Timeline.IsWeaponDrawn = drawn;
         return AnimationPortResult.Ok();
     }
 

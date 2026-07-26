@@ -186,10 +186,15 @@ public sealed class AnimationSession
         if (!result.Success)
             return result;
 
-        return forceLoop
+        return forceLoop && _port.SupportsForceLoop
             ? SetForceLoop(actor, timeline)
             : AnimationResult.Ok();
     }
+
+    /// <summary>False when the running client does not expose the game's
+    /// forced-timeline field; surfaces hide the control rather than offer
+    /// one that cannot work.</summary>
+    public bool SupportsForceLoop => _port.SupportsForceLoop;
 
     public AnimationResult SetForceLoop(ActorId actor, ushort timeline)
     {

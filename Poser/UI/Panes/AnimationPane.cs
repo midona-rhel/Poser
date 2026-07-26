@@ -36,7 +36,6 @@ public sealed class AnimationPane
     private bool _asBase = true;
     private bool _interrupt = true;
     private bool _playFromStart = true;
-    private bool _forceLoop;
     private int _directTimeline;
     private string _status = string.Empty;
     private ScrubControlId? _activeScrub;
@@ -179,19 +178,6 @@ public sealed class AnimationPane
             }))
             Report(_animation.ResetActor(actor), "Reset animation");
 
-        ImGui.SameLine(0f, 12f * s);
-        bool loop = owned.ForceLoop != null;
-        if (Crystarium.Switch("##anim-loop", ref loop))
-        {
-            _forceLoop = loop;
-            Report(
-                _animation.SetForceLoop(actor, loop ? current : (ushort)0),
-                "Loop");
-        }
-        ImGui.SameLine(0f, 6f * s);
-        ViewText.Label(
-            new Vector2(ImGui.GetCursorScreenPos().X, row.Y + 4f * s),
-            "Loop", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
 
         // Speed: -5..10 with 1 as normal, per the PBI. Reset drops the
         // override rather than writing 1, so the game's own speed returns.
@@ -352,7 +338,7 @@ public sealed class AnimationPane
     {
         Report(
             _animation.PlayEntry(
-                actor, entry, _asBase, _interrupt, _playFromStart, _forceLoop),
+                actor, entry, _asBase, _interrupt, _playFromStart, forceLoop: false),
             entry.Name);
     }
 
