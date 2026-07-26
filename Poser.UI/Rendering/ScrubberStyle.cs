@@ -17,6 +17,10 @@ public record struct ScrubberStyle
     public Vector4? TrackColor;
     public float?   TrackHeight;
     public Vector4? TickColor;
+    /// <summary>Values marked on the track itself (a speed control marks 0
+    /// and 1 so stop and natural speed are findable). Marks only — they do
+    /// not snap; snapping stays the separate Step ticks.</summary>
+    public float[]? Notches;
 
     // Thumb
     public Vector4? ThumbColor;
@@ -61,6 +65,7 @@ public record struct ScrubberStyle
         TrackColor = o.TrackColor ?? TrackColor,
         TrackHeight = o.TrackHeight ?? TrackHeight,
         TickColor = o.TickColor ?? TickColor,
+        Notches = o.Notches ?? Notches,
         ThumbColor = o.ThumbColor ?? ThumbColor,
         ThumbWidth = o.ThumbWidth ?? ThumbWidth,
         ThumbBorderRadius = o.ThumbBorderRadius ?? ThumbBorderRadius,

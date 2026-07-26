@@ -17,8 +17,8 @@ namespace Poser.UI;
 /// The Animation tab: a compact live mixer for the selected actor, not a
 /// timeline-slot debugger.
 ///
-/// Sections follow the task — transport, stance, layers, scrub, face and
-/// lips. Choosing an animation is always the shared
+/// Sections follow the task — transport, stance, layers (with scrub
+/// inline), face and lips. Choosing an animation is always the shared
 /// <see cref="AnimationPicker"/>, with the CALLER supplying the
 /// destination.
 ///
@@ -184,8 +184,6 @@ public sealed class AnimationPane
         y += SectionGap(s);
         y += DrawLayers(actor, reading, owned, dl, new Vector2(origin.X, y), width, s);
         y += SectionGap(s);
-        y += DrawScrub(actor, reading, dl, new Vector2(origin.X, y), width, s);
-        y += SectionGap(s);
         y += DrawFace(actor, reading, new Vector2(origin.X, y), width, s);
 
         if (_status.Length > 0)
@@ -319,19 +317,26 @@ public sealed class AnimationPane
         row = cursor + new Vector2(0f, y);
         valueX = LabelCell(row, "Speed", s);
         trailingX = TrailingButtons(row, width, s,
-            new TrailingAction("1×", "anim-speed-reset",
+            new TrailingAction("Reset", "anim-speed-reset",
                 "Hand playback speed back to the game", false,
                 () => Report(_animation.ClearSpeed(actor), "Speed")),
             new TrailingAction("All actors…", "anim-scene",
                 "Freeze, resume, replay or restore every actor in the scene",
                 false, () => _sceneMenuRequested = true));
 
+        // A scrubber, not a bare slider: the value reads out beside the
+        // thumb, and 0 and 1 are marked on the track so stop and natural
+        // speed are findable inside the -5..10 range.
         float speed = owned.OverallSpeed ?? reading.OverallSpeed;
         ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y + SliderY * s));
-        if (Crystarium.Slider("##anim-speed", ref speed, -5f, 10f, new SliderProps
+        if (Crystarium.Scrubber("##anim-speed", ref speed, -5f, 10f, new ScrubberProps
             {
-                Style = new SliderStyle
+                DisplayFormat = "0.00",
+                DisplaySuffix = "×",
+                Style = new ScrubberStyle
                 {
+                    Height = Sizing.Fixed(14f),
+                    Notches = new[] { 0f, 1f },
                     Width = Sizing.Fixed(MathF.Max(
                         80f, (trailingX - valueX) / s - Gap)),
                 },
@@ -466,19 +471,12 @@ public sealed class AnimationPane
     {
         float y = Caption(cursor, "LAYERS", s);
 
+        // The Full body row IS what the references call blending: a pick
+        // here is a one-shot played through the sequencer over the base
+        // loop. There is no separate "blend" — every layer pick is the
+        // same operation with a visible target.
         y += DrawLayerRow(actor, reading, owned, cursor, width, s, y,
-            AnimationSlot.Base, "Base", alwaysShow: true);
-
-        // Blend has no slot of its own — it is whatever the sequencer is
-        // blending — so its row offers the action rather than slot state.
-        var row = cursor + new Vector2(0f, y);
-        float valueX = LabelCell(row, "Blend", s);
-        if (ValueButton(valueX, row.Y, row.X + width, s,
-                "Add blend…", "anim-add-blend",
-                "Blend an animation through the game's sequencer"))
-            _picker.Open(AnimationPickTarget.Blend, AnimationSlot.Base,
-                restrictToSlot: null, caption: "Blend");
-        y += Row * s;
+            AnimationSlot.Base, "Full body", alwaysShow: true);
 
         foreach (var slot in PrimaryLayers)
             y += DrawLayerRow(actor, reading, owned, cursor, width, s, y,
@@ -490,6 +488,25 @@ public sealed class AnimationPane
             foreach (var slot in AdvancedLayers)
                 y += DrawLayerRow(actor, reading, owned, cursor, width, s, y,
                     slot, AnimationSlots.DisplayName(slot), alwaysShow: true);
+
+        // Raw Havok controls, for the slots the friendly rows do not
+        // cover. The friendly scrub lives inline in the layer rows above.
+        y += InspectorLayout.Section(dl, cursor + new Vector2(0f, y), width,
+            "anim", "ADVANCED CONTROLS", ref _openAdvancedScrub, s, topBorder: false);
+        if (_openAdvancedScrub)
+        {
+            var controls = AdvancedControls(reading);
+            foreach (var control in controls)
+                y += DrawScrubRow(actor, reading, cursor, width, s, y,
+                    control.Id.ToString(), control);
+            if (controls.Count == 0)
+            {
+                ViewText.Label(cursor + new Vector2(0f, y + 4f * s),
+                    "No animation controls.", 11f,
+                    FontWeight.Regular, InspectorLayout.HintColor);
+                y += Row * s;
+            }
+        }
         return y;
     }
 
@@ -545,13 +562,23 @@ public sealed class AnimationPane
             Report(_animation.ClearSlotSpeed(actor, captured), "Layer speed");
         }
 
-        x -= (Gap + 90f) * s;
+        x -= (Gap + 130f) * s;
         float slotSpeed = owned.SlotSpeeds.TryGetValue(slot, out var over)
             ? over
             : reading.SpeedFor(slot);
         ImGui.SetCursorScreenPos(new Vector2(x, row.Y + SliderY * s));
-        if (Crystarium.Slider($"##anim-layer-speed-{(int)slot}", ref slotSpeed, 0f, 2f,
-                new SliderProps { Style = new SliderStyle { Width = Sizing.Fixed(90f) } }))
+        if (Crystarium.Scrubber($"##anim-layer-speed-{(int)slot}", ref slotSpeed, 0f, 2f,
+                new ScrubberProps
+                {
+                    DisplayFormat = "0.00",
+                    DisplaySuffix = "×",
+                    Style = new ScrubberStyle
+                    {
+                        Height = Sizing.Fixed(14f),
+                        Notches = new[] { 1f },
+                        Width = Sizing.Fixed(130f),
+                    },
+                }))
             Report(_animation.SetSlotSpeed(actor, captured, slotSpeed), "Layer speed");
 
         float pauseWidth = MathF.Max(
@@ -576,52 +603,16 @@ public sealed class AnimationPane
                 NameFor(timeline, "Choose…"), $"anim-layer-{(int)slot}",
                 "Choose an animation for this layer"))
             _picker.Open(AnimationPickTarget.Slot, captured, captured, $"{label} layer");
-        return Row * s;
-    }
+        float used = Row * s;
 
-    // ── D. Scrub ──────────────────────────────────────────────────────
-
-    private float DrawScrub(
-        ActorId actor, ActorAnimationReading reading, ImDrawListPtr dl,
-        Vector2 cursor, float width, float s)
-    {
-        float y = Caption(cursor, "SCRUB", s);
-        bool any = false;
-
-        foreach (var slot in AnimationSlots.Scrubbable)
-        {
-            if (_animation.FindSlotControl(actor, slot) is not { } control)
-                continue;
-            any = true;
-            y += DrawScrubRow(actor, reading, cursor, width, s, y,
-                AnimationSlots.DisplayName(slot), control);
-        }
-
-        if (!any)
-        {
-            ViewText.Label(cursor + new Vector2(0f, y + 4f * s),
-                "Nothing playing on the body layers.", 11f,
-                FontWeight.Regular, InspectorLayout.HintColor);
-            y += Row * s;
-        }
-
-        y += InspectorLayout.Section(dl, cursor + new Vector2(0f, y), width,
-            "anim", "ADVANCED CONTROLS", ref _openAdvancedScrub, s, topBorder: false);
-        if (_openAdvancedScrub)
-        {
-            var controls = AdvancedControls(reading);
-            foreach (var control in controls)
-                y += DrawScrubRow(actor, reading, cursor, width, s, y,
-                    control.Id.ToString(), control);
-            if (controls.Count == 0)
-            {
-                ViewText.Label(cursor + new Vector2(0f, y + 4f * s),
-                    "No animation controls.", 11f,
-                    FontWeight.Regular, InspectorLayout.HintColor);
-                y += Row * s;
-            }
-        }
-        return y;
+        // The scrub belongs to the layer it scrubs (Ktisis puts it inline
+        // in the slot row); only the two body layers have a reliably
+        // friendly Havok control.
+        if (slot is AnimationSlot.Base or AnimationSlot.UpperBody &&
+            _animation.FindSlotControl(actor, slot) is { } control)
+            used += DrawScrubRow(actor, reading, cursor, width, s, y + used,
+                "Time", control);
+        return used;
     }
 
     /// <summary>
@@ -804,12 +795,6 @@ public sealed class AnimationPane
                     _animation.PlayEntry(actor, pick.Entry, asBase: true,
                         selection.Interrupt && pick.PlayImmediately,
                         selection.PlayFromStart, forceLoop: false),
-                    pick.Entry.Name);
-                break;
-            case AnimationPickTarget.Blend:
-                Report(
-                    _animation.PlayEntry(actor, pick.Entry, asBase: false,
-                        selection.Interrupt, selection.PlayFromStart, forceLoop: false),
                     pick.Entry.Name);
                 break;
             case AnimationPickTarget.Slot:

@@ -88,6 +88,24 @@ public static partial class Crystarium
             }
         }
 
+        // Notches cross the track at fixed values (no snapping), so the
+        // reference points of the range are visible before dragging.
+        if (resolved.Notches is { } notches)
+        {
+            var notchColor = ColorEx.ApplyAlpha(resolved.TickColor ?? Norvrandt.Sheet.CurrentTheme.Border);
+            uint notchU32 = ImGui.ColorConvertFloat4ToU32(notchColor);
+            float notchPad = 2f * scale;
+            foreach (var notch in notches)
+            {
+                if (notch < min || notch > max) continue;
+                float nt = (notch - min) / (max - min);
+                float nx = trackStart.X + nt * trackWidth;
+                drawList.AddRectFilled(
+                    new Vector2(nx - 0.5f * scale, trackStart.Y - notchPad),
+                    new Vector2(nx + 0.5f * scale, trackEnd.Y + notchPad), notchU32);
+            }
+        }
+
         float ratio = Math.Clamp((value - min) / (max - min), 0f, 1f);
         float thumbX = cursorScreenPos.X + ratio * trackWidth;
         var thumbPos = new Vector2(thumbX, cursorScreenPos.Y);

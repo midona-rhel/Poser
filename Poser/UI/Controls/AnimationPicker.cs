@@ -17,7 +17,6 @@ namespace Poser.UI.Controls;
 public enum AnimationPickTarget
 {
     Base,
-    Blend,
     Slot,
     Lips,
     Expression,
@@ -33,7 +32,7 @@ public readonly record struct AnimationPick(
 /// The ONE animation picker: an anchored glass popover with search, a kind
 /// filter, and icon/name/id rows.
 ///
-/// Every destination opens it — the base animation, a blend, a layer, the
+/// Every destination opens it — the base animation, a layer, the
 /// expression, the lips — and the CALLER states the destination, so the
 /// product has one search surface rather than one per control. It reports
 /// the choice and nothing else.
