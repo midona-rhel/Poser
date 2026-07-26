@@ -24,6 +24,7 @@ public sealed class CleanPoseFacade
         IExpressionService expressions,
         IGazeService gaze,
         Poser.Application.Animation.AnimationSession animation,
+        Poser.Application.Presentation.ActorPresentationSession presentation,
         IPluginLog log)
     {
         _bindings = bindings;
@@ -34,6 +35,7 @@ public sealed class CleanPoseFacade
         _expressions = expressions;
         _gaze = gaze;
         _animation = animation;
+        _presentation = presentation;
         _log = log;
     }
 
