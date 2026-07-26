@@ -9,8 +9,8 @@
 | Implementation owner | Claude |
 | Review owner | Codex |
 | Acceptance owner | User, in game |
-| Base ref | `pbi-006-base-v2` |
-| Feature branch | `feature/pbi-006-brio-gizmos` |
+| Base ref | `pbi-006-base` |
+| Feature branch | `feature/pbi-006-screen-stable-gizmo` |
 | Accepted head | Not accepted |
 
 ## Outcome
