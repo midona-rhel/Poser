@@ -1,116 +1,38 @@
 # Animation
 
-- `AnimationSession` is the one authority, keyed by exact-generation
-  `ActorId`; `IAnimationRuntimePort` is the only native path. Addresses live
-  solely in `AnimationRuntimePort` — the speed detours need an address index,
-  so it is DERIVED from the stable-id table and rebuilt on every override
-  change and structural scene change.
-- Restoration is per item, from a capture taken once before the first change
-  of that kind: base → captured mode/param/timeline; speed and slot speeds →
-  stop enforcing, so the game's own recalculation wins again; held
-  expression → released (unpin the facial layer, "Straight face" 604, idle
-  3 — Brio's order); lips → the captured timeline (NOT 0, which
-  only means "no speech timeline"); stance/pose and weapon → their captured
-  values; position lock → released; physics → released by the last owner.
-  Slot timelines are NOT restored — neither reference ever writes one, so
-  there is nothing truthful to write back; a layer reset releases only the
-  layer's speed.
-  Each aspect is released only when its own restore succeeded, so a failure on
-  a live actor stays owned and the next Reset retries it. An actor that no
-  longer resolves is dropped, not written.
-- Speed is enforced, not written once: the game recalculates every frame, so
-  the overall detour stomps its result and the slot detour substitutes the
-  argument. Range −5..10, normal 1; reset drops the override.
-- Every play is the game's sequencer (`PlayTimeline`) — no blend weight, no
-  slot writes (the timeline's own sheet `Stance` routes it onto its layer),
-  and NO base latch: Brio's AnimLock+BaseOverride model re-drove its
-  timeline over everything, which made layering an upper-body one-shot onto
-  a running full-body impossible and fought every stance pick. Playback is
-  Ktisis' model instead — each play runs the mode dance (a sheet-Pause
-  timeline holds the actor via EmoteLoop with parameter 0; a normal play
-  first leaves a held or stale-latched mode) and stale AnimLock latches are
-  dismantled on the way in. "Combining animations" is per-slot
-  layering (a full-body base and an upper-body one-shot run simultaneously);
-  holding one body part is that layer's speed pinned at 0 — the only mixing
-  primitive that exists in either reference. An expression HOLDS via Brio's
-  mechanism: play it, pin the facial layer at speed 0; release unpins, plays
-  "Straight face" (604), unpins again, then idle (3). Stance runs Ktisis' full
-  transition (cancel timeline → set emote mode → write pose type/index → drive
-  the idle or emote), preserving draw and camera offsets across a sit-chair
-  change; the read-back reports the RAW family (Battle, Umbrella, Accessory)
-  so the UI never lies about the current state, and `SupportsStance` is false
-  when the transition functions were not found. A stance pick RELEASES a
-  latched base animation first — the latch re-drives its override within a
-  frame otherwise, silently reverting the stance. Weapon
-  plays the draw/sheathe timeline **and** sets the weapon-state flag, which the
-  game does not update for a forced timeline.
-- **The game's forced-timeline field stays unused** (unproven for the
-  current client; `SupportsForceLoop` is false and the native call fails
-  explicitly). Looping is ORCHESTRATED instead: an armed slot whose
-  timeline leaves (the one-shot ended, the game swapped its own idle in)
-  gets the timeline played again through the same proven sequencer call,
-  on the framework tick with a short cooldown. The transport's Loop switch
-  (default ON, as the reference's) arms the picked animation; each body
-  layer's Time row has its own loop switch. Loops are owned state: reset,
-  stance picks, and the facial bake's suspension all disarm or pause them.
-- Catalog (Emote / Action / Expression / Raw) admits an entry only with a
-  name, non-zero timeline, and known slot, so nothing fails after selection.
-  Search matches name or a bare id; kind and slot filters compose.
-- Choosing an animation is ONE surface: a glass `Popover` picker opened from
-  the transport, any layer, the expression and the lips, with the
-  caller supplying the destination. The kind filter includes **All**, and
-  Base picks add Brio's All/Sheathed/Drawn tri-filter, which narrows emotes
-  by `Emote.DrawsWeapon` and leaves actions and raw timelines alone. It shrinks to its results, scrolls only
-  the list, and searching a number plays that id — there is no separate id
-  field. A slot pick is restricted to that slot, so a body timeline cannot
-  land in the face. Lips are enumerated from the known speech range, since
-  the sheet does not classify them by slot.
-- The page is a mixer organised by task: transport (with the status line
-  directly beneath it, where failures are visible without scrolling),
-  stance, layers, face and lips. There is no "Blend" row — the Full body
-  layer row IS that operation with a visible target. Scrub sits inline
-  under the Full body and Upper body layer rows, as Ktisis places it.
-  Stance is a combo whose trigger shows the true family even when it is not
-  in the list, and re-picking the shown entry fires — that is what makes
-  Idle reachable from a weapon-drawn actor; the pose cycler (number, −/+)
-  sits on the same row. Layer rows remember the last pick: a finished
-  one-shot swaps Pause for Replay instead of collapsing back to
-  "Add layer…", and continuity is the loop system — the transport Loop
-  switch plus per-layer loop switches on the Time rows, which are ALWAYS
-  present (disabled when nothing plays) so the switches do not vanish
-  with the animation. Speed and time lines are
-  Ktisis' number-plus-slider pairing in this product's vocabulary: the
-  transform drag well (drag, Ctrl fine / Shift coarse, double-click to
-  type) beside the ONE flat Slider — the Scrubber component and its
-  second look are deleted; the Slider owns opt-in readout and
-  non-snapping track notches (overall speed marks 0 and 1 in −5..10,
-  layer speed marks 1 in 0..2). The time well commits through the same
-  scrub gesture as its slider and both disable together when nothing
-  plays. The pose cycler disables itself while a picked
-  animation plays or the family has a single pose. Parts/Overlay and
-  arbitrary Havok controls live
-  under collapsed Advanced disclosures — empty engine slots are not the
-  interface.
-- Slots are the game's indices; 4–6 are absent from the enum, not filtered.
-  Every slot has choose/pause/speed/reset, whether primary or Advanced. Scrubbing is a
-  gesture: freeze, captured duration and skeleton token at Begin, release
-  leaves the actor paused on that frame, and a token mismatch cancels rather
-  than writing through a replaced skeleton. Friendly Full/Upper scrubbing
-  resolves its control by slot index across partials, not by list position;
-  the scrub carries its actor so a value cannot enter another's gesture.
-- Animation state is session-only — never history, pose-file payload, or a
-  pose layer. The exception is **Apply face to pose**: a two-phase bake that
-  captures the visible face, stops only the facial slot, lets the baseline
-  settle, then applies the capture against the settled baseline as one
-  undoable edit. Expression and gaze appear in both phases and cancel.
-- UI: Pose and Animation share one window width — the right column is always
-  spent, on the Pose rail or on Animation content — so navigating never
-  resizes the frame. Crystarium controls ignore `ImGui.SetNextItemWidth`;
-  widths come from `Style.Width` in unscaled units. The Animation page uses
-  the SHELL's scroll rather than its own child — the shell child spans the
-  full panel width while the content it hands out is already inset, which is
-  what puts the scrollbar in a reserved gutter. The inspector stays on
-  BOTH tabs, so the right column is never reclaimed and width never depends
-  on the tab. The titlebar action and the ACTORS `+` both open the same
-  glass spawn menu. The Pose Animation switch reads ON = animating from the
-  same session state as the transport.
+- `AnimationSession` (exact-generation `ActorId` keys) is the one authority;
+  `IAnimationRuntimePort` is the only native boundary. Addresses, pointers,
+  hooks, and sig scans live solely in the port.
+- Every play is the game sequencer's `PlayTimeline` with the reference's mode
+  handling (sheet-Pause timelines hold via EmoteLoop/param 0; a normal play
+  first leaves a held or stale-latched mode). There is no base latch, no slot
+  write, and no blend weight anywhere: the timeline's sheet `Stance` routes it
+  onto its slot. Combining animations is per-slot layering; holding one body
+  part is that slot's speed pinned at 0. An expression holds by play + facial
+  pin; release is unpin → 604 → unpin → 3 and keeps ownership on failure.
+- Looping is Poser-orchestrated: an armed slot whose timeline ends is played
+  again on the framework tick. The game's forced-timeline field is unproven
+  for this client and is never touched (`SupportsForceLoop` false). Loop
+  state lives only in the session's `LoopedSlots`; the per-slot Time-row
+  switches are its only controls, and picks arm it only on those slots.
+- Restoration: each aspect is captured once before Poser's first change of
+  that kind and released only when its own native restore succeeds, so
+  failures stay owned and retry. Base restore replays the captured base-slot
+  timeline (idle only as fallback) with captured mode/param/override. An
+  unresolvable actor is dropped without writes. GPose exit AND plugin unload
+  both run the full restore; stance picks release base state and loops first.
+- Speed is enforced through the two speed hooks, not written once; range
+  −5..10, reset hands authority back. Physics freeze patches two regions
+  transactionally (rollback on partial failure, protection restored in
+  finally) and releases with the last owner.
+- Stance uses the sig-scanned transition (cancel → emote mode → pose writes),
+  reports the RAW family (Battle/Umbrella/Accessory included), and is gated
+  by `SupportsStance`. Scrubbing is a gesture: freeze at Begin, clamp to the
+  captured duration, skeleton-token mismatch cancels instead of writing.
+- The facial bake is two-phase (capture during preview → release only the
+  face → settle → apply) through the atomic `SetAbsoluteMany`, refuses to run
+  under a live transform gesture, suspends animation commands and loops while
+  pending, and restores the actor's exact prior speed ownership.
+- UI: one shared picker (caller supplies the destination); catalog admits
+  only named, non-zero, known-slot timelines so nothing fails after
+  selection; controls display only state the session actually owns.
