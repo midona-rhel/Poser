@@ -170,10 +170,13 @@ public sealed class AnimationSession
         }
 
         var result = _port.RestoreBase(actor, capture);
+        if (!result.Success)
+            return AnimationResult.Fail(result.Detail ?? "Base restore failed.");
+        // Ownership is released only AFTER the native restore landed; a
+        // failure keeps the capture so the next attempt retries instead
+        // of silently abandoning the override on a live actor.
         Mutate(actor, o => o with { BaseTimeline = null, BaseCapture = null });
-        return result.Success
-            ? AnimationResult.Ok()
-            : AnimationResult.Fail(result.Detail ?? "Base restore failed.");
+        return AnimationResult.Ok();
     }
 
     /// <summary>
@@ -271,10 +274,10 @@ public sealed class AnimationSession
     {
         if (Suspended() is { } blocked) return blocked;
         var result = _port.ClearOverallSpeed(actor);
+        if (!result.Success)
+            return AnimationResult.Fail(result.Detail ?? "Speed reset failed.");
         Mutate(actor, o => o with { OverallSpeed = null });
-        return result.Success
-            ? AnimationResult.Ok()
-            : AnimationResult.Fail(result.Detail ?? "Speed reset failed.");
+        return AnimationResult.Ok();
     }
 
     public bool IsPaused(ActorId actor) => OverridesFor(actor).IsPaused;
@@ -303,15 +306,15 @@ public sealed class AnimationSession
     {
         if (Suspended() is { } blocked) return blocked;
         var result = _port.ClearSlotSpeed(actor, slot);
+        if (!result.Success)
+            return AnimationResult.Fail(result.Detail ?? "Slot speed reset failed.");
         Mutate(actor, o =>
         {
             var speeds = new Dictionary<AnimationSlot, float>(o.SlotSpeeds);
             speeds.Remove(slot);
             return o with { SlotSpeeds = speeds };
         });
-        return result.Success
-            ? AnimationResult.Ok()
-            : AnimationResult.Fail(result.Detail ?? "Slot speed reset failed.");
+        return AnimationResult.Ok();
     }
 
     // ── Lips, stance, weapon, position ────────────────────────────────
@@ -572,15 +575,21 @@ public sealed class AnimationSession
     public AnimationResult ReleaseExpression(ActorId actor)
     {
         if (Suspended() is { } blocked) return blocked;
-        ClearSlotSpeed(actor, AnimationSlot.Facial);
+        var unpin = ClearSlotSpeed(actor, AnimationSlot.Facial);
         var straight = Blend(actor, AnimationTimelines.StraightFace);
-        ClearSlotSpeed(actor, AnimationSlot.Facial);
+        var again = ClearSlotSpeed(actor, AnimationSlot.Facial);
         var idle = Blend(actor, AnimationTimelines.Idle);
+        if (!unpin.Success || !straight.Success || !again.Success || !idle.Success)
+        {
+            // The face is still (partly) held; keeping HeldExpression is
+            // what lets the next release or reset retry the whole
+            // sequence instead of stranding a pinned layer.
+            return AnimationResult.Fail(
+                unpin.Detail ?? straight.Detail ?? again.Detail ?? idle.Detail ??
+                "Expression release failed.");
+        }
         Mutate(actor, o => o with { HeldExpression = null });
-        return straight.Success && idle.Success
-            ? AnimationResult.Ok()
-            : AnimationResult.Fail(
-                straight.Detail ?? idle.Detail ?? "Expression release failed.");
+        return AnimationResult.Ok();
     }
 
     /// <summary>The expression currently held on the face, if any.</summary>
