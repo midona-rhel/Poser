@@ -70,6 +70,14 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     private readonly SetEmoteModeDelegate? _setEmoteMode;
     private delegate nint CancelTimelineDelegate(TimelineContainer* container, nint a2, nint a3);
     private readonly CancelTimelineDelegate? _cancelTimeline;
+    // ClientStructs binds PlayEmote as PlayEmote(uint, PlayEmoteOption*),
+    // and passing a null option pointer faults inside the game. The
+    // reference calls a four-argument form with zeros for option and
+    // chair, which is the shape that is actually known to work, so that
+    // is the one used here.
+    private delegate bool PlayEmoteDelegate(
+        EmoteController* controller, nint emoteId, nint option, nint chair);
+    private readonly PlayEmoteDelegate? _playEmote;
 
     /// <summary>Ktisis' EmoteModeEnum. These are argument VALUES for
     /// SetEmoteMode, not struct offsets.</summary>
@@ -102,6 +110,8 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             sigScanner, "E8 ?? ?? ?? ?? F6 46 10 01", "SetEmoteMode");
         _cancelTimeline = ScanDelegate<CancelTimelineDelegate>(
             sigScanner, "E8 ?? ?? ?? ?? 80 7B 17 01", "CancelTimeline");
+        _playEmote = ScanDelegate<PlayEmoteDelegate>(
+            sigScanner, "E8 ?? ?? ?? ?? 88 45 68", "PlayEmote");
 
         try
         {
@@ -469,8 +479,9 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         var character = Resolve(actor, out var detail);
         if (character == null)
             return AnimationPortResult.Fail(detail!);
-        character->EmoteController.PlayEmote(emoteId, null);
-        return AnimationPortResult.Ok();
+        return PlayEmoteNative(character, emoteId)
+            ? AnimationPortResult.Ok()
+            : AnimationPortResult.Fail("The emote entry point is unavailable.");
     }
 
     /// <summary>
@@ -500,6 +511,24 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     /// writes risks corrupting a live game process. So this fails
     /// explicitly and the UI does not offer the control.
     /// </summary>
+    /// <summary>
+    /// Plays an emote through the game's own entry point. Falls back to
+    /// blending idle when the entry point was not found, because the
+    /// alternative — leaving the pose index written with nothing driving
+    /// it — shows the actor in a state the UI claims it is not in.
+    /// </summary>
+    private bool PlayEmoteNative(Character* character, uint emoteId)
+    {
+        if (_playEmote == null)
+        {
+            character->Timeline.TimelineSequencer.PlayTimeline(
+                AnimationTimelines.Idle, null);
+            return false;
+        }
+        _playEmote(&character->EmoteController, (nint)emoteId, nint.Zero, nint.Zero);
+        return true;
+    }
+
     public AnimationPortResult SetForceLoop(ActorId actor, ushort timeline) =>
         AnimationPortResult.Fail(
             "Force loop is unavailable: the game's forced-timeline field is not " +
@@ -654,12 +683,16 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             _ => EmoteModeNormal,
         };
 
-        // The game reports how many poses this family actually has, which
-        // is what the wrap clamps against — no hardcoded pose counts.
+        // The game reports how many poses this family has. For Idle the
+        // wrap must ALSO stay inside the emote table that drives those
+        // poses: wrapping to a count the table cannot serve would step to
+        // a pose index with no emote behind it.
         int available = EmoteController.GetAvailablePoses(poseType);
         if (available <= 0)
             available = 1;
-        int wrapped = pose < 0 ? available - 1 : pose % available;
+        if (stance == AnimationStance.Idle)
+            available = Math.Min(available, AnimationTimelines.IdlePoses.Count);
+        int wrapped = ((pose % available) + available) % available;
 
         bool preserveOffsets = stance == AnimationStance.SitChair;
         var drawOffset = preserveOffsets ? character->DrawOffset : default;
@@ -691,12 +724,12 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         }
         else if (weaponDrawn)
         {
-            character->EmoteController.PlayEmote(AnimationTimelines.BattlePose, null);
+            PlayEmoteNative(character, AnimationTimelines.BattlePose);
         }
         else if (wrapped < AnimationTimelines.IdlePoses.Count &&
             AnimationTimelines.IdlePoses[wrapped] is var emote and not 0)
         {
-            character->EmoteController.PlayEmote(emote, null);
+            PlayEmoteNative(character, emote);
         }
         return AnimationPortResult.Ok();
     }
