@@ -101,6 +101,7 @@ internal static class ServiceRegistration
             sp => sp.GetRequiredService<Game.Animation.AnimationRuntimePort>());
         services.AddSingleton<AnimationSession>();
         services.AddSingleton<AnimationCatalog>();
+        services.AddSingleton<AnimationSceneActions>();
         services.AddSingleton<Game.Animation.AnimationCatalogLoader>();
         services.AddSingleton<CleanSceneLifecycle>();
         services.AddSingleton<IEditorState, EditorState>();
@@ -126,6 +127,7 @@ internal static class ServiceRegistration
         services.AddSingleton<PoseFileInspectorSection>();
         services.AddSingleton<PoseInspectorPane>();
         services.AddSingleton<PoseRailPane>();
+        services.AddSingleton<AnimationPane>();
         services.AddSingleton<GraphicalBonePane>();
 
         services.AddSingleton<SkeletonOverlayWindow>();

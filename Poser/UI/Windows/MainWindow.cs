@@ -60,6 +60,8 @@ public class MainWindow : Window
 
     // M2 panes on the verified grammar (Migrations #7-#11).
     private readonly PoseInspectorPane _poseInspector;
+    private readonly AnimationPane _animationPane;
+    private readonly Game.Animation.AnimationCatalogLoader _animationCatalog;
     private readonly PoseRailPane _poseRail;
     private bool _collapsed;
     private float _savedHeight = DefaultHeight;
@@ -90,6 +92,8 @@ public class MainWindow : Window
         CleanTransformFacade cleanTransforms,
         CleanPoseFacade cleanPose,
         PoseInspectorPane poseInspector,
+        AnimationPane animationPane,
+        Game.Animation.AnimationCatalogLoader animationCatalog,
         PoseRailPane poseRail,
         GraphicalBonePane graphicalBonePane)
         : base($"{PluginConstants.PluginName}###poser_main_window",
@@ -113,6 +117,8 @@ public class MainWindow : Window
 
         _spawnService = spawnService;
         _poseInspector = poseInspector;
+        _animationPane = animationPane;
+        _animationCatalog = animationCatalog;
         _poseInspector.DrawMapInline = graphicalBonePane.DrawInline;
         _poseInspector.GetMapMirror = () => graphicalBonePane.SidesSwapped;
         _poseInspector.SetMapMirror = on => graphicalBonePane.SidesSwapped = on;
@@ -691,9 +697,13 @@ public class MainWindow : Window
 
     private void BuildTabs(SelectionId? primary)
     {
+        // Tabs are rebuilt each frame; the active one is preserved so a
+        // selection change cannot silently throw the user back to Pose.
         _vm.Tabs.Clear();
-        _activeTab = "Pose";
-        _vm.Tabs.Add(new ShellTab { Label = "Pose", Active = true });
+        if (_activeTab is not ("Pose" or "Animation"))
+            _activeTab = "Pose";
+        _vm.Tabs.Add(new ShellTab { Label = "Pose", Active = _activeTab == "Pose" });
+        _vm.Tabs.Add(new ShellTab { Label = "Animation", Active = _activeTab == "Animation" });
     }
 
     private void BuildCrumbAndStatus(SelectionId? primary)
@@ -798,6 +808,13 @@ public class MainWindow : Window
         }
 
         ImGui.SetCursorScreenPos(origin);
+
+        if (_activeTab == "Animation")
+        {
+            _animationCatalog.EnsureLoaded();
+            _animationPane.Draw(origin, size);
+            return;
+        }
 
         _poseInspector.SetSelection(_selection.Primary);
         _poseInspector.Draw(origin, size);
