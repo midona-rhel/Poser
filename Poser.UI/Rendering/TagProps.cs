@@ -50,21 +50,6 @@ public record struct IconToggleProps
     public bool Disabled;
 }
 
-public record struct ScrubberProps
-{
-    public string? Id;
-    public StyleClassSet Classes;
-    public ScrubberStyle Style;
-    public Action<float>? OnChange;
-    public string? Tooltip;
-    public bool Disabled;
-    public float Step;
-    public float DisplayMultiplier;
-    public string DisplayFormat;
-    public string DisplaySuffix;
-    public bool HideValue;
-}
-
 public record struct SliderProps
 {
     public string? Id;
@@ -73,7 +58,12 @@ public record struct SliderProps
     public Action<float>? OnChange;
     public string? Tooltip;
     public bool Disabled;
-    public string Format;
+    /// <summary>When set, the value renders as an inline mono readout to
+    /// the right of the track (picto's <c>.sliderVal</c> folded into the
+    /// control). Null keeps the bare track — existing call sites pair
+    /// their own labels.</summary>
+    public string? Format;
+    public string? Suffix;
 }
 
 public record struct DropdownProps

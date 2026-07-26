@@ -334,18 +334,16 @@ public sealed class AnimationPane
                 "Freeze, resume, replay or restore every actor in the scene",
                 false, () => _sceneMenuRequested = true));
 
-        // A scrubber, not a bare slider: the value reads out beside the
-        // thumb, and 0 and 1 are marked on the track so stop and natural
-        // speed are findable inside the -5..10 range.
+        // The one slider look, with an inline readout and 0 and 1 marked
+        // on the track so stop and natural speed are findable in -5..10.
         float speed = owned.OverallSpeed ?? reading.OverallSpeed;
         ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y + SliderY * s));
-        if (Crystarium.Scrubber("##anim-speed", ref speed, -5f, 10f, new ScrubberProps
+        if (Crystarium.Slider("##anim-speed", ref speed, -5f, 10f, new SliderProps
             {
-                DisplayFormat = "0.00",
-                DisplaySuffix = "×",
-                Style = new ScrubberStyle
+                Format = "0.00",
+                Suffix = "×",
+                Style = new SliderStyle
                 {
-                    Height = Sizing.Fixed(14f),
                     Notches = new[] { 0f, 1f },
                     Width = Sizing.Fixed(MathF.Max(
                         80f, (trailingX - valueX) / s - Gap)),
@@ -610,14 +608,13 @@ public sealed class AnimationPane
             ? over
             : reading.SpeedFor(slot);
         ImGui.SetCursorScreenPos(new Vector2(x, row.Y + SliderY * s));
-        if (Crystarium.Scrubber($"##anim-layer-speed-{(int)slot}", ref slotSpeed, 0f, 2f,
-                new ScrubberProps
+        if (Crystarium.Slider($"##anim-layer-speed-{(int)slot}", ref slotSpeed, 0f, 2f,
+                new SliderProps
                 {
-                    DisplayFormat = "0.00",
-                    DisplaySuffix = "×",
-                    Style = new ScrubberStyle
+                    Format = "0.00",
+                    Suffix = "×",
+                    Style = new SliderStyle
                     {
-                        Height = Sizing.Fixed(14f),
                         Notches = new[] { 1f },
                         Width = Sizing.Fixed(130f),
                     },

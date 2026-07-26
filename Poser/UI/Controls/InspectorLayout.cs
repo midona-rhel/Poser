@@ -44,30 +44,6 @@ internal static class InspectorLayout
         return HeaderHeight * s;
     }
 
-    public static bool ScrubberRow(
-        Vector2 cursor, ref float h, float width, string id, string label,
-        ref float value, float min, float max, string format, string suffix,
-        float s)
-    {
-        ViewText.Label(cursor + new Vector2(0f, h / s + 7f) * s, label, 12f,
-            FontWeight.Regular, LabelColor);
-        ImGui.SetCursorScreenPos(new Vector2(
-            cursor.X + LabelColumnWidth * s, cursor.Y + h + 2f * s));
-        bool changed = Crystarium.Scrubber(id, ref value, min, max,
-            new ScrubberProps
-            {
-                DisplayFormat = format,
-                DisplaySuffix = suffix,
-                Style = new ScrubberStyle
-                {
-                    Width = Sizing.Fixed(
-                        (width - LabelColumnWidth * s) / s),
-                },
-            });
-        h += RowHeight * s;
-        return changed;
-    }
-
     public static void Header(
         ImDrawListPtr dl, Vector2 cursor, float width, string title, bool open,
         float s, bool topBorder)

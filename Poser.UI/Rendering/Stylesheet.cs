@@ -38,7 +38,6 @@ public static class Stylesheet
     private static readonly List<Rule<CheckboxStyle>>   _checkboxRules   = new();
     private static readonly List<Rule<ToggleStyle>>     _toggleRules     = new();
     private static readonly List<Rule<IconToggleStyle>> _iconToggleRules = new();
-    private static readonly List<Rule<ScrubberStyle>>   _scrubberRules   = new();
     private static readonly List<Rule<DropdownStyle>>   _dropdownRules   = new();
     private static readonly List<Rule<TextInputStyle>>  _textInputRules  = new();
     private static readonly List<Rule<SliderStyle>>     _sliderRules     = new();
@@ -93,8 +92,6 @@ public static class Stylesheet
     public static void Define(StyleClass cls, IconToggleStyle s)                => Add(_iconToggleRules, new[] { cls.Name }, null, PseudoState.None, s);
     public static void Define(StyleClass cls, PseudoState p, IconToggleStyle s) => Add(_iconToggleRules, new[] { cls.Name }, null, p,                s);
 
-    public static void Define(StyleClass cls, ScrubberStyle s)                  => Add(_scrubberRules,   new[] { cls.Name }, null, PseudoState.None, s);
-    public static void Define(StyleClass cls, PseudoState p, ScrubberStyle s)   => Add(_scrubberRules,   new[] { cls.Name }, null, p,                s);
 
     public static void Define(StyleClass cls, DropdownStyle s)                  => Add(_dropdownRules,   new[] { cls.Name }, null, PseudoState.None, s);
     public static void Define(StyleClass cls, PseudoState p, DropdownStyle s)   => Add(_dropdownRules,   new[] { cls.Name }, null, p,                s);
@@ -117,7 +114,6 @@ public static class Stylesheet
         _checkboxRules.Clear();
         _toggleRules.Clear();
         _iconToggleRules.Clear();
-        _scrubberRules.Clear();
         _dropdownRules.Clear();
         _textInputRules.Clear();
         _sliderRules.Clear();
@@ -247,16 +243,6 @@ public static class Stylesheet
         EnsureInitialized();
         var baseStyle = IconToggleStyle.From(MatchAndFold(_elementRules, classes, id, state, default, static (a, b) => a.MergedWith(b)));
         return        MatchAndFold(_iconToggleRules, classes, id, state, baseStyle, static (a, b) => a.MergedWith(b));
-    }
-
-    public static ScrubberStyle ResolveScrubber(StyleClassSet classes, PseudoState state)
-        => ResolveScrubber(classes, null, state);
-
-    public static ScrubberStyle ResolveScrubber(StyleClassSet classes, string? id, PseudoState state)
-    {
-        EnsureInitialized();
-        var baseStyle = ScrubberStyle.From(MatchAndFold(_elementRules, classes, id, state, default, static (a, b) => a.MergedWith(b)));
-        return        MatchAndFold(_scrubberRules, classes, id, state, baseStyle, static (a, b) => a.MergedWith(b));
     }
 
     public static DropdownStyle ResolveDropdown(StyleClassSet classes, PseudoState state)

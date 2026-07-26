@@ -83,8 +83,6 @@ public static class Norvrandt
         public static void Define(StyleClass cls, IconToggleStyle s) => Stylesheet.Define(cls, s);
         public static void Define(StyleClass cls, PseudoState p, IconToggleStyle s) => Stylesheet.Define(cls, p, s);
 
-        public static void Define(StyleClass cls, ScrubberStyle s) => Stylesheet.Define(cls, s);
-        public static void Define(StyleClass cls, PseudoState p, ScrubberStyle s) => Stylesheet.Define(cls, p, s);
 
         public static void Define(StyleClass cls, DropdownStyle s) => Stylesheet.Define(cls, s);
         public static void Define(StyleClass cls, PseudoState p, DropdownStyle s) => Stylesheet.Define(cls, p, s);

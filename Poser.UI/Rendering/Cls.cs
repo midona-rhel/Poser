@@ -31,7 +31,6 @@ public static class Cls
     public static readonly StyleClass Toggle      = new("toggle");
     public static readonly StyleClass IconToggle  = new("icon-toggle");
     public static readonly StyleClass TextInput   = new("text-input");
-    public static readonly StyleClass Scrubber    = new("scrubber");
     public static readonly StyleClass Slider      = new("slider");
     public static readonly StyleClass Dropdown    = new("dropdown");
 

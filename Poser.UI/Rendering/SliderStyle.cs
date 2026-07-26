@@ -17,6 +17,10 @@ public record struct SliderStyle
     public Vector4? GrabActiveColor;
     public Vector4? Color;
     public float?   Opacity;
+    /// <summary>Values marked with a short bar crossing the track (a speed
+    /// control marks 0 and 1 so stop and natural speed are findable).
+    /// Marks only — they never snap.</summary>
+    public float[]? Notches;
 
     public ElementStyle ToElementStyle() => new()
     {
@@ -47,5 +51,6 @@ public record struct SliderStyle
         GrabColor = o.GrabColor ?? GrabColor,
         GrabActiveColor = o.GrabActiveColor ?? GrabActiveColor,
         Color = o.Color ?? Color, Opacity = o.Opacity ?? Opacity,
+        Notches = o.Notches ?? Notches,
     };
 }

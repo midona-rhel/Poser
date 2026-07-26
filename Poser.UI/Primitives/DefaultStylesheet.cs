@@ -176,12 +176,6 @@ internal static class DefaultStylesheet
             BorderColor = new System.Numerics.Vector4(50 / 255f, 151 / 255f, 255 / 255f, 0.50f),
         });
 
-        // ---- Scrubber ----
-        Stylesheet.Define(Cls.Scrubber, new ScrubberStyle
-        {
-            Height = Sizing.Fixed(t.RowHeight),
-        });
-
         // ---- Dropdown ----
         // picto shared/ui/CmSelect/CmSelect.module.css (.btn): 26px pill, radius 6,
         // bg subtle-overlay white@.10, border 1px white@.08, 12px text.
