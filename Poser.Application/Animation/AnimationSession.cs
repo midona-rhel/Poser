@@ -330,15 +330,100 @@ public sealed class AnimationSession
 
     // ── Scrubbing ─────────────────────────────────────────────────────
 
+    /// <summary>
+    /// One scrub drag. Everything that could move under the drag freezes
+    /// at Begin: playback (so the game cannot advance the frame out from
+    /// under the pointer), the control identity, its duration, and the
+    /// skeleton token. Release leaves the actor paused on the frame the
+    /// user chose — resuming is a separate, deliberate act.
+    /// </summary>
+    private sealed record ScrubGesture(
+        ActorId Actor,
+        ScrubControlId Control,
+        float Duration,
+        ulong Token,
+        bool WasPaused);
+
+    private ScrubGesture? _scrub;
+
+    public bool IsScrubbing => _scrub != null;
+    public float? ScrubDuration => _scrub?.Duration;
+
     public IReadOnlyList<ScrubControlReading> EnumerateControls(ActorId actor, out ulong token) =>
         _port.EnumerateControls(actor, out token);
 
-    public AnimationResult Scrub(ActorId actor, ScrubControlId control, float time, ulong token)
+    /// <summary>
+    /// Freezes playback and captures the drag's whole mapping. Fails when
+    /// the control is not present, so a scrub never starts against
+    /// geometry that is already gone.
+    /// </summary>
+    public AnimationResult BeginScrub(ActorId actor, ScrubControlId control)
     {
-        var result = _port.SetControlTime(actor, control, time, token);
+        var controls = _port.EnumerateControls(actor, out var token);
+        ScrubControlReading? target = null;
+        foreach (var reading in controls)
+            if (reading.Id == control)
+                target = reading;
+        if (target == null)
+            return AnimationResult.Fail("That animation control is no longer present.");
+
+        bool wasPaused = IsPaused(actor);
+        if (!wasPaused)
+        {
+            var freeze = SetSpeed(actor, 0f);
+            if (!freeze.Success)
+                return freeze;
+        }
+
+        _scrub = new ScrubGesture(actor, control, target.Duration, token, wasPaused);
+        Changed?.Invoke();
+        return AnimationResult.Ok();
+    }
+
+    /// <summary>
+    /// Writes a frame within the drag, clamped to the duration CAPTURED
+    /// at Begin rather than a freshly read one — a duration that changes
+    /// mid-drag would otherwise stretch or jump the mapping. A skeleton
+    /// token mismatch ends the drag instead of writing through whatever
+    /// now occupies that control position.
+    /// </summary>
+    public AnimationResult UpdateScrub(float time)
+    {
+        if (_scrub is not { } gesture)
+            return AnimationResult.Fail("No scrub is active.");
+        if (!float.IsFinite(time))
+            return AnimationResult.Fail("Scrub time must be a finite number.");
+
+        float clamped = Math.Clamp(time, 0f, gesture.Duration);
+        var result = _port.SetControlTime(
+            gesture.Actor, gesture.Control, clamped, gesture.Token);
+        if (result.Success)
+            return AnimationResult.Ok();
+
+        _scrub = null;
+        Changed?.Invoke();
+        return AnimationResult.Fail(result.Detail ?? "Scrub cancelled.");
+    }
+
+    /// <summary>Ends the drag, leaving the actor paused on the released
+    /// frame. That pause is an ordinary speed override, so Resume
+    /// continues from exactly there.</summary>
+    public void EndScrub()
+    {
+        _scrub = null;
+        Changed?.Invoke();
+    }
+
+    // ── Slot replacement ──────────────────────────────────────────────
+
+    /// <summary>Replaces one slot's timeline, leaving every other slot and
+    /// every other override untouched.</summary>
+    public AnimationResult SetSlotTimeline(ActorId actor, AnimationSlot slot, ushort timeline)
+    {
+        var result = _port.SetSlotTimeline(actor, slot, timeline);
         return result.Success
             ? AnimationResult.Ok()
-            : AnimationResult.Fail(result.Detail ?? "Scrub target is no longer valid.");
+            : AnimationResult.Fail(result.Detail ?? "Slot playback failed.");
     }
 
     // ── Restoration ───────────────────────────────────────────────────
