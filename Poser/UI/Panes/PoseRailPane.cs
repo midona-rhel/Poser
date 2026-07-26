@@ -12,7 +12,7 @@ namespace Poser.UI;
 /// <summary>
 /// The inspector RAIL (approved M2 pose stage): lives in the
 /// shell's 280px right column. Crumb, the compact oriented rotation gizmo,
-/// compact ROTATION / POSITION / SCALE axis rows, IK switch, then the
+/// compact TRANSLATION / ROTATION / SCALE axis rows, IK switch, then the
 /// relocated GAZE / POSE sections. The Pose tab's content column keeps
 /// ONLY the Anamnesis surface (seg + strip + matrix) — everything editable
 /// about the selection lives here.

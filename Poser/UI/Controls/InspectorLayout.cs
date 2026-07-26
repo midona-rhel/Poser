@@ -14,6 +14,42 @@ internal static class InspectorLayout
     public const float RowHeight = 30f;
     public const float LabelColumnWidth = 94f;
 
+    // ── Shared inspector form row (PBI-090) ──────────────────────
+    // ONE geometry for every form row: a 94px label column, one control
+    // region filling the remainder, one row height, and per-control
+    // vertical origins that centre each control's real height in that
+    // row. Slider rows reserve one right-aligned value column. Sections
+    // built on these report exact heights and never overflow the width
+    // they are given.
+    /// <summary>One height for every form row.</summary>
+    public const float FormRowHeight = 30f;
+    /// <summary>Right-aligned readout column reserved by slider rows.</summary>
+    public const float FormValueColumnWidth = 44f;
+    /// <summary>Gap between X/Y/Z wells in an axis row.</summary>
+    public const float FormAxisGap = 6f;
+    /// <summary>11px row label, optically centred in the form row.</summary>
+    public const float FormLabelY = 7f;
+    /// <summary>26px controls (dropdowns, axis wells) in the form row.</summary>
+    public const float FormTallControlY = 2f;
+    /// <summary>24px compact buttons in the form row.</summary>
+    public const float FormButtonY = 3f;
+    /// <summary>20px switches in the form row.</summary>
+    public const float FormSwitchY = 5f;
+    /// <summary>14px slider hit rects in the form row.</summary>
+    public const float FormSliderY = 8f;
+
+    /// <summary>Draws a form-row label on the shared baseline.</summary>
+    public static void FormLabel(Vector2 rowOrigin, string label, float s) =>
+        ViewText.Label(new Vector2(rowOrigin.X, rowOrigin.Y + FormLabelY * s),
+            label, 11f, FontWeight.Regular, LabelColor);
+
+    /// <summary>Where the control region starts.</summary>
+    public static float FormControlX(float rowX, float s) => rowX + LabelColumnWidth * s;
+
+    /// <summary>The control region's width in UNSCALED pixels, for
+    /// explicit control widths — never ambient available width.</summary>
+    public static float FormControlWidth(float width, float s) => width / s - LabelColumnWidth;
+
     public static readonly Vector4 LabelColor = new(1f, 1f, 1f, 0.5f);
     public static readonly Vector4 HintColor = new(1f, 1f, 1f, 0.4f);
     public static readonly Vector4 ValueColor = new(1f, 1f, 1f, 0.9f);

@@ -63,8 +63,8 @@ public sealed class PoseFileInspectorSection
         }
 
         float x = 0f;
+        x += ScopeCheck(cursor, h, x, "impx-pos", "Translation", ref _position, s);
         x += ScopeCheck(cursor, h, x, "impx-rot", "Rotation", ref _rotation, s);
-        x += ScopeCheck(cursor, h, x, "impx-pos", "Position", ref _position, s);
         ScopeCheck(cursor, h, x, "impx-scale", "Scale", ref _scale, s);
         h += 28f * s;
         ScopeCheck(cursor, h, 0f, "impx-reset", "Reset affected bones first",
