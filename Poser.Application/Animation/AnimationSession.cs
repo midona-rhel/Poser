@@ -731,16 +731,20 @@ public sealed class AnimationSession
                 cancelled = Try(_port.CancelActiveTimeline(actor));
             }
 
-            foreach (var (slot, incoming) in slots.ToList())
+            // A failed cancellation processes NOTHING: replaying would
+            // restart layers over a state the cancel never cleared, and
+            // releasing any entry would shrink the plan the retry still
+            // needs. The complete plan is preserved unchanged, the base
+            // restore below still runs for this attempt, and the cancel
+            // failure returns with the result.
+            if (cancelled)
             {
-                if (incoming == 0)
+                foreach (var (slot, incoming) in slots.ToList())
                 {
-                    if (cancelled)
+                    if (incoming == 0)
                         slots.Remove(slot);
-                }
-                else if (Try(_port.Blend(actor, incoming, remaining.BaseCapture, out _)))
-                {
-                    slots.Remove(slot);
+                    else if (Try(_port.Blend(actor, incoming, remaining.BaseCapture, out _)))
+                        slots.Remove(slot);
                 }
             }
             remaining = remaining with { SlotCaptures = slots };
