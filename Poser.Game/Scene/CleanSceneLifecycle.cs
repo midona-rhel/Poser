@@ -33,6 +33,9 @@ public sealed class CleanSceneLifecycle : IDisposable
 
     private static readonly TimeSpan SlotPollInterval = TimeSpan.FromSeconds(1);
 
+    private readonly object _disposeGate = new();
+    private bool _disposeRestoreAbandoned;
+
     private string? _lastSignature;
     private bool _refreshing;
     private bool _retryPending;
@@ -88,19 +91,36 @@ public sealed class CleanSceneLifecycle : IDisposable
             if (_framework.IsInFrameworkUpdateThread)
             {
                 // Dalamud disposes plugins on the framework thread; run
-                // inline. No timed wait exists anywhere on this path, so
-                // the restore can never be abandoned half-queued and then
-                // run against disposed services.
+                // inline — no waiting, no queue.
                 _animation.ResumeCommands();
                 _animation.ResetAll();
             }
             else
             {
-                _framework.RunOnFrameworkThread(() =>
+                // Off-thread disposal: bounded wait, with a gate that
+                // makes timeout and execution mutually exclusive. If the
+                // pump is dead the wait expires and the flag abandons the
+                // queued callback; if the callback is mid-restore it holds
+                // the gate, so disposal blocks until it finishes rather
+                // than returning under it. Either way the callback can
+                // never run against disposed services.
+                var task = _framework.RunOnFrameworkThread(() =>
                 {
-                    _animation.ResumeCommands();
-                    _animation.ResetAll();
-                }).Wait();
+                    lock (_disposeGate)
+                    {
+                        if (_disposeRestoreAbandoned)
+                            return;
+                        _animation.ResumeCommands();
+                        _animation.ResetAll();
+                    }
+                });
+                if (!task.Wait(TimeSpan.FromSeconds(2)))
+                {
+                    lock (_disposeGate)
+                    {
+                        _disposeRestoreAbandoned = true;
+                    }
+                }
             }
         }
         catch
