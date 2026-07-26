@@ -46,10 +46,9 @@ public sealed class FacialPoseCapture : IDisposable
 {
     private readonly IFramework _framework;
     private readonly StableBindingRegistry _bindings;
-    private readonly IBonePosingService _bonePosing;
     private readonly AnimationSession _animation;
-    private readonly ITransformRuntimePort _runtime;
-    private readonly TransformHistory _history;
+    private readonly TransformCommandService _transforms;
+    private readonly TransformGestureService _gestures;
     private readonly IPluginLog _log;
 
     /// <summary>Ticks to let the face settle after the preview stops.
@@ -60,9 +59,13 @@ public sealed class FacialPoseCapture : IDisposable
     {
         public required ActorId Actor;
         public required SkeletonId Skeleton;
-        public required bool WasPaused;
+        /// <summary>The EXACT speed ownership before the bake paused the
+        /// actor: an owned override value (0 = already paused, 0.5 = a
+        /// custom slow-motion), or null when the game owned its own speed.
+        /// Restored verbatim — collapsing this to a pause/resume pair
+        /// destroyed custom speeds.</summary>
+        public required float? PriorSpeed;
         public required List<(BoneId Bone, LegacyTransform Captured)> Captures;
-        public required List<TransformTargetState> Before;
         public int TicksRemaining = SettleTicks;
     }
 
@@ -71,18 +74,16 @@ public sealed class FacialPoseCapture : IDisposable
     public FacialPoseCapture(
         IFramework framework,
         StableBindingRegistry bindings,
-        IBonePosingService bonePosing,
         AnimationSession animation,
-        ITransformRuntimePort runtime,
-        TransformHistory history,
+        TransformCommandService transforms,
+        TransformGestureService gestures,
         IPluginLog log)
     {
         _framework = framework;
         _bindings = bindings;
-        _bonePosing = bonePosing;
         _animation = animation;
-        _runtime = runtime;
-        _history = history;
+        _transforms = transforms;
+        _gestures = gestures;
         _log = log;
         _framework.Update += OnFrameworkUpdate;
     }
@@ -108,6 +109,10 @@ public sealed class FacialPoseCapture : IDisposable
             return GestureResult.Fail("A face capture is already in progress.");
         if (!_framework.IsInFrameworkUpdateThread)
             return GestureResult.Fail("Face capture must start on the framework thread.");
+        // A live transform gesture owns the pose right now; baking under
+        // it would interleave two writers on the same bones.
+        if (_gestures.ActiveGesture != null)
+            return GestureResult.Fail("Finish the current transform gesture first.");
 
         // Only the Character skeleton carries face bones; auxiliary slots
         // must not be swept in.
@@ -115,28 +120,25 @@ public sealed class FacialPoseCapture : IDisposable
             return GestureResult.Fail("This actor has no character skeleton.");
 
         var captures = new List<(BoneId, LegacyTransform)>();
-        var before = new List<TransformTargetState>();
         foreach (var bone in skeleton.Bones)
         {
             if (!IsFaceBone(bone.Id.CanonicalName))
                 continue;
             if (_bindings.Resolve(bone.Id) is not { Success: true, Value: { } live })
                 continue;
-
-            var captured = _runtime.Capture(TransformTargetId.ForBone(bone.Id));
-            if (!captured.Success || captured.State == null)
-                continue;
             // LastRawTransform is the pre-reparent absolute a pose file
             // stores; LastTransform diverges for face partials.
             captures.Add((bone.Id, live.LastRawTransform));
-            before.Add(captured.State);
         }
 
         if (captures.Count == 0)
             return GestureResult.Fail("This actor has no face bones to capture.");
 
-        bool wasPaused = _animation.IsPaused(actor);
-        if (!wasPaused)
+        // Pause for the capture, remembering the exact prior ownership so
+        // the end of the bake can put back a custom speed, a pause, or
+        // no override at all — whichever was true.
+        float? priorSpeed = _animation.OverridesFor(actor).OverallSpeed;
+        if (priorSpeed is not 0f)
         {
             var paused = _animation.Pause(actor);
             if (!paused.Success)
@@ -149,8 +151,7 @@ public sealed class FacialPoseCapture : IDisposable
         var stopped = _animation.ReleaseExpression(actor);
         if (!stopped.Success)
         {
-            if (!wasPaused)
-                _animation.Resume(actor);
+            RestoreSpeed(actor, priorSpeed);
             return GestureResult.Fail(stopped.Detail ?? "Could not stop the facial preview.");
         }
 
@@ -161,9 +162,8 @@ public sealed class FacialPoseCapture : IDisposable
         {
             Actor = actor,
             Skeleton = skeleton.Id,
-            WasPaused = wasPaused,
+            PriorSpeed = priorSpeed,
             Captures = captures,
-            Before = before,
         };
         return GestureResult.Ok();
     }
@@ -179,7 +179,12 @@ public sealed class FacialPoseCapture : IDisposable
     }
 
     /// <summary>
-    /// Phase two: re-validate, apply, and record one history entry.
+    /// Phase two: re-validate, then apply through the ONE atomic transform
+    /// authority. SetAbsoluteMany captures every target before writing,
+    /// rolls the whole face back on any failure, refuses to run under a
+    /// live gesture, and records the single undoable history patch — the
+    /// per-bone linked-aware path double-applied linked bones and is not
+    /// used here.
     /// </summary>
     private void Complete(PendingBake pending)
     {
@@ -191,50 +196,38 @@ public sealed class FacialPoseCapture : IDisposable
                 return;
             }
 
-            // Apply exactly as loading a pose file does: the captured
-            // absolute against the bone's CURRENT raw baseline, which is
-            // now the settled, preview-free face.
-            var applied = new List<BoneId>();
+            var writes = new List<(TransformTargetId, Poser.Domain.Transforms.PoseTransform)>(
+                pending.Captures.Count);
             foreach (var (boneId, captured) in pending.Captures)
-            {
-                if (_bindings.Resolve(boneId) is not { Success: true, Value: { } live })
-                    continue;
-                _bonePosing.ApplyTransform(live, captured, live.LastRawTransform);
-                applied.Add(boneId);
-            }
-            if (applied.Count == 0)
-                return;
+                writes.Add((
+                    TransformTargetId.ForBone(boneId),
+                    new Poser.Domain.Transforms.PoseTransform(
+                        captured.Position, captured.Rotation, captured.Scale)));
 
-            var after = new List<TransformTargetState>(pending.Before.Count);
-            foreach (var state in pending.Before)
-            {
-                var captured = _runtime.Capture(state.Target);
-                if (!captured.Success || captured.State == null)
-                {
-                    // Put every touched bone back and record nothing: a
-                    // half-recorded patch would not undo cleanly.
-                    foreach (var original in pending.Before)
-                        _runtime.Restore(original);
-                    _log.Warning("Face capture rolled back: a bone could not be re-read.");
-                    return;
-                }
-                after.Add(captured.State);
-            }
-
-            // One patch for the whole face, so undo removes the bake in a
-            // single step rather than bone by bone.
-            _history.Append(new TransformPatch(
-                "Apply facial animation to pose", pending.Before, after));
+            var applied = _transforms.SetAbsoluteMany(
+                writes, "Apply facial animation to pose");
+            if (!applied.Success)
+                _log.Warning($"Face capture abandoned: {applied.Detail}");
         }
         finally
         {
-            // Release the guard before our own teardown call.
+            // Release the guard before our own teardown call, then give
+            // the actor back its EXACT prior speed ownership.
             _animation.ResumeCommands();
-            // The actor was paused for the capture; give it back the
-            // playback state it had.
-            if (!pending.WasPaused)
-                _animation.Resume(pending.Actor);
+            RestoreSpeed(pending.Actor, pending.PriorSpeed);
         }
+    }
+
+    /// <summary>Puts back the speed state recorded at Begin: an owned
+    /// override is re-written verbatim (including 0 — an actor that was
+    /// already paused stays paused); no override hands the speed back to
+    /// the game.</summary>
+    private void RestoreSpeed(ActorId actor, float? priorSpeed)
+    {
+        if (priorSpeed is { } speed)
+            _animation.SetSpeed(actor, speed);
+        else
+            _animation.ClearSpeed(actor);
     }
 
     /// <summary>
