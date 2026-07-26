@@ -334,19 +334,24 @@ public sealed class AnimationPane
                 "Freeze, resume, replay or restore every actor in the scene",
                 false, () => _sceneMenuRequested = true));
 
-        // The one slider look, with an inline readout and 0 and 1 marked
-        // on the track so stop and natural speed are findable in -5..10.
+        // Ktisis' number-plus-slider line: the well IS the number (drag,
+        // Ctrl fine, double-click to type), the slider is bare with 0 and
+        // 1 marked so stop and natural speed are findable in -5..10.
         float speed = owned.OverallSpeed ?? reading.OverallSpeed;
-        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y + SliderY * s));
+        const float speedWell = 56f;
+        if (AppShellView.DragValueCell(ImGui.GetWindowDrawList(),
+                new Vector2(valueX, row.Y + 2f * s), speedWell * s,
+                "anim-speed-well", ref speed, 0.01f, "0.00", s, out _))
+            Report(_animation.SetSpeed(actor, speed), "Speed");
+        float speedSliderX = valueX + (speedWell + Gap) * s;
+        ImGui.SetCursorScreenPos(new Vector2(speedSliderX, row.Y + SliderY * s));
         if (Crystarium.Slider("##anim-speed", ref speed, -5f, 10f, new SliderProps
             {
-                Format = "0.00",
-                Suffix = "×",
                 Style = new SliderStyle
                 {
                     Notches = new[] { 0f, 1f },
                     Width = Sizing.Fixed(MathF.Max(
-                        80f, (trailingX - valueX) / s - Gap)),
+                        60f, (trailingX - speedSliderX) / s - Gap)),
                 },
             }))
             Report(_animation.SetSpeed(actor, speed), "Speed");
@@ -607,16 +612,19 @@ public sealed class AnimationPane
         float slotSpeed = owned.SlotSpeeds.TryGetValue(slot, out var over)
             ? over
             : reading.SpeedFor(slot);
-        ImGui.SetCursorScreenPos(new Vector2(x, row.Y + SliderY * s));
+        if (AppShellView.DragValueCell(ImGui.GetWindowDrawList(),
+                new Vector2(x, row.Y + 2f * s), 48f * s,
+                $"anim-layer-speed-well-{(int)slot}", ref slotSpeed,
+                0.005f, "0.00", s, out _))
+            Report(_animation.SetSlotSpeed(actor, captured, slotSpeed), "Layer speed");
+        ImGui.SetCursorScreenPos(new Vector2(x + 52f * s, row.Y + SliderY * s));
         if (Crystarium.Slider($"##anim-layer-speed-{(int)slot}", ref slotSpeed, 0f, 2f,
                 new SliderProps
                 {
-                    Format = "0.00",
-                    Suffix = "×",
                     Style = new SliderStyle
                     {
                         Notches = new[] { 1f },
-                        Width = Sizing.Fixed(130f),
+                        Width = Sizing.Fixed(78f),
                     },
                 }))
             Report(_animation.SetSlotSpeed(actor, captured, slotSpeed), "Layer speed");
@@ -711,11 +719,25 @@ public sealed class AnimationPane
         bool scrubbable = control.Duration > 0f;
         float duration = MathF.Max(control.Duration, 0.0001f);
 
-        // Fixed readout slot, text right-aligned inside it by measure, so
-        // the slider's width does not jitter with the digit count.
-        const float readoutSlot = 80f;
+        // Ktisis' number-plus-slider line: the well shows and edits the
+        // time (drag or double-click type, clamped to the duration) and
+        // commits through the SAME scrub gesture as the slider.
+        const float wellW = 48f;
+        bool wellReleased = false;
+        float wellTime = time;
+        bool wellChanged = AppShellView.DragValueCell(ImGui.GetWindowDrawList(),
+            new Vector2(valueX, row.Y + 2f * s), wellW * s,
+            $"anim-scrub-well-{control.Id.Partial}-{control.Id.Control}",
+            ref wellTime, 0.01f, "0.00", s, out wellReleased,
+            disabled: !scrubbable);
+        float sliderX = valueX + (wellW + Gap) * s;
+
+        // Fixed readout slot showing the duration (the well owns the
+        // current time), right-aligned by measure so the slider's width
+        // does not jitter with the digit count.
+        const float readoutSlot = 48f;
         float loopWidth = loopSlot != null ? 44f : 0f;
-        string readout = $"{control.Time:0.00}/{control.Duration:0.00}";
+        string readout = $"/{control.Duration:0.00}";
         float readoutWidth = ViewText.Measure(readout, 11f, mono: true);
         ViewText.Label(
             new Vector2(row.X + width - readoutWidth, row.Y + TextY * s),
@@ -738,7 +760,7 @@ public sealed class AnimationPane
                 ImGui.SetTooltip("Play this layer's animation again when it ends");
         }
 
-        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y + SliderY * s));
+        ImGui.SetCursorScreenPos(new Vector2(sliderX, row.Y + SliderY * s));
         bool changed = Crystarium.Slider(
             $"##anim-scrub-{control.Id.Partial}-{control.Id.Control}",
             ref time, 0f, duration, new SliderProps
@@ -747,9 +769,16 @@ public sealed class AnimationPane
                 Style = new SliderStyle
                 {
                     Width = Sizing.Fixed(MathF.Max(
-                        80f, width / s - LabelColumn - readoutSlot - loopWidth - Gap)),
+                        60f,
+                        width / s - LabelColumn - wellW - Gap - readoutSlot -
+                        loopWidth - Gap)),
                 },
             });
+        if (wellChanged && scrubbable)
+        {
+            time = Math.Clamp(wellTime, 0f, duration);
+            changed = true;
+        }
         if (!scrubbable)
             changed = false;
 
@@ -767,7 +796,8 @@ public sealed class AnimationPane
             Report(_animation.UpdateScrub(time), "Scrub");
         }
         if (_scrub is { } current && current.Actor.Equals(actor) &&
-            current.Control.Equals(control.Id) && ImGui.IsItemDeactivated())
+            current.Control.Equals(control.Id) &&
+            (ImGui.IsItemDeactivated() || wellReleased))
         {
             EndScrub();
         }

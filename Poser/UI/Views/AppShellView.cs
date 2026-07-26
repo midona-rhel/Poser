@@ -786,6 +786,32 @@ public static class AppShellView
         return 26f * s + 8f * s;
     }
 
+    /// <summary>
+    /// Single-value drag well: the SAME numeric cell as the transform axes
+    /// (horizontal drag with Ctrl fine / Shift coarse, double-click to
+    /// type, commit on release or Enter), for rows that pair a number with
+    /// a slider — Ktisis' input-plus-slider line in this product's own
+    /// vocabulary. No axis letter; neutral letter color.
+    /// </summary>
+    public static bool DragValueCell(ImDrawListPtr dl, Vector2 pos, float width, string id,
+        ref float value, float perPixel, string fmt, float s, out bool released,
+        bool disabled = false)
+    {
+        released = false;
+        if (disabled)
+        {
+            DrawAxis(dl, pos, width, "",
+                value.ToString(fmt, System.Globalization.CultureInfo.InvariantCulture),
+                TextTertiary, s);
+            return false;
+        }
+        bool wasReleased = false;
+        bool changed = DragAxis(dl, pos, width, id, "", ref value, TextTertiary,
+            perPixel, fmt, s, ref wasReleased);
+        released = wasReleased;
+        return changed;
+    }
+
     /// <summary>Cancels an in-progress numeric axis edit, for example when selection changes.</summary>
     public static void CancelAxisEdit()
     {
@@ -862,8 +888,9 @@ public static class AppShellView
         DrawAxis(dl, pos, width, axis,
             _axisEditValue.ToString(fmt, System.Globalization.CultureInfo.InvariantCulture), color, s);
 
-        ImGui.SetCursorScreenPos(pos + new Vector2(18f * s, 2f * s));
-        ImGui.SetNextItemWidth(MathF.Max(1f, width - 20f * s));
+        float editX = axis.Length > 0 ? 18f : 4f;
+        ImGui.SetCursorScreenPos(pos + new Vector2(editX * s, 2f * s));
+        ImGui.SetNextItemWidth(MathF.Max(1f, width - (editX + 2f) * s));
         if (_axisEditNeedsFocus)
             ImGui.SetKeyboardFocusHere();
 
@@ -916,7 +943,8 @@ public static class AppShellView
         dl.AddRect(min + new Vector2(0.5f, 0.5f), max - new Vector2(0.5f, 0.5f),
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderSecondary)), 4f * s, ImDrawFlags.None, 1f * s);
         ViewText.Label(min + new Vector2(8f, 7f) * s, axis, 12f, FontWeight.Regular, color, mono: true);
-        ViewText.Label(min + new Vector2(8f + 14f, 7f) * s, value, 12f, FontWeight.Regular, TextPrimary, mono: true);
+        float valueIndent = axis.Length > 0 ? 8f + 14f : 8f;
+        ViewText.Label(min + new Vector2(valueIndent, 7f) * s, value, 12f, FontWeight.Regular, TextPrimary, mono: true);
     }
 
     // ── shared small controls ────────────────────────────────────────────
