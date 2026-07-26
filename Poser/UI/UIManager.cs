@@ -68,6 +68,10 @@ public sealed class UIManager : IUIManager
     private void DrawUI()
     {
         _windows.System.Draw();
+        // The one hover-help card renders after every window has drawn,
+        // so registrations from any pane are complete and the card sits
+        // on the foreground list above all of them.
+        Crystarium.HoverHelp.Render();
         HandleKeybinds();
     }
 
