@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Bindings.ImGuizmo;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Application.Scene;
@@ -206,8 +205,9 @@ public class SkeletonOverlayWindow : Window
         }
 
         // Draw skeleton
-        var isGizmoActive = ImGuizmo.IsUsing() ||
-            Controls.GizmoPointerOwnership.Owned;
+        // The custom gizmo holds shared pointer ownership on hover AND
+        // drag, so this single check covers both engagement states.
+        var isGizmoActive = Controls.GizmoPointerOwnership.Owned;
         var lineOpacity = isGizmoActive ? LineOpacityWhileUsing : LineOpacity;
 
         switch (_editorState.SkeletonViewMode)
@@ -242,8 +242,6 @@ public class SkeletonOverlayWindow : Window
             .OrderBy(actor => actor.CameraDistance)
             .FirstOrDefault();
         bool actorClicked = hoveredActor != null &&
-                            !ImGuizmo.IsUsing() &&
-                            !ImGuizmo.IsOver() &&
                             !Controls.GizmoPointerOwnership.Owned &&
                             ImGui.IsMouseReleased(ImGuiMouseButton.Left);
         if (hoveredActor != null)
@@ -363,8 +361,7 @@ public class SkeletonOverlayWindow : Window
             return false;
 
         // Don't show when gizmo active (Ktisis check)
-        if (ImGuizmo.IsUsing() || ImGuizmo.IsOver() ||
-            Controls.GizmoPointerOwnership.Owned)
+        if (Controls.GizmoPointerOwnership.Owned)
             return false;
 
         var begin = false;

@@ -11,17 +11,21 @@
 - Frames (Brio, deliberate): wells edit **model-space** values; gizmo World
   mode manipulates the character's model axes, so well drags match World
   arrows 1:1; Local = the bone's own axes.
-- Rings: one shared module for inspector and world, projected
-  **direction-only** (Brio's ImBrio.Gizmo contract): camera ROTATION only —
-  no translation, perspective, FOV, or depth — with one X-mirror handedness
-  decision, so ring shape and pixel radius are screen-stable; only the
-  world gizmo's centre moves (one `WorldToScreen` for the pivot; an
-  unprojectable pivot draws nothing). Orientation still comes from the real
-  frame + camera. A drag freezes pivot, frame, axis, and tangent at grab;
-  the tangent is the true positive-rotation direction (epsilon-rotated
-  direction, same basis). Ctrl 0.1× / Shift 10× / both 1×. Translate and
-  scale stay on stock ImGuizmo with component constraints (each tool
-  restores what it does not own).
+- Gizmos (Brio's split, deliberate): the inspector ball projects
+  **direction-only** — camera ROTATION only, one X-mirror handedness
+  decision, fixed pixel radius at the widget centre — so only camera
+  rotation reorients it. The world overlay is **perspective-correct**:
+  the real view/projection matrices place every handle at the pivot's
+  world position, sized in world units measured at the pivot's depth
+  (stable perceived size, no off-centre shear); an unprojectable pivot
+  draws nothing.
+- World tools are fully custom pastel (no stock ImGuizmo): Translate
+  shafts/arrowheads/planes, Rotate rings + camera-roll circle, Scale
+  local-axis knobs + uniform centre, Universal composing all three with
+  deterministic hover priority. Drawn geometry IS hit geometry; each
+  handle's tangent/plane mapping freezes at grab and the true
+  positive-rotation tangent is epsilon-derived through the surface's own
+  projection. Ctrl 0.1× / Shift 10× / both 1×.
 - Pivot (Rotate + bone only): Self rotates in place; Parent orbits the frozen
   parent position using the parent→child radial frame. The gizmo draws at the
   pivot it rotates around. Inspector wells always rotate in place.
