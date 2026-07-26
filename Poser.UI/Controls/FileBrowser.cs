@@ -164,7 +164,8 @@ public class FileBrowser
                 }
             }
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Go up one folder");
+                Crystarium.HoverHelp.Explain("filebrowser-up",
+                    ImGui.GetItemRectMin(), ImGui.GetItemRectMax(), "Go up one folder");
         });
 
         // Path display
@@ -195,7 +196,9 @@ public class FileBrowser
                 }
             }
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Refresh");
+                Crystarium.HoverHelp.Explain("filebrowser-refresh",
+                    ImGui.GetItemRectMin(), ImGui.GetItemRectMax(),
+                    "Re-read this folder from disk");
         });
     }
 

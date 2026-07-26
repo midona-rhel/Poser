@@ -97,7 +97,8 @@ public static partial class Crystarium
             doc.Render(ImGui.GetWindowDrawList(), iconPos, iconMax, tint);
         }
 
-        if (hit.Hovered && !string.IsNullOrEmpty(tooltip)) ImGui.SetTooltip(tooltip);
+        if (hit.Hovered && !string.IsNullOrEmpty(tooltip))
+            HoverHelp.Explain(id ?? icon.ToString(), hit.ScreenMin, hit.ScreenMax, tooltip!);
         if (hit.Clicked) onClick?.Invoke();
         return hit.Clicked;
     }
@@ -140,7 +141,8 @@ public static partial class Crystarium
                 resolved.Color ?? Norvrandt.Sheet.CurrentTheme.Text);
         }
 
-        if (hit.Hovered && !string.IsNullOrEmpty(tooltip)) ImGui.SetTooltip(tooltip);
+        if (hit.Hovered && !string.IsNullOrEmpty(tooltip))
+            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, tooltip!);
         return hit.Clicked;
     }
 
@@ -176,7 +178,8 @@ public static partial class Crystarium
             doc.Render(ImGui.GetWindowDrawList(), hit.ScreenMin, hit.ScreenMax, fill);
         }
 
-        if (hit.Hovered && !string.IsNullOrEmpty(tooltip)) ImGui.SetTooltip(tooltip);
+        if (hit.Hovered && !string.IsNullOrEmpty(tooltip))
+            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, tooltip!);
         return hit.Clicked;
     }
 }

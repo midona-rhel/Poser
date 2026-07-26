@@ -113,7 +113,8 @@ public static partial class Crystarium
         }
 
         if (changed) onChange?.Invoke(value);
-        if (!string.IsNullOrEmpty(tooltip) && inputHovered) ImGui.SetTooltip(tooltip);
+        if (!string.IsNullOrEmpty(tooltip) && inputHovered)
+            HoverHelp.Explain(id, inputMin, inputMax, tooltip!);
 
         return changed;
     }

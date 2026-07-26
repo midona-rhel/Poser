@@ -245,7 +245,12 @@ public class SkeletonOverlayWindow : Window
                             !Controls.GizmoPointerOwnership.Owned &&
                             ImGui.IsMouseReleased(ImGuiMouseButton.Left);
         if (hoveredActor != null)
-            ImGui.SetTooltip($"{hoveredActor.Name}\nActor transform");
+        {
+            var overlayMouse = ImGui.GetMousePos();
+            Crystarium.HoverHelp.Preview("sow-actor",
+                overlayMouse - new Vector2(4f, 4f), overlayMouse + new Vector2(4f, 4f),
+                $"{hoveredActor.Name} — actor transform");
+        }
 
         // Update hovered bones list and draw hover window (Ktisis style)
         UpdateHoveredBones(bones);

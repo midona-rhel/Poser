@@ -117,7 +117,8 @@ internal static partial class Element
         {
             if (clicked && !props.Disabled) props.OnClick?.Invoke();
             if (!string.IsNullOrEmpty(props.Tooltip) && (state & PseudoState.Hover) != 0)
-                ImGui.SetTooltip(props.Tooltip);
+                Crystarium.HoverHelp.Explain(props.Id ?? props.Tooltip!,
+                    ImGui.GetItemRectMin(), ImGui.GetItemRectMax(), props.Tooltip!);
 
             if ((state & PseudoState.Hover) != 0)
                 ApplyCursor(resolved.Cursor ?? UI.Cursor.Pointer);

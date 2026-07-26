@@ -736,7 +736,9 @@ public sealed class AnimationPane
                     _animation.SetSlotLoop(actor, armedSlot, loopTimeline, looped),
                     "Loop");
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Play this layer's animation again when it ends");
+                Crystarium.HoverHelp.Explain($"anim-loop-help-{(int)armedSlot}",
+                    ImGui.GetItemRectMin(), ImGui.GetItemRectMax(),
+                    "Play this layer's animation again when it ends");
         }
 
         ImGui.SetCursorScreenPos(new Vector2(sliderX, row.Y + SliderY * s));

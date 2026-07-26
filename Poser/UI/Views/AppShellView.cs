@@ -289,20 +289,24 @@ public static class AppShellView
                 TablerIcon.Plus,
                 false,
                 s,
-                vm.OnSpawn);
+                vm.OnSpawn,
+                help: "Add an actor to the scene");
             titleRight -= (28f + 4f) * s;
         }
         IconButton(dl, new Vector2(titleRight - 28f * s, undoY), TablerIcon.ArrowBackUp, false, s, vm.OnRedo,
-            dimmed: !vm.CanRedo, flipX: true);
+            dimmed: !vm.CanRedo, flipX: true,
+            help: vm.CanRedo ? "Reapply the change you undid" : "Nothing to redo");
         IconButton(dl, new Vector2(titleRight - (28f + 4f + 28f) * s, undoY), TablerIcon.ArrowBackUp, false, s,
-            vm.OnUndo, dimmed: !vm.CanUndo);
+            vm.OnUndo, dimmed: !vm.CanUndo,
+            help: vm.CanUndo ? "Take back the last pose edit" : "Nothing to undo");
 
         // center strip
         float x = leftMax.X + 12f * s;
         float cy = min.Y + (h - 28f * s) / 2f;
         if (vm.ShowProject)
         {
-            IconButton(dl, new Vector2(x, cy), TablerIcon.Folder, false, s, vm.OnProject);
+            IconButton(dl, new Vector2(x, cy), TablerIcon.Folder, false, s, vm.OnProject,
+                help: "Open the scene project browser");
             x += (28f + 10f) * s;
         }
 
@@ -331,11 +335,8 @@ public static class AppShellView
             i => vm.OnSymmetry?.Invoke(i));
         x += 10f * s;
         IconButtonNamed(dl, new Vector2(x, min.Y + (h - 28f * s) / 2f), "link",
-            vm.LinkedOn, s, () => vm.OnLinked?.Invoke(!vm.LinkedOn));
-        if (ImGui.IsMouseHoveringRect(
-                new Vector2(x, min.Y + (h - 28f * s) / 2f),
-                new Vector2(x + 28f * s, min.Y + (h + 28f * s) / 2f)))
-            ImGui.SetTooltip("Linked bones");
+            vm.LinkedOn, s, () => vm.OnLinked?.Invoke(!vm.LinkedOn),
+            help: "Edit linked bones together — mirrored pairs move as one");
         x += (28f + 10f) * s;
 
         // tb-right cell: when the rail is present, the right cluster sits on a
@@ -350,16 +351,21 @@ public static class AppShellView
         // right cluster (rightmost = collapse chevron, then close X — user spec)
         float rx = max.X - 12f * s - 28f * s;
         IconButtonNamed(dl, new Vector2(rx, cy), vm.Collapsed ? "chevron-down" : "chevron-up", false, s,
-            () => vm.OnCollapse?.Invoke(!vm.Collapsed));
+            () => vm.OnCollapse?.Invoke(!vm.Collapsed),
+            help: vm.Collapsed ? "Expand the window" : "Collapse to the title bar");
         rx -= (28f + 10f) * s;
-        IconButtonNamed(dl, new Vector2(rx, cy), "x", false, s, vm.OnHideUi); // close window
+        IconButtonNamed(dl, new Vector2(rx, cy), "x", false, s, vm.OnHideUi,
+            help: "Hide the Poser window"); // close window
         rx -= (28f + 10f) * s;
-        IconButton(dl, new Vector2(rx, cy), TablerIcon.Settings, false, s, vm.OnSettings);
+        IconButton(dl, new Vector2(rx, cy), TablerIcon.Settings, false, s, vm.OnSettings,
+            help: "Open Poser settings");
         rx -= (28f + 10f) * s;
         IconButton(dl, new Vector2(rx, cy), TablerIcon.Armature, vm.SkeletonOverlayOn, s,
-            () => vm.OnSkeletonOverlay?.Invoke(!vm.SkeletonOverlayOn));
+            () => vm.OnSkeletonOverlay?.Invoke(!vm.SkeletonOverlayOn),
+            help: "Toggle the skeleton overlay in the viewport");
         rx -= (28f + 10f) * s;
-        IconButton(dl, new Vector2(rx, cy), TablerIcon.UserCircle, false, s, vm.OnSelectTarget);
+        IconButton(dl, new Vector2(rx, cy), TablerIcon.UserCircle, false, s, vm.OnSelectTarget,
+            help: "Select your in-game target");
     }
 
     // ── sidebar ──────────────────────────────────────────────────────────
@@ -884,7 +890,8 @@ public static class AppShellView
         if (hovered && _axisEditId == null)
         {
             ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEw);
-            ImGui.SetTooltip("Drag to adjust (Ctrl fine ×0.1, Shift coarse ×10) · Double-click to type");
+            Crystarium.HoverHelp.Explain(id, pos, pos + new Vector2(width, 26f * s),
+                "Drag to adjust · Ctrl fine ×0.1 · Shift coarse ×10 · Double-click to type");
         }
 
         return changed;
@@ -967,10 +974,13 @@ public static class AppShellView
 
     // ── shared small controls ────────────────────────────────────────────
 
-    private static void IconButtonNamed(ImDrawListPtr dl, Vector2 pos, string iconName, bool on, float s, Action? onClick, bool dimmed = false)
+    private static void IconButtonNamed(ImDrawListPtr dl, Vector2 pos, string iconName, bool on, float s, Action? onClick, bool dimmed = false, string? help = null)
     {
         ImGui.SetCursorScreenPos(pos);
         var hit = Interactive.Reserve($"##ibn-{iconName}-{pos.X:0}-{pos.Y:0}", new Vector2(28f, 28f) * s, disabled: dimmed);
+        if (help != null &&
+            (hit.Hovered || (dimmed && ImGui.IsMouseHoveringRect(hit.ScreenMin, hit.ScreenMax))))
+            Crystarium.HoverHelp.Explain($"tb-{iconName}", hit.ScreenMin, hit.ScreenMax, help);
         if (on)
             dl.AddRectFilled(hit.ScreenMin, hit.ScreenMax, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(ActiveOverlay)), 5f * s);
         else if (hit.Hovered && !dimmed)
@@ -982,10 +992,15 @@ public static class AppShellView
             onClick?.Invoke();
     }
 
-    private static void IconButton(ImDrawListPtr dl, Vector2 pos, TablerIcon icon, bool on, float s, Action? onClick, bool dimmed = false, bool flipX = false)
+    private static void IconButton(ImDrawListPtr dl, Vector2 pos, TablerIcon icon, bool on, float s, Action? onClick, bool dimmed = false, bool flipX = false, string? help = null)
     {
         ImGui.SetCursorScreenPos(pos);
         var hit = Interactive.Reserve($"##ib-{icon}-{pos.X:0}-{pos.Y:0}", new Vector2(28f, 28f) * s, disabled: dimmed);
+        // A dimmed action still explains itself (why it is unavailable
+        // is part of its help); hover is re-derived geometrically.
+        if (help != null &&
+            (hit.Hovered || (dimmed && ImGui.IsMouseHoveringRect(hit.ScreenMin, hit.ScreenMax))))
+            Crystarium.HoverHelp.Explain($"tb-{icon}", hit.ScreenMin, hit.ScreenMax, help);
         if (on)
             dl.AddRectFilled(hit.ScreenMin, hit.ScreenMax, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(ActiveOverlay)), 5f * s);
         else if (hit.Hovered && !dimmed)

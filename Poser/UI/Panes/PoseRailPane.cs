@@ -80,7 +80,8 @@ public class PoseRailPane
                 Crystarium.Icon("link", 11f * s, new Vector4(120 / 255f, 185 / 255f, 1f, 1f));
                 ViewText.Label(pmin + new Vector2(19f, 2f) * s, count, 11f, FontWeight.Medium, new Vector4(120 / 255f, 185 / 255f, 1f, 1f));
                 if (ImGui.IsMouseHoveringRect(pmin, pmax))
-                    ImGui.SetTooltip("Linked editing — edits apply to these bones");
+                    Crystarium.HoverHelp.Explain("rail-linked-pill", pmin, pmax,
+                        "Linked editing — edits apply to these bones");
             }
             cursor.Y += (sub.Length > 0 ? 36f : 22f) * s;
 
@@ -224,7 +225,9 @@ public class PoseRailPane
         {
             // Ring emphasis only — no cursor-following markers.
             ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
-            ImGui.SetTooltip(
+            var ringMouse = ImGui.GetMousePos();
+            Crystarium.HoverHelp.Explain("rail-gizmo-ring",
+                ringMouse - new Vector2(4f, 4f), ringMouse + new Vector2(4f, 4f),
                 $"{RotationGizmoRings.AxisName(hoverAxis)} · drag along the ring");
         }
 

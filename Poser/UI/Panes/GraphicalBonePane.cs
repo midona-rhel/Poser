@@ -383,10 +383,13 @@ public sealed class GraphicalBonePane : IDisposable
                 fillColor);
         }
 
-        // Tooltip
+        // Name preview for the unlabeled dot: same chrome, no delay.
         if (isHovered && ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows))
         {
-            ImGui.SetTooltip(bone.Name);
+            var dotMouse = ImGui.GetMousePos();
+            Crystarium.HoverHelp.Preview("gbp-dot",
+                dotMouse - new Vector2(4f, 4f), dotMouse + new Vector2(4f, 4f),
+                bone.Name);
         }
     }
 

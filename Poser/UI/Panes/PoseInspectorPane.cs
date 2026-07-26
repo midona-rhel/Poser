@@ -573,7 +573,10 @@ public class PoseInspectorPane
             if (ImGui.IsMouseHoveringRect(
                     new Vector2(mirrorLabelX, chromeY),
                     new Vector2(rx + 36f * s, chromeY + 20f * s)))
-                ImGui.SetTooltip("Swap left/right on the maps");
+                Crystarium.HoverHelp.Explain("ps-mirror-help",
+                    new Vector2(mirrorLabelX, chromeY),
+                    new Vector2(rx + 36f * s, chromeY + 20f * s),
+                    "Swap left and right on the body and face maps");
         }
 
         dl.AddRectFilled(
@@ -716,6 +719,13 @@ public class PoseInspectorPane
         ViewText.Label(Theme.Optical.Snap(new Vector2(
                 cursor.X, cursor.Y + fy + 6f * s + Theme.Optical.FooterLabel * s)),
             "Parenting", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
+        if (ImGui.IsMouseHoveringRect(
+                new Vector2(cursor.X, cursor.Y + fy),
+                new Vector2(cursor.X + ViewText.Measure("Parenting", 12f), cursor.Y + fy + 20f * s)))
+            Crystarium.HoverHelp.Explain("ft-parenting-help",
+                new Vector2(cursor.X, cursor.Y + fy),
+                new Vector2(cursor.X + ViewText.Measure("Parenting", 12f), cursor.Y + fy + 20f * s),
+                "Which components child bones inherit when a parent moves");
         float px = cursor.X + 64f * s;
         foreach (var (label, component) in new[]
         {
@@ -724,6 +734,7 @@ public class PoseInspectorPane
             ("Scale", Core.TransformComponents.Scale),
         })
         {
+            float cellStart = px;
             ImGui.SetCursorScreenPos(new Vector2(px, cursor.Y + fy + 4f * s));
             bool propagates = poseInfo.DefaultPropagation.HasFlag(component);
             if (Crystarium.Checkbox($"##ft-parenting-{label}", ref propagates))
@@ -738,6 +749,20 @@ public class PoseInspectorPane
                 label, 11f,
                 FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.6f));
             px += ViewText.Measure(label, 11f) + 8f * s;
+            if (ImGui.IsMouseHoveringRect(
+                    new Vector2(cellStart, cursor.Y + fy),
+                    new Vector2(px, cursor.Y + fy + 20f * s)))
+                Crystarium.HoverHelp.Explain($"ft-parenting-help-{label}",
+                    new Vector2(cellStart, cursor.Y + fy),
+                    new Vector2(px, cursor.Y + fy + 20f * s),
+                    component switch
+                    {
+                        Core.TransformComponents.Position =>
+                            "Propagate translation edits to child bones",
+                        Core.TransformComponents.Rotation =>
+                            "Propagate rotation edits to child bones",
+                        _ => "Propagate scale edits to child bones",
+                    });
         }
         ImGui.SetCursorScreenPos(new Vector2(px, cursor.Y + fy));
         if (Crystarium.Button("Clear", new ButtonProps { Id = "ft-clear", Classes = Cls.Compact, Tooltip = "Clear bone selection" }))
@@ -831,7 +856,12 @@ public class PoseInspectorPane
         }
         if (hovered != null)
         {
-            ImGui.SetTooltip(hovered.DisplayName);
+            {
+                var mouse3 = ImGui.GetMousePos();
+                Crystarium.HoverHelp.Preview("pose-orbit-dot",
+                    mouse3 - new Vector2(4f, 4f), mouse3 + new Vector2(4f, 4f),
+                    hovered.DisplayName);
+            }
             var hoveredId = SelectionId.ForBone(hovered.Id);
             if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGui.GetIO().KeyCtrl)
                 _selection.Select(hoveredId);
@@ -1141,21 +1171,41 @@ public class PoseInspectorPane
                 config = _ikPort.Get(ikTarget);
             }
         }
+        // The header's semantic target excludes the Reset button, which
+        // explains itself through its own help.
+        float headerHelpW = eligible
+            ? width - (Crystarium.MeasureButton("Reset defaults", Cls.Compact).X + 8f * s)
+            : width;
+        if (ImGui.IsMouseHoveringRect(
+                cursor, cursor + new Vector2(headerHelpW, InspectorLayout.FormRowHeight * s)))
+            Crystarium.HoverHelp.Explain("ik-row-live",
+                cursor, cursor + new Vector2(headerHelpW, InspectorLayout.FormRowHeight * s),
+                eligible
+                    ? "Solve this chain toward the gizmo target while you pose"
+                    : "This bone has no IK chain — select a hand or foot");
         h += InspectorLayout.FormRowHeight * s;
         if (config == null)
         {
-            // One quiet unavailable row, the same height it reports.
-            if (ImGui.IsMouseHoveringRect(
-                    cursor, cursor + new Vector2(width, InspectorLayout.FormRowHeight * s)))
-                ImGui.SetTooltip("This bone can't use IK");
             return h;
         }
 
         void RowLabel(string label) =>
             InspectorLayout.FormLabel(new Vector2(cursor.X, cursor.Y + h), label, s);
 
-        bool SliderRow(string id, string label, ref float value, float min, float max, string fmt)
+        // One semantic target per row: hovering the label OR the control
+        // registers the same rect and explanation. Registered AFTER the
+        // row's own controls, so it wins the frame (last registration).
+        void RowHelp(float top, string id, string help)
         {
+            var helpMin = new Vector2(cursor.X, top);
+            var helpMax = new Vector2(cursor.X + width, top + InspectorLayout.FormRowHeight * s);
+            if (ImGui.IsMouseHoveringRect(helpMin, helpMax))
+                Crystarium.HoverHelp.Explain(id, helpMin, helpMax, help);
+        }
+
+        bool SliderRow(string id, string label, ref float value, float min, float max, string fmt, string help)
+        {
+            float rowTop = cursor.Y + h;
             RowLabel(label);
             ImGui.SetCursorScreenPos(new Vector2(
                 controlX, cursor.Y + h + InspectorLayout.FormSliderY * s));
@@ -1173,22 +1223,26 @@ public class PoseInspectorPane
                 readout, 11f, FontWeight.Regular,
                 InspectorLayout.LabelColor, mono: true);
             h += InspectorLayout.FormRowHeight * s;
+            RowHelp(rowTop, id + "-row", help);
             return moved;
         }
 
-        bool SwitchRow(string id, string label, bool value, out bool next)
+        bool SwitchRow(string id, string label, bool value, out bool next, string help)
         {
+            float rowTop = cursor.Y + h;
             RowLabel(label);
             ImGui.SetCursorScreenPos(new Vector2(
                 controlX, cursor.Y + h + InspectorLayout.FormSwitchY * s));
             next = value;
             bool moved = Crystarium.Switch(id, ref next);
             h += InspectorLayout.FormRowHeight * s;
+            RowHelp(rowTop, id + "-row", help);
             return moved;
         }
 
-        bool DropdownRow(string id, string label, string[] items, ref int index)
+        bool DropdownRow(string id, string label, string[] items, ref int index, string help)
         {
+            float rowTop = cursor.Y + h;
             RowLabel(label);
             ImGui.SetCursorScreenPos(new Vector2(
                 controlX, cursor.Y + h + InspectorLayout.FormTallControlY * s));
@@ -1199,6 +1253,7 @@ public class PoseInspectorPane
                 Style = new DropdownStyle { Width = Sizing.Fixed(controlW) },
             });
             h += InspectorLayout.FormRowHeight * s;
+            RowHelp(rowTop, id + "-row", help);
             return moved;
         }
 
@@ -1211,7 +1266,8 @@ public class PoseInspectorPane
         int solverIndex = config.Solver == Domain.Posing.IkSolver.Ccd
             ? solverItems.Length - 1
             : 0;
-        if (DropdownRow("##ik-solver", "Solver", solverItems, ref solverIndex))
+        if (DropdownRow("##ik-solver", "Solver", solverItems, ref solverIndex,
+                "Two Joint is the anatomical arm and leg solver; CCD bends any chain toward the target"))
         {
             var solver = twoJointAvailable && solverIndex == 0
                 ? Domain.Posing.IkSolver.TwoJoint
@@ -1223,7 +1279,8 @@ public class PoseInspectorPane
         {
             int modeIndex = config.TargetMode == Domain.Posing.IkTargetMode.Fixed ? 1 : 0;
             if (DropdownRow("##ik-target", "Target",
-                    new[] { "Relative", "Fixed" }, ref modeIndex))
+                    new[] { "Relative", "Fixed" }, ref modeIndex,
+                    "Relative follows your drag from the current pose; Fixed pins a world-space goal"))
                 Apply(config with
                 {
                     TargetMode = modeIndex == 1
@@ -1232,10 +1289,12 @@ public class PoseInspectorPane
                 });
 
             if (SwitchRow("##ik-constraints", "Constraints",
-                    config.EnforceConstraints, out var constraints))
+                    config.EnforceConstraints, out var constraints,
+                    "Keep joints inside their anatomical limits while solving"))
                 Apply(config with { EnforceConstraints = constraints });
             if (SwitchRow("##ik-endrot", "End rotation",
-                    config.EnforceEndRotation, out var endRotation))
+                    config.EnforceEndRotation, out var endRotation,
+                    "Also rotate the end bone to match the target's orientation"))
                 Apply(config with { EnforceEndRotation = endRotation });
 
             var definition = Domain.Posing.IkChains.ForEndpoint(boneId.CanonicalName)!;
@@ -1243,24 +1302,29 @@ public class PoseInspectorPane
                 ? ("Shoulder", "Elbow", "Hand")
                 : ("Hip", "Knee", "Foot");
             float firstGain = config.FirstJointGain;
-            if (SliderRow("##ik-gain1", firstLabel, ref firstGain, 0f, 1f, "{0:0.00}"))
+            if (SliderRow("##ik-gain1", firstLabel, ref firstGain, 0f, 1f, "{0:0.00}",
+                    $"How much the {firstLabel.ToLowerInvariant()} participates in the solve"))
                 Apply(config with { FirstJointGain = firstGain });
             float secondGain = config.SecondJointGain;
-            if (SliderRow("##ik-gain2", secondLabel, ref secondGain, 0f, 1f, "{0:0.00}"))
+            if (SliderRow("##ik-gain2", secondLabel, ref secondGain, 0f, 1f, "{0:0.00}",
+                    $"How much the {secondLabel.ToLowerInvariant()} bends to reach the target"))
                 Apply(config with { SecondJointGain = secondGain });
             float endGain = config.EndJointGain;
-            if (SliderRow("##ik-gain3", endLabel, ref endGain, 0f, 1f, "{0:0.00}"))
+            if (SliderRow("##ik-gain3", endLabel, ref endGain, 0f, 1f, "{0:0.00}",
+                    $"How much the {endLabel.ToLowerInvariant()} adjusts at the target"))
                 Apply(config with { EndJointGain = endGain });
 
             float hingeMin = config.HingeMinDegrees;
-            if (SliderRow("##ik-hmin", "Hinge min", ref hingeMin, 0f, 180f, "{0:0}°"))
+            if (SliderRow("##ik-hmin", "Hinge min", ref hingeMin, 0f, 180f, "{0:0}°",
+                    "The hinge joint's smallest allowed bend, in degrees"))
                 Apply(config with
                 {
                     HingeMinDegrees = hingeMin,
                     HingeMaxDegrees = MathF.Max(hingeMin, config.HingeMaxDegrees),
                 });
             float hingeMax = config.HingeMaxDegrees;
-            if (SliderRow("##ik-hmax", "Hinge max", ref hingeMax, 0f, 180f, "{0:0}°"))
+            if (SliderRow("##ik-hmax", "Hinge max", ref hingeMax, 0f, 180f, "{0:0}°",
+                    "The hinge joint's largest allowed bend, in degrees"))
                 Apply(config with
                 {
                     HingeMaxDegrees = hingeMax,
@@ -1271,6 +1335,7 @@ public class PoseInspectorPane
             // across the control region with the standard gaps. The port
             // rejects a transiently zero vector, while every valid
             // intermediate value updates live.
+            float axisRowTop = cursor.Y + h;
             RowLabel("Hinge axis");
             var axis = _ikAxisScratch ?? config.HingeAxis;
             float wellW = (controlW * s - 2f * InspectorLayout.FormAxisGap * s) / 3f;
@@ -1284,6 +1349,8 @@ public class PoseInspectorPane
             axisChanged |= AppShellView.DragAxisWell(dl, new Vector2(controlX + wellStep * 2f, wellY), wellW,
                 "ik-axis-z", "Z", ref axis.Z, Theme.Palette.AxisZ, 0.005f, "0.00", s, out var releasedZ);
             h += InspectorLayout.FormRowHeight * s;
+            RowHelp(axisRowTop, "ik-axis-row",
+                "The local axis the middle joint bends around");
             if (axisChanged)
             {
                 _ikAxisScratch = axis;
@@ -1297,17 +1364,21 @@ public class PoseInspectorPane
         else
         {
             if (SwitchRow("##ik-constraints", "Constraints",
-                    config.EnforceConstraints, out var constraints))
+                    config.EnforceConstraints, out var constraints,
+                    "Keep joints inside their anatomical limits while solving"))
                 Apply(config with { EnforceConstraints = constraints });
 
             float depth = config.CcdDepth;
-            if (SliderRow("##ik-depth", "Depth", ref depth, 1f, 20f, "{0:0}"))
+            if (SliderRow("##ik-depth", "Depth", ref depth, 1f, 20f, "{0:0}",
+                    "How many parent bones the solver may move"))
                 Apply(config with { CcdDepth = (int)MathF.Round(depth) });
             float iterations = config.CcdIterations;
-            if (SliderRow("##ik-iter", "Iterations", ref iterations, 1f, 60f, "{0:0}"))
+            if (SliderRow("##ik-iter", "Iterations", ref iterations, 1f, 60f, "{0:0}",
+                    "Solver passes per update — more lands closer but costs more"))
                 Apply(config with { CcdIterations = (int)MathF.Round(iterations) });
             float gain = config.CcdGain;
-            if (SliderRow("##ik-gain", "Gain", ref gain, 0f, 1f, "{0:0.00}"))
+            if (SliderRow("##ik-gain", "Gain", ref gain, 0f, 1f, "{0:0.00}",
+                    "How far each pass moves toward the target"))
                 Apply(config with { CcdGain = gain });
         }
 

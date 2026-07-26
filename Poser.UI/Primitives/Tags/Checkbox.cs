@@ -91,7 +91,8 @@ public static partial class Crystarium
             drawList.PathStroke(fill, ImDrawFlags.None, 2f * unit);
         }
 
-        if (hovered && !string.IsNullOrEmpty(tooltip)) ImGui.SetTooltip(tooltip);
+        if (hovered && !string.IsNullOrEmpty(tooltip))
+            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, tooltip!);
         return clicked;
     }
 

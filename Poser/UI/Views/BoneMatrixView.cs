@@ -85,7 +85,9 @@ public static class BoneMatrixView
             ImGui.InvisibleButton($"##{idPrefix}-section-{sectionIndex}",
                 new Vector2(MathF.Min(width, ViewText.Measure(section.Title, 11f) + 18f * s), 24f * s));
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Select every bone in this group");
+                Crystarium.HoverHelp.Explain($"bmv-section-{sectionIndex}",
+                    ImGui.GetItemRectMin(), ImGui.GetItemRectMax(),
+                    "Select every bone in this group · Ctrl adds to the selection");
             if (ImGui.IsItemClicked())
                 vm.OnSection?.Invoke(section, ImGui.GetIO().KeyCtrl);
             float lineY = y + 32f * s;

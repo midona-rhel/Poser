@@ -99,7 +99,9 @@ public static partial class Crystarium
         drawList.AddText(textPos, ImGui.ColorConvertFloat4ToU32(textColor), display);
 
         if (fontPushed) fontHandle!.Pop();
-        if (display != currentText && valueHovered) ImGui.SetTooltip(currentText);
+        // Truncation-only preview: same chrome, no explanatory delay.
+        if (display != currentText && valueHovered)
+            HoverHelp.Preview($"{id}-full", valuePos, valueEnd, currentText);
 
         // Chevron: Tabler IconSelector ("M8 9l4 -4l4 4" + "M16 15l-4 4l-4 -4",
         // 24-grid, stroke 2, round caps) at 14px, opacity .5.
@@ -215,7 +217,8 @@ public static partial class Crystarium
                         itemPos.X + optPad,
                         itemPos.Y + (height - itemTextSize.Y) / 2f + scale);
                     popupDrawList.AddText(itemTextPos, ColorEx.ApplyAlpha(Norvrandt.Sheet.CurrentTheme.Text).ToU32(), itemDisplay);
-                    if (itemDisplay != items[i] && itemHovered) ImGui.SetTooltip(items[i]);
+                    if (itemDisplay != items[i] && itemHovered)
+                        HoverHelp.Preview($"{id}-item-{i}", itemPos, itemPos + itemSize, items[i]);
 
                     ImGui.PopID();
                 }
@@ -232,7 +235,7 @@ public static partial class Crystarium
         ImGui.PopStyleVar(2);
 
         if (!string.IsNullOrEmpty(tooltip) && (valueHovered || buttonHovered))
-            ImGui.SetTooltip(tooltip);
+            HoverHelp.Explain(id, valuePos, valueEnd, tooltip!);
 
         return changed;
     }
