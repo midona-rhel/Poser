@@ -1,8 +1,30 @@
 using System;
 using System.Numerics;
+using Dalamud.Bindings.ImGui;
 using Poser.Services;
 
 namespace Poser.UI.Controls;
+
+/// <summary>Every interactive element of the in-world gizmo. One engaged
+/// handle owns the complete drag; hover priority between overlapping
+/// kinds is deterministic (see <see cref="WorldGizmo.HitTest"/>).</summary>
+public enum WorldHandleKind
+{
+    TranslateAxis,
+    TranslatePlane,
+    RotateRing,
+    Roll,
+    ScaleAxis,
+    ScaleUniform,
+}
+
+/// <summary>One handle identity: kind plus axis index (0..2; ignored for
+/// Roll and ScaleUniform).</summary>
+public readonly record struct WorldHandle(WorldHandleKind Kind, int Axis);
+
+/// <summary>A hover/press resolution: the handle, its screen distance, and
+/// the underlying ring segment when the handle is a ring.</summary>
+public readonly record struct WorldHandleHit(WorldHandle Handle, float Distance, RingHit? Ring);
 
 /// <summary>
 /// Perspective-correct projection for the IN-WORLD gizmo, distinct from the
@@ -231,5 +253,357 @@ public static class WorldGizmo
         return tangent.LengthSquared() < 1e-8f
             ? hit.Tangent
             : Vector2.Normalize(tangent);
+    }
+
+    // Handle geometry in gizmo units (multiples of WorldScale). Universal
+    // pushes the scale knobs beyond the translate arrowheads and the rings
+    // outside both, so every handle keeps its own uncluttered grab band.
+    private const float ShaftInner = 0.2f;
+    private const float ShaftOuter = 1.0f;
+    private const float PlaneInner = 0.35f;
+    private const float PlaneOuter = 0.65f;
+    private const float UniversalKnobDistance = 1.18f;
+    private const float UniversalRingRadius = 1.35f;
+
+    /// <summary>
+    /// The complete per-frame world-gizmo geometry for one tool: which
+    /// handle families are active and their projected screen shapes. Frames
+    /// are world-space axis bases — translate uses the orientation mode's
+    /// axes, scale always the target's own local axes (stock-gizmo parity),
+    /// rings the rotate frame (radial under a Parent pivot).
+    /// </summary>
+    public sealed class Layout
+    {
+        public required WorldGizmoProjection Projection;
+        public Quaternion TranslateFrame;
+        public Quaternion ScaleFrame;
+        public ProjectedRings? Rings;
+        public float RingWorldRadius;
+        public float UiScale;
+
+        public bool TranslateActive;
+        public Vector2[] ShaftStart = new Vector2[3];
+        public Vector2[] ShaftEnd = new Vector2[3];
+        public bool[] ShaftVisible = new bool[3];
+        public Vector2[][] PlaneQuad = new Vector2[3][];
+        public bool[] PlaneVisible = new bool[3];
+
+        public bool ScaleActive;
+        public bool ScaleShafts;
+        public Vector2[] ScaleShaftStart = new Vector2[3];
+        public Vector2[] ScaleKnob = new Vector2[3];
+        public bool[] ScaleVisible = new bool[3];
+        public bool UniformActive;
+    }
+
+    /// <summary>Builds the layout for the given tool. Handles whose
+    /// projection degenerates (behind camera, edge-on plane, shaft shorter
+    /// than a few pixels) are marked invisible: not drawn, not hittable.</summary>
+    public static Layout Build(
+        WorldGizmoProjection projection,
+        TransformTool tool,
+        Quaternion translateFrame,
+        Quaternion scaleFrame,
+        Quaternion ringFrame,
+        float uiScale)
+    {
+        var layout = new Layout { Projection = projection, UiScale = uiScale };
+        layout.TranslateFrame = translateFrame;
+        layout.ScaleFrame = scaleFrame;
+        bool universal = tool == TransformTool.Universal;
+        float s = projection.WorldScale;
+
+        if (tool is TransformTool.Move || universal)
+        {
+            layout.TranslateActive = true;
+            for (int a = 0; a < 3; a++)
+            {
+                var axis = FrameAxis(translateFrame, a);
+                bool ok = projection.Project(
+                    projection.Pivot + axis * (ShaftInner * s), out var start);
+                ok &= projection.Project(
+                    projection.Pivot + axis * (ShaftOuter * s), out var end);
+                layout.ShaftStart[a] = start;
+                layout.ShaftEnd[a] = end;
+                layout.ShaftVisible[a] = ok &&
+                    Vector2.Distance(start, end) > 6f * uiScale;
+
+                // Plane handle a lies between the OTHER two axes; its world
+                // normal is axis a. Edge-on planes disappear.
+                var u = FrameAxis(translateFrame, (a + 1) % 3);
+                var v = FrameAxis(translateFrame, (a + 2) % 3);
+                bool facing = MathF.Abs(Vector3.Dot(
+                    axis, projection.ViewDirection)) > 0.08f;
+                var quad = new Vector2[4];
+                bool projected = facing &&
+                    projection.Project(projection.Pivot + (u * PlaneInner + v * PlaneInner) * s, out quad[0]) &&
+                    projection.Project(projection.Pivot + (u * PlaneOuter + v * PlaneInner) * s, out quad[1]) &&
+                    projection.Project(projection.Pivot + (u * PlaneOuter + v * PlaneOuter) * s, out quad[2]) &&
+                    projection.Project(projection.Pivot + (u * PlaneInner + v * PlaneOuter) * s, out quad[3]);
+                layout.PlaneQuad[a] = quad;
+                layout.PlaneVisible[a] = projected;
+            }
+        }
+
+        if (tool is TransformTool.Scale || universal)
+        {
+            layout.ScaleActive = true;
+            layout.ScaleShafts = !universal;
+            layout.UniformActive = true;
+            float knobDistance = universal ? UniversalKnobDistance : ShaftOuter;
+            for (int a = 0; a < 3; a++)
+            {
+                var axis = FrameAxis(scaleFrame, a);
+                bool ok = projection.Project(
+                    projection.Pivot + axis * (ShaftInner * s), out var start);
+                ok &= projection.Project(
+                    projection.Pivot + axis * (knobDistance * s), out var knob);
+                layout.ScaleShaftStart[a] = start;
+                layout.ScaleKnob[a] = knob;
+                layout.ScaleVisible[a] = ok &&
+                    Vector2.Distance(projection.Center, knob) > 8f * uiScale;
+            }
+        }
+
+        if (tool is TransformTool.Rotate || universal)
+        {
+            layout.RingWorldRadius = (universal ? UniversalRingRadius : 1f) * s;
+            var rings = ProjectRings(
+                projection, ringFrame, layout.RingWorldRadius, uiScale);
+            if (rings.Valid)
+                layout.Rings = rings;
+        }
+        return layout;
+    }
+
+    public static Vector3 FrameAxis(Quaternion frame, int axis) =>
+        Vector3.Normalize(Vector3.Transform(
+            axis switch
+            {
+                0 => Vector3.UnitX,
+                1 => Vector3.UnitY,
+                _ => Vector3.UnitZ,
+            },
+            frame));
+
+    /// <summary>
+    /// Resolves the hovered handle. Priority between overlapping kinds is
+    /// deterministic and documented: plane quads, then the uniform-scale
+    /// centre, then scale knobs, then translate shafts, then ring
+    /// segments and the roll circle (which order X → Y → Z → Roll among
+    /// themselves). Within a tier the nearest candidate wins.
+    /// </summary>
+    public static WorldHandleHit? HitTest(Layout layout, Vector2 mouse, float tolerance)
+    {
+        if (layout.TranslateActive)
+            for (int a = 0; a < 3; a++)
+                if (layout.PlaneVisible[a] && PointInQuad(mouse, layout.PlaneQuad[a]))
+                    return new WorldHandleHit(
+                        new WorldHandle(WorldHandleKind.TranslatePlane, a), 0f, null);
+
+        if (layout.UniformActive &&
+            Vector2.Distance(mouse, layout.Projection.Center) <= 9f * layout.UiScale)
+            return new WorldHandleHit(
+                new WorldHandle(WorldHandleKind.ScaleUniform, 0), 0f, null);
+
+        if (layout.ScaleActive)
+        {
+            int best = -1;
+            float bestDistance = tolerance + 4f * layout.UiScale;
+            for (int a = 0; a < 3; a++)
+            {
+                if (!layout.ScaleVisible[a])
+                    continue;
+                float distance = Vector2.Distance(mouse, layout.ScaleKnob[a]);
+                if (layout.ScaleShafts)
+                    distance = MathF.Min(distance, DistanceToSegment(
+                        mouse, layout.ScaleShaftStart[a], layout.ScaleKnob[a]));
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = a;
+                }
+            }
+            if (best >= 0)
+                return new WorldHandleHit(
+                    new WorldHandle(WorldHandleKind.ScaleAxis, best), bestDistance, null);
+        }
+
+        if (layout.TranslateActive)
+        {
+            int best = -1;
+            float bestDistance = tolerance;
+            for (int a = 0; a < 3; a++)
+            {
+                if (!layout.ShaftVisible[a])
+                    continue;
+                float distance = DistanceToSegment(
+                    mouse, layout.ShaftStart[a], layout.ShaftEnd[a]);
+                // The arrowhead extends the grab band past the shaft tip.
+                distance = MathF.Min(distance, MathF.Max(0f,
+                    Vector2.Distance(mouse, layout.ShaftEnd[a]) - 10f * layout.UiScale));
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = a;
+                }
+            }
+            if (best >= 0)
+                return new WorldHandleHit(
+                    new WorldHandle(WorldHandleKind.TranslateAxis, best), bestDistance, null);
+        }
+
+        if (layout.Rings is { } rings &&
+            RotationGizmoRings.HitTest(rings, mouse, tolerance) is { } ringHit)
+            return new WorldHandleHit(
+                ringHit.Axis == RotationGizmoRings.RollAxis
+                    ? new WorldHandle(WorldHandleKind.Roll, 0)
+                    : new WorldHandle(WorldHandleKind.RotateRing, ringHit.Axis),
+                ringHit.Distance, ringHit);
+
+        return null;
+    }
+
+    /// <summary>
+    /// Draws every active handle with the approved pastel grammar: axis
+    /// palette, hover/active emphasis, no plate, no rear arcs, no cursor
+    /// decoration — the world counterpart of the inspector styling.
+    /// </summary>
+    public static void Draw(
+        ImDrawListPtr dl,
+        Layout layout,
+        WorldHandle? hover,
+        WorldHandle? active)
+    {
+        float uiScale = layout.UiScale;
+
+        if (layout.Rings is { } rings)
+        {
+            RotationGizmoRings.Draw(
+                dl, rings,
+                hover is { } h ? RingEmphasisAxis(h) : -1,
+                active is { } a ? RingEmphasisAxis(a) : -1,
+                drawRearArcs: false, uiScale);
+        }
+
+        if (layout.TranslateActive)
+        {
+            for (int a = 0; a < 3; a++)
+            {
+                if (!layout.PlaneVisible[a])
+                    continue;
+                bool hot = IsHot(hover, active, WorldHandleKind.TranslatePlane, a);
+                var color = AxisColor(a);
+                uint fill = ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(color with { W = hot ? 0.45f : 0.22f }));
+                uint border = ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(color with { W = hot ? 1f : 0.7f }));
+                var quad = layout.PlaneQuad[a];
+                dl.AddQuadFilled(quad[0], quad[1], quad[2], quad[3], fill);
+                dl.AddQuad(quad[0], quad[1], quad[2], quad[3], border, 1.5f * uiScale);
+            }
+            for (int a = 0; a < 3; a++)
+            {
+                if (!layout.ShaftVisible[a])
+                    continue;
+                bool hot = IsHot(hover, active, WorldHandleKind.TranslateAxis, a);
+                var color = AxisColor(a);
+                uint stroke = ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(color with { W = hot ? 1f : 0.85f }));
+                dl.AddLine(layout.ShaftStart[a], layout.ShaftEnd[a],
+                    stroke, (hot ? 4.5f : 3f) * uiScale);
+                var direction = Vector2.Normalize(
+                    layout.ShaftEnd[a] - layout.ShaftStart[a]);
+                var perpendicular = new Vector2(-direction.Y, direction.X);
+                var tip = layout.ShaftEnd[a] + direction * 12f * uiScale;
+                dl.AddTriangleFilled(
+                    tip,
+                    layout.ShaftEnd[a] + perpendicular * 5f * uiScale,
+                    layout.ShaftEnd[a] - perpendicular * 5f * uiScale,
+                    stroke);
+            }
+        }
+
+        if (layout.ScaleActive)
+        {
+            for (int a = 0; a < 3; a++)
+            {
+                if (!layout.ScaleVisible[a])
+                    continue;
+                bool hot = IsHot(hover, active, WorldHandleKind.ScaleAxis, a);
+                var color = AxisColor(a);
+                uint stroke = ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(color with { W = hot ? 1f : 0.85f }));
+                if (layout.ScaleShafts)
+                    dl.AddLine(layout.ScaleShaftStart[a], layout.ScaleKnob[a],
+                        stroke, (hot ? 4.5f : 3f) * uiScale);
+                float half = (hot ? 6f : 5f) * uiScale;
+                dl.AddRectFilled(
+                    layout.ScaleKnob[a] - new Vector2(half, half),
+                    layout.ScaleKnob[a] + new Vector2(half, half),
+                    stroke, 1.5f * uiScale);
+            }
+        }
+
+        if (layout.UniformActive)
+        {
+            bool hot = IsHot(hover, active, WorldHandleKind.ScaleUniform, 0);
+            var color = new Vector4(1f, 1f, 1f, hot ? 0.95f : 0.55f);
+            dl.AddCircleFilled(layout.Projection.Center, 4f * uiScale,
+                ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(color with { W = hot ? 0.5f : 0.25f })));
+            dl.AddCircle(layout.Projection.Center, 7f * uiScale,
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(color)),
+                0, (hot ? 2.5f : 1.5f) * uiScale);
+        }
+    }
+
+    private static Vector4 AxisColor(int axis) => axis switch
+    {
+        0 => Theme.Palette.AxisX,
+        1 => Theme.Palette.AxisY,
+        _ => Theme.Palette.AxisZ,
+    };
+
+    private static bool IsHot(
+        WorldHandle? hover, WorldHandle? active, WorldHandleKind kind, int axis)
+    {
+        var handle = new WorldHandle(kind, axis);
+        return hover == handle || active == handle;
+    }
+
+    private static int RingEmphasisAxis(WorldHandle? handle) => handle switch
+    {
+        { Kind: WorldHandleKind.RotateRing, Axis: var axis } => axis,
+        { Kind: WorldHandleKind.Roll } => RotationGizmoRings.RollAxis,
+        _ => -1,
+    };
+
+    private static bool PointInQuad(Vector2 point, Vector2[] quad)
+    {
+        bool sign = false;
+        for (int i = 0; i < 4; i++)
+        {
+            var a = quad[i];
+            var b = quad[(i + 1) % 4];
+            float cross = (b.X - a.X) * (point.Y - a.Y) -
+                (b.Y - a.Y) * (point.X - a.X);
+            if (i == 0)
+                sign = cross >= 0f;
+            else if (cross >= 0f != sign)
+                return false;
+        }
+        return true;
+    }
+
+    private static float DistanceToSegment(Vector2 point, Vector2 a, Vector2 b)
+    {
+        var ab = b - a;
+        float lengthSquared = ab.LengthSquared();
+        if (lengthSquared < 1e-6f)
+            return Vector2.Distance(point, a);
+        float t = Math.Clamp(
+            Vector2.Dot(point - a, ab) / lengthSquared, 0f, 1f);
+        return Vector2.Distance(point, a + ab * t);
     }
 }

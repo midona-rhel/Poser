@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Bindings.ImGuizmo;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Core;
@@ -17,6 +15,7 @@ using Poser.Entities;
 using Poser.Game.Posing;
 using Poser.Game.Transforms;
 using Poser.Services;
+using Poser.UI.Controls;
 using DomainOperation = Poser.Domain.Transforms.TransformOperation;
 using DomainSpace = Poser.Domain.Transforms.TransformSpace;
 using LegacyTransform = Poser.Transform;
@@ -34,8 +33,13 @@ internal enum GizmoTargetType
 }
 
 /// <summary>
-/// Unified gizmo overlay window that handles both actor and bone transforms.
-/// Simple delta-based system like Brio - bones rotate around themselves.
+/// Unified in-world gizmo overlay for actor and bone transforms. Every
+/// tool — Translate, Rotate, Scale, and the composed Universal — is the
+/// custom pastel presentation drawn through the perspective-correct
+/// <see cref="WorldGizmoProjection"/> (Brio's overlay path: real camera
+/// view/projection matrices, stable perceived size at the pivot's depth).
+/// No stock ImGuizmo is drawn or hit-tested. All manipulation dispatches
+/// deltas through the clean TransformGestureService lifecycle.
 /// </summary>
 public class GizmoOverlayWindow : Window
 {
@@ -48,19 +52,19 @@ public class GizmoOverlayWindow : Window
     private readonly CleanTransformFacade _cleanTransforms;
     private readonly CleanPoseFacade _cleanPose;
 
-    private const int GizmoId = 142857;
-
     /// <summary>
-    /// Everything one gizmo gesture froze at Begin: tool, orientation, domain
-    /// space, pivot, and the presentation baseline. Nothing here re-reads
-    /// editor state mid-drag — a mismatch cancels the gesture instead of
-    /// changing its meaning. No native entity is retained.
+    /// Everything one gizmo gesture froze at Begin: the engaged handle,
+    /// tool, orientation, domain space, pivot, and the presentation
+    /// baseline. Nothing here re-reads editor state mid-drag — a mismatch
+    /// cancels the gesture instead of changing its meaning. No native
+    /// entity is retained.
     /// </summary>
     private sealed class GizmoGesture
     {
         public required TransformGestureId Id { get; init; }
-        public required ImGuizmoOperation Operation { get; init; }
-        public required ImGuizmoMode Mode { get; init; }
+        public required WorldHandle Handle { get; init; }
+        public required TransformTool Tool { get; init; }
+        public required TransformOrientation Orientation { get; init; }
         public required DomainSpace Space { get; init; }
         public required LegacyTransform Start { get; init; }
         public LegacyTransform Current;
@@ -75,24 +79,34 @@ public class GizmoOverlayWindow : Window
     // target kind that owns it, and one suppression flag. A cancelled or
     // superseded gesture (Escape, tool/space change, target-kind change,
     // external cancellation, failed update) must not allow ANY new Begin —
-    // actor or bone — while the same ImGuizmo interaction is still active.
+    // actor or bone — while the same mouse press is still held.
     private GizmoGesture? _gesture;
     private GizmoTargetType _gestureTargetType = GizmoTargetType.None;
     private bool _beginSuppressed;
 
-    // Custom rotation-ring drag: the Rotate operation renders
-    // through the shared RotationGizmoRings module instead of stock ImGuizmo.
-    // Axis frozen in model space at grab; total angle accumulates from the
-    // frozen tangent so no frame feeds a result back as the next baseline.
+    // Drag state frozen at Begin. The engaged handle's mapping (axis,
+    // plane, tangent) never re-derives mid-drag; presentation may follow
+    // the camera and, for translate, the moving target.
+    private Vector3 _dragPivotWorld;
+    private Quaternion _dragRingFrame = Quaternion.Identity;
+    private Vector3 _dragAxisWorld;
     private Vector3 _ringAxisModel;
     private Vector2 _ringTangent;
-    private Vector2 _ringOrigin;
+    private Vector2 _dragMouseOrigin;
     private float _ringDistance;
     private float _ringAngle;
-    // Pivot and frame freeze for the complete drag; rings are not
-    // recalculated from the moving bone until release.
-    private Vector3 _ringPivotWorld;
-    private Quaternion _ringFrame = Quaternion.Identity;
+    private Vector3 _dragPlanePoint;
+    private Vector3 _dragPlaneNormal;
+    private Vector3 _dragPrevHit;
+    private Vector3 _dragAccumWorld;
+    private float _dragPrevAxisT;
+    private float _dragLogScale;
+    private float _dragPrevUniformPixels;
+    private Matrix4x4 _dragInvModel = Matrix4x4.Identity;
+
+    // Uniform scale grows toward screen up-right; 200 px per e-fold.
+    private static readonly Vector2 UniformScaleDirection =
+        Vector2.Normalize(new Vector2(1f, -1f));
 
     /// <summary>Cancels only when the service still owns the gesture; an
     /// externally/self-cancelled gesture is treated as already cancelled.</summary>
@@ -106,7 +120,7 @@ public class GizmoOverlayWindow : Window
     /// Reconciles the overlay lifecycle BEFORE the target-type branch runs:
     /// a selection-kind change (Actor↔Bone↔None) or an external cancellation
     /// clears stale local gesture state and suppresses every new Begin until
-    /// the original ImGuizmo interaction ends.
+    /// the original mouse press ends.
     /// </summary>
     private void ReconcileInteractionLifecycle(GizmoTargetType currentTarget)
     {
@@ -121,13 +135,11 @@ public class GizmoOverlayWindow : Window
                     _cleanTransforms.Cancel(gesture.Id);
                 _gesture = null;
                 _gestureTargetType = GizmoTargetType.None;
-                _beginSuppressed = ImGuizmo.IsUsing() ||
-                    ImGui.IsMouseDown(ImGuiMouseButton.Left);
+                _beginSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
             }
         }
 
-        if (_beginSuppressed && !ImGuizmo.IsUsing() &&
-            !ImGui.IsMouseDown(ImGuiMouseButton.Left))
+        if (_beginSuppressed && !ImGui.IsMouseDown(ImGuiMouseButton.Left))
             _beginSuppressed = false;
     }
 
@@ -168,35 +180,14 @@ public class GizmoOverlayWindow : Window
         var io = ImGui.GetIO();
         Size = io.DisplaySize;
         SizeCondition = ImGuiCond.Always;
-        ImGuizmo.SetID(GizmoId);
     }
 
     public override void Draw()
     {
-        ImGuizmo.BeginFrame();
-        var io = ImGui.GetIO();
-        ImGuizmo.SetRect(0, 0, io.DisplaySize.X, io.DisplaySize.Y);
-        ImGuizmo.SetOrthographic(false);
-        ImGuizmo.AllowAxisFlip(false);
-        ImGuizmo.SetDrawlist();
-
         var targetType = GetGizmoTargetType();
         ReconcileInteractionLifecycle(targetType);
-        switch (targetType)
-        {
-            case GizmoTargetType.Bone:
-                DrawBoneGizmo();
-                break;
-            case GizmoTargetType.Actor:
-                DrawActorGizmo();
-                break;
-        }
-    }
-
-    public override void PostDraw()
-    {
-        ImGuizmo.SetID(0);
-        base.PostDraw();
+        if (targetType != GizmoTargetType.None)
+            DrawWorldGizmo(targetType);
     }
 
     private GizmoTargetType GetGizmoTargetType()
@@ -221,12 +212,12 @@ public class GizmoOverlayWindow : Window
     /// Enforces the frozen-gesture contract each frame: an externally
     /// cancelled gesture (selection change, scene invalidation, undo guard)
     /// clears local presentation state; Escape cancels and restores the
-    /// frozen baseline; a tool or orientation change cancels rather than
-    /// mutating the drag. Returns the surviving gesture or null.
+    /// frozen baseline; a tool, orientation, or pivot change cancels rather
+    /// than mutating the drag. Returns the surviving gesture or null.
     /// </summary>
     private GizmoGesture? GuardGesture(
-        ImGuizmoOperation currentOperation,
-        ImGuizmoMode currentMode,
+        TransformTool currentTool,
+        TransformOrientation currentOrientation,
         Core.RotationPivot currentPivot)
     {
         if (_gesture is not { } gesture)
@@ -243,8 +234,8 @@ public class GizmoOverlayWindow : Window
             ClearGesture(suppress: true);
             return null;
         }
-        if (gesture.Operation != currentOperation ||
-            gesture.Mode != currentMode ||
+        if (gesture.Tool != currentTool ||
+            gesture.Orientation != currentOrientation ||
             gesture.PivotChoice != currentPivot)
         {
             _cleanTransforms.Cancel(gesture.Id);
@@ -260,554 +251,173 @@ public class GizmoOverlayWindow : Window
         _gestureTargetType = GizmoTargetType.None;
         _ringAngle = 0f;
         _ringDistance = 0f;
+        _dragAccumWorld = Vector3.Zero;
+        _dragLogScale = 0f;
+        _dragPrevUniformPixels = 0f;
         if (suppress)
-            _beginSuppressed = suppress &&
-            (ImGuizmo.IsUsing() || ImGui.IsMouseDown(ImGuiMouseButton.Left));
-    }
-
-    private void DrawActorGizmo()
-    {
-        if (EffectiveSelection() is not
-            { Primary: { Kind: TransformTargetKind.Actor, Actor: { } primaryActor } } actorSelection)
-            return;
-        var actorTargets = actorSelection.Targets;
-        var viewMatrix = _cameraService.GetViewMatrix();
-        var projectionMatrix = _cameraService.GetProjectionMatrix();
-
-        var gizmoMode = _editorState.TransformOrientation == TransformOrientation.Global
-            ? ImGuizmoMode.World
-            : ImGuizmoMode.Local;
-        var gizmoOperation = GetGizmoOperation();
-        var actorGesture = GuardGesture(
-            gizmoOperation, gizmoMode, _editorState.RotationPivot);
-
-        // Live memory only seeds a gesture; during a drag the frozen
-        // presentation baseline feeds the manipulator. Rest state reads
-        // through the viewport projection.
-        Transform actorTransform;
-        if (actorGesture is { } presented)
-        {
-            actorTransform = presented.Current;
-        }
-        else if (_viewport.GetActorTransform(primaryActor) is { } rest)
-        {
-            actorTransform = ToLegacy(rest);
-        }
-        else
-        {
-            return;
-        }
-        if (gizmoOperation == ImGuizmoOperation.Rotate)
-        {
-            DrawRotationRings(
-                actorTargets,
-                gizmoMode,
-                _editorState.RotationPivot,
-                actorGesture,
-                actorTransform,
-                pivotActive: false,
-                actorTransform.Position,
-                Matrix4x4.Identity,
-                primaryBone: null);
-            return;
-        }
-
-        var modelMatrix = actorTransform.ToMatrix();
-
-        ImGuizmo.Enable(true);
-        var viewMatrixCopy = viewMatrix;
-
-        var wasManipulated = ImGuizmo.Manipulate(
-            ref viewMatrixCopy,
-            ref projectionMatrix,
-            gizmoOperation,
-            gizmoMode,
-            ref modelMatrix);
-        var isUsing = ImGuizmo.IsUsing();
-
-        if (isUsing && _gesture == null && !_beginSuppressed)
-        {
-            var begin = _cleanTransforms.Begin(
-                actorTargets,
-                ToDomainOperation(gizmoOperation),
-                ToDomainSpace(gizmoMode),
-                actorTargets.Count > 1
-                    ? PivotMode.Primary
-                    : PivotMode.PerTarget,
-                description:
-                    $"Transform {actorTargets.Count} actor{(actorTargets.Count == 1 ? "" : "s")}");
-            if (begin.Success && begin.GestureId is { } gesture)
-            {
-                _gesture = new GizmoGesture
-                {
-                    Id = gesture,
-                    Operation = gizmoOperation,
-                    Mode = gizmoMode,
-                    Space = ToDomainSpace(gizmoMode),
-                    Start = actorTransform,
-                    Current = actorTransform,
-                    // Actors never orbit; the choice is stored only so the
-                    // shared guard's pivot comparison stays inert here.
-                    PivotChoice = _editorState.RotationPivot,
-                };
-                _gestureTargetType = GizmoTargetType.Actor;
-            }
-        }
-
-        if (wasManipulated && _gesture is { } activeGesture)
-        {
-            var newTransform = PoseMath.ConstrainToComponents(
-                activeGesture.Start,
-                Transform.FromMatrix(modelMatrix),
-                GetAllowedComponents(activeGesture.Operation));
-            var update = _cleanTransforms.Update(
-                activeGesture.Id,
-                ToDomainDelta(
-                    activeGesture.Start,
-                    newTransform,
-                    activeGesture.Space));
-            if (update.Success)
-            {
-                activeGesture.Current = newTransform;
-            }
-            else
-            {
-                // Covers scene-revision self-cancellation, invalid deltas,
-                // and runtime apply failure without double restoration.
-                CancelIfOwned(activeGesture.Id);
-                ClearGesture(suppress: true);
-            }
-        }
-
-        if (!isUsing)
-        {
-            if (_gesture is { } completed)
-            {
-                _cleanTransforms.Commit(completed.Id);
-                ClearGesture(suppress: false);
-            }
-            _beginSuppressed = false;
-        }
-    }
-
-    private void DrawBoneGizmo()
-    {
-        // The shared effective resolution anchors placement and targets: the
-        // first selected target is the primary.
-        if (EffectiveSelection() is not
-            { Primary: { Kind: TransformTargetKind.Bone, Bone: { } primaryId } } boneSelection)
-            return;
-        var orderedTargets = boneSelection.Targets;
-
-        // Skeleton matrix query also refreshes/registers the skeleton caches
-        // inside the runtime boundary.
-        if (_viewport.GetSkeletonModelMatrix(primaryId) is not { } modelMatrix)
-            return;
-
-        var projectionMatrix = _cameraService.GetProjectionMatrix();
-        var worldViewMatrix = _cameraService.GetViewMatrix();
-        worldViewMatrix.M44 = 1;
-        worldViewMatrix = Matrix4x4.Multiply(modelMatrix, worldViewMatrix);
-
-        var gizmoMode = _editorState.TransformOrientation == TransformOrientation.Global
-            ? ImGuizmoMode.World
-            : ImGuizmoMode.Local;
-        var gizmoOperation = GetGizmoOperation();
-        var pivotChoice = _editorState.RotationPivot;
-        var boneGesture = GuardGesture(gizmoOperation, gizmoMode, pivotChoice);
-
-        // Live memory only seeds a gesture. During a drag the frozen
-        // presentation baseline feeds the manipulator, exactly like Brio's
-        // tracking transform — reading Havok model-space back every frame can
-        // turn a rotation into an apparent orbit.
-        Transform currentTransform;
-        if (boneGesture is { } presented)
-        {
-            currentTransform = presented.Current;
-        }
-        else if (_viewport.GetBoneModelTransform(primaryId) is { } rest)
-        {
-            currentTransform = ToLegacy(rest);
-        }
-        else
-        {
-            return;
-        }
-
-        // The gizmo is drawn at the point it rotates around: Parent and
-        // Selection place its visible center and manipulation matrix at the
-        // pivot — tracking the live scene at rest, frozen while dragging.
-        // Rotation-only manipulation never moves the fed matrix, and the
-        // component constraint below re-bases position and scale onto the
-        // bone's frozen Start, so the pivot-positioned matrix still yields a
-        // pure rotation delta. Parent with no valid parent degrades to Self.
-        bool pivotActive = gizmoOperation == ImGuizmoOperation.Rotate &&
-            pivotChoice != Core.RotationPivot.Self;
-        Vector3? restPivot = null;
-        if (pivotActive && boneGesture == null)
-        {
-            restPivot = _viewport.GetParentModelTransform(primaryId)?.Position;
-            if (restPivot == null)
-                pivotActive = false;
-        }
-        var displayTransform = currentTransform;
-        if (pivotActive)
-        {
-            displayTransform = currentTransform with
-            {
-                Position = boneGesture is { } frozen
-                    ? frozen.Pivot
-                    : restPivot!.Value,
-            };
-        }
-        if (gizmoOperation == ImGuizmoOperation.Rotate)
-        {
-            // Correction 4D: the world ROTATION gizmo is the shared custom
-            // ring renderer with the inspector's approved styling; translate
-            // and scale continue through stock ImGuizmo below.
-            DrawRotationRings(
-                orderedTargets,
-                gizmoMode,
-                pivotChoice,
-                boneGesture,
-                currentTransform,
-                pivotActive,
-                boneGesture is { } frozenGesture && pivotActive
-                    ? frozenGesture.Pivot
-                    : restPivot ?? currentTransform.Position,
-                modelMatrix,
-                primaryId);
-            return;
-        }
-
-        var lastMatrix = displayTransform.ToMatrix();
-
-        // Brio-style posing composes persistent bone deltas after the game's
-        // animation update, so animation playback does not gate manipulation.
-        ImGuizmo.Enable(true);
-
-        var wasManipulated = ImGuizmo.Manipulate(
-            ref worldViewMatrix,
-            ref projectionMatrix,
-            gizmoOperation,
-            gizmoMode,
-            ref lastMatrix);
-        var isUsing = ImGuizmo.IsUsing();
-
-        // IsUsing must be sampled after Manipulate. On the first changed frame
-        // the pre-call value still describes the previous frame.
-        if (isUsing && _gesture == null && !_beginSuppressed)
-        {
-            // Parent pivot routes through the clean gesture with a frozen
-            // custom pivot; there is no second orbit session. The pivot
-            // point freezes here, at Begin — the same value the gizmo displays.
-            var cleanPivotMode = PivotMode.PerTarget;
-            Vector3? cleanCustomPivot = null;
-            if (pivotActive)
-            {
-                cleanPivotMode = PivotMode.Custom;
-                cleanCustomPivot = restPivot;
-            }
-
-            var orderedIds = orderedTargets;
-
-            var space = pivotActive
-                ? DomainSpace.World
-                : ToDomainSpace(gizmoMode);
-            var begin = _cleanTransforms.Begin(
-                orderedIds,
-                ToDomainOperation(gizmoOperation),
-                space,
-                cleanPivotMode,
-                cleanCustomPivot,
-                description:
-                    $"Transform {orderedIds.Count} bone{(orderedIds.Count == 1 ? "" : "s")}",
-                includeLinkedBones:
-                    _bonePosingService.LinkedBonesEnabled,
-                symmetry: _editorState.SymmetryMode switch
-                {
-                    SymmetryMode.Copy =>
-                        TransformDeltaMode.Direct,
-                    SymmetryMode.Mirror =>
-                        TransformDeltaMode.Mirrored,
-                    _ => null,
-                });
-            if (begin.Success && begin.GestureId is { } gesture)
-            {
-                _gesture = new GizmoGesture
-                {
-                    Id = gesture,
-                    Operation = gizmoOperation,
-                    Mode = gizmoMode,
-                    Space = space,
-                    Start = currentTransform,
-                    Current = currentTransform,
-                    PivotMode = cleanPivotMode,
-                    Pivot = cleanPivotMode switch
-                    {
-                        PivotMode.Custom =>
-                            cleanCustomPivot ?? currentTransform.Position,
-                        _ => currentTransform.Position,
-                    },
-                    PivotChoice = pivotChoice,
-                };
-                _gestureTargetType = GizmoTargetType.Bone;
-            }
-        }
-
-        if (wasManipulated && _gesture is { } activeGesture)
-        {
-            var newTransform = PoseMath.ConstrainToComponents(
-                activeGesture.Start,
-                Transform.FromMatrix(lastMatrix),
-                GetAllowedComponents(activeGesture.Operation));
-            var update = _cleanTransforms.Update(
-                activeGesture.Id,
-                ToDomainDelta(
-                    activeGesture.Start,
-                    newTransform,
-                    activeGesture.Space));
-            if (update.Success)
-            {
-                if (activeGesture.PivotMode == PivotMode.Custom)
-                {
-                    var total = ToDomainDelta(
-                        activeGesture.Start,
-                        newTransform,
-                        DomainSpace.World);
-                    newTransform = newTransform with
-                    {
-                        Position = activeGesture.Pivot +
-                            Vector3.Transform(
-                                activeGesture.Start.Position -
-                                activeGesture.Pivot,
-                                total.Rotation),
-                    };
-                }
-                activeGesture.Current = newTransform;
-            }
-            else
-            {
-                // Covers scene-revision self-cancellation, invalid deltas,
-                // and runtime apply failure without double restoration.
-                CancelIfOwned(activeGesture.Id);
-                ClearGesture(suppress: true);
-            }
-        }
-
-        if (!isUsing)
-        {
-            if (_gesture is { } completed)
-            {
-                _cleanTransforms.Commit(completed.Id);
-                ClearGesture(suppress: false);
-            }
-            _beginSuppressed = false;
-        }
+            _beginSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
     }
 
     /// <summary>
-    /// Custom world rotation rings: shared frame/projection/
-    /// hit-test/tangent math with the inspector, drawn with the inspector's
-    /// pastel palette and emphasis but WITHOUT rear arcs, background plate,
-    /// or decorative guides. Dispatches through the identical clean gesture
-    /// lifecycle the ImGuizmo path uses. `modelMatrix` is identity for
-    /// actors (their model space IS world space).
+    /// The one world-gizmo path for actors and bones: resolves the target
+    /// and frames, builds the perspective layout for the active tool,
+    /// hit-tests/draws the custom handles, and runs Begin/Update/Commit
+    /// through the clean gesture lifecycle. Actor targets use an identity
+    /// model matrix (their model space IS world space).
     /// </summary>
-    private void DrawRotationRings(
-        IReadOnlyList<TransformTargetId> targets,
-        ImGuizmoMode gizmoMode,
-        Core.RotationPivot pivotChoice,
-        GizmoGesture? gesture,
-        Transform currentTransform,
-        bool pivotActive,
-        Vector3 pivotModel,
-        Matrix4x4 modelMatrix,
-        BoneId? primaryBone)
+    private void DrawWorldGizmo(GizmoTargetType targetType)
     {
-        float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
-        Matrix4x4.Decompose(modelMatrix, out _, out var actorRotation, out _);
+        bool isBone = targetType == GizmoTargetType.Bone;
+        if (EffectiveSelection() is not { } selection)
+            return;
+        var targets = selection.Targets;
+        BoneId? primaryBone = null;
+        ActorId? primaryActor = null;
+        var modelMatrix = Matrix4x4.Identity;
 
-        // Ring frame (world): Parent pivot uses the parent→child radial
-        // frame; otherwise Local frames the target's own current world
-        // orientation and World uses world axes. The frame follows the
-        // presentation result during a drag; applied deltas stay on the
-        // frozen gesture-start baseline.
-        Quaternion frameWorld;
-        Vector3 pivotWorld;
-        if (gesture != null)
+        if (isBone)
         {
-            // Frozen for the complete drag.
-            frameWorld = _ringFrame;
-            pivotWorld = _ringPivotWorld;
-        }
-        else if (primaryBone is { } bone &&
-            pivotChoice == Core.RotationPivot.Parent &&
-            _viewport.GetParentModelTransform(bone) is { } parentModel)
-        {
-            frameWorld = UI.Controls.RotationGizmoRings.RadialFrame(
-                Vector3.Transform(parentModel.Position, modelMatrix),
-                Vector3.Transform(currentTransform.Position, modelMatrix));
-            pivotWorld = Vector3.Transform(pivotModel, modelMatrix);
+            if (selection.Primary is not
+                { Kind: TransformTargetKind.Bone, Bone: { } primaryBoneId })
+                return;
+            primaryBone = primaryBoneId;
+            // Skeleton matrix query also refreshes/registers the skeleton
+            // caches inside the runtime boundary.
+            if (_viewport.GetSkeletonModelMatrix(primaryBoneId) is not { } skeletonMatrix)
+                return;
+            modelMatrix = skeletonMatrix;
         }
         else
         {
-            // Brio parity: World mode rotates about the character's MODEL
-            // axes (identity model matrix for actors keeps world axes).
-            frameWorld = gizmoMode == ImGuizmoMode.Local
-                ? Quaternion.Normalize(actorRotation * currentTransform.Rotation)
-                : actorRotation;
-            pivotWorld = Vector3.Transform(pivotModel, modelMatrix);
+            if (selection.Primary is not
+                { Kind: TransformTargetKind.Actor, Actor: { } primaryActorId })
+                return;
+            primaryActor = primaryActorId;
         }
-        // The world overlay is perspective-correct (Brio's overlay path):
-        // the real view/projection matrices place and orient the rings at
-        // the pivot's actual world position, sized in world units that keep
-        // a stable perceived radius at the pivot's depth. Only the
-        // inspector keeps the direction-only basis.
-        var projection = UI.Controls.WorldGizmoProjection.Create(
-            _cameraService, ImGui.GetIO().DisplaySize, pivotWorld, 80f * scale);
-        if (projection == null)
+
+        var tool = _editorState.TransformTool;
+        var orientation = _editorState.TransformOrientation;
+        var pivotChoice = _editorState.RotationPivot;
+        var gesture = GuardGesture(tool, orientation, pivotChoice);
+
+        // Live memory only seeds a gesture. During a drag the frozen
+        // presentation baseline feeds the manipulation, exactly like Brio's
+        // tracking transform — reading Havok model-space back every frame
+        // can turn a rotation into an apparent orbit.
+        Transform currentTransform;
+        if (gesture is { } presented)
+        {
+            currentTransform = presented.Current;
+        }
+        else if (isBone &&
+            _viewport.GetBoneModelTransform(primaryBone!.Value) is { } boneRest)
+        {
+            currentTransform = ToLegacy(boneRest);
+        }
+        else if (!isBone &&
+            _viewport.GetActorTransform(primaryActor!.Value) is { } actorRest)
+        {
+            currentTransform = ToLegacy(actorRest);
+        }
+        else
+        {
             return;
-        float ringWorldRadius = projection.WorldScale;
-        var rings = UI.Controls.WorldGizmo.ProjectRings(
-            projection, frameWorld, ringWorldRadius, scale);
-        if (!rings.Valid)
-            return;
+        }
+
+        Matrix4x4.Decompose(modelMatrix, out _, out var actorRotation, out _);
+
+        // Frames (world-space axis bases). Brio parity: World manipulates
+        // the character's MODEL axes — the same frame the numeric wells
+        // edit; Local the target's own axes. Scale handles are always the
+        // target's local axes (stock-gizmo parity: scale is local-only).
+        var localFrame = Quaternion.Normalize(
+            actorRotation * currentTransform.Rotation);
+        var translateFrame = orientation == TransformOrientation.Global
+            ? actorRotation
+            : localFrame;
+        var scaleFrame = localFrame;
+
+        // Parent pivot applies to the Rotate tool on bones only: the rings
+        // orbit the frozen parent position with the parent→child radial
+        // frame. Parent with no valid parent degrades to Self.
+        bool pivotActive = tool == TransformTool.Rotate && isBone &&
+            pivotChoice != Core.RotationPivot.Self;
+        Vector3? restPivot = null;
+        if (pivotActive && gesture == null)
+        {
+            restPivot = _viewport.GetParentModelTransform(primaryBone!.Value)?.Position;
+            if (restPivot == null)
+                pivotActive = false;
+        }
+
+        bool ringDrag = gesture is { Handle.Kind: WorldHandleKind.RotateRing or WorldHandleKind.Roll };
+        Quaternion ringFrame;
+        if (ringDrag)
+        {
+            ringFrame = _dragRingFrame;
+        }
+        else if (pivotActive && gesture == null && restPivot is { } parentPosition)
+        {
+            ringFrame = RotationGizmoRings.RadialFrame(
+                Vector3.Transform(parentPosition, modelMatrix),
+                Vector3.Transform(currentTransform.Position, modelMatrix));
+        }
+        else
+        {
+            ringFrame = translateFrame;
+        }
+
+        // Pivot: rings freeze it for the complete drag; translate follows
+        // the moving target; everything else sits on the target.
+        Vector3 pivotModel = pivotActive && restPivot is { } rest
+            ? rest
+            : currentTransform.Position;
+        Vector3 pivotWorld = ringDrag
+            ? _dragPivotWorld
+            : Vector3.Transform(pivotModel, modelMatrix);
+
+        float uiScale = ImGuiHelpers.GlobalScale;
+        var projection = WorldGizmoProjection.Create(
+            _cameraService, ImGui.GetIO().DisplaySize, pivotWorld, 80f * uiScale);
+        WorldGizmo.Layout? layout = projection != null
+            ? WorldGizmo.Build(
+                projection, tool, translateFrame, scaleFrame, ringFrame, uiScale)
+            : null;
 
         var io = ImGui.GetIO();
         var mouse = io.MousePos;
-        int hoverAxis = -1;
-        UI.Controls.RingHit? hoverHit = null;
-        bool dragging = gesture != null;
-        if (!dragging &&
-            UI.Controls.RotationGizmoRings.HitTest(rings, mouse, 8f * scale) is { } hit)
-        {
-            hoverAxis = hit.Axis;
-            hoverHit = hit;
-        }
+        WorldHandleHit? hover = null;
+        if (gesture == null && layout != null)
+            hover = WorldGizmo.HitTest(layout, mouse, 8f * uiScale);
 
-        var dl = ImGui.GetWindowDrawList();
-        int dragAxisIndex = dragging ? AxisIndexFromModel(rings, actorRotation) : -1;
-        UI.Controls.RotationGizmoRings.Draw(
-            dl, rings, hoverAxis, dragAxisIndex, drawRearArcs: false, scale);
+        if (layout != null)
+            WorldGizmo.Draw(
+                ImGui.GetWindowDrawList(), layout,
+                hover?.Handle, gesture?.Handle);
 
-        // The overlay window is NoInputs; claim the mouse from the game while
-        // the pointer engages a ring (ImGuizmo does the same internally), and
-        // hold shared ownership so selection surfaces ignore the click and
-        // its release frame.
-        if (hoverAxis >= 0 || dragging)
+        // The overlay window is NoInputs; claim the mouse from the game
+        // while the pointer engages a handle, and hold shared ownership so
+        // selection surfaces ignore the click and its release frame.
+        if (hover != null || gesture != null)
         {
             ImGui.SetNextFrameWantCaptureMouse(true);
-            UI.Controls.GizmoPointerOwnership.Hold();
+            GizmoPointerOwnership.Hold();
         }
 
-        // Begin on ring press.
-        if (!dragging && hoverAxis >= 0 &&
+        if (gesture == null && hover is { } grab && layout != null &&
+            projection != null &&
             ImGui.IsMouseClicked(ImGuiMouseButton.Left) &&
             _gesture == null && !_beginSuppressed)
         {
-            var cleanPivotMode = PivotMode.PerTarget;
-            Vector3? cleanCustomPivot = null;
-            if (primaryBone != null && pivotActive)
-            {
-                cleanPivotMode = PivotMode.Custom;
-                cleanCustomPivot = pivotModel;
-            }
-            else if (primaryBone == null && targets.Count > 1)
-            {
-                cleanPivotMode = PivotMode.Primary;
-            }
-
-            var begin = _cleanTransforms.Begin(
-                targets,
-                DomainOperation.Rotate,
-                DomainSpace.World,
-                cleanPivotMode,
-                cleanCustomPivot,
-                description: primaryBone != null
-                    ? $"Transform {targets.Count} bone{(targets.Count == 1 ? "" : "s")}"
-                    : $"Transform {targets.Count} actor{(targets.Count == 1 ? "" : "s")}",
-                includeLinkedBones: primaryBone != null &&
-                    _bonePosingService.LinkedBonesEnabled,
-                symmetry: primaryBone != null
-                    ? _editorState.SymmetryMode switch
-                    {
-                        SymmetryMode.Copy => TransformDeltaMode.Direct,
-                        SymmetryMode.Mirror => TransformDeltaMode.Mirrored,
-                        _ => null,
-                    }
-                    : null);
-            if (begin.Success && begin.GestureId is { } gestureId)
-            {
-                _gesture = new GizmoGesture
-                {
-                    Id = gestureId,
-                    Operation = ImGuizmoOperation.Rotate,
-                    Mode = gizmoMode,
-                    Space = DomainSpace.World,
-                    Start = currentTransform,
-                    Current = currentTransform,
-                    PivotMode = cleanPivotMode,
-                    Pivot = cleanCustomPivot ?? currentTransform.Position,
-                    PivotChoice = pivotChoice,
-                };
-                _gestureTargetType = primaryBone != null
-                    ? GizmoTargetType.Bone
-                    : GizmoTargetType.Actor;
-                var axisWorld = UI.Controls.RotationGizmoRings.AxisWorld(rings, hoverAxis);
-                _ringAxisModel = Vector3.Normalize(Vector3.Transform(
-                    axisWorld, Quaternion.Inverse(actorRotation)));
-                _ringTangent = hoverHit is { } grabHit
-                    ? UI.Controls.WorldGizmo.PositiveTangentPerspective(
-                        projection, rings, grabHit, mouse, ringWorldRadius)
-                    : System.Numerics.Vector2.Zero;
-                _ringOrigin = mouse;
-                _ringDistance = 0f;
-                _ringAngle = 0f;
-                _ringPivotWorld = pivotWorld;
-                _ringFrame = frameWorld;
-            }
+            BeginGesture(
+                grab, layout, projection, targetType, targets, primaryBone,
+                tool, orientation, pivotChoice, pivotActive, pivotModel,
+                pivotWorld, currentTransform, modelMatrix, actorRotation,
+                translateFrame, scaleFrame, ringFrame, mouse);
         }
 
-        // Drag update from the frozen tangent/axis; total from Start only.
-        if (_gesture is { } activeGesture && ImGui.IsMouseDown(ImGuiMouseButton.Left))
-        {
-            float newDistance = Vector2.Dot(mouse - _ringOrigin, _ringTangent);
-            float delta = (newDistance - _ringDistance) *
-                UI.Controls.RotationGizmoRings.ModifierMultiplier(io);
-            _ringDistance = newDistance;
-            if (delta != 0f)
-            {
-                _ringAngle += delta / UI.Controls.RotationGizmoRings.PixelsPerRadian;
-                var totalRotation = Quaternion.CreateFromAxisAngle(_ringAxisModel, _ringAngle);
-                var newTransform = activeGesture.Start with
-                {
-                    Rotation = Quaternion.Normalize(totalRotation * activeGesture.Start.Rotation),
-                };
-                var update = _cleanTransforms.Update(
-                    activeGesture.Id,
-                    ToDomainDelta(activeGesture.Start, newTransform, DomainSpace.World));
-                if (update.Success)
-                {
-                    if (activeGesture.PivotMode == PivotMode.Custom)
-                    {
-                        newTransform = newTransform with
-                        {
-                            Position = activeGesture.Pivot +
-                                Vector3.Transform(
-                                    activeGesture.Start.Position - activeGesture.Pivot,
-                                    totalRotation),
-                        };
-                    }
-                    activeGesture.Current = newTransform;
-                }
-                else
-                {
-                    CancelIfOwned(activeGesture.Id);
-                    ClearGesture(suppress: true);
-                }
-            }
-        }
+        if (_gesture is { } active && ImGui.IsMouseDown(ImGuiMouseButton.Left))
+            UpdateGesture(active, projection, io, mouse);
 
         // Commit exactly once on release.
         if (_gesture is { } completed && !ImGui.IsMouseDown(ImGuiMouseButton.Left))
@@ -818,24 +428,319 @@ public class GizmoOverlayWindow : Window
         }
     }
 
-    /// <summary>The dragged ring's axis index for emphasis, recovered from
-    /// the frozen model-space axis.</summary>
-    private int AxisIndexFromModel(UI.Controls.ProjectedRings rings, Quaternion actorRotation)
+    /// <summary>
+    /// Freezes the engaged handle's complete drag mapping, then opens the
+    /// clean gesture. Ray-based handles that cannot establish a stable
+    /// mapping (degenerate plane, no intersection) decline to begin.
+    /// </summary>
+    private void BeginGesture(
+        WorldHandleHit grab,
+        WorldGizmo.Layout layout,
+        WorldGizmoProjection projection,
+        GizmoTargetType targetType,
+        IReadOnlyList<TransformTargetId> targets,
+        BoneId? primaryBone,
+        TransformTool tool,
+        TransformOrientation orientation,
+        Core.RotationPivot pivotChoice,
+        bool pivotActive,
+        Vector3 pivotModel,
+        Vector3 pivotWorld,
+        Transform currentTransform,
+        Matrix4x4 modelMatrix,
+        Quaternion actorRotation,
+        Quaternion translateFrame,
+        Quaternion scaleFrame,
+        Quaternion ringFrame,
+        Vector2 mouse)
     {
-        var axisWorld = Vector3.Normalize(Vector3.Transform(_ringAxisModel, actorRotation));
-        int best = -1;
-        float bestDot = 0.9f;
-        for (int a = 0; a < 3; a++)
+        bool isBone = primaryBone != null;
+        var kind = grab.Handle.Kind;
+        int axisIndex = grab.Handle.Axis;
+        bool ringHandle = kind is WorldHandleKind.RotateRing or WorldHandleKind.Roll;
+        if (!Matrix4x4.Invert(modelMatrix, out var invModel))
+            return;
+
+        // Per-kind frozen mapping, established BEFORE the service gesture
+        // so a failed mapping never opens one.
+        Vector3 axisWorld = Vector3.UnitX;
+        Vector3 planeNormal = Vector3.UnitY;
+        Vector3 initialHit = Vector3.Zero;
+        float initialAxisT = 0f;
+        Vector2 ringTangent = Vector2.Zero;
+        switch (kind)
         {
-            float dot = MathF.Abs(Vector3.Dot(
-                axisWorld, UI.Controls.RotationGizmoRings.AxisWorld(rings, a)));
-            if (dot > bestDot)
+            case WorldHandleKind.TranslateAxis:
+            case WorldHandleKind.ScaleAxis:
             {
-                bestDot = dot;
-                best = a;
+                var frame = kind == WorldHandleKind.TranslateAxis
+                    ? translateFrame
+                    : scaleFrame;
+                axisWorld = WorldGizmo.FrameAxis(frame, axisIndex);
+                // The drag plane contains the axis and faces the camera.
+                var normal = projection.ViewDirection -
+                    axisWorld * Vector3.Dot(projection.ViewDirection, axisWorld);
+                if (normal.LengthSquared() < 1e-6f)
+                    return;
+                planeNormal = Vector3.Normalize(normal);
+                if (projection.RayPlane(mouse, pivotWorld, planeNormal) is not { } hit)
+                    return;
+                initialHit = hit;
+                if (kind == WorldHandleKind.ScaleAxis)
+                {
+                    initialAxisT = Vector3.Dot(hit - pivotWorld, axisWorld);
+                    if (MathF.Abs(initialAxisT) < 1e-3f)
+                        return;
+                }
+                break;
+            }
+            case WorldHandleKind.TranslatePlane:
+            {
+                planeNormal = WorldGizmo.FrameAxis(translateFrame, axisIndex);
+                if (projection.RayPlane(mouse, pivotWorld, planeNormal) is not { } hit)
+                    return;
+                initialHit = hit;
+                break;
+            }
+            case WorldHandleKind.RotateRing:
+            case WorldHandleKind.Roll:
+            {
+                if (layout.Rings is not { } rings || grab.Ring is not { } ringHit)
+                    return;
+                axisWorld = RotationGizmoRings.AxisWorld(
+                    rings,
+                    kind == WorldHandleKind.Roll
+                        ? RotationGizmoRings.RollAxis
+                        : axisIndex);
+                ringTangent = WorldGizmo.PositiveTangentPerspective(
+                    projection, rings, ringHit, mouse, layout.RingWorldRadius);
+                break;
             }
         }
-        return best < 0 ? UI.Controls.RotationGizmoRings.RollAxis : best;
+
+        var operation = kind switch
+        {
+            WorldHandleKind.TranslateAxis or WorldHandleKind.TranslatePlane =>
+                DomainOperation.Translate,
+            WorldHandleKind.ScaleAxis or WorldHandleKind.ScaleUniform =>
+                DomainOperation.Scale,
+            _ => DomainOperation.Rotate,
+        };
+        // Ring gestures always dispatch world-composed rotation deltas (the
+        // frozen model-space axis carries the frame); linear handles use
+        // the orientation mode's space.
+        var space = ringHandle
+            ? DomainSpace.World
+            : orientation == TransformOrientation.Global
+                ? DomainSpace.World
+                : DomainSpace.Local;
+
+        // Parent pivot routes through the clean gesture with a frozen
+        // custom pivot; there is no second orbit session. Multi-actor
+        // selections pivot on the primary.
+        var cleanPivotMode = PivotMode.PerTarget;
+        Vector3? cleanCustomPivot = null;
+        if (ringHandle && isBone && pivotActive)
+        {
+            cleanPivotMode = PivotMode.Custom;
+            cleanCustomPivot = pivotModel;
+        }
+        else if (!isBone && targets.Count > 1)
+        {
+            cleanPivotMode = PivotMode.Primary;
+        }
+
+        var begin = _cleanTransforms.Begin(
+            targets,
+            operation,
+            space,
+            cleanPivotMode,
+            cleanCustomPivot,
+            description: isBone
+                ? $"Transform {targets.Count} bone{(targets.Count == 1 ? "" : "s")}"
+                : $"Transform {targets.Count} actor{(targets.Count == 1 ? "" : "s")}",
+            includeLinkedBones: isBone && _bonePosingService.LinkedBonesEnabled,
+            symmetry: isBone
+                ? _editorState.SymmetryMode switch
+                {
+                    SymmetryMode.Copy => TransformDeltaMode.Direct,
+                    SymmetryMode.Mirror => TransformDeltaMode.Mirrored,
+                    _ => null,
+                }
+                : null);
+        if (!begin.Success || begin.GestureId is not { } gestureId)
+            return;
+
+        _gesture = new GizmoGesture
+        {
+            Id = gestureId,
+            Handle = grab.Handle,
+            Tool = tool,
+            Orientation = orientation,
+            Space = space,
+            Start = currentTransform,
+            Current = currentTransform,
+            PivotMode = cleanPivotMode,
+            Pivot = cleanCustomPivot ?? currentTransform.Position,
+            PivotChoice = pivotChoice,
+        };
+        _gestureTargetType = targetType;
+
+        _dragInvModel = invModel;
+        _dragPivotWorld = pivotWorld;
+        _dragRingFrame = ringFrame;
+        _dragAxisWorld = axisWorld;
+        _ringAxisModel = Vector3.Normalize(Vector3.Transform(
+            axisWorld, Quaternion.Inverse(actorRotation)));
+        _ringTangent = ringTangent;
+        _dragMouseOrigin = mouse;
+        _ringDistance = 0f;
+        _ringAngle = 0f;
+        _dragPlanePoint = pivotWorld;
+        _dragPlaneNormal = planeNormal;
+        _dragPrevHit = initialHit;
+        _dragAccumWorld = Vector3.Zero;
+        _dragPrevAxisT = initialAxisT;
+        _dragLogScale = 0f;
+        _dragPrevUniformPixels = 0f;
+    }
+
+    /// <summary>
+    /// One frame of the engaged handle's drag: every kind accumulates
+    /// modifier-scaled increments against its frozen mapping and dispatches
+    /// the TOTAL delta from the frozen Start — no frame feeds a result back
+    /// as the next baseline. Ray handles skip the frame (holding the last
+    /// value) when the pivot is momentarily unprojectable.
+    /// </summary>
+    private void UpdateGesture(
+        GizmoGesture gesture,
+        WorldGizmoProjection? projection,
+        ImGuiIOPtr io,
+        Vector2 mouse)
+    {
+        float multiplier = RotationGizmoRings.ModifierMultiplier(io);
+        switch (gesture.Handle.Kind)
+        {
+            case WorldHandleKind.RotateRing:
+            case WorldHandleKind.Roll:
+            {
+                float newDistance = Vector2.Dot(mouse - _dragMouseOrigin, _ringTangent);
+                float delta = (newDistance - _ringDistance) * multiplier;
+                _ringDistance = newDistance;
+                if (delta == 0f)
+                    return;
+                _ringAngle += delta / RotationGizmoRings.PixelsPerRadian;
+                var totalRotation = Quaternion.CreateFromAxisAngle(
+                    _ringAxisModel, _ringAngle);
+                var newTransform = gesture.Start with
+                {
+                    Rotation = Quaternion.Normalize(
+                        totalRotation * gesture.Start.Rotation),
+                };
+                if (!DispatchUpdate(gesture, newTransform))
+                    return;
+                if (gesture.PivotMode == PivotMode.Custom)
+                {
+                    newTransform = newTransform with
+                    {
+                        Position = gesture.Pivot +
+                            Vector3.Transform(
+                                gesture.Start.Position - gesture.Pivot,
+                                totalRotation),
+                    };
+                }
+                gesture.Current = newTransform;
+                return;
+            }
+            case WorldHandleKind.TranslateAxis:
+            case WorldHandleKind.TranslatePlane:
+            {
+                if (projection?.RayPlane(mouse, _dragPlanePoint, _dragPlaneNormal)
+                    is not { } hit)
+                    return;
+                var step = gesture.Handle.Kind == WorldHandleKind.TranslateAxis
+                    ? _dragAxisWorld * Vector3.Dot(hit - _dragPrevHit, _dragAxisWorld)
+                    : hit - _dragPrevHit;
+                _dragPrevHit = hit;
+                step *= multiplier;
+                if (step == Vector3.Zero)
+                    return;
+                _dragAccumWorld += step;
+                var newTransform = gesture.Start with
+                {
+                    Position = gesture.Start.Position +
+                        Vector3.TransformNormal(_dragAccumWorld, _dragInvModel),
+                };
+                if (DispatchUpdate(gesture, newTransform))
+                    gesture.Current = newTransform;
+                return;
+            }
+            case WorldHandleKind.ScaleAxis:
+            {
+                if (projection?.RayPlane(mouse, _dragPlanePoint, _dragPlaneNormal)
+                    is not { } hit)
+                    return;
+                float t = Vector3.Dot(hit - _dragPlanePoint, _dragAxisWorld);
+                // The factor is the along-axis distance ratio (stock-gizmo
+                // semantics), accumulated in log space so Ctrl/Shift
+                // sensitivity applies to increments. Crossing the pivot
+                // holds the last value instead of flipping sign.
+                if (MathF.Abs(t) < 1e-4f ||
+                    MathF.Sign(t) != MathF.Sign(_dragPrevAxisT))
+                    return;
+                _dragLogScale +=
+                    (MathF.Log(MathF.Abs(t)) - MathF.Log(MathF.Abs(_dragPrevAxisT))) *
+                    multiplier;
+                _dragPrevAxisT = t;
+                ApplyScale(gesture, gesture.Handle.Axis);
+                return;
+            }
+            case WorldHandleKind.ScaleUniform:
+            {
+                float distance = Vector2.Dot(
+                    mouse - _dragMouseOrigin, UniformScaleDirection);
+                float step = (distance - _dragPrevUniformPixels) * multiplier;
+                _dragPrevUniformPixels = distance;
+                if (step == 0f)
+                    return;
+                _dragLogScale += step / 200f;
+                ApplyScale(gesture, axis: -1);
+                return;
+            }
+        }
+    }
+
+    /// <summary>Applies the accumulated log-space factor to one axis of the
+    /// frozen Start scale, or to all three for the uniform handle.</summary>
+    private void ApplyScale(GizmoGesture gesture, int axis)
+    {
+        float factor = Math.Clamp(MathF.Exp(_dragLogScale), 0.001f, 1000f);
+        var start = gesture.Start.Scale;
+        var scale = axis switch
+        {
+            0 => start with { X = start.X * factor },
+            1 => start with { Y = start.Y * factor },
+            2 => start with { Z = start.Z * factor },
+            _ => start * factor,
+        };
+        var newTransform = gesture.Start with { Scale = scale };
+        if (DispatchUpdate(gesture, newTransform))
+            gesture.Current = newTransform;
+    }
+
+    /// <summary>Dispatches the total delta; a failed update (scene-revision
+    /// self-cancellation, invalid delta, runtime apply failure) cancels
+    /// without double restoration and suppresses re-Begin for this press.</summary>
+    private bool DispatchUpdate(GizmoGesture gesture, Transform newTransform)
+    {
+        var update = _cleanTransforms.Update(
+            gesture.Id,
+            ToDomainDelta(gesture.Start, newTransform, gesture.Space));
+        if (update.Success)
+            return true;
+        CancelIfOwned(gesture.Id);
+        ClearGesture(suppress: true);
+        return false;
     }
 
     private static TransformDelta ToDomainDelta(
@@ -862,55 +767,4 @@ public class GizmoOverlayWindow : Window
                 ScaleFactor(start.Scale.Y, desired.Scale.Y),
                 ScaleFactor(start.Scale.Z, desired.Scale.Z)));
     }
-
-    private static DomainOperation ToDomainOperation(
-        ImGuizmoOperation operation)
-    {
-        if (operation == ImGuizmoOperation.Translate)
-            return DomainOperation.Translate;
-        if (operation == ImGuizmoOperation.Rotate)
-            return DomainOperation.Rotate;
-        if (operation == ImGuizmoOperation.Scale)
-            return DomainOperation.Scale;
-        return DomainOperation.Universal;
-    }
-
-    private static DomainSpace ToDomainSpace(ImGuizmoMode mode) =>
-        mode == ImGuizmoMode.World
-            ? DomainSpace.World
-            : DomainSpace.Local;
-
-    private ImGuizmoOperation GetGizmoOperation()
-    {
-        return _editorState.TransformTool switch
-        {
-            TransformTool.Move => ImGuizmoOperation.Translate,
-            TransformTool.Rotate => ImGuizmoOperation.Rotate,
-            TransformTool.Scale => ImGuizmoOperation.Scale,
-            TransformTool.Universal => ImGuizmoOperation.Translate | ImGuizmoOperation.Rotate | ImGuizmoOperation.Scale,
-            _ => ImGuizmoOperation.Rotate
-        };
-    }
-
-    private static TransformComponents GetAllowedComponents(ImGuizmoOperation operation)
-    {
-        if (operation == ImGuizmoOperation.Translate)
-            return TransformComponents.Position;
-        if (operation == ImGuizmoOperation.Rotate)
-            return TransformComponents.Rotation;
-        if (operation == ImGuizmoOperation.Scale)
-            return TransformComponents.Scale;
-
-        return TransformComponents.Position
-            | TransformComponents.Rotation
-            | TransformComponents.Scale;
-    }
-
-    /// <summary>
-    /// Finds the highest bone in the hierarchy among the selected bones.
-    /// The highest bone is the one with the fewest ancestors (closest to root).
-    /// </summary>
-    /// <summary>
-    /// Gets the depth of a bone in the hierarchy (0 = root, higher = deeper).
-    /// </summary>
 }
