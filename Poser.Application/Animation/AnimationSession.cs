@@ -749,10 +749,16 @@ public sealed class AnimationSession
         // Base restoration runs AFTER the expression release and slot
         // replays: those go through the mode dance, which would overwrite
         // the just-restored mode and parameter if the base went back
-        // first. Its Blend-free restore writes mode/param/override and
-        // replays the captured base-slot timeline directly.
-        if (owned.BaseCapture is { } capture && Try(_port.RestoreBase(actor, capture)))
+        // first. The base is restored on EVERY attempt, but its capture is
+        // released only once every mode-mutating dependency — expression
+        // release, cancellation, slot replays — has resolved: a retry of
+        // any of those alters or cancels the base again, and would
+        // otherwise find its restoration point already gone.
+        if (owned.BaseCapture is { } capture && Try(_port.RestoreBase(actor, capture)) &&
+            remaining.HeldExpression == null && remaining.SlotCaptures.Count == 0)
+        {
             remaining = remaining with { BaseCapture = null, BaseTimeline = null };
+        }
 
         if (owned.SlotSpeeds.Count > 0)
         {
