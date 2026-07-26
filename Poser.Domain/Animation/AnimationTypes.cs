@@ -266,12 +266,19 @@ public sealed record AnimationOverrides
 /// </summary>
 public sealed record AnimationSelection
 {
-    public uint BaseTimeline { get; init; }
-    public uint BlendTimeline { get; init; }
-    public uint LipsTimeline { get; init; }
+    public string Search { get; init; } = string.Empty;
     public AnimationKind Kind { get; init; } = AnimationKind.Emote;
     public AnimationSlot? SlotFilter { get; init; }
-    public string Search { get; init; } = string.Empty;
+
+    /// <summary>When set, a catalog pick replaces THAT slot's timeline
+    /// instead of playing as base or blend. Armed by a slot row's search
+    /// button; cleared by choosing Base/Blend again.</summary>
+    public AnimationSlot? TargetSlot { get; init; }
+
+    public bool PlayAsBase { get; init; } = true;
+    public bool Interrupt { get; init; } = true;
+    public bool PlayFromStart { get; init; } = true;
+    public int DirectTimelineId { get; init; }
 
     public static AnimationSelection Default { get; } = new();
 }

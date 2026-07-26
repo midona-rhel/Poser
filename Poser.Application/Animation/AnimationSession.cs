@@ -83,6 +83,22 @@ public sealed class AnimationSession
 
     public ActorAnimationReading? Read(ActorId actor) => _port.Read(actor);
 
+    /// <summary>
+    /// True while a multi-phase operation owns the actor's animation — a
+    /// facial bake between its capture and apply phases. Every command
+    /// that could change what the face is doing is refused, because the
+    /// captured values would then describe a face that no longer exists.
+    /// Reads stay available so surfaces can keep rendering.
+    /// </summary>
+    public bool CommandsSuspended { get; private set; }
+
+    public void SuspendCommands() { CommandsSuspended = true; Changed?.Invoke(); }
+    public void ResumeCommands() { CommandsSuspended = false; Changed?.Invoke(); }
+
+    private AnimationResult? Suspended() => CommandsSuspended
+        ? AnimationResult.Fail("A face capture is in progress.")
+        : null;
+
     public bool IsSupported(ActorId actor) => _port.IsSupported(actor);
 
     public bool IsPhysicsFrozen => _port.IsPhysicsFrozen;
@@ -107,6 +123,7 @@ public sealed class AnimationSession
     /// </summary>
     public AnimationResult PlayBase(ActorId actor, ushort timeline, bool interrupt)
     {
+        if (Suspended() is { } blocked) return blocked;
         var current = OverridesFor(actor);
         var result = _port.ApplyBase(
             actor, timeline, interrupt, current.BaseCapture, out var captured);
@@ -126,6 +143,7 @@ public sealed class AnimationSession
     /// records no override and needs no restoration.</summary>
     public AnimationResult Blend(ActorId actor, ushort timeline)
     {
+        if (Suspended() is { } blocked) return blocked;
         var result = _port.Blend(actor, timeline);
         return result.Success
             ? AnimationResult.Ok()
@@ -134,6 +152,7 @@ public sealed class AnimationSession
 
     public AnimationResult PlayEmote(ActorId actor, uint emoteId)
     {
+        if (Suspended() is { } blocked) return blocked;
         var result = _port.PlayEmote(actor, emoteId);
         return result.Success
             ? AnimationResult.Ok()
@@ -144,6 +163,7 @@ public sealed class AnimationSession
     /// speed, lips, and the rest are untouched.</summary>
     public AnimationResult StopBase(ActorId actor)
     {
+        if (Suspended() is { } blocked) return blocked;
         var current = OverridesFor(actor);
         if (current.BaseCapture is not { } capture)
         {
@@ -224,6 +244,7 @@ public sealed class AnimationSession
 
     public AnimationResult SetSpeed(ActorId actor, float speed)
     {
+        if (Suspended() is { } blocked) return blocked;
         var result = _port.SetOverallSpeed(actor, speed);
         if (!result.Success)
             return AnimationResult.Fail(result.Detail ?? "Speed failed.");
@@ -233,6 +254,7 @@ public sealed class AnimationSession
 
     public AnimationResult ClearSpeed(ActorId actor)
     {
+        if (Suspended() is { } blocked) return blocked;
         var result = _port.ClearOverallSpeed(actor);
         Mutate(actor, o => o with { OverallSpeed = null });
         return result.Success
@@ -250,6 +272,7 @@ public sealed class AnimationSession
 
     public AnimationResult SetSlotSpeed(ActorId actor, AnimationSlot slot, float speed)
     {
+        if (Suspended() is { } blocked) return blocked;
         var result = _port.SetSlotSpeed(actor, slot, speed);
         if (!result.Success)
             return AnimationResult.Fail(result.Detail ?? "Slot speed failed.");
@@ -263,6 +286,7 @@ public sealed class AnimationSession
 
     public AnimationResult ClearSlotSpeed(ActorId actor, AnimationSlot slot)
     {
+        if (Suspended() is { } blocked) return blocked;
         var result = _port.ClearSlotSpeed(actor, slot);
         Mutate(actor, o =>
         {
@@ -285,6 +309,7 @@ public sealed class AnimationSession
     /// </summary>
     public AnimationResult SetLips(ActorId actor, ushort timeline)
     {
+        if (Suspended() is { } blocked) return blocked;
         var current = OverridesFor(actor);
         ushort? capture = current.LipsCapture;
         if (capture == null && _port.Read(actor) is { } reading)
@@ -308,6 +333,7 @@ public sealed class AnimationSession
 
     public AnimationResult SetStance(ActorId actor, AnimationStance stance, int pose)
     {
+        if (Suspended() is { } blocked) return blocked;
         var capture = OverridesFor(actor).StanceCaptureValue;
         if (capture == null && _port.Read(actor) is { } reading)
             capture = new StanceCapture(reading.Stance, reading.Pose);
@@ -321,6 +347,7 @@ public sealed class AnimationSession
 
     public AnimationResult SetWeaponDrawn(ActorId actor, bool drawn)
     {
+        if (Suspended() is { } blocked) return blocked;
         var capture = OverridesFor(actor).WeaponCapture;
         if (capture == null && _port.Read(actor) is { } reading)
             capture = reading.WeaponDrawn;
@@ -490,6 +517,7 @@ public sealed class AnimationSession
     /// </summary>
     public AnimationResult SetSlotTimeline(ActorId actor, AnimationSlot slot, ushort timeline)
     {
+        if (Suspended() is { } blocked) return blocked;
         var current = OverridesFor(actor);
         ushort? capture = current.SlotTimelineCaptures.TryGetValue(slot, out var existing)
             ? existing
@@ -554,6 +582,7 @@ public sealed class AnimationSession
     /// </summary>
     public AnimationResult ResetActor(ActorId actor)
     {
+        if (Suspended() is { } blocked) return blocked;
         if (!_overrides.TryGetValue(actor, out var owned))
         {
             if (_physicsOwners.Remove(actor))
