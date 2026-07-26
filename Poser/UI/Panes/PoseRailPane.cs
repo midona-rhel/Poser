@@ -79,7 +79,7 @@ public class PoseRailPane
                 ImGui.SetCursorScreenPos(pmin + new Vector2(5f, 3.5f) * s);
                 Crystarium.Icon("link", 11f * s, new Vector4(120 / 255f, 185 / 255f, 1f, 1f));
                 ViewText.Label(pmin + new Vector2(19f, 2f) * s, count, 11f, FontWeight.Medium, new Vector4(120 / 255f, 185 / 255f, 1f, 1f));
-                if (ImGui.IsMouseHoveringRect(pmin, pmax))
+                if (Crystarium.HoverHelp.HelpHovered(pmin, pmax))
                     Crystarium.HoverHelp.Explain("rail-linked-pill", pmin, pmax,
                         "Linked editing — edits apply to these bones");
             }

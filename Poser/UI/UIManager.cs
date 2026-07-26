@@ -87,27 +87,28 @@ public sealed class UIManager : IUIManager
             return;
         }
 
-        var overrides = _configService.Config.UI.Keybinds;
-        Fire("Undo", "Ctrl+Z", () =>
+        Fire("Undo", () =>
         {
             if (_cleanTransforms.CanUndo)
                 _cleanTransforms.Undo();
         });
-        Fire("Redo", "Ctrl+Y", () =>
+        Fire("Redo", () =>
         {
             if (_cleanTransforms.CanRedo)
                 _cleanTransforms.Redo();
         });
-        Fire("Translate mode", "Ctrl+1", () => _editorState.TransformTool = TransformTool.Move);
-        Fire("Rotate mode", "Ctrl+2", () => _editorState.TransformTool = TransformTool.Rotate);
-        Fire("Scale mode", "Ctrl+3", () => _editorState.TransformTool = TransformTool.Scale);
-        Fire("Universal mode", "Ctrl+4", () => _editorState.TransformTool = TransformTool.Universal);
-        Fire("Hide UI", "Ctrl+H", ToggleAllUi);
+        Fire("Translate mode", () => _editorState.TransformTool = TransformTool.Move);
+        Fire("Rotate mode", () => _editorState.TransformTool = TransformTool.Rotate);
+        Fire("Scale mode", () => _editorState.TransformTool = TransformTool.Scale);
+        Fire("Universal mode", () => _editorState.TransformTool = TransformTool.Universal);
+        Fire("Hide UI", ToggleAllUi);
         return;
 
-        void Fire(string action, string fallback, Action run)
+        void Fire(string action, Action run)
         {
-            string chord = overrides.TryGetValue(action, out var bound) ? bound : fallback;
+            // The SAME resolver the hover badges display, so a shown
+            // chord always matches the one that fires.
+            string chord = PoserKeybinds.Effective(action);
             bool active = ChordDown(chord);
             if (active && _keybindsDown.Add(action))
                 run();

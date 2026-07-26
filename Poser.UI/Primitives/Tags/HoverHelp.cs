@@ -30,7 +30,10 @@ public static partial class Crystarium
     /// opacity 0, scale(.9), translateY(10px); IN is opacity 1, scale(1).
     /// Entering interpolates OUT→IN and exiting IN→OUT, each over 150 ms
     /// on the CSS <c>ease</c> curve (cubic-bezier 0.25, 0.1, 0.25, 1)
-    /// with transform-origin at the card centre. Close delay 0 means the
+    /// with transform-origin at the card centre; the translation composes
+    /// inside the scaled space (`scale(k) translateY(y)` ⇒ offset y·k),
+    /// and the backdrop blur stays at constant strength while the blurred
+    /// result fades with the group opacity. Close delay 0 means the
     /// EXIT BEGINS immediately when hover ends — the card retains its
     /// content and geometry and visibly reverses; it does not vanish. An
     /// interrupted entrance exits from its current visual state, and a
@@ -74,11 +77,11 @@ public static partial class Crystarium
         private enum Phase { Hidden, Entering, Open, Exiting }
 
         private readonly record struct Candidate(
-            string Id, Vector2 Min, Vector2 Max, string Text,
+            uint Id, Vector2 Min, Vector2 Max, string Text,
             string? Shortcut, HoverHelpSide Side, bool Instant);
 
         private static Candidate? _candidate;
-        private static string? _pendingId;
+        private static uint? _pendingId;
         private static double _pendingSince;
         private static Phase _phase = Phase.Hidden;
         private static Candidate _card;
@@ -95,7 +98,10 @@ public static partial class Crystarium
         {
             if (text.Length == 0)
                 return;
-            _candidate = new Candidate(id, targetMin, targetMax, text, shortcut, side, Instant: false);
+            // Identity resolves through ImGui's ID stack at the
+            // registration site, so equal raw strings in different
+            // windows or ID scopes are distinct targets.
+            _candidate = new Candidate(ImGui.GetID(id), targetMin, targetMax, text, shortcut, side, Instant: false);
         }
 
         /// <summary>
@@ -107,8 +113,20 @@ public static partial class Crystarium
         {
             if (text.Length == 0)
                 return;
-            _candidate = new Candidate(id, targetMin, targetMax, text, null, side, Instant: true);
+            _candidate = new Candidate(ImGui.GetID(id), targetMin, targetMax, text, null, side, Instant: true);
         }
+
+        /// <summary>
+        /// Occlusion-aware hover test for GEOMETRIC help targets — form
+        /// rows, label clusters, and disabled controls that have no live
+        /// item. True only when the mouse is inside the rect AND the
+        /// current window is the one under the mouse, so help cannot
+        /// bleed through an overlapping window or popup.
+        /// </summary>
+        public static bool HelpHovered(Vector2 min, Vector2 max) =>
+            ImGui.IsMouseHoveringRect(min, max) &&
+            ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows |
+                ImGuiHoveredFlags.AllowWhenBlockedByActiveItem);
 
         /// <summary>
         /// Advances the state machine and draws the single card. Called
@@ -283,21 +301,27 @@ public static partial class Crystarium
             pos.Y = Math.Clamp(pos.Y, 0f, MathF.Max(0f, display.Y - cardH));
 
             // Mantine pop, transform-origin centre: scale .9 → 1 and
-            // translateY 10px → 0 while opacity 0 → 1.
+            // translateY 10px → 0 while opacity 0 → 1. CSS composes
+            // `scale(k) translateY(y)` with the translation INSIDE the
+            // scaled space, so the applied offset is y·k.
             float k = PopScaleOut + (1f - PopScaleOut) * inness;
             float rise = (1f - inness) * PopRise * scale;
             var center = pos + new Vector2(cardW, cardH) * 0.5f;
-            var translate = new Vector2(0f, rise);
+            var translate = new Vector2(0f, rise * k);
             var animMin = center + (pos - center) * k + translate;
             var animMax = center + (pos + new Vector2(cardW, cardH) - center) * k + translate;
             float radius = 4f * scale;
 
             var fg = ImGui.GetForegroundDrawList();
-            // The blur is its own prepended command and cannot join the
-            // vertex range, so it follows the SAME animated geometry and
-            // fades with the same eased value — no blur flash before the
-            // surface is visible.
-            GlassChrome.PrependBlur(fg, animMin, animMax, radius * k, inness);
+            // The blur runs at CONSTANT strength (picto keeps blur(16px)
+            // fixed and fades the element); its command geometry is the
+            // animated rect, and its own emitted vertices are alpha-faded
+            // with the group opacity so the blurred result composites out
+            // with the card instead of flashing.
+            int blurVtxStart = fg.VtxBuffer.Size;
+            GlassChrome.PrependHoverBlur(fg, animMin, animMax, radius * k);
+            int blurVtxEnd = fg.VtxBuffer.Size;
+            VertexTransform.ApplyPop(fg, blurVtxStart, blurVtxEnd, center, 1f, Vector2.Zero, inness);
 
             // Everything below lands in one captured vertex range and is
             // popped as one composited surface: background, borders,

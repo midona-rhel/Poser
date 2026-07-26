@@ -295,10 +295,12 @@ public static class AppShellView
         }
         IconButton(dl, new Vector2(titleRight - 28f * s, undoY), TablerIcon.ArrowBackUp, false, s, vm.OnRedo,
             dimmed: !vm.CanRedo, flipX: true,
-            help: vm.CanRedo ? "Reapply the change you undid" : "Nothing to redo");
+            help: vm.CanRedo ? "Reapply the change you undid" : "Nothing to redo",
+            helpShortcut: PoserKeybinds.Effective("Redo"));
         IconButton(dl, new Vector2(titleRight - (28f + 4f + 28f) * s, undoY), TablerIcon.ArrowBackUp, false, s,
             vm.OnUndo, dimmed: !vm.CanUndo,
-            help: vm.CanUndo ? "Take back the last pose edit" : "Nothing to undo");
+            help: vm.CanUndo ? "Take back the last pose edit" : "Nothing to undo",
+            helpShortcut: PoserKeybinds.Effective("Undo"));
 
         // center strip
         float x = leftMax.X + 12f * s;
@@ -974,13 +976,13 @@ public static class AppShellView
 
     // ── shared small controls ────────────────────────────────────────────
 
-    private static void IconButtonNamed(ImDrawListPtr dl, Vector2 pos, string iconName, bool on, float s, Action? onClick, bool dimmed = false, string? help = null)
+    private static void IconButtonNamed(ImDrawListPtr dl, Vector2 pos, string iconName, bool on, float s, Action? onClick, bool dimmed = false, string? help = null, string? helpShortcut = null)
     {
         ImGui.SetCursorScreenPos(pos);
         var hit = Interactive.Reserve($"##ibn-{iconName}-{pos.X:0}-{pos.Y:0}", new Vector2(28f, 28f) * s, disabled: dimmed);
         if (help != null &&
-            (hit.Hovered || (dimmed && ImGui.IsMouseHoveringRect(hit.ScreenMin, hit.ScreenMax))))
-            Crystarium.HoverHelp.Explain($"tb-{iconName}", hit.ScreenMin, hit.ScreenMax, help);
+            (hit.Hovered || (dimmed && Crystarium.HoverHelp.HelpHovered(hit.ScreenMin, hit.ScreenMax))))
+            Crystarium.HoverHelp.Explain($"tb-{iconName}", hit.ScreenMin, hit.ScreenMax, help, helpShortcut);
         if (on)
             dl.AddRectFilled(hit.ScreenMin, hit.ScreenMax, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(ActiveOverlay)), 5f * s);
         else if (hit.Hovered && !dimmed)
@@ -992,15 +994,15 @@ public static class AppShellView
             onClick?.Invoke();
     }
 
-    private static void IconButton(ImDrawListPtr dl, Vector2 pos, TablerIcon icon, bool on, float s, Action? onClick, bool dimmed = false, bool flipX = false, string? help = null)
+    private static void IconButton(ImDrawListPtr dl, Vector2 pos, TablerIcon icon, bool on, float s, Action? onClick, bool dimmed = false, bool flipX = false, string? help = null, string? helpShortcut = null)
     {
         ImGui.SetCursorScreenPos(pos);
         var hit = Interactive.Reserve($"##ib-{icon}-{pos.X:0}-{pos.Y:0}", new Vector2(28f, 28f) * s, disabled: dimmed);
         // A dimmed action still explains itself (why it is unavailable
-        // is part of its help); hover is re-derived geometrically.
+        // is part of its help); hover is re-derived occlusion-aware.
         if (help != null &&
-            (hit.Hovered || (dimmed && ImGui.IsMouseHoveringRect(hit.ScreenMin, hit.ScreenMax))))
-            Crystarium.HoverHelp.Explain($"tb-{icon}", hit.ScreenMin, hit.ScreenMax, help);
+            (hit.Hovered || (dimmed && Crystarium.HoverHelp.HelpHovered(hit.ScreenMin, hit.ScreenMax))))
+            Crystarium.HoverHelp.Explain($"tb-{icon}", hit.ScreenMin, hit.ScreenMax, help, helpShortcut);
         if (on)
             dl.AddRectFilled(hit.ScreenMin, hit.ScreenMax, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(ActiveOverlay)), 5f * s);
         else if (hit.Hovered && !dimmed)

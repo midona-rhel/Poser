@@ -167,7 +167,7 @@ public static partial class Crystarium
         // A disabled reserve reports Hovered = false, but a disabled action may
         // still explain itself; hover is re-derived geometrically for help.
         bool tooltipHover = hit.Hovered ||
-            (hit.Disabled && ImGui.IsMouseHoveringRect(hit.ScreenMin, hit.ScreenMax));
+            (hit.Disabled && HoverHelp.HelpHovered(hit.ScreenMin, hit.ScreenMax));
         if (tooltipHover && !string.IsNullOrEmpty(tooltip))
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, tooltip!);
         if (hit.Clicked) onClick?.Invoke();

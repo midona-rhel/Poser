@@ -570,7 +570,7 @@ public class PoseInspectorPane
             float mirrorLabelX = rx - ViewText.Measure("Mirror", 12f) - 6f * s;
             ViewText.Label(new Vector2(mirrorLabelX, chromeY + 2f * s), "Mirror",
                 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
-            if (ImGui.IsMouseHoveringRect(
+            if (Crystarium.HoverHelp.HelpHovered(
                     new Vector2(mirrorLabelX, chromeY),
                     new Vector2(rx + 36f * s, chromeY + 20f * s)))
                 Crystarium.HoverHelp.Explain("ps-mirror-help",
@@ -719,7 +719,7 @@ public class PoseInspectorPane
         ViewText.Label(Theme.Optical.Snap(new Vector2(
                 cursor.X, cursor.Y + fy + 6f * s + Theme.Optical.FooterLabel * s)),
             "Parenting", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
-        if (ImGui.IsMouseHoveringRect(
+        if (Crystarium.HoverHelp.HelpHovered(
                 new Vector2(cursor.X, cursor.Y + fy),
                 new Vector2(cursor.X + ViewText.Measure("Parenting", 12f), cursor.Y + fy + 20f * s)))
             Crystarium.HoverHelp.Explain("ft-parenting-help",
@@ -749,7 +749,7 @@ public class PoseInspectorPane
                 label, 11f,
                 FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.6f));
             px += ViewText.Measure(label, 11f) + 8f * s;
-            if (ImGui.IsMouseHoveringRect(
+            if (Crystarium.HoverHelp.HelpHovered(
                     new Vector2(cellStart, cursor.Y + fy),
                     new Vector2(px, cursor.Y + fy + 20f * s)))
                 Crystarium.HoverHelp.Explain($"ft-parenting-help-{label}",
@@ -1176,7 +1176,7 @@ public class PoseInspectorPane
         float headerHelpW = eligible
             ? width - (Crystarium.MeasureButton("Reset defaults", Cls.Compact).X + 8f * s)
             : width;
-        if (ImGui.IsMouseHoveringRect(
+        if (Crystarium.HoverHelp.HelpHovered(
                 cursor, cursor + new Vector2(headerHelpW, InspectorLayout.FormRowHeight * s)))
             Crystarium.HoverHelp.Explain("ik-row-live",
                 cursor, cursor + new Vector2(headerHelpW, InspectorLayout.FormRowHeight * s),
@@ -1199,7 +1199,7 @@ public class PoseInspectorPane
         {
             var helpMin = new Vector2(cursor.X, top);
             var helpMax = new Vector2(cursor.X + width, top + InspectorLayout.FormRowHeight * s);
-            if (ImGui.IsMouseHoveringRect(helpMin, helpMax))
+            if (Crystarium.HoverHelp.HelpHovered(helpMin, helpMax))
                 Crystarium.HoverHelp.Explain(id, helpMin, helpMax, help);
         }
 
