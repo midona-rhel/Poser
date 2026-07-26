@@ -659,8 +659,13 @@ public class GizmoOverlayWindow : Window
                 : actorRotation;
             pivotWorld = Vector3.Transform(pivotModel, modelMatrix);
         }
+        // One perspective projection locates the CENTRE only; the ring
+        // geometry itself is direction-only and screen-stable. A pivot
+        // outside the projectable viewport does not draw.
+        if (!_cameraService.WorldToScreen(pivotWorld, out var ringCenter))
+            return;
         var rings = UI.Controls.RotationGizmoRings.Project(
-            _cameraService, pivotWorld, frameWorld, 80f * scale);
+            _cameraService, ringCenter, frameWorld, 80f * scale);
         if (!rings.Valid)
             return;
 
@@ -749,7 +754,7 @@ public class GizmoOverlayWindow : Window
                     axisWorld, Quaternion.Inverse(actorRotation)));
                 _ringTangent = hoverHit is { } grabHit
                     ? UI.Controls.RotationGizmoRings.PositiveTangent(
-                        _cameraService, rings, grabHit, mouse)
+                        rings, grabHit, mouse)
                     : System.Numerics.Vector2.Zero;
                 _ringOrigin = mouse;
                 _ringDistance = 0f;

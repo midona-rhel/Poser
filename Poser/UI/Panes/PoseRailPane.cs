@@ -34,12 +34,11 @@ public class PoseRailPane
     private float _dragDistance;
     private float _dragAngle;
     private RingHit? _hoverHit;
-    // Pivot and frame freeze for the complete drag; the rings are never
-    // recalculated from the moving bone until release. The DISPLAYED frame
-    // rotates by the accumulated drag angle about the frozen axis so the
-    // widget still animates — presentation derived from frozen state, not
-    // from the bone, so no frame feeds back into the interaction math.
-    private Vector3 _dragPivotWorld;
+    // Frame freeze for the complete drag; the rings are never recalculated
+    // from the moving bone until release. The DISPLAYED frame rotates by
+    // the accumulated drag angle about the frozen axis so the widget still
+    // animates — presentation derived from frozen state, not from the bone,
+    // so no frame feeds back into the interaction math.
     private Quaternion _dragFrame = Quaternion.Identity;
     private Vector3 _dragAxisWorld;
 
@@ -146,11 +145,10 @@ public class PoseRailPane
         var io = ImGui.GetIO();
         var mouse = ImGui.GetMousePos();
 
-        var (pivotWorld, frameWorld, axisConversion, canEdit) =
+        var (_, frameWorld, axisConversion, canEdit) =
             _inspector.GizmoWorldContext();
         if (active && _dragAxis >= 0)
         {
-            pivotWorld = _dragPivotWorld;
             frameWorld = Quaternion.Normalize(
                 Quaternion.CreateFromAxisAngle(_dragAxisWorld, _dragAngle) *
                 _dragFrame);
@@ -159,11 +157,13 @@ public class PoseRailPane
         dl.AddCircleFilled(center, widgetRadius + 12f * s,
             ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.30f)));
 
-        var projected = RotationGizmoRings.Project(
-            _camera, pivotWorld, frameWorld, widgetRadius);
-        if (!projected.Valid)
+        // Direction-only projection straight at the fixed widget centre —
+        // no perspective and no recentring, so the widget's shape and size
+        // never depend on where the actor stands on screen.
+        var rings = RotationGizmoRings.Project(
+            _camera, center, frameWorld, widgetRadius);
+        if (!rings.Valid)
             return d + 8f * s;
-        var rings = projected.Recentered(center);
 
         int hoverAxis = -1;
         _hoverHit = null;
@@ -185,14 +185,11 @@ public class PoseRailPane
             var axisWorld = RotationGizmoRings.AxisWorld(rings, hoverAxis);
             _dragAxisModel = Vector3.Normalize(Vector3.Transform(
                 axisWorld, Quaternion.Inverse(axisConversion)));
-            // The widget is recentered 1:1, so world-projected tangent
-            // directions transfer directly.
             _dragTangent = RotationGizmoRings.PositiveTangent(
-                _camera, projected, grabHit, projected.Center + (mouse - center));
+                rings, grabHit, mouse);
             _dragOrigin = mouse;
             _dragDistance = 0f;
             _dragAngle = 0f;
-            _dragPivotWorld = pivotWorld;
             _dragFrame = frameWorld;
             _dragAxisWorld = axisWorld;
         }

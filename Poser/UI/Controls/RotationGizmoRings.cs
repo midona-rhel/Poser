@@ -8,48 +8,21 @@ namespace Poser.UI.Controls;
 /// <summary>
 /// One projected ring set: the shared rotation-gizmo geometry consumed by
 /// BOTH the inspector widget and the in-world overlay. Ring points are
-/// true world-space circles around the pivot, projected
-/// through the actual game camera (`ICameraService.WorldToScreen`), so the
-/// red/green/blue rings describe the same real rotation axes everywhere.
+/// DIRECTION-ONLY projections (camera rotation, no translation,
+/// perspective, FOV, or depth), so shape and pixel radius are identical
+/// anywhere on screen; only the centre moves with the pivot.
 /// </summary>
 public sealed class ProjectedRings
 {
     public bool Valid;
     public Vector2 Center;
-    public Vector3 PivotWorld;
     public Vector2[][] Points = Array.Empty<Vector2[]>();
-    public Vector3[][] WorldPoints = Array.Empty<Vector3[]>();
     public bool[][] Front = Array.Empty<bool[]>();
     public float ScreenRadius;
     public float RollRadius;
     public Quaternion Frame = Quaternion.Identity;
+    public Quaternion ViewRotation = Quaternion.Identity;
     public Vector3 RollAxisWorld = Vector3.UnitZ;
-
-    /// <summary>The same rings re-centered for a fixed widget location.</summary>
-    public ProjectedRings Recentered(Vector2 newCenter)
-    {
-        var moved = new ProjectedRings
-        {
-            Valid = Valid,
-            Center = newCenter,
-            PivotWorld = PivotWorld,
-            Points = new Vector2[Points.Length][],
-            WorldPoints = WorldPoints,
-            Front = Front,
-            ScreenRadius = ScreenRadius,
-            RollRadius = RollRadius,
-            Frame = Frame,
-            RollAxisWorld = RollAxisWorld,
-        };
-        var offset = newCenter - Center;
-        for (int a = 0; a < Points.Length; a++)
-        {
-            moved.Points[a] = new Vector2[Points[a].Length];
-            for (int i = 0; i < Points[a].Length; i++)
-                moved.Points[a][i] = Points[a][i] + offset;
-        }
-        return moved;
-    }
 }
 
 public readonly record struct RingHit(int Axis, float Distance, Vector2 Tangent, int SegmentIndex);
@@ -104,82 +77,82 @@ public static class RotationGizmoRings
     }
 
     /// <summary>
-    /// Projects the three axis rings around the world-space pivot using the
-    /// actual game camera. The world radius is derived so the projected ring
-    /// is approximately <paramref name="screenRadius"/> pixels; the roll
-    /// ring sits slightly outside. Front segments are those closer to the
-    /// camera than the pivot.
+    /// Projects the three axis rings around the given SCREEN centre using
+    /// only the camera's rotation (Brio ImBrio.Gizmo compatibility): each
+    /// unit ring direction is rotated by the gizmo frame and the view
+    /// rotation, then its camera-space X/Y maps straight to the requested
+    /// pixel radius. No translation, perspective, FOV, pivot depth, or
+    /// actor scale participates — the rings keep one stable shape and size
+    /// anywhere on screen. Front segments face the camera (Z &lt; 0).
     /// </summary>
     public static ProjectedRings Project(
         ICameraService camera,
-        Vector3 pivotWorld,
+        Vector2 center,
         Quaternion frame,
-        float screenRadius)
+        float radiusPixels)
     {
-        var rings = new ProjectedRings { Frame = frame };
-        if (!camera.WorldToScreen(pivotWorld, out var center))
-            return rings;
-
-        // pixels-per-meter at the pivot, from a camera-right offset.
+        var rings = new ProjectedRings { Frame = frame, Center = center };
         var view = camera.GetViewMatrix();
         view.M44 = 1f;
-        if (!Matrix4x4.Invert(view, out var viewInverse))
+        if (!Matrix4x4.Decompose(view, out _, out var viewRotation, out _))
             return rings;
-        var cameraRight = Vector3.Normalize(
-            Vector3.TransformNormal(Vector3.UnitX, viewInverse));
-        if (!camera.WorldToScreen(pivotWorld + cameraRight * 0.5f, out var offsetScreen))
-            return rings;
-        float pixelsPerMeter = Vector2.Distance(center, offsetScreen) * 2f;
-        if (pixelsPerMeter < 1e-3f)
-            return rings;
-        float worldRadius = screenRadius / pixelsPerMeter;
-
-        var cameraPosition = camera.GetCameraPosition();
-        float pivotDepth = Vector3.DistanceSquared(cameraPosition, pivotWorld);
 
         rings.Valid = true;
-        rings.Center = center;
-        rings.PivotWorld = pivotWorld;
-        rings.ScreenRadius = screenRadius;
-        rings.RollRadius = screenRadius + 8f;
-        rings.RollAxisWorld = Vector3.Normalize(pivotWorld - cameraPosition);
+        rings.ViewRotation = viewRotation;
+        rings.ScreenRadius = radiusPixels;
+        rings.RollRadius = radiusPixels + 8f;
+        // The roll ring rotates about the camera view axis: the world
+        // direction mapping to camera-space +Z under the same basis.
+        rings.RollAxisWorld = Vector3.Normalize(
+            FromCamera(Vector3.UnitZ, viewRotation));
         rings.Points = new Vector2[3][];
-        rings.WorldPoints = new Vector3[3][];
         rings.Front = new bool[3][];
 
         for (int a = 0; a < 3; a++)
         {
             rings.Points[a] = new Vector2[RingPoints];
-            rings.WorldPoints[a] = new Vector3[RingPoints];
             rings.Front[a] = new bool[RingPoints];
             for (int i = 0; i < RingPoints; i++)
             {
-                float t = i / (float)(RingPoints - 1) * MathF.Tau;
-                var local = a switch
-                {
-                    0 => new Vector3(0f, MathF.Cos(t), MathF.Sin(t)),
-                    1 => new Vector3(MathF.Cos(t), 0f, MathF.Sin(t)),
-                    _ => new Vector3(MathF.Cos(t), MathF.Sin(t), 0f),
-                };
-                var world = pivotWorld +
-                    Vector3.Transform(local, frame) * worldRadius;
-                rings.WorldPoints[a][i] = world;
-                if (!camera.WorldToScreen(world, out var screen))
-                {
-                    // Behind the camera: reuse the previous point so the
-                    // polyline stays finite; mark it rear-facing.
-                    screen = i > 0 ? rings.Points[a][i - 1] : center;
-                    rings.Points[a][i] = screen;
-                    rings.Front[a][i] = false;
-                    continue;
-                }
-                rings.Points[a][i] = screen;
-                rings.Front[a][i] =
-                    Vector3.DistanceSquared(cameraPosition, world) < pivotDepth;
+                var cam = ToCamera(
+                    Vector3.Transform(LocalRingPoint(a, i), frame),
+                    viewRotation);
+                rings.Points[a][i] =
+                    center + new Vector2(cam.X, cam.Y) * radiusPixels;
+                rings.Front[a][i] = cam.Z < 0f;
             }
         }
         return rings;
     }
+
+    /// <summary>Unit direction of ring point <paramref name="index"/> on
+    /// axis <paramref name="axis"/>'s circle in the gizmo frame.</summary>
+    public static Vector3 LocalRingPoint(int axis, int index)
+    {
+        float t = index / (float)(RingPoints - 1) * MathF.Tau;
+        return axis switch
+        {
+            0 => new Vector3(0f, MathF.Cos(t), MathF.Sin(t)),
+            1 => new Vector3(MathF.Cos(t), 0f, MathF.Sin(t)),
+            _ => new Vector3(MathF.Cos(t), MathF.Sin(t), 0f),
+        };
+    }
+
+    // THE handedness decision, made once from Brio (ImBrio.Gizmo): camera
+    // space is the view matrix's rotation followed by an X mirror; screen
+    // offset is camera X/Y and front is Z < 0. Individual axes are never
+    // repaired with extra sign flips — tangents derive from this same
+    // mapping, so drag direction stays sign-correct by construction.
+    private static Vector3 ToCamera(Vector3 worldDirection, Quaternion viewRotation)
+    {
+        var v = Vector3.Transform(worldDirection, viewRotation);
+        return new Vector3(-v.X, v.Y, v.Z);
+    }
+
+    private static Vector3 FromCamera(Vector3 cameraDirection, Quaternion viewRotation) =>
+        Vector3.Transform(
+            new Vector3(-cameraDirection.X, cameraDirection.Y, cameraDirection.Z),
+            Quaternion.Inverse(viewRotation));
 
     /// <summary>
     /// Nearest visible projected ring segment within tolerance; the outer
@@ -291,35 +264,41 @@ public static class RotationGizmoRings
 
     /// <summary>
     /// The screen-space direction of POSITIVE rotation about the ring's
-    /// axis at the grab point, derived by projecting an epsilon-rotated grab
-    /// point — so the drag direction always matches the applied rotation on
-    /// every ring regardless of winding or view handedness.
+    /// axis at the grab point, derived by epsilon-rotating the grab
+    /// DIRECTION and re-projecting through the same direction-only basis —
+    /// drag direction always matches the applied rotation on every ring
+    /// with no perspective projection involved.
     /// </summary>
     public static Vector2 PositiveTangent(
-        ICameraService camera,
         ProjectedRings rings,
         RingHit hit,
         Vector2 mouse)
     {
-        Vector3 grabWorld;
+        if (!rings.Valid)
+            return hit.Tangent;
+        Vector3 grabDirection;
         if (hit.Axis == RollAxis)
         {
-            grabWorld = camera.ScreenToWorld(
-                mouse, camera.GetDepthToPosition(rings.PivotWorld));
+            var radial = mouse - rings.Center;
+            if (radial.LengthSquared() < 1e-6f)
+                return hit.Tangent;
+            radial = Vector2.Normalize(radial);
+            grabDirection = FromCamera(
+                new Vector3(radial.X, radial.Y, 0f), rings.ViewRotation);
         }
         else
         {
-            grabWorld = rings.WorldPoints[hit.Axis][hit.SegmentIndex];
+            grabDirection = Vector3.Transform(
+                LocalRingPoint(hit.Axis, hit.SegmentIndex), rings.Frame);
         }
         var axisWorld = AxisWorld(rings, hit.Axis);
-        var rotated = rings.PivotWorld + Vector3.Transform(
-            grabWorld - rings.PivotWorld,
+        var rotated = Vector3.Transform(
+            grabDirection,
             Quaternion.CreateFromAxisAngle(axisWorld, 0.05f));
-        if (!camera.WorldToScreen(grabWorld, out var a) ||
-            !camera.WorldToScreen(rotated, out var b))
-            return hit.Tangent;
-        var tangent = b - a;
-        return tangent.LengthSquared() < 1e-6f
+        var a = ToCamera(grabDirection, rings.ViewRotation);
+        var b = ToCamera(rotated, rings.ViewRotation);
+        var tangent = new Vector2(b.X - a.X, b.Y - a.Y);
+        return tangent.LengthSquared() < 1e-8f
             ? hit.Tangent
             : Vector2.Normalize(tangent);
     }
