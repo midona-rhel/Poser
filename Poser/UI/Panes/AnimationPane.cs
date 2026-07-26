@@ -159,7 +159,6 @@ public sealed class AnimationPane
 
         var reading = _animation.Read(actor) ?? ActorAnimationReading.Empty;
         var owned = _animation.OverridesFor(actor);
-        var selection = _animation.SelectionFor(actor);
 
         // The shell's content child scrolls and owns the gutter; the page
         // supplies only its own vertical padding.
@@ -167,7 +166,7 @@ public sealed class AnimationPane
         DrawPage(actor, reading, owned, width, s);
 
         if (_picker.Draw() is { } pick)
-            Apply(actor, selection, pick);
+            Apply(actor, pick);
     }
 
     private void DrawPage(
@@ -179,19 +178,22 @@ public sealed class AnimationPane
         float y = origin.Y;
 
         y += DrawTransport(actor, reading, owned, new Vector2(origin.X, y), width, s);
+
+        // Failures render HERE, under the controls that cause most of
+        // them, instead of five sections down where they scrolled out of
+        // sight.
+        if (_status.Length > 0)
+        {
+            ViewText.Label(new Vector2(origin.X, y + 2f * s), _status, 11f,
+                FontWeight.Regular, InspectorLayout.HintColor);
+            y += 20f * s;
+        }
         y += SectionGap(s);
         y += DrawStance(actor, reading, new Vector2(origin.X, y), width, s);
         y += SectionGap(s);
         y += DrawLayers(actor, reading, owned, dl, new Vector2(origin.X, y), width, s);
         y += SectionGap(s);
         y += DrawFace(actor, reading, new Vector2(origin.X, y), width, s);
-
-        if (_status.Length > 0)
-        {
-            ViewText.Label(new Vector2(origin.X, y + 6f * s), _status, 11f,
-                FontWeight.Regular, InspectorLayout.HintColor);
-            y += Row * s;
-        }
 
         // Register the content extent, including the trailing padding, so
         // scrolling to the bottom leaves the last row clear of the edge.
@@ -785,16 +787,18 @@ public sealed class AnimationPane
 
     /// <summary>Routes a pick to the destination the caller armed. The
     /// picker never decides where an animation goes.</summary>
-    private void Apply(ActorId actor, AnimationSelection selection, AnimationPick pick)
+    private void Apply(ActorId actor, AnimationPick pick)
     {
         var timeline = (ushort)pick.Entry.TimelineId;
         switch (pick.Target)
         {
             case AnimationPickTarget.Base:
+                // Interrupt and play-from-start are Ktisis' defaults; the
+                // picker's play-on-select is the one option with UI.
                 Report(
                     _animation.PlayEntry(actor, pick.Entry, asBase: true,
-                        selection.Interrupt && pick.PlayImmediately,
-                        selection.PlayFromStart, forceLoop: false),
+                        interrupt: pick.PlayImmediately,
+                        playFromStart: true, forceLoop: false),
                     pick.Entry.Name);
                 break;
             case AnimationPickTarget.Slot:

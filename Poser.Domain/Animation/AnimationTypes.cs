@@ -266,21 +266,3 @@ public sealed record AnimationOverrides
 
     public bool IsPaused => OverallSpeed is 0f;
 }
-
-/// <summary>
-/// Playback options the Animation tab keeps per actor, so switching actors
-/// cannot carry one actor's choices onto another. Session-only — never a
-/// pose layer, history entry, or file payload.
-///
-/// Search state is deliberately NOT here: it belongs to the act of
-/// picking, lives in the picker, and is cleared each time it opens.
-/// </summary>
-public sealed record AnimationSelection
-{
-    public bool PlayAsBase { get; init; } = true;
-    public bool Interrupt { get; init; } = true;
-    public bool PlayFromStart { get; init; } = true;
-    public int DirectTimelineId { get; init; }
-
-    public static AnimationSelection Default { get; } = new();
-}

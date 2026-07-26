@@ -56,6 +56,7 @@ public class PoseInspectorPane
     private readonly Game.Viewport.ViewportProjection _viewport;
     private readonly ExpressionInspectorSection _expressionSection;
     private readonly PoseFileInspectorSection _poseFileSection;
+    private readonly Dalamud.Plugin.Services.IPluginLog _log;
 
     /// <summary>Renders the Body/Face map inline through GraphicalBonePane.</summary>
     public Func<int, Vector2, bool>? DrawMapInline;
@@ -150,9 +151,11 @@ public class PoseInspectorPane
         Game.Viewport.ViewportProjection viewport,
         ExpressionInspectorSection expressionSection,
         PoseFileInspectorSection poseFileSection,
-        Application.Posing.IIkConfigurationPort ikPort)
+        Application.Posing.IIkConfigurationPort ikPort,
+        Dalamud.Plugin.Services.IPluginLog log)
     {
         _ikPort = ikPort;
+        _log = log;
         _selection = scene.Selection;
         _scene = scene;
         _bindings = bindings;
@@ -528,10 +531,14 @@ public class PoseInspectorPane
         bool motion = chromeActorId is { } motionId && !_animation.IsPaused(motionId);
         if (Crystarium.Switch("##ps-motion", ref motion) && chromeActorId is { } toggleId)
         {
-            if (motion)
-                _animation.Resume(toggleId);
-            else
-                _animation.Pause(toggleId);
+            // A silently failed toggle leaves the switch lying about the
+            // actor; the session has no status surface here, so the log is
+            // where the reason lands.
+            var toggled = motion
+                ? _animation.Resume(toggleId)
+                : _animation.Pause(toggleId);
+            if (!toggled.Success)
+                _log.Warning($"Animation toggle failed: {toggled.Detail}");
         }
         rx -= ViewText.Measure("Animation", 12f) + 6f * s;
         ViewText.Label(new Vector2(rx, chromeY + 2f * s), "Animation", 12f,
@@ -541,7 +548,11 @@ public class PoseInspectorPane
         ImGui.SetCursorScreenPos(new Vector2(rx, chromeY));
         bool physics = chromeActorId is { } physicsId && _animation.OwnsPhysics(physicsId);
         if (Crystarium.Switch("##ps-physics", ref physics) && chromeActorId is { } physicsToggle)
-            _animation.SetPhysicsFrozen(physicsToggle, physics);
+        {
+            var frozen = _animation.SetPhysicsFrozen(physicsToggle, physics);
+            if (!frozen.Success)
+                _log.Warning($"Physics toggle failed: {frozen.Detail}");
+        }
         rx -= ViewText.Measure("Physics", 12f) + 6f * s;
         ViewText.Label(new Vector2(rx, chromeY + 2f * s), "Physics", 12f,
             FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));

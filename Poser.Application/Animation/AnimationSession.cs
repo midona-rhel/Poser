@@ -53,7 +53,6 @@ public sealed class AnimationSession
 {
     private readonly IAnimationRuntimePort _port;
     private readonly Dictionary<ActorId, AnimationOverrides> _overrides = new();
-    private readonly Dictionary<ActorId, AnimationSelection> _selections = new();
     private readonly HashSet<ActorId> _physicsOwners = new();
 
     public AnimationSession(IAnimationRuntimePort port)
@@ -69,15 +68,6 @@ public sealed class AnimationSession
 
     public AnimationOverrides OverridesFor(ActorId actor) =>
         _overrides.TryGetValue(actor, out var value) ? value : AnimationOverrides.None;
-
-    public AnimationSelection SelectionFor(ActorId actor) =>
-        _selections.TryGetValue(actor, out var value) ? value : AnimationSelection.Default;
-
-    public void SetSelection(ActorId actor, AnimationSelection selection)
-    {
-        _selections[actor] = selection;
-        Changed?.Invoke();
-    }
 
     public ActorAnimationReading? Read(ActorId actor) => _port.Read(actor);
 
@@ -568,7 +558,6 @@ public sealed class AnimationSession
         {
             if (_physicsOwners.Remove(actor))
                 ReleasePhysicsIfUnowned();
-            _selections.Remove(actor);
             return AnimationResult.Ok();
         }
 
@@ -636,7 +625,6 @@ public sealed class AnimationSession
         if (actorGone || !remaining.HasAny)
         {
             _overrides.Remove(actor);
-            _selections.Remove(actor);
         }
         else
         {
@@ -665,7 +653,6 @@ public sealed class AnimationSession
         }
         _physicsOwners.Clear();
         ReleasePhysicsIfUnowned();
-        _selections.Clear();
         Changed?.Invoke();
         return failures.Count == 0
             ? AnimationResult.Ok()
@@ -683,9 +670,6 @@ public sealed class AnimationSession
     {
         var present = new HashSet<ActorId>(snapshot.Actors.Select(a => a.Id));
         var departed = _overrides.Keys.Where(id => !present.Contains(id)).ToList();
-        foreach (var id in _selections.Keys.Where(id => !present.Contains(id)).ToList())
-            _selections.Remove(id);
-
         if (departed.Count == 0)
         {
             if (_physicsOwners.RemoveWhere(id => !present.Contains(id)) > 0)
