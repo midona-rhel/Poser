@@ -40,12 +40,9 @@ public sealed class AnimationPane
     private readonly SceneSession _scene;
 
     // View preferences, deliberately not per-actor. Disclosures start
-    // collapsed and contribute only their header when closed. Loop
-    // defaults ON — the reference's equivalent does, and it is why its
-    // animations feel continuous.
+    // collapsed and contribute only their header when closed.
     private bool _openAdvancedSlots;
     private bool _openAdvancedScrub;
-    private bool _loopBase = true;
 
     private (ActorId Actor, ScrubControlId Control)? _scrub;
     /// <summary>Last animation picked into each layer. A one-shot ends in
@@ -355,26 +352,6 @@ public sealed class AnimationPane
                 },
             }))
             Report(_animation.SetSpeed(actor, speed), "Speed");
-        y += Row * s;
-
-        // Loop: whether the session re-drives the animation when it ends.
-        row = cursor + new Vector2(0f, y);
-        valueX = LabelCell(row, "Loop", s);
-        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y + SwitchY * s));
-        bool loop = _loopBase;
-        if (Crystarium.Switch("##anim-loop-base", ref loop))
-        {
-            _loopBase = loop;
-            // Apply to the CURRENT animation immediately, so the switch is
-            // not a promise about some future pick.
-            if (current != 0)
-                Report(
-                    _animation.SetSlotLoop(actor, AnimationSlot.Base, current, loop),
-                    "Loop");
-        }
-        ViewText.Label(new Vector2(valueX + 56f * s, row.Y + TextY * s),
-            "Play the animation again when it ends", 11f,
-            FontWeight.Regular, InspectorLayout.LabelColor);
         y += Row * s;
 
         DrawSceneMenu();
@@ -904,26 +881,36 @@ public sealed class AnimationPane
         {
             case AnimationPickTarget.Base:
             {
-                // The pick plays through the sequencer like everything
-                // else (the references have no base latch); Loop decides
-                // whether the session re-drives it when it ends.
+                // Plays through the sequencer like everything else (no
+                // latch). Retention and loop arming happen only AFTER a
+                // successful play, keyed by the timeline's ACTUAL slot.
                 var played = _animation.PlayEntry(actor, pick.Entry,
                     asBase: true, playFromStart: true);
-                if (played.Success)
-                    _animation.SetSlotLoop(actor, pick.Entry.Slot, timeline, _loopBase);
-                Report(played, pick.Entry.Name);
+                if (!played.Success)
+                {
+                    Report(played, pick.Entry.Name);
+                    break;
+                }
+                _layerPicks[(actor, pick.Entry.Slot)] = timeline;
+                Report(ArmLoop(actor, pick.Entry.Slot, timeline, played),
+                    pick.Entry.Name);
                 break;
             }
             case AnimationPickTarget.Slot:
+            {
                 // The generic play: the timeline's own slot tag routes it
-                // onto its layer -- the references never write a slot. An
-                // armed loop follows the new pick.
-                _layerPicks[(actor, pick.Slot)] = timeline;
-                if (_animation.OverridesFor(actor).LoopedSlots.ContainsKey(pick.Slot))
-                    _animation.SetSlotLoop(actor, pick.Slot, timeline, true);
-                Report(_animation.Blend(actor, timeline),
+                // onto its layer -- the references never write a slot.
+                var played = _animation.Blend(actor, timeline);
+                if (!played.Success)
+                {
+                    Report(played, AnimationSlots.DisplayName(pick.Slot));
+                    break;
+                }
+                _layerPicks[(actor, pick.Entry.Slot)] = timeline;
+                Report(ArmLoop(actor, pick.Entry.Slot, timeline, played),
                     AnimationSlots.DisplayName(pick.Slot));
                 break;
+            }
             case AnimationPickTarget.Expression:
                 // Expressions HOLD: play onto the face, pin the layer.
                 Report(_animation.HoldExpression(actor, timeline), "Expression");
@@ -932,6 +919,22 @@ public sealed class AnimationPane
                 Report(_animation.SetLips(actor, timeline), "Lips");
                 break;
         }
+    }
+
+    /// <summary>
+    /// Arms looping for a successful pick, but ONLY on the slots that
+    /// carry a loop control (the body layers' Time rows): the session is
+    /// the single owner of loop state and the switch is its one visible
+    /// control, so no slot is ever armed invisibly. A failed arm is
+    /// returned instead of being swallowed behind the successful play.
+    /// </summary>
+    private AnimationResult ArmLoop(
+        ActorId actor, AnimationSlot slot, ushort timeline, AnimationResult played)
+    {
+        if (slot is not (AnimationSlot.Base or AnimationSlot.UpperBody))
+            return played;
+        var armed = _animation.SetSlotLoop(actor, slot, timeline, true);
+        return armed.Success ? played : armed;
     }
 
     private void Report(AnimationResult result, string what) =>

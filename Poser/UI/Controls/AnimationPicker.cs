@@ -25,8 +25,7 @@ public enum AnimationPickTarget
 public readonly record struct AnimationPick(
     TimelineEntry Entry,
     AnimationPickTarget Target,
-    AnimationSlot Slot,
-    bool PlayImmediately);
+    AnimationSlot Slot);
 
 /// <summary>
 /// The ONE animation picker: an anchored glass popover with search, a kind
@@ -66,7 +65,6 @@ public sealed class AnimationPicker
     /// kind filter — used where the valid set is a known enumeration rather
     /// than a catalog query, such as the speech timelines.</summary>
     private IReadOnlyList<TimelineEntry>? _explicit;
-    private bool _playOnSelect = true;
 
     private static readonly string[] KindLabels = { "All", "Emote", "Action", "Expr", "Raw" };
     private static readonly AnimationKind?[] KindValues =
@@ -152,7 +150,7 @@ public sealed class AnimationPicker
     /// on screen.</summary>
     private static float HeightFor(int resultCount, bool showKinds, bool showWeapon)
     {
-        float chrome = 18f + 32f + (showKinds ? 34f : 0f) + (showWeapon ? 34f : 0f) + 30f + 16f;
+        float chrome = 18f + 32f + (showKinds ? 34f : 0f) + (showWeapon ? 34f : 0f) + 16f;
         int rows = Math.Clamp(resultCount, MinListRows, MaxListRows);
         return chrome + rows * RowHeight;
     }
@@ -255,10 +253,9 @@ public sealed class AnimationPicker
         }
 
         AnimationPick? picked = null;
-        float footer = 30f * s;
         float listHeight = MathF.Max(
             RowHeight * MinListRows * s,
-            (ImGui.GetWindowSize().Y - 16f * s) - (cursor.Y - origin.Y) - footer);
+            (ImGui.GetWindowSize().Y - 16f * s) - (cursor.Y - origin.Y));
 
         ImGui.SetCursorScreenPos(cursor);
         Crystarium.PushScrollbarStyle();
@@ -285,20 +282,13 @@ public sealed class AnimationPicker
                             Width = rowWidth,
                         }))
                 {
-                    picked = new AnimationPick(entry, _target, _slot, _playOnSelect);
+                    picked = new AnimationPick(entry, _target, _slot);
                 }
             }
         }
         ImGui.EndChild();
         ImGui.PopStyleVar();
         Crystarium.PopScrollbarStyle();
-        cursor.Y += listHeight;
-
-        // Footer: the one option that belongs to the act of picking.
-        ImGui.SetCursorScreenPos(cursor + new Vector2(0f, 6f * s));
-        Crystarium.Switch("##anim-pick-play", ref _playOnSelect);
-        ViewText.Label(cursor + new Vector2(46f * s, 8f * s), "Play when selected", 11f,
-            FontWeight.Regular, InspectorLayout.LabelColor);
 
         if (picked != null)
             ImGui.CloseCurrentPopup();

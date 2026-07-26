@@ -57,6 +57,10 @@ public static partial class Crystarium
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(pad, pad));
         ImGui.PushStyleVar(ImGuiStyleVar.PopupRounding, 8f * scale);
         ImGui.PushStyleVar(ImGuiStyleVar.PopupBorderSize, 0f); // trio drawn manually
+        // Spacing is ONLY the explicit 2px gap counted in totalHeight;
+        // ImGui's automatic ItemSpacing would otherwise add per-item
+        // height the calculation cannot see and clip the last row.
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, Vector2.Zero);
         ImGui.PushStyleColor(ImGuiCol.PopupBg, GlassChrome.BackgroundColor);
 
         ImGui.SetNextWindowSize(new Vector2(width, totalHeight));
@@ -137,7 +141,7 @@ public static partial class Crystarium
         }
 
         ImGui.PopStyleColor();
-        ImGui.PopStyleVar(3);
+        ImGui.PopStyleVar(4);
         return clicked;
     }
 }
