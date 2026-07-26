@@ -13,7 +13,8 @@
 | Feature branch | `feature/pbi-007-animation-parity` |
 | Accepted head | Not accepted |
 
-PBI-090 interface polish and PBI-100 Advanced Expression remain deferred.
+PBI-090 interface polish follows this implementation. PBI-100 Advanced
+Expression remains deferred.
 
 ## Outcome
 
