@@ -326,13 +326,13 @@ public class PoseInspectorPane
     /// parent→child radial frame; the frame follows the presentation result
     /// during a drag while applied deltas stay on the frozen baseline.
     /// </summary>
-    public (Vector3 PivotWorld, Quaternion FrameWorld, Quaternion AxisConversion, bool CanEdit) GizmoWorldContext()
+    public (Quaternion FrameWorld, Quaternion AxisConversion, bool CanEdit) GizmoWorldContext()
     {
         var (transform, canEdit) = ReadTransform();
         if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } boneId })
         {
             if (_viewport.GetSkeletonModelMatrix(boneId) is not { } actorMatrix)
-                return (Vector3.Zero, Quaternion.Identity, Quaternion.Identity, false);
+                return (Quaternion.Identity, Quaternion.Identity, false);
             Matrix4x4.Decompose(actorMatrix, out _, out var actorRotation, out _);
 
             Transform model;
@@ -341,14 +341,12 @@ public class PoseInspectorPane
             else if (ViewportBoneModel(boneId) is { } live)
                 model = live;
             else
-                return (Vector3.Zero, Quaternion.Identity, Quaternion.Identity, false);
+                return (Quaternion.Identity, Quaternion.Identity, false);
 
-            var pivotModel = model.Position;
             Quaternion frameWorld;
             if (_editorState.RotationPivot == Core.RotationPivot.Parent &&
                 ViewportParentModel(boneId) is { } parent)
             {
-                pivotModel = parent.Position;
                 frameWorld = Controls.RotationGizmoRings.RadialFrame(
                     Vector3.Transform(parent.Position, actorMatrix),
                     Vector3.Transform(model.Position, actorMatrix));
@@ -362,8 +360,7 @@ public class PoseInspectorPane
                     ? actorRotation
                     : Quaternion.Normalize(actorRotation * model.Rotation);
             }
-            var pivotWorld = Vector3.Transform(pivotModel, actorMatrix);
-            return (pivotWorld, frameWorld, actorRotation, canEdit);
+            return (frameWorld, actorRotation, canEdit);
         }
 
         // Actor selection: the displayed transform IS the world transform,
@@ -371,7 +368,7 @@ public class PoseInspectorPane
         var frame = _editorState.TransformOrientation == TransformOrientation.Global
             ? Quaternion.Identity
             : Quaternion.Normalize(transform.Rotation);
-        return (transform.Position, frame, Quaternion.Identity, canEdit);
+        return (frame, Quaternion.Identity, canEdit);
     }
 
     /// <summary>

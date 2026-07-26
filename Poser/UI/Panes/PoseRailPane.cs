@@ -145,7 +145,7 @@ public class PoseRailPane
         var io = ImGui.GetIO();
         var mouse = ImGui.GetMousePos();
 
-        var (_, frameWorld, axisConversion, canEdit) =
+        var (frameWorld, axisConversion, canEdit) =
             _inspector.GizmoWorldContext();
         if (active && _dragAxis >= 0)
         {

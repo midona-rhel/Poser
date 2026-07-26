@@ -11,10 +11,16 @@
 - Frames (Brio, deliberate): wells edit **model-space** values; gizmo World
   mode manipulates the character's model axes, so well drags match World
   arrows 1:1; Local = the bone's own axes.
-- Rings: one shared module for inspector and world. A drag freezes pivot,
-  frame, axis, and tangent at grab; the tangent is the true positive-rotation
-  direction (epsilon-projected). Ctrl 0.1× / Shift 10× / both 1×. Translate
-  and scale stay on stock ImGuizmo with component constraints (each tool
+- Rings: one shared module for inspector and world, projected
+  **direction-only** (Brio's ImBrio.Gizmo contract): camera ROTATION only —
+  no translation, perspective, FOV, or depth — with one X-mirror handedness
+  decision, so ring shape and pixel radius are screen-stable; only the
+  world gizmo's centre moves (one `WorldToScreen` for the pivot; an
+  unprojectable pivot draws nothing). Orientation still comes from the real
+  frame + camera. A drag freezes pivot, frame, axis, and tangent at grab;
+  the tangent is the true positive-rotation direction (epsilon-rotated
+  direction, same basis). Ctrl 0.1× / Shift 10× / both 1×. Translate and
+  scale stay on stock ImGuizmo with component constraints (each tool
   restores what it does not own).
 - Pivot (Rotate + bone only): Self rotates in place; Parent orbits the frozen
   parent position using the parent→child radial frame. The gizmo draws at the
