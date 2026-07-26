@@ -80,8 +80,20 @@ public sealed class AnimationSession
     /// </summary>
     public bool CommandsSuspended { get; private set; }
 
-    public void SuspendCommands() { CommandsSuspended = true; Changed?.Invoke(); }
-    public void ResumeCommands() { CommandsSuspended = false; Changed?.Invoke(); }
+    public void SuspendCommands()
+    {
+        CommandsSuspended = true;
+        // Armed loops would replay animations into the settling baseline.
+        _port.LoopsSuspended = true;
+        Changed?.Invoke();
+    }
+
+    public void ResumeCommands()
+    {
+        CommandsSuspended = false;
+        _port.LoopsSuspended = false;
+        Changed?.Invoke();
+    }
 
     private AnimationResult? Suspended() => CommandsSuspended
         ? AnimationResult.Fail("A face capture is in progress.")
@@ -105,37 +117,35 @@ public sealed class AnimationSession
     // ── Base and blend ────────────────────────────────────────────────
 
     /// <summary>
-    /// Latches a base animation. The pre-override native state is captured
-    /// on the first call only, so repeated base changes still restore to
-    /// the state Poser found.
+    /// Plays a timeline as "the animation" of the actor: the SAME
+    /// sequencer play as everything else — the references have no base
+    /// latch — recorded so the transport can display and replay the pick.
+    /// Continuity is the loop system, armed separately by the caller.
     /// </summary>
-    public AnimationResult PlayBase(ActorId actor, ushort timeline, bool interrupt)
+    public AnimationResult PlayBase(ActorId actor, ushort timeline)
     {
-        if (Suspended() is { } blocked) return blocked;
-        var current = OverridesFor(actor);
-        var result = _port.ApplyBase(
-            actor, timeline, interrupt, current.BaseCapture, out var captured);
+        var result = Blend(actor, timeline);
         if (!result.Success)
-            return AnimationResult.Fail(result.Detail ?? "Base animation failed.");
-
-        Mutate(actor, o => o with
-        {
-            BaseTimeline = timeline,
-            BaseInterrupt = interrupt,
-            BaseCapture = o.BaseCapture ?? captured,
-        });
+            return result;
+        Mutate(actor, o => o with { BaseTimeline = timeline });
         return AnimationResult.Ok();
     }
 
-    /// <summary>Blend rides the game's sequencer and owns nothing, so it
-    /// records no override and needs no restoration.</summary>
+    /// <summary>
+    /// Plays through the sequencer with the reference's mode handling.
+    /// The port captures mode state before its first Poser-made change;
+    /// that capture is owned here for restoration.
+    /// </summary>
     public AnimationResult Blend(ActorId actor, ushort timeline)
     {
         if (Suspended() is { } blocked) return blocked;
-        var result = _port.Blend(actor, timeline);
-        return result.Success
-            ? AnimationResult.Ok()
-            : AnimationResult.Fail(result.Detail ?? "Blend failed.");
+        var current = OverridesFor(actor);
+        var result = _port.Blend(actor, timeline, current.BaseCapture, out var captured);
+        if (!result.Success)
+            return AnimationResult.Fail(result.Detail ?? "Blend failed.");
+        if (captured is { } taken)
+            Mutate(actor, o => o with { BaseCapture = o.BaseCapture ?? taken });
+        return AnimationResult.Ok();
     }
 
     public AnimationResult PlayEmote(ActorId actor, uint emoteId)
@@ -180,33 +190,46 @@ public sealed class AnimationSession
     /// Force loop is applied last so it wraps whichever route ran.
     /// </summary>
     public AnimationResult PlayEntry(
-        ActorId actor, TimelineEntry entry, bool asBase, bool interrupt,
-        bool playFromStart, bool forceLoop)
+        ActorId actor, TimelineEntry entry, bool asBase, bool playFromStart)
     {
         var timeline = (ushort)entry.TimelineId;
-        AnimationResult result;
-
         if (asBase)
+            return PlayBase(actor, timeline);
+        if (playFromStart && entry.CanPlayFromStart)
         {
-            result = PlayBase(actor, timeline, interrupt);
+            var result = PlayEmote(actor, entry.EmoteId);
+            if (result.Success)
+                return result;
         }
-        else if (playFromStart && entry.CanPlayFromStart)
-        {
-            result = PlayEmote(actor, entry.EmoteId);
-            if (!result.Success)
-                result = Blend(actor, timeline);
-        }
-        else
-        {
-            result = Blend(actor, timeline);
-        }
+        return Blend(actor, timeline);
+    }
 
+    /// <summary>
+    /// Arms or disarms Poser-driven looping for one slot: when the slot
+    /// leaves the armed timeline (the one-shot ended), the port plays it
+    /// again through the proven sequencer call. Owned state — reset
+    /// disarms it; no unproven native field is involved.
+    /// </summary>
+    public AnimationResult SetSlotLoop(ActorId actor, AnimationSlot slot, ushort timeline, bool on)
+    {
+        if (Suspended() is { } blocked) return blocked;
+        if (on && timeline == 0)
+            return AnimationResult.Fail("Nothing to loop on this layer.");
+        var result = on
+            ? _port.SetSlotLoop(actor, slot, timeline)
+            : _port.ClearSlotLoop(actor, slot);
         if (!result.Success)
-            return result;
-
-        return forceLoop && _port.SupportsForceLoop
-            ? SetForceLoop(actor, timeline)
-            : AnimationResult.Ok();
+            return AnimationResult.Fail(result.Detail ?? "Loop failed.");
+        Mutate(actor, o =>
+        {
+            var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
+            if (on)
+                loops[slot] = timeline;
+            else
+                loops.Remove(slot);
+            return o with { LoopedSlots = loops };
+        });
+        return AnimationResult.Ok();
     }
 
     /// <summary>False when the running client does not expose the game's
@@ -330,12 +353,19 @@ public sealed class AnimationSession
         if (capture == null && _port.Read(actor) is { } reading)
             capture = new StanceCapture(reading.Stance, reading.Pose);
 
-        // A latched base animation re-drives its override the moment the
-        // stance transition settles, reverting the pick within a frame.
-        // Choosing a stance IS leaving the animation, so the latch is
-        // released first — Ktisis has no latch to fight, which is why its
-        // pose changes stick.
+        // Choosing a stance IS leaving the animation: armed loops are
+        // disarmed first (or the next tick replays the very animation the
+        // stance just replaced), then any owned base state is released.
         var owned = OverridesFor(actor);
+        if (owned.LoopedSlots.Count > 0)
+        {
+            _port.ClearLoops(actor);
+            Mutate(actor, o => o with
+            {
+                LoopedSlots = new Dictionary<AnimationSlot, ushort>(),
+            });
+            owned = OverridesFor(actor);
+        }
         if (owned.BaseCapture != null || owned.BaseTimeline != null)
         {
             var released = StopBase(actor);
@@ -571,6 +601,7 @@ public sealed class AnimationSession
         {
             if (_physicsOwners.Remove(actor))
                 ReleasePhysicsIfUnowned();
+            _port.ClearLoops(actor);
             return AnimationResult.Ok();
         }
 
@@ -592,6 +623,17 @@ public sealed class AnimationSession
             return false;
         }
 
+        // Loops first: a still-armed loop would replay the animation the
+        // very restore below is removing.
+        if (owned.LoopedSlots.Count > 0)
+        {
+            _port.ClearLoops(actor);
+            remaining = remaining with
+            {
+                LoopedSlots = new Dictionary<AnimationSlot, ushort>(),
+            };
+        }
+
         if (owned.BaseCapture is { } capture && Try(_port.RestoreBase(actor, capture)))
             remaining = remaining with { BaseCapture = null, BaseTimeline = null };
         if (owned.OverallSpeed != null && Try(_port.ClearOverallSpeed(actor)))
@@ -602,10 +644,12 @@ public sealed class AnimationSession
         // resuming mid-timeline from an unpinned frame.
         if (owned.HeldExpression != null)
         {
+            // The release plays pass the existing capture so a reset can
+            // never re-capture state Poser itself produced.
             _port.ClearSlotSpeed(actor, AnimationSlot.Facial);
-            Try(_port.Blend(actor, AnimationTimelines.StraightFace));
+            Try(_port.Blend(actor, AnimationTimelines.StraightFace, remaining.BaseCapture, out _));
             _port.ClearSlotSpeed(actor, AnimationSlot.Facial);
-            Try(_port.Blend(actor, AnimationTimelines.Idle));
+            Try(_port.Blend(actor, AnimationTimelines.Idle, remaining.BaseCapture, out _));
             remaining = remaining with { HeldExpression = null };
             if (remaining.SlotSpeeds.ContainsKey(AnimationSlot.Facial))
             {

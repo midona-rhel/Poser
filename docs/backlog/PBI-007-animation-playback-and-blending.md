@@ -59,11 +59,15 @@ absent rather than failing after selection.
 Support:
 
 - direct timeline-id entry and searchable selection;
-- play as **Base** with optional interrupt and play-from-start;
-- play as **Blend**, using the game's sequencer behavior rather than an
+- play as **Base** — the same sequencer play as everything else, recorded
+  for the transport (as built there is NO base latch: the latch model broke
+  layering and stance picks);
+- play onto any layer through the game's sequencer rather than an
   invented blend-weight system;
 - stop/reset to the exact incoming animation state;
-- force loop, overall pause/resume, and speed `-5..10` with normal `1`;
+- looping (Poser-orchestrated re-play when an armed slot's timeline ends;
+  the game's forced-timeline field is unproven and stays unused), overall
+  pause/resume, and speed `-5..10` with normal `1`;
 - Idle, Sit Ground, Sit Chair, and Sleeping pose families with valid pose
   wrapping; weapon draw/sheath; position lock;
 - facial timeline preview and **Apply to face pose** as one undoable pose edit,

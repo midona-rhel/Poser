@@ -795,7 +795,7 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
             if (_bindings.GetActorId(actor) is { } animActor)
             {
                 _animation.Resume(animActor);
-                _animation.PlayBase(animActor, 253, interrupt: true);
+                _animation.PlayBase(animActor, 253);
             }
             return ApplyCleanTransform(
                 bone,

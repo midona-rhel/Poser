@@ -86,6 +86,8 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     private const uint EmoteModeSitChair = 2;
     private const uint EmoteModeSleeping = 3;
 
+    private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.ActionTimeline>? _timelineSheet;
+
     private readonly nint _physicsAddress;
     private byte[] _physicsOriginal1 = [];
     private byte[] _physicsOriginal2 = [];
@@ -97,9 +99,12 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         IGameInteropProvider hooking,
         IPluginLog log,
         StableBindingRegistry bindings,
-        PosingService posing)
+        PosingService posing,
+        IDataManager data)
     {
         _framework = framework;
+        _timelineSheet = data.GetExcelSheet<Lumina.Excel.Sheets.ActionTimeline>();
+        _framework.Update += EnforceLoops;
         _log = log;
         _bindings = bindings;
         _posing = posing;
@@ -426,8 +431,17 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
 
     // ── Base, blend, loop ─────────────────────────────────────────────
 
-    public AnimationPortResult ApplyBase(
-        ActorId actor, ushort timeline, bool interrupt,
+    /// <summary>
+    /// The reference's play, verbatim (Ktisis AnimationManager.PlayTimeline
+    /// minus its forced-timeline write): a sheet-Pause timeline holds the
+    /// actor by entering EmoteLoop with parameter 0; playing a normal
+    /// timeline while still in that held state first returns the mode to
+    /// Normal, because the held mode otherwise eats the play. A stale
+    /// AnimLock latch (an older Poser build's base model, or Brio) is
+    /// dismantled the same way — it re-drives its own timeline over
+    /// anything played here, which is what made layering impossible.
+    /// </summary>
+    public AnimationPortResult Blend(ActorId actor, ushort timeline,
         BaseAnimationCapture? existing, out BaseAnimationCapture? captured)
     {
         captured = null;
@@ -443,15 +457,34 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
                 character->Timeline.BaseOverride);
         }
 
-        // AnimLock stops the game choosing its own mode-driven timeline;
-        // BaseOverride is the latched timeline it re-drives every frame.
-        character->SetMode(CharacterModes.AnimLock, 0);
-        character->Timeline.BaseOverride = timeline;
-
-        if (interrupt)
-            character->Timeline.TimelineSequencer.PlayTimeline(timeline, null);
-
+        PlayWithMode(character, timeline);
         return AnimationPortResult.Ok();
+    }
+
+    /// <summary>Ktisis' mode dance around a play. Raw field writes, as the
+    /// reference does them; every member is a named ClientStructs symbol.</summary>
+    private void PlayWithMode(Character* character, ushort timeline)
+    {
+        bool pause = _timelineSheet?.GetRowOrDefault(timeline)?.Pause ?? false;
+        if (pause)
+        {
+            character->Mode = CharacterModes.EmoteLoop;
+            character->ModeParam = 0;
+        }
+        else if (character->Mode == CharacterModes.EmoteLoop && character->ModeParam == 0)
+        {
+            character->Mode = CharacterModes.Normal;
+        }
+        else if (character->Mode == CharacterModes.AnimLock)
+        {
+            // Not in Ktisis: our older builds latched AnimLock+BaseOverride
+            // (Brio's base model). The latch re-drives its timeline forever,
+            // so it is dismantled on the way into any new play.
+            character->Mode = CharacterModes.Normal;
+            character->ModeParam = 0;
+            character->Timeline.BaseOverride = 0;
+        }
+        character->Timeline.TimelineSequencer.PlayTimeline(timeline, null);
     }
 
     public AnimationPortResult RestoreBase(ActorId actor, BaseAnimationCapture capture)
@@ -466,17 +499,6 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         // Blend idle so the actor visibly leaves the overridden animation
         // instead of holding its last frame until something else moves it.
         character->Timeline.TimelineSequencer.PlayTimeline(AnimationTimelines.Idle, null);
-        return AnimationPortResult.Ok();
-    }
-
-    public AnimationPortResult Blend(ActorId actor, ushort timeline)
-    {
-        var character = Resolve(actor, out var detail);
-        if (character == null)
-            return AnimationPortResult.Fail(detail!);
-        // The sequencer picks the slot from the timeline row and performs
-        // the engine's own blend. Poser never computes a blend weight.
-        character->Timeline.TimelineSequencer.PlayTimeline(timeline, null);
         return AnimationPortResult.Ok();
     }
 
@@ -533,6 +555,76 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         }
         _playEmote(&character->EmoteController, (nint)emoteId, nint.Zero, nint.Zero);
         return true;
+    }
+
+    // ── Loops ───────────────────────────────────────────
+
+    /// <summary>One armed loop. The cooldown keeps the frame or two of
+    /// play transition from re-firing the play every tick.</summary>
+    private sealed class LoopArm
+    {
+        public ushort Timeline;
+        public int Cooldown;
+    }
+
+    private const int LoopCooldownTicks = 15;
+    private readonly Dictionary<ActorId, Dictionary<int, LoopArm>> _loops = new();
+
+    public bool LoopsSuspended { get; set; }
+
+    public AnimationPortResult SetSlotLoop(ActorId actor, AnimationSlot slot, ushort timeline)
+    {
+        var character = Resolve(actor, out var detail);
+        if (character == null)
+            return AnimationPortResult.Fail(detail!);
+        if (!_loops.TryGetValue(actor, out var slots))
+            _loops[actor] = slots = new Dictionary<int, LoopArm>();
+        slots[(int)slot] = new LoopArm { Timeline = timeline, Cooldown = LoopCooldownTicks };
+        return AnimationPortResult.Ok();
+    }
+
+    public AnimationPortResult ClearSlotLoop(ActorId actor, AnimationSlot slot)
+    {
+        if (_loops.TryGetValue(actor, out var slots))
+        {
+            slots.Remove((int)slot);
+            if (slots.Count == 0)
+                _loops.Remove(actor);
+        }
+        return AnimationPortResult.Ok();
+    }
+
+    public void ClearLoops(ActorId actor) => _loops.Remove(actor);
+
+    /// <summary>
+    /// The loop tick: an armed slot that no longer plays its timeline
+    /// (the one-shot ended; the game swapped its own idle in) gets the
+    /// timeline played again — the same proven call as a user pick. The
+    /// unproven forced-timeline field is never touched.
+    /// </summary>
+    private void EnforceLoops(IFramework framework)
+    {
+        if (LoopsSuspended || _loops.Count == 0)
+            return;
+        foreach (var (actor, slots) in _loops)
+        {
+            var character = Resolve(actor, out _);
+            if (character == null)
+                continue;
+            foreach (var (slot, arm) in slots)
+            {
+                if (arm.Cooldown > 0)
+                {
+                    arm.Cooldown--;
+                    continue;
+                }
+                if (character->Timeline.TimelineSequencer.TimelineIds[slot] != arm.Timeline)
+                {
+                    PlayWithMode(character, arm.Timeline);
+                    arm.Cooldown = LoopCooldownTicks;
+                }
+            }
+        }
     }
 
     public AnimationPortResult SetForceLoop(ActorId actor, ushort timeline) =>
@@ -695,6 +787,18 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         bool preserveOffsets = stance == AnimationStance.SitChair;
         var drawOffset = preserveOffsets ? character->DrawOffset : default;
         var cameraOffset = preserveOffsets ? character->CameraOffset : default;
+
+        // A stale base latch (an older build, or Brio) re-drives its
+        // timeline the moment the transition settles — the stance holds
+        // for one playback and reverts. Dismantle it regardless of what
+        // this session owns; session bookkeeping cannot see a latch that
+        // predates it.
+        if (character->Mode == CharacterModes.AnimLock)
+        {
+            character->Mode = CharacterModes.Normal;
+            character->ModeParam = 0;
+            character->Timeline.BaseOverride = 0;
+        }
 
         _cancelTimeline(&character->Timeline, nint.Zero, nint.Zero);
         _setEmoteMode(&character->EmoteController, emoteMode);
@@ -895,6 +999,8 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
 
     public void Dispose()
     {
+        _framework.Update -= EnforceLoops;
+        _loops.Clear();
         _speedHook?.Dispose();
         _slotSpeedHook?.Dispose();
         _enforcement.Clear();

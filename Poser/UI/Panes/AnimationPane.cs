@@ -40,9 +40,12 @@ public sealed class AnimationPane
     private readonly SceneSession _scene;
 
     // View preferences, deliberately not per-actor. Disclosures start
-    // collapsed and contribute only their header when closed.
+    // collapsed and contribute only their header when closed. Loop
+    // defaults ON — the reference's equivalent does, and it is why its
+    // animations feel continuous.
     private bool _openAdvancedSlots;
     private bool _openAdvancedScrub;
+    private bool _loopBase = true;
 
     private (ActorId Actor, ScrubControlId Control)? _scrub;
     /// <summary>Last animation picked into each layer. A one-shot ends in
@@ -351,6 +354,26 @@ public sealed class AnimationPane
             Report(_animation.SetSpeed(actor, speed), "Speed");
         y += Row * s;
 
+        // Loop: whether the session re-drives the animation when it ends.
+        row = cursor + new Vector2(0f, y);
+        valueX = LabelCell(row, "Loop", s);
+        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y + SwitchY * s));
+        bool loop = _loopBase;
+        if (Crystarium.Switch("##anim-loop-base", ref loop))
+        {
+            _loopBase = loop;
+            // Apply to the CURRENT animation immediately, so the switch is
+            // not a promise about some future pick.
+            if (current != 0)
+                Report(
+                    _animation.SetSlotLoop(actor, AnimationSlot.Base, current, loop),
+                    "Loop");
+        }
+        ViewText.Label(new Vector2(valueX + 56f * s, row.Y + TextY * s),
+            "Play the animation again when it ends", 11f,
+            FontWeight.Regular, InspectorLayout.LabelColor);
+        y += Row * s;
+
         DrawSceneMenu();
         return y;
     }
@@ -421,6 +444,16 @@ public sealed class AnimationPane
         // path already routes to the battle variants when the weapon is
         // drawn.
         var poseFamily = stanceIndex >= 0 ? reading.Stance : AnimationStance.Idle;
+        // The cycler drives the game's stance idles. While a picked
+        // animation plays (or loops) the buttons would fight it, and a
+        // one-pose family has nothing to cycle — enabled buttons that do
+        // nothing are worse than none.
+        var stanceOwned = _animation.OverridesFor(actor);
+        bool poseDisabled = !supportsStance ||
+            AnimationTimelines.PoseCount(poseFamily, reading.WeaponDrawn) <= 1 ||
+            stanceOwned.LoopedSlots.ContainsKey(AnimationSlot.Base) ||
+            (stanceOwned.BaseTimeline is { } basePick &&
+                reading.TimelineFor(AnimationSlot.Base) == basePick);
         float poseX = valueX + (160f + 16f) * s;
         ViewText.Label(new Vector2(poseX, row.Y + TextY * s),
             reading.Pose.ToString(), 12f, FontWeight.Medium,
@@ -431,7 +464,7 @@ public sealed class AnimationPane
                 Id = "anim-pose-prev",
                 Classes = Cls.Compact,
                 Tooltip = "Previous pose (wraps)",
-                Disabled = !supportsStance,
+                Disabled = poseDisabled,
                 Style = new ButtonStyle { Width = Sizing.Fixed(24f), Height = Sizing.Fixed(24f) },
             }))
             Report(
@@ -443,7 +476,7 @@ public sealed class AnimationPane
                 Id = "anim-pose-next",
                 Classes = Cls.Compact,
                 Tooltip = "Next pose (wraps)",
-                Disabled = !supportsStance,
+                Disabled = poseDisabled,
                 Style = new ButtonStyle { Width = Sizing.Fixed(24f), Height = Sizing.Fixed(24f) },
             }))
             Report(
@@ -631,11 +664,16 @@ public sealed class AnimationPane
 
         // The scrub belongs to the layer it scrubs (Ktisis puts it inline
         // in the slot row); only the two body layers have a reliably
-        // friendly Havok control.
-        if (slot is AnimationSlot.Base or AnimationSlot.UpperBody &&
-            _animation.FindSlotControl(actor, slot) is { } control)
+        // friendly Havok control. The row is ALWAYS there — a slider that
+        // vanishes whenever nothing plays takes the loop switch with it.
+        if (slot is AnimationSlot.Base or AnimationSlot.UpperBody)
+        {
+            var control = _animation.FindSlotControl(actor, slot)
+                ?? new ScrubControlReading(
+                    new ScrubControlId(-1, (int)slot), 0f, 0f, 0f);
             used += DrawScrubRow(actor, reading, cursor, width, s, y + used,
-                "Time", control);
+                "Time", control, slot, timeline);
+        }
         return used;
     }
 
@@ -667,33 +705,56 @@ public sealed class AnimationPane
     private float DrawScrubRow(
         ActorId actor, ActorAnimationReading reading,
         Vector2 cursor, float width, float s, float y,
-        string label, ScrubControlReading control)
+        string label, ScrubControlReading control,
+        AnimationSlot? loopSlot = null, ushort loopTimeline = 0)
     {
         var row = cursor + new Vector2(0f, y);
         float valueX = LabelCell(row, label, s);
         float time = control.Time;
+        bool scrubbable = control.Duration > 0f;
         float duration = MathF.Max(control.Duration, 0.0001f);
 
         // Fixed readout slot, text right-aligned inside it by measure, so
         // the slider's width does not jitter with the digit count.
         const float readoutSlot = 80f;
+        float loopWidth = loopSlot != null ? 44f : 0f;
         string readout = $"{control.Time:0.00}/{control.Duration:0.00}";
         float readoutWidth = ViewText.Measure(readout, 11f, mono: true);
         ViewText.Label(
             new Vector2(row.X + width - readoutWidth, row.Y + TextY * s),
             readout, 11f, FontWeight.Regular, InspectorLayout.HintColor, mono: true);
 
+        // The layer's loop switch lives with its time, between slider and
+        // readout; raw Havok rows have no slot to loop.
+        if (loopSlot is { } armedSlot)
+        {
+            bool looped = _animation.OverridesFor(actor)
+                .LoopedSlots.ContainsKey(armedSlot);
+            ImGui.SetCursorScreenPos(new Vector2(
+                row.X + width - (readoutSlot + loopWidth) * s,
+                row.Y + SwitchY * s));
+            if (Crystarium.Switch($"##anim-loop-{(int)armedSlot}", ref looped))
+                Report(
+                    _animation.SetSlotLoop(actor, armedSlot, loopTimeline, looped),
+                    "Loop");
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Play this layer's animation again when it ends");
+        }
+
         ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y + SliderY * s));
         bool changed = Crystarium.Slider(
             $"##anim-scrub-{control.Id.Partial}-{control.Id.Control}",
             ref time, 0f, duration, new SliderProps
             {
+                Disabled = !scrubbable,
                 Style = new SliderStyle
                 {
                     Width = Sizing.Fixed(MathF.Max(
-                        80f, width / s - LabelColumn - readoutSlot - Gap)),
+                        80f, width / s - LabelColumn - readoutSlot - loopWidth - Gap)),
                 },
             });
+        if (!scrubbable)
+            changed = false;
 
         // The drag owns the freeze for its length and releases the actor
         // paused on the frame it landed on.
@@ -815,18 +876,24 @@ public sealed class AnimationPane
         switch (pick.Target)
         {
             case AnimationPickTarget.Base:
-                // Interrupt and play-from-start are Ktisis' defaults; the
-                // picker's play-on-select is the one option with UI.
-                Report(
-                    _animation.PlayEntry(actor, pick.Entry, asBase: true,
-                        interrupt: pick.PlayImmediately,
-                        playFromStart: true, forceLoop: false),
-                    pick.Entry.Name);
+            {
+                // The pick plays through the sequencer like everything
+                // else (the references have no base latch); Loop decides
+                // whether the session re-drives it when it ends.
+                var played = _animation.PlayEntry(actor, pick.Entry,
+                    asBase: true, playFromStart: true);
+                if (played.Success)
+                    _animation.SetSlotLoop(actor, pick.Entry.Slot, timeline, _loopBase);
+                Report(played, pick.Entry.Name);
                 break;
+            }
             case AnimationPickTarget.Slot:
                 // The generic play: the timeline's own slot tag routes it
-                // onto its layer -- the references never write a slot.
+                // onto its layer -- the references never write a slot. An
+                // armed loop follows the new pick.
                 _layerPicks[(actor, pick.Slot)] = timeline;
+                if (_animation.OverridesFor(actor).LoopedSlots.ContainsKey(pick.Slot))
+                    _animation.SetSlotLoop(actor, pick.Slot, timeline, true);
                 Report(_animation.Blend(actor, timeline),
                     AnimationSlots.DisplayName(pick.Slot));
                 break;

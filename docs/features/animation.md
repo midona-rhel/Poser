@@ -21,9 +21,15 @@
 - Speed is enforced, not written once: the game recalculates every frame, so
   the overall detour stomps its result and the slot detour substitutes the
   argument. Range −5..10, normal 1; reset drops the override.
-- Every play is the game's sequencer (`PlayTimeline`) — no blend weight, and
-  no slot writes: the timeline's own sheet `Stance` routes it onto its layer.
-  Base latches `BaseOverride` + AnimLock. "Combining animations" is per-slot
+- Every play is the game's sequencer (`PlayTimeline`) — no blend weight, no
+  slot writes (the timeline's own sheet `Stance` routes it onto its layer),
+  and NO base latch: Brio's AnimLock+BaseOverride model re-drove its
+  timeline over everything, which made layering an upper-body one-shot onto
+  a running full-body impossible and fought every stance pick. Playback is
+  Ktisis' model instead — each play runs the mode dance (a sheet-Pause
+  timeline holds the actor via EmoteLoop with parameter 0; a normal play
+  first leaves a held or stale-latched mode) and stale AnimLock latches are
+  dismantled on the way in. "Combining animations" is per-slot
   layering (a full-body base and an upper-body one-shot run simultaneously);
   holding one body part is that layer's speed pinned at 0 — the only mixing
   primitive that exists in either reference. An expression HOLDS via Brio's
@@ -38,10 +44,15 @@
   frame otherwise, silently reverting the stance. Weapon
   plays the draw/sheathe timeline **and** sets the weapon-state flag, which the
   game does not update for a forced timeline.
-- **Force loop is not implemented.** The game's forced-timeline field is not
-  mapped for the current client and could not be proven; approximating it with
-  `BaseOverride` would collapse Blend into Base. `SupportsForceLoop` is false,
-  the call fails explicitly, and no control is offered.
+- **The game's forced-timeline field stays unused** (unproven for the
+  current client; `SupportsForceLoop` is false and the native call fails
+  explicitly). Looping is ORCHESTRATED instead: an armed slot whose
+  timeline leaves (the one-shot ended, the game swapped its own idle in)
+  gets the timeline played again through the same proven sequencer call,
+  on the framework tick with a short cooldown. The transport's Loop switch
+  (default ON, as the reference's) arms the picked animation; each body
+  layer's Time row has its own loop switch. Loops are owned state: reset,
+  stance picks, and the facial bake's suspension all disarm or pause them.
 - Catalog (Emote / Action / Expression / Raw) admits an entry only with a
   name, non-zero timeline, and known slot, so nothing fails after selection.
   Search matches name or a bare id; kind and slot filters compose.
@@ -64,10 +75,14 @@
   Idle reachable from a weapon-drawn actor; the pose cycler (number, −/+)
   sits on the same row. Layer rows remember the last pick: a finished
   one-shot swaps Pause for Replay instead of collapsing back to
-  "Add layer…" — continuity beyond that is force loop, which stays
-  withdrawn (the field is unproven for the current client). Speed controls are scrubbers
+  "Add layer…", and continuity is the loop system — the transport Loop
+  switch plus per-layer loop switches on the Time rows, which are ALWAYS
+  present (disabled when nothing plays) so the switches do not vanish
+  with the animation. Speed controls are scrubbers
   with a live readout: overall −5..10 with 0 and 1 notched, per-layer 0..2
-  with 1 notched. Parts/Overlay and arbitrary Havok controls live
+  with 1 notched. The pose cycler disables itself while a picked
+  animation plays or the family has a single pose. Parts/Overlay and
+  arbitrary Havok controls live
   under collapsed Advanced disclosures — empty engine slots are not the
   interface.
 - Slots are the game's indices; 4–6 are absent from the enum, not filtered.

@@ -35,23 +35,35 @@ public interface IAnimationRuntimePort
 
     // ── Base and blend ────────────────────────────────────────────────
     /// <summary>
-    /// Latches <paramref name="timeline"/> as the actor's base animation.
-    /// When <paramref name="capture"/> is supplied it is NOT re-captured —
-    /// the first capture is the restore point for the whole session.
-    /// Returns the capture taken, if this call took one.
+    /// Plays a timeline through the game's own sequencer with the
+    /// reference's mode handling: a sheet-Pause timeline holds the actor
+    /// (EmoteLoop with parameter 0), and a normal play first leaves a
+    /// held or stale-latched mode, which otherwise eats the play. The
+    /// timeline row picks its own slot; there is no blend weight
+    /// anywhere. When <paramref name="existing"/> is null the pre-play
+    /// mode state is captured and returned for restoration.
     /// </summary>
-    AnimationPortResult ApplyBase(
-        ActorId actor, ushort timeline, bool interrupt,
+    AnimationPortResult Blend(ActorId actor, ushort timeline,
         BaseAnimationCapture? existing, out BaseAnimationCapture? captured);
 
-    /// <summary>Puts mode, mode parameter, and base timeline back exactly
-    /// as captured, then blends idle so the change is visible.</summary>
+    /// <summary>Puts mode, mode parameter, and the base-override field
+    /// back exactly as captured, then blends idle so the change is
+    /// visible.</summary>
     AnimationPortResult RestoreBase(ActorId actor, BaseAnimationCapture capture);
 
-    /// <summary>Plays a timeline through the game's own sequencer, which
-    /// picks the slot and does the engine's blend. There is no blend
-    /// weight or percentage anywhere — the sequencer owns blending.</summary>
-    AnimationPortResult Blend(ActorId actor, ushort timeline);
+    // ── Loops ───────────────────────────────────────────
+    /// <summary>Arms Poser-driven looping for one slot: whenever the slot
+    /// leaves this timeline (the one-shot ended and the game swapped its
+    /// own idle in), the timeline is played again through the same proven
+    /// sequencer call. The game's forced-timeline field stays unused — it
+    /// is unproven for this client.</summary>
+    AnimationPortResult SetSlotLoop(ActorId actor, AnimationSlot slot, ushort timeline);
+    AnimationPortResult ClearSlotLoop(ActorId actor, AnimationSlot slot);
+    /// <summary>Drops every armed loop for the actor. No native writes.</summary>
+    void ClearLoops(ActorId actor);
+    /// <summary>Pauses loop enforcement while a multi-phase operation
+    /// (facial bake) needs the actor to hold still.</summary>
+    bool LoopsSuspended { get; set; }
 
     /// <summary>Plays an emote through the game's emote entry point, which
     /// is the only way to get intro-then-loop playback.</summary>

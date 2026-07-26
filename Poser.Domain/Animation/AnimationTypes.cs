@@ -225,9 +225,13 @@ public readonly record struct StanceCapture(AnimationStance Stance, int Pose);
 public sealed record AnimationOverrides
 {
     public ushort? BaseTimeline { get; init; }
-    public bool BaseInterrupt { get; init; } = true;
-    public bool PlayFromStart { get; init; } = true;
     public float? OverallSpeed { get; init; }
+    /// <summary>Slots Poser keeps re-driving: when the slot leaves the
+    /// armed timeline (the one-shot ended and the game swapped its own
+    /// idle in), the port plays it again. Poser-orchestrated — the game's
+    /// forced-timeline field is unproven for this client.</summary>
+    public IReadOnlyDictionary<AnimationSlot, ushort> LoopedSlots { get; init; } =
+        new Dictionary<AnimationSlot, ushort>();
     public IReadOnlyDictionary<AnimationSlot, float> SlotSpeeds { get; init; } =
         new Dictionary<AnimationSlot, float>();
     public ushort? Lips { get; init; }
@@ -239,8 +243,10 @@ public sealed record AnimationOverrides
     // repeated changes so restore always targets the state Poser found,
     // not an intermediate one it created.
 
-    /// <summary>Mode, mode parameter, and base timeline before the first
-    /// base override.</summary>
+    /// <summary>Mode, mode parameter, and base-override field before the
+    /// first Poser play. Every play may adjust the character mode (the
+    /// reference's Pause-timeline hold), so the capture belongs to the
+    /// first play of ANY kind, not just a transport pick.</summary>
     public BaseAnimationCapture? BaseCapture { get; init; }
     /// <summary>The expression currently HELD on the face: blended onto
     /// the facial layer and pinned there by that layer's speed at 0 --
@@ -262,6 +268,7 @@ public sealed record AnimationOverrides
     public bool HasAny =>
         BaseCapture != null || LipsCapture != null || OverallSpeed != null ||
         PositionLock || SlotSpeeds.Count > 0 || HeldExpression != null ||
+        LoopedSlots.Count > 0 ||
         StanceCaptureValue != null || WeaponCapture != null;
 
     public bool IsPaused => OverallSpeed is 0f;
