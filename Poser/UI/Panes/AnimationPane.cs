@@ -315,8 +315,10 @@ public sealed class AnimationPane
         if (ValueButton(valueX, row.Y, trailingX, s,
                 NameFor(current, "Choose…"), "anim-choose-base",
                 "Choose the animation this actor plays"))
+            // Restricted to full-body timelines: the transport row is the
+            // base layer's control, and every other slot has its own row.
             _picker.Open(AnimationPickTarget.Base, AnimationSlot.Base,
-                restrictToSlot: null, caption: "Animation");
+                restrictToSlot: AnimationSlot.Base, caption: "Animation");
         y += Row * s;
 
         // Speed row: slider fills to the trailing 1× reset and the

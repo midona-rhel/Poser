@@ -85,11 +85,23 @@ public sealed class CleanSceneLifecycle : IDisposable
         // to block the restoration. Disposal must not throw.
         try
         {
-            _framework.RunOnFrameworkThread(() =>
+            if (_framework.IsInFrameworkUpdateThread)
             {
+                // Dalamud disposes plugins on the framework thread; run
+                // inline. No timed wait exists anywhere on this path, so
+                // the restore can never be abandoned half-queued and then
+                // run against disposed services.
                 _animation.ResumeCommands();
                 _animation.ResetAll();
-            }).Wait(TimeSpan.FromSeconds(2));
+            }
+            else
+            {
+                _framework.RunOnFrameworkThread(() =>
+                {
+                    _animation.ResumeCommands();
+                    _animation.ResetAll();
+                }).Wait();
+            }
         }
         catch
         {
