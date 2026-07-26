@@ -55,7 +55,8 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
 
     public TransformPortResult ApplyAbsolute(
         TransformTargetState baseline,
-        DomainTransform desired)
+        DomainTransform desired,
+        bool rawBaseline = false)
     {
         if (!OnFrameworkThread())
             return FrameworkThreadFailure();
@@ -95,10 +96,15 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
                 _bones.RestorePoseStacks(
                     bone,
                     ToLegacyLayers(baseline.Pose));
+                // The raw basis is read from the LIVE bone at apply time:
+                // the facial bake applies its captured absolutes against
+                // the settled LastRawTransform, exactly as a pose file
+                // loads. The captured baseline transform (LastTransform)
+                // diverges on face partials.
                 _bones.ApplyTransform(
                     bone,
                     ToLegacy(desired),
-                    ToLegacy(baseline.Transform));
+                    rawBaseline ? bone.LastRawTransform : ToLegacy(baseline.Transform));
             }
             finally
             {

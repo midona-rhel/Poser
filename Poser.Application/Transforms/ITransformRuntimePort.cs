@@ -50,9 +50,17 @@ public interface ITransformRuntimePort
 {
     TransformPortResult Capture(TransformTargetId target);
 
+    /// <summary>
+    /// Applies an absolute value. For bones the application basis is the
+    /// captured baseline transform; <paramref name="rawBaseline"/> uses
+    /// the bone's CURRENT LastRawTransform instead — the pre-reparent
+    /// absolute a pose file stores, which diverges from LastTransform on
+    /// face partials. The facial bake requires the raw basis.
+    /// </summary>
     TransformPortResult ApplyAbsolute(
         TransformTargetState baseline,
-        PoseTransform desired);
+        PoseTransform desired,
+        bool rawBaseline = false);
 
     TransformPortResult Restore(TransformTargetState state);
 }

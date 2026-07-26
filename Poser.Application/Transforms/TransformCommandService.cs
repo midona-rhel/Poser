@@ -71,7 +71,8 @@ public sealed class TransformCommandService
     /// </summary>
     public GestureResult SetAbsoluteMany(
         IReadOnlyList<(TransformTargetId Target, PoseTransform Desired)> writes,
-        string description)
+        string description,
+        bool rawBaseline = false)
     {
         if (_gestures.ActiveGesture != null)
             return GestureResult.Fail("A transform gesture is active.");
@@ -89,7 +90,7 @@ public sealed class TransformCommandService
 
         for (int i = 0; i < writes.Count; i++)
         {
-            var applied = _runtime.ApplyAbsolute(before[i], writes[i].Desired);
+            var applied = _runtime.ApplyAbsolute(before[i], writes[i].Desired, rawBaseline);
             if (applied.Success)
                 continue;
             RestoreAll(before);

@@ -204,8 +204,12 @@ public sealed class FacialPoseCapture : IDisposable
                     new Poser.Domain.Transforms.PoseTransform(
                         captured.Position, captured.Rotation, captured.Scale)));
 
+            // rawBaseline: the application basis is each bone's CURRENT
+            // LastRawTransform — the settled, preview-free face — exactly
+            // as a pose file loads. The default captured baseline is
+            // LastTransform, which diverges on face partials.
             var applied = _transforms.SetAbsoluteMany(
-                writes, "Apply facial animation to pose");
+                writes, "Apply facial animation to pose", rawBaseline: true);
             if (!applied.Success)
                 _log.Warning($"Face capture abandoned: {applied.Detail}");
         }
@@ -224,10 +228,12 @@ public sealed class FacialPoseCapture : IDisposable
     /// the game.</summary>
     private void RestoreSpeed(ActorId actor, float? priorSpeed)
     {
-        if (priorSpeed is { } speed)
-            _animation.SetSpeed(actor, speed);
-        else
-            _animation.ClearSpeed(actor);
+        var restored = priorSpeed is { } speed
+            ? _animation.SetSpeed(actor, speed)
+            : _animation.ClearSpeed(actor);
+        if (!restored.Success)
+            _log.Warning(
+                $"Face bake could not restore playback speed: {restored.Detail}");
     }
 
     /// <summary>
