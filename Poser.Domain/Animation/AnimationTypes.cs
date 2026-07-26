@@ -32,16 +32,21 @@ public enum AnimationKind
 }
 
 /// <summary>
-/// Pose families. Values ARE the game's pose-mode byte (Battle = 1 is
-/// deliberately excluded — it is reached through weapon state, not the
-/// stance selector).
+/// Pose families. Values ARE the game's pose-mode byte. Only the four
+/// selectable families appear in the stance picker; the rest exist so a
+/// read-back can report the TRUE state (a weapon-drawn actor is "Battle",
+/// not a lie of "Idle") — they are reached through weapon or gear state,
+/// never selected directly.
 /// </summary>
 public enum AnimationStance
 {
     Idle = 0,
+    WeaponDrawn = 1,
     SitChair = 2,
     SitGround = 3,
     Sleeping = 4,
+    Umbrella = 5,
+    Accessory = 6,
 }
 
 public static class AnimationSlots

@@ -284,12 +284,18 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         }
 
         var controls = CollectControls(character, out var token);
+        // The RAW pose family: collapsing WeaponDrawn/Umbrella/Accessory to
+        // Idle made the UI lie about the current state, which in turn made
+        // Idle unreachable (re-selecting what the control already showed).
         var poseType = character->EmoteController.CurrentPoseType;
         var stance = poseType switch
         {
+            EmoteController.PoseType.WeaponDrawn => AnimationStance.WeaponDrawn,
             EmoteController.PoseType.Sit => AnimationStance.SitChair,
             EmoteController.PoseType.GroundSit => AnimationStance.SitGround,
             EmoteController.PoseType.Doze => AnimationStance.Sleeping,
+            EmoteController.PoseType.Umbrella => AnimationStance.Umbrella,
+            EmoteController.PoseType.Accessory => AnimationStance.Accessory,
             _ => AnimationStance.Idle,
         };
 
@@ -535,6 +541,8 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             "mapped for this client version.");
 
     public bool SupportsForceLoop => false;
+
+    public bool SupportsStance => _setEmoteMode != null && _cancelTimeline != null;
 
     // ── Speed ─────────────────────────────────────────────────────────
 

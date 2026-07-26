@@ -77,6 +77,20 @@ public sealed class AnimationPane
     };
 
     private static readonly string[] StanceLabels = { "Idle", "Chair", "Ground", "Sleep" };
+
+    /// <summary>Display name for EVERY readable family, including the ones
+    /// the picker does not offer — the pill must tell the truth about a
+    /// weapon-drawn or umbrella state instead of claiming "Idle".</summary>
+    private static string StanceName(AnimationStance stance) => stance switch
+    {
+        AnimationStance.Idle => "Idle",
+        AnimationStance.WeaponDrawn => "Battle",
+        AnimationStance.SitChair => "Chair",
+        AnimationStance.SitGround => "Ground",
+        AnimationStance.Sleeping => "Sleep",
+        AnimationStance.Umbrella => "Umbrella",
+        _ => "Accessory",
+    };
     private static readonly AnimationStance[] StanceValues =
     {
         AnimationStance.Idle, AnimationStance.SitChair,
@@ -361,22 +375,40 @@ public sealed class AnimationPane
     {
         float y = Caption(cursor, "STANCE", s);
 
+        // Ktisis' combo, not a segmented pill: the trigger shows the TRUE
+        // family (which may be "Battle" — not in the list), and re-picking
+        // the shown entry still fires, which is what makes Idle reachable
+        // from a weapon-drawn state.
+        bool supportsStance = _animation.SupportsStance;
         int stanceIndex = Array.IndexOf(StanceValues, reading.Stance);
-        if (stanceIndex < 0)
-            stanceIndex = 0;
         var row = cursor + new Vector2(0f, y);
         float valueX = LabelCell(row, "Stance", s);
-        // The pill is exactly row height and its first tab LABEL sits on
-        // the value column — the dark chrome is decoration, not padding,
-        // same as the inspector's surface pill.
-        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y));
-        if (Crystarium.SegmentedControl("##anim-stance", StanceLabels, ref stanceIndex,
-                maxWidth: MathF.Min(240f, width / s - LabelColumn),
-                alignFirstTabToCursor: true))
-            Report(_animation.SetStance(actor, StanceValues[stanceIndex], 0), "Stance");
+        ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y + 2f * s));
+        int picked = stanceIndex;
+        if (Crystarium.Dropdown("##anim-stance", StanceLabels, ref picked,
+                new DropdownProps
+                {
+                    PreviewText = StanceName(reading.Stance),
+                    ReselectFires = true,
+                    Disabled = !supportsStance,
+                    Tooltip = supportsStance
+                        ? "Pose family — picking one returns the actor to it"
+                        : "Stance changes are unavailable: a required game function was not found",
+                    Style = new DropdownStyle { Width = Sizing.Fixed(160f) },
+                }))
+        {
+            // A family CHANGE starts at pose 0; re-picking the current
+            // family keeps the pose (Ktisis' behavior for both).
+            int pose = StanceValues[picked] == reading.Stance ? reading.Pose : 0;
+            Report(_animation.SetStance(actor, StanceValues[picked], pose), "Stance");
+        }
         y += Row * s;
 
         // Pose stepper: previous / number / next, both directions wrapping.
+        // Non-selectable families (Battle, Umbrella…) step through Idle,
+        // whose native path already routes to the battle variants when the
+        // weapon is drawn.
+        var poseFamily = stanceIndex >= 0 ? reading.Stance : AnimationStance.Idle;
         row = cursor + new Vector2(0f, y);
         valueX = LabelCell(row, "Pose", s);
         ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y + ButtonY * s));
@@ -386,10 +418,11 @@ public sealed class AnimationPane
                 Classes = Cls.Compact,
                 Tooltip = "Previous pose (wraps)",
                 FlipX = true,
+                Disabled = !supportsStance,
                 Style = new ButtonStyle { Width = Sizing.Fixed(24f), Height = Sizing.Fixed(24f) },
             }))
             Report(
-                _animation.SetStance(actor, StanceValues[stanceIndex], reading.Pose - 1),
+                _animation.SetStance(actor, poseFamily, reading.Pose - 1),
                 "Pose");
         float numberX = valueX + (24f + Gap) * s;
         ViewText.Label(new Vector2(numberX, row.Y + TextY * s),
@@ -401,10 +434,11 @@ public sealed class AnimationPane
                 Id = "anim-pose-next",
                 Classes = Cls.Compact,
                 Tooltip = "Next pose (wraps)",
+                Disabled = !supportsStance,
                 Style = new ButtonStyle { Width = Sizing.Fixed(24f), Height = Sizing.Fixed(24f) },
             }))
             Report(
-                _animation.SetStance(actor, StanceValues[stanceIndex], reading.Pose + 1),
+                _animation.SetStance(actor, poseFamily, reading.Pose + 1),
                 "Pose");
         y += Row * s;
 

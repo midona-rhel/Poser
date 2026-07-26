@@ -66,6 +66,11 @@ public interface IAnimationRuntimePort
     /// </summary>
     bool SupportsForceLoop { get; }
 
+    /// <summary>False when the stance-transition functions (SetEmoteMode /
+    /// CancelTimeline) were not found in the running client; surfaces
+    /// disable the stance row rather than offer writes that will fail.</summary>
+    bool SupportsStance { get; }
+
     /// <summary>Writes the forced timeline id the game re-asserts every
     /// frame; 0 clears the loop.</summary>
     AnimationPortResult SetForceLoop(ActorId actor, ushort timeline);

@@ -224,6 +224,10 @@ public sealed class AnimationSession
     /// one that cannot work.</summary>
     public bool SupportsForceLoop => _port.SupportsForceLoop;
 
+    /// <summary>False when the client's stance-transition functions were
+    /// not found; the stance controls render disabled.</summary>
+    public bool SupportsStance => _port.SupportsStance;
+
     /// <summary>
     /// Forces a timeline to repeat. Owns no state: on every client where
     /// <see cref="SupportsForceLoop"/> is false this cannot take effect,

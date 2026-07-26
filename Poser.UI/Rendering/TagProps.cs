@@ -84,6 +84,16 @@ public record struct DropdownProps
     public Action<int>? OnChange;
     public string? Tooltip;
     public bool Disabled;
+    /// <summary>Overrides the pill's text. Lets the trigger show the TRUE
+    /// current state even when it is not one of the offered items (a
+    /// stance combo showing "Battle" over an Idle/Chair/Ground/Sleep
+    /// list, as Ktisis does).</summary>
+    public string? PreviewText;
+    /// <summary>When true, clicking the already-selected item still
+    /// reports a change. Required wherever the list is a set of ACTIONS
+    /// against live state: re-picking what the pill shows must fire, or
+    /// that entry is unreachable from a drifted external state.</summary>
+    public bool ReselectFires;
 }
 
 public record struct TextInputProps

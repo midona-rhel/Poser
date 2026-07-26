@@ -11,12 +11,14 @@ namespace Poser.UI;
 public static partial class Crystarium
 {
     public static bool Dropdown(string id, string[] items, ref int selected)
-        => DropdownCore(id, items, ref selected, default, null, false, null, null);
+        => DropdownCore(id, items, ref selected, default, null, false, null, null, null, false);
     public static bool Dropdown(string id, string[] items, ref int selected, in DropdownProps props)
-        => DropdownCore(id, items, ref selected, props.Classes, props.Tooltip, props.Disabled, props.OnChange, props.Style);
+        => DropdownCore(id, items, ref selected, props.Classes, props.Tooltip, props.Disabled, props.OnChange, props.Style,
+            props.PreviewText, props.ReselectFires);
 
     private static bool DropdownCore(string id, string[] items, ref int selected,
-        StyleClassSet classes, string? tooltip, bool disabled, Action<int>? onChange, DropdownStyle? inline)
+        StyleClassSet classes, string? tooltip, bool disabled, Action<int>? onChange, DropdownStyle? inline,
+        string? previewText, bool reselectFires)
     {
         Stylesheet.EnsureInitialized();
         if (items.Length == 0) return false;
@@ -84,7 +86,8 @@ public static partial class Crystarium
         bool fontPushed = fontHandle is { Available: true };
         if (fontPushed) fontHandle!.Push();
 
-        string currentText = (selected >= 0 && selected < items.Length) ? items[selected] : "";
+        string currentText = previewText ??
+            ((selected >= 0 && selected < items.Length) ? items[selected] : "");
         float textPadding = padLeft;
         float textAvail = totalWidth - padLeft - gap - chevronSlot - padRight;
         string display = TruncateText(currentText, textAvail);
@@ -194,7 +197,10 @@ public static partial class Crystarium
                     ImGui.PushID(i);
                     if (ImGui.InvisibleButton("##item", itemSize))
                     {
-                        if (selected != i) { selected = i; changed = true; onChange?.Invoke(i); }
+                        if (selected != i || reselectFires)
+                        {
+                            selected = i; changed = true; onChange?.Invoke(i);
+                        }
                         ImGui.CloseCurrentPopup();
                     }
                     bool itemHovered = ImGui.IsItemHovered();
