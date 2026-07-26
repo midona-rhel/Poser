@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
+using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Utility;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
@@ -44,6 +45,10 @@ public sealed class AnimationPane
     private readonly Game.Animation.FacialPoseCapture _facialCapture;
     private readonly SceneSession _scene;
     private readonly ITextureProvider _textures;
+
+    // Icon ids the game could not supply. Negative results only — the
+    // texture wrap itself is re-resolved every frame.
+    private readonly HashSet<uint> _missingIcons = new();
 
     // Local, deliberately not per-actor: disclosure is a view preference.
     private readonly Dictionary<AnimationSlot, bool> _slotOpen = new();
@@ -209,6 +214,40 @@ public sealed class AnimationPane
         ImGui.PopStyleVar();
     }
 
+    /// <summary>
+    /// Resolves a catalog row's game icon, or null when there is none.
+    ///
+    /// Sheet icon ids are not guaranteed to exist: several Emote rows
+    /// carry ids the game cannot supply (246325 among them), and
+    /// GetFromGameIcon THROWS IconNotFoundException for those — a
+    /// non-zero id is not proof the icon resolves. The try-variant is the
+    /// documented non-throwing path, and the catch is deliberate belt and
+    /// braces around a provider that has already thrown once from inside.
+    ///
+    /// Ids that fail are remembered so a bad row costs one attempt rather
+    /// than one per frame — this list draws hundreds of rows, so an
+    /// exception per row per frame is a frame-rate cliff, not just noise.
+    /// The WRAP is never cached: Dalamud's shared textures must be
+    /// re-resolved each frame, which is the lesson from the spawn-browser
+    /// texture-lifetime crash.
+    /// </summary>
+    private IDalamudTextureWrap? ResolveIcon(uint iconId)
+    {
+        if (iconId == 0 || _missingIcons.Contains(iconId))
+            return null;
+        try
+        {
+            if (_textures.TryGetFromGameIcon(new GameIconLookup(iconId), out var shared))
+                return shared.GetWrapOrDefault();
+            _missingIcons.Add(iconId);
+        }
+        catch (Exception)
+        {
+            _missingIcons.Add(iconId);
+        }
+        return null;
+    }
+
     private static int IndexOfSlot(AnimationSlot slot)
     {
         for (int i = 0; i < AnimationSlots.All.Count; i++)
@@ -250,16 +289,14 @@ public sealed class AnimationPane
 
             float iconSize = 18f * s;
             var iconPos = rowMin + new Vector2(2f * s, (rowH - iconSize) / 2f);
-            if (entry.Icon != 0 &&
-                _textures.GetFromGameIcon(new GameIconLookup(entry.Icon))
-                    .GetWrapOrDefault() is { } wrap)
+            if (ResolveIcon(entry.Icon) is { } wrap)
             {
                 dl.AddImage(wrap.Handle, iconPos, iconPos + new Vector2(iconSize, iconSize));
             }
             else
             {
-                // Raw timelines carry no icon; a neutral glyph keeps the
-                // name column aligned instead of ragged.
+                // No icon, or one the game cannot supply; a neutral glyph
+                // keeps the name column aligned instead of ragged.
                 dl.AddCircle(iconPos + new Vector2(iconSize / 2f, iconSize / 2f),
                     iconSize * 0.3f,
                     ImGui.ColorConvertFloat4ToU32(InspectorLayout.HintColor),
