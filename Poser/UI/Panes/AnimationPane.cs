@@ -52,6 +52,9 @@ public sealed class AnimationPane
     private string _status = string.Empty;
 
     // One grid for every row in the pane.
+    /// <summary>Vertical breathing room above and below the page, matching
+    /// the shell's horizontal content inset.</summary>
+    private const float ContentPadding = 12f;
     private const float Row = 26f;
     private const float RowGap = 4f;
     private const float LabelColumn = 92f;
@@ -149,7 +152,12 @@ public sealed class AnimationPane
         // and it is the thing that reserves the gutter. Opening a child
         // inside the already-inset content would put this page's scrollbar
         // over its own trailing actions.
-        ImGui.SetCursorScreenPos(origin);
+        //
+        // The shell insets content 12px HORIZONTALLY only — its vertical
+        // gap is 4px at the top and nothing at the bottom — so the page
+        // supplies its own vertical padding to match, the same 12px the
+        // rail uses above and below its content.
+        ImGui.SetCursorScreenPos(origin + new Vector2(0f, ContentPadding * s));
         DrawPage(actor, reading, owned, width, s);
 
         // The picker is a popup and so is unaffected by the shell's scroll.
@@ -182,9 +190,11 @@ public sealed class AnimationPane
             y += (Row + RowGap) * s;
         }
 
-        // Register the content extent so the page can scroll to it.
+        // Register the content extent, including the trailing padding, so
+        // scrolling to the bottom leaves the last row clear of the edge
+        // rather than flush against it.
         ImGui.SetCursorScreenPos(origin);
-        ImGui.Dummy(new Vector2(width, y - origin.Y));
+        ImGui.Dummy(new Vector2(width, (y - origin.Y) + ContentPadding * s));
     }
 
     private static float SectionGap(float s) => 10f * s;
