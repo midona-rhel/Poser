@@ -211,29 +211,50 @@ public sealed record ActorAnimationReading(
 /// Everything Poser authored for one actor. This is the ONLY record of
 /// what must be undone; anything absent here was never Poser's to restore.
 /// </summary>
+public readonly record struct StanceCapture(AnimationStance Stance, int Pose);
+
 public sealed record AnimationOverrides
 {
     public ushort? BaseTimeline { get; init; }
     public bool BaseInterrupt { get; init; } = true;
     public bool PlayFromStart { get; init; } = true;
-    public ushort? ForceLoop { get; init; }
     public float? OverallSpeed { get; init; }
     public IReadOnlyDictionary<AnimationSlot, float> SlotSpeeds { get; init; } =
         new Dictionary<AnimationSlot, float>();
     public ushort? Lips { get; init; }
     public bool PositionLock { get; init; }
 
-    /// <summary>Captured once, before the first base override.</summary>
+    // ── Captures ──────────────────────────────────────────────────────
+    // Each is taken ONCE, before the first override of its kind, and is
+    // the only thing that can put that aspect back. A capture survives
+    // repeated changes so restore always targets the state Poser found,
+    // not an intermediate one it created.
+
+    /// <summary>Mode, mode parameter, and base timeline before the first
+    /// base override.</summary>
     public BaseAnimationCapture? BaseCapture { get; init; }
-    /// <summary>Captured once, before the first lips override.</summary>
+    /// <summary>Lips timeline before the first lips override. Selecting
+    /// None restores THIS, rather than writing 0 — 0 is "no speech
+    /// timeline", which is not necessarily what the actor arrived with.</summary>
     public ushort? LipsCapture { get; init; }
+    /// <summary>Incoming timeline per slot, before Poser first replaced
+    /// that slot. Also the facial-preview restore point: stopping a
+    /// facial preview writes the captured Facial timeline back, which is
+    /// how the preview is removed without touching base or upper body.</summary>
+    public IReadOnlyDictionary<AnimationSlot, ushort> SlotTimelineCaptures { get; init; } =
+        new Dictionary<AnimationSlot, ushort>();
+    /// <summary>Stance family and pose index before the first stance change.</summary>
+    public StanceCapture? StanceCaptureValue { get; init; }
+    /// <summary>Weapon state before Poser first drew or sheathed.</summary>
+    public bool? WeaponCapture { get; init; }
 
     public static AnimationOverrides None { get; } = new();
 
     /// <summary>True when Poser owns anything that must be restored.</summary>
     public bool HasAny =>
         BaseCapture != null || LipsCapture != null || OverallSpeed != null ||
-        ForceLoop != null || PositionLock || SlotSpeeds.Count > 0;
+        PositionLock || SlotSpeeds.Count > 0 || SlotTimelineCaptures.Count > 0 ||
+        StanceCaptureValue != null || WeaponCapture != null;
 
     public bool IsPaused => OverallSpeed is 0f;
 }

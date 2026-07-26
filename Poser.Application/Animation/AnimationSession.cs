@@ -196,13 +196,18 @@ public sealed class AnimationSession
     /// one that cannot work.</summary>
     public bool SupportsForceLoop => _port.SupportsForceLoop;
 
+    /// <summary>
+    /// Forces a timeline to repeat. Owns no state: on every client where
+    /// <see cref="SupportsForceLoop"/> is false this cannot take effect,
+    /// and recording an override for a write that did not happen would put
+    /// a phantom entry into the restoration list.
+    /// </summary>
     public AnimationResult SetForceLoop(ActorId actor, ushort timeline)
     {
         var result = _port.SetForceLoop(actor, timeline);
-        if (!result.Success)
-            return AnimationResult.Fail(result.Detail ?? "Loop failed.");
-        Mutate(actor, o => o with { ForceLoop = timeline == 0 ? null : timeline });
-        return AnimationResult.Ok();
+        return result.Success
+            ? AnimationResult.Ok()
+            : AnimationResult.Fail(result.Detail ?? "Loop failed.");
     }
 
     // ── Speed ─────────────────────────────────────────────────────────
@@ -262,6 +267,12 @@ public sealed class AnimationSession
 
     // ── Lips, stance, weapon, position ────────────────────────────────
 
+    /// <summary>
+    /// Sets the lip override. Selecting None (0) RESTORES the captured
+    /// incoming timeline rather than writing 0: 0 means "no speech
+    /// timeline", which is not necessarily what the actor arrived with,
+    /// and writing it would discard the only record of that.
+    /// </summary>
     public AnimationResult SetLips(ActorId actor, ushort timeline)
     {
         var current = OverridesFor(actor);
@@ -269,34 +280,46 @@ public sealed class AnimationSession
         if (capture == null && _port.Read(actor) is { } reading)
             capture = reading.LipsOverride;
 
-        var result = _port.SetLips(actor, timeline);
+        bool clearing = timeline == 0;
+        ushort target = clearing ? capture ?? 0 : timeline;
+
+        var result = _port.SetLips(actor, target);
         if (!result.Success)
             return AnimationResult.Fail(result.Detail ?? "Lips failed.");
 
         Mutate(actor, o => o with
         {
-            Lips = timeline == 0 ? null : timeline,
-            // Keep the capture while an override is live so clearing it
-            // later still knows what the actor arrived with.
-            LipsCapture = timeline == 0 ? null : (o.LipsCapture ?? capture),
+            Lips = clearing ? null : timeline,
+            // The capture is released only once it has been restored.
+            LipsCapture = clearing ? null : (o.LipsCapture ?? capture),
         });
         return AnimationResult.Ok();
     }
 
     public AnimationResult SetStance(ActorId actor, AnimationStance stance, int pose)
     {
+        var capture = OverridesFor(actor).StanceCaptureValue;
+        if (capture == null && _port.Read(actor) is { } reading)
+            capture = new StanceCapture(reading.Stance, reading.Pose);
+
         var result = _port.SetStance(actor, stance, pose);
-        return result.Success
-            ? AnimationResult.Ok()
-            : AnimationResult.Fail(result.Detail ?? "Stance failed.");
+        if (!result.Success)
+            return AnimationResult.Fail(result.Detail ?? "Stance failed.");
+        Mutate(actor, o => o with { StanceCaptureValue = o.StanceCaptureValue ?? capture });
+        return AnimationResult.Ok();
     }
 
     public AnimationResult SetWeaponDrawn(ActorId actor, bool drawn)
     {
+        var capture = OverridesFor(actor).WeaponCapture;
+        if (capture == null && _port.Read(actor) is { } reading)
+            capture = reading.WeaponDrawn;
+
         var result = _port.SetWeaponDrawn(actor, drawn);
-        return result.Success
-            ? AnimationResult.Ok()
-            : AnimationResult.Fail(result.Detail ?? "Weapon state failed.");
+        if (!result.Success)
+            return AnimationResult.Fail(result.Detail ?? "Weapon state failed.");
+        Mutate(actor, o => o with { WeaponCapture = o.WeaponCapture ?? capture });
+        return AnimationResult.Ok();
     }
 
     public AnimationResult SetPositionLock(ActorId actor, bool locked)
@@ -421,14 +444,68 @@ public sealed class AnimationSession
 
     // ── Slot replacement ──────────────────────────────────────────────
 
-    /// <summary>Replaces one slot's timeline, leaving every other slot and
-    /// every other override untouched.</summary>
+    /// <summary>
+    /// Replaces one slot's timeline, leaving every other slot and every
+    /// other override untouched. The slot's INCOMING timeline is captured
+    /// on the first replacement, which is both the restore point and —
+    /// for the Facial slot — the means of removing a preview without
+    /// disturbing base or upper body.
+    /// </summary>
     public AnimationResult SetSlotTimeline(ActorId actor, AnimationSlot slot, ushort timeline)
     {
+        var current = OverridesFor(actor);
+        ushort? capture = current.SlotTimelineCaptures.TryGetValue(slot, out var existing)
+            ? existing
+            : _port.Read(actor)?.TimelineFor(slot);
+
         var result = _port.SetSlotTimeline(actor, slot, timeline);
-        return result.Success
-            ? AnimationResult.Ok()
-            : AnimationResult.Fail(result.Detail ?? "Slot playback failed.");
+        if (!result.Success)
+            return AnimationResult.Fail(result.Detail ?? "Slot playback failed.");
+
+        if (capture is { } captured)
+        {
+            Mutate(actor, o =>
+            {
+                if (o.SlotTimelineCaptures.ContainsKey(slot))
+                    return o;
+                var captures = new Dictionary<AnimationSlot, ushort>(o.SlotTimelineCaptures)
+                {
+                    [slot] = captured,
+                };
+                return o with { SlotTimelineCaptures = captures };
+            });
+        }
+        return AnimationResult.Ok();
+    }
+
+    /// <summary>The timeline a slot held before Poser first replaced it,
+    /// if it has.</summary>
+    public ushort? CapturedSlotTimeline(ActorId actor, AnimationSlot slot) =>
+        OverridesFor(actor).SlotTimelineCaptures.TryGetValue(slot, out var value)
+            ? value
+            : null;
+
+    /// <summary>
+    /// Puts one slot back to its captured incoming timeline and releases
+    /// the capture. This is how a facial preview is removed: it touches
+    /// exactly that slot, so base and upper body keep playing.
+    /// </summary>
+    public AnimationResult RestoreSlotTimeline(ActorId actor, AnimationSlot slot)
+    {
+        if (CapturedSlotTimeline(actor, slot) is not { } captured)
+            return AnimationResult.Ok();
+
+        var result = _port.SetSlotTimeline(actor, slot, captured);
+        if (!result.Success)
+            return AnimationResult.Fail(result.Detail ?? "Slot restore failed.");
+
+        Mutate(actor, o =>
+        {
+            var captures = new Dictionary<AnimationSlot, ushort>(o.SlotTimelineCaptures);
+            captures.Remove(slot);
+            return o with { SlotTimelineCaptures = captures };
+        });
+        return AnimationResult.Ok();
     }
 
     // ── Restoration ───────────────────────────────────────────────────
@@ -448,28 +525,68 @@ public sealed class AnimationSession
             return AnimationResult.Ok();
         }
 
+        // Each aspect is released ONLY when its restore succeeded. What
+        // fails stays owned, so a later Reset retries it instead of the
+        // override being silently abandoned on a still-live actor. If the
+        // actor no longer resolves there is nothing left to restore into,
+        // and everything is dropped.
         var failures = new List<string>();
-        void Record(AnimationPortResult result)
+        var remaining = owned;
+        bool actorGone = !_port.IsSupported(actor) && _port.Read(actor) == null;
+
+        bool Try(AnimationPortResult result)
         {
-            if (!result.Success && result.Detail is { } detail)
+            if (result.Success)
+                return true;
+            if (result.Detail is { } detail)
                 failures.Add(detail);
+            return false;
         }
 
-        if (owned.BaseCapture is { } capture)
-            Record(_port.RestoreBase(actor, capture));
-        if (owned.ForceLoop != null)
-            Record(_port.SetForceLoop(actor, 0));
-        if (owned.OverallSpeed != null)
-            Record(_port.ClearOverallSpeed(actor));
-        foreach (var slot in owned.SlotSpeeds.Keys.ToList())
-            Record(_port.ClearSlotSpeed(actor, slot));
-        if (owned.LipsCapture is { } lips)
-            Record(_port.SetLips(actor, lips));
-        if (owned.PositionLock)
-            Record(_port.SetPositionLock(actor, false));
+        if (owned.BaseCapture is { } capture && Try(_port.RestoreBase(actor, capture)))
+            remaining = remaining with { BaseCapture = null, BaseTimeline = null };
+        if (owned.OverallSpeed != null && Try(_port.ClearOverallSpeed(actor)))
+            remaining = remaining with { OverallSpeed = null };
 
-        _overrides.Remove(actor);
-        _selections.Remove(actor);
+        if (owned.SlotSpeeds.Count > 0)
+        {
+            var speeds = new Dictionary<AnimationSlot, float>(remaining.SlotSpeeds);
+            foreach (var slot in owned.SlotSpeeds.Keys.ToList())
+                if (Try(_port.ClearSlotSpeed(actor, slot)))
+                    speeds.Remove(slot);
+            remaining = remaining with { SlotSpeeds = speeds };
+        }
+
+        if (owned.SlotTimelineCaptures.Count > 0)
+        {
+            var captures = new Dictionary<AnimationSlot, ushort>(remaining.SlotTimelineCaptures);
+            foreach (var (slot, timeline) in owned.SlotTimelineCaptures)
+                if (Try(_port.SetSlotTimeline(actor, slot, timeline)))
+                    captures.Remove(slot);
+            remaining = remaining with { SlotTimelineCaptures = captures };
+        }
+
+        if (owned.StanceCaptureValue is { } stance &&
+            Try(_port.SetStance(actor, stance.Stance, stance.Pose)))
+            remaining = remaining with { StanceCaptureValue = null };
+        if (owned.WeaponCapture is { } weapon &&
+            Try(_port.SetWeaponDrawn(actor, weapon)))
+            remaining = remaining with { WeaponCapture = null };
+        if (owned.LipsCapture is { } lips && Try(_port.SetLips(actor, lips)))
+            remaining = remaining with { LipsCapture = null, Lips = null };
+        if (owned.PositionLock && Try(_port.SetPositionLock(actor, false)))
+            remaining = remaining with { PositionLock = false };
+
+        if (actorGone || !remaining.HasAny)
+        {
+            _overrides.Remove(actor);
+            _selections.Remove(actor);
+        }
+        else
+        {
+            _overrides[actor] = remaining;
+        }
+
         if (_physicsOwners.Remove(actor))
             ReleasePhysicsIfUnowned();
         Changed?.Invoke();
