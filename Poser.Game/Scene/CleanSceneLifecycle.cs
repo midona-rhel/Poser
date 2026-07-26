@@ -76,6 +76,27 @@ public sealed class CleanSceneLifecycle : IDisposable
         _events.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
         _events.Unsubscribe<SkeletonChangedEvent>(OnSkeletonChanged);
         _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseChanged);
+
+        // Plugin unload while still in GPose is the same last moment as a
+        // GPose exit: the overridden actors are about to become
+        // unreachable, so every animation override is put back NOW. A
+        // face bake pending at unload can never complete (its pump is
+        // gone), so its command guard is released first rather than left
+        // to block the restoration. Disposal must not throw.
+        try
+        {
+            _framework.RunOnFrameworkThread(() =>
+            {
+                _animation.ResumeCommands();
+                _animation.ResetAll();
+            }).Wait(TimeSpan.FromSeconds(2));
+        }
+        catch
+        {
+            // An unreachable framework thread at shutdown means the game
+            // is tearing down anyway; there is nothing left to restore
+            // into.
+        }
     }
 
     private void Refresh()

@@ -152,11 +152,14 @@ public sealed record TimelineEntry(
 }
 
 /// <summary>
-/// The exact native state Poser captured before its FIRST base override,
-/// and the only thing that can put the actor back. Stored as raw values so
-/// the domain never references native enums.
+/// The exact native state Poser captured before its FIRST play, and the
+/// only thing that can put the actor back: character mode, mode parameter,
+/// the base-override field, and the timeline the base slot was actually
+/// playing. Stored as raw values so the domain never references native
+/// enums.
 /// </summary>
-public readonly record struct BaseAnimationCapture(byte Mode, byte ModeParam, ushort BaseTimeline);
+public readonly record struct BaseAnimationCapture(
+    byte Mode, byte ModeParam, ushort BaseTimeline, ushort BaseSlotTimeline = 0);
 
 /// <summary>Identity of one Havok animation control, by position. Paired
 /// with the skeleton generation it was enumerated under so a scrub can be

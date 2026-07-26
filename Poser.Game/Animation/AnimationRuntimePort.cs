@@ -454,7 +454,11 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             captured = new BaseAnimationCapture(
                 (byte)character->Mode,
                 character->ModeParam,
-                character->Timeline.BaseOverride);
+                character->Timeline.BaseOverride,
+                // The timeline actually PLAYING on the base slot, so a
+                // restore can put back what the actor was doing rather
+                // than a blanket idle.
+                character->Timeline.TimelineSequencer.TimelineIds[0]);
         }
 
         PlayWithMode(character, timeline);
@@ -496,9 +500,14 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         character->Timeline.BaseOverride = capture.BaseTimeline;
         character->Mode = (CharacterModes)capture.Mode;
         character->ModeParam = capture.ModeParam;
-        // Blend idle so the actor visibly leaves the overridden animation
-        // instead of holding its last frame until something else moves it.
-        character->Timeline.TimelineSequencer.PlayTimeline(AnimationTimelines.Idle, null);
+        // Play what the base slot HELD when Poser first touched the actor,
+        // so a pre-existing ordinary animation comes back instead of being
+        // flattened to idle. Idle is only the fallback for an empty slot.
+        character->Timeline.TimelineSequencer.PlayTimeline(
+            capture.BaseSlotTimeline != 0
+                ? capture.BaseSlotTimeline
+                : AnimationTimelines.Idle,
+            null);
         return AnimationPortResult.Ok();
     }
 
@@ -969,14 +978,37 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         {
             if (frozen)
             {
-                _physicsOriginal1 = ReplaceRaw(_physicsAddress, [0x90, 0x90, 0x90, 0x90]);
-                _physicsOriginal2 = ReplaceRaw(
-                    _physicsAddress - PhysicsFreezePatchOffset, [0x90, 0x90, 0x90]);
+                // Both regions or neither: a fault after the first write
+                // rolls it back, so a half-frozen simulation can never
+                // survive behind _physicsFrozen == false.
+                var original1 = ReplaceRaw(_physicsAddress, [0x90, 0x90, 0x90, 0x90]);
+                byte[] original2;
+                try
+                {
+                    original2 = ReplaceRaw(
+                        _physicsAddress - PhysicsFreezePatchOffset, [0x90, 0x90, 0x90]);
+                }
+                catch
+                {
+                    ReplaceRaw(_physicsAddress, original1);
+                    throw;
+                }
+                _physicsOriginal1 = original1;
+                _physicsOriginal2 = original2;
             }
             else
             {
-                ReplaceRaw(_physicsAddress, _physicsOriginal1);
-                ReplaceRaw(_physicsAddress - PhysicsFreezePatchOffset, _physicsOriginal2);
+                // Restore BOTH regions even if the first throws; the
+                // original-byte writes are idempotent, so a failed attempt
+                // stays frozen and retries cleanly.
+                try
+                {
+                    ReplaceRaw(_physicsAddress, _physicsOriginal1);
+                }
+                finally
+                {
+                    ReplaceRaw(_physicsAddress - PhysicsFreezePatchOffset, _physicsOriginal2);
+                }
             }
             _physicsFrozen = frozen;
             return AnimationPortResult.Ok();
@@ -992,8 +1024,15 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         var original = MemoryHelper.ReadRaw(address, data.Length);
         var protection = MemoryHelper.ChangePermission(
             address, data.Length, MemoryProtection.ExecuteReadWrite);
-        MemoryHelper.WriteRaw(address, data);
-        MemoryHelper.ChangePermission(address, data.Length, protection);
+        try
+        {
+            MemoryHelper.WriteRaw(address, data);
+        }
+        finally
+        {
+            // Page protection goes back even when the write faults.
+            MemoryHelper.ChangePermission(address, data.Length, protection);
+        }
         return original;
     }
 
