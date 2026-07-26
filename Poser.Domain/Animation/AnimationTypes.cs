@@ -142,7 +142,8 @@ public sealed record TimelineEntry(
     AnimationSlot Slot,
     uint Icon = 0,
     uint EmoteId = 0,
-    int EmoteIndex = -1)
+    int EmoteIndex = -1,
+    bool? DrawsWeapon = null)
 {
     /// <summary>Emote index 0 is the only one the game can play "from the
     /// start" through its own emote entry point (intro then loop).</summary>

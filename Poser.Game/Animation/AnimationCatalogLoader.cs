@@ -108,7 +108,10 @@ public sealed class AnimationCatalogLoader
                     slot,
                     emote.Icon,
                     emote.RowId,
-                    index));
+                    index,
+                    // Only emotes know their weapon state; actions and raw
+                    // timelines stay null and pass Brio's drawn filter.
+                    emote.DrawsWeapon));
             }
         }
     }

@@ -69,12 +69,20 @@ public sealed class AnimationPicker
     private IReadOnlyList<TimelineEntry>? _explicit;
     private bool _playOnSelect = true;
 
-    private static readonly string[] KindLabels = { "Emote", "Action", "Expr", "Raw" };
-    private static readonly AnimationKind[] KindValues =
+    private static readonly string[] KindLabels = { "All", "Emote", "Action", "Expr", "Raw" };
+    private static readonly AnimationKind?[] KindValues =
     {
-        AnimationKind.Emote, AnimationKind.Action,
+        null, AnimationKind.Emote, AnimationKind.Action,
         AnimationKind.Expression, AnimationKind.RawTimeline,
     };
+
+    private static readonly string[] WeaponLabels = { "All", "Sheathed", "Drawn" };
+    /// <summary>0 = all, 1 = sheathed, 2 = drawn. Brio's tri-filter: it
+    /// narrows EMOTES by their weapon state and leaves actions and raw
+    /// timelines alone, and only the Base destination shows it — a blended
+    /// one-shot does not change weapon state. Persists across opens, like
+    /// Brio's.</summary>
+    private int _weaponFilter;
 
     public AnimationPicker(AnimationCatalog catalog, ITextureProvider textures)
     {
@@ -125,31 +133,35 @@ public sealed class AnimationPicker
             return null;
 
         var results = Results(out var kinds, out var kindIndex);
+        bool showWeapon = ShowWeaponFilter;
         AnimationPick? picked = null;
         Crystarium.Popover(PopupId, new PopoverProps
         {
             Width = Width,
-            Height = HeightFor(results.Count, kinds.Count > 1),
+            Height = HeightFor(results.Count, kinds.Count > 1, showWeapon),
             AnchorMin = _anchorMin,
             AnchorMax = _anchorMax,
-        }, () => picked = DrawBody(results, kinds, kindIndex));
+        }, () => picked = DrawBody(results, kinds, kindIndex, showWeapon));
         return picked;
     }
+
+    private bool ShowWeaponFilter =>
+        _target == AnimationPickTarget.Base && _explicit == null;
 
     /// <summary>Chrome plus as many rows as there are, between a floor that
     /// keeps the empty state readable and a ceiling that keeps the popover
     /// on screen.</summary>
-    private static float HeightFor(int resultCount, bool showKinds)
+    private static float HeightFor(int resultCount, bool showKinds, bool showWeapon)
     {
-        float chrome = 18f + 32f + (showKinds ? 34f : 0f) + 30f + 16f;
+        float chrome = 18f + 32f + (showKinds ? 34f : 0f) + (showWeapon ? 34f : 0f) + 30f + 16f;
         int rows = Math.Clamp(resultCount, MinListRows, MaxListRows);
         return chrome + rows * RowHeight;
     }
 
     private IReadOnlyList<TimelineEntry> Results(
-        out List<AnimationKind> kinds, out int kindIndex)
+        out List<AnimationKind?> kinds, out int kindIndex)
     {
-        kinds = new List<AnimationKind>();
+        kinds = new List<AnimationKind?>();
         kindIndex = 0;
         if (_explicit is { } entries)
         {
@@ -164,29 +176,39 @@ public sealed class AnimationPicker
         }
 
         // Kinds a restricted slot can never contain are dropped, so the
-        // filter never offers a choice that returns nothing.
+        // filter never offers a choice that returns nothing. "All" (null)
+        // is never impossible and always leads.
         var excluded = AnimationCatalog.ExcludedKinds(_slotFilter);
         foreach (var value in KindValues)
         {
             bool blocked = false;
-            foreach (var kind in excluded)
-                if (kind == value)
-                    blocked = true;
+            if (value is { } concrete)
+                foreach (var kind in excluded)
+                    if (kind == concrete)
+                        blocked = true;
             if (!blocked)
                 kinds.Add(value);
         }
-        if (kinds.Count == 0)
-            kinds.Add(AnimationKind.RawTimeline);
 
         var current = KindValues[Math.Clamp(_kindIndex, 0, KindValues.Length - 1)];
         kindIndex = kinds.IndexOf(current);
         if (kindIndex < 0)
             kindIndex = 0;
-        return _catalog.Search(_search, kinds[kindIndex], _slotFilter, limit: 400);
+        var found = _catalog.Search(_search, kinds[kindIndex], _slotFilter, limit: 400);
+        if (!ShowWeaponFilter || _weaponFilter == 0)
+            return found;
+
+        bool drawn = _weaponFilter == 2;
+        var narrowed = new List<TimelineEntry>(found.Count);
+        foreach (var entry in found)
+            if (entry.DrawsWeapon is not { } state || state == drawn)
+                narrowed.Add(entry);
+        return narrowed;
     }
 
     private AnimationPick? DrawBody(
-        IReadOnlyList<TimelineEntry> results, List<AnimationKind> kinds, int kindIndex)
+        IReadOnlyList<TimelineEntry> results, List<AnimationKind?> kinds, int kindIndex,
+        bool showWeapon)
     {
         float s = ImGuiHelpers.GlobalScale;
         float inner = Width - 16f;
@@ -214,6 +236,15 @@ public sealed class AnimationPicker
             int chosen = kindIndex;
             if (Crystarium.SegmentedControl("##anim-pick-kind", labels, ref chosen, inner))
                 _kindIndex = Array.IndexOf(KindValues, kinds[chosen]);
+            cursor.Y += 34f * s;
+        }
+
+        if (showWeapon)
+        {
+            ImGui.SetCursorScreenPos(cursor);
+            int weapon = _weaponFilter;
+            if (Crystarium.SegmentedControl("##anim-pick-weapon", WeaponLabels, ref weapon, inner))
+                _weaponFilter = weapon;
             cursor.Y += 34f * s;
         }
 
