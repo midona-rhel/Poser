@@ -8,7 +8,6 @@ using Dalamud.Interface.Utility;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Domain.Animation;
-using Poser.Domain.Identity;
 using Poser.UI.Views;
 
 namespace Poser.UI.Controls;
@@ -21,31 +20,35 @@ public enum AnimationPickTarget
     Blend,
     Slot,
     Lips,
+    Expression,
 }
 
 public readonly record struct AnimationPick(
     TimelineEntry Entry,
     AnimationPickTarget Target,
-    AnimationSlot Slot);
+    AnimationSlot Slot,
+    bool PlayImmediately);
 
 /// <summary>
-/// The ONE animation picker: a glass popover with the shared filter pill,
-/// segmented kind filter, and icon/name/id rows.
+/// The ONE animation picker: an anchored glass popover with search, a kind
+/// filter, and icon/name/id rows.
 ///
-/// It is opened by Base, Blend, each slot's Select action, and Lips — the
-/// caller supplies the destination, so there is exactly one search surface
-/// in the product instead of one per control. The Animation page itself
-/// stays compact sections and controls with no list of its own.
+/// Every destination opens it — the base animation, a blend, a layer, the
+/// expression, the lips — and the CALLER states the destination, so the
+/// product has one search surface rather than one per control. It reports
+/// the choice and nothing else.
 ///
-/// Search text is deliberately picker-local and transient: it belongs to
-/// the act of picking, not to the actor, and clearing it between openings
-/// is what makes the picker feel like a fresh search each time.
+/// Height shrinks to the results: a fixed tall popover over three matches
+/// is mostly empty glass. Only the results list scrolls; the search field
+/// and kind filter stay put, so what is being typed into never moves.
 /// </summary>
 public sealed class AnimationPicker
 {
     private const string PopupId = "##anim-picker";
     private const float Width = 380f;
-    private const float Height = 420f;
+    private const float RowHeight = 26f;
+    private const int MaxListRows = 12;
+    private const int MinListRows = 3;
 
     private readonly AnimationCatalog _catalog;
     private readonly ITextureProvider _textures;
@@ -58,10 +61,13 @@ public sealed class AnimationPicker
     private Vector2 _anchorMax;
     private AnimationPickTarget _target;
     private AnimationSlot _slot;
-    /// <summary>Restricts results when the destination only accepts one
-    /// slot, so a pick can never land a body timeline in the face.</summary>
     private AnimationSlot? _slotFilter;
     private string _caption = string.Empty;
+    /// <summary>When set, the picker shows exactly these rows and hides the
+    /// kind filter — used where the valid set is a known enumeration rather
+    /// than a catalog query, such as the speech timelines.</summary>
+    private IReadOnlyList<TimelineEntry>? _explicit;
+    private bool _playOnSelect = true;
 
     private static readonly string[] KindLabels = { "Emote", "Action", "Expr", "Raw" };
     private static readonly AnimationKind[] KindValues =
@@ -76,28 +82,27 @@ public sealed class AnimationPicker
         _textures = textures;
     }
 
-    public bool IsOpenFor(AnimationPickTarget target, AnimationSlot slot) =>
-        ImGui.IsPopupOpen(PopupId) && _target == target &&
-        (target != AnimationPickTarget.Slot || _slot == slot);
-
     /// <summary>
-    /// Requests the picker under the control that asked for it. The open
-    /// is deferred to <see cref="Draw"/> because a popup opened from
-    /// inside a scrolling child parents to that child and closes on the
-    /// same frame.
+    /// Requests the picker under the control that asked for it. The open is
+    /// deferred to <see cref="Draw"/> because a popup opened from inside a
+    /// scrolling child parents to that child and closes the same frame.
     /// </summary>
     public void Open(
         AnimationPickTarget target,
         AnimationSlot slot,
         AnimationSlot? restrictToSlot,
-        string caption)
+        string caption,
+        AnimationKind? kind = null,
+        IReadOnlyList<TimelineEntry>? entries = null)
     {
         _target = target;
         _slot = slot;
         _slotFilter = restrictToSlot;
         _caption = caption;
+        _explicit = entries;
         _search = string.Empty;
-        _kindIndex = Array.IndexOf(KindValues, AnimationCatalog.BestKind(restrictToSlot));
+        var start = kind ?? AnimationCatalog.BestKind(restrictToSlot);
+        _kindIndex = Array.IndexOf(KindValues, start);
         if (_kindIndex < 0)
             _kindIndex = 0;
         _anchorMin = ImGui.GetItemRectMin();
@@ -106,8 +111,8 @@ public sealed class AnimationPicker
     }
 
     /// <summary>
-    /// Draws the picker if open. Call once per frame from the pane's
-    /// top level, outside any child. Returns the pick made this frame.
+    /// Draws the picker if open. Call once per frame from the pane's top
+    /// level, outside any child. Returns the pick made this frame.
     /// </summary>
     public AnimationPick? Draw()
     {
@@ -119,78 +124,108 @@ public sealed class AnimationPicker
         if (!ImGui.IsPopupOpen(PopupId))
             return null;
 
+        var results = Results(out var kinds, out var kindIndex);
         AnimationPick? picked = null;
         Crystarium.Popover(PopupId, new PopoverProps
         {
             Width = Width,
-            Height = Height,
+            Height = HeightFor(results.Count, kinds.Count > 1),
             AnchorMin = _anchorMin,
             AnchorMax = _anchorMax,
-        }, () => picked = DrawBody());
+        }, () => picked = DrawBody(results, kinds, kindIndex));
         return picked;
     }
 
-    private AnimationPick? DrawBody()
+    /// <summary>Chrome plus as many rows as there are, between a floor that
+    /// keeps the empty state readable and a ceiling that keeps the popover
+    /// on screen.</summary>
+    private static float HeightFor(int resultCount, bool showKinds)
+    {
+        float chrome = 18f + 32f + (showKinds ? 34f : 0f) + 30f + 16f;
+        int rows = Math.Clamp(resultCount, MinListRows, MaxListRows);
+        return chrome + rows * RowHeight;
+    }
+
+    private IReadOnlyList<TimelineEntry> Results(
+        out List<AnimationKind> kinds, out int kindIndex)
+    {
+        kinds = new List<AnimationKind>();
+        kindIndex = 0;
+        if (_explicit is { } entries)
+        {
+            if (string.IsNullOrWhiteSpace(_search))
+                return entries;
+            var filtered = new List<TimelineEntry>();
+            foreach (var entry in entries)
+                if (entry.Name.IndexOf(_search, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    entry.TimelineId.ToString() == _search.Trim())
+                    filtered.Add(entry);
+            return filtered;
+        }
+
+        // Kinds a restricted slot can never contain are dropped, so the
+        // filter never offers a choice that returns nothing.
+        var excluded = AnimationCatalog.ExcludedKinds(_slotFilter);
+        foreach (var value in KindValues)
+        {
+            bool blocked = false;
+            foreach (var kind in excluded)
+                if (kind == value)
+                    blocked = true;
+            if (!blocked)
+                kinds.Add(value);
+        }
+        if (kinds.Count == 0)
+            kinds.Add(AnimationKind.RawTimeline);
+
+        var current = KindValues[Math.Clamp(_kindIndex, 0, KindValues.Length - 1)];
+        kindIndex = kinds.IndexOf(current);
+        if (kindIndex < 0)
+            kindIndex = 0;
+        return _catalog.Search(_search, kinds[kindIndex], _slotFilter, limit: 400);
+    }
+
+    private AnimationPick? DrawBody(
+        IReadOnlyList<TimelineEntry> results, List<AnimationKind> kinds, int kindIndex)
     {
         float s = ImGuiHelpers.GlobalScale;
-        float inner = Width - 16f; // popover padding both sides
+        float inner = Width - 16f;
         var origin = ImGui.GetCursorScreenPos();
         var cursor = origin;
 
-        // Destination, stated in the picker so the user knows where a
-        // click lands without remembering which control they used.
-        ViewText.Label(cursor, _caption, 11f, FontWeight.Medium,
-            InspectorLayout.LabelColor);
+        // The destination, stated where the choosing happens.
+        ViewText.Label(cursor, _caption, 11f, FontWeight.Medium, InspectorLayout.LabelColor);
         cursor.Y += 18f * s;
 
         ImGui.SetCursorScreenPos(cursor);
         Crystarium.FilterPill("##anim-pick-search", ref _search, "Search name or id", inner);
         cursor.Y += 32f * s;
 
-        // Kinds a restricted slot can never contain are dropped, so the
-        // filter never offers a choice that returns nothing.
-        var excluded = AnimationCatalog.ExcludedKinds(_slotFilter);
-        var labels = new List<string>();
-        var values = new List<AnimationKind>();
-        for (int i = 0; i < KindValues.Length; i++)
+        if (kinds.Count > 1)
         {
-            bool blocked = false;
-            foreach (var kind in excluded)
-                if (kind == KindValues[i])
-                    blocked = true;
-            if (blocked)
-                continue;
-            labels.Add(KindLabels[i]);
-            values.Add(KindValues[i]);
+            var labels = new string[kinds.Count];
+            for (int i = 0; i < kinds.Count; i++)
+                labels[i] = KindLabels[Array.IndexOf(KindValues, kinds[i])];
+            ImGui.SetCursorScreenPos(cursor);
+            int chosen = kindIndex;
+            if (Crystarium.SegmentedControl("##anim-pick-kind", labels, ref chosen, inner))
+                _kindIndex = Array.IndexOf(KindValues, kinds[chosen]);
+            cursor.Y += 34f * s;
         }
-        if (values.Count == 0)
-        {
-            labels.Add(KindLabels[^1]);
-            values.Add(KindValues[^1]);
-        }
-        int selectedKind = values.IndexOf(
-            KindValues[Math.Clamp(_kindIndex, 0, KindValues.Length - 1)]);
-        if (selectedKind < 0)
-            selectedKind = 0;
-        ImGui.SetCursorScreenPos(cursor);
-        if (Crystarium.SegmentedControl("##anim-pick-kind", labels.ToArray(),
-                ref selectedKind, inner))
-            _kindIndex = Array.IndexOf(KindValues, values[selectedKind]);
-        cursor.Y += 34f * s;
 
-        if (!_catalog.IsLoaded)
+        if (!_catalog.IsLoaded && _explicit == null)
         {
             ViewText.Label(cursor, "Building animation catalog…", 11f,
                 FontWeight.Regular, InspectorLayout.HintColor);
             return null;
         }
 
-        var results = _catalog.Search(
-            _search, values[selectedKind], _slotFilter, limit: 400);
-
         AnimationPick? picked = null;
+        float footer = 30f * s;
         float listHeight = MathF.Max(
-            60f * s, (Height - 16f) * s - (cursor.Y - origin.Y));
+            RowHeight * MinListRows * s,
+            (ImGui.GetWindowSize().Y - 16f * s) - (cursor.Y - origin.Y) - footer);
+
         ImGui.SetCursorScreenPos(cursor);
         Crystarium.PushScrollbarStyle();
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
@@ -211,22 +246,37 @@ public sealed class AnimationPicker
                         {
                             Icon = FallbackIcon(entry.Kind),
                             IconTexture = ResolveIcon(entry.Icon),
-                            Badge = entry.TimelineId.ToString(),
+                            Badge = Metadata(entry),
                             NoExpanderSlot = true,
                         }))
                 {
-                    picked = new AnimationPick(entry, _target, _slot);
+                    picked = new AnimationPick(entry, _target, _slot, _playOnSelect);
                 }
             }
         }
         ImGui.EndChild();
         ImGui.PopStyleVar();
         Crystarium.PopScrollbarStyle();
+        cursor.Y += listHeight;
+
+        // Footer: the one option that belongs to the act of picking.
+        ImGui.SetCursorScreenPos(cursor + new Vector2(0f, 6f * s));
+        Crystarium.Switch("##anim-pick-play", ref _playOnSelect);
+        ViewText.Label(cursor + new Vector2(46f * s, 8f * s), "Play when selected", 11f,
+            FontWeight.Regular, InspectorLayout.LabelColor);
 
         if (picked != null)
             ImGui.CloseCurrentPopup();
         return picked;
     }
+
+    /// <summary>The badge carries what matters for the destination: the id
+    /// always, and the slot too when the picker is not already restricted
+    /// to one — that is the difference between a body and a face timeline.</summary>
+    private string Metadata(TimelineEntry entry) =>
+        _slotFilter != null
+            ? entry.TimelineId.ToString()
+            : $"{AnimationSlots.DisplayName(entry.Slot)} · {entry.TimelineId}";
 
     /// <summary>Glyph for rows the game gives no icon for — every raw
     /// timeline. Keyed by kind so the column still reads at a glance.</summary>

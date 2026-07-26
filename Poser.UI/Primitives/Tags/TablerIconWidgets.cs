@@ -55,10 +55,10 @@ public static partial class Crystarium
     public static bool IconButton(TablerIcon icon, string tooltip, Action onClick)
         => IconButtonTablerCore(icon, default, null, tooltip, onClick, false, null);
     public static bool IconButton(TablerIcon icon, in ButtonProps props)
-        => IconButtonTablerCore(icon, props.Classes, props.Id, props.Tooltip, props.OnClick, props.Disabled, props.Style);
+        => IconButtonTablerCore(icon, props.Classes, props.Id, props.Tooltip, props.OnClick, props.Disabled, props.Style, props.FlipX);
 
     private static bool IconButtonTablerCore(TablerIcon icon, StyleClassSet classes, string? id, string? tooltip,
-        Action? onClick, bool disabled, ButtonStyle? inline)
+        Action? onClick, bool disabled, ButtonStyle? inline, bool flipX = false)
     {
         Stylesheet.EnsureInitialized();
 
@@ -92,6 +92,8 @@ public static partial class Crystarium
             var iconPos = hit.ScreenMin + (new Vector2(side, h) - new Vector2(iconSize, iconSize)) * 0.5f;
             var iconMax = iconPos + new Vector2(iconSize, iconSize);
             var tint = resolved.Color ?? theme.Text;
+            if (flipX)
+                (iconPos.X, iconMax.X) = (iconMax.X, iconPos.X);
             doc.Render(ImGui.GetWindowDrawList(), iconPos, iconMax, tint);
         }
 

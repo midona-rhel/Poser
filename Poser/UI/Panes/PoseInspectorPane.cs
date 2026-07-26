@@ -522,13 +522,17 @@ public class PoseInspectorPane
         float chromeY = cursor.Y + (tabsHeightPx - 20f) * 0.5f * s;
         float rx = cursor.X + width - 36f * s;
         ImGui.SetCursorScreenPos(new Vector2(rx, chromeY));
-        bool motion = chromeActorId is { } motionId && _animation.IsPaused(motionId);
+        // ON means the actor is ANIMATING, which is what the label says.
+        // The state is the session's, not a second UI boolean, so this and
+        // the Animation tab's transport are the same control in two places
+        // and neither can drift from the actor.
+        bool motion = chromeActorId is { } motionId && !_animation.IsPaused(motionId);
         if (Crystarium.Switch("##ps-motion", ref motion) && chromeActorId is { } toggleId)
         {
             if (motion)
-                _animation.Pause(toggleId);
-            else
                 _animation.Resume(toggleId);
+            else
+                _animation.Pause(toggleId);
         }
         rx -= ViewText.Measure("Animation", 12f) + 6f * s;
         ViewText.Label(new Vector2(rx, chromeY + 2f * s), "Animation", 12f,

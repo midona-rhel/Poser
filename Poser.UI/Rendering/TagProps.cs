@@ -13,6 +13,11 @@ public record struct ButtonProps
     public Action? OnClick;
     public string? Tooltip;
     public bool Disabled;
+    /// <summary>Mirrors an icon button's glyph horizontally, so a single
+    /// directional icon serves both directions of a stepper instead of
+    /// one direction being drawn with the wrong arrow. Ignored by text
+    /// buttons.</summary>
+    public bool FlipX;
 }
 
 public record struct CheckboxProps
