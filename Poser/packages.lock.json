@@ -49,7 +49,10 @@
         "type": "Project"
       },
       "posingcore": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "Poser.Domain": "[1.0.0, )"
+        }
       }
     }
   }
