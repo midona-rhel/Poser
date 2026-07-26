@@ -18,27 +18,38 @@ public enum HoverHelpSide
 public static partial class Crystarium
 {
     /// <summary>
-    /// The ONE explanatory hover-help renderer — a pixel transcription of
+    /// The ONE explanatory hover-help renderer — a transcription of
     /// picto's KbdTooltip (shared/ui/KbdTooltip/KbdTooltip.tsx): open
-    /// delay 400 ms, close delay 0, six-pixel target offset, 150 ms
-    /// ease-out pop; glass background with backdrop blur, one-pixel
-    /// secondary border with the glass top edge, radius 4, and a
-    /// 0 2px 8px black@30% shadow; one-line cards 24px tall with 6px
-    /// horizontal padding, 13px text, a 4px content gap, and 16px kbd
-    /// shortcut badges.
+    /// delay 400 ms, close delay 0, six-pixel target offset; glass
+    /// background with backdrop blur, one-pixel secondary border with the
+    /// glass top edge, radius 4, and a 0 2px 8px black@30% shadow;
+    /// one-line cards 24px tall with 6px horizontal padding, 13px text, a
+    /// 4px content gap, and 16px kbd shortcut badges.
+    ///
+    /// The animation is Mantine's <c>pop</c> transition, exactly: OUT is
+    /// opacity 0, scale(.9), translateY(10px); IN is opacity 1, scale(1).
+    /// Entering interpolates OUT→IN and exiting IN→OUT, each over 150 ms
+    /// on the CSS <c>ease</c> curve (cubic-bezier 0.25, 0.1, 0.25, 1)
+    /// with transform-origin at the card centre. Close delay 0 means the
+    /// EXIT BEGINS immediately when hover ends — the card retains its
+    /// content and geometry and visibly reverses; it does not vanish. An
+    /// interrupted entrance exits from its current visual state, and a
+    /// re-entered target resumes its entrance the same way. The transform
+    /// is applied to the COMPLETE composited card — blur surface,
+    /// background, borders, shadow, text, and badges scale, rise, and
+    /// fade as one surface via a captured vertex range.
     ///
     /// Controls provide only a stable id, the semantic target rectangle,
     /// the explanation, an optional shortcut, and a preferred side; this
     /// class owns timing, animation, placement, chrome, and top-layer
     /// rendering. The card draws on the FOREGROUND draw list — above
     /// every Poser window, taking no input and affecting no layout,
-    /// measurement, scrolling, or hover state. Only one card is ever
-    /// visible: when several targets register in one frame (a form row
-    /// over its own wells), the LAST registration — the most specific,
-    /// drawn latest — wins. Moving directly between controls restarts
-    /// the new id's delay; leaving closes immediately. The pop scales
-    /// the card chrome 90→100% around its centre while the content
-    /// fades — the closest draw-list equivalent of Mantine's pop.
+    /// measurement, scrolling, or hover state. Never more than one card
+    /// renders: a directly entered target runs its own 400 ms delay while
+    /// the old card exits, and a target that becomes ready supersedes any
+    /// remaining exit. When several targets register in one frame (a form
+    /// row over its own wells), the LAST registration — the most
+    /// specific, drawn latest — wins.
     /// </summary>
     public static class HoverHelp
     {
@@ -51,6 +62,16 @@ public static partial class Crystarium
         private const float BadgeHeight = 16f;
         private const float BadgeMinWidth = 16f;
         private const float BadgePaddingX = 4f;
+        /// <summary>Mantine pop's OUT displacement: translateY(10px),
+        /// downward, independent of the placement side.</summary>
+        private const float PopRise = 10f;
+        private const float PopScaleOut = 0.9f;
+
+        /// <summary>CSS default timing function `ease`.</summary>
+        private static readonly Transition PopEase =
+            Transition.CubicBezier((float)PopSeconds, 0.25f, 0.1f, 0.25f, 1f);
+
+        private enum Phase { Hidden, Entering, Open, Exiting }
 
         private readonly record struct Candidate(
             string Id, Vector2 Min, Vector2 Max, string Text,
@@ -59,8 +80,9 @@ public static partial class Crystarium
         private static Candidate? _candidate;
         private static string? _pendingId;
         private static double _pendingSince;
-        private static string? _openId;
-        private static double _openedAt;
+        private static Phase _phase = Phase.Hidden;
+        private static Candidate _card;
+        private static double _phaseStart;
 
         /// <summary>
         /// Registers explanatory help for a hovered target. Call every
@@ -89,9 +111,9 @@ public static partial class Crystarium
         }
 
         /// <summary>
-        /// Draws the single visible card. Called exactly once per frame,
-        /// after every window has drawn, so registrations from any pane
-        /// are complete.
+        /// Advances the state machine and draws the single card. Called
+        /// exactly once per frame, after every window has drawn, so
+        /// registrations from any pane are complete.
         /// </summary>
         public static void Render()
         {
@@ -99,36 +121,106 @@ public static partial class Crystarium
             _candidate = null;
             double now = ImGui.GetTime();
 
-            if (candidate is not { } c)
+            if (candidate is { } c)
             {
-                // Leaving closes immediately; nothing lingers.
+                if (_pendingId != c.Id)
+                {
+                    // Moving directly to another control restarts ITS delay.
+                    _pendingId = c.Id;
+                    _pendingSince = now;
+                }
+
+                bool ready = c.Instant || now - _pendingSince >= OpenDelaySeconds;
+                if (ready)
+                {
+                    if (_phase == Phase.Hidden || _card.Id != c.Id)
+                    {
+                        // A ready card supersedes anything still exiting:
+                        // never two rendered cards.
+                        _card = c;
+                        _phase = Phase.Entering;
+                        _phaseStart = now;
+                    }
+                    else
+                    {
+                        // Same id: follow the live target rect and text.
+                        var wasExiting = _phase == Phase.Exiting;
+                        float inness = CurrentInness(now);
+                        _card = c;
+                        if (wasExiting)
+                        {
+                            // Re-entered mid-exit: the entrance resumes
+                            // from the current visual state, as a CSS
+                            // transition would.
+                            _phase = Phase.Entering;
+                            _phaseStart = now - InverseProgress(inness) * PopSeconds;
+                        }
+                    }
+                }
+                else if (_phase is Phase.Entering or Phase.Open)
+                {
+                    // Hover moved onto a still-pending target: the old
+                    // card BEGINS its exit now (close delay 0 starts the
+                    // exit; it does not remove the card).
+                    BeginExit(now);
+                }
+            }
+            else
+            {
                 _pendingId = null;
-                _openId = null;
-                return;
+                if (_phase is Phase.Entering or Phase.Open)
+                    BeginExit(now);
             }
 
-            if (_pendingId != c.Id)
-            {
-                // Moving directly to another control restarts ITS delay.
-                _pendingId = c.Id;
-                _pendingSince = now;
-                _openId = null;
-            }
-
-            if (!c.Instant && now - _pendingSince < OpenDelaySeconds)
+            if (_phase == Phase.Entering && now - _phaseStart >= PopSeconds)
+                _phase = Phase.Open;
+            if (_phase == Phase.Exiting && now - _phaseStart >= PopSeconds)
+                _phase = Phase.Hidden;
+            if (_phase == Phase.Hidden)
                 return;
 
-            if (_openId != c.Id)
-            {
-                // A stable id starts the pop exactly once; hovering in
-                // place must not restart the animation every frame.
-                _openId = c.Id;
-                _openedAt = now;
-            }
+            Draw(_card, CurrentInness(now));
+        }
 
+        /// <summary>Starts the IN→OUT exit from the CURRENT visual state,
+        /// so an interrupted entrance reverses continuously.</summary>
+        private static void BeginExit(double now)
+        {
+            float inness = CurrentInness(now);
+            _phase = Phase.Exiting;
+            _phaseStart = now - InverseProgress(1f - inness) * PopSeconds;
+        }
+
+        /// <summary>How far IN (0 = Mantine OUT, 1 = Mantine IN) the card
+        /// currently is on the ease curve.</summary>
+        private static float CurrentInness(double now)
+        {
+            float p = (float)Math.Clamp((now - _phaseStart) / PopSeconds, 0.0, 1.0);
+            return _phase switch
+            {
+                Phase.Entering => PopEase.Evaluate(p),
+                Phase.Open => 1f,
+                Phase.Exiting => 1f - PopEase.Evaluate(p),
+                _ => 0f,
+            };
+        }
+
+        /// <summary>Linear progress whose eased value equals
+        /// <paramref name="eased"/> (the curve is monotonic).</summary>
+        private static float InverseProgress(float eased)
+        {
+            float lo = 0f, hi = 1f;
+            for (int i = 0; i < 20; i++)
+            {
+                float mid = (lo + hi) * 0.5f;
+                if (PopEase.Evaluate(mid) < eased) lo = mid; else hi = mid;
+            }
+            return (lo + hi) * 0.5f;
+        }
+
+        private static void Draw(in Candidate c, float inness)
+        {
             float scale = ImGuiHelpers.GlobalScale;
-            float t = (float)Math.Clamp((now - _openedAt) / PopSeconds, 0.0, 1.0);
-            float ease = 1f - MathF.Pow(1f - t, 3f);
 
             var textFont = FontRegistry.Resolve(FontFamily.Default, 13f);
             var badgeFont = FontRegistry.Resolve(FontFamily.Default, 10f);
@@ -190,39 +282,48 @@ public static partial class Crystarium
             pos.X = Math.Clamp(pos.X, 0f, MathF.Max(0f, display.X - cardW));
             pos.Y = Math.Clamp(pos.Y, 0f, MathF.Max(0f, display.Y - cardH));
 
-            // Pop: the chrome scales 90 → 100% about the card centre;
-            // every color fades with the eased time.
-            float pop = 0.9f + 0.1f * ease;
+            // Mantine pop, transform-origin centre: scale .9 → 1 and
+            // translateY 10px → 0 while opacity 0 → 1.
+            float k = PopScaleOut + (1f - PopScaleOut) * inness;
+            float rise = (1f - inness) * PopRise * scale;
             var center = pos + new Vector2(cardW, cardH) * 0.5f;
-            var half = new Vector2(cardW, cardH) * 0.5f * pop;
-            var min = center - half;
-            var max = center + half;
+            var translate = new Vector2(0f, rise);
+            var animMin = center + (pos - center) * k + translate;
+            var animMax = center + (pos + new Vector2(cardW, cardH) - center) * k + translate;
             float radius = 4f * scale;
 
             var fg = ImGui.GetForegroundDrawList();
-            GlassChrome.PrependBlur(fg, min, max, radius);
+            // The blur is its own prepended command and cannot join the
+            // vertex range, so it follows the SAME animated geometry and
+            // fades with the same eased value — no blur flash before the
+            // surface is visible.
+            GlassChrome.PrependBlur(fg, animMin, animMax, radius * k, inness);
 
-            Vector4 Faded(Vector4 color) => color with { W = color.W * ease };
+            // Everything below lands in one captured vertex range and is
+            // popped as one composited surface: background, borders,
+            // shadow, text, and badges together.
+            int vtxStart = fg.VtxBuffer.Size;
+
             var secondary = new Vector4(1f, 1f, 1f, 0.08f);
-            BoxRenderer.Draw(fg, min, max, new BoxStyle
+            BoxRenderer.Draw(fg, pos, pos + new Vector2(cardW, cardH), new BoxStyle
             {
-                BackgroundColor = Faded(GlassChrome.BackgroundColor),
+                BackgroundColor = GlassChrome.BackgroundColor,
                 BorderRadius = 4f,
                 BorderWidth = 1f,
-                BorderTopColor = Faded(Theme.Glass.BorderTop),
-                BorderLeftColor = Faded(secondary),
-                BorderRightColor = Faded(secondary),
-                BorderBottomColor = Faded(secondary),
-                BoxShadow = new BoxShadow(0f, 2f, 8f, Faded(new Vector4(0f, 0f, 0f, 0.30f))),
+                BorderTopColor = Theme.Glass.BorderTop,
+                BorderLeftColor = secondary,
+                BorderRightColor = secondary,
+                BorderBottomColor = secondary,
+                BoxShadow = new BoxShadow(0f, 2f, 8f, new Vector4(0f, 0f, 0f, 0.30f)),
             });
 
             var theme = Norvrandt.Sheet.CurrentTheme;
-            float x = min.X + PaddingX * scale;
-            float midY = (min.Y + max.Y) * 0.5f;
+            float x = pos.X + PaddingX * scale;
+            float midY = pos.Y + cardH * 0.5f;
 
             if (textPushed) textFont!.Push();
             fg.AddText(new Vector2(x, midY - textSize.Y * 0.5f),
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Faded(theme.Text))), c.Text);
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Text)), c.Text);
             if (textPushed) textFont!.Pop();
             x += textSize.X;
 
@@ -230,9 +331,9 @@ public static partial class Crystarium
             {
                 if (badgePushed) badgeFont!.Push();
                 uint badgeBg = ImGui.ColorConvertFloat4ToU32(
-                    ColorEx.ApplyAlpha(Faded(new Vector4(1f, 1f, 1f, 0.10f))));
+                    ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.10f)));
                 uint badgeText = ImGui.ColorConvertFloat4ToU32(
-                    ColorEx.ApplyAlpha(Faded(theme.Text)));
+                    ColorEx.ApplyAlpha(theme.Text));
                 for (int i = 0; i < keys.Length; i++)
                 {
                     x += ContentGap * scale;
@@ -249,6 +350,9 @@ public static partial class Crystarium
                 }
                 if (badgePushed) badgeFont!.Pop();
             }
+
+            int vtxEnd = fg.VtxBuffer.Size;
+            VertexTransform.ApplyPop(fg, vtxStart, vtxEnd, center, k, translate, inness);
         }
     }
 }

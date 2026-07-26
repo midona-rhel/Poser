@@ -91,8 +91,13 @@ Implement one shared hover-help renderer matching
 `picto/src/shared/ui/KbdTooltip/KbdTooltip.tsx`:
 
 - Open delay 400 ms, close delay 0, six-pixel target offset.
-- 150 ms ease-out `pop` entrance; stable control id prevents animation restart
-  every frame.
+- Mantine's `pop` transition, exactly: OUT is opacity 0, scale(.9),
+  translateY(10px); IN is opacity 1, scale(1). Entering runs OUT→IN and
+  exiting IN→OUT, each over 150 ms on the CSS `ease` curve
+  (cubic-bezier 0.25, 0.1, 0.25, 1) with transform-origin at the card
+  centre, applied to the complete composited card (blur, chrome, shadow,
+  text, badges). A stable control id prevents animation restart every
+  frame.
 - Glass background with 16-pixel blur, one-pixel secondary border and glass
   top edge, four-pixel radius, and `0 2px 8px` black at 30% shadow.
 - One-line content is 24 pixels high with horizontal padding 6, normal
@@ -102,7 +107,10 @@ Implement one shared hover-help renderer matching
 - Render above Poser's windows without taking input or affecting layout,
   scrolling, hover state, or control measurement.
 - Only one hover card is visible. Moving directly between controls restarts
-  the delay for the new stable id; leaving closes it immediately.
+  the delay for the new stable id; leaving starts the exit immediately —
+  the outgoing card keeps its content and geometry while it reverses, and
+  a directly entered target's own 400 ms delay overlaps that exit without
+  a second rendered card.
 - Disabled controls can still explain why they are unavailable.
 
 The hover card is explanatory, not a duplicate label. For example, hovering
@@ -153,7 +161,8 @@ Use reviewable commits without amend or rebase after review starts.
 - Every IK row shares label/control/value columns and padding; Hinge axis uses
   the same single-row geometry and all controls remain live.
 - Hovering a documented control for 400 ms produces one Picto-matched glass
-  card centred on the target with a smooth 150 ms pop; leaving closes it.
+  card centred on the target with the 150 ms Mantine pop; leaving plays
+  the 150 ms exit in reverse.
 - Shoulder label and slider produce the same useful explanation. Disabled
   actions and shortcut-bearing toolbar buttons render the appropriate content.
 - Hover cards flip/clamp at all window edges, never capture input, never create

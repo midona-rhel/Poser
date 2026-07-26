@@ -37,8 +37,9 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
   to framebuffer pixels; segmented tabs and the dropdown's accepted +1
   are fixed references. Never scatter ±1 literals through panes.
 - Hover help: `Crystarium.HoverHelp` is the ONE explanatory surface
-  (picto KbdTooltip: 400 ms open, instant close, 150 ms pop, glass card
-  on the foreground draw list, no input, no layout impact). Controls
+  (picto KbdTooltip: 400 ms open, instant exit start, the 150 ms Mantine
+  pop entering and exiting as one composited surface, glass card on the
+  foreground draw list, no input, no layout impact). Controls
   register only stable id + target rect + text (+ shortcut, side);
   `Preview` covers truncation without the delay; the last registration
   of a frame wins, so a semantic row outranks its own wells. No native

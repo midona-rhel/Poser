@@ -1,3 +1,4 @@
+using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -31,14 +32,22 @@ public static class GlassChrome
     /// approximated via the luminosity tint; strength/tint tuned in game.
     /// </summary>
     public static void PrependBlur(ImDrawListPtr drawList, Vector2 min, Vector2 max, float rounding)
+        => PrependBlur(drawList, min, max, rounding, 1f);
+
+    /// <summary>
+    /// Blur with a 0..1 strength, so an animating glass surface (the
+    /// hover card's pop) can fade its backdrop in and out with the rest
+    /// of the composited card instead of flashing at full strength.
+    /// </summary>
+    public static void PrependBlur(ImDrawListPtr drawList, Vector2 min, Vector2 max, float rounding, float strength)
     {
-        if (!BackdropBlurAvailable) return;
+        if (!BackdropBlurAvailable || strength <= 0f) return;
         ImGuiHelpers.PrependBlurBehind(
             drawList, min, max,
-            blurStrength: 1.0f,
+            blurStrength: Math.Clamp(strength, 0f, 1f),
             rounding: rounding,
             tintColor: default,
-            luminosityColor: new Vector4(0f, 0f, 0f, 0.30f), // brightness(.7)
+            luminosityColor: new Vector4(0f, 0f, 0f, 0.30f * Math.Clamp(strength, 0f, 1f)), // brightness(.7)
             noiseOpacity: 0f); // picto glass has no noise
     }
 
