@@ -4,14 +4,14 @@
 
 | Field | Value |
 |---|---|
-| Status | Ready |
+| Status | Accepted |
 | Size | Large |
 | Implementation owner | Claude |
 | Review owner | Codex |
 | Acceptance owner | User, in game |
 | Base ref | `pbi-090-base` |
 | Feature branch | `feature/pbi-090-interface-rhythm-hover-help` |
-| Accepted head | Not accepted |
+| Accepted head | `763c1c1` |
 
 PBI-007 is the implementation baseline. PBI-100 Advanced Expression remains
 deferred until a later explicit product decision.
