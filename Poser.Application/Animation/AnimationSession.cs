@@ -675,8 +675,6 @@ public sealed class AnimationSession
             };
         }
 
-        if (owned.BaseCapture is { } capture && Try(_port.RestoreBase(actor, capture)))
-            remaining = remaining with { BaseCapture = null, BaseTimeline = null };
         if (owned.OverallSpeed != null && Try(_port.ClearOverallSpeed(actor)))
             remaining = remaining with { OverallSpeed = null };
 
@@ -714,6 +712,14 @@ public sealed class AnimationSession
                     slots.Remove(slot);
             remaining = remaining with { SlotCaptures = slots };
         }
+
+        // Base restoration runs AFTER the expression release and slot
+        // replays: those go through the mode dance, which would overwrite
+        // the just-restored mode and parameter if the base went back
+        // first. Its Blend-free restore writes mode/param/override and
+        // replays the captured base-slot timeline directly.
+        if (owned.BaseCapture is { } capture && Try(_port.RestoreBase(actor, capture)))
+            remaining = remaining with { BaseCapture = null, BaseTimeline = null };
 
         if (owned.SlotSpeeds.Count > 0)
         {
