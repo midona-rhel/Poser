@@ -101,10 +101,7 @@ public static class RotationGizmoRings
         rings.ViewRotation = viewRotation;
         rings.ScreenRadius = radiusPixels;
         rings.RollRadius = radiusPixels + 8f;
-        // The roll ring rotates about the camera view axis: the world
-        // direction mapping to camera-space +Z under the same basis.
-        rings.RollAxisWorld = Vector3.Normalize(
-            FromCamera(Vector3.UnitZ, viewRotation));
+        rings.RollAxisWorld = CameraViewAxis(viewRotation);
         rings.Points = new Vector2[3][];
         rings.Front = new bool[3][];
 
@@ -153,6 +150,47 @@ public static class RotationGizmoRings
         Vector3.Transform(
             new Vector3(-cameraDirection.X, cameraDirection.Y, cameraDirection.Z),
             Quaternion.Inverse(viewRotation));
+
+    /// <summary>
+    /// THE camera view axis, and the only definition of it: the world
+    /// direction that maps to camera-space +Z, which is away from the
+    /// viewer under the same convention that classifies Z &lt; 0 as front.
+    /// Roll rotates about this on BOTH surfaces. Deriving it once is the
+    /// point — the inspector and the world overlay project through
+    /// different matrices, and two independent derivations could disagree
+    /// in sign and roll opposite ways for the same drag.
+    /// </summary>
+    public static Vector3 CameraViewAxis(Quaternion viewRotation) =>
+        Vector3.Normalize(FromCamera(Vector3.UnitZ, viewRotation));
+
+    /// <summary>
+    /// The positive-roll screen direction under the pointer. Roll is a
+    /// screen-space circle on both surfaces, so both use this one
+    /// screen-space derivation: the perpendicular of the pointer's radial
+    /// offset, signed by rotating that radial through the shared camera
+    /// basis. Identical drag ⇒ identical roll, inspector or world.
+    /// </summary>
+    public static Vector2 RollTangent(
+        ProjectedRings rings,
+        Vector2 mouse,
+        Vector2 fallback)
+    {
+        var radial = mouse - rings.Center;
+        if (radial.LengthSquared() < 1e-6f)
+            return fallback;
+        radial = Vector2.Normalize(radial);
+        var grabDirection = FromCamera(
+            new Vector3(radial.X, radial.Y, 0f), rings.ViewRotation);
+        var rotated = Vector3.Transform(
+            grabDirection,
+            Quaternion.CreateFromAxisAngle(rings.RollAxisWorld, 0.05f));
+        var a = ToCamera(grabDirection, rings.ViewRotation);
+        var b = ToCamera(rotated, rings.ViewRotation);
+        var tangent = new Vector2(b.X - a.X, b.Y - a.Y);
+        return tangent.LengthSquared() < 1e-8f
+            ? fallback
+            : Vector2.Normalize(tangent);
+    }
 
     /// <summary>
     /// Nearest visible projected ring segment within tolerance; the outer
@@ -276,21 +314,10 @@ public static class RotationGizmoRings
     {
         if (!rings.Valid)
             return hit.Tangent;
-        Vector3 grabDirection;
         if (hit.Axis == RollAxis)
-        {
-            var radial = mouse - rings.Center;
-            if (radial.LengthSquared() < 1e-6f)
-                return hit.Tangent;
-            radial = Vector2.Normalize(radial);
-            grabDirection = FromCamera(
-                new Vector3(radial.X, radial.Y, 0f), rings.ViewRotation);
-        }
-        else
-        {
-            grabDirection = Vector3.Transform(
-                LocalRingPoint(hit.Axis, hit.SegmentIndex), rings.Frame);
-        }
+            return RollTangent(rings, mouse, hit.Tangent);
+        var grabDirection = Vector3.Transform(
+            LocalRingPoint(hit.Axis, hit.SegmentIndex), rings.Frame);
         var axisWorld = AxisWorld(rings, hit.Axis);
         var rotated = Vector3.Transform(
             grabDirection,

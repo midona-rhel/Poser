@@ -51,9 +51,14 @@ public sealed class WorldGizmoProjection
     /// geometry is expressed as multiples of this, which is exactly how a
     /// stable perceived handle size falls out of a perspective path.</summary>
     public float WorldScale;
-    /// <summary>Unit direction from the camera through the pivot; the
-    /// camera-roll rotation axis.</summary>
+    /// <summary>Unit direction from the camera through the pivot. Used for
+    /// front/rear classification and drag-plane normals — both genuinely
+    /// about this pivot. It is NOT the roll axis; roll uses the shared
+    /// camera view axis so the two surfaces agree (see
+    /// <see cref="RotationGizmoRings.CameraViewAxis"/>).</summary>
     public Vector3 ViewDirection;
+    /// <summary>The camera's rotation, for the shared roll convention.</summary>
+    public Quaternion ViewRotation = Quaternion.Identity;
 
     /// <summary>
     /// Builds the projection for one frame, or null when the camera is
@@ -71,6 +76,8 @@ public sealed class WorldGizmoProjection
         var viewProj = view * projection;
         if (!Matrix4x4.Invert(viewProj, out var invViewProj))
             return null;
+        if (!Matrix4x4.Decompose(view, out _, out var viewRotation, out _))
+            return null;
 
         var result = new WorldGizmoProjection
         {
@@ -79,6 +86,7 @@ public sealed class WorldGizmoProjection
             CameraPosition = camera.GetCameraPosition(),
             DisplayCenter = displaySize / 2f,
             Pivot = pivotWorld,
+            ViewRotation = viewRotation,
         };
         if (!result.Project(pivotWorld, out var center))
             return null;
@@ -181,10 +189,14 @@ public static class WorldGizmo
         {
             Frame = frame,
             Center = projection.Center,
-            // The perspective surface derives tangents itself
-            // (PositiveTangentPerspective); the direction-only ViewRotation
-            // stays identity here on purpose.
-            RollAxisWorld = projection.ViewDirection,
+            // Roll takes the SHARED camera view axis and the shared view
+            // rotation, identical to the inspector's, so the same drag
+            // rolls the same way on both surfaces. The X/Y/Z ring points
+            // below are still perspective-projected; only roll — a screen
+            // circle on both surfaces — shares its convention.
+            ViewRotation = projection.ViewRotation,
+            RollAxisWorld = RotationGizmoRings.CameraViewAxis(
+                projection.ViewRotation),
         };
         rings.Points = new Vector2[3][];
         rings.Front = new bool[3][];
@@ -226,22 +238,15 @@ public static class WorldGizmo
         Vector2 mouse,
         float ringWorldRadius)
     {
-        Vector3 grabWorld;
+        // Roll is a screen-space circle here exactly as in the inspector,
+        // so it uses the shared screen-space derivation rather than a
+        // second, perspective one that could disagree in sign.
         if (hit.Axis == RotationGizmoRings.RollAxis)
-        {
-            // The roll grab point lives on the view plane through the pivot.
-            grabWorld = projection.RayPlane(
-                mouse, projection.Pivot, projection.ViewDirection)
-                ?? projection.Pivot;
-            if (Vector3.DistanceSquared(grabWorld, projection.Pivot) < 1e-10f)
-                return hit.Tangent;
-        }
-        else
-        {
-            grabWorld = projection.Pivot + Vector3.Transform(
-                RotationGizmoRings.LocalRingPoint(hit.Axis, hit.SegmentIndex),
-                rings.Frame) * ringWorldRadius;
-        }
+            return RotationGizmoRings.RollTangent(rings, mouse, hit.Tangent);
+
+        var grabWorld = projection.Pivot + Vector3.Transform(
+            RotationGizmoRings.LocalRingPoint(hit.Axis, hit.SegmentIndex),
+            rings.Frame) * ringWorldRadius;
         var axisWorld = RotationGizmoRings.AxisWorld(rings, hit.Axis);
         var rotated = projection.Pivot + Vector3.Transform(
             grabWorld - projection.Pivot,
