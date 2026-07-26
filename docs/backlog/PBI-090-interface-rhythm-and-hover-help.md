@@ -44,6 +44,16 @@ Final draw coordinates snap to framebuffer pixels after applying UI scale.
 Do not scatter new `+ 1`/`- 1` literals through consumers; put each optical
 offset in its owning primitive or shared layout token.
 
+## Slider styling
+
+Restyle the one shared `Crystarium.Slider` primitive across the retained UI.
+The thumb is a solid white circle. The track from its minimum to the current
+value is filled with the theme's primary blue; the remaining track stays
+neutral. This deliberately supersedes the current Picto transcription's blue
+thumb and unfilled track. Preserve the existing geometry, notches, readouts,
+disabled opacity, hit area, drag behavior, and value semantics. Do not add
+pane-specific slider drawing.
+
 ## Transform ordering and naming
 
 The transform inspector uses this order everywhere:
@@ -137,6 +147,8 @@ Use reviewable commits without amend or rebase after review starts.
 
 - At supported UI scales, sidebar text is one pixel higher, button text one
   pixel lower, tabs unchanged, and Parenting labels optically centred.
+- Every retained slider has one white circular thumb and a primary-blue filled
+  track up to its value, with a neutral remainder and unchanged interaction.
 - Transform rows read Translation, Rotation, Scale in that order.
 - Every IK row shares label/control/value columns and padding; Hinge axis uses
   the same single-row geometry and all controls remain live.
