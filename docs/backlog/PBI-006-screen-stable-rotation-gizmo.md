@@ -4,14 +4,14 @@
 
 | Field | Value |
 |---|---|
-| Status | Ready |
+| Status | Complete |
 | Size | Large |
 | Implementation owner | Claude |
 | Review owner | Codex |
 | Acceptance owner | User, in game |
 | Base ref | `pbi-006-base` |
 | Feature branch | `feature/pbi-006-screen-stable-gizmo` |
-| Accepted head | Not accepted |
+| Accepted head | `9dd7498` |
 
 ## Outcome
 
