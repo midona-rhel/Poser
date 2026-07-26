@@ -30,6 +30,7 @@ public readonly record struct AnimationResult(bool Success, string? Detail = nul
 ///                     recalculation wins again (there is no remembered
 ///                     value to write back, by design);
 ///   slot speeds     → stop enforcing and hand each touched slot back;
+///   held expression → released (unpin facial, Straight face, idle);
 ///   lips            → the captured timeline (NOT 0, which merely means
 ///                     "no speech timeline");
 ///   stance and pose → the family and index captured before the first
@@ -503,6 +504,52 @@ public sealed class AnimationSession
         Changed?.Invoke();
     }
 
+    // ── Expression hold ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Puts an expression on the face and KEEPS it there while the body
+    /// animates: play the timeline through the sequencer (it routes onto
+    /// the facial layer by its own tag), then pin that layer's speed at 0
+    /// so the last frame holds. This is Brio's expression mechanism,
+    /// verbatim; there is no other way to make a face persist.
+    /// </summary>
+    public AnimationResult HoldExpression(ActorId actor, ushort timeline)
+    {
+        if (Suspended() is { } blocked) return blocked;
+        var played = Blend(actor, timeline);
+        if (!played.Success)
+            return played;
+        var pinned = SetSlotSpeed(actor, AnimationSlot.Facial, 0f);
+        if (!pinned.Success)
+            return pinned;
+        Mutate(actor, o => o with { HeldExpression = timeline });
+        return AnimationResult.Ok();
+    }
+
+    /// <summary>
+    /// Releases a held expression, in Brio's exact order: unpin the
+    /// facial layer, play "Straight face", unpin again (the game may
+    /// have re-registered a speed during the blend), then idle. The face
+    /// returns to whatever the base animation gives it.
+    /// </summary>
+    public AnimationResult ReleaseExpression(ActorId actor)
+    {
+        if (Suspended() is { } blocked) return blocked;
+        ClearSlotSpeed(actor, AnimationSlot.Facial);
+        var straight = Blend(actor, AnimationTimelines.StraightFace);
+        ClearSlotSpeed(actor, AnimationSlot.Facial);
+        var idle = Blend(actor, AnimationTimelines.Idle);
+        Mutate(actor, o => o with { HeldExpression = null });
+        return straight.Success && idle.Success
+            ? AnimationResult.Ok()
+            : AnimationResult.Fail(
+                straight.Detail ?? idle.Detail ?? "Expression release failed.");
+    }
+
+    /// <summary>The expression currently held on the face, if any.</summary>
+    public ushort? HeldExpressionFor(ActorId actor) =>
+        OverridesFor(actor).HeldExpression;
+
     // ── Restoration ───────────────────────────────────────────────────
 
     /// <summary>
@@ -543,6 +590,24 @@ public sealed class AnimationSession
             remaining = remaining with { BaseCapture = null, BaseTimeline = null };
         if (owned.OverallSpeed != null && Try(_port.ClearOverallSpeed(actor)))
             remaining = remaining with { OverallSpeed = null };
+
+        // A held expression is released BEFORE the speed loop clears the
+        // facial pin, so the face visibly leaves the expression instead of
+        // resuming mid-timeline from an unpinned frame.
+        if (owned.HeldExpression != null)
+        {
+            _port.ClearSlotSpeed(actor, AnimationSlot.Facial);
+            Try(_port.Blend(actor, AnimationTimelines.StraightFace));
+            _port.ClearSlotSpeed(actor, AnimationSlot.Facial);
+            Try(_port.Blend(actor, AnimationTimelines.Idle));
+            remaining = remaining with { HeldExpression = null };
+            if (remaining.SlotSpeeds.ContainsKey(AnimationSlot.Facial))
+            {
+                var speeds = new Dictionary<AnimationSlot, float>(remaining.SlotSpeeds);
+                speeds.Remove(AnimationSlot.Facial);
+                remaining = remaining with { SlotSpeeds = speeds };
+            }
+        }
 
         if (owned.SlotSpeeds.Count > 0)
         {

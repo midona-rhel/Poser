@@ -143,14 +143,10 @@ public sealed class FacialPoseCapture : IDisposable
                 return GestureResult.Fail(paused.Detail ?? "Could not pause the actor.");
         }
 
-        // Stop ONLY the preview, the way Brio clears an expression: release
-        // any facial speed hold, play "Straight face", then idle -- the
-        // sequencer routes both onto the face, leaving base and upper body
-        // untouched.
-        _animation.ClearSlotSpeed(actor, AnimationSlot.Facial);
-        var stopped = _animation.Blend(actor, AnimationTimelines.StraightFace);
-        if (stopped.Success)
-            stopped = _animation.Blend(actor, AnimationTimelines.Idle);
+        // Stop ONLY the preview: the session's expression release (Brio's
+        // unpin / Straight face / idle sequence), which touches nothing
+        // but the face.
+        var stopped = _animation.ReleaseExpression(actor);
         if (!stopped.Success)
         {
             if (!wasPaused)

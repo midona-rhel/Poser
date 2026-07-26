@@ -683,11 +683,21 @@ public sealed class AnimationPane
 
         var row = cursor + new Vector2(0f, y);
         float valueX = LabelCell(row, "Expression", s);
-        ushort facial = reading.TimelineFor(AnimationSlot.Facial);
+        // The truthful current expression is the HELD one; the live slot
+        // value is transient while a one-shot plays.
+        ushort held = _animation.HeldExpressionFor(actor) ?? 0;
+        ushort facial = held != 0 ? held : reading.TimelineFor(AnimationSlot.Facial);
         float trailingX = TrailingButtons(row, width, s,
             new TrailingAction("Preview", "anim-expression-preview",
-                "Replay the current expression", facial == 0,
-                () => Report(_animation.Blend(actor, facial), "Expression")),
+                "Replay the held expression from its start", facial == 0,
+                () => Report(
+                    held != 0
+                        ? _animation.HoldExpression(actor, held)
+                        : _animation.Blend(actor, facial),
+                    "Expression")),
+            new TrailingAction("Release", "anim-expression-release",
+                "Let the face go back to the base animation", held == 0,
+                () => Report(_animation.ReleaseExpression(actor), "Expression")),
             new TrailingAction("Apply to face", "anim-apply-face",
                 "Keep this face after the preview stops, as one undoable pose edit",
                 _facialCapture.IsPending,
@@ -702,7 +712,7 @@ public sealed class AnimationPane
                 }));
         if (ValueButton(valueX, row.Y, trailingX, s,
                 NameFor(facial, "Choose expression…"), "anim-expression",
-                "Preview a facial expression"))
+                "Hold an expression on the face while the body animates"))
             _picker.Open(AnimationPickTarget.Expression, AnimationSlot.Facial,
                 AnimationSlot.Facial, "Expression", AnimationKind.Expression);
         y += Row * s;
@@ -769,11 +779,14 @@ public sealed class AnimationPane
                     pick.Entry.Name);
                 break;
             case AnimationPickTarget.Slot:
-            case AnimationPickTarget.Expression:
                 // The generic play: the timeline's own slot tag routes it
                 // onto its layer -- the references never write a slot.
                 Report(_animation.Blend(actor, timeline),
                     AnimationSlots.DisplayName(pick.Slot));
+                break;
+            case AnimationPickTarget.Expression:
+                // Expressions HOLD: play onto the face, pin the layer.
+                Report(_animation.HoldExpression(actor, timeline), "Expression");
                 break;
             case AnimationPickTarget.Lips:
                 Report(_animation.SetLips(actor, timeline), "Lips");

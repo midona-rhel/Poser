@@ -236,6 +236,11 @@ public sealed record AnimationOverrides
     /// <summary>Mode, mode parameter, and base timeline before the first
     /// base override.</summary>
     public BaseAnimationCapture? BaseCapture { get; init; }
+    /// <summary>The expression currently HELD on the face: blended onto
+    /// the facial layer and pinned there by that layer's speed at 0 --
+    /// Brio's mechanism, the only one that exists. Release plays Straight
+    /// face then idle and unpins.</summary>
+    public ushort? HeldExpression { get; init; }
     /// <summary>Lips timeline before the first lips override. Selecting
     /// None restores THIS, rather than writing 0 — 0 is "no speech
     /// timeline", which is not necessarily what the actor arrived with.</summary>
@@ -250,7 +255,7 @@ public sealed record AnimationOverrides
     /// <summary>True when Poser owns anything that must be restored.</summary>
     public bool HasAny =>
         BaseCapture != null || LipsCapture != null || OverallSpeed != null ||
-        PositionLock || SlotSpeeds.Count > 0 ||
+        PositionLock || SlotSpeeds.Count > 0 || HeldExpression != null ||
         StanceCaptureValue != null || WeaponCapture != null;
 
     public bool IsPaused => OverallSpeed is 0f;
