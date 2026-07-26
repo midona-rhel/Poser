@@ -475,6 +475,25 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             : null;
     }
 
+    /// <summary>
+    /// The game's OWN timeline cancellation — the sig-scanned function the
+    /// stance transition already uses (Ktisis' SetPose flow). It stops
+    /// what the container is currently driving; there is no proven
+    /// per-slot stop in either reference, so this is container-wide and
+    /// callers rebuild the base afterwards.
+    /// </summary>
+    public AnimationPortResult CancelActiveTimeline(ActorId actor)
+    {
+        var character = Resolve(actor, out var detail);
+        if (character == null)
+            return AnimationPortResult.Fail(detail!);
+        if (_cancelTimeline == null)
+            return AnimationPortResult.Fail(
+                "Timeline cancellation is unavailable: the game function was not found.");
+        _cancelTimeline(&character->Timeline, nint.Zero, nint.Zero);
+        return AnimationPortResult.Ok();
+    }
+
     /// <summary>The base restore point as it stands right now, for plays
     /// that go through the emote entry point rather than Blend.</summary>
     public BaseAnimationCapture? CaptureBase(ActorId actor)

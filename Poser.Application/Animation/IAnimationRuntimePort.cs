@@ -60,6 +60,11 @@ public interface IAnimationRuntimePort
     /// that go through the emote entry point rather than Blend.</summary>
     BaseAnimationCapture? CaptureBase(ActorId actor);
 
+    /// <summary>The game's own cancellation of the container's running
+    /// timeline (the stance transition's function; container-wide, since
+    /// no per-slot stop is proven in either reference).</summary>
+    AnimationPortResult CancelActiveTimeline(ActorId actor);
+
     // ── Loops ───────────────────────────────────────────
     /// <summary>Arms Poser-driven looping for one slot: whenever the slot
     /// leaves this timeline (the one-shot ended and the game swapped its

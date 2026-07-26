@@ -701,15 +701,33 @@ public sealed class AnimationSession
         }
 
         // Replay each captured incoming slot timeline. An empty capture
-        // (0) has nothing to replay: with loops already disarmed, the
-        // layer one-shot ends on its own, so the record is just released.
+        // (0) means the slot held nothing before Poser played there — if
+        // it is STILL playing, that animation is Poser's and must go.
+        // There is no proven per-slot stop in either reference, so the
+        // game's own container-wide cancellation (the stance transition's
+        // function) clears it once for all such slots; the base restore
+        // that follows rebuilds the base layer. A capture is released
+        // only when its slot is actually clear or its replay landed.
         if (owned.SlotCaptures.Count > 0)
         {
+            var liveRead = _port.Read(actor);
+            bool cancelNeeded = owned.SlotCaptures.Any(entry =>
+                entry.Value == 0 && liveRead?.TimelineFor(entry.Key) is > 0);
+            bool cancelled = !cancelNeeded || Try(_port.CancelActiveTimeline(actor));
+
             var slots = new Dictionary<AnimationSlot, ushort>(remaining.SlotCaptures);
             foreach (var (slot, incoming) in owned.SlotCaptures)
-                if (incoming == 0 ||
-                    Try(_port.Blend(actor, incoming, remaining.BaseCapture, out _)))
+            {
+                if (incoming == 0)
+                {
+                    if (cancelled)
+                        slots.Remove(slot);
+                }
+                else if (Try(_port.Blend(actor, incoming, remaining.BaseCapture, out _)))
+                {
                     slots.Remove(slot);
+                }
+            }
             remaining = remaining with { SlotCaptures = slots };
         }
 
