@@ -59,7 +59,7 @@ public sealed class AppShellViewModel
     public string CrumbPrefix = "";   // tertiary part ("Midona Rhel · ")
     public string CrumbBold = "";     // primary part ("j_te_l")
 
-    public int GizmoOperation;        // 0 translate, 1 rotate, 2 scale
+    public int GizmoOperation;        // 0 translate, 1 rotate, 2 scale, 3 universal
     public int GizmoSpace;            // 0 local, 1 world
     public int RotationPivot;         // 0 self, 1 parent
     public bool ShowRotationPivot;    // Rotate tool + bone selection only
@@ -308,7 +308,8 @@ public static class AppShellView
 
         // gizmo op seg (icon tabs) + space seg
         x = IconSeg(dl, new Vector2(x, min.Y + (h - 30f * s) / 2f),
-            new[] { TablerIcon.ArrowsMove, TablerIcon.Rotate, TablerIcon.ArrowsDiagonal },
+            new[] { TablerIcon.ArrowsMove, TablerIcon.Rotate, TablerIcon.ArrowsDiagonal,
+                TablerIcon.ArrowsMaximize },
             vm.GizmoOperation, s, i => vm.OnGizmoOperation?.Invoke(i));
         x += 10f * s;
         x = TextSeg(dl, new Vector2(x, min.Y + (h - 30f * s) / 2f),

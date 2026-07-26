@@ -97,6 +97,7 @@ public sealed class UIManager : IUIManager
         Fire("Translate mode", "Ctrl+1", () => _editorState.TransformTool = TransformTool.Move);
         Fire("Rotate mode", "Ctrl+2", () => _editorState.TransformTool = TransformTool.Rotate);
         Fire("Scale mode", "Ctrl+3", () => _editorState.TransformTool = TransformTool.Scale);
+        Fire("Universal mode", "Ctrl+4", () => _editorState.TransformTool = TransformTool.Universal);
         Fire("Hide UI", "Ctrl+H", ToggleAllUi);
         return;
 

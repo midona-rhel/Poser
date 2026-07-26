@@ -41,6 +41,7 @@ public sealed class SettingsViewModel
     {
         ("Undo", "Ctrl+Z"), ("Redo", "Ctrl+Y"),
         ("Translate mode", "Ctrl+1"), ("Rotate mode", "Ctrl+2"), ("Scale mode", "Ctrl+3"),
+        ("Universal mode", "Ctrl+4"),
         ("Hide UI", "Ctrl+H"),
     };
     public int RebindingIndex = -1;
