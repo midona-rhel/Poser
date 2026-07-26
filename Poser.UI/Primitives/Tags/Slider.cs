@@ -8,10 +8,12 @@ namespace Poser.UI;
 public static partial class Crystarium
 {
     /// <summary>
-    /// Range slider — pixel transcription of picto's <c>.slider</c> input
-    /// (tokens.css + M5/M7 usage): 4px track, radius 2, <c>--color-border-primary</c>
-    /// (white @ .14); 14px circular thumb in <c>--color-primary</c> #3297FF.
-    /// No filled-left segment. <c>Format</c> opts into an inline mono value
+    /// Range slider. PBI-090 deliberately supersedes the original picto
+    /// transcription's coloring: the 14px circular thumb is solid white
+    /// and the track is FILLED with <c>--color-primary</c> #3297FF from
+    /// its minimum to the current value, the remainder staying the
+    /// neutral white @ .14. Geometry, hit area, drag semantics, notches,
+    /// readout, and disabled fade are unchanged. <c>Format</c> opts into an inline mono value
     /// readout right of the track (picto's <c>.sliderVal</c> as part of the
     /// control); without it, pair a separate mono label as before.
     /// <c>Style.Notches</c> marks values with a bar crossing the track,
@@ -82,12 +84,27 @@ public static partial class Crystarium
         float cy = (hit.ScreenMin.Y + hit.ScreenMax.Y) * 0.5f;
 
         // track: height 4, border-radius 2, background --color-border-primary
+        float pos = max > min ? Math.Clamp((value - min) / (max - min), 0f, 1f) : 0f;
+        float thumbX = x0 + pos * (x1 - x0);
+
         var track = resolved.BackgroundColor ?? new Vector4(1f, 1f, 1f, 0.14f);
         track.W *= alpha;
         dl.AddRectFilled(
             new Vector2(hit.ScreenMin.X, cy - 2f * scale),
             new Vector2(hit.ScreenMax.X, cy + 2f * scale),
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(track)), 2f * scale);
+
+        // Filled segment: minimum → value in the primary blue; the
+        // remainder above stays neutral.
+        if (thumbX - hit.ScreenMin.X > 1f * scale)
+        {
+            var fill = Theme.Palette.Primary;
+            fill.W *= alpha;
+            dl.AddRectFilled(
+                new Vector2(hit.ScreenMin.X, cy - 2f * scale),
+                new Vector2(thumbX, cy + 2f * scale),
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(fill)), 2f * scale);
+        }
 
         // Notch marks cross the track at fixed values (no snapping), so the
         // range's reference points are visible before dragging.
@@ -105,11 +122,10 @@ public static partial class Crystarium
             }
         }
 
-        // thumb: 14px circle, --color-primary
-        float pos = max > min ? Math.Clamp((value - min) / (max - min), 0f, 1f) : 0f;
-        var thumb = resolved.GrabColor ?? new Vector4(50 / 255f, 151 / 255f, 255 / 255f, 1f);
+        // thumb: 14px circle, solid white over the fill boundary
+        var thumb = resolved.GrabColor ?? Theme.Palette.White;
         thumb.W *= alpha;
-        dl.AddCircleFilled(new Vector2(x0 + pos * (x1 - x0), cy), half,
+        dl.AddCircleFilled(new Vector2(thumbX, cy), half,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(thumb)), 32);
 
         if (readout != null)

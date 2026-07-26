@@ -710,7 +710,9 @@ public class PoseInspectorPane
 
         // Parenting: one checkbox per propagated component.
         var poseInfo = _bonePosingService.GetPoseInfo(skeleton);
-        ViewText.Label(new Vector2(cursor.X, cursor.Y + fy + 6f * s), "Parenting", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
+        ViewText.Label(Theme.Optical.Snap(new Vector2(
+                cursor.X, cursor.Y + fy + 6f * s + Theme.Optical.FooterLabel * s)),
+            "Parenting", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
         float px = cursor.X + 64f * s;
         foreach (var (label, component) in new[]
         {
@@ -728,7 +730,9 @@ public class PoseInspectorPane
                     : poseInfo.DefaultPropagation & ~component;
             }
             px += 20f * s;
-            ViewText.Label(new Vector2(px, cursor.Y + fy + 6f * s), label, 11f,
+            ViewText.Label(Theme.Optical.Snap(new Vector2(
+                    px, cursor.Y + fy + 6f * s + Theme.Optical.FooterLabel * s)),
+                label, 11f,
                 FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.6f));
             px += ViewText.Measure(label, 11f) + 8f * s;
         }

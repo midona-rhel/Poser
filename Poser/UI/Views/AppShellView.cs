@@ -560,11 +560,15 @@ public static class AppShellView
             : 6f * s;
         ImGui.PushClipRect(new Vector2(cursor.X, cursor.Y),
             new Vector2(cursor.X + innerW - badgeReserve, cursor.Y + RowHeight * s), true);
-        ViewText.Label(new Vector2(x, cursor.Y + 5f * s), row.Label, 13f, FontWeight.Regular, TextPrimary);
+        ViewText.Label(Theme.Optical.Snap(new Vector2(
+                x, cursor.Y + 5f * s + Theme.Optical.SidebarText * s)),
+            row.Label, 13f, FontWeight.Regular, TextPrimary);
         ImGui.PopClipRect();
 
         if (row.Count.Length > 0)
-            ViewText.Label(new Vector2(cursor.X + innerW - 8f * s - ViewText.Measure(row.Count, 11f, mono: true), cursor.Y + 7f * s),
+            ViewText.Label(Theme.Optical.Snap(new Vector2(
+                    cursor.X + innerW - 8f * s - ViewText.Measure(row.Count, 11f, mono: true),
+                    cursor.Y + 7f * s + Theme.Optical.SidebarText * s)),
                 row.Count, 11f, FontWeight.Regular, TextSecondary, mono: true);
 
         if (hit.Clicked)

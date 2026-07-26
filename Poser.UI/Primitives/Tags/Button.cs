@@ -156,8 +156,11 @@ public static partial class Crystarium
             bool fontPushed = fontHandle is { Available: true };
             if (fontPushed) fontHandle!.Push();
             var textSize = ImGui.CalcTextSize(label);
+            // Text labels take the shared button optical baseline; the
+            // icon branch above stays independently centred.
             var textPos = hit.ScreenMin + (size - textSize) * 0.5f;
-            drawList.AddText(textPos, textU32, label);
+            textPos.Y += Theme.Optical.ButtonText * ImGuiHelpers.GlobalScale;
+            drawList.AddText(Theme.Optical.Snap(textPos), textU32, label);
             if (fontPushed) fontHandle!.Pop();
         }
 

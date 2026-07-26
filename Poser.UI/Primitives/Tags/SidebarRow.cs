@@ -129,9 +129,11 @@ public static partial class Crystarium
         }
         x += iconSize + 6f * scale;
 
-        // Label 13px text-primary
+        // Label 13px text-primary, on the shared sidebar optical baseline
         var labelSize = ImGui.CalcTextSize(label);
-        dl.AddText(new Vector2(x, hit.ScreenMin.Y + (height - labelSize.Y) * 0.5f),
+        dl.AddText(Theme.Optical.Snap(new Vector2(
+                x,
+                hit.ScreenMin.Y + (height - labelSize.Y) * 0.5f + Theme.Optical.SidebarText * scale)),
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Text)), label);
 
         // Badge: mono 11px text-secondary, right padding 8
@@ -141,7 +143,9 @@ public static partial class Crystarium
             bool monoPushed = monoFont is { Available: true };
             if (monoPushed) monoFont!.Push();
             var badgeSize = ImGui.CalcTextSize(props.Badge);
-            dl.AddText(new Vector2(hit.ScreenMax.X - 8f * scale - badgeSize.X, hit.ScreenMin.Y + (height - badgeSize.Y) * 0.5f),
+            dl.AddText(Theme.Optical.Snap(new Vector2(
+                    hit.ScreenMax.X - 8f * scale - badgeSize.X,
+                    hit.ScreenMin.Y + (height - badgeSize.Y) * 0.5f + Theme.Optical.SidebarText * scale)),
                 ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Text with { W = 0.72f })), props.Badge);
             if (monoPushed) monoFont!.Pop();
         }

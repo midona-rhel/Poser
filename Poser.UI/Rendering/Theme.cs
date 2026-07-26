@@ -1,3 +1,4 @@
+using System;
 using System.Numerics;
 
 namespace Poser.UI;
@@ -91,6 +92,33 @@ public record struct Theme
 
     // ---- Plugin-invariant naming conventions (not skinning) ----
 
+    /// <summary>
+    /// Optical baseline corrections (PBI-090). Logical pixels, applied by
+    /// the OWNING primitive or view row — never scattered as literals
+    /// through panes — and snapped to whole framebuffer pixels after UI
+    /// scaling via <see cref="Snap"/>. The segmented tabs and the
+    /// dropdown's accepted +1 nudge are the fixed visual references and
+    /// take none of these.
+    /// </summary>
+    public static class Optical
+    {
+        /// <summary>Sidebar row labels and their badges sit one logical
+        /// pixel high in the 26px row.</summary>
+        public const float SidebarText = -1f;
+        /// <summary>Text-button labels sit one logical pixel low; icon
+        /// glyphs stay independently centred and take no nudge.</summary>
+        public const float ButtonText = 1f;
+        /// <summary>Pose-footer labels rise one logical pixel to meet
+        /// their checkbox centres.</summary>
+        public const float FooterLabel = -1f;
+
+        /// <summary>Snaps a final scaled draw position to whole
+        /// framebuffer pixels, so a corrected baseline cannot land on a
+        /// half pixel and blur.</summary>
+        public static Vector2 Snap(Vector2 position) =>
+            new(MathF.Round(position.X), MathF.Round(position.Y));
+    }
+
     /// <summary>Spacing scale tokens. Stable across themes; same Md as everywhere else in design.</summary>
     public static class Spacing
     {
@@ -173,6 +201,10 @@ public record struct Theme
         public static readonly Vector4 Purple = new(0.5f, 0f, 0.5f, 1f);
         public static readonly Vector4 Orange = new(1f, 0.5f, 0f, 1f);
         public static readonly Vector4 Gray   = new(0.5f, 0.5f, 0.5f, 1f);
+
+        /// <summary>picto --color-primary #3297FF — the brand blue the
+        /// transcriptions share (slider fill, focus accents).</summary>
+        public static readonly Vector4 Primary = new(50f / 255f, 151f / 255f, 255f / 255f, 1f);
 
         // Shared transform-axis palette: every axis-colored surface (toolbar
         // axis wells, rotation ball, gizmo accents) consumes these — one
