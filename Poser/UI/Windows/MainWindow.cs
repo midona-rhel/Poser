@@ -48,6 +48,7 @@ public class MainWindow : Window
     // binding registry and the pointer never persists in UI state.
     private ActorId? _ctxActorId;
     private bool _ctxOpenRequested;
+    private bool _addOpenRequested;
     private BoneId? _ctxBoneId;
     private bool _boneCtxOpenRequested;
     private bool _renameOpen;
@@ -155,6 +156,10 @@ public class MainWindow : Window
                 _bindings.GetActorId(target) is { } targetId)
                 _selection.Select(SelectionId.ForActor(targetId));
         };
+        // The sidebar's add affordance. Creation lives where the created
+        // thing will appear (approved shell mockup M1 §4), so the ACTORS
+        // header owns it rather than a separate spawn menu.
+        _vm.OnSectionPlus = _ => _addOpenRequested = true;
         _vm.OnRowClicked = OnRowClicked;
         _vm.OnRowExpandToggled = row =>
         {
@@ -266,8 +271,10 @@ public class MainWindow : Window
         float gs = ImGuiHelpers.GlobalScale;
         _lastWidth = ImGui.GetWindowSize().X / gs;
         _lastHeight = ImGui.GetWindowSize().Y / gs;
+        ReconcilePendingSpawn();
         BuildViewModel();
         AppShellView.Draw(_vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
+        DrawAddEntityMenu();
         DrawActorContextMenu();
         DrawBoneContextMenu();
         DrawRenameModal();
@@ -357,7 +364,7 @@ public class MainWindow : Window
         string filter = _vm.SidebarSearch.Trim();
         bool filtering = filter.Length > 0;
 
-        var actors = new ShellSidebarSection { Title = "ACTORS", ShowPlus = false };
+        var actors = new ShellSidebarSection { Title = "ACTORS", ShowPlus = true };
         foreach (var actor in _scene.Snapshot.Actors)
         {
             var actorKey = "actor:" + actor.Id.LogicalId;
@@ -801,6 +808,76 @@ public class MainWindow : Window
 
         _poseInspector.SetSelection(_selection.Primary);
         _poseInspector.Draw(origin, size);
+    }
+
+    /// <summary>
+    /// The sidebar ACTORS "+" menu: the entity-creation actions, in the
+    /// same glass popup the row context menus use. The plus fires from
+    /// inside the sidebar's scroll child, so the open is deferred to this
+    /// top-level draw exactly as the row menus do — opening a popup from
+    /// within the child parents it to the child and it closes immediately.
+    ///
+    /// Scope is the creation half of the retained lifetime actions;
+    /// cameras, lights and world objects are deferred product-wide, so
+    /// they are absent rather than shown disabled.
+    /// </summary>
+    private void DrawAddEntityMenu()
+    {
+        if (_addOpenRequested)
+        {
+            ImGui.OpenPopup("##sidebar-add");
+            _addOpenRequested = false;
+        }
+
+        // Cloning a selection needs one; the entry is dropped rather than
+        // disabled when nothing is selected.
+        IActor? selected = null;
+        string selectedName = string.Empty;
+        if (_selection.Primary is { Kind: SceneEntityKind.Actor, Actor: { } selectedId } &&
+            _bindings.Resolve(selectedId) is { Success: true, Value: { } live })
+        {
+            selected = live;
+            selectedName = DisplayName(live.Name);
+        }
+
+        var items = new List<ContextMenuItem>
+        {
+            new("Clone yourself", TablerIcon.User),
+        };
+        if (selected != null)
+            items.Add(new($"Clone {selectedName}", TablerIcon.UserCircle));
+
+        int clicked = Crystarium.ContextMenu("##sidebar-add", items.ToArray());
+        if (clicked < 0)
+            return;
+        if (clicked == 0)
+            SelectSpawned(_spawnService.SpawnPlayerClone());
+        else if (selected != null)
+            SelectSpawned(_spawnService.CloneActor(selected));
+    }
+
+    /// <summary>Selects a freshly spawned actor so the thing just created
+    /// is the thing being edited. The scene has not rescanned yet, so the
+    /// id is resolved on the next refresh rather than here.</summary>
+    private void SelectSpawned(IActor? spawned)
+    {
+        if (spawned == null)
+            return;
+        _pendingSelectSpawned = spawned;
+    }
+
+    private IActor? _pendingSelectSpawned;
+
+    /// <summary>Second half of <see cref="SelectSpawned"/>: once the scene
+    /// refresh has bound the new actor, select it and forget it.</summary>
+    private void ReconcilePendingSpawn()
+    {
+        if (_pendingSelectSpawned is not { } spawned)
+            return;
+        if (_bindings.GetActorId(spawned) is not { } id)
+            return;
+        _selection.Select(SelectionId.ForActor(id));
+        _pendingSelectSpawned = null;
     }
 
     /// <summary>Right-click actor menu: the lifetime actions that were stranded
