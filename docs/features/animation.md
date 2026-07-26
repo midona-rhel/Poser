@@ -31,13 +31,18 @@
   name, non-zero timeline, and known slot, so nothing fails after selection.
   Search matches name or a bare id; kind and slot filters compose.
 - Choosing an animation is ONE surface: a glass `Popover` picker opened from
-  Base, Blend, Lips and each slot's Select, with the caller supplying the
-  destination. The page itself is compact sections with no list. A slot pick
-  is restricted to that slot, so a body timeline cannot land in the face.
-  Search state lives in the picker and clears on open; only play mode,
-  interrupt, from-start and the direct id are per actor.
+  the transport, a blend, any layer, the expression and the lips, with the
+  caller supplying the destination. It shrinks to its results, scrolls only
+  the list, and searching a number plays that id — there is no separate id
+  field. A slot pick is restricted to that slot, so a body timeline cannot
+  land in the face. Lips are enumerated from the known speech range, since
+  the sheet does not classify them by slot.
+- The page is a mixer organised by task: transport, stance, active layers,
+  scrub, face and lips. Parts/Overlay and arbitrary Havok controls live
+  under collapsed Advanced disclosures — empty engine slots are not the
+  interface.
 - Slots are the game's indices; 4–6 are absent from the enum, not filtered.
-  Every slot has search/play, pause/resume, speed and reset. Scrubbing is a
+  Every slot has choose/pause/speed/reset, whether primary or Advanced. Scrubbing is a
   gesture: freeze, captured duration and skeleton token at Begin, release
   leaves the actor paused on that frame, and a token mismatch cancels rather
   than writing through a replaced skeleton. Friendly Full/Upper scrubbing
@@ -51,5 +56,8 @@
 - UI: Pose and Animation share one window width — the right column is always
   spent, on the Pose rail or on Animation content — so navigating never
   resizes the frame. Crystarium controls ignore `ImGui.SetNextItemWidth`;
-  widths come from `Style.Width` in unscaled units. The sidebar ACTORS `+`
-  opens the same glass menu the row context menus use.
+  widths come from `Style.Width` in unscaled units. The inspector stays on
+  BOTH tabs, so the right column is never reclaimed and width never depends
+  on the tab. The titlebar action and the ACTORS `+` both open the same
+  glass spawn menu. The Pose Animation switch reads ON = animating from the
+  same session state as the transport.

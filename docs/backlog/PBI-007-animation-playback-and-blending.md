@@ -98,17 +98,40 @@ restores animation and physics after its pose/expression/gaze/IK reset.
 Use the existing **Animation** top-level tab; do not add a window. A selected
 bone resolves to its owning actor, while the sidebar selection remains stable.
 
-- Header: current animation, play/pause, stop/reset, loop, speed, and a compact
-  glass scene-actions menu.
-- Main selector: existing filter-pill grammar, kind/slot filters, icons,
-  names, ids, and start-on-select.
-- Sections: Base, Blend, Stance, Slots, Scrub, Lips, and Advanced controls.
-- Rows use existing Poser/Picto spacing, segmented controls, switches,
-  dropdowns, and buttons; no Brio UI imitation, wrapped instruction blocks,
-  manual glyphs, permanent scrollbar, or inspector overflow.
+The tab is a compact live mixer, organised by the user's task rather than by
+the engine's slot array. It is not a slot debugger and not a keyframe editor.
 
-The Pose tab's existing Animation and Physics switches remain quick controls
-over the same session; they do not retain separate state.
+- Three columns throughout: sidebar, animation content, inspector. The
+  inspector stays on Animation because bone selection and posing remain
+  available, so the minimum width equals Pose-with-inspector and switching
+  tabs never resizes the window.
+- Transport: current animation (opens the picker), play/pause, replay,
+  restore; speed with a reset and a compact glass scene-actions menu.
+- Stance: family, a wrapping pose stepper, weapon and position-lock switches.
+- Layers: compact rows for Base, Blend, Upper body, Facial and Additive —
+  name opens the picker for that destination, then pause, speed, reset. An
+  inactive optional layer offers "Add layer" rather than an empty slot.
+  Parts 1–4 and Overlay live under one collapsed Advanced disclosure.
+- Scrub: friendly Full body and Upper body rows; arbitrary Havok
+  partial/control scrubbing under Advanced.
+- Face and lips are separate catalogs: expression choose/preview/apply, and
+  lips enumerated from the known speech timelines rather than searched.
+- ONE shared picker serves every destination — anchored glass popover,
+  search by name or id, kind filter, icon/name/id rows with
+  destination-relevant metadata, only the list scrolling, height shrinking
+  to the results, and play-when-selected in its footer. No separate
+  developer id field on the page.
+- Rows use existing Poser/Picto spacing, segmented controls, switches and
+  buttons on one grid (label, flexible value, trailing actions) at the
+  shared 26 px control height; no Brio or Ktisis visual imitation, wrapped
+  instruction blocks, manual glyphs, permanent scrollbar, or overflow.
+- Entity creation keeps both approved entry points — the titlebar action and
+  the ACTORS header — opening the identical auto-sized spawn menu.
+
+The Pose tab's Animation and Physics switches are quick controls over the
+same session and retain no separate state. Animation ON means the actor is
+animating; changing either it or the transport updates the other at once.
+A layer's pause affects only that layer; the transport affects the actor.
 
 ## Excluded
 
