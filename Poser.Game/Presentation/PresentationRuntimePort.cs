@@ -60,6 +60,10 @@ public sealed unsafe class PresentationRuntimePort : IPresentationRuntimePort, I
 
     private delegate nint UpdateTintDelegate(nint characterBase, nint tint);
     private readonly Hook<UpdateTintDelegate>? _updateTintHook;
+    // Non-null is NOT enabled: construction can succeed and Enable still
+    // throw. Tint commands gate on this, set only after Enable returned;
+    // a partially constructed hook is still disposed.
+    private readonly bool _tintHookEnabled;
 
     public PresentationRuntimePort(
         IFramework framework,
@@ -80,6 +84,7 @@ public sealed unsafe class PresentationRuntimePort : IPresentationRuntimePort, I
             var address = Marshal.ReadInt64((nint)CharacterBase.StaticVirtualTablePointer + 0xC0);
             _updateTintHook = hooking.HookFromAddress<UpdateTintDelegate>((nint)address, UpdateTintDetour);
             _updateTintHook.Enable();
+            _tintHookEnabled = true;
         }
         catch (Exception ex)
         {
@@ -189,9 +194,9 @@ public sealed unsafe class PresentationRuntimePort : IPresentationRuntimePort, I
 
     public PresentationPortResult SetTint(ActorId actor, PresentationModel model, Vector4 tint)
     {
-        if (_updateTintHook == null)
+        if (!_tintHookEnabled)
             return PresentationPortResult.Fail(
-                "Tint is unavailable: the game's tint update could not be hooked.");
+                "Tint is unavailable: the game's tint update is not hooked.");
         var character = Resolve(actor, out var detail);
         if (character == null)
             return PresentationPortResult.Fail(detail!);
