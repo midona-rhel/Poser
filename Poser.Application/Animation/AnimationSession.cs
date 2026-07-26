@@ -705,18 +705,33 @@ public sealed class AnimationSession
         // it is STILL playing, that animation is Poser's and must go.
         // There is no proven per-slot stop in either reference, so the
         // game's own container-wide cancellation (the stance transition's
-        // function) clears it once for all such slots; the base restore
-        // that follows rebuilds the base layer. A capture is released
-        // only when its slot is actually clear or its replay landed.
+        // function) clears it once for all such slots — and because it is
+        // container-wide, every OTHER active slot it will take down joins
+        // the capture set with its current timeline FIRST, so the same
+        // replay-and-retry machinery brings unrelated layers back. The
+        // base restore below rebuilds the base layer. A capture is
+        // released only when its slot is actually clear or its replay
+        // landed; anything else stays owned for the next attempt.
         if (owned.SlotCaptures.Count > 0)
         {
             var liveRead = _port.Read(actor);
             bool cancelNeeded = owned.SlotCaptures.Any(entry =>
                 entry.Value == 0 && liveRead?.TimelineFor(entry.Key) is > 0);
-            bool cancelled = !cancelNeeded || Try(_port.CancelActiveTimeline(actor));
 
             var slots = new Dictionary<AnimationSlot, ushort>(remaining.SlotCaptures);
-            foreach (var (slot, incoming) in owned.SlotCaptures)
+            bool cancelled = true;
+            if (cancelNeeded)
+            {
+                if (liveRead != null)
+                    foreach (var slotReading in liveRead.Slots)
+                        if (slotReading.Slot != AnimationSlot.Base &&
+                            slotReading.TimelineId != 0 &&
+                            !slots.ContainsKey(slotReading.Slot))
+                            slots[slotReading.Slot] = slotReading.TimelineId;
+                cancelled = Try(_port.CancelActiveTimeline(actor));
+            }
+
+            foreach (var (slot, incoming) in slots.ToList())
             {
                 if (incoming == 0)
                 {
