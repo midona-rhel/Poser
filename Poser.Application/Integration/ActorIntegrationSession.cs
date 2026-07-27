@@ -1335,10 +1335,13 @@ public sealed class ActorIntegrationSession
         // Which exported source already serves each game path; identical
         // duplicates are ignored, conflicting ones fail the export.
         var sources = new Dictionary<string, string>(StringComparer.Ordinal);
-        string rootFull;
+        string realRoot;
         try
         {
-            rootFull = System.IO.Path.GetFullPath(modRoot);
+            var resolvedRoot = ResolveRealPath(System.IO.Path.GetFullPath(modRoot));
+            if (resolvedRoot == null)
+                return (null, skipped, "Penumbra's mod directory could not be resolved to a real path.");
+            realRoot = resolvedRoot;
         }
         catch (Exception ex)
         {
@@ -1371,17 +1374,24 @@ public sealed class ActorIntegrationSession
                     skipped.Add($"{actualRaw} (missing on disk)");
                     continue;
                 }
-                // Canonical containment: GetRelativePath escapes with ".."
-                // for anything outside the canonical root, which catches
-                // <root>/../elsewhere constructions a prefix check accepts.
-                string relative = System.IO.Path.GetRelativePath(rootFull, localFull);
-                if (relative.StartsWith("..", StringComparison.Ordinal)
-                    || System.IO.Path.IsPathRooted(relative))
+                // REAL containment: every reparse point along the path —
+                // including intermediate directory junctions/symlinks — is
+                // resolved to its final filesystem target, so a file under
+                // <root>\junction\… that really lives elsewhere is caught,
+                // and lexical tricks like <root>\..\outside never pass.
+                var realFile = ResolveRealPath(localFull);
+                if (realFile == null)
+                {
+                    skipped.Add($"{actualRaw} (could not resolve the real path)");
+                    continue;
+                }
+                if (EscapesRoot(System.IO.Path.GetRelativePath(realRoot, realFile)))
                 {
                     skipped.Add($"{actualRaw} (outside the Penumbra mod directory)");
                     continue;
                 }
-                sourceKey = localFull;
+                localFull = realFile;
+                sourceKey = realFile;
             }
             else
             {
@@ -1434,6 +1444,64 @@ public sealed class ActorIntegrationSession
             description, glamourerState, customizeData, manipulationData, files, swaps),
             skipped, null);
     }
+
+    /// <summary>
+    /// Resolves the REAL final filesystem path: every reparse point
+    /// (symbolic link, junction) the walk encounters — including
+    /// intermediate directories — is followed to its final target, and the
+    /// walk restarts on the target so ITS ancestors resolve too. Returns
+    /// null on a broken link or a link cycle.
+    /// </summary>
+    private static string? ResolveRealPath(string fullPath)
+    {
+        var separators = new[]
+        {
+            System.IO.Path.DirectorySeparatorChar,
+            System.IO.Path.AltDirectorySeparatorChar,
+        };
+        string path = fullPath;
+        for (int pass = 0; pass < 8; pass++)
+        {
+            string? root = System.IO.Path.GetPathRoot(path);
+            if (string.IsNullOrEmpty(root))
+                return null;
+            string current = root;
+            bool jumped = false;
+            foreach (var segment in path[root.Length..]
+                .Split(separators, StringSplitOptions.RemoveEmptyEntries))
+            {
+                current = System.IO.Path.Combine(current, segment);
+                System.IO.FileSystemInfo info = System.IO.Directory.Exists(current)
+                    ? new System.IO.DirectoryInfo(current)
+                    : new System.IO.FileInfo(current);
+                if (info.LinkTarget == null)
+                    continue;
+                var resolved = info.ResolveLinkTarget(returnFinalTarget: true);
+                if (resolved == null)
+                    return null;
+                // Splice the untraversed remainder onto the resolved
+                // target and restart the walk from the top.
+                var remainder = path[current.Length..].TrimStart('\\', '/');
+                path = remainder.Length == 0
+                    ? resolved.FullName
+                    : System.IO.Path.Combine(resolved.FullName, remainder);
+                jumped = true;
+                break;
+            }
+            if (!jumped)
+                return path;
+        }
+        return null; // Unresolvable nesting depth; treat as a cycle.
+    }
+
+    /// <summary>Segment-exact escape test: only a leading ".." SEGMENT (or
+    /// a rooted result) escapes — a legitimate directory whose name merely
+    /// begins with ".." does not.</summary>
+    private static bool EscapesRoot(string relative) =>
+        System.IO.Path.IsPathRooted(relative)
+        || relative == ".."
+        || relative.StartsWith(".." + System.IO.Path.DirectorySeparatorChar, StringComparison.Ordinal)
+        || relative.StartsWith("../", StringComparison.Ordinal);
 
     private IntegrationResult? McdfGate(ActorId actor)
     {
