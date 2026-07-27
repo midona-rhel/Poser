@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -49,6 +50,25 @@ public sealed class AppearancePane
     private string _collectionReadout = "—";
     private bool _bodyBlocked;
     private string _bodyBlockedDetail = string.Empty;
+
+    // MCDF dialogs; the target actor and export description freeze when a
+    // dialog opens so a selection change cannot retarget the pending file.
+    private readonly FileBrowser _mcdfImportBrowser =
+        new("Import Character File", new[] { ".mcdf" }, isSaveMode: false);
+    private readonly FileBrowser _mcdfExportBrowser =
+        new("Export Character File", new[] { ".mcdf" }, isSaveMode: true);
+    private string _mcdfPath =
+        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+    private ActorId? _mcdfActor;
+    private string _mcdfDescription = string.Empty;
+
+    /// <summary>Pumps the MCDF file dialogs; called at window top level so
+    /// a dialog survives tab switches.</summary>
+    public void DrawBrowsers()
+    {
+        _mcdfImportBrowser.Draw();
+        _mcdfExportBrowser.Draw();
+    }
 
     /// <summary>The ONE stable-id display lookup every surface uses
     /// (nickname, else anonymous mask, else the cleaned snapshot name) --
@@ -384,6 +404,159 @@ public sealed class AppearancePane
             "Holds a saved Customize+ profile on this actor as a temporary profile; Reset removes it so the normal assignment resumes",
             () => _integration.ListBodyProfiles(),
             id => _integration.ResetBodyProfile(id));
+        y += 10f * s;
+
+        // ── Character file (MCDF) ─────────────────────────────────────
+        y += Caption("CHARACTER FILE (MCDF)");
+        var operation = _integration.Mcdf;
+        float mcdfTop = cursor.Y + y;
+        if (_integration.McdfBusy && operation is { } running)
+        {
+            // While busy the row becomes ONE progress row: phase label,
+            // bar, byte/file readout, Cancel.
+            InspectorLayout.FormLabel(new Vector2(cursor.X, mcdfTop), PhaseLabel(running.Phase), s);
+            var cancelSize = Crystarium.MeasureButton("Cancel", Cls.Compact);
+            string readout = running.BytesTotal > 0
+                ? $"{running.FilesDone}/{running.FilesTotal} · {running.BytesDone / (1024.0 * 1024.0):0.0} MB"
+                : running.FileName;
+            float readoutW = ViewText.Measure(readout, 11f, mono: true);
+            float barW = MathF.Max(40f, controlW - cancelSize.X / s - readoutW / s - 16f);
+            ImGui.SetCursorScreenPos(new Vector2(
+                controlX, mcdfTop + InspectorLayout.FormSliderY * s));
+            Crystarium.ProgressBar(
+                running.BytesTotal > 0
+                    ? (float)((double)running.BytesDone / running.BytesTotal)
+                    : 0f,
+                barW);
+            ViewText.Label(new Vector2(
+                    controlX + (barW + 8f) * s, mcdfTop + InspectorLayout.FormLabelY * s),
+                readout, 11f, FontWeight.Regular, InspectorLayout.LabelColor, mono: true);
+            ImGui.SetCursorScreenPos(new Vector2(
+                cursor.X + width - cancelSize.X, mcdfTop + InspectorLayout.FormButtonY * s));
+            if (Crystarium.Button("Cancel", new ButtonProps
+                {
+                    Id = "app-mcdf-cancel",
+                    Classes = Cls.Compact,
+                    Disabled = !running.Cancellable,
+                    Tooltip = running.Cancellable
+                        ? "Cancel this operation; an import rolls back everything already applied"
+                        : "This phase cannot be cancelled",
+                }))
+                _integration.CancelMcdf();
+            RowHelp(mcdfTop, "app-mcdf-progress-row",
+                "The running character-file operation for this actor");
+        }
+        else
+        {
+            InspectorLayout.FormLabel(new Vector2(cursor.X, mcdfTop), "File", s);
+            var importSize = Crystarium.MeasureButton("Import…", Cls.Compact);
+            var exportSize = Crystarium.MeasureButton("Export…", Cls.Compact);
+            var mcdfResetSize = Crystarium.MeasureButton("Reset MCDF", Cls.Compact);
+            bool mcdfOwnedNow = external.Mcdf != null;
+            float buttons = importSize.X + 8f * s + exportSize.X
+                + (mcdfOwnedNow ? 8f * s + mcdfResetSize.X : 0f);
+            string currentFile = external.Mcdf?.FileName ?? "None";
+            ViewText.Label(new Vector2(controlX, mcdfTop + InspectorLayout.FormLabelY * s),
+                FitLabel(currentFile, MathF.Max(30f * s, controlW * s - buttons - 12f * s)),
+                11f, FontWeight.Regular,
+                mcdfOwnedNow ? InspectorLayout.ValueColor : InspectorLayout.HintColor);
+
+            float bx2 = cursor.X + width;
+            if (mcdfOwnedNow)
+            {
+                bx2 -= mcdfResetSize.X;
+                ImGui.SetCursorScreenPos(new Vector2(
+                    bx2, mcdfTop + InspectorLayout.FormButtonY * s));
+                if (Crystarium.Button("Reset MCDF", new ButtonProps
+                    {
+                        Id = "app-mcdf-reset",
+                        Classes = Cls.Compact,
+                        Tooltip = "Remove everything this character file applied and restore the incoming external state",
+                    }))
+                {
+                    var result = _integration.ResetMcdf(actor);
+                    _status = result.Success ? string.Empty : $"Reset MCDF: {result.Detail}";
+                    _readoutAt = DateTime.MinValue;
+                }
+                bx2 -= 8f * s;
+            }
+
+            bool exportable = penumbra.Available && glamourerApi.Available && !mcdfOwnedNow;
+            bx2 -= exportSize.X;
+            ImGui.SetCursorScreenPos(new Vector2(
+                bx2, mcdfTop + InspectorLayout.FormButtonY * s));
+            if (Crystarium.Button("Export…", new ButtonProps
+                {
+                    Id = "app-mcdf-export",
+                    Classes = Cls.Compact,
+                    Disabled = !exportable,
+                    Tooltip = !penumbra.Available ? penumbra.Detail
+                        : !glamourerApi.Available ? glamourerApi.Detail
+                        : mcdfOwnedNow
+                            ? "Reset MCDF first — an imported file is never repackaged"
+                            : "Save this actor's mods, appearance, and body scale as a .mcdf",
+                }) && exportable)
+            {
+                _mcdfActor = actor;
+                _mcdfDescription = headerName;
+                _mcdfExportBrowser.Open(_mcdfPath, chosen =>
+                {
+                    _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
+                    if (_mcdfActor is not { } frozen)
+                        return;
+                    var begun = _integration.BeginExport(
+                        frozen, chosen, $"{_mcdfDescription} — exported by Poser");
+                    _status = begun.Success ? string.Empty : $"Export: {begun.Detail}";
+                });
+            }
+
+            bx2 -= 8f * s + importSize.X;
+            ImGui.SetCursorScreenPos(new Vector2(
+                bx2, mcdfTop + InspectorLayout.FormButtonY * s));
+            if (Crystarium.Button("Import…", new ButtonProps
+                {
+                    Id = "app-mcdf-import",
+                    Classes = Cls.Compact,
+                    Tooltip = "Apply a .mcdf character file (mods, appearance, body scale) to only this actor",
+                }))
+            {
+                _mcdfActor = actor;
+                _mcdfImportBrowser.Open(_mcdfPath, chosen =>
+                {
+                    _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
+                    if (_mcdfActor is not { } frozen)
+                        return;
+                    var begun = _integration.BeginImport(frozen, chosen);
+                    _status = begun.Success ? string.Empty : $"Import: {begun.Detail}";
+                    _readoutAt = DateTime.MinValue;
+                });
+            }
+            RowHelp(mcdfTop, "app-mcdf-row",
+                "Import a Mare/Brio/Ktisis character file onto only this actor, or export this actor's current mods, appearance, and body scale");
+        }
+        y += InspectorLayout.FormRowHeight * s;
+
+        // The last operation's truthful result, with the skipped-resource
+        // names on hover when an export omitted anything.
+        if (operation?.Outcome is { } outcome)
+        {
+            var lineTop = cursor.Y + y + 2f * s;
+            ViewText.Label(new Vector2(cursor.X, lineTop), outcome.Detail, 11f,
+                FontWeight.Regular, InspectorLayout.HintColor);
+            if (outcome.SkippedResources.Count > 0)
+            {
+                var lineMin = new Vector2(cursor.X, lineTop);
+                var lineMax = new Vector2(cursor.X + width, lineTop + 16f * s);
+                if (Crystarium.HoverHelp.HelpHovered(lineMin, lineMax))
+                {
+                    var shown = outcome.SkippedResources.Count > 8
+                        ? string.Join("  ", outcome.SkippedResources.Take(8)) + "  …"
+                        : string.Join("  ", outcome.SkippedResources);
+                    Crystarium.HoverHelp.Explain("app-mcdf-skipped", lineMin, lineMax, shown);
+                }
+            }
+            y += 20f * s;
+        }
 
         // Register the content extent so the shell's scroll knows the
         // page height (the form fits the retained minimum; this is only
@@ -422,6 +595,27 @@ public sealed class AppearancePane
             }
         }
     }
+
+    private static string PhaseLabel(McdfPhase phase) => phase switch
+    {
+        McdfPhase.Reading => "Reading",
+        McdfPhase.Validating => "Validating",
+        McdfPhase.Extracting => "Extracting",
+        McdfPhase.Preparing => "Preparing",
+        McdfPhase.CapturingBaseline => "Capturing",
+        McdfPhase.ApplyingResources => "Applying mods",
+        McdfPhase.ApplyingAppearance => "Applying look",
+        McdfPhase.AwaitingRedraw => "Redrawing",
+        McdfPhase.ApplyingBodyProfile => "Body profile",
+        McdfPhase.Committing => "Committing",
+        McdfPhase.CapturingExport => "Capturing",
+        McdfPhase.WritingPackage => "Writing",
+        McdfPhase.RollingBack => "Rolling back",
+        McdfPhase.Completed => "Completed",
+        McdfPhase.Failed => "Failed",
+        McdfPhase.Cancelled => "Cancelled",
+        _ => "Working",
+    };
 
     /// <summary>Truncates a trigger label to its fixed-width button with an
     /// ellipsis, so long external names never stretch the form.</summary>

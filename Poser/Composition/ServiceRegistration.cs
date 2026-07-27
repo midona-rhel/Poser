@@ -109,7 +109,22 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Integration.IntegrationRuntimePort>();
         services.AddSingleton<Application.Integration.IIntegrationRuntimePort>(
             sp => sp.GetRequiredService<Game.Integration.IntegrationRuntimePort>());
-        services.AddSingleton<Application.Integration.ActorIntegrationSession>();
+        services.AddSingleton<Application.Integration.ActorIntegrationSession>(sp =>
+        {
+            var session = new Application.Integration.ActorIntegrationSession(
+                sp.GetRequiredService<Application.Integration.IIntegrationRuntimePort>(),
+                sp.GetRequiredService<Application.Integration.IMcdfFileBoundary>());
+            // The MCDF hard limits are config-backed with conservative
+            // defaults; read once at composition.
+            var limits = sp.GetRequiredService<Config.ConfigurationService>()
+                .Config.Integration;
+            session.Limits = new global::Poser.Domain.Integration.McdfLimits(
+                limits.McdfMaxTotalBytes,
+                limits.McdfMaxFileBytes,
+                limits.McdfMaxFileCount,
+                limits.McdfMaxGamePathCount);
+            return session;
+        });
         services.AddSingleton<AnimationCatalog>();
         services.AddSingleton<AnimationSceneActions>();
         services.AddSingleton<Game.Animation.AnimationCatalogLoader>();

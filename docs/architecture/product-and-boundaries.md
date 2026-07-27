@@ -10,13 +10,19 @@ in the active UI or dependency closure.
   import/export; one undo journal; expression, gaze, animation/physics
   freeze; settings; the live harness; runtime appearance (opacity,
   whole-model tint, granular wetness — [features/runtime-appearance.md](
-  ../features/runtime-appearance.md)) with its narrow OUTBOUND
-  Open-in-Glamourer navigation, the one allowed IPC use. Animation may
-  run while posing.
+  ../features/runtime-appearance.md)); actor-scoped external appearance
+  workflows — Penumbra collection, Glamourer design, and Customize+
+  profile selectors, MCDF import/export ([features/files-and-transfer.md](
+  ../features/files-and-transfer.md)), and outbound Open-in-Glamourer —
+  through ONE integration port, the only allowed IPC surface. Animation
+  may run while posing.
 - Deferred (no dormant UI or registrations): animation
   authoring, cameras, lights, environment, world objects, references,
-  libraries/projects, autosave, status/VFX, and any general IPC/web API
-  beyond the outbound Glamourer navigation above.
+  libraries/projects (no file library, scene format, thumbnails, or
+  recent-file database), autosave, status/VFX, Character Select+ actor
+  application (its public IPC has neither arbitrary-actor targeting nor a
+  restore call — deferred until both exist), and any general IPC/web API
+  beyond the integration port above.
 - Layers: Domain → nothing; Application → Domain; Game → Domain+Application+
   PosingCore; UI → rendering only; Poser composes. Domain/Application never
   touch Dalamud/ImGui/pointers; addresses never leave `Poser.Game`; UI owns

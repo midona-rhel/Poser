@@ -278,6 +278,7 @@ public class MainWindow : Window
         DrawActorContextMenu();
         DrawBoneContextMenu();
         DrawRenameModal();
+        _appearancePane.DrawBrowsers();
 
     }
 

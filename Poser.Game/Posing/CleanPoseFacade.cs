@@ -29,6 +29,7 @@ public sealed class CleanPoseFacade
         IGazeService gaze,
         Poser.Application.Animation.AnimationSession animation,
         Poser.Application.Presentation.ActorPresentationSession presentation,
+        Poser.Application.Integration.ActorIntegrationSession integration,
         IPluginLog log)
     {
         _bindings = bindings;
@@ -42,8 +43,11 @@ public sealed class CleanPoseFacade
         _gaze = gaze;
         _animation = animation;
         _presentation = presentation;
+        _integration = integration;
         _log = log;
     }
+
+    private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
 
     private readonly Poser.Application.Transforms.TransformCommandService _commands;
     private readonly IPoseFileService _poseFiles;
@@ -161,6 +165,14 @@ public sealed class CleanPoseFacade
             var presentation = _presentation.ResetActor(animationActor);
             if (!presentation.Success && presentation.Detail is { } presentationDetail)
                 failures.Add($"appearance reset failed: {presentationDetail}");
+
+            // External integrations LAST: restoring collections/MCDF can
+            // trigger a redraw, which would discard everything the steps
+            // above just put back if it ran earlier. Failures aggregate
+            // without skipping later cleanup.
+            var external = _integration.ResetActor(animationActor);
+            if (!external.Success && external.Detail is { } externalDetail)
+                failures.Add($"external appearance reset failed: {externalDetail}");
         }
 
         if (failures.Count == 0)

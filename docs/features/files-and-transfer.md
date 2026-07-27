@@ -28,5 +28,41 @@ interchange with Brio and (via name conversion) Anamnesis.
   chosen scope; the model transform applies once to the owning actor.
   The Expression preset applies face bones with `j_kao` excluded; face
   reconcile and `.cmp` remain Character-only.
-- File import is not undoable (known gap). In-memory copy/stash uses
-  `PortablePose` and is fully history-integrated.
+- File import is ONE atomic undoable edit: the importer computes a plan
+  without mutating, every affected exact slot-qualified target (including
+  reset-before-import and the model transform) is captured first, a
+  failure restores everything and appends no history item, and success
+  appends exactly one. The Selected-scope filter freezes at dialog
+  confirmation; the target actor freezes at dialog open. In-memory
+  copy/stash uses `PortablePose` and is equally history-integrated.
+
+## Character files (MCDF)
+
+- MCDF v1 (Mare/Brio/Ktisis interchange) is a legacy K4os LZ4 stream:
+  ASCII `MCDF`, version byte 1, little-endian int32 JSON length, UTF-8
+  JSON (`Description`, `GlamourerData`, `CustomizePlusData`,
+  `ManipulationData`, `Files[{GamePaths,Length,Hash}]`,
+  `FileSwaps[{GamePaths,FileSwapPath}]`), then raw payloads in `Files`
+  order. Unknown members are ignored; unknown versions fail. MCDF carries
+  appearance resources ONLY — never pose, animation, selection, camera,
+  or scene data; `.pose` remains the only pose format.
+- Import validates before any actor change: magic/version, complete
+  reads, config-backed hard limits (total/one-file bytes, entry and path
+  counts), normalized relative lower-case game paths, the Brio extension
+  allow-list, byte-identical-only duplicates, game-path-to-game-path
+  swaps, and SHA-1 payload verification. Extraction uses generated names
+  in a unique temp operation directory, deleted on success, failure,
+  cancellation, GPose exit, and disposal.
+- One import/export runs at a time with an immutable progress snapshot
+  and cooperative cancellation. Import applies as a transaction
+  (temporary collection → temporary mods/manipulations → locked Glamourer
+  state → bounded redraw wait with binding refresh → temporary body
+  profile) and commits ownership only when complete; failure or
+  cancellation rolls back in reverse order, and a partial rollback stays
+  owned and retryable through **Reset MCDF**. Re-import tears the active
+  MCDF down first. Export is read-only, refuses an MCDF-wearing actor
+  and foreign Glamourer locks, keeps swaps as swaps, applies Brio's
+  compatibility filter, deduplicates payloads by SHA-1, reports every
+  skipped resource by name, and replaces the destination atomically via
+  a `.tmp`. Ownership/baseline semantics live in
+  [runtime-appearance.md](runtime-appearance.md).
