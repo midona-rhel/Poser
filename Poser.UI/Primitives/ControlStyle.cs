@@ -4,6 +4,7 @@ namespace Poser.UI;
 
 internal enum UiWidthKind
 {
+    Unspecified,
     Content,
     Fill,
     Fixed,

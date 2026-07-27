@@ -17,12 +17,11 @@ public static partial class Crystarium
         string? help = null,
         string? id = null)
     {
-        float scale = ImGuiHelpers.GlobalScale;
         float height = ButtonHeight(style);
-        float width = ControlSizing.Width(
-            style.Width,
-            MeasureLabel(label, style).X / scale + ButtonPadding(style) * 2f,
-            ImGui.GetContentRegionAvail().X / scale);
+        float width = ResolveButtonWidth(
+            label,
+            style,
+            ImGui.GetContentRegionAvail().X / ImGuiHelpers.GlobalScale);
         return RenderButton(
             id ?? label,
             new(width, height),
@@ -72,10 +71,45 @@ public static partial class Crystarium
             onClick);
     }
 
-    public static Vector2 MeasureButton(string label, ControlStyle style = default) =>
-        new(
-            MeasureLabel(label, style).X + ButtonPadding(style) * 2f * ImGuiHelpers.GlobalScale,
-            ButtonHeight(style) * ImGuiHelpers.GlobalScale);
+    public static Vector2 MeasureButton(string label, ControlStyle style = default)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        return new(
+            ResolveButtonWidth(
+                label,
+                style,
+                ImGui.GetContentRegionAvail().X / scale) * scale,
+            ButtonHeight(style) * scale);
+    }
+
+    internal static float IntrinsicButtonWidth(
+        string label, ControlStyle style) =>
+        MeasureLabel(label, style).X / ImGuiHelpers.GlobalScale
+            + ButtonPadding(style) * 2f;
+
+    internal static float ResolveButtonWidth(
+        string label, ControlStyle style, float availableWidth) =>
+        ControlSizing.Width(
+            style.Width,
+            IntrinsicButtonWidth(label, style),
+            availableWidth);
+
+    internal static bool ButtonAtWidth(
+        string label,
+        Action? onClick,
+        ControlStyle style,
+        float width,
+        bool disabled,
+        string? help,
+        string id) =>
+        RenderButton(
+            id,
+            new(width, ButtonHeight(style)),
+            style,
+            disabled,
+            help,
+            () => DrawButtonLabel(label, style),
+            onClick);
 
     private static bool RenderButton(
         string id,

@@ -14,8 +14,8 @@ public static partial class Crystarium
     /// 12px text-secondary; active tab bg surface-2 (#2a2a2e) + shadow
     /// 0 1px 2px black@.25 + text-primary.
     /// </summary>
-    /// <summary>When the styled width is narrower than the natural width,
-    /// tab padding compresses to the shared spacing floor. When
+    /// <summary>Fixed and fill widths occupy their complete requested span,
+    /// distributing that span across the segments. When
     /// <paramref name="alignFirstTabToCursor"/> is true, the cursor denotes
     /// the first tab edge rather than the decorative outer pill edge. This lets
     /// header labels align with sibling tab labels without treating the pill's
@@ -39,40 +39,42 @@ public static partial class Crystarium
         float tabHeight = MathF.Max(0f, totalHeight - chromePad * 2f) * scale;
         float tabPadX = Crystarium.ActiveTheme.Spacing.Six * scale;
 
-        float availableWidth = ImGui.GetContentRegionAvail().X / scale;
-        float constrainedWidth = style.Width.Kind switch
-        {
-            UiWidthKind.Fill => availableWidth,
-            UiWidthKind.Fixed => style.Width.Value,
-            _ => 0f,
-        };
-        if (constrainedWidth > 0f)
-        {
-            var mfont = FontRegistry.Resolve(FontFamily.Default, Crystarium.ActiveTheme.Typography.LabelSize);
-            bool mp = mfont is { Available: true };
-            if (mp) mfont!.Push();
-            float text = 0f;
-            foreach (var it in items) text += ImGui.CalcTextSize(it).X;
-            if (mp) mfont!.Pop();
-            float chrome = pad * 2f + gap * (items.Length - 1);
-            float fitPad =
-                (constrainedWidth * scale - chrome - text) / (items.Length * 2f);
-            tabPadX = MathF.Max(
-                Crystarium.ActiveTheme.Spacing.Three * scale,
-                MathF.Min(tabPadX, fitPad));
-        }
-
         var font = FontRegistry.Resolve(FontFamily.Default, Crystarium.ActiveTheme.Typography.LabelSize);
         bool fontPushed = font is { Available: true };
         if (fontPushed) font!.Push();
 
-        // Measure tabs.
+        // Content uses intrinsic tab widths. Fixed and fill resolve an exact
+        // outer width, then distribute the inner span without changing it.
         Span<float> widths = items.Length <= 16 ? stackalloc float[items.Length] : new float[items.Length];
-        float totalW = pad * 2f + gap * (items.Length - 1);
+        float chromeWidth = pad * 2f + gap * MathF.Max(0, items.Length - 1);
+        float naturalInnerWidth = 0f;
         for (int i = 0; i < items.Length; i++)
         {
             widths[i] = ImGui.CalcTextSize(items[i]).X + tabPadX * 2f;
-            totalW += widths[i];
+            naturalInnerWidth += widths[i];
+        }
+
+        float naturalWidth = chromeWidth + naturalInnerWidth;
+        float totalW = ControlSizing.Width(
+            style.Width,
+            naturalWidth / scale,
+            ImGui.GetContentRegionAvail().X / scale) * scale;
+        if ((style.Width.Kind is UiWidthKind.Fixed or UiWidthKind.Fill)
+            && items.Length > 0)
+        {
+            float innerWidth = MathF.Max(0f, totalW - chromeWidth);
+            if (innerWidth >= naturalInnerWidth)
+            {
+                float extra = (innerWidth - naturalInnerWidth) / items.Length;
+                for (int i = 0; i < widths.Length; i++)
+                    widths[i] += extra;
+            }
+            else if (naturalInnerWidth > 0f)
+            {
+                float compression = innerWidth / naturalInnerWidth;
+                for (int i = 0; i < widths.Length; i++)
+                    widths[i] *= compression;
+            }
         }
         float totalH = tabHeight + pad * 2f;
 
@@ -118,8 +120,12 @@ public static partial class Crystarium
                 ? theme.Text
                 : theme.Text with { W = 0.72f }; // text-secondary
             var textSize = ImGui.CalcTextSize(items[i]);
-            dl.AddText(tabMin + new Vector2(tabPadX, (tabHeight - textSize.Y) * 0.5f),
+            dl.PushClipRect(tabMin, tabMax, true);
+            dl.AddText(tabMin + new Vector2(
+                    (widths[i] - textSize.X) * 0.5f,
+                    (tabHeight - textSize.Y) * 0.5f),
                 ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(textColor)), items[i]);
+            dl.PopClipRect();
 
             x += widths[i] + gap;
         }

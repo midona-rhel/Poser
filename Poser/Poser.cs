@@ -62,7 +62,7 @@ public class Poser : IDalamudPlugin
             chatGui);
 
         // Initialize configuration service (sets static Instance, must be before UI)
-        var configService = _serviceProvider.GetRequiredService<ConfigurationService>();
+        _ = _serviceProvider.GetRequiredService<ConfigurationService>();
 
         // Activate the clean scene owner before constructing presentation.
         // Singleton registration is lazy: without resolving this service its
@@ -75,11 +75,6 @@ public class Poser : IDalamudPlugin
 
         // Dalamud provides real backdrop blur for the retained glass surfaces.
         Crystarium.FloatingSurface.BackdropBlurAvailable = true;
-
-        // Bridge Poser's UIConfiguration into Crystarium's stylesheet theme.
-        // First sync runs on the first draw frame (Resolve() touches ImGui style
-        // colors, which is unsafe outside an ImGui frame).
-        ThemeBridge.Initialize(pluginInterface, configService);
 
         // Initialize UI Manager (triggers subscription to draw events)
         _ = _serviceProvider.GetRequiredService<IUIManager>();
@@ -141,7 +136,6 @@ public class Poser : IDalamudPlugin
     public void Dispose()
     {
         _commandManager.RemoveHandler(CommandName);
-        ThemeBridge.Dispose();
         FontRegistry.Dispose();
         _serviceProvider.Dispose();
     }

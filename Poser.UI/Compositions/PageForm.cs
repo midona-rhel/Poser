@@ -72,13 +72,22 @@ public static partial class Crystarium
             var leftScope = new ActionScope();
             left(leftScope);
             float top = _origin.Y + _y * _scale;
-            DrawActions(leftScope.Items, _origin.X, top, false, $"{_id}-actions");
             if (right != null)
             {
                 var rightScope = new ActionScope();
                 right(rightScope);
-                DrawActions(rightScope.Items, _origin.X + _width, top, true,
+                float groupGap = ActiveTheme.Page.ActionGap * _scale;
+                float groupWidth = MathF.Max(0f, (_width - groupGap) * 0.5f);
+                DrawActions(leftScope.Items, _origin.X, groupWidth, top, false,
+                    $"{_id}-actions");
+                DrawActions(rightScope.Items,
+                    _origin.X + groupWidth + groupGap, groupWidth, top, true,
                     $"{_id}-actions-right");
+            }
+            else
+            {
+                DrawActions(leftScope.Items, _origin.X, _width, top, false,
+                    $"{_id}-actions");
             }
             _y += ActiveTheme.Controls.FormRowHeight;
             _hasFlowContent = true;
@@ -208,7 +217,7 @@ public static partial class Crystarium
                     displayedValue = next;
                     onChange(next);
                 },
-                WithWidth(style, controlWidth / row.Scale),
+                InRegion(style, controlWidth / row.Scale, fillByDefault: true),
                 disabled: disabled);
             string readout = displayedValue.ToString(format, CultureInfo.InvariantCulture);
             DrawTextRight(
@@ -229,9 +238,11 @@ public static partial class Crystarium
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
+            var controlStyle = InRegion(
+                style, row.ControlWidth / row.Scale, fillByDefault: false);
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
-                style.Height, ActiveTheme.Controls.SwitchHeight)));
-            Crystarium.Switch(id, value, onChange, style, disabled);
+                controlStyle.Height, ActiveTheme.Controls.SwitchHeight)));
+            Crystarium.Switch(id, value, onChange, controlStyle, disabled);
             _page.EndRow(row, id, help);
         }
 
@@ -242,7 +253,7 @@ public static partial class Crystarium
             string id = Id(label);
             var row = _page.BeginRow(label);
             var controlStyle =
-                WorkspaceWidth(style, row.ControlWidth / row.Scale);
+                WorkspaceInRegion(style, row.ControlWidth / row.Scale);
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 controlStyle.Height, ActiveTheme.Controls.WorkspaceHeight)));
             Crystarium.Dropdown(id, items, selected, onChange,
@@ -257,7 +268,7 @@ public static partial class Crystarium
             string id = Id(label);
             var row = _page.BeginRow(label);
             var controlStyle =
-                WorkspaceWidth(style, row.ControlWidth / row.Scale);
+                WorkspaceInRegion(style, row.ControlWidth / row.Scale);
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 controlStyle.Height, ActiveTheme.Controls.WorkspaceHeight)));
             Crystarium.TextInput(id, value, onChange,
@@ -273,7 +284,7 @@ public static partial class Crystarium
             var actions = new ActionScope();
             content(actions);
             DrawActions(actions.Items,
-                alignRight ? row.ControlOrigin.X + row.ControlWidth : row.ControlOrigin.X,
+                row.ControlOrigin.X, row.ControlWidth,
                 row.Origin.Y, alignRight, id);
             _page.EndRow(row, id, help);
         }
@@ -285,15 +296,22 @@ public static partial class Crystarium
             string id = Id(label);
             var row = _page.BeginRow(label);
             float gap = ActiveTheme.Page.ActionGap * row.Scale;
+            var resetStyle =
+                Workspace(style) with { Width = UiWidth.Content };
             float resetWidth = owned
-                ? MeasureButton("Reset", Workspace(style)).X
+                ? MeasureButton("Reset", resetStyle).X
                 : 0f;
             float triggerWidth = row.ControlWidth - resetWidth - (owned ? gap : 0f);
+            var triggerStyle = InRegion(
+                Workspace(style),
+                triggerWidth / row.Scale,
+                fillByDefault: true);
+            float renderedTriggerWidth = ResolveButtonWidth(
+                value, triggerStyle, triggerWidth / row.Scale) * row.Scale;
             string display = FitText(value,
-                triggerWidth - ActiveTheme.Spacing.Six * 2f * row.Scale,
+                renderedTriggerWidth
+                    - ActiveTheme.Spacing.Six * 2f * row.Scale,
                 ActiveTheme.Typography.LabelSize);
-            var triggerStyle = WorkspaceWidth(
-                style, triggerWidth / row.Scale);
             float controlHeight = ControlSizing.Height(
                 triggerStyle.Height, ActiveTheme.Controls.WorkspaceHeight);
             ImGui.SetCursorScreenPos(row.CenterControl(controlHeight));
@@ -308,7 +326,7 @@ public static partial class Crystarium
                 ImGui.SetCursorScreenPos(new(
                     row.ControlOrigin.X + row.ControlWidth - resetWidth,
                     row.CenterControl(controlHeight).Y));
-                Crystarium.Button("Reset", reset, Workspace(style),
+                Crystarium.Button("Reset", reset, resetStyle,
                     help: $"Restore the incoming {label.ToLowerInvariant()} exactly",
                     id: $"{id}-reset");
             }
@@ -344,7 +362,8 @@ public static partial class Crystarium
             var row = _page.BeginRow(label);
             var actions = new ActionScope();
             content(actions);
-            float actionWidth = MeasureActions(actions.Items, row.Scale);
+            float actionWidth = MeasureActions(
+                actions.Items, row.Scale, row.ControlWidth);
             float gap = actions.Items.Count > 0
                 ? ActiveTheme.Page.ActionGap * row.Scale
                 : 0f;
@@ -356,8 +375,8 @@ public static partial class Crystarium
                 unavailable ? FormHintColor : FormValueColor,
                 FitText(value, valueWidth, ActiveTheme.Typography.CaptionSize));
             DrawActions(actions.Items,
-                row.ControlOrigin.X + row.ControlWidth,
-                row.Origin.Y, true, id);
+                row.ControlOrigin.X + row.ControlWidth - actionWidth,
+                actionWidth, row.Origin.Y, true, id);
             _page.EndRow(row, id, help);
         }
 
@@ -369,12 +388,22 @@ public static partial class Crystarium
             string id = Id(label);
             var row = _page.BeginRow(label);
             float gap = ActiveTheme.Page.ActionGap * row.Scale;
-            float actionWidth = cancel != null
-                ? MeasureButton("Cancel", Workspace(cancelStyle)).X + gap
-                : 0f;
             float readoutWidth = MeasureText(readout,
                 ActiveTheme.Typography.CaptionSize, FontWeight.Regular,
                 FontFamily.Mono).X;
+            float actionLimit = MathF.Max(0f,
+                row.ControlWidth
+                    - ActiveTheme.Form.ValueColumnWidth * row.Scale
+                    - readoutWidth
+                    - gap * 2f);
+            var actions = new ActionScope();
+            if (cancel != null)
+                actions.Button("Cancel", cancel, cancelStyle,
+                    cancelDisabled, cancelHelp);
+            float actionWidth = actions.Items.Count > 0
+                ? MeasureActions(
+                    actions.Items, row.Scale, actionLimit) + gap
+                : 0f;
             float barWidth = MathF.Max(
                 ActiveTheme.Form.ValueColumnWidth * row.Scale,
                 row.ControlWidth - actionWidth - readoutWidth - gap);
@@ -387,12 +416,10 @@ public static partial class Crystarium
                 FormLabelColor, readout);
             if (cancel != null)
             {
-                var actions = new ActionScope();
-                actions.Button("Cancel", cancel, cancelStyle,
-                    cancelDisabled, cancelHelp);
                 DrawActions(actions.Items,
-                    row.ControlOrigin.X + row.ControlWidth,
-                    row.Origin.Y, true, id);
+                    row.ControlOrigin.X + row.ControlWidth
+                        - (actionWidth - gap),
+                    actionWidth - gap, row.Origin.Y, true, id);
             }
             _page.EndRow(row, id, help);
         }
@@ -454,18 +481,24 @@ public static partial class Crystarium
         public void Well(string label, Vector4? value, Action<Vector4> onChange,
             string? unavailableHelp = null, ControlStyle style = default)
         {
-            float side = ControlSizing.Height(
-                style.Height, ActiveTheme.Controls.ColorWellSize);
-            float width = ControlSizing.Width(
-                style.Width, side,
-                (_row.ControlOrigin.X + _row.ControlWidth - _x) / _row.Scale);
             float labelWidth = MeasureText(label,
                 ActiveTheme.Typography.CaptionSize, FontWeight.Regular).X;
+            float wellX = _x + labelWidth
+                + ActiveTheme.Spacing.Two * _row.Scale;
+            var controlStyle = InRegion(
+                style,
+                (_row.ControlOrigin.X + _row.ControlWidth - wellX) / _row.Scale,
+                fillByDefault: false);
+            float side = ControlSizing.Height(
+                controlStyle.Height, ActiveTheme.Controls.ColorWellSize);
+            float width = ControlSizing.Width(
+                controlStyle.Width, side,
+                (_row.ControlOrigin.X + _row.ControlWidth - wellX) / _row.Scale);
             DrawTextCentered(new(_x, _row.Origin.Y),
                 new(labelWidth, ActiveTheme.Controls.FormRowHeight * _row.Scale),
                 ActiveTheme.Typography.CaptionSize, FontWeight.Regular,
                 FormHintColor, label);
-            _x += labelWidth + ActiveTheme.Spacing.Two * _row.Scale;
+            _x = wellX;
             ImGui.SetCursorScreenPos(new(_x,
                 _row.Origin.Y + (ActiveTheme.Controls.FormRowHeight -
                     side) * 0.5f * _row.Scale));
@@ -473,7 +506,7 @@ public static partial class Crystarium
                 $"{_id}-{label}",
                 value ?? Vector4.Zero,
                 onChange,
-                style,
+                controlStyle,
                 rgbOnly: true,
                 disabled: value == null,
                 help: unavailableHelp);
@@ -505,53 +538,95 @@ public static partial class Crystarium
                 0.5f * Scale);
     }
 
-    private static float MeasureActions(IReadOnlyList<ActionItem> actions,
-        float scale)
+    private static float MeasureActions(
+        IReadOnlyList<ActionItem> actions,
+        float scale,
+        float availableWidth,
+        out float fillWidth)
     {
-        float total = 0f;
-        for (int i = 0; i < actions.Count; i++)
-        {
-            total += MeasureButton(actions[i].Label,
-                Workspace(actions[i].Style)).X;
-            if (i > 0)
-                total += ActiveTheme.Page.ActionGap * scale;
-        }
-        return total;
-    }
-
-    private static void DrawActions(IReadOnlyList<ActionItem> actions,
-        float anchorX, float top, bool alignRight, string id)
-    {
-        float scale = ImGuiHelpers.GlobalScale;
         float gap = ActiveTheme.Page.ActionGap * scale;
-        float total = MeasureActions(actions, scale);
-        float x = alignRight ? anchorX - total : anchorX;
+        float committed = gap * MathF.Max(0, actions.Count - 1);
+        int fillCount = 0;
         for (int i = 0; i < actions.Count; i++)
         {
             var action = actions[i];
             var style = Workspace(action.Style);
-            float width = MeasureButton(action.Label, style).X;
+            switch (style.Width.Kind)
+            {
+                case UiWidthKind.Fill:
+                    fillCount++;
+                    break;
+                case UiWidthKind.Fixed:
+                    committed += style.Width.Value * scale;
+                    break;
+                default:
+                    committed += IntrinsicButtonWidth(
+                        action.Label, style) * scale;
+                    break;
+            }
+        }
+
+        fillWidth = fillCount == 0
+            ? 0f
+            : MathF.Max(0f, availableWidth - committed) / fillCount;
+        return committed + fillWidth * fillCount;
+    }
+
+    private static float MeasureActions(
+        IReadOnlyList<ActionItem> actions,
+        float scale,
+        float availableWidth) =>
+        MeasureActions(actions, scale, availableWidth, out _);
+
+    private static void DrawActions(IReadOnlyList<ActionItem> actions,
+        float regionX, float regionWidth, float top, bool alignRight, string id)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        float gap = ActiveTheme.Page.ActionGap * scale;
+        float total = MeasureActions(
+            actions, scale, regionWidth, out float fillWidth);
+        float x = alignRight
+            ? regionX + regionWidth - total
+            : regionX;
+        for (int i = 0; i < actions.Count; i++)
+        {
+            var action = actions[i];
+            var style = Workspace(action.Style);
+            float width = style.Width.Kind switch
+            {
+                UiWidthKind.Fill => fillWidth,
+                UiWidthKind.Fixed => style.Width.Value * scale,
+                _ => IntrinsicButtonWidth(action.Label, style) * scale,
+            };
             float height = ControlSizing.Height(
                 style.Height, ActiveTheme.Controls.WorkspaceHeight);
             ImGui.SetCursorScreenPos(new(
                 x,
-                top + (ActiveTheme.Controls.FormRowHeight - height)
+                    top + (ActiveTheme.Controls.FormRowHeight - height)
                     * 0.5f * scale));
-            Button(action.Label, action.OnClick,
-                style with { Width = UiWidth.Fixed(width / scale) },
-                action.Disabled, action.Help, $"{id}-{action.Label}");
+            ButtonAtWidth(
+                action.Label,
+                action.OnClick,
+                style,
+                width / scale,
+                action.Disabled,
+                action.Help,
+                $"{id}-{action.Label}");
             x += width + gap;
         }
     }
 
-    private static ControlStyle WithWidth(ControlStyle style, float width) =>
-        style.Width.Kind == UiWidthKind.Content
-            ? style with { Width = UiWidth.Fixed(width) }
-            : style;
+    private static ControlStyle InRegion(
+        ControlStyle style, float width, bool fillByDefault) =>
+        style.Width.Kind == UiWidthKind.Fill
+            || (fillByDefault
+                && style.Width.Kind == UiWidthKind.Unspecified)
+                ? style with { Width = UiWidth.Fixed(width) }
+                : style;
 
-    private static ControlStyle WorkspaceWidth(
+    private static ControlStyle WorkspaceInRegion(
         ControlStyle style, float width) =>
-        WithWidth(Workspace(style), width);
+        InRegion(Workspace(style), width, fillByDefault: true);
 
     private static ControlStyle Workspace(ControlStyle style) =>
         style.Height.Kind == UiHeightKind.Natural

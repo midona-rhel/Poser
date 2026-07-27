@@ -40,7 +40,7 @@ public static partial class Crystarium
         }
 
         var dl = ImGui.GetWindowDrawList();
-        // Shared disabled fade (matches the .btn:disabled stylesheet opacity).
+        // Shared disabled fade for retained controls.
         float opacity = disabled ? Crystarium.ActiveTheme.Chrome.ControlDisabledOpacity : 1f;
 
         var trackColor = value
