@@ -587,6 +587,13 @@ public sealed class ActorIntegrationSession
         public Guid? TemporaryProfile;
         public string? BodyJson;
         public IntegrationBaseline Baseline = IntegrationBaseline.None;
+        // The transaction WORKING snapshot — the live Poser-authored
+        // recipe immediately before this import — as opposed to the
+        // durable baseline above, which is what Reset restores. Rollback
+        // returns the actor to the working recipe.
+        public string? WorkingGlamourerState;
+        public bool ReplacedWorkingBodyProfile;
+        public string? WorkingBodyProfileJson;
     }
 
     private InFlightImport? _inFlight;
@@ -743,7 +750,7 @@ public sealed class ActorIntegrationSession
                 // anonymous temporary resources), revalidate the exact
                 // generation, capture the baseline. Refusals happen here,
                 // before any mutation.
-                var (baseline, detail) = PrepareImport(actor, package);
+                var (baseline, detail) = PrepareImport(operation, package);
                 if (detail != null || baseline == null)
                     return detail ?? "The import could not be prepared.";
                 operation.Baseline = baseline;
@@ -908,8 +915,9 @@ public sealed class ActorIntegrationSession
     }
 
     private (IntegrationBaseline? Baseline, string? Detail) PrepareImport(
-        ActorId actor, McdfPackage package)
+        InFlightImport operation, McdfPackage package)
     {
+        var actor = operation.Target;
         var current = OverridesFor(actor);
         if (current.Mcdf is { } mcdf)
         {
@@ -939,12 +947,18 @@ public sealed class ActorIntegrationSession
         }
 
         var baseline = current.Baseline;
-        if (package.GlamourerData.Length > 0 && baseline.GlamourerState == null)
+        if (package.GlamourerData.Length > 0)
         {
+            // ONE live capture serves two roles: the transaction working
+            // snapshot rollback returns to (which includes any active
+            // Poser design), and — only when nothing was captured yet —
+            // the durable baseline Reset restores.
             var incoming = _port.CaptureGlamourerState(actor);
             if (!incoming.Success || incoming.Value is not { } state)
                 return (null, incoming.Detail ?? "The incoming Glamourer state could not be captured.");
-            baseline = baseline with { GlamourerState = state };
+            operation.WorkingGlamourerState = state;
+            if (baseline.GlamourerState == null)
+                baseline = baseline with { GlamourerState = state };
         }
         if (package.CustomizePlusData.Length > 0)
         {
@@ -959,6 +973,15 @@ public sealed class ActorIntegrationSession
                     SavedBodyProfile = bodyState.ActiveIsSaved ? bodyState.ActiveProfile : null,
                     BodyProfileCaptured = true,
                 };
+            // Applying the MCDF profile DISPLACES an active Poser
+            // temporary profile; remember its retained JSON so rollback
+            // can put the working recipe back.
+            if (current.TemporaryBodyProfile != null
+                && current.BodyProfileJson is { } workingJson)
+            {
+                operation.ReplacedWorkingBodyProfile = true;
+                operation.WorkingBodyProfileJson = workingJson;
+            }
         }
         return (baseline, null);
     }
@@ -989,17 +1012,42 @@ public sealed class ActorIntegrationSession
                 failures.Add(deleted.Detail!);
         }
 
+        if (operation.TemporaryProfile == null
+            && operation.ReplacedWorkingBodyProfile && resolvable
+            && operation.WorkingBodyProfileJson is { } workingJson)
+        {
+            // The MCDF profile displaced a Poser temporary profile; put
+            // the working recipe back and record the NEW id Customize+
+            // returns, preserving selector ownership.
+            var reapplied = _port.ApplyTemporaryBodyProfile(actor, workingJson);
+            if (reapplied.Success && reapplied.Value != default)
+            {
+                var owner = OverridesFor(actor);
+                if (owner.TemporaryBodyProfile != null)
+                    Mutate(actor, owner with { TemporaryBodyProfile = reapplied.Value });
+                operation.ReplacedWorkingBodyProfile = false;
+            }
+            else
+            {
+                failures.Add(reapplied.Detail
+                    ?? "The previous Customize+ profile could not be reapplied.");
+            }
+        }
+
         if (operation.GlamourerLocked && resolvable)
         {
             var unlocked = _port.UnlockGlamourerState(actor);
             if (unlocked.Success)
             {
                 operation.GlamourerLocked = false;
-                if (operation.Baseline.GlamourerState is { } state)
+                // The WORKING snapshot — the exact pre-import state,
+                // including any active Poser design — comes back; the
+                // durable baseline stays captured for Reset.
+                if (operation.WorkingGlamourerState is { } state)
                 {
                     var restored = _port.RestoreGlamourerState(actor, state);
                     if (restored.Success)
-                        operation.Baseline = operation.Baseline with { GlamourerState = null };
+                        operation.WorkingGlamourerState = null;
                     else
                         failures.Add(restored.Detail!);
                 }
