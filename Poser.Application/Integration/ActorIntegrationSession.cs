@@ -538,6 +538,12 @@ public sealed class ActorIntegrationSession
     public void Reconcile(SceneSnapshot snapshot)
     {
         var present = new HashSet<ActorId>(snapshot.Actors.Select(actor => actor.Id));
+        // An in-flight import whose exact target generation left the scene
+        // invalidates NOW — committed ownership is not the only state the
+        // lifecycle must police.
+        if (_inFlight is { Invalidated: false } inFlight
+            && !present.Contains(inFlight.Target))
+            InvalidateInFlight();
         foreach (var actor in _overrides.Keys.Where(id => !present.Contains(id)).ToList())
             ResetActor(actor);
     }
@@ -853,6 +859,11 @@ public sealed class ActorIntegrationSession
             {
                 if (Guard() is { } stop)
                     return stop;
+                // The exact generation must still resolve at the moment of
+                // ownership mutation — a despawned or replaced actor rolls
+                // back instead of committing onto a stale id.
+                if (!_port.IsResolvable(actor))
+                    return "The actor is no longer available.";
                 var current = OverridesFor(actor);
                 bool replacedGlamourer = package.GlamourerData.Length > 0;
                 bool replacedBody = bodyJson != null;
@@ -871,6 +882,11 @@ public sealed class ActorIntegrationSession
                 });
                 if (ReferenceEquals(_inFlight, operation))
                     _inFlight = null;
+                // The success outcome publishes INSIDE this action: a reset
+                // that runs after commit is ordered after this publication
+                // on the framework thread, so the background task can never
+                // overwrite it with a stale success message.
+                Finish($"Imported {fileName}.", success: true);
                 return null;
             });
             if (committed != null)
@@ -878,7 +894,6 @@ public sealed class ActorIntegrationSession
                 await FailAsync(committed);
                 return;
             }
-            Finish($"Imported {fileName}.", success: true);
         }
         catch (Exception ex)
         {
