@@ -815,9 +815,14 @@ public static class AppShellView
             var childCursor = ImGui.GetCursorScreenPos();
             if (vm.ContentUsesPage)
             {
+                float allocatedWidth = MathF.Max(
+                    0f,
+                    childSize.X - ScrollbarWidth * s);
                 vm.DrawContent?.Invoke(
                     childCursor,
-                    new Vector2(childSize.X, ImGui.GetContentRegionAvail().Y));
+                    new Vector2(
+                        allocatedWidth,
+                        ImGui.GetContentRegionAvail().Y));
             }
             else
             {

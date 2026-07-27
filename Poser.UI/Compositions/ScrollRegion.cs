@@ -25,8 +25,7 @@ public static partial class Crystarium
         {
             float contentWidth = MathF.Max(
                 0f,
-                ImGui.GetContentRegionAvail().X / scale
-                    - Crystarium.ActiveTheme.Scrollbar.GutterWidth);
+                width - Crystarium.ActiveTheme.Scrollbar.GutterWidth);
             content(new ScrollRegionScope(contentWidth, scale));
         }
         NarrowVisibleScrollbarThumb();
