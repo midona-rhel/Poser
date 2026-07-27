@@ -1,0 +1,120 @@
+using Poser.Domain.Identity;
+using Poser.Domain.Integration;
+
+namespace Poser.Application.Integration;
+
+/// <summary>
+/// Narrow runtime boundary for the external appearance integrations —
+/// Penumbra collections/temporary resources, Glamourer designs/state, and
+/// Customize+ profiles — plus the outbound Open-in-Glamourer navigation.
+///
+/// The implementation owns every IPC subscriber and resolves the actor's
+/// object index only at the call boundary; no index, address, or subscriber
+/// ever crosses this interface. Synchronous members must run on the
+/// framework thread and fail truthfully off it; the session marshals its
+/// background transaction phases through <see cref="OnFrameworkThread"/>.
+/// </summary>
+public interface IIntegrationRuntimePort
+{
+    IntegrationAvailability Penumbra { get; }
+    IntegrationAvailability Glamourer { get; }
+    IntegrationAvailability CustomizePlus { get; }
+
+    /// <summary>Runs one transaction phase on the framework thread. Executes
+    /// inline when already there.</summary>
+    Task<T> OnFrameworkThread<T>(Func<T> action);
+
+    // ── Penumbra ─────────────────────────────────────────────────────────
+
+    IntegrationValue<IReadOnlyList<ExternalItem>> GetCollections();
+
+    IntegrationValue<CollectionAssignment> GetCollectionAssignment(ActorId actor);
+
+    /// <summary>Creates or updates only this actor's individual assignment.</summary>
+    IntegrationPortResult SetIndividualCollection(ActorId actor, Guid collection);
+
+    /// <summary>Restores the captured assignment-vs-inheritance state: either
+    /// the prior individual assignment, or deletion of Poser's assignment so
+    /// inheritance resumes.</summary>
+    IntegrationPortResult RestoreCollection(ActorId actor, CollectionBaseline baseline);
+
+    /// <summary>Creates one temporary collection and assigns it to the exact
+    /// actor. A failed assignment deletes the created collection before the
+    /// failure returns, so no anonymous collection ever leaks.</summary>
+    IntegrationValue<Guid> CreateTemporaryCollection(ActorId actor, string name);
+
+    /// <summary>Adds Poser's temporary mod (embedded files, swaps, and meta
+    /// manipulations) to the temporary collection under the owned tag.</summary>
+    IntegrationPortResult AddTemporaryMods(
+        Guid collection,
+        IReadOnlyDictionary<string, string> paths,
+        string manipulations);
+
+    /// <summary>Deletes the temporary collection (and with it Poser's
+    /// temporary mods and its assignment). Works by id after the actor is
+    /// gone.</summary>
+    IntegrationPortResult DeleteTemporaryCollection(Guid collection);
+
+    /// <summary>Actor-specific meta manipulations, not the global/current
+    /// UI collection's.</summary>
+    IntegrationValue<string> GetActorMetaManipulations(ActorId actor);
+
+    /// <summary>Current resource replacements for the actor: resolved actual
+    /// path (local file or swap source game path) to the game paths it
+    /// serves.</summary>
+    IntegrationValue<IReadOnlyDictionary<string, IReadOnlyList<string>>>
+        GetActorResourcePaths(ActorId actor);
+
+    IntegrationValue<string> GetModDirectory();
+
+    /// <summary>Fire-and-forget redraw request for teardown paths that must
+    /// not wait.</summary>
+    IntegrationPortResult RequestRedraw(ActorId actor);
+
+    /// <summary>Requests a redraw and waits, bounded, for the exact actor to
+    /// be drawable again, then refreshes scene bindings so downstream state
+    /// reconciles against the redrawn body.</summary>
+    Task<IntegrationPortResult> RedrawAndWait(
+        ActorId actor, TimeSpan timeout, CancellationToken cancellation);
+
+    // ── Glamourer ────────────────────────────────────────────────────────
+
+    IntegrationValue<IReadOnlyList<ExternalItem>> GetDesigns();
+
+    /// <summary>Complete serialized actor state with the caller's normal
+    /// key. A state locked by another plugin fails here, before any
+    /// mutation.</summary>
+    IntegrationValue<string> CaptureGlamourerState(ActorId actor);
+
+    /// <summary>Applies a design with the API's documented default design
+    /// flags and no persistent lock.</summary>
+    IntegrationPortResult ApplyDesign(ActorId actor, Guid design);
+
+    /// <summary>Applies a serialized state; <paramref name="holdLock"/> uses
+    /// Poser's own key so the imported look survives automation, and must be
+    /// released through <see cref="UnlockGlamourerState"/>.</summary>
+    IntegrationPortResult ApplyGlamourerState(ActorId actor, string state, bool holdLock);
+
+    /// <summary>Releases Poser's own lock only. Never touches another
+    /// plugin's lock.</summary>
+    IntegrationPortResult UnlockGlamourerState(ActorId actor);
+
+    /// <summary>Outbound navigation: opens Glamourer's window on the actor.</summary>
+    IntegrationPortResult OpenGlamourer(ActorId actor);
+
+    // ── Customize+ ───────────────────────────────────────────────────────
+
+    /// <summary>Saved (normal) profiles only.</summary>
+    IntegrationValue<IReadOnlyList<ExternalItem>> GetBodyProfiles();
+
+    /// <summary>The actor's active profile id and whether it is a readable
+    /// saved profile. An active id absent from the saved list is a
+    /// temporary profile the API cannot read back.</summary>
+    IntegrationValue<BodyProfileProbe> ProbeBodyProfile(ActorId actor);
+
+    IntegrationValue<string> GetBodyProfileJson(Guid profile);
+
+    IntegrationValue<Guid> ApplyTemporaryBodyProfile(ActorId actor, string profileJson);
+
+    IntegrationPortResult DeleteTemporaryBodyProfile(ActorId actor);
+}

@@ -23,6 +23,19 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.10"
         }
       },
+      "K4os.Compression.LZ4": {
+        "type": "Transitive",
+        "resolved": "1.3.8",
+        "contentHash": "LhwlPa7c1zs1OV2XadMtAWdImjLIsqFJPoRcIWAadSRn0Ri1DepK65UbWLPmt4riLqx2d40xjXRk0ogpqNtK7g=="
+      },
+      "K4os.Compression.LZ4.Legacy": {
+        "type": "Transitive",
+        "resolved": "1.3.8",
+        "contentHash": "+82CK5zXbGjMnVLm2JJpsSAz3+4CRcMmxUDOmehUh1bDjrmpnc5VHxB14hiV1lXtqe53lNI+O76BQvgWhgI66g==",
+        "dependencies": {
+          "K4os.Compression.LZ4": "1.3.8"
+        }
+      },
       "Microsoft.Extensions.DependencyInjection.Abstractions": {
         "type": "Transitive",
         "resolved": "10.0.10",
@@ -40,6 +53,7 @@
       "poser.game": {
         "type": "Project",
         "dependencies": {
+          "K4os.Compression.LZ4.Legacy": "[1.3.8, )",
           "Poser.Application": "[1.0.0, )",
           "Poser.Domain": "[1.0.0, )",
           "PosingCore": "[1.0.0, )"
