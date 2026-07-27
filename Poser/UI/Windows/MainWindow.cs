@@ -52,6 +52,8 @@ public class MainWindow : Window
     private bool _addOpenRequested;
     private BoneId? _ctxBoneId;
     private bool _boneCtxOpenRequested;
+    private IReadOnlyList<BoneId>? _ctxOverlayBones;
+    private bool _overlayCtxOpenRequested;
     private bool _renameOpen;
     private string _renameValue = "";
     private ActorId? _renameTarget;
@@ -204,6 +206,38 @@ public class MainWindow : Window
                 _ctxBoneId = ctxBone;
                 _boneCtxOpenRequested = true;
             }
+            else if (row.OverlayBones != null)
+            {
+                _ctxOverlayBones = row.OverlayBones;
+                _overlayCtxOpenRequested = true;
+            }
+        };
+        _vm.OnActorTarget = row =>
+        {
+            if (ResolveActorRow(row) is { } actor)
+                _actorManager.SetGPoseTarget(actor);
+        };
+        _vm.OnActorVisibility = row =>
+        {
+            if (ResolveActorRow(row) is { } actor)
+                _spawnService.SetVisibility(actor, !_spawnService.IsVisible(actor));
+        };
+        _vm.OnActorPause = row =>
+        {
+            if (row.Tag is not SelectionId
+                { Kind: SceneEntityKind.Actor, Actor: { } actor })
+                return;
+            if (_animation.IsPaused(actor))
+                _animation.Resume(actor);
+            else
+                _animation.Pause(actor);
+        };
+        _vm.OnOverlayVisibility = row =>
+        {
+            if (row.OverlayBones is not { } bones)
+                return;
+            SkeletonOverlayPresentation.SetVisible(
+                bones, !SkeletonOverlayPresentation.AreVisible(bones));
         };
         _vm.DrawContent = DrawTabContent;
     }
@@ -284,6 +318,7 @@ public class MainWindow : Window
         DrawAddEntityMenu();
         DrawActorContextMenu();
         DrawBoneContextMenu();
+        DrawOverlayContextMenu();
         DrawRenameModal();
         _appearancePane.DrawBrowsers();
 
@@ -437,10 +472,14 @@ public class MainWindow : Window
                 _collapsedNodes.Add(actorKey);
             bool expanded = filtering || !_collapsedNodes.Contains(actorKey);
             var actorSelectionId = SelectionId.ForActor(actor.Id);
+            var resolvedActor = _bindings.Resolve(actor.Id);
+            bool actorVisible = resolvedActor.Success
+                ? _spawnService.IsVisible(resolvedActor.Value!)
+                : !actor.IsHidden;
             actors.Rows.Add(new ShellSidebarRow
             {
                 Label = actorLabel,
-                Count = actor.IsHidden ? "hidden" : ActorCount(actor),
+                Count = "",
                 Icon = actor.IsCompanion ? TablerIcon.Paw : TablerIcon.User,
                 // The disclosure affordance is permanent; an unresolved
                 // skeleton only disables it until the snapshot exposes bones.
@@ -449,6 +488,9 @@ public class MainWindow : Window
                 Expanded = expanded,
                 Active = _selection.IsSelected(actorSelectionId),
                 Tag = actorSelectionId,
+                ActorActions = true,
+                ActorVisible = actorVisible,
+                ActorPaused = _animation.IsPaused(actor.Id),
             });
 
             // M11: the actor folds DIRECTLY into bone categories (no skeleton
@@ -491,7 +533,7 @@ public class MainWindow : Window
                         actors.Rows.Add(new ShellSidebarRow
                         {
                             Label = categoryLabel,
-                            Count = (allBones.Count - 1).ToString(),
+                            Count = "",
                             Depth = 1,
                             HasChildren = true,
                             Expanded = catExpanded,
@@ -499,6 +541,7 @@ public class MainWindow : Window
                             Active = _selection.IsSelected(mergedId),
                             Tag = mergedId,
                             ExpandKey = catKey,
+                            OverlayBones = allBones.Select(bone => bone.Id).ToArray(),
                         });
                     }
                     else
@@ -506,12 +549,13 @@ public class MainWindow : Window
                         actors.Rows.Add(new ShellSidebarRow
                         {
                             Label = categoryLabel,
-                            Count = allBones.Count.ToString(),
+                            Count = "",
                             Depth = 1,
                             HasChildren = true,
                             Expanded = catExpanded,
                             IsLastChild = catLast,
                             Tag = catKey,
+                            OverlayBones = allBones.Select(bone => bone.Id).ToArray(),
                         });
                     }
                     if (!catExpanded) continue;
@@ -524,15 +568,13 @@ public class MainWindow : Window
                         actors.Rows.Add(new ShellSidebarRow
                         {
                             Label = childBones[b].DisplayName,
-                            // modded/unlocalized bones: DisplayName == canonical — one is enough
-                            Count = childBones[b].DisplayName == childBones[b].Id.CanonicalName
-                                ? ""
-                                : childBones[b].Id.CanonicalName,
+                            Count = "",
                             Depth = 2,
                             IsLastChild = b == childBones.Count - 1,
                             TreeLines = new[] { false, !catLast },
                             Active = _selection.IsSelected(boneSelectionId),
                             Tag = boneSelectionId,
+                            OverlayBones = new[] { childBones[b].Id },
                         });
                     }
                 }
@@ -593,12 +635,13 @@ public class MainWindow : Window
             section.Rows.Add(new ShellSidebarRow
             {
                 Label = slotLabel,
-                Count = visible.Count.ToString(),
+                Count = "",
                 Depth = 1,
                 HasChildren = true,
                 Expanded = slotExpanded,
                 IsLastChild = groupLast,
                 Tag = slotKey,
+                OverlayBones = visible.Select(bone => bone.Id).ToArray(),
             });
             if (!slotExpanded)
                 continue;
@@ -671,9 +714,7 @@ public class MainWindow : Window
         return new ShellSidebarRow
         {
             Label = bone.DisplayName,
-            Count = bone.DisplayName == bone.Id.CanonicalName
-                ? ""
-                : bone.Id.CanonicalName,
+            Count = "",
             Depth = depth,
             HasChildren = hasChildren,
             Expanded = expanded,
@@ -682,6 +723,7 @@ public class MainWindow : Window
             Active = _selection.IsSelected(selectionId),
             Tag = selectionId,
             ExpandKey = expandKey,
+            OverlayBones = new[] { bone.Id },
         };
     }
 
@@ -703,13 +745,6 @@ public class MainWindow : Window
     /// <summary>Strips the raw object-index suffix ("Name (201)") for display.</summary>
     private static string DisplayName(string name)
         => System.Text.RegularExpressions.Regex.Replace(name, @"\s*\(\d+\)$", "");
-
-    private static string ActorCount(ActorDescriptor actor)
-    {
-        if (actor.IsCompanion) return "minion";
-        if (actor.IsPlayer) return "player";
-        return "npc";
-    }
 
     private void BuildTabs(SelectionId? primary)
     {
@@ -811,6 +846,15 @@ public class MainWindow : Window
         {
             _selection.Select(id);
         }
+    }
+
+    private IActor? ResolveActorRow(ShellSidebarRow row)
+    {
+        if (row.Tag is not SelectionId
+            { Kind: SceneEntityKind.Actor, Actor: { } actorId })
+            return null;
+        var resolved = _bindings.Resolve(actorId);
+        return resolved.Success ? resolved.Value : null;
     }
 
     // ── typed tab content hosted inside the shell ──────────────────────
@@ -942,6 +986,8 @@ public class MainWindow : Window
         {
             new("Set game target", TablerIcon.Eye),
             new(!_spawnService.IsVisible(actor) ? "Show" : "Hide", !_spawnService.IsVisible(actor) ? TablerIcon.Eye : TablerIcon.EyeOff),
+            new(_animation.IsPaused(actorId) ? "Resume animation" : "Pause animation",
+                _animation.IsPaused(actorId) ? TablerIcon.PlayerPlay : TablerIcon.Movie),
             new("Rename…", TablerIcon.Edit),
             new("Clone", TablerIcon.Stack2),
             ContextMenuItem.Separator,
@@ -951,6 +997,13 @@ public class MainWindow : Window
         {
             () => _actorManager.SetGPoseTarget(actor),
             () => _spawnService.SetVisibility(actor, !_spawnService.IsVisible(actor)),
+            () =>
+            {
+                if (_animation.IsPaused(actorId))
+                    _animation.Resume(actorId);
+                else
+                    _animation.Pause(actorId);
+            },
             () =>
             {
                 _renameTarget = actorId;
@@ -1023,6 +1076,13 @@ public class MainWindow : Window
             new ContextMenuItem("Select parent", TablerIcon.ArrowUp, disabled: descriptor.Parent == null),
             new ContextMenuItem("Select children", TablerIcon.Sitemap, disabled: !hasChildren),
             new ContextMenuItem("Select mirrored bone", TablerIcon.ArrowsMove, disabled: mirror == null),
+            new ContextMenuItem(
+                SkeletonOverlayPresentation.IsVisible(boneId)
+                    ? "Hide from overlay"
+                    : "Show in overlay",
+                SkeletonOverlayPresentation.IsVisible(boneId)
+                    ? TablerIcon.EyeOff
+                    : TablerIcon.Eye),
             ContextMenuItem.Separator,
             new ContextMenuItem("Flip bone", TablerIcon.Rotate),
             new ContextMenuItem("Reset bone", TablerIcon.Refresh, danger: true),
@@ -1062,17 +1122,43 @@ public class MainWindow : Window
             case 2 when mirror != null:
                 _selection.Select(SelectionId.ForBone(mirror.Id));
                 break;
-            case 4:
+            case 3:
+                SkeletonOverlayPresentation.SetVisible(
+                    new[] { boneId },
+                    !SkeletonOverlayPresentation.IsVisible(boneId));
+                break;
+            case 5:
                 _cleanPose.FlipBone(
                     TransformTargetId.ForBone(boneId),
                     descriptor.DisplayName);
                 break;
-            case 5:
+            case 6:
                 _cleanPose.ResetBone(
                     TransformTargetId.ForBone(boneId),
                     descriptor.DisplayName);
                 break;
         }
+    }
+
+    private void DrawOverlayContextMenu()
+    {
+        if (_ctxOverlayBones is not { } bones)
+            return;
+        bool visible = SkeletonOverlayPresentation.AreVisible(bones);
+        var items = new[]
+        {
+            new ContextMenuItem(
+                visible ? "Hide category from overlay" : "Show category in overlay",
+                visible ? TablerIcon.EyeOff : TablerIcon.Eye),
+        };
+        if (_overlayCtxOpenRequested)
+        {
+            _overlayCtxOpenRequested = false;
+            Crystarium.FloatingMenu.Open(
+                "##overlay-ctx", ImGui.GetMousePos(), items);
+        }
+        if (Crystarium.FloatingMenu.Draw("##overlay-ctx") == 0)
+            SkeletonOverlayPresentation.SetVisible(bones, !visible);
     }
 
     private void DrawRenameModal()

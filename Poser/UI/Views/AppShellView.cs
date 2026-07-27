@@ -25,6 +25,10 @@ public sealed class ShellSidebarRow
     public bool Expanded;
     public bool Active;
     public object? Tag;
+    public bool ActorActions;
+    public bool ActorVisible = true;
+    public bool ActorPaused;
+    public IReadOnlyList<Domain.Identity.BoneId>? OverlayBones;
 
     /// <summary>Last child of its parent → curved-L branch instead of T.</summary>
     public bool IsLastChild;
@@ -115,6 +119,10 @@ public sealed class AppShellViewModel
     public Action<ShellSidebarRow>? OnRowClicked;
     public Action<ShellSidebarRow>? OnRowContextMenu;
     public Action<ShellSidebarRow>? OnRowExpandToggled;
+    public Action<ShellSidebarRow>? OnActorTarget;
+    public Action<ShellSidebarRow>? OnActorVisibility;
+    public Action<ShellSidebarRow>? OnActorPause;
+    public Action<ShellSidebarRow>? OnOverlayVisibility;
     public Action<int>? OnSectionPlus;
 }
 
@@ -483,11 +491,17 @@ public static class AppShellView
 
         float GuideX(int depth) => cursor.X + (RootIconCenter + (depth - 1) * Indent) * s;
 
-        // ONE reserve per row; the expander is dispatched by mouse position on
-        // click. (A second overlapping reserve never receives the click — the
-        // row reserve submitted first wins it. Round-4 dead-arrow defect.)
+        float actionReserve = row.ActorActions
+            ? 66f * s
+            : row.OverlayBones != null
+                ? 22f * s
+                : 0f;
+        float bodyWidth = MathF.Max(1f, innerW - actionReserve);
+        // The body and action strip are disjoint hit regions. A compact action
+        // can therefore never select or disclose its row.
         ImGui.SetCursorScreenPos(cursor);
-        var hit = Interactive.Reserve($"##sbr-{id}", new Vector2(innerW, RowHeight * s), disabled: false);
+        var hit = Interactive.Reserve(
+            $"##sbr-{id}", new Vector2(bodyWidth, RowHeight * s), disabled: false);
 
         float arrowMinX, arrowMaxX;
         if (d == 0) { arrowMinX = cursor.X; arrowMaxX = cursor.X + 18f * s; }
@@ -578,9 +592,7 @@ public static class AppShellView
         }
 
         // clip the label short of the badge so long names never run under it
-        float badgeReserve = row.Count.Length > 0
-            ? ViewText.Measure(row.Count, 11f, mono: true) + 16f * s
-            : 6f * s;
+        float badgeReserve = actionReserve + 6f * s;
         ImGui.PushClipRect(new Vector2(cursor.X, cursor.Y),
             new Vector2(cursor.X + innerW - badgeReserve, cursor.Y + RowHeight * s), true);
         ViewText.Label(Crystarium.ActiveTheme.Optical.Snap(new Vector2(
@@ -588,11 +600,40 @@ public static class AppShellView
             row.Label, 13f, FontWeight.Regular, TextPrimary);
         ImGui.PopClipRect();
 
-        if (row.Count.Length > 0)
-            ViewText.Label(Crystarium.ActiveTheme.Optical.Snap(new Vector2(
-                    cursor.X + innerW - 8f * s - ViewText.Measure(row.Count, 11f, mono: true),
-                    cursor.Y + 7f * s + Crystarium.ActiveTheme.Optical.SidebarText * s)),
-                row.Count, 11f, FontWeight.Regular, TextSecondary, mono: true);
+        if (row.ActorActions)
+        {
+            float ax = cursor.X + innerW - actionReserve;
+            DrawRowAction(
+                $"##target-{id}", new Vector2(ax, cursor.Y + 3f * s),
+                TablerIcon.Eye, false, s,
+                () => vm.OnActorTarget?.Invoke(row),
+                "Set game target");
+            ax += 22f * s;
+            DrawRowAction(
+                $"##visible-{id}", new Vector2(ax, cursor.Y + 3f * s),
+                row.ActorVisible ? TablerIcon.Eye : TablerIcon.EyeOff,
+                !row.ActorVisible, s,
+                () => vm.OnActorVisibility?.Invoke(row),
+                row.ActorVisible ? "Hide actor" : "Show actor");
+            ax += 22f * s;
+            DrawRowAction(
+                $"##pause-{id}", new Vector2(ax, cursor.Y + 3f * s),
+                row.ActorPaused ? TablerIcon.PlayerPlay : TablerIcon.Movie,
+                row.ActorPaused, s,
+                () => vm.OnActorPause?.Invoke(row),
+                row.ActorPaused ? "Resume animation" : "Pause animation");
+        }
+        else if (row.OverlayBones != null)
+        {
+            bool visible = SkeletonOverlayPresentation.AreVisible(row.OverlayBones);
+            DrawRowAction(
+                $"##overlay-{id}",
+                new Vector2(cursor.X + innerW - 22f * s, cursor.Y + 3f * s),
+                visible ? TablerIcon.Eye : TablerIcon.EyeOff,
+                !visible, s,
+                () => vm.OnOverlayVisibility?.Invoke(row),
+                visible ? "Hide from skeleton overlay" : "Show in skeleton overlay");
+        }
 
         if (hit.Clicked)
         {
@@ -865,6 +906,48 @@ public static class AppShellView
     public static void CancelAxisEdit()
     {
         Crystarium.CancelAxisEdit();
+    }
+
+    private static void DrawRowAction(
+        string id,
+        Vector2 pos,
+        TablerIcon icon,
+        bool inactive,
+        float scale,
+        Action action,
+        string help)
+    {
+        ImGui.SetCursorScreenPos(pos);
+        var hit = Interactive.Reserve(
+            id, new Vector2(20f, 20f) * scale, disabled: false);
+        if (hit.Hovered)
+            ImGui.GetWindowDrawList().AddRectFilled(
+                hit.ScreenMin, hit.ScreenMax,
+                ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(SurfaceHover)),
+                Crystarium.ActiveTheme.Radii.Small * scale);
+        float iconSize = 13f * scale;
+        ImGui.SetCursorScreenPos(
+            hit.ScreenMin + (hit.ScreenMax - hit.ScreenMin
+                - new Vector2(iconSize)) * 0.5f);
+        Crystarium.Icon(
+            icon,
+            iconSize,
+            ColorEx.ApplyAlpha(TextPrimary with
+            {
+                W = inactive ? 0.34f : hit.Hovered ? 0.95f : 0.64f,
+            }));
+        if (inactive && icon != TablerIcon.EyeOff)
+            ImGui.GetWindowDrawList().AddLine(
+                hit.ScreenMin + new Vector2(4f, 4f) * scale,
+                hit.ScreenMax - new Vector2(4f, 4f) * scale,
+                ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(TextSecondary)),
+                scale);
+        if (hit.Clicked)
+            action();
+        if (hit.Hovered)
+            Crystarium.HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help);
     }
 
     private static bool DragAxis(ImDrawListPtr dl, Vector2 pos, float width, string id, string axis,

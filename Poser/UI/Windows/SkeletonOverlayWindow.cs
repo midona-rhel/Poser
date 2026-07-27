@@ -154,7 +154,7 @@ public class SkeletonOverlayWindow : Window
             var boneWorldPositions = new Dictionary<BoneId, Vector3>();
             foreach (var bone in descriptors)
             {
-                if (bone.IsHidden)
+                if (bone.IsHidden || !SkeletonOverlayPresentation.IsVisible(bone.Id))
                     continue;
                 if (_viewport.GetBoneModelTransform(bone.Id) is not { } boneTransform)
                     continue;
