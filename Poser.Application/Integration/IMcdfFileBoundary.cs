@@ -10,13 +10,16 @@ namespace Poser.Application.Integration;
 public interface IMcdfFileBoundary
 {
     /// <summary>
-    /// Reads, validates, and extracts a complete package into a unique
-    /// Poser operation directory. Any validation failure, limit breach, or
-    /// cancellation deletes the operation directory before returning.
+    /// Reads, validates, and extracts a complete package into the
+    /// CALLER-OWNED operation directory. The boundary never deletes it —
+    /// the caller registered the directory before this call, so a failed
+    /// read leaves a visible, retryable cleanup obligation instead of a
+    /// silently orphaned directory.
     /// </summary>
     Task<IntegrationValue<McdfPackage>> ReadPackage(
         string path,
         McdfLimits limits,
+        string operationDirectory,
         Action<McdfProgressStep> progress,
         CancellationToken cancellation);
 

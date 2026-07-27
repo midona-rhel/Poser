@@ -166,62 +166,81 @@ public sealed class TransformCommandService
 
         GestureResult FailWithRollback(string detail)
         {
+            // Every captured target is attempted independently — a restore
+            // that throws must not stop restoration of the targets after
+            // it — and returned and thrown failures aggregate together.
             var rollbackFailures = new List<string>();
             foreach (var state in before)
             {
-                var restored = _runtime.Restore(state);
-                if (!restored.Success)
-                    rollbackFailures.Add(
-                        restored.Detail ?? $"Could not restore {state.Target}.");
+                try
+                {
+                    var restored = _runtime.Restore(state);
+                    if (!restored.Success)
+                        rollbackFailures.Add(
+                            restored.Detail ?? $"Could not restore {state.Target}.");
+                }
+                catch (Exception ex)
+                {
+                    rollbackFailures.Add($"{state.Target}: {ex.Message}");
+                }
             }
             return GestureResult.Fail(rollbackFailures.Count == 0
                 ? detail
                 : $"{detail} Rollback also failed: {string.Join("; ", rollbackFailures)}");
         }
 
-        foreach (var target in resets)
+        try
         {
-            var reset = working[target] with
+            foreach (var target in resets)
             {
-                Pose = PoseOperations.Reset(working[target].Pose),
-                HasOverride = false,
-            };
-            var applied = _runtime.Restore(reset);
-            if (!applied.Success)
-                return FailWithRollback(applied.Detail ?? $"Could not reset {target}.");
-            working[target] = reset;
-        }
+                var reset = working[target] with
+                {
+                    Pose = PoseOperations.Reset(working[target].Pose),
+                    HasOverride = false,
+                };
+                var applied = _runtime.Restore(reset);
+                if (!applied.Success)
+                    return FailWithRollback(applied.Detail ?? $"Could not reset {target}.");
+                working[target] = reset;
+            }
 
-        foreach (var (target, desired) in writes)
+            foreach (var (target, desired) in writes)
+            {
+                var applied = _runtime.ApplyAbsolute(working[target], desired, rawBaseline: true);
+                if (!applied.Success)
+                    return FailWithRollback(applied.Detail ?? $"Could not transform {target}.");
+            }
+
+            if (model is { } edit)
+            {
+                var state = working[edit.Target];
+                var applied = edit.Absolute is { } absolute
+                    ? _runtime.ApplyAbsolute(state, absolute)
+                    : _runtime.Restore(state with { HasOverride = false });
+                if (!applied.Success)
+                    return FailWithRollback(
+                        applied.Detail ?? "Could not apply the model transform.");
+            }
+
+            var after = new List<TransformTargetState>(before.Count);
+            foreach (var state in before)
+            {
+                var captured = _runtime.Capture(state.Target);
+                if (!captured.Success || captured.State == null)
+                    return FailWithRollback(
+                        captured.Detail ?? $"Could not capture {state.Target}.");
+                after.Add(captured.State);
+            }
+
+            _history.Append(new TransformPatch(description, before, after));
+            return GestureResult.Ok();
+        }
+        catch (Exception ex)
         {
-            var applied = _runtime.ApplyAbsolute(working[target], desired, rawBaseline: true);
-            if (!applied.Success)
-                return FailWithRollback(applied.Detail ?? $"Could not transform {target}.");
+            // A thrown mutation is the same as a returned failure: restore
+            // every captured target, append no history item.
+            return FailWithRollback($"The import edit failed unexpectedly: {ex.Message}");
         }
-
-        if (model is { } edit)
-        {
-            var state = working[edit.Target];
-            var applied = edit.Absolute is { } absolute
-                ? _runtime.ApplyAbsolute(state, absolute)
-                : _runtime.Restore(state with { HasOverride = false });
-            if (!applied.Success)
-                return FailWithRollback(
-                    applied.Detail ?? "Could not apply the model transform.");
-        }
-
-        var after = new List<TransformTargetState>(before.Count);
-        foreach (var state in before)
-        {
-            var captured = _runtime.Capture(state.Target);
-            if (!captured.Success || captured.State == null)
-                return FailWithRollback(
-                    captured.Detail ?? $"Could not capture {state.Target}.");
-            after.Add(captured.State);
-        }
-
-        _history.Append(new TransformPatch(description, before, after));
-        return GestureResult.Ok();
     }
 
     public GestureResult ClearActorOverrides(

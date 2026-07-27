@@ -720,9 +720,20 @@ public sealed class ActorIntegrationSession
 
         try
         {
-            // Phase 1 — read, validate, extract: pure file work, off the
-            // framework thread and entirely off the actor.
-            var read = await _files.ReadPackage(path, Limits, step =>
+            // Phase 1 — the session GENERATES and REGISTERS the operation
+            // directory before the boundary touches it, so even a read
+            // that fails mid-extraction leaves a visible, retryable
+            // cleanup obligation instead of an orphaned directory. Then
+            // read, validate, extract: pure file work, off the framework
+            // thread and entirely off the actor.
+            string operationDirectory = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(), "Poser", $"mcdf-{Guid.NewGuid():N}");
+            await _port.OnFrameworkThread(() =>
+            {
+                operation.OperationDirectory = operationDirectory;
+                return true;
+            });
+            var read = await _files.ReadPackage(path, Limits, operationDirectory, step =>
             {
                 filesTotal = step.FilesTotal;
                 bytesTotal = step.BytesTotal;
@@ -746,7 +757,6 @@ public sealed class ActorIntegrationSession
                 }
                 catch (FormatException)
                 {
-                    operation.OperationDirectory = package.OperationDirectory;
                     await FailAsync("The package's Customize+ payload is not valid base64.");
                     return;
                 }
@@ -758,7 +768,6 @@ public sealed class ActorIntegrationSession
             Step(McdfPhase.Preparing, filesTotal, bytesTotal);
             var prepared = await _port.OnFrameworkThread(() =>
             {
-                operation.OperationDirectory = package.OperationDirectory;
                 if (Guard() is { } stop)
                     return stop;
                 var missing = new List<string>();

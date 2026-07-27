@@ -57,9 +57,12 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
     public Task<IntegrationValue<McdfPackage>> ReadPackage(
         string path,
         McdfLimits limits,
+        string operationDirectory,
         Action<McdfProgressStep> progress,
         CancellationToken cancellation) =>
-        Task.Run(() => ReadCore(path, limits, progress, cancellation), CancellationToken.None);
+        Task.Run(
+            () => ReadCore(path, limits, operationDirectory, progress, cancellation),
+            CancellationToken.None);
 
     public Task<IntegrationValue<McdfWriteStats>> WritePackage(
         string destination,
@@ -92,12 +95,13 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
     private IntegrationValue<McdfPackage> ReadCore(
         string path,
         McdfLimits limits,
+        string operationDirectory,
         Action<McdfProgressStep> progress,
         CancellationToken cancellation)
     {
-        string operationDirectory = Path.Combine(
-            Path.GetTempPath(), "Poser", $"mcdf-{Guid.NewGuid():N}");
-        bool keep = false;
+        // The caller owns the operation directory and registered it before
+        // calling; a failure here leaves partial extraction for the
+        // caller's visible, retryable cleanup.
         try
         {
             progress(new McdfProgressStep(McdfPhase.Reading, 0, 0, 0, 0));
@@ -200,7 +204,6 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                     swaps[McdfFormat.NormalizeGamePath(gamePath)] =
                         McdfFormat.NormalizeGamePath(swap.FileSwapPath);
 
-            keep = true;
             return IntegrationValue<McdfPackage>.Ok(new McdfPackage(
                 Path.GetFileName(path),
                 data.Description,
@@ -221,11 +224,6 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         {
             return IntegrationValue<McdfPackage>.Fail(
                 $"Reading the package failed: {ex.Message}");
-        }
-        finally
-        {
-            if (!keep)
-                DeleteOperationDirectory(operationDirectory);
         }
     }
 
