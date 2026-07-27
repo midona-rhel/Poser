@@ -43,7 +43,8 @@ public static partial class Crystarium
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.ControlBorder)), r, ImDrawFlags.None, 1f * scale);
 
         string popupId = id + "_picker";
-        if (hit.Clicked && !disabled) ImGui.OpenPopup(popupId);
+        if (hit.Clicked && !disabled)
+            FloatingSurface.OpenPopup(popupId);
 
         bool changed = false;
         var popupColor = color;

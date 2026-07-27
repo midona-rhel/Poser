@@ -51,6 +51,13 @@ public static partial class Crystarium
                     ActiveTheme.Floating.CloseActionSize) with { Bare = true },
                 id: id);
 
+        public static void OpenPopup(string id)
+        {
+            FloatingMenu.DismissAll();
+            Interactive.BlockRemainderOfFrame();
+            ImGui.OpenPopup(id);
+        }
+
         public static bool Popup(
             string id,
             in FloatingSurfaceProps props,
@@ -84,12 +91,15 @@ public static partial class Crystarium
             if (open)
             {
                 var min = ImGui.GetWindowPos();
+                var max = min + ImGui.GetWindowSize();
+                Interactive.BeginSurface(min, max);
                 DrawChrome(
                     ImGui.GetWindowDrawList(),
                     min,
-                    min + ImGui.GetWindowSize(),
+                    max,
                     Crystarium.ActiveTheme.Radii.Surface);
                 body();
+                Interactive.EndSurface();
                 ImGui.EndPopup();
             }
 
@@ -127,12 +137,14 @@ public static partial class Crystarium
             {
                 var min = ImGui.GetWindowPos();
                 var max = min + ImGui.GetWindowSize();
+                Interactive.BeginSurface(min, max);
                 DrawChrome(
                     ImGui.GetWindowDrawList(),
                     min,
                     max,
                     Crystarium.ActiveTheme.Radii.Window);
                 body(new FloatingSurfaceFrame(min, max, scale));
+                Interactive.EndSurface();
             }
             ImGui.End();
             ImGui.PopStyleVar(2);

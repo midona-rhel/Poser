@@ -70,7 +70,9 @@ public sealed class UIManager : IUIManager
         if (!FontRegistry.Ready)
             return;
 
+        Interactive.BeginFrame();
         _windows.System.Draw();
+        Crystarium.FloatingMenu.EndFrame();
         // The one hover-help card renders after every window has drawn,
         // so registrations from any pane are complete and the card sits
         // on the foreground list above all of them.

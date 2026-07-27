@@ -53,9 +53,11 @@ public static partial class Crystarium
         var btnEnd = valueEnd; // popup positioning below anchors to the pill
 
         ImGui.SetCursorScreenPos(valuePos);
-        ImGui.InvisibleButton($"{id}_value", new Vector2(totalWidth, height));
-        bool valueHovered = ImGui.IsItemHovered() && !disabled;
-        if (ImGui.IsItemClicked() && !disabled) ImGui.OpenPopup(popupId);
+        var trigger = Interactive.Reserve(
+            $"{id}_value", new Vector2(totalWidth, height), disabled);
+        bool valueHovered = trigger.Hovered;
+        if (trigger.Clicked)
+            FloatingSurface.OpenPopup(popupId);
 
         var valueBg = ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.ControlHover);
         drawList.AddRectFilled(valuePos, valueEnd, ImGui.ColorConvertFloat4ToU32(valueBg), rounding);
@@ -153,9 +155,14 @@ public static partial class Crystarium
                         if (optFontPushed) optFont!.Push();
                         float optPad = Crystarium.ActiveTheme.Page.ActionGap * scale;
                         float optRounding = Crystarium.ActiveTheme.Radii.Medium * scale;
-                        uint optFill = ImGui.ColorConvertFloat4ToU32(
+                        uint hoverFill = ImGui.ColorConvertFloat4ToU32(
                             ColorEx.ApplyAlpha(
                                 Crystarium.ActiveTheme.Chrome.WeakOverlay));
+                        uint selectedFill = ImGui.ColorConvertFloat4ToU32(
+                            ColorEx.ApplyAlpha(
+                                Crystarium.ActiveTheme.Chrome.SegmentSelected));
+                        uint separator = ImGui.ColorConvertFloat4ToU32(
+                            Crystarium.ActiveTheme.Border with { W = 0.24f });
                         var spacing = ImGui.GetStyle().ItemSpacing;
                         ImGui.PushStyleVar(
                             ImGuiStyleVar.ItemSpacing,
@@ -168,20 +175,11 @@ public static partial class Crystarium
                             var itemSize = new Vector2(
                                 region.ContentWidth * scale,
                                 height);
-                            if (i > 0)
-                            {
-                                ImGui.GetWindowDrawList().AddRectFilled(
-                                    itemPos,
-                                    new Vector2(
-                                        itemPos.X + itemSize.X,
-                                        itemPos.Y + MathF.Max(1f, scale)),
-                                    ImGui.ColorConvertFloat4ToU32(
-                                        Crystarium.ActiveTheme.Border
-                                            with { W = 0.24f }));
-                            }
 
                             ImGui.PushID(i);
-                            if (ImGui.InvisibleButton("##item", itemSize))
+                            var itemHit = Interactive.Reserve(
+                                "##item", itemSize, disabled: false);
+                            if (itemHit.Clicked)
                             {
                                 if (popupSelected != i || reselectFires)
                                 {
@@ -191,14 +189,20 @@ public static partial class Crystarium
                                 }
                                 ImGui.CloseCurrentPopup();
                             }
-                            bool itemHovered = ImGui.IsItemHovered();
+                            bool itemHovered = itemHit.Hovered;
 
                             var popupDrawList = ImGui.GetWindowDrawList();
-                            if (itemHovered || isSelected)
+                            if (isSelected)
                                 popupDrawList.AddRectFilled(
                                     itemPos,
                                     itemPos + itemSize,
-                                    optFill,
+                                    selectedFill,
+                                    optRounding);
+                            else if (itemHovered)
+                                popupDrawList.AddRectFilled(
+                                    itemPos,
+                                    itemPos + itemSize,
+                                    hoverFill,
                                     optRounding);
 
                             string itemDisplay = TruncateText(
@@ -220,6 +224,20 @@ public static partial class Crystarium
                                     itemPos,
                                     itemPos + itemSize,
                                     items[i]);
+
+                            // Paint boundaries after row state fills so a
+                            // selected or hovered row cannot erase them.
+                            if (i < items.Length - 1)
+                            {
+                                float lineY = itemPos.Y + itemSize.Y
+                                    - MathF.Max(1f, scale);
+                                popupDrawList.AddRectFilled(
+                                    new Vector2(itemPos.X, lineY),
+                                    new Vector2(
+                                        itemPos.X + itemSize.X,
+                                        itemPos.Y + itemSize.Y),
+                                    separator);
+                            }
 
                             ImGui.PopID();
                         }
@@ -245,9 +263,10 @@ public static partial class Crystarium
         if (string.IsNullOrEmpty(text)) return text;
         var size = ImGui.CalcTextSize(text);
         if (size.X <= maxWidth) return text;
-        var ellipsisSize = ImGui.CalcTextSize("...");
+        const string ellipsis = "…";
+        var ellipsisSize = ImGui.CalcTextSize(ellipsis);
         float available = maxWidth - ellipsisSize.X;
-        if (available <= 0) return "...";
+        if (available <= 0) return ellipsis;
         int left = 0, right = text.Length;
         while (left < right)
         {
@@ -255,6 +274,6 @@ public static partial class Crystarium
             var sub = ImGui.CalcTextSize(text[..mid]);
             if (sub.X <= available) left = mid; else right = mid - 1;
         }
-        return left == 0 ? "..." : text[..left] + "...";
+        return left == 0 ? ellipsis : text[..left] + ellipsis;
     }
 }

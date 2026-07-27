@@ -123,7 +123,7 @@ public sealed class AnimationPicker
     {
         if (_openRequested)
         {
-            ImGui.OpenPopup(PopupId);
+            Crystarium.FloatingSurface.OpenPopup(PopupId);
             _openRequested = false;
         }
         if (!ImGui.IsPopupOpen(PopupId))
@@ -298,6 +298,7 @@ public sealed class AnimationPicker
                 }
             }
         }
+        Crystarium.NarrowVisibleScrollbarThumb();
         ImGui.EndChild();
         ImGui.PopStyleVar();
         Crystarium.PopScrollbarStyle();

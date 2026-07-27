@@ -55,7 +55,7 @@ public static partial class Crystarium
             if (_openRequested)
             {
                 _openRequested = false;
-                ImGui.OpenPopup(_popupId);
+                FloatingSurface.OpenPopup(_popupId);
             }
             if (!ImGui.IsPopupOpen(_popupId))
             {

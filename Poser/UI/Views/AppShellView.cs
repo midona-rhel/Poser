@@ -128,9 +128,9 @@ public sealed class AppShellViewModel
 public static class AppShellView
 {
     // ── palette (picto tokens) ───────────────────────────────────────────
-    private static readonly Vector4 BgApp          = new(24 / 255f, 25 / 255f, 27 / 255f, 1f);
-    private static readonly Vector4 Surface1       = new(36 / 255f, 37 / 255f, 40 / 255f, 1f);
-    private static readonly Vector4 Surface2       = new(42 / 255f, 42 / 255f, 46 / 255f, 1f);
+    private static readonly Vector4 BgApp          = new(24 / 255f, 25 / 255f, 27 / 255f, 0.88f);
+    private static readonly Vector4 Surface1       = new(36 / 255f, 37 / 255f, 40 / 255f, 0.90f);
+    private static readonly Vector4 Surface2       = new(42 / 255f, 42 / 255f, 46 / 255f, 0.92f);
     private static readonly Vector4 TextPrimary    = new(1f, 1f, 1f, 1f);
     private static readonly Vector4 TextSecondary  = new(1f, 1f, 1f, 0.72f);
     private static readonly Vector4 TextTertiary   = new(1f, 1f, 1f, 0.50f);
@@ -170,7 +170,9 @@ public static class AppShellView
         var max = origin + size;
         var dl = ImGui.GetWindowDrawList();
 
-        // window chassis: bg-app fill + glass border trio, radius 10
+        // One shell-level blur; child panels only add translucent fills.
+        Crystarium.FloatingSurface.PrependShellBlur(
+            dl, min, max, Crystarium.ActiveTheme.Radii.Window * s);
         dl.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BgApp)), 10f * s);
         DrawTitlebar(vm, min, max, s, dl);
 
@@ -222,6 +224,7 @@ public static class AppShellView
                 ImGui.SetCursorScreenPos(railContentOrigin);
                 vm.DrawRail(railContentOrigin, new Vector2(railW - 25f * s, max.Y - railMin.Y - 24f * s));
             }
+            Crystarium.NarrowVisibleScrollbarThumb();
             ImGui.EndChild();
             ImGui.PopStyleVar();
         }
@@ -248,7 +251,6 @@ public static class AppShellView
             // Collapsed means one continuous titlebar, not an empty window with
             // a surviving sidebar cell. Paint one glass strip with no divider.
             var barMax = new Vector2(max.X, min.Y + h);
-            Crystarium.FloatingSurface.PrependShellBlur(dl, min, barMax, 10f * s);
             dl.AddRectFilled(min, barMax,
                 ImGui.ColorConvertFloat4ToU32(
                     ColorEx.ApplyAlpha(Crystarium.FloatingSurface.FillColor)),
@@ -256,8 +258,7 @@ public static class AppShellView
         }
         else
         {
-            // left cell: GLASS (M11) — overlay recipe: real backdrop blur + 92% fill
-            Crystarium.FloatingSurface.PrependShellBlur(dl, min, leftMax, 10f * s);
+            // left cell: translucent fill over the one shell-level blur.
             dl.AddRectFilled(min, leftMax,
                 ImGui.ColorConvertFloat4ToU32(
                     ColorEx.ApplyAlpha(Crystarium.FloatingSurface.FillColor)),
@@ -377,8 +378,7 @@ public static class AppShellView
 
     private static void DrawSidebar(AppShellViewModel vm, Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
     {
-        // M11 glass chassis — SAME recipe as the overlays: backdrop blur + 92% fill.
-        Crystarium.FloatingSurface.PrependShellBlur(dl, min, max, 10f * s);
+        // Sidebar fill composes over the one shell-level blur.
         dl.AddRectFilled(
             min,
             max,
@@ -461,6 +461,7 @@ public static class AppShellView
         // register the content extent so the child can scroll
         ImGui.SetCursorScreenPos(treeStart);
         ImGui.Dummy(new Vector2(innerW, cursor.Y - treeStart.Y));
+        Crystarium.NarrowVisibleScrollbarThumb();
         ImGui.EndChild();
         ImGui.PopStyleVar();
 
@@ -779,6 +780,7 @@ public static class AppShellView
                 vm.DrawContent?.Invoke(contentOrigin, contentSize);
             }
         }
+        Crystarium.NarrowVisibleScrollbarThumb();
         ImGui.EndChild();
         ImGui.PopStyleVar();
     }

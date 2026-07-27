@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 
@@ -35,6 +36,65 @@ public readonly struct InteractionResult
 /// </summary>
 public static class Interactive
 {
+    private readonly record struct Occluder(Vector2 Min, Vector2 Max);
+
+    private static List<Occluder> _previousOccluders = new();
+    private static List<Occluder> _currentOccluders = new();
+    private static int _surfaceDepth;
+    private static bool _blockRemainderOfFrame;
+
+    public static int SurfaceDepth => _surfaceDepth;
+
+    /// <summary>Starts the shared retained-UI interaction frame. Floating
+    /// rectangles survive for one frame so surfaces drawn after their owners
+    /// still occlude controls submitted earlier in the next frame.</summary>
+    public static void BeginFrame()
+    {
+        (_previousOccluders, _currentOccluders) =
+            (_currentOccluders, _previousOccluders);
+        _currentOccluders.Clear();
+        _surfaceDepth = 0;
+        _blockRemainderOfFrame = false;
+    }
+
+    public static void BlockRemainderOfFrame() =>
+        _blockRemainderOfFrame = true;
+
+    public static void BeginSurface(Vector2 min, Vector2 max)
+    {
+        _currentOccluders.Add(new Occluder(min, max));
+        _surfaceDepth++;
+    }
+
+    public static void RegisterOccluder(Vector2 min, Vector2 max) =>
+        _currentOccluders.Add(new Occluder(min, max));
+
+    public static void EndSurface()
+    {
+        if (_surfaceDepth > 0)
+            _surfaceDepth--;
+    }
+
+    public static bool PointerOccluded(int registrationDepth = 0)
+    {
+        if (registrationDepth > 0 || _surfaceDepth > 0)
+            return false;
+        if (_blockRemainderOfFrame)
+            return true;
+        var mouse = ImGui.GetMousePos();
+        foreach (var rect in _currentOccluders)
+            if (Contains(rect, mouse))
+                return true;
+        foreach (var rect in _previousOccluders)
+            if (Contains(rect, mouse))
+                return true;
+        return false;
+    }
+
+    private static bool Contains(in Occluder rect, Vector2 point) =>
+        point.X >= rect.Min.X && point.X < rect.Max.X
+        && point.Y >= rect.Min.Y && point.Y < rect.Max.Y;
+
     /// <summary>
     /// Reserve a hit-test rect at the current cursor.
     /// </summary>
@@ -45,9 +105,10 @@ public static class Interactive
         ImGui.InvisibleButton(id, size);
         var max = min + size;
 
-        bool hovered = ImGui.IsItemHovered() && !disabled;
-        bool active  = ImGui.IsItemActive()  && !disabled;
-        bool clicked = ImGui.IsItemClicked() && !disabled;
+        bool occluded = PointerOccluded();
+        bool hovered = ImGui.IsItemHovered() && !disabled && !occluded;
+        bool active  = ImGui.IsItemActive()  && !disabled && !occluded;
+        bool clicked = ImGui.IsItemClicked() && !disabled && !occluded;
 
         PseudoState state = PseudoState.None;
         if (hovered)  state |= PseudoState.Hover;

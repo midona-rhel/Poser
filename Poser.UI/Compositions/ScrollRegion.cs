@@ -29,6 +29,7 @@ public static partial class Crystarium
                     - Crystarium.ActiveTheme.Scrollbar.GutterWidth);
             content(new ScrollRegionScope(contentWidth, scale));
         }
+        NarrowVisibleScrollbarThumb();
         ImGui.EndChild();
         ImGui.PopStyleVar();
         PopScrollbarStyle();
@@ -141,5 +142,32 @@ public static partial class Crystarium
     {
         ImGui.PopStyleColor(4);
         ImGui.PopStyleVar(2);
+    }
+
+    /// <summary>Keeps the canonical gutter and hit target intact while
+    /// narrowing only ImGui's emitted visible grab geometry.</summary>
+    public static unsafe void NarrowVisibleScrollbarThumb()
+    {
+        var draw = ImGui.GetWindowDrawList();
+        float scale = ImGuiHelpers.GlobalScale;
+        float gutter = Crystarium.ActiveTheme.Scrollbar.GutterWidth * scale;
+        float right = ImGui.GetWindowPos().X + ImGui.GetWindowSize().X;
+        float left = right - gutter;
+        float center = (left + right) * 0.5f;
+        uint normal = ImGui.GetColorU32(ImGuiCol.ScrollbarGrab);
+        uint hovered = ImGui.GetColorU32(ImGuiCol.ScrollbarGrabHovered);
+        uint active = ImGui.GetColorU32(ImGuiCol.ScrollbarGrabActive);
+        var vertices = (ImDrawVert*)draw.VtxBuffer.Data;
+        for (int i = 0; i < draw.VtxBuffer.Size; i++)
+        {
+            ref var vertex = ref vertices[i];
+            if (vertex.Pos.X < left || vertex.Pos.X > right)
+                continue;
+            if (vertex.Col != normal
+                && vertex.Col != hovered
+                && vertex.Col != active)
+                continue;
+            vertex.Pos.X = center + (vertex.Pos.X - center) * 0.8f;
+        }
     }
 }

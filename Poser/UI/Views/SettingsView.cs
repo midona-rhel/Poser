@@ -134,6 +134,7 @@ public static class SettingsView
 
         // ── pane: 12px 20px 20px padding, scrollable
         ImGui.SetCursorScreenPos(new Vector2(min.X + navW, bodyTop));
+        Crystarium.PushScrollbarStyle();
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(20f * s, 12f * s));
         if (ImGui.BeginChild("##settings-pane", new Vector2(max.X - min.X - navW, bodyBottom - bodyTop), false,
             ImGuiWindowFlags.AlwaysUseWindowPadding)) // borderless children ignore WindowPadding otherwise
@@ -148,8 +149,10 @@ public static class SettingsView
                 default: DrawAboutPane(vm, s); break;
             }
         }
+        Crystarium.NarrowVisibleScrollbarThumb();
         ImGui.EndChild();
         ImGui.PopStyleVar();
+        Crystarium.PopScrollbarStyle();
 
         // ── footer: black-10 band, inset top hairline, right-aligned Cancel + primary Save
         dl.AddRectFilled(new Vector2(min.X, bodyBottom), max,

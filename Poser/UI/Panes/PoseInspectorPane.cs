@@ -624,6 +624,7 @@ public class PoseInspectorPane
                 ImGui.Dummy(Vector2.One);
             }
         }
+        Crystarium.NarrowVisibleScrollbarThumb();
         ImGui.EndChild();
         ImGui.PopStyleVar();
 

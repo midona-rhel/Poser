@@ -66,7 +66,7 @@ public static partial class Crystarium
 
         private readonly record struct Candidate(
             uint Id, Vector2 Min, Vector2 Max, string Text,
-            string? Shortcut, HoverHelpSide Side, bool Instant);
+            string? Shortcut, HoverHelpSide Side, bool Instant, int Layer);
 
         private static Candidate? _candidate;
         private static uint? _pendingId;
@@ -89,7 +89,9 @@ public static partial class Crystarium
             // Identity resolves through ImGui's ID stack at the
             // registration site, so equal raw strings in different
             // windows or ID scopes are distinct targets.
-            _candidate = new Candidate(ImGui.GetID(id), targetMin, targetMax, text, shortcut, side, Instant: false);
+            _candidate = new Candidate(
+                ImGui.GetID(id), targetMin, targetMax, text, shortcut, side,
+                Instant: false, Interactive.SurfaceDepth);
         }
 
         /// <summary>
@@ -101,7 +103,9 @@ public static partial class Crystarium
         {
             if (text.Length == 0)
                 return;
-            _candidate = new Candidate(ImGui.GetID(id), targetMin, targetMax, text, null, side, Instant: true);
+            _candidate = new Candidate(
+                ImGui.GetID(id), targetMin, targetMax, text, null, side,
+                Instant: true, Interactive.SurfaceDepth);
         }
 
         /// <summary>
@@ -112,6 +116,7 @@ public static partial class Crystarium
         /// bleed through an overlapping window or popup.
         /// </summary>
         public static bool HelpHovered(Vector2 min, Vector2 max) =>
+            !Interactive.PointerOccluded() &&
             ImGui.IsMouseHoveringRect(min, max) &&
             ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows |
                 ImGuiHoveredFlags.AllowWhenBlockedByActiveItem);
@@ -125,6 +130,9 @@ public static partial class Crystarium
         {
             var candidate = _candidate;
             _candidate = null;
+            if (candidate is { } registered
+                && Interactive.PointerOccluded(registered.Layer))
+                candidate = null;
             double now = ImGui.GetTime();
 
             if (candidate is { } c)

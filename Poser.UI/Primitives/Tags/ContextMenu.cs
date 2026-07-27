@@ -70,12 +70,20 @@ public static partial class Crystarium
         private static Vector2 _pivot;
         private static double _phaseStart;
         private static bool _focusPending;
+        private static int _lastOwnerFrame = -1;
 
         /// <summary>Opens the menu for <paramref name="id"/> at the given
         /// screen position (typically the mouse), replacing any open menu.
         /// Items freeze at open.</summary>
         public static void Open(string id, Vector2 position, ContextMenuItem[] items)
         {
+            if (_phase != Phase.Hidden && _id == id)
+            {
+                StartClose();
+                return;
+            }
+
+            Interactive.BlockRemainderOfFrame();
             float s = ImGuiHelpers.GlobalScale;
             _id = id;
             _items = items;
@@ -91,6 +99,15 @@ public static partial class Crystarium
             _phase = Phase.Opening;
             _phaseStart = ImGui.GetTime();
             _focusPending = true;
+        }
+
+        public static void DismissAll() => _phase = Phase.Hidden;
+
+        public static void EndFrame()
+        {
+            if (_phase != Phase.Hidden
+                && _lastOwnerFrame != ImGui.GetFrameCount())
+                _phase = Phase.Hidden;
         }
 
         public static bool IsOpen(string id) => _phase != Phase.Hidden && _id == id;
@@ -135,6 +152,7 @@ public static partial class Crystarium
             if (_phase == Phase.Hidden || _id != id)
                 return -1;
 
+            _lastOwnerFrame = ImGui.GetFrameCount();
             float s = ImGuiHelpers.GlobalScale;
             double now = ImGui.GetTime();
             float t = (float)(now - _phaseStart);
@@ -183,6 +201,7 @@ public static partial class Crystarium
             }
 
             var io = ImGui.GetIO();
+            Interactive.RegisterOccluder(Vector2.Zero, io.DisplaySize);
             const ImGuiWindowFlags hostFlags =
                 ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize
                 | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoScrollbar
