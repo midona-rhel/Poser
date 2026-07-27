@@ -141,6 +141,7 @@ public class MainWindow : Window
         };
         _poseInspector.DescriptorDisplayName = ActorDisplayName;
         appearancePane.DisplayNameProvider = ActorDisplayName;
+        animationPane.DisplayNameProvider = ActorDisplayName;
         // Transitional: the inspector still takes entity display lookups until
         // its own migration; route them through the lineage nickname store.
         _poseInspector.ActorDisplayNameProvider = actor =>
@@ -352,7 +353,8 @@ public class MainWindow : Window
         // that reserved band instead of over the content. A pane that
         // opens its own child inside the inset content loses the gutter.
         _vm.ContentOwnsViewport = _activeTab == "Pose";
-        _vm.ContentUsesPage = _activeTab == "Appearance";
+        _vm.ContentUsesPage =
+            _activeTab is "Animation" or "Appearance";
         // Appearance has no pose rail; its content takes the released
         // width. The outer window size is untouched by tab changes.
         _vm.DrawRail = _collapsed ? null : _poseRail.Draw;

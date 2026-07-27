@@ -178,6 +178,11 @@ public static partial class Crystarium
             _y += ActiveTheme.Controls.FormRowHeight;
         }
 
+        internal void Advance(float logicalHeight)
+        {
+            _y += logicalHeight;
+        }
+
         internal string RowId(string section, string label) =>
             $"##{_id}-{section}-{label}";
 
@@ -338,7 +343,9 @@ public static partial class Crystarium
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
-            content(new ColorWellScope(row, id));
+            var wells = new ColorWellScope(row, id);
+            content(wells);
+            wells.Draw();
             _page.EndRow(row, id, help);
         }
 
@@ -462,6 +469,17 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
+        /// <summary>Hosts an immediate-mode group that reports its consumed
+        /// height in pixels while Page retains section spacing and extent
+        /// ownership.</summary>
+        public void Region(Func<Vector2, float, float, float> draw)
+        {
+            var row = _page.BeginRow("");
+            float consumed = MathF.Max(0f, draw(
+                row.Origin, row.Width, row.Scale));
+            _page.Advance(consumed / row.Scale);
+        }
+
         private string Id(string label) => _page.RowId(_section, label);
     }
 
@@ -469,48 +487,79 @@ public static partial class Crystarium
     {
         private readonly FormRowScope _row;
         private readonly string _id;
-        private float _x;
+        private readonly List<ColorWellItem> _items = new();
+
+        private readonly record struct ColorWellItem(
+            string Label,
+            Vector4? Value,
+            Action<Vector4> OnChange,
+            string? UnavailableHelp,
+            ControlStyle Style);
 
         internal ColorWellScope(in FormRowScope row, string id)
         {
             _row = row;
             _id = id;
-            _x = row.ControlOrigin.X;
         }
 
         public void Well(string label, Vector4? value, Action<Vector4> onChange,
             string? unavailableHelp = null, ControlStyle style = default)
         {
-            float labelWidth = MeasureText(label,
-                ActiveTheme.Typography.CaptionSize, FontWeight.Regular).X;
-            float wellX = _x + labelWidth
-                + ActiveTheme.Spacing.Two * _row.Scale;
-            var controlStyle = InRegion(
-                style,
-                (_row.ControlOrigin.X + _row.ControlWidth - wellX) / _row.Scale,
-                fillByDefault: false);
-            float side = ControlSizing.Height(
-                controlStyle.Height, ActiveTheme.Controls.ColorWellSize);
-            float width = ControlSizing.Width(
-                controlStyle.Width, side,
-                (_row.ControlOrigin.X + _row.ControlWidth - wellX) / _row.Scale);
-            DrawTextCentered(new(_x, _row.Origin.Y),
-                new(labelWidth, ActiveTheme.Controls.FormRowHeight * _row.Scale),
-                ActiveTheme.Typography.CaptionSize, FontWeight.Regular,
-                FormHintColor, label);
-            _x = wellX;
-            ImGui.SetCursorScreenPos(new(_x,
-                _row.Origin.Y + (ActiveTheme.Controls.FormRowHeight -
-                    side) * 0.5f * _row.Scale));
-            Crystarium.ColorWell(
-                $"{_id}-{label}",
-                value ?? Vector4.Zero,
-                onChange,
-                controlStyle,
-                rgbOnly: true,
-                disabled: value == null,
-                help: unavailableHelp);
-            _x += (width + ActiveTheme.Spacing.Six) * _row.Scale;
+            _items.Add(new(
+                label, value, onChange, unavailableHelp, style));
+        }
+
+        internal void Draw()
+        {
+            if (_items.Count == 0)
+                return;
+            float trackWidth = _row.ControlWidth / _items.Count;
+            for (int i = 0; i < _items.Count; i++)
+            {
+                var item = _items[i];
+                float labelWidth = MeasureText(
+                    item.Label,
+                    ActiveTheme.Typography.CaptionSize,
+                    FontWeight.Regular).X;
+                var controlStyle = InRegion(
+                    item.Style,
+                    trackWidth / _row.Scale,
+                    fillByDefault: false);
+                float side = ControlSizing.Height(
+                    controlStyle.Height,
+                    ActiveTheme.Controls.ColorWellSize);
+                float width = ControlSizing.Width(
+                    controlStyle.Width,
+                    side,
+                    trackWidth / _row.Scale);
+                float gap = ActiveTheme.Page.ActionGap * _row.Scale;
+                float groupWidth = labelWidth + gap + width * _row.Scale;
+                float trackX = _row.ControlOrigin.X + i * trackWidth;
+                float groupX = trackX + MathF.Max(
+                    0f, (trackWidth - groupWidth) * 0.5f);
+                DrawTextCentered(
+                    new(groupX, _row.Origin.Y),
+                    new(
+                        labelWidth,
+                        ActiveTheme.Controls.FormRowHeight * _row.Scale),
+                    ActiveTheme.Typography.CaptionSize,
+                    FontWeight.Regular,
+                    FormHintColor,
+                    item.Label);
+                ImGui.SetCursorScreenPos(new(
+                    groupX + labelWidth + gap,
+                    _row.Origin.Y
+                        + (ActiveTheme.Controls.FormRowHeight - side)
+                        * 0.5f * _row.Scale));
+                Crystarium.ColorWell(
+                    $"{_id}-{item.Label}",
+                    item.Value ?? Vector4.Zero,
+                    item.OnChange,
+                    controlStyle,
+                    rgbOnly: true,
+                    disabled: item.Value == null,
+                    help: item.UnavailableHelp);
+            }
         }
     }
 

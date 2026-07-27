@@ -38,11 +38,16 @@ public sealed class AnimationPane
     private readonly Game.Animation.FacialPoseCapture _facialCapture;
     private readonly AnimationPicker _picker;
     private readonly SceneSession _scene;
+    public Func<ActorDescriptor, string>? DisplayNameProvider;
 
     // View preferences, deliberately not per-actor. Disclosures start
     // collapsed and contribute only their header when closed.
+    private bool _openGeneralPlayback = true;
+    private bool _openStance = true;
+    private bool _openLayers = true;
+    private bool _openFace = true;
     private bool _openAdvancedSlots;
-    private bool _openAdvancedScrub;
+    private bool _openAdvancedControls;
 
     private (ActorId Actor, ScrubControlId Control)? _scrub;
     /// <summary>Last animation picked into each layer. A one-shot ends in
@@ -58,16 +63,18 @@ public sealed class AnimationPane
     private string _status = string.Empty;
     private bool _sceneMenuRequested;
 
-    // One grid for every row in the pane.
-    private const float ContentPadding = 12f;
-    private const float Row = 30f;
-    private const float LabelColumn = 92f;
-    private const float Gap = 8f;
-    // Per-control vertical centring inside the 30px row.
-    private const float ButtonY = 3f;   // 24px compact button
-    private const float SliderY = 8f;   // 14px slider
-    private const float SwitchY = 5f;   // 20px switch
-    private const float TextY = 9f;     // 11-12px text
+    private static float Row => Crystarium.ActiveTheme.Controls.FormRowHeight;
+    private static float LabelColumn =>
+        Crystarium.ActiveTheme.Form.LabelColumnWidth;
+    private static float Gap => Crystarium.ActiveTheme.Page.ActionGap;
+    private static float ButtonY => (Row
+        - Crystarium.ActiveTheme.Controls.WorkspaceHeight) * 0.5f;
+    private static float SliderY => (Row
+        - Crystarium.ActiveTheme.Controls.SliderHeight) * 0.5f;
+    private static float SwitchY => (Row
+        - Crystarium.ActiveTheme.Controls.SwitchHeight) * 0.5f;
+    private static float TextY => (Row
+        - Crystarium.ActiveTheme.Typography.LabelSize) * 0.5f;
 
     /// <summary>The layers a user actually mixes. Parts and Overlay are
     /// engine slots and live under Advanced.</summary>
@@ -138,81 +145,78 @@ public sealed class AnimationPane
 
     public void Draw(Vector2 origin, Vector2 size)
     {
-        float s = ImGuiHelpers.GlobalScale;
-        float width = InspectorLayout.ClampContentWidth(size.X, s);
-
-        if (TargetActor() is not { } actor)
+        Crystarium.Page("animation", origin, size, page =>
         {
-            InspectorLayout.EmptyState(origin, s);
-            return;
-        }
+            if (TargetActor() is not { } actor)
+            {
+                page.EmptyState();
+                return;
+            }
+            if (!_animation.IsSupported(actor))
+            {
+                page.EmptyState(
+                    "This actor does not support animation control.");
+                return;
+            }
 
-        if (!_animation.IsSupported(actor))
-        {
-            ViewText.Label(origin + new Vector2(0f, 8f) * s,
-                "This actor does not support animation control.", 12f,
-                FontWeight.Regular, InspectorLayout.HintColor);
-            return;
-        }
+            if (_scrub is { } active && !active.Actor.Equals(actor))
+                EndScrub();
 
-        // A selection change ends any scrub still bound to the old actor,
-        // so its slider values cannot reach the previous gesture.
-        if (_scrub is { } active && !active.Actor.Equals(actor))
-        {
-            EndScrub();
-        }
+            var reading =
+                _animation.Read(actor) ?? ActorAnimationReading.Empty;
+            var owned = _animation.OverridesFor(actor);
+            var descriptor = Describe(actor);
+            page.Status(descriptor == null
+                ? "Actor"
+                : DisplayNameProvider?.Invoke(descriptor) ?? "Actor");
+            page.Status(_status);
 
-        var reading = _animation.Read(actor) ?? ActorAnimationReading.Empty;
-        var owned = _animation.OverridesFor(actor);
-
-        // The shell's content child scrolls and owns the gutter; the page
-        // supplies only its own vertical padding.
-        ImGui.SetCursorScreenPos(origin + new Vector2(0f, ContentPadding * s));
-        DrawPage(actor, reading, owned, width, s);
+            page.Section(
+                "GENERAL PLAYBACK",
+                _openGeneralPlayback,
+                next => _openGeneralPlayback = next,
+                form => form.Region((at, width, scale) =>
+                    DrawTransport(actor, reading, owned, at, width, scale)));
+            page.Section(
+                "STANCE",
+                _openStance,
+                next => _openStance = next,
+                form => form.Region((at, width, scale) =>
+                    DrawStance(actor, reading, at, width, scale)));
+            page.Section(
+                "LAYERS",
+                _openLayers,
+                next => _openLayers = next,
+                form => form.Region((at, width, scale) =>
+                    DrawPrimaryLayers(
+                        actor, reading, owned, at, width, scale)));
+            page.Section(
+                "FACE & LIPS",
+                _openFace,
+                next => _openFace = next,
+                form => form.Region((at, width, scale) =>
+                    DrawFace(actor, reading, at, width, scale)));
+            page.Section(
+                "ADVANCED SLOTS",
+                _openAdvancedSlots,
+                next => _openAdvancedSlots = next,
+                form => form.Region((at, width, scale) =>
+                    DrawAdvancedSlots(
+                        actor, reading, owned, at, width, scale)));
+            page.Section(
+                "ADVANCED CONTROLS",
+                _openAdvancedControls,
+                next => _openAdvancedControls = next,
+                form => form.Region((at, width, scale) =>
+                    DrawAdvancedControls(
+                        actor, reading, at, width, scale)));
+        });
 
         if (_picker.Draw() is { } pick)
-            Apply(actor, pick);
-    }
-
-    private void DrawPage(
-        ActorId actor, ActorAnimationReading reading,
-        AnimationOverrides owned, float width, float s)
-    {
-        var origin = ImGui.GetCursorScreenPos();
-        var dl = ImGui.GetWindowDrawList();
-        float y = origin.Y;
-
-        y += DrawTransport(actor, reading, owned, new Vector2(origin.X, y), width, s);
-
-        // Failures render HERE, under the controls that cause most of
-        // them, instead of five sections down where they scrolled out of
-        // sight.
-        if (_status.Length > 0)
         {
-            ViewText.Label(new Vector2(origin.X, y + 2f * s), _status, 11f,
-                FontWeight.Regular, InspectorLayout.HintColor);
-            y += 20f * s;
+            if (TargetActor() is { } target)
+                Apply(target, pick);
         }
-        y += SectionGap(s);
-        y += DrawStance(actor, reading, new Vector2(origin.X, y), width, s);
-        y += SectionGap(s);
-        y += DrawLayers(actor, reading, owned, dl, new Vector2(origin.X, y), width, s);
-        y += SectionGap(s);
-        y += DrawFace(actor, reading, new Vector2(origin.X, y), width, s);
-
-        // Register the content extent, including the trailing padding, so
-        // scrolling to the bottom leaves the last row clear of the edge.
-        ImGui.SetCursorScreenPos(origin);
-        ImGui.Dummy(new Vector2(width, (y - origin.Y) + ContentPadding * s));
-    }
-
-    private static float SectionGap(float s) => 10f * s;
-
-    /// <summary>Section caption on the shared grid.</summary>
-    private static float Caption(Vector2 cursor, string text, float s)
-    {
-        ViewText.Label(cursor, text, 11f, FontWeight.SemiBold, InspectorLayout.LabelColor);
-        return 20f * s;
     }
 
     /// <summary>Label cell for a row; returns the x where the value starts.</summary>
@@ -287,7 +291,7 @@ public sealed class AnimationPane
         ActorId actor, ActorAnimationReading reading,
         AnimationOverrides owned, Vector2 cursor, float width, float s)
     {
-        float y = Caption(cursor, Describe(actor)?.Name ?? "ACTOR", s);
+        float y = 0f;
 
         ushort current = reading.BaseTimeline != 0
             ? reading.BaseTimeline
@@ -394,7 +398,7 @@ public sealed class AnimationPane
     private float DrawStance(
         ActorId actor, ActorAnimationReading reading, Vector2 cursor, float width, float s)
     {
-        float y = Caption(cursor, "STANCE", s);
+        float y = 0f;
 
         // Ktisis' combo, not a segmented pill: the trigger shows the TRUE
         // family (which may be "Battle" — not in the list), and re-picking
@@ -483,11 +487,11 @@ public sealed class AnimationPane
 
     // ── C. Layers ─────────────────────────────────────────────────────
 
-    private float DrawLayers(
+    private float DrawPrimaryLayers(
         ActorId actor, ActorAnimationReading reading, AnimationOverrides owned,
-        ImDrawListPtr dl, Vector2 cursor, float width, float s)
+        Vector2 cursor, float width, float s)
     {
-        float y = Caption(cursor, "LAYERS", s);
+        float y = 0f;
 
         // The Full body row IS what the references call blending: a pick
         // here is a one-shot played through the sequencer over the base
@@ -499,31 +503,47 @@ public sealed class AnimationPane
         foreach (var slot in PrimaryLayers)
             y += DrawLayerRow(actor, reading, owned, cursor, width, s, y,
                 slot, AnimationSlots.DisplayName(slot), alwaysShow: false);
+        return y;
+    }
 
-        y += InspectorLayout.Section(dl, cursor + new Vector2(0f, y), width,
-            "anim", "ADVANCED SLOTS", ref _openAdvancedSlots, s, topBorder: false);
-        if (_openAdvancedSlots)
-            foreach (var slot in AdvancedLayers)
-                y += DrawLayerRow(actor, reading, owned, cursor, width, s, y,
-                    slot, AnimationSlots.DisplayName(slot), alwaysShow: true);
+    private float DrawAdvancedSlots(
+        ActorId actor,
+        ActorAnimationReading reading,
+        AnimationOverrides owned,
+        Vector2 cursor,
+        float width,
+        float s)
+    {
+        float y = 0f;
+        foreach (var slot in AdvancedLayers)
+            y += DrawLayerRow(
+                actor, reading, owned, cursor, width, s, y,
+                slot, AnimationSlots.DisplayName(slot), alwaysShow: true);
+        return y;
+    }
 
-        // Raw Havok controls, for the slots the friendly rows do not
-        // cover. The friendly scrub lives inline in the layer rows above.
-        y += InspectorLayout.Section(dl, cursor + new Vector2(0f, y), width,
-            "anim", "ADVANCED CONTROLS", ref _openAdvancedScrub, s, topBorder: false);
-        if (_openAdvancedScrub)
+    private float DrawAdvancedControls(
+        ActorId actor,
+        ActorAnimationReading reading,
+        Vector2 cursor,
+        float width,
+        float s)
+    {
+        float y = 0f;
+        var controls = AdvancedControls(reading);
+        foreach (var control in controls)
+            y += DrawScrubRow(
+                actor, reading, cursor, width, s, y,
+                control.Id.ToString(), control);
+        if (controls.Count == 0)
         {
-            var controls = AdvancedControls(reading);
-            foreach (var control in controls)
-                y += DrawScrubRow(actor, reading, cursor, width, s, y,
-                    control.Id.ToString(), control);
-            if (controls.Count == 0)
-            {
-                ViewText.Label(cursor + new Vector2(0f, y + 4f * s),
-                    "No animation controls.", 11f,
-                    FontWeight.Regular, InspectorLayout.HintColor);
-                y += Row * s;
-            }
+            ViewText.Label(
+                cursor + new Vector2(0f, TextY * s),
+                "No animation controls.",
+                Crystarium.ActiveTheme.Typography.CaptionSize,
+                FontWeight.Regular,
+                InspectorLayout.HintColor);
+            y += Row * s;
         }
         return y;
     }
@@ -558,7 +578,16 @@ public sealed class AnimationPane
                     $"Play an animation on the {label.ToLowerInvariant()} layer"))
                 _picker.Open(AnimationPickTarget.Slot, capturedEmpty, capturedEmpty,
                     $"{label} layer");
-            return Row * s;
+            float emptyHeight = Row * s;
+            if (slot == AnimationSlot.UpperBody)
+            {
+                var emptyControl = new ScrubControlReading(
+                    new ScrubControlId(-1, (int)slot), 0f, 0f, 0f);
+                emptyHeight += DrawScrubRow(
+                    actor, reading, cursor, width, s, y + emptyHeight,
+                    "Time", emptyControl, slot, 0);
+            }
+            return emptyHeight;
         }
 
         var captured = slot;
@@ -809,7 +838,7 @@ public sealed class AnimationPane
     private float DrawFace(
         ActorId actor, ActorAnimationReading reading, Vector2 cursor, float width, float s)
     {
-        float y = Caption(cursor, "FACE & LIPS", s);
+        float y = 0f;
 
         var row = cursor + new Vector2(0f, y);
         float valueX = LabelCell(row, "Expression", s);

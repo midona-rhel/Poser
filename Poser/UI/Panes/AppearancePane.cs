@@ -129,7 +129,7 @@ public sealed class AppearancePane
             });
             page.Status(_status);
 
-            page.Section("PRESENTATION", form =>
+            page.Section("GENERAL", form =>
             {
                 float opacity = owned.Opacity ?? reading.Opacity;
                 form.Slider("Opacity", opacity, 0f, 1f,
