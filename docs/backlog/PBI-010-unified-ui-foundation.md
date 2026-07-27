@@ -264,7 +264,16 @@ These are systematic composition fixes, not pane-local offsets.
 - Numeric axis wells are a Crystarium primitive, including Hinge axis. They
   use the mono value font, theme focus/selection colors, right-aligned values,
   and widths derived from the FormRow region. Raw `InputFloat` styling and
-  overflowing fixed indents are deleted.
+  overflowing fixed indents are deleted. Transform wells display one more
+  digit than today: Translation and Scale use `0.000`; Rotation uses `0.00`.
+  Hinge axis uses `0.000` and supersedes the earlier single-row decision: its
+  label occupies the normal form row and the X/Y/Z wells occupy one full-width
+  row immediately below, matching the transform triplet instead of squeezing
+  three values into the post-label column.
+- The Tint row remains one row, not three. Its Character/Main/Off groups use
+  three equal tracks across the control region, one shared inline gap between
+  each label and 26 px well, and the FormRow centreline. Missing models reserve
+  the same track and well geometry so availability never reflows the row.
 - Body/Face maps resolve all overlapping dot candidates before painting and
   render exactly one hovered instance. Clicking and HoverHelp use that same
   winner.
@@ -309,6 +318,12 @@ These are systematic composition fixes, not pane-local offsets.
 - Menu and dropdown row rectangles must be non-overlapping at every supported
   scale. At most one option receives hover, press, HoverHelp, or activation in
   a frame, and visual animation uses the same rectangle as hit-testing.
+- Floating-surface occlusion is centralized. Every menu, dropdown, picker,
+  color well, modal, file window, and hover card registers its surface and
+  input layer with the shared interaction path. `Interactive.Reserve` rejects
+  lower-layer hover/clicks, and HoverHelp revalidates its final candidate after
+  all windows draw. No tooltip or click may bleed through a color picker or
+  other floating surface, including on the frame it opens.
 
 ### Retained pages and matrix
 
@@ -319,6 +334,12 @@ These are systematic composition fixes, not pane-local offsets.
   all use the same persisted disclosure component; closed content contributes
   zero height. The actor heading uses the shared lineage display API, so
   nickname and anonymous mode are never bypassed.
+- Selection propagation is tab-independent. `PoseInspectorPane.SetSelection`
+  currently runs only inside the Pose content branch, leaving the always
+  visible inspector rail on Animation/Appearance bound to a stale bone. Update
+  the inspector selection once per main-window frame before tab dispatch, then
+  render any tab. IK eligibility, transform values, and every rail section must
+  update immediately without visiting Pose first.
 - Treat Matrix as a bounded canvas with equal theme page padding on all four
   sides. Middle-drag pans; wheel zooms about the pointer; a small Reset View
   action restores fit. Selection semantics and matrix filtering are unchanged.
