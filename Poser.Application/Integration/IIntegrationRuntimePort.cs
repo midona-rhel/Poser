@@ -121,9 +121,9 @@ public interface IIntegrationRuntimePort
 
     IntegrationValue<Guid> ApplyTemporaryBodyProfile(ActorId actor, string profileJson);
 
-    IntegrationPortResult DeleteTemporaryBodyProfile(ActorId actor);
-
-    /// <summary>Deletes Poser's temporary profile by its own id — the
-    /// cleanup path that still works after the actor is gone.</summary>
+    /// <summary>Deletes Poser's temporary profile by its OWN id — the one
+    /// ownership-safe cleanup primitive. There is deliberately no
+    /// delete-by-actor: that would remove whichever temporary profile is
+    /// active, including another plugin's.</summary>
     IntegrationPortResult DeleteTemporaryBodyProfileById(Guid profile);
 }

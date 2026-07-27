@@ -49,6 +49,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
     private const int PenumbraEcNothingChanged = 1;
 
     private const int CustomizeEcSuccess = 0;
+    private const int CustomizeEcInvalidCharacter = 1;
     private const int CustomizeEcProfileNotFound = 3;
 
     private static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(10);
@@ -87,7 +88,6 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
     private readonly ICallGateSubscriber<Guid, (int, string?)> _getProfileByUniqueId;
     private readonly ICallGateSubscriber<ushort, (int, Guid?)> _getActiveProfileId;
     private readonly ICallGateSubscriber<ushort, string, (int, Guid?)> _setTemporaryProfile;
-    private readonly ICallGateSubscriber<ushort, int> _deleteTemporaryProfile;
     private readonly ICallGateSubscriber<Guid, int> _deleteTemporaryProfileById;
 
     private DateTime _nextPenumbraCheck = DateTime.MinValue;
@@ -134,7 +134,6 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
         _getProfileByUniqueId = pluginInterface.GetIpcSubscriber<Guid, (int, string?)>("CustomizePlus.Profile.GetByUniqueId");
         _getActiveProfileId = pluginInterface.GetIpcSubscriber<ushort, (int, Guid?)>("CustomizePlus.Profile.GetActiveProfileIdOnCharacter");
         _setTemporaryProfile = pluginInterface.GetIpcSubscriber<ushort, string, (int, Guid?)>("CustomizePlus.Profile.SetTemporaryProfileOnCharacter");
-        _deleteTemporaryProfile = pluginInterface.GetIpcSubscriber<ushort, int>("CustomizePlus.Profile.DeleteTemporaryProfileOnCharacter");
         _deleteTemporaryProfileById = pluginInterface.GetIpcSubscriber<Guid, int>("CustomizePlus.Profile.DeleteTemporaryProfileByUniqueId");
     }
 
@@ -575,25 +574,15 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
                     $"Customize+ failed applying the temporary profile (code {ec}).");
         });
 
-    public IntegrationPortResult DeleteTemporaryBodyProfile(ActorId actor) =>
-        Guarded(CustomizePlus, "Delete profile", () =>
-        {
-            int index = ResolveIndex(actor, out var detail);
-            if (index < 0)
-                return IntegrationPortResult.Fail(detail!);
-            int ec = _deleteTemporaryProfile.InvokeFunc((ushort)index);
-            // An already-absent temporary profile is a successful release.
-            return ec is CustomizeEcSuccess or CustomizeEcProfileNotFound
-                ? IntegrationPortResult.Ok()
-                : IntegrationPortResult.Fail(
-                    $"Customize+ failed deleting the temporary profile (code {ec}).");
-        });
-
     public IntegrationPortResult DeleteTemporaryBodyProfileById(Guid profile) =>
         Guarded(CustomizePlus, "Delete profile", () =>
         {
             int ec = _deleteTemporaryProfileById.InvokeFunc(profile);
+            // Already-absent profile and already-gone owning actor are both
+            // successful releases (Customize+ itself documents
+            // InvalidCharacter on this path as "not an error").
             return ec is CustomizeEcSuccess or CustomizeEcProfileNotFound
+                    or CustomizeEcInvalidCharacter
                 ? IntegrationPortResult.Ok()
                 : IntegrationPortResult.Fail(
                     $"Customize+ failed deleting the temporary profile (code {ec}).");

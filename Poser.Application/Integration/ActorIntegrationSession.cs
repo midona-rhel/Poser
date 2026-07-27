@@ -208,12 +208,14 @@ public sealed class ActorIntegrationSession
     public IntegrationResult ResetBodyProfile(ActorId actor)
     {
         var current = OverridesFor(actor);
-        if (current.TemporaryBodyProfile == null)
+        if (current.TemporaryBodyProfile is not { } owned)
             return IntegrationResult.Ok();
 
-        // Deleting ONLY Poser's temporary profile lets the underlying saved
-        // assignment resume naturally.
-        var deleted = _port.DeleteTemporaryBodyProfile(actor);
+        // Deleting ONLY Poser's temporary profile — by its OWN id — lets
+        // the underlying saved assignment resume naturally. Deleting by
+        // actor would remove whatever temporary profile is active now,
+        // which may belong to another plugin.
+        var deleted = _port.DeleteTemporaryBodyProfileById(owned);
         if (!deleted.Success)
             return IntegrationResult.Fail(deleted.Detail!);
 
@@ -270,12 +272,11 @@ public sealed class ActorIntegrationSession
             current = TearDownMcdf(actor, current, mcdf, resolvable, failures, ref touchedNative);
         }
 
-        // Body profile: delete only Poser's temporary profile.
+        // Body profile: delete only Poser's temporary profile, by its own
+        // id — never whichever temporary profile is currently active.
         if (current.TemporaryBodyProfile is { } temporary)
         {
-            var deleted = resolvable
-                ? _port.DeleteTemporaryBodyProfile(actor)
-                : _port.DeleteTemporaryBodyProfileById(temporary);
+            var deleted = _port.DeleteTemporaryBodyProfileById(temporary);
             if (deleted.Success)
                 current = current with
                 {
@@ -416,9 +417,7 @@ public sealed class ActorIntegrationSession
         Guid? temporaryProfile = mcdf.TemporaryProfile;
         if (temporaryProfile is { } profile)
         {
-            var deleted = resolvable
-                ? _port.DeleteTemporaryBodyProfile(actor)
-                : _port.DeleteTemporaryBodyProfileById(profile);
+            var deleted = _port.DeleteTemporaryBodyProfileById(profile);
             if (deleted.Success)
                 temporaryProfile = null;
             else
@@ -786,9 +785,7 @@ public sealed class ActorIntegrationSession
 
         if (tempProfile is { } profile)
         {
-            var deleted = resolvable
-                ? _port.DeleteTemporaryBodyProfile(actor)
-                : _port.DeleteTemporaryBodyProfileById(profile);
+            var deleted = _port.DeleteTemporaryBodyProfileById(profile);
             if (deleted.Success)
                 tempProfile = null;
             else
