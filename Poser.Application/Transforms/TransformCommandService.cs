@@ -1,5 +1,6 @@
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
+using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
 
 namespace Poser.Application.Transforms;
@@ -96,6 +97,105 @@ public sealed class TransformCommandService
             RestoreAll(before);
             return GestureResult.Fail(
                 applied.Detail ?? $"Could not transform {writes[i].Target}.");
+        }
+
+        var after = new List<TransformTargetState>(before.Count);
+        foreach (var state in before)
+        {
+            var captured = _runtime.Capture(state.Target);
+            if (!captured.Success || captured.State == null)
+            {
+                RestoreAll(before);
+                return GestureResult.Fail(
+                    captured.Detail ?? $"Could not capture {state.Target}.");
+            }
+            after.Add(captured.State);
+        }
+
+        _history.Append(new TransformPatch(description, before, after));
+        return GestureResult.Ok();
+    }
+
+    /// <summary>
+    /// One atomic pose-file import: reset-before-import and application
+    /// form a SINGLE edit. Every affected slot-qualified target is
+    /// captured before anything changes; resets clear the captured pose
+    /// stacks, the file's transforms then write against the live raw
+    /// basis, and the model transform applies (or clears) once on the
+    /// owning actor. Any failure restores every captured target and
+    /// creates no history item; success appends exactly one.
+    /// </summary>
+    public GestureResult ImportEdit(
+        IReadOnlyList<TransformTargetId> resets,
+        IReadOnlyList<(TransformTargetId Target, PoseTransform Desired)> writes,
+        (TransformTargetId Target, PoseTransform? Absolute)? model,
+        string description)
+    {
+        if (_gestures.ActiveGesture != null)
+            return GestureResult.Fail("A transform gesture is active.");
+        if (resets.Count == 0 && writes.Count == 0 && model == null)
+            return GestureResult.Fail("The pose file affects nothing on this actor.");
+
+        // Capture every affected exact target once, before any write.
+        var order = new List<TransformTargetId>();
+        var seen = new HashSet<TransformTargetId>();
+        foreach (var target in resets)
+            if (seen.Add(target))
+                order.Add(target);
+        foreach (var (target, _) in writes)
+            if (seen.Add(target))
+                order.Add(target);
+        if (model is { } modelEdit && seen.Add(modelEdit.Target))
+            order.Add(modelEdit.Target);
+
+        var before = new List<TransformTargetState>(order.Count);
+        var byTarget = new Dictionary<TransformTargetId, TransformTargetState>(order.Count);
+        foreach (var target in order)
+        {
+            var captured = Capture(target);
+            if (!captured.Success || captured.State == null)
+                return GestureResult.Fail(captured.Detail!);
+            before.Add(captured.State);
+            byTarget[target] = captured.State;
+        }
+
+        foreach (var target in resets)
+        {
+            var state = byTarget[target];
+            var applied = _runtime.Restore(state with
+            {
+                Pose = PoseOperations.Reset(state.Pose),
+                HasOverride = false,
+            });
+            if (applied.Success)
+                continue;
+            RestoreAll(before);
+            return GestureResult.Fail(
+                applied.Detail ?? $"Could not reset {target}.");
+        }
+
+        foreach (var (target, desired) in writes)
+        {
+            var applied = _runtime.ApplyAbsolute(byTarget[target], desired, rawBaseline: true);
+            if (applied.Success)
+                continue;
+            RestoreAll(before);
+            return GestureResult.Fail(
+                applied.Detail ?? $"Could not transform {target}.");
+        }
+
+        if (model is { } edit)
+        {
+            var state = byTarget[edit.Target];
+            var applied = edit.Absolute is { } absolute
+                ? _runtime.ApplyAbsolute(state, absolute)
+                : _runtime.Restore(state with { HasOverride = false });
+            if (!applied.Success)
+            {
+                RestoreAll(before);
+                return GestureResult.Fail(
+                    applied.Detail ?? "Could not apply the model transform.");
+            }
         }
 
         var after = new List<TransformTargetState>(before.Count);

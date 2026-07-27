@@ -29,12 +29,15 @@ public interface IPoseFileService : IDisposable
     PoseFile CreatePoseFile(IReadOnlyList<ISkeleton> slots);
 
     /// <summary>
-    /// Imports a pose from file onto the matching slots of the supplied set.
+    /// Loads a pose file and computes the complete import plan for the
+    /// matching slots WITHOUT mutating anything. Returns null when the file
+    /// cannot be read. The stable pose edit path applies the plan as one
+    /// atomic, undoable edit.
     /// </summary>
-    bool ImportPose(IReadOnlyList<ISkeleton> slots, string path, PoseImportOptions? options = null);
+    PoseImportPlan? BuildImportPlan(IReadOnlyList<ISkeleton> slots, string path, PoseImportOptions? options = null);
 
     /// <summary>
-    /// Imports a pose file onto the matching slots of the supplied set.
+    /// Computes the import plan for an already-loaded pose file.
     /// </summary>
-    bool ImportPose(IReadOnlyList<ISkeleton> slots, PoseFile poseFile, PoseImportOptions? options = null);
+    PoseImportPlan BuildImportPlan(IReadOnlyList<ISkeleton> slots, PoseFile poseFile, PoseImportOptions? options = null);
 }

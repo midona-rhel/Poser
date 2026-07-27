@@ -7,6 +7,7 @@ using Poser.Entities;
 using Poser.Files;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
+using Poser.Game.Posing;
 using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
@@ -17,8 +18,10 @@ namespace Poser.UI;
 public sealed class PoseFileInspectorSection
 {
     private readonly IPoseFileService _poseFiles;
+    private readonly CleanPoseFacade _poseFacade;
     private readonly SelectionSession _selection;
     private readonly ISkeletonService _skeletons;
+    private string _status = string.Empty;
     private readonly FileBrowser _importBrowser =
         new("Import Pose", new[] { ".pose", ".cmp" }, isSaveMode: false);
     private readonly FileBrowser _exportBrowser =
@@ -31,10 +34,12 @@ public sealed class PoseFileInspectorSection
 
     public PoseFileInspectorSection(
         IPoseFileService poseFiles,
+        CleanPoseFacade poseFacade,
         SelectionSession selection,
         ISkeletonService skeletons)
     {
         _poseFiles = poseFiles;
+        _poseFacade = poseFacade;
         _selection = selection;
         _skeletons = skeletons;
     }
@@ -75,11 +80,17 @@ public sealed class PoseFileInspectorSection
         if (Crystarium.Button("Import…",
                 new ButtonProps { Id = "impex-import", Classes = Cls.Compact }))
         {
+            // The actor is frozen at dialog open; the Selected-scope bone
+            // filter freezes at dialog confirmation (BuildOptions runs in
+            // the callback) and never expands into a later selection.
             _importBrowser.Open(_lastPath, path =>
             {
                 _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
-                _poseFiles.ImportPose(
-                    _skeletons.GetSkeletons(skeleton.Actor), path, BuildOptions());
+                var imported = _poseFacade.ImportPose(
+                    skeleton.Actor, path, BuildOptions());
+                _status = imported.Success
+                    ? string.Empty
+                    : $"Import: {imported.Detail}";
             });
         }
         ImGui.SameLine(0f, 6f * s);
@@ -89,11 +100,20 @@ public sealed class PoseFileInspectorSection
             _exportBrowser.Open(_lastPath, path =>
             {
                 _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
-                _poseFiles.ExportPose(
+                bool exported = _poseFiles.ExportPose(
                     _skeletons.GetSkeletons(skeleton.Actor), path);
+                _status = exported ? string.Empty : "Export: the pose file could not be written.";
             });
         }
-        return h + 34f * s;
+        h += 34f * s;
+
+        if (_status.Length > 0)
+        {
+            ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 2f * s),
+                _status, 11f, FontWeight.Regular, InspectorLayout.HintColor);
+            h += 20f * s;
+        }
+        return h;
     }
 
     private static float ScopeCheck(

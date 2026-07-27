@@ -113,7 +113,7 @@ public class PoseFileService : IPoseFileService
         }
     }
 
-    public bool ImportPose(IReadOnlyList<ISkeleton> slots, string path, PoseImportOptions? options = null)
+    public PoseImportPlan? BuildImportPlan(IReadOnlyList<ISkeleton> slots, string path, PoseImportOptions? options = null)
     {
         try
         {
@@ -126,123 +126,114 @@ public class PoseFileService : IPoseFileService
                 if (cmp == null)
                 {
                     _log.Error($"Failed to load CMTool pose file from {path}");
-                    return false;
+                    return null;
                 }
 
                 var upgraded = cmp.Upgrade();
                 var cmpOptions = (options ?? DefaultImportOptions).Clone();
                 cmpOptions.ApplyPosition = false;
-                return ImportPose(slots, upgraded, cmpOptions);
+                return BuildImportPlan(slots, upgraded, cmpOptions);
             }
 
             var poseFile = PoseFile.Load(path);
             if (poseFile == null)
             {
                 _log.Error($"Failed to load pose file from {path}");
-                return false;
+                return null;
             }
 
             // Sanitize bone names for Anamnesis compatibility
             poseFile.SanitizeBoneNames();
 
-            return ImportPose(slots, poseFile, options);
+            return BuildImportPlan(slots, poseFile, options);
         }
         catch (Exception ex)
         {
             _log.Error($"Failed to import pose: {ex.Message}");
-            return false;
+            return null;
         }
     }
 
-    public bool ImportPose(IReadOnlyList<ISkeleton> slots, PoseFile poseFile, PoseImportOptions? options = null)
+    public PoseImportPlan BuildImportPlan(IReadOnlyList<ISkeleton> slots, PoseFile poseFile, PoseImportOptions? options = null)
     {
         options ??= DefaultImportOptions;
+        var plan = new PoseImportPlan();
 
-        try
+        var bySlot = slots
+            .Where(s => s.Slot != PoseSlot.Unknown)
+            .ToDictionary(s => s.Slot);
+        bySlot.TryGetValue(PoseSlot.Character, out var character);
+
+        // Brio parity: import does NOT wipe existing modifications (Brio's
+        // interactive import passes reset: false). Reset only on explicit
+        // request and only within the chosen scope.
+        if (options.ResetBeforeImport)
+            PlanResetScope(plan, bySlot, character, poseFile, options);
+
+        // Character collection → Character slot only.
+        if (options.ApplyBody && character != null)
+            PlanCharacterCollection(plan, character, poseFile, options);
+
+        // Each auxiliary collection imports only into its matching live
+        // slot; a missing slot is reported, never redirected by name.
+        if (!options.AsExpression)
         {
-            var bySlot = slots
-                .Where(s => s.Slot != PoseSlot.Unknown)
-                .ToDictionary(s => s.Slot);
-            bySlot.TryGetValue(PoseSlot.Character, out var character);
-
-            // Brio parity: import does NOT wipe existing modifications (Brio's
-            // interactive import passes reset: false). Reset only on explicit
-            // request and only within the chosen scope.
-            if (options.ResetBeforeImport)
-                ResetScope(bySlot, character, poseFile, options);
-
-            int bonesApplied = 0;
-
-            // Character collection → Character slot only.
-            if (options.ApplyBody && character != null)
-                bonesApplied += ApplyCharacterCollection(character, poseFile, options);
-
-            // Each auxiliary collection imports only into its matching live
-            // slot; a missing slot is reported, never redirected by name.
-            if (!options.AsExpression)
+            foreach (var slot in new[]
+                     {
+                         PoseSlot.MainHand,
+                         PoseSlot.OffHand,
+                         PoseSlot.Prop,
+                         PoseSlot.Ornament,
+                     })
             {
-                foreach (var slot in new[]
-                         {
-                             PoseSlot.MainHand,
-                             PoseSlot.OffHand,
-                             PoseSlot.Prop,
-                             PoseSlot.Ornament,
-                         })
+                var collection = CollectionFor(poseFile, slot)!;
+                if (collection.Count == 0 || !SlotEnabled(slot, options))
+                    continue;
+                if (!bySlot.TryGetValue(slot, out var slotSkeleton))
                 {
-                    var collection = CollectionFor(poseFile, slot)!;
-                    if (collection.Count == 0 || !SlotEnabled(slot, options))
+                    _log.Info($"Pose import: {slot} collection skipped — slot not present on this actor.");
+                    continue;
+                }
+                foreach (var (boneName, boneData) in collection)
+                {
+                    var bone = slotSkeleton.GetBone(boneName);
+                    if (bone == null || !PassesBoneFilter(bone, options))
                         continue;
-                    if (!bySlot.TryGetValue(slot, out var slotSkeleton))
-                    {
-                        _log.Info($"Pose import: {slot} collection skipped — slot not present on this actor.");
-                        continue;
-                    }
-                    foreach (var (boneName, boneData) in collection)
-                    {
-                        var bone = slotSkeleton.GetBone(boneName);
-                        if (bone == null || !PassesBoneFilter(bone, options))
-                            continue;
-                        ApplyBoneTransform(bone, boneData, options);
-                        bonesApplied++;
-                    }
+                    PlanBoneTransform(plan, bone, boneData, options);
+                    plan.FileBoneCount++;
                 }
             }
-
-            // Brio parity (ModelPosingCapability.ImportModelPose, non-scene
-            // path): current actor transform += ModelDifference, applied ONCE
-            // to the owning actor.
-            if (options.ApplyModelTransform && !options.AsExpression &&
-                slots.Count > 0)
-            {
-                var actor = slots[0].Actor;
-                if (options.ResetBeforeImport)
-                    _posingService.ClearTransformOverride(actor);
-
-                var current = _posingService.GetEffectiveTransform(actor);
-                Transform difference = poseFile.ModelDifference;
-                _posingService.SetTransformOverride(actor, new Transform
-                {
-                    Position = current.Position + difference.Position,
-                    Rotation = Quaternion.Normalize(current.Rotation * difference.Rotation),
-                    Scale = current.Scale + difference.Scale
-                });
-            }
-
-            // Re-anchor the face after body imports (rewrite of Brio's
-            // ReconcileHead) — Character-only. Skipped when IK is live on the
-            // Character skeleton because reconciling would fight the solver.
-            if (!options.AsExpression && options.ApplyFace && character != null &&
-                !_bonePosingService.HasEnabledIk(character))
-                ReconcileFace(character);
-
-            _log.Debug($"Imported pose: {bonesApplied} bones applied");
-            return true;
         }
-        catch (Exception ex)
+
+        // Brio parity (ModelPosingCapability.ImportModelPose, non-scene
+        // path): current actor transform += ModelDifference, applied ONCE
+        // to the owning actor. Reset-before-import bases the sum on the
+        // original transform, exactly what clearing-then-reading produced.
+        if (options.ApplyModelTransform && !options.AsExpression &&
+            slots.Count > 0)
         {
-            _log.Error($"Failed to import pose: {ex.Message}");
-            return false;
+            var actor = slots[0].Actor;
+            var current = options.ResetBeforeImport
+                ? _posingService.GetOriginalTransform(actor)
+                : _posingService.GetEffectiveTransform(actor);
+            Transform difference = poseFile.ModelDifference;
+            plan.ModelActor = actor;
+            plan.ModelTransform = new Transform
+            {
+                Position = current.Position + difference.Position,
+                Rotation = Quaternion.Normalize(current.Rotation * difference.Rotation),
+                Scale = current.Scale + difference.Scale
+            };
         }
+
+        // Re-anchor the face after body imports (rewrite of Brio's
+        // ReconcileHead) — Character-only. Skipped when IK is live on the
+        // Character skeleton because reconciling would fight the solver.
+        if (!options.AsExpression && options.ApplyFace && character != null &&
+            !_bonePosingService.HasEnabledIk(character))
+            PlanFaceReconcile(plan, character);
+
+        return plan;
     }
 
     /// <summary>Reset-before-import touches EXACTLY what the importer could
@@ -252,7 +243,8 @@ public class PoseFileService : IPoseFileService
     /// filter. A slot resets ONLY under the same collection-present/enabled
     /// gate the application loop uses — a selected auxiliary bone is never
     /// erased when nothing from its slot can apply.</summary>
-    private void ResetScope(
+    private void PlanResetScope(
+        PoseImportPlan plan,
         IReadOnlyDictionary<PoseSlot, ISkeleton> bySlot,
         ISkeleton? character,
         PoseFile poseFile,
@@ -272,7 +264,7 @@ public class PoseFileService : IPoseFileService
         if (options.ApplyBody && character != null && poseFile.Bones.Count > 0)
         {
             foreach (var bone in character.Bones.Where(InCharacterScope))
-                _bonePosingService.ResetBone(bone);
+                plan.Resets.Add(bone);
         }
 
         if (options.AsExpression)
@@ -286,16 +278,16 @@ public class PoseFileService : IPoseFileService
                 CollectionFor(poseFile, slot) is not { Count: > 0 })
                 continue;
             foreach (var bone in skeleton.Bones.Where(bone => PassesBoneFilter(bone, options)))
-                _bonePosingService.ResetBone(bone);
+                plan.Resets.Add(bone);
         }
     }
 
-    private int ApplyCharacterCollection(
+    private void PlanCharacterCollection(
+        PoseImportPlan plan,
         ISkeleton skeleton,
         PoseFile poseFile,
         PoseImportOptions options)
     {
-        int bonesApplied = 0;
 
         // Pre-Dawntrail face heuristic (Anamnesis): files with face bones
         // but no tongue bone predate the DT face rework — importing their
@@ -355,11 +347,9 @@ public class PoseFileService : IPoseFileService
                 effective = stripped;
             }
 
-            ApplyBoneTransform(bone, boneData, effective);
-            bonesApplied++;
+            PlanBoneTransform(plan, bone, boneData, effective);
+            plan.FileBoneCount++;
         }
-
-        return bonesApplied;
     }
 
     /// <summary>Selective-import filter: the slot-qualified bone itself, or
@@ -385,31 +375,31 @@ public class PoseFileService : IPoseFileService
         return false;
     }
 
-    private void ApplyBoneTransform(IBone bone, PoseFile.BoneData boneData, PoseImportOptions options)
+    private static void PlanBoneTransform(
+        PoseImportPlan plan, IBone bone, PoseFile.BoneData boneData, PoseImportOptions options)
     {
         // File bones are absolute raw (pre-reparent) snapshots, so the delta basis is
         // LastRawTransform — Brio passes bone.LastRawTransform to BonePoseInfo.Apply.
         // For partial-0 bones this equals LastTransform; for face partials it differs.
+        // The atomic edit applies the desired transform against the LIVE raw
+        // basis, so components the options exclude are read here and stay put.
         var original = bone.LastRawTransform;
 
-        // Build the new transform based on options
-        var newTransform = new Transform
+        plan.Writes.Add((bone, new Transform
         {
             Position = options.ApplyPosition ? boneData.Position : original.Position,
             Rotation = options.ApplyRotation ? boneData.Rotation : original.Rotation,
             Scale = options.ApplyScale ? boneData.Scale : original.Scale
-        };
-
-        // Apply via the bone posing service
-        _bonePosingService.ApplyTransform(bone, newTransform, original);
+        }));
     }
 
     /// <summary>
-    /// Re-applies the head subtree (j_kao + descendants) at its current raw
-    /// transforms. Near-identity deltas are rejected by BonePoseInfo.Apply, so
-    /// this is a no-op unless an import actually shifted the face's basis.
+    /// Plans a re-apply of the head subtree (j_kao + descendants) at its
+    /// current raw transforms. Near-identity deltas are rejected by
+    /// BonePoseInfo.Apply, so this is a no-op unless an import actually
+    /// shifted the face's basis.
     /// </summary>
-    private void ReconcileFace(ISkeleton skeleton)
+    private static void PlanFaceReconcile(PoseImportPlan plan, ISkeleton skeleton)
     {
         var head = skeleton.GetBone("j_kao");
         if (head == null)
@@ -419,8 +409,7 @@ public class PoseFileService : IPoseFileService
         {
             if (!IsInSubtree(bone, head))
                 continue;
-            var raw = bone.LastRawTransform;
-            _bonePosingService.ApplyTransform(bone, raw, raw);
+            plan.Writes.Add((bone, bone.LastRawTransform));
         }
     }
 
