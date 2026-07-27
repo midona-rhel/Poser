@@ -97,7 +97,8 @@ public class MainWindow : Window
         AppearancePane appearancePane,
         Game.Animation.AnimationCatalogLoader animationCatalog,
         PoseRailPane poseRail,
-        GraphicalBonePane graphicalBonePane)
+        GraphicalBonePane graphicalBonePane,
+        Game.PropSpawnService propService)
         : base($"{PluginConstants.PluginName}###poser_main_window",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
@@ -118,6 +119,7 @@ public class MainWindow : Window
         _bonePosingService = bonePosingService;
 
         _spawnService = spawnService;
+        _propService = propService;
         _poseInspector = poseInspector;
         _animationPane = animationPane;
         _appearancePane = appearancePane;
@@ -832,47 +834,37 @@ public class MainWindow : Window
     }
 
     /// <summary>
-    /// The sidebar ACTORS "+" menu: the entity-creation actions, in the
-    /// same glass popup the row context menus use. The plus fires from
-    /// inside the sidebar's scroll child, so the open is deferred to this
-    /// top-level draw exactly as the row menus do — opening a popup from
-    /// within the child parents it to the child and it closes immediately.
-    ///
-    /// Scope is the creation half of the retained lifetime actions;
-    /// cameras, lights and world objects are deferred product-wide, so
-    /// they are absent rather than shown disabled.
+    /// The sidebar ACTORS "+" menu: entity creation in the shared floating
+    /// menu — New actor, New actor with companion slot, New prop. The
+    /// titlebar plus opens the identical menu. Cameras, lights and
+    /// references stay absent (not disabled) until their runtime entity
+    /// types exist.
     /// </summary>
     private void DrawAddEntityMenu()
     {
         if (_addOpenRequested)
         {
             _addOpenRequested = false;
-            // Cloning a selection needs one; the entry is dropped rather
-            // than disabled when nothing is selected. Items and handlers
-            // freeze at open.
-            IActor? selected = null;
-            string selectedName = string.Empty;
-            if (_selection.Primary is { Kind: SceneEntityKind.Actor, Actor: { } selectedId } &&
-                _bindings.Resolve(selectedId) is { Success: true, Value: { } live })
+            // Entity CREATION, matching Brio's actor-container surface:
+            // spawn semantics, not clone semantics (cloning lives in the
+            // selected actor's right-click menu). Basic spawning and
+            // companion-slot spawning are split — the slot costs an extra
+            // object slot and only the explicit entry pays it.
+            var items = new[]
             {
-                selected = live;
-                selectedName = DisplayName(live.Name);
-            }
-
-            var items = new List<ContextMenuItem>
-            {
-                new("Clone yourself", TablerIcon.User),
+                new ContextMenuItem("New actor", TablerIcon.User),
+                new ContextMenuItem("New actor with companion slot", TablerIcon.Paw),
+                ContextMenuItem.Separator,
+                new ContextMenuItem("New prop", TablerIcon.Diamond),
             };
             _addActions = new List<Action?>
             {
-                () => SelectSpawned(_spawnService.SpawnPlayerClone()),
+                () => SelectSpawned(_spawnService.SpawnNewActor(reserveCompanionSlot: false)),
+                () => SelectSpawned(_spawnService.SpawnNewActor(reserveCompanionSlot: true)),
+                null,
+                () => _propService.SpawnProp(),
             };
-            if (selected != null)
-            {
-                items.Add(new($"Clone {selectedName}", TablerIcon.UserCircle));
-                _addActions.Add(() => SelectSpawned(_spawnService.CloneActor(selected)));
-            }
-            Crystarium.FloatingMenu.Open("##sidebar-add", ImGui.GetMousePos(), items.ToArray());
+            Crystarium.FloatingMenu.Open("##sidebar-add", ImGui.GetMousePos(), items);
         }
 
         int clicked = Crystarium.FloatingMenu.Draw("##sidebar-add");
@@ -881,6 +873,7 @@ public class MainWindow : Window
     }
 
     private List<Action?> _addActions = new();
+    private readonly Game.PropSpawnService _propService;
 
     /// <summary>Selects a freshly spawned actor so the thing just created
     /// is the thing being edited. The scene has not rescanned yet, so the

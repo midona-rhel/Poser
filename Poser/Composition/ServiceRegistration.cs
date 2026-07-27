@@ -138,6 +138,7 @@ internal static class ServiceRegistration
     {
         services.AddSingleton<ICameraService, CameraService>();
         services.AddSingleton<IActorSpawnService, ActorSpawnService>();
+        services.AddSingleton<Game.PropSpawnService>();
         services.AddSingleton<IGazeService, GazeService>();
         services.AddSingleton<ILiveTestService, LiveTestService>();
         services.AddSingleton<IExpressionService, ExpressionService>();

@@ -11,10 +11,14 @@ namespace Poser.Services;
 public interface IActorSpawnService : IDisposable
 {
     /// <summary>
-    /// Spawn a clone of the local player.
+    /// Create a NEW actor (Brio's actor-container "New actor"): spawned as
+    /// its own entity, internally seeded from the local player's
+    /// appearance exactly as Brio does. The companion slot is reserved
+    /// only on request — it costs an extra object slot and is what allows
+    /// minions/mounts/ornaments to attach later.
     /// </summary>
     /// <returns>The spawned actor, or null if failed.</returns>
-    IActor? SpawnPlayerClone();
+    IActor? SpawnNewActor(bool reserveCompanionSlot);
 
     /// <summary>
     /// Spawn a clone of an arbitrary scene actor (appearance + position copy —

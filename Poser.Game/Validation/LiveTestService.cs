@@ -973,7 +973,7 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
     private async Task<bool> EnsureControlledActor()
     {
         _testActor = await _framework.RunOnFrameworkThread(
-            () => _spawn.SpawnPlayerClone());
+            () => _spawn.SpawnNewActor(reserveCompanionSlot: true));
         if (_testActor == null)
             return false;
         _ownedActors.Add(_testActor);

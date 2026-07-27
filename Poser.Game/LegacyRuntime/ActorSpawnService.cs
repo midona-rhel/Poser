@@ -51,15 +51,17 @@ public unsafe class ActorSpawnService : IActorSpawnService
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
     }
 
-    public IActor? SpawnPlayerClone()
+    public IActor? SpawnNewActor(bool reserveCompanionSlot)
     {
+        // Creation semantics, clone mechanism: like Brio, a NEW actor is
+        // seeded from the local player's appearance.
         var localPlayer = _objectTable.GetObjectAddress(0); // Index 0 is local player
         if (localPlayer == nint.Zero)
         {
-            _log.Warning("ActorSpawnService: Cannot spawn clone - no local player");
+            _log.Warning("ActorSpawnService: Cannot spawn - no local player");
             return null;
         }
-        return SpawnCloneFrom(localPlayer);
+        return SpawnCloneFrom(localPlayer, reserveCompanionSlot);
     }
 
     public IActor? CloneActor(IActor source)
@@ -69,11 +71,13 @@ public unsafe class ActorSpawnService : IActorSpawnService
             _log.Warning("ActorSpawnService: Cannot clone - source has no address");
             return null;
         }
-        return SpawnCloneFrom(source.Address);
+        // A clone keeps the slot so companion attachment stays possible,
+        // matching the pre-split behavior of every Poser spawn.
+        return SpawnCloneFrom(source.Address, reserveCompanionSlot: true);
     }
 
-    /// <summary>Shared clone path: new battle character + appearance/position copy.</summary>
-    private IActor? SpawnCloneFrom(nint sourceAddress)
+    /// <summary>Shared spawn path: new battle character + appearance/position copy.</summary>
+    private IActor? SpawnCloneFrom(nint sourceAddress, bool reserveCompanionSlot)
     {
         try
         {
@@ -84,10 +88,13 @@ public unsafe class ActorSpawnService : IActorSpawnService
                 return null;
             }
 
-            // Create a new battle character. param 1 RESERVES THE COMPANION SLOT
-            // (Brio SpawnFlags.ReserveCompanionSlot) — without it, minions/mounts
-            // can never attach to the clone. Costs one extra object slot.
-            uint idCheck = com->CreateBattleCharacter(param: 1);
+            // param 1 RESERVES THE COMPANION SLOT (Brio
+            // SpawnFlags.ReserveCompanionSlot) — without it, minions and
+            // mounts can never attach to this actor. It costs one extra
+            // object slot, so basic spawning passes 0 (Brio's plain
+            // "Actor" entry) and only the companion-slot entry pays it.
+            uint idCheck = com->CreateBattleCharacter(
+                param: (byte)(reserveCompanionSlot ? 1 : 0));
             if (idCheck == 0xFFFFFFFF)
             {
                 _log.Warning("ActorSpawnService: Failed to create character - invalid ID");
