@@ -1090,8 +1090,12 @@ public sealed class ActorIntegrationSession
     {
         var actor = operation.Target;
         bool resolvable = _port.IsResolvable(actor);
-        bool touchedNative = operation.TemporaryCollection != null
-            || operation.GlamourerLocked || operation.TemporaryProfile != null;
+        // A Penumbra redraw belongs to Penumbra changes only: Glamourer
+        // and Customize+ apply their own updates, and Penumbra is
+        // legitimately optional for packages without resources — tying a
+        // redraw to them would leave a Glamourer-only rollback pending
+        // forever when Penumbra is absent.
+        bool removedPenumbra = operation.RedrawPending;
         var failures = new List<string>();
 
         if (operation.TemporaryProfile is { } profile)
@@ -1188,12 +1192,17 @@ public sealed class ActorIntegrationSession
         {
             var deleted = _port.DeleteTemporaryCollection(collection);
             if (deleted.Success)
+            {
                 operation.TemporaryCollection = null;
+                removedPenumbra = true;
+            }
             else
+            {
                 failures.Add(deleted.Detail!);
+            }
         }
 
-        if ((touchedNative || operation.RedrawPending) && resolvable)
+        if (removedPenumbra && resolvable)
         {
             var redraw = _port.RequestRedraw(actor);
             if (redraw.Success)
