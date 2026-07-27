@@ -9,17 +9,18 @@ public static partial class Crystarium
 {
     public static bool FilterPill(
         string id,
-        ref string value,
+        string value,
+        System.Action<string> onChange,
         string placeholder,
         float width)
-        => TextInput(id, ref value, new TextInputProps
-        {
-            Placeholder = placeholder,
-            Clearable = true,
-            Style = new TextInputStyle
+        => ClearableTextInput(
+            id,
+            value,
+            onChange,
+            new ControlStyle
             {
-                Width = Sizing.Fixed(width),
-                Height = Sizing.Fixed(Crystarium.ActiveTheme.Controls.WorkspaceHeight),
+                Size = UiSize.Workspace,
+                Width = UiSize.Fixed(width),
             },
-        });
+            placeholder);
 }

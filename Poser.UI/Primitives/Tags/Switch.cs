@@ -12,16 +12,23 @@ public static partial class Crystarium
     /// off bg rgba(128,128,128,.25), on bg #3297FF; 16px white knob at (2,2),
     /// opacity .6 off → 1 on, sliding +12px; knob shadow 0 1px 3px rgba(0,0,0,.2).
     /// </summary>
-    public static bool Switch(string id, ref bool value) => Switch(id, ref value, disabled: false);
-
-    public static bool Switch(string id, ref bool value, bool disabled)
+    public static bool Switch(
+        string id,
+        bool value,
+        System.Action<bool> onChange,
+        bool disabled = false,
+        string? help = null)
     {
         float scale = ImGuiHelpers.GlobalScale;
         var size = new Vector2(
             Crystarium.ActiveTheme.Controls.SwitchWidth,
             Crystarium.ActiveTheme.Controls.SwitchHeight) * scale;
         var hit = Interactive.Reserve(id, size, disabled, Norvrandt.AvailableHeight);
-        if (hit.Clicked) value = !value;
+        if (hit.Clicked)
+        {
+            value = !value;
+            onChange(value);
+        }
 
         var dl = ImGui.GetWindowDrawList();
         // Shared disabled fade (matches the .btn:disabled stylesheet opacity).
@@ -55,6 +62,10 @@ public static partial class Crystarium
         dl.AddCircleFilled(center, knobRadius,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(knobColor)), 32);
 
+        if (!string.IsNullOrEmpty(help) &&
+            (hit.Hovered || (hit.Disabled &&
+                HoverHelp.HelpHovered(hit.ScreenMin, hit.ScreenMax))))
+            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
         return hit.Clicked;
     }
 }

@@ -45,9 +45,14 @@ public static partial class Crystarium
             });
 
         public static bool CloseButton(string id) =>
-            IconButtonTablerCore(
+            IconButton(
                 TablerIcon.X,
-                Cls.SurfaceClose, id, null, null, false, null);
+                style: new ControlStyle
+                {
+                    Size = UiSize.Fixed(ActiveTheme.Floating.CloseActionSize),
+                    Bare = true,
+                },
+                id: id);
 
         public static bool Popup(
             string id,

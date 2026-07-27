@@ -15,8 +15,6 @@ namespace Poser.UI;
 ///           // raw ImGui content here
 ///       });
 ///   });
-///
-///   Norvrandt.Sheet.Define(Cls.Btn + Cls.Primary, new ButtonStyle { BackgroundColor = MyAccent });
 /// </code>
 /// </summary>
 internal static class Norvrandt
@@ -54,33 +52,6 @@ internal static class Norvrandt
         public static void Define(StyleClass cls, PseudoState pseudo, ElementStyle style) => Stylesheet.Define(cls, pseudo, style);
         public static void Define(StyleClassSet classes, ElementStyle style) => Stylesheet.Define(classes, style);
         public static void Define(StyleClassSet classes, PseudoState pseudo, ElementStyle style) => Stylesheet.Define(classes, pseudo, style);
-
-        // Tag-typed sugar (compile-time prevents nonsense fields)
-        public static void Define(StyleClass cls, ButtonStyle s) => Stylesheet.Define(cls, s);
-        public static void Define(StyleClass cls, PseudoState p, ButtonStyle s) => Stylesheet.Define(cls, p, s);
-        public static void Define(StyleClassSet cls, ButtonStyle s) => Stylesheet.Define(cls, s);
-        public static void Define(StyleClassSet cls, PseudoState p, ButtonStyle s) => Stylesheet.Define(cls, p, s);
-
-        public static void Define(StyleClass cls, CheckboxStyle s) => Stylesheet.Define(cls, s);
-        public static void Define(StyleClass cls, PseudoState p, CheckboxStyle s) => Stylesheet.Define(cls, p, s);
-        public static void Define(StyleClassSet cls, CheckboxStyle s) => Stylesheet.Define(cls, s);
-        public static void Define(StyleClassSet cls, PseudoState p, CheckboxStyle s) => Stylesheet.Define(cls, p, s);
-
-        public static void Define(StyleClass cls, ToggleStyle s) => Stylesheet.Define(cls, s);
-        public static void Define(StyleClass cls, PseudoState p, ToggleStyle s) => Stylesheet.Define(cls, p, s);
-
-        public static void Define(StyleClass cls, IconToggleStyle s) => Stylesheet.Define(cls, s);
-        public static void Define(StyleClass cls, PseudoState p, IconToggleStyle s) => Stylesheet.Define(cls, p, s);
-
-
-        public static void Define(StyleClass cls, DropdownStyle s) => Stylesheet.Define(cls, s);
-        public static void Define(StyleClass cls, PseudoState p, DropdownStyle s) => Stylesheet.Define(cls, p, s);
-
-        public static void Define(StyleClass cls, TextInputStyle s) => Stylesheet.Define(cls, s);
-        public static void Define(StyleClass cls, PseudoState p, TextInputStyle s) => Stylesheet.Define(cls, p, s);
-
-        public static void Define(StyleClass cls, SliderStyle s) => Stylesheet.Define(cls, s);
-        public static void Define(StyleClass cls, PseudoState p, SliderStyle s) => Stylesheet.Define(cls, p, s);
 
         public static void Define(StyleClass cls, TextStyle s) => Stylesheet.Define(cls, s);
         public static void Define(StyleClass cls, PseudoState p, TextStyle s) => Stylesheet.Define(cls, p, s);

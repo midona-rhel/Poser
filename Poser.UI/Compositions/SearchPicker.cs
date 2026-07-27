@@ -131,7 +131,8 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(new Vector2(origin.X, searchY));
             FilterPill(
                 $"{_popupId}-filter",
-                ref _search,
+                _search,
+                next => _search = next,
                 "Search by name",
                 inner);
 

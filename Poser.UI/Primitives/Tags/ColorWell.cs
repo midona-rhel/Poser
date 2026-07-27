@@ -13,32 +13,26 @@ public static partial class Crystarium
     /// deviation: the picker interior is ImGui's, only the chrome is picto).
     /// Returns true while the color is being edited.
     /// </summary>
-    public static bool ColorWell(string id, ref Vector4 color)
-        => ColorWell(id, ref color, default);
-
-    /// <summary>
-    /// Color well with an RGB-only option: the picker hides alpha and the
-    /// value's EXISTING alpha channel is preserved exactly — for values
-    /// like whole-model tints whose alpha belongs to the game.
-    /// </summary>
-    public static bool ColorWell(string id, ref Vector4 color, bool rgbOnly)
-        => ColorWell(id, ref color, new ColorWellProps { RgbOnly = rgbOnly });
-
-    public static bool ColorWell(string id, ref Vector4 color, in ColorWellProps props)
+    public static bool ColorWell(
+        string id,
+        Vector4 color,
+        System.Action<Vector4> onChange,
+        bool rgbOnly = false,
+        bool disabled = false,
+        string? help = null)
     {
-        Stylesheet.EnsureInitialized();
         float scale = ImGuiHelpers.GlobalScale;
 
         var size = new Vector2(
             Crystarium.ActiveTheme.Controls.ColorWellSize,
             Crystarium.ActiveTheme.Controls.ColorWellSize) * scale;
-        var hit = Interactive.Reserve(id, size, props.Disabled, Norvrandt.AvailableHeight);
+        var hit = Interactive.Reserve(id, size, disabled, Norvrandt.AvailableHeight);
 
         var dl = ImGui.GetWindowDrawList();
         float r = Crystarium.ActiveTheme.Radii.Control * scale;
         dl.AddRectFilled(hit.ScreenMin, hit.ScreenMax,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
-                props.Disabled
+                disabled
                     ? Crystarium.ActiveTheme.Chrome.UnavailableFill
                     : color with { W = 1f })), r);
         // 1px border painted inside the box edge (CSS border-box)
@@ -46,11 +40,10 @@ public static partial class Crystarium
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.ControlBorder)), r, ImDrawFlags.None, 1f * scale);
 
         string popupId = id + "_picker";
-        if (hit.Clicked && !props.Disabled) ImGui.OpenPopup(popupId);
+        if (hit.Clicked && !disabled) ImGui.OpenPopup(popupId);
 
         bool changed = false;
         var popupColor = color;
-        bool rgbOnly = props.RgbOnly;
         FloatingSurface.Popup(
             popupId,
             new FloatingSurfaceProps
@@ -77,11 +70,11 @@ public static partial class Crystarium
                     popupColor.W = keepAlpha;
             });
         if (changed)
-            color = popupColor;
-        if (!string.IsNullOrEmpty(props.Tooltip)
-            && (hit.Hovered || (props.Disabled
+            onChange(popupColor);
+        if (!string.IsNullOrEmpty(help)
+            && (hit.Hovered || (disabled
                 && HoverHelp.HelpHovered(hit.ScreenMin, hit.ScreenMax))))
-            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, props.Tooltip!);
+            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
         return changed;
     }
 
@@ -92,7 +85,6 @@ public static partial class Crystarium
     /// </summary>
     public static bool Swatch(string id, Vector4 color, bool active)
     {
-        Stylesheet.EnsureInitialized();
         float scale = ImGuiHelpers.GlobalScale;
 
         var size = new Vector2(

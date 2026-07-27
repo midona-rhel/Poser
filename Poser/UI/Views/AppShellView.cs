@@ -395,7 +395,8 @@ public static class AppShellView
         ImGui.SetCursorScreenPos(min + new Vector2(SidebarHorizontalPadding, 6f) * s);
         Crystarium.FilterPill(
             "##sidebar-search",
-            ref vm.SidebarSearch,
+            vm.SidebarSearch,
+            next => vm.SidebarSearch = next,
             "Filter scene...",
             (max.X - min.X) / s - SidebarHorizontalPadding * 2f - 1f);
 

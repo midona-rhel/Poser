@@ -14,8 +14,6 @@ public static partial class Crystarium
         => TextCore(text, cls, null);
     public static void Text(string text, StyleClassSet classes)
         => TextCore(text, classes, null);
-    public static void Text(string text, in TextProps props)
-        => TextCore(text, props.Classes, props.Style);
 
     public static void Text(string text, float size, FontWeight weight,
         Vector4 color, bool mono = false, bool wrap = false)
@@ -28,13 +26,10 @@ public static partial class Crystarium
                 FontWeight = weight,
                 FontFamily = mono ? FontFamily.Mono : FontFamily.Default,
             },
-        }, () => Text(text, new TextProps
+        }, () => TextCore(text, default, new TextStyle
         {
-            Style = new TextStyle
-            {
-                Color = color,
-                WhiteSpace = wrap ? UI.WhiteSpace.Normal : UI.WhiteSpace.Nowrap,
-            },
+            Color = color,
+            WhiteSpace = wrap ? UI.WhiteSpace.Normal : UI.WhiteSpace.Nowrap,
         }));
     }
 

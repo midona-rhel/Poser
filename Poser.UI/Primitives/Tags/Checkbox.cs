@@ -1,105 +1,79 @@
+using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface;
 using Dalamud.Interface.Utility;
-using Poser.UI.Effects;
 
 namespace Poser.UI;
 
 public static partial class Crystarium
 {
-    // ---- Short overloads ----
-
-    public static bool Checkbox(string id, ref bool value)
-        => CheckboxCore(id, ref value, default, null, false, null, null);
-    public static bool Checkbox(string id, ref bool value, StyleClassSet classes)
-        => CheckboxCore(id, ref value, classes, null, false, null, null);
-    public static bool Checkbox(string id, ref bool value, in CheckboxProps props)
-        => CheckboxCore(id, ref value, props.Classes, props.Tooltip, props.Disabled, props.OnChange, props.Style);
-
     public static float CheckboxSize =>
-        Crystarium.ActiveTheme.Controls.CheckboxSize * ImGuiHelpers.GlobalScale;
+        ActiveTheme.Controls.CheckboxSize * ImGuiHelpers.GlobalScale;
 
-    private static bool CheckboxCore(string id, ref bool value, StyleClassSet classes,
-        string? tooltip, bool disabled, System.Action<bool>? onChange, CheckboxStyle? inline)
+    public static bool Checkbox(
+        string id,
+        bool value,
+        Action<bool> onChange,
+        bool disabled = false,
+        string? help = null)
     {
-        Stylesheet.EnsureInitialized();
-
-        var classSet = Cls.Checkbox + classes;
-        var preState = (disabled ? PseudoState.Disabled : PseudoState.None) | (value ? PseudoState.Checked : 0);
-
-        // Resolve once early to read size.
-        var pre = Stylesheet.ResolveCheckbox(classSet, preState);
-        if (inline.HasValue) pre = pre.MergedWith(inline.Value);
-
-        if (pre.Display == UI.Display.None) return false;
-
         float scale = ImGuiHelpers.GlobalScale;
-        float size = (pre.Size ?? Sizing.Fixed(Crystarium.ActiveTheme.Controls.CheckboxSize)).Value * scale;
-        size = SizeUtil.Clamp(size, pre.MinSize, pre.MaxSize, scale);
-
-        var hit = Interactive.Reserve(id, new Vector2(size, size), disabled, Norvrandt.AvailableHeight);
-        if (hit.Clicked) { value = !value; onChange?.Invoke(value); }
-
-        var state = hit.State;
-        if (value) state |= PseudoState.Checked;
-
-        var resolved = Stylesheet.ResolveCheckbox(classSet, state);
-        if (inline.HasValue) resolved = resolved.MergedWith(inline.Value);
-
-        var pos = hit.ScreenMin;
-        var end = hit.ScreenMax;
-        bool hovered = hit.Hovered;
-        bool clicked = hit.Clicked;
-
-        var drawList = ImGui.GetWindowDrawList();
-        float rounding = (resolved.BorderRadius ?? 2f) * scale;
-
-        var bg = resolved.BackgroundColor ?? (hovered ? ImGui.GetStyle().Colors[(int)ImGuiCol.FrameBgHovered] : Crystarium.ActiveTheme.SurfaceSunken);
-        bg = ColorEx.ApplyAlpha(bg);
-        if (disabled) bg.W *= resolved.Opacity ?? Crystarium.ActiveTheme.Chrome.DisabledOpacity;
-        drawList.AddRectFilled(pos, end, ImGui.ColorConvertFloat4ToU32(bg), rounding);
-
-        float borderWidth = (resolved.BorderWidth ?? 1f) * scale;
-        if (borderWidth > 0f)
+        float size = ActiveTheme.Controls.CheckboxSize * scale;
+        var hit = Interactive.Reserve(
+            id, new Vector2(size), disabled, Norvrandt.AvailableHeight);
+        if (hit.Clicked)
         {
-            var borderColor = resolved.BorderColor ?? Crystarium.ActiveTheme.Palette.Black;
-            var borderU = ColorEx.ApplyAlpha(borderColor);
-            if (disabled) borderU.W *= Crystarium.ActiveTheme.Chrome.DisabledOpacity;
-            // Stroke inset by half thickness — the border paints fully inside the box
-            // like CSS `outline-offset: -1px` (picto .checkBox).
-            float bi = borderWidth * 0.5f;
-            drawList.AddRect(pos + new Vector2(bi, bi), end - new Vector2(bi, bi),
-                ImGui.ColorConvertFloat4ToU32(borderU),
-                System.MathF.Max(0f, rounding - bi), ImDrawFlags.None, borderWidth);
+            value = !value;
+            onChange(value);
         }
 
-        // Checkmark — Tabler IconCheck ("M5 12l5 5l10 -10", 24-grid, stroke 2, round
-        // caps) at 10/14 of the box, matching picto FolderTree's <IconCheck size={10}/>.
-        if (value)
-        {
-            var fillColor = ColorEx.ApplyAlpha(resolved.CheckmarkColor ?? Crystarium.ActiveTheme.Palette.White);
-            if (disabled) fillColor.W *= Crystarium.ActiveTheme.Chrome.DisabledOpacity;
-            uint fill = ImGui.ColorConvertFloat4ToU32(fillColor);
+        float opacity = disabled ? ActiveTheme.Chrome.DisabledOpacity : 1f;
+        var background = value
+            ? ActiveTheme.Chrome.Primary
+            : ActiveTheme.Chrome.InputWell;
+        background.W *= opacity;
+        var draw = ImGui.GetWindowDrawList();
+        float radius = ActiveTheme.Radii.Medium * scale;
+        draw.AddRectFilled(
+            hit.ScreenMin,
+            hit.ScreenMax,
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(background)),
+            radius);
 
+        if (!value)
+        {
+            var border = ActiveTheme.Glass.BorderBottom;
+            border.W *= opacity;
+            float inset = 0.5f * scale;
+            draw.AddRect(
+                hit.ScreenMin + new Vector2(inset),
+                hit.ScreenMax - new Vector2(inset),
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(border)),
+                MathF.Max(0f, radius - inset),
+                ImDrawFlags.None,
+                scale);
+        }
+        else
+        {
+            var check = ActiveTheme.Chrome.Checkmark;
+            check.W *= opacity;
             float iconSpan = size * (10f / 14f);
             float unit = iconSpan / 24f;
-            var origin = pos + new Vector2((size - iconSpan) * 0.5f, (size - iconSpan) * 0.5f);
-            drawList.PathLineTo(origin + new Vector2(5f, 12f) * unit);
-            drawList.PathLineTo(origin + new Vector2(10f, 17f) * unit);
-            drawList.PathLineTo(origin + new Vector2(20f, 7f) * unit);
-            drawList.PathStroke(fill, ImDrawFlags.None, 2f * unit);
+            var origin = hit.ScreenMin +
+                new Vector2((size - iconSpan) * 0.5f);
+            draw.PathLineTo(origin + new Vector2(5f, 12f) * unit);
+            draw.PathLineTo(origin + new Vector2(10f, 17f) * unit);
+            draw.PathLineTo(origin + new Vector2(20f, 7f) * unit);
+            draw.PathStroke(
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(check)),
+                ImDrawFlags.None,
+                2f * unit);
         }
 
-        if (hovered && !string.IsNullOrEmpty(tooltip))
-            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, tooltip!);
-        return clicked;
-    }
-
-    private static uint ApplyAlphaU32(uint c, float mul)
-    {
-        var v = ImGui.ColorConvertU32ToFloat4(c);
-        v.W *= mul;
-        return ImGui.ColorConvertFloat4ToU32(v);
+        if (!string.IsNullOrEmpty(help) &&
+            (hit.Hovered || (hit.Disabled &&
+                HoverHelp.HelpHovered(hit.ScreenMin, hit.ScreenMax))))
+            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
+        return hit.Clicked;
     }
 }

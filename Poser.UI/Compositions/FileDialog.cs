@@ -149,9 +149,9 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(min);
             if (IconButton(
                     TablerIcon.ArrowUp,
-                    id: $"{_id}-up",
+                    style: new ControlStyle { Size = UiSize.Comfortable },
                     help: "Open the parent folder",
-                    density: ControlDensity.Comfortable))
+                    id: $"{_id}-up"))
             {
                 var parent = Directory.GetParent(_currentPath)?.FullName;
                 if (parent != null)
@@ -161,26 +161,27 @@ public static partial class Crystarium
             float pathX = min.X + control + gap;
             float pathWidth = max.X - pathX;
             ImGui.SetCursorScreenPos(new Vector2(pathX, min.Y));
-            if (TextInput(
-                    $"{_id}-path",
-                    ref _pathEdit,
-                    new TextInputProps
+            TextInput(
+                $"{_id}-path",
+                _pathEdit,
+                next =>
+                {
+                    _pathEdit = next;
+                    if (Directory.Exists(next)
+                        && !string.Equals(
+                            next,
+                            _currentPath,
+                            StringComparison.OrdinalIgnoreCase))
                     {
-                        Classes = Cls.Comfortable,
-                        Placeholder = "Path",
-                        Style = new TextInputStyle
-                        {
-                            Width = Sizing.Fixed(pathWidth / scale),
-                        },
-                    })
-                && Directory.Exists(_pathEdit)
-                && !string.Equals(
-                    _pathEdit,
-                    _currentPath,
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                _pendingNavigate = _pathEdit;
-            }
+                        _pendingNavigate = next;
+                    }
+                },
+                new ControlStyle
+                {
+                    Size = UiSize.Comfortable,
+                    Width = UiSize.Fixed(pathWidth / scale),
+                },
+                placeholder: "Path");
 
             float y = min.Y
                 + (Crystarium.ActiveTheme.Controls.ComfortableHeight
@@ -296,11 +297,14 @@ public static partial class Crystarium
             float scale)
         {
             string confirmLabel = _isSaveMode ? "Save" : "Import";
-            var confirmSize = MeasureButton(
-                confirmLabel,
-                ControlDensity.Comfortable,
-                primary: true);
-            var cancelSize = MeasureButton("Cancel", ControlDensity.Comfortable);
+            var confirmStyle = new ControlStyle
+            {
+                Size = UiSize.Comfortable,
+                Primary = true,
+            };
+            var comfortable = new ControlStyle { Size = UiSize.Comfortable };
+            var confirmSize = MeasureButton(confirmLabel, confirmStyle);
+            var cancelSize = MeasureButton("Cancel", comfortable);
             float gap = Crystarium.ActiveTheme.Page.ActionGap * scale;
             float inset = Crystarium.ActiveTheme.Floating.HeaderInset * scale;
             float y = footerTop
@@ -314,9 +318,9 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(new Vector2(confirmX, y));
             if (Button(
                     confirmLabel,
-                    id: $"{_id}-confirm",
+                    style: confirmStyle,
                     disabled: !canConfirm,
-                    primary: true)
+                    id: $"{_id}-confirm")
                 && canConfirm)
                 Confirm();
 
@@ -338,16 +342,14 @@ public static partial class Crystarium
                 ImGui.SetCursorScreenPos(new Vector2(min.X + inset, y));
                 TextInput(
                     $"{_id}-name",
-                    ref _fileName,
-                    new TextInputProps
+                    _fileName,
+                    next => _fileName = next,
+                    new ControlStyle
                     {
-                        Classes = Cls.Comfortable,
-                        Placeholder = "File name",
-                        Style = new TextInputStyle
-                        {
-                            Width = Sizing.Fixed(width / scale),
-                        },
-                    });
+                        Size = UiSize.Comfortable,
+                        Width = UiSize.Fixed(width / scale),
+                    },
+                    placeholder: "File name");
             }
         }
 

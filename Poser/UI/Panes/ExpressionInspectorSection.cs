@@ -42,16 +42,21 @@ public sealed class ExpressionInspectorSection
                 11f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
             ImGui.SetCursorScreenPos(new Vector2(
                 cursor.X + sliderX * s, cursor.Y + h + 5f * s));
-            if (Crystarium.Slider($"##au-{id}", ref weight,
-                    bidirectional ? -1f : 0f, 1f, new SliderProps
+            Crystarium.Slider(
+                $"##au-{id}",
+                weight,
+                bidirectional ? -1f : 0f,
+                1f,
+                next =>
+                {
+                    weight = next;
+                    _expressions.SetWeight(actor, id, next);
+                },
+                new ControlStyle
                     {
-                        Style = new SliderStyle
-                        {
-                            Width = Sizing.Fixed(
-                                width / s - sliderX - valueW - sliderGap),
-                        },
-                    }))
-                _expressions.SetWeight(actor, id, weight);
+                        Width = UiSize.Fixed(
+                            width / s - sliderX - valueW - sliderGap),
+                    });
             ViewText.Label(new Vector2(
                     cursor.X + width - 36f * s, cursor.Y + h + 5f * s),
                 $"{weight * 100f:0}%", 11f, FontWeight.Regular,
@@ -66,7 +71,7 @@ public sealed class ExpressionInspectorSection
                 id: "expr-reset",
                 help: "Clear all expression weights",
                 disabled: !active,
-                density: Crystarium.ControlDensity.Workspace))
+                style: ControlStyle.Workspace))
             _expressions.ResetExpression(actor);
         return h + 34f * s;
     }

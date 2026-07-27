@@ -1057,9 +1057,13 @@ public class MainWindow : Window
         if (!_renameOpen || _renameTarget is not { } target) return;
         Crystarium.Modal("##rename-actor", ref _renameOpen, "Rename actor", () =>
         {
-            Crystarium.TextInput("##rename-input", ref _renameValue);
+            Crystarium.TextInput(
+                "##rename-input", _renameValue, next => _renameValue = next);
             ImGui.Dummy(new Vector2(0f, 8f * ImGuiHelpers.GlobalScale));
-            if (Crystarium.Button("Save", id: "rename-save", primary: true))
+            if (Crystarium.Button(
+                    "Save",
+                    style: new ControlStyle { Primary = true },
+                    id: "rename-save"))
             {
                 Config.ConfigurationService.Instance.SetNickname(target.LogicalId, _renameValue);
                 _renameOpen = false;

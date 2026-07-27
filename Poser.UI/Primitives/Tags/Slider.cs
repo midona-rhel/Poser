@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -13,59 +14,30 @@ public static partial class Crystarium
     /// and the track is FILLED with <c>--color-primary</c> #3297FF from
     /// its minimum to the current value, the remainder staying the
     /// neutral white @ .14. Geometry, hit area, drag semantics, notches,
-    /// readout, and disabled fade are unchanged. <c>Format</c> opts into an inline mono value
-    /// readout right of the track (picto's <c>.sliderVal</c> as part of the
-    /// control); without it, pair a separate mono label as before.
-    /// <c>Style.Notches</c> marks values with a bar crossing the track,
+    /// readout, and disabled fade are unchanged. <paramref name=marks/> marks values with a bar crossing the track.
     /// without snapping. Custom-drawn (ImGui's SliderFloat grab is
     /// rectangular). This is the ONE slider — there is no second look.
     /// </summary>
-    public static bool Slider(string id, ref float value, float min, float max)
-        => SliderCore(id, ref value, min, max, default, null, false, null, null, null, null);
-
-    public static bool Slider(string id, ref float value, float min, float max, in SliderProps props)
-        => SliderCore(id, ref value, min, max, props.Classes, props.Tooltip, props.Disabled, props.OnChange, props.Style,
-            props.Format, props.Suffix);
-
-    private static bool SliderCore(string id, ref float value, float min, float max,
-        StyleClassSet classes, string? tooltip, bool disabled, Action<float>? onChange,
-        SliderStyle? inline, string? format, string? suffix)
+    public static bool Slider(
+        string id,
+        float value,
+        float min,
+        float max,
+        Action<float> onChange,
+        ControlStyle style = default,
+        IReadOnlyList<float>? marks = null,
+        bool disabled = false,
+        string? help = null)
     {
-        Stylesheet.EnsureInitialized();
-
-        var classSet = Cls.Slider + classes;
-        var resolved = Stylesheet.ResolveSlider(classSet, disabled ? PseudoState.Disabled : PseudoState.None);
-        if (inline.HasValue) resolved = resolved.MergedWith(inline.Value);
-        if (resolved.Display == UI.Display.None) return false;
-
         float scale = ImGuiHelpers.GlobalScale;
-        float widthPx;
-        if (resolved.Width.HasValue && resolved.Width.Value.Mode == SizingMode.Fixed)
-            widthPx = resolved.Width.Value.Value * scale;
-        else
-            widthPx = Norvrandt.AvailableWidth;
-        widthPx = SizeUtil.Clamp(widthPx, resolved.MinWidth, resolved.MaxWidth, scale);
-
-        // The readout reserves the width of the widest end of the range, so
-        // the track does not breathe as digits change; it sits OUTSIDE the
-        // hit rect so clicking the number cannot jump the thumb.
-        float reserve = 0f;
-        string? readout = null;
-        var monoFont = FontRegistry.Resolve(FontFamily.Mono, Crystarium.ActiveTheme.Typography.CaptionSize);
-        bool monoAvailable = monoFont is { Available: true };
-        if (!string.IsNullOrEmpty(format))
-        {
-            if (monoAvailable) monoFont!.Push();
-            string low = min.ToString(format, System.Globalization.CultureInfo.InvariantCulture) + suffix;
-            string high = max.ToString(format, System.Globalization.CultureInfo.InvariantCulture) + suffix;
-            reserve = MathF.Max(ImGui.CalcTextSize(low).X, ImGui.CalcTextSize(high).X) + 8f * scale;
-            readout = value.ToString(format, System.Globalization.CultureInfo.InvariantCulture) + suffix;
-            if (monoAvailable) monoFont!.Pop();
-        }
+        float widthPx = ControlSizing.Width(
+            style.Width,
+            Norvrandt.AvailableWidth / scale,
+            Norvrandt.AvailableWidth / scale) * scale;
 
         // Hit rect = thumb height (14px) across the full width.
         var size = new Vector2(
-            MathF.Max(Crystarium.ActiveTheme.Controls.SwitchHeight * scale, widthPx - reserve),
+            MathF.Max(Crystarium.ActiveTheme.Controls.SwitchHeight * scale, widthPx),
             Crystarium.ActiveTheme.Controls.SliderHeight * scale);
         var hit = Interactive.Reserve(id, size, disabled, Norvrandt.AvailableHeight);
 
@@ -82,14 +54,14 @@ public static partial class Crystarium
         }
 
         var dl = ImGui.GetWindowDrawList();
-        float alpha = (disabled ? 0.5f : 1f) * (resolved.Opacity ?? 1f);
+        float alpha = disabled ? 0.5f : 1f;
         float cy = (hit.ScreenMin.Y + hit.ScreenMax.Y) * 0.5f;
 
         // track: height 4, border-radius 2, background --color-border-primary
         float pos = max > min ? Math.Clamp((value - min) / (max - min), 0f, 1f) : 0f;
         float thumbX = x0 + pos * (x1 - x0);
 
-        var track = resolved.BackgroundColor ?? Crystarium.ActiveTheme.Chrome.ControlBorder;
+        var track = Crystarium.ActiveTheme.Chrome.ControlBorder;
         track.W *= alpha;
         dl.AddRectFilled(
             new Vector2(hit.ScreenMin.X, cy - Crystarium.ActiveTheme.Controls.SliderTrackHeight * 0.5f * scale),
@@ -112,11 +84,11 @@ public static partial class Crystarium
 
         // Notch marks cross the track at fixed values (no snapping), so the
         // range's reference points are visible before dragging.
-        if (resolved.Notches is { } notches && x1 > x0 && max > min)
+        if (marks != null && x1 > x0 && max > min)
         {
             var notchColor = track with { W = MathF.Min(1f, track.W * 2.5f) };
             uint notchU32 = ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(notchColor));
-            foreach (var notch in notches)
+            foreach (var notch in marks)
             {
                 if (notch < min || notch > max) continue;
                 float nx = x0 + (notch - min) / (max - min) * (x1 - x0);
@@ -127,26 +99,14 @@ public static partial class Crystarium
         }
 
         // thumb: 14px circle, solid white over the fill boundary
-        var thumb = resolved.GrabColor ?? Crystarium.ActiveTheme.Palette.White;
+        var thumb = Crystarium.ActiveTheme.Palette.White;
         thumb.W *= alpha;
         dl.AddCircleFilled(new Vector2(thumbX, cy), half,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(thumb)), 32);
 
-        if (readout != null)
-        {
-            if (monoAvailable) monoFont!.Push();
-            var textSize = ImGui.CalcTextSize(readout);
-            var textColor = resolved.Color ?? Crystarium.ActiveTheme.Text;
-            textColor.W *= alpha;
-            dl.AddText(
-                new Vector2(hit.ScreenMax.X + 8f * scale, cy - textSize.Y * 0.5f),
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(textColor)), readout);
-            if (monoAvailable) monoFont!.Pop();
-        }
-
-        if (changed) onChange?.Invoke(value);
-        if (!string.IsNullOrEmpty(tooltip) && ImGui.IsItemHovered())
-            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, tooltip!);
+        if (changed) onChange(value);
+        if (!string.IsNullOrEmpty(help) && ImGui.IsItemHovered())
+            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
 
         return changed;
     }

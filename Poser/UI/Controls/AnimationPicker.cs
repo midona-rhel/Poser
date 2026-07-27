@@ -221,7 +221,9 @@ public sealed class AnimationPicker
         cursor.Y += 18f * s;
 
         ImGui.SetCursorScreenPos(cursor);
-        Crystarium.FilterPill("##anim-pick-search", ref _search, "Search name or id", inner);
+        Crystarium.FilterPill(
+            "##anim-pick-search", _search, next => _search = next,
+            "Search name or id", inner);
         cursor.Y += 32f * s;
 
         if (kinds.Count > 1)

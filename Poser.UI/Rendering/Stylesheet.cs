@@ -9,14 +9,6 @@ namespace Poser.UI;
 /// <c>#id</c> targeting. CSS-like string selectors are also accepted
 /// (".btn:hover.primary", "#save-btn", "#save-btn.danger:hover"). Resolution
 /// merges all matching rules in (specificity, declaration-order) order.
-///
-/// <para><b>Typed-source rules:</b> when you call
-/// <c>Define(.btn, new ButtonStyle { ... })</c> the rule is stored in a
-/// <c>List&lt;Rule&lt;ButtonStyle&gt;&gt;</c>, not lifted to <see cref="ElementStyle"/>.
-/// <c>ResolveButton</c> walks the global ElementStyle rules first (projected
-/// down via <c>ButtonStyle.From</c>), then layers tag-typed rules on top using
-/// <c>MergedWith</c>. No lossy round-trip on tag-specific fields like
-/// <see cref="CheckboxStyle.Size"/>.</para>
 /// </summary>
 public static class Stylesheet
 {
@@ -33,15 +25,8 @@ public static class Stylesheet
         public int Order;
     }
 
-    private static readonly List<Rule<ElementStyle>>    _elementRules    = new();
-    private static readonly List<Rule<ButtonStyle>>     _buttonRules     = new();
-    private static readonly List<Rule<CheckboxStyle>>   _checkboxRules   = new();
-    private static readonly List<Rule<ToggleStyle>>     _toggleRules     = new();
-    private static readonly List<Rule<IconToggleStyle>> _iconToggleRules = new();
-    private static readonly List<Rule<DropdownStyle>>   _dropdownRules   = new();
-    private static readonly List<Rule<TextInputStyle>>  _textInputRules  = new();
-    private static readonly List<Rule<SliderStyle>>     _sliderRules     = new();
-    private static readonly List<Rule<TextStyle>>       _textRules       = new();
+    private static readonly List<Rule<ElementStyle>> _elementRules = new();
+    private static readonly List<Rule<TextStyle>> _textRules = new();
 
     private static int _orderCounter = 0;
     private static bool _initialized = false;
@@ -74,34 +59,6 @@ public static class Stylesheet
         Add(_elementRules, classes, id, pseudo, style, part);
     }
 
-    // ---------- Define overloads (tag-typed → typed bucket, no round-trip) ----------
-
-    public static void Define(StyleClass cls, ButtonStyle s)                    => Add(_buttonRules,     new[] { cls.Name },                          null, PseudoState.None, s);
-    public static void Define(StyleClass cls, PseudoState p, ButtonStyle s)     => Add(_buttonRules,     new[] { cls.Name },                          null, p,                s);
-    public static void Define(StyleClassSet cls, ButtonStyle s)                 => Add(_buttonRules,     cls.Names ?? Array.Empty<string>(),          null, PseudoState.None, s);
-    public static void Define(StyleClassSet cls, PseudoState p, ButtonStyle s)  => Add(_buttonRules,     cls.Names ?? Array.Empty<string>(),          null, p,                s);
-
-    public static void Define(StyleClass cls, CheckboxStyle s)                  => Add(_checkboxRules,   new[] { cls.Name },                          null, PseudoState.None, s);
-    public static void Define(StyleClass cls, PseudoState p, CheckboxStyle s)   => Add(_checkboxRules,   new[] { cls.Name },                          null, p,                s);
-    public static void Define(StyleClassSet cls, CheckboxStyle s)               => Add(_checkboxRules,   cls.Names ?? Array.Empty<string>(),          null, PseudoState.None, s);
-    public static void Define(StyleClassSet cls, PseudoState p, CheckboxStyle s)=> Add(_checkboxRules,   cls.Names ?? Array.Empty<string>(),          null, p,                s);
-
-    public static void Define(StyleClass cls, ToggleStyle s)                    => Add(_toggleRules,     new[] { cls.Name }, null, PseudoState.None, s);
-    public static void Define(StyleClass cls, PseudoState p, ToggleStyle s)     => Add(_toggleRules,     new[] { cls.Name }, null, p,                s);
-
-    public static void Define(StyleClass cls, IconToggleStyle s)                => Add(_iconToggleRules, new[] { cls.Name }, null, PseudoState.None, s);
-    public static void Define(StyleClass cls, PseudoState p, IconToggleStyle s) => Add(_iconToggleRules, new[] { cls.Name }, null, p,                s);
-
-
-    public static void Define(StyleClass cls, DropdownStyle s)                  => Add(_dropdownRules,   new[] { cls.Name }, null, PseudoState.None, s);
-    public static void Define(StyleClass cls, PseudoState p, DropdownStyle s)   => Add(_dropdownRules,   new[] { cls.Name }, null, p,                s);
-
-    public static void Define(StyleClass cls, TextInputStyle s)                 => Add(_textInputRules,  new[] { cls.Name }, null, PseudoState.None, s);
-    public static void Define(StyleClass cls, PseudoState p, TextInputStyle s)  => Add(_textInputRules,  new[] { cls.Name }, null, p,                s);
-
-    public static void Define(StyleClass cls, SliderStyle s)                    => Add(_sliderRules,     new[] { cls.Name }, null, PseudoState.None, s);
-    public static void Define(StyleClass cls, PseudoState p, SliderStyle s)     => Add(_sliderRules,     new[] { cls.Name }, null, p,                s);
-
     public static void Define(StyleClass cls, TextStyle s)                      => Add(_textRules,       new[] { cls.Name }, null, PseudoState.None, s);
     public static void Define(StyleClass cls, PseudoState p, TextStyle s)       => Add(_textRules,       new[] { cls.Name }, null, p,                s);
 
@@ -110,13 +67,6 @@ public static class Stylesheet
     public static void Reset()
     {
         _elementRules.Clear();
-        _buttonRules.Clear();
-        _checkboxRules.Clear();
-        _toggleRules.Clear();
-        _iconToggleRules.Clear();
-        _dropdownRules.Clear();
-        _textInputRules.Clear();
-        _sliderRules.Clear();
         _textRules.Clear();
         _orderCounter = 0;
         _initialized = false;
@@ -201,78 +151,6 @@ public static class Stylesheet
     {
         EnsureInitialized();
         return MatchAndFold(_elementRules, classes, id, state, default, static (a, b) => a.MergedWith(b), part);
-    }
-
-    // ---------- Tag resolvers: ElementStyle bucket → tag projection → tag-typed overlay ----------
-
-    public static ButtonStyle ResolveButton(StyleClassSet classes, PseudoState state)
-        => ResolveButton(classes, null, state);
-
-    public static ButtonStyle ResolveButton(StyleClassSet classes, string? id, PseudoState state)
-    {
-        EnsureInitialized();
-        var baseStyle  = ButtonStyle.From(MatchAndFold(_elementRules, classes, id, state, default, static (a, b) => a.MergedWith(b)));
-        return         MatchAndFold(_buttonRules,  classes, id, state, baseStyle, static (a, b) => a.MergedWith(b));
-    }
-
-    public static CheckboxStyle ResolveCheckbox(StyleClassSet classes, PseudoState state)
-        => ResolveCheckbox(classes, null, state);
-
-    public static CheckboxStyle ResolveCheckbox(StyleClassSet classes, string? id, PseudoState state)
-    {
-        EnsureInitialized();
-        var baseStyle = CheckboxStyle.From(MatchAndFold(_elementRules, classes, id, state, default, static (a, b) => a.MergedWith(b)));
-        return        MatchAndFold(_checkboxRules, classes, id, state, baseStyle, static (a, b) => a.MergedWith(b));
-    }
-
-    public static ToggleStyle ResolveToggle(StyleClassSet classes, PseudoState state)
-        => ResolveToggle(classes, null, state);
-
-    public static ToggleStyle ResolveToggle(StyleClassSet classes, string? id, PseudoState state)
-    {
-        EnsureInitialized();
-        var baseStyle = ToggleStyle.From(MatchAndFold(_elementRules, classes, id, state, default, static (a, b) => a.MergedWith(b)));
-        return        MatchAndFold(_toggleRules, classes, id, state, baseStyle, static (a, b) => a.MergedWith(b));
-    }
-
-    public static IconToggleStyle ResolveIconToggle(StyleClassSet classes, PseudoState state)
-        => ResolveIconToggle(classes, null, state);
-
-    public static IconToggleStyle ResolveIconToggle(StyleClassSet classes, string? id, PseudoState state)
-    {
-        EnsureInitialized();
-        var baseStyle = IconToggleStyle.From(MatchAndFold(_elementRules, classes, id, state, default, static (a, b) => a.MergedWith(b)));
-        return        MatchAndFold(_iconToggleRules, classes, id, state, baseStyle, static (a, b) => a.MergedWith(b));
-    }
-
-    public static DropdownStyle ResolveDropdown(StyleClassSet classes, PseudoState state)
-        => ResolveDropdown(classes, null, state);
-
-    public static DropdownStyle ResolveDropdown(StyleClassSet classes, string? id, PseudoState state)
-    {
-        EnsureInitialized();
-        var baseStyle = DropdownStyle.From(MatchAndFold(_elementRules, classes, id, state, default, static (a, b) => a.MergedWith(b)));
-        return        MatchAndFold(_dropdownRules, classes, id, state, baseStyle, static (a, b) => a.MergedWith(b));
-    }
-
-    public static TextInputStyle ResolveTextInput(StyleClassSet classes, PseudoState state)
-        => ResolveTextInput(classes, null, state);
-
-    public static TextInputStyle ResolveTextInput(StyleClassSet classes, string? id, PseudoState state)
-    {
-        EnsureInitialized();
-        var baseStyle = TextInputStyle.From(MatchAndFold(_elementRules, classes, id, state, default, static (a, b) => a.MergedWith(b)));
-        return        MatchAndFold(_textInputRules, classes, id, state, baseStyle, static (a, b) => a.MergedWith(b));
-    }
-
-    public static SliderStyle ResolveSlider(StyleClassSet classes, PseudoState state)
-        => ResolveSlider(classes, null, state);
-
-    public static SliderStyle ResolveSlider(StyleClassSet classes, string? id, PseudoState state)
-    {
-        EnsureInitialized();
-        var baseStyle = SliderStyle.From(MatchAndFold(_elementRules, classes, id, state, default, static (a, b) => a.MergedWith(b)));
-        return        MatchAndFold(_sliderRules, classes, id, state, baseStyle, static (a, b) => a.MergedWith(b));
     }
 
     public static TextStyle ResolveText(StyleClassSet classes, PseudoState state)

@@ -532,8 +532,11 @@ public class PoseInspectorPane
         // the Animation tab's transport are the same control in two places
         // and neither can drift from the actor.
         bool motion = chromeActorId is { } motionId && !_animation.IsPaused(motionId);
-        if (Crystarium.Switch("##ps-motion", ref motion) && chromeActorId is { } toggleId)
+        Crystarium.Switch("##ps-motion", motion, next =>
         {
+            motion = next;
+            if (chromeActorId is not { } toggleId)
+                return;
             // A silently failed toggle leaves the switch lying about the
             // actor; the session has no status surface here, so the log is
             // where the reason lands.
@@ -542,7 +545,7 @@ public class PoseInspectorPane
                 : _animation.Pause(toggleId);
             if (!toggled.Success)
                 _log.Warning($"Animation toggle failed: {toggled.Detail}");
-        }
+        });
         rx -= ViewText.Measure("Animation", 12f) + 6f * s;
         ViewText.Label(new Vector2(rx, chromeY + 2f * s), "Animation", 12f,
             FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
@@ -550,12 +553,15 @@ public class PoseInspectorPane
         rx -= 14f * s + 36f * s;
         ImGui.SetCursorScreenPos(new Vector2(rx, chromeY));
         bool physics = chromeActorId is { } physicsId && _animation.OwnsPhysics(physicsId);
-        if (Crystarium.Switch("##ps-physics", ref physics) && chromeActorId is { } physicsToggle)
+        Crystarium.Switch("##ps-physics", physics, next =>
         {
+            physics = next;
+            if (chromeActorId is not { } physicsToggle)
+                return;
             var frozen = _animation.SetPhysicsFrozen(physicsToggle, physics);
             if (!frozen.Success)
                 _log.Warning($"Physics toggle failed: {frozen.Detail}");
-        }
+        });
         rx -= ViewText.Measure("Physics", 12f) + 6f * s;
         ViewText.Label(new Vector2(rx, chromeY + 2f * s), "Physics", 12f,
             FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
@@ -565,8 +571,8 @@ public class PoseInspectorPane
             rx -= 14f * s + 36f * s;
             ImGui.SetCursorScreenPos(new Vector2(rx, chromeY));
             bool swapped = GetMapMirror?.Invoke() ?? false;
-            if (Crystarium.Switch("##ps-mirror", ref swapped))
-                SetMapMirror?.Invoke(swapped);
+            Crystarium.Switch(
+                "##ps-mirror", swapped, next => SetMapMirror?.Invoke(next));
             float mirrorLabelX = rx - ViewText.Measure("Mirror", 12f) - 6f * s;
             ViewText.Label(new Vector2(mirrorLabelX, chromeY + 2f * s), "Mirror",
                 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
@@ -652,12 +658,16 @@ public class PoseInspectorPane
         float h = 0f;
         h += 12f * s;
         ImGui.SetCursorScreenPos(new Vector2(cursor.X, cursor.Y + h));
-        if (Crystarium.FilterPill(
-                "##pose-matrix-filter",
-                ref _matrixFilter,
-                "Filter bones…",
-                MathF.Min(260f, width / s)))
-            _matrixVm = null;
+        Crystarium.FilterPill(
+            "##pose-matrix-filter",
+            _matrixFilter,
+            next =>
+            {
+                _matrixFilter = next;
+                _matrixVm = null;
+            },
+            "Filter bones…",
+            MathF.Min(260f, width / s));
         h += 38f * s;
 
         var matrixSkeleton = PrimarySkeletonDescriptor();
@@ -737,12 +747,12 @@ public class PoseInspectorPane
             float cellStart = px;
             ImGui.SetCursorScreenPos(new Vector2(px, cursor.Y + fy + 4f * s));
             bool propagates = poseInfo.DefaultPropagation.HasFlag(component);
-            if (Crystarium.Checkbox($"##ft-parenting-{label}", ref propagates))
+            Crystarium.Checkbox($"##ft-parenting-{label}", propagates, next =>
             {
-                poseInfo.DefaultPropagation = propagates
+                poseInfo.DefaultPropagation = next
                     ? poseInfo.DefaultPropagation | component
                     : poseInfo.DefaultPropagation & ~component;
-            }
+            });
             px += 20f * s;
             ViewText.Label(Crystarium.ActiveTheme.Optical.Snap(new Vector2(
                     px, cursor.Y + fy + 6f * s + Crystarium.ActiveTheme.Optical.FooterLabel * s)),
@@ -766,7 +776,7 @@ public class PoseInspectorPane
         }
         ImGui.SetCursorScreenPos(new Vector2(px, cursor.Y + fy));
         if (Crystarium.Button("Clear", id: "ft-clear", help: "Clear bone selection",
-            density: Crystarium.ControlDensity.Workspace))
+            style: ControlStyle.Workspace))
             _selection.Clear();
     }
 
@@ -1064,10 +1074,13 @@ public class PoseInspectorPane
                         current = i;
                 }
                 ImGui.SetCursorScreenPos(cursor + new Vector2(46f, h / s) * s);
-                if (Crystarium.Dropdown("##gaze-target", names, ref current) &&
-                    current >= 0 && current < others.Count &&
-                    _bindings.Resolve(others[current].Id) is { Success: true, Value: { } live })
-                    _gazeService.SetGazeTarget(actor, live);
+                Crystarium.Dropdown("##gaze-target", names, current, next =>
+                {
+                    if (next >= 0 && next < others.Count &&
+                        _bindings.Resolve(others[next].Id) is
+                            { Success: true, Value: { } live })
+                        _gazeService.SetGazeTarget(actor, live);
+                });
             }
             h += 34f * s;
         }
@@ -1090,11 +1103,12 @@ public class PoseInspectorPane
         bool off = state.Mode == GazeTargetMode.None;
         bool enabled = !off && state.TargetType.HasFlag(part);
         ImGui.SetCursorScreenPos(new Vector2(cursor.X + 94f * s, cursor.Y + 4f * s));
-        if (Crystarium.Switch($"##gaze-part-{label}", ref enabled, disabled: off) && !off)
+        Crystarium.Switch($"##gaze-part-{label}", enabled, next =>
         {
-            var flags = enabled ? state.TargetType | part : state.TargetType & ~part;
+            enabled = next;
+            var flags = next ? state.TargetType | part : state.TargetType & ~part;
             _gazeService.SetGazeParts(actor, flags);
-        }
+        }, disabled: off);
         ViewText.Label(cursor + new Vector2(140f, 7f) * s, off ? "off" : enabled ? "driven" : "free", 11f,
             FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
 
@@ -1153,18 +1167,22 @@ public class PoseInspectorPane
         InspectorLayout.FormLabel(cursor, "Live IK", s);
         ImGui.SetCursorScreenPos(new Vector2(
             controlX, cursor.Y + InspectorLayout.FormSwitchY * s));
-        if (Crystarium.Switch("##pose-ik", ref armed, disabled: !eligible) && config != null)
-            Apply(config with { Enabled = armed });
+        Crystarium.Switch("##pose-ik", armed, next =>
+        {
+            armed = next;
+            if (config != null)
+                Apply(config with { Enabled = next });
+        }, disabled: !eligible);
         if (eligible)
         {
-            var resetSize = Crystarium.MeasureButton("Reset defaults", Crystarium.ControlDensity.Workspace);
+            var resetSize = Crystarium.MeasureButton("Reset defaults", ControlStyle.Workspace);
             ImGui.SetCursorScreenPos(new Vector2(
                 cursor.X + width - resetSize.X,
                 cursor.Y + InspectorLayout.FormButtonY * s));
             if (Crystarium.Button("Reset defaults",
                     id: "ik-reset-defaults",
                     help: "Restore this chain's IK defaults",
-                    density: Crystarium.ControlDensity.Workspace))
+                    style: ControlStyle.Workspace))
             {
                 _ikPort.ResetDefaults(ikTarget);
                 config = _ikPort.Get(ikTarget);
@@ -1173,7 +1191,7 @@ public class PoseInspectorPane
         // The header's semantic target excludes the Reset button, which
         // explains itself through its own help.
         float headerHelpW = eligible
-            ? width - (Crystarium.MeasureButton("Reset defaults", Crystarium.ControlDensity.Workspace).X + 8f * s)
+            ? width - (Crystarium.MeasureButton("Reset defaults", ControlStyle.Workspace).X + 8f * s)
             : width;
         if (Crystarium.HoverHelp.HelpHovered(
                 cursor, cursor + new Vector2(headerHelpW, InspectorLayout.FormRowHeight * s)))
@@ -1208,13 +1226,24 @@ public class PoseInspectorPane
             RowLabel(label);
             ImGui.SetCursorScreenPos(new Vector2(
                 controlX, cursor.Y + h + InspectorLayout.FormSliderY * s));
-            bool moved = Crystarium.Slider(id, ref value, min, max, new SliderProps
-            {
-                Style = new SliderStyle
+            float next = value;
+            bool moved = false;
+            Crystarium.Slider(
+                id,
+                value,
+                min,
+                max,
+                changed =>
                 {
-                    Width = Sizing.Fixed(controlW - InspectorLayout.FormValueColumnWidth),
+                    next = changed;
+                    moved = true;
                 },
+                new ControlStyle
+            {
+                Width = UiSize.Fixed(
+                    controlW - InspectorLayout.FormValueColumnWidth),
             });
+            value = next;
             string readout = string.Format(fmt, value);
             ViewText.Label(new Vector2(
                     cursor.X + width - ViewText.Measure(readout, 11f, mono: true),
@@ -1232,8 +1261,14 @@ public class PoseInspectorPane
             RowLabel(label);
             ImGui.SetCursorScreenPos(new Vector2(
                 controlX, cursor.Y + h + InspectorLayout.FormSwitchY * s));
-            next = value;
-            bool moved = Crystarium.Switch(id, ref next);
+            bool result = value;
+            bool moved = false;
+            Crystarium.Switch(id, value, changed =>
+            {
+                result = changed;
+                moved = true;
+            });
+            next = result;
             h += InspectorLayout.FormRowHeight * s;
             RowHelp(rowTop, id + "-row", help);
             return moved;
@@ -1247,10 +1282,22 @@ public class PoseInspectorPane
                 controlX, cursor.Y + h + InspectorLayout.FormTallControlY * s));
             // The control region's width, explicitly: ambient available
             // width overshoots the rail into the scrollbar gutter.
-            bool moved = Crystarium.Dropdown(id, items, ref index, new DropdownProps
+            int next = index;
+            bool moved = false;
+            Crystarium.Dropdown(
+                id,
+                items,
+                index,
+                changed =>
+                {
+                    next = changed;
+                    moved = true;
+                },
+                new ControlStyle
             {
-                Style = new DropdownStyle { Width = Sizing.Fixed(controlW) },
+                Width = UiSize.Fixed(controlW),
             });
+            index = next;
             h += InspectorLayout.FormRowHeight * s;
             RowHelp(rowTop, id + "-row", help);
             return moved;
@@ -1460,8 +1507,7 @@ public class PoseInspectorPane
         var widths = new float[actions.Count];
         for (int i = 0; i < actions.Count; i++)
             widths[i] = Crystarium.MeasureButton(
-                actions[i].Label, Crystarium.ControlDensity.Workspace,
-                disabled: actions[i].Disabled).X;
+                actions[i].Label, ControlStyle.Workspace).X;
 
         int start = 0;
         int row = 0;
@@ -1493,8 +1539,10 @@ public class PoseInspectorPane
                         id: action.Id,
                         help: action.Tooltip,
                         disabled: action.Disabled,
-                        density: Crystarium.ControlDensity.Workspace,
-                        width: widths[i] / scale))
+                        style: ControlStyle.Workspace with
+                        {
+                            Width = UiSize.Fixed(widths[i] / scale),
+                        }))
                     action.Invoke();
                 x += widths[i] + gap;
             }

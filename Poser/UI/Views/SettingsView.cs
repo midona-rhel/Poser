@@ -161,10 +161,16 @@ public static class SettingsView
         float saveW = 64f, cancelW = 76f, gap = 6f;
         float bx = max.X - 12f * s - (saveW + gap + cancelW) * s;
         ImGui.SetCursorScreenPos(new Vector2(bx, bodyBottom + (footH - 32f * s) / 2f));
-        if (Crystarium.Button("Cancel", width: cancelW))
+        if (Crystarium.Button("Cancel",
+                style: new ControlStyle { Width = UiSize.Fixed(cancelW) }))
             vm.OnCancel?.Invoke();
         ImGui.SameLine(0f, gap * s);
-        if (Crystarium.Button("Save", primary: true, width: saveW))
+        if (Crystarium.Button("Save",
+                style: new ControlStyle
+                {
+                    Width = UiSize.Fixed(saveW),
+                    Primary = true,
+                }))
             vm.OnSave?.Invoke();
     }
 
@@ -178,10 +184,10 @@ public static class SettingsView
         // Bone dot radius: slider (max-width 220) + mono value
         RowStart(s);
         RowLabel("Bone dot radius", s, controlY: 10f);  // slider 14px
-        Crystarium.Slider("##dot-radius", ref vm.BoneDotRadius, 2f, 12f, new SliderProps
-        {
-            Style = new SliderStyle { Width = Sizing.Fixed(220) },
-        });
+        Crystarium.Slider(
+            "##dot-radius", vm.BoneDotRadius, 2f, 12f,
+            next => vm.BoneDotRadius = next,
+            new ControlStyle { Width = UiSize.Fixed(220f) });
         ImGui.SameLine(0f, 12f * s);
         ViewText.Label(ImGui.GetCursorScreenPos() + new Vector2(0f, 1f * s),
             $"{(int)MathF.Round(vm.BoneDotRadius)} px", 12f, FontWeight.Regular, TextSecondary, mono: true);
@@ -191,18 +197,18 @@ public static class SettingsView
         // Overlay colors: five captioned wells
         RowStart(s, tall: true);
         RowLabel("Overlay colors", s, controlY: 6f);    // M5 tall row pads 6
-        WellStack("##ov-sel", ref vm.OverlaySelected, "selected", s);
-        WellStack("##ov-hov", ref vm.OverlayHovered, "hovered", s);
-        WellStack("##ov-ina", ref vm.OverlayInactive, "inactive", s);
-        WellStack("##ov-ik",  ref vm.OverlayIkChain, "IK chain", s);
-        WellStack("##ov-mir", ref vm.OverlayMirrored, "mirrored", s);
+        WellStack("##ov-sel", vm.OverlaySelected, next => vm.OverlaySelected = next, "selected", s);
+        WellStack("##ov-hov", vm.OverlayHovered, next => vm.OverlayHovered = next, "hovered", s);
+        WellStack("##ov-ina", vm.OverlayInactive, next => vm.OverlayInactive = next, "inactive", s);
+        WellStack("##ov-ik", vm.OverlayIkChain, next => vm.OverlayIkChain = next, "IK chain", s);
+        WellStack("##ov-mir", vm.OverlayMirrored, next => vm.OverlayMirrored = next, "mirrored", s);
         RowEnd(s, tall: true);
 
         SectionHeader("FILTERS & PRIVACY", first: false, s);
 
         RowStart(s);
         RowLabel("NSFW bones", s, controlY: 7f);        // switch 20px
-        Crystarium.Switch("##nsfw", ref vm.NsfwBones);
+        Crystarium.Switch("##nsfw", vm.NsfwBones, next => vm.NsfwBones = next);
         ImGui.SameLine(0f, 12f * s);
         ViewText.Label(ImGui.GetCursorScreenPos() + new Vector2(0f, 4f * s),
             "show IVCS / extended bone groups in the bone map and sidebar tree", 11f, FontWeight.Regular, TextTertiary, wrap: true);
@@ -210,7 +216,7 @@ public static class SettingsView
 
         RowStart(s);
         RowLabel("Anonymous mode", s, controlY: 7f);
-        Crystarium.Switch("##anon", ref vm.AnonymousMode);
+        Crystarium.Switch("##anon", vm.AnonymousMode, next => vm.AnonymousMode = next);
         ImGui.SameLine(0f, 12f * s);
         ViewText.Label(ImGui.GetCursorScreenPos() + new Vector2(0f, 4f * s),
             "mask character names (\"Actor 1\", \"Actor 2\") in the UI", 11f, FontWeight.Regular, TextTertiary, wrap: true);
@@ -239,7 +245,7 @@ public static class SettingsView
 
         RowStart(s);
         RowLabel("Open with GPose", s, controlY: 7f);
-        Crystarium.Switch("##open-gpose", ref vm.OpenOnGPose);
+        Crystarium.Switch("##open-gpose", vm.OpenOnGPose, next => vm.OpenOnGPose = next);
         ImGui.SameLine(0f, 12f * s);
         ViewText.Label(ImGui.GetCursorScreenPos() + new Vector2(0f, 4f * s),
             "show the Poser window automatically when entering GPose", 11f, FontWeight.Regular, TextTertiary, wrap: true);
@@ -247,7 +253,7 @@ public static class SettingsView
 
         RowStart(s);
         RowLabel("Close with GPose", s, controlY: 7f);
-        Crystarium.Switch("##close-gpose", ref vm.CloseWithGPose);
+        Crystarium.Switch("##close-gpose", vm.CloseWithGPose, next => vm.CloseWithGPose = next);
         ImGui.SameLine(0f, 12f * s);
         ViewText.Label(ImGui.GetCursorScreenPos() + new Vector2(0f, 4f * s),
             "hide all Poser windows when leaving GPose", 11f, FontWeight.Regular, TextTertiary, wrap: true);
@@ -260,7 +266,7 @@ public static class SettingsView
 
         RowStart(s);
         RowLabel("Show lines", s, controlY: 7f);
-        Crystarium.Switch("##skel-lines", ref vm.ShowSkeletonLines);
+        Crystarium.Switch("##skel-lines", vm.ShowSkeletonLines, next => vm.ShowSkeletonLines = next);
         ImGui.SameLine(0f, 12f * s);
         ViewText.Label(ImGui.GetCursorScreenPos() + new Vector2(0f, 4f * s),
             "connect parent and child bones in the overlay", 11f, FontWeight.Regular, TextTertiary, wrap: true);
@@ -268,10 +274,10 @@ public static class SettingsView
 
         RowStart(s);
         RowLabel("Line thickness", s, controlY: 10f);
-        Crystarium.Slider("##line-th", ref vm.BoneLineThickness, 0.5f, 4f, new SliderProps
-        {
-            Style = new SliderStyle { Width = Sizing.Fixed(220) },
-        });
+        Crystarium.Slider(
+            "##line-th", vm.BoneLineThickness, 0.5f, 4f,
+            next => vm.BoneLineThickness = next,
+            new ControlStyle { Width = UiSize.Fixed(220f) });
         ImGui.SameLine(0f, 12f * s);
         ViewText.Label(ImGui.GetCursorScreenPos() + new Vector2(0f, 1f * s),
             vm.BoneLineThickness.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " px", 12f, FontWeight.Regular, TextSecondary, mono: true);
@@ -279,10 +285,10 @@ public static class SettingsView
 
         RowStart(s);
         RowLabel("Line opacity", s, controlY: 10f);
-        Crystarium.Slider("##line-op", ref vm.BoneLineOpacity, 0f, 1f, new SliderProps
-        {
-            Style = new SliderStyle { Width = Sizing.Fixed(220) },
-        });
+        Crystarium.Slider(
+            "##line-op", vm.BoneLineOpacity, 0f, 1f,
+            next => vm.BoneLineOpacity = next,
+            new ControlStyle { Width = UiSize.Fixed(220f) });
         ImGui.SameLine(0f, 12f * s);
         ViewText.Label(ImGui.GetCursorScreenPos() + new Vector2(0f, 1f * s),
             $"{(int)MathF.Round(vm.BoneLineOpacity * 100)} %", 12f, FontWeight.Regular, TextSecondary, mono: true);
@@ -311,7 +317,7 @@ public static class SettingsView
 
         RowStart(s);
         RowLabel("Tree guide lines", s, controlY: 7f);
-        Crystarium.Switch("##tree-guides", ref vm.TreeGuides);
+        Crystarium.Switch("##tree-guides", vm.TreeGuides, next => vm.TreeGuides = next);
         ImGui.SameLine(0f, 12f * s);
         ViewText.Label(ImGui.GetCursorScreenPos() + new Vector2(0f, 4f * s),
             "connector lines showing hierarchy depth in the scene tree and bone lists", 11f, FontWeight.Regular, TextTertiary, wrap: true);
@@ -331,7 +337,8 @@ public static class SettingsView
             // Rebind buttons in an aligned column regardless of chip width
             ImGui.SetCursorScreenPos(_rowOrigin + new Vector2(280f * s, 1f * s));
             if (Crystarium.Button(rebinding ? "Cancel" : "Rebind",
-                id: "kb-" + i, width: 72f))
+                style: new ControlStyle { Width = UiSize.Fixed(72f) },
+                id: "kb-" + i))
                 vm.RebindingIndex = rebinding ? -1 : i;
             RowEnd(s);
         }
@@ -356,7 +363,8 @@ public static class SettingsView
 
         RowStart(s);
         RowLabel("Source", s, controlY: 1f);
-        if (Crystarium.Button("Open repository", width: 140f))
+        if (Crystarium.Button("Open repository",
+                style: new ControlStyle { Width = UiSize.Fixed(140f) }))
             vm.OnOpenRepository?.Invoke();
         RowEnd(s);
 
@@ -450,13 +458,18 @@ public static class SettingsView
 
     /// <summary>M5 .stack — color well + 10px tertiary caption (centered), 3px gap,
     /// 10px between stacks. Stack width = max(well, caption) like the flex column.</summary>
-    private static void WellStack(string id, ref Vector4 color, string caption, float s)
+    private static void WellStack(
+        string id,
+        Vector4 color,
+        Action<Vector4> onChange,
+        string caption,
+        float s)
     {
         var pos = ImGui.GetCursorScreenPos();
         float capW = ViewText.Measure(caption, 10f);
         float stackW = MathF.Max(28f * s, capW);
         ImGui.SetCursorScreenPos(new Vector2(pos.X + (stackW - 28f * s) / 2f, pos.Y));
-        Crystarium.ColorWell(id, ref color);
+        Crystarium.ColorWell(id, color, onChange);
         ViewText.Label(new Vector2(pos.X + (stackW - capW) / 2f, pos.Y + (28f + 3f) * s), caption, 10f, FontWeight.Regular, TextTertiary);
         ImGui.SetCursorScreenPos(new Vector2(pos.X + stackW + 10f * s, pos.Y));
     }

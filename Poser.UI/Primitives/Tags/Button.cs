@@ -9,216 +9,222 @@ namespace Poser.UI;
 
 public static partial class Crystarium
 {
-    public enum ControlDensity
-    {
-        Comfortable,
-        Workspace,
-    }
-
     public static bool Button(
         string label,
         Action? onClick = null,
-        string? id = null,
-        string? help = null,
+        ControlStyle style = default,
         bool disabled = false,
-        ControlDensity density = ControlDensity.Comfortable,
-        bool primary = false,
-        float? width = null)
+        string? help = null,
+        string? id = null)
     {
-        var classes = DensityClasses(density);
-        if (primary)
-            classes += Cls.Primary;
-        ButtonStyle? style = width is { } fixedWidth
-            ? new ButtonStyle { Width = fixedWidth }
-            : null;
-        return ButtonCore(
-            label,
-            classes,
-            id,
-            help,
-            onClick,
+        float scale = ImGuiHelpers.GlobalScale;
+        float height = ButtonHeight(style);
+        float width = ControlSizing.Width(
+            style.Width,
+            MeasureLabel(label, style).X / scale + ButtonPadding(style) * 2f,
+            Norvrandt.AvailableWidth / scale);
+        return RenderButton(
+            id ?? label,
+            new(width, height),
+            style,
             disabled,
-            style);
+            help,
+            () => DrawButtonLabel(label, style),
+            onClick);
     }
-
-    // ---- IconButton overloads ----
 
     public static bool IconButton(
         FontAwesomeIcon icon,
         Action? onClick = null,
-        string? id = null,
-        string? help = null,
+        ControlStyle style = default,
         bool disabled = false,
-        ControlDensity density = ControlDensity.Comfortable,
-        float? size = null)
+        string? help = null,
+        string? id = null)
     {
-        ButtonStyle? style = size is { } fixedSize
-            ? new ButtonStyle { Width = fixedSize, Height = fixedSize }
-            : null;
-        return IconButtonCore(
-            icon,
-            DensityClasses(density),
-            id,
-            help,
-            onClick,
+        float side = IconButtonSize(style);
+        return RenderButton(
+            id ?? icon.ToIconString(),
+            new(side, side),
+            style,
             disabled,
-            style);
+            help,
+            () => DrawFontAwesomeIcon(icon),
+            onClick);
     }
 
-    // ---- Measurement ----
-
-    /// <summary>
-    /// Measures a text button exactly as it renders: resolved stylesheet
-    /// padding and resolved font. Layout code (wrapping, right-alignment)
-    /// must use this instead of a hand-authored CalcTextSize + constant
-    /// estimate that can drift from the component.
-    /// </summary>
-    public static Vector2 MeasureButton(
-        string label,
-        ControlDensity density = ControlDensity.Comfortable,
-        bool primary = false,
-        bool disabled = false)
+    public static bool IconButton(
+        TablerIcon icon,
+        Action? onClick = null,
+        ControlStyle style = default,
+        bool disabled = false,
+        string? help = null,
+        string? id = null,
+        bool flipX = false)
     {
-        Stylesheet.EnsureInitialized();
+        float side = IconButtonSize(style);
+        return RenderButton(
+            id ?? Tabler.NameFor(icon),
+            new(side, side),
+            style,
+            disabled,
+            help,
+            () => DrawTablerIcon(icon, flipX),
+            onClick);
+    }
 
-        var classes = DensityClasses(density);
-        if (primary)
-            classes += Cls.Primary;
-        var pre = Stylesheet.ResolveButton(Cls.Btn + classes, disabled ? PseudoState.Disabled : PseudoState.None);
+    public static Vector2 MeasureButton(string label, ControlStyle style = default) =>
+        new(
+            MeasureLabel(label, style).X + ButtonPadding(style) * 2f * ImGuiHelpers.GlobalScale,
+            ButtonHeight(style) * ImGuiHelpers.GlobalScale);
+
+    private static bool RenderButton(
+        string id,
+        Vector2 logicalSize,
+        ControlStyle style,
+        bool disabled,
+        string? help,
+        Action content,
+        Action? onClick)
+    {
         float scale = ImGuiHelpers.GlobalScale;
-        float height = (pre.Height ?? Sizing.Fixed(Crystarium.ActiveTheme.Controls.ComfortableHeight)).Value * scale;
-        Spacing padding = pre.Padding ?? new Spacing(0, Crystarium.ActiveTheme.Page.ActionGap);
-        float width = MeasureLabel(label, pre).X + padding.Horizontal * scale;
-        width  = SizeUtil.Clamp(width,  pre.MinWidth,  pre.MaxWidth,  scale);
-        height = SizeUtil.Clamp(height, pre.MinHeight, pre.MaxHeight, scale);
-        return new Vector2(width, height);
-    }
+        var size = logicalSize * scale;
+        var hit = Interactive.Reserve(id, size, disabled, Norvrandt.AvailableHeight);
+        var theme = ActiveTheme;
+        float opacity = disabled ? theme.Chrome.ControlDisabledOpacity : 1f;
+        var background = style.Bare
+            ? (hit.Hovered ? theme.Chrome.WeakOverlay : Vector4.Zero)
+            : style.Primary
+                ? (hit.Hovered ? theme.Chrome.PrimaryHover : theme.Chrome.Primary)
+                : (hit.Hovered ? theme.Chrome.ControlHover : theme.Chrome.ControlFill);
+        var border = style.Primary ? background : theme.Chrome.ControlBorder;
+        background.W *= opacity;
+        border.W *= opacity;
 
-    private static StyleClassSet DensityClasses(ControlDensity density) =>
-        density == ControlDensity.Workspace
-            ? Cls.Workspace
-            : Cls.Comfortable;
-
-    /// <summary>Measures the label under the button's resolved stylesheet font.</summary>
-    private static Vector2 MeasureLabel(string label, in ButtonStyle resolved)
-    {
-        var fontHandle = FontRegistry.Resolve(resolved.FontFamily ?? FontFamily.Default, resolved.FontSize ?? Crystarium.ActiveTheme.Typography.BodySize);
-        bool fontPushed = fontHandle is { Available: true };
-        if (fontPushed) fontHandle!.Push();
-        var size = ImGui.CalcTextSize(label);
-        if (fontPushed) fontHandle!.Pop();
-        return size;
-    }
-
-    // ---- Core ----
-
-    private static bool ButtonCore(string label, StyleClassSet classes, string? id, string? tooltip, Action? onClick, bool disabled, ButtonStyle? inline)
-    {
-        Stylesheet.EnsureInitialized();
-
-        var pre = Stylesheet.ResolveButton(Cls.Btn + classes, disabled ? PseudoState.Disabled : PseudoState.None);
-        if (inline.HasValue) pre = pre.MergedWith(inline.Value);
-        if (pre.Display == UI.Display.None) return false;
-
-        float scale = ImGuiHelpers.GlobalScale;
-        float height = (pre.Height ?? Sizing.Fixed(Crystarium.ActiveTheme.Controls.ComfortableHeight)).Value * scale;
-        Spacing padding = pre.Padding ?? new Spacing(0, Crystarium.ActiveTheme.Page.ActionGap);
-
-        float width;
-        if (pre.Width.HasValue && pre.Width.Value.Mode == SizingMode.Fixed)
-            width = pre.Width.Value.Value * scale;
-        else if (pre.Width.HasValue && pre.Width.Value.Mode == SizingMode.Fill)
-            width = ImGui.GetContentRegionAvail().X;
-        else
-            width = MeasureLabel(label, pre).X + padding.Horizontal * scale;
-
-        width  = SizeUtil.Clamp(width,  pre.MinWidth,  pre.MaxWidth,  scale);
-        height = SizeUtil.Clamp(height, pre.MinHeight, pre.MaxHeight, scale);
-
-        return RenderButton(width, height, label, FontAwesomeIcon.None, false, classes, id ?? label, tooltip, onClick, disabled, inline);
-    }
-
-    private static bool IconButtonCore(FontAwesomeIcon icon, StyleClassSet classes, string? id, string? tooltip, Action? onClick, bool disabled, ButtonStyle? inline)
-    {
-        Stylesheet.EnsureInitialized();
-
-        classes = classes + Cls.Icon;
-
-        var pre = Stylesheet.ResolveButton(Cls.Btn + classes, disabled ? PseudoState.Disabled : PseudoState.None);
-        if (inline.HasValue) pre = pre.MergedWith(inline.Value);
-        if (pre.Display == UI.Display.None) return false;
-
-        float scale = ImGuiHelpers.GlobalScale;
-        float side = (pre.Width  ?? Sizing.Fixed(Crystarium.ActiveTheme.Controls.ComfortableHeight)).Value * scale;
-        float h    = (pre.Height ?? Sizing.Fixed(Crystarium.ActiveTheme.Controls.ComfortableHeight)).Value * scale;
-        side = SizeUtil.Clamp(side, pre.MinWidth,  pre.MaxWidth,  scale);
-        h    = SizeUtil.Clamp(h,    pre.MinHeight, pre.MaxHeight, scale);
-
-        return RenderButton(side, h, null, icon, true, classes, id ?? icon.ToIconString(), tooltip, onClick, disabled, inline);
-    }
-
-    private static bool RenderButton(float width, float height,
-        string? label, FontAwesomeIcon icon, bool iconOnly,
-        StyleClassSet classes, string id, string? tooltip, Action? onClick, bool disabled, ButtonStyle? inline)
-    {
-        var hit = Interactive.Reserve(id, new Vector2(width, height), disabled, Norvrandt.AvailableHeight);
-
-        var resolved = Stylesheet.ResolveButton(Cls.Btn + classes, hit.State);
-        if (inline.HasValue) resolved = resolved.MergedWith(inline.Value);
-
-        var elemStyle = resolved.ToElementStyle();
-        if (hit.Disabled) elemStyle.Opacity = elemStyle.Opacity ?? Crystarium.ActiveTheme.Chrome.DisabledOpacity;
-        ChromeBuilder.Paint(hit.ScreenMin, hit.ScreenMax, elemStyle, ChromeBuilder.LiveButtonBg(hit.State));
-
-        var drawList = ImGui.GetWindowDrawList();
-        // Element opacity (the stylesheet's disabled fade) applies to the
-        // button's content — label and icon — as well as its chrome, so a
-        // disabled button fades uniformly instead of keeping bright text on
-        // a dimmed fill.
-        float contentOpacity = elemStyle.Opacity ?? 1f;
-        var textColor = resolved.Color ?? Crystarium.ActiveTheme.Text;
-        textColor = textColor with { W = textColor.W * contentOpacity };
-        uint textU32 = ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(textColor));
-        var size = hit.Size;
-
-        if (iconOnly)
+        var draw = ImGui.GetWindowDrawList();
+        float radius = theme.Radii.Control * scale;
+        draw.AddRectFilled(
+            hit.ScreenMin,
+            hit.ScreenMax,
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(background)),
+            radius);
+        if (!style.Bare)
         {
-            var iconFont = UiBuilder.IconFont;
-            var iconStr = icon.ToIconString();
-            float iconScale = Crystarium.ActiveTheme.Controls.IconContentScale;
-            ImGui.PushFont(iconFont);
-            var baseIconSize = ImGui.CalcTextSize(iconStr);
-            ImGui.PopFont();
-            var scaledIconSize = baseIconSize * iconScale;
-            var iconPos = hit.ScreenMin + (size - scaledIconSize) * 0.5f;
-            float outlineOffset = 1f * ImGuiHelpers.GlobalScale;
-            var iconOutline = Crystarium.ActiveTheme.Palette.Black with { W = Crystarium.ActiveTheme.Palette.Black.W * contentOpacity };
-            var iconFill = Crystarium.ActiveTheme.Palette.White with { W = Crystarium.ActiveTheme.Palette.White.W * contentOpacity };
-            DrawHelpers.DrawOutlinedIconScaled(drawList, iconFont, iconPos, iconStr,
-                ColorEx.ApplyAlpha(iconOutline.ToU32()), ColorEx.ApplyAlpha(iconFill.ToU32()), outlineOffset, iconScale);
-        }
-        else if (label != null)
-        {
-            var fontHandle = FontRegistry.Resolve(resolved.FontFamily ?? FontFamily.Default, resolved.FontSize ?? Crystarium.ActiveTheme.Typography.BodySize);
-            bool fontPushed = fontHandle is { Available: true };
-            if (fontPushed) fontHandle!.Push();
-            var textSize = ImGui.CalcTextSize(label);
-            // Text labels take the shared button optical baseline; the
-            // icon branch above stays independently centred.
-            var textPos = hit.ScreenMin + (size - textSize) * 0.5f;
-            textPos.Y += Crystarium.ActiveTheme.Optical.ButtonText * ImGuiHelpers.GlobalScale;
-            drawList.AddText(Crystarium.ActiveTheme.Optical.Snap(textPos), textU32, label);
-            if (fontPushed) fontHandle!.Pop();
+            float inset = 0.5f * scale;
+            draw.AddRect(
+                hit.ScreenMin + new Vector2(inset),
+                hit.ScreenMax - new Vector2(inset),
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(border)),
+                MathF.Max(0f, radius - inset),
+                ImDrawFlags.None,
+                scale);
         }
 
-        // A disabled reserve reports Hovered = false, but a disabled action may
-        // still explain itself; hover is re-derived geometrically for help.
-        bool tooltipHover = hit.Hovered ||
-            (hit.Disabled && HoverHelp.HelpHovered(hit.ScreenMin, hit.ScreenMax));
-        if (tooltipHover && !string.IsNullOrEmpty(tooltip))
-            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, tooltip!);
-        if (hit.Clicked) onClick?.Invoke();
+        ButtonContent = new(hit.ScreenMin, hit.ScreenMax, opacity);
+        content();
 
+        if (!string.IsNullOrEmpty(help) &&
+            (hit.Hovered || (hit.Disabled && HoverHelp.HelpHovered(hit.ScreenMin, hit.ScreenMax))))
+            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
+        if (hit.Clicked)
+            onClick?.Invoke();
         return hit.Clicked;
     }
+
+    [ThreadStatic]
+    private static ButtonContentBounds ButtonContent;
+
+    private readonly record struct ButtonContentBounds(Vector2 Min, Vector2 Max, float Opacity);
+
+    private static void DrawButtonLabel(string label, ControlStyle style)
+    {
+        var bounds = ButtonContent;
+        var font = FontRegistry.Resolve(
+            FontFamily.Default,
+            ControlSizing.IsWorkspace(style.Size)
+                ? ActiveTheme.Typography.LabelSize
+                : ActiveTheme.Typography.BodySize);
+        bool pushed = font is { Available: true };
+        if (pushed) font!.Push();
+        var textSize = ImGui.CalcTextSize(label);
+        var position = bounds.Min + (bounds.Max - bounds.Min - textSize) * 0.5f;
+        position.Y += ActiveTheme.Optical.ButtonText * ImGuiHelpers.GlobalScale;
+        var color = ActiveTheme.Chrome.Text with
+        {
+            W = ActiveTheme.Chrome.Text.W * bounds.Opacity,
+        };
+        ImGui.GetWindowDrawList().AddText(
+            ActiveTheme.Optical.Snap(position),
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(color)),
+            label);
+        if (pushed) font!.Pop();
+    }
+
+    private static void DrawFontAwesomeIcon(FontAwesomeIcon icon)
+    {
+        var bounds = ButtonContent;
+        var font = UiBuilder.IconFont;
+        string glyph = icon.ToIconString();
+        float iconScale = ActiveTheme.Controls.IconContentScale;
+        ImGui.PushFont(font);
+        var baseSize = ImGui.CalcTextSize(glyph);
+        ImGui.PopFont();
+        var size = baseSize * iconScale;
+        var position = bounds.Min + (bounds.Max - bounds.Min - size) * 0.5f;
+        float outlineOffset = ImGuiHelpers.GlobalScale;
+        var outline = ActiveTheme.Palette.Black with { W = bounds.Opacity };
+        var fill = ActiveTheme.Palette.White with { W = bounds.Opacity };
+        DrawHelpers.DrawOutlinedIconScaled(
+            ImGui.GetWindowDrawList(),
+            font,
+            position,
+            glyph,
+            ColorEx.ApplyAlpha(outline.ToU32()),
+            ColorEx.ApplyAlpha(fill.ToU32()),
+            outlineOffset,
+            iconScale);
+    }
+
+    private static void DrawTablerIcon(TablerIcon icon, bool flipX)
+    {
+        var doc = Tabler.Get(icon);
+        if (doc == null)
+            return;
+        var bounds = ButtonContent;
+        float side = MathF.Min(
+            bounds.Max.X - bounds.Min.X,
+            bounds.Max.Y - bounds.Min.Y) * ActiveTheme.Controls.IconContentScale;
+        var min = bounds.Min + (bounds.Max - bounds.Min - new Vector2(side)) * 0.5f;
+        var max = min + new Vector2(side);
+        if (flipX)
+            (min.X, max.X) = (max.X, min.X);
+        var color = ActiveTheme.Text with { W = ActiveTheme.Text.W * bounds.Opacity };
+        doc.Render(ImGui.GetWindowDrawList(), min, max, color);
+    }
+
+    private static Vector2 MeasureLabel(string label, ControlStyle style)
+    {
+        var font = FontRegistry.Resolve(
+            FontFamily.Default,
+            ControlSizing.IsWorkspace(style.Size)
+                ? ActiveTheme.Typography.LabelSize
+                : ActiveTheme.Typography.BodySize);
+        bool pushed = font is { Available: true };
+        if (pushed) font!.Push();
+        var result = ImGui.CalcTextSize(label);
+        if (pushed) font!.Pop();
+        return result;
+    }
+
+    private static float ButtonHeight(ControlStyle style) =>
+        ControlSizing.Height(style.Size, ActiveTheme.Controls.ComfortableHeight);
+
+    private static float IconButtonSize(ControlStyle style) =>
+        style.Size?.Kind == UiSizeKind.Fixed
+            ? style.Size.Value.Value
+            : ButtonHeight(style);
+
+    private static float ButtonPadding(ControlStyle style) =>
+        ControlSizing.IsWorkspace(style.Size)
+            ? ActiveTheme.Spacing.Six
+            : ActiveTheme.Spacing.Eight;
 }

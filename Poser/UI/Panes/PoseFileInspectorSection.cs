@@ -58,7 +58,9 @@ public sealed class PoseFileInspectorSection
             11f, FontWeight.Regular, InspectorLayout.LabelColor);
         ImGui.SetCursorScreenPos(new Vector2(cursor.X + 46f * s, cursor.Y + h));
         Crystarium.Dropdown("##impex-scope",
-            new[] { "Full", "Body", "Expression", "Selected" }, ref _scope);
+            new[] { "Full", "Body", "Expression", "Selected" },
+            _scope,
+            next => _scope = next);
         h += 32f * s;
 
         if (_scope == 3)
@@ -79,7 +81,7 @@ public sealed class PoseFileInspectorSection
 
         ImGui.SetCursorScreenPos(new Vector2(cursor.X, cursor.Y + h));
         if (Crystarium.Button("Import…", id: "impex-import",
-                density: Crystarium.ControlDensity.Workspace))
+                style: ControlStyle.Workspace))
         {
             // The actor is frozen at dialog open; the Selected-scope
             // selection freezes as COMPLETE BoneIds at dialog confirmation.
@@ -104,7 +106,7 @@ public sealed class PoseFileInspectorSection
         }
         ImGui.SameLine(0f, 6f * s);
         if (Crystarium.Button("Export…", id: "impex-export",
-                density: Crystarium.ControlDensity.Workspace))
+                style: ControlStyle.Workspace))
         {
             _exportBrowser.Open(_lastPath, path =>
             {
@@ -136,7 +138,9 @@ public sealed class PoseFileInspectorSection
     {
         ImGui.SetCursorScreenPos(new Vector2(
             cursor.X + x * s, cursor.Y + h + 2f * s));
-        Crystarium.Checkbox($"##{id}", ref value);
+        bool next = value;
+        Crystarium.Checkbox($"##{id}", value, changed => next = changed);
+        value = next;
         float boxW = Crystarium.CheckboxSize / ImGuiHelpers.GlobalScale;
         ViewText.Label(new Vector2(
                 cursor.X + (x + boxW + 6f) * s, cursor.Y + h + 3f * s),

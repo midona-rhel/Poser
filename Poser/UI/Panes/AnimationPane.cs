@@ -245,17 +245,19 @@ public sealed class AnimationPane
         for (int i = actions.Length - 1; i >= 0; i--)
         {
             var action = actions[i];
-            float w = Crystarium.MeasureButton(action.Label, Crystarium.ControlDensity.Workspace).X;
+            float w = Crystarium.MeasureButton(action.Label, ControlStyle.Workspace).X;
             if (action.WidthLabel is { } alt)
-                w = MathF.Max(w, Crystarium.MeasureButton(alt, Crystarium.ControlDensity.Workspace).X);
+                w = MathF.Max(w, Crystarium.MeasureButton(alt, ControlStyle.Workspace).X);
             x -= w;
             ImGui.SetCursorScreenPos(new Vector2(x, rowOrigin.Y + ButtonY * s));
             if (Crystarium.Button(action.Label,
                     id: action.Id,
                     help: action.Tip,
                     disabled: action.Disabled,
-                    density: Crystarium.ControlDensity.Workspace,
-                    width: w / s) && !action.Disabled)
+                    style: ControlStyle.Workspace with
+                    {
+                        Width = UiSize.Fixed(w / s),
+                    }) && !action.Disabled)
                 action.Click();
             x -= Gap * s;
         }
@@ -272,8 +274,11 @@ public sealed class AnimationPane
         return Crystarium.Button(label,
             id: id,
             help: tip,
-            density: Crystarium.ControlDensity.Workspace,
-            width: MathF.Max(70f, (rightEdge - valueX) / ImGuiHelpers.GlobalScale));
+            style: ControlStyle.Workspace with
+            {
+                Width = UiSize.Fixed(MathF.Max(
+                    70f, (rightEdge - valueX) / ImGuiHelpers.GlobalScale)),
+            });
     }
 
     // ── A. Transport ──────────────────────────────────────────────────
@@ -337,16 +342,22 @@ public sealed class AnimationPane
             Report(_animation.SetSpeed(actor, speed), "Speed");
         float speedSliderX = valueX + (speedWell + Gap) * s;
         ImGui.SetCursorScreenPos(new Vector2(speedSliderX, row.Y + SliderY * s));
-        if (Crystarium.Slider("##anim-speed", ref speed, -5f, 10f, new SliderProps
+        Crystarium.Slider(
+            "##anim-speed",
+            speed,
+            -5f,
+            10f,
+            next =>
             {
-                Style = new SliderStyle
+                speed = next;
+                Report(_animation.SetSpeed(actor, next), "Speed");
+            },
+            new ControlStyle
                 {
-                    Notches = new[] { 0f, 1f },
-                    Width = Sizing.Fixed(MathF.Max(
+                    Width = UiSize.Fixed(MathF.Max(
                         60f, (trailingX - speedSliderX) / s - Gap)),
                 },
-            }))
-            Report(_animation.SetSpeed(actor, speed), "Speed");
+            marks: new[] { 0f, 1f });
         y += Row * s;
 
         DrawSceneMenu();
@@ -394,24 +405,22 @@ public sealed class AnimationPane
         var row = cursor + new Vector2(0f, y);
         float valueX = LabelCell(row, "Stance", s);
         ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y + 2f * s));
-        int picked = stanceIndex;
-        if (Crystarium.Dropdown("##anim-stance", StanceLabels, ref picked,
-                new DropdownProps
-                {
-                    PreviewText = StanceName(reading.Stance),
-                    ReselectFires = true,
-                    Disabled = !supportsStance,
-                    Tooltip = supportsStance
-                        ? "Pose family — picking one returns the actor to it"
-                        : "Stance changes are unavailable: a required game function was not found",
-                    Style = new DropdownStyle { Width = Sizing.Fixed(160f) },
-                }))
-        {
-            // A family CHANGE starts at pose 0; re-picking the current
-            // family keeps the pose (Ktisis' behavior for both).
-            int pose = StanceValues[picked] == reading.Stance ? reading.Pose : 0;
-            Report(_animation.SetStance(actor, StanceValues[picked], pose), "Stance");
-        }
+        Crystarium.ActionDropdown(
+            "##anim-stance",
+            StanceLabels,
+            stanceIndex,
+            StanceName(reading.Stance),
+            picked =>
+            {
+                int pose = StanceValues[picked] == reading.Stance ? reading.Pose : 0;
+                Report(_animation.SetStance(
+                    actor, StanceValues[picked], pose), "Stance");
+            },
+            new ControlStyle { Width = UiSize.Fixed(160f) },
+            disabled: !supportsStance,
+            help: supportsStance
+                ? "Pose family — picking one returns the actor to it"
+                : "Stance changes are unavailable: a required game function was not found");
 
         // The pose cycler lives ON the stance row — number, then the same
         // − / + icon buttons the rest of the product uses. Non-selectable
@@ -438,8 +447,10 @@ public sealed class AnimationPane
                 id: "anim-pose-prev",
                 help: "Previous pose (wraps)",
                 disabled: poseDisabled,
-                density: Crystarium.ControlDensity.Workspace,
-                size: 24f))
+                style: ControlStyle.Workspace with
+                {
+                    Size = UiSize.Fixed(24f),
+                }))
             Report(
                 _animation.SetStance(actor, poseFamily, reading.Pose - 1),
                 "Pose");
@@ -448,8 +459,10 @@ public sealed class AnimationPane
                 id: "anim-pose-next",
                 help: "Next pose (wraps)",
                 disabled: poseDisabled,
-                density: Crystarium.ControlDensity.Workspace,
-                size: 24f))
+                style: ControlStyle.Workspace with
+                {
+                    Size = UiSize.Fixed(24f),
+                }))
             Report(
                 _animation.SetStance(actor, poseFamily, reading.Pose + 1),
                 "Pose");
@@ -457,17 +470,20 @@ public sealed class AnimationPane
 
         row = cursor + new Vector2(0f, y);
         valueX = LabelCell(row, "Weapon", s);
-        bool drawn = reading.WeaponDrawn;
         ImGui.SetCursorScreenPos(new Vector2(valueX, row.Y + SwitchY * s));
-        if (Crystarium.Switch("##anim-weapon", ref drawn))
-            Report(_animation.SetWeaponDrawn(actor, drawn), "Weapon");
+        Crystarium.Switch(
+            "##anim-weapon",
+            reading.WeaponDrawn,
+            next => Report(_animation.SetWeaponDrawn(actor, next), "Weapon"));
 
         ViewText.Label(new Vector2(valueX + 56f * s, row.Y + TextY * s), "Lock position",
             11f, FontWeight.Regular, InspectorLayout.LabelColor);
         bool locked = _animation.OverridesFor(actor).PositionLock;
         ImGui.SetCursorScreenPos(new Vector2(valueX + 148f * s, row.Y + SwitchY * s));
-        if (Crystarium.Switch("##anim-poslock", ref locked))
-            Report(_animation.SetPositionLock(actor, locked), "Position lock");
+        Crystarium.Switch(
+            "##anim-poslock",
+            locked,
+            next => Report(_animation.SetPositionLock(actor, next), "Position lock"));
         return y + Row * s;
     }
 
@@ -557,7 +573,7 @@ public sealed class AnimationPane
 
         // Right-to-left: Reset, speed slider, Pause — then the name fills.
         float x = row.X + width;
-        float resetWidth = Crystarium.MeasureButton("Reset", Crystarium.ControlDensity.Workspace).X;
+        float resetWidth = Crystarium.MeasureButton("Reset", ControlStyle.Workspace).X;
         x -= resetWidth;
         ImGui.SetCursorScreenPos(new Vector2(x, row.Y + ButtonY * s));
         bool resetDisabled = !owned.SlotSpeeds.ContainsKey(slot);
@@ -565,8 +581,10 @@ public sealed class AnimationPane
                 id: $"anim-layer-reset-{(int)slot}",
                 help: "Hand this layer's speed back to the game",
                 disabled: resetDisabled,
-                density: Crystarium.ControlDensity.Workspace,
-                width: resetWidth / s) && !resetDisabled)
+                style: ControlStyle.Workspace with
+                {
+                    Width = UiSize.Fixed(resetWidth / s),
+                }) && !resetDisabled)
         {
             // A layer reset hands the layer's SPEED back; the timeline is
             // not restorable -- the references never write one, so neither
@@ -584,21 +602,26 @@ public sealed class AnimationPane
                 0.005f, "0.00", s, out _))
             Report(_animation.SetSlotSpeed(actor, captured, slotSpeed), "Layer speed");
         ImGui.SetCursorScreenPos(new Vector2(x + 52f * s, row.Y + SliderY * s));
-        if (Crystarium.Slider($"##anim-layer-speed-{(int)slot}", ref slotSpeed, 0f, 2f,
-                new SliderProps
+        Crystarium.Slider(
+            $"##anim-layer-speed-{(int)slot}",
+            slotSpeed,
+            0f,
+            2f,
+            next =>
+            {
+                slotSpeed = next;
+                Report(_animation.SetSlotSpeed(actor, captured, next), "Layer speed");
+            },
+            new ControlStyle
                 {
-                    Style = new SliderStyle
-                    {
-                        Notches = new[] { 1f },
-                        Width = Sizing.Fixed(78f),
-                    },
-                }))
-            Report(_animation.SetSlotSpeed(actor, captured, slotSpeed), "Layer speed");
+                    Width = UiSize.Fixed(78f),
+                },
+            marks: new[] { 1f });
 
         float pauseWidth = MathF.Max(MathF.Max(
-            Crystarium.MeasureButton("Pause", Crystarium.ControlDensity.Workspace).X,
-            Crystarium.MeasureButton("Play", Crystarium.ControlDensity.Workspace).X),
-            Crystarium.MeasureButton("Replay", Crystarium.ControlDensity.Workspace).X);
+            Crystarium.MeasureButton("Pause", ControlStyle.Workspace).X,
+            Crystarium.MeasureButton("Play", ControlStyle.Workspace).X),
+            Crystarium.MeasureButton("Replay", ControlStyle.Workspace).X);
         x -= (Gap * s) + pauseWidth;
         ImGui.SetCursorScreenPos(new Vector2(x, row.Y + ButtonY * s));
         if (live == 0)
@@ -608,15 +631,19 @@ public sealed class AnimationPane
             if (Crystarium.Button("Replay",
                     id: $"anim-layer-replay-{(int)slot}",
                     help: "Play this animation again",
-                    density: Crystarium.ControlDensity.Workspace,
-                    width: pauseWidth / s))
+                    style: ControlStyle.Workspace with
+                    {
+                        Width = UiSize.Fixed(pauseWidth / s),
+                    }))
                 Report(_animation.Blend(actor, timeline), label);
         }
         else if (Crystarium.Button(slotPaused ? "Play" : "Pause",
                 id: $"anim-layer-pause-{(int)slot}",
                 help: "Hold or release only this layer",
-                density: Crystarium.ControlDensity.Workspace,
-                width: pauseWidth / s))
+                style: ControlStyle.Workspace with
+                {
+                    Width = UiSize.Fixed(pauseWidth / s),
+                }))
             Report(
                 slotPaused
                     ? _animation.ClearSlotSpeed(actor, captured)
@@ -714,10 +741,12 @@ public sealed class AnimationPane
             ImGui.SetCursorScreenPos(new Vector2(
                 row.X + width - (readoutSlot + loopWidth) * s,
                 row.Y + SwitchY * s));
-            if (Crystarium.Switch($"##anim-loop-{(int)armedSlot}", ref looped))
-                Report(
-                    _animation.SetSlotLoop(actor, armedSlot, loopTimeline, looped),
-                    "Loop");
+            Crystarium.Switch(
+                $"##anim-loop-{(int)armedSlot}",
+                looped,
+                next => Report(
+                    _animation.SetSlotLoop(actor, armedSlot, loopTimeline, next),
+                    "Loop"));
             if (ImGui.IsItemHovered())
                 Crystarium.HoverHelp.Explain($"anim-loop-help-{(int)armedSlot}",
                     ImGui.GetItemRectMin(), ImGui.GetItemRectMax(),
@@ -725,19 +754,25 @@ public sealed class AnimationPane
         }
 
         ImGui.SetCursorScreenPos(new Vector2(sliderX, row.Y + SliderY * s));
-        bool changed = Crystarium.Slider(
+        bool changed = false;
+        Crystarium.Slider(
             $"##anim-scrub-{control.Id.Partial}-{control.Id.Control}",
-            ref time, 0f, duration, new SliderProps
+            time,
+            0f,
+            duration,
+            next =>
             {
-                Disabled = !scrubbable,
-                Style = new SliderStyle
-                {
-                    Width = Sizing.Fixed(MathF.Max(
+                time = next;
+                changed = true;
+            },
+            new ControlStyle
+            {
+                Width = UiSize.Fixed(MathF.Max(
                         60f,
                         width / s - LabelColumn - wellW - Gap - readoutSlot -
                         loopWidth - Gap)),
-                },
-            });
+            },
+            disabled: !scrubbable);
         if (wellChanged && scrubbable)
         {
             time = Math.Clamp(wellTime, 0f, duration);

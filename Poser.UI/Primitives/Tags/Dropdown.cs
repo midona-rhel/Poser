@@ -9,49 +9,40 @@ namespace Poser.UI;
 
 public static partial class Crystarium
 {
-    public static bool Dropdown(string id, string[] items, ref int selected)
-        => DropdownCore(id, items, ref selected, default, null, false, null, null, null, false);
-    public static bool Dropdown(string id, string[] items, ref int selected, in DropdownProps props)
-        => DropdownCore(id, items, ref selected, props.Classes, props.Tooltip, props.Disabled, props.OnChange, props.Style,
-            props.PreviewText, props.ReselectFires);
+    public static bool Dropdown(
+        string id, string[] items, int selected, Action<int> onChange,
+        ControlStyle style = default, bool disabled = false, string? help = null) =>
+        DropdownCore(id, items, selected, onChange, style, disabled, help, null, false);
 
-    private static bool DropdownCore(string id, string[] items, ref int selected,
-        StyleClassSet classes, string? tooltip, bool disabled, Action<int>? onChange, DropdownStyle? inline,
+    public static bool ActionDropdown(
+        string id, string[] items, int selected, string previewText, Action<int> onChange,
+        ControlStyle style = default, bool disabled = false, string? help = null) =>
+        DropdownCore(id, items, selected, onChange, style, disabled, help, previewText, true);
+
+    private static bool DropdownCore(
+        string id, string[] items, int selected, Action<int> onChange,
+        ControlStyle style, bool disabled, string? help,
         string? previewText, bool reselectFires)
     {
-        Stylesheet.EnsureInitialized();
         if (items.Length == 0) return false;
-
-        var classSet = Cls.Dropdown + classes;
         string popupId = $"{id}_popup";
-        bool isOpen = ImGui.IsPopupOpen(popupId);
-
-        var preState = disabled ? PseudoState.Disabled : PseudoState.None;
-        if (isOpen) preState |= PseudoState.Open;
-        var resolved = Stylesheet.ResolveDropdown(classSet, preState);
-        if (inline.HasValue) resolved = resolved.MergedWith(inline.Value);
-
-        if (resolved.Display == UI.Display.None) return false;
-
         // Trigger is a single pill — pixel transcription of picto
         // shared/ui/CmSelect/CmSelect.module.css (.btn): 26px, padding 0 6px 0 12px,
         // gap 6, radius 6, bg subtle-overlay white@.10, border 1px white@.08,
         // 12px text; chevron = Tabler IconSelector at 14 in a 20px slot, opacity .5.
         bool changed = false;
         float scale = ImGuiHelpers.GlobalScale;
-        float height = (resolved.Height ?? Sizing.Fixed(Crystarium.ActiveTheme.Controls.WorkspaceHeight)).Value * scale;
-        float rounding = (resolved.BorderRadius ?? Crystarium.ActiveTheme.Radii.Control) * scale;
+        float height = ControlSizing.Height(style.Size,
+            Crystarium.ActiveTheme.Controls.WorkspaceHeight) * scale;
+        float rounding = Crystarium.ActiveTheme.Radii.Control * scale;
         float padLeft = Crystarium.ActiveTheme.Spacing.Six * scale;
         float padRight = Crystarium.ActiveTheme.Spacing.Three * scale;
         float gap = Crystarium.ActiveTheme.Spacing.Three * scale;
         float chevronSlot = Crystarium.ActiveTheme.Controls.SwitchHeight * scale;
 
-        float totalWidth;
-        if (resolved.Width.HasValue && resolved.Width.Value.Mode == SizingMode.Fixed)
-            totalWidth = resolved.Width.Value.Value * scale;
-        else
-            totalWidth = Norvrandt.AvailableWidth;
-        totalWidth = SizeUtil.Clamp(totalWidth, resolved.MinWidth, resolved.MaxWidth, scale);
+        float totalWidth = ControlSizing.Width(style.Width,
+            Norvrandt.AvailableWidth / scale,
+            Norvrandt.AvailableWidth / scale) * scale;
         float minWidth = padLeft + gap + chevronSlot + padRight + 20f * scale;
         if (totalWidth < minWidth) totalWidth = minWidth;
 
@@ -64,16 +55,15 @@ public static partial class Crystarium
         ImGui.SetCursorScreenPos(valuePos);
         ImGui.InvisibleButton($"{id}_value", new Vector2(totalWidth, height));
         bool valueHovered = ImGui.IsItemHovered() && !disabled;
-        bool buttonHovered = false;
         if (ImGui.IsItemClicked() && !disabled) ImGui.OpenPopup(popupId);
 
-        var valueBg = ColorEx.ApplyAlpha(resolved.ValueBackground ?? Crystarium.ActiveTheme.Chrome.ControlHover);
+        var valueBg = ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.ControlHover);
         drawList.AddRectFilled(valuePos, valueEnd, ImGui.ColorConvertFloat4ToU32(valueBg), rounding);
 
-        float borderWidth = (resolved.BorderWidth ?? 1f) * scale;
+        float borderWidth = scale;
         if (borderWidth > 0f)
         {
-            var borderColor = ColorEx.ApplyAlpha(resolved.BorderColor ?? Crystarium.ActiveTheme.Chrome.WeakOverlay);
+            var borderColor = ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.WeakOverlay);
             float bi = borderWidth * 0.5f; // stroke inside the box like CSS
             drawList.AddRect(valuePos + new Vector2(bi, bi), valueEnd - new Vector2(bi, bi),
                 ImGui.ColorConvertFloat4ToU32(borderColor),
@@ -81,7 +71,8 @@ public static partial class Crystarium
         }
 
         // Label at 12px via FontRegistry (CSS-px semantics)
-        var fontHandle = FontRegistry.Resolve(resolved.FontFamily ?? FontFamily.Default, resolved.FontSize ?? Crystarium.ActiveTheme.Typography.LabelSize);
+        var fontHandle = FontRegistry.Resolve(
+            FontFamily.Default, Crystarium.ActiveTheme.Typography.LabelSize);
         bool fontPushed = fontHandle is { Available: true };
         if (fontPushed) fontHandle!.Push();
 
@@ -91,7 +82,7 @@ public static partial class Crystarium
         float textAvail = totalWidth - padLeft - gap - chevronSlot - padRight;
         string display = TruncateText(currentText, textAvail);
         var textSize = ImGui.CalcTextSize(display);
-        var textColor = ColorEx.ApplyAlpha(resolved.Color ?? Crystarium.ActiveTheme.Text);
+        var textColor = ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Text);
         // Optical baseline: the font's reported bounds sit one pixel above
         // the visual center of the pill.
         var textPos = new Vector2(
@@ -112,7 +103,7 @@ public static partial class Crystarium
             float unit = iconSpan / 24f;
             var slotOrigin = new Vector2(valueEnd.X - padRight - chevronSlot, valuePos.Y);
             var origin = slotOrigin + new Vector2((chevronSlot - iconSpan) * 0.5f, (height - iconSpan) * 0.5f);
-            var chevColor = ColorEx.ApplyAlpha((resolved.Color ?? Crystarium.ActiveTheme.Text) with { W = 0.5f });
+            var chevColor = ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Text with { W = 0.5f });
             uint chevU32 = ImGui.ColorConvertFloat4ToU32(chevColor);
             float stroke = 2f * unit;
             drawList.PathLineTo(origin + new Vector2(8f, 9f) * unit);
@@ -156,8 +147,8 @@ public static partial class Crystarium
                     region =>
                     {
                         var optFont = FontRegistry.Resolve(
-                            resolved.FontFamily ?? FontFamily.Default,
-                            resolved.FontSize ?? Crystarium.ActiveTheme.Typography.LabelSize);
+                            FontFamily.Default,
+                            Crystarium.ActiveTheme.Typography.LabelSize);
                         bool optFontPushed = optFont is { Available: true };
                         if (optFontPushed) optFont!.Push();
                         float optPad = Crystarium.ActiveTheme.Page.ActionGap * scale;
@@ -196,7 +187,7 @@ public static partial class Crystarium
                                 {
                                     popupSelected = i;
                                     popupChanged = true;
-                                    onChange?.Invoke(i);
+                                    onChange(i);
                                 }
                                 ImGui.CloseCurrentPopup();
                             }
@@ -240,12 +231,11 @@ public static partial class Crystarium
 
         if (popupChanged)
         {
-            selected = popupSelected;
             changed = true;
         }
 
-        if (!string.IsNullOrEmpty(tooltip) && (valueHovered || buttonHovered))
-            HoverHelp.Explain(id, valuePos, valueEnd, tooltip!);
+        if (!string.IsNullOrEmpty(help) && valueHovered)
+            HoverHelp.Explain(id, valuePos, valueEnd, help!);
 
         return changed;
     }

@@ -93,17 +93,17 @@ public class PoseRailPane
                 if (Crystarium.Button("Reset transform",
                         id: "rail-actor-reset",
                         help: "Restore the actor's original transform",
-                        density: Crystarium.ControlDensity.Workspace))
+                        style: ControlStyle.Workspace))
                     _inspector.ResetActorTransform();
             }
             else
             {
                 if (Crystarium.Button("Reset bone", id: "rail-bone-reset",
-                    help: "Reset this bone's pose", density: Crystarium.ControlDensity.Workspace))
+                    help: "Reset this bone's pose", style: ControlStyle.Workspace))
                     _inspector.ResetPrimaryBone();
                 ImGui.SameLine(0f, 6f * s);
                 if (Crystarium.Button("Select children", id: "rail-children",
-                    help: "Add descendant bones to the selection", density: Crystarium.ControlDensity.Workspace))
+                    help: "Add descendant bones to the selection", style: ControlStyle.Workspace))
                     _inspector.SelectChildren();
             }
             cursor.Y += 36f * s;
