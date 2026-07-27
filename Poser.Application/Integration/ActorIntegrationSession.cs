@@ -1107,25 +1107,27 @@ public sealed class ActorIntegrationSession
         bool removedPenumbra = operation.RedrawPending;
         var failures = new List<string>();
 
+        // The displaced working profile's recovery obligation exists the
+        // moment displacement is KNOWN — before any deletion attempt — so
+        // a failed deletion of the MCDF profile persists BOTH the MCDF
+        // profile id and the recovery JSON; a later Reset deletes the
+        // profile and then reapplies the working recipe. Displacement only
+        // actually happened if the MCDF profile was applied; a rollback
+        // that never reached the body phase clears the flag untouched.
+        if (operation.ReplacedWorkingBodyProfile)
+        {
+            if (operation.TemporaryProfile != null)
+                operation.PendingBodyRecoveryJson = operation.WorkingBodyProfileJson;
+            operation.ReplacedWorkingBodyProfile = false;
+        }
+
         if (operation.TemporaryProfile is { } profile)
         {
             var deleted = _port.DeleteTemporaryBodyProfileById(profile);
             if (deleted.Success)
-            {
                 operation.TemporaryProfile = null;
-                if (operation.ReplacedWorkingBodyProfile)
-                {
-                    // The MCDF profile displaced a Poser temporary
-                    // profile; reapplying it is now a tracked obligation,
-                    // released only on success.
-                    operation.PendingBodyRecoveryJson = operation.WorkingBodyProfileJson;
-                    operation.ReplacedWorkingBodyProfile = false;
-                }
-            }
             else
-            {
                 failures.Add(deleted.Detail!);
-            }
         }
 
         if (operation.TemporaryProfile == null
