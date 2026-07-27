@@ -43,10 +43,15 @@ public interface IIntegrationRuntimePort
     /// inheritance resumes.</summary>
     IntegrationPortResult RestoreCollection(ActorId actor, CollectionBaseline baseline);
 
-    /// <summary>Creates one temporary collection and assigns it to the exact
-    /// actor. A failed assignment deletes the created collection before the
-    /// failure returns, so no anonymous collection ever leaks.</summary>
-    IntegrationValue<Guid> CreateTemporaryCollection(ActorId actor, string name);
+    /// <summary>Creates one temporary collection. The caller registers the
+    /// returned id BEFORE assigning, so a failed assignment leaves a
+    /// tracked, retryable collection rather than an anonymous leak.</summary>
+    IntegrationValue<Guid> CreateTemporaryCollection(string name);
+
+    /// <summary>Assigns the temporary collection to the exact actor WITHOUT
+    /// force: an existing temporary assignment (another plugin's) makes
+    /// this fail instead of being deleted.</summary>
+    IntegrationPortResult AssignTemporaryCollection(Guid collection, ActorId actor);
 
     /// <summary>Adds Poser's temporary mod (embedded files, swaps, and meta
     /// manipulations) to the temporary collection under the owned tag.</summary>

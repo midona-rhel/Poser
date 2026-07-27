@@ -66,16 +66,14 @@ public sealed class ActorIntegrationSession
             return gate;
         var current = OverridesFor(actor);
 
-        var baseline = current.Baseline.Collection;
-        if (baseline == null)
-        {
-            var incoming = _port.GetCollectionAssignment(actor);
-            if (!incoming.Success || incoming.Value is not { } assignment)
-                return IntegrationResult.Fail(incoming.Detail ?? "The incoming collection could not be captured.");
-            baseline = new CollectionBaseline(
-                assignment.HasIndividualAssignment,
-                assignment.HasIndividualAssignment ? assignment.EffectiveId : null);
-        }
+        var incoming = _port.GetCollectionAssignment(actor);
+        if (!incoming.Success || incoming.Value is not { } assignment)
+            return IntegrationResult.Fail(incoming.Detail ?? "The incoming collection could not be captured.");
+        if (ForeignTemporaryCollection(current, assignment) is { } foreign)
+            return IntegrationResult.Fail(foreign);
+        var baseline = current.Baseline.Collection ?? new CollectionBaseline(
+            assignment.HasIndividualAssignment,
+            assignment.HasIndividualAssignment ? assignment.EffectiveId : null);
 
         var applied = _port.SetIndividualCollection(actor, collection);
         if (!applied.Success)
@@ -87,9 +85,14 @@ public sealed class ActorIntegrationSession
             CollectionOwned = true,
             CollectionName = name,
         });
-        // Penumbra applies a changed assignment on the next redraw.
-        _port.RequestRedraw(actor);
-        return IntegrationResult.Ok();
+        // Penumbra applies a changed assignment on the next redraw; a
+        // failed request is reported, not swallowed — the assignment
+        // itself stands and stays owned either way.
+        var redraw = _port.RequestRedraw(actor);
+        return redraw.Success
+            ? IntegrationResult.Ok()
+            : IntegrationResult.Fail(
+                $"The collection was assigned, but the redraw failed: {redraw.Detail}");
     }
 
     public IntegrationResult ResetCollection(ActorId actor)
@@ -110,8 +113,32 @@ public sealed class ActorIntegrationSession
             CollectionOwned = false,
             CollectionName = null,
         });
-        _port.RequestRedraw(actor);
-        return IntegrationResult.Ok();
+        var redraw = _port.RequestRedraw(actor);
+        return redraw.Success
+            ? IntegrationResult.Ok()
+            : IntegrationResult.Fail(
+                $"The assignment was restored, but the redraw failed: {redraw.Detail}");
+    }
+
+    /// <summary>
+    /// A non-individual effective collection that is neither in Penumbra's
+    /// installed-collection list nor Poser's own temporary collection is a
+    /// temporary assignment from another plugin. Nothing displaces it: the
+    /// current API cannot capture it for restoration.
+    /// </summary>
+    private string? ForeignTemporaryCollection(
+        IntegrationOverrides current, CollectionAssignment assignment)
+    {
+        if (assignment.HasIndividualAssignment)
+            return null;
+        if (assignment.EffectiveId == current.Mcdf?.TemporaryCollection)
+            return null;
+        var known = _port.GetCollections();
+        if (!known.Success || known.Value is not { } collections)
+            return known.Detail ?? "Penumbra's collections could not be listed.";
+        return collections.Any(item => item.Id == assignment.EffectiveId)
+            ? null
+            : "This actor's effective Penumbra collection is a temporary assignment from another plugin; Poser will not displace it.";
     }
 
     public IntegrationResult ApplyDesign(ActorId actor, Guid design, string name)
@@ -619,11 +646,16 @@ public sealed class ActorIntegrationSession
                 Step(McdfPhase.ApplyingResources, filesTotal, bytesTotal);
                 failure = await _port.OnFrameworkThread(() =>
                 {
-                    var created = _port.CreateTemporaryCollection(
-                        actor, $"Poser MCDF {fileName}");
+                    var created = _port.CreateTemporaryCollection($"Poser MCDF {fileName}");
                     if (!created.Success)
                         return created.Detail;
+                    // Registered BEFORE assignment: if assigning fails, the
+                    // collection is tracked and rollback deletes it (or
+                    // keeps it owned and retryable when deletion fails).
                     tempCollection = created.Value;
+                    var assigned = _port.AssignTemporaryCollection(created.Value, actor);
+                    if (!assigned.Success)
+                        return assigned.Detail;
                     var paths = new Dictionary<string, string>(StringComparer.Ordinal);
                     foreach (var pair in package.ReplacedGamePaths)
                         paths[pair.Key] = pair.Value;
@@ -740,6 +772,18 @@ public sealed class ActorIntegrationSession
 
         if (!_port.IsResolvable(actor))
             return (null, "The actor is no longer available.");
+
+        // A foreign temporary Penumbra assignment refuses the import
+        // before mutation — assignment is force-free and never deletes
+        // another plugin's temporary assignment.
+        if (package.HasResources)
+        {
+            var assignment = _port.GetCollectionAssignment(actor);
+            if (!assignment.Success || assignment.Value is not { } collectionState)
+                return (null, assignment.Detail ?? "The Penumbra assignment could not be read.");
+            if (ForeignTemporaryCollection(current, collectionState) is { } foreign)
+                return (null, foreign);
+        }
 
         var baseline = current.Baseline;
         if (package.GlamourerData.Length > 0 && baseline.GlamourerState == null)

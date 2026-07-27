@@ -310,26 +310,31 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
             return PenumbraResult(ec, "restoring the collection assignment");
         });
 
-    public IntegrationValue<Guid> CreateTemporaryCollection(ActorId actor, string name) =>
+    public IntegrationValue<Guid> CreateTemporaryCollection(string name) =>
         Guarded(Penumbra, "Temporary collection", () =>
+        {
+            var (createEc, collection) = _createTemporaryCollection.InvokeFunc("Poser", name);
+            return createEc == PenumbraEcSuccess
+                ? IntegrationValue<Guid>.Ok(collection)
+                : IntegrationValue<Guid>.Fail(
+                    $"Penumbra failed creating the temporary collection (code {createEc}).");
+        });
+
+    public IntegrationPortResult AssignTemporaryCollection(Guid collection, ActorId actor) =>
+        Guarded(Penumbra, "Assign temporary collection", () =>
         {
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
-                return IntegrationValue<Guid>.Fail(detail!);
-            var (createEc, collection) = _createTemporaryCollection.InvokeFunc("Poser", name);
-            if (createEc != PenumbraEcSuccess)
-                return IntegrationValue<Guid>.Fail(
-                    $"Penumbra failed creating the temporary collection (code {createEc}).");
+                return IntegrationPortResult.Fail(detail!);
+            // forceAssignment would DELETE an existing temporary
+            // assignment; a foreign one must fail instead (the session
+            // gates on this, so hitting it here is a race, not a policy).
             int assignEc = _assignTemporaryCollection.InvokeFunc(
-                collection, index, /*forceAssignment*/ true);
-            if (assignEc != PenumbraEcSuccess)
-            {
-                // Never leak an anonymous unassigned collection.
-                _deleteTemporaryCollection.InvokeFunc(collection);
-                return IntegrationValue<Guid>.Fail(
+                collection, index, /*forceAssignment*/ false);
+            return assignEc == PenumbraEcSuccess
+                ? IntegrationPortResult.Ok()
+                : IntegrationPortResult.Fail(
                     $"Penumbra failed assigning the temporary collection (code {assignEc}).");
-            }
-            return IntegrationValue<Guid>.Ok(collection);
         });
 
     public IntegrationPortResult AddTemporaryMods(
