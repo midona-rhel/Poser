@@ -41,9 +41,8 @@ public static partial class Crystarium
 
         var pre = Stylesheet.ResolveButton(Cls.Btn + classes, disabled ? PseudoState.Disabled : PseudoState.None);
         float scale = ImGuiHelpers.GlobalScale;
-        var theme = Norvrandt.Sheet.CurrentTheme;
-        float height = (pre.Height ?? Sizing.Fixed(theme.RowHeight)).Value * scale;
-        Spacing padding = pre.Padding ?? new Spacing(0, Theme.Spacing.Md);
+        float height = (pre.Height ?? Sizing.Fixed(Theme.Metrics.Control.Comfortable)).Value * scale;
+        Spacing padding = pre.Padding ?? new Spacing(0, Theme.Metrics.Page.ActionGap);
         float width = MeasureLabel(label, pre).X + padding.Horizontal * scale;
         width  = SizeUtil.Clamp(width,  pre.MinWidth,  pre.MaxWidth,  scale);
         height = SizeUtil.Clamp(height, pre.MinHeight, pre.MaxHeight, scale);
@@ -72,9 +71,8 @@ public static partial class Crystarium
         if (pre.Display == UI.Display.None) return false;
 
         float scale = ImGuiHelpers.GlobalScale;
-        var theme = Norvrandt.Sheet.CurrentTheme;
-        float height = (pre.Height ?? Sizing.Fixed(theme.RowHeight)).Value * scale;
-        Spacing padding = pre.Padding ?? new Spacing(0, Theme.Spacing.Md);
+        float height = (pre.Height ?? Sizing.Fixed(Theme.Metrics.Control.Comfortable)).Value * scale;
+        Spacing padding = pre.Padding ?? new Spacing(0, Theme.Metrics.Page.ActionGap);
 
         float width;
         if (pre.Width.HasValue && pre.Width.Value.Mode == SizingMode.Fixed)
@@ -101,9 +99,8 @@ public static partial class Crystarium
         if (pre.Display == UI.Display.None) return false;
 
         float scale = ImGuiHelpers.GlobalScale;
-        var theme = Norvrandt.Sheet.CurrentTheme;
-        float side = (pre.Width  ?? Sizing.Fixed(theme.RowHeight)).Value * scale;
-        float h    = (pre.Height ?? Sizing.Fixed(theme.RowHeight)).Value * scale;
+        float side = (pre.Width  ?? Sizing.Fixed(Theme.Metrics.Control.Comfortable)).Value * scale;
+        float h    = (pre.Height ?? Sizing.Fixed(Theme.Metrics.Control.Comfortable)).Value * scale;
         side = SizeUtil.Clamp(side, pre.MinWidth,  pre.MaxWidth,  scale);
         h    = SizeUtil.Clamp(h,    pre.MinHeight, pre.MaxHeight, scale);
 
@@ -159,8 +156,8 @@ public static partial class Crystarium
             // Text labels take the shared button optical baseline; the
             // icon branch above stays independently centred.
             var textPos = hit.ScreenMin + (size - textSize) * 0.5f;
-            textPos.Y += Theme.Optical.ButtonText * ImGuiHelpers.GlobalScale;
-            drawList.AddText(Theme.Optical.Snap(textPos), textU32, label);
+            textPos.Y += Theme.Metrics.Optical.ButtonText * ImGuiHelpers.GlobalScale;
+            drawList.AddText(Theme.Metrics.Optical.Snap(textPos), textU32, label);
             if (fontPushed) fontHandle!.Pop();
         }
 

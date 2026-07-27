@@ -40,12 +40,12 @@ public static partial class Crystarium
         // 12px text; chevron = Tabler IconSelector at 14 in a 20px slot, opacity .5.
         bool changed = false;
         float scale = ImGuiHelpers.GlobalScale;
-        float height = (resolved.Height ?? Sizing.Fixed(26f)).Value * scale;
-        float rounding = (resolved.BorderRadius ?? 6f) * scale;
-        float padLeft = 12f * scale;
-        float padRight = 6f * scale;
-        float gap = 6f * scale;
-        float chevronSlot = 20f * scale;
+        float height = (resolved.Height ?? Sizing.Fixed(Theme.Metrics.Control.Workspace)).Value * scale;
+        float rounding = (resolved.BorderRadius ?? Theme.Metrics.Radius.Control) * scale;
+        float padLeft = Theme.Metrics.Space.Six * scale;
+        float padRight = Theme.Metrics.Space.Three * scale;
+        float gap = Theme.Metrics.Space.Three * scale;
+        float chevronSlot = Theme.Metrics.Control.SwitchHeight * scale;
 
         float totalWidth;
         if (resolved.Width.HasValue && resolved.Width.Value.Mode == SizingMode.Fixed)
@@ -95,7 +95,10 @@ public static partial class Crystarium
         var textColor = ColorEx.ApplyAlpha(resolved.Color ?? Norvrandt.Sheet.CurrentTheme.Text);
         // Optical baseline: the font's reported bounds sit one pixel above
         // the visual center of the pill.
-        var textPos = new Vector2(valuePos.X + padLeft, valuePos.Y + (height - textSize.Y) / 2f + scale);
+        var textPos = new Vector2(
+            valuePos.X + padLeft,
+            valuePos.Y + (height - textSize.Y) / 2f
+                + Theme.Metrics.Optical.DropdownText * scale);
         drawList.AddText(textPos, ImGui.ColorConvertFloat4ToU32(textColor), display);
 
         if (fontPushed) fontHandle!.Pop();
@@ -106,7 +109,7 @@ public static partial class Crystarium
         // Chevron: Tabler IconSelector ("M8 9l4 -4l4 4" + "M16 15l-4 4l-4 -4",
         // 24-grid, stroke 2, round caps) at 14px, opacity .5.
         {
-            float iconSpan = 14f * scale;
+            float iconSpan = Theme.Metrics.Control.SmallIcon * scale;
             float unit = iconSpan / 24f;
             var slotOrigin = new Vector2(valueEnd.X - padRight - chevronSlot, valuePos.Y);
             var origin = slotOrigin + new Vector2((chevronSlot - iconSpan) * 0.5f, (height - iconSpan) * 0.5f);
@@ -126,7 +129,7 @@ public static partial class Crystarium
         ImGui.SetCursorScreenPos(pos + new Vector2(0, height));
 
         // Popup
-        float popupPadding = Theme.Spacing.Sm * scale;
+        float popupPadding = Theme.Metrics.Floating.PopupPadding * scale;
         const int maxVisibleItems = 10;
         int visibleItems = Math.Min(items.Length, maxVisibleItems);
         float itemSeparator = scale;

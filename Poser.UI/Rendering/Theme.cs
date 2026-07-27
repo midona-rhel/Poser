@@ -46,15 +46,6 @@ public record struct Theme
     public Vector4 DangerHover;
     public Vector4 Info;
 
-    // ---- Sizes (unscaled px) ----
-    public float RowHeight;
-    public float RowSpacing;
-    public float LabelWidth;
-    public float ItemGap;
-    public float ButtonMin;
-    public float LargeIcon;
-    public float Control;
-
     /// <summary>Built-in neutral default. Plugins can use this as-is or tweak via <c>theme with { ... }</c>.</summary>
     public static Theme Default => new()
     {
@@ -80,80 +71,158 @@ public record struct Theme
         Danger        = new(0.90f, 0.30f, 0.30f, 1f),
         DangerHover   = new(1.00f, 0.40f, 0.40f, 1f),
         Info          = new(0.40f, 0.70f, 0.90f, 1f),
-
-        RowHeight   = 24f,
-        RowSpacing  = 6f,
-        LabelWidth  = 60f,
-        ItemGap     = 8f,
-        ButtonMin   = 70f,
-        LargeIcon   = 24f,
-        Control     = 18f,
     };
 
-    // ---- Plugin-invariant naming conventions (not skinning) ----
-
     /// <summary>
-    /// Optical baseline corrections (PBI-090). Logical pixels, applied by
-    /// the OWNING primitive or view row — never scattered as literals
-    /// through panes — and snapped to whole framebuffer pixels after UI
-    /// scaling via <see cref="Snap"/>. The segmented tabs and the
-    /// dropdown's accepted +1 nudge are the fixed visual references and
-    /// take none of these.
+    /// Canonical logical-pixel metrics for every retained UI surface. Product
+    /// code requests a semantic variant; it never repeats these values.
     /// </summary>
-    public static class Optical
+    public static class Metrics
     {
-        /// <summary>Sidebar row labels and their badges sit one logical
-        /// pixel high in the 26px row.</summary>
-        public const float SidebarText = -1f;
-        /// <summary>Text-button labels sit one logical pixel low; icon
-        /// glyphs stay independently centred and take no nudge.</summary>
-        public const float ButtonText = 1f;
-        /// <summary>Pose-footer labels rise one logical pixel to meet
-        /// their checkbox centres.</summary>
-        public const float FooterLabel = -1f;
+        public static class Space
+        {
+            public const float One = 2f;
+            public const float Two = 4f;
+            public const float Three = 6f;
+            public const float Four = 8f;
+            public const float Six = 12f;
+            public const float Eight = 16f;
+        }
 
-        /// <summary>Snaps a final scaled draw position to whole
-        /// framebuffer pixels, so a corrected baseline cannot land on a
-        /// half pixel and blur.</summary>
-        public static Vector2 Snap(Vector2 position) =>
-            new(MathF.Round(position.X), MathF.Round(position.Y));
-    }
+        public static class Control
+        {
+            public const float FormRow = 30f;
+            public const float Workspace = 26f;
+            public const float Comfortable = 32f;
+            public const float Navigation = 30f;
+            public const float ShellIconAction = 28f;
+            public const float ListRow = 26f;
+            public const float Checkbox = 14f;
+            public const float Slider = 14f;
+            public const float SliderTrack = 4f;
+            public const float SwitchWidth = 32f;
+            public const float SwitchHeight = 20f;
+            public const float SwitchKnob = 16f;
+            public const float ColorWell = 26f;
+            public const float Icon = 16f;
+            public const float SmallIcon = 14f;
+        }
 
-    /// <summary>Spacing scale tokens. Stable across themes; same Md as everywhere else in design.</summary>
-    public static class Spacing
-    {
-        public const float Xs = 2f;
-        public const float Sm = 4f;
-        public const float Md = 8f;
-        public const float Lg = 16f;
-        public const float Xl = 24f;
-        public const float Xxl = 32f;
-    }
+        public static class Page
+        {
+            public const float Inset = Space.Six;
+            public const float MaximumContentWidth = 660f;
+            public const float SectionGap = Space.Six;
+            public const float ActionGap = Space.Four;
+            public const float SectionHeader = Control.ListRow;
+            public const float StatusLine = 20f;
+        }
 
-    public static class Radius
-    {
-        public const float None = 0f;
-        public const float Sm = 2f;
-        public const float Md = 4f;
-        public const float Lg = 8f;
-        public const float Xl = 12f;
-        public const float Pill = 999f;
-    }
+        public static class Form
+        {
+            public const float LabelColumn = 94f;
+            public const float ValueColumn = 44f;
+            public const float AxisGap = Space.Three;
+        }
 
-    public static class Typo
-    {
-        public const float Caption = 11f;
-        public const float Body    = 13f;
-        public const float Heading = 16f;
-        public const float Display = 22f;
-        public const float Hero    = 32f;
-    }
+        public static class Shell
+        {
+            public const float Titlebar = 48f;
+            public const float Toolbar = 44f;
+            public const float Statusbar = 26f;
+            public const float SidebarMinimum = 220f;
+            public const float SidebarMaximum = 400f;
+            public const float SidebarDefault = 280f;
+            public const float RailWidth = 280f;
+        }
 
-    public static class Duration
-    {
-        public const float Fast    = 0.10f;
-        public const float Default = 0.20f;
-        public const float Slow    = 0.40f;
+        public static class Scrollbar
+        {
+            public const float Gutter = 12f;
+            public const float Radius = 4f;
+        }
+
+        public static class Typography
+        {
+            public const float Caption = 11f;
+            public const float Label = 12f;
+            public const float Body = 13f;
+            public const float SurfaceTitle = 14f;
+        }
+
+        public static class Radius
+        {
+            public const float None = 0f;
+            public const float Small = 2f;
+            public const float Medium = 4f;
+            public const float Control = 6f;
+            public const float Surface = 8f;
+            public const float Window = 10f;
+            public const float Large = 12f;
+            public const float Pill = 999f;
+        }
+
+        public static class Shadow
+        {
+            public const float PanelOffsetY = 3f;
+            public const float PanelBlur = 12f;
+            public const float PanelRing = 1f;
+            public const int FeatherLayers = 10;
+        }
+
+        public static class Floating
+        {
+            public const float AnchorGap = Space.One;
+            public const float ViewportInset = Space.Six;
+            public const float HostMargin = 24f;
+            public const float MenuWidth = 260f;
+            public const float MenuPadding = Space.Two;
+            public const float MenuRowPadding = Space.Three;
+            public const float MenuRowGap = Space.One;
+            public const float MenuIconGap = Space.Three;
+            public const float MenuSeparatorBlock = 5f;
+            public const float PopupPadding = Space.Two;
+            public const float PopoverPadding = Space.Four;
+            public const float ModalBar = 44f;
+            public const float ModalBodyPadding = Space.Eight;
+            public const float SmallWidth = 440f;
+            public const float MediumWidth = 560f;
+            public const float LargeWidth = 680f;
+            public const float DefaultModalHeight = 280f;
+        }
+
+        public static class Picker
+        {
+            public const float Width = 300f;
+            public const int MinimumRows = 3;
+            public const int MaximumRows = 10;
+        }
+
+        public static class FileDialog
+        {
+            public const float Width = 680f;
+            public const float Height = 440f;
+            public const float FavoritesWidth = 128f;
+        }
+
+        public static class Optical
+        {
+            public const float SidebarText = -1f;
+            public const float ButtonText = 1f;
+            public const float FooterLabel = -1f;
+            public const float DropdownText = 1f;
+
+            public static Vector2 Snap(Vector2 position) =>
+                new(MathF.Round(position.X), MathF.Round(position.Y));
+        }
+
+        public static class Motion
+        {
+            public const float Fast = 0.10f;
+            public const float Default = 0.20f;
+            public const float Slow = 0.40f;
+            public const float MenuExit = 0.08f;
+        }
     }
 
     public static class Shadow

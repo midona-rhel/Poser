@@ -99,6 +99,13 @@ public record struct TextInputProps
     public bool Clearable;
 }
 
+public record struct ColorWellProps
+{
+    public bool RgbOnly;
+    public bool Disabled;
+    public string? Tooltip;
+}
+
 /// <summary>Text is non-interactive: no OnClick / Disabled / Tooltip.</summary>
 public record struct TextProps
 {

@@ -13,7 +13,7 @@ namespace Poser.UI.Controls;
 public static class Flex
 {
     public static FlexRow Row(float? height = null, float gap = 0, float? width = null)
-        => new FlexRow(height ?? Norvrandt.Sheet.CurrentTheme.RowHeight, gap, width);
+        => new FlexRow(height ?? Theme.Metrics.Control.FormRow, gap, width);
 }
 
 /// <summary>

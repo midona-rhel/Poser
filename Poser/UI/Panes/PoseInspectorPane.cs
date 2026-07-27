@@ -716,8 +716,8 @@ public class PoseInspectorPane
 
         // Parenting: one checkbox per propagated component.
         var poseInfo = _bonePosingService.GetPoseInfo(skeleton);
-        ViewText.Label(Theme.Optical.Snap(new Vector2(
-                cursor.X, cursor.Y + fy + 6f * s + Theme.Optical.FooterLabel * s)),
+        ViewText.Label(Theme.Metrics.Optical.Snap(new Vector2(
+                cursor.X, cursor.Y + fy + 6f * s + Theme.Metrics.Optical.FooterLabel * s)),
             "Parenting", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
         if (Crystarium.HoverHelp.HelpHovered(
                 new Vector2(cursor.X, cursor.Y + fy),
@@ -744,8 +744,8 @@ public class PoseInspectorPane
                     : poseInfo.DefaultPropagation & ~component;
             }
             px += 20f * s;
-            ViewText.Label(Theme.Optical.Snap(new Vector2(
-                    px, cursor.Y + fy + 6f * s + Theme.Optical.FooterLabel * s)),
+            ViewText.Label(Theme.Metrics.Optical.Snap(new Vector2(
+                    px, cursor.Y + fy + 6f * s + Theme.Metrics.Optical.FooterLabel * s)),
                 label, 11f,
                 FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.6f));
             px += ViewText.Measure(label, 11f) + 8f * s;

@@ -18,7 +18,8 @@ public static partial class Crystarium
     public static bool Checkbox(string id, ref bool value, in CheckboxProps props)
         => CheckboxCore(id, ref value, props.Classes, props.Tooltip, props.Disabled, props.OnChange, props.Style);
 
-    public static float CheckboxSize => Norvrandt.Sheet.CurrentTheme.Control * ImGuiHelpers.GlobalScale;
+    public static float CheckboxSize =>
+        Theme.Metrics.Control.Checkbox * ImGuiHelpers.GlobalScale;
 
     private static bool CheckboxCore(string id, ref bool value, StyleClassSet classes,
         string? tooltip, bool disabled, System.Action<bool>? onChange, CheckboxStyle? inline)
@@ -35,7 +36,7 @@ public static partial class Crystarium
         if (pre.Display == UI.Display.None) return false;
 
         float scale = ImGuiHelpers.GlobalScale;
-        float size = (pre.Size ?? Sizing.Fixed(Norvrandt.Sheet.CurrentTheme.Control)).Value * scale;
+        float size = (pre.Size ?? Sizing.Fixed(Theme.Metrics.Control.Checkbox)).Value * scale;
         size = SizeUtil.Clamp(size, pre.MinSize, pre.MaxSize, scale);
 
         var hit = Interactive.Reserve(id, new Vector2(size, size), disabled, Norvrandt.AvailableHeight);

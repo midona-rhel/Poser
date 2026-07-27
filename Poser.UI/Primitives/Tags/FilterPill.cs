@@ -19,7 +19,7 @@ public static partial class Crystarium
             Style = new TextInputStyle
             {
                 Width = Sizing.Fixed(width),
-                Height = Sizing.Fixed(26f),
+                Height = Sizing.Fixed(Theme.Metrics.Control.Workspace),
             },
         });
 }

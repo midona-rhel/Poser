@@ -51,7 +51,7 @@ public static partial class Crystarium
         // hit rect so clicking the number cannot jump the thumb.
         float reserve = 0f;
         string? readout = null;
-        var monoFont = FontRegistry.Resolve(FontFamily.Mono, 11f);
+        var monoFont = FontRegistry.Resolve(FontFamily.Mono, Theme.Metrics.Typography.Caption);
         bool monoAvailable = monoFont is { Available: true };
         if (!string.IsNullOrEmpty(format))
         {
@@ -64,10 +64,12 @@ public static partial class Crystarium
         }
 
         // Hit rect = thumb height (14px) across the full width.
-        var size = new Vector2(MathF.Max(20f * scale, widthPx - reserve), 14f * scale);
+        var size = new Vector2(
+            MathF.Max(Theme.Metrics.Control.SwitchHeight * scale, widthPx - reserve),
+            Theme.Metrics.Control.Slider * scale);
         var hit = Interactive.Reserve(id, size, disabled, Norvrandt.AvailableHeight);
 
-        float half = 7f * scale;                       // thumb radius
+        float half = Theme.Metrics.Control.Slider * 0.5f * scale;
         float x0 = hit.ScreenMin.X + half;
         float x1 = hit.ScreenMax.X - half;
 
@@ -90,9 +92,10 @@ public static partial class Crystarium
         var track = resolved.BackgroundColor ?? new Vector4(1f, 1f, 1f, 0.14f);
         track.W *= alpha;
         dl.AddRectFilled(
-            new Vector2(hit.ScreenMin.X, cy - 2f * scale),
-            new Vector2(hit.ScreenMax.X, cy + 2f * scale),
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(track)), 2f * scale);
+            new Vector2(hit.ScreenMin.X, cy - Theme.Metrics.Control.SliderTrack * 0.5f * scale),
+            new Vector2(hit.ScreenMax.X, cy + Theme.Metrics.Control.SliderTrack * 0.5f * scale),
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(track)),
+            Theme.Metrics.Control.SliderTrack * 0.5f * scale);
 
         // Filled segment: minimum → value in the primary blue; the
         // remainder above stays neutral.
@@ -101,9 +104,10 @@ public static partial class Crystarium
             var fill = Theme.Palette.Primary;
             fill.W *= alpha;
             dl.AddRectFilled(
-                new Vector2(hit.ScreenMin.X, cy - 2f * scale),
-                new Vector2(thumbX, cy + 2f * scale),
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(fill)), 2f * scale);
+                new Vector2(hit.ScreenMin.X, cy - Theme.Metrics.Control.SliderTrack * 0.5f * scale),
+                new Vector2(thumbX, cy + Theme.Metrics.Control.SliderTrack * 0.5f * scale),
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(fill)),
+                Theme.Metrics.Control.SliderTrack * 0.5f * scale);
         }
 
         // Notch marks cross the track at fixed values (no snapping), so the

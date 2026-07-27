@@ -28,7 +28,7 @@ public static partial class Crystarium
         if (resolved.Display == UI.Display.None) return false;
 
         float scale = ImGuiHelpers.GlobalScale;
-        float height = (resolved.Height ?? Sizing.Fixed(Norvrandt.Sheet.CurrentTheme.RowHeight)).Value * scale;
+        float height = (resolved.Height ?? Sizing.Fixed(Theme.Metrics.Control.Comfortable)).Value * scale;
         height = SizeUtil.Clamp(height, resolved.MinHeight, resolved.MaxHeight, scale);
         float widthPx;
         if (resolved.Width.HasValue && resolved.Width.Value.Mode == SizingMode.Fixed)
@@ -39,7 +39,7 @@ public static partial class Crystarium
 
         var bg = resolved.BackgroundColor ?? Norvrandt.Sheet.CurrentTheme.SurfaceSunken;
         var border = resolved.BorderColor ?? Norvrandt.Sheet.CurrentTheme.Border;
-        var pad = resolved.Padding ?? new Spacing(0, Theme.Spacing.Md);
+        var pad = resolved.Padding ?? new Spacing(0, Theme.Metrics.Page.ActionGap);
         float framePadX = pad.Left * scale;
         float framePadY = (height - ImGui.GetTextLineHeight()) / 2f;
 

@@ -17,13 +17,13 @@ public static partial class Crystarium
     {
         float scale = ImGuiHelpers.GlobalScale;
         float w = width * scale;
-        float hitHeight = 14f * scale;
-        float trackHeight = 4f * scale;
+        float hitHeight = Theme.Metrics.Control.Slider * scale;
+        float trackHeight = Theme.Metrics.Control.SliderTrack * scale;
         var origin = ImGui.GetCursorScreenPos();
         var dl = ImGui.GetWindowDrawList();
 
         float trackY = origin.Y + (hitHeight - trackHeight) * 0.5f;
-        float radius = 2f * scale;
+        float radius = Theme.Metrics.Control.SliderTrack * 0.5f * scale;
         dl.AddRectFilled(
             new Vector2(origin.X, trackY),
             new Vector2(origin.X + w, trackY + trackHeight),

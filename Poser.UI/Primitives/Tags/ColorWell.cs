@@ -14,7 +14,7 @@ public static partial class Crystarium
     /// Returns true while the color is being edited.
     /// </summary>
     public static bool ColorWell(string id, ref Vector4 color)
-        => ColorWell(id, ref color, rgbOnly: false);
+        => ColorWell(id, ref color, default);
 
     /// <summary>
     /// Color well with an RGB-only option: the picker hides alpha and the
@@ -22,23 +22,31 @@ public static partial class Crystarium
     /// like whole-model tints whose alpha belongs to the game.
     /// </summary>
     public static bool ColorWell(string id, ref Vector4 color, bool rgbOnly)
+        => ColorWell(id, ref color, new ColorWellProps { RgbOnly = rgbOnly });
+
+    public static bool ColorWell(string id, ref Vector4 color, in ColorWellProps props)
     {
         Stylesheet.EnsureInitialized();
         float scale = ImGuiHelpers.GlobalScale;
 
-        var size = new Vector2(28f, 28f) * scale;
-        var hit = Interactive.Reserve(id, size, disabled: false, Norvrandt.AvailableHeight);
+        var size = new Vector2(
+            Theme.Metrics.Control.ColorWell,
+            Theme.Metrics.Control.ColorWell) * scale;
+        var hit = Interactive.Reserve(id, size, props.Disabled, Norvrandt.AvailableHeight);
 
         var dl = ImGui.GetWindowDrawList();
-        float r = 6f * scale;
+        float r = Theme.Metrics.Radius.Control * scale;
         dl.AddRectFilled(hit.ScreenMin, hit.ScreenMax,
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(color with { W = 1f })), r);
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                props.Disabled
+                    ? new Vector4(0f, 0f, 0f, 0.12f)
+                    : color with { W = 1f })), r);
         // 1px border painted inside the box edge (CSS border-box)
         dl.AddRect(hit.ScreenMin + new Vector2(0.5f, 0.5f), hit.ScreenMax - new Vector2(0.5f, 0.5f),
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.14f))), r, ImDrawFlags.None, 1f * scale);
 
         string popupId = id + "_picker";
-        if (hit.Clicked) ImGui.OpenPopup(popupId);
+        if (hit.Clicked && !props.Disabled) ImGui.OpenPopup(popupId);
 
         // Glass popup chrome, same recipe as ContextMenu (blur + border trio).
         bool changed = false;
@@ -63,18 +71,22 @@ public static partial class Crystarium
             });
             ImGui.SetNextItemWidth(200f * scale);
             var flags = ImGuiColorEditFlags.NoSidePreview | ImGuiColorEditFlags.NoSmallPreview;
-            if (rgbOnly)
+            if (props.RgbOnly)
                 flags |= ImGuiColorEditFlags.NoAlpha;
             float keepAlpha = color.W;
             changed = ImGui.ColorPicker4(id + "_pk", ref color, flags);
             // NoAlpha hides the channel; preserving the incoming value is
             // this overload's contract, whatever the picker left in W.
-            if (rgbOnly)
+            if (props.RgbOnly)
                 color.W = keepAlpha;
             ImGui.EndPopup();
         }
         ImGui.PopStyleColor();
         ImGui.PopStyleVar(3);
+        if (!string.IsNullOrEmpty(props.Tooltip)
+            && (hit.Hovered || (props.Disabled
+                && HoverHelp.HelpHovered(hit.ScreenMin, hit.ScreenMax))))
+            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, props.Tooltip!);
         return changed;
     }
 
@@ -88,12 +100,14 @@ public static partial class Crystarium
         Stylesheet.EnsureInitialized();
         float scale = ImGuiHelpers.GlobalScale;
 
-        var size = new Vector2(28f, 28f) * scale;
+        var size = new Vector2(
+            Theme.Metrics.Control.ColorWell,
+            Theme.Metrics.Control.ColorWell) * scale;
         var hit = Interactive.Reserve(id, size, disabled: false, Norvrandt.AvailableHeight);
 
         var dl = ImGui.GetWindowDrawList();
         var center = (hit.ScreenMin + hit.ScreenMax) * 0.5f;
-        float radius = 14f * scale;
+        float radius = Theme.Metrics.Control.ColorWell * 0.5f * scale;
 
         // box-shadow spread rings drawn as filled discs back-to-front — one clean
         // AA boundary per edge (stroked circles fringe on both stroke edges).

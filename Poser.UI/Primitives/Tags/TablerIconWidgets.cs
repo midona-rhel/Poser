@@ -68,9 +68,8 @@ public static partial class Crystarium
         if (pre.Display == UI.Display.None) return false;
 
         float scale = ImGuiHelpers.GlobalScale;
-        var theme = Norvrandt.Sheet.CurrentTheme;
-        float side = (pre.Width ?? Sizing.Fixed(theme.RowHeight)).Value * scale;
-        float h = (pre.Height ?? Sizing.Fixed(theme.RowHeight)).Value * scale;
+        float side = (pre.Width ?? Sizing.Fixed(Theme.Metrics.Control.Comfortable)).Value * scale;
+        float h = (pre.Height ?? Sizing.Fixed(Theme.Metrics.Control.Comfortable)).Value * scale;
         side = SizeUtil.Clamp(side, pre.MinWidth, pre.MaxWidth, scale);
         h = SizeUtil.Clamp(h, pre.MinHeight, pre.MaxHeight, scale);
 
@@ -116,7 +115,7 @@ public static partial class Crystarium
         if (pre.Display == UI.Display.None) return false;
 
         float scale = ImGuiHelpers.GlobalScale;
-        float size = (pre.Size ?? Sizing.Fixed(Norvrandt.Sheet.CurrentTheme.RowHeight)).Value * scale;
+        float size = (pre.Size ?? Sizing.Fixed(Theme.Metrics.Control.Comfortable)).Value * scale;
         size = SizeUtil.Clamp(size, pre.MinSize, pre.MaxSize, scale);
 
         var hit = Interactive.Reserve(id, new Vector2(size, size), false, Norvrandt.AvailableHeight);
@@ -156,7 +155,7 @@ public static partial class Crystarium
         if (pre.Display == UI.Display.None) return false;
 
         float scale = ImGuiHelpers.GlobalScale;
-        float size = (pre.Size ?? Sizing.Fixed(Norvrandt.Sheet.CurrentTheme.LargeIcon)).Value * scale;
+        float size = (pre.Size ?? Sizing.Fixed(Theme.Metrics.Control.ShellIconAction)).Value * scale;
         size = SizeUtil.Clamp(size, pre.MinSize, pre.MaxSize, scale);
 
         var hit = Interactive.Reserve(id, new Vector2(size, size), false, Norvrandt.AvailableHeight);

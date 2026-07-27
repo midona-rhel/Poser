@@ -32,10 +32,11 @@ public static partial class Crystarium
         bool alignFirstTabToCursor = false)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        float pad = 3f * scale;
-        float gap = 2f * scale;
-        float tabHeight = 24f * scale;
-        float tabPadX = 12f * scale;
+        float pad = (Theme.Metrics.Control.Navigation
+            - Theme.Metrics.Control.Workspace) * 0.5f * scale;
+        float gap = Theme.Metrics.Space.One * scale;
+        float tabHeight = Theme.Metrics.Control.Workspace * scale;
+        float tabPadX = Theme.Metrics.Space.Six * scale;
 
         if (maxWidth > 0f)
         {
@@ -47,7 +48,9 @@ public static partial class Crystarium
             if (mp) mfont!.Pop();
             float chrome = pad * 2f + gap * (items.Length - 1);
             float fitPad = (maxWidth * scale - chrome - text) / (items.Length * 2f);
-            tabPadX = MathF.Max(6f * scale, MathF.Min(tabPadX, fitPad));
+            tabPadX = MathF.Max(
+                Theme.Metrics.Space.Three * scale,
+                MathF.Min(tabPadX, fitPad));
         }
 
         var font = FontRegistry.Resolve(FontFamily.Default, 12f);
@@ -71,7 +74,8 @@ public static partial class Crystarium
         var dl = ImGui.GetWindowDrawList();
 
         dl.AddRectFilled(origin, origin + new Vector2(totalW, totalH),
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(0f, 0f, 0f, 0.20f))), 7f * scale);
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(0f, 0f, 0f, 0.20f))),
+            Theme.Metrics.Radius.Surface * scale);
 
         bool changed = false;
         float x = origin.X + pad;
@@ -89,9 +93,11 @@ public static partial class Crystarium
             if (active)
             {
                 dl.AddRectFilled(tabMax with { X = tabMin.X, Y = tabMin.Y + 1f * scale }, tabMax + new Vector2(0f, 1f * scale),
-                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(0f, 0f, 0f, 0.25f))), 5f * scale);
+                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(0f, 0f, 0f, 0.25f))),
+                    Theme.Metrics.Radius.Control * scale);
                 dl.AddRectFilled(tabMin, tabMax,
-                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(0x2a / 255f, 0x2a / 255f, 0x2e / 255f, 1f))), 5f * scale);
+                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(0x2a / 255f, 0x2a / 255f, 0x2e / 255f, 1f))),
+                    Theme.Metrics.Radius.Control * scale);
             }
 
             var textColor = active || hit.Hovered

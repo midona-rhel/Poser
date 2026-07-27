@@ -78,10 +78,12 @@ public abstract class View : Window
         ImGui.PushStyleColor(ImGuiCol.HeaderHovered, Norvrandt.Sheet.CurrentTheme.AccentHover);     _pushedColors++;
         ImGui.PushStyleColor(ImGuiCol.HeaderActive, Norvrandt.Sheet.CurrentTheme.AccentActive);     _pushedColors++;
 
-        float pad = Theme.Spacing.Md * ImGuiHelpers.GlobalScale;
+        float pad = Theme.Metrics.Page.ActionGap * ImGuiHelpers.GlobalScale;
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(pad, pad));    _pushedVars++;
-        ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, Theme.Radius.Sm * ImGuiHelpers.GlobalScale); _pushedVars++;
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, Theme.Radius.Md * ImGuiHelpers.GlobalScale); _pushedVars++;
+        ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding,
+            Theme.Metrics.Radius.Small * ImGuiHelpers.GlobalScale); _pushedVars++;
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding,
+            Theme.Metrics.Radius.Medium * ImGuiHelpers.GlobalScale); _pushedVars++;
     }
 
     private void PopTheme()

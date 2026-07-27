@@ -80,7 +80,7 @@ internal static partial class Element
 
         var rects = new RectF[cells.Length];
         float totalHeight = GridSolver.Solve(cells, colWidths, colX, colGap, rowGap,
-            Norvrandt.Sheet.CurrentTheme.RowHeight * scale, rects);
+            Theme.Metrics.Control.FormRow * scale, rects);
 
         for (int i = 0; i < rects.Length; i++)
         {

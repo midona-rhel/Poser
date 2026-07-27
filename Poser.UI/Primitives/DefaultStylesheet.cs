@@ -25,24 +25,24 @@ internal static class DefaultStylesheet
         Stylesheet.Define(Cls.Row, new ElementStyle
         {
             FlexDirection = FlexDirection.Row,
-            Gap = t.ItemGap,
-            Height = Sizing.Fixed(t.RowHeight),
-            Margin = new Spacing(0, 0, 14, 0),
+            Gap = Theme.Metrics.Page.ActionGap,
+            Height = Sizing.Fixed(Theme.Metrics.Control.FormRow),
+            Margin = new Spacing(0, 0, Theme.Metrics.Page.SectionGap, 0),
         });
 
         Stylesheet.Define(Cls.TightRow, new ElementStyle
         {
             FlexDirection = FlexDirection.Row,
-            Gap = Theme.Spacing.Sm,
-            Height = Sizing.Fixed(t.RowHeight),
-            Margin = new Spacing(0, 0, 14, 0),
+            Gap = Theme.Metrics.Space.Two,
+            Height = Sizing.Fixed(Theme.Metrics.Control.FormRow),
+            Margin = new Spacing(0, 0, Theme.Metrics.Page.SectionGap, 0),
         });
 
         // ---- Text ----
         Stylesheet.Define(Cls.Heading, new TextStyle
         {
             Color = Theme.Palette.Gray,
-            Margin = new Spacing(0, 0, 6, 0),
+            Margin = new Spacing(0, 0, Theme.Metrics.Space.Three, 0),
         });
 
         Stylesheet.Define(Cls.DisabledText, new TextStyle
@@ -52,7 +52,7 @@ internal static class DefaultStylesheet
 
         Stylesheet.Define(Cls.Label, new ElementStyle
         {
-            Width = Sizing.Fixed(t.LabelWidth),
+            Width = Sizing.Fixed(Theme.Metrics.Form.LabelColumn),
         });
 
         // ---- Button ----
@@ -61,15 +61,15 @@ internal static class DefaultStylesheet
         // radius 6, flat (no gradient/shadow).
         Stylesheet.Define(Cls.Btn, new ButtonStyle
         {
-            Height = Sizing.Fixed(32f),
-            BorderRadius = 6f,
+            Height = Sizing.Fixed(Theme.Metrics.Control.Comfortable),
+            BorderRadius = Theme.Metrics.Radius.Control,
             BorderWidth = 1f,
             BorderColor = new System.Numerics.Vector4(1f, 1f, 1f, 0.14f),
             BackgroundColor = new System.Numerics.Vector4(248 / 255f, 249 / 255f, 251 / 255f, 0.05f),
             Color = new System.Numerics.Vector4(1f, 1f, 1f, 1f),
-            FontSize = 13f,
+            FontSize = Theme.Metrics.Typography.Body,
             RaisedGradient = false,
-            Padding = new Spacing(0, 16f),
+            Padding = new Spacing(0, Theme.Metrics.Space.Eight),
         });
 
         // .btn:hover → background: var(--color-subtle-overlay) = white@.10
@@ -84,15 +84,28 @@ internal static class DefaultStylesheet
             Opacity = 0.35f,
         });
 
-        // Dense inspector/toolstrip action from the approved M11 pose stage:
-        // 24px height, 12px label, 12px horizontal padding, 5px radius.
-        // Full-size form/modal actions intentionally retain the 32px default.
+        // Main-workspace actions are the canonical 26px density.
+        Stylesheet.Define(Cls.Btn + Cls.Workspace, new ButtonStyle
+        {
+            Height = Sizing.Fixed(Theme.Metrics.Control.Workspace),
+            BorderRadius = Theme.Metrics.Radius.Control,
+            FontSize = Theme.Metrics.Typography.Label,
+            Padding = new Spacing(0, Theme.Metrics.Space.Six),
+        });
+
+        Stylesheet.Define(Cls.Btn + Cls.Comfortable, new ButtonStyle
+        {
+            Height = Sizing.Fixed(Theme.Metrics.Control.Comfortable),
+        });
+
+        // Compatibility selector for pages that have not reached their
+        // migration slice. It resolves to the same workspace primitive.
         Stylesheet.Define(Cls.Btn + Cls.Compact, new ButtonStyle
         {
-            Height = Sizing.Fixed(24f),
-            BorderRadius = 5f,
-            FontSize = 12f,
-            Padding = new Spacing(0, 12f),
+            Height = Sizing.Fixed(Theme.Metrics.Control.Workspace),
+            BorderRadius = Theme.Metrics.Radius.Control,
+            FontSize = Theme.Metrics.Typography.Label,
+            Padding = new Spacing(0, Theme.Metrics.Space.Six),
         });
 
         // .btnPrimary: bg + border #3297FF, white text; hover → primary-60.
@@ -111,7 +124,7 @@ internal static class DefaultStylesheet
 
         Stylesheet.Define(Cls.Btn + Cls.Icon, new ButtonStyle
         {
-            Width = Sizing.Fixed(t.RowHeight),
+            Width = Sizing.Fixed(Theme.Metrics.Control.Comfortable),
             Padding = new Spacing(0),
         });
 
@@ -121,8 +134,8 @@ internal static class DefaultStylesheet
         // .checkBoxChecked: bg #3297FF, no ring, white@.99 Tabler check (size 10).
         Stylesheet.Define(Cls.Checkbox, new CheckboxStyle
         {
-            Size = Sizing.Fixed(14f),
-            BorderRadius = 4f,
+            Size = Sizing.Fixed(Theme.Metrics.Control.Checkbox),
+            BorderRadius = Theme.Metrics.Radius.Medium,
             BorderWidth = 1f,
             BackgroundColor = new System.Numerics.Vector4(0f, 0f, 0f, 0.20f),
             BorderColor = new System.Numerics.Vector4(1f, 1f, 1f, 0.20f),
@@ -138,8 +151,8 @@ internal static class DefaultStylesheet
         // ---- Toggle ----
         Stylesheet.Define(Cls.Toggle, new ToggleStyle
         {
-            Size = Sizing.Fixed(t.RowHeight),
-            BorderRadius = 4f,
+            Size = Sizing.Fixed(Theme.Metrics.Control.Workspace),
+            BorderRadius = Theme.Metrics.Radius.Medium,
             BorderWidth = 1f,
             BorderColor = t.Border,
             BoxShadow = BoxShadow.Soft(),
@@ -154,7 +167,7 @@ internal static class DefaultStylesheet
         // ---- Icon toggle ----
         Stylesheet.Define(Cls.IconToggle, new IconToggleStyle
         {
-            Size = Sizing.Fixed(t.LargeIcon),
+            Size = Sizing.Fixed(Theme.Metrics.Control.ShellIconAction),
         });
 
         // ---- Text input ----
@@ -163,12 +176,22 @@ internal static class DefaultStylesheet
         // radius 4; :focus → border primary-50.
         Stylesheet.Define(Cls.TextInput, new TextInputStyle
         {
-            Height = Sizing.Fixed(32f),
+            Height = Sizing.Fixed(Theme.Metrics.Control.Comfortable),
             BackgroundColor = new System.Numerics.Vector4(0f, 0f, 0f, 0.20f),
-            BorderRadius = 4f,
+            BorderRadius = Theme.Metrics.Radius.Medium,
             BorderWidth = 1f,
             BorderColor = new System.Numerics.Vector4(1f, 1f, 1f, 0.14f),
-            Padding = new Spacing(0, 10f),
+            Padding = new Spacing(0, Theme.Metrics.Space.Six),
+        });
+
+        Stylesheet.Define(Cls.TextInput + Cls.Workspace, new TextInputStyle
+        {
+            Height = Sizing.Fixed(Theme.Metrics.Control.Workspace),
+        });
+
+        Stylesheet.Define(Cls.TextInput + Cls.Comfortable, new TextInputStyle
+        {
+            Height = Sizing.Fixed(Theme.Metrics.Control.Comfortable),
         });
 
         Stylesheet.Define(Cls.TextInput, PseudoState.Focus, new TextInputStyle
@@ -181,12 +204,17 @@ internal static class DefaultStylesheet
         // bg subtle-overlay white@.10, border 1px white@.08, 12px text.
         Stylesheet.Define(Cls.Dropdown, new DropdownStyle
         {
-            Height = Sizing.Fixed(26f),
-            BorderRadius = 6f,
+            Height = Sizing.Fixed(Theme.Metrics.Control.Workspace),
+            BorderRadius = Theme.Metrics.Radius.Control,
             BorderWidth = 1f,
             ValueBackground = new System.Numerics.Vector4(1f, 1f, 1f, 0.10f),
             BorderColor = new System.Numerics.Vector4(1f, 1f, 1f, 0.08f),
-            FontSize = 12f,
+            FontSize = Theme.Metrics.Typography.Label,
+        });
+
+        Stylesheet.Define(Cls.Dropdown + Cls.Comfortable, new DropdownStyle
+        {
+            Height = Sizing.Fixed(Theme.Metrics.Control.Comfortable),
         });
 
         // ---- Separator ----
@@ -194,7 +222,9 @@ internal static class DefaultStylesheet
         {
             Height = Sizing.Fixed(1f),
             BackgroundColor = t.Border with { W = t.Border.W * 0.5f },
-            Margin = new Spacing(6, 0, 10, 0),
+            Margin = new Spacing(
+                Theme.Metrics.Space.Three, 0,
+                Theme.Metrics.Space.Six - Theme.Metrics.Space.One, 0),
         });
     }
 }
