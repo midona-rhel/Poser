@@ -2,6 +2,7 @@ using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using Poser.Application.Integration;
 using Poser.Application.Presentation;
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
@@ -27,7 +28,7 @@ namespace Poser.UI;
 public sealed class AppearancePane
 {
     private readonly ActorPresentationSession _presentation;
-    private readonly GlamourerBridge _glamourer;
+    private readonly ActorIntegrationSession _integration;
     private readonly SceneSession _scene;
 
     private string _status = string.Empty;
@@ -41,11 +42,11 @@ public sealed class AppearancePane
 
     public AppearancePane(
         ActorPresentationSession presentation,
-        GlamourerBridge glamourer,
+        ActorIntegrationSession integration,
         SceneSession scene)
     {
         _presentation = presentation;
-        _glamourer = glamourer;
+        _integration = integration;
         _scene = scene;
     }
 
@@ -171,7 +172,9 @@ public sealed class AppearancePane
             : "Actor";
         ViewText.Label(new Vector2(cursor.X, headerTop + InspectorLayout.FormLabelY * s),
             headerName, 11f, FontWeight.SemiBold, InspectorLayout.LabelColor);
-        bool glamAvailable = _glamourer.IsAvailable(out var glamReason);
+        var glamourer = _integration.Glamourer;
+        bool glamAvailable = glamourer.Available;
+        string glamReason = glamAvailable ? "Open this actor in Glamourer." : glamourer.Detail;
         float bx = cursor.X + width;
         var resetSize = Crystarium.MeasureButton("Reset appearance", Cls.Compact);
         bx -= resetSize.X;
@@ -196,7 +199,7 @@ public sealed class AppearancePane
                 Tooltip = glamReason,
             }))
         {
-            var opened = _glamourer.OpenActor(actor);
+            var opened = _integration.OpenGlamourer(actor);
             _status = opened.Success ? string.Empty : $"Open in Glamourer: {opened.Detail}";
         }
         y += InspectorLayout.FormRowHeight * s;

@@ -105,7 +105,11 @@ internal static class ServiceRegistration
         services.AddSingleton<Application.Presentation.IPresentationRuntimePort>(
             sp => sp.GetRequiredService<Game.Presentation.PresentationRuntimePort>());
         services.AddSingleton<Application.Presentation.ActorPresentationSession>();
-        services.AddSingleton<Game.Presentation.GlamourerBridge>();
+        services.AddSingleton<Application.Integration.IMcdfFileBoundary, Game.Mcdf.McdfFileBoundary>();
+        services.AddSingleton<Game.Integration.IntegrationRuntimePort>();
+        services.AddSingleton<Application.Integration.IIntegrationRuntimePort>(
+            sp => sp.GetRequiredService<Game.Integration.IntegrationRuntimePort>());
+        services.AddSingleton<Application.Integration.ActorIntegrationSession>();
         services.AddSingleton<AnimationCatalog>();
         services.AddSingleton<AnimationSceneActions>();
         services.AddSingleton<Game.Animation.AnimationCatalogLoader>();

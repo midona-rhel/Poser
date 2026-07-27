@@ -24,6 +24,11 @@ public interface IIntegrationRuntimePort
     /// inline when already there.</summary>
     Task<T> OnFrameworkThread<T>(Func<T> action);
 
+    /// <summary>Whether the exact actor generation still resolves to a live
+    /// native object. Distinguishes "restore natively" from "clean up
+    /// Poser-created resources by their own ids only".</summary>
+    bool IsResolvable(ActorId actor);
+
     // ── Penumbra ─────────────────────────────────────────────────────────
 
     IntegrationValue<IReadOnlyList<ExternalItem>> GetCollections();
@@ -117,4 +122,8 @@ public interface IIntegrationRuntimePort
     IntegrationValue<Guid> ApplyTemporaryBodyProfile(ActorId actor, string profileJson);
 
     IntegrationPortResult DeleteTemporaryBodyProfile(ActorId actor);
+
+    /// <summary>Deletes Poser's temporary profile by its own id — the
+    /// cleanup path that still works after the actor is gone.</summary>
+    IntegrationPortResult DeleteTemporaryBodyProfileById(Guid profile);
 }

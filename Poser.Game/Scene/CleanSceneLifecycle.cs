@@ -28,6 +28,7 @@ public sealed class CleanSceneLifecycle : IDisposable
     private readonly TransformHistory _history;
     private readonly Poser.Application.Animation.AnimationSession _animation;
     private readonly Poser.Application.Presentation.ActorPresentationSession _presentation;
+    private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
     private readonly Poser.Game.Animation.AnimationRuntimePort _animationPort;
     private readonly IEventBus _events;
     private readonly IFramework _framework;
@@ -51,6 +52,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         TransformHistory history,
         Poser.Application.Animation.AnimationSession animation,
         Poser.Application.Presentation.ActorPresentationSession presentation,
+        Poser.Application.Integration.ActorIntegrationSession integration,
         Poser.Game.Animation.AnimationRuntimePort animationPort,
         IEventBus events,
         IFramework framework)
@@ -61,6 +63,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         _history = history;
         _animation = animation;
         _presentation = presentation;
+        _integration = integration;
         _animationPort = animationPort;
         _events = events;
         _framework = framework;
@@ -98,6 +101,7 @@ public sealed class CleanSceneLifecycle : IDisposable
                 _animation.ResumeCommands();
                 _animation.ResetAll();
                 _presentation.ResetAll();
+                _integration.ResetAll();
             }
             else
             {
@@ -117,6 +121,7 @@ public sealed class CleanSceneLifecycle : IDisposable
                         _animation.ResumeCommands();
                         _animation.ResetAll();
                         _presentation.ResetAll();
+                        _integration.ResetAll();
                     }
                 });
                 if (!task.Wait(TimeSpan.FromSeconds(2)))
@@ -186,6 +191,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         // never inherit the previous body's speed enforcement.
         _animation.Reconcile(_scene.Snapshot);
         _presentation.Reconcile(_scene.Snapshot);
+        _integration.Reconcile(_scene.Snapshot);
         _animationPort.SyncEnforcementIndex();
     }
 
@@ -264,6 +270,7 @@ public sealed class CleanSceneLifecycle : IDisposable
             // back here rather than dropped when they disappear.
             _animation.ResetAll();
             _presentation.ResetAll();
+            _integration.ResetAll();
         }
         Refresh();
     }
