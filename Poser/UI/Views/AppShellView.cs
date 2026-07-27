@@ -175,6 +175,13 @@ public static class AppShellView
         var min = origin;
         var max = origin + size;
         var dl = ImGui.GetWindowDrawList();
+        var shellOwner = Interactive.BeginOwner(
+            "poser-main-shell",
+            InteractionLayer.Window,
+            min,
+            max);
+        try
+        {
 
         // One shell-level blur; child panels only add translucent fills.
         Crystarium.FloatingSurface.PrependShellBlur(
@@ -241,6 +248,11 @@ public static class AppShellView
         // its asymmetric glass edge last so sidebar/rail surfaces cannot hide
         // the left, right, or bottom glass borders.
         DrawOuterGlassBorder(min, max, s);
+        }
+        finally
+        {
+            Interactive.EndOwner(shellOwner);
+        }
     }
 
     public static float RailWidth => Crystarium.ActiveTheme.Shell.RailWidth;

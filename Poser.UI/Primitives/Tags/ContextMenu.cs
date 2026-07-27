@@ -83,7 +83,7 @@ public static partial class Crystarium
                 return;
             }
 
-            Interactive.BlockRemainderOfFrame();
+            Interactive.ClaimExclusive(ExclusiveKey(id));
             float s = ImGuiHelpers.GlobalScale;
             _id = id;
             _items = items;
@@ -101,13 +101,18 @@ public static partial class Crystarium
             _focusPending = true;
         }
 
-        public static void DismissAll() => _phase = Phase.Hidden;
+        public static void DismissAll()
+        {
+            if (_phase != Phase.Hidden)
+                Interactive.ReleaseExclusive(ExclusiveKey(_id));
+            _phase = Phase.Hidden;
+        }
 
         public static void EndFrame()
         {
             if (_phase != Phase.Hidden
                 && _lastOwnerFrame != ImGui.GetFrameCount())
-                _phase = Phase.Hidden;
+                DismissAll();
         }
 
         public static bool IsOpen(string id) => _phase != Phase.Hidden && _id == id;
@@ -116,7 +121,7 @@ public static partial class Crystarium
         public static void Dismiss(string id)
         {
             if (_id == id)
-                _phase = Phase.Hidden;
+                DismissAll();
         }
 
         private static void StartClose()
@@ -182,7 +187,7 @@ public static partial class Crystarium
                 {
                     if (t >= Crystarium.ActiveTheme.Motion.MenuExit)
                     {
-                        _phase = Phase.Hidden;
+                        DismissAll();
                         return -1;
                     }
                     float k = Exit.Evaluate(Math.Clamp(
@@ -201,7 +206,11 @@ public static partial class Crystarium
             }
 
             var io = ImGui.GetIO();
-            Interactive.RegisterOccluder(Vector2.Zero, io.DisplaySize);
+            var menuOwner = Interactive.BeginOwner(
+                ExclusiveKey(_id),
+                InteractionLayer.Popup,
+                Vector2.Zero,
+                io.DisplaySize);
             const ImGuiWindowFlags hostFlags =
                 ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize
                 | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoScrollbar
@@ -243,11 +252,15 @@ public static partial class Crystarium
             // composited unit about the flip-aware transform origin.
             VertexTransform.ApplyPop(dl, vtxStart, vtxEnd, _pivot, scale, Vector2.Zero, alpha);
             ImGui.End();
+            Interactive.EndOwner(menuOwner);
 
             if (clicked >= 0)
                 StartClose();
             return clicked;
         }
+
+        private static string ExclusiveKey(string id) =>
+            $"floating-menu:{id}";
 
         private static int DrawSurfaceAndRows(ImDrawListPtr dl, float s, bool interactive)
         {
@@ -288,9 +301,13 @@ public static partial class Crystarium
                 if (interactive && !item.Disabled)
                 {
                     ImGui.SetCursorScreenPos(rowMin);
-                    if (ImGui.InvisibleButton($"##fm-row{i}", rowMax - rowMin))
+                    var hit = Interactive.Reserve(
+                        $"##fm-row{i}",
+                        rowMax - rowMin,
+                        disabled: false);
+                    if (hit.Clicked)
                         clicked = i;
-                    hovered = ImGui.IsItemHovered();
+                    hovered = hit.Hovered;
                 }
 
                 if (hovered)

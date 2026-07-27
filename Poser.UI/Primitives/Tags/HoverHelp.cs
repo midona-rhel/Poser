@@ -66,7 +66,8 @@ public static partial class Crystarium
 
         private readonly record struct Candidate(
             uint Id, Vector2 Min, Vector2 Max, string Text,
-            string? Shortcut, HoverHelpSide Side, bool Instant, int Layer);
+            string? Shortcut, HoverHelpSide Side, bool Instant,
+            InteractionOwner Owner);
 
         private static Candidate? _candidate;
         private static uint? _pendingId;
@@ -91,7 +92,7 @@ public static partial class Crystarium
             // windows or ID scopes are distinct targets.
             _candidate = new Candidate(
                 ImGui.GetID(id), targetMin, targetMax, text, shortcut, side,
-                Instant: false, Interactive.SurfaceDepth);
+                Instant: false, Interactive.CurrentOwner);
         }
 
         /// <summary>
@@ -105,7 +106,7 @@ public static partial class Crystarium
                 return;
             _candidate = new Candidate(
                 ImGui.GetID(id), targetMin, targetMax, text, null, side,
-                Instant: true, Interactive.SurfaceDepth);
+                Instant: true, Interactive.CurrentOwner);
         }
 
         /// <summary>
@@ -131,7 +132,9 @@ public static partial class Crystarium
             var candidate = _candidate;
             _candidate = null;
             if (candidate is { } registered
-                && Interactive.PointerOccluded(registered.Layer))
+                && Interactive.PointerOccluded(
+                    registered.Owner,
+                    ImGui.GetMousePos()))
                 candidate = null;
             double now = ImGui.GetTime();
 
@@ -307,6 +310,13 @@ public static partial class Crystarium
             var animMin = center + (pos - center) * k + translate;
             var animMax = center + (pos + new Vector2(cardW, cardH) - center) * k + translate;
             float radius = Crystarium.ActiveTheme.Radii.Medium * scale;
+            Interactive.RegisterOccluder(
+                new InteractionOwner(
+                    "hover-help",
+                    InteractionLayer.HoverSurface,
+                    int.MaxValue),
+                animMin,
+                animMax);
 
             var fg = ImGui.GetForegroundDrawList();
             // The blur runs at CONSTANT strength (picto keeps blur(16px)

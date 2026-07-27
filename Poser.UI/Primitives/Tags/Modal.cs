@@ -50,7 +50,11 @@ public static partial class Crystarium
 
         if (open && !ImGui.IsPopupOpen(popupId))
             FloatingSurface.OpenPopup(popupId);
-        if (!open) return false;
+        if (!open)
+        {
+            Interactive.ReleaseExclusive(popupId);
+            return false;
+        }
 
         float width = size switch
         {
@@ -87,7 +91,11 @@ public static partial class Crystarium
             var dl = ImGui.GetWindowDrawList();
             var winMin = ImGui.GetWindowPos();
             var winMax = winMin + ImGui.GetWindowSize();
-            Interactive.BeginSurface(Vector2.Zero, ImGui.GetIO().DisplaySize);
+            var modalOwner = Interactive.BeginOwner(
+                popupId,
+                InteractionLayer.Modal,
+                Vector2.Zero,
+                ImGui.GetIO().DisplaySize);
 
             FloatingSurface.DrawChrome(
                 dl,
@@ -177,9 +185,10 @@ public static partial class Crystarium
                 ImGui.CloseCurrentPopup();
                 open = false;
                 onOpenChanged(false);
+                Interactive.ReleaseExclusive(popupId);
                 closedThisFrame = true;
             }
-            Interactive.EndSurface();
+            Interactive.EndOwner(modalOwner);
             ImGui.EndPopup();
         }
 

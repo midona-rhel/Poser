@@ -38,7 +38,20 @@ public class SettingsWindow : Window
     {
         // The view paints its own chassis (bg-app + border trio); the host window is
         // an undecorated, transparent shell that only supplies position + input.
-        SettingsView.Draw(_vm, ImGui.GetWindowPos());
+        var min = ImGui.GetWindowPos();
+        var owner = Interactive.BeginOwner(
+            "poser-settings",
+            InteractionLayer.Window,
+            min,
+            min + ImGui.GetWindowSize());
+        try
+        {
+            SettingsView.Draw(_vm, min);
+        }
+        finally
+        {
+            Interactive.EndOwner(owner);
+        }
     }
 
     private void LoadFromConfig()

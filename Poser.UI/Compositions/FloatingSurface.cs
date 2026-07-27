@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -54,7 +55,7 @@ public static partial class Crystarium
         public static void OpenPopup(string id)
         {
             FloatingMenu.DismissAll();
-            Interactive.BlockRemainderOfFrame();
+            Interactive.ClaimExclusive(id);
             ImGui.OpenPopup(id);
         }
 
@@ -92,16 +93,26 @@ public static partial class Crystarium
             {
                 var min = ImGui.GetWindowPos();
                 var max = min + ImGui.GetWindowSize();
-                Interactive.BeginSurface(min, max);
-                DrawChrome(
-                    ImGui.GetWindowDrawList(),
-                    min,
-                    max,
-                    Crystarium.ActiveTheme.Radii.Surface);
-                body();
-                Interactive.EndSurface();
+                if (!Interactive.OwnsExclusive(id))
+                {
+                    ImGui.CloseCurrentPopup();
+                }
+                else
+                {
+                    var owner = Interactive.BeginOwner(
+                        id, InteractionLayer.Popup, min, max);
+                    DrawChrome(
+                        ImGui.GetWindowDrawList(),
+                        min,
+                        max,
+                        Crystarium.ActiveTheme.Radii.Surface);
+                    body();
+                    Interactive.EndOwner(owner);
+                }
                 ImGui.EndPopup();
             }
+            if (!ImGui.IsPopupOpen(id))
+                Interactive.ReleaseExclusive(id);
 
             ImGui.PopStyleColor();
             ImGui.PopStyleVar(3);
@@ -137,18 +148,90 @@ public static partial class Crystarium
             {
                 var min = ImGui.GetWindowPos();
                 var max = min + ImGui.GetWindowSize();
-                Interactive.BeginSurface(min, max);
+                var owner = Interactive.BeginOwner(
+                    id, InteractionLayer.FloatingWindow, min, max);
                 DrawChrome(
                     ImGui.GetWindowDrawList(),
                     min,
                     max,
                     Crystarium.ActiveTheme.Radii.Window);
                 body(new FloatingSurfaceFrame(min, max, scale));
-                Interactive.EndSurface();
+                Interactive.EndOwner(owner);
             }
             ImGui.End();
             ImGui.PopStyleVar(2);
             return visible;
+        }
+
+        public static int HoverList(
+            string id,
+            Vector2 anchor,
+            IReadOnlyList<string> items,
+            int selected,
+            InteractionLayer layer = InteractionLayer.HoverSurface)
+        {
+            if (items.Count == 0)
+                return -1;
+            float scale = ImGuiHelpers.GlobalScale;
+            float padding = ActiveTheme.Floating.PopupPadding * scale;
+            float width = ActiveTheme.Floating.MenuWidth * scale;
+            int rows = Math.Min(items.Count, ActiveTheme.Picker.MaximumRows);
+            float height = rows * ActiveTheme.Controls.ListRowHeight * scale
+                + padding * 2f;
+            var requested = anchor + new Vector2(
+                ActiveTheme.Floating.AnchorGap * scale,
+                0f);
+            var min = PlaceAtPoint(
+                requested,
+                new Vector2(width, height),
+                scale,
+                out _);
+            var max = min + new Vector2(width, height);
+
+            ImGui.SetNextWindowPos(min);
+            ImGui.SetNextWindowSize(max - min);
+            ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(padding));
+            bool visible = ImGui.Begin(
+                id,
+                ImGuiWindowFlags.NoTitleBar
+                | ImGuiWindowFlags.NoDecoration
+                | ImGuiWindowFlags.NoMove
+                | ImGuiWindowFlags.NoResize
+                | ImGuiWindowFlags.NoSavedSettings
+                | ImGuiWindowFlags.NoBackground
+                | ImGuiWindowFlags.NoFocusOnAppearing);
+            int clicked = -1;
+            if (visible)
+            {
+                var owner = Interactive.BeginOwner(
+                    id,
+                    layer,
+                    min,
+                    max);
+                DrawChrome(
+                    ImGui.GetWindowDrawList(),
+                    min,
+                    max,
+                    ActiveTheme.Radii.Surface);
+                ImGui.SetNextFrameWantCaptureMouse(true);
+                ScrollRegion(
+                    $"{id}-rows",
+                    (width - padding * 2f) / scale,
+                    (height - padding * 2f) / scale,
+                    region =>
+                    {
+                        for (int i = 0; i < items.Count; i++)
+                            if (region.ListRow(
+                                    $"{id}-row-{i}",
+                                    items[i],
+                                    selected: i == selected))
+                                clicked = i;
+                    });
+                Interactive.EndOwner(owner);
+            }
+            ImGui.End();
+            ImGui.PopStyleVar();
+            return clicked;
         }
 
         internal static Vector2 PlaceCentered(Vector2 size) =>
