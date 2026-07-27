@@ -108,27 +108,8 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(new Vector2(
                 winMax.X - Theme.Metrics.Floating.CloseInset * scale - closeSize,
                 winMin.Y + (barHeight - closeSize) * 0.5f));
-            var closeHit = Interactive.Reserve($"{id}##close", new Vector2(closeSize, closeSize), disabled: false);
-            if (closeHit.Hovered)
-                dl.AddRectFilled(closeHit.ScreenMin, closeHit.ScreenMax,
-                    ImGui.ColorConvertFloat4ToU32(
-                        ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.08f))),
-                    Theme.Metrics.Radius.Control * scale);
-            {
-                // Tabler X ("M18 6l-12 12" + "M6 6l12 12") at 14px, .7 → 1 on hover
-                float iconSpan = Theme.Metrics.Control.SmallIcon * scale;
-                float unit = iconSpan / 24f;
-                var o = closeHit.ScreenMin + new Vector2((closeSize - iconSpan) * 0.5f, (closeSize - iconSpan) * 0.5f);
-                var xCol = ColorEx.ApplyAlpha(theme.Text with { W = closeHit.Hovered ? 1f : 0.7f });
-                uint xU32 = ImGui.ColorConvertFloat4ToU32(xCol);
-                dl.PathLineTo(o + new Vector2(18f, 6f) * unit);
-                dl.PathLineTo(o + new Vector2(6f, 18f) * unit);
-                dl.PathStroke(xU32, ImDrawFlags.None, 2f * unit);
-                dl.PathLineTo(o + new Vector2(6f, 6f) * unit);
-                dl.PathLineTo(o + new Vector2(18f, 18f) * unit);
-                dl.PathStroke(xU32, ImDrawFlags.None, 2f * unit);
-            }
-            if (closeHit.Clicked) keepOpen = false;
+            if (FloatingSurface.CloseButton($"{id}##close"))
+                keepOpen = false;
 
             dl.AddRectFilled(
                 new Vector2(winMin.X, winMin.Y + barHeight - 1f * scale),

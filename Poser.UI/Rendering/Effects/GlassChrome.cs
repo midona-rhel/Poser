@@ -65,18 +65,4 @@ internal static class GlassChrome
             noiseOpacity: 0f);
     }
 
-    // Removed with the retained file-browser recipe in the file-dialog
-    // migration commit. Until then, its old host delegates to the canonical
-    // chrome instead of keeping a second fill/blur/border implementation.
-    internal static void DrawMenuSurface(
-        ImDrawListPtr drawList,
-        Vector2 min,
-        Vector2 max,
-        float rounding) =>
-        Crystarium.FloatingSurface.DrawChrome(
-            drawList,
-            min,
-            max,
-            rounding);
-
 }

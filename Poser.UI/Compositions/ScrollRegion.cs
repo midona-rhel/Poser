@@ -38,6 +38,8 @@ public static partial class Crystarium
     {
         private readonly float _scale;
         private int _rowCount;
+        private Vector2 _lastRowMin;
+        private Vector2 _lastRowMax;
 
         internal ScrollRegionScope(float contentWidth, float scale)
         {
@@ -55,6 +57,10 @@ public static partial class Crystarium
             string? badge = null)
         {
             DrawSeparator();
+            _lastRowMin = ImGui.GetCursorScreenPos();
+            _lastRowMax = _lastRowMin + new Vector2(
+                ContentWidth * _scale,
+                Theme.Metrics.Control.ListRow * _scale);
             bool clicked = SidebarRow(
                 id,
                 label,
@@ -69,6 +75,11 @@ public static partial class Crystarium
             _rowCount++;
             return clicked;
         }
+
+        public bool LastRowDoubleClicked() =>
+            ImGui.IsWindowHovered()
+            && ImGui.IsMouseHoveringRect(_lastRowMin, _lastRowMax)
+            && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left);
 
         public void Empty(string text)
         {

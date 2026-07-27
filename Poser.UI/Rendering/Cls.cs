@@ -26,6 +26,7 @@ public static class Cls
     public static readonly StyleClass Danger   = new("danger");
     public static readonly StyleClass Workspace = new("workspace");
     public static readonly StyleClass Comfortable = new("comfortable");
+    public static readonly StyleClass SurfaceClose = new("surface-close");
     // Transitional selector for surfaces awaiting their migration slice.
     public static readonly StyleClass Compact  = new("compact");
 

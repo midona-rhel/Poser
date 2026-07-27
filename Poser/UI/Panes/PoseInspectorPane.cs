@@ -38,7 +38,7 @@ namespace Poser.UI;
 /// (eyes/head segs via
 /// IGazeService — one shared mode, the part flags gate what it drives),
 /// IK (session switch + bulk arm/disarm), POSE (flip/mirror/reset regions,
-/// stash, import/export .pose via FileBrowser). The rotation pivot moved to
+/// stash, import/export .pose via the shared file dialog). The rotation pivot moved to
 /// the toolbar selector beside Local/World (orbit-rotation-design.md).
 /// </summary>
 public class PoseInspectorPane

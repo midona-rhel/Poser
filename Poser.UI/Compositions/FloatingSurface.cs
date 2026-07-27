@@ -33,6 +33,15 @@ public static partial class Crystarium
             float rounding) =>
             GlassChrome.PrependBlur(drawList, min, max, rounding);
 
+        public static bool CloseButton(string id) =>
+            IconButton(
+                TablerIcon.X,
+                new ButtonProps
+                {
+                    Id = id,
+                    Classes = Cls.SurfaceClose,
+                });
+
         public static bool Popup(
             string id,
             in FloatingSurfaceProps props,

@@ -210,6 +210,7 @@ public record struct Theme
             public const float Width = 680f;
             public const float Height = 440f;
             public const float FavoritesWidth = 128f;
+            public const float FileNameWidth = 220f;
         }
 
         public static class Optical

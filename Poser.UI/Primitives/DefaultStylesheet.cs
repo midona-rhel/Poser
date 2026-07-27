@@ -98,6 +98,25 @@ internal static class DefaultStylesheet
             Height = Sizing.Fixed(Theme.Metrics.Control.Comfortable),
         });
 
+        Stylesheet.Define(Cls.Btn + Cls.SurfaceClose, new ButtonStyle
+        {
+            Width = Sizing.Fixed(Theme.Metrics.Floating.CloseAction),
+            Height = Sizing.Fixed(Theme.Metrics.Floating.CloseAction),
+            BorderWidth = 0f,
+            BorderRadius = Theme.Metrics.Radius.Control,
+            BackgroundColor = System.Numerics.Vector4.Zero,
+            Padding = new Spacing(0f),
+        });
+
+        Stylesheet.Define(
+            Cls.Btn + Cls.SurfaceClose,
+            PseudoState.Hover,
+            new ButtonStyle
+            {
+                BackgroundColor = new System.Numerics.Vector4(
+                    1f, 1f, 1f, 0.08f),
+            });
+
         // Compatibility selector for pages that have not reached their
         // migration slice. It resolves to the same workspace primitive.
         Stylesheet.Define(Cls.Btn + Cls.Compact, new ButtonStyle
@@ -127,6 +146,14 @@ internal static class DefaultStylesheet
             Width = Sizing.Fixed(Theme.Metrics.Control.Comfortable),
             Padding = new Spacing(0),
         });
+
+        Stylesheet.Define(
+            Cls.Btn + Cls.Icon + Cls.SurfaceClose,
+            new ButtonStyle
+            {
+                Width = Sizing.Fixed(Theme.Metrics.Floating.CloseAction),
+                Height = Sizing.Fixed(Theme.Metrics.Floating.CloseAction),
+            });
 
         // ---- Checkbox ----
         // picto shared/ui/OverlayShell/OverlayShell.module.css (.checkBox): 14×14,

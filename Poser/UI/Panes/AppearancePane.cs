@@ -10,7 +10,6 @@ using Poser.Domain.Integration;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Game.Presentation;
-using Poser.UI.Controls;
 
 namespace Poser.UI;
 
@@ -39,9 +38,9 @@ public sealed class AppearancePane
     private bool _bodyBlocked;
     private string _bodyBlockedDetail = string.Empty;
 
-    private readonly FileBrowser _mcdfImportBrowser =
+    private readonly Crystarium.FileDialog _mcdfImportBrowser =
         new("Import Character File", new[] { ".mcdf" }, isSaveMode: false);
-    private readonly FileBrowser _mcdfExportBrowser =
+    private readonly Crystarium.FileDialog _mcdfExportBrowser =
         new("Export Character File", new[] { ".mcdf" }, isSaveMode: true);
     private string _mcdfPath =
         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);

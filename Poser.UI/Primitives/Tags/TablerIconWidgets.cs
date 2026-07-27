@@ -68,6 +68,7 @@ public static partial class Crystarium
         if (pre.Display == UI.Display.None) return false;
 
         float scale = ImGuiHelpers.GlobalScale;
+        var theme = Norvrandt.Sheet.CurrentTheme;
         float side = (pre.Width ?? Sizing.Fixed(Theme.Metrics.Control.Comfortable)).Value * scale;
         float h = (pre.Height ?? Sizing.Fixed(Theme.Metrics.Control.Comfortable)).Value * scale;
         side = SizeUtil.Clamp(side, pre.MinWidth, pre.MaxWidth, scale);
