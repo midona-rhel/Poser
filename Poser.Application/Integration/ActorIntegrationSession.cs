@@ -304,10 +304,11 @@ public sealed class ActorIntegrationSession
         bool touchedNative = false;
 
         // MCDF teardown first: it holds the lock and the temporary
-        // resources that sit on top of everything else.
+        // resources that sit on top of everything else. It requests (and
+        // retries) its own redraw.
         if (current.Mcdf is { } mcdf)
         {
-            current = TearDownMcdf(actor, current, mcdf, resolvable, failures, ref touchedNative);
+            current = TearDownMcdf(actor, current, mcdf, resolvable, failures);
         }
 
         // Body profile: delete only Poser's temporary profile, by its own
@@ -392,7 +393,11 @@ public sealed class ActorIntegrationSession
         }
 
         if (touchedNative && resolvable)
-            _port.RequestRedraw(actor);
+        {
+            var redraw = _port.RequestRedraw(actor);
+            if (!redraw.Success)
+                failures.Add($"The redraw request failed: {redraw.Detail}");
+        }
 
         if (current.HasAny)
             _overrides[actor] = current;
@@ -410,10 +415,12 @@ public sealed class ActorIntegrationSession
         IntegrationOverrides current,
         McdfOwnership mcdf,
         bool resolvable,
-        List<string> failures,
-        ref bool touchedNative)
+        List<string> failures)
     {
         bool complete = true;
+        // Redraw whenever temporary Penumbra ownership was removed — now
+        // or, still pending, by an earlier partially failed teardown.
+        bool removedPenumbra = mcdf.RedrawPending;
 
         bool locked = mcdf.GlamourerLocked;
         if (locked && resolvable)
@@ -474,11 +481,27 @@ public sealed class ActorIntegrationSession
             if (collectionDeleted.Success)
             {
                 temporaryCollection = null;
-                touchedNative = true;
+                removedPenumbra = true;
             }
             else
             {
                 failures.Add(collectionDeleted.Detail!);
+                complete = false;
+            }
+        }
+
+        // Redraw before releasing anything file-backed: a removed
+        // temporary collection leaves the removed resources visually
+        // cached until the actor redraws. Failure is reported and stays
+        // owned as a retryable redraw-pending state.
+        bool redrawPending = false;
+        if (removedPenumbra && resolvable)
+        {
+            var redraw = _port.RequestRedraw(actor);
+            if (!redraw.Success)
+            {
+                failures.Add($"The redraw request failed: {redraw.Detail}");
+                redrawPending = true;
                 complete = false;
             }
         }
@@ -512,6 +535,7 @@ public sealed class ActorIntegrationSession
                 TemporaryProfile = temporaryProfile,
                 TemporaryCollection = temporaryCollection,
                 OperationDirectory = operationDirectory,
+                RedrawPending = redrawPending,
             },
         };
     }
@@ -594,6 +618,7 @@ public sealed class ActorIntegrationSession
         public string? WorkingGlamourerState;
         public bool ReplacedWorkingBodyProfile;
         public string? WorkingBodyProfileJson;
+        public bool RedrawPending;
     }
 
     private InFlightImport? _inFlight;
@@ -922,9 +947,8 @@ public sealed class ActorIntegrationSession
         if (current.Mcdf is { } mcdf)
         {
             var failures = new List<string>();
-            bool touched = false;
             bool stillThere = _port.IsResolvable(actor);
-            current = TearDownMcdf(actor, current, mcdf, stillThere, failures, ref touched);
+            current = TearDownMcdf(actor, current, mcdf, stillThere, failures);
             Mutate(actor, current);
             if (failures.Count > 0)
                 return (null, "Tearing down the active MCDF failed: "
@@ -1072,8 +1096,19 @@ public sealed class ActorIntegrationSession
                 failures.Add(deleted.Detail!);
         }
 
-        if (touchedNative && resolvable)
-            _port.RequestRedraw(actor);
+        if ((touchedNative || operation.RedrawPending) && resolvable)
+        {
+            var redraw = _port.RequestRedraw(actor);
+            if (redraw.Success)
+            {
+                operation.RedrawPending = false;
+            }
+            else
+            {
+                failures.Add($"The redraw request failed: {redraw.Detail}");
+                operation.RedrawPending = true;
+            }
+        }
 
         if (operation.TemporaryCollection == null
             && operation.OperationDirectory is { } directory)
@@ -1091,7 +1126,8 @@ public sealed class ActorIntegrationSession
         bool clean = operation.TemporaryCollection == null
             && !operation.GlamourerLocked
             && operation.TemporaryProfile == null
-            && operation.OperationDirectory == null;
+            && operation.OperationDirectory == null
+            && !operation.RedrawPending;
         if (clean && failures.Count == 0)
         {
             Changed?.Invoke();
@@ -1110,7 +1146,8 @@ public sealed class ActorIntegrationSession
                 operation.OperationDirectory,
                 operation.GlamourerLocked,
                 operation.TemporaryProfile,
-                operation.BodyJson),
+                operation.BodyJson,
+                operation.RedrawPending),
         });
         return string.Join("; ", failures);
     }
@@ -1128,10 +1165,7 @@ public sealed class ActorIntegrationSession
 
         bool resolvable = _port.IsResolvable(actor);
         var failures = new List<string>();
-        bool touched = false;
-        current = TearDownMcdf(actor, current, mcdf, resolvable, failures, ref touched);
-        if (touched && resolvable)
-            _port.RequestRedraw(actor);
+        current = TearDownMcdf(actor, current, mcdf, resolvable, failures);
         Mutate(actor, current);
         return failures.Count == 0
             ? IntegrationResult.Ok()
