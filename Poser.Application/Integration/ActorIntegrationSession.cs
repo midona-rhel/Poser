@@ -1274,11 +1274,18 @@ public sealed class ActorIntegrationSession
             // obligation. Existing ownership — selector baselines, an
             // older MCDF's unresolved teardown — stays untouched.
             if (operation.OperationDirectory is { } orphan)
-                Mutate(actor, current with
-                {
-                    PendingDirectories =
-                        current.PendingDirectories.Append(orphan).ToList(),
-                });
+            {
+                // Transferred, not dropped: clearing the record makes a
+                // second rollback pass idempotent, and the dedupe keeps a
+                // repeated transfer from appending the same path twice.
+                operation.OperationDirectory = null;
+                if (!current.PendingDirectories.Contains(orphan))
+                    Mutate(actor, current with
+                    {
+                        PendingDirectories =
+                            current.PendingDirectories.Append(orphan).ToList(),
+                    });
+            }
             return failures.Count == 0 ? null : string.Join("; ", failures);
         }
 
@@ -1332,7 +1339,17 @@ public sealed class ActorIntegrationSession
             return IntegrationResult.Fail("An MCDF operation is still running.");
         var current = OverridesFor(actor);
         if (current.Mcdf is not { } mcdf)
-            return IntegrationResult.Ok();
+        {
+            // No active MCDF — but standalone pending-directory cleanup
+            // obligations still retry from this action.
+            if (current.PendingDirectories.Count == 0)
+                return IntegrationResult.Ok();
+            var cleanupFailures = new List<string>();
+            Mutate(actor, RetryPendingDirectories(current, cleanupFailures));
+            return cleanupFailures.Count == 0
+                ? IntegrationResult.Ok()
+                : IntegrationResult.Fail(string.Join("; ", cleanupFailures));
+        }
 
         bool resolvable = _port.IsResolvable(actor);
         var failures = new List<string>();

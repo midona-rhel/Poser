@@ -451,27 +451,33 @@ public sealed class AppearancePane
             InspectorLayout.FormLabel(new Vector2(cursor.X, mcdfTop), "File", s);
             var importSize = Crystarium.MeasureButton("Import…", Cls.Compact);
             var exportSize = Crystarium.MeasureButton("Export…", Cls.Compact);
-            var mcdfResetSize = Crystarium.MeasureButton("Reset MCDF", Cls.Compact);
             bool mcdfOwnedNow = external.Mcdf != null;
+            bool cleanupPending = external.PendingDirectories.Count > 0;
+            bool showReset = mcdfOwnedNow || cleanupPending;
+            string resetLabel = mcdfOwnedNow ? "Reset MCDF" : "Retry cleanup";
+            var mcdfResetSize = Crystarium.MeasureButton(resetLabel, Cls.Compact);
             float buttons = importSize.X + 8f * s + exportSize.X
-                + (mcdfOwnedNow ? 8f * s + mcdfResetSize.X : 0f);
-            string currentFile = external.Mcdf?.FileName ?? "None";
+                + (showReset ? 8f * s + mcdfResetSize.X : 0f);
+            string currentFile = external.Mcdf?.FileName
+                ?? (cleanupPending ? "Cleanup pending" : "None");
             ViewText.Label(new Vector2(controlX, mcdfTop + InspectorLayout.FormLabelY * s),
                 FitLabel(currentFile, MathF.Max(30f * s, controlW * s - buttons - 12f * s)),
                 11f, FontWeight.Regular,
                 mcdfOwnedNow ? InspectorLayout.ValueColor : InspectorLayout.HintColor);
 
             float bx2 = cursor.X + width;
-            if (mcdfOwnedNow)
+            if (showReset)
             {
                 bx2 -= mcdfResetSize.X;
                 ImGui.SetCursorScreenPos(new Vector2(
                     bx2, mcdfTop + InspectorLayout.FormButtonY * s));
-                if (Crystarium.Button("Reset MCDF", new ButtonProps
+                if (Crystarium.Button(resetLabel, new ButtonProps
                     {
                         Id = "app-mcdf-reset",
                         Classes = Cls.Compact,
-                        Tooltip = "Remove everything this character file applied and restore the incoming external state",
+                        Tooltip = mcdfOwnedNow
+                            ? "Remove everything this character file applied and restore the incoming external state"
+                            : "Retry deleting extracted files left behind by a failed import",
                     }))
                 {
                     var result = _integration.ResetMcdf(actor);
