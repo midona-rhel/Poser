@@ -64,6 +64,14 @@ public class SkeletonOverlayWindow : Window
     // Hover list state (Ktisis-style)
     private List<BoneDisplayData>? _hoveredBones;
     private int _hoverIndex;
+    private SelectionId? _pressedWorldTarget;
+    private PendingSelection? _pendingSelection;
+
+    private readonly record struct PendingSelection(
+        SelectionId Id,
+        Vector2 ReleasePoint,
+        bool Additive,
+        InteractionOwner Owner);
 
     public SkeletonOverlayWindow(
         SceneSession scene,
@@ -105,6 +113,9 @@ public class SkeletonOverlayWindow : Window
         var viewportPos = ImGui.GetMainViewport().Pos;
         var io = ImGui.GetIO();
         var mousePos = io.MousePos;
+        bool pointerBlocked = Interactive.PointerOccluded(
+            InteractionOwner.World,
+            mousePos);
 
         // Holding Alt temporarily hides the skeleton dots for an unobstructed
         // view; the window stays open and interaction resumes on release.
@@ -193,10 +204,23 @@ public class SkeletonOverlayWindow : Window
 
         var actorRadius = 8f * ImGuiHelpers.GlobalScale;
         foreach (var actor in actors)
-            actor.IsHovered = IsHoveringDot(actor.ScreenPos, actorRadius);
+            actor.IsHovered = !pointerBlocked
+                && IsHoveringDot(actor.ScreenPos, actorRadius);
 
         // Update hover state
-        UpdateHoverState(bones, mousePos);
+        if (pointerBlocked)
+        {
+            foreach (var bone in bones)
+                bone.IsHovered = false;
+            _hoveredBones = null;
+            _pressedWorldTarget = null;
+        }
+        else
+        {
+            UpdateHoverState(bones, mousePos);
+        }
+
+        CommitPendingSelection(bones, actors);
 
         // Filter bones if ShowSelectedBonesOnly is enabled
         if (_editorState.ShowSelectedBonesOnly)
@@ -241,10 +265,7 @@ public class SkeletonOverlayWindow : Window
             .Where(actor => actor.IsHovered)
             .OrderBy(actor => actor.CameraDistance)
             .FirstOrDefault();
-        bool actorClicked = hoveredActor != null &&
-                            !Controls.GizmoPointerOwnership.Owned &&
-                            ImGui.IsMouseReleased(ImGuiMouseButton.Left);
-        if (hoveredActor != null)
+        if (hoveredActor != null && !pointerBlocked)
         {
             var overlayMouse = ImGui.GetMousePos();
             Crystarium.HoverHelp.Preview("sow-actor",
@@ -254,20 +275,13 @@ public class SkeletonOverlayWindow : Window
 
         // Update hovered bones list and draw hover window (Ktisis style)
         UpdateHoveredBones(bones);
-        if (actorClicked)
-        {
-            if (io.KeyCtrl)
-                _selection.Toggle(hoveredActor!.Id);
-            else
-                _selection.Select(hoveredActor!.Id);
-        }
-        else if (DrawHoverWindow(out var clickedBone) && clickedBone != null)
-        {
-            if (ImGui.GetIO().KeyCtrl)
-                _selection.Toggle(clickedBone.Id);
-            else
-                _selection.Select(clickedBone.Id);
-        }
+        var worldTarget = hoveredActor?.Id
+            ?? (_hoveredBones is { Count: > 0 }
+                ? _hoveredBones[_hoverIndex].Id
+                : (SelectionId?)null);
+        UpdateWorldPress(worldTarget, pointerBlocked);
+        if (!pointerBlocked)
+            DrawHoverList();
     }
 
     private const int HoverPadding = 6;
@@ -359,57 +373,85 @@ public class SkeletonOverlayWindow : Window
             _hoverIndex = 0;
     }
 
-    private bool DrawHoverWindow(out BoneDisplayData? clicked)
+    private void UpdateWorldPress(
+        SelectionId? target,
+        bool pointerBlocked)
     {
-        clicked = null;
-        if (_hoveredBones == null || _hoveredBones.Count == 0)
-            return false;
-
-        // Don't show when gizmo active (Ktisis check)
-        if (Controls.GizmoPointerOwnership.Owned)
-            return false;
-
-        var begin = false;
-        try
+        if (pointerBlocked || Controls.GizmoPointerOwnership.Owned)
         {
-            // Position window near mouse (Ktisis style - 20px to the right)
-            var mousePos = ImGui.GetIO().MousePos;
-            ImGui.SetNextWindowPos(mousePos + new Vector2(20f, 0));
-            ImGui.SetNextWindowSize(new Vector2(-1, -1), ImGuiCond.Always);
-
-            var flags = ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoFocusOnAppearing;
-            begin = ImGui.Begin("##BoneHover", flags);
-            if (begin)
-            {
-                // Handle mouse wheel input and clamp scroll index (Ktisis style)
-                _hoverIndex -= (int)ImGui.GetIO().MouseWheel;
-                if (_hoverIndex >= _hoveredBones.Count)
-                    _hoverIndex = 0;
-                else if (_hoverIndex < 0)
-                    _hoverIndex = _hoveredBones.Count - 1;
-
-                // Capture mouse input
-                ImGui.SetNextFrameWantCaptureMouse(true);
-
-                // Check for mouse click
-                var isClick = ImGui.IsMouseReleased(ImGuiMouseButton.Left);
-
-                for (int i = 0; i < _hoveredBones.Count; i++)
-                {
-                    var bone = _hoveredBones[i];
-                    var isSelected = i == _hoverIndex;
-                    ImGui.Selectable(bone.Name, isSelected);
-                    if (isSelected && isClick)
-                        clicked = bone;
-                }
-            }
-        }
-        finally
-        {
-            if (begin) ImGui.End();
+            _pressedWorldTarget = null;
+            return;
         }
 
-        return clicked != null;
+        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+            _pressedWorldTarget = target;
+
+        if (!ImGui.IsMouseReleased(ImGuiMouseButton.Left))
+            return;
+        if (_pressedWorldTarget is { } pressed
+            && target is { } released
+            && pressed.Equals(released))
+        {
+            _pendingSelection = new PendingSelection(
+                released,
+                ImGui.GetMousePos(),
+                ImGui.GetIO().KeyCtrl,
+                InteractionOwner.World);
+        }
+        _pressedWorldTarget = null;
+    }
+
+    private void DrawHoverList()
+    {
+        if (_hoveredBones == null || _hoveredBones.Count == 0
+            || Controls.GizmoPointerOwnership.Owned)
+            return;
+
+        _hoverIndex -= (int)ImGui.GetIO().MouseWheel;
+        if (_hoverIndex >= _hoveredBones.Count)
+            _hoverIndex = 0;
+        else if (_hoverIndex < 0)
+            _hoverIndex = _hoveredBones.Count - 1;
+
+        var labels = _hoveredBones.Select(bone => bone.Name).ToArray();
+        const string ownerId = "##skeleton-overlay-bones";
+        int clicked = Crystarium.FloatingSurface.HoverList(
+            ownerId,
+            ImGui.GetMousePos(),
+            labels,
+            _hoverIndex,
+            InteractionLayer.OverlaySurface);
+        if (clicked < 0 || clicked >= _hoveredBones.Count)
+            return;
+        _hoverIndex = clicked;
+        _pendingSelection = new PendingSelection(
+            _hoveredBones[clicked].Id,
+            ImGui.GetMousePos(),
+            ImGui.GetIO().KeyCtrl,
+            new InteractionOwner(
+                ownerId,
+                InteractionLayer.OverlaySurface,
+                int.MaxValue));
+    }
+
+    private void CommitPendingSelection(
+        IReadOnlyList<BoneDisplayData> bones,
+        IReadOnlyList<ActorDisplayData> actors)
+    {
+        if (_pendingSelection is not { } pending)
+            return;
+        _pendingSelection = null;
+        bool stillPresent = bones.Any(bone => bone.Id.Equals(pending.Id))
+            || actors.Any(actor => actor.Id.Equals(pending.Id));
+        if (!stillPresent
+            || Interactive.PointerOccluded(
+                pending.Owner,
+                pending.ReleasePoint))
+            return;
+        if (pending.Additive)
+            _selection.Toggle(pending.Id);
+        else
+            _selection.Select(pending.Id);
     }
 
     private void DrawLines(ImDrawListPtr drawList, List<BoneDisplayData> bones, float opacity)
