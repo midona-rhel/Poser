@@ -19,6 +19,10 @@ public static partial class Crystarium
         private string _search = string.Empty;
         private IReadOnlyList<T> _items = Array.Empty<T>();
         private Func<T, string> _label = static _ => string.Empty;
+        private Func<T, string> _key = static item =>
+            System.Runtime.CompilerServices.RuntimeHelpers
+                .GetHashCode(item).ToString(
+                    System.Globalization.CultureInfo.InvariantCulture);
         private string? _loadError;
 
         public SearchPicker(string id) => _popupId = $"##search-picker-{id}";
@@ -30,6 +34,7 @@ public static partial class Crystarium
             string caption,
             IReadOnlyList<T> items,
             Func<T, string> label,
+            Func<T, string>? key = null,
             string? loadError = null)
         {
             _anchorMin = ImGui.GetItemRectMin();
@@ -39,6 +44,8 @@ public static partial class Crystarium
             _search = string.Empty;
             _items = items;
             _label = label;
+            if (key != null)
+                _key = key;
             _loadError = loadError;
             _openRequested = true;
         }
@@ -159,7 +166,7 @@ public static partial class Crystarium
                     foreach (var item in filtered)
                     {
                         if (region.ListRow(
-                                $"{_popupId}-{_label(item)}",
+                                $"{_popupId}-{_key(item)}",
                                 _label(item)))
                             picked = item;
                     }
