@@ -9,7 +9,7 @@ namespace Poser.UI;
 /// <summary>
 /// Resolves <see cref="FontFamily"/> + weight + size requests from
 /// <see cref="ElementStyle.FontSize"/>/<see cref="ElementStyle.FontWeight"/> to a concrete
-/// Dalamud <see cref="IFontHandle"/>. Handles are built on demand and cached per
+/// Dalamud <see cref="IFontHandle"/>. Handles are cached per normalized
 /// (family, weight, size). Requested sizes are honored exactly (rounded to whole pixels) —
 /// the old ±4px bucket snap silently corrupted the picto scale (12→13, 14→13).
 ///
@@ -43,6 +43,8 @@ public static class FontRegistry
     }
 
     private static readonly Dictionary<Key, IFontHandle> _cache = new();
+    private static readonly HashSet<Key> _required = new();
+    private static readonly HashSet<Key> _failed = new();
 
     // Resolved lazily once; null entry = file not found → Dalamud default fallback.
     private static readonly Dictionary<(FontFamily, FontWeight), string?> _files = new();
@@ -50,6 +52,66 @@ public static class FontRegistry
     public static void Register(IFontAtlas atlas)
     {
         _atlas = atlas;
+        Warm(Crystarium.ActiveTheme);
+    }
+
+    /// <summary>
+    /// True once every font used by the active theme has either become
+    /// available or failed definitively. Presentation waits for this so its
+    /// first visible measurement cannot use a temporary fallback face.
+    /// </summary>
+    public static bool Ready
+    {
+        get
+        {
+            if (_atlas == null || _required.Count == 0)
+                return false;
+
+            foreach (var key in _required)
+            {
+                if (_failed.Contains(key))
+                    continue;
+                if (!_cache.TryGetValue(key, out var handle))
+                    return false;
+                if (handle.Available)
+                    continue;
+                if (handle.LoadException is { } loadException)
+                {
+                    LastError ??=
+                        $"{key.Family}/{key.Weight}/{key.SizePx}px: {loadException.Message}";
+                    continue;
+                }
+                return false;
+            }
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Creates the complete active typography matrix before presentation.
+    /// Medium and semibold share Segoe UI Semibold, while mono has one face,
+    /// so normalization keeps the atlas to fifteen distinct handles.
+    /// </summary>
+    public static void Warm(in Theme theme)
+    {
+        if (_atlas == null)
+            return;
+
+        _required.Clear();
+        float[] sizes =
+        [
+            theme.Typography.ShortcutSize,
+            theme.Typography.CaptionSize,
+            theme.Typography.LabelSize,
+            theme.Typography.BodySize,
+            theme.Typography.SurfaceTitleSize,
+        ];
+        foreach (float size in sizes)
+        {
+            Require(FontFamily.Default, FontWeight.Regular, size);
+            Require(FontFamily.Default, FontWeight.SemiBold, size);
+            Require(FontFamily.Mono, FontWeight.Regular, size);
+        }
     }
 
     /// <summary>Resolve a font handle for family + size at regular weight.</summary>
@@ -63,11 +125,25 @@ public static class FontRegistry
         if (family == FontFamily.Icon) return null; // FontAwesome bundle handled via UiBuilder.IconFont
 
         int sizePx = Math.Max(1, (int)MathF.Round(size));
-        var key = new Key(family, weight, sizePx);
+        var key = new Key(family, NormalizeWeight(family, weight), sizePx);
         if (_cache.TryGetValue(key, out var handle)) return handle;
 
         return CacheHandle(key);
     }
+
+    private static void Require(FontFamily family, FontWeight weight, float size)
+    {
+        int sizePx = Math.Max(1, (int)MathF.Round(size));
+        var key = new Key(family, NormalizeWeight(family, weight), sizePx);
+        _required.Add(key);
+        if (!_cache.ContainsKey(key) && !_failed.Contains(key))
+            CacheHandle(key);
+    }
+
+    private static FontWeight NormalizeWeight(FontFamily family, FontWeight weight) =>
+        family == FontFamily.Mono || weight == FontWeight.Regular
+            ? FontWeight.Regular
+            : FontWeight.SemiBold;
 
     private static IFontHandle? CacheHandle(Key key)
     {
@@ -105,8 +181,10 @@ public static class FontRegistry
             _cache[key] = handle;
             return handle;
         }
-        catch
+        catch (Exception ex)
         {
+            _failed.Add(key);
+            LastError = $"{key.Family}/{key.Weight}/{key.SizePx}px: {ex.Message}";
             return null;
         }
     }
@@ -157,6 +235,8 @@ public static class FontRegistry
     {
         foreach (var h in _cache.Values) h.Dispose();
         _cache.Clear();
+        _required.Clear();
+        _failed.Clear();
         _files.Clear();
         _atlas = null;
     }

@@ -483,6 +483,7 @@ public static partial class Crystarium
     public static void UseTheme(Theme theme)
     {
         ActiveTheme = theme;
+        FontRegistry.Warm(theme);
         Stylesheet.Reset();
     }
 }

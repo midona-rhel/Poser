@@ -69,8 +69,8 @@ public class Poser : IDalamudPlugin
         // actor/skeleton subscriptions never run and SceneSession stays empty.
         _ = _serviceProvider.GetRequiredService<CleanSceneLifecycle>();
 
-        // Bootstrap Norvrandt's font registry — pre-builds IFontHandles for theme typo sizes
-        // (11/13/16/22/32) so ElementStyle.FontSize actually applies.
+        // Create the active theme's complete typography matrix before any
+        // presentation surface can measure with a fallback face.
         FontRegistry.Register(pluginInterface.UiBuilder.FontAtlas);
 
         // Dalamud provides real backdrop blur for the retained glass surfaces.

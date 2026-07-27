@@ -67,6 +67,9 @@ public sealed class UIManager : IUIManager
 
     private void DrawUI()
     {
+        if (!FontRegistry.Ready)
+            return;
+
         _windows.System.Draw();
         // The one hover-help card renders after every window has drawn,
         // so registrations from any pane are complete and the card sits
