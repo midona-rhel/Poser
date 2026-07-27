@@ -32,7 +32,6 @@ public class MainWindow : Window
     // One minimum for every tab: the right column is always spent, either
     // on the Pose rail or on Animation content.
     private const float MinimumWidth = 1110f;
-    private const float CompactMinimumWidth = MinimumWidth - AppShellView.RailWidth;
     private const float DefaultWidth = MinimumWidth + 50f;
     private const float DefaultHeight = 660f;
     private const float MinHeight = 520f;
@@ -107,7 +106,7 @@ public class MainWindow : Window
     {
         Size = new Vector2(DefaultWidth, DefaultHeight);
         SizeCondition = ImGuiCond.FirstUseEver;
-        SizeConstraints = ExpandedSizeConstraints(compact: false);
+        SizeConstraints = ExpandedSizeConstraints();
 
         _gPoseService = gPoseService;
         _actorManager = actorManager;
@@ -205,26 +204,19 @@ public class MainWindow : Window
     {
         base.PreDraw();
 
-        // RAIL-AWARE width: Pose and Animation share the wide frame (their
-        // right column occupies the same 280px), while Appearance has no
-        // inspector and shrinks by exactly AppShellView.RailWidth. One
-        // tracked wide width is the single source — the compact width is
-        // always wide − 280 and a manual resize in either mode writes the
-        // same source back, so switching can never drift. The size is
-        // written only on the frame the rail visibility changes.
-        bool compact = !_collapsed && _activeTab == "Appearance";
+        // ONE width for the whole shell: every tab keeps the inspector
+        // rail, so navigating can never move the frame. Only collapse and
+        // restore write Size.
         SizeConstraints = _collapsed
             ? new WindowSizeConstraints
             {
-                MinimumSize = new Vector2(
-                    _compact ? CompactMinimumWidth : MinimumWidth,
-                    AppShellView.TitlebarHeight),
+                MinimumSize = new Vector2(MinimumWidth, AppShellView.TitlebarHeight),
                 MaximumSize = new Vector2(float.MaxValue, AppShellView.TitlebarHeight),
             }
-            : ExpandedSizeConstraints(compact);
+            : ExpandedSizeConstraints();
 
-        // Collapse, restore, and rail changes go through the Dalamud
-        // window size system; ImGui.SetWindowSize inside Draw loses to it.
+        // Collapse and restore go through the Dalamud window size system;
+        // ImGui.SetWindowSize inside Draw loses to it.
         if (_collapsed)
         {
             Size = new Vector2(_lastWidth, AppShellView.TitlebarHeight);
@@ -235,15 +227,6 @@ public class MainWindow : Window
             Size = new Vector2(_lastWidth, _savedHeight);
             SizeCondition = ImGuiCond.Always;
             _restorePending = false;
-        }
-        else if (compact != _compact)
-        {
-            _compact = compact;
-            float width = compact
-                ? MathF.Max(CompactMinimumWidth, _wideWidth - AppShellView.RailWidth)
-                : MathF.Max(MinimumWidth, _wideWidth);
-            Size = new Vector2(width, _lastHeight);
-            SizeCondition = ImGuiCond.Always;
         }
         else
         {
@@ -272,16 +255,13 @@ public class MainWindow : Window
     }
 
     private bool _restorePending;
-    private bool _compact;
     private float _lastWidth = DefaultWidth;
     private float _lastHeight = DefaultHeight;
-    private float _wideWidth = DefaultWidth;
 
-    private static WindowSizeConstraints ExpandedSizeConstraints(bool compact)
+    private static WindowSizeConstraints ExpandedSizeConstraints()
         => new()
         {
-            MinimumSize = new Vector2(
-                compact ? CompactMinimumWidth : MinimumWidth, MinHeight),
+            MinimumSize = new Vector2(MinimumWidth, MinHeight),
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue),
         };
 
@@ -290,10 +270,6 @@ public class MainWindow : Window
         float gs = ImGuiHelpers.GlobalScale;
         _lastWidth = ImGui.GetWindowSize().X / gs;
         _lastHeight = ImGui.GetWindowSize().Y / gs;
-        // Manual sizing in either mode maintains the one wide-width source
-        // (compact is always wide − RailWidth), so there is no ±280 drift.
-        if (!_collapsed)
-            _wideWidth = _compact ? _lastWidth + AppShellView.RailWidth : _lastWidth;
         ReconcilePendingSpawn();
         BuildViewModel();
         AppShellView.Draw(_vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
@@ -335,7 +311,7 @@ public class MainWindow : Window
         _vm.ContentOwnsViewport = _activeTab == "Pose";
         // Appearance has no pose rail; its content takes the released
         // width. The outer window size is untouched by tab changes.
-        _vm.DrawRail = _collapsed || _activeTab == "Appearance" ? null : _poseRail.Draw;
+        _vm.DrawRail = _collapsed ? null : _poseRail.Draw;
 
         _vm.GizmoOperation = (int)_editorState.TransformTool;
         _vm.GizmoSpace = (int)_editorState.TransformOrientation;
