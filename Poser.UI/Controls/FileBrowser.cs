@@ -4,436 +4,283 @@ using System.IO;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface;
 using Dalamud.Interface.Utility;
-using Dalamud.Interface.Utility.Raii;
 
 namespace Poser.UI.Controls;
 
 /// <summary>
-/// Reusable file browser control for selecting files.
+/// File dialog on the retained Crystarium.Modal glass chrome: glass
+/// background with the directional border trio and black outline/shadow,
+/// 44px header and footer, Tabler icons, compact 26px rows with the
+/// retained scrollbar treatment, the primary Import/Save action in the
+/// footer and Cancel as the secondary action. Selection semantics are
+/// unchanged from the legacy window: the callback fires synchronously on
+/// the draw thread once the dialog has closed.
 /// </summary>
 public class FileBrowser
 {
-    private readonly Modal _modal;
     private readonly string _title;
     private readonly string[] _extensions;
     private readonly bool _isSaveMode;
+    private readonly string _id;
 
-    private string _currentPath = "";
-    private string _fileName = "";
-    private List<FileSystemEntry> _entries = new();
-    private int _selectedIndex = -1;
+    private readonly record struct Entry(string Name, string FullPath, bool IsDirectory);
+
+    private bool _open;
+    private string _currentPath = string.Empty;
+    private string _fileName = string.Empty;
+    private string? _selectedFile;
+    private string? _lastError;
+    private string? _pendingSelect;
     private Action<string>? _onSelect;
-    private string _lastError = "";
-
-    // Favorites/Quick Access
-    private readonly List<FavoriteEntry> _favorites = new();
-
-    private const float SidebarWidth = 120f;
+    private readonly List<(string Name, string Path)> _favorites = new();
+    private readonly List<Entry> _entries = new();
 
     public FileBrowser(string title, string[] extensions, bool isSaveMode = false)
     {
         _title = title;
         _extensions = extensions;
         _isSaveMode = isSaveMode;
-        _modal = new Modal(title, new Vector2(600, 400));
-
+        _id = $"##file-browser-{Guid.NewGuid():N}";
         InitializeFavorites();
     }
 
-    private void InitializeFavorites()
-    {
-        _favorites.Clear();
+    public bool IsOpen => _open;
 
-        // Add standard Windows folders
-        AddFavorite("Desktop", Environment.GetFolderPath(Environment.SpecialFolder.Desktop), FontAwesomeIcon.Desktop);
-        AddFavorite("Documents", Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), FontAwesomeIcon.FileAlt);
-        AddFavorite("Pictures", Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), FontAwesomeIcon.Image);
-
-        var downloadsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
-        AddFavorite("Downloads", downloadsPath, FontAwesomeIcon.Download);
-
-        // Add drives
-        try
-        {
-            foreach (var drive in DriveInfo.GetDrives())
-            {
-                if (drive.IsReady)
-                {
-                    string name = string.IsNullOrEmpty(drive.VolumeLabel)
-                        ? drive.Name.TrimEnd('\\')
-                        : $"{drive.VolumeLabel} ({drive.Name.TrimEnd('\\')})";
-                    AddFavorite(name, drive.RootDirectory.FullName, FontAwesomeIcon.Hdd);
-                }
-            }
-        }
-        catch
-        {
-            // Ignore drive enumeration errors
-        }
-    }
-
-    private void AddFavorite(string name, string path, FontAwesomeIcon icon)
-    {
-        if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
-        {
-            _favorites.Add(new FavoriteEntry { Name = name, Path = path, Icon = icon });
-        }
-    }
-
-    public bool IsOpen => _modal.IsOpen;
-
-    /// <summary>
-    /// Opens the file browser with a callback for when a file is selected.
-    /// </summary>
     public void Open(string initialPath, Action<string> onSelect)
     {
         _onSelect = onSelect;
-        _selectedIndex = -1;
-        _fileName = "";
-        _lastError = "";
-
+        _selectedFile = null;
+        _fileName = string.Empty;
+        _lastError = null;
         if (string.IsNullOrEmpty(initialPath) || !Directory.Exists(initialPath))
-        {
             initialPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-        }
-
         NavigateTo(initialPath);
-        _modal.Open();
+        _open = true;
     }
 
-    /// <summary>
-    /// Draws the file browser modal. Call this every frame.
-    /// </summary>
+    /// <summary>Call every frame from a top-level draw.</summary>
     public void Draw()
     {
-        _modal.Draw(_title, DrawContent);
-    }
+        if (_open)
+            Crystarium.Modal(_id, ref _open, _title, DrawBody, DrawFooter,
+                ModalSize.Large, height: 420f);
 
-    private void DrawContent(ImDrawListPtr drawList)
-    {
-        float scale = ImGuiHelpers.GlobalScale;
-
-        DrawPathBar();
-        ImGui.Spacing();
-
-        // Calculate heights
-        float bottomBarHeight = _isSaveMode
-            ? (Norvrandt.Sheet.CurrentTheme.RowHeight * scale * 2 + Norvrandt.Sheet.CurrentTheme.RowSpacing * scale * 2)
-            : (Norvrandt.Sheet.CurrentTheme.RowHeight * scale + Norvrandt.Sheet.CurrentTheme.RowSpacing * scale);
-        float listHeight = ImGui.GetContentRegionAvail().Y - bottomBarHeight;
-
-        // Two-column layout
-        float sidebarWidthScaled = SidebarWidth * scale;
-
-        // Sidebar (no border)
-        using (ImRaii.Child("##sidebar", new Vector2(sidebarWidthScaled, listHeight), false))
+        // The callback fires AFTER the modal closed, exactly like the
+        // legacy close-then-invoke ordering.
+        if (!_open && _pendingSelect is { } chosen)
         {
-            DrawFavorites();
-        }
-
-        ImGui.SameLine();
-
-        // File list with ControlBackground
-        using (ImRaii.PushColor(ImGuiCol.ChildBg, Norvrandt.Sheet.CurrentTheme.SurfaceSunken))
-        using (ImRaii.Child("##file_list", new Vector2(-1, listHeight), true))
-        {
-            DrawFileEntries();
-        }
-
-        ImGui.Spacing();
-        DrawBottomBar();
-    }
-
-    private void DrawPathBar()
-    {
-        using var row = Flex.Row(gap: Theme.Spacing.Sm);
-
-        // Up button
-        row.Fixed(Norvrandt.Sheet.CurrentTheme.LargeIcon, (w, h) =>
-        {
-            float offsetY = (h - ImGui.GetTextLineHeight()) / 2f;
-            if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
-
-            using (ImRaii.PushFont(UiBuilder.IconFont))
-            {
-                if (ImGui.Button(FontAwesomeIcon.ArrowUp.ToIconString()))
-                {
-                    NavigateUp();
-                }
-            }
-            if (ImGui.IsItemHovered())
-                Crystarium.HoverHelp.Explain("filebrowser-up",
-                    ImGui.GetItemRectMin(), ImGui.GetItemRectMax(), "Go up one folder");
-        });
-
-        // Path display
-        row.Fill(w =>
-        {
-            ImGui.SetNextItemWidth(w);
-            string path = _currentPath;
-            if (ImGui.InputText("##path", ref path, 512, ImGuiInputTextFlags.EnterReturnsTrue))
-            {
-                if (Directory.Exists(path))
-                {
-                    NavigateTo(path);
-                }
-            }
-        });
-
-        // Refresh button
-        row.Fixed(Norvrandt.Sheet.CurrentTheme.LargeIcon, (w, h) =>
-        {
-            float offsetY = (h - ImGui.GetTextLineHeight()) / 2f;
-            if (offsetY > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
-
-            using (ImRaii.PushFont(UiBuilder.IconFont))
-            {
-                if (ImGui.Button(FontAwesomeIcon.Sync.ToIconString()))
-                {
-                    RefreshEntries();
-                }
-            }
-            if (ImGui.IsItemHovered())
-                Crystarium.HoverHelp.Explain("filebrowser-refresh",
-                    ImGui.GetItemRectMin(), ImGui.GetItemRectMax(),
-                    "Re-read this folder from disk");
-        });
-    }
-
-    private void DrawFavorites()
-    {
-        ImGui.TextColored(Theme.Palette.Gray, "Quick Access");
-        ImGui.Spacing();
-
-        foreach (var fav in _favorites)
-        {
-            using (ImRaii.PushFont(UiBuilder.IconFont))
-            {
-                ImGui.TextColored(Theme.Palette.Orange, fav.Icon.ToIconString());
-            }
-
-            ImGui.SameLine();
-
-            bool isCurrentPath = _currentPath.Equals(fav.Path, StringComparison.OrdinalIgnoreCase);
-            if (isCurrentPath)
-            {
-                ImGui.TextColored(Norvrandt.Sheet.CurrentTheme.Accent, fav.Name);
-            }
-            else
-            {
-                if (ImGui.Selectable(fav.Name))
-                {
-                    NavigateTo(fav.Path);
-                }
-            }
+            _pendingSelect = null;
+            _onSelect?.Invoke(chosen);
         }
     }
 
-    private void DrawFileEntries()
+    // ── Content ──────────────────────────────────────────────────────────
+
+    private void DrawBody()
     {
-        for (int i = 0; i < _entries.Count; i++)
+        float s = ImGuiHelpers.GlobalScale;
+
+        // Path bar: parent-folder action + the current location.
+        if (Crystarium.IconButton(TablerIcon.ArrowUp, "Parent folder"))
         {
-            var entry = _entries[i];
-            bool isSelected = i == _selectedIndex;
+            var parent = Directory.GetParent(_currentPath)?.FullName;
+            if (parent != null)
+                NavigateTo(parent);
+        }
+        ImGui.SameLine(0f, 8f * s);
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextColored(new Vector4(1f, 1f, 1f, 0.72f), _currentPath);
 
-            using (ImRaii.PushFont(UiBuilder.IconFont))
-            {
-                var icon = entry.IsDirectory ? FontAwesomeIcon.Folder : FontAwesomeIcon.File;
-                var iconColor = entry.IsDirectory ? Theme.Palette.Orange : Norvrandt.Sheet.CurrentTheme.Text;
-                ImGui.TextColored(iconColor, icon.ToIconString());
-            }
+        if (_lastError is { } error)
+            ImGui.TextColored(new Vector4(1f, 71f / 255f, 87f / 255f, 0.9f), error);
 
-            ImGui.SameLine();
+        float listHeight = ImGui.GetContentRegionAvail().Y;
+        float sidebarWidth = 128f * s;
 
-            if (ImGui.Selectable(entry.Name, isSelected, ImGuiSelectableFlags.AllowDoubleClick))
-            {
-                _selectedIndex = i;
-                if (!entry.IsDirectory)
+        // Favorites column: compact retained rows.
+        Crystarium.PushScrollbarStyle();
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+        ImGui.BeginChild("##fb-favorites", new Vector2(sidebarWidth, listHeight),
+            false, ImGuiWindowFlags.NoSavedSettings);
+        foreach (var (name, path) in _favorites)
+        {
+            if (Crystarium.SidebarRow($"##fb-fav-{path}", name, new SidebarRowProps
                 {
+                    Icon = TablerIcon.Folder,
+                    NoExpanderSlot = true,
+                    Selected = string.Equals(path, _currentPath, StringComparison.OrdinalIgnoreCase),
+                    Width = 128f,
+                }))
+                NavigateTo(path);
+        }
+        ImGui.EndChild();
+
+        // File list: directories first, compact rows, retained scrollbar.
+        ImGui.SameLine(0f, 8f * s);
+        ImGui.BeginChild("##fb-entries",
+            new Vector2(ImGui.GetContentRegionAvail().X, listHeight),
+            false, ImGuiWindowFlags.NoSavedSettings);
+        // 12px stable scrollbar gutter, the shell's retained treatment.
+        float rowWidth = ImGui.GetContentRegionAvail().X / s - 12f;
+        foreach (var entry in _entries)
+        {
+            bool clicked = Crystarium.SidebarRow($"##fb-{entry.FullPath}", entry.Name,
+                new SidebarRowProps
+                {
+                    Icon = entry.IsDirectory ? TablerIcon.Folder : TablerIcon.FileText,
+                    NoExpanderSlot = true,
+                    Selected = !entry.IsDirectory && string.Equals(
+                        entry.FullPath, _selectedFile, StringComparison.OrdinalIgnoreCase),
+                    Width = rowWidth,
+                });
+            bool doubleClicked = ImGui.IsItemHovered()
+                && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left);
+            if (entry.IsDirectory)
+            {
+                if (clicked || doubleClicked)
+                    NavigateTo(entry.FullPath);
+                continue;
+            }
+            if (clicked)
+            {
+                _selectedFile = entry.FullPath;
+                if (_isSaveMode)
                     _fileName = entry.Name;
-                }
-
-                if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
-                {
-                    if (entry.IsDirectory)
-                    {
-                        NavigateTo(entry.FullPath);
-                    }
-                    else
-                    {
-                        SelectFile(entry.FullPath);
-                    }
-                }
+            }
+            if (doubleClicked)
+            {
+                _selectedFile = entry.FullPath;
+                if (_isSaveMode)
+                    _fileName = entry.Name;
+                else
+                    Confirm();
             }
         }
+        if (_entries.Count == 0 && _lastError == null)
+            ImGui.TextColored(new Vector4(1f, 1f, 1f, 0.4f), "  This folder is empty.");
+        ImGui.EndChild();
+        ImGui.PopStyleVar();
+        Crystarium.PopScrollbarStyle();
     }
 
-    private void DrawBottomBar()
+    private void DrawFooter()
     {
-        // File name input (for save mode)
+        float s = ImGuiHelpers.GlobalScale;
         if (_isSaveMode)
         {
-            using var row = Flex.Row(gap: Norvrandt.Sheet.CurrentTheme.ItemGap);
-            row.Label("Name");
-            row.Fill(w =>
-            {
-                ImGui.SetNextItemWidth(w);
-                ImGui.InputText("##filename", ref _fileName, 256);
-            });
+            ImGui.SetNextItemWidth(220f * s);
+            Crystarium.TextInput($"{_id}-name", ref _fileName, "File name");
+            ImGui.SameLine(0f, 8f * s);
         }
+        if (Crystarium.Button("Cancel", new ButtonProps
+            {
+                Id = $"{_id}-cancel",
+                Classes = Cls.Compact,
+            }))
+            _open = false;
+        ImGui.SameLine(0f, 8f * s);
+        bool canConfirm = _isSaveMode
+            ? _fileName.Trim().Length > 0
+            : _selectedFile != null;
+        if (Crystarium.Button(_isSaveMode ? "Save" : "Import", new ButtonProps
+            {
+                Id = $"{_id}-confirm",
+                Classes = Cls.Compact + Cls.Primary,
+                Disabled = !canConfirm,
+            }) && canConfirm)
+            Confirm();
+    }
 
-        // Error message
-        if (!string.IsNullOrEmpty(_lastError))
+    // ── Behavior (unchanged from the legacy window) ──────────────────────
+
+    private void Confirm()
+    {
+        string path;
+        if (_isSaveMode)
         {
-            ImGui.TextColored(Theme.Palette.Red, _lastError);
+            var name = _fileName.Trim();
+            if (name.Length == 0)
+                return;
+            if (_extensions.Length > 0 && !_extensions.Any(extension =>
+                    name.EndsWith(extension, StringComparison.OrdinalIgnoreCase)))
+                name += _extensions[0];
+            path = Path.Combine(_currentPath, name);
         }
-
-        // Buttons
-        using (var row = Flex.Row(gap: Theme.Spacing.Sm))
+        else
         {
-            row.Spacer();
-
-            row.Fixed(Norvrandt.Sheet.CurrentTheme.ButtonMin, (w, h) =>
-            {
-                if (Crystarium.Button("Cancel", new ButtonProps { Id = "cancel", Style = new ButtonStyle { Width = Sizing.Fixed(w / ImGuiHelpers.GlobalScale) } }))
-                {
-                    _modal.Close();
-                }
-            });
-
-            row.Fixed(Norvrandt.Sheet.CurrentTheme.ButtonMin, (w, h) =>
-            {
-                string buttonText = _isSaveMode ? "Save" : "Open";
-                bool canSelect = !string.IsNullOrEmpty(_fileName);
-
-                using (ImRaii.Disabled(!canSelect))
-                {
-                    if (Crystarium.Button(buttonText, new ButtonProps { Id = "select", Style = new ButtonStyle { Width = Sizing.Fixed(w / ImGuiHelpers.GlobalScale) } }))
-                    {
-                        string fullPath = Path.Combine(_currentPath, _fileName);
-
-                        if (_isSaveMode)
-                        {
-                            // Add extension if missing
-                            if (_extensions.Length > 0 && !_extensions.Any(e => fullPath.EndsWith(e, StringComparison.OrdinalIgnoreCase)))
-                            {
-                                fullPath += _extensions[0];
-                            }
-                            SelectFile(fullPath);
-                        }
-                        else
-                        {
-                            if (File.Exists(fullPath))
-                            {
-                                SelectFile(fullPath);
-                            }
-                            else
-                            {
-                                _lastError = "File does not exist";
-                            }
-                        }
-                    }
-                }
-            });
+            if (_selectedFile is not { } selected)
+                return;
+            path = selected;
         }
+        _open = false;
+        _pendingSelect = path;
     }
 
     private void NavigateTo(string path)
     {
-        if (!Directory.Exists(path))
-            return;
-
         _currentPath = path;
-        _selectedIndex = -1;
+        _selectedFile = null;
         RefreshEntries();
-    }
-
-    private void NavigateUp()
-    {
-        var parent = Directory.GetParent(_currentPath);
-        if (parent != null)
-        {
-            NavigateTo(parent.FullName);
-        }
     }
 
     private void RefreshEntries()
     {
         _entries.Clear();
-        _lastError = "";
-
+        _lastError = null;
         try
         {
-            // Add directories first
-            foreach (var dir in Directory.GetDirectories(_currentPath))
+            foreach (var directory in Directory.GetDirectories(_currentPath)
+                         .OrderBy(name => name, StringComparer.OrdinalIgnoreCase))
             {
-                var info = new DirectoryInfo(dir);
+                var info = new DirectoryInfo(directory);
                 if ((info.Attributes & FileAttributes.Hidden) != 0)
                     continue;
-
-                _entries.Add(new FileSystemEntry
-                {
-                    Name = info.Name,
-                    FullPath = info.FullName,
-                    IsDirectory = true
-                });
+                _entries.Add(new Entry(info.Name, directory, IsDirectory: true));
             }
-
-            // Add files with matching extensions
-            foreach (var file in Directory.GetFiles(_currentPath))
+            foreach (var file in Directory.GetFiles(_currentPath)
+                         .OrderBy(name => name, StringComparer.OrdinalIgnoreCase))
             {
                 var info = new FileInfo(file);
                 if ((info.Attributes & FileAttributes.Hidden) != 0)
                     continue;
-
-                // Filter by extension
-                if (_extensions.Length > 0)
-                {
-                    bool matches = _extensions.Any(e =>
-                        info.Extension.Equals(e, StringComparison.OrdinalIgnoreCase));
-                    if (!matches)
-                        continue;
-                }
-
-                _entries.Add(new FileSystemEntry
-                {
-                    Name = info.Name,
-                    FullPath = info.FullName,
-                    IsDirectory = false
-                });
+                if (_extensions.Length > 0 && !_extensions.Any(extension =>
+                        string.Equals(info.Extension, extension, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                _entries.Add(new Entry(info.Name, file, IsDirectory: false));
             }
-
-            // Sort: directories first, then by name
-            _entries = _entries
-                .OrderByDescending(e => e.IsDirectory)
-                .ThenBy(e => e.Name)
-                .ToList();
         }
         catch (Exception ex)
         {
-            _lastError = $"Error: {ex.Message}";
+            _lastError = $"This folder could not be read: {ex.Message}";
         }
     }
 
-    private void SelectFile(string path)
+    private void InitializeFavorites()
     {
-        _modal.Close();
-        _onSelect?.Invoke(path);
-    }
+        void AddSpecial(string name, Environment.SpecialFolder folder)
+        {
+            var path = Environment.GetFolderPath(folder);
+            if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
+                _favorites.Add((name, path));
+        }
 
-    private struct FileSystemEntry
-    {
-        public string Name;
-        public string FullPath;
-        public bool IsDirectory;
-    }
-
-    private struct FavoriteEntry
-    {
-        public string Name;
-        public string Path;
-        public FontAwesomeIcon Icon;
+        AddSpecial("Desktop", Environment.SpecialFolder.Desktop);
+        AddSpecial("Documents", Environment.SpecialFolder.MyDocuments);
+        AddSpecial("Pictures", Environment.SpecialFolder.MyPictures);
+        var downloads = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+        if (Directory.Exists(downloads))
+            _favorites.Add(("Downloads", downloads));
+        try
+        {
+            foreach (var drive in DriveInfo.GetDrives())
+                if (drive.IsReady)
+                    _favorites.Add((drive.Name, drive.RootDirectory.FullName));
+        }
+        catch
+        {
+            // Unreadable drive enumeration must not break the dialog.
+        }
     }
 }
