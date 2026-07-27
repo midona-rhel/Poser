@@ -47,23 +47,26 @@ public static partial class Crystarium
 
         float width = size switch
         {
-            ModalSize.Medium => 560f,
-            ModalSize.Large => 680f,
-            _ => 440f,
+            ModalSize.Medium => Theme.Metrics.Floating.MediumWidth,
+            ModalSize.Large => Theme.Metrics.Floating.LargeWidth,
+            _ => Theme.Metrics.Floating.SmallWidth,
         } * scale;
-        float barHeight = 44f * scale;
-        float totalHeight = (height ?? 280f) * scale;
-        float rounding = 8f * scale; // radius-lg
+        float barHeight = Theme.Metrics.Floating.ModalBar * scale;
+        float totalHeight = (height
+            ?? Theme.Metrics.Floating.DefaultModalHeight) * scale;
+        float rounding = Theme.Metrics.Radius.Surface * scale;
 
-        var displaySize = ImGui.GetIO().DisplaySize;
-        ImGui.SetNextWindowPos(position ?? (displaySize - new Vector2(width, totalHeight)) / 2f, ImGuiCond.Appearing);
+        ImGui.SetNextWindowPos(
+            position ?? FloatingSurface.PlaceCentered(
+                new Vector2(width, totalHeight)),
+            ImGuiCond.Appearing);
         ImGui.SetNextWindowSize(new Vector2(width, totalHeight));
 
         // Persistent, not pushed: ImGui draws the modal dim outside this call's
         // push/pop bracket. rgba(0,0,0,.55) is the design constant (GlassModal backdrop).
         ImGui.GetStyle().Colors[(int)ImGuiCol.ModalWindowDimBg] = new Vector4(0f, 0f, 0f, 0.55f);
 
-        ImGui.PushStyleColor(ImGuiCol.PopupBg, GlassChrome.BackgroundColor);
+        ImGui.PushStyleColor(ImGuiCol.PopupBg, Vector4.Zero);
         ImGui.PushStyleVar(ImGuiStyleVar.PopupRounding, rounding);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, rounding);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
@@ -78,38 +81,42 @@ public static partial class Crystarium
             var winMin = ImGui.GetWindowPos();
             var winMax = winMin + ImGui.GetWindowSize();
 
-            GlassChrome.PrependBlur(dl, winMin, winMax, rounding);
-            Norvrandt.Box(winMin, winMax, new BoxStyle
-            {
-                BorderWidth = 1f,
-                BorderRadius = 8f,
-                BorderTopColor = Theme.Glass.BorderTop,
-                BorderLeftColor = Theme.Glass.BorderSide,
-                BorderRightColor = Theme.Glass.BorderSide,
-                BorderBottomColor = Theme.Glass.BorderBottom,
-            });
+            FloatingSurface.DrawChrome(
+                dl,
+                winMin,
+                winMax,
+                Theme.Metrics.Radius.Surface);
 
             var theme = Norvrandt.Sheet.CurrentTheme;
 
             // ── Header: title 14px/500 at 16px, close 24×24 at right 10px,
             //    inset bottom border (border-secondary).
-            var titleFont = FontRegistry.Resolve(FontFamily.Default, FontWeight.Medium, 14f);
+            var titleFont = FontRegistry.Resolve(
+                FontFamily.Default,
+                FontWeight.Medium,
+                Theme.Metrics.Typography.SurfaceTitle);
             bool titlePushed = titleFont is { Available: true };
             if (titlePushed) titleFont!.Push();
             var titleSize = ImGui.CalcTextSize(title);
-            dl.AddText(winMin + new Vector2(16f * scale, (barHeight - titleSize.Y) * 0.5f),
+            dl.AddText(winMin + new Vector2(
+                    Theme.Metrics.Floating.HeaderInset * scale,
+                    (barHeight - titleSize.Y) * 0.5f),
                 ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Text)), title);
             if (titlePushed) titleFont!.Pop();
 
-            float closeSize = 24f * scale;
-            ImGui.SetCursorScreenPos(new Vector2(winMax.X - 10f * scale - closeSize, winMin.Y + (barHeight - closeSize) * 0.5f));
+            float closeSize = Theme.Metrics.Floating.CloseAction * scale;
+            ImGui.SetCursorScreenPos(new Vector2(
+                winMax.X - Theme.Metrics.Floating.CloseInset * scale - closeSize,
+                winMin.Y + (barHeight - closeSize) * 0.5f));
             var closeHit = Interactive.Reserve($"{id}##close", new Vector2(closeSize, closeSize), disabled: false);
             if (closeHit.Hovered)
                 dl.AddRectFilled(closeHit.ScreenMin, closeHit.ScreenMax,
-                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.08f))), 5f * scale);
+                    ImGui.ColorConvertFloat4ToU32(
+                        ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.08f))),
+                    Theme.Metrics.Radius.Control * scale);
             {
                 // Tabler X ("M18 6l-12 12" + "M6 6l12 12") at 14px, .7 → 1 on hover
-                float iconSpan = 14f * scale;
+                float iconSpan = Theme.Metrics.Control.SmallIcon * scale;
                 float unit = iconSpan / 24f;
                 var o = closeHit.ScreenMin + new Vector2((closeSize - iconSpan) * 0.5f, (closeSize - iconSpan) * 0.5f);
                 var xCol = ColorEx.ApplyAlpha(theme.Text with { W = closeHit.Hovered ? 1f : 0.7f });
@@ -144,7 +151,11 @@ public static partial class Crystarium
             // ── Body: padding 16, scrollable between the bars.
             float bodyHeight = totalHeight - barHeight - (footer != null ? barHeight : 0f);
             ImGui.SetCursorScreenPos(winMin + new Vector2(0f, barHeight));
-            ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(16f * scale, 16f * scale));
+            ImGui.PushStyleVar(
+                ImGuiStyleVar.WindowPadding,
+                new Vector2(
+                    Theme.Metrics.Floating.ModalBodyPadding * scale,
+                    Theme.Metrics.Floating.ModalBodyPadding * scale));
             // AlwaysUseWindowPadding: borderless children ignore WindowPadding otherwise.
             if (ImGui.BeginChild($"{id}##body", new Vector2(width, bodyHeight), false,
                 ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.AlwaysUseWindowPadding))
@@ -158,8 +169,14 @@ public static partial class Crystarium
             if (footer != null)
             {
                 _modalFooterWidths.TryGetValue(popupId, out float lastWidth);
-                float x = winMin.X + MathF.Max(12f * scale, width - 12f * scale - lastWidth);
-                ImGui.SetCursorScreenPos(new Vector2(x, footerTop + (barHeight - 32f * scale) * 0.5f));
+                float footerInset = Theme.Metrics.Floating.FooterInset * scale;
+                float x = winMin.X + MathF.Max(
+                    footerInset,
+                    width - footerInset - lastWidth);
+                ImGui.SetCursorScreenPos(new Vector2(
+                    x,
+                    footerTop + (barHeight
+                        - Theme.Metrics.Control.Comfortable * scale) * 0.5f));
                 ImGui.BeginGroup();
                 footer();
                 ImGui.EndGroup();

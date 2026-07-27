@@ -52,24 +52,14 @@ public static partial class Crystarium
     {
         private enum Phase { Hidden, Opening, Open, Closing }
 
-        // Picto ContextMenu.module.css values.
-        private const float MenuWidth = 260f;
-        private const float Pad = 4f;
-        private const float Gap = 2f;
-        private const float RowHeight = 26f;
-        private const float RowPad = 6f;
-        private const float RowRadius = 6f;
-        private const float MenuRadius = 8f;
-        private const float IconSize = 16f;
-        private const float IconGap = 6f;
-        private const float SeparatorBlock = 5f; // 1px line + 2px margins
-        private const float ViewportMargin = 12f;
-        private const float HostMargin = 24f;    // room for shadow + ring
-
         private static readonly Transition Enter =
-            Transition.CubicBezier(0.10f, 0.4f, 0f, 0.22f, 1f);
+            Transition.CubicBezier(
+                Theme.Metrics.Motion.Fast,
+                0.4f, 0f, 0.22f, 1f);
         private static readonly Transition Exit =
-            Transition.CubicBezier(0.08f, 0.42f, 0f, 1f, 1f); // CSS ease-in
+            Transition.CubicBezier(
+                Theme.Metrics.Motion.MenuExit,
+                0.42f, 0f, 1f, 1f); // CSS ease-in
 
         private static readonly Vector4 Danger = new(1f, 71f / 255f, 87f / 255f, 1f);
 
@@ -90,30 +80,14 @@ public static partial class Crystarium
             float s = ImGuiHelpers.GlobalScale;
             _id = id;
             _items = items;
-            _size = new Vector2(MenuWidth * s, HeightFor(items, s));
-
-            // Picto's shift/clamp: pushed inside a 12px viewport margin,
-            // never mirrored; only the transform origin flips.
-            var display = ImGui.GetIO().DisplaySize;
-            float margin = ViewportMargin * s;
-            var pos = position;
-            bool fromRight = false, fromBottom = false;
-            if (pos.X + _size.X > display.X - margin)
-            {
-                pos.X = display.X - _size.X - margin;
-                fromRight = true;
-            }
-            if (pos.Y + _size.Y > display.Y - margin)
-            {
-                pos.Y = display.Y - _size.Y - margin;
-                fromBottom = true;
-            }
-            pos.X = MathF.Max(pos.X, margin);
-            pos.Y = MathF.Max(pos.Y, margin);
-            _min = pos;
-            _pivot = new Vector2(
-                fromRight ? pos.X + _size.X : pos.X,
-                fromBottom ? pos.Y + _size.Y : pos.Y);
+            _size = new Vector2(
+                Theme.Metrics.Floating.MenuWidth * s,
+                HeightFor(items, s));
+            _min = FloatingSurface.PlaceAtPoint(
+                position,
+                _size,
+                s,
+                out _pivot);
 
             _phase = Phase.Opening;
             _phaseStart = ImGui.GetTime();
@@ -140,12 +114,14 @@ public static partial class Crystarium
 
         private static float HeightFor(ContextMenuItem[] items, float s)
         {
-            float height = Pad * 2f * s;
+            float height = Theme.Metrics.Floating.MenuPadding * 2f * s;
             for (int i = 0; i < items.Length; i++)
             {
-                height += (items[i].IsSeparator ? SeparatorBlock : RowHeight) * s;
+                height += (items[i].IsSeparator
+                    ? Theme.Metrics.Floating.MenuSeparatorBlock
+                    : Theme.Metrics.Control.ListRow) * s;
                 if (i > 0)
-                    height += Gap * s;
+                    height += Theme.Metrics.Floating.MenuRowGap * s;
             }
             return height;
         }
@@ -171,22 +147,31 @@ public static partial class Crystarium
             {
                 case Phase.Opening:
                 {
-                    float k = Enter.Evaluate(Math.Clamp(t / 0.10f, 0f, 1f));
+                    float k = Enter.Evaluate(Math.Clamp(
+                        t / Theme.Metrics.Motion.Fast,
+                        0f,
+                        1f));
                     scale = 0.92f + 0.08f * k;
                     alpha = k;
-                    interactive = true;
-                    if (t >= 0.10f)
+                    // The visual rect is transformed during entrance. Waiting
+                    // one short transition before enabling input keeps the hit
+                    // geometry identical to the rendered rows.
+                    interactive = false;
+                    if (t >= Theme.Metrics.Motion.Fast)
                         _phase = Phase.Open;
                     break;
                 }
                 case Phase.Closing:
                 {
-                    if (t >= 0.08f)
+                    if (t >= Theme.Metrics.Motion.MenuExit)
                     {
                         _phase = Phase.Hidden;
                         return -1;
                     }
-                    float k = Exit.Evaluate(Math.Clamp(t / 0.08f, 0f, 1f));
+                    float k = Exit.Evaluate(Math.Clamp(
+                        t / Theme.Metrics.Motion.MenuExit,
+                        0f,
+                        1f));
                     scale = 1f - 0.05f * k;
                     alpha = 1f - k;
                     break;
@@ -223,7 +208,7 @@ public static partial class Crystarium
                     StartClose();
             }
 
-            float host = HostMargin * s;
+            float host = Theme.Metrics.Floating.HostMargin * s;
             ImGui.SetNextWindowPos(_min - new Vector2(host, host));
             ImGui.SetNextWindowSize(_size + new Vector2(host, host) * 2f);
             if (_focusPending)
@@ -250,40 +235,21 @@ public static partial class Crystarium
         {
             var min = _min;
             var max = _min + _size;
-            float radius = MenuRadius * s;
-
-            // 0 3px 12px rgba(0,0,0,.3): a layered feather approximation.
-            var shadowOffset = new Vector2(0f, 3f * s);
-            const int layers = 10;
-            for (int i = layers; i >= 1; i--)
-            {
-                float spread = i * (12f / layers) * s;
-                float falloff = 1f - (i - 1f) / layers;
-                uint color = ImGui.ColorConvertFloat4ToU32(
-                    new Vector4(0f, 0f, 0f, 0.055f * falloff * falloff));
-                dl.AddRect(
-                    min + shadowOffset - new Vector2(spread, spread),
-                    max + shadowOffset + new Vector2(spread, spread),
-                    color, radius + spread, ImDrawFlags.None, spread * 0.9f + 1f);
-            }
-            // 0 0 0 1px rgba(0,0,0,.5): the outer ring, OUTSIDE the surface
-            // — the host margin exists so none of this clips.
-            dl.AddRect(
-                min - new Vector2(0.5f * s), max + new Vector2(0.5f * s),
-                ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.5f)),
-                radius, ImDrawFlags.None, 1f * s);
-
-            GlassChrome.DrawMenuSurface(dl, min, max, MenuRadius);
+            FloatingSurface.DrawChrome(
+                dl,
+                min,
+                max,
+                Theme.Metrics.Radius.Surface);
 
             // Rows.
             int clicked = -1;
-            float y = min.Y + Pad * s;
-            float left = min.X + Pad * s;
-            float right = max.X - Pad * s;
+            float y = min.Y + Theme.Metrics.Floating.MenuPadding * s;
+            float left = min.X + Theme.Metrics.Floating.MenuPadding * s;
+            float right = max.X - Theme.Metrics.Floating.MenuPadding * s;
             for (int i = 0; i < _items.Length; i++)
             {
                 if (i > 0)
-                    y += Gap * s;
+                    y += Theme.Metrics.Floating.MenuRowGap * s;
                 var item = _items[i];
                 if (item.IsSeparator)
                 {
@@ -292,12 +258,14 @@ public static partial class Crystarium
                         new Vector2(left, lineY),
                         new Vector2(right, lineY + MathF.Max(1f, 1f * s)),
                         ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 0.08f)));
-                    y += SeparatorBlock * s;
+                    y += Theme.Metrics.Floating.MenuSeparatorBlock * s;
                     continue;
                 }
 
                 var rowMin = new Vector2(left, y);
-                var rowMax = new Vector2(right, y + RowHeight * s);
+                var rowMax = new Vector2(
+                    right,
+                    y + Theme.Metrics.Control.ListRow * s);
                 bool hovered = false;
                 if (interactive && !item.Disabled)
                 {
@@ -312,7 +280,7 @@ public static partial class Crystarium
                         ImGui.ColorConvertFloat4ToU32(item.Danger
                             ? new Vector4(Danger.X, Danger.Y, Danger.Z, 0.12f)
                             : new Vector4(1f, 1f, 1f, 0.08f)),
-                        RowRadius * s);
+                        Theme.Metrics.Radius.Control * s);
 
                 float rowAlpha = item.Disabled ? 0.4f : 1f;
                 var text = item.Danger ? Danger : new Vector4(1f, 1f, 1f, 1f);
@@ -321,36 +289,51 @@ public static partial class Crystarium
                     text with { W = text.W * (hovered ? 1f : 0.8f) });
 
                 ImGui.SetCursorScreenPos(new Vector2(
-                    rowMin.X + RowPad * s, rowMin.Y + (RowHeight - IconSize) * 0.5f * s));
-                Icon(item.Icon, IconSize, iconTint);
+                    rowMin.X + Theme.Metrics.Floating.MenuRowPadding * s,
+                    rowMin.Y + (Theme.Metrics.Control.ListRow
+                        - Theme.Metrics.Control.Icon) * 0.5f * s));
+                Icon(item.Icon, Theme.Metrics.Control.Icon, iconTint);
 
-                float textX = rowMin.X + (RowPad + IconSize + IconGap) * s;
-                var labelFont = FontRegistry.Resolve(FontFamily.Default, 13f);
+                float textX = rowMin.X
+                    + (Theme.Metrics.Floating.MenuRowPadding
+                        + Theme.Metrics.Control.Icon
+                        + Theme.Metrics.Floating.MenuIconGap) * s;
+                var labelFont = FontRegistry.Resolve(
+                    FontFamily.Default,
+                    Theme.Metrics.Typography.Body);
                 bool labelPushed = labelFont is { Available: true };
                 if (labelPushed) labelFont!.Push();
                 var labelSize = ImGui.CalcTextSize(item.Label);
                 dl.AddText(
-                    new Vector2(textX, rowMin.Y + (RowHeight * s - labelSize.Y) * 0.5f),
+                    new Vector2(
+                        textX,
+                        rowMin.Y + (Theme.Metrics.Control.ListRow * s
+                            - labelSize.Y) * 0.5f),
                     ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(text)), item.Label);
                 if (labelPushed) labelFont!.Pop();
 
                 if (item.Shortcut is { Length: > 0 } shortcut)
                 {
-                    var shortcutFont = FontRegistry.Resolve(FontFamily.Default, 11f);
+                    var shortcutFont = FontRegistry.Resolve(
+                        FontFamily.Default,
+                        Theme.Metrics.Typography.Caption);
                     bool shortcutPushed = shortcutFont is { Available: true };
                     if (shortcutPushed) shortcutFont!.Push();
                     var shortcutSize = ImGui.CalcTextSize(shortcut);
                     dl.AddText(
                         new Vector2(
-                            rowMax.X - RowPad * s - shortcutSize.X,
-                            rowMin.Y + (RowHeight * s - shortcutSize.Y) * 0.5f),
+                            rowMax.X
+                                - Theme.Metrics.Floating.MenuRowPadding * s
+                                - shortcutSize.X,
+                            rowMin.Y + (Theme.Metrics.Control.ListRow * s
+                                - shortcutSize.Y) * 0.5f),
                         ImGui.ColorConvertFloat4ToU32(
                             ColorEx.ApplyAlpha(text with { W = text.W * 0.5f })),
                         shortcut);
                     if (shortcutPushed) shortcutFont!.Pop();
                 }
 
-                y += RowHeight * s;
+                y += Theme.Metrics.Control.ListRow * s;
             }
 
             return clicked;

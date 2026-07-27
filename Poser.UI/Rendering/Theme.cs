@@ -185,6 +185,13 @@ public record struct Theme
             public const float PopoverPadding = Space.Four;
             public const float ModalBar = 44f;
             public const float ModalBodyPadding = Space.Eight;
+            public const float HeaderInset = Space.Eight;
+            public const float FooterInset = Space.Six;
+            public const float CloseInset = 10f;
+            public const float CloseAction = 24f;
+            public const float ColorPickerWidth = 220f;
+            public const float ColorPickerHeight = 250f;
+            public const float ColorPickerPadding = 10f;
             public const float SmallWidth = 440f;
             public const float MediumWidth = 560f;
             public const float LargeWidth = 680f;
@@ -253,8 +260,17 @@ public record struct Theme
         /// <summary>tokens.css --shadow-panel: 0 3px 12px rgba(0,0,0,.3) + 0 0 0 1px rgba(0,0,0,.5).</summary>
         public static BoxShadow[] ShadowPanel => new[]
         {
-            new BoxShadow(0f, 3f, 12f, new Vector4(0f, 0f, 0f, 0.30f)),
-            new BoxShadow(0f, 0f, 0f, new Vector4(0f, 0f, 0f, 0.50f), spread: 1f),
+            new BoxShadow(
+                0f,
+                Metrics.Shadow.PanelOffsetY,
+                Metrics.Shadow.PanelBlur,
+                new Vector4(0f, 0f, 0f, 0.30f)),
+            new BoxShadow(
+                0f,
+                0f,
+                0f,
+                new Vector4(0f, 0f, 0f, 0.50f),
+                spread: Metrics.Shadow.PanelRing),
         };
     }
 

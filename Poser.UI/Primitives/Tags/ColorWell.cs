@@ -48,41 +48,35 @@ public static partial class Crystarium
         string popupId = id + "_picker";
         if (hit.Clicked && !props.Disabled) ImGui.OpenPopup(popupId);
 
-        // Glass popup chrome, same recipe as ContextMenu (blur + border trio).
         bool changed = false;
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(10f, 10f) * scale);
-        ImGui.PushStyleVar(ImGuiStyleVar.PopupRounding, 8f * scale);
-        ImGui.PushStyleVar(ImGuiStyleVar.PopupBorderSize, 0f);
-        ImGui.PushStyleColor(ImGuiCol.PopupBg, GlassChrome.BackgroundColor);
-        if (ImGui.BeginPopup(popupId))
-        {
-            var pdl = ImGui.GetWindowDrawList();
-            var winMin = ImGui.GetWindowPos();
-            var winMax = winMin + ImGui.GetWindowSize();
-            GlassChrome.PrependBlur(pdl, winMin, winMax, 8f * scale);
-            Norvrandt.Box(winMin, winMax, new BoxStyle
+        var popupColor = color;
+        FloatingSurface.Popup(
+            popupId,
+            new FloatingSurfaceProps
             {
-                BorderWidth = 1f,
-                BorderRadius = 8f,
-                BorderTopColor = Theme.Glass.BorderTop,
-                BorderLeftColor = Theme.Glass.BorderSide,
-                BorderRightColor = Theme.Glass.BorderSide,
-                BorderBottomColor = Theme.Glass.BorderBottom,
+                Width = Theme.Metrics.Floating.ColorPickerWidth,
+                Height = Theme.Metrics.Floating.ColorPickerHeight,
+                Padding = Theme.Metrics.Floating.ColorPickerPadding,
+                AnchorMin = hit.ScreenMin,
+                AnchorMax = hit.ScreenMax,
+            },
+            () =>
+            {
+                ImGui.SetNextItemWidth(
+                    (Theme.Metrics.Floating.ColorPickerWidth
+                        - Theme.Metrics.Floating.ColorPickerPadding * 2f)
+                    * scale);
+                var flags = ImGuiColorEditFlags.NoSidePreview
+                    | ImGuiColorEditFlags.NoSmallPreview;
+                if (props.RgbOnly)
+                    flags |= ImGuiColorEditFlags.NoAlpha;
+                float keepAlpha = popupColor.W;
+                changed = ImGui.ColorPicker4(id + "_pk", ref popupColor, flags);
+                if (props.RgbOnly)
+                    popupColor.W = keepAlpha;
             });
-            ImGui.SetNextItemWidth(200f * scale);
-            var flags = ImGuiColorEditFlags.NoSidePreview | ImGuiColorEditFlags.NoSmallPreview;
-            if (props.RgbOnly)
-                flags |= ImGuiColorEditFlags.NoAlpha;
-            float keepAlpha = color.W;
-            changed = ImGui.ColorPicker4(id + "_pk", ref color, flags);
-            // NoAlpha hides the channel; preserving the incoming value is
-            // this overload's contract, whatever the picker left in W.
-            if (props.RgbOnly)
-                color.W = keepAlpha;
-            ImGui.EndPopup();
-        }
-        ImGui.PopStyleColor();
-        ImGui.PopStyleVar(3);
+        if (changed)
+            color = popupColor;
         if (!string.IsNullOrEmpty(props.Tooltip)
             && (hit.Hovered || (props.Disabled
                 && HoverHelp.HelpHovered(hit.ScreenMin, hit.ScreenMax))))

@@ -309,6 +309,7 @@ public class MainWindow : Window
         // that reserved band instead of over the content. A pane that
         // opens its own child inside the inset content loses the gutter.
         _vm.ContentOwnsViewport = _activeTab == "Pose";
+        _vm.ContentUsesPage = _activeTab == "Appearance";
         // Appearance has no pose rail; its content takes the released
         // width. The outer window size is untouched by tab changes.
         _vm.DrawRail = _collapsed ? null : _poseRail.Draw;

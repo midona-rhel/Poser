@@ -81,6 +81,10 @@ public sealed class AppShellViewModel
     /// </summary>
     public Action<Vector2, Vector2>? DrawContent; // (origin, size) — already scaled
 
+    /// <summary>The active pane consumes the canonical Page composition,
+    /// which owns the content inset and extent bookkeeping.</summary>
+    public bool ContentUsesPage;
+
     /// <summary>
     /// The pane owns its internal scrolling and needs the shell viewport to
     /// remain fixed. Pose uses this for fixed mode tabs and footer chrome.
@@ -149,15 +153,15 @@ public static class AppShellView
     private static float _axisEditValue;
     private static bool _axisEditNeedsFocus;
 
-    public const float TitlebarHeight = 48f;
-    public const float SidebarWidth = 280f;
-    public const float RowHeight = 26f;
-    public const float ToolbarHeight = 44f;
-    public const float StatusbarHeight = 26f;
-    public const float ScrollbarWidth = 12f;
-    public const float ScrollbarRadius = 4f;
-    private const float SidebarHorizontalPadding = 12f;
-    public const float MainHorizontalPadding = 12f;
+    public const float TitlebarHeight = Theme.Metrics.Shell.Titlebar;
+    public const float SidebarWidth = Theme.Metrics.Shell.SidebarDefault;
+    public const float RowHeight = Theme.Metrics.Control.ListRow;
+    public const float ToolbarHeight = Theme.Metrics.Shell.Toolbar;
+    public const float StatusbarHeight = Theme.Metrics.Shell.Statusbar;
+    public const float ScrollbarWidth = Theme.Metrics.Scrollbar.Gutter;
+    public const float ScrollbarRadius = Theme.Metrics.Scrollbar.Radius;
+    private const float SidebarHorizontalPadding = Theme.Metrics.Page.Inset;
+    public const float MainHorizontalPadding = Theme.Metrics.Page.Inset;
 
     public static void Draw(AppShellViewModel vm, Vector2 origin, Vector2 size)
     {
@@ -179,12 +183,7 @@ public static class AppShellView
         // One scrollbar treatment for sidebar, main content, and inspector.
         // Transparent track + 12px gutter + 4px rounded thumb transcribes the
         // Picto global scrollbar used by the approved shell mockups.
-        ImGui.PushStyleVar(ImGuiStyleVar.ScrollbarSize, ScrollbarWidth * s);
-        ImGui.PushStyleVar(ImGuiStyleVar.ScrollbarRounding, ScrollbarRadius * s);
-        ImGui.PushStyleColor(ImGuiCol.ScrollbarBg, Vector4.Zero);
-        ImGui.PushStyleColor(ImGuiCol.ScrollbarGrab, new Vector4(1f, 1f, 1f, 0.12f));
-        ImGui.PushStyleColor(ImGuiCol.ScrollbarGrabHovered, new Vector4(1f, 1f, 1f, 0.25f));
-        ImGui.PushStyleColor(ImGuiCol.ScrollbarGrabActive, new Vector4(1f, 1f, 1f, 0.25f));
+        Crystarium.PushScrollbarStyle();
 
         float bodyTop = min.Y + TitlebarHeight * s;
         float railW = vm.DrawRail != null ? RailWidth * s : 0f;
@@ -198,7 +197,10 @@ public static class AppShellView
         if (ImGui.IsItemHovered() || ImGui.IsItemActive())
             ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEw);
         if (ImGui.IsItemActive() && ImGui.GetIO().MouseDelta.X != 0f)
-            vm.OnSidebarResize?.Invoke(Math.Clamp(vm.SidebarWidthPx + ImGui.GetIO().MouseDelta.X / s, 220f, 400f));
+            vm.OnSidebarResize?.Invoke(Math.Clamp(
+                vm.SidebarWidthPx + ImGui.GetIO().MouseDelta.X / s,
+                Theme.Metrics.Shell.SidebarMinimum,
+                Theme.Metrics.Shell.SidebarMaximum));
 
         if (vm.DrawRail != null)
         {
@@ -224,8 +226,7 @@ public static class AppShellView
             ImGui.PopStyleVar();
         }
 
-        ImGui.PopStyleColor(4);
-        ImGui.PopStyleVar(2);
+        Crystarium.PopScrollbarStyle();
 
         // Panel fills are intentionally drawn after the base chassis. Repaint
         // its asymmetric glass edge last so sidebar/rail surfaces cannot hide
@@ -233,7 +234,7 @@ public static class AppShellView
         DrawOuterGlassBorder(min, max, s);
     }
 
-    public const float RailWidth = 280f;
+    public const float RailWidth = Theme.Metrics.Shell.RailWidth;
 
     // ── titlebar ─────────────────────────────────────────────────────────
 
@@ -247,17 +248,19 @@ public static class AppShellView
             // Collapsed means one continuous titlebar, not an empty window with
             // a surviving sidebar cell. Paint one glass strip with no divider.
             var barMax = new Vector2(max.X, min.Y + h);
-            GlassChrome.PrependBlur(dl, min, barMax, 10f * s);
+            Crystarium.FloatingSurface.PrependShellBlur(dl, min, barMax, 10f * s);
             dl.AddRectFilled(min, barMax,
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(GlassChrome.BackgroundColor)),
+                ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(Crystarium.FloatingSurface.FillColor)),
                 10f * s);
         }
         else
         {
             // left cell: GLASS (M11) — overlay recipe: real backdrop blur + 92% fill
-            GlassChrome.PrependBlur(dl, min, leftMax, 10f * s);
+            Crystarium.FloatingSurface.PrependShellBlur(dl, min, leftMax, 10f * s);
             dl.AddRectFilled(min, leftMax,
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(GlassChrome.BackgroundColor)),
+                ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(Crystarium.FloatingSurface.FillColor)),
                 10f * s, ImDrawFlags.RoundCornersTopLeft);
             dl.AddRectFilled(new Vector2(leftMax.X - 1f * s, min.Y), leftMax,
                 ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderPrimary)));
@@ -375,8 +378,14 @@ public static class AppShellView
     private static void DrawSidebar(AppShellViewModel vm, Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
     {
         // M11 glass chassis — SAME recipe as the overlays: backdrop blur + 92% fill.
-        GlassChrome.PrependBlur(dl, min, max, 10f * s);
-        dl.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(GlassChrome.BackgroundColor)), 10f * s, ImDrawFlags.RoundCornersBottomLeft);
+        Crystarium.FloatingSurface.PrependShellBlur(dl, min, max, 10f * s);
+        dl.AddRectFilled(
+            min,
+            max,
+            ImGui.ColorConvertFloat4ToU32(
+                ColorEx.ApplyAlpha(Crystarium.FloatingSurface.FillColor)),
+            10f * s,
+            ImDrawFlags.RoundCornersBottomLeft);
         dl.AddRectFilled(new Vector2(max.X - 1f * s, min.Y), max, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderPrimary)));
 
         float statusTop = max.Y - StatusbarHeight * s;
@@ -742,12 +751,25 @@ public static class AppShellView
             : ImGuiWindowFlags.None;
         if (ImGui.BeginChild("##shell-content", childSize, false, childFlags))
         {
-            // Preserve the child's vertical scroll transform; only the stable
-            // horizontal content inset is manual.
-            var contentOrigin = ImGui.GetCursorScreenPos() + new Vector2(MainHorizontalPadding * s, 0f);
-            var contentSize = new Vector2(contentWidth, ImGui.GetContentRegionAvail().Y);
-            ImGui.SetCursorScreenPos(contentOrigin);
-            vm.DrawContent?.Invoke(contentOrigin, contentSize);
+            var childCursor = ImGui.GetCursorScreenPos();
+            if (vm.ContentUsesPage)
+            {
+                vm.DrawContent?.Invoke(
+                    childCursor,
+                    new Vector2(childSize.X, ImGui.GetContentRegionAvail().Y));
+            }
+            else
+            {
+                // Preserve the child's vertical scroll transform; only the stable
+                // horizontal content inset is manual.
+                var contentOrigin = childCursor
+                    + new Vector2(MainHorizontalPadding * s, 0f);
+                var contentSize = new Vector2(
+                    contentWidth,
+                    ImGui.GetContentRegionAvail().Y);
+                ImGui.SetCursorScreenPos(contentOrigin);
+                vm.DrawContent?.Invoke(contentOrigin, contentSize);
+            }
         }
         ImGui.EndChild();
         ImGui.PopStyleVar();

@@ -130,112 +130,120 @@ public static partial class Crystarium
 
         // Popup
         float popupPadding = Theme.Metrics.Floating.PopupPadding * scale;
-        const int maxVisibleItems = 10;
-        int visibleItems = Math.Min(items.Length, maxVisibleItems);
-        float itemSeparator = scale;
-        float itemListHeight = visibleItems * height +
-                               Math.Max(0, visibleItems - 1) * itemSeparator;
+        int visibleItems = Math.Min(
+            items.Length,
+            Theme.Metrics.Picker.MaximumRows);
+        float itemListHeight = visibleItems * height;
         float popupHeight = itemListHeight + popupPadding * 2;
-        float popupY = valueEnd.Y + 2f * scale;
-        var displaySize = ImGui.GetIO().DisplaySize;
-        if (popupY + popupHeight > displaySize.Y)
-        {
-            float aboveY = valuePos.Y - popupHeight - 2f * scale;
-            popupY = aboveY >= 0 ? aboveY : displaySize.Y - popupHeight;
-        }
-
-        // picto CmSelect.module.css (.drop): glass bg, 1px border white@.08,
-        // radius 6, padding 4. Outer shadow-panel is NOT rendered — ImGui clips
-        // draw commands to the popup window (documented deviation; the drop cell
-        // measures the popup rect only).
-        var popupBg = resolved.PopupBackground ?? GlassChrome.BackgroundColor;
-
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(popupPadding, popupPadding));
-        ImGui.PushStyleVar(ImGuiStyleVar.PopupRounding, rounding);
-        ImGui.PushStyleColor(ImGuiCol.PopupBg, popupBg);
-        ImGui.PushStyleColor(ImGuiCol.Border, new Vector4(1f, 1f, 1f, 0.08f));
-
-        ImGui.SetNextWindowPos(new Vector2(valuePos.X, popupY));
-        ImGui.SetNextWindowSize(new Vector2(totalWidth, popupHeight));
-        if (ImGui.BeginPopup(popupId, ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar))
-        {
-            GlassChrome.PrependBlur(ImGui.GetWindowDrawList(), ImGui.GetWindowPos(),
-                ImGui.GetWindowPos() + ImGui.GetWindowSize(), rounding);
-
-            float scrollbarSize = 8f * scale;
-            bool needsScroll = items.Length > maxVisibleItems;
-            ImGui.PushStyleVar(ImGuiStyleVar.ScrollbarSize, scrollbarSize);
-            ImGui.PushStyleVar(ImGuiStyleVar.ScrollbarRounding, 4f * scale);
-            ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(0f, itemSeparator));
-
-            // Use the real content region: window padding + border eat into totalWidth,
-            // and an oversized child spawns a stray popup scrollbar. The child itself
-            // must have zero padding (it inherits the popup's 4px otherwise, overflowing
-            // its own frame and offsetting options by 4px).
-            // EndChild must run BEFORE EndPopup: a `using var` ImRaii.Child here
-            // would dispose (EndChild) at the enclosing block's closing brace,
-            // i.e. after EndPopup, producing crossed Begin/End pairing and the
-            // "EndPopup on non-popup window" / EndChild-mismatch ImGui asserts.
-            var childSize = new Vector2(ImGui.GetContentRegionAvail().X, itemListHeight);
-            ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0f, 0f));
-            bool childOpen = ImGui.BeginChild("##dropdown_scroll", childSize, false,
-                needsScroll ? ImGuiWindowFlags.AlwaysVerticalScrollbar : ImGuiWindowFlags.NoScrollbar);
-            ImGui.PopStyleVar();
-            if (childOpen)
+        int popupSelected = selected;
+        bool popupChanged = false;
+        FloatingSurface.Popup(
+            popupId,
+            new FloatingSurfaceProps
             {
-                // Options per CmSelect.module.css (.opt): 26px, padding 0 8, radius 4,
-                // 12px text; hover → menu-hover white@.08; current option (.optActive)
-                // keeps the same white@.08 fill.
-                var optFont = FontRegistry.Resolve(resolved.FontFamily ?? FontFamily.Default, resolved.FontSize ?? 12f);
-                bool optFontPushed = optFont is { Available: true };
-                if (optFontPushed) optFont!.Push();
-                float optPad = 8f * scale;
-                float optRounding = 4f * scale;
-                uint optFill = ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.08f)));
-
-                for (int i = 0; i < items.Length; i++)
-                {
-                    bool isSelected = i == selected;
-                    var itemPos = ImGui.GetCursorScreenPos();
-                    var itemSize = new Vector2(childSize.X - (needsScroll ? scrollbarSize : 0), height);
-
-                    ImGui.PushID(i);
-                    if (ImGui.InvisibleButton("##item", itemSize))
+                Width = totalWidth / scale,
+                Height = popupHeight / scale,
+                Padding = Theme.Metrics.Floating.PopupPadding,
+                AnchorMin = valuePos,
+                AnchorMax = valueEnd,
+            },
+            () =>
+            {
+                float regionWidth = ImGui.GetContentRegionAvail().X / scale;
+                ScrollRegion(
+                    $"{popupId}-scroll",
+                    regionWidth,
+                    itemListHeight / scale,
+                    region =>
                     {
-                        if (selected != i || reselectFires)
+                        var optFont = FontRegistry.Resolve(
+                            resolved.FontFamily ?? FontFamily.Default,
+                            resolved.FontSize ?? Theme.Metrics.Typography.Label);
+                        bool optFontPushed = optFont is { Available: true };
+                        if (optFontPushed) optFont!.Push();
+                        float optPad = Theme.Metrics.Page.ActionGap * scale;
+                        float optRounding = Theme.Metrics.Radius.Medium * scale;
+                        uint optFill = ImGui.ColorConvertFloat4ToU32(
+                            ColorEx.ApplyAlpha(
+                                new Vector4(1f, 1f, 1f, 0.08f)));
+                        var spacing = ImGui.GetStyle().ItemSpacing;
+                        ImGui.PushStyleVar(
+                            ImGuiStyleVar.ItemSpacing,
+                            new Vector2(spacing.X, 0f));
+
+                        for (int i = 0; i < items.Length; i++)
                         {
-                            selected = i; changed = true; onChange?.Invoke(i);
+                            bool isSelected = i == popupSelected;
+                            var itemPos = ImGui.GetCursorScreenPos();
+                            var itemSize = new Vector2(
+                                region.ContentWidth * scale,
+                                height);
+                            if (i > 0)
+                            {
+                                ImGui.GetWindowDrawList().AddRectFilled(
+                                    itemPos,
+                                    new Vector2(
+                                        itemPos.X + itemSize.X,
+                                        itemPos.Y + MathF.Max(1f, scale)),
+                                    ImGui.ColorConvertFloat4ToU32(
+                                        Norvrandt.Sheet.CurrentTheme.Border
+                                            with { W = 0.24f }));
+                            }
+
+                            ImGui.PushID(i);
+                            if (ImGui.InvisibleButton("##item", itemSize))
+                            {
+                                if (popupSelected != i || reselectFires)
+                                {
+                                    popupSelected = i;
+                                    popupChanged = true;
+                                    onChange?.Invoke(i);
+                                }
+                                ImGui.CloseCurrentPopup();
+                            }
+                            bool itemHovered = ImGui.IsItemHovered();
+
+                            var popupDrawList = ImGui.GetWindowDrawList();
+                            if (itemHovered || isSelected)
+                                popupDrawList.AddRectFilled(
+                                    itemPos,
+                                    itemPos + itemSize,
+                                    optFill,
+                                    optRounding);
+
+                            string itemDisplay = TruncateText(
+                                items[i],
+                                itemSize.X - optPad * 2f);
+                            var itemTextSize = ImGui.CalcTextSize(itemDisplay);
+                            var itemTextPos = new Vector2(
+                                itemPos.X + optPad,
+                                itemPos.Y + (height - itemTextSize.Y) * 0.5f
+                                    + Theme.Metrics.Optical.DropdownText * scale);
+                            popupDrawList.AddText(
+                                itemTextPos,
+                                ColorEx.ApplyAlpha(
+                                    Norvrandt.Sheet.CurrentTheme.Text).ToU32(),
+                                itemDisplay);
+                            if (itemDisplay != items[i] && itemHovered)
+                                HoverHelp.Preview(
+                                    $"{id}-item-{i}",
+                                    itemPos,
+                                    itemPos + itemSize,
+                                    items[i]);
+
+                            ImGui.PopID();
                         }
-                        ImGui.CloseCurrentPopup();
-                    }
-                    bool itemHovered = ImGui.IsItemHovered();
 
-                    var popupDrawList = ImGui.GetWindowDrawList();
-                    if (itemHovered || isSelected)
-                        popupDrawList.AddRectFilled(itemPos, itemPos + itemSize, optFill, optRounding);
+                        ImGui.PopStyleVar();
+                        if (optFontPushed) optFont!.Pop();
+                    });
+            });
 
-                    string itemDisplay = TruncateText(items[i], itemSize.X - optPad * 2);
-                    var itemTextSize = ImGui.CalcTextSize(itemDisplay);
-                    var itemTextPos = new Vector2(
-                        itemPos.X + optPad,
-                        itemPos.Y + (height - itemTextSize.Y) / 2f + scale);
-                    popupDrawList.AddText(itemTextPos, ColorEx.ApplyAlpha(Norvrandt.Sheet.CurrentTheme.Text).ToU32(), itemDisplay);
-                    if (itemDisplay != items[i] && itemHovered)
-                        HoverHelp.Preview($"{id}-item-{i}", itemPos, itemPos + itemSize, items[i]);
-
-                    ImGui.PopID();
-                }
-
-                if (optFontPushed) optFont!.Pop();
-            }
-            ImGui.EndChild();
-
-            ImGui.PopStyleVar(3);
-            ImGui.EndPopup();
+        if (popupChanged)
+        {
+            selected = popupSelected;
+            changed = true;
         }
-
-        ImGui.PopStyleColor(2);
-        ImGui.PopStyleVar(2);
 
         if (!string.IsNullOrEmpty(tooltip) && (valueHovered || buttonHovered))
             HoverHelp.Explain(id, valuePos, valueEnd, tooltip!);
