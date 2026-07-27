@@ -153,7 +153,7 @@ public sealed class ActorIntegrationSession
 
         // Reapply the captured incoming state exactly — not a revert to the
         // game's own appearance.
-        var restored = _port.ApplyGlamourerState(actor, state, holdLock: false);
+        var restored = _port.RestoreGlamourerState(actor, state);
         if (!restored.Success)
             return IntegrationResult.Fail(restored.Detail!);
 
@@ -308,7 +308,7 @@ public sealed class ActorIntegrationSession
             }
             else if (current.Baseline.GlamourerState is { } state)
             {
-                var restored = _port.ApplyGlamourerState(actor, state, holdLock: false);
+                var restored = _port.RestoreGlamourerState(actor, state);
                 if (restored.Success)
                     current = current with
                     {
@@ -401,7 +401,7 @@ public sealed class ActorIntegrationSession
         if (!locked && resolvable && !current.DesignOwned
             && current.Baseline.GlamourerState is { } state)
         {
-            var restored = _port.ApplyGlamourerState(actor, state, holdLock: false);
+            var restored = _port.RestoreGlamourerState(actor, state);
             if (restored.Success)
                 current = current with
                 {
@@ -643,8 +643,8 @@ public sealed class ActorIntegrationSession
                 Step(McdfPhase.ApplyingAppearance, filesTotal, bytesTotal);
                 failure = await _port.OnFrameworkThread(() =>
                 {
-                    var applied = _port.ApplyGlamourerState(
-                        actor, package.GlamourerData, holdLock: true);
+                    var applied = _port.HoldGlamourerState(
+                        actor, package.GlamourerData);
                     if (applied.Success)
                         locked = true;
                     return applied.Success ? null : applied.Detail;
@@ -800,7 +800,7 @@ public sealed class ActorIntegrationSession
                 locked = false;
                 if (baseline.GlamourerState is { } state)
                 {
-                    var restored = _port.ApplyGlamourerState(actor, state, holdLock: false);
+                    var restored = _port.RestoreGlamourerState(actor, state);
                     if (!restored.Success)
                         failures.Add(restored.Detail!);
                 }

@@ -95,10 +95,15 @@ public interface IIntegrationRuntimePort
     /// flags and no persistent lock.</summary>
     IntegrationPortResult ApplyDesign(ActorId actor, Guid design);
 
-    /// <summary>Applies a serialized state; <paramref name="holdLock"/> uses
-    /// Poser's own key so the imported look survives automation, and must be
-    /// released through <see cref="UnlockGlamourerState"/>.</summary>
-    IntegrationPortResult ApplyGlamourerState(ActorId actor, string state, bool holdLock);
+    /// <summary>MCDF application mode: applies a serialized state as a
+    /// FIXED state locked with Poser's own key, so the imported look
+    /// survives automation until <see cref="UnlockGlamourerState"/>.</summary>
+    IntegrationPortResult HoldGlamourerState(ActorId actor, string state);
+
+    /// <summary>Baseline/design restoration mode: applies a serialized
+    /// state with the API's one-shot manual flags and NO persistent lock,
+    /// leaving no Poser fixed state behind.</summary>
+    IntegrationPortResult RestoreGlamourerState(ActorId actor, string state);
 
     /// <summary>Releases Poser's own lock only. Never touches another
     /// plugin's lock.</summary>

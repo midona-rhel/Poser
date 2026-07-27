@@ -482,15 +482,31 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
             return GlamourerResult(ec, "applying the design");
         });
 
-    public IntegrationPortResult ApplyGlamourerState(ActorId actor, string state, bool holdLock) =>
-        Guarded(Glamourer, "Apply state", () =>
+    public IntegrationPortResult HoldGlamourerState(ActorId actor, string state) =>
+        Guarded(Glamourer, "Hold state", () =>
         {
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
                 return IntegrationPortResult.Fail(detail!);
-            ulong flags = ApplyEquipment | ApplyCustomization | (holdLock ? ApplyLock : 0);
-            int ec = _applyState.InvokeFunc(state, index, LockKey, flags);
-            return GlamourerResult(ec, "applying the actor state");
+            // Fixed + locked: without Once the state maps to IpcFixed, and
+            // the Lock flag with Poser's key keeps automation off the
+            // imported look until UnlockGlamourerState releases it.
+            int ec = _applyState.InvokeFunc(
+                state, index, LockKey, ApplyEquipment | ApplyCustomization | ApplyLock);
+            return GlamourerResult(ec, "holding the actor state");
+        });
+
+    public IntegrationPortResult RestoreGlamourerState(ActorId actor, string state) =>
+        Guarded(Glamourer, "Restore state", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationPortResult.Fail(detail!);
+            // One-shot manual restoration: Once maps to IpcManual, no Lock
+            // flag — after a restore no Poser fixed state or lock remains.
+            int ec = _applyState.InvokeFunc(
+                state, index, LockKey, ApplyOnce | ApplyEquipment | ApplyCustomization);
+            return GlamourerResult(ec, "restoring the actor state");
         });
 
     public IntegrationPortResult UnlockGlamourerState(ActorId actor) =>
