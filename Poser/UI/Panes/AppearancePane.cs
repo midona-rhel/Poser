@@ -191,59 +191,47 @@ public sealed class AppearancePane
             return InspectorLayout.FormRowHeight * s;
         }
 
-        float TintRow(string id, string label, PresentationModel model, string help)
+        float TintWell(string id, string miniLabel, PresentationModel model,
+            float x, float rowTop)
         {
-            float rowTop = cursor.Y + y;
-            InspectorLayout.FormLabel(new Vector2(cursor.X, rowTop), label, s);
+            ViewText.Label(new Vector2(x, rowTop + InspectorLayout.FormLabelY * s),
+                miniLabel, 11f, FontWeight.Regular, InspectorLayout.HintColor);
+            float wellX = x + ViewText.Measure(miniLabel, 11f) + 4f * s;
+            var wellMin = new Vector2(wellX, rowTop + 1f * s);
             Vector4? current = owned.Tints.TryGetValue(model, out var ownedTint)
                 ? ownedTint
                 : reading.TintFor(model);
             if (current is { } tint)
             {
-                // 28px well centred in the 30px form row.
-                ImGui.SetCursorScreenPos(new Vector2(controlX, rowTop + 1f * s));
+                // 28px well centred in the 30px form row; RGB only — the
+                // tint's alpha channel is the model's own.
+                ImGui.SetCursorScreenPos(wellMin);
                 var edit = tint;
-                // RGB only: the tint's alpha channel is the model's own
-                // and is preserved exactly.
                 if (Crystarium.ColorWell(id, ref edit, rgbOnly: true))
-                    Report(_presentation.SetTint(actor, model, edit), label);
+                    Report(_presentation.SetTint(actor, model, edit), miniLabel);
             }
             else
             {
-                // The absent model keeps its row: nothing shifts, nothing
-                // is redirected to another model.
-                ViewText.Label(new Vector2(controlX, rowTop + InspectorLayout.FormLabelY * s),
-                    "Not present", 11f, FontWeight.Regular, InspectorLayout.HintColor);
+                // An absent weapon keeps its compact well as a disabled
+                // outline with hover help — never another full row.
+                var wellMax = wellMin + new Vector2(28f, 28f) * s;
+                ImGui.GetWindowDrawList().AddRect(wellMin, wellMax,
+                    ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 0.12f)),
+                    6f * s);
+                if (Crystarium.HoverHelp.HelpHovered(wellMin, wellMax))
+                    Crystarium.HoverHelp.Explain(id + "-absent", wellMin, wellMax,
+                        "This weapon model is not present on the actor");
             }
-            RowHelp(rowTop, id + "-row", help);
-            return InspectorLayout.FormRowHeight * s;
+            return wellX + (28f + 12f) * s - x;
         }
 
-        // ── Header: actor name, Open in Glamourer, Reset appearance ───
+        // ── Page actions (the shell crumb already names the actor) ────
         float headerTop = cursor.Y + y;
-        var descriptor = Describe(actor);
-        string headerName = descriptor is { } described
-            ? DisplayNameProvider?.Invoke(described) ?? described.Name
-            : "Actor";
-        ViewText.Label(new Vector2(cursor.X, headerTop + InspectorLayout.FormLabelY * s),
-            headerName, 11f, FontWeight.SemiBold, InspectorLayout.LabelColor);
         var glamourer = _integration.Glamourer;
         bool glamAvailable = glamourer.Available;
         string glamReason = glamAvailable ? "Open this actor in Glamourer." : glamourer.Detail;
-        float bx = cursor.X + width;
-        var resetSize = Crystarium.MeasureButton("Reset appearance", Cls.Compact);
-        bx -= resetSize.X;
-        ImGui.SetCursorScreenPos(new Vector2(bx, headerTop + InspectorLayout.FormButtonY * s));
-        if (Crystarium.Button("Reset appearance", new ButtonProps
-            {
-                Id = "app-reset",
-                Classes = Cls.Compact,
-                Tooltip = "Restore this actor's incoming opacity, tints, and wetness",
-            }))
-            Report(_presentation.ResetActor(actor), "Reset appearance");
-        var glamSize = Crystarium.MeasureButton("Open in Glamourer", Cls.Compact);
-        bx -= 8f * s + glamSize.X;
-        ImGui.SetCursorScreenPos(new Vector2(bx, headerTop + InspectorLayout.FormButtonY * s));
+        ImGui.SetCursorScreenPos(new Vector2(
+            cursor.X, headerTop + InspectorLayout.FormButtonY * s));
         if (Crystarium.Button("Open in Glamourer", new ButtonProps
             {
                 Id = "app-glamourer",
@@ -257,6 +245,16 @@ public sealed class AppearancePane
             var opened = _integration.OpenGlamourer(actor);
             _status = opened.Success ? string.Empty : $"Open in Glamourer: {opened.Detail}";
         }
+        var glamSize = Crystarium.MeasureButton("Open in Glamourer", Cls.Compact);
+        ImGui.SetCursorScreenPos(new Vector2(
+            cursor.X + glamSize.X + 8f * s, headerTop + InspectorLayout.FormButtonY * s));
+        if (Crystarium.Button("Reset appearance", new ButtonProps
+            {
+                Id = "app-reset",
+                Classes = Cls.Compact,
+                Tooltip = "Restore this actor's incoming opacity, tints, and wetness",
+            }))
+            Report(_presentation.ResetActor(actor), "Reset appearance");
         y += InspectorLayout.FormRowHeight * s;
 
         if (_status.Length > 0)
@@ -274,12 +272,20 @@ public sealed class AppearancePane
             "Fade the whole actor; 0 is fully invisible and never touches the visibility action",
             disabled: false,
             value => Report(_presentation.SetOpacity(actor, value), "Opacity"));
-        y += TintRow("##app-tint-character", "Character", PresentationModel.Character,
-            "Multiply the character model's colors");
-        y += TintRow("##app-tint-main", "Main hand", PresentationModel.MainHand,
-            "Multiply the main-hand model's colors");
-        y += TintRow("##app-tint-off", "Off hand", PresentationModel.OffHand,
-            "Multiply the off-hand model's colors");
+        // Tint — ONE 30px form row; all three models stay independently
+        // editable.
+        float tintTop = cursor.Y + y;
+        InspectorLayout.FormLabel(new Vector2(cursor.X, tintTop), "Tint", s);
+        float tintX = controlX;
+        tintX += TintWell("##app-tint-character", "Character",
+            PresentationModel.Character, tintX, tintTop);
+        tintX += TintWell("##app-tint-main", "Main",
+            PresentationModel.MainHand, tintX, tintTop);
+        TintWell("##app-tint-off", "Off",
+            PresentationModel.OffHand, tintX, tintTop);
+        RowHelp(tintTop, "app-tint-row",
+            "Multiply each model's colors; an absent weapon shows an empty well");
+        y += InspectorLayout.FormRowHeight * s;
         y += 10f * s;
 
         // ── Wet surface ───────────────────────────────────────────────
@@ -504,7 +510,9 @@ public sealed class AppearancePane
                 }) && exportable)
             {
                 _mcdfActor = actor;
-                _mcdfDescription = headerName;
+                _mcdfDescription = Describe(actor) is { } described
+                    ? DisplayNameProvider?.Invoke(described) ?? described.Name
+                    : "Actor";
                 _mcdfExportBrowser.Open(_mcdfPath, chosen =>
                 {
                     _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
