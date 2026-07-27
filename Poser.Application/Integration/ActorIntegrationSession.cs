@@ -1033,8 +1033,10 @@ public sealed class ActorIntegrationSession
             return (null, "The actor is no longer available.");
 
         // A foreign temporary Penumbra assignment refuses the import
-        // before mutation — assignment is force-free and never deletes
-        // another plugin's temporary assignment.
+        // before mutation. The later assignment deliberately uses FORCE —
+        // required to overlay an ordinary individual assignment — after
+        // re-classifying in its own framework action, so it still cannot
+        // delete another plugin's temporary assignment.
         if (package.HasResources)
         {
             var assignment = _port.GetCollectionAssignment(actor);
@@ -1547,7 +1549,17 @@ public sealed class ActorIntegrationSession
                 // resolved to its final filesystem target, so a file under
                 // <root>\junction\… that really lives elsewhere is caught,
                 // and lexical tricks like <root>\..\outside never pass.
-                var realFile = ResolveRealPath(localFull);
+                string? realFile;
+                try
+                {
+                    realFile = ResolveRealPath(localFull);
+                }
+                catch (Exception)
+                {
+                    // Malformed or inaccessible reparse data must become a
+                    // skipped resource, never escape the export.
+                    realFile = null;
+                }
                 if (realFile == null)
                 {
                     skipped.Add($"{actualRaw} (could not resolve the real path)");
