@@ -127,7 +127,7 @@ public sealed class AppShellViewModel
 /// </summary>
 public static class AppShellView
 {
-    // ── palette (picto tokens; sources cited in PictoStylesheet) ─────────
+    // ── palette (picto tokens) ───────────────────────────────────────────
     private static readonly Vector4 BgApp          = new(24 / 255f, 25 / 255f, 27 / 255f, 1f);
     private static readonly Vector4 Surface1       = new(36 / 255f, 37 / 255f, 40 / 255f, 1f);
     private static readonly Vector4 Surface2       = new(42 / 255f, 42 / 255f, 46 / 255f, 1f);
@@ -398,7 +398,12 @@ public static class AppShellView
             vm.SidebarSearch,
             next => vm.SidebarSearch = next,
             "Filter scene...",
-            (max.X - min.X) / s - SidebarHorizontalPadding * 2f - 1f);
+            ControlStyle.Workspace with
+            {
+                Width = UiWidth.Fixed(
+                    (max.X - min.X) / s
+                    - SidebarHorizontalPadding * 2f - 1f),
+            });
 
 
         // Scroll child spans to the sidebar border so the scrollbar sits AT the
@@ -703,10 +708,12 @@ public static class AppShellView
             ImGui.SetCursorScreenPos(new Vector2(
                 min.X + MainHorizontalPadding * s,
                 min.Y + (ToolbarHeight - segmentedHeightPx) / 2f * s));
-            int chosen = active;
-            if (Crystarium.SegmentedControl("##shell-tabs", labels, ref chosen,
-                    maxWidth: 0f, alignFirstTabToCursor: true) && chosen != active)
-                vm.OnTab?.Invoke(chosen);
+            Crystarium.SegmentedControl(
+                "##shell-tabs",
+                labels,
+                active,
+                chosen => vm.OnTab?.Invoke(chosen),
+                alignFirstTabToCursor: true);
         }
 
         // crumb + optional pop-out. Only tabs with a faithful standalone view

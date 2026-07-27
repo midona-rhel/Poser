@@ -16,14 +16,23 @@ public static partial class Crystarium
         string id,
         bool value,
         System.Action<bool> onChange,
+        ControlStyle style = default,
         bool disabled = false,
         string? help = null)
     {
         float scale = ImGuiHelpers.GlobalScale;
+        float logicalHeight = ControlSizing.Height(
+            style.Height, Crystarium.ActiveTheme.Controls.SwitchHeight);
+        float controlScale =
+            logicalHeight / Crystarium.ActiveTheme.Controls.SwitchHeight;
+        float logicalWidth = ControlSizing.Width(
+            style.Width,
+            Crystarium.ActiveTheme.Controls.SwitchWidth * controlScale,
+            ImGui.GetContentRegionAvail().X / scale);
         var size = new Vector2(
-            Crystarium.ActiveTheme.Controls.SwitchWidth,
-            Crystarium.ActiveTheme.Controls.SwitchHeight) * scale;
-        var hit = Interactive.Reserve(id, size, disabled, Norvrandt.AvailableHeight);
+            logicalWidth,
+            logicalHeight) * scale;
+        var hit = Interactive.Reserve(id, size, disabled);
         if (hit.Clicked)
         {
             value = !value;
@@ -43,14 +52,15 @@ public static partial class Crystarium
             Crystarium.ActiveTheme.Controls.SwitchHeight * 0.5f * scale);
 
         // knob: 16px circle, left 2px (off) / 14px (on), bottom 2px
-        float knobInset = Crystarium.ActiveTheme.Spacing.One;
-        float knobTravel = Crystarium.ActiveTheme.Controls.SwitchWidth
-            - Crystarium.ActiveTheme.Controls.SwitchKnobSize - knobInset * 2f;
+        float knobInset = Crystarium.ActiveTheme.Spacing.One * controlScale;
+        float knobSize =
+            Crystarium.ActiveTheme.Controls.SwitchKnobSize * controlScale;
+        float knobTravel = logicalWidth - knobSize - knobInset * 2f;
         float knobLeft = (knobInset + (value ? knobTravel : 0f)) * scale;
-        float knobRadius = Crystarium.ActiveTheme.Controls.SwitchKnobSize * 0.5f * scale;
+        float knobRadius = knobSize * 0.5f * scale;
         var center = hit.ScreenMin + new Vector2(
             knobLeft + knobRadius,
-            Crystarium.ActiveTheme.Controls.SwitchHeight * 0.5f * scale);
+            logicalHeight * 0.5f * scale);
 
         // knob drop shadow (0 1px 3px rgba(0,0,0,.2)) — cheap two-ring approximation
         dl.AddCircleFilled(center + new Vector2(0f, 1f * scale), knobRadius + scale,

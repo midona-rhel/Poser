@@ -28,13 +28,20 @@ public static partial class Crystarium
     /// right-aligned children). Real ImGui modal popup — blocks input behind it.
     /// <code>
     ///   if (Crystarium.Button("Open")) modalOpen = true;
-    ///   Crystarium.Modal("##import", ref modalOpen, "Import pose",
+    ///   Crystarium.Modal("##import", modalOpen,
+    ///       next => modalOpen = next, "Import pose",
     ///       body: () => { ... },
-    ///       footer: () => { Crystarium.Button("Import", Cls.Primary); });
+    ///       footer: () => Crystarium.Button("Import", Import,
+    ///           new ControlStyle { Primary = true }));
     /// </code>
     /// </summary>
     /// <returns>True on the frame the modal closes.</returns>
-    public static bool Modal(string id, ref bool open, string title, Action body,
+    public static bool Modal(
+        string id,
+        bool open,
+        Action<bool> onOpenChanged,
+        string title,
+        Action body,
         Action? footer = null, ModalSize size = ModalSize.Small, float? height = null,
         Vector2? position = null)
     {
@@ -168,6 +175,7 @@ public static partial class Crystarium
             {
                 ImGui.CloseCurrentPopup();
                 open = false;
+                onOpenChanged(false);
                 closedThisFrame = true;
             }
             ImGui.EndPopup();

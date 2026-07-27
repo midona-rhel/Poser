@@ -54,7 +54,7 @@ public sealed class ExpressionInspectorSection
                 },
                 new ControlStyle
                     {
-                        Width = UiSize.Fixed(
+                        Width = UiWidth.Fixed(
                             width / s - sliderX - valueW - sliderGap),
                     });
             ViewText.Label(new Vector2(

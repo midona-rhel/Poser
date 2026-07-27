@@ -54,7 +54,8 @@ public static partial class Crystarium
             string label,
             TablerIcon icon = TablerIcon.Circle,
             bool selected = false,
-            string? badge = null)
+            string? badge = null,
+            ControlStyle style = default)
         {
             DrawSeparator();
             _lastRowMin = ImGui.GetCursorScreenPos();
@@ -70,8 +71,8 @@ public static partial class Crystarium
                     NoExpanderSlot = true,
                     Selected = selected,
                     Badge = badge,
-                    Width = ContentWidth,
-                });
+                },
+                style with { Width = UiWidth.Fixed(ContentWidth) });
             _rowCount++;
             return clicked;
         }

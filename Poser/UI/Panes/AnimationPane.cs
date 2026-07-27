@@ -256,7 +256,7 @@ public sealed class AnimationPane
                     disabled: action.Disabled,
                     style: ControlStyle.Workspace with
                     {
-                        Width = UiSize.Fixed(w / s),
+                        Width = UiWidth.Fixed(w / s),
                     }) && !action.Disabled)
                 action.Click();
             x -= Gap * s;
@@ -276,7 +276,7 @@ public sealed class AnimationPane
             help: tip,
             style: ControlStyle.Workspace with
             {
-                Width = UiSize.Fixed(MathF.Max(
+                Width = UiWidth.Fixed(MathF.Max(
                     70f, (rightEdge - valueX) / ImGuiHelpers.GlobalScale)),
             });
     }
@@ -354,7 +354,7 @@ public sealed class AnimationPane
             },
             new ControlStyle
                 {
-                    Width = UiSize.Fixed(MathF.Max(
+                    Width = UiWidth.Fixed(MathF.Max(
                         60f, (trailingX - speedSliderX) / s - Gap)),
                 },
             marks: new[] { 0f, 1f });
@@ -416,7 +416,7 @@ public sealed class AnimationPane
                 Report(_animation.SetStance(
                     actor, StanceValues[picked], pose), "Stance");
             },
-            new ControlStyle { Width = UiSize.Fixed(160f) },
+            new ControlStyle { Width = UiWidth.Fixed(160f) },
             disabled: !supportsStance,
             help: supportsStance
                 ? "Pose family — picking one returns the actor to it"
@@ -447,10 +447,7 @@ public sealed class AnimationPane
                 id: "anim-pose-prev",
                 help: "Previous pose (wraps)",
                 disabled: poseDisabled,
-                style: ControlStyle.Workspace with
-                {
-                    Size = UiSize.Fixed(24f),
-                }))
+                style: ControlStyle.Square(24f)))
             Report(
                 _animation.SetStance(actor, poseFamily, reading.Pose - 1),
                 "Pose");
@@ -459,10 +456,7 @@ public sealed class AnimationPane
                 id: "anim-pose-next",
                 help: "Next pose (wraps)",
                 disabled: poseDisabled,
-                style: ControlStyle.Workspace with
-                {
-                    Size = UiSize.Fixed(24f),
-                }))
+                style: ControlStyle.Square(24f)))
             Report(
                 _animation.SetStance(actor, poseFamily, reading.Pose + 1),
                 "Pose");
@@ -583,7 +577,7 @@ public sealed class AnimationPane
                 disabled: resetDisabled,
                 style: ControlStyle.Workspace with
                 {
-                    Width = UiSize.Fixed(resetWidth / s),
+                    Width = UiWidth.Fixed(resetWidth / s),
                 }) && !resetDisabled)
         {
             // A layer reset hands the layer's SPEED back; the timeline is
@@ -614,7 +608,7 @@ public sealed class AnimationPane
             },
             new ControlStyle
                 {
-                    Width = UiSize.Fixed(78f),
+                    Width = UiWidth.Fixed(78f),
                 },
             marks: new[] { 1f });
 
@@ -633,7 +627,7 @@ public sealed class AnimationPane
                     help: "Play this animation again",
                     style: ControlStyle.Workspace with
                     {
-                        Width = UiSize.Fixed(pauseWidth / s),
+                        Width = UiWidth.Fixed(pauseWidth / s),
                     }))
                 Report(_animation.Blend(actor, timeline), label);
         }
@@ -642,7 +636,7 @@ public sealed class AnimationPane
                 help: "Hold or release only this layer",
                 style: ControlStyle.Workspace with
                 {
-                    Width = UiSize.Fixed(pauseWidth / s),
+                    Width = UiWidth.Fixed(pauseWidth / s),
                 }))
             Report(
                 slotPaused
@@ -767,7 +761,7 @@ public sealed class AnimationPane
             },
             new ControlStyle
             {
-                Width = UiSize.Fixed(MathF.Max(
+                Width = UiWidth.Fixed(MathF.Max(
                         60f,
                         width / s - LabelColumn - wellW - Gap - readoutSlot -
                         loopWidth - Gap)),

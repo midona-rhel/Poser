@@ -36,18 +36,11 @@ public readonly struct InteractionResult
 public static class Interactive
 {
     /// <summary>
-    /// Reserve a hit-test rect at the current cursor. If <paramref name="ambientHeight"/>
-    /// is greater than the button height the cursor is bumped down so the
-    /// control vertical-centers within the ambient row height.
+    /// Reserve a hit-test rect at the current cursor.
     /// </summary>
-    public static InteractionResult Reserve(string id, Vector2 size, bool disabled, float ambientHeight = 0f)
+    public static InteractionResult Reserve(
+        string id, Vector2 size, bool disabled)
     {
-        if (ambientHeight > size.Y)
-        {
-            float oy = (ambientHeight - size.Y) / 2f;
-            if (oy > 0) ImGui.SetCursorPosY(ImGui.GetCursorPosY() + oy);
-        }
-
         var min = ImGui.GetCursorScreenPos();
         ImGui.InvisibleButton(id, size);
         var max = min + size;

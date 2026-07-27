@@ -149,7 +149,7 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(min);
             if (IconButton(
                     TablerIcon.ArrowUp,
-                    style: new ControlStyle { Size = UiSize.Comfortable },
+                    style: ControlStyle.Comfortable,
                     help: "Open the parent folder",
                     id: $"{_id}-up"))
             {
@@ -178,8 +178,8 @@ public static partial class Crystarium
                 },
                 new ControlStyle
                 {
-                    Size = UiSize.Comfortable,
-                    Width = UiSize.Fixed(pathWidth / scale),
+                    Height = UiHeight.Comfortable,
+                    Width = UiWidth.Fixed(pathWidth / scale),
                 },
                 placeholder: "Path");
 
@@ -299,10 +299,10 @@ public static partial class Crystarium
             string confirmLabel = _isSaveMode ? "Save" : "Import";
             var confirmStyle = new ControlStyle
             {
-                Size = UiSize.Comfortable,
+                Height = UiHeight.Comfortable,
                 Primary = true,
             };
-            var comfortable = new ControlStyle { Size = UiSize.Comfortable };
+            var comfortable = ControlStyle.Comfortable;
             var confirmSize = MeasureButton(confirmLabel, confirmStyle);
             var cancelSize = MeasureButton("Cancel", comfortable);
             float gap = Crystarium.ActiveTheme.Page.ActionGap * scale;
@@ -346,8 +346,8 @@ public static partial class Crystarium
                     next => _fileName = next,
                     new ControlStyle
                     {
-                        Size = UiSize.Comfortable,
-                        Width = UiSize.Fixed(width / scale),
+                        Height = UiHeight.Comfortable,
+                        Width = UiWidth.Fixed(width / scale),
                     },
                     placeholder: "File name");
             }

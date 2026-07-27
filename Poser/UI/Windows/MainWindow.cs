@@ -1055,7 +1055,12 @@ public class MainWindow : Window
     private void DrawRenameModal()
     {
         if (!_renameOpen || _renameTarget is not { } target) return;
-        Crystarium.Modal("##rename-actor", ref _renameOpen, "Rename actor", () =>
+        Crystarium.Modal(
+            "##rename-actor",
+            _renameOpen,
+            next => _renameOpen = next,
+            "Rename actor",
+            () =>
         {
             Crystarium.TextInput(
                 "##rename-input", _renameValue, next => _renameValue = next);

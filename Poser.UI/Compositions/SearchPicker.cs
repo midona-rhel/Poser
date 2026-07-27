@@ -134,7 +134,10 @@ public static partial class Crystarium
                 _search,
                 next => _search = next,
                 "Search by name",
-                inner);
+                ControlStyle.Workspace with
+                {
+                    Width = UiWidth.Fixed(inner),
+                });
 
             float listY = searchY
                 + (Crystarium.ActiveTheme.Controls.WorkspaceHeight

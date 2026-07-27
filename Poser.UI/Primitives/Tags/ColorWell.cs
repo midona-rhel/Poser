@@ -17,26 +17,29 @@ public static partial class Crystarium
         string id,
         Vector4 color,
         System.Action<Vector4> onChange,
+        ControlStyle style = default,
         bool rgbOnly = false,
         bool disabled = false,
         string? help = null)
     {
         float scale = ImGuiHelpers.GlobalScale;
-
-        var size = new Vector2(
-            Crystarium.ActiveTheme.Controls.ColorWellSize,
-            Crystarium.ActiveTheme.Controls.ColorWellSize) * scale;
-        var hit = Interactive.Reserve(id, size, disabled, Norvrandt.AvailableHeight);
+        float side = ControlSizing.Height(
+            style.Height, Crystarium.ActiveTheme.Controls.ColorWellSize);
+        float width = ControlSizing.Width(
+            style.Width, side, ImGui.GetContentRegionAvail().X / scale);
+        var size = new Vector2(width, side) * scale;
+        var hit = Interactive.Reserve(id, size, disabled);
+        var wellMax = hit.ScreenMin + new Vector2(side * scale);
 
         var dl = ImGui.GetWindowDrawList();
         float r = Crystarium.ActiveTheme.Radii.Control * scale;
-        dl.AddRectFilled(hit.ScreenMin, hit.ScreenMax,
+        dl.AddRectFilled(hit.ScreenMin, wellMax,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
                 disabled
                     ? Crystarium.ActiveTheme.Chrome.UnavailableFill
                     : color with { W = 1f })), r);
         // 1px border painted inside the box edge (CSS border-box)
-        dl.AddRect(hit.ScreenMin + new Vector2(0.5f, 0.5f), hit.ScreenMax - new Vector2(0.5f, 0.5f),
+        dl.AddRect(hit.ScreenMin + new Vector2(0.5f, 0.5f), wellMax - new Vector2(0.5f, 0.5f),
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.ControlBorder)), r, ImDrawFlags.None, 1f * scale);
 
         string popupId = id + "_picker";
@@ -52,7 +55,7 @@ public static partial class Crystarium
                 Height = Crystarium.ActiveTheme.Floating.ColorPickerHeight,
                 Padding = Crystarium.ActiveTheme.Floating.ColorPickerPadding,
                 AnchorMin = hit.ScreenMin,
-                AnchorMax = hit.ScreenMax,
+                AnchorMax = wellMax,
             },
             () =>
             {
@@ -83,18 +86,23 @@ public static partial class Crystarium
     /// white @ .18; active state adds a 2px <c>--color-bg-app</c> gap ring plus a
     /// 2px <c>--color-primary</c> outer ring. Returns true when clicked.
     /// </summary>
-    public static bool Swatch(string id, Vector4 color, bool active)
+    public static bool Swatch(
+        string id,
+        Vector4 color,
+        bool active,
+        ControlStyle style = default)
     {
         float scale = ImGuiHelpers.GlobalScale;
-
-        var size = new Vector2(
-            Crystarium.ActiveTheme.Controls.ColorWellSize,
-            Crystarium.ActiveTheme.Controls.ColorWellSize) * scale;
-        var hit = Interactive.Reserve(id, size, disabled: false, Norvrandt.AvailableHeight);
+        float side = ControlSizing.Height(
+            style.Height, Crystarium.ActiveTheme.Controls.ColorWellSize);
+        float width = ControlSizing.Width(
+            style.Width, side, ImGui.GetContentRegionAvail().X / scale);
+        var size = new Vector2(width, side) * scale;
+        var hit = Interactive.Reserve(id, size, disabled: false);
 
         var dl = ImGui.GetWindowDrawList();
-        var center = (hit.ScreenMin + hit.ScreenMax) * 0.5f;
-        float radius = Crystarium.ActiveTheme.Controls.ColorWellSize * 0.5f * scale;
+        var center = hit.ScreenMin + new Vector2(side * 0.5f * scale);
+        float radius = side * 0.5f * scale;
 
         // box-shadow spread rings drawn as filled discs back-to-front — one clean
         // AA boundary per edge (stroked circles fringe on both stroke edges).

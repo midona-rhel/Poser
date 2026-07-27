@@ -32,7 +32,7 @@ public static partial class Crystarium
         // 12px text; chevron = Tabler IconSelector at 14 in a 20px slot, opacity .5.
         bool changed = false;
         float scale = ImGuiHelpers.GlobalScale;
-        float height = ControlSizing.Height(style.Size,
+        float height = ControlSizing.Height(style.Height,
             Crystarium.ActiveTheme.Controls.WorkspaceHeight) * scale;
         float rounding = Crystarium.ActiveTheme.Radii.Control * scale;
         float padLeft = Crystarium.ActiveTheme.Spacing.Six * scale;
@@ -40,9 +40,9 @@ public static partial class Crystarium
         float gap = Crystarium.ActiveTheme.Spacing.Three * scale;
         float chevronSlot = Crystarium.ActiveTheme.Controls.SwitchHeight * scale;
 
-        float totalWidth = ControlSizing.Width(style.Width,
-            Norvrandt.AvailableWidth / scale,
-            Norvrandt.AvailableWidth / scale) * scale;
+        float availableWidth = ImGui.GetContentRegionAvail().X / scale;
+        float totalWidth = ControlSizing.Width(
+            style.Width, availableWidth, availableWidth) * scale;
         float minWidth = padLeft + gap + chevronSlot + padRight + 20f * scale;
         if (totalWidth < minWidth) totalWidth = minWidth;
 

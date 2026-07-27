@@ -223,7 +223,8 @@ public sealed class AnimationPicker
         ImGui.SetCursorScreenPos(cursor);
         Crystarium.FilterPill(
             "##anim-pick-search", _search, next => _search = next,
-            "Search name or id", inner);
+            "Search name or id",
+            ControlStyle.Workspace with { Width = UiWidth.Fixed(inner) });
         cursor.Y += 32f * s;
 
         if (kinds.Count > 1)
@@ -232,18 +233,24 @@ public sealed class AnimationPicker
             for (int i = 0; i < kinds.Count; i++)
                 labels[i] = KindLabels[Array.IndexOf(KindValues, kinds[i])];
             ImGui.SetCursorScreenPos(cursor);
-            int chosen = kindIndex;
-            if (Crystarium.SegmentedControl("##anim-pick-kind", labels, ref chosen, inner))
-                _kindIndex = Array.IndexOf(KindValues, kinds[chosen]);
+            Crystarium.SegmentedControl(
+                "##anim-pick-kind",
+                labels,
+                kindIndex,
+                chosen => _kindIndex = Array.IndexOf(KindValues, kinds[chosen]),
+                new ControlStyle { Width = UiWidth.Fixed(inner) });
             cursor.Y += 34f * s;
         }
 
         if (showWeapon)
         {
             ImGui.SetCursorScreenPos(cursor);
-            int weapon = _weaponFilter;
-            if (Crystarium.SegmentedControl("##anim-pick-weapon", WeaponLabels, ref weapon, inner))
-                _weaponFilter = weapon;
+            Crystarium.SegmentedControl(
+                "##anim-pick-weapon",
+                WeaponLabels,
+                _weaponFilter,
+                chosen => _weaponFilter = chosen,
+                new ControlStyle { Width = UiWidth.Fixed(inner) });
             cursor.Y += 34f * s;
         }
 
@@ -281,7 +288,10 @@ public sealed class AnimationPicker
                             IconTexture = ResolveIcon(entry.Icon),
                             Badge = Metadata(entry),
                             NoExpanderSlot = true,
-                            Width = rowWidth,
+                        },
+                        new ControlStyle
+                        {
+                            Width = UiWidth.Fixed(rowWidth),
                         }))
                 {
                     picked = new AnimationPick(entry, _target, _slot);

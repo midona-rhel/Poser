@@ -14,31 +14,39 @@ public static partial class Crystarium
     /// 12px text-secondary; active tab bg surface-2 (#2a2a2e) + shadow
     /// 0 1px 2px black@.25 + text-primary.
     /// </summary>
-    public static bool SegmentedControl(string id, string[] items, ref int selected)
-        => SegmentedControl(id, items, ref selected, maxWidth: 0f);
-
-    /// <summary>Width-constrained variant: when the natural width exceeds
-    /// <paramref name="maxWidth"/> (unscaled px), tab padding compresses down to a
-    /// 6px floor so the pill fits its container (e.g. the 380px spawn popover).
-    /// When <paramref name="alignFirstTabToCursor"/> is true, the cursor denotes
+    /// <summary>When the styled width is narrower than the natural width,
+    /// tab padding compresses to the shared spacing floor. When
+    /// <paramref name="alignFirstTabToCursor"/> is true, the cursor denotes
     /// the first tab edge rather than the decorative outer pill edge. This lets
     /// header labels align with sibling tab labels without treating the pill's
     /// 3px chrome as semantic content padding.</summary>
     public static bool SegmentedControl(
         string id,
         string[] items,
-        ref int selected,
-        float maxWidth,
+        int selected,
+        Action<int> onChange,
+        ControlStyle style = default,
         bool alignFirstTabToCursor = false)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        float pad = (Crystarium.ActiveTheme.Controls.NavigationHeight
-            - Crystarium.ActiveTheme.Controls.WorkspaceHeight) * 0.5f * scale;
+        float totalHeight = ControlSizing.Height(
+            style.Height,
+            Crystarium.ActiveTheme.Controls.NavigationHeight);
+        float chromePad = (Crystarium.ActiveTheme.Controls.NavigationHeight
+            - Crystarium.ActiveTheme.Controls.WorkspaceHeight) * 0.5f;
+        float pad = chromePad * scale;
         float gap = Crystarium.ActiveTheme.Spacing.One * scale;
-        float tabHeight = Crystarium.ActiveTheme.Controls.WorkspaceHeight * scale;
+        float tabHeight = MathF.Max(0f, totalHeight - chromePad * 2f) * scale;
         float tabPadX = Crystarium.ActiveTheme.Spacing.Six * scale;
 
-        if (maxWidth > 0f)
+        float availableWidth = ImGui.GetContentRegionAvail().X / scale;
+        float constrainedWidth = style.Width.Kind switch
+        {
+            UiWidthKind.Fill => availableWidth,
+            UiWidthKind.Fixed => style.Width.Value,
+            _ => 0f,
+        };
+        if (constrainedWidth > 0f)
         {
             var mfont = FontRegistry.Resolve(FontFamily.Default, Crystarium.ActiveTheme.Typography.LabelSize);
             bool mp = mfont is { Available: true };
@@ -47,7 +55,8 @@ public static partial class Crystarium
             foreach (var it in items) text += ImGui.CalcTextSize(it).X;
             if (mp) mfont!.Pop();
             float chrome = pad * 2f + gap * (items.Length - 1);
-            float fitPad = (maxWidth * scale - chrome - text) / (items.Length * 2f);
+            float fitPad =
+                (constrainedWidth * scale - chrome - text) / (items.Length * 2f);
             tabPadX = MathF.Max(
                 Crystarium.ActiveTheme.Spacing.Three * scale,
                 MathF.Min(tabPadX, fitPad));
@@ -87,7 +96,12 @@ public static partial class Crystarium
 
             ImGui.SetCursorScreenPos(tabMin);
             var hit = Interactive.Reserve($"{id}##{i}", new Vector2(widths[i], tabHeight), disabled: false);
-            if (hit.Clicked && selected != i) { selected = i; changed = true; }
+            if (hit.Clicked && selected != i)
+            {
+                selected = i;
+                changed = true;
+                onChange(i);
+            }
 
             bool active = i == selected;
             if (active)

@@ -141,7 +141,8 @@ public sealed class PoseFileInspectorSection
         bool next = value;
         Crystarium.Checkbox($"##{id}", value, changed => next = changed);
         value = next;
-        float boxW = Crystarium.CheckboxSize / ImGuiHelpers.GlobalScale;
+        float boxW =
+            Crystarium.MeasureCheckbox().X / ImGuiHelpers.GlobalScale;
         ViewText.Label(new Vector2(
                 cursor.X + (x + boxW + 6f) * s, cursor.Y + h + 3f * s),
             label, 11f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));

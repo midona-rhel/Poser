@@ -39,11 +39,10 @@ public static partial class Crystarium
     {
         float scale = ImGuiHelpers.GlobalScale;
         float height = ControlSizing.Height(
-            style.Size, ActiveTheme.Controls.ComfortableHeight) * scale;
+            style.Height, ActiveTheme.Controls.ComfortableHeight) * scale;
+        float availableWidth = ImGui.GetContentRegionAvail().X / scale;
         float width = ControlSizing.Width(
-            style.Width,
-            Norvrandt.AvailableWidth / scale,
-            Norvrandt.AvailableWidth / scale) * scale;
+            style.Width, availableWidth, availableWidth) * scale;
         var background = ActiveTheme.Chrome.InputWell;
         var border = ActiveTheme.Chrome.ControlBorder;
         float framePadY = (height - ImGui.GetTextLineHeight()) * 0.5f;

@@ -32,16 +32,19 @@ public static partial class Crystarium
         float scale = ImGuiHelpers.GlobalScale;
         float widthPx = ControlSizing.Width(
             style.Width,
-            Norvrandt.AvailableWidth / scale,
-            Norvrandt.AvailableWidth / scale) * scale;
+            ImGui.GetContentRegionAvail().X / scale,
+            ImGui.GetContentRegionAvail().X / scale) * scale;
+        float controlHeight = ControlSizing.Height(
+            style.Height,
+            Crystarium.ActiveTheme.Controls.SliderHeight);
 
         // Hit rect = thumb height (14px) across the full width.
         var size = new Vector2(
             MathF.Max(Crystarium.ActiveTheme.Controls.SwitchHeight * scale, widthPx),
-            Crystarium.ActiveTheme.Controls.SliderHeight * scale);
-        var hit = Interactive.Reserve(id, size, disabled, Norvrandt.AvailableHeight);
+            controlHeight * scale);
+        var hit = Interactive.Reserve(id, size, disabled);
 
-        float half = Crystarium.ActiveTheme.Controls.SliderHeight * 0.5f * scale;
+        float half = controlHeight * 0.5f * scale;
         float x0 = hit.ScreenMin.X + half;
         float x1 = hit.ScreenMax.X - half;
 

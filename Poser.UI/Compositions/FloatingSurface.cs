@@ -34,7 +34,7 @@ public static partial class Crystarium
             GlassChrome.PrependBlur(drawList, min, max, rounding);
 
         public static void DrawBorder(Vector2 min, Vector2 max, float radius) =>
-            Norvrandt.Box(min, max, new BoxStyle
+            BoxRenderer.Draw(ImGui.GetWindowDrawList(), min, max, new BoxStyle
             {
                 BorderWidth = 1f,
                 BorderRadius = radius,
@@ -47,11 +47,8 @@ public static partial class Crystarium
         public static bool CloseButton(string id) =>
             IconButton(
                 TablerIcon.X,
-                style: new ControlStyle
-                {
-                    Size = UiSize.Fixed(ActiveTheme.Floating.CloseActionSize),
-                    Bare = true,
-                },
+                style: ControlStyle.Square(
+                    ActiveTheme.Floating.CloseActionSize) with { Bare = true },
                 id: id);
 
         public static bool Popup(

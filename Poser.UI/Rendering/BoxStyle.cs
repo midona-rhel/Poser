@@ -3,9 +3,8 @@ using System.Numerics;
 namespace Poser.UI;
 
 /// <summary>
-/// Chrome-only style: background, border, shadow, gradient. Used by Norvrandt.Box
-/// (low-level, draws at an explicit screen rect with no cursor manipulation) and
-/// internally by Element when rendering its own chrome.
+/// Chrome-only style used by <see cref="BoxRenderer"/> at explicit screen
+/// rectangles without cursor manipulation.
 /// </summary>
 public record struct BoxStyle
 {

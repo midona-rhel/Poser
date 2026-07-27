@@ -5,7 +5,7 @@ namespace Poser.UI;
 /// <summary>
 /// CSS-shaped box-shadow. Offset in unscaled pixels; Blur > 0 renders a soft drop-shadow,
 /// Blur = 0 renders a hard offset shadow. Spread expands the shadow outward (CSS spread).
-/// Color includes alpha. Multiple shadows stack via <see cref="ElementStyle.BoxShadows"/>.
+/// Color includes alpha. Multiple shadows stack through <see cref="BoxStyle"/>.
 /// </summary>
 public readonly struct BoxShadow
 {

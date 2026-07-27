@@ -12,7 +12,7 @@ namespace Poser.UI;
 /// <summary>
 /// A parsed SVG document. Use <see cref="Parse"/> / <see cref="Load"/> /
 /// <see cref="LoadEmbedded"/> to obtain one, then call <see cref="Render"/>
-/// or assign to <see cref="ElementStyle.BackgroundSvg"/>.
+/// or assign to <see cref="BoxStyle.BackgroundSvg"/>.
 ///
 /// <para>Cache the document — parsing isn't free. Re-render every frame.</para>
 /// </summary>

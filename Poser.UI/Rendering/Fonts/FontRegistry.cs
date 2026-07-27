@@ -8,8 +8,8 @@ namespace Poser.UI;
 
 /// <summary>
 /// Resolves <see cref="FontFamily"/> + weight + size requests from
-/// <see cref="ElementStyle.FontSize"/>/<see cref="ElementStyle.FontWeight"/> to a concrete
-/// Dalamud <see cref="IFontHandle"/>. Handles are cached per normalized
+/// the presentation contract to a concrete Dalamud <see cref="IFontHandle"/>.
+/// Handles are cached per normalized
 /// (family, weight, size). Requested sizes are honored exactly (rounded to whole pixels) —
 /// the old ±4px bucket snap silently corrupted the picto scale (12→13, 14→13).
 ///
@@ -21,8 +21,8 @@ namespace Poser.UI;
 ///
 /// <para><b>Bootstrapping.</b> The hosting plugin must call <see cref="Register"/> once at
 /// startup with its <c>IDalamudPluginInterface.UiBuilder.FontAtlas</c>. Without registration
-/// the registry returns <c>null</c> and <see cref="Element"/> falls back to the
-/// default-family ImGui font (no per-element sizing).</para>
+/// the registry returns <c>null</c> and callers fall back to the active ImGui
+/// font.</para>
 /// </summary>
 public static class FontRegistry
 {

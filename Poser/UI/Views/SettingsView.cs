@@ -162,13 +162,13 @@ public static class SettingsView
         float bx = max.X - 12f * s - (saveW + gap + cancelW) * s;
         ImGui.SetCursorScreenPos(new Vector2(bx, bodyBottom + (footH - 32f * s) / 2f));
         if (Crystarium.Button("Cancel",
-                style: new ControlStyle { Width = UiSize.Fixed(cancelW) }))
+                style: new ControlStyle { Width = UiWidth.Fixed(cancelW) }))
             vm.OnCancel?.Invoke();
         ImGui.SameLine(0f, gap * s);
         if (Crystarium.Button("Save",
                 style: new ControlStyle
                 {
-                    Width = UiSize.Fixed(saveW),
+                    Width = UiWidth.Fixed(saveW),
                     Primary = true,
                 }))
             vm.OnSave?.Invoke();
@@ -187,7 +187,7 @@ public static class SettingsView
         Crystarium.Slider(
             "##dot-radius", vm.BoneDotRadius, 2f, 12f,
             next => vm.BoneDotRadius = next,
-            new ControlStyle { Width = UiSize.Fixed(220f) });
+            new ControlStyle { Width = UiWidth.Fixed(220f) });
         ImGui.SameLine(0f, 12f * s);
         ViewText.Label(ImGui.GetCursorScreenPos() + new Vector2(0f, 1f * s),
             $"{(int)MathF.Round(vm.BoneDotRadius)} px", 12f, FontWeight.Regular, TextSecondary, mono: true);
@@ -277,7 +277,7 @@ public static class SettingsView
         Crystarium.Slider(
             "##line-th", vm.BoneLineThickness, 0.5f, 4f,
             next => vm.BoneLineThickness = next,
-            new ControlStyle { Width = UiSize.Fixed(220f) });
+            new ControlStyle { Width = UiWidth.Fixed(220f) });
         ImGui.SameLine(0f, 12f * s);
         ViewText.Label(ImGui.GetCursorScreenPos() + new Vector2(0f, 1f * s),
             vm.BoneLineThickness.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " px", 12f, FontWeight.Regular, TextSecondary, mono: true);
@@ -288,7 +288,7 @@ public static class SettingsView
         Crystarium.Slider(
             "##line-op", vm.BoneLineOpacity, 0f, 1f,
             next => vm.BoneLineOpacity = next,
-            new ControlStyle { Width = UiSize.Fixed(220f) });
+            new ControlStyle { Width = UiWidth.Fixed(220f) });
         ImGui.SameLine(0f, 12f * s);
         ViewText.Label(ImGui.GetCursorScreenPos() + new Vector2(0f, 1f * s),
             $"{(int)MathF.Round(vm.BoneLineOpacity * 100)} %", 12f, FontWeight.Regular, TextSecondary, mono: true);
@@ -305,12 +305,16 @@ public static class SettingsView
 
         RowStart(s);
         RowLabel("Entity sidebar", s, controlY: 2f); // seg 30px
-        Crystarium.SegmentedControl("##dock-sidebar", DockOptions, ref vm.SidebarDock);
+        Crystarium.SegmentedControl(
+            "##dock-sidebar", DockOptions, vm.SidebarDock,
+            next => vm.SidebarDock = next);
         RowEnd(s);
 
         RowStart(s);
         RowLabel("Inspector", s, controlY: 2f);
-        Crystarium.SegmentedControl("##dock-inspector", DockOptions, ref vm.InspectorDock);
+        Crystarium.SegmentedControl(
+            "##dock-inspector", DockOptions, vm.InspectorDock,
+            next => vm.InspectorDock = next);
         RowEnd(s);
 
         SectionHeader("TREE", first: false, s);
@@ -337,7 +341,7 @@ public static class SettingsView
             // Rebind buttons in an aligned column regardless of chip width
             ImGui.SetCursorScreenPos(_rowOrigin + new Vector2(280f * s, 1f * s));
             if (Crystarium.Button(rebinding ? "Cancel" : "Rebind",
-                style: new ControlStyle { Width = UiSize.Fixed(72f) },
+                style: new ControlStyle { Width = UiWidth.Fixed(72f) },
                 id: "kb-" + i))
                 vm.RebindingIndex = rebinding ? -1 : i;
             RowEnd(s);
@@ -358,13 +362,13 @@ public static class SettingsView
 
         RowStart(s);
         RowLabel("Stack", s);
-        ViewText.Label(_rowOrigin + new Vector2(142f * s, 9f * s), "Norvrandt · Crystarium · PosingCore", 12f, FontWeight.Regular, TextSecondary);
+        ViewText.Label(_rowOrigin + new Vector2(142f * s, 9f * s), "Crystarium · PosingCore", 12f, FontWeight.Regular, TextSecondary);
         RowEnd(s);
 
         RowStart(s);
         RowLabel("Source", s, controlY: 1f);
         if (Crystarium.Button("Open repository",
-                style: new ControlStyle { Width = UiSize.Fixed(140f) }))
+                style: new ControlStyle { Width = UiWidth.Fixed(140f) }))
             vm.OnOpenRepository?.Invoke();
         RowEnd(s);
 

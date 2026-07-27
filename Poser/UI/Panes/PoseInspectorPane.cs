@@ -514,8 +514,8 @@ public class PoseInspectorPane
         Crystarium.SegmentedControl(
             "##pose-surface",
             new[] { "Body", "Face", "Matrix", "3D" },
-            ref _poseView,
-            maxWidth: 0f,
+            _poseView,
+            selected => _poseView = selected,
             alignFirstTabToCursor: true);
 
         // Right-aligned surface chrome: Mirror selection (maps only) ·
@@ -667,7 +667,10 @@ public class PoseInspectorPane
                 _matrixVm = null;
             },
             "Filter bones…",
-            MathF.Min(260f, width / s));
+            ControlStyle.Workspace with
+            {
+                Width = UiWidth.Fixed(MathF.Min(260f, width / s)),
+            });
         h += 38f * s;
 
         var matrixSkeleton = PrimarySkeletonDescriptor();
@@ -1012,7 +1015,15 @@ public class PoseInspectorPane
             _ => 3,
         };
         ImGui.SetCursorScreenPos(cursor + new Vector2(46f, 0f) * s);
-        if (Crystarium.SegmentedControl("##gaze-mode", options, ref mode, (width - 46f * s) / s))
+        if (Crystarium.SegmentedControl(
+                "##gaze-mode",
+                options,
+                mode,
+                selected => mode = selected,
+                new ControlStyle
+                {
+                    Width = UiWidth.Fixed((width - 46f * s) / s),
+                }))
         {
             if (mode == 3 && others.Count == 0)
             {
@@ -1240,7 +1251,7 @@ public class PoseInspectorPane
                 },
                 new ControlStyle
             {
-                Width = UiSize.Fixed(
+                Width = UiWidth.Fixed(
                     controlW - InspectorLayout.FormValueColumnWidth),
             });
             value = next;
@@ -1295,7 +1306,7 @@ public class PoseInspectorPane
                 },
                 new ControlStyle
             {
-                Width = UiSize.Fixed(controlW),
+                Width = UiWidth.Fixed(controlW),
             });
             index = next;
             h += InspectorLayout.FormRowHeight * s;
@@ -1541,7 +1552,7 @@ public class PoseInspectorPane
                         disabled: action.Disabled,
                         style: ControlStyle.Workspace with
                         {
-                            Width = UiSize.Fixed(widths[i] / scale),
+                            Width = UiWidth.Fixed(widths[i] / scale),
                         }))
                     action.Invoke();
                 x += widths[i] + gap;

@@ -7,20 +7,33 @@ namespace Poser.UI;
 
 public static partial class Crystarium
 {
-    public static float CheckboxSize =>
-        ActiveTheme.Controls.CheckboxSize * ImGuiHelpers.GlobalScale;
+    public static Vector2 MeasureCheckbox(ControlStyle style = default)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        float side = ControlSizing.Height(
+            style.Height, ActiveTheme.Controls.CheckboxSize);
+        float width = ControlSizing.Width(
+            style.Width,
+            side,
+            ImGui.GetContentRegionAvail().X / scale);
+        return new Vector2(width, side) * scale;
+    }
 
     public static bool Checkbox(
         string id,
         bool value,
         Action<bool> onChange,
+        ControlStyle style = default,
         bool disabled = false,
         string? help = null)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        float size = ActiveTheme.Controls.CheckboxSize * scale;
+        var measured = MeasureCheckbox(style);
+        float side = measured.Y;
+        float width = measured.X;
         var hit = Interactive.Reserve(
-            id, new Vector2(size), disabled, Norvrandt.AvailableHeight);
+            id, new Vector2(width, side), disabled);
+        var boxMax = hit.ScreenMin + new Vector2(side);
         if (hit.Clicked)
         {
             value = !value;
@@ -36,7 +49,7 @@ public static partial class Crystarium
         float radius = ActiveTheme.Radii.Medium * scale;
         draw.AddRectFilled(
             hit.ScreenMin,
-            hit.ScreenMax,
+            boxMax,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(background)),
             radius);
 
@@ -47,7 +60,7 @@ public static partial class Crystarium
             float inset = 0.5f * scale;
             draw.AddRect(
                 hit.ScreenMin + new Vector2(inset),
-                hit.ScreenMax - new Vector2(inset),
+                boxMax - new Vector2(inset),
                 ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(border)),
                 MathF.Max(0f, radius - inset),
                 ImDrawFlags.None,
@@ -57,10 +70,10 @@ public static partial class Crystarium
         {
             var check = ActiveTheme.Chrome.Checkmark;
             check.W *= opacity;
-            float iconSpan = size * (10f / 14f);
+            float iconSpan = side * (10f / 14f);
             float unit = iconSpan / 24f;
             var origin = hit.ScreenMin +
-                new Vector2((size - iconSpan) * 0.5f);
+                new Vector2((side - iconSpan) * 0.5f);
             draw.PathLineTo(origin + new Vector2(5f, 12f) * unit);
             draw.PathLineTo(origin + new Vector2(10f, 17f) * unit);
             draw.PathLineTo(origin + new Vector2(20f, 7f) * unit);

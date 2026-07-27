@@ -22,7 +22,7 @@ public static partial class Crystarium
         float width = ControlSizing.Width(
             style.Width,
             MeasureLabel(label, style).X / scale + ButtonPadding(style) * 2f,
-            Norvrandt.AvailableWidth / scale);
+            ImGui.GetContentRegionAvail().X / scale);
         return RenderButton(
             id ?? label,
             new(width, height),
@@ -41,10 +41,10 @@ public static partial class Crystarium
         string? help = null,
         string? id = null)
     {
-        float side = IconButtonSize(style);
+        var size = IconButtonSize(style);
         return RenderButton(
             id ?? icon.ToIconString(),
-            new(side, side),
+            size,
             style,
             disabled,
             help,
@@ -61,10 +61,10 @@ public static partial class Crystarium
         string? id = null,
         bool flipX = false)
     {
-        float side = IconButtonSize(style);
+        var size = IconButtonSize(style);
         return RenderButton(
             id ?? Tabler.NameFor(icon),
-            new(side, side),
+            size,
             style,
             disabled,
             help,
@@ -88,7 +88,7 @@ public static partial class Crystarium
     {
         float scale = ImGuiHelpers.GlobalScale;
         var size = logicalSize * scale;
-        var hit = Interactive.Reserve(id, size, disabled, Norvrandt.AvailableHeight);
+        var hit = Interactive.Reserve(id, size, disabled);
         var theme = ActiveTheme;
         float opacity = disabled ? theme.Chrome.ControlDisabledOpacity : 1f;
         var background = style.Bare
@@ -140,7 +140,7 @@ public static partial class Crystarium
         var bounds = ButtonContent;
         var font = FontRegistry.Resolve(
             FontFamily.Default,
-            ControlSizing.IsWorkspace(style.Size)
+            ControlSizing.IsWorkspace(style.Height)
                 ? ActiveTheme.Typography.LabelSize
                 : ActiveTheme.Typography.BodySize);
         bool pushed = font is { Available: true };
@@ -205,7 +205,7 @@ public static partial class Crystarium
     {
         var font = FontRegistry.Resolve(
             FontFamily.Default,
-            ControlSizing.IsWorkspace(style.Size)
+            ControlSizing.IsWorkspace(style.Height)
                 ? ActiveTheme.Typography.LabelSize
                 : ActiveTheme.Typography.BodySize);
         bool pushed = font is { Available: true };
@@ -216,15 +216,22 @@ public static partial class Crystarium
     }
 
     private static float ButtonHeight(ControlStyle style) =>
-        ControlSizing.Height(style.Size, ActiveTheme.Controls.ComfortableHeight);
+        ControlSizing.Height(style.Height, ActiveTheme.Controls.ComfortableHeight);
 
-    private static float IconButtonSize(ControlStyle style) =>
-        style.Size?.Kind == UiSizeKind.Fixed
-            ? style.Size.Value.Value
+    private static Vector2 IconButtonSize(ControlStyle style)
+    {
+        float height = style.Height.Kind == UiHeightKind.Fixed
+            ? style.Height.Value
             : ButtonHeight(style);
+        float width = ControlSizing.Width(
+            style.Width,
+            height,
+            ImGui.GetContentRegionAvail().X / ImGuiHelpers.GlobalScale);
+        return new(width, height);
+    }
 
     private static float ButtonPadding(ControlStyle style) =>
-        ControlSizing.IsWorkspace(style.Size)
+        ControlSizing.IsWorkspace(style.Height)
             ? ActiveTheme.Spacing.Six
             : ActiveTheme.Spacing.Eight;
 }

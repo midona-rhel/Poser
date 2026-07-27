@@ -4,12 +4,12 @@ using Dalamud.Bindings.ImGui;
 namespace Poser.UI;
 
 /// <summary>
-/// Opaque texture handle + dimensions, owned by the host plugin. Norvrandt does
-/// not load textures itself — the host wraps its texture system (Dalamud's
+/// Opaque texture handle + dimensions, owned by the host plugin. Crystarium does
+/// not load textures itself—the host wraps its texture system (Dalamud's
 /// <c>IDalamudTextureWrap</c>, raw GL/D3D textures, etc.) into this interface.
 ///
 /// <para>Implementations may load asynchronously; check <see cref="IsLoaded"/>
-/// before reading <see cref="TextureHandle"/>. Norvrandt skips drawing when
+/// before reading <see cref="TextureHandle"/>. Crystarium skips drawing when
 /// <see cref="IsLoaded"/> is false.</para>
 /// </summary>
 public interface IImageSource

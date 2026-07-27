@@ -1,62 +1,97 @@
+using System;
+
 namespace Poser.UI;
 
-public enum UiSizeKind
+internal enum UiWidthKind
 {
     Content,
     Fill,
-    Workspace,
-    Comfortable,
     Fixed,
 }
 
-public readonly record struct UiSize
+public readonly record struct UiWidth
 {
-    private UiSize(UiSizeKind kind, float value = 0f)
+    private UiWidth(UiWidthKind kind, float value = 0f)
     {
         Kind = kind;
         Value = value;
     }
 
-    internal UiSizeKind Kind { get; }
+    internal UiWidthKind Kind { get; }
     internal float Value { get; }
 
-    public static UiSize Content => new(UiSizeKind.Content);
-    public static UiSize Fill => new(UiSizeKind.Fill);
-    public static UiSize Workspace => new(UiSizeKind.Workspace);
-    public static UiSize Comfortable => new(UiSizeKind.Comfortable);
-    public static UiSize Fixed(float value) => new(UiSizeKind.Fixed, value);
+    public static UiWidth Content => new(UiWidthKind.Content);
+    public static UiWidth Fill => new(UiWidthKind.Fill);
+    public static UiWidth Fixed(float width)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        return new(UiWidthKind.Fixed, width);
+    }
+}
+
+internal enum UiHeightKind
+{
+    Natural,
+    Workspace,
+    Comfortable,
+    Fixed,
+}
+
+public readonly record struct UiHeight
+{
+    private UiHeight(UiHeightKind kind, float value = 0f)
+    {
+        Kind = kind;
+        Value = value;
+    }
+
+    internal UiHeightKind Kind { get; }
+    internal float Value { get; }
+
+    public static UiHeight Workspace => new(UiHeightKind.Workspace);
+    public static UiHeight Comfortable => new(UiHeightKind.Comfortable);
+    public static UiHeight Fixed(float height)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+        return new(UiHeightKind.Fixed, height);
+    }
 }
 
 public readonly record struct ControlStyle
 {
-    public UiSize? Size { get; init; }
-    public UiSize? Width { get; init; }
+    public UiWidth Width { get; init; }
+    public UiHeight Height { get; init; }
     public bool Primary { get; init; }
     public bool Bare { get; init; }
 
-    public static ControlStyle Workspace => new() { Size = UiSize.Workspace };
-    public static ControlStyle Comfortable => new() { Size = UiSize.Comfortable };
+    public static ControlStyle Workspace => new() { Height = UiHeight.Workspace };
+    public static ControlStyle Comfortable => new() { Height = UiHeight.Comfortable };
+    public static ControlStyle Square(float side) => new()
+    {
+        Width = UiWidth.Fixed(side),
+        Height = UiHeight.Fixed(side),
+    };
 }
 
 internal static class ControlSizing
 {
-    public static float Height(UiSize? size, float fallback) =>
-        size?.Kind switch
+    public static float Height(UiHeight height, float fallback) =>
+        height.Kind switch
         {
-            UiSizeKind.Workspace => Crystarium.ActiveTheme.Controls.WorkspaceHeight,
-            UiSizeKind.Comfortable => Crystarium.ActiveTheme.Controls.ComfortableHeight,
-            UiSizeKind.Fixed => size.Value.Value,
+            UiHeightKind.Workspace => Crystarium.ActiveTheme.Controls.WorkspaceHeight,
+            UiHeightKind.Comfortable => Crystarium.ActiveTheme.Controls.ComfortableHeight,
+            UiHeightKind.Fixed => height.Value,
             _ => fallback,
         };
 
-    public static float Width(UiSize? width, float content, float available) =>
-        width?.Kind switch
+    public static float Width(UiWidth width, float content, float available) =>
+        width.Kind switch
         {
-            UiSizeKind.Fill => available,
-            UiSizeKind.Fixed => width.Value.Value,
+            UiWidthKind.Fill => available,
+            UiWidthKind.Fixed => width.Value,
             _ => content,
         };
 
-    public static bool IsWorkspace(UiSize? size) =>
-        size?.Kind == UiSizeKind.Workspace;
+    public static bool IsWorkspace(UiHeight height) =>
+        height.Kind == UiHeightKind.Workspace;
 }

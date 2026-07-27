@@ -13,7 +13,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<!-- The former Norvrandt renderer is now source-owned by this assembly. -->
+		<!-- Exclude nested build output from source globbing. -->
 		<Compile Remove="Rendering\bin\**\*.cs;Rendering\obj\**\*.cs" />
 	</ItemGroup>
 

@@ -29,10 +29,6 @@ public record struct SidebarRowProps
     /// siblings stay aligned; a flat list has nothing to align to and the
     /// 16px would just be dead space.</summary>
     public bool NoExpanderSlot;
-    /// <summary>Explicit row width, unscaled; 0 fills the available width.
-    /// A scrolling list sets this to reserve a stable scrollbar gutter, so
-    /// rows do not change width the moment the list starts scrolling.</summary>
-    public float Width;
 }
 
 public static partial class Crystarium
@@ -45,11 +41,20 @@ public static partial class Crystarium
     /// primary-10 bg + primary-30 border; CSS-triangle expander; 16px icon at
     /// opacity .85→1; 13px label; mono 11px badge.
     /// </summary>
-    public static bool SidebarRow(string id, string label, in SidebarRowProps props)
+    public static bool SidebarRow(
+        string id,
+        string label,
+        in SidebarRowProps props,
+        ControlStyle style = default)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        float height = Crystarium.ActiveTheme.Controls.ListRowHeight * scale;
-        float width = props.Width > 0f ? props.Width * scale : Norvrandt.AvailableWidth;
+        float height = ControlSizing.Height(
+            style.Height,
+            Crystarium.ActiveTheme.Controls.ListRowHeight) * scale;
+        float width = ControlSizing.Width(
+            style.Width,
+            ImGui.GetContentRegionAvail().X / scale,
+            ImGui.GetContentRegionAvail().X / scale) * scale;
 
         // Rows stack seamlessly at exactly 26px (picto sidebar rhythm) — suppress
         // ImGui's ambient vertical ItemSpacing for the reserve.
@@ -177,7 +182,7 @@ public static partial class Crystarium
 
         var spacing = ImGui.GetStyle().ItemSpacing;
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(spacing.X, 0f));
-        ImGui.Dummy(new Vector2(Norvrandt.AvailableWidth, height));
+        ImGui.Dummy(new Vector2(ImGui.GetContentRegionAvail().X, height));
         ImGui.PopStyleVar();
     }
 }

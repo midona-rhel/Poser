@@ -12,15 +12,13 @@ public static partial class Crystarium
         string value,
         System.Action<string> onChange,
         string placeholder,
-        float width)
+        ControlStyle style = default)
         => ClearableTextInput(
             id,
             value,
             onChange,
-            new ControlStyle
-            {
-                Size = UiSize.Workspace,
-                Width = UiSize.Fixed(width),
-            },
+            style.Height.Kind == UiHeightKind.Natural
+                ? style with { Height = UiHeight.Workspace }
+                : style,
             placeholder);
 }
