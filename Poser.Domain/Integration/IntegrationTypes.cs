@@ -121,8 +121,14 @@ public sealed record IntegrationOverrides
 
     public McdfOwnership? Mcdf { get; init; }
 
+    /// <summary>Extraction directories whose deletion failed BEFORE an
+    /// import ever mutated the actor — standalone cleanup obligations that
+    /// every reset path retries; never a replacement MCDF.</summary>
+    public IReadOnlyList<string> PendingDirectories { get; init; } = Array.Empty<string>();
+
     public bool HasAny =>
-        CollectionOwned || DesignOwned || TemporaryBodyProfile != null || Mcdf != null;
+        CollectionOwned || DesignOwned || TemporaryBodyProfile != null || Mcdf != null
+        || PendingDirectories.Count > 0;
 
     public static readonly IntegrationOverrides None = new();
 }

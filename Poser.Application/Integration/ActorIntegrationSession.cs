@@ -311,6 +311,8 @@ public sealed class ActorIntegrationSession
             current = TearDownMcdf(actor, current, mcdf, resolvable, failures);
         }
 
+        current = RetryPendingDirectories(current, failures);
+
         // Body profile: delete only Poser's temporary profile, by its own
         // id — never whichever temporary profile is currently active.
         if (current.TemporaryBodyProfile is { } temporary)
@@ -677,6 +679,10 @@ public sealed class ActorIntegrationSession
         // retries them.
         public string? PendingGlamourerRecovery;
         public string? PendingBodyRecoveryJson;
+        // True once PrepareImport captured the merged baseline; an
+        // unprepared record's default baseline must never replace the
+        // actor's existing one.
+        public bool Prepared;
     }
 
     private InFlightImport? _inFlight;
@@ -846,6 +852,7 @@ public sealed class ActorIntegrationSession
                 if (detail != null || baseline == null)
                     return detail ?? "The import could not be prepared.";
                 operation.Baseline = baseline;
+                operation.Prepared = true;
                 return null;
             });
             if (prepared != null)
@@ -1249,12 +1256,35 @@ public sealed class ActorIntegrationSession
             return null;
         }
 
-        // Keep the unresolved pieces (including an unrestored baseline)
-        // owned so Reset MCDF retries them.
         var current = OverridesFor(actor);
+        bool nativeOutstanding = operation.TemporaryCollection != null
+            || operation.GlamourerLocked
+            || operation.TemporaryProfile != null
+            || operation.RedrawPending
+            || operation.PendingGlamourerRecovery != null
+            || operation.PendingBodyRecoveryJson != null;
+        if (!nativeOutstanding)
+        {
+            // The import never mutated the actor (a pre-prepare failure);
+            // an undeletable extraction directory is a STANDALONE cleanup
+            // obligation. Existing ownership — selector baselines, an
+            // older MCDF's unresolved teardown — stays untouched.
+            if (operation.OperationDirectory is { } orphan)
+                Mutate(actor, current with
+                {
+                    PendingDirectories =
+                        current.PendingDirectories.Append(orphan).ToList(),
+                });
+            return failures.Count == 0 ? null : string.Join("; ", failures);
+        }
+
+        // Native state is outstanding, which means PrepareImport ran and
+        // any previous MCDF teardown completed — current.Mcdf is null here,
+        // so this never overwrites an older teardown obligation. The
+        // baseline merges only when Prepare actually captured it.
         Mutate(actor, current with
         {
-            Baseline = operation.Baseline,
+            Baseline = operation.Prepared ? operation.Baseline : current.Baseline,
             Mcdf = new McdfOwnership(
                 operation.FileName,
                 operation.TemporaryCollection,
@@ -1267,6 +1297,26 @@ public sealed class ActorIntegrationSession
                 operation.PendingBodyRecoveryJson),
         });
         return string.Join("; ", failures);
+    }
+
+    /// <summary>Retries deletion of extraction directories orphaned by
+    /// pre-mutation import failures; whatever still fails stays owned.</summary>
+    private IntegrationOverrides RetryPendingDirectories(
+        IntegrationOverrides current, List<string> failures)
+    {
+        if (current.PendingDirectories.Count == 0)
+            return current;
+        var remaining = new List<string>();
+        foreach (var directory in current.PendingDirectories)
+        {
+            var deleted = _files.DeleteOperationDirectory(directory);
+            if (!deleted.Success)
+            {
+                failures.Add(deleted.Detail!);
+                remaining.Add(directory);
+            }
+        }
+        return current with { PendingDirectories = remaining };
     }
 
     /// <summary>Removes everything the active MCDF created and restores the
@@ -1283,6 +1333,7 @@ public sealed class ActorIntegrationSession
         bool resolvable = _port.IsResolvable(actor);
         var failures = new List<string>();
         current = TearDownMcdf(actor, current, mcdf, resolvable, failures);
+        current = RetryPendingDirectories(current, failures);
         Mutate(actor, current);
         return failures.Count == 0
             ? IntegrationResult.Ok()
