@@ -98,6 +98,11 @@ public class FileBrowser
             var min = ImGui.GetWindowPos();
             var max = min + ImGui.GetWindowSize();
             var dl = ImGui.GetWindowDrawList();
+            // The window itself is NoBackground, so the surface fill is
+            // OURS to draw — DrawSurface provides only blur, ring, and
+            // borders (popup hosts got their fill from the popup bg).
+            dl.AddRectFilled(min, max,
+                ImGui.ColorConvertFloat4ToU32(GlassChrome.BackgroundColor), 10f * s);
             GlassChrome.DrawSurface(dl, min, max, 10f);
 
             float header = 44f * s;
@@ -156,15 +161,19 @@ public class FileBrowser
         float s = ImGuiHelpers.GlobalScale;
 
         // Path row: plain square up button + an EDITABLE outlined path
-        // input (the input chrome carries the outline).
+        // input (the input chrome carries the outline). Both are placed
+        // EXPLICITLY on one shared row top so they center against each
+        // other instead of trailing SameLine's item baseline.
+        var rowTop = ImGui.GetCursorScreenPos();
+        float inputHeight = 24f * s; // theme row height, the input's own height
         if (SquareIconButton($"{_id}-up", TablerIcon.ArrowUp,
-                ImGui.GetCursorScreenPos(), s))
+                new Vector2(rowTop.X, rowTop.Y + (inputHeight - 24f * s) / 2f), s))
         {
             var parent = Directory.GetParent(_currentPath)?.FullName;
             if (parent != null)
                 _pendingNavigate = parent;
         }
-        ImGui.SameLine(0f, 8f * s);
+        ImGui.SetCursorScreenPos(new Vector2(rowTop.X + (24f + 8f) * s, rowTop.Y));
         float pathWidth = ImGui.GetContentRegionAvail().X / s;
         if (Crystarium.TextInput($"{_id}-path", ref _pathEdit, new TextInputProps
             {
