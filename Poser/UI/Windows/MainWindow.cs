@@ -42,6 +42,7 @@ public class MainWindow : Window
     private readonly SceneSession _scene;
     private readonly SelectionSession _selection;
     private readonly StableBindingRegistry _bindings;
+    private readonly Application.Animation.AnimationSession _animation;
 
     // actor context menu + rename modal: stable ids only; the lifetime
     // services still take legacy actors, so ids resolve per frame through the
@@ -95,6 +96,7 @@ public class MainWindow : Window
         PoseInspectorPane poseInspector,
         AnimationPane animationPane,
         AppearancePane appearancePane,
+        Application.Animation.AnimationSession animation,
         Game.Animation.AnimationCatalogLoader animationCatalog,
         PoseRailPane poseRail,
         GraphicalBonePane graphicalBonePane,
@@ -123,10 +125,18 @@ public class MainWindow : Window
         _poseInspector = poseInspector;
         _animationPane = animationPane;
         _appearancePane = appearancePane;
+        _animation = animation;
         _animationCatalog = animationCatalog;
         _poseInspector.DrawMapInline = graphicalBonePane.DrawInline;
+        graphicalBonePane.SidesSwapped =
+            Config.ConfigurationService.Instance.Config.UI.MapMirrorSelection;
         _poseInspector.GetMapMirror = () => graphicalBonePane.SidesSwapped;
-        _poseInspector.SetMapMirror = on => graphicalBonePane.SidesSwapped = on;
+        _poseInspector.SetMapMirror = on =>
+        {
+            graphicalBonePane.SidesSwapped = on;
+            Config.ConfigurationService.Instance.Config.UI.MapMirrorSelection = on;
+            Config.ConfigurationService.Instance.Save();
+        };
         _poseInspector.DescriptorDisplayName = ActorDisplayName;
         appearancePane.DisplayNameProvider = ActorDisplayName;
         // Transitional: the inspector still takes entity display lookups until
@@ -150,18 +160,16 @@ public class MainWindow : Window
         _vm.OnGizmoSpace = i => _editorState.TransformOrientation = (TransformOrientation)i;
         _vm.OnRotationPivot = i => _editorState.RotationPivot = (Core.RotationPivot)i;
         _vm.OnSymmetry = i => _editorState.SymmetryMode = (SymmetryMode)i;
-        _vm.OnLinked = on => _bonePosingService.LinkedBonesEnabled = on;
+        _vm.OnPhysics = on =>
+        {
+            if (SelectedActorId() is { } actor)
+                _animation.SetPhysicsFrozen(actor, on);
+        };
         _vm.OnUndo = Undo;
         _vm.OnRedo = Redo;
         _vm.OnSkeletonOverlay = on => OnSkeletonOverlayToggled?.Invoke(on);
         _vm.OnSettings = () => OnSettingsRequested?.Invoke();
         _vm.OnHideUi = () => IsOpen = false;
-        _vm.OnSelectTarget = () =>
-        {
-            if (_actorManager.GetGPoseTarget() is { } target &&
-                _bindings.GetActorId(target) is { } targetId)
-                _selection.Select(SelectionId.ForActor(targetId));
-        };
         // The sidebar's add affordance. Creation lives where the created
         // thing will appear (approved shell mockup M1 §4), so the ACTORS
         // header owns it rather than a separate spawn menu.
@@ -318,7 +326,6 @@ public class MainWindow : Window
         _vm.GizmoSpace = (int)_editorState.TransformOrientation;
         _vm.RotationPivot = (int)_editorState.RotationPivot;
         _vm.SymmetryMode = (int)_editorState.SymmetryMode;
-        _vm.LinkedOn = _bonePosingService.LinkedBonesEnabled;
         // The pivot selector appears only where pivot choice changes the
         // active transform meaning: Rotate tool with a resolvable bone
         // selection. Parent needs a valid parent on the effective primary.
@@ -326,7 +333,7 @@ public class MainWindow : Window
             _selection.Selected, _scene.Snapshot);
         bool boneRotate = _editorState.TransformTool == TransformTool.Rotate &&
             effective is { Primary.Kind: Domain.Identity.TransformTargetKind.Bone };
-        _vm.ShowRotationPivot = boneRotate;
+        _vm.RotationPivotEnabled = boneRotate;
         _vm.RotationPivotParentAvailable = false;
         if (boneRotate &&
             effective!.Primary.Bone is { } effectiveBone)
@@ -346,6 +353,11 @@ public class MainWindow : Window
                 break;
             }
         }
+        var toolbarActor = SelectedActorId();
+        _vm.PhysicsAvailable = toolbarActor is { } actorId
+            && _animation.IsSupported(actorId);
+        _vm.PhysicsOn = toolbarActor is { } physicsActor
+            && _animation.OwnsPhysics(physicsActor);
         _vm.SkeletonOverlayOn = GetSkeletonOverlayOn?.Invoke() ?? false;
         _vm.CanUndo = _cleanTransforms.CanUndo;
         _vm.CanRedo = _cleanTransforms.CanRedo;
@@ -813,6 +825,9 @@ public class MainWindow : Window
         }
 
         ImGui.SetCursorScreenPos(origin);
+        // Inspector-owned selection state drives IK and must be current even
+        // when another tab owns the centre pane.
+        _poseInspector.SetSelection(_selection.Primary);
 
         if (_activeTab == "Animation")
         {
@@ -827,9 +842,17 @@ public class MainWindow : Window
             return;
         }
 
-        _poseInspector.SetSelection(_selection.Primary);
         _poseInspector.Draw(origin, size);
     }
+
+    private ActorId? SelectedActorId() =>
+        _selection.Primary switch
+        {
+            { Kind: SceneEntityKind.Actor, Actor: { } actor } => actor,
+            { Kind: SceneEntityKind.Bone, Bone: { } bone } =>
+                bone.Skeleton.Actor,
+            _ => null,
+        };
 
     /// <summary>
     /// The sidebar ACTORS "+" menu: entity creation in the shared floating

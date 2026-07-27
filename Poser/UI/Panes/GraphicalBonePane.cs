@@ -35,6 +35,7 @@ public sealed class GraphicalBonePane : IDisposable
     // M11 marquee (Anamnesis MouseCanvas): dot positions recorded per frame,
     // drag on empty canvas selects everything inside the rectangle.
     private readonly System.Collections.Generic.List<(SelectionId Id, Vector2 Pos)> _frameDots = new();
+    private readonly List<(SelectionId Id, Vector2 Pos, string Name)> _dotCandidates = new();
     private Vector2? _marqueeStart;
     private readonly IActorManager _actorManager;
     private readonly ISkeletonService _skeletonService;
@@ -53,6 +54,7 @@ public sealed class GraphicalBonePane : IDisposable
 
     private float _closestHoverDistance;
     private SelectionId? _hoveredBone;
+    private int _hoveredDotIndex = -1;
     // Rebuilt per frame from the selected actor's snapshot descriptors: the
     // maps identify dots by (canonical name, partial) without touching the
     // binding registry.
@@ -85,7 +87,9 @@ public sealed class GraphicalBonePane : IDisposable
     {
         _closestHoverDistance = float.MaxValue;
         _hoveredBone = null;
+        _hoveredDotIndex = -1;
         _frameDots.Clear();
+        _dotCandidates.Clear();
         _dotIds.Clear();
 
         var actor = GetSelectedActor();
@@ -101,6 +105,7 @@ public sealed class GraphicalBonePane : IDisposable
             DrawBodyPage(skeleton, contentArea);
         else
             DrawFacePage(skeleton, actor, contentArea);
+        ResolveAndDrawDots();
 
         bool hovered = ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows)
             && ImGui.IsMouseHoveringRect(origin, origin + contentArea);
@@ -335,61 +340,63 @@ public sealed class GraphicalBonePane : IDisposable
         // selection command.
         if (!_dotIds.TryGetValue((bone.BoneName, bone.PartialId), out var selectionId))
             return;
-        bool isSelected = _selection.IsSelected(selectionId);
-        bool isHovered = _hoveredBone?.Equals(selectionId) == true;
-        float s = ImGuiHelpers.GlobalScale;
-
-        // Hit detection
-        float mouseDistance = Vector2.Distance(ImGui.GetMousePos(), screenPos);
-        if (mouseDistance < HitRadius * s &&
-            mouseDistance < _closestHoverDistance)
-        {
-            _closestHoverDistance = mouseDistance;
-            _hoveredBone = selectionId;
-            isHovered = true;
-        }
-
+        _dotCandidates.Add((selectionId, screenPos, bone.Name));
         _frameDots.Add((selectionId, screenPos));
+    }
+
+    private void ResolveAndDrawDots()
+    {
+        float s = ImGuiHelpers.GlobalScale;
+        var mouse = ImGui.GetMousePos();
+        for (int i = 0; i < _dotCandidates.Count; i++)
+        {
+            var candidate = _dotCandidates[i];
+            float distance = Vector2.Distance(mouse, candidate.Pos);
+            if (distance < HitRadius * s && distance < _closestHoverDistance)
+            {
+                _closestHoverDistance = distance;
+                _hoveredBone = candidate.Id;
+                _hoveredDotIndex = i;
+            }
+        }
 
         var drawList = ImGui.GetWindowDrawList();
-
-        // Circle colors
-        uint circleColor = ImGui.GetColorU32(ImGuiCol.TextDisabled);
-        if (isSelected)
+        string? hoveredName = null;
+        for (int i = 0; i < _dotCandidates.Count; i++)
         {
-            circleColor = ImGui.GetColorU32(ImGuiCol.CheckMark);
-        }
-        else if (isHovered)
-        {
-            circleColor = ImGui.GetColorU32(ImGuiCol.Text);
-        }
-
-        // Draw circle background
-        drawList.AddCircleFilled(
-            screenPos,
-            CircleRadius * s,
-            ImGui.GetColorU32(ImGuiCol.ChildBg));
-
-        // Draw circle outline
-        drawList.AddCircle(screenPos, CircleRadius * s, circleColor);
-
-        // Draw filled center if selected or hovered
-        if (isSelected || isHovered)
-        {
-            var fillColor = isSelected ? ImGui.GetColorU32(ImGuiCol.CheckMark) : ImGui.GetColorU32(ImGuiCol.TextDisabled);
+            var candidate = _dotCandidates[i];
+            bool isSelected = _selection.IsSelected(candidate.Id);
+            bool isHovered = i == _hoveredDotIndex;
+            uint circleColor = isSelected
+                ? ImGui.GetColorU32(ImGuiCol.CheckMark)
+                : isHovered
+                    ? ImGui.GetColorU32(ImGuiCol.Text)
+                    : ImGui.GetColorU32(ImGuiCol.TextDisabled);
             drawList.AddCircleFilled(
-                screenPos,
-                (CircleRadius - 3f) * s,
-                fillColor);
+                candidate.Pos, CircleRadius * s,
+                ImGui.GetColorU32(ImGuiCol.ChildBg));
+            drawList.AddCircle(
+                candidate.Pos, CircleRadius * s, circleColor);
+            if (isSelected || isHovered)
+            {
+                drawList.AddCircleFilled(
+                    candidate.Pos,
+                    (CircleRadius - 3f) * s,
+                    isSelected
+                        ? ImGui.GetColorU32(ImGuiCol.CheckMark)
+                        : ImGui.GetColorU32(ImGuiCol.TextDisabled));
+            }
+            if (isHovered)
+                hoveredName = candidate.Name;
         }
 
-        // Name preview for the unlabeled dot: same chrome, no delay.
-        if (isHovered && ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows))
+        if (hoveredName != null
+            && ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows))
         {
-            var dotMouse = ImGui.GetMousePos();
             Crystarium.HoverHelp.Preview("gbp-dot",
-                dotMouse - new Vector2(4f, 4f), dotMouse + new Vector2(4f, 4f),
-                bone.Name);
+                mouse - new Vector2(4f, 4f),
+                mouse + new Vector2(4f, 4f),
+                hoveredName);
         }
     }
 

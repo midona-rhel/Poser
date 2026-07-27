@@ -519,7 +519,7 @@ public class PoseInspectorPane
             alignFirstTabToCursor: true);
 
         // Right-aligned surface chrome: Mirror selection (maps only) ·
-        // Physics · Animation. These are quick controls OVER the animation
+        // Animation. These are quick controls OVER the animation
         // session, not a second state: the switch reads the session's own
         // paused state, so the Pose tab and the Animation tab can never
         // disagree about whether an actor is frozen.
@@ -548,22 +548,6 @@ public class PoseInspectorPane
         });
         rx -= ViewText.Measure("Animation", 12f) + 6f * s;
         ViewText.Label(new Vector2(rx, chromeY + 2f * s), "Animation", 12f,
-            FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
-
-        rx -= 14f * s + 36f * s;
-        ImGui.SetCursorScreenPos(new Vector2(rx, chromeY));
-        bool physics = chromeActorId is { } physicsId && _animation.OwnsPhysics(physicsId);
-        Crystarium.Switch("##ps-physics", physics, next =>
-        {
-            physics = next;
-            if (chromeActorId is not { } physicsToggle)
-                return;
-            var frozen = _animation.SetPhysicsFrozen(physicsToggle, physics);
-            if (!frozen.Success)
-                _log.Warning($"Physics toggle failed: {frozen.Detail}");
-        });
-        rx -= ViewText.Measure("Physics", 12f) + 6f * s;
-        ViewText.Label(new Vector2(rx, chromeY + 2f * s), "Physics", 12f,
             FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
 
         if (_poseView is 0 or 1)
@@ -726,19 +710,24 @@ public class PoseInspectorPane
         dl.AddRectFilled(new Vector2(cursor.X, cursor.Y), new Vector2(cursor.X + width, cursor.Y + 1f * s),
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.08f))));
 
-        float fy = 9f * s;
+        float centreY = cursor.Y + 47f * s * 0.5f;
+        float checkboxSize = Crystarium.ActiveTheme.Controls.CheckboxSize * s;
+        float controlHeight = Crystarium.ActiveTheme.Controls.WorkspaceHeight * s;
+        float labelY = centreY
+            - Crystarium.ActiveTheme.Typography.LabelSize * s * 0.5f
+            + Crystarium.ActiveTheme.Optical.FooterLabel * s;
 
         // Parenting: one checkbox per propagated component.
         var poseInfo = _bonePosingService.GetPoseInfo(skeleton);
         ViewText.Label(Crystarium.ActiveTheme.Optical.Snap(new Vector2(
-                cursor.X, cursor.Y + fy + 6f * s + Crystarium.ActiveTheme.Optical.FooterLabel * s)),
+                cursor.X, labelY)),
             "Parenting", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
         if (Crystarium.HoverHelp.HelpHovered(
-                new Vector2(cursor.X, cursor.Y + fy),
-                new Vector2(cursor.X + ViewText.Measure("Parenting", 12f), cursor.Y + fy + 20f * s)))
+                new Vector2(cursor.X, centreY - controlHeight * 0.5f),
+                new Vector2(cursor.X + ViewText.Measure("Parenting", 12f), centreY + controlHeight * 0.5f)))
             Crystarium.HoverHelp.Explain("ft-parenting-help",
-                new Vector2(cursor.X, cursor.Y + fy),
-                new Vector2(cursor.X + ViewText.Measure("Parenting", 12f), cursor.Y + fy + 20f * s),
+                new Vector2(cursor.X, centreY - controlHeight * 0.5f),
+                new Vector2(cursor.X + ViewText.Measure("Parenting", 12f), centreY + controlHeight * 0.5f),
                 "Which components child bones inherit when a parent moves");
         float px = cursor.X + 64f * s;
         foreach (var (label, component) in new[]
@@ -749,7 +738,7 @@ public class PoseInspectorPane
         })
         {
             float cellStart = px;
-            ImGui.SetCursorScreenPos(new Vector2(px, cursor.Y + fy + 4f * s));
+            ImGui.SetCursorScreenPos(new Vector2(px, centreY - checkboxSize * 0.5f));
             bool propagates = poseInfo.DefaultPropagation.HasFlag(component);
             Crystarium.Checkbox($"##ft-parenting-{label}", propagates, next =>
             {
@@ -759,16 +748,16 @@ public class PoseInspectorPane
             });
             px += 20f * s;
             ViewText.Label(Crystarium.ActiveTheme.Optical.Snap(new Vector2(
-                    px, cursor.Y + fy + 6f * s + Crystarium.ActiveTheme.Optical.FooterLabel * s)),
+                    px, labelY)),
                 label, 11f,
                 FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.6f));
             px += ViewText.Measure(label, 11f) + 8f * s;
             if (Crystarium.HoverHelp.HelpHovered(
-                    new Vector2(cellStart, cursor.Y + fy),
-                    new Vector2(px, cursor.Y + fy + 20f * s)))
+                    new Vector2(cellStart, centreY - controlHeight * 0.5f),
+                    new Vector2(px, centreY + controlHeight * 0.5f)))
                 Crystarium.HoverHelp.Explain($"ft-parenting-help-{label}",
-                    new Vector2(cellStart, cursor.Y + fy),
-                    new Vector2(px, cursor.Y + fy + 20f * s),
+                    new Vector2(cellStart, centreY - controlHeight * 0.5f),
+                    new Vector2(px, centreY + controlHeight * 0.5f),
                     component switch
                     {
                         Core.TransformComponents.Position =>
@@ -778,7 +767,7 @@ public class PoseInspectorPane
                         _ => "Propagate scale edits to child bones",
                     });
         }
-        ImGui.SetCursorScreenPos(new Vector2(px, cursor.Y + fy));
+        ImGui.SetCursorScreenPos(new Vector2(px, centreY - controlHeight * 0.5f));
         if (Crystarium.Button("Clear", id: "ft-clear", help: "Clear bone selection",
             style: ControlStyle.Workspace))
             _selection.Clear();
@@ -922,18 +911,18 @@ public class PoseInspectorPane
         // PBI-090 presentation order: Translation → Rotation → Scale.
         // Only labels and order change; ids, math, and sensitivities stay.
         h += RailScrub(dl, cursor, width, "pose-pos", "Translation",
-            ref pos, 0.005f, "0.00", s, out var posChanged, out var posReleased);
+            ref pos, 0.005f, "0.000", s, out var posChanged, out var posReleased);
         changed |= posChanged;
         released |= posReleased;
 
         h += RailScrub(dl, new Vector2(cursor.X, cursor.Y + h), width, "pose-rot", "Rotation",
-            ref euler, 0.5f, "0.0", s, out var rotChanged, out var rotReleased);
+            ref euler, 0.5f, "0.00", s, out var rotChanged, out var rotReleased);
         changed |= rotChanged;
         released |= rotReleased;
         _dragEuler = rotChanged ? euler : (rotReleased ? null : _dragEuler);
 
         h += RailScrub(dl, new Vector2(cursor.X, cursor.Y + h), width, "pose-scale", "Scale",
-            ref scale, 0.005f, "0.00", s, out var scaleChanged, out var scaleReleased);
+            ref scale, 0.005f, "0.000", s, out var scaleChanged, out var scaleReleased);
         changed |= scaleChanged;
         released |= scaleReleased;
 
@@ -1389,23 +1378,21 @@ public class PoseInspectorPane
                     HingeMinDegrees = MathF.Min(hingeMax, config.HingeMinDegrees),
                 });
 
-            // Hinge axis: ONE form row — label left, the X/Y/Z wells laid
-            // across the control region with the standard gaps. The port
-            // rejects a transiently zero vector, while every valid
-            // intermediate value updates live.
+            // Hinge axis uses a label row followed by a full-width axis row.
             float axisRowTop = cursor.Y + h;
             RowLabel("Hinge axis");
+            h += InspectorLayout.FormRowHeight * s;
             var axis = _ikAxisScratch ?? config.HingeAxis;
-            float wellW = (controlW * s - 2f * InspectorLayout.FormAxisGap * s) / 3f;
+            float wellW = (width - 2f * InspectorLayout.FormAxisGap * s) / 3f;
             float wellY = cursor.Y + h + InspectorLayout.FormTallControlY * s;
             float wellStep = wellW + InspectorLayout.FormAxisGap * s;
             bool axisChanged = false;
-            axisChanged |= AppShellView.DragAxisWell(dl, new Vector2(controlX, wellY), wellW,
-                "ik-axis-x", "X", ref axis.X, Crystarium.ActiveTheme.Palette.AxisX, 0.005f, "0.00", s, out var releasedX);
-            axisChanged |= AppShellView.DragAxisWell(dl, new Vector2(controlX + wellStep, wellY), wellW,
-                "ik-axis-y", "Y", ref axis.Y, Crystarium.ActiveTheme.Palette.AxisY, 0.005f, "0.00", s, out var releasedY);
-            axisChanged |= AppShellView.DragAxisWell(dl, new Vector2(controlX + wellStep * 2f, wellY), wellW,
-                "ik-axis-z", "Z", ref axis.Z, Crystarium.ActiveTheme.Palette.AxisZ, 0.005f, "0.00", s, out var releasedZ);
+            axisChanged |= AppShellView.DragAxisWell(dl, new Vector2(cursor.X, wellY), wellW,
+                "ik-axis-x", "X", ref axis.X, Crystarium.ActiveTheme.Palette.AxisX, 0.005f, "0.000", s, out var releasedX);
+            axisChanged |= AppShellView.DragAxisWell(dl, new Vector2(cursor.X + wellStep, wellY), wellW,
+                "ik-axis-y", "Y", ref axis.Y, Crystarium.ActiveTheme.Palette.AxisY, 0.005f, "0.000", s, out var releasedY);
+            axisChanged |= AppShellView.DragAxisWell(dl, new Vector2(cursor.X + wellStep * 2f, wellY), wellW,
+                "ik-axis-z", "Z", ref axis.Z, Crystarium.ActiveTheme.Palette.AxisZ, 0.005f, "0.000", s, out var releasedZ);
             h += InspectorLayout.FormRowHeight * s;
             RowHelp(axisRowTop, "ik-axis-row",
                 "The local axis the middle joint bends around");

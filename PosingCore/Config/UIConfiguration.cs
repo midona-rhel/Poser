@@ -15,6 +15,7 @@ public class UIConfiguration
     public PanelDock SidebarDock { get; set; } = PanelDock.Left;
     public PanelDock InspectorDock { get; set; } = PanelDock.Right;
     public bool ShowTreeGuides { get; set; } = true;
+    public bool MapMirrorSelection { get; set; }
     public System.Collections.Generic.Dictionary<string, string> Keybinds { get; set; } = new();
 
     // Background colors

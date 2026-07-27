@@ -420,9 +420,10 @@ public class GizmoOverlayWindow : Window
         if (gesture == null && layout != null && !occluded)
             hover = WorldGizmo.HitTest(layout, mouse, 8f * uiScale);
 
-        // An occluded gizmo does not draw either — nothing of the overlay
-        // paints over the window that owns the pointer.
-        if (layout != null && (!occluded || gesture != null))
+        // Occlusion suppresses ownership, not presentation. The shell draws
+        // later and covers only the portion beneath it; visible handles
+        // outside the shell remain present instead of vanishing wholesale.
+        if (layout != null)
             WorldGizmo.Draw(
                 ImGui.GetWindowDrawList(), layout,
                 hover?.Handle, gesture?.Handle);

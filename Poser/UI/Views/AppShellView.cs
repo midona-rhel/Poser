@@ -62,10 +62,11 @@ public sealed class AppShellViewModel
     public int GizmoOperation;        // 0 translate, 1 rotate, 2 scale, 3 universal
     public int GizmoSpace;            // 0 local, 1 world
     public int RotationPivot;         // 0 self, 1 parent
-    public bool ShowRotationPivot;    // Rotate tool + bone selection only
+    public bool RotationPivotEnabled;
     public bool RotationPivotParentAvailable;
     public int SymmetryMode;          // 0 off, 1 link, 2 mirror
-    public bool LinkedOn;
+    public bool PhysicsOn;
+    public bool PhysicsAvailable;
     public bool SkeletonOverlayOn;
     public bool CanUndo = true;
     public bool CanRedo;
@@ -108,8 +109,8 @@ public sealed class AppShellViewModel
     public Action<int>? OnGizmoSpace;
     public Action<int>? OnRotationPivot;
     public Action<int>? OnSymmetry;
-    public Action<bool>? OnLinked;
-    public Action? OnUndo, OnRedo, OnSpawn, OnSettings, OnHideUi, OnPopOut, OnProject, OnSelectTarget;
+    public Action<bool>? OnPhysics;
+    public Action? OnUndo, OnRedo, OnSpawn, OnSettings, OnHideUi, OnPopOut, OnProject;
     public Action<bool>? OnSkeletonOverlay;
     public Action<ShellSidebarRow>? OnRowClicked;
     public Action<ShellSidebarRow>? OnRowContextMenu;
@@ -149,9 +150,6 @@ public static class AppShellView
 
     // One inline axis editor may be active at a time. This belongs to the
     // view because the edit surface is an AppShell primitive, not entity state.
-    private static string? _axisEditId;
-    private static float _axisEditValue;
-    private static bool _axisEditNeedsFocus;
 
     public static float TitlebarHeight => Crystarium.ActiveTheme.Shell.TitlebarHeight;
     public static float SidebarWidth => Crystarium.ActiveTheme.Shell.SidebarDefaultWidth;
@@ -324,25 +322,29 @@ public static class AppShellView
         x += 10f * s;
         x = TextSeg(dl, new Vector2(x, min.Y + (h - 30f * s) / 2f),
             new[] { "Local", "World" }, vm.GizmoSpace, s, i => vm.OnGizmoSpace?.Invoke(i));
-        // pivot seg (Rotate + bone only; Parent disabled without a parent),
-        // then symmetry and linked — kept in the toolbar so they stay
-        // available while the window is collapsed.
-        if (vm.ShowRotationPivot)
-        {
-            x += 10f * s;
-            x = TextSeg(dl, new Vector2(x, min.Y + (h - 30f * s) / 2f),
-                new[] { "Self", "Parent" }, vm.RotationPivot, s,
-                i => vm.OnRotationPivot?.Invoke(i),
-                itemDisabled: i => i == 1 && !vm.RotationPivotParentAvailable);
-        }
+        // Pivot keeps a permanent slot so tool/selection changes cannot move
+        // the rest of the toolbar. Both choices disable when pivot is
+        // inapplicable; Parent additionally needs a live parent bone.
+        x += 10f * s;
+        x = TextSeg(dl, new Vector2(x, min.Y + (h - 30f * s) / 2f),
+            new[] { "Self", "Parent" }, vm.RotationPivot, s,
+            i => vm.OnRotationPivot?.Invoke(i),
+            itemDisabled: i => !vm.RotationPivotEnabled
+                || (i == 1 && !vm.RotationPivotParentAvailable));
         x += 10f * s;
         x = TextSeg(dl, new Vector2(x, min.Y + (h - 30f * s) / 2f),
             new[] { "Off", "Link", "Mirror" }, vm.SymmetryMode, s,
             i => vm.OnSymmetry?.Invoke(i));
         x += 10f * s;
-        IconButtonNamed(dl, new Vector2(x, min.Y + (h - 28f * s) / 2f), "link",
-            vm.LinkedOn, s, () => vm.OnLinked?.Invoke(!vm.LinkedOn),
-            help: "Edit linked bones together — mirrored pairs move as one");
+        IconButton(dl, new Vector2(x, min.Y + (h - 28f * s) / 2f),
+            TablerIcon.Atom, vm.PhysicsOn, s,
+            vm.PhysicsAvailable
+                ? () => vm.OnPhysics?.Invoke(!vm.PhysicsOn)
+                : null,
+            dimmed: !vm.PhysicsAvailable,
+            help: vm.PhysicsAvailable
+                ? "Toggle actor physics"
+                : "Select an actor or bone to control physics");
         x += (28f + 10f) * s;
 
         // tb-right cell: when the rail is present, the right cluster sits on a
@@ -369,9 +371,6 @@ public static class AppShellView
         IconButton(dl, new Vector2(rx, cy), TablerIcon.Armature, vm.SkeletonOverlayOn, s,
             () => vm.OnSkeletonOverlay?.Invoke(!vm.SkeletonOverlayOn),
             help: "Toggle the skeleton overlay in the viewport");
-        rx -= (28f + 10f) * s;
-        IconButton(dl, new Vector2(rx, cy), TablerIcon.UserCircle, false, s, vm.OnSelectTarget,
-            help: "Select your in-game target");
     }
 
     // ── sidebar ──────────────────────────────────────────────────────────
@@ -865,125 +864,37 @@ public static class AppShellView
     /// <summary>Cancels an in-progress numeric axis edit, for example when selection changes.</summary>
     public static void CancelAxisEdit()
     {
-        _axisEditId = null;
-        _axisEditNeedsFocus = false;
+        Crystarium.CancelAxisEdit();
     }
 
     private static bool DragAxis(ImDrawListPtr dl, Vector2 pos, float width, string id, string axis,
         ref float value, Vector4 color, float perPixel, string fmt, float s, ref bool released)
     {
-        if (_axisEditId == id)
-            return EditAxisValue(dl, pos, width, id, axis, ref value, color, fmt, s, ref released);
-
         ImGui.SetCursorScreenPos(pos);
-        ImGui.InvisibleButton(id, new Vector2(width, 26f * s));
-        bool active = ImGui.IsItemActive();
-        bool hovered = ImGui.IsItemHovered();
-
-        if (hovered && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
-        {
-            _axisEditId = id;
-            _axisEditValue = value;
-            _axisEditNeedsFocus = true;
-            active = false;
-        }
-
+        float next = value;
         bool changed = false;
-        var io = ImGui.GetIO();
-        // The mouse wheel is navigation: hovering a numeric field never edits
-        // a transform, and the wheel is left unconsumed so it keeps scrolling
-        // the inspector. Horizontal drag is the pointer-edit interaction.
-        if (active)
-        {
-            ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEw);
-            float delta = io.MouseDelta.X;
-            if (delta != 0f)
+        bool committed = false;
+        changed = Crystarium.AxisWell(
+            id,
+            axis,
+            value,
+            nextValue =>
             {
-                value += delta * perPixel * DragModifierMultiplier(io);
+                next = nextValue;
                 changed = true;
-            }
-        }
-
-        if (ImGui.IsItemDeactivated())
-            released = true;
-
-        DrawAxis(dl, pos, width, axis,
-            value.ToString(fmt, System.Globalization.CultureInfo.InvariantCulture), color, s);
-        if (active)
-            dl.AddRect(pos + new Vector2(0.5f, 0.5f), pos + new Vector2(width, 26f * s) - new Vector2(0.5f, 0.5f),
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(color with { W = 0.6f })), 4f * s, ImDrawFlags.None, 1f * s);
-
-        if (hovered && _axisEditId == null)
-        {
-            ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEw);
-            Crystarium.HoverHelp.Explain(id, pos, pos + new Vector2(width, 26f * s),
-                "Drag to adjust · Ctrl fine ×0.1 · Shift coarse ×10 · Double-click to type");
-        }
-
+            },
+            () => committed = true,
+            color,
+            perPixel,
+            fmt,
+            ControlStyle.Workspace with
+            {
+                Width = UiWidth.Fixed(width / s),
+            });
+        if (changed)
+            value = next;
+        released |= committed;
         return changed;
-    }
-
-    /// <summary>
-    /// Shared drag-sensitivity policy: Ctrl fine (0.1×), Shift coarse (10×),
-    /// Ctrl+Shift back to normal (1×). Scales pointer deltas only — the
-    /// gesture still accumulates from its frozen baseline.
-    /// </summary>
-    public static float DragModifierMultiplier(ImGuiIOPtr io) =>
-        io.KeyCtrl && io.KeyShift ? 1f :
-        io.KeyCtrl ? 0.1f :
-        io.KeyShift ? 10f : 1f;
-
-    private static bool EditAxisValue(ImDrawListPtr dl, Vector2 pos, float width, string id, string axis,
-        ref float value, Vector4 color, string fmt, float s, ref bool released)
-    {
-        DrawAxis(dl, pos, width, axis,
-            _axisEditValue.ToString(fmt, System.Globalization.CultureInfo.InvariantCulture), color, s);
-
-        float editX = axis.Length > 0 ? 18f : 4f;
-        ImGui.SetCursorScreenPos(pos + new Vector2(editX * s, 2f * s));
-        ImGui.SetNextItemWidth(MathF.Max(1f, width - (editX + 2f) * s));
-        if (_axisEditNeedsFocus)
-            ImGui.SetKeyboardFocusHere();
-
-        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(4f, 3f) * s);
-        ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 3f * s);
-        ImGui.PushStyleColor(ImGuiCol.FrameBg, Surface2);
-        ImGui.PushStyleColor(ImGuiCol.FrameBgHovered, Surface2);
-        ImGui.PushStyleColor(ImGuiCol.FrameBgActive, Surface2);
-        bool enter = ImGui.InputFloat($"##axis-edit-{id}", ref _axisEditValue, 0f, 0f,
-            InputFloatFormat(fmt), ImGuiInputTextFlags.AutoSelectAll | ImGuiInputTextFlags.EnterReturnsTrue);
-        bool editedOnDeactivate = ImGui.IsItemDeactivatedAfterEdit();
-        bool deactivated = ImGui.IsItemDeactivated();
-        bool cancelled = ImGui.IsKeyPressed(ImGuiKey.Escape);
-        ImGui.PopStyleColor(3);
-        ImGui.PopStyleVar(2);
-        _axisEditNeedsFocus = false;
-
-        if (cancelled)
-        {
-            CancelAxisEdit();
-            return false;
-        }
-
-        if (enter || editedOnDeactivate)
-        {
-            value = _axisEditValue;
-            released = true;
-            CancelAxisEdit();
-            return true;
-        }
-
-        if (deactivated)
-            CancelAxisEdit();
-
-        return false;
-    }
-
-    private static string InputFloatFormat(string displayFormat)
-    {
-        int dot = displayFormat.IndexOf('.');
-        int decimals = dot < 0 ? 0 : displayFormat.Length - dot - 1;
-        return $"%.{decimals}f";
     }
 
     private static void DrawAxis(ImDrawListPtr dl, Vector2 pos, float width, string axis, string value, Vector4 color, float s)
