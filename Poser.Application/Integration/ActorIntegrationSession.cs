@@ -872,6 +872,219 @@ public sealed class ActorIntegrationSession
             : IntegrationResult.Fail(string.Join("; ", failures));
     }
 
+    // ── MCDF export ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Captures the exact selected actor's supported external state
+    /// synchronously (read-only — export never changes the actor), then
+    /// writes the package off-thread. Refuses while an MCDF is active on
+    /// the actor (no repackaging), while another operation runs, and when
+    /// the Glamourer state is locked by another plugin.
+    /// </summary>
+    public IntegrationResult BeginExport(ActorId actor, string path, string description)
+    {
+        if (McdfBusy)
+            return IntegrationResult.Fail("Another MCDF operation is already running.");
+        var current = OverridesFor(actor);
+        if (current.Mcdf != null)
+            return IntegrationResult.Fail(
+                "This actor is wearing an imported character file; exporting would repackage it. Reset MCDF first.");
+        if (!_port.Penumbra.Available)
+            return IntegrationResult.Fail(_port.Penumbra.Detail);
+        if (!_port.Glamourer.Available)
+            return IntegrationResult.Fail(_port.Glamourer.Detail);
+
+        var glamourer = _port.CaptureGlamourerState(actor);
+        if (!glamourer.Success || glamourer.Value is not { } glamourerState)
+            return IntegrationResult.Fail(
+                glamourer.Detail ?? "The Glamourer state could not be captured.");
+        var manipulations = _port.GetActorMetaManipulations(actor);
+        if (!manipulations.Success || manipulations.Value is not { } manipulationData)
+            return IntegrationResult.Fail(
+                manipulations.Detail ?? "The meta manipulations could not be captured.");
+        var resources = _port.GetActorResourcePaths(actor);
+        if (!resources.Success || resources.Value is not { } tree)
+            return IntegrationResult.Fail(
+                resources.Detail ?? "The actor's resources could not be captured.");
+        var modRoot = _port.GetModDirectory();
+        if (!modRoot.Success || modRoot.Value is not { } root)
+            return IntegrationResult.Fail(
+                modRoot.Detail ?? "Penumbra's mod directory could not be read.");
+
+        string customizeData = string.Empty;
+        if (_port.CustomizePlus.Available)
+        {
+            var probe = _port.ProbeBodyProfile(actor);
+            if (!probe.Success || probe.Value is not { } bodyState)
+                return IntegrationResult.Fail(
+                    probe.Detail ?? "The Customize+ state could not be read.");
+            if (bodyState.ActiveProfile is { } active)
+            {
+                if (bodyState.ActiveIsSaved)
+                {
+                    var json = _port.GetBodyProfileJson(active);
+                    if (!json.Success || json.Value is not { } profileJson)
+                        return IntegrationResult.Fail(
+                            json.Detail ?? "The active profile could not be read.");
+                    customizeData = Convert.ToBase64String(
+                        System.Text.Encoding.UTF8.GetBytes(profileJson));
+                }
+                else if (active == current.TemporaryBodyProfile
+                    && current.BodyProfileJson is { } retained)
+                {
+                    // Poser's own temporary profile exports from the
+                    // session's retained JSON.
+                    customizeData = Convert.ToBase64String(
+                        System.Text.Encoding.UTF8.GetBytes(retained));
+                }
+                else
+                {
+                    return IntegrationResult.Fail(
+                        "This actor's body scale is a temporary profile from another plugin that cannot be read back; exporting would silently lose it.");
+                }
+            }
+        }
+
+        var (content, skipped) = BuildExportContent(
+            description, glamourerState, customizeData, manipulationData, tree, root);
+
+        _mcdfCancellation?.Dispose();
+        _mcdfCancellation = new CancellationTokenSource();
+        var cancellation = _mcdfCancellation.Token;
+        string fileName = System.IO.Path.GetFileName(path);
+        _mcdfProgress = new McdfProgress(actor, fileName, McdfOperationKind.Export,
+            McdfPhase.WritingPackage, 0, content.Files.Count, 0, 0, true, null);
+        Changed?.Invoke();
+        _mcdfTask = Task.Run(
+            () => RunExport(actor, path, content, skipped, cancellation),
+            CancellationToken.None);
+        return IntegrationResult.Ok();
+    }
+
+    private async Task RunExport(
+        ActorId actor,
+        string path,
+        McdfExportContent content,
+        List<string> skipped,
+        CancellationToken cancellation)
+    {
+        string fileName = System.IO.Path.GetFileName(path);
+        int filesTotal = content.Files.Count;
+        long bytesTotal = 0;
+        try
+        {
+            var written = await _files.WritePackage(path, content, step =>
+            {
+                bytesTotal = step.BytesTotal;
+                _mcdfProgress = new McdfProgress(actor, fileName, McdfOperationKind.Export,
+                    step.Phase, step.FilesDone, step.FilesTotal,
+                    step.BytesDone, step.BytesTotal, true, null);
+            }, cancellation);
+            if (!written.Success || written.Value is not { } stats)
+            {
+                _mcdfProgress = new McdfProgress(actor, fileName, McdfOperationKind.Export,
+                    cancellation.IsCancellationRequested ? McdfPhase.Cancelled : McdfPhase.Failed,
+                    0, filesTotal, 0, bytesTotal, false,
+                    new McdfOutcome(false, cancellation.IsCancellationRequested,
+                        written.Detail ?? "The package could not be written.",
+                        0, 0, skipped));
+                return;
+            }
+            string detail = skipped.Count == 0
+                ? $"Exported {stats.Files} files ({stats.UncompressedBytes:N0} bytes)."
+                : $"Exported {stats.Files} files ({stats.UncompressedBytes:N0} bytes); {skipped.Count} resources skipped.";
+            _mcdfProgress = new McdfProgress(actor, fileName, McdfOperationKind.Export,
+                McdfPhase.Completed, stats.Files, stats.Files,
+                stats.UncompressedBytes, stats.UncompressedBytes, false,
+                new McdfOutcome(true, false, detail,
+                    stats.Files, stats.UncompressedBytes, skipped));
+        }
+        catch (Exception ex)
+        {
+            _mcdfProgress = new McdfProgress(actor, fileName, McdfOperationKind.Export,
+                McdfPhase.Failed, 0, filesTotal, 0, bytesTotal, false,
+                new McdfOutcome(false, false,
+                    $"The export failed unexpectedly: {ex.Message}", 0, 0, skipped));
+        }
+    }
+
+    /// <summary>
+    /// Turns Penumbra's actual-path → game-paths tree into MCDF content:
+    /// only real replacements, swaps kept game-path to game-path, allowed
+    /// extensions only, local files only from under the Penumbra mod root,
+    /// Brio's compatibility filter applied, and every skipped or missing
+    /// resource reported by name.
+    /// </summary>
+    private static (McdfExportContent Content, List<string> Skipped) BuildExportContent(
+        string description,
+        string glamourerState,
+        string customizeData,
+        string manipulationData,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> resources,
+        string modRoot)
+    {
+        var skipped = new List<string>();
+        var files = new List<McdfExportFile>();
+        var swaps = new Dictionary<string, string>(StringComparer.Ordinal);
+        string rootPrefix = modRoot.Replace('\\', '/').TrimEnd('/') + "/";
+
+        foreach (var (actualRaw, gamePathsRaw) in resources)
+        {
+            // A local filesystem path is a file replacement; anything else
+            // is a game path — identical means unmodified, different means
+            // a swap.
+            bool isLocalFile = actualRaw.Length > 1 && actualRaw[1] == ':';
+            string actualNormalized = isLocalFile
+                ? actualRaw.Replace('\\', '/')
+                : McdfFormat.NormalizeGamePath(actualRaw);
+
+            var replaced = new List<string>();
+            foreach (var rawGamePath in gamePathsRaw)
+            {
+                string gamePath = McdfFormat.NormalizeGamePath(rawGamePath);
+                if (!isLocalFile && gamePath == actualNormalized)
+                    continue; // Unmodified resource, not a replacement.
+                if (McdfFormat.ValidateGamePath(gamePath) != null)
+                {
+                    skipped.Add($"{gamePath} (unsupported resource path)");
+                    continue;
+                }
+                if (!McdfFormat.ExportFilterAllows(gamePath))
+                {
+                    skipped.Add($"{gamePath} (omitted for MCDF compatibility)");
+                    continue;
+                }
+                replaced.Add(gamePath);
+            }
+            if (replaced.Count == 0)
+                continue;
+
+            if (isLocalFile)
+            {
+                if (!System.IO.File.Exists(actualRaw))
+                {
+                    skipped.Add($"{actualRaw} (missing on disk)");
+                    continue;
+                }
+                if (!actualNormalized.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    skipped.Add($"{actualRaw} (outside the Penumbra mod directory)");
+                    continue;
+                }
+                files.Add(new McdfExportFile(replaced, actualRaw));
+            }
+            else
+            {
+                foreach (var gamePath in replaced)
+                    swaps[gamePath] = actualNormalized;
+            }
+        }
+
+        return (new McdfExportContent(
+            description, glamourerState, customizeData, manipulationData, files, swaps),
+            skipped);
+    }
+
     private IntegrationResult? McdfGate(ActorId actor)
     {
         if (McdfBusy)
