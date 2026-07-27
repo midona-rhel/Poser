@@ -81,10 +81,11 @@ public sealed record IntegrationBaseline
     public static readonly IntegrationBaseline None = new();
 }
 
-/// <summary>Everything the active MCDF import owns on one actor.</summary>
+/// <summary>Everything the active MCDF import owns on one actor. The
+/// temporary collection is null for a package with no embedded resources.</summary>
 public sealed record McdfOwnership(
     string FileName,
-    Guid TemporaryCollection,
+    Guid? TemporaryCollection,
     string OperationDirectory,
     bool GlamourerLocked,
     Guid? TemporaryProfile,

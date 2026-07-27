@@ -251,6 +251,10 @@ public sealed class ActorIntegrationSession
 
     public IntegrationResult ResetActor(ActorId actor)
     {
+        // A running import/export for this actor cancels; its own rollback
+        // removes the in-flight resources ownership has not committed yet.
+        if (McdfBusy && _mcdfProgress?.Target.Equals(actor) == true)
+            CancelMcdf();
         var current = OverridesFor(actor);
         if (!current.HasAny)
             return IntegrationResult.Ok();
@@ -427,16 +431,19 @@ public sealed class ActorIntegrationSession
         // The temporary collection deletes by its own id even after the
         // actor is gone, removing Poser's temporary mods and assignment.
         Guid? temporaryCollection = mcdf.TemporaryCollection;
-        var collectionDeleted = _port.DeleteTemporaryCollection(mcdf.TemporaryCollection);
-        if (collectionDeleted.Success)
+        if (temporaryCollection is { } tempCollection)
         {
-            temporaryCollection = null;
-            touchedNative = true;
-        }
-        else
-        {
-            failures.Add(collectionDeleted.Detail!);
-            complete = false;
+            var collectionDeleted = _port.DeleteTemporaryCollection(tempCollection);
+            if (collectionDeleted.Success)
+            {
+                temporaryCollection = null;
+                touchedNative = true;
+            }
+            else
+            {
+                failures.Add(collectionDeleted.Detail!);
+                complete = false;
+            }
         }
 
         _files.DeleteOperationDirectory(mcdf.OperationDirectory);
@@ -451,13 +458,14 @@ public sealed class ActorIntegrationSession
             {
                 GlamourerLocked = locked,
                 TemporaryProfile = temporaryProfile,
-                TemporaryCollection = temporaryCollection ?? mcdf.TemporaryCollection,
+                TemporaryCollection = temporaryCollection,
             },
         };
     }
 
     public IntegrationResult ResetAll()
     {
+        CancelMcdf();
         var failures = new List<string>();
         foreach (var actor in _overrides.Keys.ToList())
         {
@@ -479,11 +487,400 @@ public sealed class ActorIntegrationSession
             ResetActor(actor);
     }
 
-    private IntegrationResult? McdfGate(ActorId actor) =>
-        OverridesFor(actor).Mcdf != null
+    // ── MCDF ─────────────────────────────────────────────────────────────
+
+    /// <summary>Hard validation limits for incoming packages.</summary>
+    public McdfLimits Limits { get; set; } = McdfLimits.Default;
+
+    private McdfProgress? _mcdfProgress;
+    private CancellationTokenSource? _mcdfCancellation;
+    private Task? _mcdfTask;
+
+    /// <summary>Immutable snapshot of the single running (or last finished)
+    /// MCDF operation; null before the first one.</summary>
+    public McdfProgress? Mcdf => _mcdfProgress;
+
+    /// <summary>Only one MCDF import/export runs at a time.</summary>
+    public bool McdfBusy => _mcdfTask is { IsCompleted: false };
+
+    /// <summary>Cooperative cancellation of the running operation.</summary>
+    public void CancelMcdf() => _mcdfCancellation?.Cancel();
+
+    public IntegrationResult BeginImport(ActorId actor, string path)
+    {
+        if (McdfBusy)
+            return IntegrationResult.Fail("Another MCDF operation is already running.");
+        _mcdfCancellation?.Dispose();
+        _mcdfCancellation = new CancellationTokenSource();
+        var cancellation = _mcdfCancellation.Token;
+        _mcdfProgress = new McdfProgress(
+            actor, System.IO.Path.GetFileName(path), McdfOperationKind.Import,
+            McdfPhase.Reading, 0, 0, 0, 0, true, null);
+        Changed?.Invoke();
+        _mcdfTask = Task.Run(() => RunImport(actor, path, cancellation), CancellationToken.None);
+        return IntegrationResult.Ok();
+    }
+
+    private async Task RunImport(ActorId actor, string path, CancellationToken cancellation)
+    {
+        string fileName = System.IO.Path.GetFileName(path);
+        int filesTotal = 0;
+        long bytesTotal = 0;
+
+        void Step(McdfPhase phase, int filesDone, long bytesDone, bool cancellable = true) =>
+            _mcdfProgress = new McdfProgress(actor, fileName, McdfOperationKind.Import,
+                phase, filesDone, filesTotal, bytesDone, bytesTotal, cancellable, null);
+        void Finish(string detail, bool success) =>
+            _mcdfProgress = new McdfProgress(actor, fileName, McdfOperationKind.Import,
+                success ? McdfPhase.Completed
+                    : cancellation.IsCancellationRequested ? McdfPhase.Cancelled : McdfPhase.Failed,
+                filesTotal, filesTotal, bytesTotal, bytesTotal, false,
+                new McdfOutcome(success, !success && cancellation.IsCancellationRequested,
+                    detail, filesTotal, bytesTotal, Array.Empty<string>()));
+
+        try
+        {
+            // Phase 1 — read, validate, extract, entirely off the actor.
+            var read = await _files.ReadPackage(path, Limits, step =>
+            {
+                filesTotal = step.FilesTotal;
+                bytesTotal = step.BytesTotal;
+                Step(step.Phase, step.FilesDone, step.BytesDone);
+            }, cancellation);
+            if (!read.Success || read.Value is not { } package)
+            {
+                Finish(read.Detail ?? "The package could not be read.", success: false);
+                return;
+            }
+            filesTotal = package.FileCount;
+            bytesTotal = package.TotalBytes;
+
+            // Phase 2 — requirements come from the CONTENT; anything
+            // missing fails before any actor change.
+            Step(McdfPhase.Preparing, filesTotal, bytesTotal);
+            var missing = new List<string>();
+            if (package.HasResources && !_port.Penumbra.Available)
+                missing.Add(_port.Penumbra.Detail);
+            if (package.GlamourerData.Length > 0 && !_port.Glamourer.Available)
+                missing.Add(_port.Glamourer.Detail);
+            if (package.CustomizePlusData.Length > 0 && !_port.CustomizePlus.Available)
+                missing.Add(_port.CustomizePlus.Detail);
+            if (missing.Count > 0)
+            {
+                _files.DeleteOperationDirectory(package.OperationDirectory);
+                Finish("This package needs: " + string.Join(" ", missing), success: false);
+                return;
+            }
+
+            string? bodyJson = null;
+            if (package.CustomizePlusData.Length > 0)
+            {
+                try
+                {
+                    bodyJson = System.Text.Encoding.UTF8.GetString(
+                        Convert.FromBase64String(package.CustomizePlusData));
+                }
+                catch (FormatException)
+                {
+                    _files.DeleteOperationDirectory(package.OperationDirectory);
+                    Finish("The package's Customize+ payload is not valid base64.", success: false);
+                    return;
+                }
+            }
+
+            if (cancellation.IsCancellationRequested)
+            {
+                _files.DeleteOperationDirectory(package.OperationDirectory);
+                Finish("The import was cancelled.", success: false);
+                return;
+            }
+
+            // Phase 3 — framework thread: tear down a previous MCDF (never
+            // stack anonymous temporary resources), revalidate the exact
+            // generation, capture the baseline. Refusals happen here,
+            // before any mutation.
+            Step(McdfPhase.CapturingBaseline, filesTotal, bytesTotal);
+            var prepared = await _port.OnFrameworkThread(() => PrepareImport(actor, package));
+            if (prepared.Detail != null || prepared.Baseline is not { } baseline)
+            {
+                _files.DeleteOperationDirectory(package.OperationDirectory);
+                Finish(prepared.Detail ?? "The import could not be prepared.", success: false);
+                return;
+            }
+
+            // Phase 4/5 — apply; any failure or cancellation from here
+            // rolls back in reverse order.
+            Guid? tempCollection = null;
+            bool locked = false;
+            Guid? tempProfile = null;
+            string? failure = null;
+
+            if (package.HasResources)
+            {
+                Step(McdfPhase.ApplyingResources, filesTotal, bytesTotal);
+                failure = await _port.OnFrameworkThread(() =>
+                {
+                    var created = _port.CreateTemporaryCollection(
+                        actor, $"Poser MCDF {fileName}");
+                    if (!created.Success)
+                        return created.Detail;
+                    tempCollection = created.Value;
+                    var paths = new Dictionary<string, string>(StringComparer.Ordinal);
+                    foreach (var pair in package.ReplacedGamePaths)
+                        paths[pair.Key] = pair.Value;
+                    foreach (var pair in package.SwappedGamePaths)
+                        paths[pair.Key] = pair.Value;
+                    var mods = _port.AddTemporaryMods(
+                        created.Value, paths, package.ManipulationData);
+                    return mods.Success ? null : mods.Detail;
+                });
+            }
+
+            if (failure == null && cancellation.IsCancellationRequested)
+                failure = "The import was cancelled.";
+
+            if (failure == null && package.GlamourerData.Length > 0)
+            {
+                Step(McdfPhase.ApplyingAppearance, filesTotal, bytesTotal);
+                failure = await _port.OnFrameworkThread(() =>
+                {
+                    var applied = _port.ApplyGlamourerState(
+                        actor, package.GlamourerData, holdLock: true);
+                    if (applied.Success)
+                        locked = true;
+                    return applied.Success ? null : applied.Detail;
+                });
+            }
+
+            if (failure == null && package.HasResources)
+            {
+                Step(McdfPhase.AwaitingRedraw, filesTotal, bytesTotal);
+                var redraw = await _port.RedrawAndWait(
+                    actor, TimeSpan.FromSeconds(10), cancellation);
+                if (!redraw.Success)
+                    failure = redraw.Detail;
+            }
+
+            if (failure == null && cancellation.IsCancellationRequested)
+                failure = "The import was cancelled.";
+
+            if (failure == null && bodyJson != null)
+            {
+                Step(McdfPhase.ApplyingBodyProfile, filesTotal, bytesTotal);
+                failure = await _port.OnFrameworkThread(() =>
+                {
+                    var applied = _port.ApplyTemporaryBodyProfile(actor, bodyJson);
+                    if (applied.Success)
+                    {
+                        tempProfile = applied.Value;
+                        return null;
+                    }
+                    return applied.Detail;
+                });
+            }
+
+            if (failure != null)
+            {
+                Step(McdfPhase.RollingBack, filesTotal, bytesTotal, cancellable: false);
+                var leftover = await _port.OnFrameworkThread(() => RollbackImport(
+                    actor, baseline, package.OperationDirectory,
+                    tempCollection, locked, tempProfile, fileName, bodyJson));
+                Finish(leftover == null
+                    ? failure
+                    : $"{failure} Rollback also failed: {leftover} Reset MCDF retries the cleanup.",
+                    success: false);
+                return;
+            }
+
+            // Phase 6 — commit ownership only after every required
+            // component succeeded. Components the package replaced drop
+            // their per-selector ownership; the ORIGINAL baseline stays.
+            Step(McdfPhase.Committing, filesTotal, bytesTotal, cancellable: false);
+            await _port.OnFrameworkThread(() =>
+            {
+                var current = OverridesFor(actor);
+                bool replacedGlamourer = package.GlamourerData.Length > 0;
+                bool replacedBody = bodyJson != null;
+                Mutate(actor, current with
+                {
+                    Baseline = baseline,
+                    Mcdf = new McdfOwnership(
+                        fileName, tempCollection, package.OperationDirectory,
+                        locked, tempProfile, bodyJson),
+                    DesignOwned = !replacedGlamourer && current.DesignOwned,
+                    DesignName = replacedGlamourer ? null : current.DesignName,
+                    TemporaryBodyProfile = replacedBody ? null : current.TemporaryBodyProfile,
+                    BodyProfileName = replacedBody ? null : current.BodyProfileName,
+                    BodyProfileJson = replacedBody ? null : current.BodyProfileJson,
+                });
+                return true;
+            });
+            Finish($"Imported {fileName}.", success: true);
+        }
+        catch (Exception ex)
+        {
+            Finish($"The import failed unexpectedly: {ex.Message}", success: false);
+        }
+    }
+
+    private (IntegrationBaseline? Baseline, string? Detail) PrepareImport(
+        ActorId actor, McdfPackage package)
+    {
+        var current = OverridesFor(actor);
+        if (current.Mcdf is { } mcdf)
+        {
+            var failures = new List<string>();
+            bool touched = false;
+            bool stillThere = _port.IsResolvable(actor);
+            current = TearDownMcdf(actor, current, mcdf, stillThere, failures, ref touched);
+            Mutate(actor, current);
+            if (failures.Count > 0)
+                return (null, "Tearing down the active MCDF failed: "
+                    + string.Join("; ", failures));
+        }
+
+        if (!_port.IsResolvable(actor))
+            return (null, "The actor is no longer available.");
+
+        var baseline = current.Baseline;
+        if (package.GlamourerData.Length > 0 && baseline.GlamourerState == null)
+        {
+            var incoming = _port.CaptureGlamourerState(actor);
+            if (!incoming.Success || incoming.Value is not { } state)
+                return (null, incoming.Detail ?? "The incoming Glamourer state could not be captured.");
+            baseline = baseline with { GlamourerState = state };
+        }
+        if (package.CustomizePlusData.Length > 0)
+        {
+            var probe = _port.ProbeBodyProfile(actor);
+            if (!probe.Success || probe.Value is not { } bodyState)
+                return (null, probe.Detail ?? "The Customize+ state could not be read.");
+            if (ForeignTemporary(current, bodyState))
+                return (null, "This actor has a temporary Customize+ profile from another plugin; Poser will not displace it.");
+            if (!baseline.BodyProfileCaptured)
+                baseline = baseline with
+                {
+                    SavedBodyProfile = bodyState.ActiveIsSaved ? bodyState.ActiveProfile : null,
+                    BodyProfileCaptured = true,
+                };
+        }
+        return (baseline, null);
+    }
+
+    /// <summary>Reverse-order rollback of a failed or cancelled import.
+    /// Returns null when everything came back; otherwise the failure detail
+    /// after committing the unresolved leftovers as ownership so Reset MCDF
+    /// can retry them.</summary>
+    private string? RollbackImport(
+        ActorId actor,
+        IntegrationBaseline baseline,
+        string operationDirectory,
+        Guid? tempCollection,
+        bool locked,
+        Guid? tempProfile,
+        string fileName,
+        string? bodyJson)
+    {
+        bool resolvable = _port.IsResolvable(actor);
+        var failures = new List<string>();
+
+        if (tempProfile is { } profile)
+        {
+            var deleted = resolvable
+                ? _port.DeleteTemporaryBodyProfile(actor)
+                : _port.DeleteTemporaryBodyProfileById(profile);
+            if (deleted.Success)
+                tempProfile = null;
+            else
+                failures.Add(deleted.Detail!);
+        }
+
+        if (locked && resolvable)
+        {
+            var unlocked = _port.UnlockGlamourerState(actor);
+            if (unlocked.Success)
+            {
+                locked = false;
+                if (baseline.GlamourerState is { } state)
+                {
+                    var restored = _port.ApplyGlamourerState(actor, state, holdLock: false);
+                    if (!restored.Success)
+                        failures.Add(restored.Detail!);
+                }
+            }
+            else
+            {
+                failures.Add(unlocked.Detail!);
+            }
+        }
+        else if (locked)
+        {
+            locked = false;
+        }
+
+        if (tempCollection is { } collection)
+        {
+            var deleted = _port.DeleteTemporaryCollection(collection);
+            if (deleted.Success)
+                tempCollection = null;
+            else
+                failures.Add(deleted.Detail!);
+        }
+
+        if (resolvable)
+            _port.RequestRedraw(actor);
+
+        if (failures.Count == 0)
+        {
+            _files.DeleteOperationDirectory(operationDirectory);
+            Changed?.Invoke();
+            return null;
+        }
+
+        // Keep the unresolved pieces owned and retryable; the extraction
+        // directory stays until the temporary collection is gone.
+        var current = OverridesFor(actor);
+        Mutate(actor, current with
+        {
+            Baseline = baseline,
+            Mcdf = new McdfOwnership(
+                fileName, tempCollection, operationDirectory, locked, tempProfile, bodyJson),
+        });
+        return string.Join("; ", failures);
+    }
+
+    /// <summary>Removes everything the active MCDF created and restores the
+    /// complete pre-integration external baseline. Selector-owned
+    /// components stay owned and keep their own resets.</summary>
+    public IntegrationResult ResetMcdf(ActorId actor)
+    {
+        if (McdfBusy)
+            return IntegrationResult.Fail("An MCDF operation is still running.");
+        var current = OverridesFor(actor);
+        if (current.Mcdf is not { } mcdf)
+            return IntegrationResult.Ok();
+
+        bool resolvable = _port.IsResolvable(actor);
+        var failures = new List<string>();
+        bool touched = false;
+        current = TearDownMcdf(actor, current, mcdf, resolvable, failures, ref touched);
+        if (touched && resolvable)
+            _port.RequestRedraw(actor);
+        Mutate(actor, current);
+        return failures.Count == 0
+            ? IntegrationResult.Ok()
+            : IntegrationResult.Fail(string.Join("; ", failures));
+    }
+
+    private IntegrationResult? McdfGate(ActorId actor)
+    {
+        if (McdfBusy)
+            return IntegrationResult.Fail("An MCDF operation is running; wait for it to finish.");
+        return OverridesFor(actor).Mcdf != null
             ? IntegrationResult.Fail(
                 "An imported character file owns this actor's external appearance. Reset MCDF first.")
             : null;
+    }
 
     private void Mutate(ActorId actor, IntegrationOverrides updated)
     {

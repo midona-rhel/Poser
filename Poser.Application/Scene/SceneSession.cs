@@ -49,9 +49,15 @@ public sealed class SceneSession
                 : null;
 
         if (id.Kind == SceneEntityKind.Bone && id.Bone is { } bone)
-            return _bones.TryGetValue(BoneLineage.From(bone), out var current)
-                ? SelectionId.ForBone(current.Id)
+        {
+            if (_bones.TryGetValue(BoneLineage.From(bone), out var current))
+                return SelectionId.ForBone(current.Id);
+            // A bone that no longer exists (a replaced skeleton after a
+            // redraw) falls back to its owning actor, never another bone.
+            return _actors.TryGetValue(bone.Skeleton.Actor.LogicalId, out var owner)
+                ? SelectionId.ForActor(owner.Id)
                 : null;
+        }
 
         return id;
     }
