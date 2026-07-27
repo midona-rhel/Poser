@@ -98,12 +98,17 @@ public class FileBrowser
             var min = ImGui.GetWindowPos();
             var max = min + ImGui.GetWindowSize();
             var dl = ImGui.GetWindowDrawList();
-            // The window itself is NoBackground, so the surface fill is
-            // OURS to draw — DrawSurface provides only blur, ring, and
-            // borders (popup hosts got their fill from the popup bg).
-            dl.AddRectFilled(min, max,
-                ImGui.ColorConvertFloat4ToU32(GlassChrome.BackgroundColor), 10f * s);
-            GlassChrome.DrawSurface(dl, min, max, 10f);
+            // Glass surface inset by the ring width; blur + fill + the
+            // directional borders come from the shared surface, and the
+            // black 50% ring is drawn LAST as the true OUTERMOST layer.
+            var surfaceMin = min + new Vector2(1f, 1f) * s;
+            var surfaceMax = max - new Vector2(1f, 1f) * s;
+            GlassChrome.DrawMenuSurface(dl, surfaceMin, surfaceMax, 10f);
+            dl.AddRect(
+                surfaceMin - new Vector2(0.5f, 0.5f) * s,
+                surfaceMax + new Vector2(0.5f, 0.5f) * s,
+                ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.5f)),
+                10f * s, ImDrawFlags.None, 1f * s);
 
             float header = 44f * s;
             float footer = 44f * s;
@@ -178,7 +183,11 @@ public class FileBrowser
         if (Crystarium.TextInput($"{_id}-path", ref _pathEdit, new TextInputProps
             {
                 Placeholder = "Path",
-                Style = new TextInputStyle { Width = Sizing.Fixed(pathWidth) },
+                Style = new TextInputStyle
+                {
+                    Width = Sizing.Fixed(pathWidth),
+                    Height = Sizing.Fixed(24f),
+                },
             })
             && Directory.Exists(_pathEdit)
             && !string.Equals(_pathEdit, _currentPath, StringComparison.OrdinalIgnoreCase))
@@ -306,7 +315,8 @@ public class FileBrowser
                 Placeholder = "File name",
                 Style = new TextInputStyle
                 {
-                    Width = Sizing.Fixed((x - min.X) / s - 32f),
+                    Width = Sizing.Fixed(MathF.Min(220f, (x - min.X) / s - 24f)),
+                    Height = Sizing.Fixed(24f),
                 },
             });
         }
