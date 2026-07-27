@@ -1130,8 +1130,10 @@ public sealed class ActorIntegrationSession
             }
         }
 
-        var (content, skipped) = BuildExportContent(
+        var (content, skipped, contentError) = BuildExportContent(
             description, glamourerState, customizeData, manipulationData, tree, root);
+        if (contentError != null || content == null)
+            return IntegrationResult.Fail(contentError ?? "The export content could not be built.");
 
         _mcdfCancellation?.Dispose();
         _mcdfCancellation = new CancellationTokenSource();
@@ -1195,23 +1197,38 @@ public sealed class ActorIntegrationSession
 
     /// <summary>
     /// Turns Penumbra's actual-path → game-paths tree into MCDF content:
-    /// only real replacements, swaps kept game-path to game-path, allowed
-    /// extensions only, local files only from under the Penumbra mod root,
-    /// Brio's compatibility filter applied, and every skipped or missing
-    /// resource reported by name.
+    /// only real replacements, swap targets validated as game paths and
+    /// kept game-path to game-path, allowed extensions only, local files
+    /// only from under the CANONICAL Penumbra mod root, Brio's
+    /// compatibility filter applied, every skipped or missing resource
+    /// reported by name, and conflicting duplicate game-path mappings
+    /// rejected outright — a package that lies about a path is worse than
+    /// no package.
     /// </summary>
-    private static (McdfExportContent Content, List<string> Skipped) BuildExportContent(
-        string description,
-        string glamourerState,
-        string customizeData,
-        string manipulationData,
-        IReadOnlyDictionary<string, IReadOnlyList<string>> resources,
-        string modRoot)
+    private static (McdfExportContent? Content, List<string> Skipped, string? Error)
+        BuildExportContent(
+            string description,
+            string glamourerState,
+            string customizeData,
+            string manipulationData,
+            IReadOnlyDictionary<string, IReadOnlyList<string>> resources,
+            string modRoot)
     {
         var skipped = new List<string>();
         var files = new List<McdfExportFile>();
         var swaps = new Dictionary<string, string>(StringComparer.Ordinal);
-        string rootPrefix = modRoot.Replace('\\', '/').TrimEnd('/') + "/";
+        // Which exported source already serves each game path; identical
+        // duplicates are ignored, conflicting ones fail the export.
+        var sources = new Dictionary<string, string>(StringComparer.Ordinal);
+        string rootFull;
+        try
+        {
+            rootFull = System.IO.Path.GetFullPath(modRoot);
+        }
+        catch (Exception ex)
+        {
+            return (null, skipped, $"Penumbra's mod directory is not a usable path: {ex.Message}");
+        }
 
         foreach (var (actualRaw, gamePathsRaw) in resources)
         {
@@ -1219,15 +1236,54 @@ public sealed class ActorIntegrationSession
             // is a game path — identical means unmodified, different means
             // a swap.
             bool isLocalFile = actualRaw.Length > 1 && actualRaw[1] == ':';
-            string actualNormalized = isLocalFile
-                ? actualRaw.Replace('\\', '/')
-                : McdfFormat.NormalizeGamePath(actualRaw);
+
+            string sourceKey;
+            string? localFull = null;
+            string swapTarget = string.Empty;
+            if (isLocalFile)
+            {
+                try
+                {
+                    localFull = System.IO.Path.GetFullPath(actualRaw);
+                }
+                catch (Exception)
+                {
+                    skipped.Add($"{actualRaw} (not a usable path)");
+                    continue;
+                }
+                if (!System.IO.File.Exists(localFull))
+                {
+                    skipped.Add($"{actualRaw} (missing on disk)");
+                    continue;
+                }
+                // Canonical containment: GetRelativePath escapes with ".."
+                // for anything outside the canonical root, which catches
+                // <root>/../elsewhere constructions a prefix check accepts.
+                string relative = System.IO.Path.GetRelativePath(rootFull, localFull);
+                if (relative.StartsWith("..", StringComparison.Ordinal)
+                    || System.IO.Path.IsPathRooted(relative))
+                {
+                    skipped.Add($"{actualRaw} (outside the Penumbra mod directory)");
+                    continue;
+                }
+                sourceKey = localFull;
+            }
+            else
+            {
+                swapTarget = McdfFormat.NormalizeGamePath(actualRaw);
+                if (McdfFormat.ValidateGamePath(swapTarget) != null)
+                {
+                    skipped.Add($"{actualRaw} (unsupported swap target)");
+                    continue;
+                }
+                sourceKey = swapTarget;
+            }
 
             var replaced = new List<string>();
             foreach (var rawGamePath in gamePathsRaw)
             {
                 string gamePath = McdfFormat.NormalizeGamePath(rawGamePath);
-                if (!isLocalFile && gamePath == actualNormalized)
+                if (!isLocalFile && gamePath == swapTarget)
                     continue; // Unmodified resource, not a replacement.
                 if (McdfFormat.ValidateGamePath(gamePath) != null)
                 {
@@ -1239,35 +1295,29 @@ public sealed class ActorIntegrationSession
                     skipped.Add($"{gamePath} (omitted for MCDF compatibility)");
                     continue;
                 }
+                if (sources.TryGetValue(gamePath, out var previous))
+                {
+                    if (string.Equals(previous, sourceKey, StringComparison.OrdinalIgnoreCase))
+                        continue; // Identical duplicate mapping.
+                    return (null, skipped,
+                        $"Penumbra reported conflicting replacements for {gamePath}.");
+                }
+                sources[gamePath] = sourceKey;
                 replaced.Add(gamePath);
             }
             if (replaced.Count == 0)
                 continue;
 
             if (isLocalFile)
-            {
-                if (!System.IO.File.Exists(actualRaw))
-                {
-                    skipped.Add($"{actualRaw} (missing on disk)");
-                    continue;
-                }
-                if (!actualNormalized.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
-                {
-                    skipped.Add($"{actualRaw} (outside the Penumbra mod directory)");
-                    continue;
-                }
-                files.Add(new McdfExportFile(replaced, actualRaw));
-            }
+                files.Add(new McdfExportFile(replaced, localFull!));
             else
-            {
                 foreach (var gamePath in replaced)
-                    swaps[gamePath] = actualNormalized;
-            }
+                    swaps[gamePath] = swapTarget;
         }
 
         return (new McdfExportContent(
             description, glamourerState, customizeData, manipulationData, files, swaps),
-            skipped);
+            skipped, null);
     }
 
     private IntegrationResult? McdfGate(ActorId actor)

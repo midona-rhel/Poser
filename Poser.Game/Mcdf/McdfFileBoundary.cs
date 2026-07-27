@@ -409,6 +409,7 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                         return IntegrationValue<McdfWriteStats>.Fail("The export was cancelled.");
                     using var input = new FileStream(
                         byHash[digest].LocalPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    using var rehash = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
                     int got;
                     long fileWritten = 0;
                     while ((got = input.Read(chunk, 0, chunk.Length)) > 0)
@@ -416,17 +417,24 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                         if (cancellation.IsCancellationRequested)
                             return IntegrationValue<McdfWriteStats>.Fail("The export was cancelled.");
                         writer.Write(chunk, 0, got);
+                        rehash.AppendData(chunk, 0, got);
                         written += got;
                         fileWritten += got;
                         progress(new McdfProgressStep(
                             McdfPhase.WritingPackage, done, order.Count, written, totalBytes));
                     }
-                    // A file that changed size since pass 1 would corrupt
-                    // every payload after it; fail instead of writing a
-                    // package no reader can open.
+                    // A file that changed since pass 1 — by size OR by a
+                    // same-length modification — would make the declared
+                    // SHA-1 false and corrupt payload alignment; fail
+                    // before the destination is ever replaced.
                     if (fileWritten != byHash[digest].Entry.Length)
                         return IntegrationValue<McdfWriteStats>.Fail(
                             $"{byHash[digest].LocalPath} changed while exporting.");
+                    if (!string.Equals(
+                            Convert.ToHexString(rehash.GetHashAndReset()),
+                            digest, StringComparison.OrdinalIgnoreCase))
+                        return IntegrationValue<McdfWriteStats>.Fail(
+                            $"{byHash[digest].LocalPath} changed while exporting; its declared hash would be false.");
                     done++;
                     progress(new McdfProgressStep(
                         McdfPhase.WritingPackage, done, order.Count, written, totalBytes));
