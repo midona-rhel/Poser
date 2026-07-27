@@ -89,9 +89,9 @@ public readonly struct Transition
         return 3f * inv * inv * p1 + 6f * inv * u * (p2 - p1) + 3f * u * u * (1f - p2);
     }
 
-    public static readonly Transition Fast    = new(Theme.Metrics.Motion.Fast);
-    public static readonly Transition Default = new(Theme.Metrics.Motion.Default);
-    public static readonly Transition Slow    = new(Theme.Metrics.Motion.Slow);
+    public static Transition Fast => new(Crystarium.ActiveTheme.Motion.Fast);
+    public static Transition Default => new(Crystarium.ActiveTheme.Motion.Default);
+    public static Transition Slow => new(Crystarium.ActiveTheme.Motion.Slow);
 
     /// <summary>picto --ease-default: cubic-bezier(0.4, 0, 0.22, 1) at --duration-normal (200ms).</summary>
     public static readonly Transition PictoDefault = CubicBezier(0.2f, 0.4f, 0f, 0.22f, 1f);

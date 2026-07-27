@@ -18,7 +18,7 @@ public static partial class Crystarium
         => CheckboxCore(id, ref value, props.Classes, props.Tooltip, props.Disabled, props.OnChange, props.Style);
 
     public static float CheckboxSize =>
-        Theme.Metrics.Control.Checkbox * ImGuiHelpers.GlobalScale;
+        Crystarium.ActiveTheme.Controls.CheckboxSize * ImGuiHelpers.GlobalScale;
 
     private static bool CheckboxCore(string id, ref bool value, StyleClassSet classes,
         string? tooltip, bool disabled, System.Action<bool>? onChange, CheckboxStyle? inline)
@@ -35,7 +35,7 @@ public static partial class Crystarium
         if (pre.Display == UI.Display.None) return false;
 
         float scale = ImGuiHelpers.GlobalScale;
-        float size = (pre.Size ?? Sizing.Fixed(Theme.Metrics.Control.Checkbox)).Value * scale;
+        float size = (pre.Size ?? Sizing.Fixed(Crystarium.ActiveTheme.Controls.CheckboxSize)).Value * scale;
         size = SizeUtil.Clamp(size, pre.MinSize, pre.MaxSize, scale);
 
         var hit = Interactive.Reserve(id, new Vector2(size, size), disabled, Norvrandt.AvailableHeight);
@@ -55,17 +55,17 @@ public static partial class Crystarium
         var drawList = ImGui.GetWindowDrawList();
         float rounding = (resolved.BorderRadius ?? 2f) * scale;
 
-        var bg = resolved.BackgroundColor ?? (hovered ? ImGui.GetStyle().Colors[(int)ImGuiCol.FrameBgHovered] : Norvrandt.Sheet.CurrentTheme.SurfaceSunken);
+        var bg = resolved.BackgroundColor ?? (hovered ? ImGui.GetStyle().Colors[(int)ImGuiCol.FrameBgHovered] : Crystarium.ActiveTheme.SurfaceSunken);
         bg = ColorEx.ApplyAlpha(bg);
-        if (disabled) bg.W *= resolved.Opacity ?? 0.4f;
+        if (disabled) bg.W *= resolved.Opacity ?? Crystarium.ActiveTheme.Chrome.DisabledOpacity;
         drawList.AddRectFilled(pos, end, ImGui.ColorConvertFloat4ToU32(bg), rounding);
 
         float borderWidth = (resolved.BorderWidth ?? 1f) * scale;
         if (borderWidth > 0f)
         {
-            var borderColor = resolved.BorderColor ?? Theme.Palette.Black;
+            var borderColor = resolved.BorderColor ?? Crystarium.ActiveTheme.Palette.Black;
             var borderU = ColorEx.ApplyAlpha(borderColor);
-            if (disabled) borderU.W *= 0.4f;
+            if (disabled) borderU.W *= Crystarium.ActiveTheme.Chrome.DisabledOpacity;
             // Stroke inset by half thickness — the border paints fully inside the box
             // like CSS `outline-offset: -1px` (picto .checkBox).
             float bi = borderWidth * 0.5f;
@@ -78,8 +78,8 @@ public static partial class Crystarium
         // caps) at 10/14 of the box, matching picto FolderTree's <IconCheck size={10}/>.
         if (value)
         {
-            var fillColor = ColorEx.ApplyAlpha(resolved.CheckmarkColor ?? Theme.Palette.White);
-            if (disabled) fillColor.W *= 0.4f;
+            var fillColor = ColorEx.ApplyAlpha(resolved.CheckmarkColor ?? Crystarium.ActiveTheme.Palette.White);
+            if (disabled) fillColor.W *= Crystarium.ActiveTheme.Chrome.DisabledOpacity;
             uint fill = ImGui.ColorConvertFloat4ToU32(fillColor);
 
             float iconSpan = size * (10f / 14f);

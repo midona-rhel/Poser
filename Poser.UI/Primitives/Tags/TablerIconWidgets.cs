@@ -21,7 +21,7 @@ public static partial class Crystarium
         }
         var pos = ImGui.GetCursorScreenPos();
         var max = pos + new Vector2(size, size);
-        var tint = color ?? Norvrandt.Sheet.CurrentTheme.Text;
+        var tint = color ?? Crystarium.ActiveTheme.Text;
         doc.Render(ImGui.GetWindowDrawList(), pos, max, tint, flipX);
         ImGui.Dummy(new Vector2(size, size));
     }
@@ -37,7 +37,7 @@ public static partial class Crystarium
         }
         var pos = ImGui.GetCursorScreenPos();
         var max = pos + new Vector2(size, size);
-        var tint = color ?? Norvrandt.Sheet.CurrentTheme.Text;
+        var tint = color ?? Crystarium.ActiveTheme.Text;
         doc.Render(ImGui.GetWindowDrawList(), pos, max, tint);
         ImGui.Dummy(new Vector2(size, size));
     }
@@ -46,16 +46,29 @@ public static partial class Crystarium
     /// Square button with a centered Tabler icon. Mirrors <see cref="IconButton(Dalamud.Interface.FontAwesomeIcon)"/>
     /// but uses SVG rendering instead of FontAwesome glyphs.
     /// </summary>
-    public static bool IconButton(TablerIcon icon)
-        => IconButtonTablerCore(icon, default, null, null, null, false, null);
-    public static bool IconButton(TablerIcon icon, Action onClick)
-        => IconButtonTablerCore(icon, default, null, null, onClick, false, null);
-    public static bool IconButton(TablerIcon icon, string tooltip)
-        => IconButtonTablerCore(icon, default, null, tooltip, null, false, null);
-    public static bool IconButton(TablerIcon icon, string tooltip, Action onClick)
-        => IconButtonTablerCore(icon, default, null, tooltip, onClick, false, null);
-    public static bool IconButton(TablerIcon icon, in ButtonProps props)
-        => IconButtonTablerCore(icon, props.Classes, props.Id, props.Tooltip, props.OnClick, props.Disabled, props.Style, props.FlipX);
+    public static bool IconButton(
+        TablerIcon icon,
+        Action? onClick = null,
+        string? id = null,
+        string? help = null,
+        bool disabled = false,
+        ControlDensity density = ControlDensity.Comfortable,
+        float? size = null,
+        bool flipX = false)
+    {
+        ButtonStyle? style = size is { } fixedSize
+            ? new ButtonStyle { Width = fixedSize, Height = fixedSize }
+            : null;
+        return IconButtonTablerCore(
+            icon,
+            DensityClasses(density),
+            id,
+            help,
+            onClick,
+            disabled,
+            style,
+            flipX);
+    }
 
     private static bool IconButtonTablerCore(TablerIcon icon, StyleClassSet classes, string? id, string? tooltip,
         Action? onClick, bool disabled, ButtonStyle? inline, bool flipX = false)
@@ -68,9 +81,9 @@ public static partial class Crystarium
         if (pre.Display == UI.Display.None) return false;
 
         float scale = ImGuiHelpers.GlobalScale;
-        var theme = Norvrandt.Sheet.CurrentTheme;
-        float side = (pre.Width ?? Sizing.Fixed(Theme.Metrics.Control.Comfortable)).Value * scale;
-        float h = (pre.Height ?? Sizing.Fixed(Theme.Metrics.Control.Comfortable)).Value * scale;
+        var theme = Crystarium.ActiveTheme;
+        float side = (pre.Width ?? Sizing.Fixed(Crystarium.ActiveTheme.Controls.ComfortableHeight)).Value * scale;
+        float h = (pre.Height ?? Sizing.Fixed(Crystarium.ActiveTheme.Controls.ComfortableHeight)).Value * scale;
         side = SizeUtil.Clamp(side, pre.MinWidth, pre.MaxWidth, scale);
         h = SizeUtil.Clamp(h, pre.MinHeight, pre.MaxHeight, scale);
 
@@ -81,14 +94,14 @@ public static partial class Crystarium
         if (inline.HasValue) resolved = resolved.MergedWith(inline.Value);
 
         var elemStyle = resolved.ToElementStyle();
-        if (hit.Disabled) elemStyle.Opacity = elemStyle.Opacity ?? 0.4f;
+        if (hit.Disabled) elemStyle.Opacity = elemStyle.Opacity ?? Crystarium.ActiveTheme.Chrome.DisabledOpacity;
         ChromeBuilder.Paint(hit.ScreenMin, hit.ScreenMax, elemStyle, ChromeBuilder.LiveButtonBg(hit.State));
 
         // Render the SVG icon centered, ~70% of the button's smaller side.
         var doc = Tabler.Get(icon);
         if (doc != null)
         {
-            float iconSize = MathF.Min(side, h) * 0.7f;
+            float iconSize = MathF.Min(side, h) * Crystarium.ActiveTheme.Controls.IconContentScale;
             var iconPos = hit.ScreenMin + (new Vector2(side, h) - new Vector2(iconSize, iconSize)) * 0.5f;
             var iconMax = iconPos + new Vector2(iconSize, iconSize);
             var tint = resolved.Color ?? theme.Text;
@@ -116,7 +129,7 @@ public static partial class Crystarium
         if (pre.Display == UI.Display.None) return false;
 
         float scale = ImGuiHelpers.GlobalScale;
-        float size = (pre.Size ?? Sizing.Fixed(Theme.Metrics.Control.Comfortable)).Value * scale;
+        float size = (pre.Size ?? Sizing.Fixed(Crystarium.ActiveTheme.Controls.ComfortableHeight)).Value * scale;
         size = SizeUtil.Clamp(size, pre.MinSize, pre.MaxSize, scale);
 
         var hit = Interactive.Reserve(id, new Vector2(size, size), false, Norvrandt.AvailableHeight);
@@ -138,7 +151,7 @@ public static partial class Crystarium
             float iconSize = size * 0.7f;
             var iconPos = hit.ScreenMin + new Vector2((size - iconSize) * 0.5f, (size - iconSize) * 0.5f);
             doc.Render(ImGui.GetWindowDrawList(), iconPos, iconPos + new Vector2(iconSize, iconSize),
-                resolved.Color ?? Norvrandt.Sheet.CurrentTheme.Text);
+                resolved.Color ?? Crystarium.ActiveTheme.Text);
         }
 
         if (hit.Hovered && !string.IsNullOrEmpty(tooltip))
@@ -156,7 +169,7 @@ public static partial class Crystarium
         if (pre.Display == UI.Display.None) return false;
 
         float scale = ImGuiHelpers.GlobalScale;
-        float size = (pre.Size ?? Sizing.Fixed(Theme.Metrics.Control.ShellIconAction)).Value * scale;
+        float size = (pre.Size ?? Sizing.Fixed(Crystarium.ActiveTheme.Controls.ShellIconAction)).Value * scale;
         size = SizeUtil.Clamp(size, pre.MinSize, pre.MaxSize, scale);
 
         var hit = Interactive.Reserve(id, new Vector2(size, size), false, Norvrandt.AvailableHeight);
@@ -171,9 +184,9 @@ public static partial class Crystarium
         if (doc != null)
         {
             Vector4 fill;
-            if (value)         fill = resolved.OnColor    ?? Norvrandt.Sheet.CurrentTheme.Text;
-            else if (hit.Hovered) fill = resolved.HoverColor ?? new Vector4(0.8f, 0.8f, 0.8f, 0.8f);
-            else               fill = resolved.OffColor   ?? new Vector4(0.5f, 0.5f, 0.5f, 0.5f);
+            if (value)         fill = resolved.OnColor    ?? Crystarium.ActiveTheme.Text;
+            else if (hit.Hovered) fill = resolved.HoverColor ?? Crystarium.ActiveTheme.Chrome.IconHover;
+            else               fill = resolved.OffColor   ?? Crystarium.ActiveTheme.Chrome.IconOff;
 
             doc.Render(ImGui.GetWindowDrawList(), hit.ScreenMin, hit.ScreenMax, fill);
         }

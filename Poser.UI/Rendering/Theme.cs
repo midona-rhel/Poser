@@ -4,299 +4,485 @@ using System.Numerics;
 namespace Poser.UI;
 
 /// <summary>
-/// A bundle of color and size tokens used to author a stylesheet.
-///
-/// <para><b>Theme is a value, not a static.</b> Crystarium does not require one;
-/// rules can hold raw <see cref="Vector4"/> colors directly. When you do want
-/// the conventional Crystarium look, build a Theme (or start from
-/// <see cref="Default"/>) and call <c>Norvrandt.Sheet.LoadDefaults(theme)</c>.</para>
-///
-/// <para>Plugins compose their own theme from config / system colors / dark-light
-/// preference and feed it in once. Crystarium's render path reads colors from
-/// stylesheet rules — never from this struct directly — so swapping a theme just
-/// means re-running <c>LoadDefaults</c>.</para>
+/// Complete replaceable UI token value. Applying one theme replaces colors,
+/// typography, geometry, radii, shadows, motion, and optical corrections
+/// together; primitives never fall back to process-wide metric constants.
 /// </summary>
-public record struct Theme
+public readonly record struct Theme
 {
-    // ---- Backgrounds ----
-    public Vector4 Surface;
-    public Vector4 SurfaceRaised;
-    public Vector4 SurfaceSunken;
-    public Vector4 Overlay;
+    public Vector4 Surface { get; init; }
+    public Vector4 SurfaceRaised { get; init; }
+    public Vector4 SurfaceSunken { get; init; }
+    public Vector4 Overlay { get; init; }
+    public Vector4 Text { get; init; }
+    public Vector4 TextDim { get; init; }
+    public Vector4 TextMuted { get; init; }
+    public Vector4 TextInverse { get; init; }
+    public Vector4 FormLabel { get; init; }
+    public Vector4 FormHint { get; init; }
+    public Vector4 FormValue { get; init; }
+    public Vector4 FormSeparator { get; init; }
+    public Vector4 Border { get; init; }
+    public Vector4 BorderStrong { get; init; }
+    public Vector4 Accent { get; init; }
+    public Vector4 AccentHover { get; init; }
+    public Vector4 AccentActive { get; init; }
+    public Vector4 Success { get; init; }
+    public Vector4 Warning { get; init; }
+    public Vector4 Danger { get; init; }
+    public Vector4 DangerHover { get; init; }
+    public Vector4 Info { get; init; }
 
-    // ---- Text ----
-    public Vector4 Text;
-    public Vector4 TextDim;
-    public Vector4 TextMuted;
-    public Vector4 TextInverse;
+    public SpacingTokens Spacing { get; init; }
+    public ControlTokens Controls { get; init; }
+    public PageTokens Page { get; init; }
+    public FormTokens Form { get; init; }
+    public ShellTokens Shell { get; init; }
+    public ScrollbarTokens Scrollbar { get; init; }
+    public TypographyTokens Typography { get; init; }
+    public RadiusTokens Radii { get; init; }
+    public ShadowTokens Shadows { get; init; }
+    public FloatingTokens Floating { get; init; }
+    public PickerTokens Picker { get; init; }
+    public FileDialogTokens FileDialog { get; init; }
+    public OpticalTokens Optical { get; init; }
+    public MotionTokens Motion { get; init; }
+    public PaletteTokens Palette { get; init; }
+    public GlassTokens Glass { get; init; }
+    public ChromeTokens Chrome { get; init; }
+    public HoverHelpTokens HoverHelp { get; init; }
 
-    // ---- Borders ----
-    public Vector4 Border;
-    public Vector4 BorderStrong;
-
-    // ---- Brand ----
-    public Vector4 Accent;
-    public Vector4 AccentHover;
-    public Vector4 AccentActive;
-
-    // ---- Status ----
-    public Vector4 Success;
-    public Vector4 Warning;
-    public Vector4 Danger;
-    public Vector4 DangerHover;
-    public Vector4 Info;
-
-    /// <summary>Built-in neutral default. Plugins can use this as-is or tweak via <c>theme with { ... }</c>.</summary>
-    public static Theme Default => new()
+    /// <summary>The accepted Picto-derived dark foundation.</summary>
+    public static Theme PictoDark => new()
     {
-        Surface       = new(0.10f, 0.10f, 0.12f, 1f),
+        Surface = new(0.10f, 0.10f, 0.12f, 1f),
         SurfaceRaised = new(0.14f, 0.14f, 0.17f, 1f),
         SurfaceSunken = new(0.07f, 0.07f, 0.09f, 1f),
-        Overlay       = new(0.00f, 0.00f, 0.00f, 0.50f),
+        Overlay = new(0.00f, 0.00f, 0.00f, 0.50f),
+        Text = new(0.95f, 0.95f, 0.96f, 1f),
+        TextDim = new(0.65f, 0.66f, 0.70f, 1f),
+        TextMuted = new(0.45f, 0.46f, 0.50f, 1f),
+        TextInverse = new(0.05f, 0.05f, 0.06f, 1f),
+        FormLabel = new(1f, 1f, 1f, 0.50f),
+        FormHint = new(1f, 1f, 1f, 0.40f),
+        FormValue = new(1f, 1f, 1f, 0.90f),
+        FormSeparator = new(1f, 1f, 1f, 0.08f),
+        Border = new(0.25f, 0.25f, 0.30f, 1f),
+        BorderStrong = new(0.45f, 0.45f, 0.50f, 1f),
+        Accent = new(0.40f, 0.60f, 1.00f, 1f),
+        AccentHover = new(0.50f, 0.70f, 1.00f, 1f),
+        AccentActive = new(0.30f, 0.50f, 0.95f, 1f),
+        Success = new(0.30f, 0.80f, 0.40f, 1f),
+        Warning = new(1.00f, 0.70f, 0.20f, 1f),
+        Danger = new(0.90f, 0.30f, 0.30f, 1f),
+        DangerHover = new(1.00f, 0.40f, 0.40f, 1f),
+        Info = new(0.40f, 0.70f, 0.90f, 1f),
 
-        Text          = new(0.95f, 0.95f, 0.96f, 1f),
-        TextDim       = new(0.65f, 0.66f, 0.70f, 1f),
-        TextMuted     = new(0.45f, 0.46f, 0.50f, 1f),
-        TextInverse   = new(0.05f, 0.05f, 0.06f, 1f),
-
-        Border        = new(0.25f, 0.25f, 0.30f, 1f),
-        BorderStrong  = new(0.45f, 0.45f, 0.50f, 1f),
-
-        Accent        = new(0.40f, 0.60f, 1.00f, 1f),
-        AccentHover   = new(0.50f, 0.70f, 1.00f, 1f),
-        AccentActive  = new(0.30f, 0.50f, 0.95f, 1f),
-
-        Success       = new(0.30f, 0.80f, 0.40f, 1f),
-        Warning       = new(1.00f, 0.70f, 0.20f, 1f),
-        Danger        = new(0.90f, 0.30f, 0.30f, 1f),
-        DangerHover   = new(1.00f, 0.40f, 0.40f, 1f),
-        Info          = new(0.40f, 0.70f, 0.90f, 1f),
+        Spacing = new() { One = 2f, Two = 4f, Three = 6f, Four = 8f, Six = 12f, Eight = 16f },
+        Controls = new()
+        {
+            FormRowHeight = 30f,
+            WorkspaceHeight = 26f,
+            ComfortableHeight = 32f,
+            NavigationHeight = 30f,
+            ShellIconAction = 28f,
+            ListRowHeight = 26f,
+            CheckboxSize = 14f,
+            SliderHeight = 14f,
+            SliderTrackHeight = 4f,
+            SwitchWidth = 32f,
+            SwitchHeight = 20f,
+            SwitchKnobSize = 16f,
+            ColorWellSize = 26f,
+            IconSize = 16f,
+            SmallIconSize = 14f,
+            IconContentScale = 0.7f,
+        },
+        Page = new()
+        {
+            Inset = 12f,
+            MaximumContentWidth = 660f,
+            SectionGap = 12f,
+            ActionGap = 8f,
+            SectionHeaderHeight = 26f,
+            StatusLineHeight = 20f,
+        },
+        Form = new() { LabelColumnWidth = 94f, ValueColumnWidth = 44f, AxisGap = 6f },
+        Shell = new()
+        {
+            TitlebarHeight = 48f,
+            ToolbarHeight = 44f,
+            StatusbarHeight = 26f,
+            SidebarMinimumWidth = 220f,
+            SidebarMaximumWidth = 400f,
+            SidebarDefaultWidth = 280f,
+            RailWidth = 280f,
+        },
+        Scrollbar = new() { GutterWidth = 12f, Radius = 4f },
+        Typography = new() { ShortcutSize = 10f, CaptionSize = 11f, LabelSize = 12f, BodySize = 13f, SurfaceTitleSize = 14f },
+        Radii = new() { None = 0f, Small = 2f, Medium = 4f, Control = 6f, Surface = 8f, Window = 10f, Large = 12f, Pill = 999f },
+        Shadows = new()
+        {
+            Small = new(0f, 1f, 2f, new(0f, 0f, 0f, 0.15f)),
+            Medium = new(0f, 2f, 6f, new(0f, 0f, 0f, 0.20f)),
+            Large = new(0f, 4f, 12f, new(0f, 0f, 0f, 0.30f)),
+            ExtraLarge = new(0f, 8f, 24f, new(0f, 0f, 0f, 0.35f)),
+            HoverHelp = new(0f, 2f, 8f, new(0f, 0f, 0f, 0.30f)),
+            Panel = new(0f, 3f, 12f, new(0f, 0f, 0f, 0.30f)),
+            PanelRing = new(0f, 0f, 0f, new(0f, 0f, 0f, 0.50f), spread: 1f),
+            FeatherLayers = 10,
+        },
+        Floating = new()
+        {
+            AnchorGap = 2f,
+            ViewportInset = 12f,
+            HostMargin = 24f,
+            MenuWidth = 260f,
+            MenuPadding = 4f,
+            MenuRowPadding = 6f,
+            MenuRowGap = 2f,
+            MenuIconGap = 6f,
+            MenuSeparatorBlock = 5f,
+            PopupPadding = 4f,
+            PopoverPadding = 8f,
+            ModalBarHeight = 44f,
+            ModalBodyPadding = 16f,
+            HeaderInset = 16f,
+            FooterInset = 12f,
+            CloseInset = 10f,
+            CloseActionSize = 24f,
+            ColorPickerWidth = 220f,
+            ColorPickerHeight = 250f,
+            ColorPickerPadding = 10f,
+            SmallWidth = 440f,
+            MediumWidth = 560f,
+            LargeWidth = 680f,
+            DefaultModalHeight = 280f,
+        },
+        Picker = new() { Width = 300f, MinimumRows = 3, MaximumRows = 10 },
+        FileDialog = new() { Width = 680f, Height = 440f, FavoritesWidth = 128f, FileNameWidth = 220f },
+        Optical = new() { SidebarText = -1f, ButtonText = 1f, FooterLabel = -1f, DropdownText = 1f },
+        Motion = new() { Fast = 0.10f, Default = 0.20f, Slow = 0.40f, MenuExit = 0.08f, HoverOpenDelay = 0.40f, HoverPop = 0.15f },
+        Palette = new()
+        {
+            Black = new(0f, 0f, 0f, 1f),
+            White = new(1f, 1f, 1f, 1f),
+            Red = new(1f, 0f, 0f, 1f),
+            Green = new(0f, 1f, 0f, 1f),
+            Blue = new(0f, 0f, 1f, 1f),
+            Yellow = new(1f, 1f, 0f, 1f),
+            Purple = new(0.5f, 0f, 0.5f, 1f),
+            Orange = new(1f, 0.5f, 0f, 1f),
+            Gray = new(0.5f, 0.5f, 0.5f, 1f),
+            Primary = new(50f / 255f, 151f / 255f, 255f / 255f, 1f),
+            AxisX = new(1f, 107f / 255f, 122f / 255f, 1f),
+            AxisY = new(126f / 255f, 211f / 255f, 160f / 255f, 1f),
+            AxisZ = new(109f / 255f, 179f / 255f, 1f, 1f),
+        },
+        Glass = new()
+        {
+            Background = new(34f / 255f, 35f / 255f, 38f / 255f, 0.97f),
+            BlurBackground = new(36f / 255f, 37f / 255f, 40f / 255f, 0.92f),
+            BorderTop = new(1f, 1f, 1f, 0.25f),
+            BorderSide = new(1f, 1f, 1f, 0.12f),
+            BorderBottom = new(0f, 0f, 0f, 0.20f),
+            Luminosity = new(0f, 0f, 0f, 0.30f),
+        },
+        Chrome = new()
+        {
+            Text = new(1f, 1f, 1f, 1f),
+            TextMuted = new(1f, 1f, 1f, 0.60f),
+            ControlBorder = new(1f, 1f, 1f, 0.14f),
+            ControlFill = new(248f / 255f, 249f / 255f, 251f / 255f, 0.05f),
+            ControlHover = new(1f, 1f, 1f, 0.10f),
+            WeakOverlay = new(1f, 1f, 1f, 0.08f),
+            InputWell = new(0f, 0f, 0f, 0.20f),
+            Primary = new(50f / 255f, 151f / 255f, 255f / 255f, 1f),
+            PrimaryHover = new(50f / 255f, 151f / 255f, 255f / 255f, 0.60f),
+            PrimaryFocus = new(50f / 255f, 151f / 255f, 255f / 255f, 0.50f),
+            Checkmark = new(1f, 1f, 1f, 0.99f),
+            Danger = new(1f, 71f / 255f, 87f / 255f, 1f),
+            DangerHover = new(1f, 71f / 255f, 87f / 255f, 0.12f),
+            UnavailableFill = new(0f, 0f, 0f, 0.12f),
+            ColorWellBorder = new(1f, 1f, 1f, 0.14f),
+            PickerWell = new(24f / 255f, 25f / 255f, 27f / 255f, 1f),
+            PickerBorder = new(1f, 1f, 1f, 0.18f),
+            ModalDim = new(0f, 0f, 0f, 0.55f),
+            ModalFooter = new(0f, 0f, 0f, 0.10f),
+            SegmentShadow = new(0f, 0f, 0f, 0.25f),
+            SegmentSelected = new(42f / 255f, 42f / 255f, 46f / 255f, 1f),
+            SidebarSelected = new(50f / 255f, 151f / 255f, 255f / 255f, 0.10f),
+            SidebarSelectedBorder = new(50f / 255f, 151f / 255f, 255f / 255f, 0.30f),
+            SidebarHover = new(248f / 255f, 249f / 255f, 251f / 255f, 0.10f),
+            SwitchOff = new(128f / 255f, 128f / 255f, 128f / 255f, 0.25f),
+            SwitchShadow = new(0f, 0f, 0f, 0.08f),
+            SwitchHighlight = new(0f, 0f, 0f, 0.10f),
+            IconHover = new(0.8f, 0.8f, 0.8f, 0.8f),
+            IconOff = new(0.5f, 0.5f, 0.5f, 0.5f),
+            DisabledOpacity = 0.40f,
+            ControlDisabledOpacity = 0.35f,
+        },
+        HoverHelp = new()
+        {
+            TargetOffset = 6f,
+            CardHeight = 24f,
+            PaddingX = 6f,
+            ContentGap = 4f,
+            BadgeHeight = 16f,
+            BadgeMinimumWidth = 16f,
+            BadgePaddingX = 4f,
+            PopRise = 10f,
+            PopScaleOut = 0.9f,
+        },
     };
 
-    /// <summary>
-    /// Canonical logical-pixel metrics for every retained UI surface. Product
-    /// code requests a semantic variant; it never repeats these values.
-    /// </summary>
-    public static class Metrics
+    public static Theme Default => PictoDark;
+
+    public readonly record struct SpacingTokens
     {
-        public static class Space
-        {
-            public const float One = 2f;
-            public const float Two = 4f;
-            public const float Three = 6f;
-            public const float Four = 8f;
-            public const float Six = 12f;
-            public const float Eight = 16f;
-        }
-
-        public static class Control
-        {
-            public const float FormRow = 30f;
-            public const float Workspace = 26f;
-            public const float Comfortable = 32f;
-            public const float Navigation = 30f;
-            public const float ShellIconAction = 28f;
-            public const float ListRow = 26f;
-            public const float Checkbox = 14f;
-            public const float Slider = 14f;
-            public const float SliderTrack = 4f;
-            public const float SwitchWidth = 32f;
-            public const float SwitchHeight = 20f;
-            public const float SwitchKnob = 16f;
-            public const float ColorWell = 26f;
-            public const float Icon = 16f;
-            public const float SmallIcon = 14f;
-        }
-
-        public static class Page
-        {
-            public const float Inset = Space.Six;
-            public const float MaximumContentWidth = 660f;
-            public const float SectionGap = Space.Six;
-            public const float ActionGap = Space.Four;
-            public const float SectionHeader = Control.ListRow;
-            public const float StatusLine = 20f;
-        }
-
-        public static class Form
-        {
-            public const float LabelColumn = 94f;
-            public const float ValueColumn = 44f;
-            public const float AxisGap = Space.Three;
-        }
-
-        public static class Shell
-        {
-            public const float Titlebar = 48f;
-            public const float Toolbar = 44f;
-            public const float Statusbar = 26f;
-            public const float SidebarMinimum = 220f;
-            public const float SidebarMaximum = 400f;
-            public const float SidebarDefault = 280f;
-            public const float RailWidth = 280f;
-        }
-
-        public static class Scrollbar
-        {
-            public const float Gutter = 12f;
-            public const float Radius = 4f;
-        }
-
-        public static class Typography
-        {
-            public const float Caption = 11f;
-            public const float Label = 12f;
-            public const float Body = 13f;
-            public const float SurfaceTitle = 14f;
-        }
-
-        public static class Radius
-        {
-            public const float None = 0f;
-            public const float Small = 2f;
-            public const float Medium = 4f;
-            public const float Control = 6f;
-            public const float Surface = 8f;
-            public const float Window = 10f;
-            public const float Large = 12f;
-            public const float Pill = 999f;
-        }
-
-        public static class Shadow
-        {
-            public const float PanelOffsetY = 3f;
-            public const float PanelBlur = 12f;
-            public const float PanelRing = 1f;
-            public const int FeatherLayers = 10;
-        }
-
-        public static class Floating
-        {
-            public const float AnchorGap = Space.One;
-            public const float ViewportInset = Space.Six;
-            public const float HostMargin = 24f;
-            public const float MenuWidth = 260f;
-            public const float MenuPadding = Space.Two;
-            public const float MenuRowPadding = Space.Three;
-            public const float MenuRowGap = Space.One;
-            public const float MenuIconGap = Space.Three;
-            public const float MenuSeparatorBlock = 5f;
-            public const float PopupPadding = Space.Two;
-            public const float PopoverPadding = Space.Four;
-            public const float ModalBar = 44f;
-            public const float ModalBodyPadding = Space.Eight;
-            public const float HeaderInset = Space.Eight;
-            public const float FooterInset = Space.Six;
-            public const float CloseInset = 10f;
-            public const float CloseAction = 24f;
-            public const float ColorPickerWidth = 220f;
-            public const float ColorPickerHeight = 250f;
-            public const float ColorPickerPadding = 10f;
-            public const float SmallWidth = 440f;
-            public const float MediumWidth = 560f;
-            public const float LargeWidth = 680f;
-            public const float DefaultModalHeight = 280f;
-        }
-
-        public static class Picker
-        {
-            public const float Width = 300f;
-            public const int MinimumRows = 3;
-            public const int MaximumRows = 10;
-        }
-
-        public static class FileDialog
-        {
-            public const float Width = 680f;
-            public const float Height = 440f;
-            public const float FavoritesWidth = 128f;
-            public const float FileNameWidth = 220f;
-        }
-
-        public static class Optical
-        {
-            public const float SidebarText = -1f;
-            public const float ButtonText = 1f;
-            public const float FooterLabel = -1f;
-            public const float DropdownText = 1f;
-
-            public static Vector2 Snap(Vector2 position) =>
-                new(MathF.Round(position.X), MathF.Round(position.Y));
-        }
-
-        public static class Motion
-        {
-            public const float Fast = 0.10f;
-            public const float Default = 0.20f;
-            public const float Slow = 0.40f;
-            public const float MenuExit = 0.08f;
-        }
+        public float One { get; init; }
+        public float Two { get; init; }
+        public float Three { get; init; }
+        public float Four { get; init; }
+        public float Six { get; init; }
+        public float Eight { get; init; }
     }
 
-    public static class Shadow
+    public readonly record struct ControlTokens
     {
-        public static BoxShadow Sm => new(0f, 1f, 2f, new Vector4(0f, 0f, 0f, 0.15f));
-        public static BoxShadow Md => new(0f, 2f, 6f, new Vector4(0f, 0f, 0f, 0.20f));
-        public static BoxShadow Lg => new(0f, 4f, 12f, new Vector4(0f, 0f, 0f, 0.30f));
-        public static BoxShadow Xl => new(0f, 8f, 24f, new Vector4(0f, 0f, 0f, 0.35f));
-
-        public static BoxShadow Glow(Vector4 color, float blur = 8f, float spread = 2f)
-            => BoxShadow.Glow(color, blur, spread);
+        public float FormRowHeight { get; init; }
+        public float WorkspaceHeight { get; init; }
+        public float ComfortableHeight { get; init; }
+        public float NavigationHeight { get; init; }
+        public float ShellIconAction { get; init; }
+        public float ListRowHeight { get; init; }
+        public float CheckboxSize { get; init; }
+        public float SliderHeight { get; init; }
+        public float SliderTrackHeight { get; init; }
+        public float SwitchWidth { get; init; }
+        public float SwitchHeight { get; init; }
+        public float SwitchKnobSize { get; init; }
+        public float ColorWellSize { get; init; }
+        public float IconSize { get; init; }
+        public float SmallIconSize { get; init; }
+        public float IconContentScale { get; init; }
     }
 
-    /// <summary>
-    /// picto glass-surface tokens (tokens.css --glass-*). ImGui cannot backdrop-blur, so
-    /// <see cref="Bg"/> is the precomposited value of surface-1@92% over 0.7-brightness
-    /// bg-app — pixel-identical over app surfaces, non-blurred over the 3D scene
-    /// (documented deviation). Border trio renders via per-side border colors.
-    /// </summary>
-    public static class Glass
+    public readonly record struct PageTokens
     {
-        /// <summary>Precomposite of 0.92·surface-1(36,37,40) + 0.08·(0.7·bg-app(24,25,27)) ≈ rgb(34,35,38); slight alpha lets a hint of the scene through.</summary>
-        public static readonly Vector4 Bg = new(34f / 255f, 35f / 255f, 38f / 255f, 0.97f);
-        public static readonly Vector4 BorderTop = new(1f, 1f, 1f, 0.25f);
-        public static readonly Vector4 BorderSide = new(1f, 1f, 1f, 0.12f);
-        public static readonly Vector4 BorderBottom = new(0f, 0f, 0f, 0.20f);
-
-        /// <summary>tokens.css --shadow-panel: 0 3px 12px rgba(0,0,0,.3) + 0 0 0 1px rgba(0,0,0,.5).</summary>
-        public static BoxShadow[] ShadowPanel => new[]
-        {
-            new BoxShadow(
-                0f,
-                Metrics.Shadow.PanelOffsetY,
-                Metrics.Shadow.PanelBlur,
-                new Vector4(0f, 0f, 0f, 0.30f)),
-            new BoxShadow(
-                0f,
-                0f,
-                0f,
-                new Vector4(0f, 0f, 0f, 0.50f),
-                spread: Metrics.Shadow.PanelRing),
-        };
+        public float Inset { get; init; }
+        public float MaximumContentWidth { get; init; }
+        public float SectionGap { get; init; }
+        public float ActionGap { get; init; }
+        public float SectionHeaderHeight { get; init; }
+        public float StatusLineHeight { get; init; }
     }
 
-    /// <summary>Invariant palette helpers — pure red is pure red regardless of theme.</summary>
-    public static class Palette
+    public readonly record struct FormTokens
     {
-        public static readonly Vector4 Black  = new(0f, 0f, 0f, 1f);
-        public static readonly Vector4 White  = new(1f, 1f, 1f, 1f);
-        public static readonly Vector4 Red    = new(1f, 0f, 0f, 1f);
-        public static readonly Vector4 Green  = new(0f, 1f, 0f, 1f);
-        public static readonly Vector4 Blue   = new(0f, 0f, 1f, 1f);
-        public static readonly Vector4 Yellow = new(1f, 1f, 0f, 1f);
-        public static readonly Vector4 Purple = new(0.5f, 0f, 0.5f, 1f);
-        public static readonly Vector4 Orange = new(1f, 0.5f, 0f, 1f);
-        public static readonly Vector4 Gray   = new(0.5f, 0.5f, 0.5f, 1f);
+        public float LabelColumnWidth { get; init; }
+        public float ValueColumnWidth { get; init; }
+        public float AxisGap { get; init; }
+    }
 
-        /// <summary>picto --color-primary #3297FF — the brand blue the
-        /// transcriptions share (slider fill, focus accents).</summary>
-        public static readonly Vector4 Primary = new(50f / 255f, 151f / 255f, 255f / 255f, 1f);
+    public readonly record struct ShellTokens
+    {
+        public float TitlebarHeight { get; init; }
+        public float ToolbarHeight { get; init; }
+        public float StatusbarHeight { get; init; }
+        public float SidebarMinimumWidth { get; init; }
+        public float SidebarMaximumWidth { get; init; }
+        public float SidebarDefaultWidth { get; init; }
+        public float RailWidth { get; init; }
+    }
 
-        // Shared transform-axis palette: every axis-colored surface (toolbar
-        // axis wells, rotation ball, gizmo accents) consumes these — one
-        // definition, no per-pane copies.
-        public static readonly Vector4 AxisX = new(1f, 107f / 255f, 122f / 255f, 1f);
-        public static readonly Vector4 AxisY = new(126f / 255f, 211f / 255f, 160f / 255f, 1f);
-        public static readonly Vector4 AxisZ = new(109f / 255f, 179f / 255f, 1f, 1f);
+    public readonly record struct ScrollbarTokens
+    {
+        public float GutterWidth { get; init; }
+        public float Radius { get; init; }
+    }
+
+    public readonly record struct TypographyTokens
+    {
+        public float ShortcutSize { get; init; }
+        public float CaptionSize { get; init; }
+        public float LabelSize { get; init; }
+        public float BodySize { get; init; }
+        public float SurfaceTitleSize { get; init; }
+    }
+
+    public readonly record struct RadiusTokens
+    {
+        public float None { get; init; }
+        public float Small { get; init; }
+        public float Medium { get; init; }
+        public float Control { get; init; }
+        public float Surface { get; init; }
+        public float Window { get; init; }
+        public float Large { get; init; }
+        public float Pill { get; init; }
+    }
+
+    public readonly record struct ShadowTokens
+    {
+        public BoxShadow Small { get; init; }
+        public BoxShadow Medium { get; init; }
+        public BoxShadow Large { get; init; }
+        public BoxShadow ExtraLarge { get; init; }
+        public BoxShadow HoverHelp { get; init; }
+        public BoxShadow Panel { get; init; }
+        public BoxShadow PanelRing { get; init; }
+        public int FeatherLayers { get; init; }
+    }
+
+    public readonly record struct FloatingTokens
+    {
+        public float AnchorGap { get; init; }
+        public float ViewportInset { get; init; }
+        public float HostMargin { get; init; }
+        public float MenuWidth { get; init; }
+        public float MenuPadding { get; init; }
+        public float MenuRowPadding { get; init; }
+        public float MenuRowGap { get; init; }
+        public float MenuIconGap { get; init; }
+        public float MenuSeparatorBlock { get; init; }
+        public float PopupPadding { get; init; }
+        public float PopoverPadding { get; init; }
+        public float ModalBarHeight { get; init; }
+        public float ModalBodyPadding { get; init; }
+        public float HeaderInset { get; init; }
+        public float FooterInset { get; init; }
+        public float CloseInset { get; init; }
+        public float CloseActionSize { get; init; }
+        public float ColorPickerWidth { get; init; }
+        public float ColorPickerHeight { get; init; }
+        public float ColorPickerPadding { get; init; }
+        public float SmallWidth { get; init; }
+        public float MediumWidth { get; init; }
+        public float LargeWidth { get; init; }
+        public float DefaultModalHeight { get; init; }
+    }
+
+    public readonly record struct PickerTokens
+    {
+        public float Width { get; init; }
+        public int MinimumRows { get; init; }
+        public int MaximumRows { get; init; }
+    }
+
+    public readonly record struct FileDialogTokens
+    {
+        public float Width { get; init; }
+        public float Height { get; init; }
+        public float FavoritesWidth { get; init; }
+        public float FileNameWidth { get; init; }
+    }
+
+    public readonly record struct OpticalTokens
+    {
+        public float SidebarText { get; init; }
+        public float ButtonText { get; init; }
+        public float FooterLabel { get; init; }
+        public float DropdownText { get; init; }
+
+        public Vector2 Snap(Vector2 position) =>
+            new(MathF.Round(position.X), MathF.Round(position.Y));
+    }
+
+    public readonly record struct MotionTokens
+    {
+        public float Fast { get; init; }
+        public float Default { get; init; }
+        public float Slow { get; init; }
+        public float MenuExit { get; init; }
+        public float HoverOpenDelay { get; init; }
+        public float HoverPop { get; init; }
+    }
+
+    public readonly record struct PaletteTokens
+    {
+        public Vector4 Black { get; init; }
+        public Vector4 White { get; init; }
+        public Vector4 Red { get; init; }
+        public Vector4 Green { get; init; }
+        public Vector4 Blue { get; init; }
+        public Vector4 Yellow { get; init; }
+        public Vector4 Purple { get; init; }
+        public Vector4 Orange { get; init; }
+        public Vector4 Gray { get; init; }
+        public Vector4 Primary { get; init; }
+        public Vector4 AxisX { get; init; }
+        public Vector4 AxisY { get; init; }
+        public Vector4 AxisZ { get; init; }
+    }
+
+    public readonly record struct GlassTokens
+    {
+        public Vector4 Background { get; init; }
+        public Vector4 BlurBackground { get; init; }
+        public Vector4 BorderTop { get; init; }
+        public Vector4 BorderSide { get; init; }
+        public Vector4 BorderBottom { get; init; }
+        public Vector4 Luminosity { get; init; }
+    }
+
+    public readonly record struct ChromeTokens
+    {
+        public Vector4 Text { get; init; }
+        public Vector4 TextMuted { get; init; }
+        public Vector4 ControlBorder { get; init; }
+        public Vector4 ControlFill { get; init; }
+        public Vector4 ControlHover { get; init; }
+        public Vector4 WeakOverlay { get; init; }
+        public Vector4 InputWell { get; init; }
+        public Vector4 Primary { get; init; }
+        public Vector4 PrimaryHover { get; init; }
+        public Vector4 PrimaryFocus { get; init; }
+        public Vector4 Checkmark { get; init; }
+        public Vector4 Danger { get; init; }
+        public Vector4 DangerHover { get; init; }
+        public Vector4 UnavailableFill { get; init; }
+        public Vector4 ColorWellBorder { get; init; }
+        public Vector4 PickerWell { get; init; }
+        public Vector4 PickerBorder { get; init; }
+        public Vector4 ModalDim { get; init; }
+        public Vector4 ModalFooter { get; init; }
+        public Vector4 SegmentShadow { get; init; }
+        public Vector4 SegmentSelected { get; init; }
+        public Vector4 SidebarSelected { get; init; }
+        public Vector4 SidebarSelectedBorder { get; init; }
+        public Vector4 SidebarHover { get; init; }
+        public Vector4 SwitchOff { get; init; }
+        public Vector4 SwitchShadow { get; init; }
+        public Vector4 SwitchHighlight { get; init; }
+        public Vector4 IconHover { get; init; }
+        public Vector4 IconOff { get; init; }
+        public float DisabledOpacity { get; init; }
+        public float ControlDisabledOpacity { get; init; }
+    }
+
+    public readonly record struct HoverHelpTokens
+    {
+        public float TargetOffset { get; init; }
+        public float CardHeight { get; init; }
+        public float PaddingX { get; init; }
+        public float ContentGap { get; init; }
+        public float BadgeHeight { get; init; }
+        public float BadgeMinimumWidth { get; init; }
+        public float BadgePaddingX { get; init; }
+        public float PopRise { get; init; }
+        public float PopScaleOut { get; init; }
+    }
+}
+
+public static partial class Crystarium
+{
+    public static Theme ActiveTheme { get; private set; } = Theme.PictoDark;
+
+    /// <summary>Atomically replaces the full token value and its derived rules.</summary>
+    public static void UseTheme(Theme theme)
+    {
+        ActiveTheme = theme;
+        Stylesheet.Reset();
     }
 }

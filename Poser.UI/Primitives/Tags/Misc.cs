@@ -17,6 +17,27 @@ public static partial class Crystarium
     public static void Text(string text, in TextProps props)
         => TextCore(text, props.Classes, props.Style);
 
+    public static void Text(string text, float size, FontWeight weight,
+        Vector4 color, bool mono = false, bool wrap = false)
+    {
+        Norvrandt.Element(new ElementProps
+        {
+            Style = new ElementStyle
+            {
+                FontSize = size,
+                FontWeight = weight,
+                FontFamily = mono ? FontFamily.Mono : FontFamily.Default,
+            },
+        }, () => Text(text, new TextProps
+        {
+            Style = new TextStyle
+            {
+                Color = color,
+                WhiteSpace = wrap ? UI.WhiteSpace.Normal : UI.WhiteSpace.Nowrap,
+            },
+        }));
+    }
+
     private static void TextCore(string text, StyleClassSet classes, TextStyle? inline)
     {
         Stylesheet.EnsureInitialized();
@@ -77,7 +98,7 @@ public static partial class Crystarium
         var origin = ImGui.GetCursorScreenPos();
         var boxMax = origin + new Vector2(maxPx, size.Y);
 
-        var defaultColor = ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Norvrandt.Sheet.CurrentTheme.Text));
+        var defaultColor = ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Text));
         TextRenderer.Draw(ImGui.GetWindowDrawList(), origin, boxMax, text, textElemStyle, defaultColor);
 
         ImGui.Dummy(new Vector2(maxPx, size.Y));
@@ -94,7 +115,7 @@ public static partial class Crystarium
         // Vertical centering inside the cell.
         if (cellH > size.Y) origin.Y += (cellH - size.Y) * 0.5f;
         var boxMax = origin + new Vector2(cellW, size.Y);
-        var defaultColor = ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Norvrandt.Sheet.CurrentTheme.Text));
+        var defaultColor = ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Text));
         TextRenderer.Draw(ImGui.GetWindowDrawList(), origin, boxMax, text, style, defaultColor);
     }
 

@@ -51,7 +51,7 @@ public static partial class Crystarium
         // hit rect so clicking the number cannot jump the thumb.
         float reserve = 0f;
         string? readout = null;
-        var monoFont = FontRegistry.Resolve(FontFamily.Mono, Theme.Metrics.Typography.Caption);
+        var monoFont = FontRegistry.Resolve(FontFamily.Mono, Crystarium.ActiveTheme.Typography.CaptionSize);
         bool monoAvailable = monoFont is { Available: true };
         if (!string.IsNullOrEmpty(format))
         {
@@ -65,11 +65,11 @@ public static partial class Crystarium
 
         // Hit rect = thumb height (14px) across the full width.
         var size = new Vector2(
-            MathF.Max(Theme.Metrics.Control.SwitchHeight * scale, widthPx - reserve),
-            Theme.Metrics.Control.Slider * scale);
+            MathF.Max(Crystarium.ActiveTheme.Controls.SwitchHeight * scale, widthPx - reserve),
+            Crystarium.ActiveTheme.Controls.SliderHeight * scale);
         var hit = Interactive.Reserve(id, size, disabled, Norvrandt.AvailableHeight);
 
-        float half = Theme.Metrics.Control.Slider * 0.5f * scale;
+        float half = Crystarium.ActiveTheme.Controls.SliderHeight * 0.5f * scale;
         float x0 = hit.ScreenMin.X + half;
         float x1 = hit.ScreenMax.X - half;
 
@@ -89,25 +89,25 @@ public static partial class Crystarium
         float pos = max > min ? Math.Clamp((value - min) / (max - min), 0f, 1f) : 0f;
         float thumbX = x0 + pos * (x1 - x0);
 
-        var track = resolved.BackgroundColor ?? new Vector4(1f, 1f, 1f, 0.14f);
+        var track = resolved.BackgroundColor ?? Crystarium.ActiveTheme.Chrome.ControlBorder;
         track.W *= alpha;
         dl.AddRectFilled(
-            new Vector2(hit.ScreenMin.X, cy - Theme.Metrics.Control.SliderTrack * 0.5f * scale),
-            new Vector2(hit.ScreenMax.X, cy + Theme.Metrics.Control.SliderTrack * 0.5f * scale),
+            new Vector2(hit.ScreenMin.X, cy - Crystarium.ActiveTheme.Controls.SliderTrackHeight * 0.5f * scale),
+            new Vector2(hit.ScreenMax.X, cy + Crystarium.ActiveTheme.Controls.SliderTrackHeight * 0.5f * scale),
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(track)),
-            Theme.Metrics.Control.SliderTrack * 0.5f * scale);
+            Crystarium.ActiveTheme.Controls.SliderTrackHeight * 0.5f * scale);
 
         // Filled segment: minimum → value in the primary blue; the
         // remainder above stays neutral.
         if (thumbX - hit.ScreenMin.X > 1f * scale)
         {
-            var fill = Theme.Palette.Primary;
+            var fill = Crystarium.ActiveTheme.Palette.Primary;
             fill.W *= alpha;
             dl.AddRectFilled(
-                new Vector2(hit.ScreenMin.X, cy - Theme.Metrics.Control.SliderTrack * 0.5f * scale),
-                new Vector2(thumbX, cy + Theme.Metrics.Control.SliderTrack * 0.5f * scale),
+                new Vector2(hit.ScreenMin.X, cy - Crystarium.ActiveTheme.Controls.SliderTrackHeight * 0.5f * scale),
+                new Vector2(thumbX, cy + Crystarium.ActiveTheme.Controls.SliderTrackHeight * 0.5f * scale),
                 ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(fill)),
-                Theme.Metrics.Control.SliderTrack * 0.5f * scale);
+                Crystarium.ActiveTheme.Controls.SliderTrackHeight * 0.5f * scale);
         }
 
         // Notch marks cross the track at fixed values (no snapping), so the
@@ -127,7 +127,7 @@ public static partial class Crystarium
         }
 
         // thumb: 14px circle, solid white over the fill boundary
-        var thumb = resolved.GrabColor ?? Theme.Palette.White;
+        var thumb = resolved.GrabColor ?? Crystarium.ActiveTheme.Palette.White;
         thumb.W *= alpha;
         dl.AddCircleFilled(new Vector2(thumbX, cy), half,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(thumb)), 32);
@@ -136,7 +136,7 @@ public static partial class Crystarium
         {
             if (monoAvailable) monoFont!.Push();
             var textSize = ImGui.CalcTextSize(readout);
-            var textColor = resolved.Color ?? Norvrandt.Sheet.CurrentTheme.Text;
+            var textColor = resolved.Color ?? Crystarium.ActiveTheme.Text;
             textColor.W *= alpha;
             dl.AddText(
                 new Vector2(hit.ScreenMax.X + 8f * scale, cy - textSize.Y * 0.5f),

@@ -33,14 +33,21 @@ public static partial class Crystarium
             float rounding) =>
             GlassChrome.PrependBlur(drawList, min, max, rounding);
 
+        public static void DrawBorder(Vector2 min, Vector2 max, float radius) =>
+            Norvrandt.Box(min, max, new BoxStyle
+            {
+                BorderWidth = 1f,
+                BorderRadius = radius,
+                BorderTopColor = ActiveTheme.Glass.BorderTop,
+                BorderLeftColor = ActiveTheme.Glass.BorderSide,
+                BorderRightColor = ActiveTheme.Glass.BorderSide,
+                BorderBottomColor = ActiveTheme.Glass.BorderBottom,
+            });
+
         public static bool CloseButton(string id) =>
-            IconButton(
+            IconButtonTablerCore(
                 TablerIcon.X,
-                new ButtonProps
-                {
-                    Id = id,
-                    Classes = Cls.SurfaceClose,
-                });
+                Cls.SurfaceClose, id, null, null, false, null);
 
         public static bool Popup(
             string id,
@@ -55,7 +62,7 @@ public static partial class Crystarium
                 size,
                 scale);
             float padding = props.Padding * scale;
-            float radius = Theme.Metrics.Radius.Surface * scale;
+            float radius = Crystarium.ActiveTheme.Radii.Surface * scale;
 
             ImGui.SetNextWindowPos(position);
             ImGui.SetNextWindowSize(size);
@@ -79,7 +86,7 @@ public static partial class Crystarium
                     ImGui.GetWindowDrawList(),
                     min,
                     min + ImGui.GetWindowSize(),
-                    Theme.Metrics.Radius.Surface);
+                    Crystarium.ActiveTheme.Radii.Surface);
                 body();
                 ImGui.EndPopup();
             }
@@ -122,7 +129,7 @@ public static partial class Crystarium
                     ImGui.GetWindowDrawList(),
                     min,
                     max,
-                    Theme.Metrics.Radius.Window);
+                    Crystarium.ActiveTheme.Radii.Window);
                 body(new FloatingSurfaceFrame(min, max, scale));
             }
             ImGui.End();
@@ -139,7 +146,7 @@ public static partial class Crystarium
             float scale,
             out Vector2 pivot)
         {
-            float margin = Theme.Metrics.Floating.ViewportInset * scale;
+            float margin = Crystarium.ActiveTheme.Floating.ViewportInset * scale;
             var display = ImGui.GetIO().DisplaySize;
             var position = requested;
             bool fromRight = false;
@@ -183,11 +190,15 @@ public static partial class Crystarium
                     BackgroundColor = GlassChrome.BackgroundColor,
                     BorderWidth = 1f,
                     BorderRadius = radius,
-                    BorderTopColor = Theme.Glass.BorderTop,
-                    BorderLeftColor = Theme.Glass.BorderSide,
-                    BorderRightColor = Theme.Glass.BorderSide,
-                    BorderBottomColor = Theme.Glass.BorderBottom,
-                    BoxShadows = Theme.Glass.ShadowPanel,
+                    BorderTopColor = Crystarium.ActiveTheme.Glass.BorderTop,
+                    BorderLeftColor = Crystarium.ActiveTheme.Glass.BorderSide,
+                    BorderRightColor = Crystarium.ActiveTheme.Glass.BorderSide,
+                    BorderBottomColor = Crystarium.ActiveTheme.Glass.BorderBottom,
+                    BoxShadows =
+                    [
+                        Crystarium.ActiveTheme.Shadows.Panel,
+                        Crystarium.ActiveTheme.Shadows.PanelRing,
+                    ],
                 });
             drawList.PopClipRect();
         }
@@ -199,7 +210,7 @@ public static partial class Crystarium
             float scale)
         {
             var display = ImGui.GetIO().DisplaySize;
-            float gap = Theme.Metrics.Floating.AnchorGap * scale;
+            float gap = Crystarium.ActiveTheme.Floating.AnchorGap * scale;
             float x = Math.Clamp(
                 anchorMin.X,
                 0f,

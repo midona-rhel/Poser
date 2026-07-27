@@ -42,9 +42,9 @@ public class PoseRailPane
     private Quaternion _dragFrame = Quaternion.Identity;
     private Vector3 _dragAxisWorld;
 
-    private static readonly Vector4 AxisX = Theme.Palette.AxisX;
-    private static readonly Vector4 AxisY = Theme.Palette.AxisY;
-    private static readonly Vector4 AxisZ = Theme.Palette.AxisZ;
+    private static Vector4 AxisX => Crystarium.ActiveTheme.Palette.AxisX;
+    private static Vector4 AxisY => Crystarium.ActiveTheme.Palette.AxisY;
+    private static Vector4 AxisZ => Crystarium.ActiveTheme.Palette.AxisZ;
 
     public PoseRailPane(PoseInspectorPane inspector, ICameraService camera)
     {
@@ -90,22 +90,20 @@ public class PoseRailPane
             {
                 // Always clickable: clearing overrides is a safe no-op when
                 // none exist.
-                if (Crystarium.Button("Reset transform", new ButtonProps
-                    {
-                        Id = "rail-actor-reset",
-                        Classes = Cls.Compact,
-                        Tooltip = "Restore the actor's original transform",
-                    }))
+                if (Crystarium.Button("Reset transform",
+                        id: "rail-actor-reset",
+                        help: "Restore the actor's original transform",
+                        density: Crystarium.ControlDensity.Workspace))
                     _inspector.ResetActorTransform();
             }
             else
             {
-                if (Crystarium.Button("Reset bone", new ButtonProps { Id = "rail-bone-reset", Classes = Cls.Compact,
-                    Tooltip = "Reset this bone's pose" }))
+                if (Crystarium.Button("Reset bone", id: "rail-bone-reset",
+                    help: "Reset this bone's pose", density: Crystarium.ControlDensity.Workspace))
                     _inspector.ResetPrimaryBone();
                 ImGui.SameLine(0f, 6f * s);
-                if (Crystarium.Button("Select children", new ButtonProps { Id = "rail-children", Classes = Cls.Compact,
-                    Tooltip = "Add descendant bones to the selection" }))
+                if (Crystarium.Button("Select children", id: "rail-children",
+                    help: "Add descendant bones to the selection", density: Crystarium.ControlDensity.Workspace))
                     _inspector.SelectChildren();
             }
             cursor.Y += 36f * s;

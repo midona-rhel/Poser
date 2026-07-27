@@ -56,23 +56,11 @@ public static partial class Crystarium
     /// </summary>
     public static class HoverHelp
     {
-        private const double OpenDelaySeconds = 0.4;
-        private const double PopSeconds = 0.15;
-        private const float TargetOffset = 6f;
-        private const float CardHeight = 24f;
-        private const float PaddingX = 6f;
-        private const float ContentGap = 4f;
-        private const float BadgeHeight = 16f;
-        private const float BadgeMinWidth = 16f;
-        private const float BadgePaddingX = 4f;
-        /// <summary>Mantine pop's OUT displacement: translateY(10px),
-        /// downward, independent of the placement side.</summary>
-        private const float PopRise = 10f;
-        private const float PopScaleOut = 0.9f;
 
         /// <summary>CSS default timing function `ease`.</summary>
-        private static readonly Transition PopEase =
-            Transition.CubicBezier((float)PopSeconds, 0.25f, 0.1f, 0.25f, 1f);
+        private static Transition PopEase =>
+            Transition.CubicBezier(Crystarium.ActiveTheme.Motion.HoverPop,
+                0.25f, 0.1f, 0.25f, 1f);
 
         private enum Phase { Hidden, Entering, Open, Exiting }
 
@@ -148,7 +136,7 @@ public static partial class Crystarium
                     _pendingSince = now;
                 }
 
-                bool ready = c.Instant || now - _pendingSince >= OpenDelaySeconds;
+                bool ready = c.Instant || now - _pendingSince >= Crystarium.ActiveTheme.Motion.HoverOpenDelay;
                 if (ready)
                 {
                     if (_phase == Phase.Hidden || _card.Id != c.Id)
@@ -171,7 +159,7 @@ public static partial class Crystarium
                             // from the current visual state, as a CSS
                             // transition would.
                             _phase = Phase.Entering;
-                            _phaseStart = now - InverseProgress(inness) * PopSeconds;
+                            _phaseStart = now - InverseProgress(inness) * Crystarium.ActiveTheme.Motion.HoverPop;
                         }
                     }
                 }
@@ -190,9 +178,9 @@ public static partial class Crystarium
                     BeginExit(now);
             }
 
-            if (_phase == Phase.Entering && now - _phaseStart >= PopSeconds)
+            if (_phase == Phase.Entering && now - _phaseStart >= Crystarium.ActiveTheme.Motion.HoverPop)
                 _phase = Phase.Open;
-            if (_phase == Phase.Exiting && now - _phaseStart >= PopSeconds)
+            if (_phase == Phase.Exiting && now - _phaseStart >= Crystarium.ActiveTheme.Motion.HoverPop)
                 _phase = Phase.Hidden;
             if (_phase == Phase.Hidden)
                 return;
@@ -206,14 +194,14 @@ public static partial class Crystarium
         {
             float inness = CurrentInness(now);
             _phase = Phase.Exiting;
-            _phaseStart = now - InverseProgress(1f - inness) * PopSeconds;
+            _phaseStart = now - InverseProgress(1f - inness) * Crystarium.ActiveTheme.Motion.HoverPop;
         }
 
         /// <summary>How far IN (0 = Mantine OUT, 1 = Mantine IN) the card
         /// currently is on the ease curve.</summary>
         private static float CurrentInness(double now)
         {
-            float p = (float)Math.Clamp((now - _phaseStart) / PopSeconds, 0.0, 1.0);
+            float p = (float)Math.Clamp((now - _phaseStart) / Crystarium.ActiveTheme.Motion.HoverPop, 0.0, 1.0);
             return _phase switch
             {
                 Phase.Entering => PopEase.Evaluate(p),
@@ -240,8 +228,8 @@ public static partial class Crystarium
         {
             float scale = ImGuiHelpers.GlobalScale;
 
-            var textFont = FontRegistry.Resolve(FontFamily.Default, 13f);
-            var badgeFont = FontRegistry.Resolve(FontFamily.Default, 10f);
+            var textFont = FontRegistry.Resolve(FontFamily.Default, Crystarium.ActiveTheme.Typography.BodySize);
+            var badgeFont = FontRegistry.Resolve(FontFamily.Default, Crystarium.ActiveTheme.Typography.ShortcutSize);
             bool textPushed = textFont is { Available: true };
 
             // Measure the one-line content: text, then optional 16px kbd
@@ -260,21 +248,21 @@ public static partial class Crystarium
             for (int i = 0; i < keys.Length; i++)
             {
                 badgeWidths[i] = MathF.Max(
-                    BadgeMinWidth * scale,
-                    ImGui.CalcTextSize(keys[i]).X + 2f * BadgePaddingX * scale);
-                badgesW += ContentGap * scale + badgeWidths[i];
+                    Crystarium.ActiveTheme.HoverHelp.BadgeMinimumWidth * scale,
+                    ImGui.CalcTextSize(keys[i]).X + 2f * Crystarium.ActiveTheme.HoverHelp.BadgePaddingX * scale);
+                badgesW += Crystarium.ActiveTheme.HoverHelp.ContentGap * scale + badgeWidths[i];
             }
             if (badgePushed) badgeFont!.Pop();
 
-            float cardW = PaddingX * scale + textSize.X + badgesW + PaddingX * scale;
-            float cardH = CardHeight * scale;
+            float cardW = Crystarium.ActiveTheme.HoverHelp.PaddingX * scale + textSize.X + badgesW + Crystarium.ActiveTheme.HoverHelp.PaddingX * scale;
+            float cardH = Crystarium.ActiveTheme.HoverHelp.CardHeight * scale;
 
             // Anchor to the centre of the semantic target on the
             // preferred side, flip when the viewport edge is closer than
             // the card, then clamp the remainder.
             var display = ImGui.GetIO().DisplaySize;
             var targetCenter = (c.Min + c.Max) * 0.5f;
-            float offset = TargetOffset * scale;
+            float offset = Crystarium.ActiveTheme.HoverHelp.TargetOffset * scale;
             Vector2 pos = c.Side switch
             {
                 HoverHelpSide.Top => new Vector2(targetCenter.X - cardW * 0.5f, c.Min.Y - offset - cardH),
@@ -304,13 +292,13 @@ public static partial class Crystarium
             // translateY 10px → 0 while opacity 0 → 1. CSS composes
             // `scale(k) translateY(y)` with the translation INSIDE the
             // scaled space, so the applied offset is y·k.
-            float k = PopScaleOut + (1f - PopScaleOut) * inness;
-            float rise = (1f - inness) * PopRise * scale;
+            float k = Crystarium.ActiveTheme.HoverHelp.PopScaleOut + (1f - Crystarium.ActiveTheme.HoverHelp.PopScaleOut) * inness;
+            float rise = (1f - inness) * Crystarium.ActiveTheme.HoverHelp.PopRise * scale;
             var center = pos + new Vector2(cardW, cardH) * 0.5f;
             var translate = new Vector2(0f, rise * k);
             var animMin = center + (pos - center) * k + translate;
             var animMax = center + (pos + new Vector2(cardW, cardH) - center) * k + translate;
-            float radius = 4f * scale;
+            float radius = Crystarium.ActiveTheme.Radii.Medium * scale;
 
             var fg = ImGui.GetForegroundDrawList();
             // The blur runs at CONSTANT strength (picto keeps blur(16px)
@@ -328,21 +316,21 @@ public static partial class Crystarium
             // shadow, text, and badges together.
             int vtxStart = fg.VtxBuffer.Size;
 
-            var secondary = new Vector4(1f, 1f, 1f, 0.08f);
+            var secondary = Crystarium.ActiveTheme.Chrome.WeakOverlay;
             BoxRenderer.Draw(fg, pos, pos + new Vector2(cardW, cardH), new BoxStyle
             {
                 BackgroundColor = GlassChrome.BackgroundColor,
-                BorderRadius = 4f,
+                BorderRadius = Crystarium.ActiveTheme.Radii.Medium,
                 BorderWidth = 1f,
-                BorderTopColor = Theme.Glass.BorderTop,
+                BorderTopColor = Crystarium.ActiveTheme.Glass.BorderTop,
                 BorderLeftColor = secondary,
                 BorderRightColor = secondary,
                 BorderBottomColor = secondary,
-                BoxShadow = new BoxShadow(0f, 2f, 8f, new Vector4(0f, 0f, 0f, 0.30f)),
+                BoxShadow = Crystarium.ActiveTheme.Shadows.HoverHelp,
             });
 
-            var theme = Norvrandt.Sheet.CurrentTheme;
-            float x = pos.X + PaddingX * scale;
+            var theme = Crystarium.ActiveTheme;
+            float x = pos.X + Crystarium.ActiveTheme.HoverHelp.PaddingX * scale;
             float midY = pos.Y + cardH * 0.5f;
 
             if (textPushed) textFont!.Push();
@@ -355,16 +343,17 @@ public static partial class Crystarium
             {
                 if (badgePushed) badgeFont!.Push();
                 uint badgeBg = ImGui.ColorConvertFloat4ToU32(
-                    ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.10f)));
+                    ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.ControlHover));
                 uint badgeText = ImGui.ColorConvertFloat4ToU32(
                     ColorEx.ApplyAlpha(theme.Text));
                 for (int i = 0; i < keys.Length; i++)
                 {
-                    x += ContentGap * scale;
-                    float bh = BadgeHeight * scale;
+                    x += Crystarium.ActiveTheme.HoverHelp.ContentGap * scale;
+                    float bh = Crystarium.ActiveTheme.HoverHelp.BadgeHeight * scale;
                     var bMin = new Vector2(x, midY - bh * 0.5f);
                     var bMax = new Vector2(x + badgeWidths[i], midY + bh * 0.5f);
-                    fg.AddRectFilled(bMin, bMax, badgeBg, 3f * scale);
+                    fg.AddRectFilled(bMin, bMax, badgeBg,
+                        Crystarium.ActiveTheme.Radii.Small * scale);
                     var keySize = ImGui.CalcTextSize(keys[i]);
                     fg.AddText(new Vector2(
                             bMin.X + (badgeWidths[i] - keySize.X) * 0.5f,

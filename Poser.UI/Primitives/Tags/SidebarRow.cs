@@ -48,7 +48,7 @@ public static partial class Crystarium
     public static bool SidebarRow(string id, string label, in SidebarRowProps props)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        float height = Theme.Metrics.Control.ListRow * scale;
+        float height = Crystarium.ActiveTheme.Controls.ListRowHeight * scale;
         float width = props.Width > 0f ? props.Width * scale : Norvrandt.AvailableWidth;
 
         // Rows stack seamlessly at exactly 26px (picto sidebar rhythm) — suppress
@@ -63,28 +63,28 @@ public static partial class Crystarium
         // Highlight pill
         var pillMin = new Vector2(hit.ScreenMin.X + inset, hit.ScreenMin.Y);
         var pillMax = new Vector2(hit.ScreenMax.X, hit.ScreenMax.Y - 1f * scale);
-        float pillRadius = Theme.Metrics.Radius.Control * scale;
+        float pillRadius = Crystarium.ActiveTheme.Radii.Control * scale;
         if (props.DropTarget)
         {
             dl.AddRectFilled(pillMin, pillMax,
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(50 / 255f, 151 / 255f, 255 / 255f, 0.10f))), pillRadius);
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.SidebarSelected)), pillRadius);
             float bi = 0.5f * scale;
             dl.AddRect(pillMin + new Vector2(bi, bi), pillMax - new Vector2(bi, bi),
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(50 / 255f, 151 / 255f, 255 / 255f, 0.30f))),
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.SidebarSelectedBorder)),
                 pillRadius - bi, ImDrawFlags.None, 1f * scale);
         }
         else if (props.Selected)
         {
             dl.AddRectFilled(pillMin, pillMax,
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(248 / 255f, 249 / 255f, 251 / 255f, 0.10f))), pillRadius);
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.SidebarHover)), pillRadius);
         }
         else if (hit.Hovered)
         {
             dl.AddRectFilled(pillMin, pillMax,
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(248 / 255f, 249 / 255f, 251 / 255f, 0.05f))), pillRadius);
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.ControlFill)), pillRadius);
         }
 
-        var theme = Norvrandt.Sheet.CurrentTheme;
+        var theme = Crystarium.ActiveTheme;
         float x = hit.ScreenMin.X + inset;
 
         // Expander: CSS border-triangle (3.5px half-width, 5px tall), text-tertiary.
@@ -113,7 +113,7 @@ public static partial class Crystarium
             x += 16f * scale;
 
         // Icon 16px, opacity .85 → 1 on hover
-        float iconSize = Theme.Metrics.Control.Icon * scale;
+        float iconSize = Crystarium.ActiveTheme.Controls.IconSize * scale;
         var iconTint = theme.Text with { W = hit.Hovered ? 1f : 0.85f };
         var iconPos = new Vector2(x, hit.ScreenMin.Y + (height - iconSize) * 0.5f);
         if (props.IconTexture is { } texture)
@@ -127,28 +127,28 @@ public static partial class Crystarium
             Icon(props.Icon, iconSize, ColorEx.ApplyAlpha(iconTint));
             ImGui.SetCursorScreenPos(savedCursor);
         }
-        x += iconSize + Theme.Metrics.Space.Three * scale;
+        x += iconSize + Crystarium.ActiveTheme.Spacing.Three * scale;
 
         // Label 13px text-primary, on the shared sidebar optical baseline
         var labelSize = ImGui.CalcTextSize(label);
-        dl.AddText(Theme.Metrics.Optical.Snap(new Vector2(
+        dl.AddText(Crystarium.ActiveTheme.Optical.Snap(new Vector2(
                 x,
                 hit.ScreenMin.Y + (height - labelSize.Y) * 0.5f
-                    + Theme.Metrics.Optical.SidebarText * scale)),
+                    + Crystarium.ActiveTheme.Optical.SidebarText * scale)),
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Text)), label);
 
         // Badge: mono 11px text-secondary, right padding 8
         if (!string.IsNullOrEmpty(props.Badge))
         {
             var monoFont = FontRegistry.Resolve(
-                FontFamily.Mono, Theme.Metrics.Typography.Caption);
+                FontFamily.Mono, Crystarium.ActiveTheme.Typography.CaptionSize);
             bool monoPushed = monoFont is { Available: true };
             if (monoPushed) monoFont!.Push();
             var badgeSize = ImGui.CalcTextSize(props.Badge);
-            dl.AddText(Theme.Metrics.Optical.Snap(new Vector2(
-                    hit.ScreenMax.X - Theme.Metrics.Space.Four * scale - badgeSize.X,
+            dl.AddText(Crystarium.ActiveTheme.Optical.Snap(new Vector2(
+                    hit.ScreenMax.X - Crystarium.ActiveTheme.Spacing.Four * scale - badgeSize.X,
                     hit.ScreenMin.Y + (height - badgeSize.Y) * 0.5f
-                        + Theme.Metrics.Optical.SidebarText * scale)),
+                        + Crystarium.ActiveTheme.Optical.SidebarText * scale)),
                 ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Text with { W = 0.72f })), props.Badge);
             if (monoPushed) monoFont!.Pop();
         }
@@ -166,13 +166,13 @@ public static partial class Crystarium
         float height = 24f * scale;
         var origin = ImGui.GetCursorScreenPos();
 
-        var font = FontRegistry.Resolve(FontFamily.Default, FontWeight.Medium, 12f);
+        var font = FontRegistry.Resolve(FontFamily.Default, FontWeight.Medium, Crystarium.ActiveTheme.Typography.LabelSize);
         bool fontPushed = font is { Available: true };
         if (fontPushed) font!.Push();
         var textSize = ImGui.CalcTextSize(text);
         ImGui.GetWindowDrawList().AddText(
             origin + new Vector2(10f * scale, (height - textSize.Y) * 0.5f),
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Norvrandt.Sheet.CurrentTheme.Text with { W = 0.5f })), text);
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Text with { W = 0.5f })), text);
         if (fontPushed) font!.Pop();
 
         var spacing = ImGui.GetStyle().ItemSpacing;

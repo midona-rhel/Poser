@@ -70,11 +70,11 @@ public static partial class Crystarium
                 _popupId,
                 new PopoverProps
                 {
-                    Width = Theme.Metrics.Picker.Width,
+                    Width = Crystarium.ActiveTheme.Picker.Width,
                     Height = HeightFor(filtered.Count),
                     AnchorMin = _anchorMin,
                     AnchorMax = _anchorMax,
-                    Padding = Theme.Metrics.Floating.PopoverPadding,
+                    Padding = Crystarium.ActiveTheme.Floating.PopoverPadding,
                 },
                 () => picked = DrawBody(filtered));
             return picked != null ? (_owner, picked) : null;
@@ -99,35 +99,35 @@ public static partial class Crystarium
         {
             int rows = Math.Clamp(
                 resultCount,
-                Theme.Metrics.Picker.MinimumRows,
-                Theme.Metrics.Picker.MaximumRows);
-            return Theme.Metrics.Floating.PopoverPadding * 2f
-                + Theme.Metrics.Control.ListRow
-                + Theme.Metrics.Space.Two
-                + Theme.Metrics.Control.Workspace
-                + Theme.Metrics.Space.Two
-                + rows * Theme.Metrics.Control.ListRow;
+                Crystarium.ActiveTheme.Picker.MinimumRows,
+                Crystarium.ActiveTheme.Picker.MaximumRows);
+            return Crystarium.ActiveTheme.Floating.PopoverPadding * 2f
+                + Crystarium.ActiveTheme.Controls.ListRowHeight
+                + Crystarium.ActiveTheme.Spacing.Two
+                + Crystarium.ActiveTheme.Controls.WorkspaceHeight
+                + Crystarium.ActiveTheme.Spacing.Two
+                + rows * Crystarium.ActiveTheme.Controls.ListRowHeight;
         }
 
         private T? DrawBody(List<T> filtered)
         {
             float scale = ImGuiHelpers.GlobalScale;
-            float inner = Theme.Metrics.Picker.Width
-                - Theme.Metrics.Floating.PopoverPadding * 2f;
+            float inner = Crystarium.ActiveTheme.Picker.Width
+                - Crystarium.ActiveTheme.Floating.PopoverPadding * 2f;
             var origin = ImGui.GetCursorScreenPos();
             DrawTextCentered(
                 origin,
                 new Vector2(
                     inner * scale,
-                    Theme.Metrics.Control.ListRow * scale),
-                Theme.Metrics.Typography.Caption,
+                    Crystarium.ActiveTheme.Controls.ListRowHeight * scale),
+                Crystarium.ActiveTheme.Typography.CaptionSize,
                 FontWeight.Medium,
                 FormLabelColor,
                 _caption);
 
             float searchY = origin.Y
-                + (Theme.Metrics.Control.ListRow
-                    + Theme.Metrics.Space.Two) * scale;
+                + (Crystarium.ActiveTheme.Controls.ListRowHeight
+                    + Crystarium.ActiveTheme.Spacing.Two) * scale;
             ImGui.SetCursorScreenPos(new Vector2(origin.X, searchY));
             FilterPill(
                 $"{_popupId}-filter",
@@ -136,13 +136,13 @@ public static partial class Crystarium
                 inner);
 
             float listY = searchY
-                + (Theme.Metrics.Control.Workspace
-                    + Theme.Metrics.Space.Two) * scale;
+                + (Crystarium.ActiveTheme.Controls.WorkspaceHeight
+                    + Crystarium.ActiveTheme.Spacing.Two) * scale;
             float listHeight = MathF.Max(
-                Theme.Metrics.Picker.MinimumRows
-                    * Theme.Metrics.Control.ListRow,
+                Crystarium.ActiveTheme.Picker.MinimumRows
+                    * Crystarium.ActiveTheme.Controls.ListRowHeight,
                 ImGui.GetWindowSize().Y / scale
-                    - Theme.Metrics.Floating.PopoverPadding
+                    - Crystarium.ActiveTheme.Floating.PopoverPadding
                     - (listY - origin.Y) / scale);
             ImGui.SetCursorScreenPos(new Vector2(origin.X, listY));
 

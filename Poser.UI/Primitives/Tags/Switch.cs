@@ -18,40 +18,40 @@ public static partial class Crystarium
     {
         float scale = ImGuiHelpers.GlobalScale;
         var size = new Vector2(
-            Theme.Metrics.Control.SwitchWidth,
-            Theme.Metrics.Control.SwitchHeight) * scale;
+            Crystarium.ActiveTheme.Controls.SwitchWidth,
+            Crystarium.ActiveTheme.Controls.SwitchHeight) * scale;
         var hit = Interactive.Reserve(id, size, disabled, Norvrandt.AvailableHeight);
         if (hit.Clicked) value = !value;
 
         var dl = ImGui.GetWindowDrawList();
         // Shared disabled fade (matches the .btn:disabled stylesheet opacity).
-        float opacity = disabled ? 0.35f : 1f;
+        float opacity = disabled ? Crystarium.ActiveTheme.Chrome.ControlDisabledOpacity : 1f;
 
         var trackColor = value
-            ? new Vector4(50 / 255f, 151 / 255f, 255 / 255f, 1f)          // --color-primary
-            : new Vector4(128 / 255f, 128 / 255f, 128 / 255f, 0.25f);     // rgba(128,128,128,.25)
+            ? Crystarium.ActiveTheme.Chrome.Primary          // --color-primary
+            : Crystarium.ActiveTheme.Chrome.SwitchOff;     // rgba(128,128,128,.25)
         trackColor = trackColor with { W = trackColor.W * opacity };
         dl.AddRectFilled(hit.ScreenMin, hit.ScreenMax,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(trackColor)),
-            Theme.Metrics.Control.SwitchHeight * 0.5f * scale);
+            Crystarium.ActiveTheme.Controls.SwitchHeight * 0.5f * scale);
 
         // knob: 16px circle, left 2px (off) / 14px (on), bottom 2px
-        float knobInset = Theme.Metrics.Space.One;
-        float knobTravel = Theme.Metrics.Control.SwitchWidth
-            - Theme.Metrics.Control.SwitchKnob - knobInset * 2f;
+        float knobInset = Crystarium.ActiveTheme.Spacing.One;
+        float knobTravel = Crystarium.ActiveTheme.Controls.SwitchWidth
+            - Crystarium.ActiveTheme.Controls.SwitchKnobSize - knobInset * 2f;
         float knobLeft = (knobInset + (value ? knobTravel : 0f)) * scale;
-        float knobRadius = Theme.Metrics.Control.SwitchKnob * 0.5f * scale;
+        float knobRadius = Crystarium.ActiveTheme.Controls.SwitchKnobSize * 0.5f * scale;
         var center = hit.ScreenMin + new Vector2(
             knobLeft + knobRadius,
-            Theme.Metrics.Control.SwitchHeight * 0.5f * scale);
+            Crystarium.ActiveTheme.Controls.SwitchHeight * 0.5f * scale);
 
         // knob drop shadow (0 1px 3px rgba(0,0,0,.2)) — cheap two-ring approximation
         dl.AddCircleFilled(center + new Vector2(0f, 1f * scale), knobRadius + scale,
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(0f, 0f, 0f, 0.08f * opacity))), 32);
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.SwitchShadow with { W = Crystarium.ActiveTheme.Chrome.SwitchShadow.W * opacity })), 32);
         dl.AddCircleFilled(center + new Vector2(0f, 1f * scale), knobRadius + 0.4f * scale,
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(0f, 0f, 0f, 0.10f * opacity))), 32);
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.SwitchHighlight with { W = Crystarium.ActiveTheme.Chrome.SwitchHighlight.W * opacity })), 32);
 
-        var knobColor = new Vector4(1f, 1f, 1f, (value ? 1f : 0.6f) * opacity);
+        var knobColor = (value ? Crystarium.ActiveTheme.Chrome.Text : Crystarium.ActiveTheme.Chrome.TextMuted) with { W = (value ? Crystarium.ActiveTheme.Chrome.Text.W : Crystarium.ActiveTheme.Chrome.TextMuted.W) * opacity };
         dl.AddCircleFilled(center, knobRadius,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(knobColor)), 32);
 

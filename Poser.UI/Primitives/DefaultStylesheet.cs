@@ -6,8 +6,8 @@ namespace Poser.UI;
 
 /// <summary>
 /// Default class definitions installed on first use. Override any of these
-/// at startup or runtime via <see cref="Norvrandt.Sheet"/>.Define(...).
-/// Reads colors and sizes from <see cref="Norvrandt.Sheet.CurrentTheme"/>.
+/// from the active <see cref="Theme"/> whenever Crystarium applies one.
+/// Reads colors and sizes from <see cref="Crystarium.ActiveTheme"/>.
 /// </summary>
 internal static class DefaultStylesheet
 {
@@ -19,30 +19,30 @@ internal static class DefaultStylesheet
 
     public static void Install()
     {
-        var t = Norvrandt.Sheet.CurrentTheme;
+        var t = Crystarium.ActiveTheme;
 
         // ---- Layout ----
         Stylesheet.Define(Cls.Row, new ElementStyle
         {
             FlexDirection = FlexDirection.Row,
-            Gap = Theme.Metrics.Page.ActionGap,
-            Height = Sizing.Fixed(Theme.Metrics.Control.FormRow),
-            Margin = new Spacing(0, 0, Theme.Metrics.Page.SectionGap, 0),
+            Gap = Crystarium.ActiveTheme.Page.ActionGap,
+            Height = Sizing.Fixed(Crystarium.ActiveTheme.Controls.FormRowHeight),
+            Margin = new Spacing(0, 0, Crystarium.ActiveTheme.Page.SectionGap, 0),
         });
 
         Stylesheet.Define(Cls.TightRow, new ElementStyle
         {
             FlexDirection = FlexDirection.Row,
-            Gap = Theme.Metrics.Space.Two,
-            Height = Sizing.Fixed(Theme.Metrics.Control.FormRow),
-            Margin = new Spacing(0, 0, Theme.Metrics.Page.SectionGap, 0),
+            Gap = Crystarium.ActiveTheme.Spacing.Two,
+            Height = Sizing.Fixed(Crystarium.ActiveTheme.Controls.FormRowHeight),
+            Margin = new Spacing(0, 0, Crystarium.ActiveTheme.Page.SectionGap, 0),
         });
 
         // ---- Text ----
         Stylesheet.Define(Cls.Heading, new TextStyle
         {
-            Color = Theme.Palette.Gray,
-            Margin = new Spacing(0, 0, Theme.Metrics.Space.Three, 0),
+            Color = Crystarium.ActiveTheme.Palette.Gray,
+            Margin = new Spacing(0, 0, Crystarium.ActiveTheme.Spacing.Three, 0),
         });
 
         Stylesheet.Define(Cls.DisabledText, new TextStyle
@@ -52,7 +52,7 @@ internal static class DefaultStylesheet
 
         Stylesheet.Define(Cls.Label, new ElementStyle
         {
-            Width = Sizing.Fixed(Theme.Metrics.Form.LabelColumn),
+            Width = Sizing.Fixed(Crystarium.ActiveTheme.Form.LabelColumnWidth),
         });
 
         // ---- Button ----
@@ -61,49 +61,49 @@ internal static class DefaultStylesheet
         // radius 6, flat (no gradient/shadow).
         Stylesheet.Define(Cls.Btn, new ButtonStyle
         {
-            Height = Sizing.Fixed(Theme.Metrics.Control.Comfortable),
-            BorderRadius = Theme.Metrics.Radius.Control,
+            Height = Sizing.Fixed(Crystarium.ActiveTheme.Controls.ComfortableHeight),
+            BorderRadius = Crystarium.ActiveTheme.Radii.Control,
             BorderWidth = 1f,
-            BorderColor = new System.Numerics.Vector4(1f, 1f, 1f, 0.14f),
-            BackgroundColor = new System.Numerics.Vector4(248 / 255f, 249 / 255f, 251 / 255f, 0.05f),
-            Color = new System.Numerics.Vector4(1f, 1f, 1f, 1f),
-            FontSize = Theme.Metrics.Typography.Body,
+            BorderColor = t.Chrome.ControlBorder,
+            BackgroundColor = t.Chrome.ControlFill,
+            Color = t.Chrome.Text,
+            FontSize = Crystarium.ActiveTheme.Typography.BodySize,
             RaisedGradient = false,
-            Padding = new Spacing(0, Theme.Metrics.Space.Eight),
+            Padding = new Spacing(0, Crystarium.ActiveTheme.Spacing.Eight),
         });
 
         // .btn:hover → background: var(--color-subtle-overlay) = white@.10
         Stylesheet.Define(Cls.Btn, PseudoState.Hover, new ButtonStyle
         {
-            BackgroundColor = new System.Numerics.Vector4(1f, 1f, 1f, 0.10f),
+            BackgroundColor = t.Chrome.ControlHover,
         });
 
         // .btn:disabled → opacity .35
         Stylesheet.Define(Cls.Btn, PseudoState.Disabled, new ButtonStyle
         {
-            Opacity = 0.35f,
+            Opacity = t.Chrome.ControlDisabledOpacity,
         });
 
         // Main-workspace actions are the canonical 26px density.
         Stylesheet.Define(Cls.Btn + Cls.Workspace, new ButtonStyle
         {
-            Height = Sizing.Fixed(Theme.Metrics.Control.Workspace),
-            BorderRadius = Theme.Metrics.Radius.Control,
-            FontSize = Theme.Metrics.Typography.Label,
-            Padding = new Spacing(0, Theme.Metrics.Space.Six),
+            Height = Sizing.Fixed(Crystarium.ActiveTheme.Controls.WorkspaceHeight),
+            BorderRadius = Crystarium.ActiveTheme.Radii.Control,
+            FontSize = Crystarium.ActiveTheme.Typography.LabelSize,
+            Padding = new Spacing(0, Crystarium.ActiveTheme.Spacing.Six),
         });
 
         Stylesheet.Define(Cls.Btn + Cls.Comfortable, new ButtonStyle
         {
-            Height = Sizing.Fixed(Theme.Metrics.Control.Comfortable),
+            Height = Sizing.Fixed(Crystarium.ActiveTheme.Controls.ComfortableHeight),
         });
 
         Stylesheet.Define(Cls.Btn + Cls.SurfaceClose, new ButtonStyle
         {
-            Width = Sizing.Fixed(Theme.Metrics.Floating.CloseAction),
-            Height = Sizing.Fixed(Theme.Metrics.Floating.CloseAction),
+            Width = Sizing.Fixed(Crystarium.ActiveTheme.Floating.CloseActionSize),
+            Height = Sizing.Fixed(Crystarium.ActiveTheme.Floating.CloseActionSize),
             BorderWidth = 0f,
-            BorderRadius = Theme.Metrics.Radius.Control,
+            BorderRadius = Crystarium.ActiveTheme.Radii.Control,
             BackgroundColor = System.Numerics.Vector4.Zero,
             Padding = new Spacing(0f),
         });
@@ -113,37 +113,36 @@ internal static class DefaultStylesheet
             PseudoState.Hover,
             new ButtonStyle
             {
-                BackgroundColor = new System.Numerics.Vector4(
-                    1f, 1f, 1f, 0.08f),
+                BackgroundColor = t.Chrome.WeakOverlay,
             });
 
         // Compatibility selector for pages that have not reached their
         // migration slice. It resolves to the same workspace primitive.
         Stylesheet.Define(Cls.Btn + Cls.Compact, new ButtonStyle
         {
-            Height = Sizing.Fixed(Theme.Metrics.Control.Workspace),
-            BorderRadius = Theme.Metrics.Radius.Control,
-            FontSize = Theme.Metrics.Typography.Label,
-            Padding = new Spacing(0, Theme.Metrics.Space.Six),
+            Height = Sizing.Fixed(Crystarium.ActiveTheme.Controls.WorkspaceHeight),
+            BorderRadius = Crystarium.ActiveTheme.Radii.Control,
+            FontSize = Crystarium.ActiveTheme.Typography.LabelSize,
+            Padding = new Spacing(0, Crystarium.ActiveTheme.Spacing.Six),
         });
 
         // .btnPrimary: bg + border #3297FF, white text; hover → primary-60.
         Stylesheet.Define(Cls.Btn + Cls.Primary, new ButtonStyle
         {
-            BackgroundColor = new System.Numerics.Vector4(50 / 255f, 151 / 255f, 255 / 255f, 1f),
-            BorderColor = new System.Numerics.Vector4(50 / 255f, 151 / 255f, 255 / 255f, 1f),
-            Color = new System.Numerics.Vector4(1f, 1f, 1f, 1f),
+            BackgroundColor = t.Chrome.Primary,
+            BorderColor = t.Chrome.Primary,
+            Color = t.Chrome.Text,
         });
 
         Stylesheet.Define(Cls.Btn + Cls.Primary, PseudoState.Hover, new ButtonStyle
         {
-            BackgroundColor = new System.Numerics.Vector4(50 / 255f, 151 / 255f, 255 / 255f, 0.60f),
-            BorderColor = new System.Numerics.Vector4(50 / 255f, 151 / 255f, 255 / 255f, 0.60f),
+            BackgroundColor = t.Chrome.PrimaryHover,
+            BorderColor = t.Chrome.PrimaryHover,
         });
 
         Stylesheet.Define(Cls.Btn + Cls.Icon, new ButtonStyle
         {
-            Width = Sizing.Fixed(Theme.Metrics.Control.Comfortable),
+            Width = Sizing.Fixed(Crystarium.ActiveTheme.Controls.ComfortableHeight),
             Padding = new Spacing(0),
         });
 
@@ -151,8 +150,8 @@ internal static class DefaultStylesheet
             Cls.Btn + Cls.Icon + Cls.SurfaceClose,
             new ButtonStyle
             {
-                Width = Sizing.Fixed(Theme.Metrics.Floating.CloseAction),
-                Height = Sizing.Fixed(Theme.Metrics.Floating.CloseAction),
+                Width = Sizing.Fixed(Crystarium.ActiveTheme.Floating.CloseActionSize),
+                Height = Sizing.Fixed(Crystarium.ActiveTheme.Floating.CloseActionSize),
             });
 
         // ---- Checkbox ----
@@ -161,25 +160,25 @@ internal static class DefaultStylesheet
         // .checkBoxChecked: bg #3297FF, no ring, white@.99 Tabler check (size 10).
         Stylesheet.Define(Cls.Checkbox, new CheckboxStyle
         {
-            Size = Sizing.Fixed(Theme.Metrics.Control.Checkbox),
-            BorderRadius = Theme.Metrics.Radius.Medium,
+            Size = Sizing.Fixed(Crystarium.ActiveTheme.Controls.CheckboxSize),
+            BorderRadius = Crystarium.ActiveTheme.Radii.Medium,
             BorderWidth = 1f,
-            BackgroundColor = new System.Numerics.Vector4(0f, 0f, 0f, 0.20f),
-            BorderColor = new System.Numerics.Vector4(1f, 1f, 1f, 0.20f),
+            BackgroundColor = t.Chrome.InputWell,
+            BorderColor = t.Glass.BorderBottom,
         });
 
         Stylesheet.Define(Cls.Checkbox, PseudoState.Checked, new CheckboxStyle
         {
-            BackgroundColor = new System.Numerics.Vector4(50 / 255f, 151 / 255f, 255 / 255f, 1f),
+            BackgroundColor = t.Chrome.Primary,
             BorderWidth = 0f,
-            CheckmarkColor = new System.Numerics.Vector4(1f, 1f, 1f, 0.99f),
+            CheckmarkColor = t.Chrome.Checkmark,
         });
 
         // ---- Toggle ----
         Stylesheet.Define(Cls.Toggle, new ToggleStyle
         {
-            Size = Sizing.Fixed(Theme.Metrics.Control.Workspace),
-            BorderRadius = Theme.Metrics.Radius.Medium,
+            Size = Sizing.Fixed(Crystarium.ActiveTheme.Controls.WorkspaceHeight),
+            BorderRadius = Crystarium.ActiveTheme.Radii.Medium,
             BorderWidth = 1f,
             BorderColor = t.Border,
             BoxShadow = BoxShadow.Soft(),
@@ -194,7 +193,7 @@ internal static class DefaultStylesheet
         // ---- Icon toggle ----
         Stylesheet.Define(Cls.IconToggle, new IconToggleStyle
         {
-            Size = Sizing.Fixed(Theme.Metrics.Control.ShellIconAction),
+            Size = Sizing.Fixed(Crystarium.ActiveTheme.Controls.ShellIconAction),
         });
 
         // ---- Text input ----
@@ -203,27 +202,27 @@ internal static class DefaultStylesheet
         // radius 4; :focus → border primary-50.
         Stylesheet.Define(Cls.TextInput, new TextInputStyle
         {
-            Height = Sizing.Fixed(Theme.Metrics.Control.Comfortable),
-            BackgroundColor = new System.Numerics.Vector4(0f, 0f, 0f, 0.20f),
-            BorderRadius = Theme.Metrics.Radius.Medium,
+            Height = Sizing.Fixed(Crystarium.ActiveTheme.Controls.ComfortableHeight),
+            BackgroundColor = t.Chrome.InputWell,
+            BorderRadius = Crystarium.ActiveTheme.Radii.Medium,
             BorderWidth = 1f,
-            BorderColor = new System.Numerics.Vector4(1f, 1f, 1f, 0.14f),
-            Padding = new Spacing(0, Theme.Metrics.Space.Six),
+            BorderColor = t.Chrome.ControlBorder,
+            Padding = new Spacing(0, Crystarium.ActiveTheme.Spacing.Six),
         });
 
         Stylesheet.Define(Cls.Workspace, new TextInputStyle
         {
-            Height = Sizing.Fixed(Theme.Metrics.Control.Workspace),
+            Height = Sizing.Fixed(Crystarium.ActiveTheme.Controls.WorkspaceHeight),
         });
 
         Stylesheet.Define(Cls.Comfortable, new TextInputStyle
         {
-            Height = Sizing.Fixed(Theme.Metrics.Control.Comfortable),
+            Height = Sizing.Fixed(Crystarium.ActiveTheme.Controls.ComfortableHeight),
         });
 
         Stylesheet.Define(Cls.TextInput, PseudoState.Focus, new TextInputStyle
         {
-            BorderColor = new System.Numerics.Vector4(50 / 255f, 151 / 255f, 255 / 255f, 0.50f),
+            BorderColor = t.Chrome.PrimaryFocus,
         });
 
         // ---- Dropdown ----
@@ -231,17 +230,17 @@ internal static class DefaultStylesheet
         // bg subtle-overlay white@.10, border 1px white@.08, 12px text.
         Stylesheet.Define(Cls.Dropdown, new DropdownStyle
         {
-            Height = Sizing.Fixed(Theme.Metrics.Control.Workspace),
-            BorderRadius = Theme.Metrics.Radius.Control,
+            Height = Sizing.Fixed(Crystarium.ActiveTheme.Controls.WorkspaceHeight),
+            BorderRadius = Crystarium.ActiveTheme.Radii.Control,
             BorderWidth = 1f,
-            ValueBackground = new System.Numerics.Vector4(1f, 1f, 1f, 0.10f),
-            BorderColor = new System.Numerics.Vector4(1f, 1f, 1f, 0.08f),
-            FontSize = Theme.Metrics.Typography.Label,
+            ValueBackground = t.Chrome.ControlHover,
+            BorderColor = t.Chrome.WeakOverlay,
+            FontSize = Crystarium.ActiveTheme.Typography.LabelSize,
         });
 
         Stylesheet.Define(Cls.Comfortable, new DropdownStyle
         {
-            Height = Sizing.Fixed(Theme.Metrics.Control.Comfortable),
+            Height = Sizing.Fixed(Crystarium.ActiveTheme.Controls.ComfortableHeight),
         });
 
         // ---- Separator ----
@@ -250,8 +249,8 @@ internal static class DefaultStylesheet
             Height = Sizing.Fixed(1f),
             BackgroundColor = t.Border with { W = t.Border.W * 0.5f },
             Margin = new Spacing(
-                Theme.Metrics.Space.Three, 0,
-                Theme.Metrics.Space.Six - Theme.Metrics.Space.One, 0),
+                Crystarium.ActiveTheme.Spacing.Three, 0,
+                Crystarium.ActiveTheme.Spacing.Six - Crystarium.ActiveTheme.Spacing.One, 0),
         });
     }
 }

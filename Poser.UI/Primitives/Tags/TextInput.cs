@@ -27,7 +27,7 @@ public static partial class Crystarium
         if (resolved.Display == UI.Display.None) return false;
 
         float scale = ImGuiHelpers.GlobalScale;
-        float height = (resolved.Height ?? Sizing.Fixed(Theme.Metrics.Control.Comfortable)).Value * scale;
+        float height = (resolved.Height ?? Sizing.Fixed(Crystarium.ActiveTheme.Controls.ComfortableHeight)).Value * scale;
         height = SizeUtil.Clamp(height, resolved.MinHeight, resolved.MaxHeight, scale);
         float widthPx;
         if (resolved.Width.HasValue && resolved.Width.Value.Mode == SizingMode.Fixed)
@@ -36,9 +36,9 @@ public static partial class Crystarium
             widthPx = Norvrandt.AvailableWidth;
         widthPx = SizeUtil.Clamp(widthPx, resolved.MinWidth, resolved.MaxWidth, scale);
 
-        var bg = resolved.BackgroundColor ?? Norvrandt.Sheet.CurrentTheme.SurfaceSunken;
-        var border = resolved.BorderColor ?? Norvrandt.Sheet.CurrentTheme.Border;
-        var pad = resolved.Padding ?? new Spacing(0, Theme.Metrics.Page.ActionGap);
+        var bg = resolved.BackgroundColor ?? Crystarium.ActiveTheme.SurfaceSunken;
+        var border = resolved.BorderColor ?? Crystarium.ActiveTheme.Border;
+        var pad = resolved.Padding ?? new Spacing(0, Crystarium.ActiveTheme.Page.ActionGap);
         float framePadX = pad.Left * scale;
         float framePadY = (height - ImGui.GetTextLineHeight()) / 2f;
 
@@ -91,13 +91,13 @@ public static partial class Crystarium
 
             var drawList = ImGui.GetWindowDrawList();
             uint circle = ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
-                Norvrandt.Sheet.CurrentTheme.Text with { W = clearHovered ? 0.62f : 0.42f }));
+                Crystarium.ActiveTheme.Text with { W = clearHovered ? 0.62f : 0.42f }));
             drawList.AddCircleFilled(center, 7f * scale, circle, 20);
 
             float iconSize = 9f * scale;
             ImGui.SetCursorScreenPos(center - new Vector2(iconSize * 0.5f));
             Icon(TablerIcon.X, iconSize,
-                ColorEx.ApplyAlpha(Norvrandt.Sheet.CurrentTheme.SurfaceSunken with { W = 1f }));
+                ColorEx.ApplyAlpha(Crystarium.ActiveTheme.SurfaceSunken with { W = 1f }));
             ImGui.SetCursorScreenPos(cursorAfterInput);
 
             if (clearHovered)

@@ -44,7 +44,7 @@ public static partial class Crystarium
                 Height = props.Height,
                 Padding = props.Padding > 0f
                     ? props.Padding
-                    : Theme.Metrics.Floating.PopoverPadding,
+                    : Crystarium.ActiveTheme.Floating.PopoverPadding,
                 AnchorMin = props.AnchorMin,
                 AnchorMax = props.AnchorMax,
             },

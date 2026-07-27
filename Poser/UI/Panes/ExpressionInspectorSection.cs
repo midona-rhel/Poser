@@ -62,13 +62,11 @@ public sealed class ExpressionInspectorSection
         h += 6f * s;
         ImGui.SetCursorScreenPos(new Vector2(cursor.X, cursor.Y + h));
         bool active = _expressions.HasActiveExpression(actor);
-        if (Crystarium.Button("Reset", new ButtonProps
-            {
-                Id = "expr-reset",
-                Classes = Cls.Compact,
-                Disabled = !active,
-                Tooltip = "Clear all expression weights",
-            }))
+        if (Crystarium.Button("Reset",
+                id: "expr-reset",
+                help: "Clear all expression weights",
+                disabled: !active,
+                density: Crystarium.ControlDensity.Workspace))
             _expressions.ResetExpression(actor);
         return h + 34f * s;
     }

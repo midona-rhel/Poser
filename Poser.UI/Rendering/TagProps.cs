@@ -5,21 +5,6 @@ namespace Poser.UI;
 // Per-tag props. Each carries only the attributes that make sense for its tag.
 // Pattern: Id, Classes, Style (typed), event handler(s), Tooltip, Disabled.
 
-public record struct ButtonProps
-{
-    public string? Id;
-    public StyleClassSet Classes;
-    public ButtonStyle Style;
-    public Action? OnClick;
-    public string? Tooltip;
-    public bool Disabled;
-    /// <summary>Mirrors an icon button's glyph horizontally, so a single
-    /// directional icon serves both directions of a stepper instead of
-    /// one direction being drawn with the wrong arrow. Ignored by text
-    /// buttons.</summary>
-    public bool FlipX;
-}
-
 public record struct CheckboxProps
 {
     public string? Id;

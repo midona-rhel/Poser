@@ -80,7 +80,7 @@ internal static partial class Element
 
         var rects = new RectF[cells.Length];
         float totalHeight = GridSolver.Solve(cells, colWidths, colX, colGap, rowGap,
-            Theme.Metrics.Control.FormRow * scale, rects);
+            Crystarium.ActiveTheme.Controls.FormRowHeight * scale, rects);
 
         for (int i = 0; i < rects.Length; i++)
         {

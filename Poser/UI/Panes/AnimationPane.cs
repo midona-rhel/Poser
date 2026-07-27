@@ -245,19 +245,17 @@ public sealed class AnimationPane
         for (int i = actions.Length - 1; i >= 0; i--)
         {
             var action = actions[i];
-            float w = Crystarium.MeasureButton(action.Label, Cls.Compact).X;
+            float w = Crystarium.MeasureButton(action.Label, Crystarium.ControlDensity.Workspace).X;
             if (action.WidthLabel is { } alt)
-                w = MathF.Max(w, Crystarium.MeasureButton(alt, Cls.Compact).X);
+                w = MathF.Max(w, Crystarium.MeasureButton(alt, Crystarium.ControlDensity.Workspace).X);
             x -= w;
             ImGui.SetCursorScreenPos(new Vector2(x, rowOrigin.Y + ButtonY * s));
-            if (Crystarium.Button(action.Label, new ButtonProps
-                {
-                    Id = action.Id,
-                    Classes = Cls.Compact,
-                    Tooltip = action.Tip,
-                    Disabled = action.Disabled,
-                    Style = new ButtonStyle { Width = Sizing.Fixed(w / s) },
-                }) && !action.Disabled)
+            if (Crystarium.Button(action.Label,
+                    id: action.Id,
+                    help: action.Tip,
+                    disabled: action.Disabled,
+                    density: Crystarium.ControlDensity.Workspace,
+                    width: w / s) && !action.Disabled)
                 action.Click();
             x -= Gap * s;
         }
@@ -271,16 +269,11 @@ public sealed class AnimationPane
         string label, string id, string? tip)
     {
         ImGui.SetCursorScreenPos(new Vector2(valueX, rowY + ButtonY * s));
-        return Crystarium.Button(label, new ButtonProps
-        {
-            Id = id,
-            Classes = Cls.Compact,
-            Tooltip = tip,
-            Style = new ButtonStyle
-            {
-                Width = Sizing.Fixed(MathF.Max(70f, (rightEdge - valueX) / ImGuiHelpers.GlobalScale)),
-            },
-        });
+        return Crystarium.Button(label,
+            id: id,
+            help: tip,
+            density: Crystarium.ControlDensity.Workspace,
+            width: MathF.Max(70f, (rightEdge - valueX) / ImGuiHelpers.GlobalScale));
     }
 
     // ── A. Transport ──────────────────────────────────────────────────
@@ -441,26 +434,22 @@ public sealed class AnimationPane
             reading.Pose.ToString(), 12f, FontWeight.Medium,
             InspectorLayout.ValueColor, mono: true);
         ImGui.SetCursorScreenPos(new Vector2(poseX + 14f * s, row.Y + ButtonY * s));
-        if (Crystarium.IconButton(TablerIcon.Minus, new ButtonProps
-            {
-                Id = "anim-pose-prev",
-                Classes = Cls.Compact,
-                Tooltip = "Previous pose (wraps)",
-                Disabled = poseDisabled,
-                Style = new ButtonStyle { Width = Sizing.Fixed(24f), Height = Sizing.Fixed(24f) },
-            }))
+        if (Crystarium.IconButton(TablerIcon.Minus,
+                id: "anim-pose-prev",
+                help: "Previous pose (wraps)",
+                disabled: poseDisabled,
+                density: Crystarium.ControlDensity.Workspace,
+                size: 24f))
             Report(
                 _animation.SetStance(actor, poseFamily, reading.Pose - 1),
                 "Pose");
         ImGui.SetCursorScreenPos(new Vector2(poseX + (14f + 24f + 4f) * s, row.Y + ButtonY * s));
-        if (Crystarium.IconButton(TablerIcon.Plus, new ButtonProps
-            {
-                Id = "anim-pose-next",
-                Classes = Cls.Compact,
-                Tooltip = "Next pose (wraps)",
-                Disabled = poseDisabled,
-                Style = new ButtonStyle { Width = Sizing.Fixed(24f), Height = Sizing.Fixed(24f) },
-            }))
+        if (Crystarium.IconButton(TablerIcon.Plus,
+                id: "anim-pose-next",
+                help: "Next pose (wraps)",
+                disabled: poseDisabled,
+                density: Crystarium.ControlDensity.Workspace,
+                size: 24f))
             Report(
                 _animation.SetStance(actor, poseFamily, reading.Pose + 1),
                 "Pose");
@@ -568,18 +557,16 @@ public sealed class AnimationPane
 
         // Right-to-left: Reset, speed slider, Pause — then the name fills.
         float x = row.X + width;
-        float resetWidth = Crystarium.MeasureButton("Reset", Cls.Compact).X;
+        float resetWidth = Crystarium.MeasureButton("Reset", Crystarium.ControlDensity.Workspace).X;
         x -= resetWidth;
         ImGui.SetCursorScreenPos(new Vector2(x, row.Y + ButtonY * s));
         bool resetDisabled = !owned.SlotSpeeds.ContainsKey(slot);
-        if (Crystarium.Button("Reset", new ButtonProps
-            {
-                Id = $"anim-layer-reset-{(int)slot}",
-                Classes = Cls.Compact,
-                Disabled = resetDisabled,
-                Tooltip = "Hand this layer's speed back to the game",
-                Style = new ButtonStyle { Width = Sizing.Fixed(resetWidth / s) },
-            }) && !resetDisabled)
+        if (Crystarium.Button("Reset",
+                id: $"anim-layer-reset-{(int)slot}",
+                help: "Hand this layer's speed back to the game",
+                disabled: resetDisabled,
+                density: Crystarium.ControlDensity.Workspace,
+                width: resetWidth / s) && !resetDisabled)
         {
             // A layer reset hands the layer's SPEED back; the timeline is
             // not restorable -- the references never write one, so neither
@@ -609,31 +596,27 @@ public sealed class AnimationPane
             Report(_animation.SetSlotSpeed(actor, captured, slotSpeed), "Layer speed");
 
         float pauseWidth = MathF.Max(MathF.Max(
-            Crystarium.MeasureButton("Pause", Cls.Compact).X,
-            Crystarium.MeasureButton("Play", Cls.Compact).X),
-            Crystarium.MeasureButton("Replay", Cls.Compact).X);
+            Crystarium.MeasureButton("Pause", Crystarium.ControlDensity.Workspace).X,
+            Crystarium.MeasureButton("Play", Crystarium.ControlDensity.Workspace).X),
+            Crystarium.MeasureButton("Replay", Crystarium.ControlDensity.Workspace).X);
         x -= (Gap * s) + pauseWidth;
         ImGui.SetCursorScreenPos(new Vector2(x, row.Y + ButtonY * s));
         if (live == 0)
         {
             // The one-shot ended, so there is nothing to pause — the slot
             // holds the pick instead, ready to play again.
-            if (Crystarium.Button("Replay", new ButtonProps
-                {
-                    Id = $"anim-layer-replay-{(int)slot}",
-                    Classes = Cls.Compact,
-                    Tooltip = "Play this animation again",
-                    Style = new ButtonStyle { Width = Sizing.Fixed(pauseWidth / s) },
-                }))
+            if (Crystarium.Button("Replay",
+                    id: $"anim-layer-replay-{(int)slot}",
+                    help: "Play this animation again",
+                    density: Crystarium.ControlDensity.Workspace,
+                    width: pauseWidth / s))
                 Report(_animation.Blend(actor, timeline), label);
         }
-        else if (Crystarium.Button(slotPaused ? "Play" : "Pause", new ButtonProps
-            {
-                Id = $"anim-layer-pause-{(int)slot}",
-                Classes = Cls.Compact,
-                Tooltip = "Hold or release only this layer",
-                Style = new ButtonStyle { Width = Sizing.Fixed(pauseWidth / s) },
-            }))
+        else if (Crystarium.Button(slotPaused ? "Play" : "Pause",
+                id: $"anim-layer-pause-{(int)slot}",
+                help: "Hold or release only this layer",
+                density: Crystarium.ControlDensity.Workspace,
+                width: pauseWidth / s))
             Report(
                 slotPaused
                     ? _animation.ClearSlotSpeed(actor, captured)

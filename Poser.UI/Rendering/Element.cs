@@ -180,7 +180,7 @@ internal static partial class Element
             var handle = FontRegistry.Resolve(
                 family,
                 resolved.FontWeight ?? FontWeight.Regular,
-                resolved.FontSize ?? Theme.Metrics.Typography.Body);
+                resolved.FontSize ?? Crystarium.ActiveTheme.Typography.BodySize);
             if (handle is { Available: true })
             {
                 handle.Push();

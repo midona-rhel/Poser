@@ -497,7 +497,7 @@ public class PoseInspectorPane
 
     private float DrawPoseSurface(ImDrawListPtr dl, Vector2 cursor, Vector2 size, ISkeleton skeleton, float s)
     {
-        const float tabsHeightPx = AppShellView.ToolbarHeight;
+        float tabsHeightPx = AppShellView.ToolbarHeight;
         const float footerHeightPx = 47f;
         float width = size.X;
         float height = Math.Max(size.Y, (tabsHeightPx + footerHeightPx + 1f) * s);
@@ -716,8 +716,8 @@ public class PoseInspectorPane
 
         // Parenting: one checkbox per propagated component.
         var poseInfo = _bonePosingService.GetPoseInfo(skeleton);
-        ViewText.Label(Theme.Metrics.Optical.Snap(new Vector2(
-                cursor.X, cursor.Y + fy + 6f * s + Theme.Metrics.Optical.FooterLabel * s)),
+        ViewText.Label(Crystarium.ActiveTheme.Optical.Snap(new Vector2(
+                cursor.X, cursor.Y + fy + 6f * s + Crystarium.ActiveTheme.Optical.FooterLabel * s)),
             "Parenting", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
         if (Crystarium.HoverHelp.HelpHovered(
                 new Vector2(cursor.X, cursor.Y + fy),
@@ -744,8 +744,8 @@ public class PoseInspectorPane
                     : poseInfo.DefaultPropagation & ~component;
             }
             px += 20f * s;
-            ViewText.Label(Theme.Metrics.Optical.Snap(new Vector2(
-                    px, cursor.Y + fy + 6f * s + Theme.Metrics.Optical.FooterLabel * s)),
+            ViewText.Label(Crystarium.ActiveTheme.Optical.Snap(new Vector2(
+                    px, cursor.Y + fy + 6f * s + Crystarium.ActiveTheme.Optical.FooterLabel * s)),
                 label, 11f,
                 FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.6f));
             px += ViewText.Measure(label, 11f) + 8f * s;
@@ -765,7 +765,8 @@ public class PoseInspectorPane
                     });
         }
         ImGui.SetCursorScreenPos(new Vector2(px, cursor.Y + fy));
-        if (Crystarium.Button("Clear", new ButtonProps { Id = "ft-clear", Classes = Cls.Compact, Tooltip = "Clear bone selection" }))
+        if (Crystarium.Button("Clear", id: "ft-clear", help: "Clear bone selection",
+            density: Crystarium.ControlDensity.Workspace))
             _selection.Clear();
     }
 
@@ -1156,16 +1157,14 @@ public class PoseInspectorPane
             Apply(config with { Enabled = armed });
         if (eligible)
         {
-            var resetSize = Crystarium.MeasureButton("Reset defaults", Cls.Compact);
+            var resetSize = Crystarium.MeasureButton("Reset defaults", Crystarium.ControlDensity.Workspace);
             ImGui.SetCursorScreenPos(new Vector2(
                 cursor.X + width - resetSize.X,
                 cursor.Y + InspectorLayout.FormButtonY * s));
-            if (Crystarium.Button("Reset defaults", new ButtonProps
-                {
-                    Id = "ik-reset-defaults",
-                    Classes = Cls.Compact,
-                    Tooltip = "Restore this chain's IK defaults",
-                }))
+            if (Crystarium.Button("Reset defaults",
+                    id: "ik-reset-defaults",
+                    help: "Restore this chain's IK defaults",
+                    density: Crystarium.ControlDensity.Workspace))
             {
                 _ikPort.ResetDefaults(ikTarget);
                 config = _ikPort.Get(ikTarget);
@@ -1174,7 +1173,7 @@ public class PoseInspectorPane
         // The header's semantic target excludes the Reset button, which
         // explains itself through its own help.
         float headerHelpW = eligible
-            ? width - (Crystarium.MeasureButton("Reset defaults", Cls.Compact).X + 8f * s)
+            ? width - (Crystarium.MeasureButton("Reset defaults", Crystarium.ControlDensity.Workspace).X + 8f * s)
             : width;
         if (Crystarium.HoverHelp.HelpHovered(
                 cursor, cursor + new Vector2(headerHelpW, InspectorLayout.FormRowHeight * s)))
@@ -1343,11 +1342,11 @@ public class PoseInspectorPane
             float wellStep = wellW + InspectorLayout.FormAxisGap * s;
             bool axisChanged = false;
             axisChanged |= AppShellView.DragAxisWell(dl, new Vector2(controlX, wellY), wellW,
-                "ik-axis-x", "X", ref axis.X, Theme.Palette.AxisX, 0.005f, "0.00", s, out var releasedX);
+                "ik-axis-x", "X", ref axis.X, Crystarium.ActiveTheme.Palette.AxisX, 0.005f, "0.00", s, out var releasedX);
             axisChanged |= AppShellView.DragAxisWell(dl, new Vector2(controlX + wellStep, wellY), wellW,
-                "ik-axis-y", "Y", ref axis.Y, Theme.Palette.AxisY, 0.005f, "0.00", s, out var releasedY);
+                "ik-axis-y", "Y", ref axis.Y, Crystarium.ActiveTheme.Palette.AxisY, 0.005f, "0.00", s, out var releasedY);
             axisChanged |= AppShellView.DragAxisWell(dl, new Vector2(controlX + wellStep * 2f, wellY), wellW,
-                "ik-axis-z", "Z", ref axis.Z, Theme.Palette.AxisZ, 0.005f, "0.00", s, out var releasedZ);
+                "ik-axis-z", "Z", ref axis.Z, Crystarium.ActiveTheme.Palette.AxisZ, 0.005f, "0.00", s, out var releasedZ);
             h += InspectorLayout.FormRowHeight * s;
             RowHelp(axisRowTop, "ik-axis-row",
                 "The local axis the middle joint bends around");
@@ -1461,7 +1460,8 @@ public class PoseInspectorPane
         var widths = new float[actions.Count];
         for (int i = 0; i < actions.Count; i++)
             widths[i] = Crystarium.MeasureButton(
-                actions[i].Label, Cls.Compact, actions[i].Disabled).X;
+                actions[i].Label, Crystarium.ControlDensity.Workspace,
+                disabled: actions[i].Disabled).X;
 
         int start = 0;
         int row = 0;
@@ -1489,17 +1489,12 @@ public class PoseInspectorPane
             {
                 ImGui.SetCursorScreenPos(origin + new Vector2(x, row * rowAdvance));
                 var action = actions[i];
-                if (Crystarium.Button(action.Label, new ButtonProps
-                    {
-                        Id = action.Id,
-                        Classes = Cls.Compact,
-                        Disabled = action.Disabled,
-                        Tooltip = action.Tooltip,
-                        // The measured width is also the rendered width, so
-                        // the 6px gaps can never collapse from any
-                        // measure/render drift.
-                        Style = new ButtonStyle { Width = Sizing.Fixed(widths[i] / scale) },
-                    }))
+                if (Crystarium.Button(action.Label,
+                        id: action.Id,
+                        help: action.Tooltip,
+                        disabled: action.Disabled,
+                        density: Crystarium.ControlDensity.Workspace,
+                        width: widths[i] / scale))
                     action.Invoke();
                 x += widths[i] + gap;
             }

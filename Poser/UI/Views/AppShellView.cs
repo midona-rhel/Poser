@@ -143,9 +143,9 @@ public static class AppShellView
     private static readonly Vector4 SurfaceHover   = new(1f, 1f, 1f, 0.05f);
     private static readonly Vector4 SurfaceActive  = new(1f, 1f, 1f, 0.09f);
     private static readonly Vector4 Success        = new(126 / 255f, 211 / 255f, 160 / 255f, 1f);
-    private static readonly Vector4 AxisX          = Theme.Palette.AxisX;
-    private static readonly Vector4 AxisY          = Theme.Palette.AxisY;
-    private static readonly Vector4 AxisZ          = Theme.Palette.AxisZ;
+    private static Vector4 AxisX => Crystarium.ActiveTheme.Palette.AxisX;
+    private static Vector4 AxisY => Crystarium.ActiveTheme.Palette.AxisY;
+    private static Vector4 AxisZ => Crystarium.ActiveTheme.Palette.AxisZ;
 
     // One inline axis editor may be active at a time. This belongs to the
     // view because the edit surface is an AppShell primitive, not entity state.
@@ -153,15 +153,15 @@ public static class AppShellView
     private static float _axisEditValue;
     private static bool _axisEditNeedsFocus;
 
-    public const float TitlebarHeight = Theme.Metrics.Shell.Titlebar;
-    public const float SidebarWidth = Theme.Metrics.Shell.SidebarDefault;
-    public const float RowHeight = Theme.Metrics.Control.ListRow;
-    public const float ToolbarHeight = Theme.Metrics.Shell.Toolbar;
-    public const float StatusbarHeight = Theme.Metrics.Shell.Statusbar;
-    public const float ScrollbarWidth = Theme.Metrics.Scrollbar.Gutter;
-    public const float ScrollbarRadius = Theme.Metrics.Scrollbar.Radius;
-    private const float SidebarHorizontalPadding = Theme.Metrics.Page.Inset;
-    public const float MainHorizontalPadding = Theme.Metrics.Page.Inset;
+    public static float TitlebarHeight => Crystarium.ActiveTheme.Shell.TitlebarHeight;
+    public static float SidebarWidth => Crystarium.ActiveTheme.Shell.SidebarDefaultWidth;
+    public static float RowHeight => Crystarium.ActiveTheme.Controls.ListRowHeight;
+    public static float ToolbarHeight => Crystarium.ActiveTheme.Shell.ToolbarHeight;
+    public static float StatusbarHeight => Crystarium.ActiveTheme.Shell.StatusbarHeight;
+    public static float ScrollbarWidth => Crystarium.ActiveTheme.Scrollbar.GutterWidth;
+    public static float ScrollbarRadius => Crystarium.ActiveTheme.Scrollbar.Radius;
+    private static float SidebarHorizontalPadding => Crystarium.ActiveTheme.Page.Inset;
+    public static float MainHorizontalPadding => Crystarium.ActiveTheme.Page.Inset;
 
     public static void Draw(AppShellViewModel vm, Vector2 origin, Vector2 size)
     {
@@ -199,8 +199,8 @@ public static class AppShellView
         if (ImGui.IsItemActive() && ImGui.GetIO().MouseDelta.X != 0f)
             vm.OnSidebarResize?.Invoke(Math.Clamp(
                 vm.SidebarWidthPx + ImGui.GetIO().MouseDelta.X / s,
-                Theme.Metrics.Shell.SidebarMinimum,
-                Theme.Metrics.Shell.SidebarMaximum));
+                Crystarium.ActiveTheme.Shell.SidebarMinimumWidth,
+                Crystarium.ActiveTheme.Shell.SidebarMaximumWidth));
 
         if (vm.DrawRail != null)
         {
@@ -234,7 +234,7 @@ public static class AppShellView
         DrawOuterGlassBorder(min, max, s);
     }
 
-    public const float RailWidth = Theme.Metrics.Shell.RailWidth;
+    public static float RailWidth => Crystarium.ActiveTheme.Shell.RailWidth;
 
     // ── titlebar ─────────────────────────────────────────────────────────
 
@@ -577,15 +577,15 @@ public static class AppShellView
             : 6f * s;
         ImGui.PushClipRect(new Vector2(cursor.X, cursor.Y),
             new Vector2(cursor.X + innerW - badgeReserve, cursor.Y + RowHeight * s), true);
-        ViewText.Label(Theme.Metrics.Optical.Snap(new Vector2(
-                x, cursor.Y + 5f * s + Theme.Metrics.Optical.SidebarText * s)),
+        ViewText.Label(Crystarium.ActiveTheme.Optical.Snap(new Vector2(
+                x, cursor.Y + 5f * s + Crystarium.ActiveTheme.Optical.SidebarText * s)),
             row.Label, 13f, FontWeight.Regular, TextPrimary);
         ImGui.PopClipRect();
 
         if (row.Count.Length > 0)
-            ViewText.Label(Theme.Metrics.Optical.Snap(new Vector2(
+            ViewText.Label(Crystarium.ActiveTheme.Optical.Snap(new Vector2(
                     cursor.X + innerW - 8f * s - ViewText.Measure(row.Count, 11f, mono: true),
-                    cursor.Y + 7f * s + Theme.Metrics.Optical.SidebarText * s)),
+                    cursor.Y + 7f * s + Crystarium.ActiveTheme.Optical.SidebarText * s)),
                 row.Count, 11f, FontWeight.Regular, TextSecondary, mono: true);
 
         if (hit.Clicked)
@@ -777,15 +777,7 @@ public static class AppShellView
 
     private static void DrawOuterGlassBorder(Vector2 min, Vector2 max, float s)
     {
-        Norvrandt.Box(min, max, new BoxStyle
-        {
-            BorderWidth = 1f,
-            BorderRadius = 10f * s,
-            BorderTopColor = Theme.Glass.BorderTop,
-            BorderLeftColor = Theme.Glass.BorderSide,
-            BorderRightColor = Theme.Glass.BorderSide,
-            BorderBottomColor = Theme.Glass.BorderBottom,
-        });
+        Crystarium.FloatingSurface.DrawBorder(min, max, 10f * s);
     }
 
     // ── transform content helpers (M1 .prow/.scrub) ─────────────────────

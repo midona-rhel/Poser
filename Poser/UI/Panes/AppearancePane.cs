@@ -72,11 +72,11 @@ public sealed class AppearancePane
         {
             var picked = pick.Owner switch
             {
-                "app-ext-collection" => _integration.SetCollection(
+                "Collection" => _integration.SetCollection(
                     pickTarget, pick.Item.Id, pick.Item.Name),
-                "app-ext-design" => _integration.ApplyDesign(
+                "Design" => _integration.ApplyDesign(
                     pickTarget, pick.Item.Id, pick.Item.Name),
-                "app-ext-profile" => _integration.SetBodyProfile(
+                "Body profile" => _integration.SetBodyProfile(
                     pickTarget, pick.Item.Id, pick.Item.Name),
                 _ => IntegrationResult.Ok(),
             };
@@ -107,11 +107,9 @@ public sealed class AppearancePane
                     : $"{what}: {result.Detail}";
 
             var glamourer = _integration.Glamourer;
-            page.ActionBar(
-            [
-                new UiAction(
-                    "app-glamourer",
-                    "Open in Glamourer",
+            page.Actions(actions =>
+            {
+                actions.Button("Open in Glamourer",
                     () =>
                     {
                         var opened = _integration.OpenGlamourer(actor);
@@ -119,139 +117,73 @@ public sealed class AppearancePane
                             ? string.Empty
                             : $"Open in Glamourer: {opened.Detail}";
                     },
-                    glamourer.Available
+                    disabled: !glamourer.Available,
+                    help: glamourer.Available
                         ? "Open this actor in Glamourer."
-                        : glamourer.Detail,
-                    Disabled: !glamourer.Available),
-                new UiAction(
-                    "app-reset",
-                    "Reset appearance",
+                        : glamourer.Detail);
+                actions.Button("Reset appearance",
                     () => Report(
                         _presentation.ResetActor(actor),
                         "Reset appearance"),
-                    "Restore this actor's incoming opacity, tints, and wetness"),
-            ]);
+                    help: "Restore this actor's incoming opacity, tints, and wetness");
+            });
             page.Status(_status);
 
             page.Section("PRESENTATION", form =>
             {
                 float opacity = owned.Opacity ?? reading.Opacity;
-                if (form.Slider(
-                        "app-opacity",
-                        "Opacity",
-                        ref opacity,
-                        0f,
-                        1f,
-                        "{0:0.00}",
-                        "Fade the whole actor; 0 is fully invisible and never touches the visibility action"))
-                    Report(_presentation.SetOpacity(actor, opacity), "Opacity");
+                form.Slider("Opacity", opacity, 0f, 1f,
+                    value => Report(
+                        _presentation.SetOpacity(actor, value), "Opacity"),
+                    help: "Fade the whole actor; 0 is fully invisible and never touches the visibility action");
 
                 Vector4? TintFor(PresentationModel model) =>
                     owned.Tints.TryGetValue(model, out var tint)
                         ? tint
                         : reading.TintFor(model);
-                form.ColorWells(
-                    "app-tint",
-                    "Tint",
-                    [
-                        new ColorWellValue(
-                            "app-tint-character",
-                            "Character",
-                            TintFor(PresentationModel.Character),
-                            value => Report(
-                                _presentation.SetTint(
-                                    actor,
-                                    PresentationModel.Character,
-                                    value),
-                                "Character")),
-                        new ColorWellValue(
-                            "app-tint-main",
-                            "Main",
-                            TintFor(PresentationModel.MainHand),
-                            value => Report(
-                                _presentation.SetTint(
-                                    actor,
-                                    PresentationModel.MainHand,
-                                    value),
-                                "Main"),
-                            "This weapon model is not present on the actor"),
-                        new ColorWellValue(
-                            "app-tint-off",
-                            "Off",
-                            TintFor(PresentationModel.OffHand),
-                            value => Report(
-                                _presentation.SetTint(
-                                    actor,
-                                    PresentationModel.OffHand,
-                                    value),
-                                "Off"),
-                            "This weapon model is not present on the actor"),
-                    ],
-                    "Multiply each model's colors; an absent weapon shows an empty well");
+                form.ColorWells("Tint", wells =>
+                {
+                    wells.Well("Character", TintFor(PresentationModel.Character),
+                        value => Report(_presentation.SetTint(actor,
+                            PresentationModel.Character, value), "Character"));
+                    wells.Well("Main", TintFor(PresentationModel.MainHand),
+                        value => Report(_presentation.SetTint(actor,
+                            PresentationModel.MainHand, value), "Main"),
+                        "This weapon model is not present on the actor");
+                    wells.Well("Off", TintFor(PresentationModel.OffHand),
+                        value => Report(_presentation.SetTint(actor,
+                            PresentationModel.OffHand, value), "Off"),
+                        "This weapon model is not present on the actor");
+                }, help: "Multiply each model's colors; an absent weapon shows an empty well");
             });
 
             page.Section("WET SURFACE", form =>
             {
                 bool overrideOn = owned.Wetness != null;
-                if (form.Switch(
-                        "app-wet-override",
-                        "Override",
-                        ref overrideOn,
-                        "Hold the wet-surface values below against the game's own weather and water updates; turning it off restores the incoming values exactly"))
-                    Report(
-                        _presentation.SetWetnessEnabled(actor, overrideOn),
-                        "Wetness override");
+                form.Switch("Override", overrideOn,
+                    value => Report(
+                        _presentation.SetWetnessEnabled(actor, value),
+                        "Wetness override"),
+                    help: "Hold the wet-surface values below against the game's own weather and water updates; turning it off restores the incoming values exactly");
 
                 bool wetOn = _presentation.OverridesFor(actor).Wetness != null;
                 var wet = _presentation.OverridesFor(actor).Wetness
                     ?? reading.Wetness;
-                float weather = wet.Weather;
-                if (form.Slider(
-                        "app-wet-weather",
-                        "Weather",
-                        ref weather,
-                        0f,
-                        1f,
-                        "{0:0.00}",
-                        "How rain-wet the surface looks, 0 dry to 1 soaked",
-                        disabled: !wetOn))
-                    Report(
-                        _presentation.SetWetness(
-                            actor,
-                            wet with { Weather = weather }),
-                        "Weather");
-
-                float swimming = wet.Swimming;
-                if (form.Slider(
-                        "app-wet-swimming",
-                        "Swimming",
-                        ref swimming,
-                        0f,
-                        1f,
-                        "{0:0.00}",
-                        "How water-wet the surface looks, 0 dry to 1 soaked",
-                        disabled: !wetOn))
-                    Report(
-                        _presentation.SetWetness(
-                            actor,
-                            wet with { Swimming = swimming }),
-                        "Swimming");
-
-                float depth = wet.Depth;
-                if (form.Slider(
-                        "app-wet-depth",
-                        "Depth",
-                        ref depth,
-                        0f,
-                        3f,
-                        "{0:0.00}",
-                        "How high up the body the wetness reaches, in about character heights",
-                        disabled: !wetOn))
-                    Report(
-                        _presentation.SetWetness(
-                            actor,
-                            wet with { Depth = depth }),
-                        "Depth");
+                form.Slider("Weather", wet.Weather, 0f, 1f,
+                    value => Report(_presentation.SetWetness(actor,
+                        wet with { Weather = value }), "Weather"),
+                    help: "How rain-wet the surface looks, 0 dry to 1 soaked",
+                    disabled: !wetOn);
+                form.Slider("Swimming", wet.Swimming, 0f, 1f,
+                    value => Report(_presentation.SetWetness(actor,
+                        wet with { Swimming = value }), "Swimming"),
+                    help: "How water-wet the surface looks, 0 dry to 1 soaked",
+                    disabled: !wetOn);
+                form.Slider("Depth", wet.Depth, 0f, 3f,
+                    value => Report(_presentation.SetWetness(actor,
+                        wet with { Depth = value }), "Depth"),
+                    help: "How high up the body the wetness reaches, in about character heights",
+                    disabled: !wetOn);
             });
 
             RefreshReadouts(actor);
@@ -264,21 +196,13 @@ public sealed class AppearancePane
             {
                 var penumbra = _integration.Penumbra;
                 form.Selector(
-                    "app-ext-collection",
                     "Collection",
                     _collectionReadout,
-                    penumbra.Available && !mcdfOwned,
-                    !penumbra.Available
-                        ? penumbra.Detail
-                        : mcdfOwned
-                            ? mcdfReason
-                            : "Choose the Penumbra collection for this actor",
-                    external.CollectionOwned,
                     () =>
                     {
                         _pickerActor = actor;
                         OpenPicker(
-                            "app-ext-collection",
+                            "Collection",
                             "Penumbra collection",
                             _integration.ListCollections);
                     },
@@ -290,27 +214,26 @@ public sealed class AppearancePane
                             : $"Reset Collection: {result.Detail}";
                         _readoutAt = DateTime.MinValue;
                     },
-                    "Assigns a Penumbra collection to only this actor and redraws it; Reset restores whether it was assigned or inherited");
+                    available: penumbra.Available && !mcdfOwned,
+                    owned: external.CollectionOwned,
+                    help: "Assigns a Penumbra collection to only this actor and redraws it; Reset restores whether it was assigned or inherited",
+                    disabledHelp: !penumbra.Available
+                        ? penumbra.Detail
+                        : mcdfOwned
+                            ? mcdfReason
+                            : "Choose the Penumbra collection for this actor");
 
                 var glamourerApi = _integration.Glamourer;
                 form.Selector(
-                    "app-ext-design",
                     "Design",
                     external.DesignOwned
                         ? external.DesignName ?? "Design"
                         : "None applied",
-                    glamourerApi.Available && !mcdfOwned,
-                    !glamourerApi.Available
-                        ? glamourerApi.Detail
-                        : mcdfOwned
-                            ? mcdfReason
-                            : "Apply a Glamourer design to only this actor",
-                    external.DesignOwned,
                     () =>
                     {
                         _pickerActor = actor;
                         OpenPicker(
-                            "app-ext-design",
+                            "Design",
                             "Glamourer design",
                             _integration.ListDesigns);
                     },
@@ -322,31 +245,28 @@ public sealed class AppearancePane
                             : $"Reset Design: {result.Detail}";
                         _readoutAt = DateTime.MinValue;
                     },
-                    "Applies a saved Glamourer design to this actor after capturing its complete incoming state; Reset reapplies that captured state exactly");
+                    available: glamourerApi.Available && !mcdfOwned,
+                    owned: external.DesignOwned,
+                    help: "Applies a saved Glamourer design to this actor after capturing its complete incoming state; Reset reapplies that captured state exactly",
+                    disabledHelp: !glamourerApi.Available
+                        ? glamourerApi.Detail
+                        : mcdfOwned
+                            ? mcdfReason
+                            : "Apply a Glamourer design to only this actor");
 
                 var customize = _integration.CustomizePlus;
                 bool profileAvailable =
                     customize.Available && !mcdfOwned && !_bodyBlocked;
                 form.Selector(
-                    "app-ext-profile",
                     "Body profile",
                     external.TemporaryBodyProfile != null
                         ? external.BodyProfileName ?? "Profile"
                         : "Automatic",
-                    profileAvailable,
-                    !customize.Available
-                        ? customize.Detail
-                        : mcdfOwned
-                            ? mcdfReason
-                            : _bodyBlocked
-                                ? _bodyBlockedDetail
-                                : "Apply a saved Customize+ profile to only this actor",
-                    external.TemporaryBodyProfile != null,
                     () =>
                     {
                         _pickerActor = actor;
                         OpenPicker(
-                            "app-ext-profile",
+                            "Body profile",
                             "Customize+ profile",
                             _integration.ListBodyProfiles);
                     },
@@ -358,7 +278,16 @@ public sealed class AppearancePane
                             : $"Reset Body profile: {result.Detail}";
                         _readoutAt = DateTime.MinValue;
                     },
-                    "Holds a saved Customize+ profile on this actor as a temporary profile; Reset removes it so the normal assignment resumes");
+                    available: profileAvailable,
+                    owned: external.TemporaryBodyProfile != null,
+                    help: "Holds a saved Customize+ profile on this actor as a temporary profile; Reset removes it so the normal assignment resumes",
+                    disabledHelp: !customize.Available
+                        ? customize.Detail
+                        : mcdfOwned
+                            ? mcdfReason
+                            : _bodyBlocked
+                                ? _bodyBlockedDetail
+                                : "Apply a saved Customize+ profile to only this actor");
             });
 
             page.Section("CHARACTER FILE (MCDF)", form =>
@@ -370,22 +299,18 @@ public sealed class AppearancePane
                         ? $"{running.FilesDone}/{running.FilesTotal} · {running.BytesDone / (1024.0 * 1024.0):0.0} MB"
                         : running.FileName;
                     form.Progress(
-                        "app-mcdf-progress",
                         PhaseLabel(running.Phase),
                         running.BytesTotal > 0
                             ? (float)((double)running.BytesDone
                                 / running.BytesTotal)
                             : 0f,
                         readout,
-                        new UiAction(
-                            "app-mcdf-cancel",
-                            "Cancel",
-                            _integration.CancelMcdf,
-                            running.Cancellable
-                                ? "Cancel this operation; an import rolls back everything already applied"
-                                : "This phase cannot be cancelled",
-                            Disabled: !running.Cancellable),
-                        "The running character-file operation for this actor");
+                        _integration.CancelMcdf,
+                        cancelDisabled: !running.Cancellable,
+                        cancelHelp: running.Cancellable
+                            ? "Cancel this operation; an import rolls back everything already applied"
+                            : "This phase cannot be cancelled",
+                        help: "The running character-file operation for this actor");
                 }
                 else
                 {
@@ -402,11 +327,15 @@ public sealed class AppearancePane
                         penumbra.Available
                         && glamourerApi.Available
                         && !mcdfOwnedNow;
-                    var actions = new List<UiAction>
+                    form.ReadOnlyWithActions(
+                        "File",
+                        external.Mcdf?.FileName
+                            ?? (cleanupPending
+                                ? "Cleanup pending"
+                                : "None"),
+                        actions =>
                     {
-                        new(
-                            "app-mcdf-import",
-                            "Import…",
+                        actions.Button("Import…",
                             () =>
                             {
                                 _mcdfActor = actor;
@@ -428,10 +357,8 @@ public sealed class AppearancePane
                                         _readoutAt = DateTime.MinValue;
                                     });
                             },
-                            "Apply a .mcdf character file (mods, appearance, body scale) to only this actor"),
-                        new(
-                            "app-mcdf-export",
-                            "Export…",
+                            help: "Apply a .mcdf character file (mods, appearance, body scale) to only this actor");
+                        actions.Button("Export…",
                             () =>
                             {
                                 _mcdfActor = actor;
@@ -457,43 +384,32 @@ public sealed class AppearancePane
                                             : $"Export: {begun.Detail}";
                                     });
                             },
-                            !penumbra.Available
+                            disabled: !exportable,
+                            help: !penumbra.Available
                                 ? penumbra.Detail
                                 : !glamourerApi.Available
                                     ? glamourerApi.Detail
                                     : mcdfOwnedNow
                                         ? "Reset MCDF first — an imported file is never repackaged"
-                                        : "Save this actor's mods, appearance, and body scale as a .mcdf",
-                            Disabled: !exportable),
-                    };
-                    if (showReset)
-                    {
-                        actions.Add(new UiAction(
-                            "app-mcdf-reset",
-                            resetLabel,
-                            () =>
-                            {
-                                var result = _integration.ResetMcdf(actor);
-                                _status = result.Success
-                                    ? string.Empty
-                                    : $"Reset MCDF: {result.Detail}";
-                                _readoutAt = DateTime.MinValue;
-                            },
-                            mcdfOwnedNow
-                                ? "Remove everything this character file applied and restore the incoming external state"
-                                : "Retry deleting extracted files left behind by a failed import"));
-                    }
-
-                    form.ReadOnlyWithActions(
-                        "app-mcdf",
-                        "File",
-                        external.Mcdf?.FileName
-                            ?? (cleanupPending
-                                ? "Cleanup pending"
-                                : "None"),
-                        unavailable: !mcdfOwnedNow,
-                        actions,
-                        "Import a Mare/Brio/Ktisis character file onto only this actor, or export this actor's current mods, appearance, and body scale");
+                                        : "Save this actor's mods, appearance, and body scale as a .mcdf");
+                        if (showReset)
+                        {
+                            actions.Button(resetLabel,
+                                () =>
+                                {
+                                    var result = _integration.ResetMcdf(actor);
+                                    _status = result.Success
+                                        ? string.Empty
+                                        : $"Reset MCDF: {result.Detail}";
+                                    _readoutAt = DateTime.MinValue;
+                                },
+                                help: mcdfOwnedNow
+                                    ? "Remove everything this character file applied and restore the incoming external state"
+                                    : "Retry deleting extracted files left behind by a failed import");
+                        }
+                    },
+                        help: "Import a Mare/Brio/Ktisis character file onto only this actor, or export this actor's current mods, appearance, and body scale",
+                        unavailable: !mcdfOwnedNow);
                 }
 
                 if (operation?.Outcome is { } outcome)
@@ -510,7 +426,6 @@ public sealed class AppearancePane
                                 outcome.SkippedResources);
                     }
                     form.Status(
-                        "app-mcdf-outcome",
                         outcome.Detail,
                         skipped);
                 }

@@ -32,15 +32,15 @@ public static partial class Crystarium
         bool alignFirstTabToCursor = false)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        float pad = (Theme.Metrics.Control.Navigation
-            - Theme.Metrics.Control.Workspace) * 0.5f * scale;
-        float gap = Theme.Metrics.Space.One * scale;
-        float tabHeight = Theme.Metrics.Control.Workspace * scale;
-        float tabPadX = Theme.Metrics.Space.Six * scale;
+        float pad = (Crystarium.ActiveTheme.Controls.NavigationHeight
+            - Crystarium.ActiveTheme.Controls.WorkspaceHeight) * 0.5f * scale;
+        float gap = Crystarium.ActiveTheme.Spacing.One * scale;
+        float tabHeight = Crystarium.ActiveTheme.Controls.WorkspaceHeight * scale;
+        float tabPadX = Crystarium.ActiveTheme.Spacing.Six * scale;
 
         if (maxWidth > 0f)
         {
-            var mfont = FontRegistry.Resolve(FontFamily.Default, 12f);
+            var mfont = FontRegistry.Resolve(FontFamily.Default, Crystarium.ActiveTheme.Typography.LabelSize);
             bool mp = mfont is { Available: true };
             if (mp) mfont!.Push();
             float text = 0f;
@@ -49,11 +49,11 @@ public static partial class Crystarium
             float chrome = pad * 2f + gap * (items.Length - 1);
             float fitPad = (maxWidth * scale - chrome - text) / (items.Length * 2f);
             tabPadX = MathF.Max(
-                Theme.Metrics.Space.Three * scale,
+                Crystarium.ActiveTheme.Spacing.Three * scale,
                 MathF.Min(tabPadX, fitPad));
         }
 
-        var font = FontRegistry.Resolve(FontFamily.Default, 12f);
+        var font = FontRegistry.Resolve(FontFamily.Default, Crystarium.ActiveTheme.Typography.LabelSize);
         bool fontPushed = font is { Available: true };
         if (fontPushed) font!.Push();
 
@@ -74,12 +74,12 @@ public static partial class Crystarium
         var dl = ImGui.GetWindowDrawList();
 
         dl.AddRectFilled(origin, origin + new Vector2(totalW, totalH),
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(0f, 0f, 0f, 0.20f))),
-            Theme.Metrics.Radius.Surface * scale);
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.InputWell)),
+            Crystarium.ActiveTheme.Radii.Surface * scale);
 
         bool changed = false;
         float x = origin.X + pad;
-        var theme = Norvrandt.Sheet.CurrentTheme;
+        var theme = Crystarium.ActiveTheme;
         for (int i = 0; i < items.Length; i++)
         {
             var tabMin = new Vector2(x, origin.Y + pad);
@@ -93,11 +93,11 @@ public static partial class Crystarium
             if (active)
             {
                 dl.AddRectFilled(tabMax with { X = tabMin.X, Y = tabMin.Y + 1f * scale }, tabMax + new Vector2(0f, 1f * scale),
-                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(0f, 0f, 0f, 0.25f))),
-                    Theme.Metrics.Radius.Control * scale);
+                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.SegmentShadow)),
+                    Crystarium.ActiveTheme.Radii.Control * scale);
                 dl.AddRectFilled(tabMin, tabMax,
-                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(0x2a / 255f, 0x2a / 255f, 0x2e / 255f, 1f))),
-                    Theme.Metrics.Radius.Control * scale);
+                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.SegmentSelected)),
+                    Crystarium.ActiveTheme.Radii.Control * scale);
             }
 
             var textColor = active || hit.Hovered

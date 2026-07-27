@@ -62,28 +62,28 @@ public abstract class View : Window
 
     private void PushTheme()
     {
-        ImGui.PushStyleColor(ImGuiCol.WindowBg, Norvrandt.Sheet.CurrentTheme.Surface);              _pushedColors++;
-        ImGui.PushStyleColor(ImGuiCol.ChildBg, Norvrandt.Sheet.CurrentTheme.Surface);               _pushedColors++;
-        ImGui.PushStyleColor(ImGuiCol.PopupBg, Norvrandt.Sheet.CurrentTheme.SurfaceRaised);         _pushedColors++;
-        ImGui.PushStyleColor(ImGuiCol.Text, Norvrandt.Sheet.CurrentTheme.Text);                     _pushedColors++;
-        ImGui.PushStyleColor(ImGuiCol.TextDisabled, Norvrandt.Sheet.CurrentTheme.TextDim);          _pushedColors++;
-        ImGui.PushStyleColor(ImGuiCol.Border, Norvrandt.Sheet.CurrentTheme.Border);                 _pushedColors++;
-        ImGui.PushStyleColor(ImGuiCol.TitleBg, Norvrandt.Sheet.CurrentTheme.SurfaceSunken);         _pushedColors++;
-        ImGui.PushStyleColor(ImGuiCol.TitleBgActive, Norvrandt.Sheet.CurrentTheme.SurfaceRaised);   _pushedColors++;
-        ImGui.PushStyleColor(ImGuiCol.FrameBg, Norvrandt.Sheet.CurrentTheme.SurfaceSunken);         _pushedColors++;
-        ImGui.PushStyleColor(ImGuiCol.Button, Norvrandt.Sheet.CurrentTheme.SurfaceRaised);          _pushedColors++;
-        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Norvrandt.Sheet.CurrentTheme.AccentHover);     _pushedColors++;
-        ImGui.PushStyleColor(ImGuiCol.ButtonActive, Norvrandt.Sheet.CurrentTheme.AccentActive);     _pushedColors++;
-        ImGui.PushStyleColor(ImGuiCol.Header, Norvrandt.Sheet.CurrentTheme.Accent);                 _pushedColors++;
-        ImGui.PushStyleColor(ImGuiCol.HeaderHovered, Norvrandt.Sheet.CurrentTheme.AccentHover);     _pushedColors++;
-        ImGui.PushStyleColor(ImGuiCol.HeaderActive, Norvrandt.Sheet.CurrentTheme.AccentActive);     _pushedColors++;
+        ImGui.PushStyleColor(ImGuiCol.WindowBg, Crystarium.ActiveTheme.Surface);              _pushedColors++;
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, Crystarium.ActiveTheme.Surface);               _pushedColors++;
+        ImGui.PushStyleColor(ImGuiCol.PopupBg, Crystarium.ActiveTheme.SurfaceRaised);         _pushedColors++;
+        ImGui.PushStyleColor(ImGuiCol.Text, Crystarium.ActiveTheme.Text);                     _pushedColors++;
+        ImGui.PushStyleColor(ImGuiCol.TextDisabled, Crystarium.ActiveTheme.TextDim);          _pushedColors++;
+        ImGui.PushStyleColor(ImGuiCol.Border, Crystarium.ActiveTheme.Border);                 _pushedColors++;
+        ImGui.PushStyleColor(ImGuiCol.TitleBg, Crystarium.ActiveTheme.SurfaceSunken);         _pushedColors++;
+        ImGui.PushStyleColor(ImGuiCol.TitleBgActive, Crystarium.ActiveTheme.SurfaceRaised);   _pushedColors++;
+        ImGui.PushStyleColor(ImGuiCol.FrameBg, Crystarium.ActiveTheme.SurfaceSunken);         _pushedColors++;
+        ImGui.PushStyleColor(ImGuiCol.Button, Crystarium.ActiveTheme.SurfaceRaised);          _pushedColors++;
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Crystarium.ActiveTheme.AccentHover);     _pushedColors++;
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, Crystarium.ActiveTheme.AccentActive);     _pushedColors++;
+        ImGui.PushStyleColor(ImGuiCol.Header, Crystarium.ActiveTheme.Accent);                 _pushedColors++;
+        ImGui.PushStyleColor(ImGuiCol.HeaderHovered, Crystarium.ActiveTheme.AccentHover);     _pushedColors++;
+        ImGui.PushStyleColor(ImGuiCol.HeaderActive, Crystarium.ActiveTheme.AccentActive);     _pushedColors++;
 
-        float pad = Theme.Metrics.Page.ActionGap * ImGuiHelpers.GlobalScale;
+        float pad = Crystarium.ActiveTheme.Page.ActionGap * ImGuiHelpers.GlobalScale;
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(pad, pad));    _pushedVars++;
         ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding,
-            Theme.Metrics.Radius.Small * ImGuiHelpers.GlobalScale); _pushedVars++;
+            Crystarium.ActiveTheme.Radii.Small * ImGuiHelpers.GlobalScale); _pushedVars++;
         ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding,
-            Theme.Metrics.Radius.Medium * ImGuiHelpers.GlobalScale); _pushedVars++;
+            Crystarium.ActiveTheme.Radii.Medium * ImGuiHelpers.GlobalScale); _pushedVars++;
     }
 
     private void PopTheme()

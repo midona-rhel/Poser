@@ -567,9 +567,9 @@ public static class WorldGizmo
 
     private static Vector4 AxisColor(int axis) => axis switch
     {
-        0 => Theme.Palette.AxisX,
-        1 => Theme.Palette.AxisY,
-        _ => Theme.Palette.AxisZ,
+        0 => Crystarium.ActiveTheme.Palette.AxisX,
+        1 => Crystarium.ActiveTheme.Palette.AxisY,
+        _ => Crystarium.ActiveTheme.Palette.AxisZ,
     };
 
     private static bool IsHot(

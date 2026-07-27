@@ -97,15 +97,7 @@ public static class SettingsView
         var dl = ImGui.GetWindowDrawList();
 
         dl.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BgApp)), 10f * s);
-        Norvrandt.Box(min, max, new BoxStyle
-        {
-            BorderWidth = 1f,
-            BorderRadius = 10f,
-            BorderTopColor = Theme.Glass.BorderTop,
-            BorderLeftColor = Theme.Glass.BorderSide,
-            BorderRightColor = Theme.Glass.BorderSide,
-            BorderBottomColor = Theme.Glass.BorderBottom,
-        });
+        Crystarium.FloatingSurface.DrawBorder(min, max, 10f);
 
         float headH = 44f * s, footH = 44f * s, navW = 200f * s;
         float bodyTop = min.Y + headH, bodyBottom = max.Y - footH;
@@ -169,10 +161,10 @@ public static class SettingsView
         float saveW = 64f, cancelW = 76f, gap = 6f;
         float bx = max.X - 12f * s - (saveW + gap + cancelW) * s;
         ImGui.SetCursorScreenPos(new Vector2(bx, bodyBottom + (footH - 32f * s) / 2f));
-        if (Crystarium.Button("Cancel", new ButtonProps { Style = new ButtonStyle { Width = Sizing.Fixed(cancelW) } }))
+        if (Crystarium.Button("Cancel", width: cancelW))
             vm.OnCancel?.Invoke();
         ImGui.SameLine(0f, gap * s);
-        if (Crystarium.Button("Save", new ButtonProps { Classes = Cls.Primary, Style = new ButtonStyle { Width = Sizing.Fixed(saveW) } }))
+        if (Crystarium.Button("Save", primary: true, width: saveW))
             vm.OnSave?.Invoke();
     }
 
@@ -339,7 +331,7 @@ public static class SettingsView
             // Rebind buttons in an aligned column regardless of chip width
             ImGui.SetCursorScreenPos(_rowOrigin + new Vector2(280f * s, 1f * s));
             if (Crystarium.Button(rebinding ? "Cancel" : "Rebind",
-                new ButtonProps { Id = "kb-" + i, Style = new ButtonStyle { Width = Sizing.Fixed(72) } }))
+                id: "kb-" + i, width: 72f))
                 vm.RebindingIndex = rebinding ? -1 : i;
             RowEnd(s);
         }
@@ -364,7 +356,7 @@ public static class SettingsView
 
         RowStart(s);
         RowLabel("Source", s, controlY: 1f);
-        if (Crystarium.Button("Open repository", new ButtonProps { Style = new ButtonStyle { Width = Sizing.Fixed(140) } }))
+        if (Crystarium.Button("Open repository", width: 140f))
             vm.OnOpenRepository?.Invoke();
         RowEnd(s);
 

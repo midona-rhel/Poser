@@ -78,8 +78,8 @@ public sealed class PoseFileInspectorSection
         h += 28f * s;
 
         ImGui.SetCursorScreenPos(new Vector2(cursor.X, cursor.Y + h));
-        if (Crystarium.Button("Import…",
-                new ButtonProps { Id = "impex-import", Classes = Cls.Compact }))
+        if (Crystarium.Button("Import…", id: "impex-import",
+                density: Crystarium.ControlDensity.Workspace))
         {
             // The actor is frozen at dialog open; the Selected-scope
             // selection freezes as COMPLETE BoneIds at dialog confirmation.
@@ -103,8 +103,8 @@ public sealed class PoseFileInspectorSection
             });
         }
         ImGui.SameLine(0f, 6f * s);
-        if (Crystarium.Button("Export…",
-                new ButtonProps { Id = "impex-export", Classes = Cls.Compact }))
+        if (Crystarium.Button("Export…", id: "impex-export",
+                density: Crystarium.ControlDensity.Workspace))
         {
             _exportBrowser.Open(_lastPath, path =>
             {

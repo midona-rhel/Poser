@@ -30,20 +30,20 @@ public static partial class Crystarium
         float scale = ImGuiHelpers.GlobalScale;
 
         var size = new Vector2(
-            Theme.Metrics.Control.ColorWell,
-            Theme.Metrics.Control.ColorWell) * scale;
+            Crystarium.ActiveTheme.Controls.ColorWellSize,
+            Crystarium.ActiveTheme.Controls.ColorWellSize) * scale;
         var hit = Interactive.Reserve(id, size, props.Disabled, Norvrandt.AvailableHeight);
 
         var dl = ImGui.GetWindowDrawList();
-        float r = Theme.Metrics.Radius.Control * scale;
+        float r = Crystarium.ActiveTheme.Radii.Control * scale;
         dl.AddRectFilled(hit.ScreenMin, hit.ScreenMax,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
                 props.Disabled
-                    ? new Vector4(0f, 0f, 0f, 0.12f)
+                    ? Crystarium.ActiveTheme.Chrome.UnavailableFill
                     : color with { W = 1f })), r);
         // 1px border painted inside the box edge (CSS border-box)
         dl.AddRect(hit.ScreenMin + new Vector2(0.5f, 0.5f), hit.ScreenMax - new Vector2(0.5f, 0.5f),
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.14f))), r, ImDrawFlags.None, 1f * scale);
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.ControlBorder)), r, ImDrawFlags.None, 1f * scale);
 
         string popupId = id + "_picker";
         if (hit.Clicked && !props.Disabled) ImGui.OpenPopup(popupId);
@@ -55,17 +55,17 @@ public static partial class Crystarium
             popupId,
             new FloatingSurfaceProps
             {
-                Width = Theme.Metrics.Floating.ColorPickerWidth,
-                Height = Theme.Metrics.Floating.ColorPickerHeight,
-                Padding = Theme.Metrics.Floating.ColorPickerPadding,
+                Width = Crystarium.ActiveTheme.Floating.ColorPickerWidth,
+                Height = Crystarium.ActiveTheme.Floating.ColorPickerHeight,
+                Padding = Crystarium.ActiveTheme.Floating.ColorPickerPadding,
                 AnchorMin = hit.ScreenMin,
                 AnchorMax = hit.ScreenMax,
             },
             () =>
             {
                 ImGui.SetNextItemWidth(
-                    (Theme.Metrics.Floating.ColorPickerWidth
-                        - Theme.Metrics.Floating.ColorPickerPadding * 2f)
+                    (Crystarium.ActiveTheme.Floating.ColorPickerWidth
+                        - Crystarium.ActiveTheme.Floating.ColorPickerPadding * 2f)
                     * scale);
                 var flags = ImGuiColorEditFlags.NoSidePreview
                     | ImGuiColorEditFlags.NoSmallPreview;
@@ -96,28 +96,28 @@ public static partial class Crystarium
         float scale = ImGuiHelpers.GlobalScale;
 
         var size = new Vector2(
-            Theme.Metrics.Control.ColorWell,
-            Theme.Metrics.Control.ColorWell) * scale;
+            Crystarium.ActiveTheme.Controls.ColorWellSize,
+            Crystarium.ActiveTheme.Controls.ColorWellSize) * scale;
         var hit = Interactive.Reserve(id, size, disabled: false, Norvrandt.AvailableHeight);
 
         var dl = ImGui.GetWindowDrawList();
         var center = (hit.ScreenMin + hit.ScreenMax) * 0.5f;
-        float radius = Theme.Metrics.Control.ColorWell * 0.5f * scale;
+        float radius = Crystarium.ActiveTheme.Controls.ColorWellSize * 0.5f * scale;
 
         // box-shadow spread rings drawn as filled discs back-to-front — one clean
         // AA boundary per edge (stroked circles fringe on both stroke edges).
         if (active)
         {
             dl.AddCircleFilled(center, radius + 4f * scale,
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(50 / 255f, 151 / 255f, 255 / 255f, 1f))), 64);
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.Primary)), 64);
             dl.AddCircleFilled(center, radius + 2f * scale,
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(24 / 255f, 25 / 255f, 27 / 255f, 1f))), 64);
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.PickerWell)), 64);
         }
         dl.AddCircleFilled(center, radius,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(color with { W = 1f })), 64);
         // inset ring: box-shadow inset 0 0 0 1px rgba(255,255,255,.18) — 13..14px band
         dl.AddCircle(center, radius - 0.5f * scale,
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.18f))), 64, 1f * scale);
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.PickerBorder)), 64, 1f * scale);
 
         return hit.Clicked;
     }

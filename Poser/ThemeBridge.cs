@@ -51,6 +51,6 @@ internal static class ThemeBridge
     {
         // The retained UI owns its surface, text, and border tokens. Only the
         // accent choice survives from legacy configuration.
-        Norvrandt.Sheet.LoadDefaults(Theme.Default);
+        Crystarium.UseTheme(Theme.PictoDark);
     }
 }

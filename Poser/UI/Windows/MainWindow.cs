@@ -236,16 +236,16 @@ public class MainWindow : Window
         // The shell draws its own chassis; keep child regions transparent and
         // give the hosted legacy panes the themed widget colors they expect.
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Vector4.Zero);
-        ImGui.PushStyleColor(ImGuiCol.Text, Norvrandt.Sheet.CurrentTheme.Text);
-        ImGui.PushStyleColor(ImGuiCol.TextDisabled, Norvrandt.Sheet.CurrentTheme.TextDim);
-        ImGui.PushStyleColor(ImGuiCol.Border, Norvrandt.Sheet.CurrentTheme.Border);
-        ImGui.PushStyleColor(ImGuiCol.Button, Norvrandt.Sheet.CurrentTheme.SurfaceRaised);
-        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Norvrandt.Sheet.CurrentTheme.AccentHover);
-        ImGui.PushStyleColor(ImGuiCol.ButtonActive, Norvrandt.Sheet.CurrentTheme.AccentActive);
-        ImGui.PushStyleColor(ImGuiCol.FrameBg, Norvrandt.Sheet.CurrentTheme.SurfaceSunken);
-        ImGui.PushStyleColor(ImGuiCol.Header, Norvrandt.Sheet.CurrentTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.HeaderHovered, Norvrandt.Sheet.CurrentTheme.AccentHover);
-        ImGui.PushStyleColor(ImGuiCol.HeaderActive, Norvrandt.Sheet.CurrentTheme.AccentActive);
+        ImGui.PushStyleColor(ImGuiCol.Text, Crystarium.ActiveTheme.Text);
+        ImGui.PushStyleColor(ImGuiCol.TextDisabled, Crystarium.ActiveTheme.TextDim);
+        ImGui.PushStyleColor(ImGuiCol.Border, Crystarium.ActiveTheme.Border);
+        ImGui.PushStyleColor(ImGuiCol.Button, Crystarium.ActiveTheme.SurfaceRaised);
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Crystarium.ActiveTheme.AccentHover);
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, Crystarium.ActiveTheme.AccentActive);
+        ImGui.PushStyleColor(ImGuiCol.FrameBg, Crystarium.ActiveTheme.SurfaceSunken);
+        ImGui.PushStyleColor(ImGuiCol.Header, Crystarium.ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.HeaderHovered, Crystarium.ActiveTheme.AccentHover);
+        ImGui.PushStyleColor(ImGuiCol.HeaderActive, Crystarium.ActiveTheme.AccentActive);
 
         // The shell IS the window chrome — the ImGui window must contribute
         // nothing; the retained shell owns its padding and borders.
@@ -1059,14 +1059,14 @@ public class MainWindow : Window
         {
             Crystarium.TextInput("##rename-input", ref _renameValue);
             ImGui.Dummy(new Vector2(0f, 8f * ImGuiHelpers.GlobalScale));
-            if (Crystarium.Button("Save", new ButtonProps { Id = "rename-save", Classes = Cls.Primary }))
+            if (Crystarium.Button("Save", id: "rename-save", primary: true))
             {
                 Config.ConfigurationService.Instance.SetNickname(target.LogicalId, _renameValue);
                 _renameOpen = false;
             }
             ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
-            if (Crystarium.Button("Clear", new ButtonProps { Id = "rename-clear",
-                Tooltip = "Remove the nickname and show the real name" }))
+            if (Crystarium.Button("Clear", id: "rename-clear",
+                help: "Remove the nickname and show the real name"))
             {
                 Config.ConfigurationService.Instance.SetNickname(target.LogicalId, null);
                 _renameOpen = false;

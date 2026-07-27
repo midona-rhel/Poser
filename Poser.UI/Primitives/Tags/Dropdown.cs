@@ -39,12 +39,12 @@ public static partial class Crystarium
         // 12px text; chevron = Tabler IconSelector at 14 in a 20px slot, opacity .5.
         bool changed = false;
         float scale = ImGuiHelpers.GlobalScale;
-        float height = (resolved.Height ?? Sizing.Fixed(Theme.Metrics.Control.Workspace)).Value * scale;
-        float rounding = (resolved.BorderRadius ?? Theme.Metrics.Radius.Control) * scale;
-        float padLeft = Theme.Metrics.Space.Six * scale;
-        float padRight = Theme.Metrics.Space.Three * scale;
-        float gap = Theme.Metrics.Space.Three * scale;
-        float chevronSlot = Theme.Metrics.Control.SwitchHeight * scale;
+        float height = (resolved.Height ?? Sizing.Fixed(Crystarium.ActiveTheme.Controls.WorkspaceHeight)).Value * scale;
+        float rounding = (resolved.BorderRadius ?? Crystarium.ActiveTheme.Radii.Control) * scale;
+        float padLeft = Crystarium.ActiveTheme.Spacing.Six * scale;
+        float padRight = Crystarium.ActiveTheme.Spacing.Three * scale;
+        float gap = Crystarium.ActiveTheme.Spacing.Three * scale;
+        float chevronSlot = Crystarium.ActiveTheme.Controls.SwitchHeight * scale;
 
         float totalWidth;
         if (resolved.Width.HasValue && resolved.Width.Value.Mode == SizingMode.Fixed)
@@ -67,13 +67,13 @@ public static partial class Crystarium
         bool buttonHovered = false;
         if (ImGui.IsItemClicked() && !disabled) ImGui.OpenPopup(popupId);
 
-        var valueBg = ColorEx.ApplyAlpha(resolved.ValueBackground ?? new Vector4(1f, 1f, 1f, 0.10f));
+        var valueBg = ColorEx.ApplyAlpha(resolved.ValueBackground ?? Crystarium.ActiveTheme.Chrome.ControlHover);
         drawList.AddRectFilled(valuePos, valueEnd, ImGui.ColorConvertFloat4ToU32(valueBg), rounding);
 
         float borderWidth = (resolved.BorderWidth ?? 1f) * scale;
         if (borderWidth > 0f)
         {
-            var borderColor = ColorEx.ApplyAlpha(resolved.BorderColor ?? new Vector4(1f, 1f, 1f, 0.08f));
+            var borderColor = ColorEx.ApplyAlpha(resolved.BorderColor ?? Crystarium.ActiveTheme.Chrome.WeakOverlay);
             float bi = borderWidth * 0.5f; // stroke inside the box like CSS
             drawList.AddRect(valuePos + new Vector2(bi, bi), valueEnd - new Vector2(bi, bi),
                 ImGui.ColorConvertFloat4ToU32(borderColor),
@@ -81,7 +81,7 @@ public static partial class Crystarium
         }
 
         // Label at 12px via FontRegistry (CSS-px semantics)
-        var fontHandle = FontRegistry.Resolve(resolved.FontFamily ?? FontFamily.Default, resolved.FontSize ?? 12f);
+        var fontHandle = FontRegistry.Resolve(resolved.FontFamily ?? FontFamily.Default, resolved.FontSize ?? Crystarium.ActiveTheme.Typography.LabelSize);
         bool fontPushed = fontHandle is { Available: true };
         if (fontPushed) fontHandle!.Push();
 
@@ -91,13 +91,13 @@ public static partial class Crystarium
         float textAvail = totalWidth - padLeft - gap - chevronSlot - padRight;
         string display = TruncateText(currentText, textAvail);
         var textSize = ImGui.CalcTextSize(display);
-        var textColor = ColorEx.ApplyAlpha(resolved.Color ?? Norvrandt.Sheet.CurrentTheme.Text);
+        var textColor = ColorEx.ApplyAlpha(resolved.Color ?? Crystarium.ActiveTheme.Text);
         // Optical baseline: the font's reported bounds sit one pixel above
         // the visual center of the pill.
         var textPos = new Vector2(
             valuePos.X + padLeft,
             valuePos.Y + (height - textSize.Y) / 2f
-                + Theme.Metrics.Optical.DropdownText * scale);
+                + Crystarium.ActiveTheme.Optical.DropdownText * scale);
         drawList.AddText(textPos, ImGui.ColorConvertFloat4ToU32(textColor), display);
 
         if (fontPushed) fontHandle!.Pop();
@@ -108,11 +108,11 @@ public static partial class Crystarium
         // Chevron: Tabler IconSelector ("M8 9l4 -4l4 4" + "M16 15l-4 4l-4 -4",
         // 24-grid, stroke 2, round caps) at 14px, opacity .5.
         {
-            float iconSpan = Theme.Metrics.Control.SmallIcon * scale;
+            float iconSpan = Crystarium.ActiveTheme.Controls.SmallIconSize * scale;
             float unit = iconSpan / 24f;
             var slotOrigin = new Vector2(valueEnd.X - padRight - chevronSlot, valuePos.Y);
             var origin = slotOrigin + new Vector2((chevronSlot - iconSpan) * 0.5f, (height - iconSpan) * 0.5f);
-            var chevColor = ColorEx.ApplyAlpha((resolved.Color ?? Norvrandt.Sheet.CurrentTheme.Text) with { W = 0.5f });
+            var chevColor = ColorEx.ApplyAlpha((resolved.Color ?? Crystarium.ActiveTheme.Text) with { W = 0.5f });
             uint chevU32 = ImGui.ColorConvertFloat4ToU32(chevColor);
             float stroke = 2f * unit;
             drawList.PathLineTo(origin + new Vector2(8f, 9f) * unit);
@@ -128,10 +128,10 @@ public static partial class Crystarium
         ImGui.SetCursorScreenPos(pos + new Vector2(0, height));
 
         // Popup
-        float popupPadding = Theme.Metrics.Floating.PopupPadding * scale;
+        float popupPadding = Crystarium.ActiveTheme.Floating.PopupPadding * scale;
         int visibleItems = Math.Min(
             items.Length,
-            Theme.Metrics.Picker.MaximumRows);
+            Crystarium.ActiveTheme.Picker.MaximumRows);
         float itemListHeight = visibleItems * height;
         float popupHeight = itemListHeight + popupPadding * 2;
         int popupSelected = selected;
@@ -142,7 +142,7 @@ public static partial class Crystarium
             {
                 Width = totalWidth / scale,
                 Height = popupHeight / scale,
-                Padding = Theme.Metrics.Floating.PopupPadding,
+                Padding = Crystarium.ActiveTheme.Floating.PopupPadding,
                 AnchorMin = valuePos,
                 AnchorMax = valueEnd,
             },
@@ -157,14 +157,14 @@ public static partial class Crystarium
                     {
                         var optFont = FontRegistry.Resolve(
                             resolved.FontFamily ?? FontFamily.Default,
-                            resolved.FontSize ?? Theme.Metrics.Typography.Label);
+                            resolved.FontSize ?? Crystarium.ActiveTheme.Typography.LabelSize);
                         bool optFontPushed = optFont is { Available: true };
                         if (optFontPushed) optFont!.Push();
-                        float optPad = Theme.Metrics.Page.ActionGap * scale;
-                        float optRounding = Theme.Metrics.Radius.Medium * scale;
+                        float optPad = Crystarium.ActiveTheme.Page.ActionGap * scale;
+                        float optRounding = Crystarium.ActiveTheme.Radii.Medium * scale;
                         uint optFill = ImGui.ColorConvertFloat4ToU32(
                             ColorEx.ApplyAlpha(
-                                new Vector4(1f, 1f, 1f, 0.08f)));
+                                Crystarium.ActiveTheme.Chrome.WeakOverlay));
                         var spacing = ImGui.GetStyle().ItemSpacing;
                         ImGui.PushStyleVar(
                             ImGuiStyleVar.ItemSpacing,
@@ -185,7 +185,7 @@ public static partial class Crystarium
                                         itemPos.X + itemSize.X,
                                         itemPos.Y + MathF.Max(1f, scale)),
                                     ImGui.ColorConvertFloat4ToU32(
-                                        Norvrandt.Sheet.CurrentTheme.Border
+                                        Crystarium.ActiveTheme.Border
                                             with { W = 0.24f }));
                             }
 
@@ -217,11 +217,11 @@ public static partial class Crystarium
                             var itemTextPos = new Vector2(
                                 itemPos.X + optPad,
                                 itemPos.Y + (height - itemTextSize.Y) * 0.5f
-                                    + Theme.Metrics.Optical.DropdownText * scale);
+                                    + Crystarium.ActiveTheme.Optical.DropdownText * scale);
                             popupDrawList.AddText(
                                 itemTextPos,
                                 ColorEx.ApplyAlpha(
-                                    Norvrandt.Sheet.CurrentTheme.Text).ToU32(),
+                                    Crystarium.ActiveTheme.Text).ToU32(),
                                 itemDisplay);
                             if (itemDisplay != items[i] && itemHovered)
                                 HoverHelp.Preview(

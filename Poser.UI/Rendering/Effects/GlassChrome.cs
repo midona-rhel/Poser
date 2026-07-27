@@ -23,8 +23,8 @@ internal static class GlassChrome
     /// else the precomposited opaque equivalent.
     /// </summary>
     public static Vector4 BackgroundColor => BackdropBlurAvailable
-        ? new Vector4(36 / 255f, 37 / 255f, 40 / 255f, 0.92f)
-        : Theme.Glass.Bg;
+        ? Crystarium.ActiveTheme.Glass.BlurBackground
+        : Crystarium.ActiveTheme.Glass.Background;
 
     /// <summary>
     /// Blur the backdrop behind a glass rect. Call FIRST for the surface (it prepends
@@ -39,7 +39,7 @@ internal static class GlassChrome
             blurStrength: 1.0f,
             rounding: rounding,
             tintColor: default,
-            luminosityColor: new Vector4(0f, 0f, 0f, 0.30f), // brightness(.7)
+            luminosityColor: Crystarium.ActiveTheme.Glass.Luminosity, // brightness(.7)
             noiseOpacity: 0f); // picto glass has no noise
     }
 

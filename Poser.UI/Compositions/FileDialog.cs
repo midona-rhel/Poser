@@ -84,17 +84,17 @@ public static partial class Crystarium
             FloatingSurface.Window(
                 $"{_title}{_id}",
                 ref _open,
-                Theme.Metrics.FileDialog.Width,
-                Theme.Metrics.FileDialog.Height,
+                Crystarium.ActiveTheme.FileDialog.Width,
+                Crystarium.ActiveTheme.FileDialog.Height,
                 DrawFrame);
         }
 
         private void DrawFrame(FloatingSurfaceFrame frame)
         {
             float scale = frame.Scale;
-            float barHeight = Theme.Metrics.Floating.ModalBar * scale;
-            float headerInset = Theme.Metrics.Floating.HeaderInset * scale;
-            float closeSize = Theme.Metrics.Floating.CloseAction * scale;
+            float barHeight = Crystarium.ActiveTheme.Floating.ModalBarHeight * scale;
+            float headerInset = Crystarium.ActiveTheme.Floating.HeaderInset * scale;
+            float closeSize = Crystarium.ActiveTheme.Floating.CloseActionSize * scale;
             var drawList = ImGui.GetWindowDrawList();
 
             DrawTextCentered(
@@ -102,16 +102,16 @@ public static partial class Crystarium
                 new Vector2(
                     frame.Size.X
                         - headerInset * 2f
-                        - Theme.Metrics.Floating.CloseAction * scale,
+                        - Crystarium.ActiveTheme.Floating.CloseActionSize * scale,
                     barHeight),
-                Theme.Metrics.Typography.SurfaceTitle,
+                Crystarium.ActiveTheme.Typography.SurfaceTitleSize,
                 FontWeight.Medium,
                 FormValueColor,
                 _title);
 
             ImGui.SetCursorScreenPos(new Vector2(
                 frame.Max.X
-                    - Theme.Metrics.Floating.CloseInset * scale
+                    - Crystarium.ActiveTheme.Floating.CloseInset * scale
                     - closeSize,
                 frame.Min.Y + (barHeight - closeSize) * 0.5f));
             if (FloatingSurface.CloseButton($"{_id}-close"))
@@ -130,8 +130,8 @@ public static partial class Crystarium
                 new Vector2(frame.Max.X, footerTop),
                 scale);
 
-            float bodyInset = Theme.Metrics.Floating.ModalBodyPadding * scale;
-            float bodyVertical = Theme.Metrics.Space.Four * scale;
+            float bodyInset = Crystarium.ActiveTheme.Floating.ModalBodyPadding * scale;
+            float bodyVertical = Crystarium.ActiveTheme.Spacing.Four * scale;
             var bodyMin = new Vector2(
                 frame.Min.X + bodyInset,
                 frame.Min.Y + barHeight + bodyVertical);
@@ -144,17 +144,14 @@ public static partial class Crystarium
 
         private void DrawBody(Vector2 min, Vector2 max, float scale)
         {
-            float control = Theme.Metrics.Control.Comfortable * scale;
-            float gap = Theme.Metrics.Page.ActionGap * scale;
+            float control = Crystarium.ActiveTheme.Controls.ComfortableHeight * scale;
+            float gap = Crystarium.ActiveTheme.Page.ActionGap * scale;
             ImGui.SetCursorScreenPos(min);
             if (IconButton(
                     TablerIcon.ArrowUp,
-                    new ButtonProps
-                    {
-                        Id = $"{_id}-up",
-                        Classes = Cls.Comfortable,
-                        Tooltip = "Open the parent folder",
-                    }))
+                    id: $"{_id}-up",
+                    help: "Open the parent folder",
+                    density: ControlDensity.Comfortable))
             {
                 var parent = Directory.GetParent(_currentPath)?.FullName;
                 if (parent != null)
@@ -186,27 +183,27 @@ public static partial class Crystarium
             }
 
             float y = min.Y
-                + (Theme.Metrics.Control.Comfortable
-                    + Theme.Metrics.Space.Two) * scale;
+                + (Crystarium.ActiveTheme.Controls.ComfortableHeight
+                    + Crystarium.ActiveTheme.Spacing.Two) * scale;
             if (_lastError is { } error)
             {
                 DrawText(
                     new Vector2(min.X, y),
                     max.X - min.X,
-                    Theme.Metrics.Typography.Caption,
+                    Crystarium.ActiveTheme.Typography.CaptionSize,
                     FontWeight.Regular,
-                    Norvrandt.Sheet.CurrentTheme.Danger,
+                    Crystarium.ActiveTheme.Danger,
                     error);
-                y += Theme.Metrics.Page.StatusLine * scale;
+                y += Crystarium.ActiveTheme.Page.StatusLineHeight * scale;
             }
 
             float listHeight = MathF.Max(0f, max.Y - y);
             float favoritesWidth =
-                Theme.Metrics.FileDialog.FavoritesWidth * scale;
+                Crystarium.ActiveTheme.FileDialog.FavoritesWidth * scale;
             ImGui.SetCursorScreenPos(new Vector2(min.X, y));
             ScrollRegion(
                 $"{_id}-favorites",
-                Theme.Metrics.FileDialog.FavoritesWidth,
+                Crystarium.ActiveTheme.FileDialog.FavoritesWidth,
                 listHeight / scale,
                 region =>
                 {
@@ -226,7 +223,7 @@ public static partial class Crystarium
 
             float separatorX = min.X
                 + favoritesWidth
-                + Theme.Metrics.Space.Two * scale;
+                + Crystarium.ActiveTheme.Spacing.Two * scale;
             ImGui.GetWindowDrawList().AddRectFilled(
                 new Vector2(separatorX, y),
                 new Vector2(
@@ -236,7 +233,7 @@ public static partial class Crystarium
 
             float entriesX = separatorX
                 + MathF.Max(1f, scale)
-                + Theme.Metrics.Space.Four * scale;
+                + Crystarium.ActiveTheme.Spacing.Four * scale;
             float entriesWidth = MathF.Max(0f, max.X - entriesX);
             ImGui.SetCursorScreenPos(new Vector2(entriesX, y));
             ScrollRegion(
@@ -301,13 +298,14 @@ public static partial class Crystarium
             string confirmLabel = _isSaveMode ? "Save" : "Import";
             var confirmSize = MeasureButton(
                 confirmLabel,
-                Cls.Comfortable + Cls.Primary);
-            var cancelSize = MeasureButton("Cancel", Cls.Comfortable);
-            float gap = Theme.Metrics.Page.ActionGap * scale;
-            float inset = Theme.Metrics.Floating.HeaderInset * scale;
+                ControlDensity.Comfortable,
+                primary: true);
+            var cancelSize = MeasureButton("Cancel", ControlDensity.Comfortable);
+            float gap = Crystarium.ActiveTheme.Page.ActionGap * scale;
+            float inset = Crystarium.ActiveTheme.Floating.HeaderInset * scale;
             float y = footerTop
-                + (Theme.Metrics.Floating.ModalBar
-                    - Theme.Metrics.Control.Comfortable) * 0.5f * scale;
+                + (Crystarium.ActiveTheme.Floating.ModalBarHeight
+                    - Crystarium.ActiveTheme.Controls.ComfortableHeight) * 0.5f * scale;
             float confirmX = max.X - inset - confirmSize.X;
 
             bool canConfirm = _isSaveMode
@@ -316,12 +314,9 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(new Vector2(confirmX, y));
             if (Button(
                     confirmLabel,
-                    new ButtonProps
-                    {
-                        Id = $"{_id}-confirm",
-                        Classes = Cls.Comfortable + Cls.Primary,
-                        Disabled = !canConfirm,
-                    })
+                    id: $"{_id}-confirm",
+                    disabled: !canConfirm,
+                    primary: true)
                 && canConfirm)
                 Confirm();
 
@@ -329,11 +324,7 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(new Vector2(cancelX, y));
             if (Button(
                     "Cancel",
-                    new ButtonProps
-                    {
-                        Id = $"{_id}-cancel",
-                        Classes = Cls.Comfortable,
-                    }))
+                    id: $"{_id}-cancel"))
                 _open = false;
 
             if (_isSaveMode)
@@ -342,7 +333,7 @@ public static partial class Crystarium
                     0f,
                     cancelX - gap - (min.X + inset));
                 float width = MathF.Min(
-                    Theme.Metrics.FileDialog.FileNameWidth * scale,
+                    Crystarium.ActiveTheme.FileDialog.FileNameWidth * scale,
                     available);
                 ImGui.SetCursorScreenPos(new Vector2(min.X + inset, y));
                 TextInput(

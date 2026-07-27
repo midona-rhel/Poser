@@ -26,7 +26,7 @@ public static partial class Crystarium
             float contentWidth = MathF.Max(
                 0f,
                 ImGui.GetContentRegionAvail().X / scale
-                    - Theme.Metrics.Scrollbar.Gutter);
+                    - Crystarium.ActiveTheme.Scrollbar.GutterWidth);
             content(new ScrollRegionScope(contentWidth, scale));
         }
         ImGui.EndChild();
@@ -60,7 +60,7 @@ public static partial class Crystarium
             _lastRowMin = ImGui.GetCursorScreenPos();
             _lastRowMax = _lastRowMin + new Vector2(
                 ContentWidth * _scale,
-                Theme.Metrics.Control.ListRow * _scale);
+                Crystarium.ActiveTheme.Controls.ListRowHeight * _scale);
             bool clicked = SidebarRow(
                 id,
                 label,
@@ -85,18 +85,18 @@ public static partial class Crystarium
         {
             var origin = ImGui.GetCursorScreenPos()
                 + new Vector2(
-                    Theme.Metrics.Space.Four,
-                    Theme.Metrics.Space.Three) * _scale;
+                    Crystarium.ActiveTheme.Spacing.Four,
+                    Crystarium.ActiveTheme.Spacing.Three) * _scale;
             DrawText(
                 origin,
                 ContentWidth * _scale,
-                Theme.Metrics.Typography.Caption,
+                Crystarium.ActiveTheme.Typography.CaptionSize,
                 FontWeight.Regular,
                 FormHintColor,
                 text);
             ImGui.Dummy(new Vector2(
                 ContentWidth * _scale,
-                Theme.Metrics.Control.ListRow * _scale));
+                Crystarium.ActiveTheme.Controls.ListRowHeight * _scale));
         }
 
         private void DrawSeparator()
@@ -110,20 +110,20 @@ public static partial class Crystarium
                     cursor.X + ContentWidth * _scale,
                     cursor.Y + MathF.Max(1f, _scale)),
                 ImGui.ColorConvertFloat4ToU32(
-                    Norvrandt.Sheet.CurrentTheme.Border with { W = 0.24f }));
+                    Crystarium.ActiveTheme.Border with { W = 0.24f }));
         }
     }
 
     public static void PushScrollbarStyle()
     {
         float scale = ImGuiHelpers.GlobalScale;
-        var text = Norvrandt.Sheet.CurrentTheme.Text;
+        var text = Crystarium.ActiveTheme.Text;
         ImGui.PushStyleVar(
             ImGuiStyleVar.ScrollbarSize,
-            Theme.Metrics.Scrollbar.Gutter * scale);
+            Crystarium.ActiveTheme.Scrollbar.GutterWidth * scale);
         ImGui.PushStyleVar(
             ImGuiStyleVar.ScrollbarRounding,
-            Theme.Metrics.Scrollbar.Radius * scale);
+            Crystarium.ActiveTheme.Scrollbar.Radius * scale);
         ImGui.PushStyleColor(ImGuiCol.ScrollbarBg, Vector4.Zero);
         ImGui.PushStyleColor(
             ImGuiCol.ScrollbarGrab,

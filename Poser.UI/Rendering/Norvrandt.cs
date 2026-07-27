@@ -5,8 +5,8 @@ using Dalamud.Bindings.ImGui;
 namespace Poser.UI;
 
 /// <summary>
-/// Norvrandt — the Crystarium UI framework. Owns the element renderer, the
-/// stylesheet cascade, and the layout engine. Widgets (buttons, sliders, etc.)
+/// Norvrandt is Crystarium's internal element renderer. It owns the
+/// stylesheet cascade and layout engine. Widgets (buttons, sliders, etc.)
 /// live in the <c>Crystarium</c> library on top of this.
 ///
 /// <code>
@@ -17,10 +17,9 @@ namespace Poser.UI;
 ///   });
 ///
 ///   Norvrandt.Sheet.Define(Cls.Btn + Cls.Primary, new ButtonStyle { BackgroundColor = MyAccent });
-///   Norvrandt.Sheet.LoadDefaults(myTheme);    // optional — reseeds default rules
 /// </code>
 /// </summary>
-public static class Norvrandt
+internal static class Norvrandt
 {
     /// <summary>Render a generic element with optional children.</summary>
     public static void Element(ElementProps props, Action? children = null)
@@ -50,16 +49,6 @@ public static class Norvrandt
     /// <summary>Stylesheet façade. Define rules with typed selectors and pseudo-classes.</summary>
     public static class Sheet
     {
-        /// <summary>The theme last seeded into the default stylesheet (or <see cref="Theme.Default"/> if none).</summary>
-        public static Theme CurrentTheme { get; private set; } = Theme.Default;
-
-        /// <summary>Replace the default rule set with one seeded from <paramref name="theme"/>. Idempotent.</summary>
-        public static void LoadDefaults(Theme theme)
-        {
-            CurrentTheme = theme;
-            Stylesheet.Reset();
-        }
-
         // Class-based, untyped style (ElementStyle works for any element)
         public static void Define(StyleClass cls, ElementStyle style) => Stylesheet.Define(cls, style);
         public static void Define(StyleClass cls, PseudoState pseudo, ElementStyle style) => Stylesheet.Define(cls, pseudo, style);

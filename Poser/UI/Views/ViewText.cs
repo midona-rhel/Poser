@@ -16,18 +16,7 @@ internal static class ViewText
     public static void Label(Vector2 screenPos, string text, float sizePx, FontWeight weight, Vector4 color, bool mono = false, bool wrap = false)
     {
         ImGui.SetCursorScreenPos(screenPos);
-        Norvrandt.Element(new ElementProps
-        {
-            Style = new ElementStyle
-            {
-                FontSize = sizePx,
-                FontWeight = weight,
-                FontFamily = mono ? FontFamily.Mono : FontFamily.Default,
-            },
-        }, () => Crystarium.Text(text, new TextProps
-        {
-            Style = new TextStyle { Color = color, WhiteSpace = wrap ? UI.WhiteSpace.Normal : UI.WhiteSpace.Nowrap },
-        }));
+        Crystarium.Text(text, sizePx, weight, color, mono, wrap);
     }
 
     /// <summary>Width of a text run in the given face (for manual centering).</summary>

@@ -4,7 +4,7 @@ namespace Poser.UI;
 
 /// <summary>
 /// Per-element attributes for the generic <see cref="Norvrandt.Element"/>.
-/// Tags use their own typed props (<see cref="ButtonProps"/> etc.) instead.
+/// Tags expose concise semantic calls and keep low-level styling internal.
 /// </summary>
 public record struct ElementProps
 {

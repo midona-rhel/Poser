@@ -31,12 +31,12 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
   `PoserIconSources` wins. Mirrored pairs reuse one glyph with `flipX`
   (undo/redo). Fonts: CSS-size conversion + glyph offset live in
   `FontRegistry`; no per-widget font padding.
-- UI foundation: `Theme.Metrics` is the sole dimensional and optical
-  source; Norvrandt is renderer machinery, while Crystarium is the only
-  product-facing primitive/composition API. Pages describe state and
-  callbacks through Page, ActionBar, Section, Form/FormRow and
-  ScrollRegion. FloatingSurface alone owns floating placement and glass
-  fill, blur, border and shadow.
+- UI foundation: the active `Theme` value owns colors, typography, metrics,
+  radii, shadows, motion, and optical corrections together. Norvrandt is
+  internal renderer machinery; Crystarium is the only product-facing API.
+  Pages supply current state and callbacks through Page, ActionBar, Section,
+  Form/FormRow and ScrollRegion. FloatingSurface alone owns floating
+  placement and glass fill, blur, border and shadow.
 - Hover help: `Crystarium.HoverHelp` is the ONE explanatory surface
   (picto KbdTooltip: 400 ms open, instant exit start, the 150 ms Mantine
   pop entering and exiting as one composited surface, glass card on the

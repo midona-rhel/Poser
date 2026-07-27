@@ -25,7 +25,7 @@ public static class ChromeBuilder
 
         // Element opacity fades the whole chrome, border included — a disabled
         // control must not keep a full-strength outline around a faded fill.
-        var border = resolved.BorderColor ?? Norvrandt.Sheet.CurrentTheme.Border;
+        var border = resolved.BorderColor ?? Crystarium.ActiveTheme.Border;
         if (resolved.Opacity.HasValue)
         {
             bg = bg with { W = bg.W * resolved.Opacity.Value };

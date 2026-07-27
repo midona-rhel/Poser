@@ -47,14 +47,14 @@ public static partial class Crystarium
 
         float width = size switch
         {
-            ModalSize.Medium => Theme.Metrics.Floating.MediumWidth,
-            ModalSize.Large => Theme.Metrics.Floating.LargeWidth,
-            _ => Theme.Metrics.Floating.SmallWidth,
+            ModalSize.Medium => Crystarium.ActiveTheme.Floating.MediumWidth,
+            ModalSize.Large => Crystarium.ActiveTheme.Floating.LargeWidth,
+            _ => Crystarium.ActiveTheme.Floating.SmallWidth,
         } * scale;
-        float barHeight = Theme.Metrics.Floating.ModalBar * scale;
+        float barHeight = Crystarium.ActiveTheme.Floating.ModalBarHeight * scale;
         float totalHeight = (height
-            ?? Theme.Metrics.Floating.DefaultModalHeight) * scale;
-        float rounding = Theme.Metrics.Radius.Surface * scale;
+            ?? Crystarium.ActiveTheme.Floating.DefaultModalHeight) * scale;
+        float rounding = Crystarium.ActiveTheme.Radii.Surface * scale;
 
         ImGui.SetNextWindowPos(
             position ?? FloatingSurface.PlaceCentered(
@@ -64,7 +64,7 @@ public static partial class Crystarium
 
         // Persistent, not pushed: ImGui draws the modal dim outside this call's
         // push/pop bracket. rgba(0,0,0,.55) is the design constant (GlassModal backdrop).
-        ImGui.GetStyle().Colors[(int)ImGuiCol.ModalWindowDimBg] = new Vector4(0f, 0f, 0f, 0.55f);
+        ImGui.GetStyle().Colors[(int)ImGuiCol.ModalWindowDimBg] = Crystarium.ActiveTheme.Chrome.ModalDim;
 
         ImGui.PushStyleColor(ImGuiCol.PopupBg, Vector4.Zero);
         ImGui.PushStyleVar(ImGuiStyleVar.PopupRounding, rounding);
@@ -85,28 +85,28 @@ public static partial class Crystarium
                 dl,
                 winMin,
                 winMax,
-                Theme.Metrics.Radius.Surface);
+                Crystarium.ActiveTheme.Radii.Surface);
 
-            var theme = Norvrandt.Sheet.CurrentTheme;
+            var theme = Crystarium.ActiveTheme;
 
             // ── Header: title 14px/500 at 16px, close 24×24 at right 10px,
             //    inset bottom border (border-secondary).
             var titleFont = FontRegistry.Resolve(
                 FontFamily.Default,
                 FontWeight.Medium,
-                Theme.Metrics.Typography.SurfaceTitle);
+                Crystarium.ActiveTheme.Typography.SurfaceTitleSize);
             bool titlePushed = titleFont is { Available: true };
             if (titlePushed) titleFont!.Push();
             var titleSize = ImGui.CalcTextSize(title);
             dl.AddText(winMin + new Vector2(
-                    Theme.Metrics.Floating.HeaderInset * scale,
+                    Crystarium.ActiveTheme.Floating.HeaderInset * scale,
                     (barHeight - titleSize.Y) * 0.5f),
                 ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Text)), title);
             if (titlePushed) titleFont!.Pop();
 
-            float closeSize = Theme.Metrics.Floating.CloseAction * scale;
+            float closeSize = Crystarium.ActiveTheme.Floating.CloseActionSize * scale;
             ImGui.SetCursorScreenPos(new Vector2(
-                winMax.X - Theme.Metrics.Floating.CloseInset * scale - closeSize,
+                winMax.X - Crystarium.ActiveTheme.Floating.CloseInset * scale - closeSize,
                 winMin.Y + (barHeight - closeSize) * 0.5f));
             if (FloatingSurface.CloseButton($"{id}##close"))
                 keepOpen = false;
@@ -114,19 +114,19 @@ public static partial class Crystarium
             dl.AddRectFilled(
                 new Vector2(winMin.X, winMin.Y + barHeight - 1f * scale),
                 new Vector2(winMax.X, winMin.Y + barHeight),
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.08f))));
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.WeakOverlay)));
 
             // ── Footer chrome (drawn before body so its strip sits under nothing)
             float footerTop = winMax.Y - barHeight;
             if (footer != null)
             {
                 dl.AddRectFilled(new Vector2(winMin.X, footerTop), winMax,
-                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(0f, 0f, 0f, 0.10f))),
+                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.ModalFooter)),
                     rounding, ImDrawFlags.RoundCornersBottom);
                 dl.AddRectFilled(
                     new Vector2(winMin.X, footerTop),
                     new Vector2(winMax.X, footerTop + 1f * scale),
-                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.08f))));
+                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.WeakOverlay)));
             }
 
             // ── Body: padding 16, scrollable between the bars.
@@ -135,8 +135,8 @@ public static partial class Crystarium
             ImGui.PushStyleVar(
                 ImGuiStyleVar.WindowPadding,
                 new Vector2(
-                    Theme.Metrics.Floating.ModalBodyPadding * scale,
-                    Theme.Metrics.Floating.ModalBodyPadding * scale));
+                    Crystarium.ActiveTheme.Floating.ModalBodyPadding * scale,
+                    Crystarium.ActiveTheme.Floating.ModalBodyPadding * scale));
             // AlwaysUseWindowPadding: borderless children ignore WindowPadding otherwise.
             if (ImGui.BeginChild($"{id}##body", new Vector2(width, bodyHeight), false,
                 ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.AlwaysUseWindowPadding))
@@ -150,14 +150,14 @@ public static partial class Crystarium
             if (footer != null)
             {
                 _modalFooterWidths.TryGetValue(popupId, out float lastWidth);
-                float footerInset = Theme.Metrics.Floating.FooterInset * scale;
+                float footerInset = Crystarium.ActiveTheme.Floating.FooterInset * scale;
                 float x = winMin.X + MathF.Max(
                     footerInset,
                     width - footerInset - lastWidth);
                 ImGui.SetCursorScreenPos(new Vector2(
                     x,
                     footerTop + (barHeight
-                        - Theme.Metrics.Control.Comfortable * scale) * 0.5f));
+                        - Crystarium.ActiveTheme.Controls.ComfortableHeight * scale) * 0.5f));
                 ImGui.BeginGroup();
                 footer();
                 ImGui.EndGroup();
