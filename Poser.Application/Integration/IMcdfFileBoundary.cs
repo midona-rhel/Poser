@@ -32,7 +32,9 @@ public interface IMcdfFileBoundary
         Action<McdfProgressStep> progress,
         CancellationToken cancellation);
 
-    /// <summary>Deletes one extraction directory. Safe to call repeatedly
-    /// and for already-deleted directories.</summary>
-    void DeleteOperationDirectory(string operationDirectory);
+    /// <summary>Deletes one extraction directory. Idempotent for
+    /// already-deleted directories; a failure is RETURNED so the caller
+    /// keeps directory ownership and can retry — extracted payloads must
+    /// never be released while something might still reference them.</summary>
+    IntegrationPortResult DeleteOperationDirectory(string operationDirectory);
 }

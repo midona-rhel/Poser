@@ -472,7 +472,22 @@ public sealed class ActorIntegrationSession
             }
         }
 
-        _files.DeleteOperationDirectory(mcdf.OperationDirectory);
+        // Extracted payloads outlive everything that references them: the
+        // directory is deleted only once the temporary collection is
+        // definitely gone, and a failed deletion keeps directory ownership
+        // so Reset MCDF retries it.
+        string? operationDirectory = mcdf.OperationDirectory;
+        if (temporaryCollection == null && operationDirectory != null)
+        {
+            var directoryDeleted = _files.DeleteOperationDirectory(operationDirectory);
+            if (directoryDeleted.Success)
+                operationDirectory = null;
+            else
+            {
+                failures.Add(directoryDeleted.Detail!);
+                complete = false;
+            }
+        }
 
         if (complete)
             return current with { Mcdf = null };
@@ -485,6 +500,7 @@ public sealed class ActorIntegrationSession
                 GlamourerLocked = locked,
                 TemporaryProfile = temporaryProfile,
                 TemporaryCollection = temporaryCollection,
+                OperationDirectory = operationDirectory,
             },
         };
     }
@@ -593,8 +609,8 @@ public sealed class ActorIntegrationSession
                 missing.Add(_port.CustomizePlus.Detail);
             if (missing.Count > 0)
             {
-                _files.DeleteOperationDirectory(package.OperationDirectory);
-                Finish("This package needs: " + string.Join(" ", missing), success: false);
+                Finish(WithDirectoryCleanup(package.OperationDirectory,
+                    "This package needs: " + string.Join(" ", missing)), success: false);
                 return;
             }
 
@@ -608,16 +624,16 @@ public sealed class ActorIntegrationSession
                 }
                 catch (FormatException)
                 {
-                    _files.DeleteOperationDirectory(package.OperationDirectory);
-                    Finish("The package's Customize+ payload is not valid base64.", success: false);
+                    Finish(WithDirectoryCleanup(package.OperationDirectory,
+                        "The package's Customize+ payload is not valid base64."), success: false);
                     return;
                 }
             }
 
             if (cancellation.IsCancellationRequested)
             {
-                _files.DeleteOperationDirectory(package.OperationDirectory);
-                Finish("The import was cancelled.", success: false);
+                Finish(WithDirectoryCleanup(package.OperationDirectory,
+                    "The import was cancelled."), success: false);
                 return;
             }
 
@@ -629,8 +645,8 @@ public sealed class ActorIntegrationSession
             var prepared = await _port.OnFrameworkThread(() => PrepareImport(actor, package));
             if (prepared.Detail != null || prepared.Baseline is not { } baseline)
             {
-                _files.DeleteOperationDirectory(package.OperationDirectory);
-                Finish(prepared.Detail ?? "The import could not be prepared.", success: false);
+                Finish(WithDirectoryCleanup(package.OperationDirectory,
+                    prepared.Detail ?? "The import could not be prepared."), success: false);
                 return;
             }
 
@@ -810,6 +826,14 @@ public sealed class ActorIntegrationSession
         return (baseline, null);
     }
 
+    /// <summary>Deletes an extraction directory nothing references and
+    /// appends a truthful note when even that fails.</summary>
+    private string WithDirectoryCleanup(string operationDirectory, string detail)
+    {
+        var deleted = _files.DeleteOperationDirectory(operationDirectory);
+        return deleted.Success ? detail : $"{detail} {deleted.Detail}";
+    }
+
     /// <summary>Reverse-order rollback of a failed or cancelled import.
     /// Returns null when everything came back; otherwise the failure detail
     /// after committing the unresolved leftovers as ownership so Reset MCDF
@@ -871,21 +895,30 @@ public sealed class ActorIntegrationSession
         if (resolvable)
             _port.RequestRedraw(actor);
 
-        if (failures.Count == 0)
+        // Extracted payloads are removed only once no temporary collection
+        // references them; a failed deletion stays owned and retryable.
+        string? remainingDirectory = operationDirectory;
+        if (tempCollection == null)
         {
-            _files.DeleteOperationDirectory(operationDirectory);
+            var directoryDeleted = _files.DeleteOperationDirectory(operationDirectory);
+            if (directoryDeleted.Success)
+                remainingDirectory = null;
+            else
+                failures.Add(directoryDeleted.Detail!);
+        }
+
+        if (failures.Count == 0 && remainingDirectory == null)
+        {
             Changed?.Invoke();
             return null;
         }
 
-        // Keep the unresolved pieces owned and retryable; the extraction
-        // directory stays until the temporary collection is gone.
         var current = OverridesFor(actor);
         Mutate(actor, current with
         {
             Baseline = baseline,
             Mcdf = new McdfOwnership(
-                fileName, tempCollection, operationDirectory, locked, tempProfile, bodyJson),
+                fileName, tempCollection, remainingDirectory, locked, tempProfile, bodyJson),
         });
         return string.Join("; ", failures);
     }

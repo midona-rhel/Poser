@@ -51,8 +51,12 @@ interchange with Brio and (via name conversion) Anamnesis.
   counts), normalized relative lower-case game paths, the Brio extension
   allow-list, byte-identical-only duplicates, game-path-to-game-path
   swaps, and SHA-1 payload verification. Extraction uses generated names
-  in a unique temp operation directory, deleted on success, failure,
-  cancellation, GPose exit, and disposal.
+  in a unique temp operation directory. A successfully imported MCDF
+  RETAINS its extracted payloads while owned — the live temporary
+  collection references them — and they are deleted on Reset MCDF,
+  rollback, teardown, GPose exit, and disposal, only once that
+  collection is definitely gone; a failed deletion stays owned and
+  retryable.
 - One import/export runs at a time with an immutable progress snapshot
   and cooperative cancellation. Import applies as a transaction
   (temporary collection → temporary mods/manipulations → locked Glamourer

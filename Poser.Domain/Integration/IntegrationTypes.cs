@@ -82,11 +82,14 @@ public sealed record IntegrationBaseline
 }
 
 /// <summary>Everything the active MCDF import owns on one actor. The
-/// temporary collection is null for a package with no embedded resources.</summary>
+/// temporary collection is null for a package with no embedded resources;
+/// the operation directory is null once its extracted payloads are
+/// actually gone — it outlives the import because the live temporary
+/// collection references the files.</summary>
 public sealed record McdfOwnership(
     string FileName,
     Guid? TemporaryCollection,
-    string OperationDirectory,
+    string? OperationDirectory,
     bool GlamourerLocked,
     Guid? TemporaryProfile,
     string? AppliedProfileJson);

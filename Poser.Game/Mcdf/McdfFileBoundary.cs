@@ -68,18 +68,22 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         CancellationToken cancellation) =>
         Task.Run(() => WriteCore(destination, content, progress, cancellation), CancellationToken.None);
 
-    public void DeleteOperationDirectory(string operationDirectory)
+    public IntegrationPortResult DeleteOperationDirectory(string operationDirectory)
     {
         try
         {
             if (Directory.Exists(operationDirectory))
                 Directory.Delete(operationDirectory, recursive: true);
+            return IntegrationPortResult.Ok();
         }
-        catch
+        catch (Exception ex)
         {
-            // A file still held open (e.g. by an antivirus scan) must not
-            // turn cleanup into a crash; the directory lives under the OS
-            // temp root either way.
+            // A file still held open (an antivirus scan, the game itself)
+            // is a REPORTED failure: the caller keeps ownership of the
+            // directory and retries instead of releasing deleted-in-name
+            // payloads.
+            return IntegrationPortResult.Fail(
+                $"The extracted files could not be deleted: {ex.Message}");
         }
     }
 

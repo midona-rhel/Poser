@@ -47,6 +47,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
 
     private const int PenumbraEcSuccess = 0;
     private const int PenumbraEcNothingChanged = 1;
+    private const int PenumbraEcCollectionMissing = 2;
 
     private const int CustomizeEcSuccess = 0;
     private const int CustomizeEcInvalidCharacter = 1;
@@ -354,7 +355,11 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
         Guarded(Penumbra, "Delete temporary collection", () =>
         {
             int ec = _deleteTemporaryCollection.InvokeFunc(collection);
+            // An already-absent collection (CollectionMissing) is an
+            // idempotent cleanup success, like Customize+ ProfileNotFound
+            // and Glamourer NothingDone.
             return ec is PenumbraEcSuccess or PenumbraEcNothingChanged
+                    or PenumbraEcCollectionMissing
                 ? IntegrationPortResult.Ok()
                 : IntegrationPortResult.Fail(
                     $"Penumbra failed deleting the temporary collection (code {ec}).");
