@@ -77,6 +77,8 @@ public class PoseInspectorPane
     private BoneMatrixViewModel? _matrixVm;
     private string _matrixFilter = "";
     private ulong _matrixRevision;
+    private Vector2 _matrixPan;
+    private float _matrixZoom = 1f;
     // Complete skeleton identity (actor generation, SLOT, slot generation):
     // switching the primary to another slot of the same actor on an
     // unchanged scene must rebuild the matrix.
@@ -583,13 +585,11 @@ public class PoseInspectorPane
         ImGui.SetCursorScreenPos(bodyOrigin);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         float bodyContentHeight = bodyHeight;
-        // Matrix is the only document surface; Body, Face, and 3D are bounded
-        // canvases whose child can never scroll — the capability itself is off,
-        // so no sentinel, rounding, or item mismatch can conjure a scrollbar.
-        bool documentSurface = _poseView == 2;
-        var bodyFlags = documentSurface
-            ? ImGuiWindowFlags.None
-            : ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
+        // Every pose surface is a bounded viewport. Matrix owns pan and zoom
+        // directly, so switching modes cannot introduce a scrollbar or shift
+        // the shared chrome.
+        var bodyFlags =
+            ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
         if (ImGui.BeginChild("##pose-surface-content",
                 new Vector2(width + AppShellView.ScrollbarWidth * s, bodyHeight),
                 false, bodyFlags))
@@ -597,16 +597,6 @@ public class PoseInspectorPane
             var scrolledOrigin = ImGui.GetCursorScreenPos();
             bodyContentHeight = DrawPoseSurfaceContent(
                 ImGui.GetWindowDrawList(), scrolledOrigin, width, bodyHeight, skeleton, s);
-            // Body, Face, and 3D are viewport canvases and deliberately leave
-            // the child cursor untouched. Reserve extra height only when a
-            // document surface (currently Matrix) genuinely overflows.
-            if (documentSurface && bodyContentHeight > bodyHeight + 0.5f * s)
-            {
-                ImGui.SetCursorScreenPos(
-                    scrolledOrigin +
-                    new Vector2(0f, bodyContentHeight - ImGui.GetStyle().ItemSpacing.Y));
-                ImGui.Dummy(Vector2.One);
-            }
         }
         Crystarium.NarrowVisibleScrollbarThumb();
         ImGui.EndChild();
@@ -640,9 +630,26 @@ public class PoseInspectorPane
                 : viewportHeight;
         }
 
-        float h = 0f;
-        h += 12f * s;
-        ImGui.SetCursorScreenPos(new Vector2(cursor.X, cursor.Y + h));
+        return DrawMatrixSurface(dl, cursor, width, viewportHeight, s);
+    }
+
+    private float DrawMatrixSurface(
+        ImDrawListPtr dl,
+        Vector2 cursor,
+        float width,
+        float viewportHeight,
+        float s)
+    {
+        var theme = Crystarium.ActiveTheme;
+        float inset = theme.Page.Inset * s;
+        var min = cursor + new Vector2(inset);
+        var max = cursor + new Vector2(width, viewportHeight)
+            - new Vector2(inset);
+        if (max.X <= min.X || max.Y <= min.Y)
+            return viewportHeight;
+
+        float toolbarHeight = theme.Controls.WorkspaceHeight * s;
+        ImGui.SetCursorScreenPos(min);
         Crystarium.FilterPill(
             "##pose-matrix-filter",
             _matrixFilter,
@@ -654,13 +661,59 @@ public class PoseInspectorPane
             "Filter bones…",
             ControlStyle.Workspace with
             {
-                Width = UiWidth.Fixed(MathF.Min(260f, width / s)),
+                Width = UiWidth.Fixed(MathF.Min(
+                    theme.Matrix.FilterWidth,
+                    (max.X - min.X) / s)),
             });
-        h += 38f * s;
+
+        var resetStyle = ControlStyle.Workspace;
+        var resetSize = Crystarium.MeasureButton("Reset View", resetStyle);
+        ImGui.SetCursorScreenPos(new Vector2(
+            max.X - resetSize.X,
+            min.Y));
+        Crystarium.Button(
+            "Reset View",
+            () =>
+            {
+                _matrixPan = Vector2.Zero;
+                _matrixZoom = 1f;
+            },
+            resetStyle,
+            id: "pose-matrix-reset");
+
+        var viewMin = new Vector2(
+            min.X,
+            min.Y + toolbarHeight + theme.Page.ActionGap * s);
+        var viewMax = max;
+        if (viewMax.Y <= viewMin.Y)
+            return viewportHeight;
+
+        bool pointerInside = ImGui.IsMouseHoveringRect(
+            viewMin, viewMax, clip: true)
+            && !Interactive.PointerOccluded();
+        var io = ImGui.GetIO();
+        if (pointerInside
+            && ImGui.IsMouseDragging(ImGuiMouseButton.Middle))
+            _matrixPan += io.MouseDelta;
+        if (pointerInside && io.MouseWheel != 0f)
+        {
+            float oldZoom = _matrixZoom;
+            float nextZoom = Math.Clamp(
+                oldZoom + io.MouseWheel * theme.Matrix.ZoomStep,
+                theme.Matrix.MinimumZoom,
+                theme.Matrix.MaximumZoom);
+            if (MathF.Abs(nextZoom - oldZoom) > float.Epsilon)
+            {
+                var pointer = io.MousePos;
+                var local = (pointer - viewMin - _matrixPan) / oldZoom;
+                _matrixPan = pointer - viewMin - local * nextZoom;
+                _matrixZoom = nextZoom;
+            }
+        }
 
         var matrixSkeleton = PrimarySkeletonDescriptor();
         if (matrixSkeleton == null)
-            return h;
+            return viewportHeight;
         if (_matrixVm == null ||
             _matrixRevision != _scene.Revision ||
             _matrixSkeletonId != matrixSkeleton.Id)
@@ -700,8 +753,15 @@ public class PoseInspectorPane
             _matrixSkeletonId = matrixSkeleton.Id;
         }
         BoneMatrixBuilder.SyncSelection(_matrixVm, _selection);
-        h += BoneMatrixView.Draw(_matrixVm, new Vector2(cursor.X, cursor.Y + h), width - 8f * s, "livemx");
-        return h;
+        ImGui.PushClipRect(viewMin, viewMax, true);
+        BoneMatrixView.Draw(
+            _matrixVm,
+            viewMin + _matrixPan,
+            viewMax.X - viewMin.X,
+            "livemx",
+            _matrixZoom);
+        ImGui.PopClipRect();
+        return viewportHeight;
     }
 
     private void DrawPoseFooter(ImDrawListPtr dl, Vector2 cursor, float width, ISkeleton skeleton, float s)

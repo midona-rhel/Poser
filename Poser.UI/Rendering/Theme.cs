@@ -37,6 +37,7 @@ public readonly record struct Theme
     public ControlTokens Controls { get; init; }
     public PageTokens Page { get; init; }
     public FormTokens Form { get; init; }
+    public MatrixTokens Matrix { get; init; }
     public ShellTokens Shell { get; init; }
     public ScrollbarTokens Scrollbar { get; init; }
     public TypographyTokens Typography { get; init; }
@@ -108,6 +109,19 @@ public readonly record struct Theme
             StatusLineHeight = 20f,
         },
         Form = new() { LabelColumnWidth = 94f, ValueColumnWidth = 44f, AxisGap = 6f },
+        Matrix = new()
+        {
+            MinimumTrackWidth = 235f,
+            ColumnGap = 22f,
+            RowHeight = 30f,
+            RowGap = 2f,
+            PillSize = 24f,
+            PillGap = 6f,
+            FilterWidth = 260f,
+            MinimumZoom = 0.60f,
+            MaximumZoom = 1.80f,
+            ZoomStep = 0.10f,
+        },
         Shell = new()
         {
             TitlebarHeight = 48f,
@@ -283,6 +297,20 @@ public readonly record struct Theme
         public float LabelColumnWidth { get; init; }
         public float ValueColumnWidth { get; init; }
         public float AxisGap { get; init; }
+    }
+
+    public readonly record struct MatrixTokens
+    {
+        public float MinimumTrackWidth { get; init; }
+        public float ColumnGap { get; init; }
+        public float RowHeight { get; init; }
+        public float RowGap { get; init; }
+        public float PillSize { get; init; }
+        public float PillGap { get; init; }
+        public float FilterWidth { get; init; }
+        public float MinimumZoom { get; init; }
+        public float MaximumZoom { get; init; }
+        public float ZoomStep { get; init; }
     }
 
     public readonly record struct ShellTokens

@@ -58,21 +58,23 @@ public static class BoneMatrixView
     private static readonly Vector4 Primary50     = new(50 / 255f, 151 / 255f, 1f, 0.5f);
     private static readonly Vector4 SurfaceHover  = new(1f, 1f, 1f, 0.05f);
 
-    private const float MinTrack = 235f;
-    private const float ColGap = 22f;
-    private const float RowH = 30f;
-    private const float RowGap = 2f;
-    private const float PillSize = 24f;
-    private const float PillGap = 6f;
-
     /// <summary>Draws the matrix flowing downward from origin; returns total height.</summary>
-    public static float Draw(BoneMatrixViewModel vm, Vector2 origin, float width, string idPrefix = "mx")
+    public static float Draw(
+        BoneMatrixViewModel vm,
+        Vector2 origin,
+        float width,
+        string idPrefix = "mx",
+        float zoom = 1f)
     {
-        float s = ImGuiHelpers.GlobalScale;
+        var metrics = Crystarium.ActiveTheme.Matrix;
+        float s = ImGuiHelpers.GlobalScale * zoom;
         var dl = ImGui.GetWindowDrawList();
 
-        int columns = Math.Max(1, (int)MathF.Floor((width / s + ColGap) / (MinTrack + ColGap)));
-        float trackW = (width / s - ColGap * (columns - 1)) / columns;
+        int columns = Math.Max(1, (int)MathF.Floor(
+            (width / s + metrics.ColumnGap)
+            / (metrics.MinimumTrackWidth + metrics.ColumnGap)));
+        float trackW = (width / s
+            - metrics.ColumnGap * (columns - 1)) / columns;
 
         float y = origin.Y;
         int sectionIndex = 0;
@@ -80,10 +82,20 @@ public static class BoneMatrixView
         {
             // .mxHead box model: 14px pad-top, 11px caps (~13px line), 5px
             // pad-bottom → hairline at +32, rows begin at +41 (1px line + 8px margin).
-            ViewText.Label(new Vector2(origin.X, y + 15f * s), section.Title, 11f, FontWeight.SemiBold, TextSecondary);
+            ViewText.Label(
+                new Vector2(origin.X, y + 15f * s),
+                section.Title,
+                11f * zoom,
+                FontWeight.SemiBold,
+                TextSecondary);
             ImGui.SetCursorScreenPos(new Vector2(origin.X, y + 7f * s));
             ImGui.InvisibleButton($"##{idPrefix}-section-{sectionIndex}",
-                new Vector2(MathF.Min(width, ViewText.Measure(section.Title, 11f) + 18f * s), 24f * s));
+                new Vector2(
+                    MathF.Min(
+                        width,
+                        ViewText.Measure(
+                            section.Title, 11f * zoom) + 18f * s),
+                    24f * s));
             if (ImGui.IsItemHovered())
                 Crystarium.HoverHelp.Explain($"bmv-section-{sectionIndex}",
                     ImGui.GetItemRectMin(), ImGui.GetItemRectMax(),
@@ -107,16 +119,23 @@ public static class BoneMatrixView
 
                 int gridRow = slot / columns;
                 int gridCol = slot % columns;
-                float cellX = origin.X + gridCol * (trackW + ColGap) * s;
-                float cellY = gridTop + gridRow * (RowH + RowGap) * s;
-                float cellW = (trackW * span + ColGap * (span - 1)) * s;
+                float cellX = origin.X
+                    + gridCol * (trackW + metrics.ColumnGap) * s;
+                float cellY = gridTop
+                    + gridRow * (metrics.RowHeight + metrics.RowGap) * s;
+                float cellW = (trackW * span
+                    + metrics.ColumnGap * (span - 1)) * s;
 
-                DrawRow(vm, row, dl, new Vector2(cellX, cellY), cellW, s, $"{idPrefix}-{sectionIndex}-{slot}");
+                DrawRow(
+                    vm, row, dl, new Vector2(cellX, cellY), cellW,
+                    s, zoom, $"{idPrefix}-{sectionIndex}-{slot}");
 
                 slot += span;
                 gridRows = Math.Max(gridRows, gridRow + 1);
             }
-            y = gridTop + (gridRows * (RowH + RowGap) - RowGap) * s;
+            y = gridTop
+                + (gridRows * (metrics.RowHeight + metrics.RowGap)
+                    - metrics.RowGap) * s;
             sectionIndex++;
         }
 
@@ -124,25 +143,40 @@ public static class BoneMatrixView
     }
 
     private static void DrawRow(BoneMatrixViewModel vm, BoneMatrixRow row, ImDrawListPtr dl,
-        Vector2 pos, float width, float s, string id)
+        Vector2 pos, float width, float s, float zoom, string id)
     {
+        var metrics = Crystarium.ActiveTheme.Matrix;
         // pills right-aligned; label fills the rest, right-aligned with ellipsis
-        float pillsW = (row.Pills.Count * PillSize + (row.Pills.Count - 1) * PillGap) * s;
+        float pillsW = (row.Pills.Count * metrics.PillSize
+            + (row.Pills.Count - 1) * metrics.PillGap) * s;
         float labelRight = pos.X + width - pillsW - 10f * s;
 
-        float labelW = ViewText.Measure(row.Label, 12f);
-        ViewText.Label(new Vector2(MathF.Max(pos.X, labelRight - labelW), pos.Y + (RowH - 12f) / 2f * s - 2f * s),
-            row.Label, 12f, FontWeight.Regular, TextSecondary);
+        string label = Ellipsize(
+            row.Label,
+            MathF.Max(0f, labelRight - pos.X),
+            12f * zoom);
+        float labelW = ViewText.Measure(label, 12f * zoom);
+        ViewText.Label(
+            new Vector2(
+                MathF.Max(pos.X, labelRight - labelW),
+                pos.Y + (metrics.RowHeight - 12f) / 2f * s - 2f * s),
+            label, 12f * zoom, FontWeight.Regular, TextSecondary);
 
         float x = pos.X + width - pillsW;
         int i = 0;
         foreach (var pill in row.Pills)
         {
-            var center = new Vector2(x + PillSize / 2f * s, pos.Y + RowH / 2f * s);
-            float radius = PillSize / 2f * s;
+            var center = new Vector2(
+                x + metrics.PillSize / 2f * s,
+                pos.Y + metrics.RowHeight / 2f * s);
+            float radius = metrics.PillSize / 2f * s;
 
-            ImGui.SetCursorScreenPos(new Vector2(x, pos.Y + (RowH - PillSize) / 2f * s));
-            ImGui.InvisibleButton($"##{id}-p{i}", new Vector2(PillSize, PillSize) * s);
+            ImGui.SetCursorScreenPos(new Vector2(
+                x,
+                pos.Y + (metrics.RowHeight - metrics.PillSize) / 2f * s));
+            ImGui.InvisibleButton(
+                $"##{id}-p{i}",
+                new Vector2(metrics.PillSize, metrics.PillSize) * s);
             // Capture ALL item state for THIS pill immediately after its
             // InvisibleButton: the label below submits another ImGui item, so
             // a later IsItemClicked() would belong to it — the round-1
@@ -167,16 +201,34 @@ public static class BoneMatrixView
 
             if (pill.Label.Length > 0)
             {
-                float tw = ViewText.Measure(pill.Label, 10f, FontWeight.SemiBold, mono: true);
-                ViewText.Label(new Vector2(center.X - tw / 2f, center.Y - 5f * s), pill.Label, 10f,
+                float tw = ViewText.Measure(
+                    pill.Label, 10f * zoom, FontWeight.SemiBold, mono: true);
+                ViewText.Label(
+                    new Vector2(center.X - tw / 2f, center.Y - 5f * s),
+                    pill.Label,
+                    10f * zoom,
                     FontWeight.SemiBold, pill.Selected ? TextPrimary : hovered ? TextPrimary : TextSecondary, mono: true);
             }
 
             if (clicked)
                 vm.OnPill?.Invoke(pill, ctrl, shift);
 
-            x += (PillSize + PillGap) * s;
+            x += (metrics.PillSize + metrics.PillGap) * s;
             i++;
         }
+    }
+
+    private static string Ellipsize(string text, float available, float size)
+    {
+        if (ViewText.Measure(text, size) <= available)
+            return text;
+        const string ellipsis = "…";
+        if (ViewText.Measure(ellipsis, size) > available)
+            return "";
+        int length = text.Length;
+        while (length > 0
+            && ViewText.Measure(text[..length] + ellipsis, size) > available)
+            length--;
+        return text[..length] + ellipsis;
     }
 }
