@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -6,6 +7,7 @@ using Poser.Application.Integration;
 using Poser.Application.Presentation;
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
+using Poser.Domain.Integration;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Game.Presentation;
@@ -33,6 +35,20 @@ public sealed class AppearancePane
 
     private string _status = string.Empty;
     private const float ContentPadding = 12f;
+
+    private readonly ExternalPicker _picker = new();
+    /// <summary>The exact actor captured when a picker opened. A selection
+    /// change while the popover is open never retargets the pending pick.</summary>
+    private ActorId? _pickerActor;
+
+    // Cached per-actor external readouts so form rows never call IPC every
+    // frame; refreshed on a short cadence and after every integration op.
+    private static readonly TimeSpan ReadoutInterval = TimeSpan.FromSeconds(2);
+    private ActorId? _readoutActor;
+    private DateTime _readoutAt = DateTime.MinValue;
+    private string _collectionReadout = "—";
+    private bool _bodyBlocked;
+    private string _bodyBlockedDetail = string.Empty;
 
     /// <summary>The ONE stable-id display lookup every surface uses
     /// (nickname, else anonymous mask, else the cleaned snapshot name) --
@@ -71,6 +87,25 @@ public sealed class AppearancePane
     {
         float s = ImGuiHelpers.GlobalScale;
         float width = InspectorLayout.ClampContentWidth(size.X, s);
+
+        // The picker pumps regardless of the current selection: a pending
+        // pick applies to the actor frozen at open, never to whatever is
+        // selected by the time the row is clicked.
+        if (_picker.Draw() is { } pick && _pickerActor is { } pickTarget)
+        {
+            var picked = pick.Owner switch
+            {
+                "app-ext-collection" => _integration.SetCollection(
+                    pickTarget, pick.Item.Id, pick.Item.Name),
+                "app-ext-design" => _integration.ApplyDesign(
+                    pickTarget, pick.Item.Id, pick.Item.Name),
+                "app-ext-profile" => _integration.SetBodyProfile(
+                    pickTarget, pick.Item.Id, pick.Item.Name),
+                _ => IntegrationResult.Ok(),
+            };
+            _status = picked.Success ? string.Empty : $"{pick.Item.Name}: {picked.Detail}";
+            _readoutAt = DateTime.MinValue;
+        }
 
         if (TargetActor() is not { } actor)
         {
@@ -254,11 +289,152 @@ public sealed class AppearancePane
             "How high up the body the wetness reaches, in about character heights",
             disabled: !wetOn,
             value => Report(_presentation.SetWetness(actor, wet with { Depth = value }), "Depth"));
+        y += 10f * s;
+
+        // ── External appearance ───────────────────────────────────────
+        RefreshReadouts(actor);
+        var external = _integration.OverridesFor(actor);
+        bool mcdfOwned = external.Mcdf != null;
+        const string mcdfReason =
+            "An imported character file owns this actor's external appearance. Reset MCDF first.";
+
+        float SelectorRow(string id, string label, string value, bool available,
+            string reason, bool owned, string caption, string help,
+            Func<IntegrationValue<IReadOnlyList<ExternalItem>>> load,
+            Func<ActorId, IntegrationResult> reset)
+        {
+            float rowTop = cursor.Y + y;
+            InspectorLayout.FormLabel(new Vector2(cursor.X, rowTop), label, s);
+            var resetSize = Crystarium.MeasureButton("Reset", Cls.Compact);
+            // The reset column is reserved whether or not the component is
+            // owned, so gaining/losing ownership never shifts the trigger.
+            float triggerW = controlW - resetSize.X / s - 8f;
+            ImGui.SetCursorScreenPos(new Vector2(
+                controlX, rowTop + InspectorLayout.FormButtonY * s));
+            if (Crystarium.Button(FitLabel(value, (triggerW - 16f) * s), new ButtonProps
+                {
+                    Id = id,
+                    Classes = Cls.Compact,
+                    Disabled = !available,
+                    Tooltip = reason,
+                    Style = new ButtonStyle { Width = Sizing.Fixed(triggerW) },
+                }) && available)
+            {
+                _pickerActor = actor;
+                _picker.Open(id, caption, load);
+            }
+            if (owned)
+            {
+                ImGui.SetCursorScreenPos(new Vector2(
+                    cursor.X + width - resetSize.X,
+                    rowTop + InspectorLayout.FormButtonY * s));
+                if (Crystarium.Button("Reset", new ButtonProps
+                    {
+                        Id = id + "-reset",
+                        Classes = Cls.Compact,
+                        Tooltip = $"Restore the incoming {label.ToLowerInvariant()} exactly",
+                    }))
+                {
+                    var result = reset(actor);
+                    _status = result.Success ? string.Empty : $"Reset {label}: {result.Detail}";
+                    _readoutAt = DateTime.MinValue;
+                }
+            }
+            RowHelp(rowTop, id + "-row", help);
+            return InspectorLayout.FormRowHeight * s;
+        }
+
+        y += Caption("EXTERNAL APPEARANCE");
+        var penumbra = _integration.Penumbra;
+        y += SelectorRow("app-ext-collection", "Collection",
+            _collectionReadout,
+            penumbra.Available && !mcdfOwned,
+            !penumbra.Available ? penumbra.Detail
+                : mcdfOwned ? mcdfReason : "Choose the Penumbra collection for this actor",
+            external.CollectionOwned,
+            "Penumbra collection",
+            "Assigns a Penumbra collection to only this actor and redraws it; Reset restores whether it was assigned or inherited",
+            () => _integration.ListCollections(),
+            id => _integration.ResetCollection(id));
+
+        var glamourerApi = _integration.Glamourer;
+        y += SelectorRow("app-ext-design", "Design",
+            external.DesignOwned ? external.DesignName ?? "Design" : "None applied",
+            glamourerApi.Available && !mcdfOwned,
+            !glamourerApi.Available ? glamourerApi.Detail
+                : mcdfOwned ? mcdfReason : "Apply a Glamourer design to only this actor",
+            external.DesignOwned,
+            "Glamourer design",
+            "Applies a saved Glamourer design to this actor after capturing its complete incoming state; Reset reapplies that captured state exactly",
+            () => _integration.ListDesigns(),
+            id => _integration.ResetDesign(id));
+
+        var customize = _integration.CustomizePlus;
+        bool profileAvailable = customize.Available && !mcdfOwned && !_bodyBlocked;
+        y += SelectorRow("app-ext-profile", "Body profile",
+            external.TemporaryBodyProfile != null
+                ? external.BodyProfileName ?? "Profile" : "Automatic",
+            profileAvailable,
+            !customize.Available ? customize.Detail
+                : mcdfOwned ? mcdfReason
+                : _bodyBlocked ? _bodyBlockedDetail
+                : "Apply a saved Customize+ profile to only this actor",
+            external.TemporaryBodyProfile != null,
+            "Customize+ profile",
+            "Holds a saved Customize+ profile on this actor as a temporary profile; Reset removes it so the normal assignment resumes",
+            () => _integration.ListBodyProfiles(),
+            id => _integration.ResetBodyProfile(id));
 
         // Register the content extent so the shell's scroll knows the
         // page height (the form fits the retained minimum; this is only
         // the bookkeeping every shell page does).
         ImGui.SetCursorScreenPos(cursor);
         ImGui.Dummy(new Vector2(width, y + ContentPadding * s));
+    }
+
+    /// <summary>Refreshes the cached external readouts for the actor on a
+    /// short cadence — never IPC per frame from a form row.</summary>
+    private void RefreshReadouts(ActorId actor)
+    {
+        var now = DateTime.UtcNow;
+        if (_readoutActor is { } cached && cached.Equals(actor)
+            && now - _readoutAt < ReadoutInterval)
+            return;
+        _readoutActor = actor;
+        _readoutAt = now;
+
+        var collection = _integration.ReadCollection(actor);
+        _collectionReadout = collection.Success && collection.Value is { } assignment
+            ? assignment.EffectiveName
+            : "—";
+
+        // A pre-existing temporary profile from another plugin disables the
+        // body-profile action rather than being displaced.
+        _bodyBlocked = false;
+        _bodyBlockedDetail = string.Empty;
+        if (_integration.CustomizePlus.Available)
+        {
+            var displaceable = _integration.CheckBodyProfileDisplaceable(actor);
+            if (!displaceable.Success)
+            {
+                _bodyBlocked = true;
+                _bodyBlockedDetail = displaceable.Detail ?? "The Customize+ state could not be read.";
+            }
+        }
+    }
+
+    /// <summary>Truncates a trigger label to its fixed-width button with an
+    /// ellipsis, so long external names never stretch the form.</summary>
+    private static string FitLabel(string text, float maxWidth)
+    {
+        if (ViewText.Measure(text, 12f) <= maxWidth)
+            return text;
+        for (int keep = text.Length - 1; keep > 1; keep--)
+        {
+            var candidate = text[..keep] + "…";
+            if (ViewText.Measure(candidate, 12f) <= maxWidth)
+                return candidate;
+        }
+        return "…";
     }
 }
