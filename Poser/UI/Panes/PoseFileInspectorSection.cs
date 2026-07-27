@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -80,14 +81,22 @@ public sealed class PoseFileInspectorSection
         if (Crystarium.Button("Import…",
                 new ButtonProps { Id = "impex-import", Classes = Cls.Compact }))
         {
-            // The actor is frozen at dialog open; the Selected-scope bone
-            // filter freezes at dialog confirmation (BuildOptions runs in
-            // the callback) and never expands into a later selection.
+            // The actor is frozen at dialog open; the Selected-scope
+            // selection freezes as COMPLETE BoneIds at dialog confirmation.
+            // The facade verifies every one belongs to the frozen actor's
+            // exact generation — a mismatched or stale selection fails, it
+            // never becomes a name-based selection on another actor.
             _importBrowser.Open(_lastPath, path =>
             {
                 _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
+                List<BoneId>? frozenSelection = null;
+                if (_scope == 3)
+                    frozenSelection = _selection.Selected
+                        .Where(id => id is { Kind: SceneEntityKind.Bone, Bone: not null })
+                        .Select(id => id.Bone!.Value)
+                        .ToList();
                 var imported = _poseFacade.ImportPose(
-                    skeleton.Actor, path, BuildOptions());
+                    skeleton.Actor, path, BuildOptions(), frozenSelection);
                 _status = imported.Success
                     ? string.Empty
                     : $"Import: {imported.Detail}";
@@ -162,11 +171,10 @@ public sealed class PoseFileInspectorSection
             ResetBeforeImport = _reset,
             FilterIncludesDescendants = _descendants,
         };
-        if (selected)
-            options.BoneFilter = _selection.Selected
-                .Where(id => id is { Kind: SceneEntityKind.Bone, Bone: not null })
-                .Select(id => (id.Bone!.Value.Slot, id.Bone!.Value.CanonicalName))
-                .ToHashSet();
+        // The Selected-scope bone filter is NOT built here: the frozen
+        // BoneIds travel to the facade, which verifies actor identity and
+        // exact generations before reducing them to a slot-qualified
+        // filter.
         return options;
     }
 }

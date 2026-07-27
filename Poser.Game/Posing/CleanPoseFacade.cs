@@ -60,8 +60,37 @@ public sealed class CleanPoseFacade
     /// history item, and success creates one undo/redo item including the
     /// model transform when enabled.
     /// </summary>
-    public PoseEditResult ImportPose(IActor actor, string path, PoseImportOptions options)
+    public PoseEditResult ImportPose(
+        IActor actor,
+        string path,
+        PoseImportOptions options,
+        IReadOnlyList<BoneId>? selectedBones = null)
     {
+        // Selected scope: the frozen BoneIds must all belong to the exact
+        // actor generation this import was opened for, and each must still
+        // resolve. Only then do they reduce to the slot-qualified filter —
+        // a stale or cross-actor selection fails instead of turning into a
+        // name-based selection on another actor.
+        if (selectedBones != null)
+        {
+            if (_bindings.GetActorId(actor) is not { } target)
+                return PoseEditResult.Fail("The actor could not be resolved.");
+            var filter = new HashSet<(PoseSlot Slot, string Name)>();
+            foreach (var bone in selectedBones)
+            {
+                if (!bone.Skeleton.Actor.Equals(target))
+                    return PoseEditResult.Fail(
+                        "The selection contains bones from a different actor than this import's target.");
+                var resolvedBone = _bindings.Resolve(bone);
+                if (!resolvedBone.Success)
+                    return PoseEditResult.Fail(
+                        resolvedBone.Detail ?? $"Selected bone {bone.CanonicalName} is stale.");
+                filter.Add((bone.Skeleton.Slot, bone.CanonicalName));
+            }
+            options = options.Clone();
+            options.BoneFilter = filter;
+        }
+
         var plan = _poseFiles.BuildImportPlan(_skeletons.GetSkeletons(actor), path, options);
         if (plan == null)
             return PoseEditResult.Fail("The pose file could not be read.");
