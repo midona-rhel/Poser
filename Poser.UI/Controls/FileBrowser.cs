@@ -9,13 +9,14 @@ using Dalamud.Interface.Utility;
 namespace Poser.UI.Controls;
 
 /// <summary>
-/// File dialog on the retained Crystarium.Modal glass chrome: glass
-/// background with the directional border trio and black outline/shadow,
-/// 44px header and footer, Tabler icons, compact 26px rows with the
-/// retained scrollbar treatment, the primary Import/Save action in the
-/// footer and Cancel as the secondary action. Selection semantics are
-/// unchanged from the legacy window: the callback fires synchronously on
-/// the draw thread once the dialog has closed.
+/// File dialog as a FLOATING glass window (not a modal — it neither dims
+/// nor blocks the UI and can be moved aside): glass chrome with the
+/// directional border trio, 44px header and bottom-anchored 44px footer
+/// with the primary Import/Save action and Cancel beside it, an editable
+/// outlined path input with a plain square up button, a separated
+/// favorites column, and compact 26px Tabler rows with the retained
+/// scrollbar treatment. Navigation is DEFERRED to after the row
+/// enumeration. The selection callback fires after the window closes.
 /// </summary>
 public class FileBrowser
 {
@@ -32,6 +33,8 @@ public class FileBrowser
     private string? _selectedFile;
     private string? _lastError;
     private string? _pendingSelect;
+    private string? _pendingNavigate;
+    private string _pathEdit = string.Empty;
     private Action<string>? _onSelect;
     private readonly List<(string Name, string Path)> _favorites = new();
     private readonly List<Entry> _entries = new();
@@ -63,10 +66,9 @@ public class FileBrowser
     public void Draw()
     {
         if (_open)
-            Crystarium.Modal(_id, ref _open, _title, DrawBody, DrawFooter,
-                ModalSize.Large, height: 420f);
+            DrawWindow();
 
-        // The callback fires AFTER the modal closed, exactly like the
+        // The callback fires AFTER the window closed, exactly like the
         // legacy close-then-invoke ordering.
         if (!_open && _pendingSelect is { } chosen)
         {
@@ -75,22 +77,104 @@ public class FileBrowser
         }
     }
 
+    // A floating glass window, NOT a modal: it neither dims nor blocks the
+    // rest of the UI and can be moved aside.
+    private void DrawWindow()
+    {
+        float s = ImGuiHelpers.GlobalScale;
+        var size = new Vector2(680f, 440f) * s;
+        var display = ImGui.GetIO().DisplaySize;
+        ImGui.SetNextWindowSize(size, ImGuiCond.Appearing);
+        ImGui.SetNextWindowPos((display - size) / 2f, ImGuiCond.Appearing);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
+        bool visible = ImGui.Begin($"{_title}{_id}", ref _open,
+            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse
+            | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse
+            | ImGuiWindowFlags.NoBackground | ImGuiWindowFlags.NoSavedSettings
+            | ImGuiWindowFlags.NoResize);
+        if (visible)
+        {
+            var min = ImGui.GetWindowPos();
+            var max = min + ImGui.GetWindowSize();
+            var dl = ImGui.GetWindowDrawList();
+            GlassChrome.DrawSurface(dl, min, max, 10f);
+
+            float header = 44f * s;
+            float footer = 44f * s;
+            uint hairline = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 0.08f));
+
+            // 44px header: title + plain close icon.
+            ImGui.SetCursorScreenPos(new Vector2(
+                min.X + 16f * s, min.Y + (header - ImGui.GetTextLineHeight()) / 2f));
+            ImGui.TextColored(new Vector4(1f, 1f, 1f, 0.9f), _title);
+            if (SquareIconButton($"{_id}-close", TablerIcon.X,
+                    new Vector2(max.X - (16f + 24f) * s, min.Y + (header - 24f * s) / 2f), s))
+                _open = false;
+            dl.AddRectFilled(
+                new Vector2(min.X + 1f, min.Y + header),
+                new Vector2(max.X - 1f, min.Y + header + 1f), hairline);
+
+            // Body between header and footer.
+            ImGui.SetCursorScreenPos(new Vector2(min.X + 16f * s, min.Y + header + 8f * s));
+            ImGui.BeginChild("##fb-outer",
+                new Vector2(max.X - min.X - 32f * s,
+                    max.Y - min.Y - header - footer - 16f * s),
+                false, ImGuiWindowFlags.NoSavedSettings);
+            DrawBody();
+            ImGui.EndChild();
+
+            // 44px footer band with the actions bottom-anchored.
+            float footerTop = max.Y - footer;
+            dl.AddRectFilled(
+                new Vector2(min.X + 1f, footerTop),
+                new Vector2(max.X - 1f, footerTop + 1f), hairline);
+            DrawFooter(min, max, footerTop, s);
+        }
+        ImGui.End();
+        ImGui.PopStyleVar(2);
+    }
+
+    /// <summary>Plain square Picto icon button: hover fill, no outline.</summary>
+    private static bool SquareIconButton(string id, TablerIcon icon, Vector2 pos, float s)
+    {
+        var sizePx = new Vector2(24f, 24f) * s;
+        ImGui.SetCursorScreenPos(pos);
+        bool clicked = ImGui.InvisibleButton(id, sizePx);
+        if (ImGui.IsItemHovered())
+            ImGui.GetWindowDrawList().AddRectFilled(pos, pos + sizePx,
+                ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 0.08f)), 6f * s);
+        ImGui.SetCursorScreenPos(pos + (sizePx - new Vector2(16f, 16f) * s) / 2f);
+        Crystarium.Icon(icon, 16f, new Vector4(1f, 1f, 1f, ImGui.IsItemHovered() ? 1f : 0.8f));
+        return clicked;
+    }
+
     // ── Content ──────────────────────────────────────────────────────────
 
     private void DrawBody()
     {
         float s = ImGuiHelpers.GlobalScale;
 
-        // Path bar: parent-folder action + the current location.
-        if (Crystarium.IconButton(TablerIcon.ArrowUp, "Parent folder"))
+        // Path row: plain square up button + an EDITABLE outlined path
+        // input (the input chrome carries the outline).
+        if (SquareIconButton($"{_id}-up", TablerIcon.ArrowUp,
+                ImGui.GetCursorScreenPos(), s))
         {
             var parent = Directory.GetParent(_currentPath)?.FullName;
             if (parent != null)
-                NavigateTo(parent);
+                _pendingNavigate = parent;
         }
         ImGui.SameLine(0f, 8f * s);
-        ImGui.AlignTextToFramePadding();
-        ImGui.TextColored(new Vector4(1f, 1f, 1f, 0.72f), _currentPath);
+        float pathWidth = ImGui.GetContentRegionAvail().X / s;
+        if (Crystarium.TextInput($"{_id}-path", ref _pathEdit, new TextInputProps
+            {
+                Placeholder = "Path",
+                Style = new TextInputStyle { Width = Sizing.Fixed(pathWidth) },
+            })
+            && Directory.Exists(_pathEdit)
+            && !string.Equals(_pathEdit, _currentPath, StringComparison.OrdinalIgnoreCase))
+            _pendingNavigate = _pathEdit;
+        ImGui.Dummy(new Vector2(0f, 4f * s));
 
         if (_lastError is { } error)
             ImGui.TextColored(new Vector4(1f, 71f / 255f, 87f / 255f, 0.9f), error);
@@ -98,7 +182,6 @@ public class FileBrowser
         float listHeight = ImGui.GetContentRegionAvail().Y;
         float sidebarWidth = 128f * s;
 
-        // Favorites column: compact retained rows.
         Crystarium.PushScrollbarStyle();
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         ImGui.BeginChild("##fb-favorites", new Vector2(sidebarWidth, listHeight),
@@ -112,12 +195,18 @@ public class FileBrowser
                     Selected = string.Equals(path, _currentPath, StringComparison.OrdinalIgnoreCase),
                     Width = 128f,
                 }))
-                NavigateTo(path);
+                _pendingNavigate = path;
         }
         ImGui.EndChild();
 
-        // File list: directories first, compact rows, retained scrollbar.
+        // 1px separator between the favorites and the file list.
+        ImGui.SameLine(0f, 4f * s);
+        var sepTop = ImGui.GetCursorScreenPos();
+        ImGui.GetWindowDrawList().AddRectFilled(sepTop,
+            sepTop + new Vector2(MathF.Max(1f, 1f * s), listHeight),
+            ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 0.08f)));
         ImGui.SameLine(0f, 8f * s);
+
         ImGui.BeginChild("##fb-entries",
             new Vector2(ImGui.GetContentRegionAvail().X, listHeight),
             false, ImGuiWindowFlags.NoSavedSettings);
@@ -138,8 +227,10 @@ public class FileBrowser
                 && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left);
             if (entry.IsDirectory)
             {
+                // DEFERRED: navigating re-fills _entries, so it must never
+                // happen inside this enumeration.
                 if (clicked || doubleClicked)
-                    NavigateTo(entry.FullPath);
+                    _pendingNavigate = entry.FullPath;
                 continue;
             }
             if (clicked)
@@ -162,27 +253,25 @@ public class FileBrowser
         ImGui.EndChild();
         ImGui.PopStyleVar();
         Crystarium.PopScrollbarStyle();
+
+        if (_pendingNavigate is { } target)
+        {
+            _pendingNavigate = null;
+            NavigateTo(target);
+        }
     }
 
-    private void DrawFooter()
+    private void DrawFooter(Vector2 min, Vector2 max, float footerTop, float s)
     {
-        float s = ImGuiHelpers.GlobalScale;
-        if (_isSaveMode)
-        {
-            ImGui.SetNextItemWidth(220f * s);
-            Crystarium.TextInput($"{_id}-name", ref _fileName, "File name");
-            ImGui.SameLine(0f, 8f * s);
-        }
-        if (Crystarium.Button("Cancel", new ButtonProps
-            {
-                Id = $"{_id}-cancel",
-                Classes = Cls.Compact,
-            }))
-            _open = false;
-        ImGui.SameLine(0f, 8f * s);
+        float buttonY = footerTop + (44f * s - 24f * s) / 2f;
+        var confirmSize = Crystarium.MeasureButton(_isSaveMode ? "Save" : "Import", Cls.Compact);
+        var cancelSize = Crystarium.MeasureButton("Cancel", Cls.Compact);
+        float x = max.X - 16f * s - confirmSize.X;
+
         bool canConfirm = _isSaveMode
             ? _fileName.Trim().Length > 0
             : _selectedFile != null;
+        ImGui.SetCursorScreenPos(new Vector2(x, buttonY));
         if (Crystarium.Button(_isSaveMode ? "Save" : "Import", new ButtonProps
             {
                 Id = $"{_id}-confirm",
@@ -190,6 +279,28 @@ public class FileBrowser
                 Disabled = !canConfirm,
             }) && canConfirm)
             Confirm();
+
+        x -= 8f * s + cancelSize.X;
+        ImGui.SetCursorScreenPos(new Vector2(x, buttonY));
+        if (Crystarium.Button("Cancel", new ButtonProps
+            {
+                Id = $"{_id}-cancel",
+                Classes = Cls.Compact,
+            }))
+            _open = false;
+
+        if (_isSaveMode)
+        {
+            ImGui.SetCursorScreenPos(new Vector2(min.X + 16f * s, buttonY));
+            Crystarium.TextInput($"{_id}-name", ref _fileName, new TextInputProps
+            {
+                Placeholder = "File name",
+                Style = new TextInputStyle
+                {
+                    Width = Sizing.Fixed((x - min.X) / s - 32f),
+                },
+            });
+        }
     }
 
     // ── Behavior (unchanged from the legacy window) ──────────────────────
@@ -220,6 +331,7 @@ public class FileBrowser
     private void NavigateTo(string path)
     {
         _currentPath = path;
+        _pathEdit = path;
         _selectedFile = null;
         RefreshEntries();
     }
