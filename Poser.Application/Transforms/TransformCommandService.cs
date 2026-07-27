@@ -149,53 +149,65 @@ public sealed class TransformCommandService
             order.Add(modelEdit.Target);
 
         var before = new List<TransformTargetState>(order.Count);
-        var byTarget = new Dictionary<TransformTargetId, TransformTargetState>(order.Count);
+        // Two distinct state maps: `before` is the immutable pre-edit
+        // capture for rollback and history, while `working` is the
+        // application state a later step builds on. A reset REPLACES the
+        // working state, so file writes for a reset bone apply over the
+        // cleared stacks instead of resurrecting the pre-reset pose.
+        var working = new Dictionary<TransformTargetId, TransformTargetState>(order.Count);
         foreach (var target in order)
         {
             var captured = Capture(target);
             if (!captured.Success || captured.State == null)
                 return GestureResult.Fail(captured.Detail!);
             before.Add(captured.State);
-            byTarget[target] = captured.State;
+            working[target] = captured.State;
+        }
+
+        GestureResult FailWithRollback(string detail)
+        {
+            var rollbackFailures = new List<string>();
+            foreach (var state in before)
+            {
+                var restored = _runtime.Restore(state);
+                if (!restored.Success)
+                    rollbackFailures.Add(
+                        restored.Detail ?? $"Could not restore {state.Target}.");
+            }
+            return GestureResult.Fail(rollbackFailures.Count == 0
+                ? detail
+                : $"{detail} Rollback also failed: {string.Join("; ", rollbackFailures)}");
         }
 
         foreach (var target in resets)
         {
-            var state = byTarget[target];
-            var applied = _runtime.Restore(state with
+            var reset = working[target] with
             {
-                Pose = PoseOperations.Reset(state.Pose),
+                Pose = PoseOperations.Reset(working[target].Pose),
                 HasOverride = false,
-            });
-            if (applied.Success)
-                continue;
-            RestoreAll(before);
-            return GestureResult.Fail(
-                applied.Detail ?? $"Could not reset {target}.");
+            };
+            var applied = _runtime.Restore(reset);
+            if (!applied.Success)
+                return FailWithRollback(applied.Detail ?? $"Could not reset {target}.");
+            working[target] = reset;
         }
 
         foreach (var (target, desired) in writes)
         {
-            var applied = _runtime.ApplyAbsolute(byTarget[target], desired, rawBaseline: true);
-            if (applied.Success)
-                continue;
-            RestoreAll(before);
-            return GestureResult.Fail(
-                applied.Detail ?? $"Could not transform {target}.");
+            var applied = _runtime.ApplyAbsolute(working[target], desired, rawBaseline: true);
+            if (!applied.Success)
+                return FailWithRollback(applied.Detail ?? $"Could not transform {target}.");
         }
 
         if (model is { } edit)
         {
-            var state = byTarget[edit.Target];
+            var state = working[edit.Target];
             var applied = edit.Absolute is { } absolute
                 ? _runtime.ApplyAbsolute(state, absolute)
                 : _runtime.Restore(state with { HasOverride = false });
             if (!applied.Success)
-            {
-                RestoreAll(before);
-                return GestureResult.Fail(
+                return FailWithRollback(
                     applied.Detail ?? "Could not apply the model transform.");
-            }
         }
 
         var after = new List<TransformTargetState>(before.Count);
@@ -203,11 +215,8 @@ public sealed class TransformCommandService
         {
             var captured = _runtime.Capture(state.Target);
             if (!captured.Success || captured.State == null)
-            {
-                RestoreAll(before);
-                return GestureResult.Fail(
+                return FailWithRollback(
                     captured.Detail ?? $"Could not capture {state.Target}.");
-            }
             after.Add(captured.State);
         }
 

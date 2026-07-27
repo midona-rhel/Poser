@@ -7,9 +7,9 @@ namespace Poser.Files;
 /// <summary>
 /// Everything one pose-file import would change, computed WITHOUT mutating
 /// anything: the exact bones the chosen scope resets, the absolute
-/// raw-basis writes (file bones first, then the face-reconcile writes),
-/// and the owning actor's model transform when enabled. The stable pose
-/// edit path applies the whole plan as ONE atomic, undoable edit.
+/// raw-basis file writes, and the owning actor's model transform when
+/// enabled. Every target appears at most once per role, so the atomic
+/// edit gives each exactly one deterministic final state.
 /// </summary>
 public sealed class PoseImportPlan
 {
@@ -21,7 +21,7 @@ public sealed class PoseImportPlan
     public IActor? ModelActor { get; set; }
     public Transform ModelTransform { get; set; }
 
-    /// <summary>File bones applied (excludes face-reconcile writes).</summary>
+    /// <summary>File bones applied.</summary>
     public int FileBoneCount { get; set; }
 
     public bool IsEmpty =>

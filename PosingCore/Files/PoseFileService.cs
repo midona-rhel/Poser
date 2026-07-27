@@ -18,18 +18,15 @@ namespace Poser.Files;
 public class PoseFileService : IPoseFileService
 {
     private readonly IPluginLog _log;
-    private readonly IBonePosingService _bonePosingService;
     private readonly IPosingService _posingService;
 
     public PoseImportOptions DefaultImportOptions { get; } = PoseImportOptions.Default;
 
     public PoseFileService(
         IPluginLog log,
-        IBonePosingService bonePosingService,
         IPosingService posingService)
     {
         _log = log;
-        _bonePosingService = bonePosingService;
         _posingService = posingService;
     }
 
@@ -226,12 +223,12 @@ public class PoseFileService : IPoseFileService
             };
         }
 
-        // Re-anchor the face after body imports (rewrite of Brio's
-        // ReconcileHead) — Character-only. Skipped when IK is live on the
-        // Character skeleton because reconciling would fight the solver.
-        if (!options.AsExpression && options.ApplyFace && character != null &&
-            !_bonePosingService.HasEnabledIk(character))
-            PlanFaceReconcile(plan, character);
+        // No face-reconcile pass: within one atomic same-frame edit the
+        // pre-import raw transforms it would re-apply are exactly the
+        // near-identity no-op the delta rejection filters, while the
+        // stack restore hidden inside a duplicate absolute write would
+        // erase the file's own facial edits. Every target gets exactly
+        // one deterministic final state.
 
         return plan;
     }
@@ -391,34 +388,6 @@ public class PoseFileService : IPoseFileService
             Rotation = options.ApplyRotation ? boneData.Rotation : original.Rotation,
             Scale = options.ApplyScale ? boneData.Scale : original.Scale
         }));
-    }
-
-    /// <summary>
-    /// Plans a re-apply of the head subtree (j_kao + descendants) at its
-    /// current raw transforms. Near-identity deltas are rejected by
-    /// BonePoseInfo.Apply, so this is a no-op unless an import actually
-    /// shifted the face's basis.
-    /// </summary>
-    private static void PlanFaceReconcile(PoseImportPlan plan, ISkeleton skeleton)
-    {
-        var head = skeleton.GetBone("j_kao");
-        if (head == null)
-            return;
-
-        foreach (var bone in skeleton.Bones)
-        {
-            if (!IsInSubtree(bone, head))
-                continue;
-            plan.Writes.Add((bone, bone.LastRawTransform));
-        }
-    }
-
-    private static bool IsInSubtree(IBone bone, IBone root)
-    {
-        for (var b = bone; b != null; b = b.ParentBone)
-            if (ReferenceEquals(b, root) || (b.BoneName == root.BoneName && b.PartialId == root.PartialId))
-                return true;
-        return false;
     }
 
     private static bool IsFaceBone(string boneName)

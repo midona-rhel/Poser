@@ -26,8 +26,8 @@ interchange with Brio and (via name conversion) Anamnesis.
   slot; Body and Expression are Character-only; Selected uses the
   selected bones' exact slots. Reset-before-import touches only the
   chosen scope; the model transform applies once to the owning actor.
-  The Expression preset applies face bones with `j_kao` excluded; face
-  reconcile and `.cmp` remain Character-only.
+  The Expression preset applies face bones with `j_kao` excluded; `.cmp`
+  remains Character-only.
 - File import is ONE atomic undoable edit: the importer computes a plan
   without mutating, every affected exact slot-qualified target (including
   reset-before-import and the model transform) is captured first, a
