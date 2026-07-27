@@ -50,6 +50,7 @@ public static partial class Crystarium
 
         bool changed = false;
         var popupColor = color;
+        bool rgbOnly = props.RgbOnly;
         FloatingSurface.Popup(
             popupId,
             new FloatingSurfaceProps
@@ -68,11 +69,11 @@ public static partial class Crystarium
                     * scale);
                 var flags = ImGuiColorEditFlags.NoSidePreview
                     | ImGuiColorEditFlags.NoSmallPreview;
-                if (props.RgbOnly)
+                if (rgbOnly)
                     flags |= ImGuiColorEditFlags.NoAlpha;
                 float keepAlpha = popupColor.W;
                 changed = ImGui.ColorPicker4(id + "_pk", ref popupColor, flags);
-                if (props.RgbOnly)
+                if (rgbOnly)
                     popupColor.W = keepAlpha;
             });
         if (changed)

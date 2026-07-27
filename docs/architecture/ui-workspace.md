@@ -31,11 +31,12 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
   `PoserIconSources` wins. Mirrored pairs reuse one glyph with `flipX`
   (undo/redo). Fonts: CSS-size conversion + glyph offset live in
   `FontRegistry`; no per-widget font padding.
-- Optical baselines: per-component corrections live in `Theme.Optical`
-  (sidebar text/badges −1 px, text-button labels +1 px, pose-footer
-  labels −1 px), applied by the owning primitive or view row and snapped
-  to framebuffer pixels; segmented tabs and the dropdown's accepted +1
-  are fixed references. Never scatter ±1 literals through panes.
+- UI foundation: `Theme.Metrics` is the sole dimensional and optical
+  source; Norvrandt is renderer machinery, while Crystarium is the only
+  product-facing primitive/composition API. Pages describe state and
+  callbacks through Page, ActionBar, Section, Form/FormRow and
+  ScrollRegion. FloatingSurface alone owns floating placement and glass
+  fill, blur, border and shadow.
 - Hover help: `Crystarium.HoverHelp` is the ONE explanatory surface
   (picto KbdTooltip: 400 ms open, instant exit start, the 150 ms Mantine
   pop entering and exiting as one composited surface, glass card on the
@@ -43,6 +44,5 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
   register only stable id + target rect + text (+ shortcut, side);
   `Preview` covers truncation without the delay; the last registration
   of a frame wins, so a semantic row outranks its own wells. No native
-  ImGui tooltip may coexist for a migrated target. Inspector form rows
-  share the `InspectorLayout.Form*` geometry (94 px label column, one
-  30 px row height, one right-aligned value column).
+  ImGui tooltip may coexist for a migrated target. Form rows use the
+  shared label/control/value columns and one semantic density per row.

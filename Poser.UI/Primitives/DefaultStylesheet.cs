@@ -211,12 +211,12 @@ internal static class DefaultStylesheet
             Padding = new Spacing(0, Theme.Metrics.Space.Six),
         });
 
-        Stylesheet.Define(Cls.TextInput + Cls.Workspace, new TextInputStyle
+        Stylesheet.Define(Cls.Workspace, new TextInputStyle
         {
             Height = Sizing.Fixed(Theme.Metrics.Control.Workspace),
         });
 
-        Stylesheet.Define(Cls.TextInput + Cls.Comfortable, new TextInputStyle
+        Stylesheet.Define(Cls.Comfortable, new TextInputStyle
         {
             Height = Sizing.Fixed(Theme.Metrics.Control.Comfortable),
         });
@@ -239,7 +239,7 @@ internal static class DefaultStylesheet
             FontSize = Theme.Metrics.Typography.Label,
         });
 
-        Stylesheet.Define(Cls.Dropdown + Cls.Comfortable, new DropdownStyle
+        Stylesheet.Define(Cls.Comfortable, new DropdownStyle
         {
             Height = Sizing.Fixed(Theme.Metrics.Control.Comfortable),
         });
