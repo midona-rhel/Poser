@@ -35,6 +35,7 @@ public class FileBrowser
     private string? _pendingSelect;
     private string? _pendingNavigate;
     private string _pathEdit = string.Empty;
+    private float _inputHeightPx = 24f;
     private Action<string>? _onSelect;
     private readonly List<(string Name, string Path)> _favorites = new();
     private readonly List<Entry> _entries = new();
@@ -165,34 +166,31 @@ public class FileBrowser
     {
         float s = ImGuiHelpers.GlobalScale;
 
-        // Path row: plain square up button + an EDITABLE outlined path
-        // input (the input chrome carries the outline). Both are placed
-        // EXPLICITLY on one shared row top so they center against each
-        // other instead of trailing SameLine's item baseline.
+        // Path row: the input draws FIRST and its rect is MEASURED; the
+        // up button then centers against the real rendered height instead
+        // of an assumed one (the stylesheet may clamp the input taller
+        // than any inline height).
         var rowTop = ImGui.GetCursorScreenPos();
-        float inputHeight = 24f * s; // theme row height, the input's own height
+        ImGui.SetCursorScreenPos(new Vector2(rowTop.X + (24f + 8f) * s, rowTop.Y));
+        float pathWidth = ImGui.GetContentRegionAvail().X / s - (24f + 8f);
+        if (Crystarium.TextInput($"{_id}-path", ref _pathEdit, new TextInputProps
+            {
+                Placeholder = "Path",
+                Style = new TextInputStyle { Width = Sizing.Fixed(pathWidth) },
+            })
+            && Directory.Exists(_pathEdit)
+            && !string.Equals(_pathEdit, _currentPath, StringComparison.OrdinalIgnoreCase))
+            _pendingNavigate = _pathEdit;
+        _inputHeightPx = ImGui.GetItemRectSize().Y;
         if (SquareIconButton($"{_id}-up", TablerIcon.ArrowUp,
-                new Vector2(rowTop.X, rowTop.Y + (inputHeight - 24f * s) / 2f), s))
+                new Vector2(rowTop.X, rowTop.Y + (_inputHeightPx - 24f * s) / 2f), s))
         {
             var parent = Directory.GetParent(_currentPath)?.FullName;
             if (parent != null)
                 _pendingNavigate = parent;
         }
-        ImGui.SetCursorScreenPos(new Vector2(rowTop.X + (24f + 8f) * s, rowTop.Y));
-        float pathWidth = ImGui.GetContentRegionAvail().X / s;
-        if (Crystarium.TextInput($"{_id}-path", ref _pathEdit, new TextInputProps
-            {
-                Placeholder = "Path",
-                Style = new TextInputStyle
-                {
-                    Width = Sizing.Fixed(pathWidth),
-                    Height = Sizing.Fixed(24f),
-                },
-            })
-            && Directory.Exists(_pathEdit)
-            && !string.Equals(_pathEdit, _currentPath, StringComparison.OrdinalIgnoreCase))
-            _pendingNavigate = _pathEdit;
-        ImGui.Dummy(new Vector2(0f, 4f * s));
+        ImGui.SetCursorScreenPos(new Vector2(
+            rowTop.X, rowTop.Y + MathF.Max(_inputHeightPx, 24f * s) + 4f * s));
 
         if (_lastError is { } error)
             ImGui.TextColored(new Vector4(1f, 71f / 255f, 87f / 255f, 0.9f), error);
@@ -309,16 +307,18 @@ public class FileBrowser
 
         if (_isSaveMode)
         {
-            ImGui.SetCursorScreenPos(new Vector2(min.X + 16f * s, buttonY));
+            // Centered on the footer band using the MEASURED input height.
+            ImGui.SetCursorScreenPos(new Vector2(
+                min.X + 16f * s, footerTop + (44f * s - _inputHeightPx) / 2f));
             Crystarium.TextInput($"{_id}-name", ref _fileName, new TextInputProps
             {
                 Placeholder = "File name",
                 Style = new TextInputStyle
                 {
                     Width = Sizing.Fixed(MathF.Min(220f, (x - min.X) / s - 24f)),
-                    Height = Sizing.Fixed(24f),
                 },
             });
+            _inputHeightPx = ImGui.GetItemRectSize().Y;
         }
     }
 
