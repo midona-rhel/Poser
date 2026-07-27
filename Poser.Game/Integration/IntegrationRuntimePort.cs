@@ -327,11 +327,16 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
                 return IntegrationPortResult.Fail(detail!);
-            // forceAssignment would DELETE an existing temporary
-            // assignment; a foreign one must fail instead (the session
-            // gates on this, so hitting it here is a race, not a policy).
+            // forceAssignment is REQUIRED for actors with an ordinary
+            // individual assignment (force:false answers
+            // CharacterCollectionExists) and is what lets the temporary
+            // overlay that assignment while preserving it underneath. It
+            // would also delete an existing temporary assignment — which
+            // is why the session classifies the effective assignment in
+            // the same framework action immediately before this call and
+            // refuses foreign temporaries there; nothing can interleave.
             int assignEc = _assignTemporaryCollection.InvokeFunc(
-                collection, index, /*forceAssignment*/ false);
+                collection, index, /*forceAssignment*/ true);
             return assignEc == PenumbraEcSuccess
                 ? IntegrationPortResult.Ok()
                 : IntegrationPortResult.Fail(

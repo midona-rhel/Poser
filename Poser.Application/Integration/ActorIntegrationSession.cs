@@ -131,6 +131,11 @@ public sealed class ActorIntegrationSession
     {
         if (assignment.HasIndividualAssignment)
             return null;
+        // The Empty collection is excluded from GetCollections by design;
+        // Guid.Empty with no individual assignment is a normal state, not
+        // a foreign temporary.
+        if (assignment.EffectiveId == Guid.Empty)
+            return null;
         if (assignment.EffectiveId == current.Mcdf?.TemporaryCollection)
             return null;
         var known = _port.GetCollections();
@@ -756,6 +761,19 @@ public sealed class ActorIntegrationSession
                 {
                     if (Guard() is { } stop)
                         return stop;
+                    // Re-read and classify the effective assignment in the
+                    // SAME action that assigns: Empty, installed
+                    // collections, ordinary individual assignments, and
+                    // Poser's own temporary pass; a foreign temporary
+                    // refuses — and because nothing can interleave on the
+                    // framework thread, the forced assignment below can
+                    // never race into deleting one.
+                    var assignment = _port.GetCollectionAssignment(actor);
+                    if (!assignment.Success || assignment.Value is not { } collectionState)
+                        return assignment.Detail ?? "The Penumbra assignment could not be read.";
+                    if (ForeignTemporaryCollection(OverridesFor(actor), collectionState)
+                        is { } foreign)
+                        return foreign;
                     var created = _port.CreateTemporaryCollection($"Poser MCDF {fileName}");
                     if (!created.Success)
                         return created.Detail;
