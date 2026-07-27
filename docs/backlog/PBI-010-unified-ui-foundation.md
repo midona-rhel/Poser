@@ -67,6 +67,68 @@ Do not add another UI project, framework, stylesheet layer, or generic widget
 library. Delete unused general-purpose rendering code rather than preserving it
 "for later".
 
+## Authoring contract
+
+Centralized numbers are insufficient if every pane still assembles property
+records and handles immediate-mode plumbing. The product-facing API must be
+small enough that normal UI reads as content:
+
+```csharp
+Crystarium.Page("appearance", origin, size, page =>
+{
+    page.Actions(actions =>
+    {
+        actions.Button("Open in Glamourer", OpenGlamourer,
+            disabled: !available, help: unavailableReason);
+        actions.Button("Reset appearance", ResetAppearance);
+    });
+
+    page.Section("PRESENTATION", form =>
+    {
+        form.Slider("Opacity", opacity, 0f, 1f,
+            value => SetOpacity(value), format: "0.00");
+        form.Switch("Override", overrideOn,
+            value => SetOverride(value));
+    });
+});
+```
+
+Exact names may follow C# conventions, but preserve the shape:
+
+- composition scopes expose short semantic methods;
+- current value and change callback are supplied together;
+- the composition owns IDs, density, classes, sizing, placement, help target,
+  change detection, and drawing;
+- optional behavior uses named arguments, not a public property-bag object;
+- explicit IDs and low-level styling are internal escape hatches, not normal
+  pane code;
+- no `UiAction`, `ColorWellValue`, `ButtonProps`, `Sizing.Fixed`, style class,
+  `ref`-plus-`if changed`, or manual measurement boilerplate appears in a
+  migrated product pane.
+
+This remains immediate-mode UI. Do not build a retained virtual tree, allocate
+a component object graph every frame, add reflection/markup/source generation,
+or introduce `New(...).Build().Draw()` ceremony. Existing simple calls such as
+`Crystarium.Button("Hello", onClick)` are the preferred primitive shape; extend
+that simplicity rather than wrapping it.
+
+`Theme` must be a complete replaceable value, including metrics. Static
+`Theme.Metrics` constants are not themeable and therefore do not satisfy this
+PBI. Move the canonical metric groups into the active theme value so one call
+loads colors, typography, metrics, radii, shadow, motion, and optical
+corrections together. Support:
+
+```csharp
+Crystarium.UseTheme(Theme.PictoDark with
+{
+    Controls = Theme.PictoDark.Controls with { WorkspaceHeight = 28f },
+});
+```
+
+All primitives and compositions resolve the active theme. Scoped overrides may
+exist for exceptional canvases, but product panes cannot mutate global style
+state or override individual pixel values.
+
 ## Canonical metrics
 
 Put these in one named metric source. Consumers request a semantic variant;
@@ -145,8 +207,9 @@ Each slice is built and inspected in game before the next starts. Do not land
 all migrations and ask for one final visual pass.
 
 1. **Foundation** — canonical tokens, primitive variants, Page/ActionBar/
-   Section/Form/FormRow/ScrollRegion/FloatingSurface. Correct the current menu
-   blur/shadow/hit-geometry defects while extracting the surface.
+   Section/Form/FormRow/ScrollRegion/FloatingSurface plus the concise authoring
+   API above. Correct the current menu blur/shadow/hit-geometry defects while
+   extracting the surface.
 2. **Appearance** — migrate the entire page, external selectors, MCDF row, and
    file dialog. This is the proving slice; the user accepts its padding,
    control heights, section rhythm, floating chrome, and scroll behavior.
@@ -172,6 +235,10 @@ The old positioning code is deleted in the same commit that migrates it.
   `Poser.UI.Controls.Layout`.
 - Zero pane-local definitions of row height, control height, label/value
   columns, page padding, section gap, scrollbar size, or glass chrome.
+- Zero public property-bag/style/sizing construction in migrated product panes;
+  normal authoring uses semantic scope methods and named optional arguments.
+- The active `Theme` value contains metrics; no static `Theme.Metrics` consumer
+  remains.
 - `Poser/` has no direct Norvrandt layout/rendering calls except the approved
   shell/canvas bridge identified in the handoff.
 - One floating-surface chrome path and one scrollbar path.
