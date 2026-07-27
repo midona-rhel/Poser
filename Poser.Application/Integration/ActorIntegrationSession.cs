@@ -440,10 +440,32 @@ public sealed class ActorIntegrationSession
             locked = false;
         }
 
-        // The imported appearance is undone by reapplying the ORIGINAL
-        // captured state (the design baseline path below handles it when
-        // this actor also had a Poser design applied — same capture).
-        if (!locked && resolvable && !current.DesignOwned
+        // A pending working-recipe recovery (left by a failed import
+        // rollback) supersedes the durable-baseline restore: the actor
+        // returns to its pre-import recipe, released only on success, and
+        // the durable baseline stays captured for the selector resets.
+        // Without one, tearing down a committed MCDF reapplies the
+        // ORIGINAL captured state as before.
+        string? pendingGlamourer = mcdf.PendingGlamourerRecovery;
+        if (!locked && pendingGlamourer is { } recovery)
+        {
+            if (resolvable)
+            {
+                var recovered = _port.RestoreGlamourerState(actor, recovery);
+                if (recovered.Success)
+                    pendingGlamourer = null;
+                else
+                {
+                    failures.Add(recovered.Detail!);
+                    complete = false;
+                }
+            }
+            else
+            {
+                pendingGlamourer = null;
+            }
+        }
+        else if (!locked && resolvable && !current.DesignOwned
             && current.Baseline.GlamourerState is { } state)
         {
             var restored = _port.RestoreGlamourerState(actor, state);
@@ -469,6 +491,34 @@ public sealed class ActorIntegrationSession
             {
                 failures.Add(deleted.Detail!);
                 complete = false;
+            }
+        }
+
+        // The displaced working body profile comes back before ownership
+        // releases; the new id Customize+ returns lands in the selector's
+        // ownership so its Reset stays truthful.
+        string? pendingBody = mcdf.PendingBodyRecoveryJson;
+        if (temporaryProfile == null && pendingBody is { } bodyRecovery)
+        {
+            if (resolvable)
+            {
+                var reapplied = _port.ApplyTemporaryBodyProfile(actor, bodyRecovery);
+                if (reapplied.Success && reapplied.Value != default)
+                {
+                    if (current.TemporaryBodyProfile != null)
+                        current = current with { TemporaryBodyProfile = reapplied.Value };
+                    pendingBody = null;
+                }
+                else
+                {
+                    failures.Add(reapplied.Detail
+                        ?? "The previous Customize+ profile could not be reapplied.");
+                    complete = false;
+                }
+            }
+            else
+            {
+                pendingBody = null;
             }
         }
 
@@ -536,6 +586,8 @@ public sealed class ActorIntegrationSession
                 TemporaryCollection = temporaryCollection,
                 OperationDirectory = operationDirectory,
                 RedrawPending = redrawPending,
+                PendingGlamourerRecovery = pendingGlamourer,
+                PendingBodyRecoveryJson = pendingBody,
             },
         };
     }
@@ -619,6 +671,12 @@ public sealed class ActorIntegrationSession
         public bool ReplacedWorkingBodyProfile;
         public string? WorkingBodyProfileJson;
         public bool RedrawPending;
+        // Working-recipe RECOVERY obligations: set once the imported state
+        // displaced the working recipe, released only after the recipe is
+        // successfully back. They persist into McdfOwnership so Reset MCDF
+        // retries them.
+        public string? PendingGlamourerRecovery;
+        public string? PendingBodyRecoveryJson;
     }
 
     private InFlightImport? _inFlight;
@@ -1040,30 +1098,48 @@ public sealed class ActorIntegrationSession
         {
             var deleted = _port.DeleteTemporaryBodyProfileById(profile);
             if (deleted.Success)
-                operation.TemporaryProfile = null;
-            else
-                failures.Add(deleted.Detail!);
-        }
-
-        if (operation.TemporaryProfile == null
-            && operation.ReplacedWorkingBodyProfile && resolvable
-            && operation.WorkingBodyProfileJson is { } workingJson)
-        {
-            // The MCDF profile displaced a Poser temporary profile; put
-            // the working recipe back and record the NEW id Customize+
-            // returns, preserving selector ownership.
-            var reapplied = _port.ApplyTemporaryBodyProfile(actor, workingJson);
-            if (reapplied.Success && reapplied.Value != default)
             {
-                var owner = OverridesFor(actor);
-                if (owner.TemporaryBodyProfile != null)
-                    Mutate(actor, owner with { TemporaryBodyProfile = reapplied.Value });
-                operation.ReplacedWorkingBodyProfile = false;
+                operation.TemporaryProfile = null;
+                if (operation.ReplacedWorkingBodyProfile)
+                {
+                    // The MCDF profile displaced a Poser temporary
+                    // profile; reapplying it is now a tracked obligation,
+                    // released only on success.
+                    operation.PendingBodyRecoveryJson = operation.WorkingBodyProfileJson;
+                    operation.ReplacedWorkingBodyProfile = false;
+                }
             }
             else
             {
-                failures.Add(reapplied.Detail
-                    ?? "The previous Customize+ profile could not be reapplied.");
+                failures.Add(deleted.Detail!);
+            }
+        }
+
+        if (operation.TemporaryProfile == null
+            && operation.PendingBodyRecoveryJson is { } workingJson)
+        {
+            if (resolvable)
+            {
+                // Put the working recipe back and record the NEW id
+                // Customize+ returns, preserving selector ownership.
+                var reapplied = _port.ApplyTemporaryBodyProfile(actor, workingJson);
+                if (reapplied.Success && reapplied.Value != default)
+                {
+                    var owner = OverridesFor(actor);
+                    if (owner.TemporaryBodyProfile != null)
+                        Mutate(actor, owner with { TemporaryBodyProfile = reapplied.Value });
+                    operation.PendingBodyRecoveryJson = null;
+                }
+                else
+                {
+                    failures.Add(reapplied.Detail
+                        ?? "The previous Customize+ profile could not be reapplied.");
+                }
+            }
+            else
+            {
+                // Nothing left to restore into.
+                operation.PendingBodyRecoveryJson = null;
             }
         }
 
@@ -1073,17 +1149,11 @@ public sealed class ActorIntegrationSession
             if (unlocked.Success)
             {
                 operation.GlamourerLocked = false;
-                // The WORKING snapshot — the exact pre-import state,
-                // including any active Poser design — comes back; the
+                // Restoring the WORKING snapshot — the exact pre-import
+                // state, including any active Poser design — becomes a
+                // tracked obligation, released only on success; the
                 // durable baseline stays captured for Reset.
-                if (operation.WorkingGlamourerState is { } state)
-                {
-                    var restored = _port.RestoreGlamourerState(actor, state);
-                    if (restored.Success)
-                        operation.WorkingGlamourerState = null;
-                    else
-                        failures.Add(restored.Detail!);
-                }
+                operation.PendingGlamourerRecovery = operation.WorkingGlamourerState;
             }
             else
             {
@@ -1092,8 +1162,26 @@ public sealed class ActorIntegrationSession
         }
         else if (operation.GlamourerLocked)
         {
-            // The lock died with the actor's state.
+            // The lock (and the state to restore into) died with the actor.
             operation.GlamourerLocked = false;
+            operation.PendingGlamourerRecovery = null;
+        }
+
+        if (!operation.GlamourerLocked
+            && operation.PendingGlamourerRecovery is { } recovery)
+        {
+            if (resolvable)
+            {
+                var restored = _port.RestoreGlamourerState(actor, recovery);
+                if (restored.Success)
+                    operation.PendingGlamourerRecovery = null;
+                else
+                    failures.Add(restored.Detail!);
+            }
+            else
+            {
+                operation.PendingGlamourerRecovery = null;
+            }
         }
 
         if (operation.TemporaryCollection is { } collection)
@@ -1129,6 +1217,13 @@ public sealed class ActorIntegrationSession
                 failures.Add(deletedDirectory.Detail!);
         }
 
+        // A leftover that still holds the lock (unlock failed) carries the
+        // working snapshot forward as its recovery obligation, so the
+        // eventual teardown restores the pre-import recipe, not the
+        // durable baseline.
+        if (operation.GlamourerLocked && operation.PendingGlamourerRecovery == null)
+            operation.PendingGlamourerRecovery = operation.WorkingGlamourerState;
+
         if (ReferenceEquals(_inFlight, operation))
             _inFlight = null;
 
@@ -1136,7 +1231,9 @@ public sealed class ActorIntegrationSession
             && !operation.GlamourerLocked
             && operation.TemporaryProfile == null
             && operation.OperationDirectory == null
-            && !operation.RedrawPending;
+            && !operation.RedrawPending
+            && operation.PendingGlamourerRecovery == null
+            && operation.PendingBodyRecoveryJson == null;
         if (clean && failures.Count == 0)
         {
             Changed?.Invoke();
@@ -1156,7 +1253,9 @@ public sealed class ActorIntegrationSession
                 operation.GlamourerLocked,
                 operation.TemporaryProfile,
                 operation.BodyJson,
-                operation.RedrawPending),
+                operation.RedrawPending,
+                operation.PendingGlamourerRecovery,
+                operation.PendingBodyRecoveryJson),
         });
         return string.Join("; ", failures);
     }

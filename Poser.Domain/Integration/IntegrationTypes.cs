@@ -93,7 +93,9 @@ public sealed record McdfOwnership(
     bool GlamourerLocked,
     Guid? TemporaryProfile,
     string? AppliedProfileJson,
-    bool RedrawPending = false);
+    bool RedrawPending = false,
+    string? PendingGlamourerRecovery = null,
+    string? PendingBodyRecoveryJson = null);
 
 /// <summary>
 /// Poser-owned external state for one exact actor generation. Ownership is
