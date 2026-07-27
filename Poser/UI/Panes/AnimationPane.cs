@@ -366,16 +366,16 @@ public sealed class AnimationPane
     {
         if (_sceneMenuRequested)
         {
-            ImGui.OpenPopup("##anim-scene-menu");
             _sceneMenuRequested = false;
+            Crystarium.FloatingMenu.Open("##anim-scene-menu", ImGui.GetMousePos(), new[]
+            {
+                new ContextMenuItem("Freeze all", TablerIcon.PlayerPlay),
+                new ContextMenuItem("Resume all", TablerIcon.PlayerPlay),
+                new ContextMenuItem("Replay all", TablerIcon.Refresh),
+                new ContextMenuItem("Restore all", TablerIcon.ArrowBackUp),
+            });
         }
-        int clicked = Crystarium.ContextMenu("##anim-scene-menu", new[]
-        {
-            new ContextMenuItem("Freeze all", TablerIcon.PlayerPlay),
-            new ContextMenuItem("Resume all", TablerIcon.PlayerPlay),
-            new ContextMenuItem("Replay all", TablerIcon.Refresh),
-            new ContextMenuItem("Restore all", TablerIcon.ArrowBackUp),
-        });
+        int clicked = Crystarium.FloatingMenu.Draw("##anim-scene-menu");
         switch (clicked)
         {
             case 0: Report(_sceneActions.FreezeAll(), "Freeze all"); break;

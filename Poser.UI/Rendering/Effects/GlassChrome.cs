@@ -103,5 +103,36 @@ public static class GlassChrome
 
     /// <summary>ImGui clips draw commands to the popup rect, so the outer
     /// ring is drawn just inside the edge rather than outside it. Unscaled.</summary>
+    /// <summary>
+    /// Floating-menu surface (Picto ContextMenu): backdrop equivalent to
+    /// blur(13px) brightness(.7), surface-1 at 92%, and the directional
+    /// glass border trio. No ring — the menu draws its own OUTER ring and
+    /// shadow in its host margin, so nothing clips.
+    /// </summary>
+    public static void DrawMenuSurface(
+        ImDrawListPtr drawList, Vector2 min, Vector2 max, float roundingUnscaled)
+    {
+        float rounding = roundingUnscaled * ImGuiHelpers.GlobalScale;
+        if (BackdropBlurAvailable)
+            ImGuiHelpers.PrependBlurBehind(
+                drawList, min, max,
+                blurStrength: 13f,
+                rounding: rounding,
+                tintColor: default,
+                luminosityColor: new Vector4(0f, 0f, 0f, 0.30f),
+                noiseOpacity: 0f);
+        drawList.AddRectFilled(
+            min, max, ImGui.ColorConvertFloat4ToU32(BackgroundColor), rounding);
+        Norvrandt.Box(min, max, new BoxStyle
+        {
+            BorderWidth = 1f,
+            BorderRadius = roundingUnscaled,
+            BorderTopColor = Theme.Glass.BorderTop,
+            BorderLeftColor = Theme.Glass.BorderSide,
+            BorderRightColor = Theme.Glass.BorderSide,
+            BorderBottomColor = Theme.Glass.BorderBottom,
+        });
+    }
+
     public const float RingInset = 0.5f;
 }

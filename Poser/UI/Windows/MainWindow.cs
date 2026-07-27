@@ -846,36 +846,41 @@ public class MainWindow : Window
     {
         if (_addOpenRequested)
         {
-            ImGui.OpenPopup("##sidebar-add");
             _addOpenRequested = false;
+            // Cloning a selection needs one; the entry is dropped rather
+            // than disabled when nothing is selected. Items and handlers
+            // freeze at open.
+            IActor? selected = null;
+            string selectedName = string.Empty;
+            if (_selection.Primary is { Kind: SceneEntityKind.Actor, Actor: { } selectedId } &&
+                _bindings.Resolve(selectedId) is { Success: true, Value: { } live })
+            {
+                selected = live;
+                selectedName = DisplayName(live.Name);
+            }
+
+            var items = new List<ContextMenuItem>
+            {
+                new("Clone yourself", TablerIcon.User),
+            };
+            _addActions = new List<Action?>
+            {
+                () => SelectSpawned(_spawnService.SpawnPlayerClone()),
+            };
+            if (selected != null)
+            {
+                items.Add(new($"Clone {selectedName}", TablerIcon.UserCircle));
+                _addActions.Add(() => SelectSpawned(_spawnService.CloneActor(selected)));
+            }
+            Crystarium.FloatingMenu.Open("##sidebar-add", ImGui.GetMousePos(), items.ToArray());
         }
 
-        // Cloning a selection needs one; the entry is dropped rather than
-        // disabled when nothing is selected.
-        IActor? selected = null;
-        string selectedName = string.Empty;
-        if (_selection.Primary is { Kind: SceneEntityKind.Actor, Actor: { } selectedId } &&
-            _bindings.Resolve(selectedId) is { Success: true, Value: { } live })
-        {
-            selected = live;
-            selectedName = DisplayName(live.Name);
-        }
-
-        var items = new List<ContextMenuItem>
-        {
-            new("Clone yourself", TablerIcon.User),
-        };
-        if (selected != null)
-            items.Add(new($"Clone {selectedName}", TablerIcon.UserCircle));
-
-        int clicked = Crystarium.ContextMenu("##sidebar-add", items.ToArray());
-        if (clicked < 0)
-            return;
-        if (clicked == 0)
-            SelectSpawned(_spawnService.SpawnPlayerClone());
-        else if (selected != null)
-            SelectSpawned(_spawnService.CloneActor(selected));
+        int clicked = Crystarium.FloatingMenu.Draw("##sidebar-add");
+        if (clicked >= 0 && clicked < _addActions.Count)
+            _addActions[clicked]?.Invoke();
     }
+
+    private List<Action?> _addActions = new();
 
     /// <summary>Selects a freshly spawned actor so the thing just created
     /// is the thing being edited. The scene has not rescanned yet, so the
@@ -908,16 +913,13 @@ public class MainWindow : Window
     /// the duration of one frame and is dropped when resolution fails.</summary>
     private void DrawActorContextMenu()
     {
-        if (_ctxOpenRequested)
-        {
-            ImGui.OpenPopup("##actor-ctx");
-            _ctxOpenRequested = false;
-        }
-        if (_ctxActorId is not { } actorId) return;
+        if (_ctxActorId is not { } actorId)
+            return;
         var resolved = _bindings.Resolve(actorId);
         if (!resolved.Success)
         {
             _ctxActorId = null;
+            Crystarium.FloatingMenu.Dismiss("##actor-ctx");
             return;
         }
         var actor = resolved.Value!;
@@ -964,7 +966,12 @@ public class MainWindow : Window
             });
         }
 
-        int clicked = Crystarium.ContextMenu("##actor-ctx", items.ToArray());
+        if (_ctxOpenRequested)
+        {
+            _ctxOpenRequested = false;
+            Crystarium.FloatingMenu.Open("##actor-ctx", ImGui.GetMousePos(), items.ToArray());
+        }
+        int clicked = Crystarium.FloatingMenu.Draw("##actor-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
     }
@@ -976,11 +983,6 @@ public class MainWindow : Window
     /// </summary>
     private void DrawBoneContextMenu()
     {
-        if (_boneCtxOpenRequested)
-        {
-            ImGui.OpenPopup("##bone-ctx");
-            _boneCtxOpenRequested = false;
-        }
         if (_ctxBoneId is not { } boneId)
             return;
 
@@ -990,6 +992,7 @@ public class MainWindow : Window
         if (bones == null || descriptor == null)
         {
             _ctxBoneId = null;
+            Crystarium.FloatingMenu.Dismiss("##bone-ctx");
             return;
         }
 
@@ -1011,7 +1014,12 @@ public class MainWindow : Window
             new ContextMenuItem("Reset bone", TablerIcon.Refresh, danger: true),
         };
 
-        int clicked = Crystarium.ContextMenu("##bone-ctx", items);
+        if (_boneCtxOpenRequested)
+        {
+            _boneCtxOpenRequested = false;
+            Crystarium.FloatingMenu.Open("##bone-ctx", ImGui.GetMousePos(), items);
+        }
+        int clicked = Crystarium.FloatingMenu.Draw("##bone-ctx");
         switch (clicked)
         {
             case 0 when descriptor.Parent is { } parent:
