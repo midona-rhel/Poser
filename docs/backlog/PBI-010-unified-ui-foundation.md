@@ -95,14 +95,18 @@ Crystarium.Page("appearance", origin, size, page =>
 
 Exact names may follow C# conventions, but preserve the shape:
 
-- composition scopes expose short semantic methods;
+- composition scopes and standalone controls expose the same short semantic
+  methods;
 - current value and change callback are supplied together;
 - the composition owns IDs, density, classes, sizing, placement, help target,
   change detection, and drawing;
-- optional behavior uses named arguments, not a public property-bag object;
+- routine behavior uses named arguments; deliberate presentation overrides use
+  one small reusable typed style value, not tag-specific property bags;
+- size is a passable semantic value (Content, Fill, Workspace, Comfortable, or
+  an exceptional fixed size), shared by primitives and compositions;
 - explicit IDs and low-level styling are internal escape hatches, not normal
   pane code;
-- no `UiAction`, `ColorWellValue`, `ButtonProps`, `Sizing.Fixed`, style class,
+- no `UiAction`, `ColorWellValue`, tag-specific props, style classes,
   `ref`-plus-`if changed`, or manual measurement boilerplate appears in a
   migrated product pane.
 
@@ -235,8 +239,9 @@ The old positioning code is deleted in the same commit that migrates it.
   `Poser.UI.Controls.Layout`.
 - Zero pane-local definitions of row height, control height, label/value
   columns, page padding, section gap, scrollbar size, or glass chrome.
-- Zero public property-bag/style/sizing construction in migrated product panes;
-  normal authoring uses semantic scope methods and named optional arguments.
+- Zero tag-specific property-bag/style/sizing construction in migrated product
+  panes; normal authoring uses semantic scope methods, named behavior, and the
+  shared reusable control-style value.
 - The active `Theme` value contains metrics; no static `Theme.Metrics` consumer
   remains.
 - `Poser/` has no direct Norvrandt layout/rendering calls except the approved
