@@ -4,14 +4,14 @@
 
 | Field | Value |
 |---|---|
-| Status | Ready |
+| Status | Accepted |
 | Size | Medium |
 | Implementation owner | Claude |
 | Review owner | Codex |
 | Acceptance owner | User, in game |
 | Base ref | `pbi-008-base` |
 | Feature branch | `feature/pbi-008-runtime-appearance` |
-| Accepted head | Not accepted |
+| Accepted head | `d879abf` |
 
 ## Outcome
 
