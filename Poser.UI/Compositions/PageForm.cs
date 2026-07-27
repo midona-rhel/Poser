@@ -95,15 +95,15 @@ public static partial class Crystarium
 
         public void Status(string? text, string? help = null)
         {
-            if (string.IsNullOrEmpty(text))
-                return;
             float top = _origin.Y + _y * _scale;
-            DrawText(new(_origin.X, top), _width,
-                ActiveTheme.Typography.CaptionSize, FontWeight.Regular,
-                FormHintColor, text);
+            if (!string.IsNullOrEmpty(text))
+                DrawText(new(_origin.X, top), _width,
+                    ActiveTheme.Typography.CaptionSize, FontWeight.Regular,
+                    FormHintColor, text);
             float height = ActiveTheme.Page.StatusLineHeight * _scale;
-            RegisterHelp($"{_id}-status", new(_origin.X, top),
-                new(_origin.X + _width, top + height), help);
+            if (!string.IsNullOrEmpty(text))
+                RegisterHelp($"{_id}-status", new(_origin.X, top),
+                    new(_origin.X + _width, top + height), help);
             _y += ActiveTheme.Page.StatusLineHeight;
             _hasFlowContent = true;
         }
@@ -303,10 +303,10 @@ public static partial class Crystarium
             float gap = ActiveTheme.Page.ActionGap * row.Scale;
             var resetStyle =
                 Workspace(style) with { Width = UiWidth.Content };
-            float resetWidth = owned
-                ? MeasureButton("Reset", resetStyle).X
-                : 0f;
-            float triggerWidth = row.ControlWidth - resetWidth - (owned ? gap : 0f);
+            // The optional reset action owns a permanent slot so ownership
+            // changes never resize the selector under the pointer.
+            float resetWidth = MeasureButton("Reset", resetStyle).X;
+            float triggerWidth = row.ControlWidth - resetWidth - gap;
             var triggerStyle = InRegion(
                 Workspace(style),
                 triggerWidth / row.Scale,

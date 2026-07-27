@@ -51,6 +51,7 @@ public class MainWindow : Window
     private bool _ctxOpenRequested;
     private bool _addOpenRequested;
     private BoneId? _ctxBoneId;
+    private IReadOnlyList<BoneId>? _ctxBoneOverlayBones;
     private bool _boneCtxOpenRequested;
     private IReadOnlyList<BoneId>? _ctxOverlayBones;
     private bool _overlayCtxOpenRequested;
@@ -205,6 +206,7 @@ public class MainWindow : Window
             else if (row.Tag is SelectionId { Kind: SceneEntityKind.Bone, Bone: { } ctxBone })
             {
                 _ctxBoneId = ctxBone;
+                _ctxBoneOverlayBones = row.OverlayBones;
                 _boneCtxOpenRequested = true;
             }
             else if (row.OverlayBones != null)
@@ -1061,6 +1063,7 @@ public class MainWindow : Window
         if (bones == null || descriptor == null)
         {
             _ctxBoneId = null;
+            _ctxBoneOverlayBones = null;
             Crystarium.FloatingMenu.Dismiss("##bone-ctx");
             return;
         }
@@ -1073,16 +1076,19 @@ public class MainWindow : Window
                 candidate.Id.PartialId == boneId.PartialId);
         bool hasChildren = bones.Any(candidate => candidate.Parent?.Equals(boneId) == true);
 
+        var overlayBones = _ctxBoneOverlayBones ?? new[] { boneId };
+        bool overlayVisible =
+            SkeletonOverlayPresentation.AreVisible(overlayBones);
         var items = new[]
         {
             new ContextMenuItem("Select parent", TablerIcon.ArrowUp, disabled: descriptor.Parent == null),
             new ContextMenuItem("Select children", TablerIcon.Sitemap, disabled: !hasChildren),
             new ContextMenuItem("Select mirrored bone", TablerIcon.ArrowsMove, disabled: mirror == null),
             new ContextMenuItem(
-                SkeletonOverlayPresentation.IsVisible(boneId)
+                overlayVisible
                     ? "Hide from overlay"
                     : "Show in overlay",
-                SkeletonOverlayPresentation.IsVisible(boneId)
+                overlayVisible
                     ? TablerIcon.EyeOff
                     : TablerIcon.Eye),
             ContextMenuItem.Separator,
@@ -1126,8 +1132,8 @@ public class MainWindow : Window
                 break;
             case 3:
                 SkeletonOverlayPresentation.SetVisible(
-                    new[] { boneId },
-                    !SkeletonOverlayPresentation.IsVisible(boneId));
+                    overlayBones,
+                    !overlayVisible);
                 break;
             case 5:
                 _cleanPose.FlipBone(
@@ -1146,6 +1152,16 @@ public class MainWindow : Window
     {
         if (_ctxOverlayBones is not { } bones)
             return;
+        bool ownerPresent = _scene.Snapshot.Actors.Any(actor =>
+            actor.Skeletons.Any(skeleton =>
+                skeleton.Bones.Any(candidate =>
+                    bones.Contains(candidate.Id))));
+        if (!ownerPresent)
+        {
+            _ctxOverlayBones = null;
+            Crystarium.FloatingMenu.Dismiss("##overlay-ctx");
+            return;
+        }
         bool visible = SkeletonOverlayPresentation.AreVisible(bones);
         var items = new[]
         {
