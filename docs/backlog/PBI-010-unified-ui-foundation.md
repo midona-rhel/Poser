@@ -54,8 +54,8 @@ PBI explicitly normalizes it.
 
 - `Theme` owns all colors, typography, radii, shadows, spacing, control sizes,
   optical corrections, and shell dimensions.
-- Norvrandt is an internal renderer/layout engine. Product code under `Poser/`
-  must not consume it directly.
+- The retired Norvrandt/stylesheet layout engine stays deleted. Product code
+  uses Crystarium directly.
 - Crystarium is the single product-facing component and composition API.
 - `AppShellView` owns only shell composition and tree/canvas-specific drawing;
   it consumes shared tokens and controls instead of defining replacements.
@@ -230,6 +230,107 @@ all migrations and ask for one final visual pass.
 Do not migrate a surface by wrapping its old manual helper inside a new name.
 The old positioning code is deleted in the same commit that migrates it.
 
+## Live correction tranche
+
+Complete this tranche before accepting the Pose, Animation, or shell slices.
+These are systematic composition fixes, not pane-local offsets.
+
+### Stable shell and glass
+
+- The sidebar, main content box, optional inspector rail, inset, and scrollbar
+  gutter keep identical rectangles across Pose, Animation, and Appearance.
+  Changing tabs may change contents and rail visibility, never the outer
+  window or the surviving content rectangle.
+- Apply one background blur behind the shell chassis, then draw the titlebar,
+  sidebar, content, and rail with theme-owned translucent fills and directional
+  borders. Do not blur each panel independently or duplicate shadows.
+- Keep the accepted overlay rule without hiding the whole world gizmo:
+  interactive UI rectangles clip gizmo paint and reject gizmo hit-testing only
+  where they overlap. Moving the pointer over the Poser window must not erase
+  portions of the gizmo that remain visible in the game viewport.
+- Keep the 12 px scrollbar gutter and hit area. Make only the visible thumb
+  20% narrower and center it in that gutter through the one shared scrollbar
+  path; do not reclaim layout width.
+
+### Shared-control defects
+
+- Pose footer labels, checkboxes, and Clear use one FormRow centreline; remove
+  its separate text/checkbox/button offsets.
+- Dropdown rows own disjoint 26 px hit rectangles. Hover is neutral and unique;
+  the selected row uses a distinct selected treatment, so selected plus hovered
+  never looks like two hovered rows. Separators remain visible and span the
+  usable list width. A non-overflowing list does not reserve a phantom visual
+  strip, although its scrollbar gutter contract remains stable.
+- Numeric axis wells are a Crystarium primitive, including Hinge axis. They
+  use the mono value font, theme focus/selection colors, right-aligned values,
+  and widths derived from the FormRow region. Raw `InputFloat` styling and
+  overflowing fixed indents are deleted.
+- Body/Face maps resolve all overlapping dot candidates before painting and
+  render exactly one hovered instance. Clicking and HoverHelp use that same
+  winner.
+- Map-side mirroring is stored in `UIConfiguration` and survives relaunch.
+- The transform toolbar always reserves the Self/Parent pivot selector. It is
+  disabled when the active tool/selection cannot use it, and Parent alone is
+  disabled when no parent exists. Remove the ambiguous chain-link toolbar
+  button; automatic linked-bone groups remain the one behavior until a future
+  explicit product control is designed.
+- Move Physics freeze to one actor-scoped toolbar icon backed by
+  `AnimationSession`; remove the duplicate Pose-header Physics switch.
+
+### Sidebar semantics
+
+- Remove the right-hand `player`/`npc`/`minion`, bone counts, and canonical or
+  Japanese bone-name badges. Rows show the user-facing name only; technical
+  identity may appear in HoverHelp or diagnostics.
+- Give rows a fixed right action strip that is excluded from the row selection
+  hit rectangle. Actor rows expose: set game target, show/hide actor, and
+  pause/resume animation. These call the existing actor and animation services;
+  they do not own duplicate booleans. Hidden/paused state has a clear dimmed or
+  struck visual treatment and remains reversible.
+- Remove the titlebar “select current in-game target” shortcut. Selecting an
+  actor is done by its row; setting the game target is the actor-row/context
+  action.
+- Category and bone rows may toggle skeleton-overlay presentation only.
+  Category changes cascade to descendants; rows remain in the tree so the
+  action can be reversed. This mask must not hide the actor mesh, mutate the
+  native skeleton, change selection, or alter pose import/export.
+- Actor context menus retain target, visibility, pause/resume, rename, clone,
+  companion detach, and spawned-actor despawn. Bone menus retain hierarchy
+  selection, mirrored selection, flip, and reset. Overlay visibility belongs
+  on category/bone rows and their menus. Do not add unavailable attachment or
+  weapon actions as decorative placeholders.
+
+### Popup ownership
+
+- Floating menus close on the first outside press, Escape, owner disappearance,
+  and a second press on the same plus/owner button. Opening another floating
+  surface replaces the old one. The dismissing click never reaches the game or
+  an underlying control.
+- Menu and dropdown row rectangles must be non-overlapping at every supported
+  scale. At most one option receives hover, press, HoverHelp, or activation in
+  a frame, and visual animation uses the same rectangle as hit-testing.
+
+### Retained pages and matrix
+
+- Appearance starts with a normal `GENERAL` section containing opacity and
+  model tint, followed by Wet Surface and the existing external/file sections.
+- Animation uses the same Page/Section/Form grammar as Appearance. General
+  playback, Stance, Layers, Face & Lips, Advanced Slots, and Advanced Controls
+  all use the same persisted disclosure component; closed content contributes
+  zero height. The actor heading uses the shared lineage display API, so
+  nickname and anonymous mode are never bypassed.
+- Treat Matrix as a bounded canvas with equal theme page padding on all four
+  sides. Middle-drag pans; wheel zooms about the pointer; a small Reset View
+  action restores fit. Selection semantics and matrix filtering are unchanged.
+  Truncation uses the single ellipsis glyph `…`, not three periods rendered as
+  dashes by the mono font.
+
+Weapon display names and drag-to-attach are deliberately not part of this UI
+tranche. Ktisis resolves a weapon model tuple through the item sheet, and its
+link/drag affordance is backed by attachment ownership and native restoration.
+Those require a separate stable-id runtime PBI; this PBI must leave the current
+Main Hand/Off Hand slot labels truthful rather than fake either capability.
+
 ## Static completion gates
 
 - Zero ordinary `ImGui.Button`, `Selectable`, `Checkbox`, `Slider*`,
@@ -244,8 +345,7 @@ The old positioning code is deleted in the same commit that migrates it.
   shared reusable control-style value.
 - The active `Theme` value contains metrics; no static `Theme.Metrics` consumer
   remains.
-- `Poser/` has no direct Norvrandt layout/rendering calls except the approved
-  shell/canvas bridge identified in the handoff.
+- Zero Norvrandt or stylesheet layout/rendering code remains.
 - One floating-surface chrome path and one scrollbar path.
 - Every deleted path is reference-proven dead.
 
