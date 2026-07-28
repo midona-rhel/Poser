@@ -283,7 +283,7 @@ public static partial class Crystarium
             return position;
         }
 
-        internal static void DrawChrome(
+        public static void DrawChrome(
             ImDrawListPtr drawList,
             Vector2 min,
             Vector2 max,
