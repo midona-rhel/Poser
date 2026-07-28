@@ -562,9 +562,14 @@ public class PoseInspectorPane
                 false, bodyFlags))
         {
             var scrolledOrigin = ImGui.GetCursorScreenPos();
-            float surfaceWidth = _poseView is 2 or 3
-                ? width + AppShellView.ScrollbarWidth * s
-                : width;
+            float surfaceWidth = _poseView switch
+            {
+                2 => width
+                    + (AppShellView.ScrollbarWidth
+                        + AppShellView.MainHorizontalPadding) * s,
+                3 => width + AppShellView.ScrollbarWidth * s,
+                _ => width,
+            };
             bodyContentHeight = DrawPoseSurfaceContent(
                 ImGui.GetWindowDrawList(),
                 scrolledOrigin,
@@ -701,16 +706,20 @@ public class PoseInspectorPane
             region =>
             {
                 var contentOrigin = ImGui.GetCursorScreenPos();
+                float contentWidth = MathF.Max(
+                    0f,
+                    region.ContentWidth
+                        - theme.Page.Inset);
                 float contentHeight = BoneMatrixView.Draw(
                     _matrixVm,
                     contentOrigin,
-                    region.ContentWidth * s,
+                    contentWidth * s,
                     "livemx");
                 ImGui.SetCursorScreenPos(new Vector2(
                     contentOrigin.X,
                     contentOrigin.Y + contentHeight));
                 ImGui.Dummy(new Vector2(
-                    region.ContentWidth * s,
+                    contentWidth * s,
                     MathF.Max(1f, s)));
             });
         return viewportHeight;

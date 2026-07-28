@@ -861,13 +861,18 @@ public static class AppShellView
                     | ImGuiWindowFlags.NoScrollWithMouse))
             {
                 var childCursor = ImGui.GetCursorScreenPos();
+                float contentInset =
+                    MainHorizontalPadding * s;
                 var contentOrigin = childCursor
-                    + new Vector2(MainHorizontalPadding * s, 0f);
+                    + new Vector2(contentInset);
                 vm.DrawContent?.Invoke(
                     contentOrigin,
                     new Vector2(
                         contentWidth,
-                        ImGui.GetContentRegionAvail().Y));
+                        MathF.Max(
+                            0f,
+                            ImGui.GetContentRegionAvail().Y
+                                - contentInset * 2f)));
             }
             ImGui.EndChild();
             ImGui.PopStyleVar();
