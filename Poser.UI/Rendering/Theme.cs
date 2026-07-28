@@ -180,6 +180,7 @@ public readonly record struct Theme
             MenuIconGap = 6f,
             MenuSeparatorBlock = 5f,
             PopupPadding = 4f,
+            DropdownRowGap = 1f,
             PopoverPadding = 8f,
             ModalBarHeight = 44f,
             ModalBodyPadding = 16f,
@@ -442,6 +443,7 @@ public readonly record struct Theme
         public float MenuIconGap { get; init; }
         public float MenuSeparatorBlock { get; init; }
         public float PopupPadding { get; init; }
+        public float DropdownRowGap { get; init; }
         public float PopoverPadding { get; init; }
         public float ModalBarHeight { get; init; }
         public float ModalBodyPadding { get; init; }
