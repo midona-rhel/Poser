@@ -24,6 +24,10 @@ public sealed class AppearancePane
     private readonly SceneSession _scene;
 
     private string _status = string.Empty;
+    private bool _openGeneral = true;
+    private bool _openWetSurface = true;
+    private bool _openExternalAppearance = true;
+    private bool _openCharacterFile = true;
     private readonly Crystarium.SearchPicker<ExternalItem> _picker =
         new("appearance-external");
 
@@ -108,30 +112,35 @@ public sealed class AppearancePane
                     : $"{what}: {result.Detail}";
 
             var glamourer = _integration.Glamourer;
-            page.Actions(actions =>
-            {
-                actions.Button("Open in Glamourer",
-                    () =>
-                    {
-                        var opened = _integration.OpenGlamourer(actor);
-                        _status = opened.Success
-                            ? string.Empty
-                            : $"Open in Glamourer: {opened.Detail}";
-                    },
-                    disabled: !glamourer.Available,
-                    help: glamourer.Available
-                        ? "Open this actor in Glamourer."
-                        : glamourer.Detail);
-                actions.Button("Reset appearance",
-                    () => Report(
-                        _presentation.ResetActor(actor),
-                        "Reset appearance"),
-                    help: "Restore this actor's incoming opacity, tints, and wetness");
-            });
             page.Status(_status);
 
-            page.Section("GENERAL", form =>
-            {
+            page.Section(
+                "GENERAL",
+                _openGeneral,
+                next => _openGeneral = next,
+                form =>
+                {
+                form.Actions("Appearance", actions =>
+                {
+                    actions.Button("Open in Glamourer",
+                        () =>
+                        {
+                            var opened = _integration.OpenGlamourer(actor);
+                            _status = opened.Success
+                                ? string.Empty
+                                : $"Open in Glamourer: {opened.Detail}";
+                        },
+                        disabled: !glamourer.Available,
+                        help: glamourer.Available
+                            ? "Open this actor in Glamourer."
+                            : glamourer.Detail);
+                    actions.Button("Reset appearance",
+                        () => Report(
+                            _presentation.ResetActor(actor),
+                            "Reset appearance"),
+                        help: "Restore this actor's incoming opacity, tints, and wetness");
+                });
+
                 float opacity = owned.Opacity ?? reading.Opacity;
                 form.Slider("Opacity", opacity, 0f, 1f,
                     value => Report(
@@ -158,8 +167,12 @@ public sealed class AppearancePane
                 }, help: "Multiply each model's colors; an absent weapon shows an empty well");
             });
 
-            page.Section("WET SURFACE", form =>
-            {
+            page.Section(
+                "WET SURFACE",
+                _openWetSurface,
+                next => _openWetSurface = next,
+                form =>
+                {
                 bool overrideOn = owned.Wetness != null;
                 form.Switch("Override", overrideOn,
                     value => Report(
@@ -193,8 +206,12 @@ public sealed class AppearancePane
             const string mcdfReason =
                 "An imported character file owns this actor's external appearance. Reset MCDF first.";
 
-            page.Section("EXTERNAL APPEARANCE", form =>
-            {
+            page.Section(
+                "EXTERNAL APPEARANCE",
+                _openExternalAppearance,
+                next => _openExternalAppearance = next,
+                form =>
+                {
                 var penumbra = _integration.Penumbra;
                 form.Selector(
                     "Collection",
@@ -292,8 +309,12 @@ public sealed class AppearancePane
                                 : "Apply a saved Customize+ profile to only this actor");
             });
 
-            page.Section("CHARACTER FILE (MCDF)", form =>
-            {
+            page.Section(
+                "CHARACTER FILE (MCDF)",
+                _openCharacterFile,
+                next => _openCharacterFile = next,
+                form =>
+                {
                 var operation = _integration.Mcdf;
                 if (_integration.McdfBusy && operation is { } running)
                 {

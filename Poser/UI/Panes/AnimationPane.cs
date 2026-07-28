@@ -22,7 +22,7 @@ public sealed class AnimationPane
     private readonly AnimationPicker _picker;
     private readonly SceneSession _scene;
 
-    private bool _openGeneralPlayback = true;
+    private bool _openGeneral = true;
     private bool _openStance = true;
     private bool _openLayers = true;
     private bool _openFace = true;
@@ -103,9 +103,9 @@ public sealed class AnimationPane
             page.Status(_status);
 
             page.Section(
-                "GENERAL PLAYBACK",
-                _openGeneralPlayback,
-                next => _openGeneralPlayback = next,
+                "GENERAL",
+                _openGeneral,
+                next => _openGeneral = next,
                 form => DrawPlayback(form, actor, reading, owned));
             page.Section(
                 "STANCE",
