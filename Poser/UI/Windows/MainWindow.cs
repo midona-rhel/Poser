@@ -166,15 +166,6 @@ public class MainWindow : Window
         _vm.OnGizmoSpace = i => _editorState.TransformOrientation = (TransformOrientation)i;
         _vm.OnRotationPivot = i => _editorState.RotationPivot = (Core.RotationPivot)i;
         _vm.OnSymmetry = i => _editorState.SymmetryMode = (SymmetryMode)i;
-        _vm.OnAnimation = on =>
-        {
-            if (SelectedActorId() is not { } actor)
-                return;
-            if (on)
-                _animation.Resume(actor);
-            else
-                _animation.Pause(actor);
-        };
         _vm.OnPhysics = on =>
         {
             if (SelectedActorId() is { } actor)
@@ -406,11 +397,6 @@ public class MainWindow : Window
             }
         }
         var toolbarActor = SelectedActorId();
-        _vm.AnimationAvailable = toolbarActor is { } animationActor
-            && _animation.IsSupported(animationActor);
-        _vm.AnimationOn = _vm.AnimationAvailable
-            && toolbarActor is { } movingActor
-            && !_animation.IsPaused(movingActor);
         _vm.PhysicsAvailable = toolbarActor is { } actorId
             && _animation.IsSupported(actorId);
         _vm.PhysicsOn = toolbarActor is { } physicsActor

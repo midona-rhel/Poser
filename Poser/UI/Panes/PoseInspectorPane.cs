@@ -507,35 +507,20 @@ public class PoseInspectorPane
             selected => _poseView = selected,
             alignFirstTabToCursor: true);
 
-        float switchWidth =
-            Crystarium.ActiveTheme.Controls.SwitchWidth * s;
-        float switchHeight =
-            Crystarium.ActiveTheme.Controls.SwitchHeight * s;
-        float chromeY = cursor.Y
-            + (tabsHeight - switchHeight) * 0.5f;
-        float rx = cursor.X + width - switchWidth;
         if (_poseView is 0 or 1)
         {
-            ImGui.SetCursorScreenPos(new Vector2(rx, chromeY));
             bool swapped = GetMapMirror?.Invoke() ?? false;
-            Crystarium.Switch(
-                "##ps-mirror", swapped, next => SetMapMirror?.Invoke(next));
-            float mirrorLabelX = rx
-                - ViewText.Measure("Mirror", 12f)
-                - Crystarium.ActiveTheme.Spacing.Three * s;
-            ViewText.Label(new Vector2(mirrorLabelX, chromeY + 2f * s), "Mirror",
-                12f, FontWeight.Regular, Crystarium.ActiveTheme.TextDim);
-            if (Crystarium.HoverHelp.HelpHovered(
-                    new Vector2(mirrorLabelX, chromeY),
-                    new Vector2(
-                        rx + switchWidth,
-                        chromeY + switchHeight)))
-                Crystarium.HoverHelp.Explain("ps-mirror-help",
-                    new Vector2(mirrorLabelX, chromeY),
-                    new Vector2(
-                        rx + switchWidth,
-                        chromeY + switchHeight),
-                    "Swap left and right on the body and face maps");
+            Crystarium.ActionBar(
+                "pose-surface-mirror",
+                cursor,
+                new Vector2(width, tabsHeight),
+                _ => { },
+                right => right.Switch(
+                    "Mirror",
+                    swapped,
+                    next => SetMapMirror?.Invoke(next),
+                    "Swap left and right on the body and face maps"),
+                ActionBarSeparator.None);
         }
         else if (_poseView == 3)
         {

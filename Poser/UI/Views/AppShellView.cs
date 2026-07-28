@@ -60,8 +60,6 @@ public sealed class AppShellViewModel
     public string StatusRight = "142 bones · 60 fps";
 
     public List<ShellTab> Tabs = new();
-    public bool AnimationOn;
-    public bool AnimationAvailable;
 
     public int GizmoOperation;        // 0 translate, 1 rotate, 2 scale, 3 universal
     public int GizmoSpace;            // 0 local, 1 world
@@ -113,7 +111,6 @@ public sealed class AppShellViewModel
     public Action<int>? OnGizmoSpace;
     public Action<int>? OnRotationPivot;
     public Action<int>? OnSymmetry;
-    public Action<bool>? OnAnimation;
     public Action<bool>? OnPhysics;
     public Action? OnUndo, OnRedo, OnSpawn, OnSettings, OnHideUi, OnPopOut, OnProject;
     public Action<bool>? OnSkeletonOverlay;
@@ -798,9 +795,9 @@ public static class AppShellView
                 alignFirstTabToCursor: true);
         }
 
-        // The actor animation state occupies one stable right-aligned slot on
-        // every workspace tab. Tab changes never replace it with selection
-        // text or move the control.
+        // Actor physics occupies one stable right-aligned slot on every
+        // workspace tab. Tab changes never replace it with selection text or
+        // move the control.
         float rx = max.X - MainHorizontalPadding * s;
         if (vm.ShowPopOut)
         {
@@ -820,14 +817,6 @@ public static class AppShellView
             _ => { },
             right =>
             {
-                right.Switch(
-                    "Animation",
-                    vm.AnimationOn,
-                    next => vm.OnAnimation?.Invoke(next),
-                    vm.AnimationAvailable
-                        ? "Pause or resume the selected actor"
-                        : "Select an actor to control animation",
-                    disabled: !vm.AnimationAvailable);
                 right.Switch(
                     "Physics",
                     vm.PhysicsOn,
