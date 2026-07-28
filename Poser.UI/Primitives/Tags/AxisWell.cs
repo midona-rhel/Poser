@@ -111,11 +111,21 @@ public static partial class Crystarium
             : horizontalPadding
                 + axisWidth
                 + ActiveTheme.Form.AxisLabelGap;
+        float horizontalPaddingPx = horizontalPadding * scale;
+        float axisSlotPx = axisSlot * scale;
+        string editText = _axisEditValue.ToString(
+            format,
+            CultureInfo.InvariantCulture);
+        float inputLeft = MathF.Max(
+            axisSlotPx,
+            size.X
+                - ImGui.CalcTextSize(editText).X
+                - horizontalPaddingPx * 2f);
 
         ImGui.SetCursorScreenPos(
-            pos + new Vector2(axisSlot * scale, 0f));
+            pos + new Vector2(inputLeft, 0f));
         ImGui.SetNextItemWidth(MathF.Max(
-            1f, size.X - axisSlot * scale));
+            1f, size.X - inputLeft));
         if (_axisEditNeedsFocus)
             ImGui.SetKeyboardFocusHere();
 
@@ -125,7 +135,7 @@ public static partial class Crystarium
         ImGui.PushStyleVar(
             ImGuiStyleVar.FramePadding,
             new Vector2(
-                horizontalPadding * scale,
+                horizontalPaddingPx,
                 verticalPadding));
         ImGui.PushStyleVar(
             ImGuiStyleVar.FrameRounding,
