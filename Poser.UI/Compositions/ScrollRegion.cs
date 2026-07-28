@@ -1,6 +1,7 @@
 using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
@@ -55,6 +56,7 @@ public static partial class Crystarium
             TablerIcon icon = TablerIcon.Circle,
             bool selected = false,
             string? badge = null,
+            IDalamudTextureWrap? iconTexture = null,
             ControlStyle style = default)
         {
             DrawSeparator();
@@ -71,6 +73,7 @@ public static partial class Crystarium
                     NoExpanderSlot = true,
                     Selected = selected,
                     Badge = badge,
+                    IconTexture = iconTexture,
                 },
                 style with { Width = UiWidth.Fixed(ContentWidth) });
             _rowCount++;

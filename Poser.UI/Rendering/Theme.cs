@@ -173,7 +173,14 @@ public readonly record struct Theme
             LargeWidth = 680f,
             DefaultModalHeight = 280f,
         },
-        Picker = new() { Width = 300f, MinimumRows = 3, MaximumRows = 10 },
+        Picker = new()
+        {
+            Width = 300f,
+            WideWidth = 380f,
+            MinimumRows = 3,
+            MaximumRows = 10,
+            ExtendedMaximumRows = 12,
+        },
         FileDialog = new() { Width = 680f, Height = 440f, FavoritesWidth = 128f, FileNameWidth = 220f },
         Optical = new() { SidebarText = -1f, ButtonText = 1f, FooterLabel = -1f, DropdownText = 1f },
         Motion = new() { Fast = 0.10f, Default = 0.20f, Slow = 0.40f, MenuExit = 0.08f, HoverOpenDelay = 0.40f, HoverPop = 0.15f },
@@ -394,8 +401,10 @@ public readonly record struct Theme
     public readonly record struct PickerTokens
     {
         public float Width { get; init; }
+        public float WideWidth { get; init; }
         public int MinimumRows { get; init; }
         public int MaximumRows { get; init; }
+        public int ExtendedMaximumRows { get; init; }
     }
 
     public readonly record struct FileDialogTokens

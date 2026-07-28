@@ -1,5 +1,7 @@
 using System;
 using System.Numerics;
+using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
 
@@ -49,4 +51,128 @@ public static partial class Crystarium
                 AnchorMax = props.AnchorMax,
             },
             body);
+
+    public static bool Popover(
+        string id,
+        in PopoverProps props,
+        Action<PopoverScope> body)
+    {
+        float padding = props.Padding > 0f
+            ? props.Padding
+            : ActiveTheme.Floating.PopoverPadding;
+        return FloatingSurface.Popup(
+            id,
+            new FloatingSurfaceProps
+            {
+                Width = props.Width,
+                Height = props.Height,
+                Padding = padding,
+                AnchorMin = props.AnchorMin,
+                AnchorMax = props.AnchorMax,
+            },
+            () => body(new PopoverScope(
+                ImGui.GetCursorScreenPos(),
+                MathF.Max(0f, props.Width - padding * 2f),
+                MathF.Max(0f, props.Height - padding * 2f),
+                ImGuiHelpers.GlobalScale)));
+    }
+
+    public sealed class PopoverScope
+    {
+        private readonly Vector2 _origin;
+        private readonly float _width;
+        private readonly float _height;
+        private readonly float _scale;
+        private float _y;
+
+        internal PopoverScope(
+            Vector2 origin,
+            float width,
+            float height,
+            float scale)
+        {
+            _origin = origin;
+            _width = width;
+            _height = height;
+            _scale = scale;
+        }
+
+        public void Caption(string text)
+        {
+            MoveToCurrent();
+            DrawTextCentered(
+                ImGui.GetCursorScreenPos(),
+                new Vector2(
+                    _width,
+                    ActiveTheme.Page.StatusLineHeight) * _scale,
+                ActiveTheme.Typography.CaptionSize,
+                FontWeight.Medium,
+                FormLabelColor,
+                text);
+            Advance(
+                ActiveTheme.Page.StatusLineHeight
+                + ActiveTheme.Spacing.Two);
+        }
+
+        public void Filter(
+            string id,
+            string value,
+            Action<string> onChange,
+            string placeholder)
+        {
+            MoveToCurrent();
+            FilterPill(
+                id,
+                value,
+                onChange,
+                placeholder,
+                ControlStyle.Workspace with
+                {
+                    Width = UiWidth.Fixed(_width),
+                });
+            Advance(
+                ActiveTheme.Controls.WorkspaceHeight
+                + ActiveTheme.Spacing.Two);
+        }
+
+        public void Segmented(
+            string id,
+            string[] items,
+            int selected,
+            Action<int> onChange)
+        {
+            MoveToCurrent();
+            SegmentedControl(
+                id,
+                items,
+                selected,
+                onChange,
+                ControlStyle.Workspace with
+                {
+                    Width = UiWidth.Fixed(_width),
+                });
+            Advance(
+                ActiveTheme.Controls.NavigationHeight
+                + ActiveTheme.Spacing.Two);
+        }
+
+        public void List(
+            string id,
+            Action<ScrollRegionScope> content)
+        {
+            MoveToCurrent();
+            ScrollRegion(
+                id,
+                _width,
+                MathF.Max(0f, _height - _y),
+                content);
+            _y = _height;
+        }
+
+        private void MoveToCurrent() =>
+            ImGui.SetCursorScreenPos(
+                _origin + new Vector2(0f, _y * _scale));
+
+        private void Advance(float amount) => _y += amount;
+    }
 }

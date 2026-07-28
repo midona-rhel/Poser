@@ -4,11 +4,9 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
-using Dalamud.Interface.Utility;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Domain.Animation;
-using Poser.UI.Views;
 
 namespace Poser.UI.Controls;
 
@@ -43,10 +41,6 @@ public readonly record struct AnimationPick(
 public sealed class AnimationPicker
 {
     private const string PopupId = "##anim-picker";
-    private const float Width = 380f;
-    private const float RowHeight = 26f;
-    private const int MaxListRows = 12;
-    private const int MinListRows = 3;
 
     private readonly AnimationCatalog _catalog;
     private readonly ITextureProvider _textures;
@@ -134,11 +128,13 @@ public sealed class AnimationPicker
         AnimationPick? picked = null;
         Crystarium.Popover(PopupId, new PopoverProps
         {
-            Width = Width,
+            Width = Crystarium.ActiveTheme.Picker.WideWidth,
             Height = HeightFor(results.Count, kinds.Count > 1, showWeapon),
             AnchorMin = _anchorMin,
             AnchorMax = _anchorMax,
-        }, () => picked = DrawBody(results, kinds, kindIndex, showWeapon));
+        }, popover =>
+            picked = DrawBody(
+                popover, results, kinds, kindIndex, showWeapon));
         return picked;
     }
 
@@ -150,9 +146,24 @@ public sealed class AnimationPicker
     /// on screen.</summary>
     private static float HeightFor(int resultCount, bool showKinds, bool showWeapon)
     {
-        float chrome = 18f + 32f + (showKinds ? 34f : 0f) + (showWeapon ? 34f : 0f) + 16f;
-        int rows = Math.Clamp(resultCount, MinListRows, MaxListRows);
-        return chrome + rows * RowHeight;
+        var theme = Crystarium.ActiveTheme;
+        float chrome =
+            theme.Floating.PopoverPadding * 2f
+            + theme.Page.StatusLineHeight
+            + theme.Spacing.Two
+            + theme.Controls.WorkspaceHeight
+            + theme.Spacing.Two;
+        if (showKinds)
+            chrome += theme.Controls.NavigationHeight
+                + theme.Spacing.Two;
+        if (showWeapon)
+            chrome += theme.Controls.NavigationHeight
+                + theme.Spacing.Two;
+        int rows = Math.Clamp(
+            resultCount,
+            theme.Picker.MinimumRows,
+            theme.Picker.ExtendedMaximumRows);
+        return chrome + rows * theme.Controls.ListRowHeight;
     }
 
     private IReadOnlyList<TimelineEntry> Results(
@@ -204,110 +215,67 @@ public sealed class AnimationPicker
     }
 
     private AnimationPick? DrawBody(
-        IReadOnlyList<TimelineEntry> results, List<AnimationKind?> kinds, int kindIndex,
+        Crystarium.PopoverScope popover,
+        IReadOnlyList<TimelineEntry> results,
+        List<AnimationKind?> kinds,
+        int kindIndex,
         bool showWeapon)
     {
-        float s = ImGuiHelpers.GlobalScale;
-        float inner = Width - 16f;
-        // `scrollbar-gutter: stable` — the rows reserve the scrollbar's
-        // 12px whether or not it is showing, so the list does not reflow
-        // the instant it starts scrolling.
-        float rowWidth = inner - Views.AppShellView.ScrollbarWidth;
-        var origin = ImGui.GetCursorScreenPos();
-        var cursor = origin;
-
-        // The destination, stated where the choosing happens.
-        ViewText.Label(
-            cursor,
-            _caption,
-            11f,
-            FontWeight.Medium,
-            Crystarium.ActiveTheme.FormLabel);
-        cursor.Y += 18f * s;
-
-        ImGui.SetCursorScreenPos(cursor);
-        Crystarium.FilterPill(
-            "##anim-pick-search", _search, next => _search = next,
-            "Search name or id",
-            ControlStyle.Workspace with { Width = UiWidth.Fixed(inner) });
-        cursor.Y += 32f * s;
+        popover.Caption(_caption);
+        popover.Filter(
+            "##anim-pick-search",
+            _search,
+            next => _search = next,
+            "Search name or id");
 
         if (kinds.Count > 1)
         {
             var labels = new string[kinds.Count];
             for (int i = 0; i < kinds.Count; i++)
                 labels[i] = KindLabels[Array.IndexOf(KindValues, kinds[i])];
-            ImGui.SetCursorScreenPos(cursor);
-            Crystarium.SegmentedControl(
+            popover.Segmented(
                 "##anim-pick-kind",
                 labels,
                 kindIndex,
-                chosen => _kindIndex = Array.IndexOf(KindValues, kinds[chosen]),
-                new ControlStyle { Width = UiWidth.Fixed(inner) });
-            cursor.Y += 34f * s;
+                chosen => _kindIndex =
+                    Array.IndexOf(KindValues, kinds[chosen]));
         }
 
         if (showWeapon)
-        {
-            ImGui.SetCursorScreenPos(cursor);
-            Crystarium.SegmentedControl(
+            popover.Segmented(
                 "##anim-pick-weapon",
                 WeaponLabels,
                 _weaponFilter,
-                chosen => _weaponFilter = chosen,
-                new ControlStyle { Width = UiWidth.Fixed(inner) });
-            cursor.Y += 34f * s;
-        }
-
-        if (!_catalog.IsLoaded && _explicit == null)
-        {
-            ViewText.Label(cursor, "Building animation catalog…", 11f,
-                FontWeight.Regular, Crystarium.ActiveTheme.FormHint);
-            return null;
-        }
+                chosen => _weaponFilter = chosen);
 
         AnimationPick? picked = null;
-        float listHeight = MathF.Max(
-            RowHeight * MinListRows * s,
-            (ImGui.GetWindowSize().Y - 16f * s) - (cursor.Y - origin.Y));
-
-        ImGui.SetCursorScreenPos(cursor);
-        Crystarium.PushScrollbarStyle();
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
-        if (ImGui.BeginChild("##anim-pick-list", new Vector2(inner * s, listHeight),
-                false, ImGuiWindowFlags.NoSavedSettings))
-        {
-            if (results.Count == 0)
+        popover.List(
+            "##anim-pick-list",
+            region =>
             {
-                ViewText.Label(ImGui.GetCursorScreenPos() + new Vector2(0f, 6f * s),
-                    "No matches.", 11f, FontWeight.Regular,
-                    Crystarium.ActiveTheme.FormHint);
-            }
-            foreach (var entry in results)
-            {
-                if (Crystarium.SidebarRow(
+                if (!_catalog.IsLoaded && _explicit == null)
+                {
+                    region.Empty("Building animation catalog…");
+                    return;
+                }
+                if (results.Count == 0)
+                {
+                    region.Empty("No matches.");
+                    return;
+                }
+                foreach (var entry in results)
+                {
+                    if (!region.ListRow(
                         $"##pick-{entry.TimelineId}-{(int)entry.Slot}",
                         entry.Name,
-                        new SidebarRowProps
-                        {
-                            Icon = FallbackIcon(entry.Kind),
-                            IconTexture = ResolveIcon(entry.Icon),
-                            Badge = Metadata(entry),
-                            NoExpanderSlot = true,
-                        },
-                        new ControlStyle
-                        {
-                            Width = UiWidth.Fixed(rowWidth),
-                        }))
-                {
-                    picked = new AnimationPick(entry, _target, _slot);
+                        FallbackIcon(entry.Kind),
+                        badge: Metadata(entry),
+                        iconTexture: ResolveIcon(entry.Icon)))
+                        continue;
+                    picked = new AnimationPick(
+                        entry, _target, _slot);
                 }
-            }
-        }
-        Crystarium.NarrowVisibleScrollbarThumb();
-        ImGui.EndChild();
-        ImGui.PopStyleVar();
-        Crystarium.PopScrollbarStyle();
+            });
 
         if (picked != null)
             ImGui.CloseCurrentPopup();
