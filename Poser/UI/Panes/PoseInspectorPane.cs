@@ -276,12 +276,30 @@ public class PoseInspectorPane
         var dl = ImGui.GetWindowDrawList();
         var cursor = origin;
 
-        cursor.Y += DrawPoseSurface(
-            dl,
-            cursor,
-            size,
-            OwningSkeleton(),
-            s);
+        var surfaceSkeleton = OwningSkeleton();
+        if (surfaceSkeleton != null)
+        {
+            cursor.Y += DrawPoseSurface(
+                dl,
+                cursor,
+                size,
+                surfaceSkeleton,
+                s);
+        }
+        else
+        {
+            ImGui.SetCursorScreenPos(
+                origin + new Vector2(
+                    0f,
+                    Crystarium.ActiveTheme.Spacing.Four * s));
+            Crystarium.Text(
+                "Select an actor or bone in the sidebar.",
+                Crystarium.ActiveTheme.Typography.LabelSize,
+                FontWeight.Regular,
+                Crystarium.ActiveTheme.FormHint);
+            cursor.Y +=
+                Crystarium.ActiveTheme.Controls.FormRowHeight * s;
+        }
         ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
         _poseFileSection.DrawBrowsers();
     }
@@ -479,7 +497,7 @@ public class PoseInspectorPane
         ImDrawListPtr dl,
         Vector2 cursor,
         Vector2 size,
-        ISkeleton? skeleton,
+        ISkeleton skeleton,
         float s)
     {
         float tabsHeightPx = AppShellView.ToolbarHeight;
@@ -511,7 +529,9 @@ public class PoseInspectorPane
             Crystarium.ActionBar(
                 "pose-surface-mirror",
                 cursor,
-                new Vector2(width, tabsHeight),
+                new Vector2(
+                    width + AppShellView.ScrollbarWidth * s,
+                    tabsHeight),
                 _ => { },
                 right => right.Switch(
                     "Mirror",
@@ -587,10 +607,17 @@ public class PoseInspectorPane
         ImGui.EndChild();
         ImGui.PopStyleVar();
 
-        DrawPoseFooter(
-            new Vector2(shellLeft, cursor.Y + height - footerHeight),
-            shellWidth,
-            skeleton);
+        var footerOrigin =
+            new Vector2(cursor.X, cursor.Y + height - footerHeight);
+        dl.AddRectFilled(
+            new Vector2(shellLeft, footerOrigin.Y),
+            new Vector2(
+                shellLeft + shellWidth,
+                footerOrigin.Y + MathF.Max(1f, s)),
+            ImGui.ColorConvertFloat4ToU32(
+                ColorEx.ApplyAlpha(
+                    Crystarium.ActiveTheme.FormSeparator)));
+        DrawPoseFooter(footerOrigin, width, skeleton);
         return height;
     }
 
@@ -628,13 +655,10 @@ public class PoseInspectorPane
         float s)
     {
         var theme = Crystarium.ActiveTheme;
-        // The shell already allocated the page inset. Matrix consumes that
-        // box directly; its nested ScrollRegion receives the physical gutter
-        // and subtracts it exactly once.
-        var min = cursor + new Vector2(
-            0f,
-            theme.Page.Inset * s);
-        var max = cursor + new Vector2(width, viewportHeight);
+        float inset = theme.Page.Inset * s;
+        var min = cursor + new Vector2(inset);
+        var max = cursor + new Vector2(width, viewportHeight)
+            - new Vector2(inset);
         if (max.X <= min.X || max.Y <= min.Y)
             return viewportHeight;
 
@@ -648,7 +672,7 @@ public class PoseInspectorPane
                 _matrixFilter = next;
                 _matrixVm = null;
             },
-            "Filter bones…",
+            "Filter bones",
             ControlStyle.Workspace with
             {
                 Width = UiWidth.Fixed(MathF.Min(
@@ -715,8 +739,7 @@ public class PoseInspectorPane
                 var contentOrigin = ImGui.GetCursorScreenPos();
                 float contentWidth = MathF.Max(
                     0f,
-                    region.ContentWidth
-                        - theme.Page.Inset);
+                    region.ContentWidth);
                 float contentHeight = BoneMatrixView.Draw(
                     _matrixVm,
                     contentOrigin,
@@ -735,12 +758,10 @@ public class PoseInspectorPane
     private void DrawPoseFooter(
         Vector2 cursor,
         float width,
-        ISkeleton? skeleton)
+        ISkeleton skeleton)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        var poseInfo = skeleton == null
-            ? null
-            : _bonePosingService.GetPoseInfo(skeleton);
+        var poseInfo = _bonePosingService.GetPoseInfo(skeleton);
         Crystarium.ActionBar(
             "pose-parenting-footer",
             cursor,
@@ -769,28 +790,24 @@ public class PoseInspectorPane
                 })
                 {
                     bool propagates =
-                        poseInfo?.DefaultPropagation.HasFlag(component)
-                        ?? false;
+                        poseInfo.DefaultPropagation.HasFlag(component);
                     bar.Checkbox(
                         label,
                         propagates,
                         next =>
                         {
-                            if (poseInfo == null)
-                                return;
                             poseInfo.DefaultPropagation = next
                                 ? poseInfo.DefaultPropagation | component
                                 : poseInfo.DefaultPropagation & ~component;
                         },
-                        help,
-                        disabled: poseInfo == null);
+                        help);
                 }
                 bar.Button(
                     "Clear",
                     _selection.Clear,
-                    "Clear bone selection",
-                    disabled: skeleton == null);
-            });
+                    "Clear bone selection");
+            },
+            separator: ActionBarSeparator.None);
     }
 
     /// <summary>3D view: orbitable projection of the skeleton (Anamnesis

@@ -844,68 +844,74 @@ public static class AppShellView
         // scrollbar hugs the child's right edge. Deriving content width
         // from the panel put the content's right edge 1px INTO the
         // scrollbar band, so flush-right controls overlapped the thumb.
-        float contentWidth = childSize.X
-            - MainHorizontalPadding * 2f * s
-            - ScrollbarWidth * s;
         ImGui.SetCursorScreenPos(childOrigin);
-        if (vm.ContentOwnsViewport)
+        ImGui.PushStyleVar(
+            ImGuiStyleVar.WindowPadding,
+            Vector2.Zero);
+        if (ImGui.BeginChild(
+                "##shell-content-viewport",
+                childSize,
+                false,
+                ImGuiWindowFlags.NoScrollbar
+                | ImGuiWindowFlags.NoScrollWithMouse))
         {
-            ImGui.PushStyleVar(
-                ImGuiStyleVar.WindowPadding,
-                Vector2.Zero);
-            if (ImGui.BeginChild(
-                    "##shell-content-viewport",
-                    childSize,
-                    false,
-                    ImGuiWindowFlags.NoScrollbar
-                    | ImGuiWindowFlags.NoScrollWithMouse))
+            var viewportCursor = ImGui.GetCursorScreenPos();
+            if (vm.ContentOwnsViewport)
             {
-                var childCursor = ImGui.GetCursorScreenPos();
                 float contentInset =
                     MainHorizontalPadding * s;
-                var contentOrigin = childCursor
+                var contentOrigin = viewportCursor
                     + new Vector2(contentInset);
                 vm.DrawContent?.Invoke(
                     contentOrigin,
                     new Vector2(
-                        contentWidth,
+                        MathF.Max(
+                            0f,
+                            childSize.X
+                                - ScrollbarWidth * s
+                                - contentInset * 2f),
                         MathF.Max(
                             0f,
                             ImGui.GetContentRegionAvail().Y
                                 - contentInset)));
             }
-            ImGui.EndChild();
-            ImGui.PopStyleVar();
-            return;
-        }
-        Crystarium.ScrollRegion(
-            "##shell-content",
-            childSize.X / s,
-            childSize.Y / s,
-            region =>
+            else
             {
-                var childCursor = ImGui.GetCursorScreenPos();
-                if (vm.ContentUsesPage)
-                {
-                    vm.DrawContent?.Invoke(
-                        childCursor,
-                        new Vector2(
-                            region.ContentWidth * s,
-                            childSize.Y));
-                    return;
-                }
-                var contentOrigin = childCursor
-                    + new Vector2(MainHorizontalPadding * s, 0f);
-                ImGui.SetCursorScreenPos(contentOrigin);
-                vm.DrawContent?.Invoke(
-                    contentOrigin,
-                    new Vector2(
-                        MathF.Max(
-                            0f,
-                            region.ContentWidth * s
-                                - MainHorizontalPadding * 2f * s),
-                        childSize.Y));
-            });
+                ImGui.SetCursorScreenPos(viewportCursor);
+                Crystarium.ScrollRegion(
+                    "##shell-content-scroll",
+                    childSize.X / s,
+                    childSize.Y / s,
+                    region =>
+                    {
+                        var childCursor = ImGui.GetCursorScreenPos();
+                        if (vm.ContentUsesPage)
+                        {
+                            vm.DrawContent?.Invoke(
+                                childCursor,
+                                new Vector2(
+                                    region.ContentWidth * s,
+                                    childSize.Y));
+                            return;
+                        }
+                        var contentOrigin = childCursor
+                            + new Vector2(
+                                MainHorizontalPadding * s,
+                                0f);
+                        ImGui.SetCursorScreenPos(contentOrigin);
+                        vm.DrawContent?.Invoke(
+                            contentOrigin,
+                            new Vector2(
+                                MathF.Max(
+                                    0f,
+                                    region.ContentWidth * s
+                                        - MainHorizontalPadding * 2f * s),
+                                childSize.Y));
+                    });
+            }
+        }
+        ImGui.EndChild();
+        ImGui.PopStyleVar();
     }
 
     private static void DrawOuterGlassBorder(Vector2 min, Vector2 max, float s)
