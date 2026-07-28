@@ -121,11 +121,14 @@ public static partial class Crystarium
         ImGui.SetCursorScreenPos(pos + new Vector2(0, height));
 
         // Popup
+        float popupPadding =
+            Crystarium.ActiveTheme.Floating.PopupPadding * scale;
         int visibleItems = Math.Min(
             items.Length,
             Crystarium.ActiveTheme.Picker.MaximumRows);
         float itemListHeight = visibleItems * height;
-        float popupHeight = itemListHeight;
+        float popupHeight =
+            itemListHeight + popupPadding * 2f;
         int popupSelected = selected;
         bool popupChanged = false;
         FloatingSurface.Popup(
@@ -134,7 +137,8 @@ public static partial class Crystarium
             {
                 Width = totalWidth / scale,
                 Height = popupHeight / scale,
-                Padding = 0f,
+                Padding =
+                    Crystarium.ActiveTheme.Floating.PopupPadding,
                 AnchorMin = valuePos,
                 AnchorMax = valueEnd,
             },
@@ -153,35 +157,27 @@ public static partial class Crystarium
                         bool optFontPushed = optFont is { Available: true };
                         if (optFontPushed) optFont!.Push();
                         float optPad = Crystarium.ActiveTheme.Page.ActionGap * scale;
-                        uint hoverFill = ImGui.ColorConvertFloat4ToU32(
+                        float optRounding =
+                            Crystarium.ActiveTheme.Radii.Medium * scale;
+                        uint optFill = ImGui.ColorConvertFloat4ToU32(
                             ColorEx.ApplyAlpha(
-                                Crystarium.ActiveTheme.Chrome.ControlHover));
-                        uint selectedFill = ImGui.ColorConvertFloat4ToU32(
-                            ColorEx.ApplyAlpha(
-                                Crystarium.ActiveTheme.Chrome.SidebarSelected));
+                                Crystarium.ActiveTheme.Chrome.WeakOverlay));
                         var spacing = ImGui.GetStyle().ItemSpacing;
                         ImGui.PushStyleVar(
                             ImGuiStyleVar.ItemSpacing,
                             new Vector2(spacing.X, 0f));
 
-                        int hoveredIndex = -1;
                         for (int i = 0; i < items.Length; i++)
                         {
                             bool isSelected = i == popupSelected;
                             var itemPos = ImGui.GetCursorScreenPos();
-                            bool scrolls = items.Length > visibleItems;
-                            var hitSize = new Vector2(
-                                (scrolls
-                                    ? region.ContentWidth
-                                    : regionWidth) * scale,
-                                height);
-                            var fillSize = new Vector2(
-                                regionWidth * scale,
+                            var itemSize = new Vector2(
+                                region.ContentWidth * scale,
                                 height);
 
                             ImGui.PushID(i);
                             var itemHit = Interactive.Reserve(
-                                "##item", hitSize, disabled: false);
+                                "##item", itemSize, disabled: false);
                             if (itemHit.Clicked)
                             {
                                 if (popupSelected != i || reselectFires)
@@ -192,42 +188,19 @@ public static partial class Crystarium
                                 }
                                 ImGui.CloseCurrentPopup();
                             }
-                            bool itemHovered =
-                                hoveredIndex < 0 && itemHit.Hovered;
-                            if (itemHovered)
-                                hoveredIndex = i;
+                            bool itemHovered = itemHit.Hovered;
 
                             var popupDrawList = ImGui.GetWindowDrawList();
-                            ImDrawFlags rowCorners = i switch
-                            {
-                                0 when i == items.Length - 1 =>
-                                    ImDrawFlags.RoundCornersAll,
-                                0 => ImDrawFlags.RoundCornersTop,
-                                _ when i == items.Length - 1 =>
-                                    ImDrawFlags.RoundCornersBottom,
-                                _ => ImDrawFlags.None,
-                            };
-                            float rowRounding = rowCorners == ImDrawFlags.None
-                                ? 0f
-                                : Crystarium.ActiveTheme.Radii.Surface * scale;
-                            if (isSelected)
+                            if (itemHovered || isSelected)
                                 popupDrawList.AddRectFilled(
                                     itemPos,
-                                    itemPos + fillSize,
-                                    selectedFill,
-                                    rowRounding,
-                                    rowCorners);
-                            else if (itemHovered)
-                                popupDrawList.AddRectFilled(
-                                    itemPos,
-                                    itemPos + fillSize,
-                                    hoverFill,
-                                    rowRounding,
-                                    rowCorners);
+                                    itemPos + itemSize,
+                                    optFill,
+                                    optRounding);
 
                             string itemDisplay = TruncateText(
                                 items[i],
-                                hitSize.X - optPad * 2f);
+                                itemSize.X - optPad * 2f);
                             var itemTextSize = ImGui.CalcTextSize(itemDisplay);
                             var itemTextPos = new Vector2(
                                 itemPos.X + optPad,
@@ -242,7 +215,7 @@ public static partial class Crystarium
                                 HoverHelp.Preview(
                                     $"{id}-item-{i}",
                                     itemPos,
-                                    itemPos + hitSize,
+                                    itemPos + itemSize,
                                     items[i]);
 
                             ImGui.PopID();
