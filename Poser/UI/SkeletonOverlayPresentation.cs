@@ -1,31 +1,46 @@
 using System.Collections.Generic;
 using Poser.Domain.Identity;
+using Poser.Domain.Scene;
 
 namespace Poser.UI;
 
 /// <summary>Session presentation mask for the skeleton overlay only.</summary>
-internal static class SkeletonOverlayPresentation
+public sealed class SkeletonOverlayPresentation
 {
-    private static readonly HashSet<BoneId> Hidden = new();
+    private readonly HashSet<BoneId> _hidden = new();
 
-    public static bool IsVisible(BoneId bone) => !Hidden.Contains(bone);
+    public bool IsVisible(BoneId bone) => !_hidden.Contains(bone);
 
-    public static bool AreVisible(IReadOnlyList<BoneId> bones)
+    public bool AreVisible(IReadOnlyList<BoneId> bones)
     {
         foreach (var bone in bones)
-            if (Hidden.Contains(bone))
+            if (_hidden.Contains(bone))
                 return false;
         return true;
     }
 
-    public static void SetVisible(IReadOnlyList<BoneId> bones, bool visible)
+    public void SetVisible(IReadOnlyList<BoneId> bones, bool visible)
     {
         foreach (var bone in bones)
         {
             if (visible)
-                Hidden.Remove(bone);
+                _hidden.Remove(bone);
             else
-                Hidden.Add(bone);
+                _hidden.Add(bone);
         }
     }
+
+    public void Reconcile(SceneSnapshot snapshot)
+    {
+        if (_hidden.Count == 0)
+            return;
+        var present = new HashSet<BoneId>();
+        foreach (var actor in snapshot.Actors)
+            foreach (var skeleton in actor.Skeletons)
+                foreach (var bone in skeleton.Bones)
+                    present.Add(bone.Id);
+        _hidden.RemoveWhere(bone => !present.Contains(bone));
+    }
+
+    public void Clear() => _hidden.Clear();
 }

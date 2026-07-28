@@ -24,6 +24,7 @@ public class SkeletonOverlayWindow : Window
     private readonly SceneSession _scene;
     private readonly Game.Viewport.ViewportProjection _viewport;
     private readonly IEditorState _editorState;
+    private readonly SkeletonOverlayPresentation _presentation;
 
     // Configuration from settings
     private static SkeletonConfiguration Config => ConfigurationService.Instance.Config.Skeleton;
@@ -77,7 +78,8 @@ public class SkeletonOverlayWindow : Window
         SceneSession scene,
         Game.Viewport.ViewportProjection viewport,
         ICameraService cameraService,
-        IEditorState editorState)
+        IEditorState editorState,
+        SkeletonOverlayPresentation presentation)
         : base("##poser_skeleton_overlay",
             ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoDecoration |
@@ -94,6 +96,7 @@ public class SkeletonOverlayWindow : Window
         _viewport = viewport;
         _cameraService = cameraService;
         _editorState = editorState;
+        _presentation = presentation;
 
         RespectCloseHotkey = false;
     }
@@ -165,7 +168,7 @@ public class SkeletonOverlayWindow : Window
             var boneWorldPositions = new Dictionary<BoneId, Vector3>();
             foreach (var bone in descriptors)
             {
-                if (bone.IsHidden || !SkeletonOverlayPresentation.IsVisible(bone.Id))
+                if (bone.IsHidden || !_presentation.IsVisible(bone.Id))
                     continue;
                 if (_viewport.GetBoneModelTransform(bone.Id) is not { } boneTransform)
                     continue;

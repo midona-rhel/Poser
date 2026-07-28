@@ -43,6 +43,7 @@ public class MainWindow : Window
     private readonly SelectionSession _selection;
     private readonly StableBindingRegistry _bindings;
     private readonly Application.Animation.AnimationSession _animation;
+    private readonly SkeletonOverlayPresentation _overlayPresentation;
 
     // actor context menu + rename modal: stable ids only; the lifetime
     // services still take legacy actors, so ids resolve per frame through the
@@ -103,7 +104,8 @@ public class MainWindow : Window
         Game.Animation.AnimationCatalogLoader animationCatalog,
         PoseRailPane poseRail,
         GraphicalBonePane graphicalBonePane,
-        Game.PropSpawnService propService)
+        Game.PropSpawnService propService,
+        SkeletonOverlayPresentation overlayPresentation)
         : base($"{PluginConstants.PluginName}###poser_main_window",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
@@ -129,6 +131,7 @@ public class MainWindow : Window
         _animationPane = animationPane;
         _appearancePane = appearancePane;
         _animation = animation;
+        _overlayPresentation = overlayPresentation;
         _animationCatalog = animationCatalog;
         _poseInspector.DrawMapInline = graphicalBonePane.DrawInline;
         graphicalBonePane.SidesSwapped =
@@ -239,9 +242,10 @@ public class MainWindow : Window
         {
             if (row.OverlayBones is not { } bones)
                 return;
-            SkeletonOverlayPresentation.SetVisible(
-                bones, !SkeletonOverlayPresentation.AreVisible(bones));
+            _overlayPresentation.SetVisible(
+                bones, !_overlayPresentation.AreVisible(bones));
         };
+        _vm.IsOverlayVisible = _overlayPresentation.AreVisible;
         _vm.DrawContent = DrawTabContent;
     }
 
@@ -315,6 +319,7 @@ public class MainWindow : Window
         float gs = ImGuiHelpers.GlobalScale;
         _lastWidth = ImGui.GetWindowSize().X / gs;
         _lastHeight = ImGui.GetWindowSize().Y / gs;
+        _overlayPresentation.Reconcile(_scene.Snapshot);
         ReconcilePendingSpawn();
         BuildViewModel();
         AppShellView.Draw(_vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
@@ -1078,7 +1083,7 @@ public class MainWindow : Window
 
         var overlayBones = _ctxBoneOverlayBones ?? new[] { boneId };
         bool overlayVisible =
-            SkeletonOverlayPresentation.AreVisible(overlayBones);
+            _overlayPresentation.AreVisible(overlayBones);
         var items = new[]
         {
             new ContextMenuItem("Select parent", TablerIcon.ArrowUp, disabled: descriptor.Parent == null),
@@ -1131,7 +1136,7 @@ public class MainWindow : Window
                 _selection.Select(SelectionId.ForBone(mirror.Id));
                 break;
             case 3:
-                SkeletonOverlayPresentation.SetVisible(
+                _overlayPresentation.SetVisible(
                     overlayBones,
                     !overlayVisible);
                 break;
@@ -1162,7 +1167,7 @@ public class MainWindow : Window
             Crystarium.FloatingMenu.Dismiss("##overlay-ctx");
             return;
         }
-        bool visible = SkeletonOverlayPresentation.AreVisible(bones);
+        bool visible = _overlayPresentation.AreVisible(bones);
         var items = new[]
         {
             new ContextMenuItem(
@@ -1176,7 +1181,7 @@ public class MainWindow : Window
                 "##overlay-ctx", ImGui.GetMousePos(), items);
         }
         if (Crystarium.FloatingMenu.Draw("##overlay-ctx") == 0)
-            SkeletonOverlayPresentation.SetVisible(bones, !visible);
+            _overlayPresentation.SetVisible(bones, !visible);
     }
 
     private void DrawRenameModal()

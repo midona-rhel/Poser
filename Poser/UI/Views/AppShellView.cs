@@ -123,6 +123,8 @@ public sealed class AppShellViewModel
     public Action<ShellSidebarRow>? OnActorVisibility;
     public Action<ShellSidebarRow>? OnActorPause;
     public Action<ShellSidebarRow>? OnOverlayVisibility;
+    public Func<IReadOnlyList<Domain.Identity.BoneId>, bool>?
+        IsOverlayVisible;
     public Action<int>? OnSectionPlus;
 }
 
@@ -637,7 +639,8 @@ public static class AppShellView
         }
         else if (row.OverlayBones != null)
         {
-            bool visible = SkeletonOverlayPresentation.AreVisible(row.OverlayBones);
+            bool visible = vm.IsOverlayVisible?.Invoke(row.OverlayBones)
+                ?? true;
             DrawRowAction(
                 $"##overlay-{id}",
                 new Vector2(cursor.X + innerW - 22f * s, cursor.Y + 3f * s),

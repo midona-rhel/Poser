@@ -15,14 +15,17 @@ public sealed class UiWindowSet : IDisposable
     public GizmoOverlayWindow GizmoOverlay { get; }
     public SkeletonOverlayWindow SkeletonOverlay { get; }
     public SettingsWindow Settings { get; }
+    private readonly SkeletonOverlayPresentation _overlayPresentation;
 
     public UiWindowSet(
         IGPoseService gPoseService,
         MainWindow main,
         SkeletonOverlayWindow skeletonOverlay,
         GizmoOverlayWindow gizmoOverlay,
-        SettingsWindow settings)
+        SettingsWindow settings,
+        SkeletonOverlayPresentation overlayPresentation)
     {
+        _overlayPresentation = overlayPresentation;
         // Draw order is intentional: overlays first, normal windows after them.
         SkeletonOverlay = skeletonOverlay;
         System.AddWindow(SkeletonOverlay);
@@ -50,7 +53,10 @@ public sealed class UiWindowSet : IDisposable
         // toolbar Armature action opens it, and a user toggle persists for the
         // session. Session end still closes it so the next session starts Off.
         if (!isOpen)
+        {
             SkeletonOverlay.IsOpen = false;
+            _overlayPresentation.Clear();
+        }
     }
 
     private void SetSkeletonOverlayOpen(bool isOpen)
@@ -59,6 +65,7 @@ public sealed class UiWindowSet : IDisposable
     public void Dispose()
     {
         Main.OnSkeletonOverlayToggled -= SetSkeletonOverlayOpen;
+        _overlayPresentation.Clear();
         System.RemoveAllWindows();
     }
 }
