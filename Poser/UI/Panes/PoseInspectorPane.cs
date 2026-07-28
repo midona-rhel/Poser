@@ -608,11 +608,10 @@ public class PoseInspectorPane
                 : viewportHeight;
         }
 
-        return DrawMatrixSurface(dl, cursor, width, viewportHeight, s);
+        return DrawMatrixSurface(cursor, width, viewportHeight, s);
     }
 
     private float DrawMatrixSurface(
-        ImDrawListPtr dl,
         Vector2 cursor,
         float width,
         float viewportHeight,
@@ -693,13 +692,26 @@ public class PoseInspectorPane
             _matrixSkeletonId = matrixSkeleton.Id;
         }
         BoneMatrixBuilder.SyncSelection(_matrixVm, _selection);
-        ImGui.PushClipRect(viewMin, viewMax, true);
-        BoneMatrixView.Draw(
-            _matrixVm,
-            viewMin,
-            viewMax.X - viewMin.X,
-            "livemx");
-        ImGui.PopClipRect();
+        ImGui.SetCursorScreenPos(viewMin);
+        Crystarium.ScrollRegion(
+            "##pose-matrix-scroll",
+            (viewMax.X - viewMin.X) / s,
+            (viewMax.Y - viewMin.Y) / s,
+            region =>
+            {
+                var contentOrigin = ImGui.GetCursorScreenPos();
+                float contentHeight = BoneMatrixView.Draw(
+                    _matrixVm,
+                    contentOrigin,
+                    region.ContentWidth * s,
+                    "livemx");
+                ImGui.SetCursorScreenPos(new Vector2(
+                    contentOrigin.X,
+                    contentOrigin.Y + contentHeight));
+                ImGui.Dummy(new Vector2(
+                    region.ContentWidth * s,
+                    MathF.Max(1f, s)));
+            });
         return viewportHeight;
     }
 
@@ -775,11 +787,9 @@ public class PoseInspectorPane
 
     private float Draw3DView(ImDrawListPtr dl, Vector2 origin, float width, float height, SkeletonDescriptor skeleton, float s)
     {
-        // The 3D canvas is the middle viewport inset by 12 logical px on every
-        // side — the same horizontal inset as the header/footer plus a matching
-        // top/bottom canvas inset. The inset is applied once; chrome, orbit
-        // input, projection, dot hit testing, and the hint label all use the
-        // same content rectangle.
+        // The 3D canvas uses the shared page inset on every side. Chrome,
+        // camera input, projection, clipping, dot hit testing, and the hint
+        // label all use the same content rectangle.
         var camera = Crystarium.ActiveTheme.Pose3D;
         float inset = Crystarium.ActiveTheme.Page.Inset * s;
         var min = origin + new Vector2(inset, inset);
@@ -859,12 +869,15 @@ public class PoseInspectorPane
         }
         if (positions.Count == 0)
         {
+            dl.PushClipRect(min, max, true);
             CanvasLabel(
                 dl,
-                min + new Vector2(12f, 12f) * s,
+                min + new Vector2(
+                    Crystarium.ActiveTheme.Page.Inset) * s,
                 "No skeleton.",
                 12f,
                 Crystarium.ActiveTheme.FormHint);
+            dl.PopClipRect();
             return height;
         }
         center /= positions.Count;
@@ -889,6 +902,7 @@ public class PoseInspectorPane
         float bestDist = camera.HoverRadius * s;
         var mouse = ImGui.GetMousePos();
 
+        dl.PushClipRect(min, max, true);
         foreach (var bone in skeleton.Bones)
         {
             if (!positions.TryGetValue(bone.Id, out var position)) continue;
@@ -932,6 +946,7 @@ public class PoseInspectorPane
             "left drag: orbit · middle drag: pan · wheel: zoom · click: select",
             11f,
             Crystarium.ActiveTheme.FormHint);
+        dl.PopClipRect();
 
         return height;
     }
