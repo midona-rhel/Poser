@@ -65,8 +65,10 @@ public class SkeletonOverlayWindow : Window
     // Hover list state (Ktisis-style)
     private List<BoneDisplayData>? _hoveredBones;
     private int _hoverIndex;
+    private Vector2 _hoverAnchor;
     private SelectionId? _pressedWorldTarget;
     private PendingSelection? _pendingSelection;
+    private const string HoverListOwnerId = "##skeleton-overlay-bones";
 
     private readonly record struct PendingSelection(
         SelectionId Id,
@@ -116,6 +118,12 @@ public class SkeletonOverlayWindow : Window
         var viewportPos = ImGui.GetMainViewport().Pos;
         var io = ImGui.GetIO();
         var mousePos = io.MousePos;
+        var hoverListOwner = new InteractionOwner(
+            HoverListOwnerId,
+            InteractionLayer.OverlaySurface,
+            int.MaxValue);
+        bool listTravel = CanContinueIntoHoverList(
+            mousePos, hoverListOwner);
         bool pointerBlocked = Interactive.PointerOccluded(
             InteractionOwner.World,
             mousePos);
@@ -208,6 +216,7 @@ public class SkeletonOverlayWindow : Window
         var actorRadius = 8f * ImGuiHelpers.GlobalScale;
         foreach (var actor in actors)
             actor.IsHovered = !pointerBlocked
+                && !listTravel
                 && IsHoveringDot(actor.ScreenPos, actorRadius);
 
         // Update hover state
@@ -215,7 +224,6 @@ public class SkeletonOverlayWindow : Window
         {
             foreach (var bone in bones)
                 bone.IsHovered = false;
-            _hoveredBones = null;
             _pressedWorldTarget = null;
         }
         else
@@ -276,14 +284,24 @@ public class SkeletonOverlayWindow : Window
                 $"{hoveredActor.Name} — actor transform");
         }
 
-        // Update hovered bones list and draw hover window (Ktisis style)
-        UpdateHoveredBones(bones);
+        // Freeze the overlapping candidates and their anchor while the
+        // pointer crosses into the explicit list.
+        bool onFrozenCluster = listTravel
+            && _hoveredBones is { } frozen
+            && bones.Any(bone => bone.IsHovered
+                && frozen.Any(candidate => candidate.Id.Equals(bone.Id)));
+        UpdateHoveredBones(bones, mousePos, listTravel);
+        bool hasWorldBone = !listTravel
+            ? bones.Any(bone => bone.IsHovered)
+            : onFrozenCluster;
         var worldTarget = hoveredActor?.Id
-            ?? (_hoveredBones is { Count: > 0 }
+            ?? (hasWorldBone && _hoveredBones is { Count: > 0 }
                 ? _hoveredBones[_hoverIndex].Id
                 : (SelectionId?)null);
-        UpdateWorldPress(worldTarget, pointerBlocked);
-        if (!pointerBlocked)
+        UpdateWorldPress(
+            worldTarget,
+            pointerBlocked || (listTravel && !hasWorldBone));
+        if (_hoveredBones is { Count: > 0 })
             DrawHoverList();
     }
 
@@ -356,24 +374,57 @@ public class SkeletonOverlayWindow : Window
         return u >= 0 && v >= 0 && u + v <= 1;
     }
 
-    private void UpdateHoveredBones(List<BoneDisplayData> bones)
+    private void UpdateHoveredBones(
+        List<BoneDisplayData> bones,
+        Vector2 mousePos,
+        bool keepFrozen)
     {
-        // Get all hovered bones
-        var hovered = bones.Where(b => b.IsHovered).ToList();
+        if (keepFrozen && _hoveredBones is { Count: > 0 })
+            return;
+        var hovered = bones
+            .Where(bone => bone.IsHovered)
+            .OrderBy(bone => bone.CameraDistance)
+            .ToList();
 
         if (hovered.Count == 0)
         {
+            if (keepFrozen)
+                return;
             _hoveredBones = null;
             _hoverIndex = 0;
             return;
         }
 
-        // Update hover list (sorted by distance like Ktisis)
-        _hoveredBones = hovered.OrderBy(b => b.CameraDistance).ToList();
-
-        // Reset index if out of bounds
-        if (_hoverIndex >= _hoveredBones.Count)
+        bool sameCandidates = _hoveredBones != null
+            && _hoveredBones.Count == hovered.Count
+            && !_hoveredBones.Where(
+                (bone, index) => !bone.Id.Equals(hovered[index].Id)).Any();
+        if (!sameCandidates)
+        {
+            _hoveredBones = hovered;
             _hoverIndex = 0;
+            _hoverAnchor = mousePos;
+        }
+    }
+
+    private bool CanContinueIntoHoverList(
+        Vector2 point,
+        InteractionOwner owner)
+    {
+        if (_hoveredBones is not { Count: > 0 }
+            || !Interactive.TryGetOwnerBounds(
+                HoverListOwnerId,
+                out var listMin,
+                out var listMax)
+            || Interactive.PointerOccluded(owner, point))
+            return false;
+        float padding = HoverPadding * ImGuiHelpers.GlobalScale;
+        var bridgeMin = Vector2.Min(_hoverAnchor, listMin)
+            - new Vector2(padding);
+        var bridgeMax = Vector2.Max(_hoverAnchor, listMax)
+            + new Vector2(padding);
+        return point.X >= bridgeMin.X && point.X < bridgeMax.X
+            && point.Y >= bridgeMin.Y && point.Y < bridgeMax.Y;
     }
 
     private void UpdateWorldPress(
@@ -410,17 +461,10 @@ public class SkeletonOverlayWindow : Window
             || Controls.GizmoPointerOwnership.Owned)
             return;
 
-        _hoverIndex -= (int)ImGui.GetIO().MouseWheel;
-        if (_hoverIndex >= _hoveredBones.Count)
-            _hoverIndex = 0;
-        else if (_hoverIndex < 0)
-            _hoverIndex = _hoveredBones.Count - 1;
-
         var labels = _hoveredBones.Select(bone => bone.Name).ToArray();
-        const string ownerId = "##skeleton-overlay-bones";
         int clicked = Crystarium.FloatingSurface.HoverList(
-            ownerId,
-            ImGui.GetMousePos(),
+            HoverListOwnerId,
+            _hoverAnchor,
             labels,
             _hoverIndex,
             InteractionLayer.OverlaySurface);
@@ -432,7 +476,7 @@ public class SkeletonOverlayWindow : Window
             ImGui.GetMousePos(),
             ImGui.GetIO().KeyCtrl,
             new InteractionOwner(
-                ownerId,
+                HoverListOwnerId,
                 InteractionLayer.OverlaySurface,
                 int.MaxValue));
     }

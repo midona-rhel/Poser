@@ -248,6 +248,36 @@ public static class Interactive
         return false;
     }
 
+    public static bool TryGetOwnerBounds(
+        string id,
+        out Vector2 min,
+        out Vector2 max)
+    {
+        bool found = false;
+        var boundsMin = new Vector2(float.MaxValue);
+        var boundsMax = new Vector2(float.MinValue);
+        Include(_previousOccluders);
+        Include(_currentOccluders);
+        min = found ? boundsMin : default;
+        max = found ? boundsMax : default;
+        return found;
+
+        void Include(List<Occluder> occluders)
+        {
+            foreach (var occluder in occluders)
+            {
+                if (!string.Equals(
+                        occluder.Owner.Id,
+                        id,
+                        StringComparison.Ordinal))
+                    continue;
+                boundsMin = Vector2.Min(boundsMin, occluder.Min);
+                boundsMax = Vector2.Max(boundsMax, occluder.Max);
+                found = true;
+            }
+        }
+    }
+
     public static InteractionResult Reserve(
         string id,
         Vector2 size,
