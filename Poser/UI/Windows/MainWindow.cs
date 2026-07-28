@@ -355,9 +355,6 @@ public class MainWindow : Window
         // allocation; its nested ScrollRegion consumes the same physical
         // gutter the shell reserved, so mode changes cannot alter width.
         // Animation is a document and uses the shell's scroll.
-        _vm.ContentOwnsViewport = _activeTab == "Pose";
-        _vm.ContentUsesPage =
-            _activeTab is "Animation" or "Appearance";
         // Appearance has no pose rail; its content takes the released
         // width. The outer window size is untouched by tab changes.
         _vm.DrawRail = _collapsed ? null : _poseRail.Draw;
@@ -409,6 +406,7 @@ public class MainWindow : Window
 
         BuildSidebar(primary);
         BuildTabs(primary);
+        ApplyTabLayout(_activeTab);
         BuildStatus(primary);
     }
 
@@ -800,6 +798,21 @@ public class MainWindow : Window
         var label = _vm.Tabs[index].Label;
 
         _activeTab = label;
+        for (int i = 0; i < _vm.Tabs.Count; i++)
+            _vm.Tabs[i].Active = i == index;
+
+        // The click occurs while AppShellView is already drawing. Update the
+        // viewport contract in the same callback as the content selection so
+        // the remainder of this frame cannot render one tab through another
+        // tab's layout path.
+        ApplyTabLayout(label);
+    }
+
+    private void ApplyTabLayout(string tab)
+    {
+        _vm.ContentOwnsViewport = tab == "Pose";
+        _vm.ContentUsesPage =
+            tab is "Animation" or "Appearance";
     }
 
     private void OnRowClicked(ShellSidebarRow row)
