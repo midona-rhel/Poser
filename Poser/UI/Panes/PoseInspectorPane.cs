@@ -498,7 +498,8 @@ public class PoseInspectorPane
     private float DrawPoseSurface(ImDrawListPtr dl, Vector2 cursor, Vector2 size, ISkeleton skeleton, float s)
     {
         float tabsHeightPx = AppShellView.ToolbarHeight;
-        const float footerHeightPx = 47f;
+        float footerHeightPx =
+            Crystarium.ActiveTheme.Shell.PoseFooterHeight;
         float width = size.X;
         float height = Math.Max(size.Y, (tabsHeightPx + footerHeightPx + 1f) * s);
         float tabsHeight = tabsHeightPx * s;
@@ -507,7 +508,8 @@ public class PoseInspectorPane
 
         // The mode selector and footer belong to the viewport chrome. Only the
         // selected surface between them scrolls.
-        const float segmentedHeightPx = 30f;
+        float segmentedHeightPx =
+            Crystarium.ActiveTheme.Controls.NavigationHeight;
         ImGui.SetCursorScreenPos(cursor + new Vector2(
             0f,
             (tabsHeightPx - segmentedHeightPx) * 0.5f * s));
@@ -548,7 +550,7 @@ public class PoseInspectorPane
         });
         rx -= ViewText.Measure("Animation", 12f) + 6f * s;
         ViewText.Label(new Vector2(rx, chromeY + 2f * s), "Animation", 12f,
-            FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
+            FontWeight.Regular, Crystarium.ActiveTheme.TextDim);
 
         if (_poseView is 0 or 1)
         {
@@ -559,7 +561,7 @@ public class PoseInspectorPane
                 "##ps-mirror", swapped, next => SetMapMirror?.Invoke(next));
             float mirrorLabelX = rx - ViewText.Measure("Mirror", 12f) - 6f * s;
             ViewText.Label(new Vector2(mirrorLabelX, chromeY + 2f * s), "Mirror",
-                12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
+                12f, FontWeight.Regular, Crystarium.ActiveTheme.TextDim);
             if (Crystarium.HoverHelp.HelpHovered(
                     new Vector2(mirrorLabelX, chromeY),
                     new Vector2(rx + 36f * s, chromeY + 20f * s)))
@@ -577,7 +579,8 @@ public class PoseInspectorPane
                 cursor.X + width + AppShellView.MainHorizontalPadding * s,
                 cursor.Y + tabsHeight),
             ImGui.ColorConvertFloat4ToU32(
-                ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.08f))));
+                ColorEx.ApplyAlpha(
+                    Crystarium.ActiveTheme.FormSeparator)));
 
         var bodyOrigin = new Vector2(cursor.X, cursor.Y + tabsHeight);
         ImGui.SetCursorScreenPos(bodyOrigin);
@@ -596,11 +599,13 @@ public class PoseInspectorPane
             bodyContentHeight = DrawPoseSurfaceContent(
                 ImGui.GetWindowDrawList(), scrolledOrigin, width, bodyHeight, skeleton, s);
         }
-        Crystarium.NarrowVisibleScrollbarThumb();
         ImGui.EndChild();
         ImGui.PopStyleVar();
 
-        DrawPoseFooter(dl, new Vector2(cursor.X, cursor.Y + height - footerHeight), width, skeleton, s);
+        DrawPoseFooter(
+            new Vector2(cursor.X, cursor.Y + height - footerHeight),
+            width,
+            skeleton);
         return height;
     }
 
@@ -617,7 +622,8 @@ public class PoseInspectorPane
             ImGui.SetCursorScreenPos(cursor);
             if (DrawMapInline == null || !DrawMapInline(_poseView, new Vector2(width, viewportHeight)))
                 ViewText.Label(new Vector2(cursor.X, cursor.Y + 8f * s),
-                    "Select an actor to use the map.", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
+                    "Select an actor to use the map.", 12f, FontWeight.Regular,
+                    Crystarium.ActiveTheme.FormHint);
             return viewportHeight;
         }
 
@@ -762,73 +768,58 @@ public class PoseInspectorPane
         return viewportHeight;
     }
 
-    private void DrawPoseFooter(ImDrawListPtr dl, Vector2 cursor, float width, ISkeleton skeleton, float s)
+    private void DrawPoseFooter(
+        Vector2 cursor,
+        float width,
+        ISkeleton skeleton)
     {
-        // M11 footer: Parenting checkboxes · Clear.
-        dl.AddRectFilled(new Vector2(cursor.X, cursor.Y), new Vector2(cursor.X + width, cursor.Y + 1f * s),
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.08f))));
-
-        float centreY = cursor.Y + 47f * s * 0.5f;
-        float checkboxSize = Crystarium.ActiveTheme.Controls.CheckboxSize * s;
-        float controlHeight = Crystarium.ActiveTheme.Controls.WorkspaceHeight * s;
-        float labelY = centreY
-            - Crystarium.ActiveTheme.Typography.LabelSize * s * 0.5f
-            + Crystarium.ActiveTheme.Optical.FooterLabel * s;
-
-        // Parenting: one checkbox per propagated component.
+        float scale = ImGuiHelpers.GlobalScale;
         var poseInfo = _bonePosingService.GetPoseInfo(skeleton);
-        ViewText.Label(Crystarium.ActiveTheme.Optical.Snap(new Vector2(
-                cursor.X, labelY)),
-            "Parenting", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
-        if (Crystarium.HoverHelp.HelpHovered(
-                new Vector2(cursor.X, centreY - controlHeight * 0.5f),
-                new Vector2(cursor.X + ViewText.Measure("Parenting", 12f), centreY + controlHeight * 0.5f)))
-            Crystarium.HoverHelp.Explain("ft-parenting-help",
-                new Vector2(cursor.X, centreY - controlHeight * 0.5f),
-                new Vector2(cursor.X + ViewText.Measure("Parenting", 12f), centreY + controlHeight * 0.5f),
-                "Which components child bones inherit when a parent moves");
-        float px = cursor.X + 64f * s;
-        foreach (var (label, component) in new[]
-        {
-            ("Pos", Core.TransformComponents.Position),
-            ("Rot", Core.TransformComponents.Rotation),
-            ("Scale", Core.TransformComponents.Scale),
-        })
-        {
-            float cellStart = px;
-            ImGui.SetCursorScreenPos(new Vector2(px, centreY - checkboxSize * 0.5f));
-            bool propagates = poseInfo.DefaultPropagation.HasFlag(component);
-            Crystarium.Checkbox($"##ft-parenting-{label}", propagates, next =>
+        Crystarium.ActionBar(
+            "pose-parenting-footer",
+            cursor,
+            new Vector2(
+                width,
+                Crystarium.ActiveTheme.Shell.PoseFooterHeight * scale),
+            bar =>
             {
-                poseInfo.DefaultPropagation = next
-                    ? poseInfo.DefaultPropagation | component
-                    : poseInfo.DefaultPropagation & ~component;
+                bar.Label(
+                    "Parenting",
+                    "Which components child bones inherit when a parent moves");
+                foreach (var (label, component, help) in new[]
+                {
+                    (
+                        "Pos",
+                        Core.TransformComponents.Position,
+                        "Propagate translation edits to child bones"),
+                    (
+                        "Rot",
+                        Core.TransformComponents.Rotation,
+                        "Propagate rotation edits to child bones"),
+                    (
+                        "Scale",
+                        Core.TransformComponents.Scale,
+                        "Propagate scale edits to child bones"),
+                })
+                {
+                    bool propagates =
+                        poseInfo.DefaultPropagation.HasFlag(component);
+                    bar.Checkbox(
+                        label,
+                        propagates,
+                        next =>
+                        {
+                            poseInfo.DefaultPropagation = next
+                                ? poseInfo.DefaultPropagation | component
+                                : poseInfo.DefaultPropagation & ~component;
+                        },
+                        help);
+                }
+                bar.Button(
+                    "Clear",
+                    _selection.Clear,
+                    "Clear bone selection");
             });
-            px += 20f * s;
-            ViewText.Label(Crystarium.ActiveTheme.Optical.Snap(new Vector2(
-                    px, labelY)),
-                label, 11f,
-                FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.6f));
-            px += ViewText.Measure(label, 11f) + 8f * s;
-            if (Crystarium.HoverHelp.HelpHovered(
-                    new Vector2(cellStart, centreY - controlHeight * 0.5f),
-                    new Vector2(px, centreY + controlHeight * 0.5f)))
-                Crystarium.HoverHelp.Explain($"ft-parenting-help-{label}",
-                    new Vector2(cellStart, centreY - controlHeight * 0.5f),
-                    new Vector2(px, centreY + controlHeight * 0.5f),
-                    component switch
-                    {
-                        Core.TransformComponents.Position =>
-                            "Propagate translation edits to child bones",
-                        Core.TransformComponents.Rotation =>
-                            "Propagate rotation edits to child bones",
-                        _ => "Propagate scale edits to child bones",
-                    });
-        }
-        ImGui.SetCursorScreenPos(new Vector2(px, centreY - controlHeight * 0.5f));
-        if (Crystarium.Button("Clear", id: "ft-clear", help: "Clear bone selection",
-            style: ControlStyle.Workspace))
-            _selection.Clear();
     }
 
     /// <summary>3D view: orbitable projection of the skeleton (Anamnesis
@@ -848,8 +839,19 @@ public class PoseInspectorPane
         if (max.X <= min.X || max.Y <= min.Y)
             return height;
         var canvasSize = max - min;
-        dl.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.10f)), 8f * s);
-        dl.AddRect(min, max, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 0.08f))), 8f * s);
+        dl.AddRectFilled(
+            min,
+            max,
+            ImGui.ColorConvertFloat4ToU32(
+                Crystarium.ActiveTheme.Chrome.UnavailableFill),
+            Crystarium.ActiveTheme.Radii.Surface * s);
+        dl.AddRect(
+            min,
+            max,
+            ImGui.ColorConvertFloat4ToU32(
+                ColorEx.ApplyAlpha(
+                    Crystarium.ActiveTheme.FormSeparator)),
+            Crystarium.ActiveTheme.Radii.Surface * s);
 
         ImGui.SetCursorScreenPos(min);
         ImGui.InvisibleButton("##pose-3d", canvasSize);
@@ -881,7 +883,12 @@ public class PoseInspectorPane
         }
         if (positions.Count == 0)
         {
-            CanvasLabel(dl, min + new Vector2(12f, 12f) * s, "No skeleton.", 12f, new Vector4(1f, 1f, 1f, 0.4f));
+            CanvasLabel(
+                dl,
+                min + new Vector2(12f, 12f) * s,
+                "No skeleton.",
+                12f,
+                Crystarium.ActiveTheme.FormHint);
             return height;
         }
         center /= positions.Count;
@@ -899,7 +906,8 @@ public class PoseInspectorPane
             return new Vector2(mid.X + v.X * scalePx, mid.Y - v.Y * scalePx);
         }
 
-        uint lineCol = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 0.25f));
+        uint lineCol = ImGui.ColorConvertFloat4ToU32(
+            Crystarium.ActiveTheme.Glass.BorderTop);
         BoneDescriptor? hovered = null;
         float bestDist = 8f * s;
         var mouse = ImGui.GetMousePos();
@@ -912,7 +920,10 @@ public class PoseInspectorPane
                 dl.AddLine(Project(parentPosition), p, lineCol, 1f * s);
             bool isSel = selectedIds.Contains(SelectionId.ForBone(bone.Id));
             dl.AddCircleFilled(p, (isSel ? 4.5f : 3f) * s,
-                ImGui.ColorConvertFloat4ToU32(isSel ? new Vector4(1f, 1f, 1f, 1f) : new Vector4(50 / 255f, 151 / 255f, 1f, 0.85f)));
+                ImGui.ColorConvertFloat4ToU32(
+                    isSel
+                        ? Crystarium.ActiveTheme.Text
+                        : Crystarium.ActiveTheme.Accent));
             float dist = Vector2.Distance(mouse, p);
             if (dist < bestDist) { bestDist = dist; hovered = bone; }
         }
@@ -931,7 +942,7 @@ public class PoseInspectorPane
                 _selection.Toggle(hoveredId);
         }
         CanvasLabel(dl, new Vector2(max.X - 150f * s, max.Y - 20f * s), "drag: orbit - click: select", 11f,
-            new Vector4(1f, 1f, 1f, 0.4f));
+            Crystarium.ActiveTheme.FormHint);
 
         return height;
     }
@@ -950,7 +961,12 @@ public class PoseInspectorPane
 
     private static void StripLabel(Vector2 cursor, float h, float x, string text, float s)
     {
-        ViewText.Label(cursor + new Vector2(x, h / s + 9f) * s, text, 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.72f));
+        ViewText.Label(
+            cursor + new Vector2(x, h / s + 9f) * s,
+            text,
+            12f,
+            FontWeight.Regular,
+            Crystarium.ActiveTheme.TextDim);
     }
 
     // ── sections ─────────────────────────────────────────────────────────

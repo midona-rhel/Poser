@@ -134,8 +134,16 @@ public sealed class GraphicalBonePane : IDisposable
                 if (isDrag)
                 {
                     var fg = ImGui.GetForegroundDrawList();
-                    fg.AddRectFilled(rmin, rmax, ImGui.ColorConvertFloat4ToU32(new Vector4(50 / 255f, 151 / 255f, 1f, 0.12f)));
-                    fg.AddRect(rmin, rmax, ImGui.ColorConvertFloat4ToU32(new Vector4(50 / 255f, 151 / 255f, 1f, 0.65f)));
+                    fg.AddRectFilled(
+                        rmin,
+                        rmax,
+                        ImGui.ColorConvertFloat4ToU32(
+                            Crystarium.ActiveTheme.Chrome.SidebarSelected));
+                    fg.AddRect(
+                        rmin,
+                        rmax,
+                        ImGui.ColorConvertFloat4ToU32(
+                            Crystarium.ActiveTheme.AccentHover));
                 }
             }
             else

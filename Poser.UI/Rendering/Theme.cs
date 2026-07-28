@@ -46,6 +46,7 @@ public readonly record struct Theme
     public FloatingTokens Floating { get; init; }
     public PickerTokens Picker { get; init; }
     public FileDialogTokens FileDialog { get; init; }
+    public SettingsTokens Settings { get; init; }
     public OpticalTokens Optical { get; init; }
     public MotionTokens Motion { get; init; }
     public PaletteTokens Palette { get; init; }
@@ -131,6 +132,7 @@ public readonly record struct Theme
             SidebarMaximumWidth = 400f,
             SidebarDefaultWidth = 280f,
             RailWidth = 280f,
+            PoseFooterHeight = 47f,
         },
         Scrollbar = new() { GutterWidth = 12f, Radius = 4f },
         Typography = new() { ShortcutSize = 10f, CaptionSize = 11f, LabelSize = 12f, BodySize = 13f, SurfaceTitleSize = 14f },
@@ -182,6 +184,20 @@ public readonly record struct Theme
             ExtendedMaximumRows = 12,
         },
         FileDialog = new() { Width = 680f, Height = 440f, FavoritesWidth = 128f, FileNameWidth = 220f },
+        Settings = new()
+        {
+            Width = 720f,
+            Height = 520f,
+            NavigationWidth = 200f,
+            AccentOptions =
+            [
+                new(50f / 255f, 151f / 255f, 1f, 1f),
+                new(126f / 255f, 211f / 255f, 160f / 255f, 1f),
+                new(232f / 255f, 193f / 255f, 90f / 255f, 1f),
+                new(183f / 255f, 140f / 255f, 1f, 1f),
+                new(1f, 143f / 255f, 163f / 255f, 1f),
+            ],
+        },
         Optical = new() { SidebarText = -1f, ButtonText = 1f, FooterLabel = -1f, DropdownText = 1f },
         Motion = new() { Fast = 0.10f, Default = 0.20f, Slow = 0.40f, MenuExit = 0.08f, HoverOpenDelay = 0.40f, HoverPop = 0.15f },
         Palette = new()
@@ -329,6 +345,7 @@ public readonly record struct Theme
         public float SidebarMaximumWidth { get; init; }
         public float SidebarDefaultWidth { get; init; }
         public float RailWidth { get; init; }
+        public float PoseFooterHeight { get; init; }
     }
 
     public readonly record struct ScrollbarTokens
@@ -413,6 +430,14 @@ public readonly record struct Theme
         public float Height { get; init; }
         public float FavoritesWidth { get; init; }
         public float FileNameWidth { get; init; }
+    }
+
+    public readonly record struct SettingsTokens
+    {
+        public float Width { get; init; }
+        public float Height { get; init; }
+        public float NavigationWidth { get; init; }
+        public Vector4[] AccentOptions { get; init; }
     }
 
     public readonly record struct OpticalTokens

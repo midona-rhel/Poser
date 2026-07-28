@@ -63,10 +63,15 @@ public class PoseRailPane
         var (who, sub, linked) = _inspector.RailHeader();
         if (who.Length > 0)
         {
-            ViewText.Label(cursor, who, 13f, FontWeight.Medium, new Vector4(1f, 1f, 1f, 1f));
+            ViewText.Label(
+                cursor,
+                who,
+                13f,
+                FontWeight.Medium,
+                Crystarium.ActiveTheme.Text);
             if (sub.Length > 0)
                 ViewText.Label(cursor + new Vector2(0f, 17f) * s, sub, 11f, FontWeight.Regular,
-                    new Vector4(1f, 1f, 1f, 0.5f), mono: true);
+                    Crystarium.ActiveTheme.TextMuted, mono: true);
 
             if (linked >= 2)
             {
@@ -75,10 +80,23 @@ public class PoseRailPane
                 float pillW = (16f + 8f + ViewText.Measure(count, 11f) / s) * s;
                 var pmin = new Vector2(cursor.X + width - pillW, cursor.Y);
                 var pmax = pmin + new Vector2(pillW, 18f * s);
-                dl.AddRectFilled(pmin, pmax, ImGui.ColorConvertFloat4ToU32(new Vector4(50 / 255f, 151 / 255f, 1f, 0.18f)), 9f * s);
+                dl.AddRectFilled(
+                    pmin,
+                    pmax,
+                    ImGui.ColorConvertFloat4ToU32(
+                        Crystarium.ActiveTheme.Chrome.SidebarSelected),
+                    Crystarium.ActiveTheme.Radii.Surface * s);
                 ImGui.SetCursorScreenPos(pmin + new Vector2(5f, 3.5f) * s);
-                Crystarium.Icon("link", 11f * s, new Vector4(120 / 255f, 185 / 255f, 1f, 1f));
-                ViewText.Label(pmin + new Vector2(19f, 2f) * s, count, 11f, FontWeight.Medium, new Vector4(120 / 255f, 185 / 255f, 1f, 1f));
+                Crystarium.Icon(
+                    "link",
+                    11f * s,
+                    Crystarium.ActiveTheme.AccentHover);
+                ViewText.Label(
+                    pmin + new Vector2(19f, 2f) * s,
+                    count,
+                    11f,
+                    FontWeight.Medium,
+                    Crystarium.ActiveTheme.AccentHover);
                 if (Crystarium.HoverHelp.HelpHovered(pmin, pmax))
                     Crystarium.HoverHelp.Explain("rail-linked-pill", pmin, pmax,
                         "Linked editing — edits apply to these bones");
@@ -161,7 +179,8 @@ public class PoseRailPane
         }
 
         dl.AddCircleFilled(center, widgetRadius + 12f * s,
-            ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.30f)));
+            ImGui.ColorConvertFloat4ToU32(
+                Crystarium.ActiveTheme.Glass.Luminosity));
 
         // The inspector's own direction-only projection, straight at the
         // fixed widget centre — no perspective and no recentring, so the

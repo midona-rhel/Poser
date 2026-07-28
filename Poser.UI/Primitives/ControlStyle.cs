@@ -64,6 +64,8 @@ public readonly record struct ControlStyle
     public UiHeight Height { get; init; }
     public bool Primary { get; init; }
     public bool Bare { get; init; }
+    public bool Selected { get; init; }
+    public bool Slashed { get; init; }
 
     public static ControlStyle Workspace => new() { Height = UiHeight.Workspace };
     public static ControlStyle Comfortable => new() { Height = UiHeight.Comfortable };

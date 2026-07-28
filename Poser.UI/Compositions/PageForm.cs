@@ -582,6 +582,34 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
+        public void Swatches(
+            string label,
+            IReadOnlyList<Vector4> colors,
+            int selected,
+            Action<int> onChange,
+            string? help = null)
+        {
+            string id = Id(label);
+            var row = _page.BeginRow(label);
+            float side = ActiveTheme.Controls.ColorWellSize;
+            float gap = ActiveTheme.Page.ActionGap * row.Scale;
+            for (int i = 0; i < colors.Count; i++)
+            {
+                int index = i;
+                ImGui.SetCursorScreenPos(new(
+                    row.ControlOrigin.X
+                        + i * (side * row.Scale + gap),
+                    row.CenterControl(side).Y));
+                if (Crystarium.Swatch(
+                        $"{id}-{i}",
+                        colors[i],
+                        selected == i,
+                        ControlStyle.Square(side)))
+                    onChange(index);
+            }
+            _page.EndRow(row, id, help);
+        }
+
         public void ReadOnly(string label, string value, string? help = null,
             bool unavailable = false)
         {

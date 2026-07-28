@@ -118,7 +118,7 @@ public static partial class Crystarium
         }
     }
 
-    public static void PushScrollbarStyle()
+    private static void PushScrollbarStyle()
     {
         float scale = ImGuiHelpers.GlobalScale;
         var text = Crystarium.ActiveTheme.Text;
@@ -140,7 +140,7 @@ public static partial class Crystarium
             text with { W = 0.25f });
     }
 
-    public static void PopScrollbarStyle()
+    private static void PopScrollbarStyle()
     {
         ImGui.PopStyleColor(4);
         ImGui.PopStyleVar(2);
@@ -148,7 +148,7 @@ public static partial class Crystarium
 
     /// <summary>Keeps the canonical gutter and hit target intact while
     /// narrowing only ImGui's emitted visible grab geometry.</summary>
-    public static unsafe void NarrowVisibleScrollbarThumb()
+    private static unsafe void NarrowVisibleScrollbarThumb()
     {
         var draw = ImGui.GetWindowDrawList();
         float scale = ImGuiHelpers.GlobalScale;

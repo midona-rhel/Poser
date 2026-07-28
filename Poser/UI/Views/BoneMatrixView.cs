@@ -50,13 +50,20 @@ public sealed class BoneMatrixViewModel
 /// </summary>
 public static class BoneMatrixView
 {
-    private static readonly Vector4 TextPrimary   = new(1f, 1f, 1f, 1f);
-    private static readonly Vector4 TextSecondary = new(1f, 1f, 1f, 0.72f);
-    private static readonly Vector4 BorderPrimary = new(1f, 1f, 1f, 0.14f);
-    private static readonly Vector4 BorderSecond  = new(1f, 1f, 1f, 0.08f);
-    private static readonly Vector4 Primary       = new(50 / 255f, 151 / 255f, 1f, 1f);
-    private static readonly Vector4 Primary50     = new(50 / 255f, 151 / 255f, 1f, 0.5f);
-    private static readonly Vector4 SurfaceHover  = new(1f, 1f, 1f, 0.05f);
+    private static Vector4 TextPrimary =>
+        Crystarium.ActiveTheme.Chrome.Text;
+    private static Vector4 TextSecondary =>
+        Crystarium.ActiveTheme.TextDim;
+    private static Vector4 BorderPrimary =>
+        Crystarium.ActiveTheme.Chrome.ControlBorder;
+    private static Vector4 BorderSecond =>
+        Crystarium.ActiveTheme.FormSeparator;
+    private static Vector4 Primary =>
+        Crystarium.ActiveTheme.Chrome.Primary;
+    private static Vector4 Primary50 =>
+        Crystarium.ActiveTheme.Chrome.PrimaryFocus;
+    private static Vector4 SurfaceHover =>
+        Crystarium.ActiveTheme.Chrome.ControlFill;
 
     /// <summary>Draws the matrix flowing downward from origin; returns total height.</summary>
     public static float Draw(

@@ -71,6 +71,25 @@ public static partial class Crystarium
             onClick);
     }
 
+    public static bool IconButton(
+        string icon,
+        Action? onClick = null,
+        ControlStyle style = default,
+        bool disabled = false,
+        string? help = null,
+        string? id = null)
+    {
+        var size = IconButtonSize(style);
+        return RenderButton(
+            id ?? icon,
+            size,
+            style,
+            disabled,
+            help,
+            () => DrawNamedIcon(icon),
+            onClick);
+    }
+
     public static Vector2 MeasureButton(string label, ControlStyle style = default)
     {
         float scale = ImGuiHelpers.GlobalScale;
@@ -125,7 +144,9 @@ public static partial class Crystarium
         var hit = Interactive.Reserve(id, size, disabled);
         var theme = ActiveTheme;
         float opacity = disabled ? theme.Chrome.ControlDisabledOpacity : 1f;
-        var background = style.Bare
+        var background = style.Selected
+            ? theme.Chrome.SegmentSelected
+            : style.Bare
             ? (hit.Hovered ? theme.Chrome.WeakOverlay : Vector4.Zero)
             : style.Primary
                 ? (hit.Hovered ? theme.Chrome.PrimaryHover : theme.Chrome.Primary)
@@ -155,6 +176,16 @@ public static partial class Crystarium
 
         ButtonContent = new(hit.ScreenMin, hit.ScreenMax, opacity);
         content();
+        if (style.Slashed)
+        {
+            float inset = ActiveTheme.Spacing.Two * scale;
+            draw.AddLine(
+                hit.ScreenMin + new Vector2(inset),
+                hit.ScreenMax - new Vector2(inset),
+                ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(ActiveTheme.TextDim)),
+                scale);
+        }
 
         if (!string.IsNullOrEmpty(help) &&
             (hit.Hovered || (hit.Disabled && HoverHelp.HelpHovered(hit.ScreenMin, hit.ScreenMax))))
@@ -233,6 +264,25 @@ public static partial class Crystarium
             (min.X, max.X) = (max.X, min.X);
         var color = ActiveTheme.Text with { W = ActiveTheme.Text.W * bounds.Opacity };
         doc.Render(ImGui.GetWindowDrawList(), min, max, color);
+    }
+
+    private static void DrawNamedIcon(string icon)
+    {
+        var bounds = ButtonContent;
+        float side = MathF.Min(
+            bounds.Max.X - bounds.Min.X,
+            bounds.Max.Y - bounds.Min.Y)
+            * ActiveTheme.Controls.IconContentScale;
+        ImGui.SetCursorScreenPos(
+            bounds.Min
+            + (bounds.Max - bounds.Min - new Vector2(side)) * 0.5f);
+        Icon(
+            icon,
+            side,
+            ActiveTheme.Text with
+            {
+                W = ActiveTheme.Text.W * bounds.Opacity,
+            });
     }
 
     private static Vector2 MeasureLabel(string label, ControlStyle style)

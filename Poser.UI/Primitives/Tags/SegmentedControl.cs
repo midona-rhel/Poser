@@ -7,97 +7,172 @@ namespace Poser.UI;
 
 public static partial class Crystarium
 {
-    /// <summary>
-    /// Segmented pill switcher — pixel transcription of picto
-    /// shared/ui/WorkspaceSwitcher.module.css (also DisplayFrame's tool switcher):
-    /// container black@.20, padding 3, radius 7, gap 2; tabs 24px, padding 0 12,
-    /// 12px text-secondary; active tab bg surface-2 (#2a2a2e) + shadow
-    /// 0 1px 2px black@.25 + text-primary.
-    /// </summary>
-    /// <summary>Fixed and fill widths occupy their complete requested span,
-    /// distributing that span across the segments. When
-    /// <paramref name="alignFirstTabToCursor"/> is true, the cursor denotes
-    /// the first tab edge rather than the decorative outer pill edge. This lets
-    /// header labels align with sibling tab labels without treating the pill's
-    /// 3px chrome as semantic content padding.</summary>
     public static bool SegmentedControl(
         string id,
         string[] items,
         int selected,
         Action<int> onChange,
         ControlStyle style = default,
-        bool alignFirstTabToCursor = false)
+        bool alignFirstTabToCursor = false,
+        Func<int, bool>? itemDisabled = null)
+    {
+        var font = FontRegistry.Resolve(
+            FontFamily.Default,
+            ActiveTheme.Typography.LabelSize);
+        bool fontPushed = font is { Available: true };
+        if (fontPushed)
+            font!.Push();
+        float scale = ImGuiHelpers.GlobalScale;
+        float padding = ActiveTheme.Spacing.Six * scale;
+        bool changed = SegmentedControlCore(
+            id,
+            items.Length,
+            selected,
+            onChange,
+            style,
+            alignFirstTabToCursor,
+            itemDisabled,
+            index => ImGui.CalcTextSize(items[index]).X
+                + padding * 2f,
+            (drawList, index, min, max, active, hovered, disabled) =>
+            {
+                var textSize = ImGui.CalcTextSize(items[index]);
+                var color = active || hovered
+                    ? ActiveTheme.Text
+                    : ActiveTheme.Text with { W = 0.72f };
+                if (disabled)
+                    color.W *= ActiveTheme.Chrome.DisabledOpacity;
+                drawList.PushClipRect(min, max, true);
+                drawList.AddText(
+                    min + (max - min - textSize) * 0.5f,
+                    ImGui.ColorConvertFloat4ToU32(
+                        ColorEx.ApplyAlpha(color)),
+                    items[index]);
+                drawList.PopClipRect();
+            });
+        if (fontPushed)
+            font!.Pop();
+        return changed;
+    }
+
+    public static bool SegmentedControl(
+        string id,
+        TablerIcon[] items,
+        int selected,
+        Action<int> onChange,
+        ControlStyle style = default,
+        Func<int, bool>? itemDisabled = null) =>
+        SegmentedControlCore(
+            id,
+            items.Length,
+            selected,
+            onChange,
+            style,
+            false,
+            itemDisabled,
+            _ => ActiveTheme.Controls.ComfortableHeight
+                * ImGuiHelpers.GlobalScale,
+            (_, index, min, max, active, hovered, disabled) =>
+            {
+                float scale = ImGuiHelpers.GlobalScale;
+                float iconSize = ActiveTheme.Controls.SmallIconSize * scale;
+                var color = active || hovered
+                    ? ActiveTheme.Text
+                    : ActiveTheme.Text with { W = 0.72f };
+                if (disabled)
+                    color.W *= ActiveTheme.Chrome.DisabledOpacity;
+                ImGui.SetCursorScreenPos(
+                    min + (max - min - new Vector2(iconSize)) * 0.5f);
+                Icon(items[index], iconSize, ColorEx.ApplyAlpha(color));
+            });
+
+    public static Vector2 MeasureSegmentedControl(
+        string[] items,
+        ControlStyle style = default)
+    {
+        var font = FontRegistry.Resolve(
+            FontFamily.Default,
+            ActiveTheme.Typography.LabelSize);
+        bool fontPushed = font is { Available: true };
+        if (fontPushed)
+            font!.Push();
+        float scale = ImGuiHelpers.GlobalScale;
+        float padding = ActiveTheme.Spacing.Six * scale;
+        var layout = ResolveSegmentLayout(
+            items.Length,
+            style,
+            index => ImGui.CalcTextSize(items[index]).X
+                + padding * 2f);
+        if (fontPushed)
+            font!.Pop();
+        return new(layout.TotalWidth, layout.TotalHeight);
+    }
+
+    public static Vector2 MeasureSegmentedControl(
+        TablerIcon[] items,
+        ControlStyle style = default)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        float totalHeight = ControlSizing.Height(
-            style.Height,
-            Crystarium.ActiveTheme.Controls.NavigationHeight);
-        float chromePad = (Crystarium.ActiveTheme.Controls.NavigationHeight
-            - Crystarium.ActiveTheme.Controls.WorkspaceHeight) * 0.5f;
-        float pad = chromePad * scale;
-        float gap = Crystarium.ActiveTheme.Spacing.One * scale;
-        float tabHeight = MathF.Max(0f, totalHeight - chromePad * 2f) * scale;
-        float tabPadX = Crystarium.ActiveTheme.Spacing.Six * scale;
+        var layout = ResolveSegmentLayout(
+            items.Length,
+            style,
+            _ => ActiveTheme.Controls.ComfortableHeight * scale);
+        return new(layout.TotalWidth, layout.TotalHeight);
+    }
 
-        var font = FontRegistry.Resolve(FontFamily.Default, Crystarium.ActiveTheme.Typography.LabelSize);
-        bool fontPushed = font is { Available: true };
-        if (fontPushed) font!.Push();
+    private delegate void DrawSegment(
+        ImDrawListPtr drawList,
+        int index,
+        Vector2 min,
+        Vector2 max,
+        bool active,
+        bool hovered,
+        bool disabled);
 
-        // Content uses intrinsic tab widths. Fixed and fill resolve an exact
-        // outer width, then distribute the inner span without changing it.
-        Span<float> widths = items.Length <= 16 ? stackalloc float[items.Length] : new float[items.Length];
-        float chromeWidth = pad * 2f + gap * MathF.Max(0, items.Length - 1);
-        float naturalInnerWidth = 0f;
-        for (int i = 0; i < items.Length; i++)
-        {
-            widths[i] = ImGui.CalcTextSize(items[i]).X + tabPadX * 2f;
-            naturalInnerWidth += widths[i];
-        }
-
-        float naturalWidth = chromeWidth + naturalInnerWidth;
-        float totalW = ControlSizing.Width(
-            style.Width,
-            naturalWidth / scale,
-            ImGui.GetContentRegionAvail().X / scale) * scale;
-        if ((style.Width.Kind is UiWidthKind.Fixed or UiWidthKind.Fill)
-            && items.Length > 0)
-        {
-            float innerWidth = MathF.Max(0f, totalW - chromeWidth);
-            if (innerWidth >= naturalInnerWidth)
-            {
-                float extra = (innerWidth - naturalInnerWidth) / items.Length;
-                for (int i = 0; i < widths.Length; i++)
-                    widths[i] += extra;
-            }
-            else if (naturalInnerWidth > 0f)
-            {
-                float compression = innerWidth / naturalInnerWidth;
-                for (int i = 0; i < widths.Length; i++)
-                    widths[i] *= compression;
-            }
-        }
-        float totalH = tabHeight + pad * 2f;
-
+    private static bool SegmentedControlCore(
+        string id,
+        int count,
+        int selected,
+        Action<int> onChange,
+        ControlStyle style,
+        bool alignFirstTabToCursor,
+        Func<int, bool>? itemDisabled,
+        Func<int, float> naturalWidth,
+        DrawSegment draw)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        var layout = ResolveSegmentLayout(
+            count, style, naturalWidth);
         var layoutOrigin = ImGui.GetCursorScreenPos();
         var origin = alignFirstTabToCursor
-            ? layoutOrigin - new Vector2(pad, 0f)
+            ? layoutOrigin - new Vector2(layout.Padding, 0f)
             : layoutOrigin;
-        var dl = ImGui.GetWindowDrawList();
-
-        dl.AddRectFilled(origin, origin + new Vector2(totalW, totalH),
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.InputWell)),
-            Crystarium.ActiveTheme.Radii.Surface * scale);
+        var drawList = ImGui.GetWindowDrawList();
+        drawList.AddRectFilled(
+            origin,
+            origin + new Vector2(
+                layout.TotalWidth,
+                layout.TotalHeight),
+            ImGui.ColorConvertFloat4ToU32(
+                ColorEx.ApplyAlpha(ActiveTheme.Chrome.InputWell)),
+            ActiveTheme.Radii.Surface * scale);
 
         bool changed = false;
-        float x = origin.X + pad;
-        var theme = Crystarium.ActiveTheme;
-        for (int i = 0; i < items.Length; i++)
+        float x = origin.X + layout.Padding;
+        for (int i = 0; i < count; i++)
         {
-            var tabMin = new Vector2(x, origin.Y + pad);
-            var tabMax = tabMin + new Vector2(widths[i], tabHeight);
-
+            bool disabled = itemDisabled?.Invoke(i) == true;
+            var tabMin = new Vector2(
+                x,
+                origin.Y + layout.Padding);
+            var tabMax = tabMin + new Vector2(
+                layout.Widths[i],
+                layout.TabHeight);
             ImGui.SetCursorScreenPos(tabMin);
-            var hit = Interactive.Reserve($"{id}##{i}", new Vector2(widths[i], tabHeight), disabled: false);
+            var hit = Interactive.Reserve(
+                $"{id}##{i}",
+                tabMax - tabMin,
+                disabled);
             if (hit.Clicked && selected != i)
             {
                 selected = i;
@@ -108,31 +183,102 @@ public static partial class Crystarium
             bool active = i == selected;
             if (active)
             {
-                dl.AddRectFilled(tabMax with { X = tabMin.X, Y = tabMin.Y + 1f * scale }, tabMax + new Vector2(0f, 1f * scale),
-                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.SegmentShadow)),
-                    Crystarium.ActiveTheme.Radii.Control * scale);
-                dl.AddRectFilled(tabMin, tabMax,
-                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.SegmentSelected)),
-                    Crystarium.ActiveTheme.Radii.Control * scale);
+                drawList.AddRectFilled(
+                    tabMin + new Vector2(0f, scale),
+                    tabMax + new Vector2(0f, scale),
+                    ImGui.ColorConvertFloat4ToU32(
+                        ColorEx.ApplyAlpha(
+                            ActiveTheme.Chrome.SegmentShadow)),
+                    ActiveTheme.Radii.Control * scale);
+                drawList.AddRectFilled(
+                    tabMin,
+                    tabMax,
+                    ImGui.ColorConvertFloat4ToU32(
+                        ColorEx.ApplyAlpha(
+                            ActiveTheme.Chrome.SegmentSelected)),
+                    ActiveTheme.Radii.Control * scale);
             }
-
-            var textColor = active || hit.Hovered
-                ? theme.Text
-                : theme.Text with { W = 0.72f }; // text-secondary
-            var textSize = ImGui.CalcTextSize(items[i]);
-            dl.PushClipRect(tabMin, tabMax, true);
-            dl.AddText(tabMin + new Vector2(
-                    (widths[i] - textSize.X) * 0.5f,
-                    (tabHeight - textSize.Y) * 0.5f),
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(textColor)), items[i]);
-            dl.PopClipRect();
-
-            x += widths[i] + gap;
+            draw(
+                drawList,
+                i,
+                tabMin,
+                tabMax,
+                active,
+                hit.Hovered,
+                disabled);
+            x += layout.Widths[i] + layout.Gap;
         }
 
-        if (fontPushed) font!.Pop();
-        ImGui.SetCursorScreenPos(layoutOrigin + new Vector2(0f, totalH));
-        ImGui.Dummy(Vector2.Zero); // keep the layout cursor sane after manual placement
+        ImGui.SetCursorScreenPos(
+            layoutOrigin + new Vector2(0f, layout.TotalHeight));
+        ImGui.Dummy(Vector2.Zero);
         return changed;
+    }
+
+    private readonly record struct SegmentLayout(
+        float[] Widths,
+        float Padding,
+        float Gap,
+        float TabHeight,
+        float TotalWidth,
+        float TotalHeight);
+
+    private static SegmentLayout ResolveSegmentLayout(
+        int count,
+        ControlStyle style,
+        Func<int, float> naturalWidth)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        float totalHeight = ControlSizing.Height(
+            style.Height,
+            ActiveTheme.Controls.NavigationHeight);
+        float chromePadding =
+            (ActiveTheme.Controls.NavigationHeight
+                - ActiveTheme.Controls.WorkspaceHeight) * 0.5f;
+        float padding = chromePadding * scale;
+        float gap = ActiveTheme.Spacing.One * scale;
+        float tabHeight = MathF.Max(
+            0f,
+            totalHeight - chromePadding * 2f) * scale;
+        var widths = new float[count];
+        float naturalInner = 0f;
+        for (int i = 0; i < count; i++)
+        {
+            widths[i] = naturalWidth(i);
+            naturalInner += widths[i];
+        }
+        float chromeWidth =
+            padding * 2f + gap * MathF.Max(0, count - 1);
+        float naturalTotal = chromeWidth + naturalInner;
+        float totalWidth = ControlSizing.Width(
+            style.Width,
+            naturalTotal / scale,
+            ImGui.GetContentRegionAvail().X / scale) * scale;
+        if ((style.Width.Kind is UiWidthKind.Fixed or UiWidthKind.Fill)
+            && count > 0)
+        {
+            float inner = MathF.Max(0f, totalWidth - chromeWidth);
+            float ratio = naturalInner > 0f
+                ? inner / naturalInner
+                : 1f;
+            if (inner >= naturalInner)
+            {
+                float extra = (inner - naturalInner) / count;
+                for (int i = 0; i < count; i++)
+                    widths[i] += extra;
+            }
+            else
+            {
+                for (int i = 0; i < count; i++)
+                    widths[i] *= ratio;
+            }
+        }
+        return new(
+            widths,
+            padding,
+            gap,
+            tabHeight,
+            totalWidth,
+            tabHeight + padding * 2f);
     }
 }

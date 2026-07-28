@@ -138,26 +138,24 @@ public sealed class AppShellViewModel
 /// </summary>
 public static class AppShellView
 {
-    // ── palette (picto tokens) ───────────────────────────────────────────
-    private static readonly Vector4 BgApp          = new(24 / 255f, 25 / 255f, 27 / 255f, 0.88f);
-    private static readonly Vector4 Surface1       = new(36 / 255f, 37 / 255f, 40 / 255f, 0.90f);
-    private static readonly Vector4 Surface2       = new(42 / 255f, 42 / 255f, 46 / 255f, 0.92f);
-    private static readonly Vector4 TextPrimary    = new(1f, 1f, 1f, 1f);
-    private static readonly Vector4 TextSecondary  = new(1f, 1f, 1f, 0.72f);
-    private static readonly Vector4 TextTertiary   = new(1f, 1f, 1f, 0.50f);
-    private static readonly Vector4 BorderPrimary  = new(1f, 1f, 1f, 0.14f);
-    private static readonly Vector4 BorderSecondary= new(1f, 1f, 1f, 0.08f);
-    private static readonly Vector4 Black20        = new(0f, 0f, 0f, 0.20f);
-    private static readonly Vector4 HoverOverlay   = new(1f, 1f, 1f, 0.06f);
-    private static readonly Vector4 SubtleOverlay  = new(1f, 1f, 1f, 0.08f);
-    private static readonly Vector4 ActiveOverlay  = new(1f, 1f, 1f, 0.10f);
-    private static readonly Vector4 SurfaceHover   = new(1f, 1f, 1f, 0.05f);
-    private static readonly Vector4 SurfaceActive  = new(1f, 1f, 1f, 0.09f);
-    private static readonly Vector4 Success        = new(126 / 255f, 211 / 255f, 160 / 255f, 1f);
-    private static Vector4 AxisX => Crystarium.ActiveTheme.Palette.AxisX;
-    private static Vector4 AxisY => Crystarium.ActiveTheme.Palette.AxisY;
-    private static Vector4 AxisZ => Crystarium.ActiveTheme.Palette.AxisZ;
-
+    private static Vector4 BgApp =>
+        Crystarium.FloatingSurface.FillColor;
+    private static Vector4 Surface1 =>
+        Crystarium.ActiveTheme.SurfaceRaised;
+    private static Vector4 TextPrimary =>
+        Crystarium.ActiveTheme.Chrome.Text;
+    private static Vector4 TextTertiary =>
+        Crystarium.ActiveTheme.TextMuted;
+    private static Vector4 BorderPrimary =>
+        Crystarium.ActiveTheme.Chrome.ControlBorder;
+    private static Vector4 BorderSecondary =>
+        Crystarium.ActiveTheme.FormSeparator;
+    private static Vector4 SurfaceHover =>
+        Crystarium.ActiveTheme.Chrome.ControlFill;
+    private static Vector4 SurfaceActive =>
+        Crystarium.ActiveTheme.Chrome.WeakOverlay;
+    private static Vector4 Success =>
+        Crystarium.ActiveTheme.Success;
     // One inline axis editor may be active at a time. This belongs to the
     // view because the edit surface is an AppShell primitive, not entity state.
 
@@ -197,11 +195,6 @@ public static class AppShellView
             return; // titlebar strip only
         }
 
-        // One scrollbar treatment for sidebar, main content, and inspector.
-        // Transparent track + 12px gutter + 4px rounded thumb transcribes the
-        // Picto global scrollbar used by the approved shell mockups.
-        Crystarium.PushScrollbarStyle();
-
         float bodyTop = min.Y + TitlebarHeight * s;
         float railW = vm.DrawRail != null ? RailWidth * s : 0f;
         float sbw = vm.SidebarWidthPx * s;
@@ -230,21 +223,26 @@ public static class AppShellView
             // 0px content gap + 12px scrollbar.
             var railChildOrigin = railMin + new Vector2(0f, 12f) * s;
             ImGui.SetCursorScreenPos(railChildOrigin);
-            ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
-            if (ImGui.BeginChild("##shell-rail", new Vector2(railW - 1f * s, max.Y - railMin.Y - 24f * s), false, ImGuiWindowFlags.None))
-            {
-                // Child cursor already includes -ScrollY; add only the fixed
-                // horizontal inset so wheel scrolling remains functional.
-                var railContentOrigin = ImGui.GetCursorScreenPos() + new Vector2(12f * s, 0f);
-                ImGui.SetCursorScreenPos(railContentOrigin);
-                vm.DrawRail(railContentOrigin, new Vector2(railW - 25f * s, max.Y - railMin.Y - 24f * s));
-            }
-            Crystarium.NarrowVisibleScrollbarThumb();
-            ImGui.EndChild();
-            ImGui.PopStyleVar();
+            Crystarium.ScrollRegion(
+                "##shell-rail",
+                railW / s - 1f,
+                (max.Y - railMin.Y) / s - 24f,
+                region =>
+                {
+                    var railContentOrigin =
+                        ImGui.GetCursorScreenPos()
+                        + new Vector2(
+                            Crystarium.ActiveTheme.Page.Inset * s,
+                            0f);
+                    ImGui.SetCursorScreenPos(railContentOrigin);
+                    vm.DrawRail(
+                        railContentOrigin,
+                        new Vector2(
+                            region.ContentWidth * s
+                                - Crystarium.ActiveTheme.Page.Inset * s,
+                            max.Y - railMin.Y - 24f * s));
+                });
         }
-
-        Crystarium.PopScrollbarStyle();
 
         // Panel fills are intentionally drawn after the base chassis. Repaint
         // its asymmetric glass edge last so sidebar/rail surfaces cannot hide
@@ -265,6 +263,12 @@ public static class AppShellView
     {
         float h = TitlebarHeight * s;
         var leftMax = new Vector2(min.X + vm.SidebarWidthPx * s, min.Y + h);
+        float actionSize =
+            Crystarium.ActiveTheme.Controls.ShellIconAction;
+        float actionGap = Crystarium.ActiveTheme.Page.ActionGap;
+        float compactGap = Crystarium.ActiveTheme.Spacing.Two;
+        float segmentHeight =
+            Crystarium.ActiveTheme.Controls.NavigationHeight;
 
         if (vm.Collapsed)
         {
@@ -303,62 +307,62 @@ public static class AppShellView
 
         // undo/redo sit right-aligned in the sidebar's title cell, directly
         // before the spawn button.
-        float undoY = min.Y + (h - 28f * s) / 2f;
+        float undoY = min.Y + (h - actionSize * s) / 2f;
         float titleRight = leftMax.X - 8f * s;
         if (vm.ShowSpawn)
         {
-            IconButton(
+            PlaceIconButton(
                 dl,
-                new Vector2(titleRight - 28f * s, undoY),
+                new Vector2(titleRight - actionSize * s, undoY),
                 TablerIcon.Plus,
                 false,
                 s,
                 vm.OnSpawn,
                 help: "Add an actor to the scene");
-            titleRight -= (28f + 4f) * s;
+            titleRight -= (actionSize + compactGap) * s;
         }
-        IconButton(dl, new Vector2(titleRight - 28f * s, undoY), TablerIcon.ArrowBackUp, false, s, vm.OnRedo,
+        PlaceIconButton(dl, new Vector2(titleRight - actionSize * s, undoY), TablerIcon.ArrowBackUp, false, s, vm.OnRedo,
             dimmed: !vm.CanRedo, flipX: true,
             help: vm.CanRedo ? "Reapply the change you undid" : "Nothing to redo",
             helpShortcut: PoserKeybinds.Effective("Redo"));
-        IconButton(dl, new Vector2(titleRight - (28f + 4f + 28f) * s, undoY), TablerIcon.ArrowBackUp, false, s,
+        PlaceIconButton(dl, new Vector2(titleRight - (actionSize + compactGap + actionSize) * s, undoY), TablerIcon.ArrowBackUp, false, s,
             vm.OnUndo, dimmed: !vm.CanUndo,
             help: vm.CanUndo ? "Take back the last pose edit" : "Nothing to undo",
             helpShortcut: PoserKeybinds.Effective("Undo"));
 
         // center strip
         float x = leftMax.X + 12f * s;
-        float cy = min.Y + (h - 28f * s) / 2f;
+        float cy = min.Y + (h - actionSize * s) / 2f;
         if (vm.ShowProject)
         {
-            IconButton(dl, new Vector2(x, cy), TablerIcon.Folder, false, s, vm.OnProject,
+            PlaceIconButton(dl, new Vector2(x, cy), TablerIcon.Folder, false, s, vm.OnProject,
                 help: "Open the scene project browser");
-            x += (28f + 10f) * s;
+            x += (actionSize + actionGap) * s;
         }
 
         // gizmo op seg (icon tabs) + space seg
-        x = IconSeg(dl, new Vector2(x, min.Y + (h - 30f * s) / 2f),
+        x = PlaceIconSegments(new Vector2(x, min.Y + (h - segmentHeight * s) / 2f),
             new[] { TablerIcon.ArrowsMove, TablerIcon.Rotate, TablerIcon.ArrowsDiagonal,
                 TablerIcon.ArrowsMaximize },
             vm.GizmoOperation, s, i => vm.OnGizmoOperation?.Invoke(i));
-        x += 10f * s;
-        x = TextSeg(dl, new Vector2(x, min.Y + (h - 30f * s) / 2f),
+        x += actionGap * s;
+        x = PlaceTextSegments(new Vector2(x, min.Y + (h - segmentHeight * s) / 2f),
             new[] { "Local", "World" }, vm.GizmoSpace, s, i => vm.OnGizmoSpace?.Invoke(i));
         // Pivot keeps a permanent slot so tool/selection changes cannot move
         // the rest of the toolbar. Both choices disable when pivot is
         // inapplicable; Parent additionally needs a live parent bone.
-        x += 10f * s;
-        x = TextSeg(dl, new Vector2(x, min.Y + (h - 30f * s) / 2f),
+        x += actionGap * s;
+        x = PlaceTextSegments(new Vector2(x, min.Y + (h - segmentHeight * s) / 2f),
             new[] { "Self", "Parent" }, vm.RotationPivot, s,
             i => vm.OnRotationPivot?.Invoke(i),
             itemDisabled: i => !vm.RotationPivotEnabled
                 || (i == 1 && !vm.RotationPivotParentAvailable));
-        x += 10f * s;
-        x = TextSeg(dl, new Vector2(x, min.Y + (h - 30f * s) / 2f),
+        x += actionGap * s;
+        x = PlaceTextSegments(new Vector2(x, min.Y + (h - segmentHeight * s) / 2f),
             new[] { "Off", "Link", "Mirror" }, vm.SymmetryMode, s,
             i => vm.OnSymmetry?.Invoke(i));
-        x += 10f * s;
-        IconButton(dl, new Vector2(x, min.Y + (h - 28f * s) / 2f),
+        x += actionGap * s;
+        PlaceIconButton(dl, new Vector2(x, min.Y + (h - actionSize * s) / 2f),
             TablerIcon.Atom, vm.PhysicsOn, s,
             vm.PhysicsAvailable
                 ? () => vm.OnPhysics?.Invoke(!vm.PhysicsOn)
@@ -367,7 +371,7 @@ public static class AppShellView
             help: vm.PhysicsAvailable
                 ? "Toggle actor physics"
                 : "Select an actor or bone to control physics");
-        x += (28f + 10f) * s;
+        x += (actionSize + actionGap) * s;
 
         // tb-right cell: when the rail is present, the right cluster sits on a
         // surface-1 cell continuous with the rail below (shell rule)
@@ -379,18 +383,18 @@ public static class AppShellView
         }
 
         // right cluster (rightmost = collapse chevron, then close X — user spec)
-        float rx = max.X - 12f * s - 28f * s;
-        IconButtonNamed(dl, new Vector2(rx, cy), vm.Collapsed ? "chevron-down" : "chevron-up", false, s,
+        float rx = max.X - 12f * s - actionSize * s;
+        PlaceNamedIconButton(new Vector2(rx, cy), vm.Collapsed ? "chevron-down" : "chevron-up", false, s,
             () => vm.OnCollapse?.Invoke(!vm.Collapsed),
             help: vm.Collapsed ? "Expand the window" : "Collapse to the title bar");
-        rx -= (28f + 10f) * s;
-        IconButtonNamed(dl, new Vector2(rx, cy), "x", false, s, vm.OnHideUi,
+        rx -= (actionSize + actionGap) * s;
+        PlaceNamedIconButton(new Vector2(rx, cy), "x", false, s, vm.OnHideUi,
             help: "Hide the Poser window"); // close window
-        rx -= (28f + 10f) * s;
-        IconButton(dl, new Vector2(rx, cy), TablerIcon.Settings, false, s, vm.OnSettings,
+        rx -= (actionSize + actionGap) * s;
+        PlaceIconButton(dl, new Vector2(rx, cy), TablerIcon.Settings, false, s, vm.OnSettings,
             help: "Open Poser settings");
-        rx -= (28f + 10f) * s;
-        IconButton(dl, new Vector2(rx, cy), TablerIcon.Armature, vm.SkeletonOverlayOn, s,
+        rx -= (actionSize + actionGap) * s;
+        PlaceIconButton(dl, new Vector2(rx, cy), TablerIcon.Armature, vm.SkeletonOverlayOn, s,
             () => vm.OnSkeletonOverlay?.Invoke(!vm.SkeletonOverlayOn),
             help: "Toggle the skeleton overlay in the viewport");
     }
@@ -431,60 +435,71 @@ public static class AppShellView
         // right edge; rows take the avail width (a gutter, never an overlap).
         float treeTop = min.Y + 38f * s;
         ImGui.SetCursorScreenPos(new Vector2(min.X + SidebarHorizontalPadding * s, treeTop));
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         float childW = max.X - 1f * s - (min.X + SidebarHorizontalPadding * s);
-        bool treeOpen = ImGui.BeginChild("##sidebar-tree", new Vector2(childW, statusTop - treeTop - 2f * s), false, ImGuiWindowFlags.None);
-
-        // Draw through the CHILD's list — the parent list is not clipped to the
-        // scroll region and bled rows over the section header and statusbar.
-        var cdl = ImGui.GetWindowDrawList();
-        // CSS `scrollbar-gutter: stable` equivalent: reserve exactly 12px even
-        // before overflow exists. Since the tree itself starts 12px from the
-        // left edge, right scrollbar + content gap equals that left padding.
-        float innerW = childW - ScrollbarWidth * s;
-        var cursor = ImGui.GetCursorScreenPos();
-        var treeStart = cursor;
-        int sectionIndex = 0;
-
-        if (treeOpen)
-        foreach (var section in vm.Sections)
-        {
-            if (sectionIndex > 0)
-                cursor.Y += 8f * s;
-
-            // header 24px — no full-width reserve here: it would swallow the
-            // plus button's click (overlapping reserves, first one wins).
-            ViewText.Label(cursor + new Vector2(4f, 4f) * s, section.Title, 12f, FontWeight.Medium, TextTertiary);
-            if (section.ShowPlus)
+        Crystarium.ScrollRegion(
+            "##sidebar-tree",
+            childW / s,
+            (statusTop - treeTop) / s
+                - Crystarium.ActiveTheme.Spacing.One,
+            region =>
             {
-                // Keep the action completely inside the content column, clear of
-                // the stable scrollbar gutter and the child clip boundary.
-                ImGui.SetCursorScreenPos(new Vector2(cursor.X + innerW - 24f * s, cursor.Y + 3f * s));
-                var plusHit = Interactive.Reserve($"##sbp-{sectionIndex}", new Vector2(18f, 18f) * s, disabled: false);
-                float plusIconSize = 14f * s;
-                ImGui.SetCursorScreenPos(plusHit.ScreenMin +
-                    (plusHit.ScreenMax - plusHit.ScreenMin - new Vector2(plusIconSize)) * 0.5f);
-                Crystarium.Icon(TablerIcon.Plus, plusIconSize,
-                    ColorEx.ApplyAlpha(plusHit.Hovered ? TextPrimary : TextTertiary));
-                int capture = sectionIndex;
-                if (plusHit.Clicked) vm.OnSectionPlus?.Invoke(capture);
-            }
-            cursor.Y += 24f * s;
+                var cdl = ImGui.GetWindowDrawList();
+                float innerW = region.ContentWidth * s;
+                var cursor = ImGui.GetCursorScreenPos();
+                var treeStart = cursor;
+                int sectionIndex = 0;
+                foreach (var section in vm.Sections)
+                {
+                    if (sectionIndex > 0)
+                        cursor.Y +=
+                            Crystarium.ActiveTheme.Spacing.Four * s;
+                    ViewText.Label(
+                        cursor + new Vector2(
+                            Crystarium.ActiveTheme.Spacing.Two,
+                            Crystarium.ActiveTheme.Spacing.Two) * s,
+                        section.Title,
+                        Crystarium.ActiveTheme.Typography.LabelSize,
+                        FontWeight.Medium,
+                        TextTertiary);
+                    if (section.ShowPlus)
+                    {
+                        ImGui.SetCursorScreenPos(new Vector2(
+                            cursor.X + innerW
+                                - Crystarium.ActiveTheme.Floating
+                                    .CloseActionSize * s,
+                            cursor.Y
+                                + Crystarium.ActiveTheme.Spacing.Three * s));
+                        int capture = sectionIndex;
+                        Crystarium.IconButton(
+                            TablerIcon.Plus,
+                            () => vm.OnSectionPlus?.Invoke(capture),
+                            ControlStyle.Square(
+                                Crystarium.ActiveTheme.Controls.SwitchHeight)
+                                with { Bare = true },
+                            id: $"##sbp-{sectionIndex}");
+                    }
+                    cursor.Y +=
+                        Crystarium.ActiveTheme.Floating.CloseActionSize * s;
 
-            int rowIndex = 0;
-            foreach (var row in section.Rows)
-            {
-                DrawRow(vm, row, cursor, innerW, s, cdl, $"{sectionIndex}-{rowIndex++}");
-                cursor.Y += RowHeight * s;
-            }
-            sectionIndex++;
-        }
-        // register the content extent so the child can scroll
-        ImGui.SetCursorScreenPos(treeStart);
-        ImGui.Dummy(new Vector2(innerW, cursor.Y - treeStart.Y));
-        Crystarium.NarrowVisibleScrollbarThumb();
-        ImGui.EndChild();
-        ImGui.PopStyleVar();
+                    int rowIndex = 0;
+                    foreach (var row in section.Rows)
+                    {
+                        DrawRow(
+                            vm,
+                            row,
+                            cursor,
+                            innerW,
+                            s,
+                            cdl,
+                            $"{sectionIndex}-{rowIndex++}");
+                        cursor.Y += RowHeight * s;
+                    }
+                    sectionIndex++;
+                }
+                ImGui.SetCursorScreenPos(treeStart);
+                ImGui.Dummy(
+                    new Vector2(innerW, cursor.Y - treeStart.Y));
+            });
 
         // statusbar: status information only (actor count, FPS)
         dl.AddRectFilled(new Vector2(min.X, statusTop), new Vector2(max.X - 1f * s, statusTop + 1f * s),
@@ -760,7 +775,8 @@ public static class AppShellView
                 if (vm.Tabs[i].Active)
                     active = i;
             }
-            const float segmentedHeightPx = 30f;
+            float segmentedHeightPx =
+                Crystarium.ActiveTheme.Controls.NavigationHeight;
             ImGui.SetCursorScreenPos(new Vector2(
                 min.X + MainHorizontalPadding * s,
                 min.Y + (ToolbarHeight - segmentedHeightPx) / 2f * s));
@@ -778,8 +794,12 @@ public static class AppShellView
         float rx = max.X - MainHorizontalPadding * s;
         if (vm.ShowPopOut)
         {
-            rx -= 28f * s;
-            IconButton(dl, new Vector2(rx, min.Y + (ToolbarHeight - 28f) / 2f * s),
+            float actionSize =
+                Crystarium.ActiveTheme.Controls.ShellIconAction;
+            rx -= actionSize * s;
+            PlaceIconButton(dl, new Vector2(
+                    rx,
+                    min.Y + (ToolbarHeight - actionSize) / 2f * s),
                 TablerIcon.ExternalLink, false, s, vm.OnPopOut);
         }
         if (vm.CrumbBold.Length > 0 || vm.CrumbPrefix.Length > 0)
@@ -809,117 +829,64 @@ public static class AppShellView
         // scrollbar band, so flush-right controls overlapped the thumb.
         float contentWidth = childSize.X - MainHorizontalPadding * 2f * s;
         ImGui.SetCursorScreenPos(childOrigin);
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
-        var childFlags = vm.ContentOwnsViewport
-            ? ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse
-            : ImGuiWindowFlags.None;
-        if (ImGui.BeginChild("##shell-content", childSize, false, childFlags))
+        if (vm.ContentOwnsViewport)
         {
-            var childCursor = ImGui.GetCursorScreenPos();
-            if (vm.ContentUsesPage)
+            ImGui.PushStyleVar(
+                ImGuiStyleVar.WindowPadding,
+                Vector2.Zero);
+            if (ImGui.BeginChild(
+                    "##shell-content-viewport",
+                    childSize,
+                    false,
+                    ImGuiWindowFlags.NoScrollbar
+                    | ImGuiWindowFlags.NoScrollWithMouse))
             {
-                float allocatedWidth = MathF.Max(
-                    0f,
-                    childSize.X - ScrollbarWidth * s);
-                vm.DrawContent?.Invoke(
-                    childCursor,
-                    new Vector2(
-                        allocatedWidth,
-                        ImGui.GetContentRegionAvail().Y));
-            }
-            else
-            {
-                // Preserve the child's vertical scroll transform; only the stable
-                // horizontal content inset is manual.
+                var childCursor = ImGui.GetCursorScreenPos();
                 var contentOrigin = childCursor
                     + new Vector2(MainHorizontalPadding * s, 0f);
-                var contentSize = new Vector2(
-                    contentWidth,
-                    ImGui.GetContentRegionAvail().Y);
-                ImGui.SetCursorScreenPos(contentOrigin);
-                vm.DrawContent?.Invoke(contentOrigin, contentSize);
+                vm.DrawContent?.Invoke(
+                    contentOrigin,
+                    new Vector2(
+                        contentWidth,
+                        ImGui.GetContentRegionAvail().Y));
             }
+            ImGui.EndChild();
+            ImGui.PopStyleVar();
+            return;
         }
-        Crystarium.NarrowVisibleScrollbarThumb();
-        ImGui.EndChild();
-        ImGui.PopStyleVar();
+        Crystarium.ScrollRegion(
+            "##shell-content",
+            childSize.X / s,
+            childSize.Y / s,
+            region =>
+            {
+                var childCursor = ImGui.GetCursorScreenPos();
+                if (vm.ContentUsesPage)
+                {
+                    vm.DrawContent?.Invoke(
+                        childCursor,
+                        new Vector2(
+                            region.ContentWidth * s,
+                            childSize.Y));
+                    return;
+                }
+                var contentOrigin = childCursor
+                    + new Vector2(MainHorizontalPadding * s, 0f);
+                ImGui.SetCursorScreenPos(contentOrigin);
+                vm.DrawContent?.Invoke(
+                    contentOrigin,
+                    new Vector2(
+                        MathF.Max(
+                            0f,
+                            region.ContentWidth * s
+                                - MainHorizontalPadding * 2f * s),
+                        childSize.Y));
+            });
     }
 
     private static void DrawOuterGlassBorder(Vector2 min, Vector2 max, float s)
     {
         Crystarium.FloatingSurface.DrawBorder(min, max, 10f * s);
-    }
-
-    // ── transform content helpers (M1 .prow/.scrub) ─────────────────────
-
-    public static float ScrubRow(ImDrawListPtr dl, Vector2 cursor, float width, string label, string x, string y, string z, float s)
-    {
-        ViewText.Label(cursor + new Vector2(0f, 7f) * s, label, 12f, FontWeight.Regular, TextTertiary);
-        float axesX = cursor.X + 94f * s;
-        float axisW = (width - 94f * s - 12f * s) / 3f;
-        DrawAxis(dl, new Vector2(axesX, cursor.Y), axisW, "X", x, AxisX, s);
-        DrawAxis(dl, new Vector2(axesX + axisW + 6f * s, cursor.Y), axisW, "Y", y, AxisY, s);
-        DrawAxis(dl, new Vector2(axesX + (axisW + 6f * s) * 2f, cursor.Y), axisW, "Z", z, AxisZ, s);
-        return 26f * s + 8f * s;
-    }
-
-    /// <summary>
-    /// Interactive variant of <see cref="ScrubRow"/>. Each axis well supports
-    /// horizontal drag, modifier-aware mouse-wheel stepping, and double-click
-    /// numeric entry. <paramref name="released"/> fires at every commit point.
-    /// </summary>
-    public static float ScrubRowDrag(ImDrawListPtr dl, Vector2 cursor, float width, string id, string label,
-        ref Vector3 value, float perPixel, string fmt, float s, out bool changed, out bool released)
-    {
-        changed = false;
-        released = false;
-        ViewText.Label(cursor + new Vector2(0f, 7f) * s, label, 12f, FontWeight.Regular, TextTertiary);
-        float axesX = cursor.X + 94f * s;
-        float axisW = (width - 94f * s - 12f * s) / 3f;
-        changed |= DragAxis(dl, new Vector2(axesX, cursor.Y), axisW, $"{id}-x", "X", ref value.X, AxisX, perPixel, fmt, s, ref released);
-        changed |= DragAxis(dl, new Vector2(axesX + axisW + 6f * s, cursor.Y), axisW, $"{id}-y", "Y", ref value.Y, AxisY, perPixel, fmt, s, ref released);
-        changed |= DragAxis(dl, new Vector2(axesX + (axisW + 6f * s) * 2f, cursor.Y), axisW, $"{id}-z", "Z", ref value.Z, AxisZ, perPixel, fmt, s, ref released);
-        return 26f * s + 8f * s;
-    }
-
-    /// <summary>
-    /// Single-value drag well: the SAME numeric cell as the transform axes
-    /// (horizontal drag with Ctrl fine / Shift coarse, double-click to
-    /// type, commit on release or Enter), for rows that pair a number with
-    /// a slider — Ktisis' input-plus-slider line in this product's own
-    /// vocabulary. No axis letter; neutral letter color.
-    /// </summary>
-    public static bool DragValueCell(ImDrawListPtr dl, Vector2 pos, float width, string id,
-        ref float value, float perPixel, string fmt, float s, out bool released,
-        bool disabled = false)
-    {
-        released = false;
-        if (disabled)
-        {
-            DrawAxis(dl, pos, width, "",
-                value.ToString(fmt, System.Globalization.CultureInfo.InvariantCulture),
-                TextTertiary, s);
-            return false;
-        }
-        bool wasReleased = false;
-        bool changed = DragAxis(dl, pos, width, id, "", ref value, TextTertiary,
-            perPixel, fmt, s, ref wasReleased);
-        released = wasReleased;
-        return changed;
-    }
-
-    /// <summary>
-    /// One axis well with its letter and axis color — the same cell the
-    /// transform rows use, exported so a form row can lay several across
-    /// one control region without ScrubRowDrag's own label column.
-    /// </summary>
-    public static bool DragAxisWell(ImDrawListPtr dl, Vector2 pos, float width, string id, string axis,
-        ref float value, Vector4 color, float perPixel, string fmt, float s, out bool released)
-    {
-        bool wasReleased = false;
-        bool changed = DragAxis(dl, pos, width, id, axis, ref value, color, perPixel, fmt, s, ref wasReleased);
-        released = wasReleased;
-        return changed;
     }
 
     /// <summary>Cancels an in-progress numeric axis edit, for example when selection changes.</summary>
@@ -938,177 +905,115 @@ public static class AppShellView
         string help)
     {
         ImGui.SetCursorScreenPos(pos);
-        var hit = Interactive.Reserve(
-            id, new Vector2(20f, 20f) * scale, disabled: false);
-        if (hit.Hovered)
-            ImGui.GetWindowDrawList().AddRectFilled(
-                hit.ScreenMin, hit.ScreenMax,
-                ImGui.ColorConvertFloat4ToU32(
-                    ColorEx.ApplyAlpha(SurfaceHover)),
-                Crystarium.ActiveTheme.Radii.Small * scale);
-        float iconSize = 13f * scale;
-        ImGui.SetCursorScreenPos(
-            hit.ScreenMin + (hit.ScreenMax - hit.ScreenMin
-                - new Vector2(iconSize)) * 0.5f);
-        Crystarium.Icon(
+        Crystarium.IconButton(
             icon,
-            iconSize,
-            ColorEx.ApplyAlpha(TextPrimary with
+            action,
+            ControlStyle.Square(
+                Crystarium.ActiveTheme.Controls.SwitchHeight) with
             {
-                W = inactive ? 0.34f : hit.Hovered ? 0.95f : 0.64f,
-            }));
-        if (inactive && icon != TablerIcon.EyeOff)
-            ImGui.GetWindowDrawList().AddLine(
-                hit.ScreenMin + new Vector2(4f, 4f) * scale,
-                hit.ScreenMax - new Vector2(4f, 4f) * scale,
-                ImGui.ColorConvertFloat4ToU32(
-                    ColorEx.ApplyAlpha(TextSecondary)),
-                scale);
-        if (hit.Clicked)
-            action();
-        if (hit.Hovered)
-            Crystarium.HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help);
-    }
-
-    private static bool DragAxis(ImDrawListPtr dl, Vector2 pos, float width, string id, string axis,
-        ref float value, Vector4 color, float perPixel, string fmt, float s, ref bool released)
-    {
-        ImGui.SetCursorScreenPos(pos);
-        float next = value;
-        bool changed = false;
-        bool committed = false;
-        changed = Crystarium.AxisWell(
-            id,
-            axis,
-            value,
-            nextValue =>
-            {
-                next = nextValue;
-                changed = true;
+                Bare = true,
+                Selected = inactive,
+                Slashed = inactive && icon != TablerIcon.EyeOff,
             },
-            () => committed = true,
-            color,
-            perPixel,
-            fmt,
-            ControlStyle.Workspace with
-            {
-                Width = UiWidth.Fixed(width / s),
-            });
-        if (changed)
-            value = next;
-        released |= committed;
-        return changed;
-    }
-
-    private static void DrawAxis(ImDrawListPtr dl, Vector2 pos, float width, string axis, string value, Vector4 color, float s)
-    {
-        var min = pos;
-        var max = pos + new Vector2(width, 26f * s);
-        dl.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Black20)), 4f * s);
-        dl.AddRect(min + new Vector2(0.5f, 0.5f), max - new Vector2(0.5f, 0.5f),
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderSecondary)), 4f * s, ImDrawFlags.None, 1f * s);
-        ViewText.Label(min + new Vector2(8f, 7f) * s, axis, 12f, FontWeight.Regular, color, mono: true);
-        float valueIndent = axis.Length > 0 ? 8f + 14f : 8f;
-        ViewText.Label(min + new Vector2(valueIndent, 7f) * s, value, 12f, FontWeight.Regular, TextPrimary, mono: true);
+            help: help,
+            id: id);
     }
 
     // ── shared small controls ────────────────────────────────────────────
 
-    private static void IconButtonNamed(ImDrawListPtr dl, Vector2 pos, string iconName, bool on, float s, Action? onClick, bool dimmed = false, string? help = null, string? helpShortcut = null)
+    private static void PlaceNamedIconButton(
+        Vector2 position,
+        string icon,
+        bool selected,
+        float scale,
+        Action? onClick,
+        bool dimmed = false,
+        string? help = null,
+        string? helpShortcut = null)
     {
-        ImGui.SetCursorScreenPos(pos);
-        var hit = Interactive.Reserve($"##ibn-{iconName}-{pos.X:0}-{pos.Y:0}", new Vector2(28f, 28f) * s, disabled: dimmed);
-        if (help != null &&
-            (hit.Hovered || (dimmed && Crystarium.HoverHelp.HelpHovered(hit.ScreenMin, hit.ScreenMax))))
-            Crystarium.HoverHelp.Explain($"tb-{iconName}", hit.ScreenMin, hit.ScreenMax, help, helpShortcut);
-        if (on)
-            dl.AddRectFilled(hit.ScreenMin, hit.ScreenMax, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(ActiveOverlay)), 5f * s);
-        else if (hit.Hovered && !dimmed)
-            dl.AddRectFilled(hit.ScreenMin, hit.ScreenMax, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(HoverOverlay)), 5f * s);
-        float alpha = dimmed ? 0.35f : (on || hit.Hovered ? 1f : 0.8f);
-        ImGui.SetCursorScreenPos(pos + new Vector2(6f, 6f) * s);
-        Crystarium.Icon(iconName, 16f * s, ColorEx.ApplyAlpha(TextPrimary with { W = alpha }));
-        if (hit.Clicked && !dimmed)
-            onClick?.Invoke();
+        ImGui.SetCursorScreenPos(position);
+        Crystarium.IconButton(
+            icon,
+            onClick,
+            ControlStyle.Square(
+                Crystarium.ActiveTheme.Controls.ShellIconAction) with
+            {
+                Bare = true,
+                Selected = selected,
+            },
+            dimmed,
+            CombinedHelp(help, helpShortcut),
+            $"##shell-icon-{icon}-{position.X:0}-{position.Y:0}");
     }
 
-    private static void IconButton(ImDrawListPtr dl, Vector2 pos, TablerIcon icon, bool on, float s, Action? onClick, bool dimmed = false, bool flipX = false, string? help = null, string? helpShortcut = null)
+    private static void PlaceIconButton(
+        ImDrawListPtr _,
+        Vector2 position,
+        TablerIcon icon,
+        bool selected,
+        float scale,
+        Action? onClick,
+        bool dimmed = false,
+        bool flipX = false,
+        string? help = null,
+        string? helpShortcut = null)
     {
-        ImGui.SetCursorScreenPos(pos);
-        var hit = Interactive.Reserve($"##ib-{icon}-{pos.X:0}-{pos.Y:0}", new Vector2(28f, 28f) * s, disabled: dimmed);
-        // A dimmed action still explains itself (why it is unavailable
-        // is part of its help); hover is re-derived occlusion-aware.
-        if (help != null &&
-            (hit.Hovered || (dimmed && Crystarium.HoverHelp.HelpHovered(hit.ScreenMin, hit.ScreenMax))))
-            Crystarium.HoverHelp.Explain($"tb-{icon}", hit.ScreenMin, hit.ScreenMax, help, helpShortcut);
-        if (on)
-            dl.AddRectFilled(hit.ScreenMin, hit.ScreenMax, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(ActiveOverlay)), 5f * s);
-        else if (hit.Hovered && !dimmed)
-            dl.AddRectFilled(hit.ScreenMin, hit.ScreenMax, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(HoverOverlay)), 5f * s);
-
-        float alpha = dimmed ? 0.35f : (on || hit.Hovered ? 1f : 0.8f);
-        ImGui.SetCursorScreenPos(pos + new Vector2(6f, 6f) * s);
-        Crystarium.Icon(icon, 16f * s, ColorEx.ApplyAlpha(TextPrimary with { W = alpha }), flipX);
-        if (hit.Clicked && !dimmed)
-            onClick?.Invoke();
+        ImGui.SetCursorScreenPos(position);
+        Crystarium.IconButton(
+            icon,
+            onClick,
+            ControlStyle.Square(
+                Crystarium.ActiveTheme.Controls.ShellIconAction) with
+            {
+                Bare = true,
+                Selected = selected,
+            },
+            dimmed,
+            CombinedHelp(help, helpShortcut),
+            $"##shell-icon-{icon}-{position.X:0}-{position.Y:0}",
+            flipX);
     }
 
-    private static float IconSeg(ImDrawListPtr dl, Vector2 pos, TablerIcon[] icons, int active, float s, Action<int> onSelect)
+    private static float PlaceIconSegments(
+        Vector2 position,
+        TablerIcon[] icons,
+        int selected,
+        float scale,
+        Action<int> onSelect)
     {
-        float tabW = 34f * s;
-        var min = pos;
-        var max = pos + new Vector2(3f * s * 2f + tabW * icons.Length + 2f * s * (icons.Length - 1), 30f * s);
-        dl.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Black20)), 7f * s);
-
-        for (int i = 0; i < icons.Length; i++)
-        {
-            var tabMin = new Vector2(min.X + 3f * s + i * (tabW + 2f * s), min.Y + 3f * s);
-            var tabMax = tabMin + new Vector2(tabW, 24f * s);
-            ImGui.SetCursorScreenPos(tabMin);
-            var hit = Interactive.Reserve($"##iseg-{pos.X:0}-{i}", new Vector2(tabW, 24f * s) / s * s, disabled: false);
-            if (i == active)
-                dl.AddRectFilled(tabMin, tabMax, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Surface2)), 5f * s);
-            ImGui.SetCursorScreenPos(tabMin + new Vector2((tabW - 14f * s) / 2f, 5f * s));
-            Crystarium.Icon(icons[i], 14f * s, ColorEx.ApplyAlpha(i == active ? TextPrimary : TextSecondary));
-            int capture = i;
-            if (hit.Clicked) onSelect(capture);
-        }
-        return max.X;
+        ImGui.SetCursorScreenPos(position);
+        var size = Crystarium.MeasureSegmentedControl(icons);
+        Crystarium.SegmentedControl(
+            $"##shell-icon-segments-{position.X:0}",
+            icons,
+            selected,
+            onSelect);
+        return position.X + size.X;
     }
 
-    private static float TextSeg(ImDrawListPtr dl, Vector2 pos, string[] labels, int active, float s, Action<int> onSelect,
+    private static float PlaceTextSegments(
+        Vector2 position,
+        string[] labels,
+        int selected,
+        float scale,
+        Action<int> onSelect,
         Func<int, bool>? itemDisabled = null)
     {
-        float x = pos.X + 3f * s;
-        float totalW = 6f * s + 2f * s * (labels.Length - 1);
-        var widths = new float[labels.Length];
-        for (int i = 0; i < labels.Length; i++)
-        {
-            widths[i] = ViewText.Measure(labels[i], 12f) + 20f * s;
-            totalW += widths[i];
-        }
-        var min = pos;
-        var max = pos + new Vector2(totalW, 30f * s);
-        dl.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Black20)), 7f * s);
-
-        for (int i = 0; i < labels.Length; i++)
-        {
-            bool disabled = itemDisabled?.Invoke(i) == true;
-            var tabMin = new Vector2(x, min.Y + 3f * s);
-            var tabMax = tabMin + new Vector2(widths[i], 24f * s);
-            ImGui.SetCursorScreenPos(tabMin);
-            var hit = Interactive.Reserve($"##tseg-{pos.X:0}-{i}", new Vector2(widths[i] / s, 24f), disabled);
-            if (i == active)
-                dl.AddRectFilled(tabMin, tabMax, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Surface2)), 5f * s);
-            var labelColor = i == active ? TextPrimary : TextSecondary;
-            if (disabled)
-                labelColor = labelColor with { W = labelColor.W * 0.35f };
-            ViewText.Label(new Vector2(x + 10f * s, min.Y + 3f * s + 5f * s), labels[i], 12f, FontWeight.Regular,
-                labelColor);
-            int capture = i;
-            if (hit.Clicked) onSelect(capture);
-            x += widths[i] + 2f * s;
-        }
-        return max.X;
+        ImGui.SetCursorScreenPos(position);
+        var size = Crystarium.MeasureSegmentedControl(labels);
+        Crystarium.SegmentedControl(
+            $"##shell-text-segments-{position.X:0}",
+            labels,
+            selected,
+            onSelect,
+            itemDisabled: itemDisabled);
+        return position.X + size.X;
     }
+
+    private static string? CombinedHelp(
+        string? help,
+        string? shortcut) =>
+        shortcut == null
+            ? help
+            : $"{help} · {shortcut}";
 }
