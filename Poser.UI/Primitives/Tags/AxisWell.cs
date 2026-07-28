@@ -96,25 +96,37 @@ public static partial class Crystarium
         DrawAxisWell(pos, size, axis, _axisEditValue, accent, format,
             focused: true, disabled: false, scale);
 
-        float axisSlot = axis.Length == 0
-            ? ActiveTheme.Spacing.Two
-            : ActiveTheme.Spacing.Eight;
         var mono = FontRegistry.Resolve(
             FontFamily.Mono, ActiveTheme.Typography.LabelSize);
         bool fontPushed = mono is { Available: true };
         if (fontPushed)
             mono!.Push();
+        float horizontalPadding =
+            ActiveTheme.Form.AxisWellHorizontalPadding;
+        float axisWidth = axis.Length == 0
+            ? 0f
+            : ImGui.CalcTextSize(axis).X / scale;
+        float axisSlot = axis.Length == 0
+            ? horizontalPadding
+            : horizontalPadding
+                + axisWidth
+                + ActiveTheme.Form.AxisLabelGap;
 
-        ImGui.SetCursorScreenPos(pos + new Vector2(
-            axisSlot * scale, ActiveTheme.Spacing.One * scale));
+        ImGui.SetCursorScreenPos(
+            pos + new Vector2(axisSlot * scale, 0f));
         ImGui.SetNextItemWidth(MathF.Max(
-            1f, size.X - (axisSlot + ActiveTheme.Spacing.One) * scale));
+            1f, size.X - axisSlot * scale));
         if (_axisEditNeedsFocus)
             ImGui.SetKeyboardFocusHere();
 
+        float verticalPadding = MathF.Max(
+            0f,
+            (size.Y - ImGui.GetTextLineHeight()) * 0.5f);
         ImGui.PushStyleVar(
             ImGuiStyleVar.FramePadding,
-            new Vector2(ActiveTheme.Spacing.Two, ActiveTheme.Spacing.One) * scale);
+            new Vector2(
+                horizontalPadding * scale,
+                verticalPadding));
         ImGui.PushStyleVar(
             ImGuiStyleVar.FrameRounding,
             ActiveTheme.Radii.Small * scale);
@@ -202,10 +214,17 @@ public static partial class Crystarium
         bool pushed = mono is { Available: true };
         if (pushed)
             mono!.Push();
-        float pad = ActiveTheme.Spacing.Two * scale;
+        float pad =
+            ActiveTheme.Form.AxisWellHorizontalPadding * scale;
+        var axisSize = ImGui.CalcTextSize(axis);
         float axisSlot = axis.Length == 0
-            ? 0f
-            : ActiveTheme.Spacing.Eight * scale;
+            ? pad
+            : pad
+                + axisSize.X
+                + ActiveTheme.Form.AxisLabelGap * scale;
+        float axisY = pos.Y
+            + (size.Y - axisSize.Y) * 0.5f
+            + ActiveTheme.Optical.AxisText * scale;
         if (axis.Length > 0)
         {
             draw.PushClipRect(
@@ -215,13 +234,16 @@ public static partial class Crystarium
             draw.AddText(
                 new Vector2(
                     pos.X + pad,
-                    pos.Y + (size.Y - ImGui.CalcTextSize(axis).Y) * 0.5f),
+                    axisY),
                 ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(accent)),
                 axis);
             draw.PopClipRect();
         }
         string text = value.ToString(format, CultureInfo.InvariantCulture);
         var textSize = ImGui.CalcTextSize(text);
+        float textY = pos.Y
+            + (size.Y - textSize.Y) * 0.5f
+            + ActiveTheme.Optical.AxisText * scale;
         draw.PushClipRect(
             new Vector2(pos.X + axisSlot, pos.Y + inset),
             max - new Vector2(inset),
@@ -229,8 +251,7 @@ public static partial class Crystarium
         draw.AddText(
             new Vector2(
                 max.X - pad - textSize.X,
-                pos.Y + (size.Y - textSize.Y) * 0.5f
-                    + ActiveTheme.Optical.DropdownText * scale),
+                textY),
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
                 disabled ? ActiveTheme.TextDim : ActiveTheme.Text)),
             text);

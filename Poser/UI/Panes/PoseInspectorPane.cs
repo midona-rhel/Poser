@@ -1004,7 +1004,7 @@ public class PoseInspectorPane
                 _dragEuler = null;
             },
             0.5f,
-            "0.00",
+            "0.000",
             disabled: !canEdit);
         form.AxisVector(
             "Scale",

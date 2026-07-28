@@ -113,8 +113,10 @@ public readonly record struct Theme
         {
             LabelColumnWidth = 94f,
             ValueColumnWidth = 44f,
-            AxisGap = 6f,
-            AxisWellMinimumWidth = 72f,
+            AxisGap = 4f,
+            AxisWellMinimumWidth = 82f,
+            AxisWellHorizontalPadding = 6f,
+            AxisLabelGap = 3f,
         },
         Matrix = new()
         {
@@ -204,7 +206,14 @@ public readonly record struct Theme
                 new(1f, 143f / 255f, 163f / 255f, 1f),
             ],
         },
-        Optical = new() { SidebarText = -1f, ButtonText = 1f, FooterLabel = -1f, DropdownText = 1f },
+        Optical = new()
+        {
+            SidebarText = -1f,
+            ButtonText = 1f,
+            FooterLabel = -1f,
+            DropdownText = 1f,
+            AxisText = 0f,
+        },
         Motion = new() { Fast = 0.10f, Default = 0.20f, Slow = 0.40f, MenuExit = 0.08f, HoverOpenDelay = 0.40f, HoverPop = 0.15f },
         Palette = new()
         {
@@ -327,6 +336,8 @@ public readonly record struct Theme
         public float ValueColumnWidth { get; init; }
         public float AxisGap { get; init; }
         public float AxisWellMinimumWidth { get; init; }
+        public float AxisWellHorizontalPadding { get; init; }
+        public float AxisLabelGap { get; init; }
     }
 
     public readonly record struct MatrixTokens
@@ -453,6 +464,7 @@ public readonly record struct Theme
         public float ButtonText { get; init; }
         public float FooterLabel { get; init; }
         public float DropdownText { get; init; }
+        public float AxisText { get; init; }
 
         public Vector2 Snap(Vector2 position) =>
             new(MathF.Round(position.X), MathF.Round(position.Y));
