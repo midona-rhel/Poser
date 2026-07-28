@@ -655,10 +655,13 @@ public class PoseInspectorPane
         float s)
     {
         var theme = Crystarium.ActiveTheme;
-        float inset = theme.Page.Inset * s;
-        var min = cursor + new Vector2(inset);
+        var min = cursor + new Vector2(
+            0f,
+            theme.Page.ActionGap * s);
         var max = cursor + new Vector2(width, viewportHeight)
-            - new Vector2(inset);
+            - new Vector2(
+                0f,
+                theme.Page.Inset * s);
         if (max.X <= min.X || max.Y <= min.Y)
             return viewportHeight;
 
@@ -739,7 +742,8 @@ public class PoseInspectorPane
                 var contentOrigin = ImGui.GetCursorScreenPos();
                 float contentWidth = MathF.Max(
                     0f,
-                    region.ContentWidth);
+                    region.ContentWidth
+                        - theme.Page.Inset);
                 float contentHeight = BoneMatrixView.Draw(
                     _matrixVm,
                     contentOrigin,
