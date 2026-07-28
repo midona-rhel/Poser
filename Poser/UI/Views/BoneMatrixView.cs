@@ -70,18 +70,14 @@ public static class BoneMatrixView
         BoneMatrixViewModel vm,
         Vector2 origin,
         float width,
-        string idPrefix = "mx",
-        float zoom = 1f)
+        string idPrefix = "mx")
     {
         var metrics = Crystarium.ActiveTheme.Matrix;
-        float layoutScale = ImGuiHelpers.GlobalScale;
-        float s = layoutScale * zoom;
-        float logicalWidth = width / layoutScale;
-        float transformedWidth = logicalWidth * s;
+        float s = ImGuiHelpers.GlobalScale;
+        float logicalWidth = width / s;
         var dl = ImGui.GetWindowDrawList();
 
-        // Responsive fit belongs to the unzoomed viewport. Zoom transforms
-        // that stable arrangement; only a viewport resize may reflow it.
+        // Only a viewport resize recomputes the responsive column fit.
         int columns = Math.Max(1, (int)MathF.Floor(
             (logicalWidth + metrics.ColumnGap)
             / (metrics.MinimumTrackWidth + metrics.ColumnGap)));
@@ -97,16 +93,16 @@ public static class BoneMatrixView
             ViewText.Label(
                 new Vector2(origin.X, y + 15f * s),
                 section.Title,
-                11f * zoom,
+                11f,
                 FontWeight.SemiBold,
                 TextSecondary);
             ImGui.SetCursorScreenPos(new Vector2(origin.X, y + 7f * s));
             ImGui.InvisibleButton($"##{idPrefix}-section-{sectionIndex}",
                 new Vector2(
                     MathF.Min(
-                        transformedWidth,
+                        width,
                         ViewText.Measure(
-                            section.Title, 11f * zoom) + 18f * s),
+                            section.Title, 11f) + 18f * s),
                     24f * s));
             if (ImGui.IsItemHovered())
                 Crystarium.HoverHelp.Explain($"bmv-section-{sectionIndex}",
@@ -116,7 +112,7 @@ public static class BoneMatrixView
                 vm.OnSection?.Invoke(section, ImGui.GetIO().KeyCtrl);
             float lineY = y + 32f * s;
             dl.AddRectFilled(new Vector2(origin.X, lineY),
-                new Vector2(origin.X + transformedWidth, lineY + 1f * s),
+                new Vector2(origin.X + width, lineY + 1f * s),
                 ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderSecond)));
             y += 41f * s;
 
@@ -141,7 +137,7 @@ public static class BoneMatrixView
 
                 DrawRow(
                     vm, row, dl, new Vector2(cellX, cellY), cellW,
-                    s, zoom, $"{idPrefix}-{sectionIndex}-{slot}");
+                    s, $"{idPrefix}-{sectionIndex}-{slot}");
 
                 slot += span;
                 gridRows = Math.Max(gridRows, gridRow + 1);
@@ -156,7 +152,7 @@ public static class BoneMatrixView
     }
 
     private static void DrawRow(BoneMatrixViewModel vm, BoneMatrixRow row, ImDrawListPtr dl,
-        Vector2 pos, float width, float s, float zoom, string id)
+        Vector2 pos, float width, float s, string id)
     {
         var metrics = Crystarium.ActiveTheme.Matrix;
         // pills right-aligned; label fills the rest, right-aligned with ellipsis
@@ -167,13 +163,13 @@ public static class BoneMatrixView
         string label = Ellipsize(
             row.Label,
             MathF.Max(0f, labelRight - pos.X),
-            12f * zoom);
-        float labelW = ViewText.Measure(label, 12f * zoom);
+            12f);
+        float labelW = ViewText.Measure(label, 12f);
         ViewText.Label(
             new Vector2(
                 MathF.Max(pos.X, labelRight - labelW),
                 pos.Y + (metrics.RowHeight - 12f) / 2f * s - 2f * s),
-            label, 12f * zoom, FontWeight.Regular, TextSecondary);
+            label, 12f, FontWeight.Regular, TextSecondary);
 
         float x = pos.X + width - pillsW;
         int i = 0;
@@ -215,11 +211,11 @@ public static class BoneMatrixView
             if (pill.Label.Length > 0)
             {
                 float tw = ViewText.Measure(
-                    pill.Label, 10f * zoom, FontWeight.SemiBold, mono: true);
+                    pill.Label, 10f, FontWeight.SemiBold, mono: true);
                 ViewText.Label(
                     new Vector2(center.X - tw / 2f, center.Y - 5f * s),
                     pill.Label,
-                    10f * zoom,
+                    10f,
                     FontWeight.SemiBold, pill.Selected ? TextPrimary : hovered ? TextPrimary : TextSecondary, mono: true);
             }
 

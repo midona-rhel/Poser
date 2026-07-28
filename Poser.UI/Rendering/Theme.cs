@@ -38,6 +38,7 @@ public readonly record struct Theme
     public PageTokens Page { get; init; }
     public FormTokens Form { get; init; }
     public MatrixTokens Matrix { get; init; }
+    public Pose3DTokens Pose3D { get; init; }
     public ShellTokens Shell { get; init; }
     public ScrollbarTokens Scrollbar { get; init; }
     public TypographyTokens Typography { get; init; }
@@ -127,9 +128,20 @@ public readonly record struct Theme
             PillSize = 24f,
             PillGap = 6f,
             FilterWidth = 260f,
+        },
+        Pose3D = new()
+        {
+            InitialYaw = 0.6f,
+            InitialPitch = 0.3f,
+            MaximumPitch = 1.4f,
+            OrbitSensitivity = 0.01f,
+            ProjectionScale = 0.42f,
             MinimumZoom = 0.60f,
             MaximumZoom = 1.80f,
             ZoomStep = 0.10f,
+            HoverRadius = 8f,
+            DotRadius = 3f,
+            SelectedDotRadius = 4.5f,
         },
         Shell = new()
         {
@@ -349,9 +361,21 @@ public readonly record struct Theme
         public float PillSize { get; init; }
         public float PillGap { get; init; }
         public float FilterWidth { get; init; }
+    }
+
+    public readonly record struct Pose3DTokens
+    {
+        public float InitialYaw { get; init; }
+        public float InitialPitch { get; init; }
+        public float MaximumPitch { get; init; }
+        public float OrbitSensitivity { get; init; }
+        public float ProjectionScale { get; init; }
         public float MinimumZoom { get; init; }
         public float MaximumZoom { get; init; }
         public float ZoomStep { get; init; }
+        public float HoverRadius { get; init; }
+        public float DotRadius { get; init; }
+        public float SelectedDotRadius { get; init; }
     }
 
     public readonly record struct ShellTokens

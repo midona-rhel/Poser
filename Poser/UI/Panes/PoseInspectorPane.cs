@@ -75,8 +75,6 @@ public class PoseInspectorPane
     private BoneMatrixViewModel? _matrixVm;
     private string _matrixFilter = "";
     private ulong _matrixRevision;
-    private Vector2 _matrixPan;
-    private float _matrixZoom = 1f;
     // Complete skeleton identity (actor generation, SLOT, slot generation):
     // switching the primary to another slot of the same actor on an
     // unchanged scene must rebuild the matrix.
@@ -164,6 +162,7 @@ public class PoseInspectorPane
         _cleanPose = cleanPose;
         _gazeService = gazeService;
         _editorState = editorState;
+        Reset3DCamera();
     }
 
     /// <summary>The shared effective transform selection (resolver): first
@@ -538,6 +537,21 @@ public class PoseInspectorPane
                         chromeY + switchHeight),
                     "Swap left and right on the body and face maps");
         }
+        else if (_poseView == 3)
+        {
+            var resetStyle = ControlStyle.Workspace;
+            var resetSize =
+                Crystarium.MeasureButton("Reset View", resetStyle);
+            ImGui.SetCursorScreenPos(new Vector2(
+                cursor.X + width - resetSize.X,
+                cursor.Y + (tabsHeight - resetSize.Y) * 0.5f));
+            Crystarium.Button(
+                "Reset View",
+                Reset3DCamera,
+                resetStyle,
+                help: "Reset the 3D camera",
+                id: "pose-3d-reset");
+        }
 
         dl.AddRectFilled(
             new Vector2(
@@ -554,9 +568,8 @@ public class PoseInspectorPane
         ImGui.SetCursorScreenPos(bodyOrigin);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         float bodyContentHeight = bodyHeight;
-        // Every pose surface is a bounded viewport. Matrix owns pan and zoom
-        // directly, so switching modes cannot introduce a scrollbar or shift
-        // the shared chrome.
+        // Every pose surface is a bounded viewport, so switching modes cannot
+        // introduce a scrollbar or shift the shared chrome.
         var bodyFlags =
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
         if (ImGui.BeginChild("##pose-surface-content",
@@ -646,50 +659,12 @@ public class PoseInspectorPane
                     (max.X - min.X) / s)),
             });
 
-        var resetStyle = ControlStyle.Workspace;
-        var resetSize = Crystarium.MeasureButton("Reset View", resetStyle);
-        ImGui.SetCursorScreenPos(new Vector2(
-            max.X - resetSize.X,
-            min.Y));
-        Crystarium.Button(
-            "Reset View",
-            () =>
-            {
-                _matrixPan = Vector2.Zero;
-                _matrixZoom = 1f;
-            },
-            resetStyle,
-            id: "pose-matrix-reset");
-
         var viewMin = new Vector2(
             min.X,
             min.Y + toolbarHeight + theme.Page.ActionGap * s);
         var viewMax = max;
         if (viewMax.Y <= viewMin.Y)
             return viewportHeight;
-
-        bool pointerInside = ImGui.IsMouseHoveringRect(
-            viewMin, viewMax, clip: true)
-            && !Interactive.PointerOccluded();
-        var io = ImGui.GetIO();
-        if (pointerInside
-            && ImGui.IsMouseDragging(ImGuiMouseButton.Middle))
-            _matrixPan += io.MouseDelta;
-        if (pointerInside && io.MouseWheel != 0f)
-        {
-            float oldZoom = _matrixZoom;
-            float nextZoom = Math.Clamp(
-                oldZoom + io.MouseWheel * theme.Matrix.ZoomStep,
-                theme.Matrix.MinimumZoom,
-                theme.Matrix.MaximumZoom);
-            if (MathF.Abs(nextZoom - oldZoom) > float.Epsilon)
-            {
-                var pointer = io.MousePos;
-                var local = (pointer - viewMin - _matrixPan) / oldZoom;
-                _matrixPan = pointer - viewMin - local * nextZoom;
-                _matrixZoom = nextZoom;
-            }
-        }
 
         var matrixSkeleton = PrimarySkeletonDescriptor();
         if (matrixSkeleton == null)
@@ -736,10 +711,9 @@ public class PoseInspectorPane
         ImGui.PushClipRect(viewMin, viewMax, true);
         BoneMatrixView.Draw(
             _matrixVm,
-            viewMin + _matrixPan,
+            viewMin,
             viewMax.X - viewMin.X,
-            "livemx",
-            _matrixZoom);
+            "livemx");
         ImGui.PopClipRect();
         return viewportHeight;
     }
@@ -800,7 +774,19 @@ public class PoseInspectorPane
 
     /// <summary>3D view: orbitable projection of the skeleton (Anamnesis
     /// Pose3DView equivalent) — drag orbits, click dots selects.</summary>
-    private float _orbitYaw = 0.6f, _orbitPitch = 0.3f;
+    private float _orbitYaw;
+    private float _orbitPitch;
+    private float _orbitZoom;
+    private Vector2 _orbitPan;
+
+    private void Reset3DCamera()
+    {
+        var camera = Crystarium.ActiveTheme.Pose3D;
+        _orbitYaw = camera.InitialYaw;
+        _orbitPitch = camera.InitialPitch;
+        _orbitZoom = 1f;
+        _orbitPan = Vector2.Zero;
+    }
 
     private float Draw3DView(ImDrawListPtr dl, Vector2 origin, float width, float height, SkeletonDescriptor skeleton, float s)
     {
@@ -809,7 +795,8 @@ public class PoseInspectorPane
         // top/bottom canvas inset. The inset is applied once; chrome, orbit
         // input, projection, dot hit testing, and the hint label all use the
         // same content rectangle.
-        float inset = 12f * s;
+        var camera = Crystarium.ActiveTheme.Pose3D;
+        float inset = Crystarium.ActiveTheme.Page.Inset * s;
         var min = origin + new Vector2(inset, inset);
         var max = origin + new Vector2(width, height) - new Vector2(inset, inset);
         if (max.X <= min.X || max.Y <= min.Y)
@@ -831,11 +818,39 @@ public class PoseInspectorPane
 
         ImGui.SetCursorScreenPos(min);
         ImGui.InvisibleButton("##pose-3d", canvasSize);
-        if (ImGui.IsItemActive())
+        bool canvasHovered = ImGui.IsItemHovered()
+            && !Interactive.PointerOccluded();
+        var io = ImGui.GetIO();
+        if (ImGui.IsItemActive()
+            && !Interactive.PointerOccluded())
         {
-            var d = ImGui.GetIO().MouseDelta;
-            _orbitYaw += d.X * 0.01f;
-            _orbitPitch = Math.Clamp(_orbitPitch + d.Y * 0.01f, -1.4f, 1.4f);
+            _orbitYaw += io.MouseDelta.X * camera.OrbitSensitivity;
+            _orbitPitch = Math.Clamp(
+                _orbitPitch
+                    + io.MouseDelta.Y * camera.OrbitSensitivity,
+                -camera.MaximumPitch,
+                camera.MaximumPitch);
+        }
+        if (canvasHovered
+            && ImGui.IsMouseDragging(ImGuiMouseButton.Middle))
+            _orbitPan += io.MouseDelta;
+        if (canvasHovered && io.MouseWheel != 0f)
+        {
+            float oldZoom = _orbitZoom;
+            float nextZoom = Math.Clamp(
+                oldZoom + io.MouseWheel * camera.ZoomStep,
+                camera.MinimumZoom,
+                camera.MaximumZoom);
+            if (MathF.Abs(nextZoom - oldZoom) > float.Epsilon)
+            {
+                var baseCenter = (min + max) * 0.5f;
+                var pointerFromCamera =
+                    io.MousePos - baseCenter - _orbitPan;
+                _orbitPan = io.MousePos
+                    - baseCenter
+                    - pointerFromCamera * (nextZoom / oldZoom);
+                _orbitZoom = nextZoom;
+            }
         }
 
         // Keep the skeleton caches fresh regardless of what the gizmo
@@ -872,8 +887,9 @@ public class PoseInspectorPane
         var view = Matrix4x4.CreateTranslation(-center)
                  * Matrix4x4.CreateRotationY(_orbitYaw)
                  * Matrix4x4.CreateRotationX(_orbitPitch);
-        float scalePx = canvasSize.Y * 0.42f;
-        var mid = (min + max) * 0.5f;
+        float scalePx =
+            canvasSize.Y * camera.ProjectionScale * _orbitZoom;
+        var mid = (min + max) * 0.5f + _orbitPan;
         var selectedIds = _selection.Selected.ToHashSet();
 
         Vector2 Project(Vector3 p)
@@ -885,7 +901,7 @@ public class PoseInspectorPane
         uint lineCol = ImGui.ColorConvertFloat4ToU32(
             Crystarium.ActiveTheme.Glass.BorderTop);
         BoneDescriptor? hovered = null;
-        float bestDist = 8f * s;
+        float bestDist = camera.HoverRadius * s;
         var mouse = ImGui.GetMousePos();
 
         foreach (var bone in skeleton.Bones)
@@ -895,7 +911,11 @@ public class PoseInspectorPane
             if (bone.Parent is { } parentId && positions.TryGetValue(parentId, out var parentPosition))
                 dl.AddLine(Project(parentPosition), p, lineCol, 1f * s);
             bool isSel = selectedIds.Contains(SelectionId.ForBone(bone.Id));
-            dl.AddCircleFilled(p, (isSel ? 4.5f : 3f) * s,
+            dl.AddCircleFilled(
+                p,
+                (isSel
+                    ? camera.SelectedDotRadius
+                    : camera.DotRadius) * s,
                 ImGui.ColorConvertFloat4ToU32(
                     isSel
                         ? Crystarium.ActiveTheme.Text
@@ -903,7 +923,7 @@ public class PoseInspectorPane
             float dist = Vector2.Distance(mouse, p);
             if (dist < bestDist) { bestDist = dist; hovered = bone; }
         }
-        if (hovered != null)
+        if (canvasHovered && hovered != null)
         {
             {
                 var mouse3 = ImGui.GetMousePos();
@@ -917,7 +937,15 @@ public class PoseInspectorPane
             else if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
                 _selection.Toggle(hoveredId);
         }
-        CanvasLabel(dl, new Vector2(max.X - 150f * s, max.Y - 20f * s), "drag: orbit - click: select", 11f,
+        CanvasLabel(
+            dl,
+            min + new Vector2(
+                Crystarium.ActiveTheme.Page.Inset,
+                canvasSize.Y / s
+                    - Crystarium.ActiveTheme.Page.Inset
+                    - Crystarium.ActiveTheme.Typography.CaptionSize) * s,
+            "left drag: orbit · middle drag: pan · wheel: zoom · click: select",
+            11f,
             Crystarium.ActiveTheme.FormHint);
 
         return height;
