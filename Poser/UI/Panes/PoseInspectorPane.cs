@@ -561,7 +561,11 @@ public class PoseInspectorPane
         var bodyFlags =
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
         if (ImGui.BeginChild("##pose-surface-content",
-                new Vector2(width + AppShellView.ScrollbarWidth * s, bodyHeight),
+                new Vector2(
+                    width
+                        + (AppShellView.MainHorizontalPadding
+                            + AppShellView.ScrollbarWidth) * s,
+                    bodyHeight),
                 false, bodyFlags))
         {
             var scrolledOrigin = ImGui.GetCursorScreenPos();
