@@ -60,8 +60,8 @@ public sealed class AppShellViewModel
     public string StatusRight = "142 bones · 60 fps";
 
     public List<ShellTab> Tabs = new();
-    public string CrumbPrefix = "";   // tertiary part ("Midona Rhel · ")
-    public string CrumbBold = "";     // primary part ("j_te_l")
+    public bool AnimationOn;
+    public bool AnimationAvailable;
 
     public int GizmoOperation;        // 0 translate, 1 rotate, 2 scale, 3 universal
     public int GizmoSpace;            // 0 local, 1 world
@@ -113,6 +113,7 @@ public sealed class AppShellViewModel
     public Action<int>? OnGizmoSpace;
     public Action<int>? OnRotationPivot;
     public Action<int>? OnSymmetry;
+    public Action<bool>? OnAnimation;
     public Action<bool>? OnPhysics;
     public Action? OnUndo, OnRedo, OnSpawn, OnSettings, OnHideUi, OnPopOut, OnProject;
     public Action<bool>? OnSkeletonOverlay;
@@ -788,9 +789,9 @@ public static class AppShellView
                 alignFirstTabToCursor: true);
         }
 
-        // crumb + optional pop-out. Only tabs with a faithful standalone view
-        // expose this action; selection panes must not open the retired legacy
-        // properties UI under a modern-shell icon.
+        // The actor animation state occupies one stable right-aligned slot on
+        // every workspace tab. Tab changes never replace it with selection
+        // text or move the control.
         float rx = max.X - MainHorizontalPadding * s;
         if (vm.ShowPopOut)
         {
@@ -801,15 +802,22 @@ public static class AppShellView
                     rx,
                     min.Y + (ToolbarHeight - actionSize) / 2f * s),
                 TablerIcon.ExternalLink, false, s, vm.OnPopOut);
+            rx -= Crystarium.ActiveTheme.Page.ActionGap * s;
         }
-        if (vm.CrumbBold.Length > 0 || vm.CrumbPrefix.Length > 0)
-        {
-            float boldW = ViewText.Measure(vm.CrumbBold, 12f, FontWeight.Medium);
-            float prefixW = ViewText.Measure(vm.CrumbPrefix, 12f);
-            float cx = rx - 8f * s - boldW - prefixW;
-            ViewText.Label(new Vector2(cx, min.Y + (ToolbarHeight - 12f) / 2f * s - 2f * s), vm.CrumbPrefix, 12f, FontWeight.Regular, TextTertiary);
-            ViewText.Label(new Vector2(cx + prefixW, min.Y + (ToolbarHeight - 12f) / 2f * s - 2f * s), vm.CrumbBold, 12f, FontWeight.Medium, TextPrimary);
-        }
+        Crystarium.ActionBar(
+            "shell-workspace-actions",
+            min,
+            new Vector2(rx - min.X, ToolbarHeight * s),
+            _ => { },
+            right => right.Switch(
+                "Animation",
+                vm.AnimationOn,
+                next => vm.OnAnimation?.Invoke(next),
+                vm.AnimationAvailable
+                    ? "Pause or resume the selected actor"
+                    : "Select an actor to control animation",
+                disabled: !vm.AnimationAvailable),
+            ActionBarSeparator.None);
 
         // Toolbar and content share one 12px horizontal inset. The viewport
         // still reaches the outer-right glass edge, and content width always
@@ -827,7 +835,9 @@ public static class AppShellView
         // scrollbar hugs the child's right edge. Deriving content width
         // from the panel put the content's right edge 1px INTO the
         // scrollbar band, so flush-right controls overlapped the thumb.
-        float contentWidth = childSize.X - MainHorizontalPadding * 2f * s;
+        float contentWidth = childSize.X
+            - MainHorizontalPadding * 2f * s
+            - ScrollbarWidth * s;
         ImGui.SetCursorScreenPos(childOrigin);
         if (vm.ContentOwnsViewport)
         {

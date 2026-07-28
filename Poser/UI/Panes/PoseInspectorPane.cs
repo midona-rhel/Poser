@@ -44,7 +44,6 @@ namespace Poser.UI;
 public class PoseInspectorPane
 {
     private readonly IBonePosingService _bonePosingService;
-    private readonly Application.Animation.AnimationSession _animation;
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
     private readonly CleanTransformFacade _cleanTransforms;
     private readonly CleanPoseFacade _cleanPose;
@@ -56,7 +55,6 @@ public class PoseInspectorPane
     private readonly Game.Viewport.ViewportProjection _viewport;
     private readonly ExpressionInspectorSection _expressionSection;
     private readonly PoseFileInspectorSection _poseFileSection;
-    private readonly Dalamud.Plugin.Services.IPluginLog _log;
 
     /// <summary>Renders the Body/Face map inline through GraphicalBonePane.</summary>
     public Func<int, Vector2, bool>? DrawMapInline;
@@ -143,7 +141,6 @@ public class PoseInspectorPane
 
     public PoseInspectorPane(
         IBonePosingService bonePosingService,
-        Application.Animation.AnimationSession animation,
         CleanTransformFacade cleanTransforms,
         CleanPoseFacade cleanPose,
         IGazeService gazeService,
@@ -153,11 +150,9 @@ public class PoseInspectorPane
         Game.Viewport.ViewportProjection viewport,
         ExpressionInspectorSection expressionSection,
         PoseFileInspectorSection poseFileSection,
-        Application.Posing.IIkConfigurationPort ikPort,
-        Dalamud.Plugin.Services.IPluginLog log)
+        Application.Posing.IIkConfigurationPort ikPort)
     {
         _ikPort = ikPort;
-        _log = log;
         _selection = scene.Selection;
         _scene = scene;
         _bindings = bindings;
@@ -165,7 +160,6 @@ public class PoseInspectorPane
         _expressionSection = expressionSection;
         _poseFileSection = poseFileSection;
         _bonePosingService = bonePosingService;
-        _animation = animation;
         _cleanTransforms = cleanTransforms;
         _cleanPose = cleanPose;
         _gazeService = gazeService;
@@ -334,12 +328,6 @@ public class PoseInspectorPane
     /// parent→child radial frame; the frame follows the presentation result
     /// during a drag while applied deltas stay on the frozen baseline.
     /// </summary>
-    /// <summary>The stable id of the skeleton's owning actor, for the
-    /// surface chrome's animation switches. A bone selection resolves to
-    /// its actor without disturbing the sidebar selection.</summary>
-    private ActorId? ChromeActorId(ISkeleton skeleton) =>
-        _bindings.GetActorId(skeleton.Actor);
-
     public (Quaternion FrameWorld, Quaternion AxisConversion, bool CanEdit) GizmoWorldContext()
     {
         var (transform, canEdit) = ReadTransform();
@@ -520,54 +508,34 @@ public class PoseInspectorPane
             selected => _poseView = selected,
             alignFirstTabToCursor: true);
 
-        // Right-aligned surface chrome: Mirror selection (maps only) ·
-        // Animation. These are quick controls OVER the animation
-        // session, not a second state: the switch reads the session's own
-        // paused state, so the Pose tab and the Animation tab can never
-        // disagree about whether an actor is frozen.
-        var chromeActorId = ChromeActorId(skeleton);
-        float chromeY = cursor.Y + (tabsHeightPx - 20f) * 0.5f * s;
-        float rx = cursor.X + width - 36f * s;
-        ImGui.SetCursorScreenPos(new Vector2(rx, chromeY));
-        // ON means the actor is ANIMATING, which is what the label says.
-        // The state is the session's, not a second UI boolean, so this and
-        // the Animation tab's transport are the same control in two places
-        // and neither can drift from the actor.
-        bool motion = chromeActorId is { } motionId && !_animation.IsPaused(motionId);
-        Crystarium.Switch("##ps-motion", motion, next =>
-        {
-            motion = next;
-            if (chromeActorId is not { } toggleId)
-                return;
-            // A silently failed toggle leaves the switch lying about the
-            // actor; the session has no status surface here, so the log is
-            // where the reason lands.
-            var toggled = motion
-                ? _animation.Resume(toggleId)
-                : _animation.Pause(toggleId);
-            if (!toggled.Success)
-                _log.Warning($"Animation toggle failed: {toggled.Detail}");
-        });
-        rx -= ViewText.Measure("Animation", 12f) + 6f * s;
-        ViewText.Label(new Vector2(rx, chromeY + 2f * s), "Animation", 12f,
-            FontWeight.Regular, Crystarium.ActiveTheme.TextDim);
-
+        float switchWidth =
+            Crystarium.ActiveTheme.Controls.SwitchWidth * s;
+        float switchHeight =
+            Crystarium.ActiveTheme.Controls.SwitchHeight * s;
+        float chromeY = cursor.Y
+            + (tabsHeight - switchHeight) * 0.5f;
+        float rx = cursor.X + width - switchWidth;
         if (_poseView is 0 or 1)
         {
-            rx -= 14f * s + 36f * s;
             ImGui.SetCursorScreenPos(new Vector2(rx, chromeY));
             bool swapped = GetMapMirror?.Invoke() ?? false;
             Crystarium.Switch(
                 "##ps-mirror", swapped, next => SetMapMirror?.Invoke(next));
-            float mirrorLabelX = rx - ViewText.Measure("Mirror", 12f) - 6f * s;
+            float mirrorLabelX = rx
+                - ViewText.Measure("Mirror", 12f)
+                - Crystarium.ActiveTheme.Spacing.Three * s;
             ViewText.Label(new Vector2(mirrorLabelX, chromeY + 2f * s), "Mirror",
                 12f, FontWeight.Regular, Crystarium.ActiveTheme.TextDim);
             if (Crystarium.HoverHelp.HelpHovered(
                     new Vector2(mirrorLabelX, chromeY),
-                    new Vector2(rx + 36f * s, chromeY + 20f * s)))
+                    new Vector2(
+                        rx + switchWidth,
+                        chromeY + switchHeight)))
                 Crystarium.HoverHelp.Explain("ps-mirror-help",
                     new Vector2(mirrorLabelX, chromeY),
-                    new Vector2(rx + 36f * s, chromeY + 20f * s),
+                    new Vector2(
+                        rx + switchWidth,
+                        chromeY + switchHeight),
                     "Swap left and right on the body and face maps");
         }
 

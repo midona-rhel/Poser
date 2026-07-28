@@ -167,6 +167,15 @@ public class MainWindow : Window
         _vm.OnGizmoSpace = i => _editorState.TransformOrientation = (TransformOrientation)i;
         _vm.OnRotationPivot = i => _editorState.RotationPivot = (Core.RotationPivot)i;
         _vm.OnSymmetry = i => _editorState.SymmetryMode = (SymmetryMode)i;
+        _vm.OnAnimation = on =>
+        {
+            if (SelectedActorId() is not { } actor)
+                return;
+            if (on)
+                _animation.Resume(actor);
+            else
+                _animation.Pause(actor);
+        };
         _vm.OnPhysics = on =>
         {
             if (SelectedActorId() is { } actor)
@@ -398,6 +407,11 @@ public class MainWindow : Window
             }
         }
         var toolbarActor = SelectedActorId();
+        _vm.AnimationAvailable = toolbarActor is { } animationActor
+            && _animation.IsSupported(animationActor);
+        _vm.AnimationOn = _vm.AnimationAvailable
+            && toolbarActor is { } movingActor
+            && !_animation.IsPaused(movingActor);
         _vm.PhysicsAvailable = toolbarActor is { } actorId
             && _animation.IsSupported(actorId);
         _vm.PhysicsOn = toolbarActor is { } physicsActor
@@ -413,7 +427,7 @@ public class MainWindow : Window
 
         BuildSidebar(primary);
         BuildTabs(primary);
-        BuildCrumbAndStatus(primary);
+        BuildStatus(primary);
     }
 
     private void Undo()
@@ -767,41 +781,22 @@ public class MainWindow : Window
         _vm.Tabs.Add(new ShellTab { Label = "Appearance", Active = _activeTab == "Appearance" });
     }
 
-    private void BuildCrumbAndStatus(SelectionId? primary)
+    private void BuildStatus(SelectionId? primary)
     {
-        ActorDescriptor? crumbActor = null;
-        BoneDescriptor? crumbBone = null;
+        ActorDescriptor? selectedActor = null;
         if (primary is { Kind: SceneEntityKind.Bone, Bone: { } bone })
         {
-            crumbActor = FindActor(bone.Skeleton.Actor.LogicalId);
-            crumbBone = crumbActor?.GetSkeleton(bone.Slot)?.Bones
-                .FirstOrDefault(candidate => candidate.Id.Equals(bone));
+            selectedActor = FindActor(bone.Skeleton.Actor.LogicalId);
         }
         else if (primary is { Kind: SceneEntityKind.Actor, Actor: { } actorId })
         {
-            crumbActor = FindActor(actorId.LogicalId);
-        }
-
-        if (crumbBone != null && crumbActor != null)
-        {
-            _vm.CrumbPrefix = $"{ActorDisplayName(crumbActor)} · ";
-            _vm.CrumbBold = crumbBone.DisplayName;
-        }
-        else if (crumbActor != null)
-        {
-            _vm.CrumbPrefix = "";
-            _vm.CrumbBold = ActorDisplayName(crumbActor);
-        }
-        else
-        {
-            _vm.CrumbPrefix = "";
-            _vm.CrumbBold = "";
+            selectedActor = FindActor(actorId.LogicalId);
         }
 
         int actorCount = _scene.Snapshot.Actors.Count;
         _vm.StatusLeft = actorCount == 1 ? "1 actor" : $"{actorCount} actors";
 
-        int bones = crumbActor?.Skeletons.Sum(s => s.Bones.Count) ?? 0;
+        int bones = selectedActor?.Skeletons.Sum(s => s.Bones.Count) ?? 0;
         _vm.StatusRight = bones > 0
             ? $"{bones} bones · {ImGui.GetIO().Framerate:0} fps"
             : $"{ImGui.GetIO().Framerate:0} fps";

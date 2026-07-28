@@ -53,6 +53,7 @@ public static partial class Crystarium
         {
             Label,
             Checkbox,
+            Switch,
             Button,
             Icon,
         }
@@ -94,6 +95,24 @@ public static partial class Crystarium
             ControlStyle style = default) =>
             _items.Add(new(
                 ItemKind.Checkbox,
+                label,
+                value,
+                onChange,
+                null,
+                help,
+                disabled,
+                style,
+                TablerIcon.Circle));
+
+        public void Switch(
+            string label,
+            bool value,
+            Action<bool> onChange,
+            string? help = null,
+            bool disabled = false,
+            ControlStyle style = default) =>
+            _items.Add(new(
+                ItemKind.Switch,
                 label,
                 value,
                 onChange,
@@ -196,6 +215,38 @@ public static partial class Crystarium
                             item.Label);
                         break;
                     }
+                    case ItemKind.Switch:
+                    {
+                        float logicalHeight = ControlSizing.Height(
+                            item.Style.Height,
+                            ActiveTheme.Controls.SwitchHeight);
+                        float controlScale =
+                            logicalHeight
+                            / ActiveTheme.Controls.SwitchHeight;
+                        float switchWidth =
+                            ActiveTheme.Controls.SwitchWidth
+                            * controlScale * scale;
+                        float labelWidth = width
+                            - switchWidth
+                            - ActiveTheme.Spacing.Three * scale;
+                        DrawTextCentered(
+                            min,
+                            new(labelWidth, max.Y - min.Y),
+                            ActiveTheme.Typography.CaptionSize,
+                            FontWeight.Regular,
+                            FormLabelColor,
+                            item.Label);
+                        ImGui.SetCursorScreenPos(new(
+                            max.X - switchWidth,
+                            centerY - logicalHeight * scale * 0.5f));
+                        Crystarium.Switch(
+                            $"{_id}-switch-{i}",
+                            item.Value,
+                            item.OnToggle!,
+                            item.Style,
+                            item.Disabled);
+                        break;
+                    }
                     case ItemKind.Icon:
                     {
                         var style = item.Style == default
@@ -257,6 +308,14 @@ public static partial class Crystarium
                     FontFamily.Default).X,
                 ItemKind.Checkbox =>
                     ActiveTheme.Controls.CheckboxSize * scale
+                    + ActiveTheme.Spacing.Three * scale
+                    + MeasureText(
+                        item.Label,
+                        ActiveTheme.Typography.CaptionSize,
+                        FontWeight.Regular,
+                        FontFamily.Default).X,
+                ItemKind.Switch =>
+                    ActiveTheme.Controls.SwitchWidth * scale
                     + ActiveTheme.Spacing.Three * scale
                     + MeasureText(
                         item.Label,
