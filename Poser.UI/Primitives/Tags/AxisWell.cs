@@ -202,16 +202,30 @@ public static partial class Crystarium
         bool pushed = mono is { Available: true };
         if (pushed)
             mono!.Push();
-        float pad = ActiveTheme.Spacing.Four * scale;
+        float pad = ActiveTheme.Spacing.Two * scale;
+        float axisSlot = axis.Length == 0
+            ? 0f
+            : ActiveTheme.Spacing.Eight * scale;
         if (axis.Length > 0)
+        {
+            draw.PushClipRect(
+                pos + new Vector2(inset),
+                new Vector2(pos.X + axisSlot, max.Y - inset),
+                true);
             draw.AddText(
                 new Vector2(
                     pos.X + pad,
                     pos.Y + (size.Y - ImGui.CalcTextSize(axis).Y) * 0.5f),
                 ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(accent)),
                 axis);
+            draw.PopClipRect();
+        }
         string text = value.ToString(format, CultureInfo.InvariantCulture);
         var textSize = ImGui.CalcTextSize(text);
+        draw.PushClipRect(
+            new Vector2(pos.X + axisSlot, pos.Y + inset),
+            max - new Vector2(inset),
+            true);
         draw.AddText(
             new Vector2(
                 max.X - pad - textSize.X,
@@ -220,6 +234,7 @@ public static partial class Crystarium
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
                 disabled ? ActiveTheme.TextDim : ActiveTheme.Text)),
             text);
+        draw.PopClipRect();
         if (pushed)
             mono!.Pop();
     }

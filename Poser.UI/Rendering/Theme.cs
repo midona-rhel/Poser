@@ -109,7 +109,13 @@ public readonly record struct Theme
             SectionHeaderHeight = 26f,
             StatusLineHeight = 20f,
         },
-        Form = new() { LabelColumnWidth = 94f, ValueColumnWidth = 44f, AxisGap = 6f },
+        Form = new()
+        {
+            LabelColumnWidth = 94f,
+            ValueColumnWidth = 44f,
+            AxisGap = 6f,
+            AxisWellMinimumWidth = 72f,
+        },
         Matrix = new()
         {
             MinimumTrackWidth = 235f,
@@ -320,6 +326,7 @@ public readonly record struct Theme
         public float LabelColumnWidth { get; init; }
         public float ValueColumnWidth { get; init; }
         public float AxisGap { get; init; }
+        public float AxisWellMinimumWidth { get; init; }
     }
 
     public readonly record struct MatrixTokens

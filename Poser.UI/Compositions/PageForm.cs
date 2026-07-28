@@ -187,12 +187,18 @@ public static partial class Crystarium
             return row;
         }
 
-        internal void EndRow(in FormRowScope row, string id, string? help)
+        internal void EndRow(
+            in FormRowScope row,
+            string id,
+            string? help,
+            float? logicalHeight = null)
         {
+            float height =
+                logicalHeight ?? ActiveTheme.Controls.FormRowHeight;
             RegisterHelp($"{id}-row", row.Origin,
                 row.Origin + new Vector2(row.Width,
-                    ActiveTheme.Controls.FormRowHeight * row.Scale), help);
-            _y += ActiveTheme.Controls.FormRowHeight;
+                    height * row.Scale), help);
+            _y += height;
         }
 
         internal void Advance(float logicalHeight)
@@ -742,9 +748,26 @@ public static partial class Crystarium
             string id = Id(label);
             var row = _page.BeginRow(fullWidth ? string.Empty : label);
             float gap = ActiveTheme.Form.AxisGap * row.Scale;
-            float originX = fullWidth ? row.Origin.X : row.ControlOrigin.X;
-            float available = fullWidth ? row.Width : row.ControlWidth;
+            float inlineMinimum =
+                (ActiveTheme.Form.AxisWellMinimumWidth * 3f
+                    + ActiveTheme.Form.AxisGap * 2f) * row.Scale;
+            bool stacked = !fullWidth
+                && row.ControlWidth < inlineMinimum;
+            float originX = fullWidth || stacked
+                ? row.Origin.X
+                : row.ControlOrigin.X;
+            float available = fullWidth || stacked
+                ? row.Width
+                : row.ControlWidth;
             float width = (available - gap * 2f) / 3f;
+            float controlY = stacked
+                ? row.Origin.Y
+                    + ActiveTheme.Controls.FormRowHeight * row.Scale
+                    + (ActiveTheme.Controls.FormRowHeight
+                        - ActiveTheme.Controls.WorkspaceHeight)
+                    * 0.5f * row.Scale
+                : row.CenterControl(
+                    ActiveTheme.Controls.WorkspaceHeight).Y;
             var accents = new[]
             {
                 ActiveTheme.Palette.AxisX,
@@ -757,7 +780,7 @@ public static partial class Crystarium
                 int axis = i;
                 ImGui.SetCursorScreenPos(new(
                     originX + i * (width + gap),
-                    row.CenterControl(ActiveTheme.Controls.WorkspaceHeight).Y));
+                    controlY));
                 Crystarium.AxisWell(
                     $"{id}-{axes[i]}",
                     axes[i],
@@ -781,7 +804,13 @@ public static partial class Crystarium
                     },
                     disabled);
             }
-            _page.EndRow(row, id, help);
+            _page.EndRow(
+                row,
+                id,
+                help,
+                stacked
+                    ? ActiveTheme.Controls.FormRowHeight * 2f
+                    : null);
         }
 
         public void CustomCanvas(string label, Action<FormRowScope> draw,
