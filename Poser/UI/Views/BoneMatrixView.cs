@@ -67,13 +67,18 @@ public static class BoneMatrixView
         float zoom = 1f)
     {
         var metrics = Crystarium.ActiveTheme.Matrix;
-        float s = ImGuiHelpers.GlobalScale * zoom;
+        float layoutScale = ImGuiHelpers.GlobalScale;
+        float s = layoutScale * zoom;
+        float logicalWidth = width / layoutScale;
+        float transformedWidth = logicalWidth * s;
         var dl = ImGui.GetWindowDrawList();
 
+        // Responsive fit belongs to the unzoomed viewport. Zoom transforms
+        // that stable arrangement; only a viewport resize may reflow it.
         int columns = Math.Max(1, (int)MathF.Floor(
-            (width / s + metrics.ColumnGap)
+            (logicalWidth + metrics.ColumnGap)
             / (metrics.MinimumTrackWidth + metrics.ColumnGap)));
-        float trackW = (width / s
+        float trackW = (logicalWidth
             - metrics.ColumnGap * (columns - 1)) / columns;
 
         float y = origin.Y;
@@ -92,7 +97,7 @@ public static class BoneMatrixView
             ImGui.InvisibleButton($"##{idPrefix}-section-{sectionIndex}",
                 new Vector2(
                     MathF.Min(
-                        width,
+                        transformedWidth,
                         ViewText.Measure(
                             section.Title, 11f * zoom) + 18f * s),
                     24f * s));
@@ -103,7 +108,8 @@ public static class BoneMatrixView
             if (ImGui.IsItemClicked())
                 vm.OnSection?.Invoke(section, ImGui.GetIO().KeyCtrl);
             float lineY = y + 32f * s;
-            dl.AddRectFilled(new Vector2(origin.X, lineY), new Vector2(origin.X + width, lineY + 1f * s),
+            dl.AddRectFilled(new Vector2(origin.X, lineY),
+                new Vector2(origin.X + transformedWidth, lineY + 1f * s),
                 ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderSecond)));
             y += 41f * s;
 
