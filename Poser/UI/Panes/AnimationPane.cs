@@ -586,16 +586,16 @@ public sealed class AnimationPane
                 [
                     new ContextMenuItem(
                         "Freeze all",
-                        Dalamud.Interface.Utility.TablerIcon.PlayerPlay),
+                        TablerIcon.PlayerPlay),
                     new ContextMenuItem(
                         "Resume all",
-                        Dalamud.Interface.Utility.TablerIcon.PlayerPlay),
+                        TablerIcon.PlayerPlay),
                     new ContextMenuItem(
                         "Replay all",
-                        Dalamud.Interface.Utility.TablerIcon.Refresh),
+                        TablerIcon.Refresh),
                     new ContextMenuItem(
                         "Restore all",
-                        Dalamud.Interface.Utility.TablerIcon.ArrowBackUp),
+                        TablerIcon.ArrowBackUp),
                 ]);
         }
         switch (Crystarium.FloatingMenu.Draw("##anim-scene-menu"))
