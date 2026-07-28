@@ -252,13 +252,17 @@ public static partial class Crystarium
             {
                 ItemKind.Label => MeasureText(
                     item.Label,
-                    ActiveTheme.Typography.LabelSize).X,
+                    ActiveTheme.Typography.LabelSize,
+                    FontWeight.Regular,
+                    FontFamily.Default).X,
                 ItemKind.Checkbox =>
                     ActiveTheme.Controls.CheckboxSize * scale
                     + ActiveTheme.Spacing.Three * scale
                     + MeasureText(
                         item.Label,
-                        ActiveTheme.Typography.CaptionSize).X,
+                        ActiveTheme.Typography.CaptionSize,
+                        FontWeight.Regular,
+                        FontFamily.Default).X,
                 ItemKind.Icon => ControlSizing.Height(
                     item.Style.Height,
                     ActiveTheme.Floating.CloseActionSize) * scale,

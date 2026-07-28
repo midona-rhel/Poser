@@ -60,6 +60,10 @@ public static partial class Crystarium
         float padding = props.Padding > 0f
             ? props.Padding
             : ActiveTheme.Floating.PopoverPadding;
+        float contentWidth =
+            MathF.Max(0f, props.Width - padding * 2f);
+        float contentHeight =
+            MathF.Max(0f, props.Height - padding * 2f);
         return FloatingSurface.Popup(
             id,
             new FloatingSurfaceProps
@@ -72,8 +76,8 @@ public static partial class Crystarium
             },
             () => body(new PopoverScope(
                 ImGui.GetCursorScreenPos(),
-                MathF.Max(0f, props.Width - padding * 2f),
-                MathF.Max(0f, props.Height - padding * 2f),
+                contentWidth,
+                contentHeight,
                 ImGuiHelpers.GlobalScale)));
     }
 
