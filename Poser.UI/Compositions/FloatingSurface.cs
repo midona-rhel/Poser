@@ -13,6 +13,13 @@ public record struct FloatingSurfaceProps
     public float Padding;
     public Vector2 AnchorMin;
     public Vector2 AnchorMax;
+    public FloatingSurfaceTreatment Treatment;
+}
+
+public enum FloatingSurfaceTreatment
+{
+    Glass,
+    Unframed,
 }
 
 public static partial class Crystarium
@@ -105,11 +112,12 @@ public static partial class Crystarium
                 {
                     var owner = Interactive.BeginOwner(
                         id, InteractionLayer.Popup, min, max);
-                    DrawChrome(
-                        ImGui.GetWindowDrawList(),
-                        min,
-                        max,
-                        Crystarium.ActiveTheme.Radii.Surface);
+                    if (props.Treatment == FloatingSurfaceTreatment.Glass)
+                        DrawChrome(
+                            ImGui.GetWindowDrawList(),
+                            min,
+                            max,
+                            Crystarium.ActiveTheme.Radii.Surface);
                     body();
                     Interactive.EndOwner(owner);
                 }

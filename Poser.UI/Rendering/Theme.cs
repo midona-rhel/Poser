@@ -180,7 +180,7 @@ public readonly record struct Theme
             MenuIconGap = 6f,
             MenuSeparatorBlock = 5f,
             PopupPadding = 4f,
-            DropdownRowGap = 1f,
+            DropdownRowGap = 2f,
             PopoverPadding = 8f,
             ModalBarHeight = 44f,
             ModalBodyPadding = 16f,

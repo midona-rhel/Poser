@@ -128,7 +128,9 @@ public static partial class Crystarium
             Crystarium.ActiveTheme.Floating.DropdownRowGap * scale;
         float itemListHeight = visibleItems * height
             + Math.Max(0, visibleItems - 1) * rowGap;
-        float popupHeight = itemListHeight;
+        float popupPadding =
+            Crystarium.ActiveTheme.Floating.PopupPadding * scale;
+        float popupHeight = itemListHeight + popupPadding * 2f;
         int popupSelected = selected;
         bool popupChanged = false;
         FloatingSurface.Popup(
@@ -137,9 +139,10 @@ public static partial class Crystarium
             {
                 Width = totalWidth / scale,
                 Height = popupHeight / scale,
-                Padding = 0f,
+                Padding = popupPadding / scale,
                 AnchorMin = valuePos,
                 AnchorMax = valueEnd,
+                Treatment = FloatingSurfaceTreatment.Unframed,
             },
             () =>
             {
@@ -164,10 +167,11 @@ public static partial class Crystarium
                             Crystarium.ActiveTheme.Typography.LabelSize);
                         bool optFontPushed = optFont is { Available: true };
                         if (optFontPushed) optFont!.Push();
-                        float optPadLeft = padLeft;
-                        float optPadRight = padRight;
+                        float optPadLeft =
+                            Crystarium.ActiveTheme.Spacing.Four * scale;
+                        float optPadRight = optPadLeft;
                         float optRounding =
-                            Crystarium.ActiveTheme.Radii.Control * scale;
+                            Crystarium.ActiveTheme.Radii.Medium * scale;
                         uint hoverFill = ImGui.ColorConvertFloat4ToU32(
                             ColorEx.ApplyAlpha(
                                 Crystarium.ActiveTheme.Chrome.WeakOverlay));
@@ -208,33 +212,18 @@ public static partial class Crystarium
                             }
                             bool itemHovered = itemHit.Hovered;
 
-                            ImDrawFlags rowCorners = i switch
-                            {
-                                0 when i == items.Length - 1 =>
-                                    ImDrawFlags.RoundCornersAll,
-                                0 => ImDrawFlags.RoundCornersTop,
-                                _ when i == items.Length - 1 =>
-                                    ImDrawFlags.RoundCornersBottom,
-                                _ => ImDrawFlags.None,
-                            };
-                            float rowRounding =
-                                rowCorners == ImDrawFlags.None
-                                    ? 0f
-                                    : optRounding;
                             if (isSelected)
                                 popupDrawList.AddRectFilled(
                                     itemPos,
                                     itemPos + fillSize,
                                     selectedFill,
-                                    rowRounding,
-                                    rowCorners);
+                                    optRounding);
                             else if (itemHovered)
                                 popupDrawList.AddRectFilled(
                                     itemPos,
                                     itemPos + fillSize,
                                     hoverFill,
-                                    rowRounding,
-                                    rowCorners);
+                                    optRounding);
 
                             string itemDisplay = TruncateText(
                                 items[i],
