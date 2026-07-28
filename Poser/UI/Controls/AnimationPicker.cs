@@ -217,7 +217,12 @@ public sealed class AnimationPicker
         var cursor = origin;
 
         // The destination, stated where the choosing happens.
-        ViewText.Label(cursor, _caption, 11f, FontWeight.Medium, InspectorLayout.LabelColor);
+        ViewText.Label(
+            cursor,
+            _caption,
+            11f,
+            FontWeight.Medium,
+            Crystarium.ActiveTheme.FormLabel);
         cursor.Y += 18f * s;
 
         ImGui.SetCursorScreenPos(cursor);
@@ -257,7 +262,7 @@ public sealed class AnimationPicker
         if (!_catalog.IsLoaded && _explicit == null)
         {
             ViewText.Label(cursor, "Building animation catalog…", 11f,
-                FontWeight.Regular, InspectorLayout.HintColor);
+                FontWeight.Regular, Crystarium.ActiveTheme.FormHint);
             return null;
         }
 
@@ -275,7 +280,8 @@ public sealed class AnimationPicker
             if (results.Count == 0)
             {
                 ViewText.Label(ImGui.GetCursorScreenPos() + new Vector2(0f, 6f * s),
-                    "No matches.", 11f, FontWeight.Regular, InspectorLayout.HintColor);
+                    "No matches.", 11f, FontWeight.Regular,
+                    Crystarium.ActiveTheme.FormHint);
             }
             foreach (var entry in results)
             {

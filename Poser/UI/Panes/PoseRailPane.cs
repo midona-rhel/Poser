@@ -110,7 +110,12 @@ public class PoseRailPane
         }
         else
         {
-            ViewText.Label(cursor, "Nothing selected", 12f, FontWeight.Regular, InspectorLayout.HintColor);
+            ViewText.Label(
+                cursor,
+                "Nothing selected",
+                12f,
+                FontWeight.Regular,
+                Crystarium.ActiveTheme.FormHint);
             cursor.Y += 22f * s;
         }
 

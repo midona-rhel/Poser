@@ -290,7 +290,11 @@ public class PoseInspectorPane
         }
         else
         {
-            InspectorLayout.EmptyState(cursor, s);
+            Crystarium.Page(
+                "pose-empty",
+                origin,
+                size,
+                page => page.EmptyState());
         }
         ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
         _poseFileSection.DrawBrowsers();
@@ -413,77 +417,71 @@ public class PoseInspectorPane
     /// <summary>The inspector sections, drawn inside the shell rail.</summary>
     public void DrawRailSections(Vector2 origin, float width)
     {
-        float s = ImGuiHelpers.GlobalScale;
-        var dl = ImGui.GetWindowDrawList();
         var cursor = origin;
 
-        // Every rail cluster is a collapsible section; disclosure persists
-        // for the pane's lifetime. A COLLAPSED section contributes only its
-        // header — the trailing 12px body gap belongs to the expanded state,
-        // so collapsed headers stack tightly.
-        cursor.Y += InspectorLayout.Section(dl, cursor, width, "insp", "TRANSLATION", ref _openTranslation, s, topBorder: true);
-        if (_openTranslation)
-        {
-            cursor.Y += InspectorLayout.BodyGap * s;
-            cursor.Y += DrawTransform(dl, cursor, width, s);
-            cursor.Y += 12f * s;
-        }
+        void Section(
+            string id,
+            string title,
+            bool open,
+            Action<bool> setOpen,
+            Action<Crystarium.FormScope> content) =>
+            cursor.Y += Crystarium.Section(
+                $"pose-rail-{id}",
+                title,
+                cursor,
+                width,
+                open,
+                setOpen,
+                content);
+
+        Section(
+            "translation",
+            "TRANSLATION",
+            _openTranslation,
+            next => _openTranslation = next,
+            DrawTransform);
 
         var actor = OwningActor();
         var owningSkeleton = OwningSkeleton();
         if (actor != null && _expressionSection.CanDraw)
-        {
-            cursor.Y += InspectorLayout.Section(dl, cursor, width, "insp", "EXPRESSION", ref _openExpression, s, topBorder: true);
-            if (_openExpression)
-            {
-                cursor.Y += InspectorLayout.BodyGap * s;
-                cursor.Y += _expressionSection.Draw(cursor, width, actor, s);
-                cursor.Y += 12f * s;
-            }
-        }
+            Section(
+                "expression",
+                "EXPRESSION",
+                _openExpression,
+                next => _openExpression = next,
+                form => _expressionSection.Draw(form, actor));
         if (owningSkeleton != null)
-        {
-            cursor.Y += InspectorLayout.Section(dl, cursor, width, "insp", "FILES", ref _openFiles, s, topBorder: true);
-            if (_openFiles)
-            {
-                cursor.Y += InspectorLayout.BodyGap * s;
-                cursor.Y += _poseFileSection.Draw(cursor, width, owningSkeleton, s);
-                cursor.Y += 12f * s;
-            }
-        }
+            Section(
+                "files",
+                "FILES",
+                _openFiles,
+                next => _openFiles = next,
+                form => _poseFileSection.Draw(form, owningSkeleton));
         if (actor != null)
-        {
-            cursor.Y += InspectorLayout.Section(dl, cursor, width, "insp", "GAZE", ref _openGaze, s, topBorder: true);
-            if (_openGaze)
-            {
-                cursor.Y += InspectorLayout.BodyGap * s;
-                cursor.Y += DrawGaze(cursor, width, actor, s);
-                cursor.Y += 12f * s;
-            }
-        }
+            Section(
+                "gaze",
+                "GAZE",
+                _openGaze,
+                next => _openGaze = next,
+                form => DrawGaze(form, actor));
 
         var skeleton = OwningSkeleton();
         if (skeleton != null)
         {
             if (_primary is { Kind: SceneEntityKind.Bone })
-            {
-                cursor.Y += InspectorLayout.Section(dl, cursor, width, "insp", "IK", ref _openIk, s, topBorder: true);
-                if (_openIk)
-                {
-                    cursor.Y += InspectorLayout.BodyGap * s;
-                    cursor.Y += DrawIk(cursor, width, s);
-                    // The same trailing breath every other open section
-                    // gets; IK previously ran flush into the next header.
-                    cursor.Y += 12f * s;
-                }
-            }
+                Section(
+                    "ik",
+                    "IK",
+                    _openIk,
+                    next => _openIk = next,
+                    DrawIk);
 
-            cursor.Y += InspectorLayout.Section(dl, cursor, width, "insp", "POSE", ref _openPose, s, topBorder: true);
-            if (_openPose)
-            {
-                cursor.Y += InspectorLayout.BodyGap * s;
-                cursor.Y += DrawPoseActions(cursor, width, skeleton, s);
-            }
+            Section(
+                "pose",
+                "POSE",
+                _openPose,
+                next => _openPose = next,
+                form => DrawPoseActions(form, skeleton));
         }
 
         ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
@@ -957,7 +955,7 @@ public class PoseInspectorPane
 
     // ── sections ─────────────────────────────────────────────────────────
 
-    private float DrawTransform(ImDrawListPtr dl, Vector2 cursor, float width, float s)
+    private void DrawTransform(Crystarium.FormScope form)
     {
         UpdateGestureGuards();
         var (transform, canEdit) = ReadTransform();
@@ -965,83 +963,77 @@ public class PoseInspectorPane
         var euler = _dragEuler ?? PoseMath.QuaternionToEuler(transform.Rotation);
         var scale = transform.Scale;
 
-        float h = 0f;
-        bool changed = false, released = false;
-
-        // PBI-090 presentation order: Translation → Rotation → Scale.
-        // Only labels and order change; ids, math, and sensitivities stay.
-        h += RailScrub(dl, cursor, width, "pose-pos", "Translation",
-            ref pos, 0.005f, "0.000", s, out var posChanged, out var posReleased);
-        changed |= posChanged;
-        released |= posReleased;
-
-        h += RailScrub(dl, new Vector2(cursor.X, cursor.Y + h), width, "pose-rot", "Rotation",
-            ref euler, 0.5f, "0.00", s, out var rotChanged, out var rotReleased);
-        changed |= rotChanged;
-        released |= rotReleased;
-        _dragEuler = rotChanged ? euler : (rotReleased ? null : _dragEuler);
-
-        h += RailScrub(dl, new Vector2(cursor.X, cursor.Y + h), width, "pose-scale", "Scale",
-            ref scale, 0.005f, "0.000", s, out var scaleChanged, out var scaleReleased);
-        changed |= scaleChanged;
-        released |= scaleReleased;
-
-        if (changed && canEdit && !_gestureRestartSuppressed)
+        void Apply(Vector3 next, DomainOperation operation)
         {
-            var operation =
-                (rotChanged ? 1 : 0) +
-                (posChanged ? 1 : 0) +
-                (scaleChanged ? 1 : 0) > 1
-                    ? DomainOperation.Universal
-                    : rotChanged
-                        ? DomainOperation.Rotate
-                        : posChanged
-                            ? DomainOperation.Translate
-                            : DomainOperation.Scale;
+            if (!canEdit || _gestureRestartSuppressed)
+                return;
             BeginTransformSession(transform, operation);
-            var next = new Transform
+            if (operation == DomainOperation.Translate)
+                pos = next;
+            else if (operation == DomainOperation.Rotate)
+            {
+                euler = next;
+                _dragEuler = next;
+            }
+            else
+                scale = next;
+            ApplyTransformSession(new Transform
             {
                 Position = pos,
-                Rotation = rotChanged || _dragEuler.HasValue ? PoseMath.EulerToQuaternion(euler) : transform.Rotation,
+                Rotation = _dragEuler.HasValue
+                    ? PoseMath.EulerToQuaternion(euler)
+                    : transform.Rotation,
                 Scale = scale,
-            };
-            ApplyTransformSession(next);
+            });
         }
 
-        if (released)
+        void Commit()
         {
             if (canEdit)
                 CommitTransformSession();
             ClearTransformSession();
         }
 
+        form.AxisVector(
+            "Translation",
+            pos,
+            next => Apply(next, DomainOperation.Translate),
+            Commit,
+            0.005f,
+            "0.000",
+            disabled: !canEdit);
+        form.AxisVector(
+            "Rotation",
+            euler,
+            next => Apply(next, DomainOperation.Rotate),
+            () =>
+            {
+                Commit();
+                _dragEuler = null;
+            },
+            0.5f,
+            "0.00",
+            disabled: !canEdit);
+        form.AxisVector(
+            "Scale",
+            scale,
+            next => Apply(next, DomainOperation.Scale),
+            Commit,
+            0.005f,
+            "0.000",
+            disabled: !canEdit);
+
         if (!canEdit && _entity is IActor)
-        {
-            ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 2f * s),
-                "Freeze the actor's animation to move it.", 11f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
-            h += 18f * s;
-        }
-
-        return h;
-    }
-
-    /// <summary>Compact rail scrub: 16px label line + full-width axis wells.</summary>
-    private static float RailScrub(ImDrawListPtr dl, Vector2 cursor, float width, string id, string label,
-        ref Vector3 value, float perPixel, string fmt, float s, out bool changed, out bool released)
-    {
-        ViewText.Label(cursor, label, 11f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
-        float rowH = AppShellView.ScrubRowDrag(dl, new Vector2(cursor.X - 94f * s, cursor.Y + 16f * s),
-            width + 94f * s, id, "", ref value, perPixel, fmt, s, out changed, out released);
-        return 16f * s + rowH;
+            form.Status("Freeze the actor's animation to move it.");
     }
 
     // Quiet inline note after an Actor-mode click with no valid target actor.
     private bool _gazeActorUnavailableNote;
 
-    private float DrawGaze(Vector2 cursor, float width, IActor actor, float s)
+    private void DrawGaze(Crystarium.FormScope form, IActor actor)
     {
         var state = _gazeService.GetGazeState(actor);
-        string[] options = { "Off", "Fwd", "Cam", "Actor" };
+        string[] options = ["Off", "Fwd", "Cam", "Actor"];
 
         // Target discovery is scene membership: every other actor the
         // SceneSession snapshot represents is eligible — the same read
@@ -1054,9 +1046,6 @@ public class PoseInspectorPane
             if (sourceLineage is not { } source || candidate.Id.LogicalId != source)
                 others.Add(candidate);
 
-        float h = 0f;
-        ViewText.Label(cursor + new Vector2(0f, 7f) * s, "Mode", 12f, FontWeight.Regular,
-            new Vector4(1f, 1f, 1f, 0.5f));
         int mode = state.Mode switch
         {
             GazeTargetMode.None => 0,
@@ -1064,21 +1053,11 @@ public class PoseInspectorPane
             GazeTargetMode.Camera => 2,
             _ => 3,
         };
-        ImGui.SetCursorScreenPos(cursor + new Vector2(46f, 0f) * s);
-        if (Crystarium.SegmentedControl(
-                "##gaze-mode",
-                options,
-                mode,
-                selected => mode = selected,
-                new ControlStyle
-                {
-                    Width = UiWidth.Fixed((width - 46f * s) / s),
-                }))
+        form.Segmented("Mode", options, mode, selected =>
         {
+            mode = selected;
             if (mode == 3 && others.Count == 0)
             {
-                // Actor mode needs a valid other actor: reject quietly, never
-                // target self, index zero, or null.
                 _gazeActorUnavailableNote = true;
             }
             else
@@ -1093,100 +1072,83 @@ public class PoseInspectorPane
                 });
             }
             state = _gazeService.GetGazeState(actor);
-        }
-        h += 34f * s;
+        });
+
         if (_gazeActorUnavailableNote && others.Count == 0)
-        {
-            ViewText.Label(cursor + new Vector2(46f, h / s + 2f) * s,
-                "actor mode needs another actor in the scene", 11f,
-                FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
-            h += 18f * s;
-        }
+            form.Status("Actor mode needs another actor in the scene.");
+        else
+            _gazeActorUnavailableNote = false;
+
+        DrawGazePart(form, "Eyes", GazeTargetType.Eyes, actor, state);
+        DrawGazePart(form, "Head", GazeTargetType.Head, actor, state);
+        DrawGazePart(form, "Body", GazeTargetType.Body, actor, state);
+
+        var targetAddress = _gazeService.GetGazeTargetAddress(actor);
+        string[] names;
+        int current = -1;
+        if (others.Count == 0)
+            names = ["No other actors"];
         else
         {
-            _gazeActorUnavailableNote = false;
-        }
-
-        h += GazePartRow(new Vector2(cursor.X, cursor.Y + h), width, "Eyes", GazeTargetType.Eyes, actor, state, s);
-        h += GazePartRow(new Vector2(cursor.X, cursor.Y + h), width, "Head", GazeTargetType.Head, actor, state, s);
-        h += GazePartRow(new Vector2(cursor.X, cursor.Y + h), width, "Body", GazeTargetType.Body, actor, state, s);
-
-        // "look at actor" target picker: explicit choice only — nothing is
-        // auto-targeted from the draw loop.
-        if (state.Mode == GazeTargetMode.Entity)
-        {
-            ViewText.Label(cursor + new Vector2(0f, h / s + 7f) * s, "At", 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
-            if (others.Count == 0)
+            names = new string[others.Count];
+            for (int i = 0; i < others.Count; i++)
             {
-                ViewText.Label(cursor + new Vector2(46f, h / s + 7f) * s, "no other actors in the scene", 11f,
-                    FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
+                names[i] = DescriptorDisplayName?.Invoke(others[i])
+                    ?? others[i].Name;
+                if (targetAddress != 0
+                    && _bindings.Resolve(others[i].Id) is
+                        { Success: true, Value: { } resolved }
+                    && resolved.Address == targetAddress)
+                    current = i;
             }
-            else
-            {
-                var targetAddress = _gazeService.GetGazeTargetAddress(actor);
-                var names = new string[others.Count];
-                int current = -1; // placeholder until the user picks a target
-                for (int i = 0; i < others.Count; i++)
-                {
-                    names[i] = DescriptorDisplayName?.Invoke(others[i]) ?? others[i].Name;
-                    if (targetAddress != 0 &&
-                        _bindings.Resolve(others[i].Id) is { Success: true, Value: { } resolved } &&
-                        resolved.Address == targetAddress)
-                        current = i;
-                }
-                ImGui.SetCursorScreenPos(cursor + new Vector2(46f, h / s) * s);
-                Crystarium.Dropdown("##gaze-target", names, current, next =>
-                {
-                    if (next >= 0 && next < others.Count &&
-                        _bindings.Resolve(others[next].Id) is
-                            { Success: true, Value: { } live })
-                        _gazeService.SetGazeTarget(actor, live);
-                });
-            }
-            h += 34f * s;
         }
-        return h;
+        form.Dropdown(
+            "At",
+            names,
+            current,
+            next =>
+            {
+                if (next >= 0
+                    && next < others.Count
+                    && _bindings.Resolve(others[next].Id) is
+                        { Success: true, Value: { } live })
+                    _gazeService.SetGazeTarget(actor, live);
+            },
+            disabled: state.Mode != GazeTargetMode.Entity
+                || others.Count == 0,
+            help: "Actor gaze target");
     }
 
-    private float GazePartRow(
-        Vector2 cursor,
-        float width,
+    private void DrawGazePart(
+        Crystarium.FormScope form,
         string label,
         GazeTargetType part,
         IActor actor,
-        GazeState state,
-        float s)
+        GazeState state)
     {
-        ViewText.Label(cursor + new Vector2(0f, 7f) * s, label, 12f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
-
-        // Off performs no override; part switches and locks are visibly
-        // disabled while Off instead of snapping back silently.
         bool off = state.Mode == GazeTargetMode.None;
         bool enabled = !off && state.TargetType.HasFlag(part);
-        ImGui.SetCursorScreenPos(new Vector2(cursor.X + 94f * s, cursor.Y + 4f * s));
-        Crystarium.Switch($"##gaze-part-{label}", enabled, next =>
-        {
-            enabled = next;
-            var flags = next ? state.TargetType | part : state.TargetType & ~part;
-            _gazeService.SetGazeParts(actor, flags);
-        }, disabled: off);
-        ViewText.Label(cursor + new Vector2(140f, 7f) * s, off ? "off" : enabled ? "driven" : "free", 11f,
-            FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.4f));
-
-        // per-part lock: freezes the participating part at its actual current
-        // target; enabled only for a participating part of an active mode.
         bool locked = _gazeService.IsPartLocked(actor, part);
         bool lockAvailable = !off && state.TargetType.HasFlag(part);
-        ImGui.SetCursorScreenPos(new Vector2(cursor.X + width - 24f * s, cursor.Y + 3f * s));
-        var lockHit = Interactive.Reserve($"##gaze-lock-{label}", new Vector2(20f, 20f) * s, disabled: !lockAvailable);
-        ImGui.SetCursorScreenPos(new Vector2(cursor.X + width - 22f * s, cursor.Y + 5f * s));
-        float lockAlpha = !lockAvailable ? 0.15f : locked ? 0.9f : lockHit.Hovered ? 0.7f : 0.35f;
-        Crystarium.Icon(locked ? TablerIcon.Lock : TablerIcon.LockOpen, 14f * s,
-            ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, lockAlpha)));
-        if (lockHit.Clicked)
-            _gazeService.SetPartLock(actor, part, !locked);
-
-        return 34f * s;
+        form.SwitchActions(
+            label,
+            enabled,
+            next =>
+            {
+                var flags = next
+                    ? state.TargetType | part
+                    : state.TargetType & ~part;
+                _gazeService.SetGazeParts(actor, flags);
+            },
+            actions => actions.Button(
+                locked ? "Unlock" : "Lock",
+                () => _gazeService.SetPartLock(actor, part, !locked),
+                disabled: !lockAvailable,
+                help: "Freeze this gaze part at its current target"),
+            disabled: off,
+            help: off
+                ? "Choose a gaze mode to control this part"
+                : "Include this part in gaze control");
     }
 
     // Preserve the raw hinge-axis wells while dragging. Valid intermediate
@@ -1194,26 +1156,12 @@ public class PoseInspectorPane
     // scrub; the runtime keeps the normalized configuration.
     private Vector3? _ikAxisScratch;
 
-    /// <summary>
-    /// The IK section on the ONE shared form-row geometry
-    /// (InspectorLayout.Form*): every row is FormRowHeight tall with the
-    /// 94px label column, controls sit at the shared per-control origins
-    /// and are sized from the passed width — never ambient available
-    /// width — and slider rows reserve the one right-aligned value
-    /// column. Returns the exact consumed height; nothing overflows.
-    /// </summary>
-    private float DrawIk(Vector2 cursor, float width, float s)
+    private void DrawIk(Crystarium.FormScope form)
     {
-        // The selected bone's chain, read and written through the one
-        // stable-id configuration path.
         if (_primary is not { Kind: SceneEntityKind.Bone, Bone: { } boneId })
-            return 0f;
-        var dl = ImGui.GetWindowDrawList();
+            return;
         var ikTarget = TransformTargetId.ForBone(boneId);
         var config = _ikPort.Get(ikTarget);
-        float h = 0f;
-        float controlX = InspectorLayout.FormControlX(cursor.X, s);
-        float controlW = InspectorLayout.FormControlWidth(width, s);
 
         void Apply(Domain.Posing.IkChainConfig next)
         {
@@ -1221,396 +1169,250 @@ public class PoseInspectorPane
                 config = _ikPort.Get(ikTarget);
         }
 
-        // Header/action row: Live IK plus right-aligned Reset defaults,
-        // on the same outer geometry as every form row beneath it.
         bool eligible = config != null;
         bool armed = config?.Enabled == true;
-        InspectorLayout.FormLabel(cursor, "Live IK", s);
-        ImGui.SetCursorScreenPos(new Vector2(
-            controlX, cursor.Y + InspectorLayout.FormSwitchY * s));
-        Crystarium.Switch("##pose-ik", armed, next =>
-        {
-            armed = next;
-            if (config != null)
-                Apply(config with { Enabled = next });
-        }, disabled: !eligible);
-        if (eligible)
-        {
-            var resetSize = Crystarium.MeasureButton("Reset defaults", ControlStyle.Workspace);
-            ImGui.SetCursorScreenPos(new Vector2(
-                cursor.X + width - resetSize.X,
-                cursor.Y + InspectorLayout.FormButtonY * s));
-            if (Crystarium.Button("Reset defaults",
-                    id: "ik-reset-defaults",
-                    help: "Restore this chain's IK defaults",
-                    style: ControlStyle.Workspace))
+        form.SwitchActions(
+            "Live IK",
+            armed,
+            next =>
             {
-                _ikPort.ResetDefaults(ikTarget);
-                config = _ikPort.Get(ikTarget);
-            }
-        }
-        // The header's semantic target excludes the Reset button, which
-        // explains itself through its own help.
-        float headerHelpW = eligible
-            ? width - (Crystarium.MeasureButton("Reset defaults", ControlStyle.Workspace).X + 8f * s)
-            : width;
-        if (Crystarium.HoverHelp.HelpHovered(
-                cursor, cursor + new Vector2(headerHelpW, InspectorLayout.FormRowHeight * s)))
-            Crystarium.HoverHelp.Explain("ik-row-live",
-                cursor, cursor + new Vector2(headerHelpW, InspectorLayout.FormRowHeight * s),
-                eligible
-                    ? "Solve this chain toward the gizmo target while you pose"
-                    : "This bone has no IK chain — select a hand or foot");
-        h += InspectorLayout.FormRowHeight * s;
+                if (config != null)
+                    Apply(config with { Enabled = next });
+            },
+            actions => actions.Button(
+                "Reset defaults",
+                () =>
+                {
+                    _ikPort.ResetDefaults(ikTarget);
+                    config = _ikPort.Get(ikTarget);
+                },
+                disabled: !eligible,
+                help: "Restore this chain's IK defaults"),
+            disabled: !eligible,
+            help: eligible
+                ? "Solve this chain toward the gizmo target while you pose"
+                : "This bone has no IK chain — select a hand or foot");
         if (config == null)
-        {
-            return h;
-        }
+            return;
 
-        void RowLabel(string label) =>
-            InspectorLayout.FormLabel(new Vector2(cursor.X, cursor.Y + h), label, s);
-
-        // One semantic target per row: hovering the label OR the control
-        // registers the same rect and explanation. Registered AFTER the
-        // row's own controls, so it wins the frame (last registration).
-        void RowHelp(float top, string id, string help)
-        {
-            var helpMin = new Vector2(cursor.X, top);
-            var helpMax = new Vector2(cursor.X + width, top + InspectorLayout.FormRowHeight * s);
-            if (Crystarium.HoverHelp.HelpHovered(helpMin, helpMax))
-                Crystarium.HoverHelp.Explain(id, helpMin, helpMax, help);
-        }
-
-        bool SliderRow(string id, string label, ref float value, float min, float max, string fmt, string help)
-        {
-            float rowTop = cursor.Y + h;
-            RowLabel(label);
-            ImGui.SetCursorScreenPos(new Vector2(
-                controlX, cursor.Y + h + InspectorLayout.FormSliderY * s));
-            float next = value;
-            bool moved = false;
-            Crystarium.Slider(
-                id,
-                value,
-                min,
-                max,
-                changed =>
-                {
-                    next = changed;
-                    moved = true;
-                },
-                new ControlStyle
-            {
-                Width = UiWidth.Fixed(
-                    controlW - InspectorLayout.FormValueColumnWidth),
-            });
-            value = next;
-            string readout = string.Format(fmt, value);
-            ViewText.Label(new Vector2(
-                    cursor.X + width - ViewText.Measure(readout, 11f, mono: true),
-                    cursor.Y + h + InspectorLayout.FormLabelY * s),
-                readout, 11f, FontWeight.Regular,
-                InspectorLayout.LabelColor, mono: true);
-            h += InspectorLayout.FormRowHeight * s;
-            RowHelp(rowTop, id + "-row", help);
-            return moved;
-        }
-
-        bool SwitchRow(string id, string label, bool value, out bool next, string help)
-        {
-            float rowTop = cursor.Y + h;
-            RowLabel(label);
-            ImGui.SetCursorScreenPos(new Vector2(
-                controlX, cursor.Y + h + InspectorLayout.FormSwitchY * s));
-            bool result = value;
-            bool moved = false;
-            Crystarium.Switch(id, value, changed =>
-            {
-                result = changed;
-                moved = true;
-            });
-            next = result;
-            h += InspectorLayout.FormRowHeight * s;
-            RowHelp(rowTop, id + "-row", help);
-            return moved;
-        }
-
-        bool DropdownRow(string id, string label, string[] items, ref int index, string help)
-        {
-            float rowTop = cursor.Y + h;
-            RowLabel(label);
-            ImGui.SetCursorScreenPos(new Vector2(
-                controlX, cursor.Y + h + InspectorLayout.FormTallControlY * s));
-            // The control region's width, explicitly: ambient available
-            // width overshoots the rail into the scrollbar gutter.
-            int next = index;
-            bool moved = false;
-            Crystarium.Dropdown(
-                id,
-                items,
-                index,
-                changed =>
-                {
-                    next = changed;
-                    moved = true;
-                },
-                new ControlStyle
-            {
-                Width = UiWidth.Fixed(controlW),
-            });
-            index = next;
-            h += InspectorLayout.FormRowHeight * s;
-            RowHelp(rowTop, id + "-row", help);
-            return moved;
-        }
-
-        // Solver: Two Joint is offered only when its mandatory chain
-        // resolves.
         bool twoJointAvailable = _ikPort.IsTwoJointAvailable(ikTarget);
         var solverItems = twoJointAvailable
-            ? new[] { "Two Joint", "CCD" }
-            : new[] { "CCD" };
+            ? new[] { "Two Joint", "CCD" } : new[] { "CCD" };
         int solverIndex = config.Solver == Domain.Posing.IkSolver.Ccd
             ? solverItems.Length - 1
             : 0;
-        if (DropdownRow("##ik-solver", "Solver", solverItems, ref solverIndex,
-                "Two Joint is the anatomical arm and leg solver; CCD bends any chain toward the target"))
-        {
+        form.Dropdown(
+            "Solver",
+            solverItems,
+            solverIndex,
+            next =>
+            {
             var solver = twoJointAvailable && solverIndex == 0
                 ? Domain.Posing.IkSolver.TwoJoint
                 : Domain.Posing.IkSolver.Ccd;
+                if (twoJointAvailable)
+                    solver = next == 0
+                        ? Domain.Posing.IkSolver.TwoJoint
+                        : Domain.Posing.IkSolver.Ccd;
             Apply(config with { Solver = solver });
-        }
+            },
+            help: "Two Joint is anatomical; CCD bends any chain toward the target");
 
         if (config.Solver == Domain.Posing.IkSolver.TwoJoint)
         {
             int modeIndex = config.TargetMode == Domain.Posing.IkTargetMode.Fixed ? 1 : 0;
-            if (DropdownRow("##ik-target", "Target",
-                    new[] { "Relative", "Fixed" }, ref modeIndex,
-                    "Relative follows your drag from the current pose; Fixed pins a world-space goal"))
-                Apply(config with
-                {
-                    TargetMode = modeIndex == 1
-                        ? Domain.Posing.IkTargetMode.Fixed
-                        : Domain.Posing.IkTargetMode.Relative,
-                });
+            form.Dropdown(
+                "Target",
+                new[] { "Relative", "Fixed" },
+                modeIndex,
+                next =>
+                    Apply(config with
+                    {
+                        TargetMode = next == 1
+                            ? Domain.Posing.IkTargetMode.Fixed
+                            : Domain.Posing.IkTargetMode.Relative,
+                    }),
+                help: "Relative follows the current pose; Fixed pins a world-space goal");
+            form.Switch(
+                "Constraints",
+                config.EnforceConstraints,
+                next => Apply(config with { EnforceConstraints = next }),
+                help: "Keep joints inside their anatomical limits");
+            form.Switch(
+                "End rotation",
+                config.EnforceEndRotation,
+                next => Apply(config with { EnforceEndRotation = next }),
+                help: "Rotate the end bone to match the target");
 
-            if (SwitchRow("##ik-constraints", "Constraints",
-                    config.EnforceConstraints, out var constraints,
-                    "Keep joints inside their anatomical limits while solving"))
-                Apply(config with { EnforceConstraints = constraints });
-            if (SwitchRow("##ik-endrot", "End rotation",
-                    config.EnforceEndRotation, out var endRotation,
-                    "Also rotate the end bone to match the target's orientation"))
-                Apply(config with { EnforceEndRotation = endRotation });
-
-            var definition = Domain.Posing.IkChains.ForEndpoint(boneId.CanonicalName)!;
+            var definition =
+                Domain.Posing.IkChains.ForEndpoint(boneId.CanonicalName)!;
             var (firstLabel, secondLabel, endLabel) = definition.IsArm
                 ? ("Shoulder", "Elbow", "Hand")
                 : ("Hip", "Knee", "Foot");
-            float firstGain = config.FirstJointGain;
-            if (SliderRow("##ik-gain1", firstLabel, ref firstGain, 0f, 1f, "{0:0.00}",
-                    $"How much the {firstLabel.ToLowerInvariant()} participates in the solve"))
-                Apply(config with { FirstJointGain = firstGain });
-            float secondGain = config.SecondJointGain;
-            if (SliderRow("##ik-gain2", secondLabel, ref secondGain, 0f, 1f, "{0:0.00}",
-                    $"How much the {secondLabel.ToLowerInvariant()} bends to reach the target"))
-                Apply(config with { SecondJointGain = secondGain });
-            float endGain = config.EndJointGain;
-            if (SliderRow("##ik-gain3", endLabel, ref endGain, 0f, 1f, "{0:0.00}",
-                    $"How much the {endLabel.ToLowerInvariant()} adjusts at the target"))
-                Apply(config with { EndJointGain = endGain });
+            form.Slider(
+                firstLabel,
+                config.FirstJointGain,
+                0f,
+                1f,
+                next => Apply(config with { FirstJointGain = next }),
+                help: $"How much the {firstLabel.ToLowerInvariant()} participates");
+            form.Slider(
+                secondLabel,
+                config.SecondJointGain,
+                0f,
+                1f,
+                next => Apply(config with { SecondJointGain = next }),
+                help: $"How much the {secondLabel.ToLowerInvariant()} bends");
+            form.Slider(
+                endLabel,
+                config.EndJointGain,
+                0f,
+                1f,
+                next => Apply(config with { EndJointGain = next }),
+                help: $"How much the {endLabel.ToLowerInvariant()} adjusts");
+            form.Slider(
+                "Hinge min",
+                config.HingeMinDegrees,
+                0f,
+                180f,
+                next =>
+                    Apply(config with
+                    {
+                        HingeMinDegrees = next,
+                        HingeMaxDegrees = MathF.Max(
+                            next, config.HingeMaxDegrees),
+                    }),
+                format: "0°",
+                help: "Smallest allowed hinge bend");
+            form.Slider(
+                "Hinge max",
+                config.HingeMaxDegrees,
+                0f,
+                180f,
+                next =>
+                    Apply(config with
+                    {
+                        HingeMaxDegrees = next,
+                        HingeMinDegrees = MathF.Min(
+                            next, config.HingeMinDegrees),
+                    }),
+                format: "0°",
+                help: "Largest allowed hinge bend");
 
-            float hingeMin = config.HingeMinDegrees;
-            if (SliderRow("##ik-hmin", "Hinge min", ref hingeMin, 0f, 180f, "{0:0}°",
-                    "The hinge joint's smallest allowed bend, in degrees"))
-                Apply(config with
-                {
-                    HingeMinDegrees = hingeMin,
-                    HingeMaxDegrees = MathF.Max(hingeMin, config.HingeMaxDegrees),
-                });
-            float hingeMax = config.HingeMaxDegrees;
-            if (SliderRow("##ik-hmax", "Hinge max", ref hingeMax, 0f, 180f, "{0:0}°",
-                    "The hinge joint's largest allowed bend, in degrees"))
-                Apply(config with
-                {
-                    HingeMaxDegrees = hingeMax,
-                    HingeMinDegrees = MathF.Min(hingeMax, config.HingeMinDegrees),
-                });
-
-            // Hinge axis uses a label row followed by a full-width axis row.
-            float axisRowTop = cursor.Y + h;
-            RowLabel("Hinge axis");
-            h += InspectorLayout.FormRowHeight * s;
-            var axis = _ikAxisScratch ?? config.HingeAxis;
-            float wellW = (width - 2f * InspectorLayout.FormAxisGap * s) / 3f;
-            float wellY = cursor.Y + h + InspectorLayout.FormTallControlY * s;
-            float wellStep = wellW + InspectorLayout.FormAxisGap * s;
-            bool axisChanged = false;
-            axisChanged |= AppShellView.DragAxisWell(dl, new Vector2(cursor.X, wellY), wellW,
-                "ik-axis-x", "X", ref axis.X, Crystarium.ActiveTheme.Palette.AxisX, 0.005f, "0.000", s, out var releasedX);
-            axisChanged |= AppShellView.DragAxisWell(dl, new Vector2(cursor.X + wellStep, wellY), wellW,
-                "ik-axis-y", "Y", ref axis.Y, Crystarium.ActiveTheme.Palette.AxisY, 0.005f, "0.000", s, out var releasedY);
-            axisChanged |= AppShellView.DragAxisWell(dl, new Vector2(cursor.X + wellStep * 2f, wellY), wellW,
-                "ik-axis-z", "Z", ref axis.Z, Crystarium.ActiveTheme.Palette.AxisZ, 0.005f, "0.000", s, out var releasedZ);
-            h += InspectorLayout.FormRowHeight * s;
-            RowHelp(axisRowTop, "ik-axis-row",
+            form.Label(
+                "Hinge axis",
                 "The local axis the middle joint bends around");
-            if (axisChanged)
-            {
-                _ikAxisScratch = axis;
-                Apply(config with { HingeAxis = axis });
-            }
-            if (releasedX || releasedY || releasedZ)
-            {
-                _ikAxisScratch = null;
-            }
+            var axis = _ikAxisScratch ?? config.HingeAxis;
+            form.AxisVector(
+                "",
+                axis,
+                next =>
+                {
+                    _ikAxisScratch = next;
+                    Apply(config with { HingeAxis = next });
+                },
+                () => _ikAxisScratch = null,
+                0.005f,
+                "0.000",
+                fullWidth: true);
         }
         else
         {
-            if (SwitchRow("##ik-constraints", "Constraints",
-                    config.EnforceConstraints, out var constraints,
-                    "Keep joints inside their anatomical limits while solving"))
-                Apply(config with { EnforceConstraints = constraints });
-
-            float depth = config.CcdDepth;
-            if (SliderRow("##ik-depth", "Depth", ref depth, 1f, 20f, "{0:0}",
-                    "How many parent bones the solver may move"))
-                Apply(config with { CcdDepth = (int)MathF.Round(depth) });
-            float iterations = config.CcdIterations;
-            if (SliderRow("##ik-iter", "Iterations", ref iterations, 1f, 60f, "{0:0}",
-                    "Solver passes per update — more lands closer but costs more"))
-                Apply(config with { CcdIterations = (int)MathF.Round(iterations) });
-            float gain = config.CcdGain;
-            if (SliderRow("##ik-gain", "Gain", ref gain, 0f, 1f, "{0:0.00}",
-                    "How far each pass moves toward the target"))
-                Apply(config with { CcdGain = gain });
+            form.Switch(
+                "Constraints",
+                config.EnforceConstraints,
+                next => Apply(config with { EnforceConstraints = next }),
+                help: "Keep joints inside their anatomical limits");
+            form.Slider(
+                "Depth",
+                config.CcdDepth,
+                1f,
+                20f,
+                next =>
+                    Apply(config with
+                    {
+                        CcdDepth = (int)MathF.Round(next),
+                    }),
+                format: "0",
+                help: "How many parent bones the solver may move");
+            form.Slider(
+                "Iterations",
+                config.CcdIterations,
+                1f,
+                60f,
+                next =>
+                    Apply(config with
+                    {
+                        CcdIterations = (int)MathF.Round(next),
+                    }),
+                format: "0",
+                help: "Solver passes per update");
+            form.Slider(
+                "Gain",
+                config.CcdGain,
+                0f,
+                1f,
+                next => Apply(config with { CcdGain = next }),
+                help: "How far each pass moves toward the target");
         }
-
-        return h;
     }
 
-    private float DrawPoseActions(Vector2 cursor, float width, ISkeleton skeleton, float s)
+    private void DrawPoseActions(
+        Crystarium.FormScope form,
+        ISkeleton skeleton)
     {
         var bone = _entity as IBone;
-        float h = 0f;
-
-        var poseActions = new List<RailAction>();
         bool hasAuthoredEdits = _cleanPose.HasAuthoredEdits(skeleton.Actor);
-        if (bone != null)
-            poseActions.Add(new RailAction("Flip bone", "pose-flip", () => _cleanPose.FlipBone(bone),
-                Tooltip: "Flip this bone's edit to the other side"));
-        poseActions.Add(new RailAction("Mirror edits", "pose-mirror", () => _cleanPose.Mirror(skeleton.Actor),
-            Disabled: !hasAuthoredEdits,
-            Tooltip: hasAuthoredEdits
-                ? "Mirror your edits to the other side"
-                : "No edits to mirror"));
-        h += DrawWrappedActions(new Vector2(cursor.X, cursor.Y + h), width, s, poseActions);
-
-        // Reset row
-        ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 4f * s), "Reset", 11f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
-        h += 20f * s;
-
-        var resetActions = new List<RailAction>();
-        if (bone != null)
-            resetActions.Add(new RailAction("Bone", "pose-reset-bone", () => _cleanPose.ResetBone(bone)));
-        resetActions.Add(new RailAction("Body", "pose-reset-body", () => _cleanPose.Reset(skeleton.Actor, PoseRegion.Body)));
-        resetActions.Add(new RailAction("Face", "pose-reset-face", () => _cleanPose.Reset(skeleton.Actor, PoseRegion.Face)));
-        resetActions.Add(new RailAction("Hair", "pose-reset-hair", () => _cleanPose.Reset(skeleton.Actor, PoseRegion.Hair)));
-        resetActions.Add(new RailAction("All", "pose-reset-all",
-            // Actor-level reset: manual pose + expression + gaze + IK in one
-            // documented operation (CleanPoseFacade.ResetAll).
-            () => _cleanPose.ResetAll(skeleton.Actor),
-            Tooltip: "Reset pose, expression, gaze, IK, animation, appearance, and external integrations (collection, design, body profile, MCDF) for this actor"));
-        h += DrawWrappedActions(new Vector2(cursor.X, cursor.Y + h), width, s, resetActions);
-
-        // Clean application-owned transfer slot. It is available independently
-        // of the legacy file codec/import browser.
-        ViewText.Label(new Vector2(cursor.X, cursor.Y + h + 4f * s), "Transfer", 11f, FontWeight.Regular, new Vector4(1f, 1f, 1f, 0.5f));
-        h += 20f * s;
-        bool hasStash = _cleanPose.HasStash;
-        h += DrawWrappedActions(new Vector2(cursor.X, cursor.Y + h), width, s, new[]
+        form.Actions("Edit", actions =>
         {
-            new RailAction("Stash", "pose-stash", () => _cleanPose.Stash(skeleton.Actor),
-                Tooltip: "Copy the current pose to the stash"),
-            new RailAction("Apply stash", "pose-stash-apply", () => _cleanPose.ApplyStash(skeleton.Actor),
-                Disabled: !hasStash,
-                Tooltip: hasStash ? $"Stashed {_cleanPose.StashedAt:HH:mm:ss}" : "Nothing stashed yet"),
+            if (bone != null)
+                actions.Button(
+                    "Flip bone",
+                    () => _cleanPose.FlipBone(bone),
+                    help: "Flip this bone's edit to the other side");
+            actions.Button(
+                "Mirror edits",
+                () => _cleanPose.Mirror(skeleton.Actor),
+                disabled: !hasAuthoredEdits,
+                help: hasAuthoredEdits
+                    ? "Mirror your edits to the other side"
+                    : "No edits to mirror");
         });
-
-        return h;
-    }
-
-    private readonly record struct RailAction(
-        string Label,
-        string Id,
-        Action Invoke,
-        bool Disabled = false,
-        string? Tooltip = null);
-
-    /// <summary>
-    /// Packs compact rail actions from their rendered widths. The final item is
-    /// pulled onto the next row when greedy packing would leave it orphaned.
-    /// </summary>
-    private static float DrawWrappedActions(
-        Vector2 origin,
-        float availableWidth,
-        float scale,
-        IReadOnlyList<RailAction> actions)
-    {
-        if (actions.Count == 0)
-            return 0f;
-
-        float gap = 6f * scale;
-        float rowAdvance = 30f * scale; // 24px compact height + 6px row gap
-        var widths = new float[actions.Count];
-        for (int i = 0; i < actions.Count; i++)
-            widths[i] = Crystarium.MeasureButton(
-                actions[i].Label, ControlStyle.Workspace).X;
-
-        int start = 0;
-        int row = 0;
-        while (start < actions.Count)
+        form.Actions("Reset", actions =>
         {
-            int end = start;
-            float used = 0f;
-            while (end < actions.Count)
-            {
-                float next = widths[end] + (end > start ? gap : 0f);
-                if (end > start && used + next > availableWidth)
-                    break;
-                used += next;
-                end++;
-            }
-            if (end == start)
-                end++;
+            if (bone != null)
+                actions.Button(
+                    "Bone", () => _cleanPose.ResetBone(bone));
+            actions.Button(
+                "Body",
+                () => _cleanPose.Reset(skeleton.Actor, PoseRegion.Body));
+            actions.Button(
+                "Face",
+                () => _cleanPose.Reset(skeleton.Actor, PoseRegion.Face));
+            actions.Button(
+                "Hair",
+                () => _cleanPose.Reset(skeleton.Actor, PoseRegion.Hair));
+        });
+        form.Actions("Reset all", actions => actions.Button(
+            "All",
+            () => _cleanPose.ResetAll(skeleton.Actor),
+            help: "Reset pose, expression, gaze, IK, animation, appearance, and external integrations for this actor"));
 
-            // Avoid the visually accidental-looking 4+1 layout when 3+2 fits.
-            if (actions.Count - end == 1 && end - start > 1)
-                end--;
-
-            float x = 0f;
-            for (int i = start; i < end; i++)
-            {
-                ImGui.SetCursorScreenPos(origin + new Vector2(x, row * rowAdvance));
-                var action = actions[i];
-                if (Crystarium.Button(action.Label,
-                        id: action.Id,
-                        help: action.Tooltip,
-                        disabled: action.Disabled,
-                        style: ControlStyle.Workspace with
-                        {
-                            Width = UiWidth.Fixed(widths[i] / scale),
-                        }))
-                    action.Invoke();
-                x += widths[i] + gap;
-            }
-
-            start = end;
-            row++;
-        }
-
-        return row * rowAdvance + 4f * scale;
+        bool hasStash = _cleanPose.HasStash;
+        form.Actions("Transfer", actions =>
+        {
+            actions.Button(
+                "Stash",
+                () => _cleanPose.Stash(skeleton.Actor),
+                help: "Copy the current pose to the stash");
+            actions.Button(
+                "Apply stash",
+                () => _cleanPose.ApplyStash(skeleton.Actor),
+                disabled: !hasStash,
+                help: hasStash
+                    ? $"Stashed {_cleanPose.StashedAt:HH:mm:ss}"
+                    : "Nothing stashed yet");
+        });
     }
 
     // ── M11 rail helpers (header summary, children, flip, freeze state) ──

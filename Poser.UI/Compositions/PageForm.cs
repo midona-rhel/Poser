@@ -25,6 +25,23 @@ public static partial class Crystarium
         page.Complete(origin, size.X);
     }
 
+    public static float Section(
+        string id,
+        string title,
+        Vector2 origin,
+        float width,
+        bool open,
+        Action<bool> onOpenChanged,
+        Action<FormScope> content)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        var page = new PageScope(id, origin, width, scale);
+        page.DrawStandaloneSection(
+            title, open, onOpenChanged, content);
+        page.Complete(origin, width);
+        return page.LogicalHeight * scale;
+    }
+
     internal readonly record struct ActionItem(
         string Label, Action OnClick, ControlStyle Style,
         string? Help, bool Disabled);
@@ -183,6 +200,15 @@ public static partial class Crystarium
             _y += logicalHeight;
         }
 
+        internal float LogicalHeight => _y;
+
+        internal void DrawStandaloneSection(
+            string title,
+            bool open,
+            Action<bool> onOpenChanged,
+            Action<FormScope> content) =>
+            DrawSection(title, open, onOpenChanged, content);
+
         internal string RowId(string section, string label) =>
             $"##{_id}-{section}-{label}";
 
@@ -207,7 +233,10 @@ public static partial class Crystarium
 
         public void Slider(string label, float value, float minimum, float maximum,
             Action<float> onChange, string format = "0.00", string? help = null,
-            bool disabled = false, ControlStyle style = default)
+            bool disabled = false, ControlStyle style = default,
+            IReadOnlyList<float>? marks = null,
+            Action? onBegin = null,
+            Action? onCommit = null)
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
@@ -223,7 +252,10 @@ public static partial class Crystarium
                     onChange(next);
                 },
                 InRegion(style, controlWidth / row.Scale, fillByDefault: true),
-                disabled: disabled);
+                marks,
+                disabled,
+                onBegin: onBegin,
+                onCommit: onCommit);
             string readout = displayedValue.ToString(format, CultureInfo.InvariantCulture);
             DrawTextRight(
                 new(row.ControlOrigin.X + row.ControlWidth -
@@ -251,6 +283,66 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
+        public void SwitchActions(
+            string label,
+            bool value,
+            Action<bool> onChange,
+            Action<ActionScope> actions,
+            string? help = null,
+            bool disabled = false,
+            ControlStyle style = default)
+        {
+            string id = Id(label);
+            var row = _page.BeginRow(label);
+            var actionScope = new ActionScope();
+            actions(actionScope);
+            float actionWidth = MeasureActions(
+                actionScope.Items, row.Scale, row.ControlWidth);
+            var controlStyle = InRegion(
+                style, row.ControlWidth / row.Scale, fillByDefault: false);
+            ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
+                controlStyle.Height, ActiveTheme.Controls.SwitchHeight)));
+            Crystarium.Switch(id, value, onChange, controlStyle, disabled);
+            DrawActions(
+                actionScope.Items,
+                row.ControlOrigin.X + row.ControlWidth - actionWidth,
+                actionWidth,
+                row.Origin.Y,
+                true,
+                id);
+            _page.EndRow(row, id, help);
+        }
+
+        public void Checkbox(string label, bool value, Action<bool> onChange,
+            string? help = null, bool disabled = false,
+            ControlStyle style = default)
+        {
+            string id = Id(label);
+            var row = _page.BeginRow(label);
+            var controlStyle = InRegion(
+                style, row.ControlWidth / row.Scale, fillByDefault: false);
+            ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
+                controlStyle.Height, ActiveTheme.Controls.CheckboxSize)));
+            Crystarium.Checkbox(
+                id, value, onChange, controlStyle, disabled, help);
+            _page.EndRow(row, id, help);
+        }
+
+        public void Segmented(string label, string[] items,
+            int selected, Action<int> onChange, string? help = null,
+            ControlStyle style = default)
+        {
+            string id = Id(label);
+            var row = _page.BeginRow(label);
+            var controlStyle =
+                WorkspaceInRegion(style, row.ControlWidth / row.Scale);
+            ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
+                controlStyle.Height, ActiveTheme.Controls.NavigationHeight)));
+            Crystarium.SegmentedControl(
+                id, items, selected, onChange, controlStyle);
+            _page.EndRow(row, id, help);
+        }
+
         public void Dropdown(string label, string[] items,
             int selected, Action<int> onChange, string? help = null,
             bool disabled = false, ControlStyle style = default)
@@ -263,6 +355,147 @@ public static partial class Crystarium
                 controlStyle.Height, ActiveTheme.Controls.WorkspaceHeight)));
             Crystarium.Dropdown(id, items, selected, onChange,
                 controlStyle, disabled);
+            _page.EndRow(row, id, help);
+        }
+
+        public void ActionDropdown(
+            string label,
+            string[] items,
+            int selected,
+            string preview,
+            Action<int> onChange,
+            string? help = null,
+            bool disabled = false,
+            ControlStyle style = default)
+        {
+            string id = Id(label);
+            var row = _page.BeginRow(label);
+            var controlStyle =
+                WorkspaceInRegion(style, row.ControlWidth / row.Scale);
+            ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
+                controlStyle.Height,
+                ActiveTheme.Controls.WorkspaceHeight)));
+            Crystarium.ActionDropdown(
+                id,
+                items,
+                selected,
+                preview,
+                onChange,
+                controlStyle,
+                disabled,
+                help);
+            _page.EndRow(row, id, help);
+        }
+
+        public void Picker(
+            string label,
+            string value,
+            Action select,
+            Action<ActionScope>? actions = null,
+            string? help = null,
+            bool disabled = false,
+            ControlStyle style = default)
+        {
+            string id = Id(label);
+            var row = _page.BeginRow(label);
+            var actionScope = new ActionScope();
+            actions?.Invoke(actionScope);
+            float actionWidth = actionScope.Items.Count == 0
+                ? 0f
+                : MeasureActions(
+                    actionScope.Items, row.Scale, row.ControlWidth);
+            float gap = actionScope.Items.Count == 0
+                ? 0f
+                : ActiveTheme.Page.ActionGap * row.Scale;
+            float valueWidth = MathF.Max(
+                0f, row.ControlWidth - actionWidth - gap);
+            var pickerStyle = WorkspaceInRegion(
+                style, valueWidth / row.Scale);
+            float controlHeight = ControlSizing.Height(
+                pickerStyle.Height,
+                ActiveTheme.Controls.WorkspaceHeight);
+            ImGui.SetCursorScreenPos(row.CenterControl(controlHeight));
+            Crystarium.Button(
+                FitText(
+                    value,
+                    valueWidth - ActiveTheme.Spacing.Six * 2f * row.Scale,
+                    ActiveTheme.Typography.LabelSize),
+                select,
+                pickerStyle,
+                disabled,
+                help,
+                id);
+            if (actionScope.Items.Count > 0)
+                DrawActions(
+                    actionScope.Items,
+                    row.ControlOrigin.X + row.ControlWidth - actionWidth,
+                    actionWidth,
+                    row.Origin.Y,
+                    true,
+                    id);
+            _page.EndRow(row, id, help);
+        }
+
+        public void NumericSlider(
+            string label,
+            float value,
+            float minimum,
+            float maximum,
+            Action<float> onChange,
+            float perPixel,
+            string format = "0.00",
+            string? help = null,
+            bool disabled = false,
+            IReadOnlyList<float>? marks = null,
+            Action? onBegin = null,
+            Action? onCommit = null)
+        {
+            string id = Id(label);
+            var row = _page.BeginRow(label);
+            float wellWidth = ActiveTheme.Form.ValueColumnWidth;
+            float gap = ActiveTheme.Page.ActionGap * row.Scale;
+            float sliderWidth = MathF.Max(
+                0f,
+                row.ControlWidth - wellWidth * row.Scale - gap);
+            float displayed = value;
+            ImGui.SetCursorScreenPos(row.CenterControl(
+                ActiveTheme.Controls.WorkspaceHeight));
+            Crystarium.AxisWell(
+                $"{id}-value",
+                "",
+                value,
+                next =>
+                {
+                    displayed = Math.Clamp(next, minimum, maximum);
+                    onBegin?.Invoke();
+                    onChange(displayed);
+                },
+                onCommit,
+                ActiveTheme.FormValue,
+                perPixel,
+                format,
+                ControlStyle.Workspace with
+                {
+                    Width = UiWidth.Fixed(wellWidth),
+                },
+                disabled);
+            ImGui.SetCursorScreenPos(new(
+                row.ControlOrigin.X + wellWidth * row.Scale + gap,
+                row.CenterControl(ActiveTheme.Controls.SliderHeight).Y));
+            Crystarium.Slider(
+                $"{id}-slider",
+                displayed,
+                minimum,
+                maximum,
+                onChange,
+                new ControlStyle
+                {
+                    Width = UiWidth.Fixed(sliderWidth / row.Scale),
+                },
+                marks,
+                disabled,
+                onBegin: onBegin,
+                onCommit: onCommit);
             _page.EndRow(row, id, help);
         }
 
@@ -442,6 +675,13 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
+        public void Label(string text, string? help = null)
+        {
+            string id = Id(text);
+            var row = _page.BeginRow(text);
+            _page.EndRow(row, id, help);
+        }
+
         public void AxisWells(string label, Action<string, float> drawAxis,
             string? help = null)
         {
@@ -460,6 +700,62 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
+        public void AxisVector(
+            string label,
+            Vector3 value,
+            Action<Vector3> onChange,
+            Action? onCommit,
+            float perPixel,
+            string format,
+            string? help = null,
+            bool disabled = false,
+            bool fullWidth = false)
+        {
+            string id = Id(label);
+            var row = _page.BeginRow(fullWidth ? string.Empty : label);
+            float gap = ActiveTheme.Form.AxisGap * row.Scale;
+            float originX = fullWidth ? row.Origin.X : row.ControlOrigin.X;
+            float available = fullWidth ? row.Width : row.ControlWidth;
+            float width = (available - gap * 2f) / 3f;
+            var accents = new[]
+            {
+                ActiveTheme.Palette.AxisX,
+                ActiveTheme.Palette.AxisY,
+                ActiveTheme.Palette.AxisZ,
+            };
+            string[] axes = ["X", "Y", "Z"];
+            for (int i = 0; i < axes.Length; i++)
+            {
+                int axis = i;
+                ImGui.SetCursorScreenPos(new(
+                    originX + i * (width + gap),
+                    row.CenterControl(ActiveTheme.Controls.WorkspaceHeight).Y));
+                Crystarium.AxisWell(
+                    $"{id}-{axes[i]}",
+                    axes[i],
+                    axis == 0 ? value.X : axis == 1 ? value.Y : value.Z,
+                    next =>
+                    {
+                        var changed = value;
+                        if (axis == 0) changed.X = next;
+                        else if (axis == 1) changed.Y = next;
+                        else changed.Z = next;
+                        value = changed;
+                        onChange(changed);
+                    },
+                    onCommit,
+                    accents[i],
+                    perPixel,
+                    format,
+                    ControlStyle.Workspace with
+                    {
+                        Width = UiWidth.Fixed(width / row.Scale),
+                    },
+                    disabled);
+            }
+            _page.EndRow(row, id, help);
+        }
+
         public void CustomCanvas(string label, Action<FormRowScope> draw,
             string? help = null)
         {
@@ -467,17 +763,6 @@ public static partial class Crystarium
             var row = _page.BeginRow(label);
             draw(row);
             _page.EndRow(row, id, help);
-        }
-
-        /// <summary>Hosts an immediate-mode group that reports its consumed
-        /// height in pixels while Page retains section spacing and extent
-        /// ownership.</summary>
-        public void Region(Func<Vector2, float, float, float> draw)
-        {
-            var row = _page.BeginRow("");
-            float consumed = MathF.Max(0f, draw(
-                row.Origin, row.Width, row.Scale));
-            _page.Advance(consumed / row.Scale);
         }
 
         private string Id(string label) => _page.RowId(_section, label);

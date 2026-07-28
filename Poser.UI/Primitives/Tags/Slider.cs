@@ -27,7 +27,9 @@ public static partial class Crystarium
         ControlStyle style = default,
         IReadOnlyList<float>? marks = null,
         bool disabled = false,
-        string? help = null)
+        string? help = null,
+        Action? onBegin = null,
+        Action? onCommit = null)
     {
         float scale = ImGuiHelpers.GlobalScale;
         float widthPx = ControlSizing.Width(
@@ -43,6 +45,8 @@ public static partial class Crystarium
             MathF.Max(Crystarium.ActiveTheme.Controls.SwitchHeight * scale, widthPx),
             controlHeight * scale);
         var hit = Interactive.Reserve(id, size, disabled);
+        if (!disabled && ImGui.IsItemActivated())
+            onBegin?.Invoke();
 
         float half = controlHeight * 0.5f * scale;
         float x0 = hit.ScreenMin.X + half;
@@ -108,6 +112,8 @@ public static partial class Crystarium
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(thumb)), 32);
 
         if (changed) onChange(value);
+        if (!disabled && ImGui.IsItemDeactivated())
+            onCommit?.Invoke();
         if (!string.IsNullOrEmpty(help) && ImGui.IsItemHovered())
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
 
