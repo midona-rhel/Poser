@@ -564,8 +564,16 @@ public class PoseInspectorPane
                 false, bodyFlags))
         {
             var scrolledOrigin = ImGui.GetCursorScreenPos();
+            float surfaceWidth = _poseView == 3
+                ? width + AppShellView.ScrollbarWidth * s
+                : width;
             bodyContentHeight = DrawPoseSurfaceContent(
-                ImGui.GetWindowDrawList(), scrolledOrigin, width, bodyHeight, skeleton, s);
+                ImGui.GetWindowDrawList(),
+                scrolledOrigin,
+                surfaceWidth,
+                bodyHeight,
+                skeleton,
+                s);
         }
         ImGui.EndChild();
         ImGui.PopStyleVar();

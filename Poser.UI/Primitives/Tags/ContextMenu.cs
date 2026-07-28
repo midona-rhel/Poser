@@ -71,6 +71,7 @@ public static partial class Crystarium
         private static double _phaseStart;
         private static bool _focusPending;
         private static int _lastOwnerFrame = -1;
+        private static int _openedFrame = -1;
 
         /// <summary>Opens the menu for <paramref name="id"/> at the given
         /// screen position (typically the mouse), replacing any open menu.
@@ -99,6 +100,7 @@ public static partial class Crystarium
             _phase = Phase.Opening;
             _phaseStart = ImGui.GetTime();
             _focusPending = true;
+            _openedFrame = ImGui.GetFrameCount();
         }
 
         public static void DismissAll()
@@ -126,7 +128,8 @@ public static partial class Crystarium
 
         private static void StartClose()
         {
-            if (_phase is Phase.Opening or Phase.Open)
+            if ((_phase is Phase.Opening or Phase.Open)
+                && ImGui.GetFrameCount() != _openedFrame)
             {
                 _phase = Phase.Closing;
                 _phaseStart = ImGui.GetTime();
@@ -225,15 +228,18 @@ public static partial class Crystarium
 
             // Transparent full-viewport backdrop: swallows the outside
             // press that closes the menu, exactly Picto's backdrop div.
-            if (interactive)
+            if (_phase is Phase.Opening or Phase.Open)
             {
                 ImGui.SetNextWindowPos(Vector2.Zero);
                 ImGui.SetNextWindowSize(io.DisplaySize);
                 ImGui.Begin("##floating-menu-backdrop",
                     hostFlags | ImGuiWindowFlags.NoFocusOnAppearing);
                 ImGui.SetCursorScreenPos(Vector2.Zero);
-                ImGui.InvisibleButton("##floating-menu-backdrop-hit", io.DisplaySize);
-                if (ImGui.IsItemActivated()
+                var backdrop = Interactive.Reserve(
+                    "##floating-menu-backdrop-hit",
+                    io.DisplaySize,
+                    disabled: false);
+                if (backdrop.Clicked
                     || ImGui.IsItemClicked(ImGuiMouseButton.Right))
                     StartClose();
                 ImGui.End();

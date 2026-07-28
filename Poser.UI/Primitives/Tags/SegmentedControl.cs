@@ -14,7 +14,8 @@ public static partial class Crystarium
         Action<int> onChange,
         ControlStyle style = default,
         bool alignFirstTabToCursor = false,
-        Func<int, bool>? itemDisabled = null)
+        Func<int, bool>? itemDisabled = null,
+        Func<int, string?>? itemHelp = null)
     {
         var font = FontRegistry.Resolve(
             FontFamily.Default,
@@ -32,6 +33,7 @@ public static partial class Crystarium
             style,
             alignFirstTabToCursor,
             itemDisabled,
+            itemHelp,
             index => ImGui.CalcTextSize(items[index]).X
                 + padding * 2f,
             (drawList, index, min, max, active, hovered, disabled) =>
@@ -61,7 +63,8 @@ public static partial class Crystarium
         int selected,
         Action<int> onChange,
         ControlStyle style = default,
-        Func<int, bool>? itemDisabled = null) =>
+        Func<int, bool>? itemDisabled = null,
+        Func<int, string?>? itemHelp = null) =>
         SegmentedControlCore(
             id,
             items.Length,
@@ -70,6 +73,7 @@ public static partial class Crystarium
             style,
             false,
             itemDisabled,
+            itemHelp,
             _ => ActiveTheme.Controls.ComfortableHeight
                 * ImGuiHelpers.GlobalScale,
             (_, index, min, max, active, hovered, disabled) =>
@@ -137,6 +141,7 @@ public static partial class Crystarium
         ControlStyle style,
         bool alignFirstTabToCursor,
         Func<int, bool>? itemDisabled,
+        Func<int, string?>? itemHelp,
         Func<int, float> naturalWidth,
         DrawSegment draw)
     {
@@ -173,6 +178,16 @@ public static partial class Crystarium
                 $"{id}##{i}",
                 tabMax - tabMin,
                 disabled);
+            string? help = itemHelp?.Invoke(i);
+            if (!string.IsNullOrEmpty(help)
+                && (hit.Hovered
+                    || (disabled
+                        && HoverHelp.HelpHovered(tabMin, tabMax))))
+                HoverHelp.Explain(
+                    $"{id}##help-{i}",
+                    tabMin,
+                    tabMax,
+                    help);
             if (hit.Clicked && selected != i)
             {
                 selected = i;

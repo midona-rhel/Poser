@@ -345,10 +345,21 @@ public static class AppShellView
         x = PlaceIconSegments(new Vector2(x, min.Y + (h - segmentHeight * s) / 2f),
             new[] { TablerIcon.ArrowsMove, TablerIcon.Rotate, TablerIcon.ArrowsDiagonal,
                 TablerIcon.ArrowsMaximize },
-            vm.GizmoOperation, s, i => vm.OnGizmoOperation?.Invoke(i));
+            vm.GizmoOperation, s, i => vm.OnGizmoOperation?.Invoke(i),
+            itemHelp: i => i switch
+            {
+                0 => "Move the selection",
+                1 => "Rotate the selection",
+                2 => "Scale the selection",
+                _ => "Move, rotate, or scale with the universal gizmo",
+            });
         x += actionGap * s;
         x = PlaceTextSegments(new Vector2(x, min.Y + (h - segmentHeight * s) / 2f),
-            new[] { "Local", "World" }, vm.GizmoSpace, s, i => vm.OnGizmoSpace?.Invoke(i));
+            new[] { "Local", "World" }, vm.GizmoSpace, s,
+            i => vm.OnGizmoSpace?.Invoke(i),
+            itemHelp: i => i == 0
+                ? "Use the selected target's local axes"
+                : "Use world-space axes");
         // Pivot keeps a permanent slot so tool/selection changes cannot move
         // the rest of the toolbar. Both choices disable when pivot is
         // inapplicable; Parent additionally needs a live parent bone.
@@ -357,22 +368,20 @@ public static class AppShellView
             new[] { "Self", "Parent" }, vm.RotationPivot, s,
             i => vm.OnRotationPivot?.Invoke(i),
             itemDisabled: i => !vm.RotationPivotEnabled
-                || (i == 1 && !vm.RotationPivotParentAvailable));
+                || (i == 1 && !vm.RotationPivotParentAvailable),
+            itemHelp: i => i == 0
+                ? "Rotate each selected target around itself"
+                : "Rotate around the selected bone's parent pivot");
         x += actionGap * s;
         x = PlaceTextSegments(new Vector2(x, min.Y + (h - segmentHeight * s) / 2f),
             new[] { "Off", "Link", "Mirror" }, vm.SymmetryMode, s,
-            i => vm.OnSymmetry?.Invoke(i));
-        x += actionGap * s;
-        PlaceIconButton(dl, new Vector2(x, min.Y + (h - actionSize * s) / 2f),
-            TablerIcon.Atom, vm.PhysicsOn, s,
-            vm.PhysicsAvailable
-                ? () => vm.OnPhysics?.Invoke(!vm.PhysicsOn)
-                : null,
-            dimmed: !vm.PhysicsAvailable,
-            help: vm.PhysicsAvailable
-                ? "Toggle actor physics"
-                : "Select an actor or bone to control physics");
-        x += (actionSize + actionGap) * s;
+            i => vm.OnSymmetry?.Invoke(i),
+            itemHelp: i => i switch
+            {
+                0 => "Edit only the current selection",
+                1 => "Apply the same edit to linked selections",
+                _ => "Apply mirrored edits across left and right bones",
+            });
 
         // tb-right cell: when the rail is present, the right cluster sits on a
         // surface-1 cell continuous with the rail below (shell rule)
@@ -635,20 +644,20 @@ public static class AppShellView
             float ax = cursor.X + innerW - actionReserve;
             DrawRowAction(
                 $"##target-{id}", new Vector2(ax, cursor.Y + 3f * s),
-                TablerIcon.Eye, false, s,
+                TablerIcon.Crosshair, false, s,
                 () => vm.OnActorTarget?.Invoke(row),
                 "Set game target");
             ax += 22f * s;
             DrawRowAction(
                 $"##visible-{id}", new Vector2(ax, cursor.Y + 3f * s),
-                row.ActorVisible ? TablerIcon.Eye : TablerIcon.EyeOff,
+                TablerIcon.Eye,
                 !row.ActorVisible, s,
                 () => vm.OnActorVisibility?.Invoke(row),
                 row.ActorVisible ? "Hide actor" : "Show actor");
             ax += 22f * s;
             DrawRowAction(
                 $"##pause-{id}", new Vector2(ax, cursor.Y + 3f * s),
-                row.ActorPaused ? TablerIcon.PlayerPlay : TablerIcon.Movie,
+                TablerIcon.PlayerPlay,
                 row.ActorPaused, s,
                 () => vm.OnActorPause?.Invoke(row),
                 row.ActorPaused ? "Resume animation" : "Pause animation");
@@ -809,14 +818,25 @@ public static class AppShellView
             min,
             new Vector2(rx - min.X, ToolbarHeight * s),
             _ => { },
-            right => right.Switch(
-                "Animation",
-                vm.AnimationOn,
-                next => vm.OnAnimation?.Invoke(next),
-                vm.AnimationAvailable
-                    ? "Pause or resume the selected actor"
-                    : "Select an actor to control animation",
-                disabled: !vm.AnimationAvailable),
+            right =>
+            {
+                right.Switch(
+                    "Animation",
+                    vm.AnimationOn,
+                    next => vm.OnAnimation?.Invoke(next),
+                    vm.AnimationAvailable
+                        ? "Pause or resume the selected actor"
+                        : "Select an actor to control animation",
+                    disabled: !vm.AnimationAvailable);
+                right.Switch(
+                    "Physics",
+                    vm.PhysicsOn,
+                    next => vm.OnPhysics?.Invoke(next),
+                    vm.PhysicsAvailable
+                        ? "Enable or disable physics for the selected actor"
+                        : "Select an actor or bone to control physics",
+                    disabled: !vm.PhysicsAvailable);
+            },
             ActionBarSeparator.None);
 
         // Toolbar and content share one 12px horizontal inset. The viewport
@@ -922,8 +942,7 @@ public static class AppShellView
                 Crystarium.ActiveTheme.Controls.SwitchHeight) with
             {
                 Bare = true,
-                Selected = inactive,
-                Slashed = inactive && icon != TablerIcon.EyeOff,
+                Slashed = inactive,
             },
             help: help,
             id: id);
@@ -989,7 +1008,8 @@ public static class AppShellView
         TablerIcon[] icons,
         int selected,
         float scale,
-        Action<int> onSelect)
+        Action<int> onSelect,
+        Func<int, string?>? itemHelp = null)
     {
         ImGui.SetCursorScreenPos(position);
         var size = Crystarium.MeasureSegmentedControl(icons);
@@ -997,7 +1017,8 @@ public static class AppShellView
             $"##shell-icon-segments-{position.X:0}",
             icons,
             selected,
-            onSelect);
+            onSelect,
+            itemHelp: itemHelp);
         return position.X + size.X;
     }
 
@@ -1007,7 +1028,8 @@ public static class AppShellView
         int selected,
         float scale,
         Action<int> onSelect,
-        Func<int, bool>? itemDisabled = null)
+        Func<int, bool>? itemDisabled = null,
+        Func<int, string?>? itemHelp = null)
     {
         ImGui.SetCursorScreenPos(position);
         var size = Crystarium.MeasureSegmentedControl(labels);
@@ -1016,7 +1038,8 @@ public static class AppShellView
             labels,
             selected,
             onSelect,
-            itemDisabled: itemDisabled);
+            itemDisabled: itemDisabled,
+            itemHelp: itemHelp);
         return position.X + size.X;
     }
 

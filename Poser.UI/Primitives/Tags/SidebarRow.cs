@@ -29,6 +29,9 @@ public record struct SidebarRowProps
     /// siblings stay aligned; a flat list has nothing to align to and the
     /// 16px would just be dead space.</summary>
     public bool NoExpanderSlot;
+    /// <summary>Reserves the standard icon column without drawing a glyph,
+    /// so optional selection checks never move neighboring labels.</summary>
+    public bool HideIcon;
 }
 
 public static partial class Crystarium
@@ -121,11 +124,11 @@ public static partial class Crystarium
         float iconSize = Crystarium.ActiveTheme.Controls.IconSize * scale;
         var iconTint = theme.Text with { W = hit.Hovered ? 1f : 0.85f };
         var iconPos = new Vector2(x, hit.ScreenMin.Y + (height - iconSize) * 0.5f);
-        if (props.IconTexture is { } texture)
+        if (!props.HideIcon && props.IconTexture is { } texture)
         {
             dl.AddImage(texture.Handle, iconPos, iconPos + new Vector2(iconSize, iconSize));
         }
-        else
+        else if (!props.HideIcon)
         {
             var savedCursor = ImGui.GetCursorScreenPos();
             ImGui.SetCursorScreenPos(iconPos);

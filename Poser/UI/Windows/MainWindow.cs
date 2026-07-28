@@ -145,7 +145,6 @@ public class MainWindow : Window
         };
         _poseInspector.DescriptorDisplayName = ActorDisplayName;
         appearancePane.DisplayNameProvider = ActorDisplayName;
-        animationPane.DisplayNameProvider = ActorDisplayName;
         // Transitional: the inspector still takes entity display lookups until
         // its own migration; route them through the lineage nickname store.
         _poseInspector.ActorDisplayNameProvider = actor =>
@@ -922,7 +921,7 @@ public class MainWindow : Window
             // object slot and only the explicit entry pays it.
             var items = new[]
             {
-                new ContextMenuItem("New actor", TablerIcon.User),
+                new ContextMenuItem("New actor", TablerIcon.UserPlus),
                 new ContextMenuItem("New actor with companion slot", TablerIcon.Paw),
                 ContextMenuItem.Separator,
                 new ContextMenuItem("New prop", TablerIcon.Diamond),
@@ -989,10 +988,10 @@ public class MainWindow : Window
 
         var items = new List<ContextMenuItem>
         {
-            new("Set game target", TablerIcon.Eye),
+            new("Set game target", TablerIcon.Crosshair),
             new(!_spawnService.IsVisible(actor) ? "Show" : "Hide", !_spawnService.IsVisible(actor) ? TablerIcon.Eye : TablerIcon.EyeOff),
             new(_animation.IsPaused(actorId) ? "Resume animation" : "Pause animation",
-                _animation.IsPaused(actorId) ? TablerIcon.PlayerPlay : TablerIcon.Movie),
+                TablerIcon.PlayerPlay),
             new("Rename…", TablerIcon.Edit),
             new("Clone", TablerIcon.Stack2),
             ContextMenuItem.Separator,

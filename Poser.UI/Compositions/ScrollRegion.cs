@@ -57,6 +57,7 @@ public static partial class Crystarium
             bool selected = false,
             string? badge = null,
             IDalamudTextureWrap? iconTexture = null,
+            bool iconVisible = true,
             ControlStyle style = default)
         {
             DrawSeparator();
@@ -74,6 +75,7 @@ public static partial class Crystarium
                     Selected = selected,
                     Badge = badge,
                     IconTexture = iconTexture,
+                    HideIcon = !iconVisible,
                 },
                 style with { Width = UiWidth.Fixed(ContentWidth) });
             _rowCount++;

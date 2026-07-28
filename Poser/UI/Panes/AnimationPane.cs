@@ -63,8 +63,6 @@ public sealed class AnimationPane
         AnimationStance.Sleeping,
     ];
 
-    public Func<ActorDescriptor, string>? DisplayNameProvider;
-
     public AnimationPane(
         AnimationSession animation,
         AnimationCatalog catalog,
@@ -102,10 +100,6 @@ public sealed class AnimationPane
             var reading =
                 _animation.Read(actor) ?? ActorAnimationReading.Empty;
             var owned = _animation.OverridesFor(actor);
-            var descriptor = Describe(actor);
-            page.Status(descriptor == null
-                ? "Actor"
-                : DisplayNameProvider?.Invoke(descriptor) ?? "Actor");
             page.Status(_status);
 
             page.Section(

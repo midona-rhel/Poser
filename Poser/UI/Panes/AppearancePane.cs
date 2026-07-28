@@ -35,6 +35,7 @@ public sealed class AppearancePane
     private ActorId? _readoutActor;
     private DateTime _readoutAt = DateTime.MinValue;
     private string _collectionReadout = "—";
+    private Guid? _collectionId;
     private bool _bodyBlocked;
     private string _bodyBlockedDetail = string.Empty;
 
@@ -204,7 +205,8 @@ public sealed class AppearancePane
                         OpenPicker(
                             "Collection",
                             "Penumbra collection",
-                            _integration.ListCollections);
+                            _integration.ListCollections,
+                            _collectionId?.ToString("N"));
                     },
                     () =>
                     {
@@ -436,7 +438,8 @@ public sealed class AppearancePane
     private void OpenPicker(
         string owner,
         string caption,
-        Func<IntegrationValue<IReadOnlyList<ExternalItem>>> load)
+        Func<IntegrationValue<IReadOnlyList<ExternalItem>>> load,
+        string? selectedKey = null)
     {
         var loaded = load();
         _picker.Open(
@@ -447,6 +450,7 @@ public sealed class AppearancePane
                 : Array.Empty<ExternalItem>(),
             item => item.Name,
             item => item.Id.ToString("N"),
+            selectedKey,
             loaded.Success ? null : loaded.Detail);
     }
 
@@ -482,6 +486,10 @@ public sealed class AppearancePane
             collection.Success && collection.Value is { } assignment
                 ? assignment.EffectiveName
                 : "—";
+        _collectionId =
+            collection.Success && collection.Value is { } selectedCollection
+                ? selectedCollection.EffectiveId
+                : null;
 
         _bodyBlocked = false;
         _bodyBlockedDetail = string.Empty;
