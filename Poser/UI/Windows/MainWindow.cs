@@ -351,13 +351,10 @@ public class MainWindow : Window
         // remain available while animation plays, so the right column is
         // never reclaimed and the window width never depends on the tab.
         //
-        // Only Pose owns its viewport, because its surfaces are bounded
-        // canvases that must not scroll. Animation is a document and uses
-        // the SHELL's scroll, which is what reserves the 12px scrollbar
-        // gutter: the shell child spans the full panel width while the
-        // content it hands out is already inset, so the scrollbar lands in
-        // that reserved band instead of over the content. A pane that
-        // opens its own child inside the inset content loses the gutter.
+        // Pose owns a fixed outer viewport. Matrix scrolls only inside that
+        // allocation; its nested ScrollRegion consumes the same physical
+        // gutter the shell reserved, so mode changes cannot alter width.
+        // Animation is a document and uses the shell's scroll.
         _vm.ContentOwnsViewport = _activeTab == "Pose";
         _vm.ContentUsesPage =
             _activeTab is "Animation" or "Appearance";

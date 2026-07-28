@@ -38,7 +38,6 @@ public static partial class Crystarium
     public sealed class ScrollRegionScope
     {
         private readonly float _scale;
-        private int _rowCount;
         private Vector2 _lastRowMin;
         private Vector2 _lastRowMax;
 
@@ -60,7 +59,6 @@ public static partial class Crystarium
             bool iconVisible = true,
             ControlStyle style = default)
         {
-            DrawSeparator();
             _lastRowMin = ImGui.GetCursorScreenPos();
             _lastRowMax = _lastRowMin + new Vector2(
                 ContentWidth * _scale,
@@ -78,7 +76,6 @@ public static partial class Crystarium
                     HideIcon = !iconVisible,
                 },
                 style with { Width = UiWidth.Fixed(ContentWidth) });
-            _rowCount++;
             return clicked;
         }
 
@@ -103,20 +100,6 @@ public static partial class Crystarium
             ImGui.Dummy(new Vector2(
                 ContentWidth * _scale,
                 Crystarium.ActiveTheme.Controls.ListRowHeight * _scale));
-        }
-
-        private void DrawSeparator()
-        {
-            if (_rowCount == 0)
-                return;
-            var cursor = ImGui.GetCursorScreenPos();
-            ImGui.GetWindowDrawList().AddRectFilled(
-                cursor,
-                new Vector2(
-                    cursor.X + ContentWidth * _scale,
-                    cursor.Y + MathF.Max(1f, _scale)),
-                ImGui.ColorConvertFloat4ToU32(
-                    Crystarium.ActiveTheme.Border with { W = 0.24f }));
         }
     }
 

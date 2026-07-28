@@ -69,7 +69,6 @@ public static partial class Crystarium
         private static Vector2 _size;
         private static Vector2 _pivot;
         private static double _phaseStart;
-        private static bool _focusPending;
         private static int _lastOwnerFrame = -1;
         private static int _openedFrame = -1;
 
@@ -99,7 +98,6 @@ public static partial class Crystarium
 
             _phase = Phase.Opening;
             _phaseStart = ImGui.GetTime();
-            _focusPending = true;
             _openedFrame = ImGui.GetFrameCount();
         }
 
@@ -160,6 +158,23 @@ public static partial class Crystarium
             if (_phase == Phase.Hidden || _id != id)
                 return -1;
             if (!Interactive.OwnsExclusive(ExclusiveKey(id)))
+            {
+                DismissAll();
+                return -1;
+            }
+
+            var pointer = ImGui.GetMousePos();
+            bool pointerOverMenu =
+                pointer.X >= _min.X
+                && pointer.X < _min.X + _size.X
+                && pointer.Y >= _min.Y
+                && pointer.Y < _min.Y + _size.Y;
+            bool outsidePressed =
+                ImGui.IsMouseClicked(ImGuiMouseButton.Left)
+                || ImGui.IsMouseClicked(ImGuiMouseButton.Right);
+            if (ImGui.GetFrameCount() != _openedFrame
+                && ((outsidePressed && !pointerOverMenu)
+                    || ImGui.IsKeyPressed(ImGuiKey.Escape)))
             {
                 DismissAll();
                 return -1;
@@ -232,29 +247,21 @@ public static partial class Crystarium
             {
                 ImGui.SetNextWindowPos(Vector2.Zero);
                 ImGui.SetNextWindowSize(io.DisplaySize);
+                ImGui.SetNextWindowFocus();
                 ImGui.Begin("##floating-menu-backdrop",
                     hostFlags | ImGuiWindowFlags.NoFocusOnAppearing);
                 ImGui.SetCursorScreenPos(Vector2.Zero);
-                var backdrop = Interactive.Reserve(
+                Interactive.Reserve(
                     "##floating-menu-backdrop-hit",
                     io.DisplaySize,
                     disabled: false);
-                if (backdrop.Clicked
-                    || ImGui.IsItemClicked(ImGuiMouseButton.Right))
-                    StartClose();
                 ImGui.End();
-                if (ImGui.IsKeyPressed(ImGuiKey.Escape))
-                    StartClose();
             }
 
             float host = Crystarium.ActiveTheme.Floating.HostMargin * s;
             ImGui.SetNextWindowPos(_min - new Vector2(host, host));
             ImGui.SetNextWindowSize(_size + new Vector2(host, host) * 2f);
-            if (_focusPending)
-            {
-                ImGui.SetNextWindowFocus();
-                _focusPending = false;
-            }
+            ImGui.SetNextWindowFocus();
             ImGui.Begin("##floating-menu", hostFlags);
             var dl = ImGui.GetWindowDrawList();
             int vtxStart = dl.VtxBuffer.Size;

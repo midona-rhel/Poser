@@ -562,7 +562,7 @@ public class PoseInspectorPane
                 false, bodyFlags))
         {
             var scrolledOrigin = ImGui.GetCursorScreenPos();
-            float surfaceWidth = _poseView == 3
+            float surfaceWidth = _poseView is 2 or 3
                 ? width + AppShellView.ScrollbarWidth * s
                 : width;
             bodyContentHeight = DrawPoseSurfaceContent(
@@ -618,10 +618,11 @@ public class PoseInspectorPane
         float s)
     {
         var theme = Crystarium.ActiveTheme;
-        float inset = theme.Page.Inset * s;
-        var min = cursor + new Vector2(inset);
-        var max = cursor + new Vector2(width, viewportHeight)
-            - new Vector2(inset);
+        // The shell already allocated the page inset. Matrix consumes that
+        // box directly; its nested ScrollRegion receives the physical gutter
+        // and subtracts it exactly once.
+        var min = cursor;
+        var max = cursor + new Vector2(width, viewportHeight);
         if (max.X <= min.X || max.Y <= min.Y)
             return viewportHeight;
 
@@ -1073,7 +1074,7 @@ public class PoseInspectorPane
             GazeTargetMode.Camera => 2,
             _ => 3,
         };
-        form.Segmented("Mode", options, mode, selected =>
+        form.Dropdown("Mode", options, mode, selected =>
         {
             mode = selected;
             if (mode == 3 && others.Count == 0)

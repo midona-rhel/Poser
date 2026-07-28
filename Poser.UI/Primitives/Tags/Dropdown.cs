@@ -159,9 +159,6 @@ public static partial class Crystarium
                         uint selectedFill = ImGui.ColorConvertFloat4ToU32(
                             ColorEx.ApplyAlpha(
                                 Crystarium.ActiveTheme.Chrome.SidebarSelected));
-                        uint separator = ImGui.ColorConvertFloat4ToU32(
-                            ColorEx.ApplyAlpha(
-                                Crystarium.ActiveTheme.Chrome.ControlBorder));
                         var spacing = ImGui.GetStyle().ItemSpacing;
                         ImGui.PushStyleVar(
                             ImGuiStyleVar.ItemSpacing,
@@ -247,20 +244,6 @@ public static partial class Crystarium
                                     itemPos,
                                     itemPos + hitSize,
                                     items[i]);
-
-                            // Paint boundaries after row state fills so a
-                            // selected or hovered row cannot erase them.
-                            if (i < items.Length - 1)
-                            {
-                                float lineY = itemPos.Y + fillSize.Y
-                                    - MathF.Max(1f, scale);
-                                popupDrawList.AddRectFilled(
-                                    new Vector2(itemPos.X, lineY),
-                                    new Vector2(
-                                        itemPos.X + fillSize.X,
-                                        itemPos.Y + fillSize.Y),
-                                    separator);
-                            }
 
                             ImGui.PopID();
                         }

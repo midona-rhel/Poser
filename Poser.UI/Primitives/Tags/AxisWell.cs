@@ -94,7 +94,7 @@ public static partial class Crystarium
         float scale)
     {
         DrawAxisWell(pos, size, axis, _axisEditValue, accent, format,
-            focused: true, disabled: false, scale);
+            focused: true, disabled: false, scale, drawValue: false);
 
         var mono = FontRegistry.Resolve(
             FontFamily.Mono, ActiveTheme.Typography.LabelSize);
@@ -182,7 +182,8 @@ public static partial class Crystarium
         string format,
         bool focused,
         bool disabled,
-        float scale)
+        float scale,
+        bool drawValue = true)
     {
         var draw = ImGui.GetWindowDrawList();
         var max = pos + size;
@@ -239,23 +240,27 @@ public static partial class Crystarium
                 axis);
             draw.PopClipRect();
         }
-        string text = value.ToString(format, CultureInfo.InvariantCulture);
-        var textSize = ImGui.CalcTextSize(text);
-        float textY = pos.Y
-            + (size.Y - textSize.Y) * 0.5f
-            + ActiveTheme.Optical.AxisText * scale;
-        draw.PushClipRect(
-            new Vector2(pos.X + axisSlot, pos.Y + inset),
-            max - new Vector2(inset),
-            true);
-        draw.AddText(
-            new Vector2(
-                max.X - pad - textSize.X,
-                textY),
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
-                disabled ? ActiveTheme.TextDim : ActiveTheme.Text)),
-            text);
-        draw.PopClipRect();
+        if (drawValue)
+        {
+            string text =
+                value.ToString(format, CultureInfo.InvariantCulture);
+            var textSize = ImGui.CalcTextSize(text);
+            float textY = pos.Y
+                + (size.Y - textSize.Y) * 0.5f
+                + ActiveTheme.Optical.AxisText * scale;
+            draw.PushClipRect(
+                new Vector2(pos.X + axisSlot, pos.Y + inset),
+                max - new Vector2(inset),
+                true);
+            draw.AddText(
+                new Vector2(
+                    max.X - pad - textSize.X,
+                    textY),
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                    disabled ? ActiveTheme.TextDim : ActiveTheme.Text)),
+                text);
+            draw.PopClipRect();
+        }
         if (pushed)
             mono!.Pop();
     }
