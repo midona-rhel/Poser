@@ -276,19 +276,12 @@ public class PoseInspectorPane
         var dl = ImGui.GetWindowDrawList();
         var cursor = origin;
 
-        var surfaceSkeleton = OwningSkeleton();
-        if (surfaceSkeleton != null)
-        {
-            cursor.Y += DrawPoseSurface(dl, cursor, size, surfaceSkeleton, s);
-        }
-        else
-        {
-            Crystarium.Page(
-                "pose-empty",
-                origin,
-                size,
-                page => page.EmptyState());
-        }
+        cursor.Y += DrawPoseSurface(
+            dl,
+            cursor,
+            size,
+            OwningSkeleton(),
+            s);
         ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
         _poseFileSection.DrawBrowsers();
     }
@@ -482,7 +475,12 @@ public class PoseInspectorPane
 
     // ── pose surface: Body/Face/Bones seg + strip + matrix (approved M2) ─
 
-    private float DrawPoseSurface(ImDrawListPtr dl, Vector2 cursor, Vector2 size, ISkeleton skeleton, float s)
+    private float DrawPoseSurface(
+        ImDrawListPtr dl,
+        Vector2 cursor,
+        Vector2 size,
+        ISkeleton? skeleton,
+        float s)
     {
         float tabsHeightPx = AppShellView.ToolbarHeight;
         float footerHeightPx =
@@ -538,12 +536,17 @@ public class PoseInspectorPane
                 id: "pose-3d-reset");
         }
 
+        float shellLeft =
+            cursor.X - AppShellView.MainHorizontalPadding * s;
+        float shellWidth = width
+            + (AppShellView.MainHorizontalPadding * 2f
+                + AppShellView.ScrollbarWidth) * s;
         dl.AddRectFilled(
             new Vector2(
-                cursor.X - AppShellView.MainHorizontalPadding * s,
+                shellLeft,
                 cursor.Y + tabsHeight - 1f * s),
             new Vector2(
-                cursor.X + width + AppShellView.MainHorizontalPadding * s,
+                shellLeft + shellWidth,
                 cursor.Y + tabsHeight),
             ImGui.ColorConvertFloat4ToU32(
                 ColorEx.ApplyAlpha(
@@ -575,17 +578,14 @@ public class PoseInspectorPane
                 scrolledOrigin,
                 surfaceWidth,
                 bodyHeight,
-                skeleton,
                 s);
         }
         ImGui.EndChild();
         ImGui.PopStyleVar();
 
         DrawPoseFooter(
-            new Vector2(cursor.X, cursor.Y + height - footerHeight),
-            width
-                + (AppShellView.MainHorizontalPadding
-                    + AppShellView.ScrollbarWidth) * s,
+            new Vector2(shellLeft, cursor.Y + height - footerHeight),
+            shellWidth,
             skeleton);
         return height;
     }
@@ -595,7 +595,6 @@ public class PoseInspectorPane
         Vector2 cursor,
         float width,
         float viewportHeight,
-        ISkeleton skeleton,
         float s)
     {
         if (_poseView is 0 or 1)
@@ -732,10 +731,12 @@ public class PoseInspectorPane
     private void DrawPoseFooter(
         Vector2 cursor,
         float width,
-        ISkeleton skeleton)
+        ISkeleton? skeleton)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        var poseInfo = _bonePosingService.GetPoseInfo(skeleton);
+        var poseInfo = skeleton == null
+            ? null
+            : _bonePosingService.GetPoseInfo(skeleton);
         Crystarium.ActionBar(
             "pose-parenting-footer",
             cursor,
@@ -764,22 +765,27 @@ public class PoseInspectorPane
                 })
                 {
                     bool propagates =
-                        poseInfo.DefaultPropagation.HasFlag(component);
+                        poseInfo?.DefaultPropagation.HasFlag(component)
+                        ?? false;
                     bar.Checkbox(
                         label,
                         propagates,
                         next =>
                         {
+                            if (poseInfo == null)
+                                return;
                             poseInfo.DefaultPropagation = next
                                 ? poseInfo.DefaultPropagation | component
                                 : poseInfo.DefaultPropagation & ~component;
                         },
-                        help);
+                        help,
+                        disabled: poseInfo == null);
                 }
                 bar.Button(
                     "Clear",
                     _selection.Clear,
-                    "Clear bone selection");
+                    "Clear bone selection",
+                    disabled: skeleton == null);
             });
     }
 
