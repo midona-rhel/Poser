@@ -77,6 +77,7 @@ public sealed class UIManager : IUIManager
         // so registrations from any pane are complete and the card sits
         // on the foreground list above all of them.
         Crystarium.HoverHelp.Render();
+        Interactive.EndFrame();
         HandleKeybinds();
     }
 

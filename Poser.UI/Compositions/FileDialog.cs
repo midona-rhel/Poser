@@ -51,6 +51,8 @@ public static partial class Crystarium
 
         public bool IsOpen => _open;
 
+        private string SurfaceId => $"{_title}{_id}";
+
         public void Open(string initialPath, Action<string> onSelect)
         {
             _onSelect = onSelect;
@@ -65,6 +67,7 @@ public static partial class Crystarium
             }
             NavigateTo(initialPath);
             _open = true;
+            FloatingSurface.OpenWindow(SurfaceId);
         }
 
         public void Draw()
@@ -82,7 +85,7 @@ public static partial class Crystarium
         private void DrawWindow()
         {
             FloatingSurface.Window(
-                $"{_title}{_id}",
+                SurfaceId,
                 ref _open,
                 Crystarium.ActiveTheme.FileDialog.Width,
                 Crystarium.ActiveTheme.FileDialog.Height,

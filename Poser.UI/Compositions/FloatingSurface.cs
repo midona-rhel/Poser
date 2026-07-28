@@ -54,10 +54,13 @@ public static partial class Crystarium
 
         public static void OpenPopup(string id)
         {
-            FloatingMenu.DismissAll();
             Interactive.ClaimExclusive(id);
             ImGui.OpenPopup(id);
         }
+
+        public static void OpenWindow(string id) =>
+            Interactive.ClaimExclusive(
+                id, InteractionLayer.FloatingWindow);
 
         public static bool Popup(
             string id,
@@ -91,6 +94,7 @@ public static partial class Crystarium
                 | ImGuiWindowFlags.NoSavedSettings);
             if (open)
             {
+                Interactive.TouchExclusive(id);
                 var min = ImGui.GetWindowPos();
                 var max = min + ImGui.GetWindowSize();
                 if (!Interactive.OwnsExclusive(id))
@@ -126,6 +130,17 @@ public static partial class Crystarium
             float height,
             Action<FloatingSurfaceFrame> body)
         {
+            if (open && !Interactive.OwnsExclusive(id))
+            {
+                open = false;
+                return false;
+            }
+            if (!open)
+            {
+                Interactive.ReleaseExclusive(id);
+                return false;
+            }
+            Interactive.TouchExclusive(id);
             float scale = ImGuiHelpers.GlobalScale;
             var size = new Vector2(width, height) * scale;
             ImGui.SetNextWindowSize(size, ImGuiCond.Appearing);
@@ -160,6 +175,8 @@ public static partial class Crystarium
             }
             ImGui.End();
             ImGui.PopStyleVar(2);
+            if (!open)
+                Interactive.ReleaseExclusive(id);
             return visible;
         }
 

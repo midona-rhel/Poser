@@ -55,6 +55,12 @@ public static partial class Crystarium
             Interactive.ReleaseExclusive(popupId);
             return false;
         }
+        if (!Interactive.OwnsExclusive(popupId))
+        {
+            onOpenChanged(false);
+            return true;
+        }
+        Interactive.TouchExclusive(popupId);
 
         float width = size switch
         {

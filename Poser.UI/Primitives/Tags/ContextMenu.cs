@@ -156,8 +156,14 @@ public static partial class Crystarium
         {
             if (_phase == Phase.Hidden || _id != id)
                 return -1;
+            if (!Interactive.OwnsExclusive(ExclusiveKey(id)))
+            {
+                DismissAll();
+                return -1;
+            }
 
             _lastOwnerFrame = ImGui.GetFrameCount();
+            Interactive.TouchExclusive(ExclusiveKey(id));
             float s = ImGuiHelpers.GlobalScale;
             double now = ImGui.GetTime();
             float t = (float)(now - _phaseStart);
