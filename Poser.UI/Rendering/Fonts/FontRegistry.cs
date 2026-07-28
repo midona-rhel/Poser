@@ -14,8 +14,9 @@ namespace Poser.UI;
 /// the old ±4px bucket snap silently corrupted the picto scale (12→13, 14→13).
 ///
 /// <para><b>Font sources.</b> Real font files from <c>C:\Windows\Fonts</c>, matching the picto
-/// stack as rendered on Windows: Segoe UI (400) / Segoe UI Semibold (500-approx and 600 —
-/// classic Segoe has no static Medium; documented fidelity deviation) and Cascadia Mono
+/// stack as rendered on Windows: Segoe UI (400), Segoe UI Italic,
+/// Segoe UI Semibold (500-approx and 600 — classic Segoe has no static
+/// Medium; documented fidelity deviation), and Cascadia Mono
 /// (Consolas fallback) for <see cref="FontFamily.Mono"/>. When a file is missing (e.g. Wine),
 /// falls back to the Dalamud default font at the requested size.</para>
 ///
@@ -112,6 +113,10 @@ public static class FontRegistry
             Require(FontFamily.Default, FontWeight.SemiBold, size);
             Require(FontFamily.Mono, FontWeight.Regular, size);
         }
+        Require(
+            FontFamily.Italic,
+            FontWeight.Regular,
+            theme.Typography.LabelSize);
     }
 
     /// <summary>Resolve a font handle for family + size at regular weight.</summary>
@@ -213,6 +218,7 @@ public static class FontRegistry
         {
             // Medium approximated by Semibold: classic Segoe UI ships no static 500 weight.
             FontFamily.Mono => new[] { "CascadiaMono.ttf", "consola.ttf" },
+            FontFamily.Italic => new[] { "segoeuii.ttf", "segoeui.ttf" },
             _ => weight switch
             {
                 FontWeight.Regular => new[] { "segoeui.ttf" },

@@ -166,6 +166,8 @@ public static partial class Crystarium
                 ? origin.X + size.X - MeasureTotal(scale)
                 : origin.X;
             float centerY = origin.Y + size.Y * 0.5f;
+            float labelOffset =
+                ActiveTheme.Optical.ActionBarText * scale;
             for (int i = 0; i < _items.Count; i++)
             {
                 if (i > 0)
@@ -184,7 +186,7 @@ public static partial class Crystarium
                 {
                     case ItemKind.Label:
                         DrawTextCentered(
-                            min,
+                            min + new Vector2(0f, labelOffset),
                             max - min,
                             ActiveTheme.Typography.LabelSize,
                             FontWeight.Regular,
@@ -207,7 +209,7 @@ public static partial class Crystarium
                         float textX = x + side
                             + ActiveTheme.Spacing.Three * scale;
                         DrawTextCentered(
-                            new(textX, min.Y),
+                            new(textX, min.Y + labelOffset),
                             new(max.X - textX, max.Y - min.Y),
                             ActiveTheme.Typography.CaptionSize,
                             FontWeight.Regular,
@@ -230,7 +232,7 @@ public static partial class Crystarium
                             - switchWidth
                             - ActiveTheme.Spacing.Three * scale;
                         DrawTextCentered(
-                            min,
+                            min + new Vector2(0f, labelOffset),
                             new(labelWidth, max.Y - min.Y),
                             ActiveTheme.Typography.CaptionSize,
                             FontWeight.Regular,

@@ -60,9 +60,7 @@ public static partial class Crystarium
 
         string next = value;
         if (disabled) ImGui.BeginDisabled();
-        bool changed = placeholder != null
-            ? ImGui.InputTextWithHint(id, placeholder, ref next)
-            : ImGui.InputText(id, ref next);
+        bool changed = ImGui.InputText(id, ref next);
         if (disabled) ImGui.EndDisabled();
 
         var inputMin = ImGui.GetItemRectMin();
@@ -73,6 +71,29 @@ public static partial class Crystarium
 
         ImGui.PopStyleVar(3);
         ImGui.PopStyleColor(4);
+
+        if (!focused
+            && next.Length == 0
+            && !string.IsNullOrEmpty(placeholder))
+        {
+            var hintFont = FontRegistry.Resolve(
+                FontFamily.Italic,
+                FontWeight.Regular,
+                ActiveTheme.Typography.LabelSize);
+            bool hintFontPushed = hintFont is { Available: true };
+            if (hintFontPushed)
+                hintFont!.Push();
+            var hintSize = ImGui.CalcTextSize(placeholder);
+            ImGui.GetWindowDrawList().AddText(
+                new Vector2(
+                    inputMin.X + ActiveTheme.Spacing.Six * scale,
+                    inputMin.Y + (height - hintSize.Y) * 0.5f),
+                ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(ActiveTheme.TextDim)),
+                placeholder);
+            if (hintFontPushed)
+                hintFont!.Pop();
+        }
 
         if (focused)
         {

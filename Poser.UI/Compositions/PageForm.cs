@@ -20,7 +20,11 @@ public static partial class Crystarium
         float inset = ActiveTheme.Page.Inset * scale;
         float width = MathF.Min(MathF.Max(0f, size.X - inset * 2f),
             ActiveTheme.Page.MaximumContentWidth * scale);
-        var page = new PageScope(id, origin + new Vector2(inset, inset), width, scale);
+        var page = new PageScope(
+            id,
+            origin + new Vector2(inset, 0f),
+            width,
+            scale);
         content(page);
         page.Complete(origin, size.X);
     }
@@ -112,15 +116,16 @@ public static partial class Crystarium
 
         public void Status(string? text, string? help = null)
         {
+            if (string.IsNullOrEmpty(text))
+                return;
+
             float top = _origin.Y + _y * _scale;
-            if (!string.IsNullOrEmpty(text))
-                DrawText(new(_origin.X, top), _width,
-                    ActiveTheme.Typography.CaptionSize, FontWeight.Regular,
-                    FormHintColor, text);
+            DrawText(new(_origin.X, top), _width,
+                ActiveTheme.Typography.CaptionSize, FontWeight.Regular,
+                FormHintColor, text);
             float height = ActiveTheme.Page.StatusLineHeight * _scale;
-            if (!string.IsNullOrEmpty(text))
-                RegisterHelp($"{_id}-status", new(_origin.X, top),
-                    new(_origin.X + _width, top + height), help);
+            RegisterHelp($"{_id}-status", new(_origin.X, top),
+                new(_origin.X + _width, top + height), help);
             _y += ActiveTheme.Page.StatusLineHeight;
             _hasFlowContent = true;
         }
@@ -148,9 +153,12 @@ public static partial class Crystarium
                     new(_width, headerHeight), disabled: false);
                 if (hit.Clicked)
                     onOpenChanged(!open);
+                float chromeOffset =
+                    ActiveTheme.Optical.SectionChrome * _scale;
                 DrawDisclosure(ImGui.GetWindowDrawList(),
                     new(_origin.X + ActiveTheme.Spacing.One * _scale,
-                        headerTop + headerHeight * 0.5f), open, _scale);
+                        headerTop + headerHeight * 0.5f
+                            + chromeOffset), open, _scale);
                 textX += ActiveTheme.Spacing.Six * _scale;
             }
 
@@ -162,7 +170,9 @@ public static partial class Crystarium
             float separatorX = textX + titleWidth + ActiveTheme.Page.ActionGap * _scale;
             if (separatorX < _origin.X + _width)
             {
-                float lineY = MathF.Round(headerTop + headerHeight * 0.5f);
+                float lineY = MathF.Round(
+                    headerTop + headerHeight * 0.5f
+                        + ActiveTheme.Optical.SectionChrome * _scale);
                 ImGui.GetWindowDrawList().AddRectFilled(new(separatorX, lineY),
                     new(_origin.X + _width, lineY + MathF.Max(1f, _scale)),
                     ImGui.ColorConvertFloat4ToU32(FormSeparatorColor));
@@ -222,7 +232,7 @@ public static partial class Crystarium
         {
             ImGui.SetCursorScreenPos(pageOrigin);
             ImGui.Dummy(new(pageWidth,
-                (_y + ActiveTheme.Page.Inset * 2f) * _scale));
+                (_y + ActiveTheme.Page.Inset) * _scale));
         }
     }
 

@@ -152,7 +152,7 @@ public readonly record struct Theme
             SidebarMaximumWidth = 400f,
             SidebarDefaultWidth = 280f,
             RailWidth = 280f,
-            PoseFooterHeight = 32f,
+            PoseFooterHeight = 36f,
         },
         Scrollbar = new() { GutterWidth = 12f, Radius = 4f },
         Typography = new() { ShortcutSize = 10f, CaptionSize = 11f, LabelSize = 12f, BodySize = 13f, SurfaceTitleSize = 14f },
@@ -222,9 +222,10 @@ public readonly record struct Theme
         {
             SidebarText = -1f,
             ButtonText = 1f,
-            FooterLabel = -1f,
+            ActionBarText = 1f,
             DropdownText = 1f,
             AxisText = 0f,
+            SectionChrome = -1.5f,
         },
         Motion = new() { Fast = 0.10f, Default = 0.20f, Slow = 0.40f, MenuExit = 0.08f, HoverOpenDelay = 0.40f, HoverPop = 0.15f },
         Palette = new()
@@ -486,9 +487,10 @@ public readonly record struct Theme
     {
         public float SidebarText { get; init; }
         public float ButtonText { get; init; }
-        public float FooterLabel { get; init; }
+        public float ActionBarText { get; init; }
         public float DropdownText { get; init; }
         public float AxisText { get; init; }
+        public float SectionChrome { get; init; }
 
         public Vector2 Snap(Vector2 position) =>
             new(MathF.Round(position.X), MathF.Round(position.Y));

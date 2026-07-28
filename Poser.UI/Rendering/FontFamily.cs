@@ -7,6 +7,7 @@ namespace Poser.UI;
 public enum FontFamily
 {
     Default,
+    Italic,
     Mono,
     Icon,
 }

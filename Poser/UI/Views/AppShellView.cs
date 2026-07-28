@@ -861,7 +861,7 @@ public static class AppShellView
                 float contentInset =
                     MainHorizontalPadding * s;
                 var contentOrigin = viewportCursor
-                    + new Vector2(contentInset);
+                    + new Vector2(contentInset, 0f);
                 vm.DrawContent?.Invoke(
                     contentOrigin,
                     new Vector2(
@@ -872,8 +872,7 @@ public static class AppShellView
                                 - contentInset * 2f),
                         MathF.Max(
                             0f,
-                            ImGui.GetContentRegionAvail().Y
-                                - contentInset)));
+                            ImGui.GetContentRegionAvail().Y)));
             }
             else
             {
