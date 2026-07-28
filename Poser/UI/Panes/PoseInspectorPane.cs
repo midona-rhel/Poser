@@ -583,7 +583,9 @@ public class PoseInspectorPane
 
         DrawPoseFooter(
             new Vector2(cursor.X, cursor.Y + height - footerHeight),
-            width,
+            width
+                + (AppShellView.MainHorizontalPadding
+                    + AppShellView.ScrollbarWidth) * s,
             skeleton);
         return height;
     }
@@ -626,7 +628,9 @@ public class PoseInspectorPane
         // The shell already allocated the page inset. Matrix consumes that
         // box directly; its nested ScrollRegion receives the physical gutter
         // and subtracts it exactly once.
-        var min = cursor;
+        var min = cursor + new Vector2(
+            0f,
+            theme.Page.Inset * s);
         var max = cursor + new Vector2(width, viewportHeight);
         if (max.X <= min.X || max.Y <= min.Y)
             return viewportHeight;

@@ -145,9 +145,12 @@ public static partial class Crystarium
             () =>
             {
                 float regionWidth = ImGui.GetContentRegionAvail().X / scale;
+                var regionOrigin = ImGui.GetCursorScreenPos();
+                ImGui.SetCursorScreenPos(
+                    regionOrigin - new Vector2(popupPadding, 0f));
                 ScrollRegion(
                     $"{popupId}-scroll",
-                    regionWidth,
+                    regionWidth + popupPadding / scale,
                     itemListHeight / scale,
                     region =>
                     {
@@ -162,6 +165,10 @@ public static partial class Crystarium
                         uint optFill = ImGui.ColorConvertFloat4ToU32(
                             ColorEx.ApplyAlpha(
                                 Crystarium.ActiveTheme.Chrome.WeakOverlay));
+                        uint optSeparator = ImGui.ColorConvertFloat4ToU32(
+                            ColorEx.ApplyAlpha(
+                                Crystarium.ActiveTheme.FormSeparator));
+                        float separatorHeight = MathF.Max(1f, scale);
                         var spacing = ImGui.GetStyle().ItemSpacing;
                         ImGui.PushStyleVar(
                             ImGuiStyleVar.ItemSpacing,
@@ -197,6 +204,16 @@ public static partial class Crystarium
                                     itemPos + itemSize,
                                     optFill,
                                     optRounding);
+                            if (i < items.Length - 1)
+                                popupDrawList.AddRectFilled(
+                                    new Vector2(
+                                        itemPos.X,
+                                        itemPos.Y + itemSize.Y
+                                            - separatorHeight),
+                                    itemPos + new Vector2(
+                                        itemSize.X,
+                                        itemSize.Y),
+                                    optSeparator);
 
                             string itemDisplay = TruncateText(
                                 items[i],

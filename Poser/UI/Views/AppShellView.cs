@@ -872,7 +872,7 @@ public static class AppShellView
                         MathF.Max(
                             0f,
                             ImGui.GetContentRegionAvail().Y
-                                - contentInset * 2f)));
+                                - contentInset)));
             }
             ImGui.EndChild();
             ImGui.PopStyleVar();

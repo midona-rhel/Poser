@@ -152,7 +152,7 @@ public readonly record struct Theme
             SidebarMaximumWidth = 400f,
             SidebarDefaultWidth = 280f,
             RailWidth = 280f,
-            PoseFooterHeight = 47f,
+            PoseFooterHeight = 32f,
         },
         Scrollbar = new() { GutterWidth = 12f, Radius = 4f },
         Typography = new() { ShortcutSize = 10f, CaptionSize = 11f, LabelSize = 12f, BodySize = 13f, SurfaceTitleSize = 14f },
