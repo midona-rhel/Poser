@@ -169,55 +169,66 @@ try {
             Remove-Item -LiteralPath $staging -Force
         }
         $url = "${uri}?component=$($item.Name)&theme=$($item.Theme)"
-        $profile = Join-Path $profileRoot "$($item.Theme)-$($item.Suffix)-$($item.Name)"
-        & $Browser `
-            --headless=new `
-            --disable-lcd-text `
-            --hide-scrollbars `
-            --disable-background-mode `
-            --disable-background-networking `
-            --disable-component-update `
-            --disable-default-apps `
-            --disable-extensions `
-            --disable-sync `
-            --no-first-run `
-            --run-all-compositor-stages-before-draw `
-            --virtual-time-budget=1000 `
-            --force-device-scale-factor=$($item.Scale) `
-            --window-size="$($item.Width),$($item.Height)" `
-            --user-data-dir="$profile" `
-            --screenshot="$staging" `
-            $url | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            return "Reference capture failed for $($item.Name), $($item.Theme) at $($item.Scale)."
-        }
-        # The Edge launcher detaches and the real browser process writes
-        # the screenshot AFTER the launcher returns. Wait for the staging
-        # file to exist and stabilize — the same non-zero size on two
-        # consecutive polls plus an exclusive open — before promoting it.
-        $deadline = [DateTime]::UtcNow.AddSeconds(30)
-        $stable = $false
-        $lastSize = -1
-        while ([DateTime]::UtcNow -lt $deadline) {
-            if (Test-Path -LiteralPath $staging) {
-                $size = (Get-Item -LiteralPath $staging).Length
-                if ($size -gt 0 -and $size -eq $lastSize) {
-                    try {
-                        ([IO.File]::Open(
-                            $staging, 'Open', 'Read', 'None')).Dispose()
-                        $stable = $true
-                        break
-                    } catch { }
-                }
-                $lastSize = $size
+        # Concurrent cold starts occasionally lose an Edge instance; one
+        # retry with a fresh profile absorbs that without hiding a real
+        # failure, which still surfaces with its reason.
+        $reason = $null
+        for ($attempt = 0; $attempt -lt 2; $attempt++) {
+            $profile = Join-Path $profileRoot `
+                "$($item.Theme)-$($item.Suffix)-$($item.Name)-$attempt"
+            & $Browser `
+                --headless=new `
+                --disable-lcd-text `
+                --hide-scrollbars `
+                --disable-background-mode `
+                --disable-background-networking `
+                --disable-component-update `
+                --disable-default-apps `
+                --disable-extensions `
+                --disable-sync `
+                --no-first-run `
+                --run-all-compositor-stages-before-draw `
+                --virtual-time-budget=1000 `
+                --force-device-scale-factor=$($item.Scale) `
+                --window-size="$($item.Width),$($item.Height)" `
+                --user-data-dir="$profile" `
+                --screenshot="$staging" `
+                $url | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                $reason = "browser exit code $LASTEXITCODE"
+                continue
             }
-            Start-Sleep -Milliseconds 150
+            # The Edge launcher detaches and the real browser process
+            # writes the screenshot AFTER the launcher returns. Wait for
+            # the staging file to exist and stabilize — the same non-zero
+            # size on two consecutive polls plus an exclusive open —
+            # before promoting it.
+            $deadline = [DateTime]::UtcNow.AddSeconds(30)
+            $stable = $false
+            $lastSize = -1
+            while ([DateTime]::UtcNow -lt $deadline) {
+                if (Test-Path -LiteralPath $staging) {
+                    $size = (Get-Item -LiteralPath $staging).Length
+                    if ($size -gt 0 -and $size -eq $lastSize) {
+                        try {
+                            ([IO.File]::Open(
+                                $staging, 'Open', 'Read', 'None')).Dispose()
+                            $stable = $true
+                            break
+                        } catch { }
+                    }
+                    $lastSize = $size
+                }
+                Start-Sleep -Milliseconds 150
+            }
+            if (-not $stable) {
+                $reason = "no stable screenshot within 30s"
+                continue
+            }
+            Move-Item -LiteralPath $staging -Destination $target -Force
+            return $null
         }
-        if (-not $stable) {
-            return "Reference capture failed for $($item.Name), $($item.Theme) at $($item.Scale)."
-        }
-        Move-Item -LiteralPath $staging -Destination $target -Force
-        return $null
+        return "Reference capture failed for $($item.Name), $($item.Theme) at $($item.Scale): $reason."
     } -ThrottleLimit 6 | Where-Object { $_ })
     if ($failures.Count -gt 0) {
         throw ($failures -join "`n")
