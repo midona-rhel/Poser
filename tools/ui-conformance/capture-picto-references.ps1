@@ -172,6 +172,7 @@ try {
         $profile = Join-Path $profileRoot "$($item.Theme)-$($item.Suffix)-$($item.Name)"
         & $Browser `
             --headless=new `
+            --disable-lcd-text `
             --hide-scrollbars `
             --disable-background-mode `
             --disable-background-networking `

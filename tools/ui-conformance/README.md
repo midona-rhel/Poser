@@ -45,6 +45,12 @@ The generated `artifacts/index.html` links each result. Every result contains:
   hash and the reference-side font identities. Preserved results from
   another source, build, or rendering environment are marked stale.
 
+References render with `--disable-lcd-text`: the candidate's ImGui atlas is
+single-channel alpha (greyscale), in game as in capture, so ClearType subpixel
+fringe on the reference is un-matchable noise, not signal. What remains in the
+diffs is real rasterizer divergence — DirectWrite grid-fits outlines while the
+stb pipeline (the same one Dalamud renders with in game) is unhinted.
+
 Exact equality is the pass gate. The measurements explain likely causes but do
 not waive antialiasing differences. Generated captures and reports are ignored
 by Git.
