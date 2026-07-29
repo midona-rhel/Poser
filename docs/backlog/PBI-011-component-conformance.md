@@ -2,12 +2,12 @@
 
 | Control | Value |
 |---|---|
-| Status | Prepared; implementation begins only after the current UI-foundation and conformance-harness work is committed |
+| Status | Ready for slice implementation |
 | Size | Extra large, delivered as individually accepted component slices |
 | Implementation owner | Claude |
 | Review owner | Codex |
 | Runtime and visual acceptance | User |
-| Base ref | `pbi-011-base` — create from the accepted, clean baseline |
+| Base ref | `pbi-011-base` (`9a9193736b797f828b0336d9571721bb8ba90c99`) |
 | Feature branch | `feature/pbi-011-component-conformance` |
 | Accepted head | Not accepted |
 
@@ -53,8 +53,21 @@ detection, complete catalog routing, six themes, and three scales.
    call site that represents that component.
 6. Delete the superseded component, local drawing recipe, token, and compatibility
    overload. Do not leave two valid ways to render the same ordinary control.
-7. Run the Debug production build, `git diff --check`, and only that component's
-   conformance captures at 100%, 125%, and 150% for all six themes.
+7. Run the Debug production build and `git diff --check`. Rebuild the complete
+   catalog regression at Dark/100%, then run the current component at 100%,
+   125%, and 150% for all six themes. The second run preserves the regression
+   results in the same inspection window:
+
+   ```powershell
+   .\tools\ui-conformance\run.ps1 all -Clean -Scales 1 -Themes dark
+   .\tools\ui-conformance\run.ps1 <component> `
+       -Scales 1,1.25,1.5 `
+       -Themes dark,light,lightgray,gray,blue,purple
+   ```
+
+   Every report records the Picto-source manifest and candidate assembly hash;
+   the aggregate window marks preserved results stale instead of presenting
+   them as evidence for a different build.
 8. Stop and hand the slice to Codex with the API design, state ownership, source
    paths, changed paths, deleted paths, reports, residual pixels, and explicit
    in-game locations.

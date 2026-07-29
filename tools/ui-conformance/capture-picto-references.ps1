@@ -2,7 +2,8 @@ param(
     [string]$Browser = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     [string[]]$Components = @(),
     [double[]]$Scales = @(1.0, 1.25, 1.5),
-    [string[]]$Themes = @("dark")
+    [string[]]$Themes = @("dark"),
+    [switch]$ListCatalog
 )
 
 $ErrorActionPreference = "Stop"
@@ -10,11 +11,6 @@ $toolRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Resolve-Path (Join-Path $toolRoot "..\..")
 $html = Resolve-Path (Join-Path $toolRoot "picto-reference.html")
 $output = Join-Path $toolRoot "artifacts\picto"
-$runId = [Guid]::NewGuid().ToString("N")
-$profileRoot = Join-Path $env:TEMP "poser-ui-conformance-edge-$runId"
-
-New-Item -ItemType Directory -Force -Path $output | Out-Null
-New-Item -ItemType Directory -Force -Path $profileRoot | Out-Null
 
 $catalog = @(
     @{ Name = "action-button"; Width = 320; Height = 80 },
@@ -36,6 +32,23 @@ $catalog = @(
     @{ Name = "context-menu"; Width = 320; Height = 190 },
     @{ Name = "modal"; Width = 560; Height = 360 }
 )
+if ($ListCatalog) {
+    $catalog.Name
+    return
+}
+
+$variantPattern = "(?m)^\s{6}'([^']+)':\s*\{"
+$variantNames = @(
+    [regex]::Matches(
+        (Get-Content -Raw -LiteralPath $html),
+        $variantPattern) |
+        ForEach-Object { $_.Groups[1].Value })
+$catalogNames = @($catalog.Name | Sort-Object)
+$variantNames = @($variantNames | Sort-Object)
+if (Compare-Object $catalogNames $variantNames) {
+    throw "Picto reference HTML and capture catalog disagree."
+}
+
 if ($Components.Count -gt 0) {
     $requested = [Collections.Generic.HashSet[string]]::new(
         [StringComparer]::OrdinalIgnoreCase)
@@ -46,7 +59,6 @@ if ($Components.Count -gt 0) {
         throw "Unknown reference component. Resolved set: $known"
     }
 }
-$uri = [System.Uri]::new($html.Path).AbsoluteUri
 $knownThemes = @("dark", "light", "lightgray", "gray", "blue", "purple")
 foreach ($theme in $Themes) {
     if ($knownThemes -notcontains $theme) {
@@ -54,34 +66,12 @@ foreach ($theme in $Themes) {
     }
 }
 
-foreach ($theme in $Themes) {
-    foreach ($scale in $Scales) {
-        $suffix = [string]::Format(
-            [System.Globalization.CultureInfo]::InvariantCulture,
-            "{0:0.##}",
-            $scale).Replace(".", "p")
-        foreach ($component in $catalog) {
-            $target = Join-Path $output "$($component.Name)@$theme@$suffix.png"
-            $url = "${uri}?component=$($component.Name)&theme=$theme"
-            $profile = Join-Path $profileRoot "$theme-$suffix-$($component.Name)"
-            & $Browser `
-                --headless=new `
-                --hide-scrollbars `
-                --run-all-compositor-stages-before-draw `
-                --virtual-time-budget=1000 `
-                --force-device-scale-factor=$scale `
-                --window-size="$($component.Width),$($component.Height)" `
-                --user-data-dir="$profile" `
-                --screenshot="$target" `
-                $url | Out-Null
-            if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $target)) {
-                throw "Reference capture failed for $($component.Name), $theme at $scale."
-            }
-        }
-    }
+if (!(Test-Path -LiteralPath $Browser -PathType Leaf)) {
+    throw "Reference browser was not found at '$Browser'."
 }
 
 $sources = @(
+    "tools\ui-conformance\picto-reference.html",
     "..\Picto\src\shared\styles\tokens.css",
     "..\Picto\src\shared\styles\actionButton.module.css",
     "..\Picto\src\shared\styles\iconButton.module.css",
@@ -98,12 +88,95 @@ $sources = @(
     "..\Picto\src\shared\ui\ContextMenu\ContextMenu.module.css",
     "..\Picto\src\shared\ui\GlassModal\GlassModal.module.css"
 )
-$manifest = foreach ($source in $sources) {
-    $resolved = Resolve-Path (Join-Path $repoRoot $source)
-    @{
-        path = $source.Replace("\", "/")
-        sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $resolved).Hash.ToLowerInvariant()
+
+function Get-ReferenceManifest {
+    @($sources | ForEach-Object {
+        $source = $_
+        $resolved = Resolve-Path (Join-Path $repoRoot $source)
+        [ordered]@{
+            path = $source.Replace("\", "/")
+            sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $resolved).Hash.ToLowerInvariant()
+        }
+    })
+}
+
+$manifestBefore = Get-ReferenceManifest
+$browserVersionBefore =
+    (Get-Item -LiteralPath $Browser).VersionInfo.FileVersion
+$uri = [System.Uri]::new($html.Path).AbsoluteUri
+$runId = [Guid]::NewGuid().ToString("N")
+$profileRoot = Join-Path $env:TEMP "poser-ui-conformance-edge-$runId"
+New-Item -ItemType Directory -Force -Path $output | Out-Null
+New-Item -ItemType Directory -Force -Path $profileRoot | Out-Null
+
+try {
+    foreach ($theme in $Themes) {
+        foreach ($scale in $Scales) {
+            $suffix = [string]::Format(
+                [System.Globalization.CultureInfo]::InvariantCulture,
+                "{0:0.##}",
+                $scale).Replace(".", "p")
+            foreach ($component in $catalog) {
+                $target = Join-Path $output "$($component.Name)@$theme@$suffix.png"
+                $url = "${uri}?component=$($component.Name)&theme=$theme"
+                $profile = Join-Path $profileRoot "$theme-$suffix-$($component.Name)"
+                & $Browser `
+                    --headless=new `
+                    --hide-scrollbars `
+                    --disable-background-mode `
+                    --disable-background-networking `
+                    --disable-component-update `
+                    --disable-default-apps `
+                    --disable-extensions `
+                    --disable-sync `
+                    --no-first-run `
+                    --run-all-compositor-stages-before-draw `
+                    --virtual-time-budget=1000 `
+                    --force-device-scale-factor=$scale `
+                    --window-size="$($component.Width),$($component.Height)" `
+                    --user-data-dir="$profile" `
+                    --screenshot="$target" `
+                    $url | Out-Null
+                if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $target)) {
+                    throw "Reference capture failed for $($component.Name), $theme at $scale."
+                }
+            }
+        }
     }
 }
-$manifest | ConvertTo-Json | Set-Content -Encoding utf8 `
+finally {
+    # Edge can let a renderer finish a few milliseconds after its root process
+    # exits. Wait through that hand-off so every run removes its isolated profile.
+    for ($attempt = 0; $attempt -lt 20; $attempt++) {
+        Start-Sleep -Milliseconds 100
+        if (Test-Path -LiteralPath $profileRoot) {
+            Remove-Item -LiteralPath $profileRoot -Recurse -Force `
+                -ErrorAction SilentlyContinue
+        }
+        if (!(Test-Path -LiteralPath $profileRoot)) {
+            break
+        }
+    }
+    if (Test-Path -LiteralPath $profileRoot) {
+        throw "Edge did not release the temporary capture profile '$profileRoot'."
+    }
+}
+
+$manifestAfter = Get-ReferenceManifest
+$browserVersionAfter =
+    (Get-Item -LiteralPath $Browser).VersionInfo.FileVersion
+$beforeJson = $manifestBefore | ConvertTo-Json -Depth 4 -Compress
+$afterJson = $manifestAfter | ConvertTo-Json -Depth 4 -Compress
+if ($beforeJson -ne $afterJson -or
+    $browserVersionBefore -ne $browserVersionAfter) {
+    throw "Picto reference sources changed during capture; discard this run."
+}
+$manifest = [ordered]@{
+    browser = [ordered]@{
+        path = $Browser
+        version = $browserVersionAfter
+    }
+    sources = $manifestAfter
+}
+$manifest | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 `
     -LiteralPath (Join-Path $output "reference-sources.json")

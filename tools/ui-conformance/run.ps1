@@ -1,8 +1,10 @@
 param(
     [Parameter(Position = 0)]
     [string]$Component = "all",
-    [double[]]$Scales = @(1.0),
-    [string[]]$Themes = @("dark"),
+    [double[]]$Scales = @(1.0, 1.25, 1.5),
+    [string[]]$Themes = @(
+        "dark", "light", "lightgray", "gray", "blue", "purple"),
+    [switch]$Clean,
     [switch]$OpenReport
 )
 
@@ -22,10 +24,12 @@ if (!$resultsFull.StartsWith(
         [StringComparison]::OrdinalIgnoreCase)) {
     throw "Refusing to clear a result path outside the artifact directory."
 }
-if (Test-Path -LiteralPath $resultsFull) {
+if ($Clean -and (Test-Path -LiteralPath $resultsFull)) {
     Remove-Item -LiteralPath $resultsFull -Recurse -Force
 }
 
+$captureReferences = Join-Path $toolRoot "capture-picto-references.ps1"
+$all = @(& $captureReferences -ListCatalog)
 $aliases = @{
     "button" = @("action-button", "primary-button")
     "icon-button" = @("icon-button", "icon-button-active")
@@ -35,17 +39,6 @@ $aliases = @{
     "dropdown" = @("dropdown-closed", "dropdown-open")
     "sidebar" = @("sidebar-row", "sidebar-row-selected")
 }
-$all = @(
-    "action-button", "primary-button",
-    "icon-button", "icon-button-active",
-    "switch-off", "switch-on",
-    "text-input", "search-input",
-    "dropdown-closed", "dropdown-open",
-    "color-palette",
-    "sidebar-row", "sidebar-row-selected",
-    "property-row", "section",
-    "tooltip", "context-menu", "modal"
-)
 $components = if ($Component -eq "all") {
     $all
 } elseif ($aliases.ContainsKey($Component)) {
@@ -59,10 +52,29 @@ $components = if ($Component -eq "all") {
 dotnet build $project -c Debug --no-restore -p:NuGetAudit=false
 if ($LASTEXITCODE -ne 0) { throw "Capture host build failed." }
 
-& (Join-Path $toolRoot "capture-picto-references.ps1") `
+$candidateCatalog = @(& $exe --list)
+if ($LASTEXITCODE -ne 0) { throw "Candidate catalog query failed." }
+if (Compare-Object ($all | Sort-Object) ($candidateCatalog | Sort-Object)) {
+    throw "Picto reference and Crystarium candidate catalogs disagree."
+}
+
+& $captureReferences `
     -Components $components `
     -Scales $Scales `
     -Themes $Themes
+if ($LASTEXITCODE -ne 0) { throw "Picto reference capture failed." }
+
+$referenceManifest = Join-Path $artifacts "picto\reference-sources.json"
+$referenceManifestHash = (
+    Get-FileHash -Algorithm SHA256 -LiteralPath $referenceManifest
+).Hash.ToLowerInvariant()
+$candidateHash = (
+    Get-FileHash -Algorithm SHA256 -LiteralPath $exe
+).Hash.ToLowerInvariant()
+$candidateCommit = (git -C $repoRoot rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0) { throw "Could not resolve the candidate commit." }
+$candidateDirty = [bool](git -C $repoRoot status --porcelain)
+if ($LASTEXITCODE -ne 0) { throw "Could not inspect candidate worktree state." }
 
 foreach ($theme in $Themes) {
     foreach ($scale in $Scales) {
@@ -86,7 +98,11 @@ foreach ($theme in $Themes) {
                 --candidate $candidate `
                 --output $result `
                 --component "$name [$theme]" `
-                --scale $scale
+                --scale $scale `
+                --reference-manifest-hash $referenceManifestHash `
+                --candidate-hash $candidateHash `
+                --candidate-commit $candidateCommit `
+                --candidate-dirty $candidateDirty
             if ($LASTEXITCODE -ne 0) {
                 throw "Comparison failed for $name, $theme at $scale."
             }
@@ -94,7 +110,10 @@ foreach ($theme in $Themes) {
     }
 }
 
-python (Join-Path $toolRoot "compare.py") --aggregate $artifacts
+python (Join-Path $toolRoot "compare.py") `
+    --aggregate $artifacts `
+    --reference-manifest-hash $referenceManifestHash `
+    --candidate-hash $candidateHash
 if ($LASTEXITCODE -ne 0) { throw "Aggregate report failed." }
 $report = Join-Path $artifacts "index.html"
 Write-Host "UI conformance report: $report"

@@ -88,7 +88,9 @@ def connected_regions(mask: np.ndarray) -> list[list[int]]:
 
 
 def compare(reference_path: Path, candidate_path: Path, output: Path,
-            component: str, scale: str) -> dict:
+            component: str, scale: str, reference_manifest_hash: str,
+            candidate_hash: str, candidate_commit: str,
+            candidate_dirty: bool) -> dict:
     output.mkdir(parents=True, exist_ok=True)
     reference_image = Image.open(reference_path).convert("RGBA")
     candidate_image = Image.open(candidate_path).convert("RGBA")
@@ -215,6 +217,10 @@ def compare(reference_path: Path, candidate_path: Path, output: Path,
     metrics = {
         "component": component,
         "scale": scale,
+        "referenceManifestSha256": reference_manifest_hash,
+        "candidateAssemblySha256": candidate_hash,
+        "candidateCommit": candidate_commit,
+        "candidateDirty": candidate_dirty,
         "passed": not exact.any(),
         "exactDifferentPixels": int(exact.sum()),
         "exactDifferentPercent": round(float(exact.mean() * 100), 4),
@@ -239,6 +245,9 @@ def compare(reference_path: Path, candidate_path: Path, output: Path,
 
 def single_report_html(report: dict) -> str:
     status = "PASS" if report["passed"] else "FAIL"
+    candidate_label = html.escape(report["candidateCommit"][:12])
+    if report["candidateDirty"]:
+        candidate_label += " + dirty"
     diagnoses = "".join(
         f"<li>{html.escape(item)}</li>" for item in report["diagnoses"])
     return f"""<!doctype html>
@@ -252,6 +261,7 @@ def single_report_html(report: dict) -> str:
 <span>Exact diff <b>{report['exactDifferentPixels']:,} px</b></span>
 <span>Significant diff <b>{report['significantDifferentPixels']:,} px</b></span>
 <span>Maximum channel delta <b>{report['maximumChannelDelta']}</b></span>
+<span>Candidate <b>{candidate_label}</b></span>
 </section>
 <section class="images">
 <figure><figcaption>Picto reference</figcaption><img src="reference.png"></figure>
@@ -277,30 +287,47 @@ h2{font-size:15px;margin-top:22px}li{margin:7px 0;color:#ffffffc8}
 """
 
 
-def aggregate(root: Path) -> None:
+def aggregate(root: Path, reference_manifest_hash: str,
+              candidate_hash: str) -> None:
     reports = []
-    for path in sorted(root.glob("results/*/*/report.json")):
+    for path in sorted(root.glob("results/*/*/*/report.json")):
         report = json.loads(path.read_text(encoding="utf-8"))
         report["base"] = str(path.parent.relative_to(root)).replace("\\", "/")
         report["href"] = report["base"] + "/index.html"
+        report["stale"] = (
+            report.get("referenceManifestSha256") != reference_manifest_hash
+            or report.get("candidateAssemblySha256") != candidate_hash
+        )
         reports.append(report)
-    cards = "".join(
+    if not reports:
+        raise RuntimeError("No comparison reports were generated.")
+
+    def report_status(item: dict) -> tuple[str, str]:
+        if item["stale"]:
+            return "STALE", "stale"
+        if item["passed"]:
+            return "PASS", "pass"
+        return "FAIL", "fail"
+
+    def card_html(item: dict) -> str:
+        state = report_status(item)
+        return (
         f"<article class='card' data-name='{html.escape(item['component'])}'>"
         f"<header><div><a href='{html.escape(item['href'])}'>"
         f"<h2>{html.escape(item['component'])}</h2></a>"
         f"<p>Scale {html.escape(str(item['scale']))} · "
         f"{item['exactDifferentPixels']:,} different pixels</p></div>"
-        f"<strong class='status {'pass' if item['passed'] else 'fail'}'>"
-        f"{'PASS' if item['passed'] else 'FAIL'}</strong></header>"
+        f"<strong class='status {state[1]}'>{state[0]}</strong></header>"
         "<div class='triptych'>"
         f"<figure><figcaption>Picto</figcaption><img src='{item['base']}/reference.png'></figure>"
         f"<figure><figcaption>Crystarium</figcaption><img src='{item['base']}/candidate.png'></figure>"
         f"<figure><figcaption>Red diff</figcaption><img src='{item['base']}/diff.png'></figure>"
         f"</div><p class='finding'>{html.escape(item['diagnoses'][0])}</p>"
-        "</article>"
-        for item in reports
-    )
-    failed = sum(not item["passed"] for item in reports)
+        "</article>")
+
+    cards = "".join(card_html(item) for item in reports)
+    failed = sum(not item["passed"] and not item["stale"] for item in reports)
+    stale = sum(item["stale"] for item in reports)
     document = f"""<!doctype html><html><head><meta charset="utf-8">
 <title>Picto ↔ Crystarium conformance</title><style>{REPORT_CSS}
 a{{color:#7db8ff;text-decoration:none}}header input{{width:260px;height:32px;padding:0 10px;border:1px solid #ffffff24;
@@ -308,9 +335,11 @@ border-radius:6px;background:#0003;color:white}}.catalog{{display:grid;gap:18px;
 .card{{background:#18191b;border:1px solid #ffffff18;border-radius:10px;padding:14px}}
 .card>header{{border:0}}.card h2{{margin:0 0 4px;font-size:17px}}.triptych{{display:grid;
 grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}}.finding{{color:#ffffffb8;margin:10px 0 0}}
+.stale{{background:#d99b242c;color:#f2be5c}}
 [hidden]{{display:none!important}}</style></head><body><main>
 <header><div><h1>Picto ↔ Crystarium conformance</h1>
-<p>Automated exact-pixel comparison; {failed} of {len(reports)} captures fail.</p></div>
+<p>Automated exact-pixel comparison; {failed} current captures fail,
+{stale} captures are stale.</p></div>
 <input id="filter" placeholder="Filter components…"></header>
 <section class="catalog">{cards}</section></main>
 <script>
@@ -332,9 +361,17 @@ def main() -> None:
     parser.add_argument("--component")
     parser.add_argument("--scale", default="1")
     parser.add_argument("--aggregate", type=Path)
+    parser.add_argument("--reference-manifest-hash", default="")
+    parser.add_argument("--candidate-hash", default="")
+    parser.add_argument("--candidate-commit", default="")
+    parser.add_argument("--candidate-dirty", default="false")
     args = parser.parse_args()
     if args.aggregate:
-        aggregate(args.aggregate)
+        aggregate(
+            args.aggregate,
+            args.reference_manifest_hash,
+            args.candidate_hash,
+        )
         return
     required = [args.reference, args.candidate, args.output, args.component]
     if any(value is None for value in required):
@@ -345,6 +382,10 @@ def main() -> None:
         args.output,
         args.component,
         args.scale,
+        args.reference_manifest_hash,
+        args.candidate_hash,
+        args.candidate_commit,
+        args.candidate_dirty.lower() == "true",
     )
 
 

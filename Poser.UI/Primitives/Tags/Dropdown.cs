@@ -39,6 +39,7 @@ public static partial class Crystarium
         float padRight = Crystarium.ActiveTheme.Spacing.Three * scale;
         float gap = Crystarium.ActiveTheme.Spacing.Three * scale;
         float chevronSlot = Crystarium.ActiveTheme.Controls.SwitchHeight * scale;
+        float borderSpan = 2f * scale;
 
         // CmSelect's base contract is intrinsic sizing: the widest option
         // determines the label span. Fixed and Fill may override that width,
@@ -51,13 +52,17 @@ public static partial class Crystarium
         foreach (string item in items)
             widestLabel = MathF.Max(
                 widestLabel, ImGui.CalcTextSize(item).X);
+        if (!string.IsNullOrEmpty(previewText))
+            widestLabel = MathF.Max(
+                widestLabel, ImGui.CalcTextSize(previewText).X);
         float intrinsicWidth =
-            padLeft + widestLabel + gap + chevronSlot + padRight;
+            borderSpan + padLeft + widestLabel + gap + chevronSlot + padRight;
 
         float availableWidth = ImGui.GetContentRegionAvail().X / scale;
         float totalWidth = ControlSizing.Width(
             style.Width, intrinsicWidth / scale, availableWidth) * scale;
-        float minWidth = padLeft + gap + chevronSlot + padRight + 20f * scale;
+        float minWidth =
+            borderSpan + padLeft + gap + chevronSlot + padRight + 20f * scale;
         if (totalWidth < minWidth) totalWidth = minWidth;
 
         var pos = ImGui.GetCursorScreenPos();
