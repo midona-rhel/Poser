@@ -158,7 +158,7 @@ public static partial class Crystarium
         var (font, pushed, _, _) = ResolveStyle(style);
         try
         {
-            return ImGui.CalcTextSize(Nfc(text));
+            return ImGui.CalcTextSize(Presentation(text));
         }
         finally
         {
@@ -168,16 +168,15 @@ public static partial class Crystarium
     }
 
     /// <summary>
-    /// Returns the presentation string for an ellipsis truncation at the
-    /// style's ACTUAL face and weight: the longest whole-grapheme prefix
-    /// whose width plus the ellipsis fits, minimally the ellipsis itself
-    /// (the constrained renderer clips that remainder like CSS
-    /// <c>overflow: hidden</c> does — callers drawing the result
-    /// unconstrained own their own clipping). Surrogate pairs and
-    /// combining sequences never split. The result is NFC-normalized
-    /// presentation output; the caller's original string is untouched.
+    /// Composition-internal ellipsis fitting for labels that a composed
+    /// control renders itself (button captions). Everything else goes
+    /// through the canonical CLIPPED renderer — this helper must never
+    /// substitute for it, because when even the ellipsis cannot fit the
+    /// result is the ORIGINAL run and only the renderer's clip makes
+    /// that correct. Grapheme clusters never split; the result is
+    /// presentation output and the caller's string is untouched.
     /// </summary>
-    public static string TruncateText(string text, in TextStyle style, float width)
+    internal static string TruncateText(string text, in TextStyle style, float width)
     {
         if (!(width > 0f))
             throw new ArgumentOutOfRangeException(
@@ -185,7 +184,7 @@ public static partial class Crystarium
         var (font, pushed, _, _) = ResolveStyle(style);
         try
         {
-            return TruncateResolved(Nfc(text), width);
+            return TruncateResolved(Presentation(text), width);
         }
         finally
         {
@@ -194,14 +193,21 @@ public static partial class Crystarium
         }
     }
 
-    /// <summary>Presentation normalization: composed (NFC) form so
-    /// measurement, truncation, wrapping, and drawing all see the same
-    /// grapheme sequence the reference renderer shapes. Semantic content
-    /// outside presentation is never rewritten.</summary>
-    private static string Nfc(string text) =>
-        string.IsNullOrEmpty(text) || text.IsNormalized(NormalizationForm.FormC)
+    /// <summary>Presentation normalization: newlines canonicalized (CRLF
+    /// and lone CR become LF, as the HTML parser does before layout) and
+    /// composed NFC form, so measurement, truncation, wrapping, and
+    /// drawing all see the same sequence the reference renderer shapes.
+    /// Semantic content outside presentation is never rewritten.</summary>
+    private static string Presentation(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return text;
+        if (text.Contains('\r'))
+            text = text.Replace("\r\n", "\n").Replace('\r', '\n');
+        return text.IsNormalized(NormalizationForm.FormC)
             ? text
             : text.Normalize(NormalizationForm.FormC);
+    }
 
     private static (IFontHandle? Font, bool Pushed, float Size, Vector4 Color)
         ResolveStyle(in TextStyle style)
@@ -231,7 +237,7 @@ public static partial class Crystarium
         var (font, pushed, size, color) = ResolveStyle(style);
         try
         {
-            text = Nfc(text);
+            text = Presentation(text);
             var dl = ImGui.GetWindowDrawList();
             uint packed = ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(color));
             var origin = ActiveTheme.Optical.Snap(position);
@@ -327,12 +333,18 @@ public static partial class Crystarium
 
     /// <summary>Grapheme-cluster ellipsis backoff in the CURRENTLY PUSHED
     /// face — truncation and rendering always agree on the same font, and
-    /// the fit decision uses fractional advances like the browser's.</summary>
+    /// the fit decision uses fractional advances like the browser's. When
+    /// even the ellipsis alone cannot fit, the ORIGINAL run is returned —
+    /// Blink drops the ellipsis and clips the raw text, and the canonical
+    /// renderer's clip rectangle does the same here.</summary>
     private static string TruncateResolved(string text, float width)
     {
         if (string.IsNullOrEmpty(text))
             return string.Empty;
         if (FractionalTextWidth(text) <= width)
+            return text;
+        float ellipsis = FractionalTextWidth("…");
+        if (ellipsis > width)
             return text;
 
         // Prefix boundaries fall on whole text elements (grapheme
@@ -341,7 +353,6 @@ public static partial class Crystarium
         var elements = StringInfo.GetTextElementEnumerator(text);
         while (elements.MoveNext())
             boundaries.Add(elements.ElementIndex);
-        float ellipsis = FractionalTextWidth("…");
         for (int element = boundaries.Count - 1; element >= 1; element--)
         {
             if (FractionalTextWidth(text[..boundaries[element]]) + ellipsis <= width)

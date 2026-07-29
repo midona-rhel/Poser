@@ -1092,11 +1092,10 @@ public static partial class Crystarium
             return;
         var style = new TextStyle
         { Size = size, Weight = weight, Family = family, Color = color };
-        string fitted = Crystarium.TruncateText(text, style, region.X);
-        var measured = Crystarium.MeasureText(fitted, style);
+        float lineHeight = Crystarium.MeasureText(text, style).Y;
         Crystarium.TextAt(new(position.X,
-                position.Y + (region.Y - measured.Y) * 0.5f),
-            fitted, style);
+                position.Y + (region.Y - lineHeight) * 0.5f),
+            text, style, TextConstraint.Truncate(region.X));
     }
 
     private static void DrawTextRight(Vector2 position, float width,
@@ -1106,11 +1105,15 @@ public static partial class Crystarium
         if (!(width > 0f))
             return;
         var style = new TextStyle { Size = size, Family = family, Color = color };
-        string fitted = Crystarium.TruncateText(text, style, width);
-        var measured = Crystarium.MeasureText(fitted, style);
-        Crystarium.TextAt(new(position.X + width - measured.X,
-                position.Y + (height - measured.Y) * 0.5f),
-            fitted, style);
+        var measured = Crystarium.MeasureText(text, style);
+        float y = position.Y + (height - measured.Y) * 0.5f;
+        if (measured.X <= width)
+            Crystarium.TextAt(
+                new(position.X + width - measured.X, y), text, style);
+        else
+            Crystarium.TextAt(
+                new(position.X, y), text, style,
+                TextConstraint.Truncate(width));
     }
 
 }
