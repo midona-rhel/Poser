@@ -189,6 +189,13 @@
         css: 'shared/ui/InspectorField/InspectorField.module.css',
         html: '<div class="popover popover-text-demo" style="width:260px"><div class="popoverText">a\tbc\tdef\ttab stops</div></div>',
       },
+      'text-ws-crlf': {
+        // text-wrapped-newline's exact content with CRLF separators —
+        // the HTML parser normalizes CRLF to LF before layout, so this
+        // reference must be identical to the LF twin's.
+        css: 'shared/ui/InspectorField/InspectorField.module.css',
+        html: '<div class="popover popover-text-demo" style="width:200px"><div class="popoverText">First line\r\nSecond block that wraps onward, and onward.</div></div>',
+      },
       'action-button': {
         css: 'shared/styles/actionButton.module.css',
         html: '<button class="btn">Apply changes</button>',

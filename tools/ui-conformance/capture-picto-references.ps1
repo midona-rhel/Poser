@@ -3,6 +3,10 @@ param(
     [string[]]$Components = @(),
     [double[]]$Scales = @(1.0, 1.25, 1.5),
     [string[]]$Themes = @("dark"),
+    # The ACTUAL resolved font files (run.ps1 passes the candidate
+    # host's --fonts output); the browser text stack resolves the same
+    # files through the Segoe UI font-link chain.
+    [string[]]$FontFiles = @(),
     [switch]$ListCatalog
 )
 
@@ -31,6 +35,7 @@ $catalog = @(
     @{ Name = "text-ws-collapse"; Width = 320; Height = 80 },
     @{ Name = "text-ws-prewrap"; Width = 320; Height = 110 },
     @{ Name = "text-ws-tab"; Width = 320; Height = 74 },
+    @{ Name = "text-ws-crlf"; Width = 320; Height = 130 },
     @{ Name = "action-button"; Width = 320; Height = 80 },
     @{ Name = "primary-button"; Width = 320; Height = 80 },
     @{ Name = "icon-button"; Width = 120; Height = 80 },
@@ -276,26 +281,22 @@ if ($beforeJson -ne $afterJson -or
     throw "Picto reference sources changed during capture; discard this run."
 }
 # The rendering environment is part of reference identity: the browser
-# executable itself and the font files its text stack resolves (the UI
-# faces, the mono fixture faces, the Japanese fallback family, and the
-# emoji font). A changed environment changes this manifest, so preserved
-# results are marked stale.
+# executable itself and the ACTUAL resolved font files (passed in by
+# run.ps1 from the candidate host's resolver — the browser's Segoe UI
+# font-link chain resolves the same files), plus the emoji font only
+# the browser can render. A changed environment changes this manifest,
+# so preserved results are marked stale.
 $fontsDir = [Environment]::GetFolderPath("Fonts")
 if ([string]::IsNullOrEmpty($fontsDir)) { $fontsDir = "C:\Windows\Fonts" }
-$referenceFonts = @(
-    "segoeui.ttf", "seguisb.ttf", "segoeuii.ttf",
-    "CascadiaMono.ttf", "consola.ttf",
-    "YuGothM.ttc", "YuGothB.ttc", "YuGothR.ttc", "YuGothL.ttc",
-    "seguiemj.ttf"
-) | ForEach-Object {
-    $font = Join-Path $fontsDir $_
-    if (Test-Path -LiteralPath $font -PathType Leaf) {
-        [ordered]@{
-            path = "font:$_"
-            sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $font).Hash.ToLowerInvariant()
+$referenceFonts = @($FontFiles) + @(Join-Path $fontsDir "seguiemj.ttf") |
+    ForEach-Object {
+        if (Test-Path -LiteralPath $_ -PathType Leaf) {
+            [ordered]@{
+                path = "font:" + (Split-Path -Leaf $_)
+                sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $_).Hash.ToLowerInvariant()
+            }
         }
-    }
-} | Where-Object { $_ }
+    } | Where-Object { $_ }
 $manifest = [ordered]@{
     browser = [ordered]@{
         path = $Browser

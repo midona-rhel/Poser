@@ -23,6 +23,16 @@ internal static class Program
             return Measure(float.Parse(
                 args[1], System.Globalization.CultureInfo.InvariantCulture));
 
+        if (args.Length == 1 && args[0] == "--fonts")
+        {
+            // The exact font files this machine resolves — base faces
+            // plus the shared font-link CJK fallback. Provenance hashes
+            // these paths instead of an assumed list.
+            foreach (var file in FontRegistry.ResolveAllFiles())
+                Console.WriteLine(file);
+            return 0;
+        }
+
         if (args.Length == 2 && args[0] == "--batch")
         {
             // One process for a whole capture list: the dominant cost of
@@ -107,22 +117,30 @@ internal static class Program
 
         using var renderer = new Dx11Renderer();
         renderer.Initialize(form.Handle, maxWidth, maxHeight);
-        var context = ImGui.CreateContext();
+        // The root context exists to own the shared font atlas; every
+        // entry renders in its OWN context created over that atlas, so
+        // no ImGui interaction, timing, or widget state can survive from
+        // one capture into the next while the expensive atlas build
+        // still happens exactly once.
+        var rootContext = ImGui.CreateContext();
         try
         {
-            var io = ImGui.GetIO();
-            io.DisplayFramebufferScale = Vector2.One;
-            io.DeltaTime = 1f / 60f;
-            io.IniFilename = null;
-            ImGui.StyleColorsDark();
-
+            var rootIo = ImGui.GetIO();
+            rootIo.IniFilename = null;
             Ui.UseTheme(ResolveTheme(entries[0].ThemeName));
             using var fonts = new StandaloneFontAtlas(renderer);
+            var atlasClock = System.Diagnostics.Stopwatch.StartNew();
             FontRegistry.Register(fonts);
             fonts.BuildFontsImmediately();
+            atlasClock.Stop();
             if (!FontRegistry.Ready)
                 throw new InvalidOperationException(
                     $"Font atlas is not ready: {FontRegistry.LastError}");
+            // First-visible-UI cost gate: the same atlas builds in game
+            // before anything renders, so the number is watched here.
+            Console.WriteLine(
+                $"atlas-build-ms {atlasClock.ElapsedMilliseconds}");
+            var sharedAtlas = ImGui.GetIO().Fonts;
 
             foreach (var entry in entries)
             {
@@ -131,48 +149,63 @@ internal static class Program
                 var spec = ComponentCatalog.Get(entry.Name);
                 int width = (int)MathF.Round(spec.Width * entry.Scale);
                 int height = (int)MathF.Round(spec.Height * entry.Scale);
-                io.FontGlobalScale = entry.Scale;
 
-                // Covers HoverHelp's 400ms delay + 150ms entrance and
-                // every shorter floating-surface transition, and lets any
-                // state carried across batch entries settle out.
-                const int frameCount = 40;
-                for (int frame = 0; frame < frameCount; frame++)
+                var entryContext = ImGui.CreateContext(sharedAtlas);
+                ImGui.SetCurrentContext(entryContext);
+                try
                 {
-                    Application.DoEvents();
+                    var io = ImGui.GetIO();
+                    io.DisplayFramebufferScale = Vector2.One;
+                    io.FontGlobalScale = entry.Scale;
                     io.DeltaTime = 1f / 60f;
-                    io.DisplaySize = new Vector2(width, height);
-                    var pointer = ComponentCatalog.PointerFor(
-                        entry.Name, entry.Scale);
-                    io.AddMousePosEvent(pointer.X, pointer.Y);
+                    io.IniFilename = null;
+                    ImGui.StyleColorsDark();
 
-                    ImGui.NewFrame();
-                    Interactive.BeginFrame();
-                    ComponentCatalog.Draw(
-                        entry.Name, frame, new Vector2(width, height));
-                    Ui.FloatingMenu.EndFrame();
-                    Ui.HoverHelp.Render();
-                    Interactive.EndFrame();
-                    ImGui.Render();
+                    // Covers HoverHelp's 400ms delay + 150ms entrance and
+                    // every shorter floating-surface transition.
+                    const int frameCount = 40;
+                    for (int frame = 0; frame < frameCount; frame++)
+                    {
+                        Application.DoEvents();
+                        io.DeltaTime = 1f / 60f;
+                        io.DisplaySize = new Vector2(width, height);
+                        var pointer = ComponentCatalog.PointerFor(
+                            entry.Name, entry.Scale);
+                        io.AddMousePosEvent(pointer.X, pointer.Y);
 
-                    renderer.BeginFrame(new Vector4(
-                        theme.Surface.X,
-                        theme.Surface.Y,
-                        theme.Surface.Z,
-                        1));
-                    renderer.Render(ImGui.GetDrawData());
-                    renderer.Present();
+                        ImGui.NewFrame();
+                        Interactive.BeginFrame();
+                        ComponentCatalog.Draw(
+                            entry.Name, frame, new Vector2(width, height));
+                        Ui.FloatingMenu.EndFrame();
+                        Ui.HoverHelp.Render();
+                        Interactive.EndFrame();
+                        ImGui.Render();
+
+                        renderer.BeginFrame(new Vector4(
+                            theme.Surface.X,
+                            theme.Surface.Y,
+                            theme.Surface.Z,
+                            1));
+                        renderer.Render(ImGui.GetDrawData());
+                        renderer.Present();
+                    }
+
+                    renderer.SaveBackbuffer(entry.Output, width, height);
+                    Console.WriteLine(entry.Output);
                 }
-
-                renderer.SaveBackbuffer(entry.Output, width, height);
-                Console.WriteLine(entry.Output);
+                finally
+                {
+                    ImGui.SetCurrentContext(rootContext);
+                    ImGui.DestroyContext(entryContext);
+                }
             }
             return 0;
         }
         finally
         {
             FontRegistry.Dispose();
-            ImGui.DestroyContext(context);
+            ImGui.DestroyContext(rootContext);
         }
     }
 

@@ -37,7 +37,7 @@ $aliases = @{
         "text-truncated-emoji", "text-truncated-fit", "text-truncated-narrow",
         "text-truncated-flow", "text-wrapped", "text-wrapped-newline",
         "text-wrapped-overwide", "text-wrapped-flow", "text-ws-collapse",
-        "text-ws-prewrap", "text-ws-tab")
+        "text-ws-prewrap", "text-ws-tab", "text-ws-crlf")
     "button" = @("action-button", "primary-button")
     "icon-button" = @("icon-button", "icon-button-active")
     "switch" = @("switch-off", "switch-on")
@@ -65,10 +65,17 @@ if (Compare-Object ($all | Sort-Object) ($candidateCatalog | Sort-Object)) {
     throw "Picto reference and Crystarium candidate catalogs disagree."
 }
 
+# The candidate host reports the exact font files this machine's
+# registry resolves — base faces plus the shared font-link CJK fallback
+# — so BOTH manifests hash real resolutions, never an assumed list.
+$resolvedFonts = @(& $exe --fonts)
+if ($LASTEXITCODE -ne 0) { throw "Candidate font resolution failed." }
+
 & $captureReferences `
     -Components $components `
     -Scales $Scales `
-    -Themes $Themes
+    -Themes $Themes `
+    -FontFiles $resolvedFonts
 if ($LASTEXITCODE -ne 0) { throw "Picto reference capture failed." }
 
 $referenceManifest = Join-Path $artifacts "picto\reference-sources.json"
@@ -89,13 +96,6 @@ $candidateBinaries = @(
     "Dalamud.Bindings.ImGui.dll",
     "cimgui.dll"
 )
-$fontsDir = [Environment]::GetFolderPath("Fonts")
-if ([string]::IsNullOrEmpty($fontsDir)) { $fontsDir = "C:\Windows\Fonts" }
-$candidateFonts = @(
-    "segoeui.ttf", "seguisb.ttf", "segoeuii.ttf",
-    "CascadiaMono.ttf", "consola.ttf",
-    "YuGothM.ttc", "YuGothB.ttc", "YuGothR.ttc", "YuGothL.ttc"
-)
 $candidateManifest = @($candidateBinaries | ForEach-Object {
     $binary = Join-Path $binDir $_
     if (!(Test-Path -LiteralPath $binary -PathType Leaf)) {
@@ -105,15 +105,12 @@ $candidateManifest = @($candidateBinaries | ForEach-Object {
         path = $_
         sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $binary).Hash.ToLowerInvariant()
     }
-}) + @($candidateFonts | ForEach-Object {
-    $font = Join-Path $fontsDir $_
-    if (Test-Path -LiteralPath $font -PathType Leaf) {
-        [ordered]@{
-            path = "font:$_"
-            sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $font).Hash.ToLowerInvariant()
-        }
+}) + @($resolvedFonts | ForEach-Object {
+    [ordered]@{
+        path = "font:" + (Split-Path -Leaf $_)
+        sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $_).Hash.ToLowerInvariant()
     }
-} | Where-Object { $_ })
+})
 $candidateDir = Join-Path $artifacts "crystarium"
 New-Item -ItemType Directory -Force -Path $candidateDir | Out-Null
 $candidateManifestPath = Join-Path $candidateDir "candidate-manifest.json"
@@ -127,9 +124,13 @@ if ($LASTEXITCODE -ne 0) { throw "Could not resolve the candidate commit." }
 $candidateDirty = [bool](git -C $repoRoot status --porcelain)
 if ($LASTEXITCODE -ne 0) { throw "Could not inspect candidate worktree state." }
 
-# All candidate captures run in ONE host process — boot, D3D, and the
-# font atlas dominate a capture's cost and depend on none of component,
-# theme, or scale.
+# Candidate captures batch PER COMPONENT: one process per component
+# keeps the boot/D3D/atlas win while guaranteeing that no ImGui or
+# widget state can leak from one component into another. Entries inside
+# a component's batch differ only by theme and scale — the same draw
+# path the component runs repeatedly in production — and
+# verify-batch-isolation.ps1 demonstrates hash equality against
+# fully isolated captures.
 $invariant = [Globalization.CultureInfo]::InvariantCulture
 $combos = @(foreach ($theme in $Themes) {
     foreach ($scale in $Scales) {
@@ -147,11 +148,15 @@ $combos = @(foreach ($theme in $Themes) {
     }
 })
 $batchFile = Join-Path $artifacts "candidate-batch.txt"
-$combos | ForEach-Object {
-    "$($_.Name)`t$($_.Candidate)`t$($_.Scale.ToString($invariant))`t$($_.Theme)"
-} | Set-Content -Encoding utf8 -LiteralPath $batchFile
-& $exe --batch $batchFile
-if ($LASTEXITCODE -ne 0) { throw "Crystarium batch capture failed." }
+foreach ($group in ($combos | Group-Object Name)) {
+    $group.Group | ForEach-Object {
+        "$($_.Name)`t$($_.Candidate)`t$($_.Scale.ToString($invariant))`t$($_.Theme)"
+    } | Set-Content -Encoding utf8 -LiteralPath $batchFile
+    & $exe --batch $batchFile
+    if ($LASTEXITCODE -ne 0) {
+        throw "Crystarium batch capture failed for $($group.Name)."
+    }
+}
 
 foreach ($combo in $combos) {
     $reference = Join-Path $artifacts "picto\$($combo.Name)@$($combo.Theme)@$($combo.Suffix).png"

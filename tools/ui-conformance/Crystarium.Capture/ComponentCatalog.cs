@@ -34,6 +34,7 @@ internal static class ComponentCatalog
         new("text-ws-collapse", 320, 80),
         new("text-ws-prewrap", 320, 110),
         new("text-ws-tab", 320, 74),
+        new("text-ws-crlf", 320, 130),
         new("action-button", 320, 80),
         new("primary-button", 320, 80),
         new("icon-button", 120, 80),
@@ -185,7 +186,8 @@ internal static class ComponentCatalog
                 break;
             case "text-truncated-narrow":
                 // ContextMenu.module.css .label idiom — narrower than
-                // the ellipsis itself: the contract returns empty.
+                // the ellipsis itself: Blink drops the ellipsis and
+                // clips the raw run, and so does the renderer's clip.
                 Ui.Text("Unreachable", default,
                     TextConstraint.Truncate(6f * ImGuiHelpers.GlobalScale));
                 break;
@@ -293,6 +295,18 @@ internal static class ComponentCatalog
                     default,
                     TextConstraint.Wrap(
                         260f * ImGuiHelpers.GlobalScale, 1.5f,
+                        TextWhitespace.PreWrap));
+                break;
+            case "text-ws-crlf":
+                // text-wrapped-newline's exact content with CRLF line
+                // separators: presentation normalization must make this
+                // capture pixel-identical to the LF twin, as the HTML
+                // parser normalizes CRLF before layout on the reference.
+                Ui.Text(
+                    "First line\r\nSecond block that wraps onward, and onward.",
+                    default,
+                    TextConstraint.Wrap(
+                        200f * ImGuiHelpers.GlobalScale, 1.5f,
                         TextWhitespace.PreWrap));
                 break;
             case "action-button":
@@ -414,10 +428,18 @@ internal static class ComponentCatalog
                 break;
             case "context-menu":
                 if (frame == 0)
+                {
+                    // FloatingMenu is a retained static surface and Open
+                    // TOGGLES an already-open menu closed — a prior batch
+                    // entry leaving it open would capture a closing menu.
+                    // Dismiss first so every entry opens fresh, exactly
+                    // like an isolated capture.
+                    Ui.FloatingMenu.DismissAll();
                     Ui.FloatingMenu.Open(
                         "##context-menu",
                         origin,
                         MenuItems);
+                }
                 Ui.FloatingMenu.Draw("##context-menu");
                 break;
             case "modal":
