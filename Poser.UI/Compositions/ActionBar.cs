@@ -165,6 +165,37 @@ public static partial class Crystarium
             float scale,
             bool alignRight)
         {
+            // Two-pass widths: intrinsic/fixed items measure first, then
+            // Fill buttons split ONLY the remaining ActionBar allocation
+            // — Fill never resolves from ambient window availability.
+            float gapTotal = _items.Count > 1
+                ? ActiveTheme.Page.ActionGap * scale * (_items.Count - 1)
+                : 0f;
+            var widths = new float[_items.Count];
+            float measuredTotal = 0f;
+            int fillCount = 0;
+            for (int i = 0; i < _items.Count; i++)
+            {
+                if (_items[i].Kind == ItemKind.Button
+                    && _items[i].Style.Width.Kind == UiWidthKind.Fill)
+                {
+                    fillCount++;
+                    continue;
+                }
+                widths[i] = Measure(_items[i], scale);
+                measuredTotal += widths[i];
+            }
+            if (fillCount > 0)
+            {
+                float fillEach = MathF.Max(
+                    0f, size.X - measuredTotal - gapTotal) / fillCount;
+                for (int i = 0; i < _items.Count; i++)
+                    if (widths[i] == 0f
+                        && _items[i].Kind == ItemKind.Button
+                        && _items[i].Style.Width.Kind == UiWidthKind.Fill)
+                        widths[i] = fillEach;
+            }
+
             float x = alignRight
                 ? origin.X + size.X - MeasureTotal(scale)
                 : origin.X;
@@ -176,7 +207,7 @@ public static partial class Crystarium
                 if (i > 0)
                     x += ActiveTheme.Page.ActionGap * scale;
                 var item = _items[i];
-                float width = Measure(item, scale);
+                float width = widths[i];
                 var min = new Vector2(
                     x,
                     centerY
@@ -284,14 +315,17 @@ public static partial class Crystarium
                                     style.Height,
                                     ActiveTheme.Controls.WorkspaceHeight)
                                 * scale * 0.5f));
-                        Crystarium.Button(
+                        // Render through the canonical component at the
+                        // EXACT width this bar measured for the item.
+                        ButtonAtWidth(
                             item.Label,
                             item.OnClick!,
-                            variant: item.Variant,
-                            style: style,
-                            disabled: item.Disabled,
-                            help: item.Help,
-                            id: $"{_id}-button-{i}");
+                            style,
+                            width / scale,
+                            item.Disabled,
+                            item.Help,
+                            $"{_id}-button-{i}",
+                            item.Variant);
                         break;
                     }
                 }

@@ -7,10 +7,14 @@ using Ui = Poser.UI.Crystarium;
 
 namespace Crystarium.Capture;
 
+/// <summary>Hidden specs are candidate-only invariants (no Picto parity
+/// reference exists); they render on demand but stay out of the
+/// conformance catalog listing.</summary>
 internal readonly record struct ComponentSpec(
     string Name,
     int Width,
-    int Height);
+    int Height,
+    bool Hidden = false);
 
 internal static class ComponentCatalog
 {
@@ -54,8 +58,9 @@ internal static class ComponentCatalog
         new("btn-width-content", 320, 80),
         new("btn-width-fixed", 320, 80),
         new("btn-width-fill", 320, 80),
-        new("btn-narrow", 320, 80),
+        new("btn-narrow", 320, 80, Hidden: true),
         new("btn-hover-exit", 320, 80),
+        new("btn-hover-mid", 320, 80),
         new("icon-button", 120, 80),
         new("icon-button-active", 120, 80),
         new("switch-off", 120, 80),
@@ -94,7 +99,8 @@ internal static class ComponentCatalog
         new("Despawn", TablerIcon.X, danger: true),
     ];
 
-    public static IReadOnlyList<ComponentSpec> All => Specs;
+    public static IReadOnlyList<ComponentSpec> All =>
+        Specs.Where(spec => !spec.Hidden).ToArray();
 
     public static ComponentSpec Get(string name) =>
         Specs.FirstOrDefault(
@@ -153,8 +159,12 @@ internal static class ComponentCatalog
         // Hover states park the pointer inside the control; hover-exit
         // leaves after 15 frames so the 150ms background transition has
         // settled back to idle by capture.
+        // btn-hover-mid enters at frame 35: five 1/60s hover frames of a
+        // 150ms transition = linear progress 5/9, captured mid-flight
+        // deterministically on the fixed-timestep final frame.
         bool inside = name.EndsWith("-hover", StringComparison.Ordinal)
-            || (name == "btn-hover-exit" && frame < 15);
+            || (name == "btn-hover-exit" && frame < 15)
+            || (name == "btn-hover-mid" && frame >= 35);
         return inside
             ? new Vector2(84, 40) * scale
             : new Vector2(-1000, -1000);
@@ -462,6 +472,7 @@ internal static class ComponentCatalog
             case "btn-secondary-hover":
             case "btn-secondary-focus":
             case "btn-hover-exit":
+            case "btn-hover-mid":
                 // actionButton.module.css .btn — hover/focus states are
                 // pointer- and Tab-driven through the real interaction
                 // path; hover-exit settles back to idle after the pointer

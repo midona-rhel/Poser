@@ -118,10 +118,13 @@ public static partial class Crystarium
             ButtonHeight(style) * scale);
     }
 
+    /// <summary>CSS border-box intrinsic width: measured label + the
+    /// canonical horizontal padding per side + the 1px border per side.</summary>
     internal static float IntrinsicButtonWidth(
         string label, ControlStyle style) =>
         MeasureText(label, ButtonLabelStyle(style)).X / ImGuiHelpers.GlobalScale
-            + ButtonPadding(style) * 2f;
+            + ButtonPadding(style) * 2f
+            + 2f;
 
     internal static float ResolveButtonWidth(
         string label, ControlStyle style, float availableWidth) =>
@@ -219,29 +222,57 @@ public static partial class Crystarium
                 theme.Chrome.Text),
         };
 
-        // Disabled buttons take no hover styling; the 150ms background
-        // transition follows hover for everything else.
-        float eased = AdvanceHover(identity, hit.Hovered && !disabled);
-        var background = Vector4.Lerp(fill, fillHover, eased);
-        var border = hit.Hovered && !disabled ? borderHover : borderIdle;
-        background.W *= opacity;
-        border.W *= opacity;
-
         var draw = ImGui.GetWindowDrawList();
         float radius = theme.Radii.Control * scale;
-        draw.AddRectFilled(
-            hit.ScreenMin,
-            hit.ScreenMax,
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(background)),
-            radius);
+        float borderPx = 1f * scale;
         float inset = 0.5f * scale;
-        draw.AddRect(
-            hit.ScreenMin + new Vector2(inset),
-            hit.ScreenMax - new Vector2(inset),
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(border)),
-            MathF.Max(0f, radius - inset),
-            ImDrawFlags.None,
-            scale);
+        if (disabled)
+        {
+            // .btn:disabled is CSS GROUP opacity: the element flattens
+            // first, then composites at 0.35. Stacking primitives each
+            // at 0.35 double-composites the border over the fill and
+            // brightens the outer edge, so the fill is inset to the
+            // border's inner edge and the ring carries the analytically
+            // flattened border-over-fill color — no overlapping draws.
+            var ring = FlattenOver(borderIdle, fill);
+            ring.W *= opacity;
+            var fillFaded = fill;
+            fillFaded.W *= opacity;
+            draw.AddRectFilled(
+                hit.ScreenMin + new Vector2(borderPx),
+                hit.ScreenMax - new Vector2(borderPx),
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(fillFaded)),
+                MathF.Max(0f, radius - borderPx));
+            draw.AddRect(
+                hit.ScreenMin + new Vector2(inset),
+                hit.ScreenMax - new Vector2(inset),
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(ring)),
+                MathF.Max(0f, radius - inset),
+                ImDrawFlags.None,
+                borderPx);
+        }
+        else
+        {
+            // Enabled: the border blends over the fill exactly as the
+            // CSS element composites against the page; the background
+            // follows the 150ms hover transition with PREMULTIPLIED
+            // color interpolation, as Chromium interpolates rgba.
+            float eased = AdvanceHover(identity, hit.Hovered);
+            var background = PremultipliedLerp(fill, fillHover, eased);
+            var border = hit.Hovered ? borderHover : borderIdle;
+            draw.AddRectFilled(
+                hit.ScreenMin,
+                hit.ScreenMax,
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(background)),
+                radius);
+            draw.AddRect(
+                hit.ScreenMin + new Vector2(inset),
+                hit.ScreenMax - new Vector2(inset),
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(border)),
+                MathF.Max(0f, radius - inset),
+                ImDrawFlags.None,
+                borderPx);
+        }
 
         // .btn:focus-visible — 2px primary-60 outline offset 1px, shown
         // for keyboard focus only; pointer interaction never invents one.
@@ -292,6 +323,32 @@ public static partial class Crystarium
             : ActiveTheme.Typography.BodySize,
         Color = color,
     };
+
+    /// <summary>Top layer composited over the bottom layer (source-over),
+    /// returned straight-alpha — the flattened color a CSS element shows
+    /// where the two overlap before any group opacity applies.</summary>
+    private static Vector4 FlattenOver(Vector4 top, Vector4 bottom)
+    {
+        float alpha = top.W + bottom.W * (1f - top.W);
+        if (alpha <= 0f)
+            return default;
+        var rgb = (new Vector3(top.X, top.Y, top.Z) * top.W
+            + new Vector3(bottom.X, bottom.Y, bottom.Z)
+                * bottom.W * (1f - top.W)) / alpha;
+        return new Vector4(rgb, alpha);
+    }
+
+    /// <summary>Premultiplied-alpha interpolation — how Chromium
+    /// transitions between rgba backgrounds of different alpha.</summary>
+    private static Vector4 PremultipliedLerp(Vector4 from, Vector4 to, float t)
+    {
+        float alpha = from.W + (to.W - from.W) * t;
+        if (alpha <= 0f)
+            return default;
+        var rgb = (new Vector3(from.X, from.Y, from.Z) * from.W * (1f - t)
+            + new Vector3(to.X, to.Y, to.Z) * to.W * t) / alpha;
+        return new Vector4(rgb, alpha);
+    }
 
     private static float AdvanceHover(uint identity, bool hovered)
     {

@@ -270,17 +270,20 @@
         css: 'shared/styles/actionButton.module.css',
         html: '<div style="width:240px"><button class="btn" style="width:100%">Apply changes</button></div>',
       },
-      'btn-narrow': {
-        // Narrower than the label; the candidate clips to the button
-        // bounds. The native button does not clip, so overflow here is
-        // an expected, reported difference at the edges.
-        css: 'shared/styles/actionButton.module.css',
-        html: '<button class="btn" style="width:60px">Apply changes</button>',
-      },
       'btn-hover-exit': {
         // Settled hover exit equals idle.
         css: 'shared/styles/actionButton.module.css',
         html: '<button class="btn">Apply changes</button>',
+      },
+      'btn-hover-mid': {
+        // Deterministic mid-flight of the 150ms ease hover transition:
+        // the candidate hovers for exactly five 1/60s frames = linear
+        // progress 5/9; cubic-bezier(.25,.1,.25,1) eases that to
+        // 0.852283, and Chromium interpolates rgba PREMULTIPLIED, so
+        // lerp(rgba(248,249,251,.05), rgba(255,255,255,.10), 0.852283)
+        // = the background below.
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn" style="background: rgba(254.4418, 254.5215, 254.681, 0.092614)">Apply changes</button>',
       },
       'icon-button': {
         css: 'shared/styles/iconButton.module.css',

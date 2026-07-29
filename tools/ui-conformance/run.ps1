@@ -55,8 +55,8 @@ $aliases = @{
         "btn-width-content",
         "btn-width-fixed",
         "btn-width-fill",
-        "btn-narrow",
-        "btn-hover-exit")
+        "btn-hover-exit",
+        "btn-hover-mid")
     "icon-button" = @("icon-button", "icon-button-active")
     "switch" = @("switch-off", "switch-on")
     "input" = @("text-input", "search-input")
