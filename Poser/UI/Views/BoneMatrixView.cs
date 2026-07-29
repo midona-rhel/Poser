@@ -90,13 +90,19 @@ public static class BoneMatrixView
         {
             // .mxHead box model: 14px pad-top, 11px caps (~13px line), 5px
             // pad-bottom → hairline at +32, rows begin at +41 (1px line + 8px margin).
-            Crystarium.TextAt(new Vector2(origin.X, y + 15f * s), section.Title, new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Weight = FontWeight.SemiBold, Color = TextSecondary });
+            var sectionStyle = new TextStyle
+            {
+                Size = Crystarium.ActiveTheme.Typography.CaptionSize,
+                Weight = FontWeight.SemiBold,
+                Color = TextSecondary,
+            };
+            Crystarium.TextAt(new Vector2(origin.X, y + 15f * s), section.Title, sectionStyle);
             ImGui.SetCursorScreenPos(new Vector2(origin.X, y + 7f * s));
             ImGui.InvisibleButton($"##{idPrefix}-section-{sectionIndex}",
                 new Vector2(
                     MathF.Min(
                         width,
-                        Crystarium.MeasureText(section.Title, new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize }).X + 18f * s),
+                        Crystarium.MeasureText(section.Title, sectionStyle).X + 18f * s),
                     24f * s));
             if (ImGui.IsItemHovered())
                 Crystarium.HoverHelp.Explain($"bmv-section-{sectionIndex}",
@@ -154,12 +160,17 @@ public static class BoneMatrixView
             + (row.Pills.Count - 1) * metrics.PillGap) * s;
         float labelRight = pos.X + width - pillsW - 10f * s;
 
-        string label = Ellipsize(
-            row.Label,
-            MathF.Max(0f, labelRight - pos.X),
-            12f);
-        float labelW = Crystarium.MeasureText(label, new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize }).X;
-        Crystarium.TextAt(new Vector2( MathF.Max(pos.X, labelRight - labelW), pos.Y + (metrics.RowHeight - 12f) / 2f * s - 2f * s), label, new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = TextSecondary });
+        var labelStyle = new TextStyle
+        {
+            Size = Crystarium.ActiveTheme.Typography.LabelSize,
+            Color = TextSecondary,
+        };
+        float labelAvail = labelRight - pos.X;
+        string label = labelAvail > 0f
+            ? Crystarium.TruncateText(row.Label, labelStyle, labelAvail)
+            : string.Empty;
+        float labelW = Crystarium.MeasureText(label, labelStyle).X;
+        Crystarium.TextAt(new Vector2( MathF.Max(pos.X, labelRight - labelW), pos.Y + (metrics.RowHeight - 12f) / 2f * s - 2f * s), label, labelStyle);
 
         float x = pos.X + width - pillsW;
         int i = 0;
@@ -200,8 +211,15 @@ public static class BoneMatrixView
 
             if (pill.Label.Length > 0)
             {
-                float tw = Crystarium.MeasureText(pill.Label, new TextStyle { Size = Crystarium.ActiveTheme.Typography.ShortcutSize, Weight = FontWeight.SemiBold, Family = FontFamily.Mono }).X;
-                Crystarium.TextAt(new Vector2(center.X - tw / 2f, center.Y - 5f * s), pill.Label, new TextStyle { Size = Crystarium.ActiveTheme.Typography.ShortcutSize, Weight = FontWeight.SemiBold, Color = pill.Selected ? TextPrimary : hovered ? TextPrimary : TextSecondary, Family = FontFamily.Mono });
+                var pillLabelStyle = new TextStyle
+                {
+                    Size = Crystarium.ActiveTheme.Typography.ShortcutSize,
+                    Weight = FontWeight.SemiBold,
+                    Family = FontFamily.Mono,
+                    Color = pill.Selected ? TextPrimary : hovered ? TextPrimary : TextSecondary,
+                };
+                float tw = Crystarium.MeasureText(pill.Label, pillLabelStyle).X;
+                Crystarium.TextAt(new Vector2(center.X - tw / 2f, center.Y - 5f * s), pill.Label, pillLabelStyle);
             }
 
             if (clicked)
@@ -210,13 +228,5 @@ public static class BoneMatrixView
             x += (metrics.PillSize + metrics.PillGap) * s;
             i++;
         }
-    }
-
-    private static string Ellipsize(string text, float available, float size)
-    {
-        // The canonical text component owns truncation; this is a
-        // named convenience over the same routine.
-        return Crystarium.TruncateText(text,
-            new TextStyle { Size = available }, size);
     }
 }

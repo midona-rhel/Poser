@@ -435,7 +435,8 @@ public static partial class Crystarium
                 Crystarium.TruncateText(
                     value,
                     new TextStyle { Size = ActiveTheme.Typography.LabelSize },
-                    valueWidth - ActiveTheme.Spacing.Six * 2f * row.Scale),
+                    MathF.Max(1f,
+                        valueWidth - ActiveTheme.Spacing.Six * 2f * row.Scale)),
                 select,
                 pickerStyle,
                 disabled,
@@ -564,8 +565,8 @@ public static partial class Crystarium
                 value, triggerStyle, triggerWidth / row.Scale) * row.Scale;
             string display = Crystarium.TruncateText(value,
                 new TextStyle { Size = ActiveTheme.Typography.LabelSize },
-                renderedTriggerWidth
-                    - ActiveTheme.Spacing.Six * 2f * row.Scale);
+                MathF.Max(1f, renderedTriggerWidth
+                    - ActiveTheme.Spacing.Six * 2f * row.Scale));
             float controlHeight = ControlSizing.Height(
                 triggerStyle.Height, ActiveTheme.Controls.WorkspaceHeight);
             ImGui.SetCursorScreenPos(row.CenterControl(controlHeight));
@@ -657,13 +658,13 @@ public static partial class Crystarium
                 : 0f;
             float valueWidth = MathF.Max(0f,
                 row.ControlWidth - actionWidth - gap);
+            // DrawTextCentered truncates to the same width and style
+            // itself — no pre-truncation pass.
             DrawTextCentered(row.ControlOrigin,
                 new(valueWidth, ActiveTheme.Controls.FormRowHeight * row.Scale),
                 ActiveTheme.Typography.CaptionSize, FontWeight.Regular,
                 unavailable ? FormHintColor : FormValueColor,
-                Crystarium.TruncateText(value,
-                    new TextStyle { Size = ActiveTheme.Typography.CaptionSize },
-                    valueWidth));
+                value);
             DrawActions(actions.Items,
                 row.ControlOrigin.X + row.ControlWidth - actionWidth,
                 actionWidth, row.Origin.Y, true, id);
@@ -1075,14 +1076,20 @@ public static partial class Crystarium
     private static void DrawText(Vector2 position, float width, float size,
         FontWeight weight, Vector4 color, string text,
         FontFamily family = FontFamily.Default)
-        => Crystarium.TextAt(position, text,
+    {
+        if (!(width > 0f))
+            return;
+        Crystarium.TextAt(position, text,
             new TextStyle { Size = size, Weight = weight, Family = family, Color = color },
-            width, TextFit.Truncate);
+            TextConstraint.Truncate(width));
+    }
 
     private static void DrawTextCentered(Vector2 position, Vector2 region,
         float size, FontWeight weight, Vector4 color, string text,
         FontFamily family = FontFamily.Default)
     {
+        if (!(region.X > 0f))
+            return;
         var style = new TextStyle
         { Size = size, Weight = weight, Family = family, Color = color };
         string fitted = Crystarium.TruncateText(text, style, region.X);
@@ -1096,6 +1103,8 @@ public static partial class Crystarium
         float height, float size, FontFamily family, Vector4 color,
         string text)
     {
+        if (!(width > 0f))
+            return;
         var style = new TextStyle { Size = size, Family = family, Color = color };
         string fitted = Crystarium.TruncateText(text, style, width);
         var measured = Crystarium.MeasureText(fitted, style);

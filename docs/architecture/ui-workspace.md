@@ -29,8 +29,23 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
   (Brio `GraphicalSidesSwapped`) swaps sided dots on the maps only.
 - Icons: `TablerSvgSources.cs` is generated — never hand-edit;
   `PoserIconSources` wins. Mirrored pairs reuse one glyph with `flipX`
-  (undo/redo). Fonts: CSS-size conversion + glyph offset live in
-  `FontRegistry`; no per-widget font padding.
+  (undo/redo). Fonts: CSS-size conversion lives in `FontRegistry` — sizes
+  are CSS-pixel semantics scaled per font file; there is NO glyph offset
+  and no per-widget font padding: with that sizing ImGui's baseline
+  already matches the browser line box, and any nudge would shift every
+  text run.
+- Text: `Crystarium.Text`/`TextAt`/`MeasureText`/`TruncateText` with a
+  `TextStyle` (token size, weight, family, theme color, opacity-based
+  disabled) is the ONE text renderer. Width behavior is a typed
+  `TextConstraint`: `Intrinsic` carries no width, `Truncate(width)`
+  requires one, `Wrap(width, lineHeight?)` owns its optional CSS
+  line-height; non-positive dimensions are rejected. Truncation backs
+  off whole grapheme clusters, guarantees the result fits, and returns
+  empty when even the ellipsis cannot fit. Wrapping is CSS-compatible:
+  explicit newlines break, space runs collapse, an over-wide word
+  overflows (never hard-breaks), the fractional line advance accumulates
+  unrounded, and each line half-leading-centers in its line box.
+  Measurement and rendering must share one resolved style value.
 - UI foundation: the active `Theme` value owns colors, typography, metrics,
   radii, shadows, motion, and optical corrections together; a theme change
   installs one complete replacement value rather than mutating tokens.

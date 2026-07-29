@@ -290,17 +290,29 @@ public static class AppShellView
         }
 
         // app name + GPose pill
-        Crystarium.TextAt(min + new Vector2(14f, (TitlebarHeight - 16f) / 2f) * s, "Poser", new TextStyle { Size = Crystarium.ActiveTheme.Typography.BodySize, Weight = FontWeight.SemiBold, Color = TextPrimary });
-        float appW = Crystarium.MeasureText("Poser", new TextStyle { Size = Crystarium.ActiveTheme.Typography.BodySize, Weight = FontWeight.SemiBold }).X;
+        var appNameStyle = new TextStyle
+        {
+            Size = Crystarium.ActiveTheme.Typography.BodySize,
+            Weight = FontWeight.SemiBold,
+            Color = TextPrimary,
+        };
+        Crystarium.TextAt(min + new Vector2(14f, (TitlebarHeight - 16f) / 2f) * s, "Poser", appNameStyle);
+        float appW = Crystarium.MeasureText("Poser", appNameStyle).X;
         if (vm.GPoseActive)
         {
+            var pillStyle = new TextStyle
+            {
+                Size = Crystarium.ActiveTheme.Typography.CaptionSize,
+                Weight = FontWeight.Medium,
+                Color = Success,
+            };
             var pillMin = new Vector2(min.X + 14f * s + appW + 8f * s, min.Y + (h - 20f * s) / 2f);
-            float pillTextW = Crystarium.MeasureText("GPose", new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Weight = FontWeight.Medium }).X;
+            float pillTextW = Crystarium.MeasureText("GPose", pillStyle).X;
             var pillMax = pillMin + new Vector2(8f * s + 7f * s + 6f * s + pillTextW + 8f * s, 20f * s);
             dl.AddRectFilled(pillMin, pillMax, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Success with { W = 0.12f })), 10f * s);
             var dotC = new Vector2(pillMin.X + 8f * s + 3.5f * s, pillMin.Y + 10f * s);
             dl.AddCircleFilled(dotC, 3.5f * s, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Success)));
-            Crystarium.TextAt(new Vector2(dotC.X + 3.5f * s + 6f * s, pillMin.Y + 4f * s), "GPose", new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Weight = FontWeight.Medium, Color = Success });
+            Crystarium.TextAt(new Vector2(dotC.X + 3.5f * s + 6f * s, pillMin.Y + 4f * s), "GPose", pillStyle);
         }
 
         // undo/redo sit right-aligned in the sidebar's title cell, directly
@@ -506,8 +518,14 @@ public static class AppShellView
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderSecondary)));
         var dotCenter = new Vector2(min.X + 10f * s + 3.5f * s, statusTop + StatusbarHeight * s / 2f);
         dl.AddCircleFilled(dotCenter, 3.5f * s, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Success)));
-        Crystarium.TextAt(new Vector2(dotCenter.X + 3.5f * s + 8f * s, statusTop + 7f * s), vm.StatusLeft, new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Color = TextTertiary, Family = FontFamily.Mono });
-        Crystarium.TextAt(new Vector2(max.X - 10f * s - Crystarium.MeasureText(vm.StatusRight, new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Family = FontFamily.Mono }).X, statusTop + 7f * s), vm.StatusRight, new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Color = TextTertiary, Family = FontFamily.Mono });
+        var statusStyle = new TextStyle
+        {
+            Size = Crystarium.ActiveTheme.Typography.CaptionSize,
+            Color = TextTertiary,
+            Family = FontFamily.Mono,
+        };
+        Crystarium.TextAt(new Vector2(dotCenter.X + 3.5f * s + 8f * s, statusTop + 7f * s), vm.StatusLeft, statusStyle);
+        Crystarium.TextAt(new Vector2(max.X - 10f * s - Crystarium.MeasureText(vm.StatusRight, statusStyle).X, statusTop + 7f * s), vm.StatusRight, statusStyle);
     }
 
     private static void DrawRow(AppShellViewModel vm, ShellSidebarRow row, Vector2 cursor, float innerW, float s, ImDrawListPtr dl, string id)

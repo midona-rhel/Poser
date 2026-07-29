@@ -18,9 +18,6 @@ namespace Poser.UI;
 public static class TtfMetrics
 {
     private static readonly Dictionary<string, float> _cache = new(StringComparer.OrdinalIgnoreCase);
-    private const float BaselineReferenceSize = 13f;
-    private const float BaselineReferenceOffset = -2f;
-
 
     /// <summary>(ascender − descender) / unitsPerEm for the font file; 1.0 when unreadable.</summary>
     public static float CssScale(string path)
@@ -33,14 +30,6 @@ public static class TtfMetrics
             return scale;
         }
     }
-
-    /// <summary>
-    /// Vertical glyph offset that centers Segoe/Cascadia's visible ink inside the
-    /// CSS-sized ImGui line box. Scales from the measured 13px correction so all
-    /// typography sizes retain the same optical baseline.
-    /// </summary>
-    public static float CenteredGlyphOffsetY(float cssSize)
-        => BaselineReferenceOffset * cssSize / BaselineReferenceSize;
 
     private static float ReadScale(string path)
     {

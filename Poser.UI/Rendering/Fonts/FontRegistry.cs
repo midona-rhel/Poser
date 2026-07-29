@@ -164,10 +164,12 @@ public static class FontRegistry
                     {
                         // Sizes are CSS-pixel semantics (em = SizePx) to match the picto
                         // reference; ImGui sizes by ascent−descent, so scale per font.
+                        // No glyph offset: with that sizing, ImGui's baseline (scaled
+                        // ascent) already coincides with the browser's line-box
+                        // placement, and any nudge here shifts EVERY text run.
                         var config = new SafeFontConfig
                         {
                             SizePx = key.SizePx * TtfMetrics.CssScale(file),
-                            GlyphOffset = new Vector2(0f, TtfMetrics.CenteredGlyphOffsetY(key.SizePx)),
                         };
                         tk.AddFontFromFile(file, config);
                     }

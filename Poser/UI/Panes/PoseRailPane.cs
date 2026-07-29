@@ -71,7 +71,13 @@ public class PoseRailPane
             {
                 // pill: link icon + count, right-aligned (mockup .linked)
                 string count = linked.ToString();
-                float pillW = (16f + 8f + Crystarium.MeasureText(count, new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize }).X / s) * s;
+                var countStyle = new TextStyle
+                {
+                    Size = Crystarium.ActiveTheme.Typography.CaptionSize,
+                    Weight = FontWeight.Medium,
+                    Color = Crystarium.ActiveTheme.AccentHover,
+                };
+                float pillW = (16f + 8f + Crystarium.MeasureText(count, countStyle).X / s) * s;
                 var pmin = new Vector2(cursor.X + width - pillW, cursor.Y);
                 var pmax = pmin + new Vector2(pillW, 18f * s);
                 dl.AddRectFilled(
@@ -85,7 +91,7 @@ public class PoseRailPane
                     "link",
                     11f * s,
                     Crystarium.ActiveTheme.AccentHover);
-                Crystarium.TextAt(pmin + new Vector2(19f, 2f) * s, count, new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Weight = FontWeight.Medium, Color = Crystarium.ActiveTheme.AccentHover });
+                Crystarium.TextAt(pmin + new Vector2(19f, 2f) * s, count, countStyle);
                 if (Crystarium.HoverHelp.HelpHovered(pmin, pmax))
                     Crystarium.HoverHelp.Explain("rail-linked-pill", pmin, pmax,
                         "Linked editing — edits apply to these bones");

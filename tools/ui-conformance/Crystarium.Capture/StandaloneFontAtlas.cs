@@ -107,10 +107,18 @@ internal sealed class StandaloneFontAtlas : IFontAtlas
     private sealed unsafe class Toolkit(
         ImFontAtlasPtr atlas) : IFontAtlasBuildToolkitPreBuild
     {
+        // Latin + punctuation, combining diacritics, CJK punctuation/kana
+        // and unified ideographs for the truncation-safety fixtures. Faces
+        // without coverage simply contribute no glyphs (the comparison then
+        // shows the honest missing-glyph difference). Astral-plane emoji sit
+        // outside ImGui's 16-bit glyph ranges and cannot be requested here.
         private static readonly ushort[] GlyphRanges =
         [
             0x20, 0xff,
+            0x0300, 0x036f,
             0x2013, 0x2026,
+            0x3000, 0x30ff,
+            0x4e00, 0x9fff,
             0,
         ];
 
@@ -185,9 +193,6 @@ internal sealed class StandaloneFontAtlas : IFontAtlas
             var config = new SafeFontConfig
             {
                 SizePx = sizePx * TtfMetrics.CssScale(path),
-                GlyphOffset = new Vector2(
-                    0,
-                    TtfMetrics.CenteredGlyphOffsetY(sizePx)),
             };
             return AddFontFromFile(path, in config);
         }
