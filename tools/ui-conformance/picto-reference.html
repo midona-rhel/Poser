@@ -23,6 +23,10 @@
       padding: 24px;
     }
     button, input { margin: 0; }
+    /* ContextMenu.module.css .disabled extracted from the menu-row
+       geometry: opacity .4 is Picto's disabled-text idiom. */
+    .text-disabled-demo { opacity: 0.4; }
+    .text-flex-demo { display: flex; }
     .row-demo { width: 272px; --sidebar-row-height: 26px; --row-inset: 1px; }
     .property-demo { width: 272px; }
     .section-demo { width: 272px; }
@@ -61,6 +65,40 @@
   <script>
     const root = '../../../Picto/src/';
     const variants = {
+      'text-label': {
+        // Picto typography: src/app/globals.css body — 13px
+        // --font-family at --color-text-primary.
+        css: 'app/globals.css',
+        html: '<div>Actor display name</div>',
+      },
+      'text-caption': {
+        // src/shared/ui/PropertyRow/PropertyRow.module.css .label.
+        css: 'shared/ui/PropertyRow/PropertyRow.module.css',
+        html: '<span class="label" style="display:block">Opacity</span>',
+      },
+      'text-mono': {
+        // PropertyRow.module.css .value + .valueMono (CSS-Modules
+        // composes flattened into the class list, as property-row does).
+        css: 'shared/ui/PropertyRow/PropertyRow.module.css',
+        html: '<span class="value valueMono" style="display:block;flex:none;text-align:left">1.000</span>',
+      },
+      'text-disabled': {
+        // src/shared/ui/ContextMenu/ContextMenu.module.css .disabled.
+        css: 'shared/ui/ContextMenu/ContextMenu.module.css',
+        html: '<div class="text-disabled-demo">Unavailable action</div>',
+      },
+      'text-truncated': {
+        // ContextMenu.module.css .label — flex:1; min-width:0;
+        // overflow:hidden; text-overflow:ellipsis; white-space:nowrap.
+        css: 'shared/ui/ContextMenu/ContextMenu.module.css',
+        html: '<div class="text-flex-demo" style="width:140px"><span class="label">The quick brown fox jumps over</span></div>',
+      },
+      'text-wrapped': {
+        // src/shared/ui/GlassModal/GlassModal.module.css .helpText —
+        // 11px --color-text-tertiary at line-height 1.4.
+        css: 'shared/ui/GlassModal/GlassModal.module.css',
+        html: '<div class="helpText" style="width:220px">Poser keeps the incoming state and restores it exactly when the override is removed.</div>',
+      },
       'action-button': {
         css: 'shared/styles/actionButton.module.css',
         html: '<button class="btn">Apply changes</button>',

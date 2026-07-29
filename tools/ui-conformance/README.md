@@ -12,7 +12,7 @@ Run a named comparison:
 ```
 
 `combobox` expands to the closed and open dropdown states. Other groups are
-`button`, `icon-button`, `switch`, `input`, and `sidebar`; `all` runs the full
+`text`, `button`, `icon-button`, `switch`, `input`, and `sidebar`; `all` runs the full
 catalog. The default is the complete six-theme, three-scale matrix. Narrow it
 with `-Scales` and `-Themes`; use `-Clean` when beginning a new regression set.
 Without `-Clean`, new captures replace their matching entries and leave other

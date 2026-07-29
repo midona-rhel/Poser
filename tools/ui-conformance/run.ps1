@@ -31,6 +31,9 @@ if ($Clean -and (Test-Path -LiteralPath $resultsFull)) {
 $captureReferences = Join-Path $toolRoot "capture-picto-references.ps1"
 $all = @(& $captureReferences -ListCatalog)
 $aliases = @{
+    "text" = @(
+        "text-label", "text-caption", "text-mono",
+        "text-disabled", "text-truncated", "text-wrapped")
     "button" = @("action-button", "primary-button")
     "icon-button" = @("icon-button", "icon-button-active")
     "switch" = @("switch-off", "switch-on")
@@ -46,7 +49,7 @@ $components = if ($Component -eq "all") {
 } elseif ($all -contains $Component) {
     @($Component)
 } else {
-    throw "Unknown component '$Component'. Use all, combobox, button, switch, input, sidebar, or a catalog name."
+    throw "Unknown component '$Component'. Use all, text, combobox, button, switch, input, sidebar, or a catalog name."
 }
 
 dotnet build $project -c Debug --no-restore -p:NuGetAudit=false

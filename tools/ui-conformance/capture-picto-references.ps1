@@ -13,6 +13,12 @@ $html = Resolve-Path (Join-Path $toolRoot "picto-reference.html")
 $output = Join-Path $toolRoot "artifacts\picto"
 
 $catalog = @(
+    @{ Name = "text-label"; Width = 320; Height = 44 },
+    @{ Name = "text-caption"; Width = 320; Height = 44 },
+    @{ Name = "text-mono"; Width = 320; Height = 44 },
+    @{ Name = "text-disabled"; Width = 320; Height = 44 },
+    @{ Name = "text-truncated"; Width = 320; Height = 44 },
+    @{ Name = "text-wrapped"; Width = 320; Height = 96 },
     @{ Name = "action-button"; Width = 320; Height = 80 },
     @{ Name = "primary-button"; Width = 320; Height = 80 },
     @{ Name = "icon-button"; Width = 120; Height = 80 },
@@ -73,6 +79,8 @@ if (!(Test-Path -LiteralPath $Browser -PathType Leaf)) {
 $sources = @(
     "tools\ui-conformance\picto-reference.html",
     "..\Picto\src\shared\styles\tokens.css",
+    "..\Picto\src\app\globals.css",
+    "..\Picto\src\shared\styles\surfaces.css",
     "..\Picto\src\shared\styles\actionButton.module.css",
     "..\Picto\src\shared\styles\iconButton.module.css",
     "..\Picto\src\shared\ui\ToggleSwitch\ToggleSwitch.module.css",
@@ -137,7 +145,18 @@ try {
                     --user-data-dir="$profile" `
                     --screenshot="$target" `
                     $url | Out-Null
-                if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $target)) {
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Reference capture failed for $($component.Name), $theme at $scale."
+                }
+                # The Edge launcher detaches and the real browser process
+                # writes the screenshot AFTER the launcher returns; an
+                # immediate existence check races that write. Wait bounded.
+                $deadline = [DateTime]::UtcNow.AddSeconds(15)
+                while (!(Test-Path -LiteralPath $target) -and
+                    [DateTime]::UtcNow -lt $deadline) {
+                    Start-Sleep -Milliseconds 100
+                }
+                if (!(Test-Path -LiteralPath $target)) {
                     throw "Reference capture failed for $($component.Name), $theme at $scale."
                 }
             }

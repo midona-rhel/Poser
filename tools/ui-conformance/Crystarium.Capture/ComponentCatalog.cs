@@ -1,6 +1,8 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Poser.UI;
+using Dalamud.Interface.Utility;
+using FontFamily = Poser.UI.FontFamily;
 using Ui = Poser.UI.Crystarium;
 
 namespace Crystarium.Capture;
@@ -14,6 +16,12 @@ internal static class ComponentCatalog
 {
     private static readonly ComponentSpec[] Specs =
     [
+        new("text-label", 320, 44),
+        new("text-caption", 320, 44),
+        new("text-mono", 320, 44),
+        new("text-disabled", 320, 44),
+        new("text-truncated", 320, 44),
+        new("text-wrapped", 320, 96),
         new("action-button", 320, 80),
         new("primary-button", 320, 80),
         new("icon-button", 120, 80),
@@ -93,6 +101,56 @@ internal static class ComponentCatalog
 
         switch (name)
         {
+            case "text-label":
+                // Picto typography: src/app/globals.css body — 13px
+                // --font-family at --color-text-primary.
+                Ui.Text("Actor display name");
+                break;
+            case "text-caption":
+                // src/shared/ui/PropertyRow/PropertyRow.module.css .label —
+                // 11px --color-text-secondary.
+                Ui.Text("Opacity", new TextStyle
+                {
+                    Size = Ui.ActiveTheme.Typography.CaptionSize,
+                    Color = Ui.ActiveTheme.TextDim,
+                });
+                break;
+            case "text-mono":
+                // PropertyRow.module.css .value.valueMono — 11px mono
+                // tabular numerals at opacity .8 over text-primary.
+                Ui.Text("1.000", new TextStyle
+                {
+                    Size = Ui.ActiveTheme.Typography.CaptionSize,
+                    Family = FontFamily.Mono,
+                    Color = Ui.ActiveTheme.Text with { W = 0.8f },
+                });
+                break;
+            case "text-disabled":
+                // src/shared/ui/ContextMenu/ContextMenu.module.css
+                // .disabled — the ordinary label at opacity .4, Picto's
+                // disabled-text idiom.
+                Ui.Text("Unavailable action", new TextStyle { Disabled = true });
+                break;
+            case "text-truncated":
+                // ContextMenu.module.css .label — single line,
+                // ellipsis-truncated inside 140px.
+                Ui.Text("The quick brown fox jumps over", default,
+                    140f * ImGuiHelpers.GlobalScale, TextFit.Truncate);
+                break;
+            case "text-wrapped":
+                // src/shared/ui/GlassModal/GlassModal.module.css
+                // .helpText — 11px --color-text-tertiary wrapped at
+                // line-height 1.4 inside 220px.
+                Ui.Text(
+                    "Poser keeps the incoming state and restores it exactly when the override is removed.",
+                    new TextStyle
+                    {
+                        Size = Ui.ActiveTheme.Typography.CaptionSize,
+                        Color = Ui.ActiveTheme.TextMuted,
+                        LineHeight = 1.4f,
+                    },
+                    220f * ImGuiHelpers.GlobalScale, TextFit.Wrap);
+                break;
             case "action-button":
                 Ui.Button(
                     "Apply changes",
