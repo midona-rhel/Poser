@@ -36,6 +36,7 @@ $catalog = @(
     @{ Name = "text-ws-prewrap"; Width = 320; Height = 110 },
     @{ Name = "text-ws-tab"; Width = 320; Height = 74 },
     @{ Name = "text-ws-crlf"; Width = 320; Height = 130 },
+    @{ Name = "text-align-end"; Width = 320; Height = 88 },
     @{ Name = "action-button"; Width = 320; Height = 80 },
     @{ Name = "primary-button"; Width = 320; Height = 80 },
     @{ Name = "icon-button"; Width = 120; Height = 80 },

@@ -28,12 +28,25 @@ public enum TextWhitespace
     PreWrap,
 }
 
+/// <summary>Horizontal alignment of a constrained run inside its box
+/// (CSS <c>text-align</c>). Start draws from the box's start edge; End
+/// pins the run's end to the end edge — a truncated run keeps its
+/// ellipsis on that edge when truncation begins, and a raw overflow run
+/// (narrower-than-ellipsis box) shows its END with the start clipped,
+/// exactly as an end-aligned CSS line overflows.</summary>
+public enum TextAlign
+{
+    Start,
+    End,
+}
+
 /// <summary>
 /// A typed width constraint for a text run. Intrinsic text carries no
 /// width; truncation REQUIRES one; wrapping requires one and owns its
-/// optional CSS line-height and white-space policy. Invalid combinations
-/// are unrepresentable and non-positive dimensions are rejected at
-/// construction.
+/// optional CSS line-height and white-space policy. Constrained runs
+/// carry a typed <see cref="TextAlign"/>, defaulting to Start. Invalid
+/// combinations are unrepresentable and non-positive dimensions are
+/// rejected at construction.
 /// </summary>
 public readonly struct TextConstraint
 {
@@ -43,14 +56,17 @@ public readonly struct TextConstraint
     internal float Width { get; }
     internal float? LineHeight { get; }
     internal TextWhitespace Whitespace { get; }
+    internal TextAlign Alignment { get; }
 
     private TextConstraint(
-        FitMode mode, float width, float? lineHeight, TextWhitespace whitespace)
+        FitMode mode, float width, float? lineHeight,
+        TextWhitespace whitespace, TextAlign alignment)
     {
         Mode = mode;
         Width = width;
         LineHeight = lineHeight;
         Whitespace = whitespace;
+        Alignment = alignment;
     }
 
     /// <summary>Natural content width; never cut.</summary>
@@ -59,13 +75,16 @@ public readonly struct TextConstraint
     /// <summary>One line, ellipsis-truncated and CLIPPED inside the pixel
     /// width (Picto's <c>overflow:hidden; text-overflow:ellipsis;
     /// white-space:nowrap</c> idiom). The run occupies the full width in
-    /// layout, exactly like the CSS box.</summary>
-    public static TextConstraint Truncate(float width)
+    /// layout, exactly like the CSS box, and aligns inside it per
+    /// <paramref name="alignment"/>.</summary>
+    public static TextConstraint Truncate(
+        float width, TextAlign alignment = TextAlign.Start)
     {
         if (!(width > 0f))
             throw new ArgumentOutOfRangeException(
                 nameof(width), width, "Truncation requires a positive pixel width.");
-        return new TextConstraint(FitMode.Truncate, width, null, TextWhitespace.Normal);
+        return new TextConstraint(
+            FitMode.Truncate, width, null, TextWhitespace.Normal, alignment);
     }
 
     /// <summary>
@@ -81,7 +100,8 @@ public readonly struct TextConstraint
     public static TextConstraint Wrap(
         float width,
         float? lineHeight = null,
-        TextWhitespace whitespace = TextWhitespace.Normal)
+        TextWhitespace whitespace = TextWhitespace.Normal,
+        TextAlign alignment = TextAlign.Start)
     {
         if (!(width > 0f))
             throw new ArgumentOutOfRangeException(
@@ -89,7 +109,8 @@ public readonly struct TextConstraint
         if (lineHeight is { } multiplier && !(multiplier > 0f))
             throw new ArgumentOutOfRangeException(
                 nameof(lineHeight), multiplier, "A line height must be positive.");
-        return new TextConstraint(FitMode.Wrap, width, lineHeight, whitespace);
+        return new TextConstraint(
+            FitMode.Wrap, width, lineHeight, whitespace, alignment);
     }
 }
 
@@ -247,17 +268,27 @@ public static partial class Crystarium
                 {
                     // CSS overflow:hidden + text-overflow:ellipsis — the
                     // fitted string decides where the ellipsis goes, the
-                    // clip owns the visual edge (a narrower-than-ellipsis
-                    // box shows a clipped ellipsis, as the browser does).
+                    // clip owns the visual edge. When even the ellipsis
+                    // cannot fit, the fitted string IS the original run
+                    // and the clip cuts it raw, as Blink does. End
+                    // alignment offsets by the leftover width, which for
+                    // a raw overflow goes negative so the run's END stays
+                    // at the box edge with the start clipped.
                     float natural = ImGui.GetTextLineHeight();
                     string fitted = TruncateResolved(text, constraint.Width);
+                    float offset = constraint.Alignment == TextAlign.End
+                        ? constraint.Width - FractionalTextWidth(fitted)
+                        : 0f;
                     dl.PushClipRect(
                         origin,
                         origin + new Vector2(constraint.Width, natural),
                         true);
                     try
                     {
-                        dl.AddText(origin, packed, fitted);
+                        dl.AddText(
+                            new Vector2(
+                                MathF.Round(origin.X + offset), origin.Y),
+                            packed, fitted);
                     }
                     finally
                     {
@@ -282,9 +313,14 @@ public static partial class Crystarium
                     foreach (var line in WrapResolved(
                         text, constraint.Width, constraint.Whitespace))
                     {
+                        float offset = constraint.Alignment == TextAlign.End
+                            ? constraint.Width - MeasureLine(line)
+                            : 0f;
                         DrawLine(
                             dl,
-                            new Vector2(origin.X, MathF.Round(y + halfLeading)),
+                            new Vector2(
+                                MathF.Round(origin.X + offset),
+                                MathF.Round(y + halfLeading)),
                             packed, line);
                         y += advance;
                     }

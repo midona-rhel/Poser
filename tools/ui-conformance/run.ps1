@@ -37,7 +37,7 @@ $aliases = @{
         "text-truncated-emoji", "text-truncated-fit", "text-truncated-narrow",
         "text-truncated-flow", "text-wrapped", "text-wrapped-newline",
         "text-wrapped-overwide", "text-wrapped-flow", "text-ws-collapse",
-        "text-ws-prewrap", "text-ws-tab", "text-ws-crlf")
+        "text-ws-prewrap", "text-ws-tab", "text-ws-crlf", "text-align-end")
     "button" = @("action-button", "primary-button")
     "icon-button" = @("icon-button", "icon-button-active")
     "switch" = @("switch-off", "switch-on")

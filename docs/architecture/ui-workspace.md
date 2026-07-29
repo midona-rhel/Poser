@@ -44,11 +44,14 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
   non-positive dimensions are rejected. Presentation normalization also
   canonicalizes CRLF and lone CR to LF, as the HTML parser does. A
   constrained inline run occupies its constraint width in layout so
-  siblings flow from the box edge. Truncation backs off whole grapheme
-  clusters and the renderer CLIPS to the box like `overflow: hidden` —
-  when even the ellipsis cannot fit, the ORIGINAL run draws through the
-  clip, exactly Blink's narrow behavior; string fitting is
-  composition-internal and never a substitute for that clip. Wrapping
+  siblings flow from the box edge, and carries a typed `TextAlign`
+  (Start default; End pins the run's end to the box edge — a truncated
+  run keeps its ellipsis there, and a raw overflow shows its end with
+  the start clipped, like an end-aligned CSS line). Truncation backs
+  off whole grapheme clusters and the renderer CLIPS to the box like
+  `overflow: hidden` — when even the ellipsis cannot fit, the ORIGINAL
+  run draws through the clip, exactly Blink's narrow behavior; string
+  fitting is composition-internal and never a substitute for that clip. Wrapping
   never hard-breaks an over-wide word, accumulates the fractional line
   advance unrounded, half-leading-centers each line, and expands
   preserved tabs to 8-space stops under PreWrap. CJK (Default family

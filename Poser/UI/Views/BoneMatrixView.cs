@@ -168,19 +168,9 @@ public static class BoneMatrixView
         float labelAvail = labelRight - pos.X;
         float labelY = pos.Y + (metrics.RowHeight - 12f) / 2f * s - 2f * s;
         if (labelAvail > 0f)
-        {
-            // Right-aligned when it fits; an over-long label fills the
-            // slot through the canonical clipped truncating renderer.
-            float labelW = Crystarium.MeasureText(row.Label, labelStyle).X;
-            if (labelW <= labelAvail)
-                Crystarium.TextAt(
-                    new Vector2(labelRight - labelW, labelY),
-                    row.Label, labelStyle);
-            else
-                Crystarium.TextAt(
-                    new Vector2(pos.X, labelY), row.Label, labelStyle,
-                    TextConstraint.Truncate(labelAvail));
-        }
+            Crystarium.TextAt(
+                new Vector2(pos.X, labelY), row.Label, labelStyle,
+                TextConstraint.Truncate(labelAvail, TextAlign.End));
 
         float x = pos.X + width - pillsW;
         int i = 0;

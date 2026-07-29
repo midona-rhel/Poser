@@ -35,6 +35,7 @@ internal static class ComponentCatalog
         new("text-ws-prewrap", 320, 110),
         new("text-ws-tab", 320, 74),
         new("text-ws-crlf", 320, 130),
+        new("text-align-end", 320, 88),
         new("action-button", 320, 80),
         new("primary-button", 320, 80),
         new("icon-button", 120, 80),
@@ -309,6 +310,56 @@ internal static class ComponentCatalog
                         200f * ImGuiHelpers.GlobalScale, 1.5f,
                         TextWhitespace.PreWrap));
                 break;
+            case "text-align-end":
+            {
+                // src/shared/ui/PropertyRow/PropertyRow.module.css —
+                // .row (20px, nowrap) with .label (11px secondary,
+                // min-width 64) and .value (flex:1, 11px primary at
+                // opacity .8, text-align: right); second row uses
+                // .valueMono. End alignment through the canonical
+                // constrained renderer pins each value to the row's end
+                // edge. Picto has no end-aligned ELLIPSIS grammar, so
+                // the truncating-End case has no reference here.
+                float s2 = ImGuiHelpers.GlobalScale;
+                float rowWidth = 200f * s2;
+                float labelWidth = 64f * s2;
+                float rowHeight = 20f * s2;
+                var labelStyle = new TextStyle
+                {
+                    Size = Ui.ActiveTheme.Typography.CaptionSize,
+                    Color = Ui.ActiveTheme.TextDim,
+                };
+                var rows = new (string Label, string Value, TextStyle Style)[]
+                {
+                    ("Opacity", "1.000", new TextStyle
+                    {
+                        Size = Ui.ActiveTheme.Typography.CaptionSize,
+                        Color = Ui.ActiveTheme.Text with { W = 0.8f },
+                    }),
+                    ("Scale", "0.750", new TextStyle
+                    {
+                        Size = Ui.ActiveTheme.Typography.CaptionSize,
+                        Family = FontFamily.Mono,
+                        Color = Ui.ActiveTheme.Text with { W = 0.8f },
+                    }),
+                };
+                for (int i = 0; i < rows.Length; i++)
+                {
+                    float rowTop = origin.Y + i * rowHeight;
+                    float lineHeight = Ui.MeasureText(
+                        rows[i].Label, labelStyle).Y;
+                    float textY = rowTop + (rowHeight - lineHeight) * 0.5f;
+                    Ui.TextAt(
+                        new Vector2(origin.X, textY),
+                        rows[i].Label, labelStyle);
+                    Ui.TextAt(
+                        new Vector2(origin.X + labelWidth, textY),
+                        rows[i].Value, rows[i].Style,
+                        TextConstraint.Truncate(
+                            rowWidth - labelWidth, TextAlign.End));
+                }
+                break;
+            }
             case "action-button":
                 Ui.Button(
                     "Apply changes",

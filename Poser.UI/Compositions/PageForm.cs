@@ -1105,15 +1105,11 @@ public static partial class Crystarium
         if (!(width > 0f))
             return;
         var style = new TextStyle { Size = size, Family = family, Color = color };
-        var measured = Crystarium.MeasureText(text, style);
-        float y = position.Y + (height - measured.Y) * 0.5f;
-        if (measured.X <= width)
-            Crystarium.TextAt(
-                new(position.X + width - measured.X, y), text, style);
-        else
-            Crystarium.TextAt(
-                new(position.X, y), text, style,
-                TextConstraint.Truncate(width));
+        float lineHeight = Crystarium.MeasureText(text, style).Y;
+        Crystarium.TextAt(
+            new(position.X, position.Y + (height - lineHeight) * 0.5f),
+            text, style,
+            TextConstraint.Truncate(width, TextAlign.End));
     }
 
 }
