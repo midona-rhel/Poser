@@ -862,9 +862,7 @@ public class MainWindow : Window
     {
         if (!_gPoseService.IsGPosing)
         {
-            ViewText.Label(origin + new Vector2(0f, 8f) * ImGuiHelpers.GlobalScale,
-                "Enter GPose to start posing.", 12f, FontWeight.Regular,
-                Crystarium.ActiveTheme.FormHint);
+            Crystarium.TextAt(origin + new Vector2(0f, 8f) * ImGuiHelpers.GlobalScale, "Enter GPose to start posing.", new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.FormHint });
             return;
         }
 

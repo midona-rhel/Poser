@@ -290,17 +290,17 @@ public static class AppShellView
         }
 
         // app name + GPose pill
-        ViewText.Label(min + new Vector2(14f, (TitlebarHeight - 16f) / 2f) * s, "Poser", 13f, FontWeight.SemiBold, TextPrimary);
-        float appW = ViewText.Measure("Poser", 13f, FontWeight.SemiBold);
+        Crystarium.TextAt(min + new Vector2(14f, (TitlebarHeight - 16f) / 2f) * s, "Poser", new TextStyle { Size = Crystarium.ActiveTheme.Typography.BodySize, Weight = FontWeight.SemiBold, Color = TextPrimary });
+        float appW = Crystarium.MeasureText("Poser", new TextStyle { Size = Crystarium.ActiveTheme.Typography.BodySize, Weight = FontWeight.SemiBold }).X;
         if (vm.GPoseActive)
         {
             var pillMin = new Vector2(min.X + 14f * s + appW + 8f * s, min.Y + (h - 20f * s) / 2f);
-            float pillTextW = ViewText.Measure("GPose", 11f, FontWeight.Medium);
+            float pillTextW = Crystarium.MeasureText("GPose", new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Weight = FontWeight.Medium }).X;
             var pillMax = pillMin + new Vector2(8f * s + 7f * s + 6f * s + pillTextW + 8f * s, 20f * s);
             dl.AddRectFilled(pillMin, pillMax, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Success with { W = 0.12f })), 10f * s);
             var dotC = new Vector2(pillMin.X + 8f * s + 3.5f * s, pillMin.Y + 10f * s);
             dl.AddCircleFilled(dotC, 3.5f * s, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Success)));
-            ViewText.Label(new Vector2(dotC.X + 3.5f * s + 6f * s, pillMin.Y + 4f * s), "GPose", 11f, FontWeight.Medium, Success);
+            Crystarium.TextAt(new Vector2(dotC.X + 3.5f * s + 6f * s, pillMin.Y + 4f * s), "GPose", new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Weight = FontWeight.Medium, Color = Success });
         }
 
         // undo/redo sit right-aligned in the sidebar's title cell, directly
@@ -460,14 +460,7 @@ public static class AppShellView
                     if (sectionIndex > 0)
                         cursor.Y +=
                             Crystarium.ActiveTheme.Spacing.Four * s;
-                    ViewText.Label(
-                        cursor + new Vector2(
-                            Crystarium.ActiveTheme.Spacing.Two,
-                            Crystarium.ActiveTheme.Spacing.Two) * s,
-                        section.Title,
-                        Crystarium.ActiveTheme.Typography.LabelSize,
-                        FontWeight.Medium,
-                        TextTertiary);
+                    Crystarium.TextAt(cursor + new Vector2( Crystarium.ActiveTheme.Spacing.Two, Crystarium.ActiveTheme.Spacing.Two) * s, section.Title, new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Weight = FontWeight.Medium, Color = TextTertiary });
                     if (section.ShowPlus)
                     {
                         ImGui.SetCursorScreenPos(new Vector2(
@@ -513,9 +506,8 @@ public static class AppShellView
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderSecondary)));
         var dotCenter = new Vector2(min.X + 10f * s + 3.5f * s, statusTop + StatusbarHeight * s / 2f);
         dl.AddCircleFilled(dotCenter, 3.5f * s, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Success)));
-        ViewText.Label(new Vector2(dotCenter.X + 3.5f * s + 8f * s, statusTop + 7f * s), vm.StatusLeft, 11f, FontWeight.Regular, TextTertiary, mono: true);
-        ViewText.Label(new Vector2(max.X - 10f * s - ViewText.Measure(vm.StatusRight, 11f, mono: true), statusTop + 7f * s),
-            vm.StatusRight, 11f, FontWeight.Regular, TextTertiary, mono: true);
+        Crystarium.TextAt(new Vector2(dotCenter.X + 3.5f * s + 8f * s, statusTop + 7f * s), vm.StatusLeft, new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Color = TextTertiary, Family = FontFamily.Mono });
+        Crystarium.TextAt(new Vector2(max.X - 10f * s - Crystarium.MeasureText(vm.StatusRight, new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Family = FontFamily.Mono }).X, statusTop + 7f * s), vm.StatusRight, new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Color = TextTertiary, Family = FontFamily.Mono });
     }
 
     private static void DrawRow(AppShellViewModel vm, ShellSidebarRow row, Vector2 cursor, float innerW, float s, ImDrawListPtr dl, string id)
@@ -631,9 +623,7 @@ public static class AppShellView
         float badgeReserve = actionReserve + 6f * s;
         ImGui.PushClipRect(new Vector2(cursor.X, cursor.Y),
             new Vector2(cursor.X + innerW - badgeReserve, cursor.Y + RowHeight * s), true);
-        ViewText.Label(Crystarium.ActiveTheme.Optical.Snap(new Vector2(
-                x, cursor.Y + 5f * s + Crystarium.ActiveTheme.Optical.SidebarText * s)),
-            row.Label, 13f, FontWeight.Regular, TextPrimary);
+        Crystarium.TextAt(Crystarium.ActiveTheme.Optical.Snap(new Vector2( x, cursor.Y + 5f * s + Crystarium.ActiveTheme.Optical.SidebarText * s)), row.Label, new TextStyle { Size = Crystarium.ActiveTheme.Typography.BodySize, Color = TextPrimary });
         ImGui.PopClipRect();
 
         if (row.ActorActions)

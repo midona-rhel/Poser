@@ -432,10 +432,10 @@ public static partial class Crystarium
                 ActiveTheme.Controls.WorkspaceHeight);
             ImGui.SetCursorScreenPos(row.CenterControl(controlHeight));
             Crystarium.Button(
-                FitText(
+                Crystarium.TruncateText(
                     value,
-                    valueWidth - ActiveTheme.Spacing.Six * 2f * row.Scale,
-                    ActiveTheme.Typography.LabelSize),
+                    new TextStyle { Size = ActiveTheme.Typography.LabelSize },
+                    valueWidth - ActiveTheme.Spacing.Six * 2f * row.Scale),
                 select,
                 pickerStyle,
                 disabled,
@@ -562,10 +562,10 @@ public static partial class Crystarium
                 fillByDefault: true);
             float renderedTriggerWidth = ResolveButtonWidth(
                 value, triggerStyle, triggerWidth / row.Scale) * row.Scale;
-            string display = FitText(value,
+            string display = Crystarium.TruncateText(value,
+                new TextStyle { Size = ActiveTheme.Typography.LabelSize },
                 renderedTriggerWidth
-                    - ActiveTheme.Spacing.Six * 2f * row.Scale,
-                ActiveTheme.Typography.LabelSize);
+                    - ActiveTheme.Spacing.Six * 2f * row.Scale);
             float controlHeight = ControlSizing.Height(
                 triggerStyle.Height, ActiveTheme.Controls.WorkspaceHeight);
             ImGui.SetCursorScreenPos(row.CenterControl(controlHeight));
@@ -661,7 +661,9 @@ public static partial class Crystarium
                 new(valueWidth, ActiveTheme.Controls.FormRowHeight * row.Scale),
                 ActiveTheme.Typography.CaptionSize, FontWeight.Regular,
                 unavailable ? FormHintColor : FormValueColor,
-                FitText(value, valueWidth, ActiveTheme.Typography.CaptionSize));
+                Crystarium.TruncateText(value,
+                    new TextStyle { Size = ActiveTheme.Typography.CaptionSize },
+                    valueWidth));
             DrawActions(actions.Items,
                 row.ControlOrigin.X + row.ControlWidth - actionWidth,
                 actionWidth, row.Origin.Y, true, id);
@@ -1067,69 +1069,39 @@ public static partial class Crystarium
 
     private static Vector2 MeasureText(string text, float size,
         FontWeight weight, FontFamily family = FontFamily.Default)
-    {
-        var font = FontRegistry.Resolve(family, weight, size);
-        bool pushed = font is { Available: true };
-        if (pushed)
-            font!.Push();
-        var measured = ImGui.CalcTextSize(text);
-        if (pushed)
-            font!.Pop();
-        return measured;
-    }
+        => Crystarium.MeasureText(text,
+            new TextStyle { Size = size, Weight = weight, Family = family });
 
     private static void DrawText(Vector2 position, float width, float size,
         FontWeight weight, Vector4 color, string text,
         FontFamily family = FontFamily.Default)
-    {
-        string fitted = FitText(text, width, size, family);
-        var font = FontRegistry.Resolve(family, weight, size);
-        bool pushed = font is { Available: true };
-        if (pushed)
-            font!.Push();
-        ImGui.GetWindowDrawList().AddText(position,
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(color)), fitted);
-        if (pushed)
-            font!.Pop();
-    }
+        => Crystarium.TextAt(position, text,
+            new TextStyle { Size = size, Weight = weight, Family = family, Color = color },
+            width, TextFit.Truncate);
 
     private static void DrawTextCentered(Vector2 position, Vector2 region,
         float size, FontWeight weight, Vector4 color, string text,
         FontFamily family = FontFamily.Default)
     {
-        string fitted = FitText(text, region.X, size, family);
-        var measured = MeasureText(fitted, size, weight, family);
-        DrawText(new(position.X,
+        var style = new TextStyle
+        { Size = size, Weight = weight, Family = family, Color = color };
+        string fitted = Crystarium.TruncateText(text, style, region.X);
+        var measured = Crystarium.MeasureText(fitted, style);
+        Crystarium.TextAt(new(position.X,
                 position.Y + (region.Y - measured.Y) * 0.5f),
-            region.X, size, weight, color, fitted, family);
+            fitted, style);
     }
 
     private static void DrawTextRight(Vector2 position, float width,
         float height, float size, FontFamily family, Vector4 color,
         string text)
     {
-        string fitted = FitText(text, width, size, family);
-        var measured = MeasureText(fitted, size, FontWeight.Regular, family);
-        DrawText(new(position.X + width - measured.X,
+        var style = new TextStyle { Size = size, Family = family, Color = color };
+        string fitted = Crystarium.TruncateText(text, style, width);
+        var measured = Crystarium.MeasureText(fitted, style);
+        Crystarium.TextAt(new(position.X + width - measured.X,
                 position.Y + (height - measured.Y) * 0.5f),
-            width, size, FontWeight.Regular, color, fitted, family);
-    }
-
-    private static string FitText(string text, float width, float size,
-        FontFamily family = FontFamily.Default)
-    {
-        if (string.IsNullOrEmpty(text) || width <= 0f)
-            return string.Empty;
-        if (MeasureText(text, size, FontWeight.Regular, family).X <= width)
-            return text;
-        for (int keep = text.Length - 1; keep > 0; keep--)
-        {
-            string candidate = text[..keep] + "…";
-            if (MeasureText(candidate, size,
-                    FontWeight.Regular, family).X <= width)
-                return candidate;
-        }
-        return "…";
+            fitted, style);
     }
 
 }

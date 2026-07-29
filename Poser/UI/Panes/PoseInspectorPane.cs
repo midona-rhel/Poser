@@ -294,9 +294,11 @@ public class PoseInspectorPane
                     Crystarium.ActiveTheme.Spacing.Four * s));
             Crystarium.Text(
                 "Select an actor or bone in the sidebar.",
-                Crystarium.ActiveTheme.Typography.LabelSize,
-                FontWeight.Regular,
-                Crystarium.ActiveTheme.FormHint);
+                new TextStyle
+                {
+                    Size = Crystarium.ActiveTheme.Typography.LabelSize,
+                    Color = Crystarium.ActiveTheme.FormHint,
+                });
             cursor.Y +=
                 Crystarium.ActiveTheme.Controls.FormRowHeight * s;
         }
@@ -632,9 +634,7 @@ public class PoseInspectorPane
         {
             ImGui.SetCursorScreenPos(cursor);
             if (DrawMapInline == null || !DrawMapInline(_poseView, new Vector2(width, viewportHeight)))
-                ViewText.Label(new Vector2(cursor.X, cursor.Y + 8f * s),
-                    "Select an actor to use the map.", 12f, FontWeight.Regular,
-                    Crystarium.ActiveTheme.FormHint);
+                Crystarium.TextAt(new Vector2(cursor.X, cursor.Y + 8f * s), "Select an actor to use the map.", new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.FormHint });
             return viewportHeight;
         }
 
@@ -915,13 +915,7 @@ public class PoseInspectorPane
         if (positions.Count == 0)
         {
             dl.PushClipRect(min, max, true);
-            CanvasLabel(
-                dl,
-                min + new Vector2(
-                    Crystarium.ActiveTheme.Page.Inset) * s,
-                "No skeleton.",
-                12f,
-                Crystarium.ActiveTheme.FormHint);
+            Crystarium.TextAt(min + new Vector2( Crystarium.ActiveTheme.Page.Inset) * s, "No skeleton.", new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.FormHint });
             dl.PopClipRect();
             return height;
         }
@@ -981,41 +975,16 @@ public class PoseInspectorPane
             else if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
                 _selection.Toggle(hoveredId);
         }
-        CanvasLabel(
-            dl,
-            min + new Vector2(
-                Crystarium.ActiveTheme.Page.Inset,
-                canvasSize.Y / s
-                    - Crystarium.ActiveTheme.Page.Inset
-                    - Crystarium.ActiveTheme.Typography.CaptionSize) * s,
-            "left drag: orbit · middle drag: pan · wheel: zoom · click: select",
-            11f,
-            Crystarium.ActiveTheme.FormHint);
+        Crystarium.TextAt(min + new Vector2( Crystarium.ActiveTheme.Page.Inset, canvasSize.Y / s - Crystarium.ActiveTheme.Page.Inset - Crystarium.ActiveTheme.Typography.CaptionSize) * s, "left drag: orbit · middle drag: pan · wheel: zoom · click: select", new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Color = Crystarium.ActiveTheme.FormHint });
         dl.PopClipRect();
 
         return height;
     }
 
-    /// <summary>Draw-list-only canvas annotation: canvas surfaces submit no
-    /// layout items, so their labels can never grow the child's scroll
-    /// extent.</summary>
-    private static void CanvasLabel(ImDrawListPtr dl, Vector2 pos, string text, float fontSize, Vector4 color)
-    {
-        var fontHandle = FontRegistry.Resolve(FontFamily.Default, fontSize);
-        bool fontPushed = fontHandle is { Available: true };
-        if (fontPushed) fontHandle!.Push();
-        dl.AddText(pos, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(color)), text);
-        if (fontPushed) fontHandle!.Pop();
-    }
 
     private static void StripLabel(Vector2 cursor, float h, float x, string text, float s)
     {
-        ViewText.Label(
-            cursor + new Vector2(x, h / s + 9f) * s,
-            text,
-            12f,
-            FontWeight.Regular,
-            Crystarium.ActiveTheme.TextDim);
+        Crystarium.TextAt(cursor + new Vector2(x, h / s + 9f) * s, text, new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.TextDim });
     }
 
     // ── sections ─────────────────────────────────────────────────────────

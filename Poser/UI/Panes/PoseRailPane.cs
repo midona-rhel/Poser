@@ -63,21 +63,15 @@ public class PoseRailPane
         var (who, sub, linked) = _inspector.RailHeader();
         if (who.Length > 0)
         {
-            ViewText.Label(
-                cursor,
-                who,
-                13f,
-                FontWeight.Medium,
-                Crystarium.ActiveTheme.Text);
+            Crystarium.TextAt(cursor, who, new TextStyle { Size = Crystarium.ActiveTheme.Typography.BodySize, Weight = FontWeight.Medium, Color = Crystarium.ActiveTheme.Text });
             if (sub.Length > 0)
-                ViewText.Label(cursor + new Vector2(0f, 17f) * s, sub, 11f, FontWeight.Regular,
-                    Crystarium.ActiveTheme.TextMuted, mono: true);
+                Crystarium.TextAt(cursor + new Vector2(0f, 17f) * s, sub, new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Color = Crystarium.ActiveTheme.TextMuted, Family = FontFamily.Mono });
 
             if (linked >= 2)
             {
                 // pill: link icon + count, right-aligned (mockup .linked)
                 string count = linked.ToString();
-                float pillW = (16f + 8f + ViewText.Measure(count, 11f) / s) * s;
+                float pillW = (16f + 8f + Crystarium.MeasureText(count, new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize }).X / s) * s;
                 var pmin = new Vector2(cursor.X + width - pillW, cursor.Y);
                 var pmax = pmin + new Vector2(pillW, 18f * s);
                 dl.AddRectFilled(
@@ -91,12 +85,7 @@ public class PoseRailPane
                     "link",
                     11f * s,
                     Crystarium.ActiveTheme.AccentHover);
-                ViewText.Label(
-                    pmin + new Vector2(19f, 2f) * s,
-                    count,
-                    11f,
-                    FontWeight.Medium,
-                    Crystarium.ActiveTheme.AccentHover);
+                Crystarium.TextAt(pmin + new Vector2(19f, 2f) * s, count, new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Weight = FontWeight.Medium, Color = Crystarium.ActiveTheme.AccentHover });
                 if (Crystarium.HoverHelp.HelpHovered(pmin, pmax))
                     Crystarium.HoverHelp.Explain("rail-linked-pill", pmin, pmax,
                         "Linked editing — edits apply to these bones");
@@ -128,12 +117,7 @@ public class PoseRailPane
         }
         else
         {
-            ViewText.Label(
-                cursor,
-                "Nothing selected",
-                12f,
-                FontWeight.Regular,
-                Crystarium.ActiveTheme.FormHint);
+            Crystarium.TextAt(cursor, "Nothing selected", new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.FormHint });
             cursor.Y += 22f * s;
         }
 

@@ -19,7 +19,7 @@ namespace Poser.UI;
 ///       public MyWindow() : base("My Window") { Size = new Vector2(400, 300); }
 ///       protected override void Body()
 ///       {
-///           Crystarium.Heading("Hello");
+///           Crystarium.Text("Hello");
 ///           Crystarium.Card(() => Crystarium.Text("Body"));
 ///       }
 ///   }
