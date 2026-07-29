@@ -41,19 +41,26 @@ detection, complete catalog routing, six themes, and three scales.
 
 1. Identify the exact current Picto TSX/CSS source and record it in the fixture.
    Do not substitute a visually similar component or invented sample data.
-2. Add every required state to `tools/ui-conformance`: Picto reference,
+2. Inspect the TSX component itself: public props, controlled state, internal
+   transient state, composition, DOM hierarchy, event flow, and CSS selectors.
+   Translate that design deliberately into immediate-mode UI; do not copy only
+   the final pixels or mechanically imitate React.
+3. Define the smallest reusable, product-agnostic Crystarium API that covers the
+   catalog fixture and every retained production consumer.
+4. Add every required state to `tools/ui-conformance`: Picto reference,
    Crystarium candidate, red diff, metrics, and the visual inspection page.
-3. Normalize the canonical Crystarium component and migrate every retained Poser
+5. Normalize the canonical Crystarium component and migrate every retained Poser
    call site that represents that component.
-4. Delete the superseded component, local drawing recipe, token, and compatibility
+6. Delete the superseded component, local drawing recipe, token, and compatibility
    overload. Do not leave two valid ways to render the same ordinary control.
-5. Run the Debug production build, `git diff --check`, and only that component's
+7. Run the Debug production build, `git diff --check`, and only that component's
    conformance captures at 100%, 125%, and 150% for all six themes.
-6. Stop and hand the slice to Codex with source paths, changed paths, deleted
-   paths, report paths, residual pixels, and explicit in-game locations.
-7. Codex reviews the implementation and automated comparison.
-8. The user inspects the comparison window and the same component in game.
-9. Record the accepted commit below. Only then begin the next numbered slice.
+8. Stop and hand the slice to Codex with the API design, state ownership, source
+   paths, changed paths, deleted paths, reports, residual pixels, and explicit
+   in-game locations.
+9. Codex reviews both the reusable code design and automated comparison.
+10. The user inspects the comparison window and the same component in game.
+11. Record the accepted commit below. Only then begin the next numbered slice.
 
 Claude must not batch later components, continue while acceptance is pending, or
 claim visual/runtime success from compilation or image metrics.
@@ -133,6 +140,25 @@ Each handoff covers only one numbered row.
 
 - `Theme` is the only theme value; component code consumes it through canonical
   primitives and compositions.
+- Picto's TypeScript/JS structure is an architectural reference as well as a
+  visual reference. Preserve useful boundaries, variants, controlled-state
+  semantics, and composition patterns when they make sense in immediate-mode UI.
+- Translate semantics, not framework machinery. Do not introduce a React-style
+  virtual tree, CSS engine, generic layout framework, or retained component graph.
+- Public component APIs are concise, strongly typed, product-agnostic, and
+  callback-based. Product names, actor/bone services, and pane state never enter
+  Crystarium.
+- Prefer a small value/style record and explicit variants over boolean piles,
+  parallel overload families, or a kitchen-sink property bag. Invalid variant,
+  width, height, or state combinations should be unrepresentable where practical.
+- Callers own durable values and business state. The component owns only
+  ephemeral interaction state such as hover, active press, editing, open
+  transition, and keyboard navigation, keyed by stable ImGui identity.
+- A component owns its complete visual and interaction geometry. Measurement,
+  rendering, hit testing, focus, clipping, and disabled behavior use the same
+  resolved bounds instead of recomputing competing rectangles.
+- Composite components reuse normalized primitives. They may arrange or
+  coordinate them, but must not redraw local approximations of those primitives.
 - `UiWidth` and `UiHeight` remain type-safe. Unsupported width/height
   combinations must not compile or silently fall back.
 - Crystarium is the public product authoring surface. Product panes do not call
@@ -154,6 +180,8 @@ PBI-011 slice:
 Base/head:
 Commit(s), no amend/rebase:
 Exact Picto source and selector:
+Picto TSX API/state/event-flow findings:
+Crystarium public API and state ownership:
 Canonical component changed:
 All migrated call sites:
 Deleted competing paths:
