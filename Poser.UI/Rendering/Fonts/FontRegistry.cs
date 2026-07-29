@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Numerics;
 using Dalamud.Interface.ManagedFontAtlas;
@@ -49,6 +50,18 @@ public static class FontRegistry
 
     // Resolved lazily once; null entry = file not found → Dalamud default fallback.
     private static readonly Dictionary<(FontFamily, FontWeight), string?> _files = new();
+
+    /// <summary>CJK ranges merged from the Windows default Japanese UI
+    /// font: ideographic punctuation + kana, unified ideographs, and
+    /// fullwidth forms. Shared with the conformance host so the capture
+    /// and in-game font paths request identical coverage.</summary>
+    public static readonly ushort[] CjkMergeRanges =
+    [
+        0x3000, 0x30ff,
+        0x4e00, 0x9fff,
+        0xff01, 0xff5e,
+        0,
+    ];
 
     public static void Register(IFontAtlas atlas)
     {
@@ -171,7 +184,22 @@ public static class FontRegistry
                         {
                             SizePx = key.SizePx * TtfMetrics.CssScale(file),
                         };
-                        tk.AddFontFromFile(file, config);
+                        var added = tk.AddFontFromFile(file, config);
+                        // CJK coverage: merge the Windows default UI font
+                        // for Japanese (Dalamud resolves it per the
+                        // Microsoft international-font list — Yu Gothic UI
+                        // on supported Windows) into the same handle for
+                        // the kana/ideograph ranges. A silent no-op on
+                        // hosts without that culture support.
+                        var cjk = config with
+                        {
+                            MergeFont = added,
+                            GlyphRanges = CjkMergeRanges,
+                        };
+                        tk.AttachWindowsDefaultFont(
+                            CultureInfo.GetCultureInfo("ja"),
+                            cjk,
+                            (int)key.Weight);
                     }
                     else
                     {

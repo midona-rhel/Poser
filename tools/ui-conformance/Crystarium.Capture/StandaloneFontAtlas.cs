@@ -167,7 +167,7 @@ internal sealed class StandaloneFontAtlas : IFontAtlas
             };
             try
             {
-                fixed (ushort* ranges = GlyphRanges)
+                fixed (ushort* ranges = fontConfig.GlyphRanges ?? GlyphRanges)
                 {
                     Font = atlas.AddFontFromFileTTF(
                         path,
@@ -235,7 +235,46 @@ internal sealed class StandaloneFontAtlas : IFontAtlas
             in SafeFontConfig fontConfig,
             int weight = 400,
             int stretch = 5,
-            int style = 0) => throw Unsupported();
+            int style = 0)
+        {
+            // Dalamud semantics: merge the culture's Windows default UI
+            // font into MergeFont (falling back to the current font);
+            // silently do nothing when either the target or the culture
+            // is unavailable. The size is fontConfig.SizePx AS GIVEN —
+            // re-deriving it from the fallback's own metrics would make
+            // the capture host diverge from the in-game font path.
+            var target = fontConfig.MergeFont;
+            if (target.IsNull)
+                target = Font;
+            if (target.IsNull)
+                return;
+            var resolved = WindowsCultureFonts.Resolve(cultureInfo, weight);
+            if (resolved is not { } face)
+                return;
+            var nativeConfig = ImFontConfig_ImFontConfig();
+            var config = new ImFontConfigPtr(nativeConfig)
+            {
+                MergeMode = true,
+                DstFont = target,
+                FontNo = face.FaceIndex,
+                GlyphOffset = fontConfig.GlyphOffset,
+            };
+            try
+            {
+                fixed (ushort* ranges = fontConfig.GlyphRanges ?? GlyphRanges)
+                {
+                    atlas.AddFontFromFileTTF(
+                        face.Path,
+                        fontConfig.SizePx,
+                        config,
+                        ranges);
+                }
+            }
+            finally
+            {
+                ImFontConfig_destroy(nativeConfig);
+            }
+        }
 
         public void AttachExtraGlyphsForDalamudLanguage(
             in SafeFontConfig fontConfig) { }
