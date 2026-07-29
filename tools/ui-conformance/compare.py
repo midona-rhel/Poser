@@ -263,13 +263,57 @@ def single_report_html(report: dict) -> str:
 <span>Maximum channel delta <b>{report['maximumChannelDelta']}</b></span>
 <span>Candidate <b>{candidate_label}</b></span>
 </section>
+{inspection_toolbar_html()}
 <section class="images">
-<figure><figcaption>Picto reference</figcaption><img src="reference.png"></figure>
-<figure><figcaption>Current Crystarium</figcaption><img src="candidate.png"></figure>
-<figure><figcaption>Automated red failure map</figcaption><img src="diff.png"></figure>
+<figure><figcaption>Picto reference</figcaption><div class="viewport"><img src="reference.png"></div></figure>
+<figure><figcaption>Current Crystarium</figcaption><div class="viewport"><img src="candidate.png"></div></figure>
+<figure><figcaption>Automated red failure map</figcaption><div class="viewport"><img src="diff.png"></div></figure>
 </section>
 <section><h2>Measured diagnosis</h2><ul>{diagnoses}</ul></section>
-</main></body></html>"""
+</main>{inspection_script()}</body></html>"""
+
+
+def inspection_toolbar_html() -> str:
+    return """<section class="inspection-tools" aria-label="Inspection zoom">
+<span>Inspection zoom</span>
+<button class="zoom active" type="button" data-zoom="1">1×</button>
+<button class="zoom" type="button" data-zoom="2">2×</button>
+<button class="zoom" type="button" data-zoom="4">4×</button>
+<small>Native pixels; integer scaling only</small>
+</section>"""
+
+
+def inspection_script() -> str:
+    return """<script>
+let inspectionZoom=1;
+function applyInspectionZoom(value){
+ inspectionZoom=value;
+ document.querySelectorAll('.viewport img').forEach(img=>{
+  const apply=()=>{
+   img.style.width=`${img.naturalWidth*inspectionZoom}px`;
+   img.style.height=`${img.naturalHeight*inspectionZoom}px`;
+  };
+  if(img.complete) apply(); else img.addEventListener('load',apply,{once:true});
+ });
+ document.querySelectorAll('.zoom').forEach(
+  button=>button.classList.toggle('active',Number(button.dataset.zoom)===value));
+}
+document.querySelectorAll('.zoom').forEach(
+ button=>button.addEventListener('click',()=>applyInspectionZoom(Number(button.dataset.zoom))));
+document.querySelectorAll('.images,.triptych').forEach(group=>{
+ const panes=[...group.querySelectorAll('.viewport')];
+ let syncing=false;
+ panes.forEach(source=>source.addEventListener('scroll',()=>{
+  if(syncing)return;
+  syncing=true;
+  panes.forEach(target=>{
+   if(target!==source){target.scrollLeft=source.scrollLeft;target.scrollTop=source.scrollTop;}
+  });
+  syncing=false;
+ }));
+});
+applyInspectionZoom(1);
+</script>"""
 
 
 REPORT_CSS = """
@@ -280,9 +324,14 @@ h1{margin:0 0 4px;font-size:24px}p{margin:0 0 18px;color:#ffffff88}
 .status{padding:6px 10px;border-radius:6px}.pass{background:#2e9f552c;color:#72df95}
 .fail{background:#ff47572c;color:#ff7a86}.metrics{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0}
 .metrics span{background:#242528;padding:8px 10px;border-radius:6px}
+.inspection-tools{display:flex;align-items:center;gap:6px;margin:0 0 12px}
+.inspection-tools span{margin-right:4px;color:#ffffffb8}.inspection-tools small{margin-left:4px;color:#ffffff70}
+.zoom{height:28px;min-width:38px;border:1px solid #ffffff24;border-radius:5px;background:#242528;color:#ffffffb8}
+.zoom:hover{background:#303136}.zoom.active{background:#3a3b41;color:#fff;border-color:#ffffff38}
 .images{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 figure{margin:0;background:#18191b;border:1px solid #ffffff18;border-radius:8px;overflow:hidden}
-figcaption{padding:8px 10px;background:#242528;color:#ffffffb8}img{display:block;width:100%;image-rendering:pixelated}
+figcaption{padding:8px 10px;background:#242528;color:#ffffffb8}
+.viewport{overflow:auto;max-height:70vh}.viewport img{display:block;width:auto;height:auto;max-width:none;image-rendering:pixelated}
 h2{font-size:15px;margin-top:22px}li{margin:7px 0;color:#ffffffc8}
 """
 
@@ -319,11 +368,18 @@ def aggregate(root: Path, reference_manifest_hash: str,
         f"{item['exactDifferentPixels']:,} different pixels</p></div>"
         f"<strong class='status {state[1]}'>{state[0]}</strong></header>"
         "<div class='triptych'>"
-        f"<figure><figcaption>Picto</figcaption><img src='{item['base']}/reference.png'></figure>"
-        f"<figure><figcaption>Crystarium</figcaption><img src='{item['base']}/candidate.png'></figure>"
-        f"<figure><figcaption>Red diff</figcaption><img src='{item['base']}/diff.png'></figure>"
+        f"<figure><figcaption>Picto</figcaption><div class='viewport'><img src='{item['base']}/reference.png'></div></figure>"
+        f"<figure><figcaption>Crystarium</figcaption><div class='viewport'><img src='{item['base']}/candidate.png'></div></figure>"
+        f"<figure><figcaption>Red diff</figcaption><div class='viewport'><img src='{item['base']}/diff.png'></div></figure>"
         f"</div><p class='finding'>{html.escape(item['diagnoses'][0])}</p>"
         "</article>")
+
+    # Report presentation is independent of pixel generation. Refresh every
+    # detail page while aggregating so viewer fixes never require recapturing
+    # or recomputing otherwise-current evidence.
+    for item in reports:
+        report_path = root / item["base"] / "index.html"
+        report_path.write_text(single_report_html(item), encoding="utf-8")
 
     cards = "".join(card_html(item) for item in reports)
     failed = sum(not item["passed"] and not item["stale"] for item in reports)
@@ -341,6 +397,7 @@ grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}}.finding{{color:#ffffffb8
 <p>Automated exact-pixel comparison; {failed} current captures fail,
 {stale} captures are stale.</p></div>
 <input id="filter" placeholder="Filter components…"></header>
+{inspection_toolbar_html()}
 <section class="catalog">{cards}</section></main>
 <script>
 const filter=document.getElementById('filter');
@@ -349,7 +406,7 @@ filter.addEventListener('input',()=>{{
  document.querySelectorAll('.card').forEach(
   x=>x.hidden=!x.dataset.name.includes(q));
 }});
-</script></body></html>"""
+</script>{inspection_script()}</body></html>"""
     (root / "index.html").write_text(document, encoding="utf-8")
 
 
