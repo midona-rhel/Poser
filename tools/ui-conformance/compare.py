@@ -263,7 +263,6 @@ def single_report_html(report: dict) -> str:
 <span>Maximum channel delta <b>{report['maximumChannelDelta']}</b></span>
 <span>Candidate <b>{candidate_label}</b></span>
 </section>
-{inspection_toolbar_html()}
 <section class="images">
 <figure><figcaption>Picto reference</figcaption><div class="viewport"><img src="reference.png"></div></figure>
 <figure><figcaption>Current Crystarium</figcaption><div class="viewport"><img src="candidate.png"></div></figure>
@@ -273,33 +272,8 @@ def single_report_html(report: dict) -> str:
 </main>{inspection_script()}</body></html>"""
 
 
-def inspection_toolbar_html() -> str:
-    return """<section class="inspection-tools" aria-label="Inspection zoom">
-<span>Inspection zoom</span>
-<button class="zoom active" type="button" data-zoom="1">1×</button>
-<button class="zoom" type="button" data-zoom="2">2×</button>
-<button class="zoom" type="button" data-zoom="4">4×</button>
-<small>Native pixels; integer scaling only</small>
-</section>"""
-
-
 def inspection_script() -> str:
     return """<script>
-let inspectionZoom=1;
-function applyInspectionZoom(value){
- inspectionZoom=value;
- document.querySelectorAll('.viewport img').forEach(img=>{
-  const apply=()=>{
-   img.style.width=`${img.naturalWidth*inspectionZoom}px`;
-   img.style.height=`${img.naturalHeight*inspectionZoom}px`;
-  };
-  if(img.complete) apply(); else img.addEventListener('load',apply,{once:true});
- });
- document.querySelectorAll('.zoom').forEach(
-  button=>button.classList.toggle('active',Number(button.dataset.zoom)===value));
-}
-document.querySelectorAll('.zoom').forEach(
- button=>button.addEventListener('click',()=>applyInspectionZoom(Number(button.dataset.zoom))));
 document.querySelectorAll('.images,.triptych').forEach(group=>{
  const panes=[...group.querySelectorAll('.viewport')];
  let syncing=false;
@@ -312,7 +286,6 @@ document.querySelectorAll('.images,.triptych').forEach(group=>{
   syncing=false;
  }));
 });
-applyInspectionZoom(1);
 </script>"""
 
 
@@ -324,10 +297,6 @@ h1{margin:0 0 4px;font-size:24px}p{margin:0 0 18px;color:#ffffff88}
 .status{padding:6px 10px;border-radius:6px}.pass{background:#2e9f552c;color:#72df95}
 .fail{background:#ff47572c;color:#ff7a86}.metrics{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0}
 .metrics span{background:#242528;padding:8px 10px;border-radius:6px}
-.inspection-tools{display:flex;align-items:center;gap:6px;margin:0 0 12px}
-.inspection-tools span{margin-right:4px;color:#ffffffb8}.inspection-tools small{margin-left:4px;color:#ffffff70}
-.zoom{height:28px;min-width:38px;border:1px solid #ffffff24;border-radius:5px;background:#242528;color:#ffffffb8}
-.zoom:hover{background:#303136}.zoom.active{background:#3a3b41;color:#fff;border-color:#ffffff38}
 .images{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 figure{margin:0;background:#18191b;border:1px solid #ffffff18;border-radius:8px;overflow:hidden}
 figcaption{padding:8px 10px;background:#242528;color:#ffffffb8}
@@ -397,7 +366,6 @@ grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}}.finding{{color:#ffffffb8
 <p>Automated exact-pixel comparison; {failed} current captures fail,
 {stale} captures are stale.</p></div>
 <input id="filter" placeholder="Filter components…"></header>
-{inspection_toolbar_html()}
 <section class="catalog">{cards}</section></main>
 <script>
 const filter=document.getElementById('filter');
