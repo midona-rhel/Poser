@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Interface.ManagedFontAtlas;
 
@@ -51,10 +51,10 @@ public static class FontRegistry
     // Resolved lazily once; null entry = file not found → Dalamud default fallback.
     private static readonly Dictionary<(FontFamily, FontWeight), string?> _files = new();
 
-    /// <summary>CJK ranges merged from the Windows default Japanese UI
-    /// font: ideographic punctuation + kana, unified ideographs, and
-    /// fullwidth forms. Shared with the conformance host so the capture
-    /// and in-game font paths request identical coverage.</summary>
+    /// <summary>CJK ranges merged from the font-link fallback face:
+    /// ideographic punctuation + kana, unified ideographs, and fullwidth
+    /// forms. Shared with the conformance host so the capture and
+    /// in-game font paths request identical coverage.</summary>
     public static readonly ushort[] CjkMergeRanges =
     [
         0x3000, 0x30ff,
@@ -132,6 +132,32 @@ public static class FontRegistry
             theme.Typography.LabelSize);
     }
 
+    /// <summary>
+    /// Every concrete font file this machine's registry resolves —
+    /// the base faces plus the shared font-link CJK fallback for both
+    /// weights. Provenance hashes exactly these files rather than an
+    /// assumed list.
+    /// </summary>
+    public static IEnumerable<string> ResolveAllFiles()
+    {
+        var files = new List<string?>
+        {
+            ResolveFile(FontFamily.Default, FontWeight.Regular),
+            ResolveFile(FontFamily.Default, FontWeight.SemiBold),
+            ResolveFile(FontFamily.Mono, FontWeight.Regular),
+            ResolveFile(FontFamily.Italic, FontWeight.Regular),
+        };
+        foreach (int weight in new[] { 400, 600 })
+        {
+            if (WindowsFontFallback.ResolveJapanese(weight) is { } fallback)
+                files.Add(fallback.Path);
+        }
+        return files
+            .Where(file => file != null)
+            .Select(file => file!)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+    }
+
     /// <summary>Resolve a font handle for family + size at regular weight.</summary>
     public static IFontHandle? Resolve(FontFamily family, float size)
         => Resolve(family, FontWeight.Regular, size);
@@ -185,21 +211,28 @@ public static class FontRegistry
                             SizePx = key.SizePx * TtfMetrics.CssScale(file),
                         };
                         var added = tk.AddFontFromFile(file, config);
-                        // CJK coverage: merge the Windows default UI font
-                        // for Japanese (Dalamud resolves it per the
-                        // Microsoft international-font list — Yu Gothic UI
-                        // on supported Windows) into the same handle for
-                        // the kana/ideograph ranges. A silent no-op on
-                        // hosts without that culture support.
-                        var cjk = config with
+                        // CJK coverage for the Default family only —
+                        // mono wells and italic hints have no CJK use,
+                        // and keeping them out bounds the first-visible
+                        // atlas cost. The shared font-link resolver picks
+                        // the face Chromium falls back to from Segoe UI
+                        // (Meiryo UI before Yu Gothic UI), and the merge
+                        // sizes by THAT face's own metrics so both the
+                        // game and the capture host render identically.
+                        if (key.Family == FontFamily.Default
+                            && WindowsFontFallback.ResolveJapanese(
+                                (int)key.Weight) is { } cjkFace)
                         {
-                            MergeFont = added,
-                            GlyphRanges = CjkMergeRanges,
-                        };
-                        tk.AttachWindowsDefaultFont(
-                            CultureInfo.GetCultureInfo("ja"),
-                            cjk,
-                            (int)key.Weight);
+                            var cjk = new SafeFontConfig
+                            {
+                                SizePx = key.SizePx * TtfMetrics.CssScale(
+                                    cjkFace.Path, cjkFace.FaceIndex),
+                                FontNo = cjkFace.FaceIndex,
+                                MergeFont = added,
+                                GlyphRanges = CjkMergeRanges,
+                            };
+                            tk.AddFontFromFile(cjkFace.Path, cjk);
+                        }
                     }
                     else
                     {

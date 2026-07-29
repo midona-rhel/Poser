@@ -19,19 +19,23 @@ public static class TtfMetrics
 {
     private static readonly Dictionary<string, float> _cache = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>(ascender − descender) / unitsPerEm for the font file; 1.0 when unreadable.</summary>
-    public static float CssScale(string path)
+    /// <summary>(ascender − descender) / unitsPerEm for a face of the
+    /// font file; 1.0 when unreadable. TTC collections address the face
+    /// by index — faces in one collection can carry different vertical
+    /// metrics (Meiryo vs Meiryo UI).</summary>
+    public static float CssScale(string path, int faceIndex = 0)
     {
+        string key = faceIndex == 0 ? path : $"{path}#{faceIndex}";
         lock (_cache)
         {
-            if (_cache.TryGetValue(path, out var cached)) return cached;
-            float scale = ReadScale(path);
-            _cache[path] = scale;
+            if (_cache.TryGetValue(key, out var cached)) return cached;
+            float scale = ReadScale(path, faceIndex);
+            _cache[key] = scale;
             return scale;
         }
     }
 
-    private static float ReadScale(string path)
+    private static float ReadScale(string path, int faceIndex)
     {
         try
         {
@@ -39,14 +43,19 @@ public static class TtfMetrics
             using var r = new BinaryReader(fs);
 
             uint tag = ReadU32(r);
-            if (tag == 0x74746366) // 'ttcf' — TrueType collection: use the first face
+            if (tag == 0x74746366) // 'ttcf' — TrueType collection: seek the face
             {
                 r.ReadUInt32(); // version
                 uint numFonts = ReadU32(r);
-                if (numFonts == 0) return 1f;
-                uint firstOffset = ReadU32(r);
-                fs.Seek(firstOffset, SeekOrigin.Begin);
+                if (numFonts == 0 || faceIndex >= numFonts) return 1f;
+                fs.Seek(12 + faceIndex * 4, SeekOrigin.Begin);
+                uint faceOffset = ReadU32(r);
+                fs.Seek(faceOffset, SeekOrigin.Begin);
                 ReadU32(r); // sfnt version of the face
+            }
+            else if (faceIndex != 0)
+            {
+                return 1f;
             }
 
             ushort numTables = ReadU16(r);
