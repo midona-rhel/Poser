@@ -36,6 +36,9 @@ internal static class ComponentCatalog
         new("text-ws-tab", 320, 74),
         new("text-ws-crlf", 320, 130),
         new("text-align-end", 320, 88),
+        new("icons-grid-16", 232, 256),
+        new("icons-grid-14", 216, 238),
+        new("icons-states", 136, 184),
         new("action-button", 320, 80),
         new("primary-button", 320, 80),
         new("icon-button", 120, 80),
@@ -87,6 +90,46 @@ internal static class ComponentCatalog
             : throw new ArgumentException(
                 $"Unknown component '{name}'. " +
                 $"Expected one of: {string.Join(", ", Specs.Select(x => x.Name))}.");
+
+    private static void DrawIconGrid(Vector2 origin, float size)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        float pitch = (size + 8f) * scale;
+        var names = Tabler.ShippedNames();
+        for (int i = 0; i < names.Count; i++)
+        {
+            var min = origin + new Vector2(i % 8 * pitch, i / 8 * pitch);
+            Ui.IconIn(min, min + new Vector2(size * scale), names[i]);
+        }
+    }
+
+    private static void DrawIconStates(Vector2 origin)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        float pitch = 24f * scale;
+        string[] icons = ["settings", "eye", "trash", "chevron-down"];
+        for (int column = 0; column < icons.Length; column++)
+        {
+            float x = origin.X + column * pitch;
+            void Cell(
+                int row, float size, Vector4? color = null,
+                float opacity = 1f, bool disabled = false,
+                float? stroke = null)
+            {
+                var min = new Vector2(x, origin.Y + row * pitch);
+                Ui.IconIn(
+                    min, min + new Vector2(size * scale), icons[column],
+                    color, opacity: opacity, disabled: disabled,
+                    strokeWidth: stroke);
+            }
+            Cell(0, 16f);
+            Cell(1, 16f, opacity: 0.8f);
+            Cell(2, 16f, disabled: true);
+            Cell(3, 16f, Ui.ActiveTheme.Accent);
+            Cell(4, 16f, stroke: 1.5f);
+            Cell(5, 11f, Ui.ActiveTheme.Accent);
+        }
+    }
 
     public static Vector2 PointerFor(string name, float scale) =>
         name == "context-menu"
@@ -360,6 +403,24 @@ internal static class ComponentCatalog
                 }
                 break;
             }
+            case "icons-grid-16":
+                // Every shipped icon (Tabler.ShippedNames — custom
+                // overriding Tabler, ordinal-sorted) at 16px on a 24px
+                // pitch; idle theme text, exactly the bare-SVG rendering
+                // Picto uses.
+                DrawIconGrid(origin, 16f);
+                break;
+            case "icons-grid-14":
+                // The same shipped set at 14px on a 22px pitch.
+                DrawIconGrid(origin, 14f);
+                break;
+            case "icons-states":
+                // Representative states mirroring the reference rows:
+                // idle, resting .8 (iconSlot), disabled .4 (menu
+                // .disabled), accent tint, stroke 1.5 chrome idiom, and
+                // the 11px rail size.
+                DrawIconStates(origin);
+                break;
             case "action-button":
                 Ui.Button(
                     "Apply changes",

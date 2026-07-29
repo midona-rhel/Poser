@@ -37,6 +37,9 @@ $catalog = @(
     @{ Name = "text-ws-tab"; Width = 320; Height = 74 },
     @{ Name = "text-ws-crlf"; Width = 320; Height = 130 },
     @{ Name = "text-align-end"; Width = 320; Height = 88 },
+    @{ Name = "icons-grid-16"; Width = 232; Height = 256 },
+    @{ Name = "icons-grid-14"; Width = 216; Height = 238 },
+    @{ Name = "icons-states"; Width = 136; Height = 184 },
     @{ Name = "action-button"; Width = 320; Height = 80 },
     @{ Name = "primary-button"; Width = 320; Height = 80 },
     @{ Name = "icon-button"; Width = 120; Height = 80 },
@@ -96,6 +99,8 @@ if (!(Test-Path -LiteralPath $Browser -PathType Leaf)) {
 
 $sources = @(
     "tools\ui-conformance\picto-reference.html",
+    "Poser.UI\Icons\TablerSvgSources.cs",
+    "Poser.UI\Icons\PoserIconSources.cs",
     "..\Picto\src\shared\styles\tokens.css",
     "..\Picto\src\app\globals.css",
     "..\Picto\src\shared\styles\surfaces.css",
