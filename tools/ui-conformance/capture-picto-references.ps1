@@ -238,10 +238,20 @@ finally {
     Get-ChildItem -LiteralPath $output -Filter "*.partial-$runId.png" `
         -ErrorAction SilentlyContinue |
         Remove-Item -Force -ErrorAction SilentlyContinue
-    # Edge can let renderers finish after their root processes exit, and
-    # with six captures in flight the stragglers overlap; wait up to 30s
-    # through that hand-off so every run removes its isolated profiles.
-    for ($attempt = 0; $attempt -lt 120; $attempt++) {
+    # Every browser this run launched carries the run-unique profile root
+    # in its command line; a straggler that outlives its capture belongs
+    # to us and nothing else, so stop it outright instead of hoping it
+    # exits inside an arbitrary wait.
+    try {
+        Get-CimInstance Win32_Process -Filter "Name = 'msedge.exe'" `
+            -ErrorAction Stop |
+            Where-Object { $_.CommandLine -like "*$runId*" } |
+            ForEach-Object {
+                Stop-Process -Id $_.ProcessId -Force `
+                    -ErrorAction SilentlyContinue
+            }
+    } catch { }
+    for ($attempt = 0; $attempt -lt 40; $attempt++) {
         Start-Sleep -Milliseconds 250
         if (Test-Path -LiteralPath $profileRoot) {
             Remove-Item -LiteralPath $profileRoot -Recurse -Force `
