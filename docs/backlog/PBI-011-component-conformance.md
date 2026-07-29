@@ -53,17 +53,23 @@ detection, complete catalog routing, six themes, and three scales.
    call site that represents that component.
 6. Delete the superseded component, local drawing recipe, token, and compatibility
    overload. Do not leave two valid ways to render the same ordinary control.
-7. Run the Debug production build and `git diff --check`. Rebuild the complete
-   catalog regression at Dark/100%, then run the current component at 100%,
-   125%, and 150% for all six themes. The second run preserves the regression
-   results in the same inspection window:
+7. Run the Debug production build and `git diff --check`. Then three capture
+   runs, each bounded at five minutes, splitting the axes by what they can
+   actually detect — geometry is theme-invariant (Picto themes change color
+   tokens only), so scales run against one theme and themes run against one
+   scale instead of a full cross-product:
 
    ```powershell
+   # complete catalog regression, Dark/100%
    .\tools\ui-conformance\run.ps1 all -Clean -Scales 1 -Themes dark
-   .\tools\ui-conformance\run.ps1 <component> `
-       -Scales 1,1.25,1.5 `
+   # geometry: current component across scales, one theme
+   .\tools\ui-conformance\run.ps1 <component> -Scales 1,1.25,1.5 -Themes dark
+   # theme colors: current component across themes, one scale
+   .\tools\ui-conformance\run.ps1 <component> -Scales 1 `
        -Themes dark,light,lightgray,gray,blue,purple
    ```
+
+   The later runs preserve the earlier results in the same inspection window.
 
    Every report records the Picto-source manifest and candidate rendering manifest hash;
    the aggregate window marks preserved results stale instead of presenting

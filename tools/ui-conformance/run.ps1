@@ -127,37 +127,47 @@ if ($LASTEXITCODE -ne 0) { throw "Could not resolve the candidate commit." }
 $candidateDirty = [bool](git -C $repoRoot status --porcelain)
 if ($LASTEXITCODE -ne 0) { throw "Could not inspect candidate worktree state." }
 
-foreach ($theme in $Themes) {
+# All candidate captures run in ONE host process — boot, D3D, and the
+# font atlas dominate a capture's cost and depend on none of component,
+# theme, or scale.
+$invariant = [Globalization.CultureInfo]::InvariantCulture
+$combos = @(foreach ($theme in $Themes) {
     foreach ($scale in $Scales) {
         $suffix = [string]::Format(
-            [Globalization.CultureInfo]::InvariantCulture,
-            "{0:0.##}",
-            $scale).Replace(".", "p")
+            $invariant, "{0:0.##}", $scale).Replace(".", "p")
         foreach ($name in $components) {
-            $candidateDir = Join-Path $artifacts "crystarium"
-            New-Item -ItemType Directory -Force -Path $candidateDir | Out-Null
-            $candidate = Join-Path $candidateDir "$name@$theme@$suffix.png"
-            & $exe $name $candidate $scale $theme
-            if ($LASTEXITCODE -ne 0) {
-                throw "Crystarium capture failed for $name, $theme at $scale."
-            }
-
-            $reference = Join-Path $artifacts "picto\$name@$theme@$suffix.png"
-            $result = Join-Path $results "$theme\$name\$suffix"
-            python (Join-Path $toolRoot "compare.py") `
-                --reference $reference `
-                --candidate $candidate `
-                --output $result `
-                --component "$name [$theme]" `
-                --scale $scale `
-                --reference-manifest-hash $referenceManifestHash `
-                --candidate-hash $candidateHash `
-                --candidate-commit $candidateCommit `
-                --candidate-dirty $candidateDirty
-            if ($LASTEXITCODE -ne 0) {
-                throw "Comparison failed for $name, $theme at $scale."
+            [pscustomobject]@{
+                Name = $name
+                Theme = $theme
+                Scale = $scale
+                Suffix = $suffix
+                Candidate = Join-Path $candidateDir "$name@$theme@$suffix.png"
             }
         }
+    }
+})
+$batchFile = Join-Path $artifacts "candidate-batch.txt"
+$combos | ForEach-Object {
+    "$($_.Name)`t$($_.Candidate)`t$($_.Scale.ToString($invariant))`t$($_.Theme)"
+} | Set-Content -Encoding utf8 -LiteralPath $batchFile
+& $exe --batch $batchFile
+if ($LASTEXITCODE -ne 0) { throw "Crystarium batch capture failed." }
+
+foreach ($combo in $combos) {
+    $reference = Join-Path $artifacts "picto\$($combo.Name)@$($combo.Theme)@$($combo.Suffix).png"
+    $result = Join-Path $results "$($combo.Theme)\$($combo.Name)\$($combo.Suffix)"
+    python (Join-Path $toolRoot "compare.py") `
+        --reference $reference `
+        --candidate $combo.Candidate `
+        --output $result `
+        --component "$($combo.Name) [$($combo.Theme)]" `
+        --scale $combo.Scale `
+        --reference-manifest-hash $referenceManifestHash `
+        --candidate-hash $candidateHash `
+        --candidate-commit $candidateCommit `
+        --candidate-dirty $candidateDirty
+    if ($LASTEXITCODE -ne 0) {
+        throw "Comparison failed for $($combo.Name), $($combo.Theme) at $($combo.Scale)."
     }
 }
 

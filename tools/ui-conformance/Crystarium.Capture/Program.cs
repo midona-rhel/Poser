@@ -23,34 +23,81 @@ internal static class Program
             return Measure(float.Parse(
                 args[1], System.Globalization.CultureInfo.InvariantCulture));
 
+        if (args.Length == 2 && args[0] == "--batch")
+        {
+            // One process for a whole capture list: the dominant cost of
+            // a capture is process boot + D3D + atlas build, none of
+            // which depend on component, theme, or scale.
+            var entries = new List<BatchEntry>();
+            foreach (var line in File.ReadAllLines(args[1]))
+            {
+                if (line.Length == 0)
+                    continue;
+                var parts = line.Split('\t');
+                if (parts.Length != 4)
+                    throw new FormatException(
+                        $"Batch line needs name<TAB>output<TAB>scale<TAB>theme: '{line}'");
+                entries.Add(new BatchEntry(
+                    parts[0],
+                    Path.GetFullPath(parts[1]),
+                    float.Parse(
+                        parts[2],
+                        System.Globalization.CultureInfo.InvariantCulture),
+                    parts[3]));
+            }
+            return RunCaptures(entries);
+        }
+
         if (args.Length < 2)
         {
             Console.Error.WriteLine(
-                "Usage: Crystarium.Capture <component> <output.png> [scale] [theme]");
+                "Usage: Crystarium.Capture <component> <output.png> [scale] [theme]\n" +
+                "       Crystarium.Capture --batch <listfile>\n" +
+                "       Crystarium.Capture --measure <cssSize>\n" +
+                "       Crystarium.Capture --list");
             return 2;
         }
 
-        string name = args[0];
-        string output = Path.GetFullPath(args[1]);
-        float scale = args.Length >= 3
-            ? float.Parse(
-                args[2],
-                System.Globalization.CultureInfo.InvariantCulture)
-            : 1f;
-        if (scale <= 0)
-            throw new ArgumentOutOfRangeException(nameof(scale));
-        string themeName = args.Length >= 4 ? args[3] : "dark";
-        Theme theme = ResolveTheme(themeName);
-        Ui.UseTheme(theme);
-        var component = ComponentCatalog.Get(name);
-        int width = (int)MathF.Round(component.Width * scale);
-        int height = (int)MathF.Round(component.Height * scale);
+        return RunCaptures(
+        [
+            new BatchEntry(
+                args[0],
+                Path.GetFullPath(args[1]),
+                args.Length >= 3
+                    ? float.Parse(
+                        args[2],
+                        System.Globalization.CultureInfo.InvariantCulture)
+                    : 1f,
+                args.Length >= 4 ? args[3] : "dark"),
+        ]);
+    }
+
+    private readonly record struct BatchEntry(
+        string Name, string Output, float Scale, string ThemeName);
+
+    private static unsafe int RunCaptures(IReadOnlyList<BatchEntry> entries)
+    {
+        if (entries.Count == 0)
+            return 0;
+        int maxWidth = 0, maxHeight = 0;
+        foreach (var entry in entries)
+        {
+            if (entry.Scale <= 0)
+                throw new ArgumentOutOfRangeException(
+                    nameof(entries), entry.Scale, "Scale must be positive.");
+            ResolveTheme(entry.ThemeName);
+            var spec = ComponentCatalog.Get(entry.Name);
+            maxWidth = Math.Max(
+                maxWidth, (int)MathF.Round(spec.Width * entry.Scale));
+            maxHeight = Math.Max(
+                maxHeight, (int)MathF.Round(spec.Height * entry.Scale));
+        }
 
         Application.SetHighDpiMode(HighDpiMode.DpiUnaware);
         using var form = new Form
         {
             Text = "Crystarium capture",
-            ClientSize = new Size(width, height),
+            ClientSize = new Size(maxWidth, maxHeight),
             FormBorderStyle = FormBorderStyle.FixedSingle,
             StartPosition = FormStartPosition.Manual,
             Location = new Point(-32000, -32000),
@@ -59,18 +106,17 @@ internal static class Program
         form.Show();
 
         using var renderer = new Dx11Renderer();
-        renderer.Initialize(form.Handle, width, height);
+        renderer.Initialize(form.Handle, maxWidth, maxHeight);
         var context = ImGui.CreateContext();
         try
         {
             var io = ImGui.GetIO();
-            io.DisplaySize = new Vector2(width, height);
             io.DisplayFramebufferScale = Vector2.One;
-            io.FontGlobalScale = scale;
             io.DeltaTime = 1f / 60f;
             io.IniFilename = null;
             ImGui.StyleColorsDark();
 
+            Ui.UseTheme(ResolveTheme(entries[0].ThemeName));
             using var fonts = new StandaloneFontAtlas(renderer);
             FontRegistry.Register(fonts);
             fonts.BuildFontsImmediately();
@@ -78,37 +124,49 @@ internal static class Program
                 throw new InvalidOperationException(
                     $"Font atlas is not ready: {FontRegistry.LastError}");
 
-            // Covers HoverHelp's 400ms delay + 150ms entrance and every
-            // shorter floating-surface transition before capture.
-            const int frameCount = 40;
-            for (int frame = 0; frame < frameCount; frame++)
+            foreach (var entry in entries)
             {
-                Application.DoEvents();
-                io.DeltaTime = 1f / 60f;
-                io.DisplaySize = new Vector2(width, height);
-                var pointer = ComponentCatalog.PointerFor(name, scale);
-                io.AddMousePosEvent(pointer.X, pointer.Y);
+                var theme = ResolveTheme(entry.ThemeName);
+                Ui.UseTheme(theme);
+                var spec = ComponentCatalog.Get(entry.Name);
+                int width = (int)MathF.Round(spec.Width * entry.Scale);
+                int height = (int)MathF.Round(spec.Height * entry.Scale);
+                io.FontGlobalScale = entry.Scale;
 
-                ImGui.NewFrame();
-                Interactive.BeginFrame();
-                ComponentCatalog.Draw(
-                    name, frame, new Vector2(width, height));
-                Ui.FloatingMenu.EndFrame();
-                Ui.HoverHelp.Render();
-                Interactive.EndFrame();
-                ImGui.Render();
+                // Covers HoverHelp's 400ms delay + 150ms entrance and
+                // every shorter floating-surface transition, and lets any
+                // state carried across batch entries settle out.
+                const int frameCount = 40;
+                for (int frame = 0; frame < frameCount; frame++)
+                {
+                    Application.DoEvents();
+                    io.DeltaTime = 1f / 60f;
+                    io.DisplaySize = new Vector2(width, height);
+                    var pointer = ComponentCatalog.PointerFor(
+                        entry.Name, entry.Scale);
+                    io.AddMousePosEvent(pointer.X, pointer.Y);
 
-                renderer.BeginFrame(new Vector4(
-                    theme.Surface.X,
-                    theme.Surface.Y,
-                    theme.Surface.Z,
-                    1));
-                renderer.Render(ImGui.GetDrawData());
-                renderer.Present();
+                    ImGui.NewFrame();
+                    Interactive.BeginFrame();
+                    ComponentCatalog.Draw(
+                        entry.Name, frame, new Vector2(width, height));
+                    Ui.FloatingMenu.EndFrame();
+                    Ui.HoverHelp.Render();
+                    Interactive.EndFrame();
+                    ImGui.Render();
+
+                    renderer.BeginFrame(new Vector4(
+                        theme.Surface.X,
+                        theme.Surface.Y,
+                        theme.Surface.Z,
+                        1));
+                    renderer.Render(ImGui.GetDrawData());
+                    renderer.Present();
+                }
+
+                renderer.SaveBackbuffer(entry.Output, width, height);
+                Console.WriteLine(entry.Output);
             }
-
-            renderer.SaveBackbuffer(output);
-            Console.WriteLine(output);
             return 0;
         }
         finally

@@ -243,6 +243,9 @@ internal static class ComponentCatalog
                 // GlassModal.module.css .helpText wrapped at 160px with a
                 // body-text block sibling BELOW (block flow, margin 0):
                 // the wrap block's layout height positions the sibling.
+                // Both blocks share the container's left edge, so the
+                // sibling re-anchors to the stage origin the same way
+                // both divs inherit the stage padding.
                 ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, Vector2.Zero);
                 Ui.Text(
                     "Poser keeps the incoming state and restores it exactly.",
@@ -252,6 +255,8 @@ internal static class ComponentCatalog
                         Color = Ui.ActiveTheme.TextMuted,
                     },
                     TextConstraint.Wrap(160f * ImGuiHelpers.GlobalScale, 1.4f));
+                ImGui.SetCursorScreenPos(new Vector2(
+                    origin.X, ImGui.GetCursorScreenPos().Y));
                 Ui.Text("After");
                 ImGui.PopStyleVar();
                 break;

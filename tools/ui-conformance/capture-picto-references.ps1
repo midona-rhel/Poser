@@ -131,73 +131,95 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 New-Item -ItemType Directory -Force -Path $profileRoot | Out-Null
 
 try {
-    foreach ($theme in $Themes) {
+    $combos = @(foreach ($theme in $Themes) {
         foreach ($scale in $Scales) {
             $suffix = [string]::Format(
                 [System.Globalization.CultureInfo]::InvariantCulture,
                 "{0:0.##}",
                 $scale).Replace(".", "p")
             foreach ($component in $catalog) {
-                $target = Join-Path $output "$($component.Name)@$theme@$suffix.png"
-                # Capture into a run-unique staging file so a partially
-                # written screenshot can never be read as the final
-                # artifact; the finished file replaces it in one move.
-                $staging = Join-Path $output `
-                    "$($component.Name)@$theme@$suffix.partial-$runId.png"
-                if (Test-Path -LiteralPath $staging) {
-                    Remove-Item -LiteralPath $staging -Force
+                [pscustomobject]@{
+                    Name = $component.Name
+                    Width = $component.Width
+                    Height = $component.Height
+                    Theme = $theme
+                    Scale = $scale
+                    Suffix = $suffix
                 }
-                $url = "${uri}?component=$($component.Name)&theme=$theme"
-                $profile = Join-Path $profileRoot "$theme-$suffix-$($component.Name)"
-                & $Browser `
-                    --headless=new `
-                    --hide-scrollbars `
-                    --disable-background-mode `
-                    --disable-background-networking `
-                    --disable-component-update `
-                    --disable-default-apps `
-                    --disable-extensions `
-                    --disable-sync `
-                    --no-first-run `
-                    --run-all-compositor-stages-before-draw `
-                    --virtual-time-budget=1000 `
-                    --force-device-scale-factor=$scale `
-                    --window-size="$($component.Width),$($component.Height)" `
-                    --user-data-dir="$profile" `
-                    --screenshot="$staging" `
-                    $url | Out-Null
-                if ($LASTEXITCODE -ne 0) {
-                    throw "Reference capture failed for $($component.Name), $theme at $scale."
-                }
-                # The Edge launcher detaches and the real browser process
-                # writes the screenshot AFTER the launcher returns. Wait
-                # for the staging file to exist and stabilize — the same
-                # non-zero size on two consecutive polls plus an
-                # exclusive open — before promoting it.
-                $deadline = [DateTime]::UtcNow.AddSeconds(20)
-                $stable = $false
-                $lastSize = -1
-                while ([DateTime]::UtcNow -lt $deadline) {
-                    if (Test-Path -LiteralPath $staging) {
-                        $size = (Get-Item -LiteralPath $staging).Length
-                        if ($size -gt 0 -and $size -eq $lastSize) {
-                            try {
-                                ([IO.File]::Open(
-                                    $staging, 'Open', 'Read', 'None')).Dispose()
-                                $stable = $true
-                                break
-                            } catch { }
-                        }
-                        $lastSize = $size
-                    }
-                    Start-Sleep -Milliseconds 150
-                }
-                if (-not $stable) {
-                    throw "Reference capture failed for $($component.Name), $theme at $scale."
-                }
-                Move-Item -LiteralPath $staging -Destination $target -Force
             }
         }
+    })
+    # Captures run concurrently: each already owns an isolated profile
+    # and a run-unique staging file, so parallelism changes nothing about
+    # isolation — only the wall clock.
+    $failures = @($combos | ForEach-Object -Parallel {
+        $item = $_
+        $Browser = $using:Browser
+        $uri = $using:uri
+        $output = $using:output
+        $profileRoot = $using:profileRoot
+        $runId = $using:runId
+        $target = Join-Path $output "$($item.Name)@$($item.Theme)@$($item.Suffix).png"
+        # Capture into a run-unique staging file so a partially written
+        # screenshot can never be read as the final artifact; the
+        # finished file replaces it in one move.
+        $staging = Join-Path $output `
+            "$($item.Name)@$($item.Theme)@$($item.Suffix).partial-$runId.png"
+        if (Test-Path -LiteralPath $staging) {
+            Remove-Item -LiteralPath $staging -Force
+        }
+        $url = "${uri}?component=$($item.Name)&theme=$($item.Theme)"
+        $profile = Join-Path $profileRoot "$($item.Theme)-$($item.Suffix)-$($item.Name)"
+        & $Browser `
+            --headless=new `
+            --hide-scrollbars `
+            --disable-background-mode `
+            --disable-background-networking `
+            --disable-component-update `
+            --disable-default-apps `
+            --disable-extensions `
+            --disable-sync `
+            --no-first-run `
+            --run-all-compositor-stages-before-draw `
+            --virtual-time-budget=1000 `
+            --force-device-scale-factor=$($item.Scale) `
+            --window-size="$($item.Width),$($item.Height)" `
+            --user-data-dir="$profile" `
+            --screenshot="$staging" `
+            $url | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            return "Reference capture failed for $($item.Name), $($item.Theme) at $($item.Scale)."
+        }
+        # The Edge launcher detaches and the real browser process writes
+        # the screenshot AFTER the launcher returns. Wait for the staging
+        # file to exist and stabilize — the same non-zero size on two
+        # consecutive polls plus an exclusive open — before promoting it.
+        $deadline = [DateTime]::UtcNow.AddSeconds(30)
+        $stable = $false
+        $lastSize = -1
+        while ([DateTime]::UtcNow -lt $deadline) {
+            if (Test-Path -LiteralPath $staging) {
+                $size = (Get-Item -LiteralPath $staging).Length
+                if ($size -gt 0 -and $size -eq $lastSize) {
+                    try {
+                        ([IO.File]::Open(
+                            $staging, 'Open', 'Read', 'None')).Dispose()
+                        $stable = $true
+                        break
+                    } catch { }
+                }
+                $lastSize = $size
+            }
+            Start-Sleep -Milliseconds 150
+        }
+        if (-not $stable) {
+            return "Reference capture failed for $($item.Name), $($item.Theme) at $($item.Scale)."
+        }
+        Move-Item -LiteralPath $staging -Destination $target -Force
+        return $null
+    } -ThrottleLimit 6 | Where-Object { $_ })
+    if ($failures.Count -gt 0) {
+        throw ($failures -join "`n")
     }
 }
 finally {

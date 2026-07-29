@@ -297,6 +297,18 @@ internal sealed class Dx11Renderer : IDisposable
     public unsafe void SaveBackbuffer(string path)
     {
         using var source = _swapChain.GetBuffer<ID3D11Texture2D>(0);
+        SaveBackbuffer(
+            path,
+            (int)source.Description.Width,
+            (int)source.Description.Height);
+    }
+
+    /// <summary>Saves the top-left region of the backbuffer — batch
+    /// captures share one max-sized swap chain and crop each component's
+    /// canvas out of it.</summary>
+    public unsafe void SaveBackbuffer(string path, int width, int height)
+    {
+        using var source = _swapChain.GetBuffer<ID3D11Texture2D>(0);
         var description = source.Description;
         description.Usage = ResourceUsage.Staging;
         description.BindFlags = BindFlags.None;
@@ -307,8 +319,8 @@ internal sealed class Dx11Renderer : IDisposable
         try
         {
             using var bitmap = new Bitmap(
-                (int)description.Width,
-                (int)description.Height,
+                Math.Min(width, (int)description.Width),
+                Math.Min(height, (int)description.Height),
                 PixelFormat.Format32bppArgb);
             var data = bitmap.LockBits(
                 new Rectangle(0, 0, bitmap.Width, bitmap.Height),

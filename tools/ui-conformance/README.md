@@ -13,8 +13,13 @@ Run a named comparison:
 
 `combobox` expands to the closed and open dropdown states. Other groups are
 `text`, `button`, `icon-button`, `switch`, `input`, and `sidebar`; `all` runs the full
-catalog. The default is the complete six-theme, three-scale matrix. Narrow it
-with `-Scales` and `-Themes`; use `-Clean` when beginning a new regression set.
+catalog. Split the axes by what they detect: geometry is theme-invariant
+(Picto themes change color tokens only), so run scales against one theme
+(`-Scales 1,1.25,1.5 -Themes dark`) and themes against one scale
+(`-Scales 1 -Themes dark,light,lightgray,gray,blue,purple`) rather than the
+full cross-product. Candidate captures batch into one host process and
+reference captures run six-wide in parallel, so each run stays in minutes.
+Use `-Clean` when beginning a new regression set.
 Without `-Clean`, new captures replace their matching entries and leave other
 components visible in the same catalog. `-OpenReport` opens that scrollable
 catalog in its own window.
