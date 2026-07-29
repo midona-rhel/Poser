@@ -65,7 +65,7 @@ detection, complete catalog routing, six themes, and three scales.
        -Themes dark,light,lightgray,gray,blue,purple
    ```
 
-   Every report records the Picto-source manifest and candidate assembly hash;
+   Every report records the Picto-source manifest and candidate rendering manifest hash;
    the aggregate window marks preserved results stale instead of presenting
    them as evidence for a different build.
 8. Stop and hand the slice to Codex with the API design, state ownership, source

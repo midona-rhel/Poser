@@ -26,9 +26,14 @@ internal static class ComponentCatalog
         new("text-truncated-emoji", 320, 44),
         new("text-truncated-fit", 320, 44),
         new("text-truncated-narrow", 320, 44),
+        new("text-truncated-flow", 320, 44),
         new("text-wrapped", 320, 96),
         new("text-wrapped-newline", 320, 130),
         new("text-wrapped-overwide", 320, 100),
+        new("text-wrapped-flow", 320, 130),
+        new("text-ws-collapse", 320, 80),
+        new("text-ws-prewrap", 320, 110),
+        new("text-ws-tab", 320, 74),
         new("action-button", 320, 80),
         new("primary-button", 320, 80),
         new("icon-button", 120, 80),
@@ -205,7 +210,9 @@ internal static class ComponentCatalog
                 Ui.Text(
                     "First line\nSecond block that wraps onward, and onward.",
                     default,
-                    TextConstraint.Wrap(200f * ImGuiHelpers.GlobalScale, 1.5f));
+                    TextConstraint.Wrap(
+                        200f * ImGuiHelpers.GlobalScale, 1.5f,
+                        TextWhitespace.PreWrap));
                 break;
             case "text-wrapped-overwide":
                 // GlassModal.module.css .helpText inside 120px — the
@@ -219,6 +226,69 @@ internal static class ComponentCatalog
                         Color = Ui.ActiveTheme.TextMuted,
                     },
                     TextConstraint.Wrap(120f * ImGuiHelpers.GlobalScale, 1.4f));
+                break;
+            case "text-truncated-flow":
+                // ContextMenu.module.css .label in a fixed 140px flex slot
+                // with a VISIBLE following sibling (flex gap 0): the
+                // truncated run occupies its constraint width in layout,
+                // so the sibling starts at the box edge.
+                ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, Vector2.Zero);
+                Ui.Text("The quick brown fox jumps over", default,
+                    TextConstraint.Truncate(140f * ImGuiHelpers.GlobalScale));
+                ImGui.SameLine();
+                Ui.Text("Next");
+                ImGui.PopStyleVar();
+                break;
+            case "text-wrapped-flow":
+                // GlassModal.module.css .helpText wrapped at 160px with a
+                // body-text block sibling BELOW (block flow, margin 0):
+                // the wrap block's layout height positions the sibling.
+                ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, Vector2.Zero);
+                Ui.Text(
+                    "Poser keeps the incoming state and restores it exactly.",
+                    new TextStyle
+                    {
+                        Size = Ui.ActiveTheme.Typography.CaptionSize,
+                        Color = Ui.ActiveTheme.TextMuted,
+                    },
+                    TextConstraint.Wrap(160f * ImGuiHelpers.GlobalScale, 1.4f));
+                Ui.Text("After");
+                ImGui.PopStyleVar();
+                break;
+            case "text-ws-collapse":
+                // GlassModal.module.css .helpText (white-space: normal) —
+                // repeated spaces AND the newline all collapse to single
+                // spaces before wrapping inside 220px.
+                Ui.Text(
+                    "Collapse   runs of   spacing\nacross   breaks in the   source text.",
+                    new TextStyle
+                    {
+                        Size = Ui.ActiveTheme.Typography.CaptionSize,
+                        Color = Ui.ActiveTheme.TextMuted,
+                    },
+                    TextConstraint.Wrap(220f * ImGuiHelpers.GlobalScale, 1.4f));
+                break;
+            case "text-ws-prewrap":
+                // InspectorField.module.css .popover .popoverText
+                // (white-space: pre-wrap) — the doubled and tripled
+                // spaces stay visible and the newline breaks.
+                Ui.Text(
+                    "Keep  two   spaces\nand the break",
+                    default,
+                    TextConstraint.Wrap(
+                        200f * ImGuiHelpers.GlobalScale, 1.5f,
+                        TextWhitespace.PreWrap));
+                break;
+            case "text-ws-tab":
+                // InspectorField.module.css .popover .popoverText — tabs
+                // preserved by pre-wrap advance to 8-space-width stops
+                // (CSS default tab-size: 8).
+                Ui.Text(
+                    "a\tbc\tdef\ttab stops",
+                    default,
+                    TextConstraint.Wrap(
+                        260f * ImGuiHelpers.GlobalScale, 1.5f,
+                        TextWhitespace.PreWrap));
                 break;
             case "action-button":
                 Ui.Button(

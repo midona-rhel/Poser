@@ -23,9 +23,14 @@ $catalog = @(
     @{ Name = "text-truncated-emoji"; Width = 320; Height = 44 },
     @{ Name = "text-truncated-fit"; Width = 320; Height = 44 },
     @{ Name = "text-truncated-narrow"; Width = 320; Height = 44 },
+    @{ Name = "text-truncated-flow"; Width = 320; Height = 44 },
     @{ Name = "text-wrapped"; Width = 320; Height = 96 },
     @{ Name = "text-wrapped-newline"; Width = 320; Height = 130 },
     @{ Name = "text-wrapped-overwide"; Width = 320; Height = 100 },
+    @{ Name = "text-wrapped-flow"; Width = 320; Height = 130 },
+    @{ Name = "text-ws-collapse"; Width = 320; Height = 80 },
+    @{ Name = "text-ws-prewrap"; Width = 320; Height = 110 },
+    @{ Name = "text-ws-tab"; Width = 320; Height = 74 },
     @{ Name = "action-button"; Width = 320; Height = 80 },
     @{ Name = "primary-button"; Width = 320; Height = 80 },
     @{ Name = "icon-button"; Width = 120; Height = 80 },
@@ -225,11 +230,34 @@ if ($beforeJson -ne $afterJson -or
     $browserVersionBefore -ne $browserVersionAfter) {
     throw "Picto reference sources changed during capture; discard this run."
 }
+# The rendering environment is part of reference identity: the browser
+# executable itself and the font files its text stack resolves (the UI
+# faces, the mono fixture faces, the Japanese fallback family, and the
+# emoji font). A changed environment changes this manifest, so preserved
+# results are marked stale.
+$fontsDir = [Environment]::GetFolderPath("Fonts")
+if ([string]::IsNullOrEmpty($fontsDir)) { $fontsDir = "C:\Windows\Fonts" }
+$referenceFonts = @(
+    "segoeui.ttf", "seguisb.ttf", "segoeuii.ttf",
+    "CascadiaMono.ttf", "consola.ttf",
+    "YuGothM.ttc", "YuGothB.ttc", "YuGothR.ttc", "YuGothL.ttc",
+    "seguiemj.ttf"
+) | ForEach-Object {
+    $font = Join-Path $fontsDir $_
+    if (Test-Path -LiteralPath $font -PathType Leaf) {
+        [ordered]@{
+            path = "font:$_"
+            sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $font).Hash.ToLowerInvariant()
+        }
+    }
+} | Where-Object { $_ }
 $manifest = [ordered]@{
     browser = [ordered]@{
         path = $Browser
         version = $browserVersionAfter
+        sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $Browser).Hash.ToLowerInvariant()
     }
+    fonts = @($referenceFonts)
     sources = $manifestAfter
 }
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 `

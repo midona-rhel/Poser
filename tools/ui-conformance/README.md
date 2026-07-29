@@ -33,10 +33,12 @@ The generated `artifacts/index.html` links each result. Every result contains:
   and bright/text-ink vertical offset;
 - the Picto source-manifest hash, the candidate-manifest hash (an ordered
   SHA-256 manifest over the rendering binaries — `Poser.UI.dll`,
-  `Crystarium.Capture.dll`, the managed ImGui bindings, and native
-  `cimgui.dll` — written to `artifacts/crystarium/candidate-manifest.json`),
-  commit, and dirty state. Preserved results from another source or
-  candidate build are marked stale.
+  `Crystarium.Capture.dll`, the managed ImGui bindings, native
+  `cimgui.dll` — plus every resolvable candidate font file, written to
+  `artifacts/crystarium/candidate-manifest.json`), commit, and dirty
+  state. The reference manifest likewise records the browser executable
+  hash and the reference-side font identities. Preserved results from
+  another source, build, or rendering environment are marked stale.
 
 Exact equality is the pass gate. The measurements explain likely causes but do
 not waive antialiasing differences. Generated captures and reports are ignored

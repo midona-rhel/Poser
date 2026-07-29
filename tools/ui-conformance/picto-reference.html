@@ -138,6 +138,13 @@
         css: 'shared/ui/ContextMenu/ContextMenu.module.css',
         html: '<div class="text-flex-demo" style="width:6px"><span class="label">Unreachable</span></div>',
       },
+      'text-truncated-flow': {
+        // ContextMenu.module.css .label in a fixed 140px flex slot with
+        // a visible following sibling at flex gap 0: the sibling starts
+        // at the truncation box edge.
+        css: 'shared/ui/ContextMenu/ContextMenu.module.css',
+        html: '<div class="text-flex-demo"><span class="label" style="flex:none;width:140px">The quick brown fox jumps over</span><span>Next</span></div>',
+      },
       'text-wrapped': {
         // src/shared/ui/GlassModal/GlassModal.module.css .helpText —
         // 11px --color-text-tertiary at line-height 1.4.
@@ -156,6 +163,31 @@
         // token overflows its line (CSS overflow-wrap: normal).
         css: 'shared/ui/GlassModal/GlassModal.module.css',
         html: '<div class="helpText" style="width:120px">A veryverylongunbrokentoken overflows.</div>',
+      },
+      'text-wrapped-flow': {
+        // GlassModal.module.css .helpText wrapped at 160px with a
+        // body-text block sibling below (block flow, margin 0): the
+        // wrap block's height positions the sibling.
+        css: 'shared/ui/GlassModal/GlassModal.module.css',
+        html: '<div class="helpText" style="width:160px">Poser keeps the incoming state and restores it exactly.</div><div>After</div>',
+      },
+      'text-ws-collapse': {
+        // GlassModal.module.css .helpText (white-space: normal) —
+        // repeated spaces and the newline collapse to single spaces.
+        css: 'shared/ui/GlassModal/GlassModal.module.css',
+        html: '<div class="helpText" style="width:220px">Collapse   runs of   spacing\nacross   breaks in the   source text.</div>',
+      },
+      'text-ws-prewrap': {
+        // InspectorField.module.css .popover .popoverText (white-space:
+        // pre-wrap) — doubled/tripled spaces stay, the newline breaks.
+        css: 'shared/ui/InspectorField/InspectorField.module.css',
+        html: '<div class="popover popover-text-demo" style="width:200px"><div class="popoverText">Keep  two   spaces\nand the break</div></div>',
+      },
+      'text-ws-tab': {
+        // InspectorField.module.css .popover .popoverText — preserved
+        // tabs advance to 8-space-width stops (CSS default tab-size: 8).
+        css: 'shared/ui/InspectorField/InspectorField.module.css',
+        html: '<div class="popover popover-text-demo" style="width:260px"><div class="popoverText">a\tbc\tdef\ttab stops</div></div>',
       },
       'action-button': {
         css: 'shared/styles/actionButton.module.css',

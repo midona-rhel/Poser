@@ -35,7 +35,9 @@ $aliases = @{
         "text-label", "text-caption", "text-mono", "text-disabled",
         "text-truncated", "text-truncated-cjk", "text-truncated-combining",
         "text-truncated-emoji", "text-truncated-fit", "text-truncated-narrow",
-        "text-wrapped", "text-wrapped-newline", "text-wrapped-overwide")
+        "text-truncated-flow", "text-wrapped", "text-wrapped-newline",
+        "text-wrapped-overwide", "text-wrapped-flow", "text-ws-collapse",
+        "text-ws-prewrap", "text-ws-tab")
     "button" = @("action-button", "primary-button")
     "icon-button" = @("icon-button", "icon-button-active")
     "switch" = @("switch-off", "switch-on")
@@ -75,14 +77,24 @@ $referenceManifestHash = (
 ).Hash.ToLowerInvariant()
 # Provenance hashes the deterministic rendering binaries that actually
 # produce the candidate pixels — the apphost .exe alone would miss a
-# rebuilt Poser.UI.dll entirely. The ordered manifest is written next to
-# the captures and its own hash is the candidate identity.
+# rebuilt Poser.UI.dll entirely — plus every font file the candidate can
+# resolve (FontRegistry faces and the Windows Japanese UI fallback), so
+# preserved results go stale when the rendering environment changes. The
+# ordered manifest is written next to the captures and its own hash is
+# the candidate identity.
 $binDir = Split-Path -Parent $exe
 $candidateBinaries = @(
     "Poser.UI.dll",
     "Crystarium.Capture.dll",
     "Dalamud.Bindings.ImGui.dll",
     "cimgui.dll"
+)
+$fontsDir = [Environment]::GetFolderPath("Fonts")
+if ([string]::IsNullOrEmpty($fontsDir)) { $fontsDir = "C:\Windows\Fonts" }
+$candidateFonts = @(
+    "segoeui.ttf", "seguisb.ttf", "segoeuii.ttf",
+    "CascadiaMono.ttf", "consola.ttf",
+    "YuGothM.ttc", "YuGothB.ttc", "YuGothR.ttc", "YuGothL.ttc"
 )
 $candidateManifest = @($candidateBinaries | ForEach-Object {
     $binary = Join-Path $binDir $_
@@ -93,7 +105,15 @@ $candidateManifest = @($candidateBinaries | ForEach-Object {
         path = $_
         sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $binary).Hash.ToLowerInvariant()
     }
-})
+}) + @($candidateFonts | ForEach-Object {
+    $font = Join-Path $fontsDir $_
+    if (Test-Path -LiteralPath $font -PathType Leaf) {
+        [ordered]@{
+            path = "font:$_"
+            sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $font).Hash.ToLowerInvariant()
+        }
+    }
+} | Where-Object { $_ })
 $candidateDir = Join-Path $artifacts "crystarium"
 New-Item -ItemType Directory -Force -Path $candidateDir | Out-Null
 $candidateManifestPath = Join-Path $candidateDir "candidate-manifest.json"
