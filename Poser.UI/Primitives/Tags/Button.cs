@@ -226,30 +226,43 @@ public static partial class Crystarium
         float radius = theme.Radii.Control * scale;
         float borderPx = 1f * scale;
         float inset = 0.5f * scale;
+        // The hover state advances EVERY frame — a disabled frame drives
+        // it toward idle, so disabling while hovered and re-enabling away
+        // from the pointer can never replay stale hover fill.
+        float eased = AdvanceHover(identity, hit.Hovered && !disabled);
         if (disabled)
         {
-            // .btn:disabled is CSS GROUP opacity: the element flattens
-            // first, then composites at 0.35. Stacking primitives each
-            // at 0.35 double-composites the border over the fill and
-            // brightens the outer edge, so the fill is inset to the
-            // border's inner edge and the ring carries the analytically
-            // flattened border-over-fill color — no overlapping draws.
-            var ring = FlattenOver(borderIdle, fill);
-            ring.W *= opacity;
-            var fillFaded = fill;
-            fillFaded.W *= opacity;
-            draw.AddRectFilled(
-                hit.ScreenMin + new Vector2(borderPx),
-                hit.ScreenMax - new Vector2(borderPx),
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(fillFaded)),
-                MathF.Max(0f, radius - borderPx));
-            draw.AddRect(
-                hit.ScreenMin + new Vector2(inset),
-                hit.ScreenMax - new Vector2(inset),
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(ring)),
-                MathF.Max(0f, radius - inset),
-                ImDrawFlags.None,
-                borderPx);
+            // .btn:disabled is CSS GROUP opacity: fill, border, glyph
+            // coverage, and their antialiasing flatten into ONE surface
+            // before 0.35 applies once. Sequential primitive fading
+            // cannot express that, so the surface is CPU-composed and
+            // drawn as a single textured quad. Without a registered
+            // backend (or atlas pixels), the nearest sequential
+            // approximation below still avoids overlapping draws.
+            if (!DrawDisabledGroup(
+                    draw, hit.ScreenMin, hit.ScreenMax, label, style,
+                    variant, fill, borderIdle, text, radius, borderPx, opacity))
+            {
+                var ring = FlattenOver(borderIdle, fill);
+                ring.W *= opacity;
+                var fillFaded = fill;
+                fillFaded.W *= opacity;
+                draw.AddRectFilled(
+                    hit.ScreenMin + new Vector2(borderPx),
+                    hit.ScreenMax - new Vector2(borderPx),
+                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(fillFaded)),
+                    MathF.Max(0f, radius - borderPx));
+                draw.AddRect(
+                    hit.ScreenMin + new Vector2(inset),
+                    hit.ScreenMax - new Vector2(inset),
+                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(ring)),
+                    MathF.Max(0f, radius - inset),
+                    ImDrawFlags.None,
+                    borderPx);
+                DrawButtonLabelClipped(
+                    draw, hit.ScreenMin, hit.ScreenMax, label, style,
+                    text with { W = text.W * opacity });
+            }
         }
         else
         {
@@ -257,7 +270,6 @@ public static partial class Crystarium
             // CSS element composites against the page; the background
             // follows the 150ms hover transition with PREMULTIPLIED
             // color interpolation, as Chromium interpolates rgba.
-            float eased = AdvanceHover(identity, hit.Hovered);
             var background = PremultipliedLerp(fill, fillHover, eased);
             var border = hit.Hovered ? borderHover : borderIdle;
             draw.AddRectFilled(
@@ -274,37 +286,29 @@ public static partial class Crystarium
                 borderPx);
         }
 
-        // .btn:focus-visible — 2px primary-60 outline offset 1px, shown
-        // for keyboard focus only; pointer interaction never invents one.
-        if (hit.Focused && Interactive.KeyboardNavActive)
+        if (!disabled)
         {
-            float offset = 1f * scale;
-            float thickness = 2f * scale;
-            float expand = offset + thickness * 0.5f;
-            draw.AddRect(
-                hit.ScreenMin - new Vector2(expand),
-                hit.ScreenMax + new Vector2(expand),
-                ImGui.ColorConvertFloat4ToU32(
-                    ColorEx.ApplyAlpha(theme.Chrome.PrimaryHover)),
-                radius + expand,
-                ImDrawFlags.None,
-                thickness);
-        }
+            // .btn:focus-visible — 2px primary-60 outline offset 1px,
+            // shown for keyboard focus only; pointer interaction never
+            // invents one. Disabled buttons draw their label inside the
+            // group surface above and can neither focus nor hover.
+            if (hit.Focused && Interactive.KeyboardNavActive)
+            {
+                float offset = 1f * scale;
+                float thickness = 2f * scale;
+                float expand = offset + thickness * 0.5f;
+                draw.AddRect(
+                    hit.ScreenMin - new Vector2(expand),
+                    hit.ScreenMax + new Vector2(expand),
+                    ImGui.ColorConvertFloat4ToU32(
+                        ColorEx.ApplyAlpha(theme.Chrome.PrimaryHover)),
+                    radius + expand,
+                    ImDrawFlags.None,
+                    thickness);
+            }
 
-        // Centered label through the canonical text path, clipped to the
-        // button's visual bounds.
-        var labelStyle = ButtonLabelStyle(
-            style, text with { W = text.W * opacity });
-        var measured = MeasureText(label, labelStyle);
-        var position = hit.ScreenMin + (hit.Size - measured) * 0.5f;
-        draw.PushClipRect(hit.ScreenMin, hit.ScreenMax, true);
-        try
-        {
-            TextAt(position, label, labelStyle);
-        }
-        finally
-        {
-            draw.PopClipRect();
+            DrawButtonLabelClipped(
+                draw, hit.ScreenMin, hit.ScreenMax, label, style, text);
         }
 
         if (!string.IsNullOrEmpty(help) &&
@@ -323,6 +327,216 @@ public static partial class Crystarium
             : ActiveTheme.Typography.BodySize,
         Color = color,
     };
+
+    /// <summary>Centered label through the canonical text path, clipped
+    /// to the button's visual bounds.</summary>
+    private static void DrawButtonLabelClipped(
+        ImDrawListPtr draw, Vector2 min, Vector2 max,
+        string label, ControlStyle style, Vector4 color)
+    {
+        var labelStyle = ButtonLabelStyle(style, color);
+        var measured = MeasureText(label, labelStyle);
+        var position = min + (max - min - measured) * 0.5f;
+        draw.PushClipRect(min, max, true);
+        try
+        {
+            TextAt(position, label, labelStyle);
+        }
+        finally
+        {
+            draw.PopClipRect();
+        }
+    }
+
+    /// <summary>Composes the disabled button as ONE flattened surface —
+    /// fill, border, glyph coverage, antialiasing — with the group
+    /// opacity applied once, and draws it as a single textured quad.
+    /// Returns false when no group-surface backend or atlas pixel data
+    /// is available.</summary>
+    private static unsafe bool DrawDisabledGroup(
+        ImDrawListPtr draw, Vector2 min, Vector2 max,
+        string label, ControlStyle style, ButtonVariant variant,
+        Vector4 fill, Vector4 border, Vector4 textColor,
+        float radiusPx, float borderPx, float groupOpacity)
+    {
+        if (!GroupSurface.Available)
+            return false;
+        int width = (int)MathF.Round(max.X - min.X);
+        int height = (int)MathF.Round(max.Y - min.Y);
+        if (width <= 0 || height <= 0)
+            return false;
+
+        var labelStyle = ButtonLabelStyle(style, textColor);
+        long key = CombineHash(
+            HashCode.Combine(label, variant, width, height),
+            HashCode.Combine(fill, border, textColor, groupOpacity));
+        var texture = GroupSurface.Acquire(
+            key, width, height, ImGui.GetFrameCount(),
+            () => ComposeDisabledButton(
+                width, height, label, labelStyle, fill, border, textColor,
+                radiusPx, borderPx, groupOpacity));
+        if (texture is not { } handle)
+            return false;
+        draw.AddImage(
+            new ImTextureID(handle),
+            min,
+            min + new Vector2(width, height),
+            Vector2.Zero,
+            Vector2.One,
+            ImGui.ColorConvertFloat4ToU32(
+                ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 1f))));
+        return true;
+    }
+
+    private static long CombineHash(int high, int low) =>
+        ((long)high << 32) | (uint)low;
+
+    /// <summary>CPU flatten of the disabled button in straight alpha:
+    /// SDF-antialiased rounded fill and border ring (background paints to
+    /// the border box, the border blends over it, exactly the CSS box),
+    /// glyph coverage bilinearly sampled from the shared font atlas at
+    /// the same centered positions the enabled path draws, then ONE
+    /// group-opacity multiply.</summary>
+    private static unsafe byte[] ComposeDisabledButton(
+        int width, int height, string label, TextStyle labelStyle,
+        Vector4 fill, Vector4 border, Vector4 textColor,
+        float radiusPx, float borderPx, float groupOpacity)
+    {
+        var buffer = new Vector4[width * height];
+
+        var half = new Vector2(width, height) * 0.5f;
+        float CoverRounded(Vector2 p, Vector2 halfSize, float r)
+        {
+            var q = Vector2.Abs(p - half) - (halfSize - new Vector2(r));
+            float outside = new Vector2(
+                MathF.Max(q.X, 0f), MathF.Max(q.Y, 0f)).Length();
+            float inside = MathF.Min(MathF.Max(q.X, q.Y), 0f);
+            float sdf = outside + inside - r;
+            return Math.Clamp(0.5f - sdf, 0f, 1f);
+        }
+
+        void Composite(int x, int y, Vector4 color, float coverage)
+        {
+            float alpha = color.W * coverage;
+            if (alpha <= 0f)
+                return;
+            ref var dst = ref buffer[y * width + x];
+            float outAlpha = alpha + dst.W * (1f - alpha);
+            if (outAlpha <= 0f)
+                return;
+            var rgb = (new Vector3(color.X, color.Y, color.Z) * alpha
+                + new Vector3(dst.X, dst.Y, dst.Z) * dst.W * (1f - alpha))
+                / outAlpha;
+            dst = new Vector4(rgb, outAlpha);
+        }
+
+        var innerHalf = half - new Vector2(borderPx);
+        float innerRadius = MathF.Max(0f, radiusPx - borderPx);
+        for (int y = 0; y < height; y++)
+        for (int x = 0; x < width; x++)
+        {
+            var p = new Vector2(x + 0.5f, y + 0.5f);
+            float outer = CoverRounded(p, half, radiusPx);
+            float inner = CoverRounded(p, innerHalf, innerRadius);
+            Composite(x, y, fill, outer);
+            Composite(x, y, border, MathF.Max(0f, outer - inner));
+        }
+
+        // Glyph coverage from the shared atlas at the enabled path's
+        // exact centered, snapped position and global scale.
+        var font = FontRegistry.Resolve(
+            labelStyle.Family,
+            labelStyle.Weight ?? FontWeight.Regular,
+            labelStyle.Size ?? ActiveTheme.Typography.BodySize);
+        var locked = font is { Available: true } ? font.TryLock(out _) : null;
+        if (locked != null)
+        {
+            try
+            {
+                var imFont = locked.ImFont;
+                var atlas = ImGui.GetIO().Fonts;
+                byte* atlasPixelsRaw = null;
+                int atlasW = 0, atlasH = 0;
+                atlas.GetTexDataAsAlpha8(
+                    0, &atlasPixelsRaw, &atlasW, &atlasH);
+                if (atlasPixelsRaw == null || atlasW == 0)
+                    return FinishCompose(buffer, width, height, groupOpacity);
+                nint atlasPixels = (nint)atlasPixelsRaw;
+
+                float glyphScale = Dalamud.Interface.Utility
+                    .ImGuiHelpers.GlobalScale;
+                var measured = MeasureText(label, labelStyle);
+                var start = ActiveTheme.Optical.Snap(
+                    (new Vector2(width, height) - measured) * 0.5f);
+                float penX = start.X;
+                foreach (char c in label)
+                {
+                    ref var glyph = ref *imFont.FindGlyph(c);
+                    float x0 = penX + glyph.X0 * glyphScale;
+                    float y0 = start.Y + glyph.Y0 * glyphScale;
+                    float x1 = penX + glyph.X1 * glyphScale;
+                    float y1 = start.Y + glyph.Y1 * glyphScale;
+                    int px0 = Math.Max(0, (int)MathF.Floor(x0));
+                    int py0 = Math.Max(0, (int)MathF.Floor(y0));
+                    int px1 = Math.Min(width, (int)MathF.Ceiling(x1));
+                    int py1 = Math.Min(height, (int)MathF.Ceiling(y1));
+                    for (int py = py0; py < py1; py++)
+                    for (int px = px0; px < px1; px++)
+                    {
+                        float tx = (px + 0.5f - x0) / MathF.Max(x1 - x0, 1e-4f);
+                        float ty = (py + 0.5f - y0) / MathF.Max(y1 - y0, 1e-4f);
+                        if (tx < 0f || tx >= 1f || ty < 0f || ty >= 1f)
+                            continue;
+                        float u = (glyph.U0 + (glyph.U1 - glyph.U0) * tx) * atlasW - 0.5f;
+                        float v = (glyph.V0 + (glyph.V1 - glyph.V0) * ty) * atlasH - 0.5f;
+                        int ui = (int)MathF.Floor(u);
+                        int vi = (int)MathF.Floor(v);
+                        float fu = u - ui;
+                        float fv = v - vi;
+                        float coverage =
+                            SampleAtlas(atlasPixels, atlasW, atlasH, ui, vi)
+                                * (1f - fu) * (1f - fv)
+                            + SampleAtlas(atlasPixels, atlasW, atlasH, ui + 1, vi)
+                                * fu * (1f - fv)
+                            + SampleAtlas(atlasPixels, atlasW, atlasH, ui, vi + 1)
+                                * (1f - fu) * fv
+                            + SampleAtlas(atlasPixels, atlasW, atlasH, ui + 1, vi + 1)
+                                * fu * fv;
+                        Composite(px, py, textColor, coverage);
+                    }
+                    penX += glyph.AdvanceX * glyphScale;
+                }
+            }
+            finally
+            {
+                locked.Dispose();
+            }
+        }
+
+        return FinishCompose(buffer, width, height, groupOpacity);
+    }
+
+    private static unsafe float SampleAtlas(
+        nint pixels, int atlasWidth, int atlasHeight, int x, int y) =>
+        x < 0 || y < 0 || x >= atlasWidth || y >= atlasHeight
+            ? 0f
+            : ((byte*)pixels)[y * atlasWidth + x] / 255f;
+
+    private static byte[] FinishCompose(
+        Vector4[] buffer, int width, int height, float groupOpacity)
+    {
+        var bytes = new byte[width * height * 4];
+        for (int i = 0; i < buffer.Length; i++)
+        {
+            var px = buffer[i];
+            bytes[i * 4 + 0] = (byte)Math.Clamp((int)MathF.Round(px.X * 255f), 0, 255);
+            bytes[i * 4 + 1] = (byte)Math.Clamp((int)MathF.Round(px.Y * 255f), 0, 255);
+            bytes[i * 4 + 2] = (byte)Math.Clamp((int)MathF.Round(px.Z * 255f), 0, 255);
+            bytes[i * 4 + 3] = (byte)Math.Clamp(
+                (int)MathF.Round(px.W * groupOpacity * 255f), 0, 255);
+        }
+        return bytes;
+    }
 
     /// <summary>Top layer composited over the bottom layer (source-over),
     /// returned straight-alpha — the flattened color a CSS element shows

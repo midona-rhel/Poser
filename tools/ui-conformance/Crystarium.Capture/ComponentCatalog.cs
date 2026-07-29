@@ -59,6 +59,10 @@ internal static class ComponentCatalog
         new("btn-width-fixed", 320, 80),
         new("btn-width-fill", 320, 80),
         new("btn-narrow", 320, 80, Hidden: true),
+        new("btn-narrow-blank", 320, 80, Hidden: true),
+        new("btn-narrow-unclipped", 320, 80, Hidden: true),
+        new("btn-hover-reconcile", 320, 80, Hidden: true),
+        new("bar-allocation", 340, 140, Hidden: true),
         new("btn-hover-exit", 320, 80),
         new("btn-hover-mid", 320, 80),
         new("icon-button", 120, 80),
@@ -159,12 +163,16 @@ internal static class ComponentCatalog
         // Hover states park the pointer inside the control; hover-exit
         // leaves after 15 frames so the 150ms background transition has
         // settled back to idle by capture.
-        // btn-hover-mid enters at frame 35: five 1/60s hover frames of a
-        // 150ms transition = linear progress 5/9, captured mid-flight
-        // deterministically on the fixed-timestep final frame.
+        // btn-hover-mid targets five 1/60s hover frames of the 150ms
+        // transition = linear progress 5/9, captured mid-flight on the
+        // fixed-timestep final frame. The harness's queued-event-to-
+        // hover latency is exactly ONE frame (measured: entering at 35
+        // yields four advances, matching the 4-step composite to the
+        // pixel), so entry is calibrated to frame 34.
         bool inside = name.EndsWith("-hover", StringComparison.Ordinal)
             || (name == "btn-hover-exit" && frame < 15)
-            || (name == "btn-hover-mid" && frame >= 35);
+            || (name == "btn-hover-mid" && frame >= 34)
+            || (name == "btn-hover-reconcile" && frame < 20);
         return inside
             ? new Vector2(84, 40) * scale
             : new Vector2(-1000, -1000);
@@ -539,12 +547,90 @@ internal static class ComponentCatalog
                 break;
             case "btn-narrow":
                 // Narrower than the label: the canonical component clips
-                // to its visual bounds.
+                // to its visual bounds. Candidate-only invariant (Picto's
+                // native button does not clip) — see verify-button-clip.
                 Ui.Button(
                     "Apply changes",
                     style: new ControlStyle { Width = UiWidth.Fixed(60f) },
                     id: "##btn");
                 break;
+            case "btn-narrow-blank":
+                // Chrome-only twin of btn-narrow: subtracting it from the
+                // labelled capture isolates glyph pixels unambiguously.
+                Ui.Button(
+                    "",
+                    style: new ControlStyle { Width = UiWidth.Fixed(60f) },
+                    id: "##btn");
+                break;
+            case "btn-narrow-unclipped":
+            {
+                // NEGATIVE CONTROL for the clip invariant: the same
+                // over-wide label deliberately drawn WITHOUT the button's
+                // clip. The clip test must FAIL on this state, proving
+                // the glyph mask detects escapes.
+                Ui.Button(
+                    "",
+                    style: new ControlStyle { Width = UiWidth.Fixed(60f) },
+                    id: "##btn");
+                float s2 = ImGuiHelpers.GlobalScale;
+                var boxMin = origin;
+                var boxSize = new Vector2(60f, 32f) * s2;
+                var unclippedStyle = new TextStyle { };
+                var m = Ui.MeasureText("Apply changes", unclippedStyle);
+                Ui.TextAt(
+                    boxMin + (boxSize - m) * 0.5f,
+                    "Apply changes", unclippedStyle);
+                break;
+            }
+            case "btn-hover-reconcile":
+                // Deterministic sequence: hover settles (frames 0..17,
+                // pointer inside from 0), disabled at 18..30 while the
+                // pointer leaves at 20, re-enabled from 31. The final
+                // enabled frame must equal idle — stale hover fill must
+                // not replay. Asserted against btn-secondary's capture.
+                Ui.Button(
+                    "Apply changes",
+                    disabled: frame is >= 18 and <= 30,
+                    id: "##btn");
+                break;
+            case "bar-allocation":
+            {
+                // ActionBar allocation invariant: Content + Fixed + Fill
+                // inside a 260px allocation on a 340px canvas, left- and
+                // right-aligned. Every rectangle must stay inside the
+                // allocation, and Fill must resolve the REMAINING bar
+                // allocation, not the wider window.
+                float s3 = ImGuiHelpers.GlobalScale;
+                var alloc = new Vector2(260f, 40f) * s3;
+                Ui.ActionBar(
+                    "##bar-left",
+                    origin,
+                    alloc,
+                    bar =>
+                    {
+                        bar.Button("OK", () => { });
+                        bar.Button("Fixed", () => { }, style: new ControlStyle
+                        { Width = UiWidth.Fixed(70f) });
+                        bar.Button("Fill", () => { }, style: new ControlStyle
+                        { Width = UiWidth.Fill });
+                    },
+                    separator: ActionBarSeparator.None);
+                Ui.ActionBar(
+                    "##bar-right",
+                    origin + new Vector2(0f, 56f * s3),
+                    alloc,
+                    _ => { },
+                    right: bar =>
+                    {
+                        bar.Button("OK", () => { });
+                        bar.Button("Fixed", () => { }, style: new ControlStyle
+                        { Width = UiWidth.Fixed(70f) });
+                        bar.Button("Fill", () => { }, style: new ControlStyle
+                        { Width = UiWidth.Fill });
+                    },
+                    separator: ActionBarSeparator.None);
+                break;
+            }
             case "icon-button":
                 Ui.IconButton(
                     TablerIcon.Settings,

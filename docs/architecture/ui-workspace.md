@@ -94,8 +94,16 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
   cancels); Enter/Space activate a keyboard-focused button; pointer
   interaction never shows the focus outline; disabled buttons cannot
   focus or activate, take no hover styling, and keep their HoverHelp
-  explanation. Compositions forward allocated widths into the same
-  component (`ButtonAtWidth`) and never repaint or remeasure it.
+  explanation. `.btn:disabled` is CSS GROUP opacity: fill, border,
+  glyph coverage, and antialiasing flatten into one surface via
+  `GroupSurface` (CPU-composed, host-provided texture backend — Dalamud
+  textures in game, the capture renderer in conformance) before 0.35
+  applies once; sequential primitive fading cannot express this and is
+  only the no-backend fallback. Content width is CSS border-box (label
+  + padding + 1px border per side). Compositions forward allocated
+  widths into the same component (`ButtonAtWidth`); ActionBar measures
+  its own items and resolves Fill against only its remaining
+  allocation, never ambient window availability.
 - Hover help: `Crystarium.HoverHelp` is the ONE explanatory surface
   (picto KbdTooltip: 400 ms open, instant exit start, the 150 ms Mantine
   pop entering and exiting as one composited surface, glass card on the

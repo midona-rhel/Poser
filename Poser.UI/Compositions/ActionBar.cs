@@ -195,9 +195,14 @@ public static partial class Crystarium
                         && _items[i].Style.Width.Kind == UiWidthKind.Fill)
                         widths[i] = fillEach;
             }
+            // Right alignment derives from the SAME widths that render,
+            // so placement and rendering can never disagree.
+            float totalWidth = gapTotal;
+            for (int i = 0; i < _items.Count; i++)
+                totalWidth += widths[i];
 
             float x = alignRight
-                ? origin.X + size.X - MeasureTotal(scale)
+                ? origin.X + size.X - totalWidth
                 : origin.X;
             float centerY = origin.Y + size.Y * 0.5f;
             float labelOffset =
@@ -370,16 +375,5 @@ public static partial class Crystarium
                     Workspace(item.Style)).X,
             };
 
-        private float MeasureTotal(float scale)
-        {
-            float width = 0f;
-            for (int i = 0; i < _items.Count; i++)
-            {
-                if (i > 0)
-                    width += ActiveTheme.Page.ActionGap * scale;
-                width += Measure(_items[i], scale);
-            }
-            return width;
-        }
     }
 }

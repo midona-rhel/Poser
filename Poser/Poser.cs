@@ -13,6 +13,7 @@ using Poser.Game;
 using Poser.Game.Scene;
 using Poser.Services;
 using Poser.UI;
+using Poser.UI.Host;
 
 namespace Poser;
 
@@ -74,6 +75,12 @@ public class Poser : IDalamudPlugin
         // Create the active theme's complete typography matrix before any
         // presentation surface can measure with a fallback face.
         FontRegistry.Register(pluginInterface.UiBuilder.FontAtlas);
+
+        // Group-opacity surfaces (disabled buttons) compose on the CPU
+        // and draw as one textured quad; Dalamud's texture provider is
+        // the in-game backend, so the game renders the same flattened
+        // pixels the conformance capture host renders.
+        GroupSurface.Register(new DalamudGroupSurfaceBackend(textureProvider));
 
         // Dalamud provides real backdrop blur for the retained glass surfaces.
         Crystarium.FloatingSurface.BackdropBlurAvailable = true;
@@ -138,6 +145,7 @@ public class Poser : IDalamudPlugin
     public void Dispose()
     {
         _commandManager.RemoveHandler(CommandName);
+        GroupSurface.Clear();
         FontRegistry.Dispose();
         _serviceProvider.Dispose();
     }
