@@ -28,6 +28,11 @@ namespace Poser.UI;
 /// </summary>
 public static class FontRegistry
 {
+    // stb's grayscale coverage is lighter than Picto's DirectWrite output
+    // at these small sizes. Strengthen coverage without changing face,
+    // advances, wrapping, or the semantic 400/600 weight selection.
+    private const float RasterizerMultiply = 1.10f;
+
     private static IFontAtlas? _atlas;
 
     /// <summary>Last font-load failure (diagnostics; surfaced via the UI bridge).</summary>
@@ -209,6 +214,7 @@ public static class FontRegistry
                         var config = new SafeFontConfig
                         {
                             SizePx = key.SizePx * TtfMetrics.CssScale(file),
+                            RasterizerMultiply = RasterizerMultiply,
                         };
                         var added = tk.AddFontFromFile(file, config);
                         // CJK coverage for the Default family only —
@@ -230,6 +236,7 @@ public static class FontRegistry
                                 FontNo = cjkFace.FaceIndex,
                                 MergeFont = added,
                                 GlyphRanges = CjkMergeRanges,
+                                RasterizerMultiply = RasterizerMultiply,
                             };
                             tk.AddFontFromFile(cjkFace.Path, cjk);
                         }

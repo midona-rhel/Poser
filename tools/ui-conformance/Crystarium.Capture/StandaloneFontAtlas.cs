@@ -165,6 +165,7 @@ internal sealed class StandaloneFontAtlas : IFontAtlas
             {
                 GlyphOffset = fontConfig.GlyphOffset,
                 FontNo = fontConfig.FontNo,
+                RasterizerMultiply = fontConfig.RasterizerMultiply,
             };
             var merge = fontConfig.MergeFont;
             if (!merge.IsNull)
