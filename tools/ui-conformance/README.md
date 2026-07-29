@@ -31,8 +31,12 @@ The generated `artifacts/index.html` links each result. Every result contains:
 - an exact red pixel-failure map with bounded mismatch regions;
 - measured foreground bounds, alignment, missing/extra coverage, color delta,
   and bright/text-ink vertical offset;
-- the Picto source-manifest hash, candidate assembly hash, commit, and dirty
-  state. Preserved results from another source or assembly are marked stale.
+- the Picto source-manifest hash, the candidate-manifest hash (an ordered
+  SHA-256 manifest over the rendering binaries — `Poser.UI.dll`,
+  `Crystarium.Capture.dll`, the managed ImGui bindings, and native
+  `cimgui.dll` — written to `artifacts/crystarium/candidate-manifest.json`),
+  commit, and dirty state. Preserved results from another source or
+  candidate build are marked stale.
 
 Exact equality is the pass gate. The measurements explain likely causes but do
 not waive antialiasing differences. Generated captures and reports are ignored

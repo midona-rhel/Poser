@@ -32,8 +32,10 @@ $captureReferences = Join-Path $toolRoot "capture-picto-references.ps1"
 $all = @(& $captureReferences -ListCatalog)
 $aliases = @{
     "text" = @(
-        "text-label", "text-caption", "text-mono",
-        "text-disabled", "text-truncated", "text-wrapped")
+        "text-label", "text-caption", "text-mono", "text-disabled",
+        "text-truncated", "text-truncated-cjk", "text-truncated-combining",
+        "text-truncated-emoji", "text-truncated-fit", "text-truncated-narrow",
+        "text-wrapped", "text-wrapped-newline", "text-wrapped-overwide")
     "button" = @("action-button", "primary-button")
     "icon-button" = @("icon-button", "icon-button-active")
     "switch" = @("switch-off", "switch-on")
@@ -71,8 +73,34 @@ $referenceManifest = Join-Path $artifacts "picto\reference-sources.json"
 $referenceManifestHash = (
     Get-FileHash -Algorithm SHA256 -LiteralPath $referenceManifest
 ).Hash.ToLowerInvariant()
+# Provenance hashes the deterministic rendering binaries that actually
+# produce the candidate pixels — the apphost .exe alone would miss a
+# rebuilt Poser.UI.dll entirely. The ordered manifest is written next to
+# the captures and its own hash is the candidate identity.
+$binDir = Split-Path -Parent $exe
+$candidateBinaries = @(
+    "Poser.UI.dll",
+    "Crystarium.Capture.dll",
+    "Dalamud.Bindings.ImGui.dll",
+    "cimgui.dll"
+)
+$candidateManifest = @($candidateBinaries | ForEach-Object {
+    $binary = Join-Path $binDir $_
+    if (!(Test-Path -LiteralPath $binary -PathType Leaf)) {
+        throw "Candidate rendering binary '$_' was not found in '$binDir'."
+    }
+    [ordered]@{
+        path = $_
+        sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $binary).Hash.ToLowerInvariant()
+    }
+})
+$candidateDir = Join-Path $artifacts "crystarium"
+New-Item -ItemType Directory -Force -Path $candidateDir | Out-Null
+$candidateManifestPath = Join-Path $candidateDir "candidate-manifest.json"
+$candidateManifest | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 `
+    -LiteralPath $candidateManifestPath
 $candidateHash = (
-    Get-FileHash -Algorithm SHA256 -LiteralPath $exe
+    Get-FileHash -Algorithm SHA256 -LiteralPath $candidateManifestPath
 ).Hash.ToLowerInvariant()
 $candidateCommit = (git -C $repoRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not resolve the candidate commit." }

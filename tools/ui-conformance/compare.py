@@ -218,7 +218,7 @@ def compare(reference_path: Path, candidate_path: Path, output: Path,
         "component": component,
         "scale": scale,
         "referenceManifestSha256": reference_manifest_hash,
-        "candidateAssemblySha256": candidate_hash,
+        "candidateManifestSha256": candidate_hash,
         "candidateCommit": candidate_commit,
         "candidateDirty": candidate_dirty,
         "passed": not exact.any(),
@@ -296,7 +296,7 @@ def aggregate(root: Path, reference_manifest_hash: str,
         report["href"] = report["base"] + "/index.html"
         report["stale"] = (
             report.get("referenceManifestSha256") != reference_manifest_hash
-            or report.get("candidateAssemblySha256") != candidate_hash
+            or report.get("candidateManifestSha256") != candidate_hash
         )
         reports.append(report)
     if not reports:

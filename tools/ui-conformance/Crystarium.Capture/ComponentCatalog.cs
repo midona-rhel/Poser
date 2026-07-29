@@ -19,9 +19,16 @@ internal static class ComponentCatalog
         new("text-label", 320, 44),
         new("text-caption", 320, 44),
         new("text-mono", 320, 44),
-        new("text-disabled", 320, 44),
+        new("text-disabled", 320, 74),
         new("text-truncated", 320, 44),
+        new("text-truncated-cjk", 320, 44),
+        new("text-truncated-combining", 320, 44),
+        new("text-truncated-emoji", 320, 44),
+        new("text-truncated-fit", 320, 44),
+        new("text-truncated-narrow", 320, 44),
         new("text-wrapped", 320, 96),
+        new("text-wrapped-newline", 320, 130),
+        new("text-wrapped-overwide", 320, 100),
         new("action-button", 320, 80),
         new("primary-button", 320, 80),
         new("icon-button", 120, 80),
@@ -126,16 +133,56 @@ internal static class ComponentCatalog
                 });
                 break;
             case "text-disabled":
+            {
                 // src/shared/ui/ContextMenu/ContextMenu.module.css
-                // .disabled — the ordinary label at opacity .4, Picto's
-                // disabled-text idiom.
-                Ui.Text("Unavailable action", new TextStyle { Disabled = true });
+                // .item.disabled > .label — the real Picto disabled
+                // selector: opacity .4 on a 26px flex menu row with 6px
+                // horizontal padding, 13px text-primary, flex-centered.
+                var disabledStyle = new TextStyle { Disabled = true };
+                float rowHeight = 26f * ImGuiHelpers.GlobalScale;
+                float lineHeight = Ui.MeasureText("Unavailable action", disabledStyle).Y;
+                Ui.TextAt(
+                    origin + new Vector2(
+                        6f * ImGuiHelpers.GlobalScale,
+                        (rowHeight - lineHeight) * 0.5f),
+                    "Unavailable action", disabledStyle);
                 break;
+            }
             case "text-truncated":
                 // ContextMenu.module.css .label — single line,
                 // ellipsis-truncated inside 140px.
                 Ui.Text("The quick brown fox jumps over", default,
-                    140f * ImGuiHelpers.GlobalScale, TextFit.Truncate);
+                    TextConstraint.Truncate(140f * ImGuiHelpers.GlobalScale));
+                break;
+            case "text-truncated-cjk":
+                // ContextMenu.module.css .label idiom — grapheme-safe
+                // backoff over ideographs (no Latin word boundaries).
+                Ui.Text("素早い茶色の狐が飛び跳ねる", default,
+                    TextConstraint.Truncate(140f * ImGuiHelpers.GlobalScale));
+                break;
+            case "text-truncated-combining":
+                // ContextMenu.module.css .label idiom — combining acute
+                // accents (U+0301) must never separate from their base.
+                Ui.Text("réservé déjà touché", default,
+                    TextConstraint.Truncate(100f * ImGuiHelpers.GlobalScale));
+                break;
+            case "text-truncated-emoji":
+                // ContextMenu.module.css .label idiom — the surrogate
+                // pair (U+1F600) must never be split by the backoff.
+                Ui.Text("Emoji \U0001F600 marker overflow test", default,
+                    TextConstraint.Truncate(110f * ImGuiHelpers.GlobalScale));
+                break;
+            case "text-truncated-fit":
+                // ContextMenu.module.css .label idiom — text that fits
+                // must pass through untouched, no ellipsis.
+                Ui.Text("The quick brown fox", default,
+                    TextConstraint.Truncate(140f * ImGuiHelpers.GlobalScale));
+                break;
+            case "text-truncated-narrow":
+                // ContextMenu.module.css .label idiom — narrower than
+                // the ellipsis itself: the contract returns empty.
+                Ui.Text("Unreachable", default,
+                    TextConstraint.Truncate(6f * ImGuiHelpers.GlobalScale));
                 break;
             case "text-wrapped":
                 // src/shared/ui/GlassModal/GlassModal.module.css
@@ -147,9 +194,31 @@ internal static class ComponentCatalog
                     {
                         Size = Ui.ActiveTheme.Typography.CaptionSize,
                         Color = Ui.ActiveTheme.TextMuted,
-                        LineHeight = 1.4f,
                     },
-                    220f * ImGuiHelpers.GlobalScale, TextFit.Wrap);
+                    TextConstraint.Wrap(220f * ImGuiHelpers.GlobalScale, 1.4f));
+                break;
+            case "text-wrapped-newline":
+                // src/shared/ui/InspectorField/InspectorField.module.css
+                // .popover .popoverText — 13px text-primary at
+                // line-height 1.5, white-space: pre-wrap preserving the
+                // explicit newline, inside 200px.
+                Ui.Text(
+                    "First line\nSecond block that wraps onward, and onward.",
+                    default,
+                    TextConstraint.Wrap(200f * ImGuiHelpers.GlobalScale, 1.5f));
+                break;
+            case "text-wrapped-overwide":
+                // GlassModal.module.css .helpText inside 120px — the
+                // over-wide token overflows its line (CSS overflow-wrap
+                // normal), it is never hard-broken.
+                Ui.Text(
+                    "A veryverylongunbrokentoken overflows.",
+                    new TextStyle
+                    {
+                        Size = Ui.ActiveTheme.Typography.CaptionSize,
+                        Color = Ui.ActiveTheme.TextMuted,
+                    },
+                    TextConstraint.Wrap(120f * ImGuiHelpers.GlobalScale, 1.4f));
                 break;
             case "action-button":
                 Ui.Button(

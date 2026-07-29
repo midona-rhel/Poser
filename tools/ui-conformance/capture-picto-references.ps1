@@ -16,9 +16,16 @@ $catalog = @(
     @{ Name = "text-label"; Width = 320; Height = 44 },
     @{ Name = "text-caption"; Width = 320; Height = 44 },
     @{ Name = "text-mono"; Width = 320; Height = 44 },
-    @{ Name = "text-disabled"; Width = 320; Height = 44 },
+    @{ Name = "text-disabled"; Width = 320; Height = 74 },
     @{ Name = "text-truncated"; Width = 320; Height = 44 },
+    @{ Name = "text-truncated-cjk"; Width = 320; Height = 44 },
+    @{ Name = "text-truncated-combining"; Width = 320; Height = 44 },
+    @{ Name = "text-truncated-emoji"; Width = 320; Height = 44 },
+    @{ Name = "text-truncated-fit"; Width = 320; Height = 44 },
+    @{ Name = "text-truncated-narrow"; Width = 320; Height = 44 },
     @{ Name = "text-wrapped"; Width = 320; Height = 96 },
+    @{ Name = "text-wrapped-newline"; Width = 320; Height = 130 },
+    @{ Name = "text-wrapped-overwide"; Width = 320; Height = 100 },
     @{ Name = "action-button"; Width = 320; Height = 80 },
     @{ Name = "primary-button"; Width = 320; Height = 80 },
     @{ Name = "icon-button"; Width = 120; Height = 80 },
@@ -94,7 +101,8 @@ $sources = @(
     "..\Picto\src\shared\ui\InspectorSection\InspectorSection.module.css",
     "..\Picto\src\shared\ui\KbdTooltip\KbdTooltip.module.css",
     "..\Picto\src\shared\ui\ContextMenu\ContextMenu.module.css",
-    "..\Picto\src\shared\ui\GlassModal\GlassModal.module.css"
+    "..\Picto\src\shared\ui\GlassModal\GlassModal.module.css",
+    "..\Picto\src\shared\ui\InspectorField\InspectorField.module.css"
 )
 
 function Get-ReferenceManifest {
@@ -126,6 +134,14 @@ try {
                 $scale).Replace(".", "p")
             foreach ($component in $catalog) {
                 $target = Join-Path $output "$($component.Name)@$theme@$suffix.png"
+                # Capture into a run-unique staging file so a partially
+                # written screenshot can never be read as the final
+                # artifact; the finished file replaces it in one move.
+                $staging = Join-Path $output `
+                    "$($component.Name)@$theme@$suffix.partial-$runId.png"
+                if (Test-Path -LiteralPath $staging) {
+                    Remove-Item -LiteralPath $staging -Force
+                }
                 $url = "${uri}?component=$($component.Name)&theme=$theme"
                 $profile = Join-Path $profileRoot "$theme-$suffix-$($component.Name)"
                 & $Browser `
@@ -143,27 +159,46 @@ try {
                     --force-device-scale-factor=$scale `
                     --window-size="$($component.Width),$($component.Height)" `
                     --user-data-dir="$profile" `
-                    --screenshot="$target" `
+                    --screenshot="$staging" `
                     $url | Out-Null
                 if ($LASTEXITCODE -ne 0) {
                     throw "Reference capture failed for $($component.Name), $theme at $scale."
                 }
                 # The Edge launcher detaches and the real browser process
-                # writes the screenshot AFTER the launcher returns; an
-                # immediate existence check races that write. Wait bounded.
-                $deadline = [DateTime]::UtcNow.AddSeconds(15)
-                while (!(Test-Path -LiteralPath $target) -and
-                    [DateTime]::UtcNow -lt $deadline) {
-                    Start-Sleep -Milliseconds 100
+                # writes the screenshot AFTER the launcher returns. Wait
+                # for the staging file to exist and stabilize — the same
+                # non-zero size on two consecutive polls plus an
+                # exclusive open — before promoting it.
+                $deadline = [DateTime]::UtcNow.AddSeconds(20)
+                $stable = $false
+                $lastSize = -1
+                while ([DateTime]::UtcNow -lt $deadline) {
+                    if (Test-Path -LiteralPath $staging) {
+                        $size = (Get-Item -LiteralPath $staging).Length
+                        if ($size -gt 0 -and $size -eq $lastSize) {
+                            try {
+                                ([IO.File]::Open(
+                                    $staging, 'Open', 'Read', 'None')).Dispose()
+                                $stable = $true
+                                break
+                            } catch { }
+                        }
+                        $lastSize = $size
+                    }
+                    Start-Sleep -Milliseconds 150
                 }
-                if (!(Test-Path -LiteralPath $target)) {
+                if (-not $stable) {
                     throw "Reference capture failed for $($component.Name), $theme at $scale."
                 }
+                Move-Item -LiteralPath $staging -Destination $target -Force
             }
         }
     }
 }
 finally {
+    Get-ChildItem -LiteralPath $output -Filter "*.partial-$runId.png" `
+        -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
     # Edge can let a renderer finish a few milliseconds after its root process
     # exits. Wait through that hand-off so every run removes its isolated profile.
     for ($attempt = 0; $attempt -lt 20; $attempt++) {
