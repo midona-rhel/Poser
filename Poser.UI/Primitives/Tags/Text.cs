@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
+using System.Text;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.Interface.Utility;
@@ -9,10 +10,30 @@ using Dalamud.Interface.Utility;
 namespace Poser.UI;
 
 /// <summary>
+/// CSS white-space policy for a wrapped run, covering the values Picto's
+/// wrapping grammars use. <c>nowrap</c> is the Truncate constraint and
+/// <c>pre</c> is a single unwrapped line — neither is a wrap policy.
+/// </summary>
+public enum TextWhitespace
+{
+    /// <summary>CSS <c>normal</c>: newlines, tabs, and space runs all
+    /// collapse to single spaces; lines break at spaces.</summary>
+    Normal,
+    /// <summary>CSS <c>pre-line</c>: explicit newlines break; space and
+    /// tab runs collapse to single spaces.</summary>
+    PreLine,
+    /// <summary>CSS <c>pre-wrap</c>: explicit newlines break; spaces and
+    /// tabs are preserved (tabs advance to 8-space-width stops); lines
+    /// still break at spaces, with break-point spaces hanging.</summary>
+    PreWrap,
+}
+
+/// <summary>
 /// A typed width constraint for a text run. Intrinsic text carries no
 /// width; truncation REQUIRES one; wrapping requires one and owns its
-/// optional CSS line-height. Invalid combinations are unrepresentable
-/// and non-positive dimensions are rejected at construction.
+/// optional CSS line-height and white-space policy. Invalid combinations
+/// are unrepresentable and non-positive dimensions are rejected at
+/// construction.
 /// </summary>
 public readonly struct TextConstraint
 {
@@ -21,40 +42,46 @@ public readonly struct TextConstraint
     internal FitMode Mode { get; }
     internal float Width { get; }
     internal float? LineHeight { get; }
+    internal TextWhitespace Whitespace { get; }
 
-    private TextConstraint(FitMode mode, float width, float? lineHeight)
+    private TextConstraint(
+        FitMode mode, float width, float? lineHeight, TextWhitespace whitespace)
     {
         Mode = mode;
         Width = width;
         LineHeight = lineHeight;
+        Whitespace = whitespace;
     }
 
     /// <summary>Natural content width; never cut.</summary>
     public static TextConstraint Intrinsic => default;
 
-    /// <summary>One line, ellipsis-truncated inside the pixel width
-    /// (Picto's <c>overflow:hidden; text-overflow:ellipsis;
-    /// white-space:nowrap</c> idiom).</summary>
+    /// <summary>One line, ellipsis-truncated and CLIPPED inside the pixel
+    /// width (Picto's <c>overflow:hidden; text-overflow:ellipsis;
+    /// white-space:nowrap</c> idiom). The run occupies the full width in
+    /// layout, exactly like the CSS box.</summary>
     public static TextConstraint Truncate(float width)
     {
         if (!(width > 0f))
             throw new ArgumentOutOfRangeException(
                 nameof(width), width, "Truncation requires a positive pixel width.");
-        return new TextConstraint(FitMode.Truncate, width, null);
+        return new TextConstraint(FitMode.Truncate, width, null, TextWhitespace.Normal);
     }
 
     /// <summary>
-    /// Word wrap inside the pixel width, on the CSS-compatible contract:
-    /// explicit newlines always break; runs of ordinary spaces collapse
-    /// and disappear at line breaks (CSS <c>white-space: normal</c>); a
-    /// single over-wide word OVERFLOWS its line (CSS
-    /// <c>overflow-wrap: normal</c>) rather than being hard-broken; the
-    /// line advance is the FRACTIONAL CSS line height, accumulated
-    /// unrounded so long paragraphs cannot drift; each line's glyph run
-    /// sits half-leading-centered inside its explicit line box. A null
-    /// line height uses the font's natural line box.
+    /// Word wrap inside the pixel width. The run occupies the full width
+    /// in layout, like the CSS box; a single over-wide word OVERFLOWS its
+    /// line (CSS <c>overflow-wrap: normal</c>) rather than being
+    /// hard-broken. Whitespace follows the typed <paramref name="whitespace"/>
+    /// policy. The line advance is the FRACTIONAL CSS line height,
+    /// accumulated unrounded so long paragraphs cannot drift; each line's
+    /// glyph run sits half-leading-centered inside its explicit line box.
+    /// A null line height uses the font's natural line box.
     /// </summary>
-    public static TextConstraint Wrap(float width, float? lineHeight = null)
+    public static TextConstraint Wrap(
+        float width,
+        float? lineHeight = null,
+        TextWhitespace whitespace = TextWhitespace.Normal)
     {
         if (!(width > 0f))
             throw new ArgumentOutOfRangeException(
@@ -62,7 +89,7 @@ public readonly struct TextConstraint
         if (lineHeight is { } multiplier && !(multiplier > 0f))
             throw new ArgumentOutOfRangeException(
                 nameof(lineHeight), multiplier, "A line height must be positive.");
-        return new TextConstraint(FitMode.Wrap, width, lineHeight);
+        return new TextConstraint(FitMode.Wrap, width, lineHeight, whitespace);
     }
 }
 
@@ -102,7 +129,10 @@ public static partial class Crystarium
     public static void Text(string text, in TextStyle style)
         => Text(text, style, TextConstraint.Intrinsic);
 
-    /// <summary>Inline (cursor-flow) text under a typed constraint.</summary>
+    /// <summary>Inline (cursor-flow) text under a typed constraint. A
+    /// constrained run occupies <c>constraint.Width</c> in layout, so
+    /// following items flow from the constraint edge exactly like
+    /// siblings of the CSS box.</summary>
     public static void Text(string text, in TextStyle style, TextConstraint constraint)
     {
         var origin = ImGui.GetCursorScreenPos();
@@ -128,7 +158,7 @@ public static partial class Crystarium
         var (font, pushed, _, _) = ResolveStyle(style);
         try
         {
-            return ImGui.CalcTextSize(text);
+            return ImGui.CalcTextSize(Nfc(text));
         }
         finally
         {
@@ -138,11 +168,14 @@ public static partial class Crystarium
     }
 
     /// <summary>
-    /// Truncates to the pixel width with an ellipsis, measured at the
-    /// style's ACTUAL face and weight, backing off whole grapheme
-    /// clusters — surrogate pairs and combining sequences are never
-    /// split. The returned text is GUARANTEED to fit the width; when
-    /// even the ellipsis alone cannot fit, the result is empty.
+    /// Returns the presentation string for an ellipsis truncation at the
+    /// style's ACTUAL face and weight: the longest whole-grapheme prefix
+    /// whose width plus the ellipsis fits, minimally the ellipsis itself
+    /// (the constrained renderer clips that remainder like CSS
+    /// <c>overflow: hidden</c> does — callers drawing the result
+    /// unconstrained own their own clipping). Surrogate pairs and
+    /// combining sequences never split. The result is NFC-normalized
+    /// presentation output; the caller's original string is untouched.
     /// </summary>
     public static string TruncateText(string text, in TextStyle style, float width)
     {
@@ -152,7 +185,7 @@ public static partial class Crystarium
         var (font, pushed, _, _) = ResolveStyle(style);
         try
         {
-            return TruncateResolved(text, width);
+            return TruncateResolved(Nfc(text), width);
         }
         finally
         {
@@ -160,6 +193,15 @@ public static partial class Crystarium
                 font!.Pop();
         }
     }
+
+    /// <summary>Presentation normalization: composed (NFC) form so
+    /// measurement, truncation, wrapping, and drawing all see the same
+    /// grapheme sequence the reference renderer shapes. Semantic content
+    /// outside presentation is never rewritten.</summary>
+    private static string Nfc(string text) =>
+        string.IsNullOrEmpty(text) || text.IsNormalized(NormalizationForm.FormC)
+            ? text
+            : text.Normalize(NormalizationForm.FormC);
 
     private static (IFontHandle? Font, bool Pushed, float Size, Vector4 Color)
         ResolveStyle(in TextStyle style)
@@ -181,13 +223,15 @@ public static partial class Crystarium
 
     /// <summary>The one text renderer: resolves the style, fits the run,
     /// snaps the origin to whole pixels, and draws through the window
-    /// draw list. Returns the drawn size.</summary>
+    /// draw list. Returns the LAYOUT size — a constrained run occupies
+    /// its constraint width regardless of ink.</summary>
     private static Vector2 DrawTextRun(
         Vector2 position, string text, in TextStyle style, TextConstraint constraint)
     {
         var (font, pushed, size, color) = ResolveStyle(style);
         try
         {
+            text = Nfc(text);
             var dl = ImGui.GetWindowDrawList();
             uint packed = ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(color));
             var origin = ActiveTheme.Optical.Snap(position);
@@ -195,32 +239,50 @@ public static partial class Crystarium
             {
                 case TextConstraint.FitMode.Truncate:
                 {
+                    // CSS overflow:hidden + text-overflow:ellipsis — the
+                    // fitted string decides where the ellipsis goes, the
+                    // clip owns the visual edge (a narrower-than-ellipsis
+                    // box shows a clipped ellipsis, as the browser does).
+                    float natural = ImGui.GetTextLineHeight();
                     string fitted = TruncateResolved(text, constraint.Width);
-                    dl.AddText(origin, packed, fitted);
-                    return ImGui.CalcTextSize(fitted);
+                    dl.PushClipRect(
+                        origin,
+                        origin + new Vector2(constraint.Width, natural),
+                        true);
+                    try
+                    {
+                        dl.AddText(origin, packed, fitted);
+                    }
+                    finally
+                    {
+                        dl.PopClipRect();
+                    }
+                    return new Vector2(constraint.Width, natural);
                 }
                 case TextConstraint.FitMode.Wrap:
                 {
                     // CSS line boxes: the advance stays FRACTIONAL and
                     // accumulates unrounded so paragraphs cannot drift;
                     // each glyph run is half-leading-centered inside its
-                    // line box and only the draw position rounds.
+                    // line box and only the draw position rounds. Ink may
+                    // overflow the box (overflow: visible), but layout
+                    // occupies the constraint width.
                     float natural = ImGui.GetTextLineHeight();
                     float advance = constraint.LineHeight is { } multiplier
                         ? size * multiplier * ImGuiHelpers.GlobalScale
                         : natural;
                     float halfLeading = (advance - natural) * 0.5f;
                     float y = origin.Y;
-                    float maxWidth = 0f;
-                    foreach (var line in WrapResolved(text, constraint.Width))
+                    foreach (var line in WrapResolved(
+                        text, constraint.Width, constraint.Whitespace))
                     {
-                        dl.AddText(
+                        DrawLine(
+                            dl,
                             new Vector2(origin.X, MathF.Round(y + halfLeading)),
                             packed, line);
-                        maxWidth = MathF.Max(maxWidth, ImGui.CalcTextSize(line).X);
                         y += advance;
                     }
-                    return new Vector2(maxWidth, MathF.Ceiling(y - origin.Y));
+                    return new Vector2(constraint.Width, MathF.Ceiling(y - origin.Y));
                 }
                 default:
                     dl.AddText(origin, packed, text);
@@ -234,17 +296,44 @@ public static partial class Crystarium
         }
     }
 
+    /// <summary>
+    /// Unquantized run width from per-glyph advances at the current
+    /// font scale. ImGui's CalcTextSize CEILS its result to whole
+    /// pixels, so a fit decision made on it accepts anything within the
+    /// rounding slack — one extra character at the truncation boundary,
+    /// a late line break at a wrap boundary. The browser compares
+    /// FRACTIONAL advance sums, so every fit comparison here does too.
+    /// </summary>
+    private static float FractionalTextWidth(string text)
+    {
+        var font = ImGui.GetFont();
+        float scale = ImGui.GetFontSize() / font.FontSize;
+        float width = 0f;
+        for (int i = 0; i < text.Length; i++)
+        {
+            // Astral codepoints resolve to the font's single fallback
+            // glyph, exactly as AddText renders them.
+            if (char.IsHighSurrogate(text[i]) && i + 1 < text.Length
+                && char.IsLowSurrogate(text[i + 1]))
+            {
+                width += font.GetCharAdvance(font.FallbackChar) * scale;
+                i++;
+                continue;
+            }
+            width += font.GetCharAdvance(text[i]) * scale;
+        }
+        return width;
+    }
+
     /// <summary>Grapheme-cluster ellipsis backoff in the CURRENTLY PUSHED
     /// face — truncation and rendering always agree on the same font, and
-    /// every candidate is measured before it is returned.</summary>
+    /// the fit decision uses fractional advances like the browser's.</summary>
     private static string TruncateResolved(string text, float width)
     {
         if (string.IsNullOrEmpty(text))
             return string.Empty;
-        if (ImGui.CalcTextSize(text).X <= width)
+        if (FractionalTextWidth(text) <= width)
             return text;
-        if (ImGui.CalcTextSize("…").X > width)
-            return string.Empty;
 
         // Prefix boundaries fall on whole text elements (grapheme
         // clusters): surrogate pairs and combining sequences never split.
@@ -252,47 +341,149 @@ public static partial class Crystarium
         var elements = StringInfo.GetTextElementEnumerator(text);
         while (elements.MoveNext())
             boundaries.Add(elements.ElementIndex);
+        float ellipsis = FractionalTextWidth("…");
         for (int element = boundaries.Count - 1; element >= 1; element--)
         {
-            string candidate = text[..boundaries[element]] + "…";
-            if (ImGui.CalcTextSize(candidate).X <= width)
-                return candidate;
+            if (FractionalTextWidth(text[..boundaries[element]]) + ellipsis <= width)
+                return text[..boundaries[element]] + "…";
         }
         return "…";
     }
 
-    /// <summary>Greedy word wrap in the currently pushed face, on the
-    /// contract documented at <see cref="TextConstraint.Wrap"/>.</summary>
-    private static IEnumerable<string> WrapResolved(string text, float width)
+    private const float TabStopSpaces = 8f;
+
+    /// <summary>Measures one laid-out line, expanding preserved tabs to
+    /// 8-space-width stops from the line start (CSS <c>tab-size: 8</c>).</summary>
+    private static float MeasureLine(string line)
+    {
+        if (!line.Contains('\t'))
+            return FractionalTextWidth(line);
+        float tab = FractionalTextWidth(" ") * TabStopSpaces;
+        float x = 0f;
+        var segments = line.Split('\t');
+        for (int i = 0; i < segments.Length; i++)
+        {
+            if (i > 0)
+                x = (MathF.Floor(x / tab) + 1f) * tab;
+            x += FractionalTextWidth(segments[i]);
+        }
+        return x;
+    }
+
+    /// <summary>Draws one laid-out line with the same tab expansion
+    /// <see cref="MeasureLine"/> measures.</summary>
+    private static void DrawLine(
+        ImDrawListPtr dl, Vector2 position, uint packed, string line)
+    {
+        if (!line.Contains('\t'))
+        {
+            dl.AddText(position, packed, line);
+            return;
+        }
+        float tab = FractionalTextWidth(" ") * TabStopSpaces;
+        float x = 0f;
+        var segments = line.Split('\t');
+        for (int i = 0; i < segments.Length; i++)
+        {
+            if (i > 0)
+                x = (MathF.Floor(x / tab) + 1f) * tab;
+            dl.AddText(
+                new Vector2(MathF.Round(position.X + x), position.Y),
+                packed, segments[i]);
+            x += FractionalTextWidth(segments[i]);
+        }
+    }
+
+    /// <summary>Greedy word wrap in the currently pushed face under the
+    /// typed whitespace policy documented at
+    /// <see cref="TextConstraint.Wrap"/>.</summary>
+    private static IEnumerable<string> WrapResolved(
+        string text, float width, TextWhitespace whitespace)
+    {
+        if (whitespace == TextWhitespace.Normal)
+        {
+            // CSS normal: newlines and tabs are ordinary collapsible
+            // whitespace — ONE paragraph, single-space separated.
+            return WrapCollapsed(
+                text.Replace('\n', ' ').Replace('\t', ' '), width);
+        }
+        return WrapParagraphs(text, width, whitespace);
+    }
+
+    private static IEnumerable<string> WrapParagraphs(
+        string text, float width, TextWhitespace whitespace)
     {
         foreach (var paragraph in text.Split('\n'))
         {
-            // Runs of ordinary spaces collapse and leading/trailing
-            // spaces vanish (CSS white-space: normal); an empty
-            // paragraph is an explicit blank line.
-            var words = paragraph.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (words.Length == 0)
+            bool any = false;
+            var lines = whitespace == TextWhitespace.PreWrap
+                ? WrapPreserved(paragraph, width)
+                : WrapCollapsed(paragraph.Replace('\t', ' '), width);
+            foreach (var line in lines)
             {
-                yield return string.Empty;
+                any = true;
+                yield return line;
+            }
+            if (!any)
+                yield return string.Empty; // explicit blank line
+        }
+    }
+
+    /// <summary>Collapsing wrap (CSS normal / pre-line paragraph): space
+    /// runs collapse and vanish at line breaks; the first word of a line
+    /// always lands even over-wide (overflow-wrap: normal).</summary>
+    private static IEnumerable<string> WrapCollapsed(string paragraph, float width)
+    {
+        var words = paragraph.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        string line = string.Empty;
+        foreach (var word in words)
+        {
+            string candidate = line.Length == 0 ? word : line + " " + word;
+            if (FractionalTextWidth(candidate) <= width || line.Length == 0)
+            {
+                line = candidate;
                 continue;
             }
-            string line = string.Empty;
-            foreach (var word in words)
-            {
-                string candidate = line.Length == 0 ? word : line + " " + word;
-                if (ImGui.CalcTextSize(candidate).X <= width || line.Length == 0)
-                {
-                    // The first word of a line always lands even when
-                    // over-wide: CSS overflow-wrap normal lets it
-                    // overflow rather than hard-breaking it.
-                    line = candidate;
-                    continue;
-                }
-                yield return line;
-                line = word;
-            }
-            if (line.Length > 0)
-                yield return line;
+            yield return line;
+            line = word;
         }
+        if (line.Length > 0)
+            yield return line;
+    }
+
+    /// <summary>Preserving wrap (CSS pre-wrap paragraph): spaces and tabs
+    /// stay in the text; breaks happen only before words, so break-point
+    /// whitespace hangs at the end of the previous line.</summary>
+    private static IEnumerable<string> WrapPreserved(string paragraph, float width)
+    {
+        var builder = new StringBuilder();
+        bool hasInk = false;
+        int index = 0;
+        while (index < paragraph.Length)
+        {
+            int start = index;
+            bool isSpace = paragraph[index] is ' ' or '\t';
+            while (index < paragraph.Length
+                && (paragraph[index] is ' ' or '\t') == isSpace)
+                index++;
+            string token = paragraph[start..index];
+            if (isSpace)
+            {
+                builder.Append(token);
+                continue;
+            }
+            string candidate = builder.ToString() + token;
+            if (!hasInk || MeasureLine(candidate) <= width)
+            {
+                builder.Append(token);
+                hasInk = true;
+                continue;
+            }
+            yield return builder.ToString();
+            builder.Clear();
+            builder.Append(token);
+        }
+        if (builder.Length > 0)
+            yield return builder.ToString();
     }
 }

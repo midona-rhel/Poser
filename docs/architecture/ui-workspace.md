@@ -36,16 +36,22 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
   text run.
 - Text: `Crystarium.Text`/`TextAt`/`MeasureText`/`TruncateText` with a
   `TextStyle` (token size, weight, family, theme color, opacity-based
-  disabled) is the ONE text renderer. Width behavior is a typed
-  `TextConstraint`: `Intrinsic` carries no width, `Truncate(width)`
-  requires one, `Wrap(width, lineHeight?)` owns its optional CSS
-  line-height; non-positive dimensions are rejected. Truncation backs
-  off whole grapheme clusters, guarantees the result fits, and returns
-  empty when even the ellipsis cannot fit. Wrapping is CSS-compatible:
-  explicit newlines break, space runs collapse, an over-wide word
-  overflows (never hard-breaks), the fractional line advance accumulates
-  unrounded, and each line half-leading-centers in its line box.
-  Measurement and rendering must share one resolved style value.
+  disabled) is the ONE text renderer. Input is NFC-normalized for
+  presentation only. Width behavior is a typed `TextConstraint`:
+  `Intrinsic` carries no width, `Truncate(width)` requires one,
+  `Wrap(width, lineHeight?, whitespace?)` owns its optional CSS
+  line-height and `TextWhitespace` policy (Normal / PreLine / PreWrap);
+  non-positive dimensions are rejected. A constrained inline run
+  occupies its constraint width in layout so siblings flow from the box
+  edge. Truncation backs off whole grapheme clusters and the renderer
+  CLIPS to the box like `overflow: hidden` — a narrower-than-ellipsis
+  box shows a clipped ellipsis, never a hidden run. Wrapping never
+  hard-breaks an over-wide word, accumulates the fractional line
+  advance unrounded, half-leading-centers each line, and expands
+  preserved tabs to 8-space stops under PreWrap. CJK falls back to the
+  Windows default Japanese UI font merged through Dalamud's
+  `AttachWindowsDefaultFont`. Measurement and rendering must share one
+  resolved style value.
 - UI foundation: the active `Theme` value owns colors, typography, metrics,
   radii, shadows, motion, and optical corrections together; a theme change
   installs one complete replacement value rather than mutating tokens.
