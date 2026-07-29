@@ -126,7 +126,7 @@ public static partial class Crystarium
                 center - new Vector2(iconSize * 0.5f),
                 center + new Vector2(iconSize * 0.5f),
                 TablerIcon.X,
-                ColorEx.ApplyAlpha(ActiveTheme.SurfaceSunken with { W = 1f }));
+                ActiveTheme.SurfaceSunken with { W = 1f });
             ImGui.SetCursorScreenPos(cursorAfterInput);
 
             if (clearHovered)

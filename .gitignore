@@ -67,3 +67,5 @@ CLAUDE.md
 /tools/ui-conformance/__pycache__/
 /docs/validation/**/*.png
 /PosingCore/Data/GameData/
+tools/ui-conformance/icon-fixtures.generated.js
+tools/ui-conformance/icon-names.generated.txt

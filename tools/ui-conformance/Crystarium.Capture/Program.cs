@@ -23,6 +23,15 @@ internal static class Program
             return Measure(float.Parse(
                 args[1], System.Globalization.CultureInfo.InvariantCulture));
 
+        if (args.Length == 1 && args[0] == "--icons")
+        {
+            // Ordered shipped-icon names; run.ps1 asserts the generated
+            // reference renders exactly this list in this order.
+            foreach (var name in Poser.UI.Tabler.ShippedNames())
+                Console.WriteLine(name);
+            return 0;
+        }
+
         if (args.Length == 1 && args[0] == "--fonts")
         {
             // The exact font files this machine resolves — base faces

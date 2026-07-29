@@ -64,10 +64,17 @@ if ($ListCatalog) {
     return
 }
 
+# Icon fixtures are generated from the shipped source registry so the
+# reference can never drift from what Poser.UI actually ships.
+python (Join-Path $toolRoot "generate-icon-fixtures.py")
+if ($LASTEXITCODE -ne 0) { throw "Icon fixture generation failed." }
+$generatedJs = Join-Path $toolRoot "icon-fixtures.generated.js"
+
 $variantPattern = "(?m)^\s{6}'([^']+)':\s*\{"
 $variantNames = @(
     [regex]::Matches(
-        (Get-Content -Raw -LiteralPath $html),
+        (Get-Content -Raw -LiteralPath $html) + "`n" +
+        (Get-Content -Raw -LiteralPath $generatedJs),
         $variantPattern) |
         ForEach-Object { $_.Groups[1].Value })
 $catalogNames = @($catalog.Name | Sort-Object)
@@ -99,6 +106,7 @@ if (!(Test-Path -LiteralPath $Browser -PathType Leaf)) {
 
 $sources = @(
     "tools\ui-conformance\picto-reference.html",
+    "tools\ui-conformance\icon-fixtures.generated.js",
     "Poser.UI\Icons\TablerSvgSources.cs",
     "Poser.UI\Icons\PoserIconSources.cs",
     "..\Picto\src\shared\styles\tokens.css",

@@ -339,8 +339,9 @@ public static partial class Crystarium
                 float rowAlpha = item.Disabled ? Crystarium.ActiveTheme.Chrome.DisabledOpacity : 1f;
                 var text = item.Danger ? Crystarium.ActiveTheme.Chrome.Danger : Crystarium.ActiveTheme.Chrome.Text;
                 text.W *= rowAlpha;
-                var iconTint = ColorEx.ApplyAlpha(
-                    text with { W = text.W * (hovered ? 1f : 0.8f) });
+                // Raw tint: the canonical icon path applies the global
+                // ImGui alpha exactly once inside the SVG renderer.
+                var iconTint = text with { W = text.W * (hovered ? 1f : 0.8f) };
 
                 ImGui.SetCursorScreenPos(new Vector2(
                     rowMin.X + Crystarium.ActiveTheme.Floating.MenuRowPadding * s,

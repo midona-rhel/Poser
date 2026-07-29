@@ -130,8 +130,11 @@ internal static class SvgRenderer
         }
         if (roundJoins && points.Count >= 3)
         {
+            // A closed path's vertex 0 is a corner too — the closing
+            // segment meets the first there, so it rounds like the rest.
+            int first = closed ? 0 : 1;
             int last = closed ? points.Count : points.Count - 1;
-            for (int i = 1; i < last; i++)
+            for (int i = first; i < last; i++)
             {
                 var previous = points[(i - 1 + points.Count) % points.Count];
                 var current = points[i % points.Count];

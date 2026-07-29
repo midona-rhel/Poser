@@ -132,7 +132,7 @@ public static partial class Crystarium
         {
             IconIn(
                 iconPos, iconPos + new Vector2(iconSize), props.Icon,
-                ColorEx.ApplyAlpha(iconTint));
+                iconTint);
         }
         x += iconSize + Crystarium.ActiveTheme.Spacing.Three * scale;
 

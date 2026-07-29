@@ -66,6 +66,18 @@ if (Compare-Object ($all | Sort-Object) ($candidateCatalog | Sort-Object)) {
     throw "Picto reference and Crystarium candidate catalogs disagree."
 }
 
+# The icon reference is generated from the shipped registry; assert the
+# ordered name lists agree so neither side can silently drift.
+python (Join-Path $toolRoot "generate-icon-fixtures.py")
+if ($LASTEXITCODE -ne 0) { throw "Icon fixture generation failed." }
+$referenceIconNames = @(Get-Content -LiteralPath (
+    Join-Path $toolRoot "icon-names.generated.txt"))
+$candidateIconNames = @(& $exe --icons)
+if ($LASTEXITCODE -ne 0) { throw "Candidate icon name query failed." }
+if (Compare-Object $referenceIconNames $candidateIconNames -SyncWindow 0) {
+    throw "Generated icon reference and Tabler.ShippedNames disagree in content or order."
+}
+
 # The candidate host reports the exact font files this machine's
 # registry resolves — base faces plus the shared font-link CJK fallback
 # — so BOTH manifests hash real resolutions, never an assumed list.
