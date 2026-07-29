@@ -17,6 +17,7 @@ namespace Poser.UI;
 public class SettingsWindow : Window
 {
     private SettingsViewModel _vm = new();
+    private bool _saving;
 
     public SettingsWindow()
         : base($"Settings###{PluginConstants.PluginName}_settings",
@@ -26,7 +27,19 @@ public class SettingsWindow : Window
     {
     }
 
-    public override void OnOpen() => LoadFromConfig();
+    public override void OnOpen()
+    {
+        _saving = false;
+        LoadFromConfig();
+    }
+
+    public override void OnClose()
+    {
+        if (!_saving)
+            ThemeSelection.Apply(
+                ConfigurationService.Instance.Config.UI.Theme);
+        _saving = false;
+    }
 
     public override void PreDraw()
     {
@@ -75,6 +88,7 @@ public class SettingsWindow : Window
 
             NsfwBones = c.Display.ShowNsfwBones,
             AnonymousMode = c.Display.AnonymousMode,
+            Theme = c.UI.Theme,
             AccentIndex = c.UI.AccentIndex,
 
             SidebarDock = (int)c.UI.SidebarDock,
@@ -85,6 +99,7 @@ public class SettingsWindow : Window
             OnSave = SaveToConfig,
             OnCancel = () => IsOpen = false,
             OnClose = () => IsOpen = false,
+            OnThemePreview = ThemeSelection.Apply,
         };
         _vm.OnOpenRepository = () =>
             Process.Start(new ProcessStartInfo("https://github.com/midona-rhel/Poser") { UseShellExecute = true });
@@ -115,6 +130,7 @@ public class SettingsWindow : Window
 
         c.Display.ShowNsfwBones = _vm.NsfwBones;
         c.Display.AnonymousMode = _vm.AnonymousMode;
+        c.UI.Theme = _vm.Theme;
         c.UI.AccentIndex = _vm.AccentIndex;
 
         c.UI.SidebarDock = (PanelDock)_vm.SidebarDock;
@@ -124,6 +140,8 @@ public class SettingsWindow : Window
         foreach (var (action, binding) in _vm.Keybinds)
             c.UI.Keybinds[action] = binding;
 
+        _saving = true;
+        ThemeSelection.Apply(c.UI.Theme);
         svc.ApplyChange();
         IsOpen = false;
     }

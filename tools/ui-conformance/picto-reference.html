@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <link rel="stylesheet" href="../../../Picto/src/shared/styles/tokens.css">
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--color-bg-app);
+      color: var(--color-text-primary);
+      font-family: var(--font-family);
+      font-size: 13px;
+    }
+    #stage {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      padding: 24px;
+    }
+    button, input { margin: 0; }
+    .row-demo { width: 272px; --sidebar-row-height: 26px; --row-inset: 1px; }
+    .property-demo { width: 272px; }
+    .section-demo { width: 272px; }
+    .tooltip-shell {
+      display: inline-flex;
+      padding: 4px 6px;
+      border-radius: 4px;
+      background: var(--glass-bg);
+      border: 1px solid var(--color-border-secondary);
+      box-shadow: 0 2px 8px rgba(0,0,0,.3);
+      backdrop-filter: blur(16px);
+    }
+    .dropdown-demo {
+      position: relative;
+      display: inline-flex;
+      width: max-content;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .dropdown-demo .drop {
+      position: relative;
+      width: 100%;
+    }
+    .modal-demo { height: 220px; }
+    .menu-demo { position: relative !important; left: auto !important; top: auto !important; }
+    .palette-demo { margin: 0 !important; }
+    .selector-icon {
+      width: 20px; height: 20px; display: inline-flex;
+      align-items: center; justify-content: center; opacity: .5;
+    }
+    svg { display: block; }
+  </style>
+</head>
+<body>
+  <main id="stage"></main>
+  <script>
+    const root = '../../../Picto/src/';
+    const variants = {
+      'action-button': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn">Apply changes</button>',
+      },
+      'primary-button': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn btnPrimary">Apply changes</button>',
+      },
+      'icon-button': {
+        css: 'shared/styles/iconButton.module.css',
+        html: '<button class="iconBtn" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V20h-3v-.08a1.7 1.7 0 0 0-1.03-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 14.7a1.7 1.7 0 0 0-1.56-1.03H5v-3h.44A1.7 1.7 0 0 0 7 9.64a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.12-2.12.06.06A1.7 1.7 0 0 0 10.66 6a1.7 1.7 0 0 0 1.03-1.56V4h3v.44A1.7 1.7 0 0 0 15.72 6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.12 2.12-.06.06A1.7 1.7 0 0 0 19.38 9.66a1.7 1.7 0 0 0 1.56 1.03H21v3h-.06A1.7 1.7 0 0 0 19.4 15z"/></svg></button>',
+      },
+      'icon-button-active': {
+        css: 'shared/styles/iconButton.module.css',
+        html: '<button class="iconBtn iconBtnActive" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V20h-3v-.08a1.7 1.7 0 0 0-1.03-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 14.7a1.7 1.7 0 0 0-1.56-1.03H5v-3h.44A1.7 1.7 0 0 0 7 9.64a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.12-2.12.06.06A1.7 1.7 0 0 0 10.66 6a1.7 1.7 0 0 0 1.03-1.56V4h3v.44A1.7 1.7 0 0 0 15.72 6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.12 2.12-.06.06A1.7 1.7 0 0 0 19.38 9.66a1.7 1.7 0 0 0 1.56 1.03H21v3h-.06A1.7 1.7 0 0 0 19.4 15z"/></svg></button>',
+      },
+      'switch-off': {
+        css: 'shared/ui/ToggleSwitch/ToggleSwitch.module.css',
+        html: '<span class="toggle"><span class="track"></span><span class="knob"></span></span>',
+      },
+      'switch-on': {
+        css: 'shared/ui/ToggleSwitch/ToggleSwitch.module.css',
+        html: '<span class="toggle"><span class="track trackOn"></span><span class="knob knobOn"></span></span>',
+      },
+      'text-input': {
+        css: 'shared/ui/GlassInput/GlassInput.module.css',
+        html: '<input class="input" style="width:272px" value="Filter scene…" readonly>',
+      },
+      'search-input': {
+        css: 'shared/ui/GlassInput/GlassInput.module.css',
+        html: '<div class="searchWrap" style="width:272px"><svg class="searchIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="searchInput" value="Search" readonly></div>',
+      },
+      'dropdown-closed': {
+        css: 'shared/ui/CmSelect/CmSelect.module.css',
+        html: '<button class="btn"><span class="btnLabel">Date Added<span class="sizer" aria-hidden="true">Date Added</span><span class="sizer" aria-hidden="true">Date Created</span><span class="sizer" aria-hidden="true">Date Modified</span><span class="sizer" aria-hidden="true">Name</span><span class="sizer" aria-hidden="true">Rating</span><span class="sizer" aria-hidden="true">File Size</span><span class="sizer" aria-hidden="true">Duration</span></span><span class="btnChevron"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m8 9 4-4 4 4M16 15l-4 4-4-4"/></svg></span></button>',
+      },
+      'dropdown-open': {
+        css: 'shared/ui/CmSelect/CmSelect.module.css',
+        html: '<div class="dropdown-demo"><button class="btn"><span class="btnLabel">Date Added<span class="sizer" aria-hidden="true">Date Added</span><span class="sizer" aria-hidden="true">Date Created</span><span class="sizer" aria-hidden="true">Date Modified</span><span class="sizer" aria-hidden="true">Name</span><span class="sizer" aria-hidden="true">Rating</span><span class="sizer" aria-hidden="true">File Size</span><span class="sizer" aria-hidden="true">Duration</span></span><span class="btnChevron"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m8 9 4-4 4 4M16 15l-4 4-4-4"/></svg></span></button><div class="drop"><button class="opt optActive"><span class="optLabel">Date Added</span></button><button class="opt"><span class="optLabel">Date Created</span></button><button class="opt"><span class="optLabel">Date Modified</span></button><button class="opt"><span class="optLabel">Name</span></button><button class="opt"><span class="optLabel">Rating</span></button><button class="opt"><span class="optLabel">File Size</span></button><button class="opt"><span class="optLabel">Duration</span></button></div></div>',
+      },
+      'color-palette': {
+        css: 'shared/ui/ColorPalette/ColorPalette.module.css',
+        html: '<div class="palette palette-demo"><span class="swatchWrap"><span class="swatch" style="background:#3297ff"></span></span><span class="swatchWrap"><span class="swatch" style="background:#9b7cff"></span></span><span class="swatchWrap"><span class="swatch" style="background:#51cf66"></span></span><span class="swatchWrap"><span class="swatch" style="background:#ff6b6b"></span></span></div>',
+      },
+      'sidebar-row': {
+        css: 'shared/ui/SidebarRow/SidebarRow.module.css',
+        html: '<div class="row row-demo"><span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M5 21a7 7 0 0 1 14 0"/></svg></span><span class="label">Midona Rhel</span></div>',
+      },
+      'sidebar-row-selected': {
+        css: 'shared/ui/SidebarRow/SidebarRow.module.css',
+        html: '<div class="row row-demo selected"><span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M5 21a7 7 0 0 1 14 0"/></svg></span><span class="label">Midona Rhel</span></div>',
+      },
+      'property-row': {
+        css: 'shared/ui/PropertyRow/PropertyRow.module.css',
+        html: '<div class="row property-demo"><span class="label">Opacity</span><span class="value valueMono">1.000</span></div>',
+      },
+      'section': {
+        css: 'shared/ui/InspectorSection/InspectorSection.module.css',
+        html: '<section class="section section-demo"><div class="header"><span class="title">GENERAL</span><span class="chevron"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div></section>',
+      },
+      'tooltip': {
+        css: 'shared/ui/KbdTooltip/KbdTooltip.module.css',
+        html: '<div class="tooltip-shell"><span class="content">Undo <span class="kbd">Ctrl</span><span class="kbd">Z</span></span></div>',
+      },
+      'context-menu': {
+        css: 'shared/ui/ContextMenu/ContextMenu.module.css',
+        html: '<div class="menu menu-demo"><div class="items"><div class="item focused"><span class="iconSlot">◎</span><span class="label">Set game target</span></div><div class="item"><span class="iconSlot">◉</span><span class="label">Hide</span></div><div class="item"><span class="iconSlot">✎</span><span class="label">Rename…</span></div><div class="separator"></div><div class="item danger"><span class="iconSlot">×</span><span class="label">Despawn</span></div></div></div>',
+      },
+      'modal': {
+        css: [
+          'shared/ui/GlassModal/GlassModal.module.css',
+          'shared/styles/actionButton.module.css',
+        ],
+        html: '<div class="backdrop"><section class="panel sm modal-demo"><header class="header"><span class="title">Import pose</span><button class="closeBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button></header><div class="body">Apply heroic-stand.pose to Midona Rhel?</div><footer class="footer"><button class="btn">Cancel</button><button class="btn btnPrimary">Import</button></footer></section></div>',
+      },
+    };
+    const params = new URLSearchParams(location.search);
+    const theme = params.get('theme') || 'dark';
+    const light = theme === 'light' || theme === 'lightgray';
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.mantineColorScheme =
+      light ? 'light' : 'dark';
+    document.documentElement.style.colorScheme =
+      light ? 'light' : 'dark';
+    const name = params.get('component') || 'action-button';
+    const entry = variants[name];
+    if (!entry) throw new Error(`Unknown component: ${name}`);
+    const styles = Array.isArray(entry.css) ? entry.css : [entry.css];
+    let loaded = 0;
+    for (const source of styles) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = root + source;
+      link.onload = () => {
+        if (++loaded === styles.length)
+          document.documentElement.dataset.ready = 'true';
+      };
+      document.head.appendChild(link);
+    }
+    document.getElementById('stage').innerHTML = entry.html;
+  </script>
+</body>
+</html>

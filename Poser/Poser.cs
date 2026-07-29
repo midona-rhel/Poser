@@ -62,7 +62,9 @@ public class Poser : IDalamudPlugin
             chatGui);
 
         // Initialize configuration service (sets static Instance, must be before UI)
-        _ = _serviceProvider.GetRequiredService<ConfigurationService>();
+        var configuration =
+            _serviceProvider.GetRequiredService<ConfigurationService>();
+        ThemeSelection.Apply(configuration.Config.UI.Theme);
 
         // Activate the clean scene owner before constructing presentation.
         // Singleton registration is lazy: without resolving this service its

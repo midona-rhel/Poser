@@ -91,7 +91,8 @@ public static partial class Crystarium
         string id,
         Vector4 color,
         bool active,
-        ControlStyle style = default)
+        ControlStyle style = default,
+        string? help = null)
     {
         float scale = ImGuiHelpers.GlobalScale;
         float side = ControlSizing.Height(
@@ -120,6 +121,8 @@ public static partial class Crystarium
         dl.AddCircle(center, radius - 0.5f * scale,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.PickerBorder)), 64, 1f * scale);
 
+        if (!string.IsNullOrEmpty(help) && hit.Hovered)
+            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
         return hit.Clicked;
     }
 }

@@ -51,6 +51,7 @@ public sealed class UIManager : IUIManager
         _windows = windows;
 
         _windows.Main.OnSettingsRequested += ToggleSettingsWindow;
+        _configService.OnConfigurationChanged += ApplyConfiguredTheme;
 
         _pluginInterface.UiBuilder.Draw += DrawUI;
         _pluginInterface.UiBuilder.OpenMainUi += ToggleMainWindow;
@@ -188,11 +189,15 @@ public sealed class UIManager : IUIManager
     private void ToggleSettingsWindow()
         => _windows.Settings.IsOpen = !_windows.Settings.IsOpen;
 
+    private void ApplyConfiguredTheme() =>
+        ThemeSelection.Apply(_configService.Config.UI.Theme);
+
     public void Dispose()
     {
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
 
         _windows.Main.OnSettingsRequested -= ToggleSettingsWindow;
+        _configService.OnConfigurationChanged -= ApplyConfiguredTheme;
 
         _pluginInterface.UiBuilder.Draw -= DrawUI;
         _pluginInterface.UiBuilder.OpenMainUi -= ToggleMainWindow;

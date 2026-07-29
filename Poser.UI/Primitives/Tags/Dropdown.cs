@@ -40,9 +40,23 @@ public static partial class Crystarium
         float gap = Crystarium.ActiveTheme.Spacing.Three * scale;
         float chevronSlot = Crystarium.ActiveTheme.Controls.SwitchHeight * scale;
 
+        // CmSelect's base contract is intrinsic sizing: the widest option
+        // determines the label span. Fixed and Fill may override that width,
+        // but Content/Unspecified must never inherit the surrounding region.
+        var fontHandle = FontRegistry.Resolve(
+            FontFamily.Default, Crystarium.ActiveTheme.Typography.LabelSize);
+        bool fontPushed = fontHandle is { Available: true };
+        if (fontPushed) fontHandle!.Push();
+        float widestLabel = 0f;
+        foreach (string item in items)
+            widestLabel = MathF.Max(
+                widestLabel, ImGui.CalcTextSize(item).X);
+        float intrinsicWidth =
+            padLeft + widestLabel + gap + chevronSlot + padRight;
+
         float availableWidth = ImGui.GetContentRegionAvail().X / scale;
         float totalWidth = ControlSizing.Width(
-            style.Width, availableWidth, availableWidth) * scale;
+            style.Width, intrinsicWidth / scale, availableWidth) * scale;
         float minWidth = padLeft + gap + chevronSlot + padRight + 20f * scale;
         if (totalWidth < minWidth) totalWidth = minWidth;
 
@@ -71,12 +85,6 @@ public static partial class Crystarium
                 ImGui.ColorConvertFloat4ToU32(borderColor),
                 System.MathF.Max(0f, rounding - bi), ImDrawFlags.None, borderWidth);
         }
-
-        // Label at 12px via FontRegistry (CSS-px semantics)
-        var fontHandle = FontRegistry.Resolve(
-            FontFamily.Default, Crystarium.ActiveTheme.Typography.LabelSize);
-        bool fontPushed = fontHandle is { Available: true };
-        if (fontPushed) fontHandle!.Push();
 
         string currentText = previewText ??
             ((selected >= 0 && selected < items.Length) ? items[selected] : "");

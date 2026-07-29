@@ -58,23 +58,23 @@ public readonly record struct Theme
     /// <summary>The accepted Picto-derived dark foundation.</summary>
     public static Theme PictoDark => new()
     {
-        Surface = new(0.10f, 0.10f, 0.12f, 1f),
-        SurfaceRaised = new(0.14f, 0.14f, 0.17f, 1f),
-        SurfaceSunken = new(0.07f, 0.07f, 0.09f, 1f),
+        Surface = Rgb(24, 25, 27),
+        SurfaceRaised = Rgb(36, 37, 40),
+        SurfaceSunken = Rgb(42, 42, 46),
         Overlay = new(0.00f, 0.00f, 0.00f, 0.50f),
-        Text = new(0.95f, 0.95f, 0.96f, 1f),
-        TextDim = new(0.65f, 0.66f, 0.70f, 1f),
-        TextMuted = new(0.45f, 0.46f, 0.50f, 1f),
-        TextInverse = new(0.05f, 0.05f, 0.06f, 1f),
+        Text = new(1f, 1f, 1f, 1f),
+        TextDim = new(1f, 1f, 1f, 0.72f),
+        TextMuted = new(1f, 1f, 1f, 0.50f),
+        TextInverse = new(0f, 0f, 0f, 1f),
         FormLabel = new(1f, 1f, 1f, 0.50f),
         FormHint = new(1f, 1f, 1f, 0.40f),
         FormValue = new(1f, 1f, 1f, 0.90f),
         FormSeparator = new(1f, 1f, 1f, 0.08f),
-        Border = new(0.25f, 0.25f, 0.30f, 1f),
-        BorderStrong = new(0.45f, 0.45f, 0.50f, 1f),
-        Accent = new(0.40f, 0.60f, 1.00f, 1f),
-        AccentHover = new(0.50f, 0.70f, 1.00f, 1f),
-        AccentActive = new(0.30f, 0.50f, 0.95f, 1f),
+        Border = new(1f, 1f, 1f, 0.08f),
+        BorderStrong = new(1f, 1f, 1f, 0.14f),
+        Accent = Rgb(50, 151, 255),
+        AccentHover = Rgba(50, 151, 255, 0.60f),
+        AccentActive = Rgba(50, 151, 255, 0.80f),
         Success = new(0.30f, 0.80f, 0.40f, 1f),
         Warning = new(1.00f, 0.70f, 0.20f, 1f),
         Danger = new(0.90f, 0.30f, 0.30f, 1f),
@@ -302,7 +302,159 @@ public readonly record struct Theme
         },
     };
 
+    public static Theme PictoBlue => DarkSurface(
+        PictoDark,
+        Rgb(15, 23, 50),
+        Rgb(23, 31, 58),
+        Rgb(28, 36, 65),
+        wideShadow: true);
+
+    public static Theme PictoPurple => DarkSurface(
+        PictoDark,
+        Rgb(30, 21, 38),
+        Rgb(38, 29, 46),
+        Rgb(43, 34, 53),
+        wideShadow: true);
+
+    public static Theme PictoGray => DarkSurface(
+        PictoDark,
+        Rgb(50, 50, 54),
+        Rgb(58, 58, 62),
+        Rgb(63, 63, 69),
+        wideShadow: true);
+
+    public static Theme PictoLight => LightSurface(
+        PictoDark,
+        Rgb(245, 245, 245),
+        Rgb(240, 240, 240),
+        Rgb(235, 237, 239),
+        new(0f, 0f, 0f, 0.12f),
+        new(0f, 0f, 0f, 0.06f));
+
+    public static Theme PictoLightGray => LightSurface(
+        PictoLight,
+        Rgb(200, 202, 205),
+        Rgb(208, 210, 213),
+        Rgb(194, 196, 199),
+        Rgb(171, 173, 175),
+        new(0f, 0f, 0f, 0.08f));
+
     public static Theme Default => PictoDark;
+
+    private static Theme DarkSurface(
+        Theme theme,
+        Vector4 surface,
+        Vector4 raised,
+        Vector4 sunken,
+        bool wideShadow)
+    {
+        return theme with
+        {
+            Surface = surface,
+            SurfaceRaised = raised,
+            SurfaceSunken = sunken,
+            Glass = theme.Glass with
+            {
+                Background = raised with { W = 0.92f },
+                BlurBackground = raised with { W = 0.92f },
+            },
+            Chrome = theme.Chrome with
+            {
+                PickerWell = surface,
+                SegmentSelected = sunken,
+            },
+            Shadows = wideShadow
+                ? theme.Shadows with
+                {
+                    Panel = new(
+                        0f, 8f, 32f,
+                        new(0f, 0f, 0f, 0.40f)),
+                }
+                : theme.Shadows,
+        };
+    }
+
+    private static Theme LightSurface(
+        Theme theme,
+        Vector4 surface,
+        Vector4 raised,
+        Vector4 sunken,
+        Vector4 borderStrong,
+        Vector4 border)
+    {
+        var primary = Rgb(37, 99, 235);
+        return theme with
+        {
+            Surface = surface,
+            SurfaceRaised = raised,
+            SurfaceSunken = sunken,
+            Text = new(0f, 0f, 0f, 1f),
+            TextDim = new(0f, 0f, 0f, 0.72f),
+            TextMuted = new(0f, 0f, 0f, 0.50f),
+            TextInverse = new(1f, 1f, 1f, 1f),
+            FormLabel = new(0f, 0f, 0f, 0.50f),
+            FormHint = new(0f, 0f, 0f, 0.40f),
+            FormValue = new(0f, 0f, 0f, 0.90f),
+            FormSeparator = border,
+            Border = border,
+            BorderStrong = borderStrong,
+            Accent = primary,
+            AccentHover = primary with { W = 0.60f },
+            AccentActive = primary with { W = 0.80f },
+            Glass = theme.Glass with
+            {
+                Background = raised with { W = 0.95f },
+                BlurBackground = raised with { W = 0.95f },
+                Luminosity = Vector4.Zero,
+            },
+            Chrome = theme.Chrome with
+            {
+                Text = new(0f, 0f, 0f, 1f),
+                TextMuted = new(0f, 0f, 0f, 0.60f),
+                ControlBorder = borderStrong,
+                ControlFill = new(0f, 0f, 0f, 0.05f),
+                ControlHover = new(0f, 0f, 0f, 0.08f),
+                WeakOverlay = border,
+                InputWell = new(0f, 0f, 0f, 0.20f),
+                Primary = primary,
+                PrimaryHover = primary with { W = 0.60f },
+                PrimaryFocus = primary with { W = 0.50f },
+                Checkmark = new(1f, 1f, 1f, 0.99f),
+                UnavailableFill = new(0f, 0f, 0f, 0.08f),
+                ColorWellBorder = borderStrong,
+                PickerWell = surface,
+                PickerBorder = new(0f, 0f, 0f, 0.18f),
+                ModalDim = new(0f, 0f, 0f, 0.35f),
+                ModalFooter = new(0f, 0f, 0f, 0.06f),
+                SegmentShadow = new(0f, 0f, 0f, 0.12f),
+                SegmentSelected = sunken,
+                SidebarSelected = primary with { W = 0.10f },
+                SidebarSelectedBorder = primary with { W = 0.30f },
+                SidebarHover = new(0f, 0f, 0f, 0.06f),
+                SwitchOff = new(0f, 0f, 0f, 0.20f),
+                SwitchShadow = new(0f, 0f, 0f, 0.08f),
+                SwitchHighlight = new(1f, 1f, 1f, 0.10f),
+                IconHover = new(0f, 0f, 0f, 0.80f),
+                IconOff = new(0f, 0f, 0f, 0.50f),
+            },
+            Palette = theme.Palette with
+            {
+                Primary = primary,
+            },
+            Shadows = theme.Shadows with
+            {
+                Panel = new(
+                    0f, 8f, 32f,
+                    new(0f, 0f, 0f, 0.15f)),
+            },
+        };
+    }
+
+    private static Vector4 Rgb(byte r, byte g, byte b) =>
+        new(r / 255f, g / 255f, b / 255f, 1f);
+
+    private static Vector4 Rgba(byte r, byte g, byte b, float a) =>
+        new(r / 255f, g / 255f, b / 255f, a);
 
     public readonly record struct SpacingTokens
     {

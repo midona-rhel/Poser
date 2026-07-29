@@ -34,6 +34,8 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
 - UI foundation: the active `Theme` value owns colors, typography, metrics,
   radii, shadows, motion, and optical corrections together; a theme change
   installs one complete replacement value rather than mutating tokens.
+  The persisted selector mirrors Picto's portable color themes; Auto resolves
+  the Windows app mode. Platform window-material themes are out of scope.
   Crystarium is the only product-facing API. Pages supply current state,
   callbacks, and typed `ControlStyle` width/height semantics through Page,
   ActionBar, Section, Form/FormRow and ScrollRegion; compositions resolve

@@ -62,5 +62,8 @@ CLAUDE.md
 /imgui.ini
 /tools/__pycache__/
 /tools/uiverify/
+/tools/ui-conformance/artifacts/
+/tools/ui-conformance/.scratch-*/
+/tools/ui-conformance/__pycache__/
 /docs/validation/**/*.png
 /PosingCore/Data/GameData/

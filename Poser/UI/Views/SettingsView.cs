@@ -2,6 +2,7 @@ using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using Poser.Config;
 
 namespace Poser.UI.Views;
 
@@ -21,6 +22,7 @@ public sealed class SettingsViewModel
         Crystarium.ActiveTheme.Palette.AxisY;
     public bool NsfwBones;
     public bool AnonymousMode = true;
+    public UITheme Theme = UITheme.Dark;
     public int AccentIndex;
 
     public bool OpenOnGPose = true;
@@ -52,6 +54,7 @@ public sealed class SettingsViewModel
     public Action? OnCancel;
     public Action? OnClose;
     public Action? OnOpenRepository;
+    public Action<UITheme>? OnThemePreview;
 }
 
 /// <summary>
@@ -78,6 +81,28 @@ public static class SettingsView
 
     private static readonly string[] DockOptions =
         ["Left", "Right", "Floating", "Hidden"];
+
+    private static readonly string[] ThemeLabels =
+    [
+        "Auto",
+        "Light",
+        "Light Gray",
+        "Gray",
+        "Dark",
+        "Blue",
+        "Purple",
+    ];
+
+    private static readonly Vector4[] ThemeSwatches =
+    [
+        new(0.50f, 0.50f, 0.50f, 1f),
+        new(1f, 1f, 1f, 1f),
+        new(200f / 255f, 202f / 255f, 205f / 255f, 1f),
+        new(68f / 255f, 68f / 255f, 68f / 255f, 1f),
+        new(1f / 255f, 1f / 255f, 1f / 255f, 1f),
+        new(40f / 255f, 53f / 255f, 110f / 255f, 1f),
+        new(70f / 255f, 50f / 255f, 117f / 255f, 1f),
+    ];
 
     public static void Draw(SettingsViewModel vm, Vector2 origin)
     {
@@ -300,11 +325,23 @@ public static class SettingsView
                 "Mask character names throughout the UI");
         });
         page.Section("THEME", form =>
+        {
+            form.Swatches(
+                "Theme",
+                ThemeSwatches,
+                (int)vm.Theme,
+                next =>
+                {
+                    vm.Theme = (UITheme)next;
+                    vm.OnThemePreview?.Invoke(vm.Theme);
+                },
+                ThemeLabels);
             form.Swatches(
                 "Accent",
                 Crystarium.ActiveTheme.Settings.AccentOptions,
                 vm.AccentIndex,
-                next => vm.AccentIndex = next));
+                next => vm.AccentIndex = next);
+        });
     }
 
     private static void DrawSkeleton(

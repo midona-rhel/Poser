@@ -8,9 +8,21 @@ namespace Poser.Config;
 /// </summary>
 public enum PanelDock { Left, Right, Floating, Hidden }
 
+public enum UITheme
+{
+    Auto,
+    Light,
+    LightGray,
+    Gray,
+    Dark,
+    Blue,
+    Purple,
+}
+
 public class UIConfiguration
 {
     // Settings -> Display/UI (Crystarium shell; the ImGuiCol entries below are legacy-window theming)
+    public UITheme Theme { get; set; } = UITheme.Dark;
     public int AccentIndex { get; set; } = 0;
     public PanelDock SidebarDock { get; set; } = PanelDock.Left;
     public PanelDock InspectorDock { get; set; } = PanelDock.Right;

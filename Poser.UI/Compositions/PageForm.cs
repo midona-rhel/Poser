@@ -603,6 +603,7 @@ public static partial class Crystarium
             IReadOnlyList<Vector4> colors,
             int selected,
             Action<int> onChange,
+            IReadOnlyList<string>? names = null,
             string? help = null)
         {
             string id = Id(label);
@@ -620,7 +621,10 @@ public static partial class Crystarium
                         $"{id}-{i}",
                         colors[i],
                         selected == i,
-                        ControlStyle.Square(side)))
+                        ControlStyle.Square(side),
+                        names != null && i < names.Count
+                            ? names[i]
+                            : null))
                     onChange(index);
             }
             _page.EndRow(row, id, help);
