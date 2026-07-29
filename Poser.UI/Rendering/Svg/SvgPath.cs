@@ -23,4 +23,6 @@ internal sealed class SvgPath
     public Vector4? Stroke;
     public float StrokeWidth = 1f;
     public bool EvenOddFill; // false = nonzero winding rule
+    public bool RoundCaps;   // stroke-linecap="round"
+    public bool RoundJoins;  // stroke-linejoin="round"
 }

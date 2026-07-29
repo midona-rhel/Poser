@@ -29,7 +29,15 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
   (Brio `GraphicalSidesSwapped`) swaps sided dots on the maps only.
 - Icons: `TablerSvgSources.cs` is generated — never hand-edit;
   `PoserIconSources` wins. Mirrored pairs reuse one glyph with `flipX`
-  (undo/redo). Fonts: CSS-size conversion lives in `FontRegistry` — sizes
+  (undo/redo). `Crystarium.Icon` (inline, LOGICAL CSS-pixel size — the
+  same semantics as text; scaling happens once inside the renderer) and
+  `Crystarium.IconIn` (screen-space box for composed controls) are the
+  ONE icon geometry path: min-side square fit, centering, whole-pixel
+  snap, tint composition (theme text × opacity × disabled opacity), the
+  optional stroke-width override (Tabler React `stroke` prop), and SVG
+  round caps/joins honored by the stroke renderer. Composed controls and
+  `BoxStyle.BackgroundSvg` route through it; no control carries its own
+  fit/center/tint recipe. Fonts: CSS-size conversion lives in `FontRegistry` — sizes
   are CSS-pixel semantics scaled per font file; there is NO glyph offset
   and no per-widget font padding: with that sizing ImGui's baseline
   already matches the browser line box, and any nudge would shift every

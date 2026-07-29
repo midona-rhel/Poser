@@ -33,6 +33,9 @@ public sealed class SvgDocument
         var inheritedFill   = new Stack<Vector4?>(); inheritedFill.Push(new Vector4(0f, 0f, 0f, 1f));
         var inheritedStroke = new Stack<Vector4?>(); inheritedStroke.Push(null);
         var inheritedStrokeWidth = new Stack<float>(); inheritedStrokeWidth.Push(1f);
+        // SVG defaults: stroke-linecap="butt", stroke-linejoin="miter".
+        var inheritedRoundCaps = new Stack<bool>(); inheritedRoundCaps.Push(false);
+        var inheritedRoundJoins = new Stack<bool>(); inheritedRoundJoins.Push(false);
 
         while (reader.Read())
         {
@@ -44,6 +47,8 @@ public sealed class SvgDocument
                     if (inheritedFill.Count > 1) inheritedFill.Pop();
                     if (inheritedStroke.Count > 1) inheritedStroke.Pop();
                     if (inheritedStrokeWidth.Count > 1) inheritedStrokeWidth.Pop();
+                    if (inheritedRoundCaps.Count > 1) inheritedRoundCaps.Pop();
+                    if (inheritedRoundJoins.Count > 1) inheritedRoundJoins.Pop();
                 }
                 continue;
             }
@@ -68,38 +73,48 @@ public sealed class SvgDocument
                         var rootSw = ParseFloatAttr(reader, "stroke-width", inheritedStrokeWidth.Peek());
                         inheritedStrokeWidth.Pop();
                         inheritedStrokeWidth.Push(rootSw);
+
+                        var rootCaps = ParseRoundAttr(reader, "stroke-linecap", inheritedRoundCaps.Peek());
+                        inheritedRoundCaps.Pop();
+                        inheritedRoundCaps.Push(rootCaps);
+
+                        var rootJoins = ParseRoundAttr(reader, "stroke-linejoin", inheritedRoundJoins.Peek());
+                        inheritedRoundJoins.Pop();
+                        inheritedRoundJoins.Push(rootJoins);
                     }
                     break;
                 case "g":
-                    ParseGroup(reader, transformStack, inheritedFill, inheritedStroke, inheritedStrokeWidth);
+                    ParseGroup(reader, transformStack, inheritedFill, inheritedStroke, inheritedStrokeWidth, inheritedRoundCaps, inheritedRoundJoins);
                     if (reader.IsEmptyElement)
                     {
                         if (transformStack.Count > 1) transformStack.Pop();
                         if (inheritedFill.Count > 1) inheritedFill.Pop();
                         if (inheritedStroke.Count > 1) inheritedStroke.Pop();
                         if (inheritedStrokeWidth.Count > 1) inheritedStrokeWidth.Pop();
+                        if (inheritedRoundCaps.Count > 1) inheritedRoundCaps.Pop();
+                        if (inheritedRoundJoins.Count > 1) inheritedRoundJoins.Pop();
                     }
                     break;
                 case "path":
-                    AddPath(doc, ParseAttr(reader, "d"), reader, transformStack, inheritedFill, inheritedStroke, inheritedStrokeWidth);
+                    AddPath(doc, ParseAttr(reader, "d"), reader, transformStack, inheritedFill, inheritedStroke, inheritedStrokeWidth, inheritedRoundCaps, inheritedRoundJoins);
                     break;
                 case "rect":
-                    AddRect(doc, reader, transformStack, inheritedFill, inheritedStroke, inheritedStrokeWidth);
+                    AddRect(doc, reader, transformStack, inheritedFill, inheritedStroke, inheritedStrokeWidth, inheritedRoundCaps, inheritedRoundJoins);
                     break;
                 case "circle":
-                    AddCircle(doc, reader, transformStack, inheritedFill, inheritedStroke, inheritedStrokeWidth);
+                    AddCircle(doc, reader, transformStack, inheritedFill, inheritedStroke, inheritedStrokeWidth, inheritedRoundCaps, inheritedRoundJoins);
                     break;
                 case "ellipse":
-                    AddEllipse(doc, reader, transformStack, inheritedFill, inheritedStroke, inheritedStrokeWidth);
+                    AddEllipse(doc, reader, transformStack, inheritedFill, inheritedStroke, inheritedStrokeWidth, inheritedRoundCaps, inheritedRoundJoins);
                     break;
                 case "line":
-                    AddLine(doc, reader, transformStack, inheritedFill, inheritedStroke, inheritedStrokeWidth);
+                    AddLine(doc, reader, transformStack, inheritedFill, inheritedStroke, inheritedStrokeWidth, inheritedRoundCaps, inheritedRoundJoins);
                     break;
                 case "polyline":
-                    AddPolyShape(doc, reader, transformStack, inheritedFill, inheritedStroke, inheritedStrokeWidth, false);
+                    AddPolyShape(doc, reader, transformStack, inheritedFill, inheritedStroke, inheritedStrokeWidth, inheritedRoundCaps, inheritedRoundJoins, false);
                     break;
                 case "polygon":
-                    AddPolyShape(doc, reader, transformStack, inheritedFill, inheritedStroke, inheritedStrokeWidth, true);
+                    AddPolyShape(doc, reader, transformStack, inheritedFill, inheritedStroke, inheritedStrokeWidth, inheritedRoundCaps, inheritedRoundJoins, true);
                     break;
             }
         }
@@ -120,8 +135,10 @@ public sealed class SvgDocument
 
     /// <summary>Render the document inside the rect [<paramref name="min"/>..<paramref name="max"/>],
     /// fitting the viewBox uniformly. <paramref name="tint"/> multiplies fill colors.
-    /// <paramref name="flipX"/> mirrors geometry inside the SVG viewBox.</summary>
-    public void Render(ImDrawListPtr drawList, Vector2 min, Vector2 max, Vector4? tint = null, bool flipX = false)
+    /// <paramref name="flipX"/> mirrors geometry inside the SVG viewBox.
+    /// <paramref name="strokeWidth"/> (viewBox units) replaces every path's own
+    /// stroke width, exactly like the Tabler React <c>stroke</c> prop.</summary>
+    public void Render(ImDrawListPtr drawList, Vector2 min, Vector2 max, Vector4? tint = null, bool flipX = false, float? strokeWidth = null)
     {
         var size = max - min;
         if (size.X <= 0f || size.Y <= 0f) return;
@@ -143,7 +160,7 @@ public sealed class SvgDocument
             return origin + new Vector2(localX * scale, (svgPt.Y - ViewBoxMin.Y) * scale);
         }
 
-        SvgRenderer.Render(drawList, Paths, ToScreen, scale, tint);
+        SvgRenderer.Render(drawList, Paths, ToScreen, scale, tint, strokeWidth);
     }
 
     // ---------- helpers ----------
@@ -175,7 +192,9 @@ public sealed class SvgDocument
         Stack<Matrix3x2> transformStack,
         Stack<Vector4?> fillStack,
         Stack<Vector4?> strokeStack,
-        Stack<float> strokeWidthStack)
+        Stack<float> strokeWidthStack,
+        Stack<bool> capsStack,
+        Stack<bool> joinsStack)
     {
         var tx = ParseTransform(ParseAttr(r, "transform"));
         transformStack.Push(transformStack.Peek() * tx);
@@ -188,13 +207,18 @@ public sealed class SvgDocument
 
         var sw = ParseFloatAttr(r, "stroke-width", strokeWidthStack.Peek());
         strokeWidthStack.Push(sw);
+
+        capsStack.Push(ParseRoundAttr(r, "stroke-linecap", capsStack.Peek()));
+        joinsStack.Push(ParseRoundAttr(r, "stroke-linejoin", joinsStack.Peek()));
     }
 
     private static void AddPath(SvgDocument doc, string d, XmlReader r,
         Stack<Matrix3x2> transformStack,
         Stack<Vector4?> fillStack,
         Stack<Vector4?> strokeStack,
-        Stack<float> strokeWidthStack)
+        Stack<float> strokeWidthStack,
+        Stack<bool> capsStack,
+        Stack<bool> joinsStack)
     {
         var subPaths = SvgPathParser.Parse(d);
         if (subPaths.Count == 0) return;
@@ -207,6 +231,8 @@ public sealed class SvgDocument
             Fill = ParseColorAttr(r, "fill", fillStack.Peek()),
             Stroke = ParseColorAttr(r, "stroke", strokeStack.Peek()),
             StrokeWidth = ParseFloatAttr(r, "stroke-width", strokeWidthStack.Peek()),
+            RoundCaps = ParseRoundAttr(r, "stroke-linecap", capsStack.Peek()),
+            RoundJoins = ParseRoundAttr(r, "stroke-linejoin", joinsStack.Peek()),
             EvenOddFill = ParseAttr(r, "fill-rule") == "evenodd",
         };
         path.SubPaths.AddRange(subPaths);
@@ -217,7 +243,9 @@ public sealed class SvgDocument
         Stack<Matrix3x2> transformStack,
         Stack<Vector4?> fillStack,
         Stack<Vector4?> strokeStack,
-        Stack<float> strokeWidthStack)
+        Stack<float> strokeWidthStack,
+        Stack<bool> capsStack,
+        Stack<bool> joinsStack)
     {
         float x = ParseFloatAttr(r, "x", 0f);
         float y = ParseFloatAttr(r, "y", 0f);
@@ -240,6 +268,8 @@ public sealed class SvgDocument
             Fill = ParseColorAttr(r, "fill", fillStack.Peek()),
             Stroke = ParseColorAttr(r, "stroke", strokeStack.Peek()),
             StrokeWidth = ParseFloatAttr(r, "stroke-width", strokeWidthStack.Peek()),
+            RoundCaps = ParseRoundAttr(r, "stroke-linecap", capsStack.Peek()),
+            RoundJoins = ParseRoundAttr(r, "stroke-linejoin", joinsStack.Peek()),
         };
         path.SubPaths.AddRange(subList);
         doc.Paths.Add(path);
@@ -249,30 +279,34 @@ public sealed class SvgDocument
         Stack<Matrix3x2> transformStack,
         Stack<Vector4?> fillStack,
         Stack<Vector4?> strokeStack,
-        Stack<float> strokeWidthStack)
+        Stack<float> strokeWidthStack,
+        Stack<bool> capsStack,
+        Stack<bool> joinsStack)
     {
         float cx = ParseFloatAttr(r, "cx", 0f);
         float cy = ParseFloatAttr(r, "cy", 0f);
         float radius = ParseFloatAttr(r, "r", 0f);
         if (radius <= 0f) return;
-        AddEllipseShape(doc, r, transformStack, fillStack, strokeStack, strokeWidthStack, cx, cy, radius, radius);
+        AddEllipseShape(doc, r, transformStack, fillStack, strokeStack, strokeWidthStack, capsStack, joinsStack, cx, cy, radius, radius);
     }
 
     private static void AddEllipse(SvgDocument doc, XmlReader r,
         Stack<Matrix3x2> transformStack,
         Stack<Vector4?> fillStack,
         Stack<Vector4?> strokeStack,
-        Stack<float> strokeWidthStack)
+        Stack<float> strokeWidthStack,
+        Stack<bool> capsStack,
+        Stack<bool> joinsStack)
     {
         float cx = ParseFloatAttr(r, "cx", 0f);
         float cy = ParseFloatAttr(r, "cy", 0f);
         float rx = ParseFloatAttr(r, "rx", 0f);
         float ry = ParseFloatAttr(r, "ry", 0f);
-        AddEllipseShape(doc, r, transformStack, fillStack, strokeStack, strokeWidthStack, cx, cy, rx, ry);
+        AddEllipseShape(doc, r, transformStack, fillStack, strokeStack, strokeWidthStack, capsStack, joinsStack, cx, cy, rx, ry);
     }
 
     private static void AddEllipseShape(SvgDocument doc, XmlReader r,
-        Stack<Matrix3x2> transformStack, Stack<Vector4?> fillStack, Stack<Vector4?> strokeStack, Stack<float> strokeWidthStack,
+        Stack<Matrix3x2> transformStack, Stack<Vector4?> fillStack, Stack<Vector4?> strokeStack, Stack<float> strokeWidthStack, Stack<bool> capsStack, Stack<bool> joinsStack,
         float cx, float cy, float rx, float ry)
     {
         const int segments = 64;
@@ -293,13 +327,15 @@ public sealed class SvgDocument
             Fill = ParseColorAttr(r, "fill", fillStack.Peek()),
             Stroke = ParseColorAttr(r, "stroke", strokeStack.Peek()),
             StrokeWidth = ParseFloatAttr(r, "stroke-width", strokeWidthStack.Peek()),
+            RoundCaps = ParseRoundAttr(r, "stroke-linecap", capsStack.Peek()),
+            RoundJoins = ParseRoundAttr(r, "stroke-linejoin", joinsStack.Peek()),
         };
         path.SubPaths.AddRange(subList);
         doc.Paths.Add(path);
     }
 
     private static void AddLine(SvgDocument doc, XmlReader r,
-        Stack<Matrix3x2> transformStack, Stack<Vector4?> fillStack, Stack<Vector4?> strokeStack, Stack<float> strokeWidthStack)
+        Stack<Matrix3x2> transformStack, Stack<Vector4?> fillStack, Stack<Vector4?> strokeStack, Stack<float> strokeWidthStack, Stack<bool> capsStack, Stack<bool> joinsStack)
     {
         float x1 = ParseFloatAttr(r, "x1", 0f);
         float y1 = ParseFloatAttr(r, "y1", 0f);
@@ -319,13 +355,15 @@ public sealed class SvgDocument
             Fill = null,
             Stroke = ParseColorAttr(r, "stroke", strokeStack.Peek()),
             StrokeWidth = ParseFloatAttr(r, "stroke-width", strokeWidthStack.Peek()),
+            RoundCaps = ParseRoundAttr(r, "stroke-linecap", capsStack.Peek()),
+            RoundJoins = ParseRoundAttr(r, "stroke-linejoin", joinsStack.Peek()),
         };
         path.SubPaths.AddRange(subList);
         doc.Paths.Add(path);
     }
 
     private static void AddPolyShape(SvgDocument doc, XmlReader r,
-        Stack<Matrix3x2> transformStack, Stack<Vector4?> fillStack, Stack<Vector4?> strokeStack, Stack<float> strokeWidthStack,
+        Stack<Matrix3x2> transformStack, Stack<Vector4?> fillStack, Stack<Vector4?> strokeStack, Stack<float> strokeWidthStack, Stack<bool> capsStack, Stack<bool> joinsStack,
         bool closed)
     {
         var pts = ParseAttr(r, "points");
@@ -350,6 +388,8 @@ public sealed class SvgDocument
             Fill = closed ? ParseColorAttr(r, "fill", fillStack.Peek()) : null,
             Stroke = ParseColorAttr(r, "stroke", strokeStack.Peek()),
             StrokeWidth = ParseFloatAttr(r, "stroke-width", strokeWidthStack.Peek()),
+            RoundCaps = ParseRoundAttr(r, "stroke-linecap", capsStack.Peek()),
+            RoundJoins = ParseRoundAttr(r, "stroke-linejoin", joinsStack.Peek()),
         };
         path.SubPaths.AddRange(subList);
         doc.Paths.Add(path);
@@ -381,6 +421,15 @@ public sealed class SvgDocument
         }
         if (i == 0) return fallback;
         return float.TryParse(s.AsSpan(0, i), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : fallback;
+    }
+
+    /// <summary>"round" toggles the flag on; any other explicit value
+    /// (butt, square, miter, bevel) toggles it off; absent inherits.</summary>
+    private static bool ParseRoundAttr(XmlReader r, string name, bool inherited)
+    {
+        var value = ParseAttr(r, name);
+        if (string.IsNullOrEmpty(value)) return inherited;
+        return value == "round";
     }
 
     private static Vector4? ParseColorAttr(XmlReader r, string name, Vector4? inherited)

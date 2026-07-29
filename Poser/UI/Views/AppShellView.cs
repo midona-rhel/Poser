@@ -626,9 +626,9 @@ public static class AppShellView
             x += 16f * s;
             ImGui.SetCursorScreenPos(new Vector2(x, cursor.Y + 5f * s));
             if (row.IconName != null)
-                Crystarium.Icon(row.IconName, 16f * s, ColorEx.ApplyAlpha(TextPrimary with { W = 0.85f }));
+                Crystarium.Icon(row.IconName, 16f, ColorEx.ApplyAlpha(TextPrimary with { W = 0.85f }));
             else
-                Crystarium.Icon(row.Icon, 16f * s, ColorEx.ApplyAlpha(TextPrimary with { W = 0.85f }));
+                Crystarium.Icon(row.Icon, 16f, ColorEx.ApplyAlpha(TextPrimary with { W = 0.85f }));
             x += 22f * s;
         }
         else

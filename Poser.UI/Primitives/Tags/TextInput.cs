@@ -122,8 +122,10 @@ public static partial class Crystarium
                 center, 7f * scale, circle, 20);
 
             float iconSize = 9f * scale;
-            ImGui.SetCursorScreenPos(center - new Vector2(iconSize * 0.5f));
-            Icon(TablerIcon.X, iconSize,
+            IconIn(
+                center - new Vector2(iconSize * 0.5f),
+                center + new Vector2(iconSize * 0.5f),
+                TablerIcon.X,
                 ColorEx.ApplyAlpha(ActiveTheme.SurfaceSunken with { W = 1f }));
             ImGui.SetCursorScreenPos(cursorAfterInput);
 

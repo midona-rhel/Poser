@@ -45,7 +45,7 @@ internal static class BoxRenderer
             DrawBackgroundImage(drawList, min, max, img, style.BackgroundImageFit ?? ImageFit.Cover, radius);
         }
 
-        // ---- Background SVG ----
+        // ---- Background SVG (canonical fit/center/snap geometry) ----
         if (style.BackgroundSvg is { } svg)
         {
             bool clipPushed = false;
@@ -54,7 +54,7 @@ internal static class BoxRenderer
                 drawList.PushClipRect(min, max, true);
                 clipPushed = true;
             }
-            svg.Render(drawList, min, max);
+            Crystarium.SvgBox(svg, min, max);
             if (clipPushed) drawList.PopClipRect();
         }
 

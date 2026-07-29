@@ -130,10 +130,9 @@ public static partial class Crystarium
         }
         else if (!props.HideIcon)
         {
-            var savedCursor = ImGui.GetCursorScreenPos();
-            ImGui.SetCursorScreenPos(iconPos);
-            Icon(props.Icon, iconSize, ColorEx.ApplyAlpha(iconTint));
-            ImGui.SetCursorScreenPos(savedCursor);
+            IconIn(
+                iconPos, iconPos + new Vector2(iconSize), props.Icon,
+                ColorEx.ApplyAlpha(iconTint));
         }
         x += iconSize + Crystarium.ActiveTheme.Spacing.Three * scale;
 

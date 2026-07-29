@@ -251,38 +251,21 @@ public static partial class Crystarium
 
     private static void DrawTablerIcon(TablerIcon icon, bool flipX)
     {
-        var doc = Tabler.Get(icon);
-        if (doc == null)
-            return;
         var bounds = ButtonContent;
-        float side = MathF.Min(
-            bounds.Max.X - bounds.Min.X,
-            bounds.Max.Y - bounds.Min.Y) * ActiveTheme.Controls.IconContentScale;
-        var min = bounds.Min + (bounds.Max - bounds.Min - new Vector2(side)) * 0.5f;
-        var max = min + new Vector2(side);
-        if (flipX)
-            (min.X, max.X) = (max.X, min.X);
-        var color = ActiveTheme.Text with { W = ActiveTheme.Text.W * bounds.Opacity };
-        doc.Render(ImGui.GetWindowDrawList(), min, max, color);
+        IconIn(
+            bounds.Min, bounds.Max, icon,
+            contentScale: ActiveTheme.Controls.IconContentScale,
+            opacity: bounds.Opacity,
+            flipX: flipX);
     }
 
     private static void DrawNamedIcon(string icon)
     {
         var bounds = ButtonContent;
-        float side = MathF.Min(
-            bounds.Max.X - bounds.Min.X,
-            bounds.Max.Y - bounds.Min.Y)
-            * ActiveTheme.Controls.IconContentScale;
-        ImGui.SetCursorScreenPos(
-            bounds.Min
-            + (bounds.Max - bounds.Min - new Vector2(side)) * 0.5f);
-        Icon(
-            icon,
-            side,
-            ActiveTheme.Text with
-            {
-                W = ActiveTheme.Text.W * bounds.Opacity,
-            });
+        IconIn(
+            bounds.Min, bounds.Max, icon,
+            contentScale: ActiveTheme.Controls.IconContentScale,
+            opacity: bounds.Opacity);
     }
 
     private static Vector2 MeasureLabel(string label, ControlStyle style)

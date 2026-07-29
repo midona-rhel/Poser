@@ -89,7 +89,7 @@ public class PoseRailPane
                 ImGui.SetCursorScreenPos(pmin + new Vector2(5f, 3.5f) * s);
                 Crystarium.Icon(
                     "link",
-                    11f * s,
+                    11f,
                     Crystarium.ActiveTheme.AccentHover);
                 Crystarium.TextAt(pmin + new Vector2(19f, 2f) * s, count, countStyle);
                 if (Crystarium.HoverHelp.HelpHovered(pmin, pmax))

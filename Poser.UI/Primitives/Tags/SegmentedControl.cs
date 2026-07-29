@@ -83,11 +83,10 @@ public static partial class Crystarium
                 var color = active || hovered
                     ? ActiveTheme.Text
                     : ActiveTheme.Text with { W = 0.72f };
-                if (disabled)
-                    color.W *= ActiveTheme.Chrome.DisabledOpacity;
-                ImGui.SetCursorScreenPos(
-                    min + (max - min - new Vector2(iconSize)) * 0.5f);
-                Icon(items[index], iconSize, ColorEx.ApplyAlpha(color));
+                var iconMin = min + (max - min - new Vector2(iconSize)) * 0.5f;
+                IconIn(
+                    iconMin, iconMin + new Vector2(iconSize), items[index],
+                    ColorEx.ApplyAlpha(color), disabled: disabled);
             });
 
     public static Vector2 MeasureSegmentedControl(

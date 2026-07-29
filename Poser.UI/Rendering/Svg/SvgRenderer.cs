@@ -15,7 +15,8 @@ internal static class SvgRenderer
         IReadOnlyList<SvgPath> paths,
         Func<Vector2, Vector2> svgToScreen,
         float scale,
-        Vector4? tint)
+        Vector4? tint,
+        float? strokeWidthOverride = null)
     {
         foreach (var path in paths)
         {
@@ -38,14 +39,20 @@ internal static class SvgRenderer
                         tint.HasValue ? Multiply(fill, tint.Value) : fill);
                 }
 
-                if (path.Stroke is { } stroke && path.StrokeWidth > 0f)
+                // strokeWidthOverride mirrors the Tabler React `stroke`
+                // prop: one value replacing every path's own width, in
+                // viewBox units.
+                float strokeWidth = strokeWidthOverride ?? path.StrokeWidth;
+                if (path.Stroke is { } stroke && strokeWidth > 0f)
                 {
                     DrawStroke(
                         drawList,
                         screenPoints,
                         tint.HasValue ? Multiply(stroke, tint.Value) : stroke,
-                        path.StrokeWidth * scale,
-                        subPath.Closed);
+                        strokeWidth * scale,
+                        subPath.Closed,
+                        path.RoundCaps,
+                        path.RoundJoins);
                 }
             }
         }
@@ -87,7 +94,9 @@ internal static class SvgRenderer
         List<Vector2> points,
         Vector4 color,
         float width,
-        bool closed)
+        bool closed,
+        bool roundCaps,
+        bool roundJoins)
     {
         var packed = ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(color));
         unsafe
@@ -101,6 +110,36 @@ internal static class SvgRenderer
                     packed,
                     closed ? ImDrawFlags.Closed : ImDrawFlags.None,
                     width);
+            }
+        }
+
+        // ImGui polylines have butt ends and miter-ish joins; SVG round
+        // caps/joins add a half-disc of ink at every open end and every
+        // significant corner. A filled circle of the stroke radius is
+        // exactly that ink. Shallow joins keep their circles inside the
+        // stroke, so only real corners get one.
+        if (!roundCaps && !roundJoins)
+            return;
+        float radius = width * 0.5f;
+        if (radius <= 0f)
+            return;
+        if (roundCaps && !closed)
+        {
+            drawList.AddCircleFilled(points[0], radius, packed);
+            drawList.AddCircleFilled(points[^1], radius, packed);
+        }
+        if (roundJoins && points.Count >= 3)
+        {
+            int last = closed ? points.Count : points.Count - 1;
+            for (int i = 1; i < last; i++)
+            {
+                var previous = points[(i - 1 + points.Count) % points.Count];
+                var current = points[i % points.Count];
+                var next = points[(i + 1) % points.Count];
+                var incoming = Vector2.Normalize(current - previous);
+                var outgoing = Vector2.Normalize(next - current);
+                if (Vector2.Dot(incoming, outgoing) < 0.94f)
+                    drawList.AddCircleFilled(current, radius, packed);
             }
         }
     }
