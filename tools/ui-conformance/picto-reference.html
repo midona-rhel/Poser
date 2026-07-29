@@ -286,11 +286,31 @@
         // Deterministic mid-flight of the 150ms ease hover transition:
         // the candidate hovers for exactly five 1/60s frames = linear
         // progress 5/9; cubic-bezier(.25,.1,.25,1) eases that to
-        // 0.852283, and Chromium interpolates rgba PREMULTIPLIED, so
-        // lerp(rgba(248,249,251,.05), rgba(255,255,255,.10), 0.852283)
-        // = the background below.
+        // 0.852283, and Chromium interpolates rgba PREMULTIPLIED. The
+        // endpoints are THEME values (.btn background and the hover
+        // --color-subtle-overlay), so the midpoint is computed after
+        // the stylesheet loads from the active theme's resolved colors
+        // — a baked literal is only correct for the themes sharing the
+        // dark fill pair.
         css: 'shared/styles/actionButton.module.css',
-        html: '<button class="btn" style="background: rgba(254.4418, 254.5215, 254.681, 0.092614)">Apply changes</button>',
+        html: '<button class="btn">Apply changes</button>',
+        postLayout() {
+          const btn = document.querySelector('.btn');
+          const parse = (c) => {
+            const m = c.match(/rgba?\(([^)]+)\)/)[1]
+              .split(',').map(Number);
+            return [m[0], m[1], m[2], m.length > 3 ? m[3] : 1];
+          };
+          const idle = parse(getComputedStyle(btn).backgroundColor);
+          btn.style.background = 'var(--color-subtle-overlay)';
+          const hover = parse(getComputedStyle(btn).backgroundColor);
+          const t = 0.852283;
+          const a = idle[3] + (hover[3] - idle[3]) * t;
+          const rgb = [0, 1, 2].map((i) =>
+            (idle[i] * idle[3] * (1 - t) + hover[i] * hover[3] * t) / a);
+          btn.style.background =
+            `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})`;
+        },
       },
       'icon-button': {
         css: 'shared/styles/iconButton.module.css',
@@ -381,8 +401,10 @@
       link.rel = 'stylesheet';
       link.href = root + source;
       link.onload = () => {
-        if (++loaded === styles.length)
+        if (++loaded === styles.length) {
+          if (entry.postLayout) entry.postLayout();
           document.documentElement.dataset.ready = 'true';
+        }
       };
       document.head.appendChild(link);
     }
