@@ -225,6 +225,13 @@
         css: 'shared/styles/actionButton.module.css',
         html: '<button class="btn" disabled>Apply changes</button>',
       },
+      'btn-disabled-unicode': {
+        // Disabled readability across scripts: Latin + CJK + combining
+        // mark + a glyph outside the candidate atlas (honest missing-
+        // glyph difference).
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn" disabled>Wait 待機 x̃ €</button>',
+      },
       'btn-primary': {
         css: 'shared/styles/actionButton.module.css',
         html: '<button class="btn btnPrimary">Apply changes</button>',

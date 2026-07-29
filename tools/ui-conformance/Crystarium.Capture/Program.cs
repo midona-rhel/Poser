@@ -94,21 +94,6 @@ internal static class Program
     private readonly record struct BatchEntry(
         string Name, string Output, float Scale, string ThemeName);
 
-    /// <summary>Capture-host <see cref="IGroupSurfaceBackend"/> over the
-    /// same D3D11 renderer the frames use, so group-composited chrome
-    /// captures exactly as it renders in game.</summary>
-    private sealed class CaptureGroupSurfaceBackend(Dx11Renderer renderer)
-        : IGroupSurfaceBackend
-    {
-        public unsafe nint CreateTexture(byte[] rgba, int width, int height)
-        {
-            fixed (byte* pixels = rgba)
-                return renderer.CreateTexture(pixels, width, height);
-        }
-
-        public void DestroyTexture(nint texture) =>
-            renderer.DestroyTexture(texture);
-    }
 
     private static unsafe int RunCaptures(IReadOnlyList<BatchEntry> entries)
     {
@@ -153,8 +138,6 @@ internal static class Program
             var rootIo = ImGui.GetIO();
             rootIo.IniFilename = null;
             Ui.UseTheme(ResolveTheme(entries[0].ThemeName));
-            Poser.UI.GroupSurface.Register(
-                new CaptureGroupSurfaceBackend(renderer));
             using var fonts = new StandaloneFontAtlas(renderer);
             var atlasClock = System.Diagnostics.Stopwatch.StartNew();
             FontRegistry.Register(fonts);
@@ -237,7 +220,6 @@ internal static class Program
         }
         finally
         {
-            Poser.UI.GroupSurface.Clear();
             FontRegistry.Dispose();
             ImGui.DestroyContext(rootContext);
         }

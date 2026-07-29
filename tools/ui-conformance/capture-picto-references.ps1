@@ -44,6 +44,7 @@ $catalog = @(
     @{ Name = "btn-secondary-hover"; Width = 320; Height = 80 },
     @{ Name = "btn-secondary-focus"; Width = 320; Height = 80 },
     @{ Name = "btn-secondary-disabled"; Width = 320; Height = 80 },
+    @{ Name = "btn-disabled-unicode"; Width = 320; Height = 80 },
     @{ Name = "btn-primary"; Width = 320; Height = 80 },
     @{ Name = "btn-primary-hover"; Width = 320; Height = 80 },
     @{ Name = "btn-primary-focus"; Width = 320; Height = 80 },

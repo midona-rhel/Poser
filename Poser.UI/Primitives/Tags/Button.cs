@@ -232,37 +232,40 @@ public static partial class Crystarium
         float eased = AdvanceHover(identity, hit.Hovered && !disabled);
         if (disabled)
         {
-            // .btn:disabled is CSS GROUP opacity: fill, border, glyph
-            // coverage, and their antialiasing flatten into ONE surface
-            // before 0.35 applies once. Sequential primitive fading
-            // cannot express that, so the surface is CPU-composed and
-            // drawn as a single textured quad. Without a registered
-            // backend (or atlas pixels), the nearest sequential
-            // approximation below still avoids overlapping draws.
-            if (!DrawDisabledGroup(
-                    draw, hit.ScreenMin, hit.ScreenMax, label, style,
-                    variant, fill, borderIdle, text, radius, borderPx, opacity))
-            {
-                var ring = FlattenOver(borderIdle, fill);
-                ring.W *= opacity;
-                var fillFaded = fill;
-                fillFaded.W *= opacity;
-                draw.AddRectFilled(
-                    hit.ScreenMin + new Vector2(borderPx),
-                    hit.ScreenMax - new Vector2(borderPx),
-                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(fillFaded)),
-                    MathF.Max(0f, radius - borderPx));
-                draw.AddRect(
-                    hit.ScreenMin + new Vector2(inset),
-                    hit.ScreenMax - new Vector2(inset),
-                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(ring)),
-                    MathF.Max(0f, radius - inset),
-                    ImDrawFlags.None,
-                    borderPx);
-                DrawButtonLabelClipped(
-                    draw, hit.ScreenMin, hit.ScreenMax, label, style,
-                    text with { W = text.W * opacity });
-            }
+            // .btn:disabled is CSS GROUP opacity — the element flattens
+            // before 0.35 applies once. ONE path reproduces it through
+            // the existing renderers: the chrome draws non-overlapping
+            // (fill inset to the border's inner edge, the ring carrying
+            // the analytically flattened border-over-fill color — exact
+            // for every backdrop), and the label draws through the
+            // canonical TextAt path with COMPENSATED color and alpha so
+            // that blending the glyphs over the faded fill lands on the
+            // group result. For translucent fills the compensation is
+            // exact for every backdrop and every glyph coverage; for an
+            // opaque fill (Primary) it is exact over the theme surface
+            // and bounded by 0.2275·|surface − backdrop| elsewhere,
+            // because affine over-blending cannot express a group over
+            // an unknown backdrop.
+            var ring = FlattenOver(borderIdle, fill);
+            ring.W *= opacity;
+            var fillFaded = fill;
+            fillFaded.W *= opacity;
+            draw.AddRectFilled(
+                hit.ScreenMin + new Vector2(borderPx),
+                hit.ScreenMax - new Vector2(borderPx),
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(fillFaded)),
+                MathF.Max(0f, radius - borderPx));
+            draw.AddRect(
+                hit.ScreenMin + new Vector2(inset),
+                hit.ScreenMax - new Vector2(inset),
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(ring)),
+                MathF.Max(0f, radius - inset),
+                ImDrawFlags.None,
+                borderPx);
+            var compensated = DisabledLabelCompensation(
+                text, fill, theme.Surface, opacity);
+            DrawButtonLabelClipped(
+                draw, hit.ScreenMin, hit.ScreenMax, label, style, compensated);
         }
         else
         {
@@ -348,196 +351,6 @@ public static partial class Crystarium
         }
     }
 
-    /// <summary>Composes the disabled button as ONE flattened surface —
-    /// fill, border, glyph coverage, antialiasing — with the group
-    /// opacity applied once, and draws it as a single textured quad.
-    /// Returns false when no group-surface backend or atlas pixel data
-    /// is available.</summary>
-    private static unsafe bool DrawDisabledGroup(
-        ImDrawListPtr draw, Vector2 min, Vector2 max,
-        string label, ControlStyle style, ButtonVariant variant,
-        Vector4 fill, Vector4 border, Vector4 textColor,
-        float radiusPx, float borderPx, float groupOpacity)
-    {
-        if (!GroupSurface.Available)
-            return false;
-        int width = (int)MathF.Round(max.X - min.X);
-        int height = (int)MathF.Round(max.Y - min.Y);
-        if (width <= 0 || height <= 0)
-            return false;
-
-        var labelStyle = ButtonLabelStyle(style, textColor);
-        long key = CombineHash(
-            HashCode.Combine(label, variant, width, height),
-            HashCode.Combine(fill, border, textColor, groupOpacity));
-        var texture = GroupSurface.Acquire(
-            key, width, height, ImGui.GetFrameCount(),
-            () => ComposeDisabledButton(
-                width, height, label, labelStyle, fill, border, textColor,
-                radiusPx, borderPx, groupOpacity));
-        if (texture is not { } handle)
-            return false;
-        draw.AddImage(
-            new ImTextureID(handle),
-            min,
-            min + new Vector2(width, height),
-            Vector2.Zero,
-            Vector2.One,
-            ImGui.ColorConvertFloat4ToU32(
-                ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, 1f))));
-        return true;
-    }
-
-    private static long CombineHash(int high, int low) =>
-        ((long)high << 32) | (uint)low;
-
-    /// <summary>CPU flatten of the disabled button in straight alpha:
-    /// SDF-antialiased rounded fill and border ring (background paints to
-    /// the border box, the border blends over it, exactly the CSS box),
-    /// glyph coverage bilinearly sampled from the shared font atlas at
-    /// the same centered positions the enabled path draws, then ONE
-    /// group-opacity multiply.</summary>
-    private static unsafe byte[] ComposeDisabledButton(
-        int width, int height, string label, TextStyle labelStyle,
-        Vector4 fill, Vector4 border, Vector4 textColor,
-        float radiusPx, float borderPx, float groupOpacity)
-    {
-        var buffer = new Vector4[width * height];
-
-        var half = new Vector2(width, height) * 0.5f;
-        float CoverRounded(Vector2 p, Vector2 halfSize, float r)
-        {
-            var q = Vector2.Abs(p - half) - (halfSize - new Vector2(r));
-            float outside = new Vector2(
-                MathF.Max(q.X, 0f), MathF.Max(q.Y, 0f)).Length();
-            float inside = MathF.Min(MathF.Max(q.X, q.Y), 0f);
-            float sdf = outside + inside - r;
-            return Math.Clamp(0.5f - sdf, 0f, 1f);
-        }
-
-        void Composite(int x, int y, Vector4 color, float coverage)
-        {
-            float alpha = color.W * coverage;
-            if (alpha <= 0f)
-                return;
-            ref var dst = ref buffer[y * width + x];
-            float outAlpha = alpha + dst.W * (1f - alpha);
-            if (outAlpha <= 0f)
-                return;
-            var rgb = (new Vector3(color.X, color.Y, color.Z) * alpha
-                + new Vector3(dst.X, dst.Y, dst.Z) * dst.W * (1f - alpha))
-                / outAlpha;
-            dst = new Vector4(rgb, outAlpha);
-        }
-
-        var innerHalf = half - new Vector2(borderPx);
-        float innerRadius = MathF.Max(0f, radiusPx - borderPx);
-        for (int y = 0; y < height; y++)
-        for (int x = 0; x < width; x++)
-        {
-            var p = new Vector2(x + 0.5f, y + 0.5f);
-            float outer = CoverRounded(p, half, radiusPx);
-            float inner = CoverRounded(p, innerHalf, innerRadius);
-            Composite(x, y, fill, outer);
-            Composite(x, y, border, MathF.Max(0f, outer - inner));
-        }
-
-        // Glyph coverage from the shared atlas at the enabled path's
-        // exact centered, snapped position and global scale.
-        var font = FontRegistry.Resolve(
-            labelStyle.Family,
-            labelStyle.Weight ?? FontWeight.Regular,
-            labelStyle.Size ?? ActiveTheme.Typography.BodySize);
-        var locked = font is { Available: true } ? font.TryLock(out _) : null;
-        if (locked != null)
-        {
-            try
-            {
-                var imFont = locked.ImFont;
-                var atlas = ImGui.GetIO().Fonts;
-                byte* atlasPixelsRaw = null;
-                int atlasW = 0, atlasH = 0;
-                atlas.GetTexDataAsAlpha8(
-                    0, &atlasPixelsRaw, &atlasW, &atlasH);
-                if (atlasPixelsRaw == null || atlasW == 0)
-                    return FinishCompose(buffer, width, height, groupOpacity);
-                nint atlasPixels = (nint)atlasPixelsRaw;
-
-                float glyphScale = Dalamud.Interface.Utility
-                    .ImGuiHelpers.GlobalScale;
-                var measured = MeasureText(label, labelStyle);
-                var start = ActiveTheme.Optical.Snap(
-                    (new Vector2(width, height) - measured) * 0.5f);
-                float penX = start.X;
-                foreach (char c in label)
-                {
-                    ref var glyph = ref *imFont.FindGlyph(c);
-                    float x0 = penX + glyph.X0 * glyphScale;
-                    float y0 = start.Y + glyph.Y0 * glyphScale;
-                    float x1 = penX + glyph.X1 * glyphScale;
-                    float y1 = start.Y + glyph.Y1 * glyphScale;
-                    int px0 = Math.Max(0, (int)MathF.Floor(x0));
-                    int py0 = Math.Max(0, (int)MathF.Floor(y0));
-                    int px1 = Math.Min(width, (int)MathF.Ceiling(x1));
-                    int py1 = Math.Min(height, (int)MathF.Ceiling(y1));
-                    for (int py = py0; py < py1; py++)
-                    for (int px = px0; px < px1; px++)
-                    {
-                        float tx = (px + 0.5f - x0) / MathF.Max(x1 - x0, 1e-4f);
-                        float ty = (py + 0.5f - y0) / MathF.Max(y1 - y0, 1e-4f);
-                        if (tx < 0f || tx >= 1f || ty < 0f || ty >= 1f)
-                            continue;
-                        float u = (glyph.U0 + (glyph.U1 - glyph.U0) * tx) * atlasW - 0.5f;
-                        float v = (glyph.V0 + (glyph.V1 - glyph.V0) * ty) * atlasH - 0.5f;
-                        int ui = (int)MathF.Floor(u);
-                        int vi = (int)MathF.Floor(v);
-                        float fu = u - ui;
-                        float fv = v - vi;
-                        float coverage =
-                            SampleAtlas(atlasPixels, atlasW, atlasH, ui, vi)
-                                * (1f - fu) * (1f - fv)
-                            + SampleAtlas(atlasPixels, atlasW, atlasH, ui + 1, vi)
-                                * fu * (1f - fv)
-                            + SampleAtlas(atlasPixels, atlasW, atlasH, ui, vi + 1)
-                                * (1f - fu) * fv
-                            + SampleAtlas(atlasPixels, atlasW, atlasH, ui + 1, vi + 1)
-                                * fu * fv;
-                        Composite(px, py, textColor, coverage);
-                    }
-                    penX += glyph.AdvanceX * glyphScale;
-                }
-            }
-            finally
-            {
-                locked.Dispose();
-            }
-        }
-
-        return FinishCompose(buffer, width, height, groupOpacity);
-    }
-
-    private static unsafe float SampleAtlas(
-        nint pixels, int atlasWidth, int atlasHeight, int x, int y) =>
-        x < 0 || y < 0 || x >= atlasWidth || y >= atlasHeight
-            ? 0f
-            : ((byte*)pixels)[y * atlasWidth + x] / 255f;
-
-    private static byte[] FinishCompose(
-        Vector4[] buffer, int width, int height, float groupOpacity)
-    {
-        var bytes = new byte[width * height * 4];
-        for (int i = 0; i < buffer.Length; i++)
-        {
-            var px = buffer[i];
-            bytes[i * 4 + 0] = (byte)Math.Clamp((int)MathF.Round(px.X * 255f), 0, 255);
-            bytes[i * 4 + 1] = (byte)Math.Clamp((int)MathF.Round(px.Y * 255f), 0, 255);
-            bytes[i * 4 + 2] = (byte)Math.Clamp((int)MathF.Round(px.Z * 255f), 0, 255);
-            bytes[i * 4 + 3] = (byte)Math.Clamp(
-                (int)MathF.Round(px.W * groupOpacity * 255f), 0, 255);
-        }
-        return bytes;
-    }
-
     /// <summary>Top layer composited over the bottom layer (source-over),
     /// returned straight-alpha — the flattened color a CSS element shows
     /// where the two overlap before any group opacity applies.</summary>
@@ -550,6 +363,42 @@ public static partial class Crystarium
             + new Vector3(bottom.X, bottom.Y, bottom.Z)
                 * bottom.W * (1f - top.W)) / alpha;
         return new Vector4(rgb, alpha);
+    }
+
+    /// <summary>
+    /// Compensated label color/alpha for the disabled group: drawing
+    /// glyphs at coverage c over the ALREADY-faded fill must equal the
+    /// CSS flatten-then-fade result. For fill alpha < 1 the solution is
+    /// exact for every backdrop: alpha = o(1−af)/(1−o·af) and the color
+    /// absorbs the excess fill contribution. An opaque fill admits no
+    /// backdrop-independent solution, so it references the theme
+    /// surface (the capture backdrop) instead.
+    /// </summary>
+    private static Vector4 DisabledLabelCompensation(
+        Vector4 text, Vector4 fill, Vector4 surface, float groupOpacity)
+    {
+        float af = fill.W;
+        if (af < 0.999f)
+        {
+            float alpha = groupOpacity * (1f - af) / (1f - groupOpacity * af);
+            var rgb = (new Vector3(text.X, text.Y, text.Z) * groupOpacity
+                - new Vector3(fill.X, fill.Y, fill.Z)
+                    * (groupOpacity * af * (1f - alpha))) / alpha;
+            return new Vector4(
+                Math.Clamp(rgb.X, 0f, 1f),
+                Math.Clamp(rgb.Y, 0f, 1f),
+                Math.Clamp(rgb.Z, 0f, 1f),
+                alpha * text.W);
+        }
+        var opaque = new Vector3(text.X, text.Y, text.Z)
+            - (new Vector3(fill.X, fill.Y, fill.Z)
+                - new Vector3(surface.X, surface.Y, surface.Z))
+                * (1f - groupOpacity);
+        return new Vector4(
+            Math.Clamp(opaque.X, 0f, 1f),
+            Math.Clamp(opaque.Y, 0f, 1f),
+            Math.Clamp(opaque.Z, 0f, 1f),
+            groupOpacity * text.W);
     }
 
     /// <summary>Premultiplied-alpha interpolation — how Chromium

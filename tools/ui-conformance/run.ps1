@@ -44,6 +44,7 @@ $aliases = @{
         "btn-secondary-hover",
         "btn-secondary-focus",
         "btn-secondary-disabled",
+        "btn-disabled-unicode",
         "btn-primary",
         "btn-primary-hover",
         "btn-primary-focus",

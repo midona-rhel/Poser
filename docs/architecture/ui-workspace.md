@@ -94,12 +94,15 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
   cancels); Enter/Space activate a keyboard-focused button; pointer
   interaction never shows the focus outline; disabled buttons cannot
   focus or activate, take no hover styling, and keep their HoverHelp
-  explanation. `.btn:disabled` is CSS GROUP opacity: fill, border,
-  glyph coverage, and antialiasing flatten into one surface via
-  `GroupSurface` (CPU-composed, host-provided texture backend — Dalamud
-  textures in game, the capture renderer in conformance) before 0.35
-  applies once; sequential primitive fading cannot express this and is
-  only the no-backend fallback. Content width is CSS border-box (label
+  explanation. `.btn:disabled` is CSS GROUP opacity reproduced through
+  the ONE existing drawing path: non-overlapping chrome (fill inset to
+  the border's inner edge, the ring carrying the analytically
+  flattened border-over-fill color) plus the canonical TextAt label
+  with compensated color/alpha — exact for every backdrop when the
+  fill is translucent, and surface-referenced (exact over the theme
+  surface) for an opaque fill, since affine over-blending cannot
+  express a group over an unknown backdrop. There is no second
+  rasterizer or texture path. Content width is CSS border-box (label
   + padding + 1px border per side). Compositions forward allocated
   widths into the same component (`ButtonAtWidth`); ActionBar measures
   its own items and resolves Fill against only its remaining

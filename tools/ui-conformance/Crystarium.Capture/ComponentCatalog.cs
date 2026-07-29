@@ -47,6 +47,7 @@ internal static class ComponentCatalog
         new("btn-secondary-hover", 320, 80),
         new("btn-secondary-focus", 320, 80),
         new("btn-secondary-disabled", 320, 80),
+        new("btn-disabled-unicode", 320, 80),
         new("btn-primary", 320, 80),
         new("btn-primary-hover", 320, 80),
         new("btn-primary-focus", 320, 80),
@@ -489,6 +490,13 @@ internal static class ComponentCatalog
                 break;
             case "btn-secondary-disabled":
                 Ui.Button("Apply changes", disabled: true, id: "##btn");
+                break;
+            case "btn-disabled-unicode":
+                // Disabled labels must stay readable across scripts:
+                // Latin, CJK (the merged fallback face), a combining
+                // mark, and a glyph outside the atlas ranges (missing-
+                // glyph fallback).
+                Ui.Button("Wait 待機 x̃ €", disabled: true, id: "##btn");
                 break;
             case "btn-primary":
             case "btn-primary-hover":
