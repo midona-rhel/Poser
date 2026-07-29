@@ -31,7 +31,7 @@ public static class FontRegistry
     // stb's grayscale coverage is lighter than Picto's DirectWrite output
     // at these small sizes. Strengthen coverage without changing face,
     // advances, wrapping, or the semantic 400/600 weight selection.
-    private const float RasterizerMultiply = 1.30f;
+    private const float RasterizerMultiply = 1.50f;
 
     private static IFontAtlas? _atlas;
 
