@@ -62,7 +62,8 @@ public readonly record struct ControlStyle
 {
     public UiWidth Width { get; init; }
     public UiHeight Height { get; init; }
-    public bool Primary { get; init; }
+    // Icon/toggle-only presentation; text buttons take a typed
+    // ButtonVariant instead and never interpret these flags.
     public bool Bare { get; init; }
     public bool Selected { get; init; }
     public bool Slashed { get; init; }

@@ -39,8 +39,23 @@ internal static class ComponentCatalog
         new("icons-grid-16", 232, 256),
         new("icons-grid-14", 216, 238),
         new("icons-states", 136, 184),
-        new("action-button", 320, 80),
-        new("primary-button", 320, 80),
+        new("btn-secondary", 320, 80),
+        new("btn-secondary-hover", 320, 80),
+        new("btn-secondary-focus", 320, 80),
+        new("btn-secondary-disabled", 320, 80),
+        new("btn-primary", 320, 80),
+        new("btn-primary-hover", 320, 80),
+        new("btn-primary-focus", 320, 80),
+        new("btn-primary-disabled", 320, 80),
+        new("btn-danger", 320, 80),
+        new("btn-danger-hover", 320, 80),
+        new("btn-danger-focus", 320, 80),
+        new("btn-danger-disabled", 320, 80),
+        new("btn-width-content", 320, 80),
+        new("btn-width-fixed", 320, 80),
+        new("btn-width-fill", 320, 80),
+        new("btn-narrow", 320, 80),
+        new("btn-hover-exit", 320, 80),
         new("icon-button", 120, 80),
         new("icon-button-active", 120, 80),
         new("switch-off", 120, 80),
@@ -131,10 +146,32 @@ internal static class ComponentCatalog
         }
     }
 
-    public static Vector2 PointerFor(string name, float scale) =>
-        name == "context-menu"
-            ? new Vector2(40, 40) * scale
+    public static Vector2 PointerFor(string name, float scale, int frame)
+    {
+        if (name == "context-menu")
+            return new Vector2(40, 40) * scale;
+        // Hover states park the pointer inside the control; hover-exit
+        // leaves after 15 frames so the 150ms background transition has
+        // settled back to idle by capture.
+        bool inside = name.EndsWith("-hover", StringComparison.Ordinal)
+            || (name == "btn-hover-exit" && frame < 15);
+        return inside
+            ? new Vector2(84, 40) * scale
             : new Vector2(-1000, -1000);
+    }
+
+    /// <summary>Key events for keyboard-driven states: focus fixtures Tab
+    /// onto their single control, producing real nav focus.</summary>
+    public static IEnumerable<(ImGuiKey Key, bool Down)> KeyEventsFor(
+        string name, int frame)
+    {
+        if (!name.EndsWith("-focus", StringComparison.Ordinal))
+            yield break;
+        if (frame == 5)
+            yield return (ImGuiKey.Tab, true);
+        if (frame == 6)
+            yield return (ImGuiKey.Tab, false);
+    }
 
     public static void Draw(string name, int frame, Vector2 canvas)
     {
@@ -421,24 +458,81 @@ internal static class ComponentCatalog
                 // the 11px rail size.
                 DrawIconStates(origin);
                 break;
-            case "action-button":
-                Ui.Button(
-                    "Apply changes",
-                    style: new ControlStyle
-                    {
-                        Width = UiWidth.Content,
-                    },
-                    id: "##action");
+            case "btn-secondary":
+            case "btn-secondary-hover":
+            case "btn-secondary-focus":
+            case "btn-hover-exit":
+                // actionButton.module.css .btn — hover/focus states are
+                // pointer- and Tab-driven through the real interaction
+                // path; hover-exit settles back to idle after the pointer
+                // leaves mid-capture.
+                Ui.Button("Apply changes", id: "##btn");
                 break;
-            case "primary-button":
+            case "btn-secondary-disabled":
+                Ui.Button("Apply changes", disabled: true, id: "##btn");
+                break;
+            case "btn-primary":
+            case "btn-primary-hover":
+            case "btn-primary-focus":
                 Ui.Button(
                     "Apply changes",
-                    style: new ControlStyle
-                    {
-                        Width = UiWidth.Content,
-                        Primary = true,
-                    },
-                    id: "##primary");
+                    variant: ButtonVariant.Primary,
+                    id: "##btn");
+                break;
+            case "btn-primary-disabled":
+                Ui.Button(
+                    "Apply changes",
+                    variant: ButtonVariant.Primary,
+                    disabled: true,
+                    id: "##btn");
+                break;
+            case "btn-danger":
+            case "btn-danger-hover":
+            case "btn-danger-focus":
+                Ui.Button(
+                    "Apply changes",
+                    variant: ButtonVariant.Danger,
+                    id: "##btn");
+                break;
+            case "btn-danger-disabled":
+                Ui.Button(
+                    "Apply changes",
+                    variant: ButtonVariant.Danger,
+                    disabled: true,
+                    id: "##btn");
+                break;
+            case "btn-width-content":
+                // Content: intrinsic label width + the canonical 16px
+                // padding and 1px border on each side.
+                Ui.Button("OK", id: "##btn");
+                break;
+            case "btn-width-fixed":
+                Ui.Button(
+                    "Apply changes",
+                    style: new ControlStyle { Width = UiWidth.Fixed(160f) },
+                    id: "##btn");
+                break;
+            case "btn-width-fill":
+                // Fill resolves the BOUNDED allocated region (the 240px
+                // child), never the surrounding window.
+                ImGui.BeginChild(
+                    "##fill-region",
+                    new Vector2(240f * ImGuiHelpers.GlobalScale, 40f * ImGuiHelpers.GlobalScale),
+                    false,
+                    ImGuiWindowFlags.NoBackground);
+                Ui.Button(
+                    "Apply changes",
+                    style: new ControlStyle { Width = UiWidth.Fill },
+                    id: "##btn");
+                ImGui.EndChild();
+                break;
+            case "btn-narrow":
+                // Narrower than the label: the canonical component clips
+                // to its visual bounds.
+                Ui.Button(
+                    "Apply changes",
+                    style: new ControlStyle { Width = UiWidth.Fixed(60f) },
+                    id: "##btn");
                 break;
             case "icon-button":
                 Ui.IconButton(
@@ -570,7 +664,7 @@ internal static class ComponentCatalog
                             Ui.ActiveTheme.Page.ActionGap * scale);
                         Ui.Button(
                             "Import",
-                            style: new ControlStyle { Primary = true },
+                            variant: ButtonVariant.Primary,
                             id: "##modal-import");
                     },
                     ModalSize.Small,

@@ -48,7 +48,8 @@ public static partial class Crystarium
 
     internal readonly record struct ActionItem(
         string Label, Action OnClick, ControlStyle Style,
-        string? Help, bool Disabled);
+        string? Help, bool Disabled,
+        ButtonVariant Variant = ButtonVariant.Secondary);
 
     public sealed class ActionScope
     {
@@ -56,8 +57,9 @@ public static partial class Crystarium
 
         public void Button(string label, Action onClick,
             ControlStyle style = default, bool disabled = false,
-            string? help = null) =>
-            _items.Add(new(label, onClick, style, help, disabled));
+            string? help = null,
+            ButtonVariant variant = ButtonVariant.Secondary) =>
+            _items.Add(new(label, onClick, style, help, disabled, variant));
 
         internal IReadOnlyList<ActionItem> Items => _items;
     }
@@ -438,10 +440,10 @@ public static partial class Crystarium
                     MathF.Max(1f,
                         valueWidth - ActiveTheme.Spacing.Six * 2f * row.Scale)),
                 select,
-                pickerStyle,
-                disabled,
-                help,
-                id);
+                style: pickerStyle,
+                disabled: disabled,
+                help: help,
+                id: id);
             if (actionScope.Items.Count > 0)
                 DrawActions(
                     actionScope.Items,
@@ -571,7 +573,7 @@ public static partial class Crystarium
                 triggerStyle.Height, ActiveTheme.Controls.WorkspaceHeight);
             ImGui.SetCursorScreenPos(row.CenterControl(controlHeight));
             Crystarium.Button(display, select,
-                triggerStyle,
+                style: triggerStyle,
                 disabled: !available,
                 help: disabledHelp,
                 id: id);
@@ -581,7 +583,7 @@ public static partial class Crystarium
                 ImGui.SetCursorScreenPos(new(
                     row.ControlOrigin.X + row.ControlWidth - resetWidth,
                     row.CenterControl(controlHeight).Y));
-                Crystarium.Button("Reset", reset, resetStyle,
+                Crystarium.Button("Reset", reset, style: resetStyle,
                     help: $"Restore the incoming {label.ToLowerInvariant()} exactly",
                     id: $"{id}-reset");
             }
@@ -1019,7 +1021,8 @@ public static partial class Crystarium
                 width / scale,
                 action.Disabled,
                 action.Help,
-                $"{id}-{action.Label}");
+                $"{id}-{action.Label}",
+                action.Variant);
             x += width + gap;
         }
     }

@@ -67,7 +67,8 @@ public static partial class Crystarium
             string? Help,
             bool Disabled,
             ControlStyle Style,
-            TablerIcon Icon);
+            TablerIcon Icon,
+            ButtonVariant Variant = ButtonVariant.Secondary);
 
         private readonly string _id;
         private readonly List<Item> _items = new();
@@ -127,7 +128,8 @@ public static partial class Crystarium
             Action onClick,
             string? help = null,
             bool disabled = false,
-            ControlStyle style = default) =>
+            ControlStyle style = default,
+            ButtonVariant variant = ButtonVariant.Secondary) =>
             _items.Add(new(
                 ItemKind.Button,
                 label,
@@ -137,7 +139,8 @@ public static partial class Crystarium
                 help,
                 disabled,
                 style,
-                TablerIcon.Circle));
+                TablerIcon.Circle,
+                variant));
 
         public void Icon(
             TablerIcon icon,
@@ -284,10 +287,11 @@ public static partial class Crystarium
                         Crystarium.Button(
                             item.Label,
                             item.OnClick!,
-                            style,
-                            item.Disabled,
-                            item.Help,
-                            $"{_id}-button-{i}");
+                            variant: item.Variant,
+                            style: style,
+                            disabled: item.Disabled,
+                            help: item.Help,
+                            id: $"{_id}-button-{i}");
                         break;
                     }
                 }

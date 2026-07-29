@@ -553,7 +553,7 @@ public class PoseInspectorPane
             Crystarium.Button(
                 "Reset View",
                 Reset3DCamera,
-                resetStyle,
+                style: resetStyle,
                 help: "Reset the 3D camera",
                 id: "pose-3d-reset");
         }

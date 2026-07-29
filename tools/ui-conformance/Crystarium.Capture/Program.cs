@@ -168,6 +168,9 @@ internal static class Program
                     io.FontGlobalScale = entry.Scale;
                     io.DeltaTime = 1f / 60f;
                     io.IniFilename = null;
+                    // Keyboard-driven fixture states (focus-visible) Tab
+                    // onto their control through real ImGui navigation.
+                    io.ConfigFlags |= ImGuiConfigFlags.NavEnableKeyboard;
                     ImGui.StyleColorsDark();
 
                     // Covers HoverHelp's 400ms delay + 150ms entrance and
@@ -179,8 +182,11 @@ internal static class Program
                         io.DeltaTime = 1f / 60f;
                         io.DisplaySize = new Vector2(width, height);
                         var pointer = ComponentCatalog.PointerFor(
-                            entry.Name, entry.Scale);
+                            entry.Name, entry.Scale, frame);
                         io.AddMousePosEvent(pointer.X, pointer.Y);
+                        foreach (var (key, down) in
+                            ComponentCatalog.KeyEventsFor(entry.Name, frame))
+                            io.AddKeyEvent(key, down);
 
                         ImGui.NewFrame();
                         Interactive.BeginFrame();

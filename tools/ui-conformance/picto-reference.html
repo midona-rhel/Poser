@@ -204,13 +204,83 @@
         css: 'shared/ui/PropertyRow/PropertyRow.module.css',
         html: '<div class="row" style="width:200px"><span class="label">Opacity</span><span class="value">1.000</span></div><div class="row" style="width:200px"><span class="label">Scale</span><span class="value valueMono">0.750</span></div>',
       },
-      'action-button': {
+      // actionButton.module.css. Headless capture cannot produce real
+      // :hover or trusted :focus-visible, so those states apply the
+      // EXACT declarations of .btn:hover / .btnPrimary:hover /
+      // .btnDanger:hover / .btn:focus-visible inline on the real class;
+      // disabled uses the native attribute.
+      'btn-secondary': {
         css: 'shared/styles/actionButton.module.css',
         html: '<button class="btn">Apply changes</button>',
       },
-      'primary-button': {
+      'btn-secondary-hover': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn" style="background: var(--color-subtle-overlay)">Apply changes</button>',
+      },
+      'btn-secondary-focus': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn" style="outline: 2px solid var(--color-primary-60); outline-offset: 1px">Apply changes</button>',
+      },
+      'btn-secondary-disabled': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn" disabled>Apply changes</button>',
+      },
+      'btn-primary': {
         css: 'shared/styles/actionButton.module.css',
         html: '<button class="btn btnPrimary">Apply changes</button>',
+      },
+      'btn-primary-hover': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn btnPrimary" style="background: var(--color-primary-60); border-color: var(--color-primary-60)">Apply changes</button>',
+      },
+      'btn-primary-focus': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn btnPrimary" style="outline: 2px solid var(--color-primary-60); outline-offset: 1px">Apply changes</button>',
+      },
+      'btn-primary-disabled': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn btnPrimary" disabled>Apply changes</button>',
+      },
+      'btn-danger': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn btnDanger">Apply changes</button>',
+      },
+      'btn-danger-hover': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn btnDanger" style="background: rgba(255, 71, 87, 0.15)">Apply changes</button>',
+      },
+      'btn-danger-focus': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn btnDanger" style="outline: 2px solid var(--color-primary-60); outline-offset: 1px">Apply changes</button>',
+      },
+      'btn-danger-disabled': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn btnDanger" disabled>Apply changes</button>',
+      },
+      'btn-width-content': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn">OK</button>',
+      },
+      'btn-width-fixed': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn" style="width:160px">Apply changes</button>',
+      },
+      'btn-width-fill': {
+        // Fill resolves the bounded 240px region, never the window.
+        css: 'shared/styles/actionButton.module.css',
+        html: '<div style="width:240px"><button class="btn" style="width:100%">Apply changes</button></div>',
+      },
+      'btn-narrow': {
+        // Narrower than the label; the candidate clips to the button
+        // bounds. The native button does not clip, so overflow here is
+        // an expected, reported difference at the edges.
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn" style="width:60px">Apply changes</button>',
+      },
+      'btn-hover-exit': {
+        // Settled hover exit equals idle.
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn">Apply changes</button>',
       },
       'icon-button': {
         css: 'shared/styles/iconButton.module.css',

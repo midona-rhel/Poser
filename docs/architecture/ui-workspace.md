@@ -78,6 +78,24 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
   ActionBar, Section, Form/FormRow and ScrollRegion; compositions resolve
   `Fill` against their allocated region. FloatingSurface alone owns floating
   placement and glass fill, blur, border and shadow.
+- Text buttons: `Crystarium.Button` is the Picto action-button family
+  (`actionButton.module.css`) with a typed `ButtonVariant` — Secondary
+  (`.btn`), Primary (`.btnPrimary`), Danger (`.btnDanger`, CSS-literal
+  colors) — never boolean presentation flags; `ControlStyle`'s
+  Bare/Selected/Slashed are icon/toggle-only. Geometry: 32px default
+  height, 16px horizontal padding, 6px radius, 1px border, label
+  centered through the canonical text path and CLIPPED to the visual
+  bounds; measurement, drawing, hit testing, the keyboard
+  focus-visible outline (2px primary-60, offset 1px), and layout
+  reservation resolve from the same rectangle. The background follows
+  Picto's 150ms ease hover transition via component-owned transient
+  state keyed by stable ImGui identity; borders and text switch
+  instantly like the CSS. Activation is release-inside (drag-out
+  cancels); Enter/Space activate a keyboard-focused button; pointer
+  interaction never shows the focus outline; disabled buttons cannot
+  focus or activate, take no hover styling, and keep their HoverHelp
+  explanation. Compositions forward allocated widths into the same
+  component (`ButtonAtWidth`) and never repaint or remeasure it.
 - Hover help: `Crystarium.HoverHelp` is the ONE explanatory surface
   (picto KbdTooltip: 400 ms open, instant exit start, the 150 ms Mantine
   pop entering and exiting as one composited surface, glass card on the

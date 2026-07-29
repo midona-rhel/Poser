@@ -303,7 +303,6 @@ public static partial class Crystarium
             var confirmStyle = new ControlStyle
             {
                 Height = UiHeight.Comfortable,
-                Primary = true,
             };
             var comfortable = ControlStyle.Comfortable;
             var confirmSize = MeasureButton(confirmLabel, confirmStyle);
@@ -321,6 +320,7 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(new Vector2(confirmX, y));
             if (Button(
                     confirmLabel,
+                    variant: ButtonVariant.Primary,
                     style: confirmStyle,
                     disabled: !canConfirm,
                     id: $"{_id}-confirm")

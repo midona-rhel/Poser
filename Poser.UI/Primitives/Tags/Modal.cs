@@ -32,7 +32,7 @@ public static partial class Crystarium
     ///       next => modalOpen = next, "Import pose",
     ///       body: () => { ... },
     ///       footer: () => Crystarium.Button("Import", Import,
-    ///           new ControlStyle { Primary = true }));
+    ///           ButtonVariant.Primary));
     /// </code>
     /// </summary>
     /// <returns>True on the frame the modal closes.</returns>

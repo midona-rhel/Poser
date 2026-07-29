@@ -39,7 +39,24 @@ $aliases = @{
         "text-wrapped-overwide", "text-wrapped-flow", "text-ws-collapse",
         "text-ws-prewrap", "text-ws-tab", "text-ws-crlf", "text-align-end")
     "icons" = @("icons-grid-16", "icons-grid-14", "icons-states")
-    "button" = @("action-button", "primary-button")
+    "text-buttons" = @(
+        "btn-secondary",
+        "btn-secondary-hover",
+        "btn-secondary-focus",
+        "btn-secondary-disabled",
+        "btn-primary",
+        "btn-primary-hover",
+        "btn-primary-focus",
+        "btn-primary-disabled",
+        "btn-danger",
+        "btn-danger-hover",
+        "btn-danger-focus",
+        "btn-danger-disabled",
+        "btn-width-content",
+        "btn-width-fixed",
+        "btn-width-fill",
+        "btn-narrow",
+        "btn-hover-exit")
     "icon-button" = @("icon-button", "icon-button-active")
     "switch" = @("switch-off", "switch-on")
     "input" = @("text-input", "search-input")
@@ -54,7 +71,7 @@ $components = if ($Component -eq "all") {
 } elseif ($all -contains $Component) {
     @($Component)
 } else {
-    throw "Unknown component '$Component'. Use all, text, combobox, button, switch, input, sidebar, or a catalog name."
+    throw "Unknown component '$Component'. Use all, text, icons, text-buttons, combobox, switch, input, sidebar, or a catalog name."
 }
 
 dotnet build $project -c Debug --no-restore -p:NuGetAudit=false

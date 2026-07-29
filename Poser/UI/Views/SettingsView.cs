@@ -218,10 +218,8 @@ public static class SettingsView
                 right.Button(
                     "Save",
                     () => vm.OnSave?.Invoke(),
-                    style: ControlStyle.Comfortable with
-                    {
-                        Primary = true,
-                    });
+                    style: ControlStyle.Comfortable,
+                    variant: ButtonVariant.Primary);
             });
 
         if (vm.RebindingIndex >= 0)

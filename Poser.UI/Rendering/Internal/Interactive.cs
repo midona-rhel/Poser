@@ -36,6 +36,8 @@ public readonly struct InteractionResult
     public readonly Vector2 ScreenMax;
     public readonly PseudoState State;
     public readonly bool Clicked;
+    public readonly bool Activated;
+    public readonly bool Focused;
     public readonly InteractionOwner Owner;
 
     public InteractionResult(
@@ -43,12 +45,16 @@ public readonly struct InteractionResult
         Vector2 max,
         PseudoState state,
         bool clicked,
+        bool activated,
+        bool focused,
         InteractionOwner owner)
     {
         ScreenMin = min;
         ScreenMax = max;
         State = state;
         Clicked = clicked;
+        Activated = activated;
+        Focused = focused;
         Owner = owner;
     }
 
@@ -102,6 +108,7 @@ public static class Interactive
         _nextOrder = 0;
         _frame = ImGui.GetFrameCount();
         _openingBarrier = null;
+        UpdateInputModality();
     }
 
     public static void EndFrame()
@@ -278,6 +285,24 @@ public static class Interactive
         }
     }
 
+    /// <summary>True after keyboard navigation (Tab/arrows), false after
+    /// any pointer press — the CSS :focus-visible modality signal.</summary>
+    public static bool KeyboardNavActive { get; private set; }
+
+    internal static void UpdateInputModality()
+    {
+        if (ImGui.IsKeyPressed(ImGuiKey.Tab)
+            || ImGui.IsKeyPressed(ImGuiKey.LeftArrow)
+            || ImGui.IsKeyPressed(ImGuiKey.RightArrow)
+            || ImGui.IsKeyPressed(ImGuiKey.UpArrow)
+            || ImGui.IsKeyPressed(ImGuiKey.DownArrow))
+            KeyboardNavActive = true;
+        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left)
+            || ImGui.IsMouseClicked(ImGuiMouseButton.Right)
+            || ImGui.IsMouseClicked(ImGuiMouseButton.Middle))
+            KeyboardNavActive = false;
+    }
+
     public static InteractionResult Reserve(
         string id,
         Vector2 size,
@@ -285,13 +310,28 @@ public static class Interactive
     {
         var owner = CurrentOwner;
         var min = ImGui.GetCursorScreenPos();
-        ImGui.InvisibleButton(id, size);
+        // Disabled controls cannot take keyboard focus or activate; the
+        // item still reserves layout and hit-tests for HoverHelp.
+        if (disabled)
+            ImGui.BeginDisabled();
+        bool pressed = ImGui.InvisibleButton(id, size);
+        bool focused = ImGui.IsItemFocused();
+        if (disabled)
+            ImGui.EndDisabled();
         var max = min + size;
 
         bool occluded = PointerOccluded(owner, ImGui.GetMousePos());
         bool hovered = ImGui.IsItemHovered() && !disabled && !occluded;
         bool active = ImGui.IsItemActive() && !disabled && !occluded;
         bool clicked = ImGui.IsItemClicked() && !disabled && !occluded;
+        // The button RETURN is ImGui's release-inside semantic: pressing,
+        // dragging out, and releasing does not activate. Keyboard
+        // activation (Space via nav, Enter explicitly) joins it.
+        bool activated = pressed && !disabled && !occluded;
+        if (focused && !disabled
+            && (ImGui.IsKeyPressed(ImGuiKey.Enter)
+                || ImGui.IsKeyPressed(ImGuiKey.KeypadEnter)))
+            activated = true;
 
         PseudoState state = PseudoState.None;
         if (hovered) state |= PseudoState.Hover;
@@ -299,7 +339,7 @@ public static class Interactive
         if (disabled) state |= PseudoState.Disabled;
 
         return new InteractionResult(
-            min, max, state, clicked, owner);
+            min, max, state, clicked, activated, focused && !disabled, owner);
     }
 
     private static Occluder? HighestAt(

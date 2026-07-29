@@ -1188,7 +1188,7 @@ public class MainWindow : Window
             ImGui.Dummy(new Vector2(0f, 8f * ImGuiHelpers.GlobalScale));
             if (Crystarium.Button(
                     "Save",
-                    style: new ControlStyle { Primary = true },
+                    variant: ButtonVariant.Primary,
                     id: "rename-save"))
             {
                 Config.ConfigurationService.Instance.SetNickname(target.LogicalId, _renameValue);
