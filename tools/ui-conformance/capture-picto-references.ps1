@@ -227,10 +227,11 @@ finally {
     Get-ChildItem -LiteralPath $output -Filter "*.partial-$runId.png" `
         -ErrorAction SilentlyContinue |
         Remove-Item -Force -ErrorAction SilentlyContinue
-    # Edge can let a renderer finish a few milliseconds after its root process
-    # exits. Wait through that hand-off so every run removes its isolated profile.
-    for ($attempt = 0; $attempt -lt 20; $attempt++) {
-        Start-Sleep -Milliseconds 100
+    # Edge can let renderers finish after their root processes exit, and
+    # with six captures in flight the stragglers overlap; wait up to 30s
+    # through that hand-off so every run removes its isolated profiles.
+    for ($attempt = 0; $attempt -lt 120; $attempt++) {
+        Start-Sleep -Milliseconds 250
         if (Test-Path -LiteralPath $profileRoot) {
             Remove-Item -LiteralPath $profileRoot -Recurse -Force `
                 -ErrorAction SilentlyContinue
