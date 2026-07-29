@@ -2,14 +2,14 @@
 
 | Control | Value |
 |---|---|
-| Status | Ready for slice implementation |
+| Status | Slice 1 accepted; ready for slice 2 |
 | Size | Extra large, delivered as individually accepted component slices |
 | Implementation owner | Claude |
 | Review owner | Codex |
 | Runtime and visual acceptance | User |
 | Base ref | `pbi-011-base` (`9a9193736b797f828b0336d9571721bb8ba90c99`) |
 | Feature branch | `feature/pbi-011-component-conformance` |
-| Accepted head | Not accepted |
+| Accepted head | `02d25f7` (slice 1 — Text) |
 
 ## Problem
 
@@ -115,7 +115,7 @@ record the exact file and selector used when its fixture is added.
 
 | # | Component | Picto reference family | Required Poser coverage | Accepted commit |
 |---:|---|---|---|---|
-| 1 | Text | Picto typography | Labels, captions, mono values, disabled text, wrapping and truncation | Pending |
+| 1 | Text | Picto typography | Labels, captions, mono values, disabled text, wrapping and truncation | `02d25f7` |
 | 2 | Icons | Picto Tabler icon use | Optical alignment, size, stroke, tint and disabled state | Pending |
 | 3 | Text buttons | `actionButton` | Primary/secondary/destructive, content/fixed/fill, disabled | Pending |
 | 4 | Icon buttons | `iconButton` | Toolbar, titlebar and row actions, hover/pressed/disabled | Pending |
