@@ -22,7 +22,11 @@ internal static class SvgStrokeMesh
         var points = Clean(source);
         if (points.Count < 2 || width <= 0f)
             return;
-        float radius = width * 0.5f;
+        const float fringe = 1f;
+        // ImGui's antialiased stroke width includes the fringe. Keeping the
+        // full requested width opaque and adding fringe outside it makes a
+        // 1.5 px icon look roughly twice as heavy.
+        float radius = MathF.Max(0f, width - fringe) * 0.5f;
         if (Vector2.DistanceSquared(points[0], points[^1])
             <= radius * radius * 0.04f)
         {
@@ -34,7 +38,7 @@ internal static class SvgStrokeMesh
         // join. At icon scale the bounded miter is visually equivalent to
         // the SVG round join while avoiding fan self-intersections on
         // tightly flattened curves.
-        var sections = BuildSections(points, radius, closed, 1f);
+        var sections = BuildSections(points, radius, closed, fringe);
         if (sections.Count < 2)
             return;
 
