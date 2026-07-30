@@ -250,9 +250,6 @@ try {
                 -WindowStyle Hidden `
                 -PassThru
             $edgeExit = $null
-            if ($edgeProcess.WaitForExit(10000)) {
-                $edgeExit = $edgeProcess.ExitCode
-            }
             # The Edge launcher detaches and the real browser process
             # writes the screenshot AFTER the launcher returns. Its own
             # exit code is therefore not authoritative. Wait for
