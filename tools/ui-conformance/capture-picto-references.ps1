@@ -193,6 +193,7 @@ $manifest = [ordered]@{
     sources = $manifestBefore
 }
 $manifestPath = Join-Path $output "reference-sources.json"
+$coveragePath = Join-Path $output "reference-coverage.json"
 $invariant = [Globalization.CultureInfo]::InvariantCulture
 $expectedCaptureNames = @(foreach ($theme in $Themes) {
     foreach ($scale in $Scales) {
@@ -221,16 +222,30 @@ if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
         ($storedIdentity | ConvertTo-Json -Depth 6 -Compress) -eq
         ($manifest | ConvertTo-Json -Depth 6 -Compress)
     )
-    $coverageCurrent = $true
-    if ($null -ne $storedManifest.captures) {
-        $priorCoverage = @($storedManifest.captures)
+    if ($identityCurrent) {
+        # Coverage is operational cache state, not rendering identity:
+        # changing a requested subset must not stale otherwise-current
+        # comparison reports by changing reference-sources.json.
+        $priorCoverage = if (
+            Test-Path -LiteralPath $coveragePath -PathType Leaf
+        ) {
+            @(Get-Content -Raw -LiteralPath $coveragePath |
+                ConvertFrom-Json)
+        } else {
+            # Migrate the legacy global-manifest cache. Every existing PNG
+            # was captured under the matching identity.
+            @(Get-ChildItem -LiteralPath $output -Filter "*.png" |
+                ForEach-Object { $_.Name })
+        }
         $covered = [Collections.Generic.HashSet[string]]::new(
             [StringComparer]::OrdinalIgnoreCase)
-        foreach ($name in $storedManifest.captures) {
+        foreach ($name in $priorCoverage) {
             [void]$covered.Add($name)
         }
         $coverageCurrent = -not @($expectedCaptureNames |
             Where-Object { !$covered.Contains($_) })
+    } else {
+        $coverageCurrent = $false
     }
     $cacheCurrent = $identityCurrent -and $coverageCurrent `
         -and -not @($expectedCaptures | Where-Object {
@@ -238,6 +253,13 @@ if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
     })
 }
 if ($cacheCurrent) {
+    # Normalize manifests written by the short-lived embedded-coverage
+    # format without recapturing or changing reference identity.
+    $manifest | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 `
+        -LiteralPath $manifestPath
+    @($priorCoverage | Sort-Object -Unique) |
+        ConvertTo-Json -AsArray |
+        Set-Content -Encoding utf8 -LiteralPath $coveragePath
     Write-Host "Picto references current: reused $($expectedCaptures.Count) captures."
     $global:LASTEXITCODE = 0
     return
@@ -411,13 +433,15 @@ if ($beforeJson -ne $afterJson -or
 $newCoverage = @($combos | ForEach-Object {
     "$($_.Name)@$($_.Theme)@$($_.Suffix).png"
 })
-$manifest["captures"] = if ($identityCurrent) {
+$coverage = if ($identityCurrent) {
     @($priorCoverage + $newCoverage | Sort-Object -Unique)
 } else {
     $newCoverage
 }
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 `
     -LiteralPath $manifestPath
+$coverage | ConvertTo-Json -AsArray | Set-Content -Encoding utf8 `
+    -LiteralPath $coveragePath
 # A detached Edge launcher can report a non-zero native exit after its
 # stable screenshot was verified and promoted. The script's own checks
 # above are authoritative; do not leak that stale launcher code to run.ps1.
