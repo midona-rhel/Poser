@@ -58,8 +58,13 @@ $catalog = @(
     @{ Name = "btn-width-fill"; Width = 320; Height = 80 },
     @{ Name = "btn-hover-exit"; Width = 320; Height = 80 },
     @{ Name = "btn-hover-mid"; Width = 320; Height = 80 },
-    @{ Name = "icon-button"; Width = 120; Height = 80 },
-    @{ Name = "icon-button-active"; Width = 120; Height = 80 },
+    @{ Name = "icon-button-idle"; Width = 120; Height = 80 },
+    @{ Name = "icon-button-hover"; Width = 120; Height = 80 },
+    @{ Name = "icon-button-pressed"; Width = 120; Height = 80 },
+    @{ Name = "icon-button-disabled"; Width = 120; Height = 80 },
+    @{ Name = "icon-button-hover-mid"; Width = 120; Height = 80 },
+    @{ Name = "icon-button-hover-exit"; Width = 120; Height = 80 },
+    @{ Name = "icon-button-keyboard-focused"; Width = 120; Height = 80 },
     @{ Name = "switch-off"; Width = 120; Height = 80 },
     @{ Name = "switch-on"; Width = 120; Height = 80 },
     @{ Name = "text-input"; Width = 320; Height = 80 },
@@ -130,6 +135,12 @@ $sources = @(
     "..\Picto\src\shared\styles\surfaces.css",
     "..\Picto\src\shared\styles\actionButton.module.css",
     "..\Picto\src\shared\styles\iconButton.module.css",
+    "..\Picto\src\app\AppShell.module.css",
+    "..\Picto\src\app\AppShell.tsx",
+    "..\Picto\src\features\grid\GridToolbar.tsx",
+    "..\Picto\src\features\grid\GridToolbar.module.css",
+    "..\Picto\src\features\viewer\DetailWindow.tsx",
+    "..\Picto\src\features\viewer\DetailWindow.module.css",
     "..\Picto\src\shared\ui\ToggleSwitch\ToggleSwitch.module.css",
     "..\Picto\src\shared\ui\GlassInput\GlassInput.module.css",
     "..\Picto\src\shared\ui\CmSelect\CmSelect.module.css",
@@ -188,6 +199,10 @@ try {
     # and a run-unique staging file, so parallelism changes nothing about
     # isolation — only the wall clock.
     $failures = @($combos | ForEach-Object -Parallel {
+        # Native Edge launchers are checked explicitly below; PowerShell
+        # 7.4's native-error promotion would otherwise abort before the
+        # detached screenshot can finish and stabilize.
+        $PSNativeCommandUseErrorActionPreference = $false
         $item = $_
         $Browser = $using:Browser
         $uri = $using:uri
@@ -211,30 +226,36 @@ try {
         for ($attempt = 0; $attempt -lt 2; $attempt++) {
             $profile = Join-Path $profileRoot `
                 "$($item.Theme)-$($item.Suffix)-$($item.Name)-$attempt"
-            & $Browser `
-                --headless=new `
-                --disable-lcd-text `
-                --hide-scrollbars `
-                --disable-background-mode `
-                --disable-background-networking `
-                --disable-component-update `
-                --disable-default-apps `
-                --disable-extensions `
-                --disable-sync `
-                --no-first-run `
-                --run-all-compositor-stages-before-draw `
-                --virtual-time-budget=1000 `
-                --force-device-scale-factor=$($item.Scale) `
-                --window-size="$($item.Width),$($item.Height)" `
-                --user-data-dir="$profile" `
-                --screenshot="$staging" `
-                $url | Out-Null
-            if ($LASTEXITCODE -ne 0) {
-                $reason = "browser exit code $LASTEXITCODE"
-                continue
+            $arguments = @(
+                "--headless=new",
+                "--disable-lcd-text",
+                "--hide-scrollbars",
+                "--disable-background-mode",
+                "--disable-background-networking",
+                "--disable-component-update",
+                "--disable-default-apps",
+                "--disable-extensions",
+                "--disable-sync",
+                "--no-first-run",
+                "--run-all-compositor-stages-before-draw",
+                "--virtual-time-budget=1000",
+                "--force-device-scale-factor=$($item.Scale)",
+                "--window-size=$($item.Width),$($item.Height)",
+                "--user-data-dir=$profile",
+                "--screenshot=$staging",
+                $url)
+            $edgeProcess = Start-Process `
+                -FilePath $Browser `
+                -ArgumentList $arguments `
+                -WindowStyle Hidden `
+                -PassThru
+            $edgeExit = $null
+            if ($edgeProcess.WaitForExit(10000)) {
+                $edgeExit = $edgeProcess.ExitCode
             }
             # The Edge launcher detaches and the real browser process
-            # writes the screenshot AFTER the launcher returns. Wait for
+            # writes the screenshot AFTER the launcher returns. Its own
+            # exit code is therefore not authoritative. Wait for
             # the staging file to exist and stabilize — the same non-zero
             # size on two consecutive polls plus an exclusive open —
             # before promoting it.
@@ -257,7 +278,11 @@ try {
                 Start-Sleep -Milliseconds 150
             }
             if (-not $stable) {
-                $reason = "no stable screenshot within 30s"
+                $reason = if ($null -ne $edgeExit -and $edgeExit -ne 0) {
+                    "browser exit code $edgeExit and no stable screenshot within 30s"
+                } else {
+                    "no stable screenshot within 30s"
+                }
                 continue
             }
             Move-Item -LiteralPath $staging -Destination $target -Force
@@ -338,3 +363,7 @@ $manifest = [ordered]@{
 }
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 `
     -LiteralPath (Join-Path $output "reference-sources.json")
+# A detached Edge launcher can report a non-zero native exit after its
+# stable screenshot was verified and promoted. The script's own checks
+# above are authoritative; do not leak that stale launcher code to run.ps1.
+$global:LASTEXITCODE = 0

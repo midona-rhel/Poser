@@ -66,8 +66,15 @@ internal static class ComponentCatalog
         new("bar-allocation", 340, 140, Hidden: true),
         new("btn-hover-exit", 320, 80),
         new("btn-hover-mid", 320, 80),
-        new("icon-button", 120, 80),
-        new("icon-button-active", 120, 80),
+        new("icon-button-idle", 120, 80),
+        new("icon-button-hover", 120, 80),
+        new("icon-button-pressed", 120, 80),
+        new("icon-button-disabled", 120, 80),
+        new("icon-button-hover-mid", 120, 80),
+        new("icon-button-hover-exit", 120, 80),
+        new("icon-button-keyboard-focused", 120, 80),
+        new("icon-button-explicit-size", 120, 88, Hidden: true),
+        new("icon-button-hover-reconcile", 120, 80, Hidden: true),
         new("switch-off", 120, 80),
         new("switch-on", 120, 80),
         new("text-input", 320, 80),
@@ -173,10 +180,29 @@ internal static class ComponentCatalog
         bool inside = name.EndsWith("-hover", StringComparison.Ordinal)
             || (name == "btn-hover-exit" && frame < 15)
             || (name == "btn-hover-mid" && frame >= 34)
-            || (name == "btn-hover-reconcile" && frame < 20);
+            || (name == "btn-hover-reconcile" && frame < 20)
+            || name == "icon-button-pressed"
+            || (name == "icon-button-hover-exit" && frame < 15)
+            // IconButton starts a CSS-shaped transition at t=0 on the
+            // first hovered frame, so enter one frame earlier than the
+            // older incremental text-button transition: after ImGui's
+            // queued-event latency this leaves five 1/60s advances.
+            || (name == "icon-button-hover-mid" && frame >= 33)
+            || (name == "icon-button-hover-reconcile" && frame < 20);
         return inside
-            ? new Vector2(84, 40) * scale
+            ? (name.StartsWith("icon-button", StringComparison.Ordinal)
+                ? new Vector2(38, 38)
+                : new Vector2(84, 40)) * scale
             : new Vector2(-1000, -1000);
+    }
+
+    /// <summary>The pressed fixture holds a real primary pointer down;
+    /// no persistent selected class stands in for :active.</summary>
+    public static IEnumerable<(int Button, bool Down)> MouseButtonEventsFor(
+        string name, int frame)
+    {
+        if (name == "icon-button-pressed" && frame == 5)
+            yield return (0, true);
     }
 
     /// <summary>Key events for keyboard-driven states: focus fixtures Tab
@@ -184,7 +210,8 @@ internal static class ComponentCatalog
     public static IEnumerable<(ImGuiKey Key, bool Down)> KeyEventsFor(
         string name, int frame)
     {
-        if (!name.EndsWith("-focus", StringComparison.Ordinal))
+        if (!name.EndsWith("-focus", StringComparison.Ordinal)
+            && name != "icon-button-keyboard-focused")
             yield break;
         if (frame == 5)
             yield return (ImGuiKey.Tab, true);
@@ -639,16 +666,38 @@ internal static class ComponentCatalog
                     separator: ActionBarSeparator.None);
                 break;
             }
-            case "icon-button":
+            case "icon-button-idle":
                 Ui.IconButton(
                     TablerIcon.Settings,
-                    id: "##icon");
+                    id: "##icon-button");
                 break;
-            case "icon-button-active":
+            case "icon-button-hover":
+            case "icon-button-pressed":
+            case "icon-button-hover-mid":
+            case "icon-button-hover-exit":
+            case "icon-button-keyboard-focused":
                 Ui.IconButton(
                     TablerIcon.Settings,
-                    style: new ControlStyle { Selected = true },
-                    id: "##icon-active");
+                    id: "##icon-button");
+                break;
+            case "icon-button-disabled":
+                Ui.IconButton(
+                    TablerIcon.Settings,
+                    disabled: true,
+                    help: "Settings are unavailable while loading",
+                    id: "##icon-button");
+                break;
+            case "icon-button-explicit-size":
+                Ui.IconButton(
+                    TablerIcon.Settings,
+                    style: ControlStyle.Square(36f),
+                    id: "##icon-button");
+                break;
+            case "icon-button-hover-reconcile":
+                Ui.IconButton(
+                    TablerIcon.Settings,
+                    disabled: frame >= 15 && frame < 25,
+                    id: "##icon-button");
                 break;
             case "switch-off":
                 Ui.Switch(

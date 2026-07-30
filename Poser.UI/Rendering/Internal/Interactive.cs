@@ -306,7 +306,8 @@ public static class Interactive
     public static InteractionResult Reserve(
         string id,
         Vector2 size,
-        bool disabled)
+        bool disabled,
+        bool activateOnSpace = false)
     {
         var owner = CurrentOwner;
         var min = ImGui.GetCursorScreenPos();
@@ -325,12 +326,15 @@ public static class Interactive
         bool active = ImGui.IsItemActive() && !disabled && !occluded;
         bool clicked = ImGui.IsItemClicked() && !disabled && !occluded;
         // The button RETURN is ImGui's release-inside semantic: pressing,
-        // dragging out, and releasing does not activate. Keyboard
-        // activation (Space via nav, Enter explicitly) joins it.
+        // dragging out, and releasing does not activate. Enter joins it
+        // explicitly; components with native button semantics can opt
+        // into explicit Space activation without changing other controls.
         bool activated = pressed && !disabled && !occluded;
         if (focused && !disabled
             && (ImGui.IsKeyPressed(ImGuiKey.Enter)
-                || ImGui.IsKeyPressed(ImGuiKey.KeypadEnter)))
+                || ImGui.IsKeyPressed(ImGuiKey.KeypadEnter)
+                || (activateOnSpace
+                    && ImGui.IsKeyPressed(ImGuiKey.Space))))
             activated = true;
 
         PseudoState state = PseudoState.None;

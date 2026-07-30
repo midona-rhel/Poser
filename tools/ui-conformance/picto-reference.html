@@ -78,6 +78,11 @@
   <script src="icon-fixtures.generated.js"></script>
   <script>
     const root = '../../../Picto/src/';
+    // Exact AppShell Settings action from AppShell.tsx lines 333–336:
+    // shared .iconBtn geometry via .toggleBtn, 16px IconSettings, stroke 1.5.
+    const settingsIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg>';
+    const settingsButton = (attrs = '', extraClass = '') =>
+      `<button class="iconBtn toggleBtn ${extraClass}" aria-label="Settings" ${attrs}>${settingsIcon}</button>`;
     const variants = {
       'text-label': {
         // Picto typography: src/app/globals.css body — 13px
@@ -317,13 +322,59 @@
             `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})`;
         },
       },
-      'icon-button': {
-        css: 'shared/styles/iconButton.module.css',
-        html: '<button class="iconBtn" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V20h-3v-.08a1.7 1.7 0 0 0-1.03-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 14.7a1.7 1.7 0 0 0-1.56-1.03H5v-3h.44A1.7 1.7 0 0 0 7 9.64a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.12-2.12.06.06A1.7 1.7 0 0 0 10.66 6a1.7 1.7 0 0 0 1.03-1.56V4h3v.44A1.7 1.7 0 0 0 15.72 6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.12 2.12-.06.06A1.7 1.7 0 0 0 19.38 9.66a1.7 1.7 0 0 0 1.56 1.03H21v3h-.06A1.7 1.7 0 0 0 19.4 15z"/></svg></button>',
+      'icon-button-idle': {
+        css: ['shared/styles/iconButton.module.css', 'app/AppShell.module.css'],
+        html: settingsButton(),
       },
-      'icon-button-active': {
-        css: 'shared/styles/iconButton.module.css',
-        html: '<button class="iconBtn iconBtnActive" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V20h-3v-.08a1.7 1.7 0 0 0-1.03-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 14.7a1.7 1.7 0 0 0-1.56-1.03H5v-3h.44A1.7 1.7 0 0 0 7 9.64a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.12-2.12.06.06A1.7 1.7 0 0 0 10.66 6a1.7 1.7 0 0 0 1.03-1.56V4h3v.44A1.7 1.7 0 0 0 15.72 6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.12 2.12-.06.06A1.7 1.7 0 0 0 19.38 9.66a1.7 1.7 0 0 0 1.56 1.03H21v3h-.06A1.7 1.7 0 0 0 19.4 15z"/></svg></button>',
+      'icon-button-hover': {
+        css: ['shared/styles/iconButton.module.css', 'app/AppShell.module.css'],
+        html: settingsButton('style="opacity:1;background:var(--color-hover-overlay);transition:none"'),
+      },
+      'icon-button-pressed': {
+        css: ['shared/styles/iconButton.module.css', 'app/AppShell.module.css'],
+        // Static Picto endpoint; the Crystarium candidate fixture below
+        // reaches this state through a real held primary pointer.
+        html: settingsButton('style="opacity:1;background:var(--color-active-overlay);transition:none"'),
+      },
+      'icon-button-disabled': {
+        css: ['shared/styles/iconButton.module.css', 'app/AppShell.module.css'],
+        html: settingsButton('disabled', 'iconBtnDisabled'),
+      },
+      'icon-button-hover-mid': {
+        css: ['shared/styles/iconButton.module.css', 'app/AppShell.module.css'],
+        html: settingsButton(),
+        postLayout() {
+          const btn = document.querySelector('.iconBtn');
+          btn.style.transition = 'none';
+          // Five fixed 1/60s candidate advances through the 150ms
+          // cubic-bezier(.4,0,.22,1) transition.
+          const x1 = .4, y1 = 0, x2 = .22, y2 = 1, x = 5 / 9;
+          const sample = (a, b, t) =>
+            ((1 - 3 * b + 3 * a) * t + (3 * b - 6 * a)) * t * t
+              + 3 * a * t;
+          const slope = (a, b, t) =>
+            3 * (1 - 3 * b + 3 * a) * t * t
+              + 2 * (3 * b - 6 * a) * t + 3 * a;
+          let u = x;
+          for (let i = 0; i < 8; i++) {
+            const d = slope(x1, x2, u);
+            if (Math.abs(d) < 1e-6) break;
+            u = Math.max(0, Math.min(1, u - (sample(x1, x2, u) - x) / d));
+          }
+          const eased = sample(y1, y2, u);
+          btn.style.opacity = String(.8 + .2 * eased);
+          btn.style.background =
+            `color-mix(in srgb, var(--color-hover-overlay) ${eased * 100}%, transparent)`;
+        },
+      },
+      'icon-button-hover-exit': {
+        css: ['shared/styles/iconButton.module.css', 'app/AppShell.module.css'],
+        html: settingsButton(),
+      },
+      'icon-button-keyboard-focused': {
+        css: ['shared/styles/iconButton.module.css', 'app/AppShell.module.css'],
+        html: settingsButton('autofocus'),
+        postLayout() { document.querySelector('.iconBtn').focus(); },
       },
       'switch-off': {
         css: 'shared/ui/ToggleSwitch/ToggleSwitch.module.css',

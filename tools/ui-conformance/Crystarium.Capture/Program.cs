@@ -42,6 +42,9 @@ internal static class Program
             return 0;
         }
 
+        if (args.Length == 1 && args[0] == "--icon-button-behavior")
+            return RunIconButtonBehavior();
+
         if (args.Length == 2 && args[0] == "--batch")
         {
             // One process for a whole capture list: the dominant cost of
@@ -73,6 +76,7 @@ internal static class Program
                 "Usage: Crystarium.Capture <component> <output.png> [scale] [theme]\n" +
                 "       Crystarium.Capture --batch <listfile>\n" +
                 "       Crystarium.Capture --measure <cssSize>\n" +
+                "       Crystarium.Capture --icon-button-behavior\n" +
                 "       Crystarium.Capture --list");
             return 2;
         }
@@ -188,6 +192,10 @@ internal static class Program
                         foreach (var (key, down) in
                             ComponentCatalog.KeyEventsFor(entry.Name, frame))
                             io.AddKeyEvent(key, down);
+                        foreach (var (button, down) in
+                            ComponentCatalog.MouseButtonEventsFor(
+                                entry.Name, frame))
+                            io.AddMouseButtonEvent(button, down);
 
                         ImGui.NewFrame();
                         Interactive.BeginFrame();
@@ -289,6 +297,198 @@ internal static class Program
         finally
         {
             FontRegistry.Dispose();
+            ImGui.DestroyContext(context);
+        }
+    }
+
+    private readonly record struct BehaviorResult(
+        int Activations, Vector2 Size);
+
+    /// <summary>Real ImGui input sequences for the momentary action
+    /// contract. Each case owns a fresh context over the shared atlas.</summary>
+    private static unsafe int RunIconButtonBehavior()
+    {
+        Application.SetHighDpiMode(HighDpiMode.DpiUnaware);
+        using var form = new Form
+        {
+            Text = "Crystarium icon-button behavior",
+            ClientSize = new Size(500, 80),
+            StartPosition = FormStartPosition.Manual,
+            Location = new Point(-32000, -32000),
+            ShowInTaskbar = false,
+        };
+        form.Show();
+        using var renderer = new Dx11Renderer();
+        renderer.Initialize(form.Handle, 500, 80);
+        var rootContext = ImGui.CreateContext();
+        try
+        {
+            var rootIo = ImGui.GetIO();
+            rootIo.IniFilename = null;
+            Ui.UseTheme(Theme.PictoDark);
+            using var fonts = new StandaloneFontAtlas(renderer);
+            FontRegistry.Register(fonts);
+            fonts.BuildFontsImmediately();
+            if (!FontRegistry.Ready)
+                throw new InvalidOperationException(
+                    $"Font atlas is not ready: {FontRegistry.LastError}");
+            var atlas = ImGui.GetIO().Fonts;
+            var failures = new List<string>();
+
+            Check("release-inside", 1, Run(
+                atlas,
+                pointer: frame => new Vector2(38, 38),
+                mouse: frame => frame switch
+                {
+                    5 => (true, true),
+                    7 => (true, false),
+                    _ => default,
+                }));
+            Check("drag-release-outside", 0, Run(
+                atlas,
+                pointer: frame => frame < 6
+                    ? new Vector2(38, 38)
+                    : new Vector2(110, 70),
+                mouse: frame => frame switch
+                {
+                    5 => (true, true),
+                    7 => (true, false),
+                    _ => default,
+                }));
+            Check("enter", 1, Run(
+                atlas,
+                pointer: _ => new Vector2(-1000, -1000),
+                key: frame => frame switch
+                {
+                    2 => (true, ImGuiKey.Tab, true),
+                    3 => (true, ImGuiKey.Tab, false),
+                    6 => (true, ImGuiKey.Enter, true),
+                    7 => (true, ImGuiKey.Enter, false),
+                    _ => default,
+                }));
+            Check("space", 1, Run(
+                atlas,
+                pointer: _ => new Vector2(-1000, -1000),
+                key: frame => frame switch
+                {
+                    2 => (true, ImGuiKey.Tab, true),
+                    3 => (true, ImGuiKey.Tab, false),
+                    6 => (true, ImGuiKey.Space, true),
+                    7 => (true, ImGuiKey.Space, false),
+                    _ => default,
+                }));
+            Check("disabled", 0, Run(
+                atlas,
+                pointer: _ => new Vector2(38, 38),
+                mouse: frame => frame switch
+                {
+                    5 => (true, true),
+                    7 => (true, false),
+                    _ => default,
+                },
+                disabled: true));
+
+            var defaultSize = Run(
+                atlas,
+                pointer: _ => new Vector2(-1000, -1000),
+                canvasWidth: 500).Size;
+            if (defaultSize != new Vector2(28f))
+                failures.Add(
+                    $"default-size: {defaultSize.X}x{defaultSize.Y}, want 28x28");
+            var explicitSize = Run(
+                atlas,
+                pointer: _ => new Vector2(-1000, -1000),
+                style: ControlStyle.Square(36f),
+                canvasWidth: 500).Size;
+            if (explicitSize != new Vector2(36f))
+                failures.Add(
+                    $"explicit-size: {explicitSize.X}x{explicitSize.Y}, want 36x36");
+
+            if (failures.Count == 0)
+            {
+                Console.WriteLine(
+                    "PASS release-inside=1 drag-release-outside=0 " +
+                    "enter=1 space=1 disabled=0 default=28x28 explicit=36x36");
+                return 0;
+            }
+            foreach (var failure in failures)
+                Console.Error.WriteLine("FAIL " + failure);
+            return 1;
+
+            void Check(
+                string name, int expected, BehaviorResult actual)
+            {
+                if (actual.Activations != expected)
+                    failures.Add(
+                        $"{name}: {actual.Activations}, want {expected}");
+            }
+        }
+        finally
+        {
+            FontRegistry.Dispose();
+            ImGui.DestroyContext(rootContext);
+        }
+    }
+
+    private static unsafe BehaviorResult Run(
+        ImFontAtlasPtr atlas,
+        Func<int, Vector2> pointer,
+        Func<int, (bool HasEvent, bool Down)>? mouse = null,
+        Func<int, (bool HasEvent, ImGuiKey Key, bool Down)>? key = null,
+        bool disabled = false,
+        ControlStyle style = default,
+        int canvasWidth = 120)
+    {
+        var context = ImGui.CreateContext(atlas);
+        ImGui.SetCurrentContext(context);
+        try
+        {
+            var io = ImGui.GetIO();
+            io.DisplayFramebufferScale = Vector2.One;
+            io.FontGlobalScale = 1f;
+            io.DeltaTime = 1f / 60f;
+            io.DisplaySize = new Vector2(canvasWidth, 80);
+            io.IniFilename = null;
+            io.ConfigFlags |= ImGuiConfigFlags.NavEnableKeyboard;
+            ImGui.StyleColorsDark();
+            int activations = 0;
+            Vector2 itemSize = default;
+            for (int frame = 0; frame < 12; frame++)
+            {
+                io.AddMousePosEvent(pointer(frame).X, pointer(frame).Y);
+                if (mouse?.Invoke(frame) is { HasEvent: true } m)
+                    io.AddMouseButtonEvent(0, m.Down);
+                if (key?.Invoke(frame) is { HasEvent: true } k)
+                    io.AddKeyEvent(k.Key, k.Down);
+                ImGui.NewFrame();
+                Interactive.BeginFrame();
+                ImGui.SetNextWindowPos(Vector2.Zero);
+                ImGui.SetNextWindowSize(new Vector2(canvasWidth, 80));
+                ImGui.PushStyleVar(
+                    ImGuiStyleVar.WindowPadding, Vector2.Zero);
+                ImGui.Begin(
+                    "##icon-button-behavior",
+                    ImGuiWindowFlags.NoDecoration
+                    | ImGuiWindowFlags.NoMove
+                    | ImGuiWindowFlags.NoSavedSettings
+                    | ImGuiWindowFlags.NoBackground);
+                ImGui.PopStyleVar();
+                ImGui.SetCursorScreenPos(new Vector2(24, 24));
+                Ui.IconButton(
+                    TablerIcon.Settings,
+                    () => activations++,
+                    style,
+                    disabled,
+                    id: "##behavior-icon-button");
+                itemSize = ImGui.GetItemRectSize();
+                ImGui.End();
+                Interactive.EndFrame();
+                ImGui.Render();
+            }
+            return new BehaviorResult(activations, itemSize);
+        }
+        finally
+        {
             ImGui.DestroyContext(context);
         }
     }

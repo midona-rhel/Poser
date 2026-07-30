@@ -62,8 +62,8 @@ public readonly record struct ControlStyle
 {
     public UiWidth Width { get; init; }
     public UiHeight Height { get; init; }
-    // Icon/toggle-only presentation; text buttons take a typed
-    // ButtonVariant instead and never interpret these flags.
+    // Toggle-only presentation retained until PBI-011 slice 5.
+    // Momentary IconButton and typed text Button ignore these flags.
     public bool Bare { get; init; }
     public bool Selected { get; init; }
     public bool Slashed { get; init; }

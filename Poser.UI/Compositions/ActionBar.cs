@@ -293,7 +293,6 @@ public static partial class Crystarium
                         var style = item.Style == default
                             ? ControlStyle.Square(
                                 ActiveTheme.Floating.CloseActionSize)
-                                with { Bare = true }
                             : item.Style;
                         float height = ControlSizing.Height(
                             style.Height,

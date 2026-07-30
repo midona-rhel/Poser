@@ -56,7 +56,7 @@ public static partial class Crystarium
             IconButton(
                 TablerIcon.X,
                 style: ControlStyle.Square(
-                    ActiveTheme.Floating.CloseActionSize) with { Bare = true },
+                    ActiveTheme.Floating.CloseActionSize),
                 id: id);
 
         public static void OpenPopup(string id)

@@ -321,21 +321,19 @@ public static class AppShellView
         float titleRight = leftMax.X - 8f * s;
         if (vm.ShowSpawn)
         {
-            PlaceIconButton(
-                dl,
+            PlaceIconAction(
                 new Vector2(titleRight - actionSize * s, undoY),
                 TablerIcon.Plus,
-                false,
                 s,
                 vm.OnSpawn,
                 help: "Add an actor to the scene");
             titleRight -= (actionSize + compactGap) * s;
         }
-        PlaceIconButton(dl, new Vector2(titleRight - actionSize * s, undoY), TablerIcon.ArrowBackUp, false, s, vm.OnRedo,
+        PlaceIconAction(new Vector2(titleRight - actionSize * s, undoY), TablerIcon.ArrowBackUp, s, vm.OnRedo,
             dimmed: !vm.CanRedo, flipX: true,
             help: vm.CanRedo ? "Reapply the change you undid" : "Nothing to redo",
             helpShortcut: PoserKeybinds.Effective("Redo"));
-        PlaceIconButton(dl, new Vector2(titleRight - (actionSize + compactGap + actionSize) * s, undoY), TablerIcon.ArrowBackUp, false, s,
+        PlaceIconAction(new Vector2(titleRight - (actionSize + compactGap + actionSize) * s, undoY), TablerIcon.ArrowBackUp, s,
             vm.OnUndo, dimmed: !vm.CanUndo,
             help: vm.CanUndo ? "Take back the last pose edit" : "Nothing to undo",
             helpShortcut: PoserKeybinds.Effective("Undo"));
@@ -345,7 +343,7 @@ public static class AppShellView
         float cy = min.Y + (h - actionSize * s) / 2f;
         if (vm.ShowProject)
         {
-            PlaceIconButton(dl, new Vector2(x, cy), TablerIcon.Folder, false, s, vm.OnProject,
+            PlaceIconAction(new Vector2(x, cy), TablerIcon.Folder, s, vm.OnProject,
                 help: "Open the scene project browser");
             x += (actionSize + actionGap) * s;
         }
@@ -403,17 +401,17 @@ public static class AppShellView
 
         // right cluster (rightmost = collapse chevron, then close X — user spec)
         float rx = max.X - 12f * s - actionSize * s;
-        PlaceNamedIconButton(new Vector2(rx, cy), vm.Collapsed ? "chevron-down" : "chevron-up", false, s,
+        PlaceNamedIconAction(new Vector2(rx, cy), vm.Collapsed ? "chevron-down" : "chevron-up", s,
             () => vm.OnCollapse?.Invoke(!vm.Collapsed),
             help: vm.Collapsed ? "Expand the window" : "Collapse to the title bar");
         rx -= (actionSize + actionGap) * s;
-        PlaceNamedIconButton(new Vector2(rx, cy), "x", false, s, vm.OnHideUi,
+        PlaceNamedIconAction(new Vector2(rx, cy), "x", s, vm.OnHideUi,
             help: "Hide the Poser window"); // close window
         rx -= (actionSize + actionGap) * s;
-        PlaceIconButton(dl, new Vector2(rx, cy), TablerIcon.Settings, false, s, vm.OnSettings,
+        PlaceIconAction(new Vector2(rx, cy), TablerIcon.Settings, s, vm.OnSettings,
             help: "Open Poser settings");
         rx -= (actionSize + actionGap) * s;
-        PlaceIconButton(dl, new Vector2(rx, cy), TablerIcon.Armature, vm.SkeletonOverlayOn, s,
+        PlaceIconToggleTemporary(new Vector2(rx, cy), TablerIcon.Armature, vm.SkeletonOverlayOn, s,
             () => vm.OnSkeletonOverlay?.Invoke(!vm.SkeletonOverlayOn),
             help: "Toggle the skeleton overlay in the viewport");
     }
@@ -486,8 +484,7 @@ public static class AppShellView
                             TablerIcon.Plus,
                             () => vm.OnSectionPlus?.Invoke(capture),
                             ControlStyle.Square(
-                                Crystarium.ActiveTheme.Controls.SwitchHeight)
-                                with { Bare = true },
+                                Crystarium.ActiveTheme.Controls.SwitchHeight),
                             id: $"##sbp-{sectionIndex}");
                     }
                     cursor.Y +=
@@ -649,18 +646,18 @@ public static class AppShellView
             float ax = cursor.X + innerW - actionReserve;
             DrawRowAction(
                 $"##target-{id}", new Vector2(ax, cursor.Y + 3f * s),
-                TablerIcon.Crosshair, false, s,
+                TablerIcon.Crosshair, s,
                 () => vm.OnActorTarget?.Invoke(row),
                 "Set game target");
             ax += 22f * s;
-            DrawRowAction(
+            DrawRowToggleTemporary(
                 $"##visible-{id}", new Vector2(ax, cursor.Y + 3f * s),
                 TablerIcon.Eye,
                 !row.ActorVisible, s,
                 () => vm.OnActorVisibility?.Invoke(row),
                 row.ActorVisible ? "Hide actor" : "Show actor");
             ax += 22f * s;
-            DrawRowAction(
+            DrawRowToggleTemporary(
                 $"##pause-{id}", new Vector2(ax, cursor.Y + 3f * s),
                 TablerIcon.PlayerPlay,
                 row.ActorPaused, s,
@@ -671,7 +668,7 @@ public static class AppShellView
         {
             bool visible = vm.IsOverlayVisible?.Invoke(row.OverlayBones)
                 ?? true;
-            DrawRowAction(
+            DrawRowToggleTemporary(
                 $"##overlay-{id}",
                 new Vector2(cursor.X + innerW - 22f * s, cursor.Y + 3f * s),
                 visible ? TablerIcon.Eye : TablerIcon.EyeOff,
@@ -812,10 +809,10 @@ public static class AppShellView
             float actionSize =
                 Crystarium.ActiveTheme.Controls.ShellIconAction;
             rx -= actionSize * s;
-            PlaceIconButton(dl, new Vector2(
+            PlaceIconAction(new Vector2(
                     rx,
                     min.Y + (ToolbarHeight - actionSize) / 2f * s),
-                TablerIcon.ExternalLink, false, s, vm.OnPopOut);
+                TablerIcon.ExternalLink, s, vm.OnPopOut);
             rx -= Crystarium.ActiveTheme.Page.ActionGap * s;
         }
         Crystarium.ActionBar(
@@ -936,7 +933,6 @@ public static class AppShellView
         string id,
         Vector2 pos,
         TablerIcon icon,
-        bool inactive,
         float scale,
         Action action,
         string help)
@@ -946,21 +942,37 @@ public static class AppShellView
             icon,
             action,
             ControlStyle.Square(
-                Crystarium.ActiveTheme.Controls.SwitchHeight) with
-            {
-                Bare = true,
-                Slashed = inactive,
-            },
+                Crystarium.ActiveTheme.Controls.SwitchHeight),
             help: help,
             id: id);
     }
 
+    private static void DrawRowToggleTemporary(
+        string id,
+        Vector2 pos,
+        TablerIcon icon,
+        bool inactive,
+        float scale,
+        Action action,
+        string help)
+    {
+        ImGui.SetCursorScreenPos(pos);
+        Crystarium.TemporaryIconToggle(
+            icon,
+            false,
+            action,
+            ControlStyle.Square(
+                Crystarium.ActiveTheme.Controls.SwitchHeight),
+            help: help,
+            id: id,
+            slashed: inactive);
+    }
+
     // ── shared small controls ────────────────────────────────────────────
 
-    private static void PlaceNamedIconButton(
+    private static void PlaceNamedIconAction(
         Vector2 position,
         string icon,
-        bool selected,
         float scale,
         Action? onClick,
         bool dimmed = false,
@@ -972,21 +984,15 @@ public static class AppShellView
             icon,
             onClick,
             ControlStyle.Square(
-                Crystarium.ActiveTheme.Controls.ShellIconAction) with
-            {
-                Bare = true,
-                Selected = selected,
-            },
+                Crystarium.ActiveTheme.Controls.ShellIconAction),
             dimmed,
             CombinedHelp(help, helpShortcut),
             $"##shell-icon-{icon}-{position.X:0}-{position.Y:0}");
     }
 
-    private static void PlaceIconButton(
-        ImDrawListPtr _,
+    private static void PlaceIconAction(
         Vector2 position,
         TablerIcon icon,
-        bool selected,
         float scale,
         Action? onClick,
         bool dimmed = false,
@@ -999,15 +1005,35 @@ public static class AppShellView
             icon,
             onClick,
             ControlStyle.Square(
-                Crystarium.ActiveTheme.Controls.ShellIconAction) with
-            {
-                Bare = true,
-                Selected = selected,
-            },
+                Crystarium.ActiveTheme.Controls.ShellIconAction),
             dimmed,
             CombinedHelp(help, helpShortcut),
             $"##shell-icon-{icon}-{position.X:0}-{position.Y:0}",
             flipX);
+    }
+
+    private static void PlaceIconToggleTemporary(
+        Vector2 position,
+        TablerIcon icon,
+        bool selected,
+        float scale,
+        Action? onClick,
+        bool dimmed = false,
+        bool flipX = false,
+        string? help = null,
+        string? helpShortcut = null)
+    {
+        ImGui.SetCursorScreenPos(position);
+        Crystarium.TemporaryIconToggle(
+            icon,
+            selected,
+            onClick,
+            ControlStyle.Square(
+                Crystarium.ActiveTheme.Controls.ShellIconAction),
+            dimmed,
+            CombinedHelp(help, helpShortcut),
+            $"##shell-toggle-{icon}-{position.X:0}-{position.Y:0}",
+            flipX: flipX);
     }
 
     private static float PlaceIconSegments(

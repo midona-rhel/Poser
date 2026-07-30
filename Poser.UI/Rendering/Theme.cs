@@ -262,6 +262,7 @@ public readonly record struct Theme
             ControlFill = new(248f / 255f, 249f / 255f, 251f / 255f, 0.05f),
             ControlHover = new(1f, 1f, 1f, 0.10f),
             WeakOverlay = new(1f, 1f, 1f, 0.08f),
+            ActiveOverlay = new(1f, 1f, 1f, 0.14f),
             InputWell = new(0f, 0f, 0f, 0.20f),
             Primary = new(50f / 255f, 151f / 255f, 255f / 255f, 1f),
             PrimaryHover = new(50f / 255f, 151f / 255f, 255f / 255f, 0.60f),
@@ -415,6 +416,7 @@ public readonly record struct Theme
                 ControlFill = new(0f, 0f, 0f, 0.05f),
                 ControlHover = new(0f, 0f, 0f, 0.08f),
                 WeakOverlay = border,
+                ActiveOverlay = new(0f, 0f, 0f, 0.10f),
                 InputWell = new(0f, 0f, 0f, 0.20f),
                 Primary = primary,
                 PrimaryHover = primary with { W = 0.60f },
@@ -695,6 +697,7 @@ public readonly record struct Theme
         public Vector4 ControlFill { get; init; }
         public Vector4 ControlHover { get; init; }
         public Vector4 WeakOverlay { get; init; }
+        public Vector4 ActiveOverlay { get; init; }
         public Vector4 InputWell { get; init; }
         public Vector4 Primary { get; init; }
         public Vector4 PrimaryHover { get; init; }

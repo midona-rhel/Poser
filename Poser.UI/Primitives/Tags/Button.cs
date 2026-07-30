@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Poser.UI.Effects;
 
@@ -50,41 +49,24 @@ public static partial class Crystarium
     }
 
     public static bool IconButton(
-        FontAwesomeIcon icon,
-        Action? onClick = null,
-        ControlStyle style = default,
-        bool disabled = false,
-        string? help = null,
-        string? id = null)
-    {
-        var size = IconButtonSize(style);
-        return RenderButton(
-            id ?? icon.ToIconString(),
-            size,
-            style,
-            disabled,
-            help,
-            () => DrawFontAwesomeIcon(icon),
-            onClick);
-    }
-
-    public static bool IconButton(
         TablerIcon icon,
         Action? onClick = null,
         ControlStyle style = default,
         bool disabled = false,
         string? help = null,
         string? id = null,
-        bool flipX = false)
+        bool flipX = false,
+        float iconSize = 16f,
+        float strokeWidth = 1.5f)
     {
         var size = IconButtonSize(style);
-        return RenderButton(
+        return RenderIconButton(
             id ?? Tabler.NameFor(icon),
             size,
-            style,
             disabled,
             help,
-            () => DrawTablerIcon(icon, flipX),
+            (min, max, opacity) => DrawButtonIcon(
+                min, max, icon, iconSize, opacity, flipX, strokeWidth),
             onClick);
     }
 
@@ -94,16 +76,71 @@ public static partial class Crystarium
         ControlStyle style = default,
         bool disabled = false,
         string? help = null,
-        string? id = null)
+        string? id = null,
+        float iconSize = 16f,
+        float strokeWidth = 1.5f)
     {
         var size = IconButtonSize(style);
-        return RenderButton(
+        return RenderIconButton(
             id ?? icon,
             size,
-            style,
             disabled,
             help,
-            () => DrawNamedIcon(icon),
+            (min, max, opacity) => DrawButtonIcon(
+                min, max, icon, iconSize, opacity, strokeWidth),
+            onClick);
+    }
+
+    /// <summary>
+    /// Slice-5 bridge for controls whose selected/slashed state persists.
+    /// Momentary actions use <see cref="IconButton(TablerIcon, Action?,
+    /// ControlStyle, bool, string?, string?, bool, float, float)"/>.
+    /// </summary>
+    public static bool TemporaryIconToggle(
+        TablerIcon icon,
+        bool selected,
+        Action? onClick = null,
+        ControlStyle style = default,
+        bool disabled = false,
+        string? help = null,
+        string? id = null,
+        bool slashed = false,
+        bool flipX = false)
+    {
+        var size = IconButtonSize(style);
+        return RenderTemporaryIconToggle(
+            id ?? Tabler.NameFor(icon),
+            size,
+            selected,
+            slashed,
+            disabled,
+            help,
+            (min, max, opacity) => DrawLegacyButtonIcon(
+                min, max, icon, opacity, flipX),
+            onClick);
+    }
+
+    /// <summary>Slice-5 bridge for registered custom SVG toggles.</summary>
+    public static bool TemporaryIconToggle(
+        string icon,
+        bool selected,
+        Action? onClick = null,
+        ControlStyle style = default,
+        bool disabled = false,
+        string? help = null,
+        string? id = null,
+        bool slashed = false)
+    {
+        var size = IconButtonSize(style);
+        return RenderTemporaryIconToggle(
+            id ?? icon,
+            size,
+            selected,
+            slashed,
+            disabled,
+            help,
+            (min, max, opacity) => DrawLegacyButtonIcon(
+                min, max, icon, opacity),
             onClick);
     }
 
@@ -442,53 +479,244 @@ public static partial class Crystarium
             HoverStates.Remove(key);
     }
 
-    // ---- Icon buttons (slice 4 owns their conformance) --------------
+    // ---- Picto momentary icon button --------------------------------
 
-    private static bool RenderButton(
+    // iconButton.module.css: both animatable properties use the Picto
+    // --ease-default timing function for 150ms.
+    private static readonly Transition IconButtonTransition =
+        Transition.CubicBezier(0.15f, 0.4f, 0f, 0.22f, 1f);
+
+    private sealed class IconButtonVisualState
+    {
+        public Vector4 Background;
+        public Vector4 FromBackground;
+        public Vector4 TargetBackground;
+        public float Opacity;
+        public float FromOpacity;
+        public float TargetOpacity;
+        public float Elapsed;
+        public int LastFrame;
+    }
+
+    private static readonly Dictionary<uint, IconButtonVisualState>
+        IconButtonVisualStates = new();
+
+    private static bool RenderIconButton(
         string id,
         Vector2 logicalSize,
-        ControlStyle style,
         bool disabled,
         string? help,
-        Action content,
+        Action<Vector2, Vector2, float> content,
         Action? onClick)
     {
         float scale = ImGuiHelpers.GlobalScale;
         var size = logicalSize * scale;
-        var hit = Interactive.Reserve(id, size, disabled);
+        uint identity = ImGui.GetID(id);
+        var hit = Interactive.Reserve(
+            id, size, disabled, activateOnSpace: true);
         var theme = ActiveTheme;
-        float opacity = disabled ? theme.Chrome.ControlDisabledOpacity : 1f;
-        var background = style.Selected
-            ? theme.Chrome.SegmentSelected
-            : style.Bare
-            ? (hit.Hovered ? theme.Chrome.WeakOverlay : Vector4.Zero)
-            : (hit.Hovered ? theme.Chrome.ControlHover : theme.Chrome.ControlFill);
-        var border = theme.Chrome.ControlBorder;
-        background.W *= opacity;
-        border.W *= opacity;
+        var targetBackground = hit.Active
+            ? theme.Chrome.ActiveOverlay
+            : hit.Hovered
+                ? theme.Chrome.WeakOverlay
+                : Vector4.Zero;
+        float targetOpacity = hit.Hovered || hit.Active ? 1f : 0.8f;
+        var (background, opacity) = AdvanceIconButtonVisual(
+            identity,
+            disabled ? Vector4.Zero : targetBackground,
+            disabled ? 0.8f : targetOpacity);
+        if (disabled)
+        {
+            background = Vector4.Zero;
+            opacity = 0.2f;
+        }
 
         var draw = ImGui.GetWindowDrawList();
-        float radius = theme.Radii.Control * scale;
+        // Shared .iconBtn is exactly 5px, independent of the 6px radius
+        // used by Picto's bordered actionButton family.
+        float radius = 5f * scale;
+        var fadedBackground = background;
+        fadedBackground.W *= opacity;
+        draw.PushClipRect(hit.ScreenMin, hit.ScreenMax, true);
+        try
+        {
+            draw.AddRectFilled(
+                hit.ScreenMin,
+                hit.ScreenMax,
+                ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(fadedBackground)),
+                radius);
+
+            // CSS opacity flattens the icon and background as one group.
+            // Their RGB is the same in every Picto theme, so this alpha
+            // compensation reproduces that group exactly at every stroke
+            // coverage instead of applying opacity twice at overlaps.
+            float iconOpacity = GroupForegroundOpacity(
+                background.W, opacity);
+            content(hit.ScreenMin, hit.ScreenMax, iconOpacity);
+        }
+        finally
+        {
+            draw.PopClipRect();
+        }
+
+        if (!string.IsNullOrEmpty(help) &&
+            (hit.Hovered || (hit.Disabled && HoverHelp.HelpHovered(hit.ScreenMin, hit.ScreenMax))))
+            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
+        if (hit.Activated)
+            onClick?.Invoke();
+        return hit.Activated;
+    }
+
+    private static (Vector4 Background, float Opacity)
+        AdvanceIconButtonVisual(
+            uint identity,
+            Vector4 targetBackground,
+            float targetOpacity)
+    {
+        int frame = ImGui.GetFrameCount();
+        if (!IconButtonVisualStates.TryGetValue(identity, out var state)
+            || frame <= state.LastFrame)
+        {
+            if (IconButtonVisualStates.Count > 512)
+                PruneIconButtonVisualStates(frame);
+            state = new IconButtonVisualState
+            {
+                Background = targetBackground,
+                FromBackground = targetBackground,
+                TargetBackground = targetBackground,
+                Opacity = targetOpacity,
+                FromOpacity = targetOpacity,
+                TargetOpacity = targetOpacity,
+                Elapsed = IconButtonTransition.DurationSeconds,
+                LastFrame = frame,
+            };
+            IconButtonVisualStates[identity] = state;
+            return (state.Background, state.Opacity);
+        }
+
+        if (state.TargetBackground != targetBackground
+            || state.TargetOpacity != targetOpacity)
+        {
+            state.FromBackground = state.Background;
+            state.TargetBackground = targetBackground;
+            state.FromOpacity = state.Opacity;
+            state.TargetOpacity = targetOpacity;
+            state.Elapsed = 0f;
+        }
+        else if (state.Elapsed < IconButtonTransition.DurationSeconds)
+        {
+            state.Elapsed = MathF.Min(
+                IconButtonTransition.DurationSeconds,
+                state.Elapsed + ImGui.GetIO().DeltaTime);
+            float linear = IconButtonTransition.DurationSeconds > 0f
+                ? state.Elapsed / IconButtonTransition.DurationSeconds
+                : 1f;
+            float eased = IconButtonTransition.Evaluate(linear);
+            state.Background = PremultipliedLerp(
+                state.FromBackground, state.TargetBackground, eased);
+            state.Opacity = state.FromOpacity
+                + (state.TargetOpacity - state.FromOpacity) * eased;
+        }
+        state.LastFrame = frame;
+        return (state.Background, state.Opacity);
+    }
+
+    private static void PruneIconButtonVisualStates(int frame)
+    {
+        var stale = new List<uint>();
+        foreach (var (key, value) in IconButtonVisualStates)
+            if (frame - value.LastFrame > 2)
+                stale.Add(key);
+        foreach (var key in stale)
+            IconButtonVisualStates.Remove(key);
+    }
+
+    private static float GroupForegroundOpacity(
+        float backgroundAlpha,
+        float groupOpacity)
+    {
+        float denominator = 1f - groupOpacity * backgroundAlpha;
+        return denominator <= 0f
+            ? groupOpacity
+            : groupOpacity * (1f - backgroundAlpha) / denominator;
+    }
+
+    private static void DrawButtonIcon(
+        Vector2 min,
+        Vector2 max,
+        TablerIcon icon,
+        float logicalSize,
+        float opacity,
+        bool flipX,
+        float strokeWidth)
+    {
+        var (iconMin, iconMax) = CenteredIconBounds(
+            min, max, logicalSize);
+        IconIn(
+            iconMin, iconMax, icon,
+            opacity: opacity,
+            flipX: flipX,
+            strokeWidth: strokeWidth);
+    }
+
+    private static void DrawButtonIcon(
+        Vector2 min,
+        Vector2 max,
+        string icon,
+        float logicalSize,
+        float opacity,
+        float strokeWidth)
+    {
+        var (iconMin, iconMax) = CenteredIconBounds(
+            min, max, logicalSize);
+        IconIn(
+            iconMin, iconMax, icon,
+            opacity: opacity,
+            strokeWidth: strokeWidth);
+    }
+
+    private static (Vector2 Min, Vector2 Max) CenteredIconBounds(
+        Vector2 min,
+        Vector2 max,
+        float logicalSize)
+    {
+        float side = logicalSize * ImGuiHelpers.GlobalScale;
+        var iconMin = (min + max - new Vector2(side)) * 0.5f;
+        return (iconMin, iconMin + new Vector2(side));
+    }
+
+    // ---- Temporary persistent icon-toggle bridge (slice 5) ----------
+
+    private static bool RenderTemporaryIconToggle(
+        string id,
+        Vector2 logicalSize,
+        bool selected,
+        bool slashed,
+        bool disabled,
+        string? help,
+        Action<Vector2, Vector2, float> content,
+        Action? onClick)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        var hit = Interactive.Reserve(id, logicalSize * scale, disabled);
+        float opacity = disabled
+            ? ActiveTheme.Chrome.ControlDisabledOpacity
+            : 1f;
+        var background = selected
+            ? ActiveTheme.Chrome.SegmentSelected
+            : hit.Hovered
+                ? ActiveTheme.Chrome.WeakOverlay
+                : Vector4.Zero;
+        background.W *= opacity;
+        var draw = ImGui.GetWindowDrawList();
         draw.AddRectFilled(
             hit.ScreenMin,
             hit.ScreenMax,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(background)),
-            radius);
-        if (!style.Bare)
-        {
-            float inset = 0.5f * scale;
-            draw.AddRect(
-                hit.ScreenMin + new Vector2(inset),
-                hit.ScreenMax - new Vector2(inset),
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(border)),
-                MathF.Max(0f, radius - inset),
-                ImDrawFlags.None,
-                scale);
-        }
-
-        ButtonContent = new(hit.ScreenMin, hit.ScreenMax, opacity);
-        content();
-        if (style.Slashed)
+            ActiveTheme.Radii.Control * scale);
+        content(hit.ScreenMin, hit.ScreenMax, opacity);
+        if (slashed)
         {
             float inset = ActiveTheme.Spacing.Two * scale;
             draw.AddLine(
@@ -507,53 +735,30 @@ public static partial class Crystarium
         return hit.Clicked;
     }
 
-    [ThreadStatic]
-    private static ButtonContentBounds ButtonContent;
-
-    private readonly record struct ButtonContentBounds(Vector2 Min, Vector2 Max, float Opacity);
-
-    private static void DrawFontAwesomeIcon(FontAwesomeIcon icon)
+    private static void DrawLegacyButtonIcon(
+        Vector2 min,
+        Vector2 max,
+        TablerIcon icon,
+        float opacity,
+        bool flipX)
     {
-        var bounds = ButtonContent;
-        var font = UiBuilder.IconFont;
-        string glyph = icon.ToIconString();
-        float iconScale = ActiveTheme.Controls.IconContentScale;
-        ImGui.PushFont(font);
-        var baseSize = ImGui.CalcTextSize(glyph);
-        ImGui.PopFont();
-        var size = baseSize * iconScale;
-        var position = bounds.Min + (bounds.Max - bounds.Min - size) * 0.5f;
-        float outlineOffset = ImGuiHelpers.GlobalScale;
-        var outline = ActiveTheme.Palette.Black with { W = bounds.Opacity };
-        var fill = ActiveTheme.Palette.White with { W = bounds.Opacity };
-        DrawHelpers.DrawOutlinedIconScaled(
-            ImGui.GetWindowDrawList(),
-            font,
-            position,
-            glyph,
-            ColorEx.ApplyAlpha(outline.ToU32()),
-            ColorEx.ApplyAlpha(fill.ToU32()),
-            outlineOffset,
-            iconScale);
-    }
-
-    private static void DrawTablerIcon(TablerIcon icon, bool flipX)
-    {
-        var bounds = ButtonContent;
         IconIn(
-            bounds.Min, bounds.Max, icon,
+            min, max, icon,
             contentScale: ActiveTheme.Controls.IconContentScale,
-            opacity: bounds.Opacity,
+            opacity: opacity,
             flipX: flipX);
     }
 
-    private static void DrawNamedIcon(string icon)
+    private static void DrawLegacyButtonIcon(
+        Vector2 min,
+        Vector2 max,
+        string icon,
+        float opacity)
     {
-        var bounds = ButtonContent;
         IconIn(
-            bounds.Min, bounds.Max, icon,
+            min, max, icon,
             contentScale: ActiveTheme.Controls.IconContentScale,
-            opacity: bounds.Opacity);
+            opacity: opacity);
     }
 
     private static float ButtonHeight(ControlStyle style) =>
@@ -563,7 +768,9 @@ public static partial class Crystarium
     {
         float height = style.Height.Kind == UiHeightKind.Fixed
             ? style.Height.Value
-            : ButtonHeight(style);
+            : ControlSizing.Height(
+                style.Height,
+                ActiveTheme.Controls.ShellIconAction);
         float width = ControlSizing.Width(
             style.Width,
             height,
