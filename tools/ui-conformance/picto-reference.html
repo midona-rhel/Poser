@@ -296,6 +296,11 @@
         html: '<button class="btn">Apply changes</button>',
         postLayout() {
           const btn = document.querySelector('.btn');
+          // Sampling runs with the transition disabled: reading the
+          // computed background right after assigning it would start
+          // the 150ms transition and return its t=0 (idle) value. The
+          // capture is a static frame, so no transition is needed.
+          btn.style.transition = 'none';
           const parse = (c) => {
             const m = c.match(/rgba?\(([^)]+)\)/)[1]
               .split(',').map(Number);
@@ -402,8 +407,17 @@
       link.href = root + source;
       link.onload = () => {
         if (++loaded === styles.length) {
-          if (entry.postLayout) entry.postLayout();
-          document.documentElement.dataset.ready = 'true';
+          // A loaded stylesheet is not yet APPLIED: computed styles at
+          // link.onload can still be UA defaults (ButtonFace). Two
+          // animation frames guarantee a style recalc with the sheet
+          // in effect before any variant samples computed colors.
+          if (entry.postLayout)
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+              entry.postLayout();
+              document.documentElement.dataset.ready = 'true';
+            }));
+          else
+            document.documentElement.dataset.ready = 'true';
         }
       };
       document.head.appendChild(link);
