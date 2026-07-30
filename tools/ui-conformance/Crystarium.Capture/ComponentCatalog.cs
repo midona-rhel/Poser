@@ -75,6 +75,9 @@ internal static class ComponentCatalog
         new("icon-button-keyboard-focused", 120, 80),
         new("icon-button-explicit-size", 120, 88, Hidden: true),
         new("icon-button-hover-reconcile", 120, 80, Hidden: true),
+        new("icon-button-backdrop-surface", 160, 80, Hidden: true),
+        new("icon-button-backdrop-raised", 160, 80, Hidden: true),
+        new("icon-button-backdrop-checker", 160, 80, Hidden: true),
         new("switch-off", 120, 80),
         new("switch-on", 120, 80),
         new("text-input", 320, 80),
@@ -188,10 +191,16 @@ internal static class ComponentCatalog
             // older incremental text-button transition: after ImGui's
             // queued-event latency this leaves five 1/60s advances.
             || (name == "icon-button-hover-mid" && frame >= 33)
+            || (name.StartsWith(
+                    "icon-button-backdrop-", StringComparison.Ordinal)
+                && frame >= 33)
             || (name == "icon-button-hover-reconcile" && frame < 20);
         return inside
             ? (name.StartsWith("icon-button", StringComparison.Ordinal)
-                ? new Vector2(38, 38)
+                ? (name.StartsWith(
+                        "icon-button-backdrop-", StringComparison.Ordinal)
+                    ? new Vector2(118, 38)
+                    : new Vector2(38, 38))
                 : new Vector2(84, 40)) * scale
             : new Vector2(-1000, -1000);
     }
@@ -699,6 +708,39 @@ internal static class ComponentCatalog
                     disabled: frame >= 15 && frame < 25,
                     id: "##icon-button");
                 break;
+            case "icon-button-backdrop-surface":
+            case "icon-button-backdrop-raised":
+            case "icon-button-backdrop-checker":
+            {
+                var dl = ImGui.GetWindowDrawList();
+                Vector4 first = name.EndsWith("raised", StringComparison.Ordinal)
+                    ? Ui.ActiveTheme.SurfaceRaised
+                    : Ui.ActiveTheme.Surface;
+                Vector4 second = name.EndsWith("checker", StringComparison.Ordinal)
+                    ? Ui.ActiveTheme.Accent
+                    : first;
+                float tile = 8f * scale;
+                for (float y = 0; y < canvas.Y; y += tile)
+                    for (float x = 0; x < canvas.X; x += tile)
+                    {
+                        var color = ((int)(x / tile) + (int)(y / tile)) % 2 == 0
+                            ? first
+                            : second;
+                        dl.AddRectFilled(
+                            new Vector2(x, y),
+                            Vector2.Min(new Vector2(x + tile, y + tile), canvas),
+                            ImGui.ColorConvertFloat4ToU32(color));
+                    }
+                ImGui.SetCursorScreenPos(origin);
+                Ui.IconButton(TablerIcon.Settings, id: "##backdrop-idle");
+                ImGui.SetCursorScreenPos(origin + new Vector2(40f * scale, 0f));
+                Ui.IconButton(
+                    TablerIcon.Settings, disabled: true,
+                    id: "##backdrop-disabled");
+                ImGui.SetCursorScreenPos(origin + new Vector2(80f * scale, 0f));
+                Ui.IconButton(TablerIcon.Settings, id: "##backdrop-transition");
+                break;
+            }
             case "switch-off":
                 Ui.Switch(
                     "##switch-off", false, _ => { });

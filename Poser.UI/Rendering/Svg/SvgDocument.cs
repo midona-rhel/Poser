@@ -139,6 +139,16 @@ public sealed class SvgDocument
     /// <paramref name="strokeWidth"/> (viewBox units) replaces every path's own
     /// stroke width, exactly like the Tabler React <c>stroke</c> prop.</summary>
     public void Render(ImDrawListPtr drawList, Vector2 min, Vector2 max, Vector4? tint = null, bool flipX = false, float? strokeWidth = null)
+        => RenderCore(drawList, min, max, tint, flipX, strokeWidth, false);
+
+    internal void RenderComposited(
+        ImDrawListPtr drawList, Vector2 min, Vector2 max,
+        Vector4? tint = null, bool flipX = false, float? strokeWidth = null)
+        => RenderCore(drawList, min, max, tint, flipX, strokeWidth, true);
+
+    private void RenderCore(
+        ImDrawListPtr drawList, Vector2 min, Vector2 max, Vector4? tint,
+        bool flipX, float? strokeWidth, bool compositeStroke)
     {
         var size = max - min;
         if (size.X <= 0f || size.Y <= 0f) return;
@@ -160,7 +170,9 @@ public sealed class SvgDocument
             return origin + new Vector2(localX * scale, (svgPt.Y - ViewBoxMin.Y) * scale);
         }
 
-        SvgRenderer.Render(drawList, Paths, ToScreen, scale, tint, strokeWidth);
+        SvgRenderer.Render(
+            drawList, Paths, ToScreen, scale, tint, strokeWidth,
+            compositeStroke);
     }
 
     // ---------- helpers ----------

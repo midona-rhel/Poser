@@ -16,7 +16,8 @@ internal static class SvgRenderer
         Func<Vector2, Vector2> svgToScreen,
         float scale,
         Vector4? tint,
-        float? strokeWidthOverride = null)
+        float? strokeWidthOverride = null,
+        bool compositeStroke = false)
     {
         foreach (var path in paths)
         {
@@ -45,7 +46,18 @@ internal static class SvgRenderer
                 float strokeWidth = strokeWidthOverride ?? path.StrokeWidth;
                 if (path.Stroke is { } stroke && strokeWidth > 0f)
                 {
-                    DrawStroke(
+                    if (compositeStroke)
+                        SvgStrokeMesh.Draw(
+                            drawList, screenPoints,
+                            tint.HasValue
+                                ? Multiply(stroke, tint.Value)
+                                : stroke,
+                            strokeWidth * scale,
+                            subPath.Closed,
+                            path.RoundCaps,
+                            path.RoundJoins);
+                    else
+                        DrawStroke(
                         drawList,
                         screenPoints,
                         tint.HasValue ? Multiply(stroke, tint.Value) : stroke,

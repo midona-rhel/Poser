@@ -58,6 +58,34 @@ foreach ($scale in $Scales) {
         "idle reconciliation PASS at ${scale}x (exit and re-enable byte-identical)"
 }
 
+$surfaceBackdrop = Invoke-Capture "icon-button-backdrop-surface" 1
+$raisedBackdrop = Invoke-Capture "icon-button-backdrop-raised" 1
+$checkerBackdrop = Invoke-Capture "icon-button-backdrop-checker" 1
+$backdropResult = python -c @"
+import numpy as np
+from PIL import Image
+a = np.asarray(Image.open(r'$surfaceBackdrop').convert('RGB')).astype(int)
+b = np.asarray(Image.open(r'$raisedBackdrop').convert('RGB')).astype(int)
+c = np.asarray(Image.open(r'$checkerBackdrop').convert('RGB')).astype(int)
+ba, bb = a[4, 4], b[4, 4]
+channel = int(np.argmax(np.abs(ba - bb)))
+denominator = int(ba[channel] - bb[channel])
+regions = [(24, 52), (64, 92), (104, 132)]
+valid = denominator != 0
+for x0, x1 in regions:
+    alpha = 1 - (a[24:52, x0:x1, channel] -
+                 b[24:52, x0:x1, channel]) / denominator
+    valid &= bool(np.all(alpha >= -0.08) and np.all(alpha <= 1.08))
+checker_colors = np.unique(c[24:52, 24:132].reshape(-1, 3), axis=0)
+valid &= len(checker_colors) >= 4
+print('PASS' if valid else
+      f'FAIL channel={channel} denominator={denominator} colors={len(checker_colors)}')
+"@
+if ($backdropResult -ne "PASS") {
+    throw "Destination-independent group opacity failed: $backdropResult"
+}
+Write-Host "destination-independent group opacity PASS (surface, raised, checker)"
+
 $reference = Join-Path $toolRoot `
     "artifacts\picto\icon-button-hover-mid@dark@1.png"
 $candidate = Join-Path $toolRoot `

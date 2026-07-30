@@ -41,6 +41,20 @@ public static partial class Crystarium
             Tabler.Get(icon), min, max, color, contentScale, opacity,
             disabled, flipX, strokeWidth);
 
+    private static void IconInComposited(
+        Vector2 min, Vector2 max, TablerIcon icon,
+        float opacity = 1f, bool flipX = false, float? strokeWidth = null)
+        => DrawIconBox(
+            Tabler.Get(icon), min, max, null, 1f, opacity,
+            false, flipX, strokeWidth, compositeStroke: true);
+
+    private static void IconInComposited(
+        Vector2 min, Vector2 max, string name,
+        float opacity = 1f, bool flipX = false, float? strokeWidth = null)
+        => DrawIconBox(
+            Tabler.Get(name), min, max, null, 1f, opacity,
+            false, flipX, strokeWidth, compositeStroke: true);
+
     /// <summary>Composed-control icon by registered name.</summary>
     public static void IconIn(
         Vector2 min, Vector2 max, string name, Vector4? color = null,
@@ -68,7 +82,8 @@ public static partial class Crystarium
     private static void DrawIconBox(
         SvgDocument? doc, Vector2 min, Vector2 max, Vector4? color,
         float contentScale, float opacity, bool disabled, bool flipX,
-        float? strokeWidth)
+        float? strokeWidth,
+        bool compositeStroke = false)
     {
         if (doc == null)
             return;
@@ -76,7 +91,9 @@ public static partial class Crystarium
         tint.W *= opacity;
         if (disabled)
             tint.W *= ActiveTheme.Chrome.DisabledOpacity;
-        SvgBoxCore(doc, min, max, tint, contentScale, flipX, strokeWidth);
+        SvgBoxCore(
+            doc, min, max, tint, contentScale, flipX, strokeWidth,
+            compositeStroke);
     }
 
     /// <summary>Background-SVG entry for box styling: uniform-fits the
@@ -93,7 +110,8 @@ public static partial class Crystarium
 
     private static void SvgBoxCore(
         SvgDocument doc, Vector2 min, Vector2 max, Vector4? tint,
-        float contentScale, bool flipX, float? strokeWidth)
+        float contentScale, bool flipX, float? strokeWidth,
+        bool compositeStroke = false)
     {
         float side = MathF.Min(max.X - min.X, max.Y - min.Y) * contentScale;
         if (side <= 0f)
@@ -101,7 +119,13 @@ public static partial class Crystarium
         var center = (min + max) * 0.5f;
         var boxMin = ActiveTheme.Optical.Snap(center - new Vector2(side) * 0.5f);
         var boxMax = boxMin + new Vector2(side);
-        doc.Render(
-            ImGui.GetWindowDrawList(), boxMin, boxMax, tint, flipX, strokeWidth);
+        if (compositeStroke)
+            doc.RenderComposited(
+                ImGui.GetWindowDrawList(), boxMin, boxMax, tint, flipX,
+                strokeWidth);
+        else
+            doc.Render(
+                ImGui.GetWindowDrawList(), boxMin, boxMax, tint, flipX,
+                strokeWidth);
     }
 }

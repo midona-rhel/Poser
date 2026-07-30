@@ -65,8 +65,8 @@ public static partial class Crystarium
             size,
             disabled,
             help,
-            (min, max, color) => DrawButtonIcon(
-                min, max, icon, iconSize, color, flipX, strokeWidth),
+            (min, max, opacity) => DrawButtonIcon(
+                min, max, icon, iconSize, opacity, flipX, strokeWidth),
             onClick);
     }
 
@@ -86,8 +86,8 @@ public static partial class Crystarium
             size,
             disabled,
             help,
-            (min, max, color) => DrawButtonIcon(
-                min, max, icon, iconSize, color, strokeWidth),
+            (min, max, opacity) => DrawButtonIcon(
+                min, max, icon, iconSize, opacity, strokeWidth),
             onClick);
     }
 
@@ -506,7 +506,7 @@ public static partial class Crystarium
         Vector2 logicalSize,
         bool disabled,
         string? help,
-        Action<Vector2, Vector2, Vector4> content,
+        Action<Vector2, Vector2, float> content,
         Action? onClick)
     {
         float scale = ImGuiHelpers.GlobalScale;
@@ -547,15 +547,7 @@ public static partial class Crystarium
                     ColorEx.ApplyAlpha(fadedBackground)),
                 radius);
 
-            // SVG strokes use overlapping primitives for round caps and
-            // joins. Passing a translucent tint would compound alpha at
-            // those overlaps, whereas CSS flattens the SVG before applying
-            // group opacity. Precompose the foreground against the effective
-            // button backdrop and draw it opaque: repeated primitives then
-            // have the same color instead of becoming brighter.
-            var iconColor = GroupForegroundColor(
-                theme.Text, background, theme.Surface, opacity);
-            content(hit.ScreenMin, hit.ScreenMax, iconColor);
+            content(hit.ScreenMin, hit.ScreenMax, opacity);
         }
         finally
         {
@@ -634,48 +626,20 @@ public static partial class Crystarium
             IconButtonVisualStates.Remove(key);
     }
 
-    private static Vector4 GroupForegroundColor(
-        Vector4 foreground,
-        Vector4 background,
-        Vector4 surface,
-        float groupOpacity)
-    {
-        float backgroundAlpha = background.W;
-        var surfaceRgb = new Vector3(surface.X, surface.Y, surface.Z);
-        var backgroundRgb =
-            new Vector3(background.X, background.Y, background.Z);
-        var foregroundRgb =
-            new Vector3(foreground.X, foreground.Y, foreground.Z);
-        var groupBackdrop =
-            backgroundRgb * backgroundAlpha
-            + surfaceRgb * (1f - backgroundAlpha);
-        float fadedAlpha = groupOpacity * backgroundAlpha;
-        var fadedBackdrop =
-            backgroundRgb * fadedAlpha
-            + surfaceRgb * (1f - fadedAlpha);
-        var color =
-            fadedBackdrop + groupOpacity * (foregroundRgb - groupBackdrop);
-        return new Vector4(
-            Math.Clamp(color.X, 0f, 1f),
-            Math.Clamp(color.Y, 0f, 1f),
-            Math.Clamp(color.Z, 0f, 1f),
-            1f);
-    }
-
     private static void DrawButtonIcon(
         Vector2 min,
         Vector2 max,
         TablerIcon icon,
         float logicalSize,
-        Vector4 color,
+        float opacity,
         bool flipX,
         float strokeWidth)
     {
         var (iconMin, iconMax) = CenteredIconBounds(
             min, max, logicalSize);
-        IconIn(
+        IconInComposited(
             iconMin, iconMax, icon,
-            color: color,
+            opacity: opacity,
             flipX: flipX,
             strokeWidth: strokeWidth);
     }
@@ -685,14 +649,14 @@ public static partial class Crystarium
         Vector2 max,
         string icon,
         float logicalSize,
-        Vector4 color,
+        float opacity,
         float strokeWidth)
     {
         var (iconMin, iconMax) = CenteredIconBounds(
             min, max, logicalSize);
-        IconIn(
+        IconInComposited(
             iconMin, iconMax, icon,
-            color: color,
+            opacity: opacity,
             strokeWidth: strokeWidth);
     }
 
