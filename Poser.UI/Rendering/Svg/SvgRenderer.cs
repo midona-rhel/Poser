@@ -19,6 +19,41 @@ internal static class SvgRenderer
         float? strokeWidthOverride = null,
         bool compositeStroke = false)
     {
+        bool useStrokeMask = compositeStroke;
+        Vector4? compositeColor = null;
+        if (useStrokeMask)
+        {
+            foreach (var path in paths)
+            {
+                if (path.Fill.HasValue)
+                {
+                    // Preserve established paint ordering for custom
+                    // filled/multicolor SVGs. IconButton's Tabler outlines
+                    // are stroke-only and take the composited mask path.
+                    useStrokeMask = false;
+                    break;
+                }
+                if (path.Stroke is { } stroke)
+                {
+                    if (compositeColor.HasValue
+                        && compositeColor.Value != stroke)
+                    {
+                        useStrokeMask = false;
+                        break;
+                    }
+                    compositeColor = stroke;
+                }
+            }
+            useStrokeMask &= compositeColor.HasValue;
+        }
+
+        if (useStrokeMask)
+        {
+            SvgStrokeMask.Draw(
+                drawList, paths, svgToScreen, scale, tint,
+                strokeWidthOverride);
+        }
+
         foreach (var path in paths)
         {
             foreach (var subPath in path.SubPaths)
@@ -46,17 +81,7 @@ internal static class SvgRenderer
                 float strokeWidth = strokeWidthOverride ?? path.StrokeWidth;
                 if (path.Stroke is { } stroke && strokeWidth > 0f)
                 {
-                    if (compositeStroke)
-                        SvgStrokeMesh.Draw(
-                            drawList, screenPoints,
-                            tint.HasValue
-                                ? Multiply(stroke, tint.Value)
-                                : stroke,
-                            strokeWidth * scale,
-                            subPath.Closed,
-                            path.RoundCaps,
-                            path.RoundJoins);
-                    else
+                    if (!useStrokeMask)
                         DrawStroke(
                         drawList,
                         screenPoints,

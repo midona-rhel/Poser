@@ -78,8 +78,12 @@ for x0, x1 in regions:
     valid &= bool(np.all(alpha >= -0.08) and np.all(alpha <= 1.08))
 checker_colors = np.unique(c[24:52, 24:132].reshape(-1, 3), axis=0)
 valid &= len(checker_colors) >= 4
+plus_crossing_error = max(
+    np.abs((a[38, 38] - ba) - (a[34, 38] - ba)).max(),
+    np.abs((a[38, 38] - ba) - (a[38, 34] - ba)).max())
+valid &= plus_crossing_error <= 1
 print('PASS' if valid else
-      f'FAIL channel={channel} denominator={denominator} colors={len(checker_colors)}')
+      f'FAIL channel={channel} denominator={denominator} colors={len(checker_colors)} plus={plus_crossing_error}')
 "@
 if ($backdropResult -ne "PASS") {
     throw "Destination-independent group opacity failed: $backdropResult"

@@ -1,0 +1,245 @@
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using Dalamud.Bindings.ImGui;
+
+namespace Poser.UI;
+
+/// <summary>
+/// Rasterizes all strokes in an icon into one cached coverage mask. A mask
+/// pixel is emitted once, so group opacity cannot compound where SVG paths,
+/// caps, or joins overlap.
+/// </summary>
+internal static class SvgStrokeMask
+{
+    private const int MaxCachedMasks = 512;
+
+    private readonly record struct Stroke(
+        List<Vector2> Points,
+        float Radius,
+        bool Closed,
+        bool RoundCaps,
+        bool RoundJoins);
+
+    private readonly record struct Pixel(short X, short Y, byte Coverage);
+
+    private sealed class Mask
+    {
+        public required Pixel[] Pixels { get; init; }
+
+        public void Draw(
+            ImDrawListPtr draw, Vector2 origin, Vector4 color)
+        {
+            foreach (var pixel in Pixels)
+            {
+                var tint = color;
+                tint.W *= pixel.Coverage / 255f;
+                uint packed = ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(tint));
+                var min = origin + new Vector2(pixel.X, pixel.Y);
+                draw.AddRectFilled(min, min + Vector2.One, packed);
+            }
+        }
+    }
+
+    private static readonly Dictionary<ulong, Mask> Cache = new();
+
+    public static void Draw(
+        ImDrawListPtr draw,
+        IReadOnlyList<SvgPath> paths,
+        Func<Vector2, Vector2> svgToScreen,
+        float scale,
+        Vector4? tint,
+        float? strokeWidthOverride)
+    {
+        var strokes = new List<Stroke>();
+        Vector4? baseColor = null;
+        float minX = float.MaxValue;
+        float minY = float.MaxValue;
+        float maxX = float.MinValue;
+        float maxY = float.MinValue;
+
+        foreach (var path in paths)
+        {
+            float width = (strokeWidthOverride ?? path.StrokeWidth) * scale;
+            if (path.Stroke is not { } strokeColor || width <= 0f)
+                continue;
+            baseColor ??= strokeColor;
+            foreach (var subPath in path.SubPaths)
+            {
+                if (subPath.Points.Count < 2)
+                    continue;
+                var points = new List<Vector2>(subPath.Points.Count);
+                foreach (var source in subPath.Points)
+                {
+                    var point = svgToScreen(source);
+                    if (points.Count > 0
+                        && Vector2.DistanceSquared(points[^1], point)
+                            <= 0.0001f)
+                        continue;
+                    points.Add(point);
+                    float extent = width * 0.5f + 0.5f;
+                    minX = MathF.Min(minX, point.X - extent);
+                    minY = MathF.Min(minY, point.Y - extent);
+                    maxX = MathF.Max(maxX, point.X + extent);
+                    maxY = MathF.Max(maxY, point.Y + extent);
+                }
+                if (points.Count >= 2)
+                    strokes.Add(new(
+                        points, width * 0.5f, subPath.Closed,
+                        path.RoundCaps, path.RoundJoins));
+            }
+        }
+
+        if (strokes.Count == 0 || baseColor is not { } stroke)
+            return;
+
+        var origin = new Vector2(MathF.Floor(minX), MathF.Floor(minY));
+        int widthPixels = Math.Max(1, (int)MathF.Ceiling(maxX) - (int)origin.X);
+        int heightPixels = Math.Max(1, (int)MathF.Ceiling(maxY) - (int)origin.Y);
+        ulong key = Hash(strokes, origin, widthPixels, heightPixels);
+        if (!Cache.TryGetValue(key, out var mask))
+        {
+            if (Cache.Count >= MaxCachedMasks)
+                Cache.Clear();
+            mask = Build(strokes, origin, widthPixels, heightPixels);
+            Cache[key] = mask;
+        }
+
+        var color = tint.HasValue
+            ? Multiply(stroke, tint.Value)
+            : stroke;
+        mask.Draw(draw, origin, color);
+    }
+
+    private static Mask Build(
+        List<Stroke> strokes,
+        Vector2 origin,
+        int width,
+        int height)
+    {
+        var pixels = new List<Pixel>(width * height);
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                var point = origin + new Vector2(x + 0.5f, y + 0.5f);
+                float coverage = Coverage(strokes, point);
+                if (coverage > 0f)
+                    pixels.Add(new(
+                        checked((short)x),
+                        checked((short)y),
+                        checked((byte)MathF.Round(coverage * 255f))));
+            }
+        }
+        return new Mask { Pixels = pixels.ToArray() };
+    }
+
+    private static float Coverage(List<Stroke> strokes, Vector2 point)
+    {
+        float coverage = 0f;
+        foreach (var stroke in strokes)
+        {
+            int segmentCount = stroke.Closed
+                ? stroke.Points.Count
+                : stroke.Points.Count - 1;
+            for (int i = 0; i < segmentCount; i++)
+            {
+                var a = stroke.Points[i];
+                var b = stroke.Points[(i + 1) % stroke.Points.Count];
+                coverage = MathF.Max(
+                    coverage,
+                    EdgeCoverage(
+                        stroke.Radius,
+                        DistanceToStrip(point, a, b)));
+            }
+
+            if (stroke.RoundCaps && !stroke.Closed)
+            {
+                coverage = MathF.Max(
+                    coverage,
+                    EdgeCoverage(
+                        stroke.Radius,
+                        Vector2.Distance(point, stroke.Points[0])));
+                coverage = MathF.Max(
+                    coverage,
+                    EdgeCoverage(
+                        stroke.Radius,
+                        Vector2.Distance(point, stroke.Points[^1])));
+            }
+
+            if (stroke.RoundJoins)
+            {
+                int first = stroke.Closed ? 0 : 1;
+                int last = stroke.Closed
+                    ? stroke.Points.Count
+                    : stroke.Points.Count - 1;
+                for (int i = first; i < last; i++)
+                    coverage = MathF.Max(
+                        coverage,
+                        EdgeCoverage(
+                            stroke.Radius,
+                            Vector2.Distance(point, stroke.Points[i])));
+            }
+        }
+        return coverage;
+    }
+
+    private static float DistanceToStrip(
+        Vector2 point, Vector2 a, Vector2 b)
+    {
+        var direction = b - a;
+        float lengthSquared = direction.LengthSquared();
+        if (lengthSquared <= 0.0001f)
+            return float.MaxValue;
+        float t = Vector2.Dot(point - a, direction) / lengthSquared;
+        if (t < 0f || t > 1f)
+            return float.MaxValue;
+        var nearest = a + direction * t;
+        return Vector2.Distance(point, nearest);
+    }
+
+    private static float EdgeCoverage(float radius, float distance) =>
+        Math.Clamp(radius + 0.5f - distance, 0f, 1f);
+
+    private static ulong Hash(
+        List<Stroke> strokes,
+        Vector2 origin,
+        int width,
+        int height)
+    {
+        const ulong offset = 14695981039346656037UL;
+        const ulong prime = 1099511628211UL;
+        ulong hash = offset;
+
+        void Add(uint value)
+        {
+            hash ^= value;
+            hash *= prime;
+        }
+
+        Add((uint)width);
+        Add((uint)height);
+        foreach (var stroke in strokes)
+        {
+            Add(BitConverter.SingleToUInt32Bits(stroke.Radius));
+            Add(stroke.Closed ? 1u : 0u);
+            Add(stroke.RoundCaps ? 1u : 0u);
+            Add(stroke.RoundJoins ? 1u : 0u);
+            Add((uint)stroke.Points.Count);
+            foreach (var point in stroke.Points)
+            {
+                Add(BitConverter.SingleToUInt32Bits(point.X - origin.X));
+                Add(BitConverter.SingleToUInt32Bits(point.Y - origin.Y));
+            }
+        }
+        return hash;
+    }
+
+    private static Vector4 Multiply(Vector4 left, Vector4 right) =>
+        new(
+            left.X * right.X,
+            left.Y * right.Y,
+            left.Z * right.Z,
+            left.W * right.W);
+}

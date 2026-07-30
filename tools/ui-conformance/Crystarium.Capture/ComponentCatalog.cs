@@ -732,13 +732,16 @@ internal static class ComponentCatalog
                             ImGui.ColorConvertFloat4ToU32(color));
                     }
                 ImGui.SetCursorScreenPos(origin);
-                Ui.IconButton(TablerIcon.Settings, id: "##backdrop-idle");
+                Ui.IconButton(TablerIcon.Plus, id: "##backdrop-idle");
                 ImGui.SetCursorScreenPos(origin + new Vector2(40f * scale, 0f));
                 Ui.IconButton(
-                    TablerIcon.Settings, disabled: true,
+                    TablerIcon.ArrowBackUp, disabled: true,
+                    flipX: true,
                     id: "##backdrop-disabled");
                 ImGui.SetCursorScreenPos(origin + new Vector2(80f * scale, 0f));
-                Ui.IconButton(TablerIcon.Settings, id: "##backdrop-transition");
+                Ui.IconButton(
+                    TablerIcon.ArrowBackUp,
+                    id: "##backdrop-transition");
                 break;
             }
             case "switch-off":
