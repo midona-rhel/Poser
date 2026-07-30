@@ -2,14 +2,14 @@
 
 | Control | Value |
 |---|---|
-| Status | Slices 1–2 accepted; ready for slice 3 |
+| Status | Slices 1–3 accepted; ready for slice 4 |
 | Size | Extra large, delivered as individually accepted component slices |
 | Implementation owner | Claude |
 | Review owner | Codex |
 | Runtime and visual acceptance | User |
 | Base ref | `pbi-011-base` (`9a9193736b797f828b0336d9571721bb8ba90c99`) |
 | Feature branch | `feature/pbi-011-component-conformance` |
-| Accepted head | `b44a2f3` (slice 2 — Icons) |
+| Accepted head | `d66806b` (slice 3 — Text buttons) |
 
 ## Problem
 
@@ -117,7 +117,7 @@ record the exact file and selector used when its fixture is added.
 |---:|---|---|---|---|
 | 1 | Text | Picto typography | Labels, captions, mono values, disabled text, wrapping and truncation | `02d25f7` |
 | 2 | Icons | Picto Tabler icon use | Optical alignment, size, stroke, tint and disabled state | `b44a2f3` |
-| 3 | Text buttons | `actionButton` | Primary/secondary/destructive, content/fixed/fill, disabled | Pending |
+| 3 | Text buttons | `actionButton` | Primary/secondary/destructive, content/fixed/fill, disabled | `d66806b` |
 | 4 | Icon buttons | `iconButton` | Toolbar, titlebar and row actions, hover/pressed/disabled | Pending |
 | 5 | Icon toggles | Active `iconButton` use | Selected state, persistence, tooltip and click ownership | Pending |
 | 6 | Switches | `ToggleSwitch` | Form switches, toolbar Physics/Animation, disabled state | Pending |
