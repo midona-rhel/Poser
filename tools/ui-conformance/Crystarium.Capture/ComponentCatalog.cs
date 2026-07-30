@@ -73,6 +73,7 @@ internal static class ComponentCatalog
         new("icon-button-hover-mid", 120, 80),
         new("icon-button-hover-exit", 120, 80),
         new("icon-button-keyboard-focused", 120, 80),
+        new("icon-button-glyphs", 280, 80),
         new("icon-button-explicit-size", 120, 88, Hidden: true),
         new("icon-button-hover-reconcile", 120, 80, Hidden: true),
         new("icon-button-backdrop-surface", 160, 80, Hidden: true),
@@ -696,6 +697,28 @@ internal static class ComponentCatalog
                     help: "Settings are unavailable while loading",
                     id: "##icon-button");
                 break;
+            case "icon-button-glyphs":
+            {
+                var glyphs = new[]
+                {
+                    TablerIcon.Plus,
+                    TablerIcon.X,
+                    TablerIcon.ChevronRight,
+                    TablerIcon.ChevronDown,
+                    TablerIcon.ArrowBackUp,
+                    TablerIcon.Folder,
+                    TablerIcon.Settings,
+                };
+                for (int i = 0; i < glyphs.Length; i++)
+                {
+                    ImGui.SetCursorScreenPos(
+                        origin + new Vector2(i * 32f * scale, 0f));
+                    Ui.IconButton(
+                        glyphs[i],
+                        id: $"##icon-button-glyph-{i}");
+                }
+                break;
+            }
             case "icon-button-explicit-size":
                 Ui.IconButton(
                     TablerIcon.Settings,

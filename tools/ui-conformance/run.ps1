@@ -65,7 +65,8 @@ $aliases = @{
         "icon-button-disabled",
         "icon-button-hover-mid",
         "icon-button-hover-exit",
-        "icon-button-keyboard-focused")
+        "icon-button-keyboard-focused",
+        "icon-button-glyphs")
     "switch" = @("switch-off", "switch-on")
     "input" = @("text-input", "search-input")
     "combobox" = @("dropdown-closed", "dropdown-open")

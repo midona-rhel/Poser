@@ -3,8 +3,8 @@
 Reads Poser.UI/Icons/PoserIconSources.cs (wins) and TablerSvgSources.cs —
 the same precedence Tabler.Get uses — and writes:
 
-- icon-fixtures.generated.js: the three icon variants as bare inline
-  SVGs on the exact pitch arithmetic the candidate grid uses. Loaded by
+- icon-fixtures.generated.js: generated icon variants as inline SVGs on
+  the exact geometry the corresponding candidate fixtures use. Loaded by
   picto-reference.html; variant keys keep the six-space indent the
   capture catalog cross-check scans for.
 - icon-names.generated.txt: the ordinal-sorted name list, one per line.
@@ -24,6 +24,15 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TOOL_ROOT))
 
 COLS = 8
 STATE_ICONS = ["settings", "eye", "trash", "chevron-down"]
+ICON_BUTTON_GLYPHS = [
+    "plus",
+    "x",
+    "chevron-right",
+    "chevron-down",
+    "arrow-back-up",
+    "folder",
+    "settings",
+]
 
 
 def parse_sources(path):
@@ -77,6 +86,22 @@ def states_html(sources):
     return f'<div style="position:relative">{"".join(parts)}</div>'
 
 
+def icon_button_glyphs_html(sources):
+    buttons = []
+    for name in ICON_BUTTON_GLYPHS:
+        xml = re.sub(r"\s+", " ", sources[name]).replace("> <", "><")
+        xml = xml.replace('width="24"', 'width="16"', 1)
+        xml = xml.replace('height="24"', 'height="16"', 1)
+        xml = xml.replace('stroke-width="2"', 'stroke-width="1.5"', 1)
+        buttons.append(
+            f'<button class="iconBtn toggleBtn" aria-label="{name}">'
+            f"{xml}</button>")
+    return (
+        '<div style="display:flex;gap:4px">'
+        + "".join(buttons)
+        + "</div>")
+
+
 def esc(s):
     return s.replace("\\", "\\\\").replace("'", "\\'")
 
@@ -109,6 +134,11 @@ def main():
         "      'icons-states': {\n"
         "        css: 'app/globals.css',\n"
         f"        html: '{esc(states_html(sources))}',\n"
+        "      },\n"
+        "      'icon-button-glyphs': {\n"
+        "        css: ['shared/styles/iconButton.module.css',"
+        " 'app/AppShell.module.css'],\n"
+        f"        html: '{esc(icon_button_glyphs_html(sources))}',\n"
         "      },\n"
         "  },\n"
         "};\n"
