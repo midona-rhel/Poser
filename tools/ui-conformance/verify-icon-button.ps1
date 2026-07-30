@@ -85,4 +85,3 @@ if ($midpoint -ne "PASS") {
     throw "150ms easing midpoint invariant failed: $midpoint"
 }
 Write-Host "150ms easing midpoint PASS (flat transition region byte-exact to Picto)"
-
