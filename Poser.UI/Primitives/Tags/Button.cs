@@ -65,8 +65,8 @@ public static partial class Crystarium
             size,
             disabled,
             help,
-            (min, max, opacity) => DrawButtonIcon(
-                min, max, icon, iconSize, opacity, flipX, strokeWidth),
+            (min, max, color) => DrawButtonIcon(
+                min, max, icon, iconSize, color, flipX, strokeWidth),
             onClick);
     }
 
@@ -86,8 +86,8 @@ public static partial class Crystarium
             size,
             disabled,
             help,
-            (min, max, opacity) => DrawButtonIcon(
-                min, max, icon, iconSize, opacity, strokeWidth),
+            (min, max, color) => DrawButtonIcon(
+                min, max, icon, iconSize, color, strokeWidth),
             onClick);
     }
 
@@ -506,7 +506,7 @@ public static partial class Crystarium
         Vector2 logicalSize,
         bool disabled,
         string? help,
-        Action<Vector2, Vector2, float> content,
+        Action<Vector2, Vector2, Vector4> content,
         Action? onClick)
     {
         float scale = ImGuiHelpers.GlobalScale;
@@ -547,13 +547,15 @@ public static partial class Crystarium
                     ColorEx.ApplyAlpha(fadedBackground)),
                 radius);
 
-            // CSS opacity flattens the icon and background as one group.
-            // Their RGB is the same in every Picto theme, so this alpha
-            // compensation reproduces that group exactly at every stroke
-            // coverage instead of applying opacity twice at overlaps.
-            float iconOpacity = GroupForegroundOpacity(
-                background.W, opacity);
-            content(hit.ScreenMin, hit.ScreenMax, iconOpacity);
+            // SVG strokes use overlapping primitives for round caps and
+            // joins. Passing a translucent tint would compound alpha at
+            // those overlaps, whereas CSS flattens the SVG before applying
+            // group opacity. Precompose the foreground against the effective
+            // button backdrop and draw it opaque: repeated primitives then
+            // have the same color instead of becoming brighter.
+            var iconColor = GroupForegroundColor(
+                theme.Text, background, theme.Surface, opacity);
+            content(hit.ScreenMin, hit.ScreenMax, iconColor);
         }
         finally
         {
@@ -632,14 +634,32 @@ public static partial class Crystarium
             IconButtonVisualStates.Remove(key);
     }
 
-    private static float GroupForegroundOpacity(
-        float backgroundAlpha,
+    private static Vector4 GroupForegroundColor(
+        Vector4 foreground,
+        Vector4 background,
+        Vector4 surface,
         float groupOpacity)
     {
-        float denominator = 1f - groupOpacity * backgroundAlpha;
-        return denominator <= 0f
-            ? groupOpacity
-            : groupOpacity * (1f - backgroundAlpha) / denominator;
+        float backgroundAlpha = background.W;
+        var surfaceRgb = new Vector3(surface.X, surface.Y, surface.Z);
+        var backgroundRgb =
+            new Vector3(background.X, background.Y, background.Z);
+        var foregroundRgb =
+            new Vector3(foreground.X, foreground.Y, foreground.Z);
+        var groupBackdrop =
+            backgroundRgb * backgroundAlpha
+            + surfaceRgb * (1f - backgroundAlpha);
+        float fadedAlpha = groupOpacity * backgroundAlpha;
+        var fadedBackdrop =
+            backgroundRgb * fadedAlpha
+            + surfaceRgb * (1f - fadedAlpha);
+        var color =
+            fadedBackdrop + groupOpacity * (foregroundRgb - groupBackdrop);
+        return new Vector4(
+            Math.Clamp(color.X, 0f, 1f),
+            Math.Clamp(color.Y, 0f, 1f),
+            Math.Clamp(color.Z, 0f, 1f),
+            1f);
     }
 
     private static void DrawButtonIcon(
@@ -647,7 +667,7 @@ public static partial class Crystarium
         Vector2 max,
         TablerIcon icon,
         float logicalSize,
-        float opacity,
+        Vector4 color,
         bool flipX,
         float strokeWidth)
     {
@@ -655,7 +675,7 @@ public static partial class Crystarium
             min, max, logicalSize);
         IconIn(
             iconMin, iconMax, icon,
-            opacity: opacity,
+            color: color,
             flipX: flipX,
             strokeWidth: strokeWidth);
     }
@@ -665,14 +685,14 @@ public static partial class Crystarium
         Vector2 max,
         string icon,
         float logicalSize,
-        float opacity,
+        Vector4 color,
         float strokeWidth)
     {
         var (iconMin, iconMax) = CenteredIconBounds(
             min, max, logicalSize);
         IconIn(
             iconMin, iconMax, icon,
-            opacity: opacity,
+            color: color,
             strokeWidth: strokeWidth);
     }
 
