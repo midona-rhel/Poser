@@ -378,6 +378,24 @@ filter.addEventListener('input',()=>{{
     (root / "index.html").write_text(document, encoding="utf-8")
 
 
+def compare_batch(path: Path) -> None:
+    entries = json.loads(path.read_text(encoding="utf-8-sig"))
+    if not isinstance(entries, list):
+        raise ValueError("Comparison batch must be a JSON array.")
+    for entry in entries:
+        compare(
+            Path(entry["reference"]),
+            Path(entry["candidate"]),
+            Path(entry["output"]),
+            entry["component"],
+            str(entry["scale"]),
+            entry["referenceManifestHash"],
+            entry["candidateHash"],
+            entry["candidateCommit"],
+            bool(entry["candidateDirty"]),
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--reference", type=Path)
@@ -385,18 +403,23 @@ def main() -> None:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--component")
     parser.add_argument("--scale", default="1")
+    parser.add_argument("--batch", type=Path)
     parser.add_argument("--aggregate", type=Path)
     parser.add_argument("--reference-manifest-hash", default="")
     parser.add_argument("--candidate-hash", default="")
     parser.add_argument("--candidate-commit", default="")
     parser.add_argument("--candidate-dirty", default="false")
     args = parser.parse_args()
+    if args.batch:
+        compare_batch(args.batch)
     if args.aggregate:
         aggregate(
             args.aggregate,
             args.reference_manifest_hash,
             args.candidate_hash,
         )
+        return
+    if args.batch:
         return
     required = [args.reference, args.candidate, args.output, args.component]
     if any(value is None for value in required):

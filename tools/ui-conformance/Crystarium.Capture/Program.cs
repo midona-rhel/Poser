@@ -206,13 +206,23 @@ internal static class Program
                         Interactive.EndFrame();
                         ImGui.Render();
 
-                        renderer.BeginFrame(new Vector4(
-                            theme.Surface.X,
-                            theme.Surface.Y,
-                            theme.Surface.Z,
-                            1));
-                        renderer.Render(ImGui.GetDrawData());
-                        renderer.Present();
+                        // Intermediate frames advance real ImGui input and
+                        // Crystarium animation state but are never observed.
+                        // Submit the final TWO frames: after the second
+                        // flip, SaveBackbuffer reads the same prior buffer
+                        // as the legacy 40-present path (important for
+                        // mid-transition fixtures) without 38 compositor
+                        // waits.
+                        if (frame >= frameCount - 2)
+                        {
+                            renderer.BeginFrame(new Vector4(
+                                theme.Surface.X,
+                                theme.Surface.Y,
+                                theme.Surface.Z,
+                                1));
+                            renderer.Render(ImGui.GetDrawData());
+                            renderer.Present();
+                        }
                     }
 
                     renderer.SaveBackbuffer(entry.Output, width, height);

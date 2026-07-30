@@ -170,6 +170,74 @@ function Get-ReferenceManifest {
 $manifestBefore = Get-ReferenceManifest
 $browserVersionBefore =
     (Get-Item -LiteralPath $Browser).VersionInfo.FileVersion
+$fontsDir = [Environment]::GetFolderPath("Fonts")
+if ([string]::IsNullOrEmpty($fontsDir)) { $fontsDir = "C:\Windows\Fonts" }
+$referenceFonts = @($FontFiles) + @(Join-Path $fontsDir "seguiemj.ttf") |
+    ForEach-Object {
+        if (Test-Path -LiteralPath $_ -PathType Leaf) {
+            [ordered]@{
+                path = "font:" + (Split-Path -Leaf $_)
+                sha256 = (Get-FileHash -Algorithm SHA256 `
+                    -LiteralPath $_).Hash.ToLowerInvariant()
+            }
+        }
+    } | Where-Object { $_ }
+$manifest = [ordered]@{
+    browser = [ordered]@{
+        path = $Browser
+        version = $browserVersionBefore
+        sha256 = (Get-FileHash -Algorithm SHA256 `
+            -LiteralPath $Browser).Hash.ToLowerInvariant()
+    }
+    fonts = @($referenceFonts)
+    sources = $manifestBefore
+}
+$manifestPath = Join-Path $output "reference-sources.json"
+$invariant = [Globalization.CultureInfo]::InvariantCulture
+$expectedCaptureNames = @(foreach ($theme in $Themes) {
+    foreach ($scale in $Scales) {
+        $suffix = [string]::Format(
+            $invariant, "{0:0.##}", $scale).Replace(".", "p")
+        foreach ($component in $catalog) {
+            "$($component.Name)@$theme@$suffix.png"
+        }
+    }
+})
+$expectedCaptures = @($expectedCaptureNames | ForEach-Object {
+    Join-Path $output $_
+})
+$cacheCurrent = $false
+if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+    $storedManifest = Get-Content -Raw -LiteralPath $manifestPath |
+        ConvertFrom-Json
+    $storedIdentity = [ordered]@{
+        browser = $storedManifest.browser
+        fonts = @($storedManifest.fonts)
+        sources = @($storedManifest.sources)
+    }
+    $coverageCurrent = $true
+    if ($null -ne $storedManifest.captures) {
+        $covered = [Collections.Generic.HashSet[string]]::new(
+            [StringComparer]::OrdinalIgnoreCase)
+        foreach ($name in $storedManifest.captures) {
+            [void]$covered.Add($name)
+        }
+        $coverageCurrent = -not @($expectedCaptureNames |
+            Where-Object { !$covered.Contains($_) })
+    }
+    $cacheCurrent = $coverageCurrent -and (
+        ($storedIdentity | ConvertTo-Json -Depth 6 -Compress) -eq
+        ($manifest | ConvertTo-Json -Depth 6 -Compress)
+    ) -and -not @($expectedCaptures | Where-Object {
+        !(Test-Path -LiteralPath $_ -PathType Leaf)
+    })
+}
+if ($cacheCurrent) {
+    Write-Host "Picto references current: reused $($expectedCaptures.Count) captures."
+    $global:LASTEXITCODE = 0
+    return
+}
+
 $uri = [System.Uri]::new($html.Path).AbsoluteUri
 $runId = [Guid]::NewGuid().ToString("N")
 $profileRoot = Join-Path $env:TEMP "poser-ui-conformance-edge-$runId"
@@ -209,7 +277,8 @@ try {
         $output = $using:output
         $profileRoot = $using:profileRoot
         $runId = $using:runId
-        $target = Join-Path $output "$($item.Name)@$($item.Theme)@$($item.Suffix).png"
+        $target = Join-Path $output `
+            "$($item.Name)@$($item.Theme)@$($item.Suffix).png"
         # Capture into a run-unique staging file so a partially written
         # screenshot can never be read as the final artifact; the
         # finished file replaces it in one move.
@@ -275,7 +344,9 @@ try {
                 Start-Sleep -Milliseconds 150
             }
             if (-not $stable) {
-                $reason = if ($null -ne $edgeExit -and $edgeExit -ne 0) {
+                $reason = if (
+                    $null -ne $edgeExit -and $edgeExit -ne 0
+                ) {
                     "browser exit code $edgeExit and no stable screenshot within 30s"
                 } else {
                     "no stable screenshot within 30s"
@@ -332,34 +403,11 @@ if ($beforeJson -ne $afterJson -or
     $browserVersionBefore -ne $browserVersionAfter) {
     throw "Picto reference sources changed during capture; discard this run."
 }
-# The rendering environment is part of reference identity: the browser
-# executable itself and the ACTUAL resolved font files (passed in by
-# run.ps1 from the candidate host's resolver — the browser's Segoe UI
-# font-link chain resolves the same files), plus the emoji font only
-# the browser can render. A changed environment changes this manifest,
-# so preserved results are marked stale.
-$fontsDir = [Environment]::GetFolderPath("Fonts")
-if ([string]::IsNullOrEmpty($fontsDir)) { $fontsDir = "C:\Windows\Fonts" }
-$referenceFonts = @($FontFiles) + @(Join-Path $fontsDir "seguiemj.ttf") |
-    ForEach-Object {
-        if (Test-Path -LiteralPath $_ -PathType Leaf) {
-            [ordered]@{
-                path = "font:" + (Split-Path -Leaf $_)
-                sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $_).Hash.ToLowerInvariant()
-            }
-        }
-    } | Where-Object { $_ }
-$manifest = [ordered]@{
-    browser = [ordered]@{
-        path = $Browser
-        version = $browserVersionAfter
-        sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $Browser).Hash.ToLowerInvariant()
-    }
-    fonts = @($referenceFonts)
-    sources = $manifestAfter
-}
+$manifest["captures"] = @($combos | ForEach-Object {
+    "$($_.Name)@$($_.Theme)@$($_.Suffix).png"
+})
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 `
-    -LiteralPath (Join-Path $output "reference-sources.json")
+    -LiteralPath $manifestPath
 # A detached Edge launcher can report a non-zero native exit after its
 # stable screenshot was verified and promoted. The script's own checks
 # above are authoritative; do not leak that stale launcher code to run.ps1.

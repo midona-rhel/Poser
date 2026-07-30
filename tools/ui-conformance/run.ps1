@@ -162,13 +162,10 @@ if ($LASTEXITCODE -ne 0) { throw "Could not resolve the candidate commit." }
 $candidateDirty = [bool](git -C $repoRoot status --porcelain)
 if ($LASTEXITCODE -ne 0) { throw "Could not inspect candidate worktree state." }
 
-# Candidate captures batch PER COMPONENT: one process per component
-# keeps the boot/D3D/atlas win while guaranteeing that no ImGui or
-# widget state can leak from one component into another. Entries inside
-# a component's batch differ only by theme and scale — the same draw
-# path the component runs repeatedly in production — and
-# verify-batch-isolation.ps1 demonstrates hash equality against
-# fully isolated captures.
+# Candidate captures share one process, D3D device, and font atlas. The
+# capture host creates and destroys a fresh ImGui context for EVERY entry,
+# so interaction, timing, and widget state remain isolated across component
+# boundaries without paying process and atlas startup once per component.
 $invariant = [Globalization.CultureInfo]::InvariantCulture
 $combos = @(foreach ($theme in $Themes) {
     foreach ($scale in $Scales) {
@@ -186,39 +183,37 @@ $combos = @(foreach ($theme in $Themes) {
     }
 })
 $batchFile = Join-Path $artifacts "candidate-batch.txt"
-foreach ($group in ($combos | Group-Object Name)) {
-    $group.Group | ForEach-Object {
-        "$($_.Name)`t$($_.Candidate)`t$($_.Scale.ToString($invariant))`t$($_.Theme)"
-    } | Set-Content -Encoding utf8 -LiteralPath $batchFile
-    & $exe --batch $batchFile
-    if ($LASTEXITCODE -ne 0) {
-        throw "Crystarium batch capture failed for $($group.Name)."
-    }
+$combos | ForEach-Object {
+    "$($_.Name)`t$($_.Candidate)`t$($_.Scale.ToString($invariant))`t$($_.Theme)"
+} | Set-Content -Encoding utf8 -LiteralPath $batchFile
+& $exe --batch $batchFile
+if ($LASTEXITCODE -ne 0) {
+    throw "Crystarium batch capture failed."
 }
 
-foreach ($combo in $combos) {
-    $reference = Join-Path $artifacts "picto\$($combo.Name)@$($combo.Theme)@$($combo.Suffix).png"
-    $result = Join-Path $results "$($combo.Theme)\$($combo.Name)\$($combo.Suffix)"
-    python (Join-Path $toolRoot "compare.py") `
-        --reference $reference `
-        --candidate $combo.Candidate `
-        --output $result `
-        --component "$($combo.Name) [$($combo.Theme)]" `
-        --scale $combo.Scale `
-        --reference-manifest-hash $referenceManifestHash `
-        --candidate-hash $candidateHash `
-        --candidate-commit $candidateCommit `
-        --candidate-dirty $candidateDirty
-    if ($LASTEXITCODE -ne 0) {
-        throw "Comparison failed for $($combo.Name), $($combo.Theme) at $($combo.Scale)."
+$comparisonBatch = Join-Path $artifacts "comparison-batch.json"
+@($combos | ForEach-Object {
+    [ordered]@{
+        reference = Join-Path $artifacts `
+            "picto\$($_.Name)@$($_.Theme)@$($_.Suffix).png"
+        candidate = $_.Candidate
+        output = Join-Path $results `
+            "$($_.Theme)\$($_.Name)\$($_.Suffix)"
+        component = "$($_.Name) [$($_.Theme)]"
+        scale = $_.Scale.ToString($invariant)
+        referenceManifestHash = $referenceManifestHash
+        candidateHash = $candidateHash
+        candidateCommit = $candidateCommit
+        candidateDirty = $candidateDirty
     }
-}
-
+}) | ConvertTo-Json -Depth 4 -AsArray | Set-Content -Encoding utf8 `
+    -LiteralPath $comparisonBatch
 python (Join-Path $toolRoot "compare.py") `
+    --batch $comparisonBatch `
     --aggregate $artifacts `
     --reference-manifest-hash $referenceManifestHash `
     --candidate-hash $candidateHash
-if ($LASTEXITCODE -ne 0) { throw "Aggregate report failed." }
+if ($LASTEXITCODE -ne 0) { throw "Comparison or aggregate report failed." }
 $report = Join-Path $artifacts "index.html"
 Write-Host "UI conformance report: $report"
 if ($OpenReport) {
