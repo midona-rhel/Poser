@@ -207,6 +207,8 @@ $expectedCaptures = @($expectedCaptureNames | ForEach-Object {
     Join-Path $output $_
 })
 $cacheCurrent = $false
+$identityCurrent = $false
+$priorCoverage = @()
 if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
     $storedManifest = Get-Content -Raw -LiteralPath $manifestPath |
         ConvertFrom-Json
@@ -215,8 +217,13 @@ if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
         fonts = @($storedManifest.fonts)
         sources = @($storedManifest.sources)
     }
+    $identityCurrent = (
+        ($storedIdentity | ConvertTo-Json -Depth 6 -Compress) -eq
+        ($manifest | ConvertTo-Json -Depth 6 -Compress)
+    )
     $coverageCurrent = $true
     if ($null -ne $storedManifest.captures) {
+        $priorCoverage = @($storedManifest.captures)
         $covered = [Collections.Generic.HashSet[string]]::new(
             [StringComparer]::OrdinalIgnoreCase)
         foreach ($name in $storedManifest.captures) {
@@ -225,10 +232,8 @@ if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
         $coverageCurrent = -not @($expectedCaptureNames |
             Where-Object { !$covered.Contains($_) })
     }
-    $cacheCurrent = $coverageCurrent -and (
-        ($storedIdentity | ConvertTo-Json -Depth 6 -Compress) -eq
-        ($manifest | ConvertTo-Json -Depth 6 -Compress)
-    ) -and -not @($expectedCaptures | Where-Object {
+    $cacheCurrent = $identityCurrent -and $coverageCurrent `
+        -and -not @($expectedCaptures | Where-Object {
         !(Test-Path -LiteralPath $_ -PathType Leaf)
     })
 }
@@ -357,7 +362,7 @@ try {
             return $null
         }
         return "Reference capture failed for $($item.Name), $($item.Theme) at $($item.Scale): $reason."
-    } -ThrottleLimit 6 | Where-Object { $_ })
+    } -ThrottleLimit 16 | Where-Object { $_ })
     if ($failures.Count -gt 0) {
         throw ($failures -join "`n")
     }
@@ -403,9 +408,14 @@ if ($beforeJson -ne $afterJson -or
     $browserVersionBefore -ne $browserVersionAfter) {
     throw "Picto reference sources changed during capture; discard this run."
 }
-$manifest["captures"] = @($combos | ForEach-Object {
+$newCoverage = @($combos | ForEach-Object {
     "$($_.Name)@$($_.Theme)@$($_.Suffix).png"
 })
+$manifest["captures"] = if ($identityCurrent) {
+    @($priorCoverage + $newCoverage | Sort-Object -Unique)
+} else {
+    $newCoverage
+}
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 `
     -LiteralPath $manifestPath
 # A detached Edge launcher can report a non-zero native exit after its
