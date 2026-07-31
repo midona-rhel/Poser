@@ -277,9 +277,12 @@ public readonly record struct Theme
             ModalFooter = PictoTokens.Dark.Black10,
             SegmentShadow = new(0f, 0f, 0f, 0.25f),
             SegmentSelected = PictoTokens.Dark.Surface2,
+            // Poser's selected-row accent recipe is retained until the
+            // SidebarRow normalization phase; Picto's selected row uses its
+            // surface-active token instead.
             SidebarSelected = PictoTokens.Dark.Primary10,
             SidebarSelectedBorder = PictoTokens.Dark.Primary30,
-            SidebarHover = PictoTokens.Dark.SurfaceActive,
+            SidebarHover = PictoTokens.Dark.SurfaceHover,
             SwitchOff = new(128f / 255f, 128f / 255f, 128f / 255f, 0.25f),
             SwitchShadow = new(0f, 0f, 0f, 0.08f),
             SwitchHighlight = new(0f, 0f, 0f, 0.10f),
@@ -430,9 +433,11 @@ public readonly record struct Theme
                 ModalFooter = PictoTokens.Light.Black10,
                 SegmentShadow = new(0f, 0f, 0f, 0.12f),
                 SegmentSelected = sunken,
+                // Retain Poser's selected-row accent recipe until SidebarRow
+                // normalization, while hover follows Picto's canonical rule.
                 SidebarSelected = PictoTokens.Light.Primary10,
                 SidebarSelectedBorder = PictoTokens.Light.Primary30,
-                SidebarHover = PictoTokens.Light.SurfaceActive,
+                SidebarHover = PictoTokens.Light.SurfaceHover,
                 SwitchOff = new(0f, 0f, 0f, 0.20f),
                 SwitchShadow = new(0f, 0f, 0f, 0.08f),
                 SwitchHighlight = new(1f, 1f, 1f, 0.10f),

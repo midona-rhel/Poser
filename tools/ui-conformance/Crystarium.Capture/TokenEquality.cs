@@ -130,7 +130,7 @@ internal static class TokenEquality
         ("Chrome.SegmentSelected", "--color-surface-2", t => t.Chrome.SegmentSelected, null),
         ("Chrome.SidebarSelected", "--color-primary-10", t => t.Chrome.SidebarSelected, null),
         ("Chrome.SidebarSelectedBorder", "--color-primary-30", t => t.Chrome.SidebarSelectedBorder, null),
-        ("Chrome.SidebarHover", "--color-surface-active", t => t.Chrome.SidebarHover, null),
+        ("Chrome.SidebarHover", "--color-surface-hover", t => t.Chrome.SidebarHover, null),
         ("Glass.BlurBackground", "--glass-bg", t => t.Glass.BlurBackground, null),
         ("Glass.BorderTop", "--glass-border-top", t => t.Glass.BorderTop, null),
         ("Glass.BorderSide", "--glass-border-side", t => t.Glass.BorderSide, null),
