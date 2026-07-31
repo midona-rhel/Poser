@@ -2,7 +2,7 @@
 
 | Control | Value |
 |---|---|
-| Status | Review corrections applied; phase 1 approved from the clean tree at `d27d232` |
+| Status | Phases 1–2 accepted; phase 2 head `1e0501b` |
 | Size | Extra large, delivered as individually accepted phases |
 | Implementation owner | Claude |
 | Review owner | Codex |
