@@ -1,221 +1,352 @@
 using System.Globalization;
 using System.Numerics;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using Poser.UI;
 
 namespace Crystarium.Capture;
 
 /// <summary>
-/// Proves color parity by TOKEN EQUALITY instead of rendering six themes and
-/// diffing pixels. It parses the sibling Picto <c>tokens.css</c> INDEPENDENTLY
-/// of <see cref="PictoTokens"/> — resolving the base <c>:root</c> plus each
-/// theme's cascade overrides — and asserts every token-derived color member of
-/// the six supported <see cref="Theme"/> values equals the CSS-resolved value.
-/// A mistranscribed constant therefore fails here rather than shipping as a
-/// silent color drift. This is a targeted key/value reader for that one flat
-/// file, not a CSS engine: it understands hex, <c>rgb()</c>, <c>rgba()</c>, and
-/// <c>var()</c> aliasing, nothing more.
+/// The token contract between Picto's canonical <c>tokens.css</c> and
+/// Crystarium's committed generated <c>PictoTokens.g.cs</c>, in one place:
+///
+/// - <see cref="Generate"/> (<c>--generate-tokens</c>): the explicit
+///   developer command that regenerates the committed C# projection from the
+///   CSS. Production build/load/packaging consume the committed output and
+///   never require Picto, a browser, or a generator run.
+/// - <see cref="Verify"/> (<c>--verify-tokens</c>): fails on source-hash
+///   drift, on any diff between a fresh regeneration and the committed file,
+///   and on any violation of the COMPLETE field mapping below — every
+///   token-derived <see cref="Theme"/> field against its CSS-resolved value
+///   across all six supported themes.
+///
+/// Only tokens actually consumed by Crystarium are generated; fields that
+/// intentionally differ from Picto are classified once in
+/// <see cref="Extensions"/> with their reason.
 /// </summary>
 internal static class TokenEquality
 {
-    // The token-derived identity that the theme family builders vary. Members
-    // NOT listed here are declared Poser extensions (see Extensions) — colors
-    // with no Picto token, never claimed as equal to one.
-    private static readonly (string Member, string Var, Func<Theme, Vector4> Read)[] Checks =
+    // ── Consumed tokens: CSS var → generated field name ──────────────
+    private static readonly (string Var, string Field)[] TokenNames =
     [
-        ("Surface",       "--color-bg-app",           t => t.Surface),
-        ("SurfaceRaised", "--color-surface-1",        t => t.SurfaceRaised),
-        ("SurfaceSunken", "--color-surface-2",        t => t.SurfaceSunken),
-        ("Text",          "--color-text-primary",     t => t.Text),
-        ("TextDim",       "--color-text-secondary",   t => t.TextDim),
-        ("TextMuted",     "--color-text-tertiary",    t => t.TextMuted),
-        ("Border",        "--color-border-secondary", t => t.Border),
-        ("BorderStrong",  "--color-border-primary",   t => t.BorderStrong),
-        ("Accent",        "--color-primary",          t => t.Accent),
-        ("AccentHover",   "--color-primary-60",       t => t.AccentHover),
+        ("--color-bg-app", "BgApp"),
+        ("--color-surface-1", "Surface1"),
+        ("--color-surface-2", "Surface2"),
+        ("--color-surface-hover", "SurfaceHover"),
+        ("--color-surface-active", "SurfaceActive"),
+        ("--color-text-primary", "TextPrimary"),
+        ("--color-text-secondary", "TextSecondary"),
+        ("--color-text-tertiary", "TextTertiary"),
+        ("--color-border-primary", "BorderPrimary"),
+        ("--color-border-secondary", "BorderSecondary"),
+        ("--color-primary", "Primary"),
+        ("--color-primary-10", "Primary10"),
+        ("--color-primary-30", "Primary30"),
+        ("--color-primary-50", "Primary50"),
+        ("--color-primary-60", "Primary60"),
+        ("--color-hover-overlay", "HoverOverlay"),
+        ("--color-active-overlay", "ActiveOverlay"),
+        ("--color-subtle-overlay", "SubtleOverlay"),
+        ("--color-black-10", "Black10"),
+        ("--color-black-20", "Black20"),
+        ("--color-negative", "Negative"),
+        ("--glass-bg", "GlassBg"),
+        ("--glass-border-top", "GlassBorderTop"),
+        ("--glass-border-side", "GlassBorderSide"),
+        ("--glass-border-bottom", "GlassBorderBottom"),
     ];
 
+    // Per-theme groups emit exactly the fields Theme.cs consumes from that
+    // group — resolved through the theme's cascade, nothing mirrored "just
+    // in case".
+    private static readonly string[] DarkEmit =
+        TokenNames.Select(t => t.Field).ToArray();
+
+    private static readonly string[] SurfaceTrioEmit = ["BgApp", "Surface1", "Surface2"];
+
+    private static readonly string[] LightEmit =
+    [
+        "BgApp", "Surface1", "Surface2", "SurfaceHover", "SurfaceActive",
+        "TextPrimary", "TextSecondary", "TextTertiary",
+        "BorderPrimary", "BorderSecondary",
+        "Primary", "Primary10", "Primary30", "Primary50", "Primary60",
+        "HoverOverlay", "ActiveOverlay", "SubtleOverlay",
+        "Black10", "Black20",
+    ];
+
+    private static readonly string[] LightGrayEmit =
+        ["BgApp", "Surface1", "Surface2", "BorderPrimary", "BorderSecondary"];
+
+    // group name → (cascade layers, emitted fields)
+    private static readonly (string Group, string[] Layers, string[] Emit)[] EmitPlan =
+    [
+        ("Dark", [], DarkEmit),
+        ("Blue", ["blue"], SurfaceTrioEmit),
+        ("Purple", ["purple"], SurfaceTrioEmit),
+        ("Gray", ["gray"], SurfaceTrioEmit),
+        ("Light", ["light"], LightEmit),
+        ("LightGray", ["light", "lightgray"], LightGrayEmit),
+    ];
+
+    // ── The complete mapping: token-derived Theme field → CSS value ──
+    // Checked for every one of the six supported themes. "@ a" entries are
+    // deterministic derivations (the token's color at a fixed alpha).
+    private static readonly (
+        string Field,
+        string Css,
+        Func<Theme, Vector4> Read,
+        Func<Vector4, Vector4>? Derive)[] Map =
+    [
+        ("Surface", "--color-bg-app", t => t.Surface, null),
+        ("SurfaceRaised", "--color-surface-1", t => t.SurfaceRaised, null),
+        ("SurfaceSunken", "--color-surface-2", t => t.SurfaceSunken, null),
+        ("Text", "--color-text-primary", t => t.Text, null),
+        ("TextDim", "--color-text-secondary", t => t.TextDim, null),
+        ("TextMuted", "--color-text-tertiary", t => t.TextMuted, null),
+        ("FormLabel", "--color-text-tertiary", t => t.FormLabel, null),
+        ("FormSeparator", "--color-border-secondary", t => t.FormSeparator, null),
+        ("Border", "--color-border-secondary", t => t.Border, null),
+        ("BorderStrong", "--color-border-primary", t => t.BorderStrong, null),
+        ("Accent", "--color-primary", t => t.Accent, null),
+        ("AccentHover", "--color-primary-60", t => t.AccentHover, null),
+        ("AccentActive", "--color-primary @ 0.80", t => t.AccentActive, c => c with { W = 0.80f }),
+        ("Danger", "--color-negative", t => t.Danger, null),
+        ("Chrome.Text", "--color-text-primary", t => t.Chrome.Text, null),
+        ("Chrome.ControlBorder", "--color-border-primary", t => t.Chrome.ControlBorder, null),
+        ("Chrome.ControlFill", "--color-surface-hover", t => t.Chrome.ControlFill, null),
+        ("Chrome.ControlHover", "--color-subtle-overlay", t => t.Chrome.ControlHover, null),
+        ("Chrome.WeakOverlay", "--color-hover-overlay", t => t.Chrome.WeakOverlay, null),
+        ("Chrome.ActiveOverlay", "--color-active-overlay", t => t.Chrome.ActiveOverlay, null),
+        ("Chrome.InputWell", "--color-black-20", t => t.Chrome.InputWell, null),
+        ("Chrome.Primary", "--color-primary", t => t.Chrome.Primary, null),
+        ("Chrome.PrimaryHover", "--color-primary-60", t => t.Chrome.PrimaryHover, null),
+        ("Chrome.PrimaryFocus", "--color-primary-50", t => t.Chrome.PrimaryFocus, null),
+        ("Chrome.Danger", "--color-negative", t => t.Chrome.Danger, null),
+        ("Chrome.DangerHover", "--color-negative @ 0.12", t => t.Chrome.DangerHover, c => c with { W = 0.12f }),
+        ("Chrome.ColorWellBorder", "--color-border-primary", t => t.Chrome.ColorWellBorder, null),
+        ("Chrome.PickerWell", "--color-bg-app", t => t.Chrome.PickerWell, null),
+        ("Chrome.ModalFooter", "--color-black-10", t => t.Chrome.ModalFooter, null),
+        ("Chrome.SegmentSelected", "--color-surface-2", t => t.Chrome.SegmentSelected, null),
+        ("Chrome.SidebarSelected", "--color-primary-10", t => t.Chrome.SidebarSelected, null),
+        ("Chrome.SidebarSelectedBorder", "--color-primary-30", t => t.Chrome.SidebarSelectedBorder, null),
+        ("Chrome.SidebarHover", "--color-surface-active", t => t.Chrome.SidebarHover, null),
+        ("Glass.BlurBackground", "--glass-bg", t => t.Glass.BlurBackground, null),
+        ("Glass.BorderTop", "--glass-border-top", t => t.Glass.BorderTop, null),
+        ("Glass.BorderSide", "--glass-border-side", t => t.Glass.BorderSide, null),
+        ("Glass.BorderBottom", "--glass-border-bottom", t => t.Glass.BorderBottom, null),
+        ("Palette.Primary", "--color-primary", t => t.Palette.Primary, null),
+    ];
+
+    // ── Intentional differences, classified once with their reason ───
     private static readonly string[] Extensions =
     [
-        "AccentActive (--color-primary @ .80 — no --color-primary-80 token)",
-        "Overlay, TextInverse, FormLabel/Hint/Value/Separator (Poser ramps)",
-        "Success, Warning, Danger, Info (Poser semantic colors)",
+        "Success, Warning — Poser status colors; tokens.css has no equivalents",
+        "FormHint (.40), FormValue (.90) — Poser text ramps between token stops",
+        "Chrome.TextMuted (.60) — Picto component literal, not a tokens.css entry",
+        "Chrome.Checkmark, SwitchOff/SwitchShadow/SwitchHighlight, IconHover/IconOff,",
+        "  UnavailableFill, PickerBorder, ModalDim, SegmentShadow — Picto component-CSS",
+        "  literals (module stylesheets), not tokens.css entries",
+        "Chrome.DisabledOpacity/ControlDisabledOpacity — CSS opacity scalars, not colors",
+        "Glass.Background — precomposited no-blur fallback (accepted dark deviation);",
+        "  Glass.Luminosity — blur-pass tint parameter, no CSS counterpart",
+        "Palette (except Primary), Settings.AccentOptions — Poser axis/debug/accent sets",
     ];
 
-    // theme name -> cascade of override selectors applied over base :root.
-    private static readonly (string Name, string[] Layers)[] Themes =
+    private static readonly (string Name, string[] Layers, Func<Theme> Value)[] Themes =
     [
-        ("dark",      []),
-        ("blue",      ["blue"]),
-        ("purple",    ["purple"]),
-        ("gray",      ["gray"]),
-        ("light",     ["light"]),
-        ("lightgray", ["light", "lightgray"]),
+        ("dark", [], () => Theme.PictoDark),
+        ("blue", ["blue"], () => Theme.PictoBlue),
+        ("purple", ["purple"], () => Theme.PictoPurple),
+        ("gray", ["gray"], () => Theme.PictoGray),
+        ("light", ["light"], () => Theme.PictoLight),
+        ("lightgray", ["light", "lightgray"], () => Theme.PictoLightGray),
     ];
 
-    private static readonly Dictionary<string, Theme> ThemeValues = new()
-    {
-        ["dark"] = Theme.PictoDark,
-        ["blue"] = Theme.PictoBlue,
-        ["purple"] = Theme.PictoPurple,
-        ["gray"] = Theme.PictoGray,
-        ["light"] = Theme.PictoLight,
-        ["lightgray"] = Theme.PictoLightGray,
-    };
+    // ── Generation ───────────────────────────────────────────────────
 
-    // Per-selector variable maps parsed from tokens.css.
-    private static readonly Dictionary<string, string> BaseVars = new();
-    private static readonly Dictionary<string, Dictionary<string, string>> LayerVars = new();
-
-    internal static int Run(string tokensCssPath)
+    internal static int Generate(string cssPath, string outputPath)
     {
-        if (!File.Exists(tokensCssPath))
+        if (!File.Exists(cssPath))
         {
-            Console.Error.WriteLine($"tokens.css not found: {tokensCssPath}");
+            Console.Error.WriteLine($"tokens.css not found: {cssPath}");
+            return 2;
+        }
+        var text = GenerateText(File.ReadAllText(cssPath));
+        File.WriteAllText(outputPath, text);
+        Console.WriteLine($"generated: {outputPath}");
+        return 0;
+    }
+
+    private static string GenerateText(string cssText)
+    {
+        var css = TokenCss.Parse(cssText);
+        var sb = new StringBuilder();
+        sb.Append(
+            "// <auto-generated>\n" +
+            "//     Generated from the CANONICAL Picto/src/shared/styles/tokens.css\n" +
+            "//     by `Crystarium.Capture --generate-tokens`\n" +
+            "//     (tools/ui-conformance/generate-tokens.ps1). Do not hand-edit.\n" +
+            "//     `--verify-tokens` regenerates and fails on any diff or hash drift.\n" +
+            "// </auto-generated>\n" +
+            "using System.Numerics;\n\n" +
+            "namespace Poser.UI;\n\n" +
+            "/// <summary>\n" +
+            "/// Committed generated projection of the Picto color tokens Crystarium\n" +
+            "/// consumes, resolved per supported theme cascade. tokens.css is the\n" +
+            "/// canonical source; production consumes this committed output and never\n" +
+            "/// needs the Picto checkout or a generator run.\n" +
+            "/// </summary>\n" +
+            "internal static class PictoTokens\n" +
+            "{\n" +
+            "    /// <summary>SHA-256 of the LF-normalized canonical tokens.css.</summary>\n" +
+            $"    internal const string SourceHash = \"{HashCss(cssText)}\";\n");
+        foreach (var (group, layers, emit) in EmitPlan)
+        {
+            var map = css.ResolveTheme(layers);
+            sb.Append($"\n    internal static class {group}\n    {{\n");
+            foreach (var field in emit)
+            {
+                var varName = TokenNames.First(t => t.Field == field).Var;
+                sb.Append(
+                    $"        internal static readonly Vector4 {field} = " +
+                    $"{Literal(TokenCss.ColorOf(varName, map))}; // {varName}\n");
+            }
+            sb.Append("    }\n");
+        }
+        sb.Append("}\n");
+        return sb.ToString();
+    }
+
+    private static string HashCss(string cssText) =>
+        Convert.ToHexStringLower(SHA256.HashData(
+            Encoding.UTF8.GetBytes(cssText.Replace("\r\n", "\n"))));
+
+    private static string Literal(Vector4 v) =>
+        $"new({Channel(v.X)}, {Channel(v.Y)}, {Channel(v.Z)}, {Scalar(v.W)})";
+
+    private static string Channel(float c)
+    {
+        var i = MathF.Round(c * 255f);
+        if (i / 255f == c)
+            return i switch
+            {
+                0f => "0f",
+                255f => "1f",
+                _ => FormattableString.Invariant($"{i:0}f / 255f"),
+            };
+        return Scalar(c);
+    }
+
+    private static string Scalar(float v) =>
+        FormattableString.Invariant($"{v:R}f");
+
+    // ── Verification ─────────────────────────────────────────────────
+
+    internal static int Verify(string cssPath, string committedPath)
+    {
+        if (!File.Exists(cssPath))
+        {
+            Console.Error.WriteLine($"tokens.css not found: {cssPath}");
+            return 2;
+        }
+        if (!File.Exists(committedPath))
+        {
+            Console.Error.WriteLine($"committed tokens file not found: {committedPath}");
             return 2;
         }
 
-        var css = File.ReadAllText(tokensCssPath);
-        ParseBlocks(css);
-
-        Console.WriteLine("Token equality — Picto tokens.css vs Crystarium Theme");
-        Console.WriteLine($"source: {tokensCssPath}");
+        Console.WriteLine("Token contract — canonical Picto tokens.css vs committed generation + Theme mapping");
+        Console.WriteLine($"source:    {cssPath}");
+        Console.WriteLine($"committed: {committedPath}");
         Console.WriteLine();
+        var failures = 0;
 
-        var mismatches = 0;
-        var checks = 0;
-        foreach (var (name, layers) in Themes)
+        // 1. Source-hash drift: the committed file must record the canonical
+        //    CSS it was generated from.
+        var cssText = File.ReadAllText(cssPath);
+        var committed = File.ReadAllText(committedPath);
+        var actualHash = HashCss(cssText);
+        var recorded = Regex.Match(committed, "SourceHash = \"([0-9a-f]{64})\"");
+        if (!recorded.Success || recorded.Groups[1].Value != actualHash)
         {
-            var resolved = ResolveTheme(layers);
-            var theme = ThemeValues[name];
-            Console.WriteLine($"[{name}]");
-            foreach (var (member, varName, read) in Checks)
+            failures++;
+            Console.WriteLine(
+                $"HASH DRIFT: committed SourceHash " +
+                $"{(recorded.Success ? recorded.Groups[1].Value[..12] + "…" : "<missing>")} " +
+                $"!= tokens.css {actualHash[..12]}… — regenerate.");
+        }
+        else
+        {
+            Console.WriteLine("source hash: match");
+        }
+
+        // 2. Regeneration diff: a fresh generation must reproduce the
+        //    committed file byte-for-byte (modulo line endings).
+        var regenerated = GenerateText(cssText);
+        if (Normalize(regenerated) != Normalize(committed))
+        {
+            failures++;
+            var temp = Path.Combine(
+                Path.GetTempPath(), "PictoTokens.g.cs.regenerated");
+            File.WriteAllText(temp, regenerated);
+            Console.WriteLine(
+                $"GENERATED DRIFT: committed file differs from a fresh " +
+                $"generation — regenerate. Fresh output: {temp}");
+        }
+        else
+        {
+            Console.WriteLine("regeneration: identical to committed file");
+        }
+
+        // 3. Complete field mapping, all six themes.
+        var css = TokenCss.Parse(cssText);
+        var mappingChecks = 0;
+        foreach (var (name, layers, value) in Themes)
+        {
+            var raw = css.ResolveTheme(layers);
+            var theme = value();
+            var themeFailures = 0;
+            foreach (var (field, cssRef, read, derive) in Map)
             {
-                checks++;
-                var css4 = ResolveColor(resolved[varName], resolved);
+                mappingChecks++;
+                var varName = derive == null ? cssRef : cssRef.Split(' ')[0];
+                var expected = TokenCss.ColorOf(varName, raw);
+                if (derive != null)
+                    expected = derive(expected);
                 var got = read(theme);
-                var ok = Approx(css4, got);
-                if (!ok) mismatches++;
-                Console.WriteLine(
-                    $"  {member,-14}{varName,-26}{Fmt(css4),-24}{(ok ? "==" : "!=")} {Fmt(got),-24}{(ok ? "MATCH" : "MISMATCH")}");
+                if (!Approx(expected, got))
+                {
+                    failures++;
+                    themeFailures++;
+                    Console.WriteLine(
+                        $"  MISMATCH [{name}] {field} <- {cssRef}: " +
+                        $"css {Fmt(expected)} != theme {Fmt(got)}");
+                }
             }
-            Console.WriteLine();
+            Console.WriteLine(
+                $"[{name}] {Map.Length - themeFailures}/{Map.Length} mapped fields match");
         }
 
-        Console.WriteLine("Declared Poser extensions (no Picto token, not checked):");
-        foreach (var e in Extensions)
-            Console.WriteLine($"  - {e}");
         Console.WriteLine();
-
-        Console.WriteLine(mismatches == 0
-            ? $"RESULT: {checks} checks, 0 mismatches — PASS"
-            : $"RESULT: {checks} checks, {mismatches} mismatches — FAIL");
-        return mismatches == 0 ? 0 : 1;
+        Console.WriteLine("Declared extensions (intentional differences, not checked):");
+        foreach (var e in Extensions)
+            Console.WriteLine($"  {e}");
+        Console.WriteLine();
+        Console.WriteLine(failures == 0
+            ? $"RESULT: hash + regeneration + {mappingChecks} mapping checks — PASS"
+            : $"RESULT: {failures} failure(s) — FAIL");
+        return failures == 0 ? 0 : 1;
     }
 
-    private static Dictionary<string, string> ResolveTheme(string[] layers)
-    {
-        var map = new Dictionary<string, string>(BaseVars);
-        foreach (var layer in layers)
-        {
-            if (!LayerVars.TryGetValue(layer, out var overrides))
-                throw new InvalidOperationException(
-                    $"tokens.css has no override block for '{layer}'.");
-            foreach (var (k, v) in overrides)
-                map[k] = v;
-        }
-        return map;
-    }
-
-    private static void ParseBlocks(string css)
-    {
-        BaseVars.Clear();
-        LayerVars.Clear();
-
-        // Strip /* comments */ so they don't glue onto the next selector.
-        css = Regex.Replace(css, @"/\*.*?\*/", " ", RegexOptions.Singleline);
-
-        // Each rule is `selector { body }`. The base :root has no attribute
-        // selector; the override blocks are keyed by the theme they carry.
-        foreach (Match block in Regex.Matches(css, @"(?<sel>[^{}]+)\{(?<body>[^{}]*)\}"))
-        {
-            var sel = block.Groups["sel"].Value.Trim();
-            var vars = ParseVars(block.Groups["body"].Value);
-            if (vars.Count == 0)
-                continue;
-
-            var layer = ClassifySelector(sel);
-            if (layer == "base")
-                foreach (var (k, v) in vars) BaseVars[k] = v;
-            else if (layer != null)
-                LayerVars[layer] = vars;
-            // Unclassified selectors are the intentionally-excluded materials
-            // (vibrancy/mica/acrylic/liquidglass) — ignored, never a theme.
-        }
-    }
-
-    private static string? ClassifySelector(string sel)
-    {
-        var light = sel.Contains("color-scheme=\"light\"");
-        var lightgray = sel.Contains("data-theme=\"lightgray\"");
-        if (light && lightgray) return "lightgray";
-        if (light) return "light";
-        if (sel.Contains("data-theme=\"blue\"")) return "blue";
-        if (sel.Contains("data-theme=\"purple\"")) return "purple";
-        if (sel.Contains("data-theme=\"gray\"")) return "gray";
-        // The base rule is a bare :root with no attribute qualifier.
-        if (sel == ":root") return "base";
-        return null;
-    }
-
-    private static Dictionary<string, string> ParseVars(string body)
-    {
-        var vars = new Dictionary<string, string>();
-        foreach (Match decl in Regex.Matches(body, @"(--[a-z0-9-]+)\s*:\s*([^;]+);"))
-            vars[decl.Groups[1].Value.Trim()] = decl.Groups[2].Value.Trim();
-        return vars;
-    }
-
-    private static Vector4 ResolveColor(string raw, Dictionary<string, string> map, int depth = 0)
-    {
-        if (depth > 8)
-            throw new InvalidOperationException($"var() cycle resolving '{raw}'.");
-        var value = raw.Trim();
-
-        var varMatch = Regex.Match(value, @"^var\(\s*(--[a-z0-9-]+)\s*\)$");
-        if (varMatch.Success)
-            return ResolveColor(map[varMatch.Groups[1].Value], map, depth + 1);
-
-        if (value.StartsWith('#'))
-        {
-            var hex = value[1..];
-            if (hex.Length == 3)
-                hex = string.Concat(hex[0], hex[0], hex[1], hex[1], hex[2], hex[2]);
-            var r = Convert.ToInt32(hex.Substring(0, 2), 16);
-            var g = Convert.ToInt32(hex.Substring(2, 2), 16);
-            var b = Convert.ToInt32(hex.Substring(4, 2), 16);
-            return new(r / 255f, g / 255f, b / 255f, 1f);
-        }
-
-        var rgb = Regex.Match(value, @"^rgba?\(([^)]+)\)$");
-        if (rgb.Success)
-        {
-            var parts = rgb.Groups[1].Value.Split(',', StringSplitOptions.TrimEntries);
-            var r = float.Parse(parts[0], CultureInfo.InvariantCulture);
-            var g = float.Parse(parts[1], CultureInfo.InvariantCulture);
-            var b = float.Parse(parts[2], CultureInfo.InvariantCulture);
-            var a = parts.Length > 3 ? float.Parse(parts[3], CultureInfo.InvariantCulture) : 1f;
-            return new(r / 255f, g / 255f, b / 255f, a);
-        }
-
-        throw new FormatException($"Unrecognized color literal: '{raw}'.");
-    }
+    private static string Normalize(string text) =>
+        text.Replace("\r\n", "\n");
 
     private static bool Approx(Vector4 a, Vector4 b)
     {
-        // Both sides are the same int/255f rational, so only float rounding
-        // separates them (~1e-6). Stay well under 1/255 so a one-unit channel
-        // mistranscription is a genuine MISMATCH, not absorbed as tolerance.
+        // Both sides derive from the same int/255f rationals, so only float
+        // rounding separates them (~1e-6). Stay well under 1/255 so a
+        // one-unit channel error is a genuine MISMATCH, never tolerance.
         const float eps = 1e-4f;
         return MathF.Abs(a.X - b.X) <= eps
             && MathF.Abs(a.Y - b.Y) <= eps

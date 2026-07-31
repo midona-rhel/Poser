@@ -13,11 +13,9 @@ public readonly record struct Theme
     public Vector4 Surface { get; init; }
     public Vector4 SurfaceRaised { get; init; }
     public Vector4 SurfaceSunken { get; init; }
-    public Vector4 Overlay { get; init; }
     public Vector4 Text { get; init; }
     public Vector4 TextDim { get; init; }
     public Vector4 TextMuted { get; init; }
-    public Vector4 TextInverse { get; init; }
     public Vector4 FormLabel { get; init; }
     public Vector4 FormHint { get; init; }
     public Vector4 FormValue { get; init; }
@@ -30,8 +28,6 @@ public readonly record struct Theme
     public Vector4 Success { get; init; }
     public Vector4 Warning { get; init; }
     public Vector4 Danger { get; init; }
-    public Vector4 DangerHover { get; init; }
-    public Vector4 Info { get; init; }
 
     public SpacingTokens Spacing { get; init; }
     public ControlTokens Controls { get; init; }
@@ -58,31 +54,29 @@ public readonly record struct Theme
     /// <summary>The accepted Picto-derived dark foundation.</summary>
     public static Theme PictoDark => new()
     {
-        // Color identity flows from PictoTokens (mirrors tokens.css); the
-        // --verify-tokens mode independently confirms these against the CSS.
+        // Color identity flows from the generated PictoTokens (projection of
+        // the canonical tokens.css); --verify-tokens checks the complete
+        // field mapping and regeneration drift. Fields NOT wired to a token
+        // are declared extensions in the verifier's classification.
         Surface = PictoTokens.Dark.BgApp,
         SurfaceRaised = PictoTokens.Dark.Surface1,
         SurfaceSunken = PictoTokens.Dark.Surface2,
-        Overlay = new(0.00f, 0.00f, 0.00f, 0.50f),
         Text = PictoTokens.Dark.TextPrimary,
         TextDim = PictoTokens.Dark.TextSecondary,
         TextMuted = PictoTokens.Dark.TextTertiary,
-        TextInverse = new(0f, 0f, 0f, 1f),
-        FormLabel = new(1f, 1f, 1f, 0.50f),
+        FormLabel = PictoTokens.Dark.TextTertiary,
         FormHint = new(1f, 1f, 1f, 0.40f),
         FormValue = new(1f, 1f, 1f, 0.90f),
-        FormSeparator = new(1f, 1f, 1f, 0.08f),
+        FormSeparator = PictoTokens.Dark.BorderSecondary,
         Border = PictoTokens.Dark.BorderSecondary,
         BorderStrong = PictoTokens.Dark.BorderPrimary,
         Accent = PictoTokens.Dark.Primary,
         AccentHover = PictoTokens.Dark.Primary60,
-        // Poser extension: there is no --color-primary-80 token.
+        // Derivation: there is no --color-primary-80 token.
         AccentActive = PictoTokens.Dark.Primary with { W = 0.80f },
         Success = new(0.30f, 0.80f, 0.40f, 1f),
         Warning = new(1.00f, 0.70f, 0.20f, 1f),
-        Danger = new(0.90f, 0.30f, 0.30f, 1f),
-        DangerHover = new(1.00f, 0.40f, 0.40f, 1f),
-        Info = new(0.40f, 0.70f, 0.90f, 1f),
+        Danger = PictoTokens.Dark.Negative,
 
         Spacing = new() { One = 2f, Two = 4f, Three = 6f, Four = 8f, Six = 12f, Eight = 16f },
         Controls = new()
@@ -243,47 +237,49 @@ public readonly record struct Theme
             Purple = new(0.5f, 0f, 0.5f, 1f),
             Orange = new(1f, 0.5f, 0f, 1f),
             Gray = new(0.5f, 0.5f, 0.5f, 1f),
-            Primary = new(50f / 255f, 151f / 255f, 255f / 255f, 1f),
+            Primary = PictoTokens.Dark.Primary,
             AxisX = new(1f, 107f / 255f, 122f / 255f, 1f),
             AxisY = new(126f / 255f, 211f / 255f, 160f / 255f, 1f),
             AxisZ = new(109f / 255f, 179f / 255f, 1f, 1f),
         },
         Glass = new()
         {
+            // Background: accepted precomposited no-blur fallback (deviation).
             Background = new(34f / 255f, 35f / 255f, 38f / 255f, 0.97f),
-            BlurBackground = new(36f / 255f, 37f / 255f, 40f / 255f, 0.92f),
-            BorderTop = new(1f, 1f, 1f, 0.25f),
-            BorderSide = new(1f, 1f, 1f, 0.12f),
-            BorderBottom = new(0f, 0f, 0f, 0.20f),
+            BlurBackground = PictoTokens.Dark.GlassBg,
+            BorderTop = PictoTokens.Dark.GlassBorderTop,
+            BorderSide = PictoTokens.Dark.GlassBorderSide,
+            BorderBottom = PictoTokens.Dark.GlassBorderBottom,
             Luminosity = new(0f, 0f, 0f, 0.30f),
         },
         Chrome = new()
         {
-            Text = new(1f, 1f, 1f, 1f),
+            Text = PictoTokens.Dark.TextPrimary,
             TextMuted = new(1f, 1f, 1f, 0.60f),
-            ControlBorder = new(1f, 1f, 1f, 0.14f),
-            ControlFill = new(248f / 255f, 249f / 255f, 251f / 255f, 0.05f),
-            ControlHover = new(1f, 1f, 1f, 0.10f),
-            WeakOverlay = new(1f, 1f, 1f, 0.08f),
-            ActiveOverlay = new(1f, 1f, 1f, 0.14f),
-            InputWell = new(0f, 0f, 0f, 0.20f),
-            Primary = new(50f / 255f, 151f / 255f, 255f / 255f, 1f),
-            PrimaryHover = new(50f / 255f, 151f / 255f, 255f / 255f, 0.60f),
-            PrimaryFocus = new(50f / 255f, 151f / 255f, 255f / 255f, 0.50f),
+            ControlBorder = PictoTokens.Dark.BorderPrimary,
+            ControlFill = PictoTokens.Dark.SurfaceHover,
+            ControlHover = PictoTokens.Dark.SubtleOverlay,
+            WeakOverlay = PictoTokens.Dark.HoverOverlay,
+            ActiveOverlay = PictoTokens.Dark.ActiveOverlay,
+            InputWell = PictoTokens.Dark.Black20,
+            Primary = PictoTokens.Dark.Primary,
+            PrimaryHover = PictoTokens.Dark.Primary60,
+            PrimaryFocus = PictoTokens.Dark.Primary50,
             Checkmark = new(1f, 1f, 1f, 0.99f),
-            Danger = new(1f, 71f / 255f, 87f / 255f, 1f),
-            DangerHover = new(1f, 71f / 255f, 87f / 255f, 0.12f),
+            Danger = PictoTokens.Dark.Negative,
+            // Derivation: --color-negative at the hover-fill alpha.
+            DangerHover = PictoTokens.Dark.Negative with { W = 0.12f },
             UnavailableFill = new(0f, 0f, 0f, 0.12f),
-            ColorWellBorder = new(1f, 1f, 1f, 0.14f),
-            PickerWell = new(24f / 255f, 25f / 255f, 27f / 255f, 1f),
+            ColorWellBorder = PictoTokens.Dark.BorderPrimary,
+            PickerWell = PictoTokens.Dark.BgApp,
             PickerBorder = new(1f, 1f, 1f, 0.18f),
             ModalDim = new(0f, 0f, 0f, 0.55f),
-            ModalFooter = new(0f, 0f, 0f, 0.10f),
+            ModalFooter = PictoTokens.Dark.Black10,
             SegmentShadow = new(0f, 0f, 0f, 0.25f),
-            SegmentSelected = new(42f / 255f, 42f / 255f, 46f / 255f, 1f),
-            SidebarSelected = new(50f / 255f, 151f / 255f, 255f / 255f, 0.10f),
-            SidebarSelectedBorder = new(50f / 255f, 151f / 255f, 255f / 255f, 0.30f),
-            SidebarHover = new(248f / 255f, 249f / 255f, 251f / 255f, 0.10f),
+            SegmentSelected = PictoTokens.Dark.Surface2,
+            SidebarSelected = PictoTokens.Dark.Primary10,
+            SidebarSelectedBorder = PictoTokens.Dark.Primary30,
+            SidebarHover = PictoTokens.Dark.SurfaceActive,
             SwitchOff = new(128f / 255f, 128f / 255f, 128f / 255f, 0.25f),
             SwitchShadow = new(0f, 0f, 0f, 0.08f),
             SwitchHighlight = new(0f, 0f, 0f, 0.10f),
@@ -386,24 +382,25 @@ public readonly record struct Theme
         Vector4 borderStrong,
         Vector4 border)
     {
+        // Light-scheme chrome comes from the light token cascade; lightgray
+        // only overrides surfaces and borders, which arrive as parameters.
         var primary = PictoTokens.Light.Primary;
         return theme with
         {
             Surface = surface,
             SurfaceRaised = raised,
             SurfaceSunken = sunken,
-            Text = new(0f, 0f, 0f, 1f),
-            TextDim = new(0f, 0f, 0f, 0.72f),
-            TextMuted = new(0f, 0f, 0f, 0.50f),
-            TextInverse = new(1f, 1f, 1f, 1f),
-            FormLabel = new(0f, 0f, 0f, 0.50f),
+            Text = PictoTokens.Light.TextPrimary,
+            TextDim = PictoTokens.Light.TextSecondary,
+            TextMuted = PictoTokens.Light.TextTertiary,
+            FormLabel = PictoTokens.Light.TextTertiary,
             FormHint = new(0f, 0f, 0f, 0.40f),
             FormValue = new(0f, 0f, 0f, 0.90f),
             FormSeparator = border,
             Border = border,
             BorderStrong = borderStrong,
             Accent = primary,
-            AccentHover = primary with { W = 0.60f },
+            AccentHover = PictoTokens.Light.Primary60,
             AccentActive = primary with { W = 0.80f },
             Glass = theme.Glass with
             {
@@ -413,29 +410,29 @@ public readonly record struct Theme
             },
             Chrome = theme.Chrome with
             {
-                Text = new(0f, 0f, 0f, 1f),
+                Text = PictoTokens.Light.TextPrimary,
                 TextMuted = new(0f, 0f, 0f, 0.60f),
                 ControlBorder = borderStrong,
-                ControlFill = new(0f, 0f, 0f, 0.05f),
-                ControlHover = new(0f, 0f, 0f, 0.08f),
-                WeakOverlay = border,
-                ActiveOverlay = new(0f, 0f, 0f, 0.10f),
-                InputWell = new(0f, 0f, 0f, 0.20f),
+                ControlFill = PictoTokens.Light.SurfaceHover,
+                ControlHover = PictoTokens.Light.SubtleOverlay,
+                WeakOverlay = PictoTokens.Light.HoverOverlay,
+                ActiveOverlay = PictoTokens.Light.ActiveOverlay,
+                InputWell = PictoTokens.Light.Black20,
                 Primary = primary,
-                PrimaryHover = primary with { W = 0.60f },
-                PrimaryFocus = primary with { W = 0.50f },
+                PrimaryHover = PictoTokens.Light.Primary60,
+                PrimaryFocus = PictoTokens.Light.Primary50,
                 Checkmark = new(1f, 1f, 1f, 0.99f),
                 UnavailableFill = new(0f, 0f, 0f, 0.08f),
                 ColorWellBorder = borderStrong,
                 PickerWell = surface,
                 PickerBorder = new(0f, 0f, 0f, 0.18f),
                 ModalDim = new(0f, 0f, 0f, 0.35f),
-                ModalFooter = new(0f, 0f, 0f, 0.06f),
+                ModalFooter = PictoTokens.Light.Black10,
                 SegmentShadow = new(0f, 0f, 0f, 0.12f),
                 SegmentSelected = sunken,
-                SidebarSelected = primary with { W = 0.10f },
-                SidebarSelectedBorder = primary with { W = 0.30f },
-                SidebarHover = new(0f, 0f, 0f, 0.06f),
+                SidebarSelected = PictoTokens.Light.Primary10,
+                SidebarSelectedBorder = PictoTokens.Light.Primary30,
+                SidebarHover = PictoTokens.Light.SurfaceActive,
                 SwitchOff = new(0f, 0f, 0f, 0.20f),
                 SwitchShadow = new(0f, 0f, 0f, 0.08f),
                 SwitchHighlight = new(1f, 1f, 1f, 0.10f),

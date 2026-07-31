@@ -45,9 +45,14 @@ internal static class Program
         if (args.Length == 1 && args[0] == "--icon-button-behavior")
             return RunIconButtonBehavior();
 
-        if (args.Length is 1 or 2 && args[0] == "--verify-tokens")
-            return TokenEquality.Run(
-                args.Length == 2 ? args[1] : DefaultTokensCssPath());
+        if (args.Length == 3 && args[0] == "--generate-tokens")
+            return TokenEquality.Generate(args[1], args[2]);
+
+        if (args.Length is 1 or 3 && args[0] == "--verify-tokens")
+            return args.Length == 3
+                ? TokenEquality.Verify(args[1], args[2])
+                : TokenEquality.Verify(
+                    DefaultTokensCssPath(), DefaultGeneratedPath());
 
         if (args.Length == 2 && args[0] == "--batch")
         {
@@ -81,7 +86,8 @@ internal static class Program
                 "       Crystarium.Capture --batch <listfile>\n" +
                 "       Crystarium.Capture --measure <cssSize>\n" +
                 "       Crystarium.Capture --icon-button-behavior\n" +
-                "       Crystarium.Capture --verify-tokens [tokens.css]\n" +
+                "       Crystarium.Capture --generate-tokens <tokens.css> <out.g.cs>\n" +
+                "       Crystarium.Capture --verify-tokens [<tokens.css> <committed.g.cs>]\n" +
                 "       Crystarium.Capture --list");
             return 2;
         }
@@ -509,11 +515,16 @@ internal static class Program
     }
 
     // The Picto checkout is a sibling of the Poser repo; walking up from the
-    // build output eventually reaches the folder that contains it. run.ps1
-    // passes an explicit path, so this is only a convenience fallback.
-    private static string DefaultTokensCssPath()
+    // build output eventually reaches the folder that contains it. The ps1
+    // wrappers pass explicit paths, so these are convenience fallbacks.
+    private static string DefaultTokensCssPath() =>
+        FindUpward("Picto/src/shared/styles/tokens.css");
+
+    private static string DefaultGeneratedPath() =>
+        FindUpward("Poser.UI/Rendering/PictoTokens.g.cs");
+
+    private static string FindUpward(string rel)
     {
-        const string rel = "Picto/src/shared/styles/tokens.css";
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory);
              dir != null;
              dir = dir.Parent)

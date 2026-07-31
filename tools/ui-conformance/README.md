@@ -16,11 +16,14 @@ Run a named comparison:
 catalog. Split the axes by what they detect: geometry is theme-invariant
 (Picto themes change color tokens only), so run scales against one theme
 (`-Scales 1,1.25,1.5 -Themes dark`). Color parity across the six supported
-themes is proven by TOKEN EQUALITY, not rendering: `verify-tokens.ps1`
-(`Crystarium.Capture --verify-tokens`) parses the sibling Picto `tokens.css`
-independently of `PictoTokens.cs` and asserts every token-derived `Theme`
-color equals the CSS-resolved value per theme cascade, listing Poser-only
-extension colors explicitly. Rendered non-dark themes remain available
+themes is proven by the TOKEN CONTRACT, not rendering: the sibling Picto
+`tokens.css` is canonical, `PictoTokens.g.cs` is committed generated output
+(`generate-tokens.ps1`, developer-only — production consumes the committed
+file), and `verify-tokens.ps1` (`Crystarium.Capture --verify-tokens`) fails
+on source-hash drift, on any diff between a fresh regeneration and the
+committed file, and on any violation of the complete token-derived
+`Theme`-field mapping per theme cascade — with intentional differences
+classified once as extensions. Rendered non-dark themes remain available
 on demand (`-Themes light` …) as a compositing diagnostic, never as the
 color-parity gate. Candidate captures batch PER COMPONENT — one host
 process per component keeps the boot/D3D/atlas win with no cross-component

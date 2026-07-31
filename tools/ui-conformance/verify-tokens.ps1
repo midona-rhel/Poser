@@ -1,7 +1,9 @@
-# Token equality: color parity for the six supported themes is proven by
-# comparing Crystarium's Theme values against an independent parse of the
-# sibling Picto tokens.css — never by rendering six theme catalogs. Run this
-# when Theme.cs / PictoTokens.cs change or the Picto checkout moves.
+# Token contract check: color parity for the six supported themes is proven
+# here, never by rendering six theme catalogs. Fails on tokens.css source-hash
+# drift, on any diff between a fresh regeneration and the committed
+# PictoTokens.g.cs, and on any violation of the complete Theme-field mapping.
+# Run after Theme.cs changes, after generate-tokens.ps1, or when the Picto
+# checkout moves.
 
 $ErrorActionPreference = "Stop"
 $toolRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -14,8 +16,14 @@ $tokens = Join-Path $toolRoot "..\..\..\Picto\src\shared\styles\tokens.css"
 if (!(Test-Path -LiteralPath $tokens -PathType Leaf)) {
     throw "Sibling Picto checkout not found: $tokens"
 }
+$committed = Join-Path $toolRoot "..\..\Poser.UI\Rendering\PictoTokens.g.cs"
+if (!(Test-Path -LiteralPath $committed -PathType Leaf)) {
+    throw "Committed token file not found: $committed"
+}
 
-& $exe --verify-tokens (Resolve-Path -LiteralPath $tokens).Path
+& $exe --verify-tokens `
+    (Resolve-Path -LiteralPath $tokens).Path `
+    (Resolve-Path -LiteralPath $committed).Path
 if ($LASTEXITCODE -ne 0) {
-    throw "Token equality FAILED — Theme colors diverge from tokens.css."
+    throw "Token contract FAILED — see output above."
 }
