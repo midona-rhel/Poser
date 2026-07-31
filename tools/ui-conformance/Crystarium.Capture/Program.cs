@@ -45,6 +45,10 @@ internal static class Program
         if (args.Length == 1 && args[0] == "--icon-button-behavior")
             return RunIconButtonBehavior();
 
+        if (args.Length is 1 or 2 && args[0] == "--verify-tokens")
+            return TokenEquality.Run(
+                args.Length == 2 ? args[1] : DefaultTokensCssPath());
+
         if (args.Length == 2 && args[0] == "--batch")
         {
             // One process for a whole capture list: the dominant cost of
@@ -77,6 +81,7 @@ internal static class Program
                 "       Crystarium.Capture --batch <listfile>\n" +
                 "       Crystarium.Capture --measure <cssSize>\n" +
                 "       Crystarium.Capture --icon-button-behavior\n" +
+                "       Crystarium.Capture --verify-tokens [tokens.css]\n" +
                 "       Crystarium.Capture --list");
             return 2;
         }
@@ -501,6 +506,23 @@ internal static class Program
         {
             ImGui.DestroyContext(context);
         }
+    }
+
+    // The Picto checkout is a sibling of the Poser repo; walking up from the
+    // build output eventually reaches the folder that contains it. run.ps1
+    // passes an explicit path, so this is only a convenience fallback.
+    private static string DefaultTokensCssPath()
+    {
+        const string rel = "Picto/src/shared/styles/tokens.css";
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory);
+             dir != null;
+             dir = dir.Parent)
+        {
+            var candidate = Path.Combine(dir.FullName, rel);
+            if (File.Exists(candidate))
+                return candidate;
+        }
+        return rel;
     }
 
     private static Theme ResolveTheme(string name) =>

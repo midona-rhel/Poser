@@ -15,9 +15,14 @@ Run a named comparison:
 `text`, `button`, `icon-button`, `switch`, `input`, and `sidebar`; `all` runs the full
 catalog. Split the axes by what they detect: geometry is theme-invariant
 (Picto themes change color tokens only), so run scales against one theme
-(`-Scales 1,1.25,1.5 -Themes dark`) and themes against one scale
-(`-Scales 1 -Themes dark,light,lightgray,gray,blue,purple`) rather than the
-full cross-product. Candidate captures batch PER COMPONENT — one host
+(`-Scales 1,1.25,1.5 -Themes dark`). Color parity across the six supported
+themes is proven by TOKEN EQUALITY, not rendering: `verify-tokens.ps1`
+(`Crystarium.Capture --verify-tokens`) parses the sibling Picto `tokens.css`
+independently of `PictoTokens.cs` and asserts every token-derived `Theme`
+color equals the CSS-resolved value per theme cascade, listing Poser-only
+extension colors explicitly. Rendered non-dark themes remain available
+on demand (`-Themes light` …) as a compositing diagnostic, never as the
+color-parity gate. Candidate captures batch PER COMPONENT — one host
 process per component keeps the boot/D3D/atlas win with no cross-component
 state leakage; `verify-batch-isolation.ps1` demonstrates hash equality
 against fully isolated captures. Reference captures run six-wide in
@@ -28,9 +33,8 @@ components visible in the same catalog. `-OpenReport` opens that scrollable
 catalog in its own window.
 The combobox reference is Picto Settings' exact `Sort by / Date Added`
 `CmSelect`: its seven real options, intrinsic width, and open-menu rules.
-Add `-Themes dark,light,lightgray,gray,blue,purple` to compare Picto's
-deterministic color themes. Auto is resolved by Poser at runtime;
-platform-material themes are deliberately unsupported.
+Auto is resolved by Poser at runtime; platform-material themes are
+deliberately unsupported.
 
 The generated `artifacts/index.html` links each result. Every result contains:
 

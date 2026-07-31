@@ -71,6 +71,12 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
 - UI foundation: the active `Theme` value owns colors, typography, metrics,
   radii, shadows, motion, and optical corrections together; a theme change
   installs one complete replacement value rather than mutating tokens.
+  Color identity flows from `PictoTokens` (a flat table mirroring the sibling
+  Picto `tokens.css`, cascade groups carrying only what their selector
+  overrides) through the two family builders; metrics, typography, radii,
+  and motion stay typed handwritten members. Six-theme color parity is
+  proven by `--verify-tokens` (independent CSS parse vs `Theme` values, with
+  Poser-only extension colors declared) — never by rendering six themes.
   The persisted selector mirrors Picto's portable color themes; Auto resolves
   the Windows app mode. Platform window-material themes are out of scope.
   Crystarium is the only product-facing API. Pages supply current state,

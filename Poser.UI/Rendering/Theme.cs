@@ -58,23 +58,26 @@ public readonly record struct Theme
     /// <summary>The accepted Picto-derived dark foundation.</summary>
     public static Theme PictoDark => new()
     {
-        Surface = Rgb(24, 25, 27),
-        SurfaceRaised = Rgb(36, 37, 40),
-        SurfaceSunken = Rgb(42, 42, 46),
+        // Color identity flows from PictoTokens (mirrors tokens.css); the
+        // --verify-tokens mode independently confirms these against the CSS.
+        Surface = PictoTokens.Dark.BgApp,
+        SurfaceRaised = PictoTokens.Dark.Surface1,
+        SurfaceSunken = PictoTokens.Dark.Surface2,
         Overlay = new(0.00f, 0.00f, 0.00f, 0.50f),
-        Text = new(1f, 1f, 1f, 1f),
-        TextDim = new(1f, 1f, 1f, 0.72f),
-        TextMuted = new(1f, 1f, 1f, 0.50f),
+        Text = PictoTokens.Dark.TextPrimary,
+        TextDim = PictoTokens.Dark.TextSecondary,
+        TextMuted = PictoTokens.Dark.TextTertiary,
         TextInverse = new(0f, 0f, 0f, 1f),
         FormLabel = new(1f, 1f, 1f, 0.50f),
         FormHint = new(1f, 1f, 1f, 0.40f),
         FormValue = new(1f, 1f, 1f, 0.90f),
         FormSeparator = new(1f, 1f, 1f, 0.08f),
-        Border = new(1f, 1f, 1f, 0.08f),
-        BorderStrong = new(1f, 1f, 1f, 0.14f),
-        Accent = Rgb(50, 151, 255),
-        AccentHover = Rgba(50, 151, 255, 0.60f),
-        AccentActive = Rgba(50, 151, 255, 0.80f),
+        Border = PictoTokens.Dark.BorderSecondary,
+        BorderStrong = PictoTokens.Dark.BorderPrimary,
+        Accent = PictoTokens.Dark.Primary,
+        AccentHover = PictoTokens.Dark.Primary60,
+        // Poser extension: there is no --color-primary-80 token.
+        AccentActive = PictoTokens.Dark.Primary with { W = 0.80f },
         Success = new(0.30f, 0.80f, 0.40f, 1f),
         Warning = new(1.00f, 0.70f, 0.20f, 1f),
         Danger = new(0.90f, 0.30f, 0.30f, 1f),
@@ -305,40 +308,40 @@ public readonly record struct Theme
 
     public static Theme PictoBlue => DarkSurface(
         PictoDark,
-        Rgb(15, 23, 50),
-        Rgb(23, 31, 58),
-        Rgb(28, 36, 65),
+        PictoTokens.Blue.BgApp,
+        PictoTokens.Blue.Surface1,
+        PictoTokens.Blue.Surface2,
         wideShadow: true);
 
     public static Theme PictoPurple => DarkSurface(
         PictoDark,
-        Rgb(30, 21, 38),
-        Rgb(38, 29, 46),
-        Rgb(43, 34, 53),
+        PictoTokens.Purple.BgApp,
+        PictoTokens.Purple.Surface1,
+        PictoTokens.Purple.Surface2,
         wideShadow: true);
 
     public static Theme PictoGray => DarkSurface(
         PictoDark,
-        Rgb(50, 50, 54),
-        Rgb(58, 58, 62),
-        Rgb(63, 63, 69),
+        PictoTokens.Gray.BgApp,
+        PictoTokens.Gray.Surface1,
+        PictoTokens.Gray.Surface2,
         wideShadow: true);
 
     public static Theme PictoLight => LightSurface(
         PictoDark,
-        Rgb(245, 245, 245),
-        Rgb(240, 240, 240),
-        Rgb(235, 237, 239),
-        new(0f, 0f, 0f, 0.12f),
-        new(0f, 0f, 0f, 0.06f));
+        PictoTokens.Light.BgApp,
+        PictoTokens.Light.Surface1,
+        PictoTokens.Light.Surface2,
+        PictoTokens.Light.BorderPrimary,
+        PictoTokens.Light.BorderSecondary);
 
     public static Theme PictoLightGray => LightSurface(
         PictoLight,
-        Rgb(200, 202, 205),
-        Rgb(208, 210, 213),
-        Rgb(194, 196, 199),
-        Rgb(171, 173, 175),
-        new(0f, 0f, 0f, 0.08f));
+        PictoTokens.LightGray.BgApp,
+        PictoTokens.LightGray.Surface1,
+        PictoTokens.LightGray.Surface2,
+        PictoTokens.LightGray.BorderPrimary,
+        PictoTokens.LightGray.BorderSecondary);
 
     public static Theme Default => PictoDark;
 
@@ -383,7 +386,7 @@ public readonly record struct Theme
         Vector4 borderStrong,
         Vector4 border)
     {
-        var primary = Rgb(37, 99, 235);
+        var primary = PictoTokens.Light.Primary;
         return theme with
         {
             Surface = surface,
@@ -451,12 +454,6 @@ public readonly record struct Theme
             },
         };
     }
-
-    private static Vector4 Rgb(byte r, byte g, byte b) =>
-        new(r / 255f, g / 255f, b / 255f, 1f);
-
-    private static Vector4 Rgba(byte r, byte g, byte b, float a) =>
-        new(r / 255f, g / 255f, b / 255f, a);
 
     public readonly record struct SpacingTokens
     {
