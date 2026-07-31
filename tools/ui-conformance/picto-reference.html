@@ -5,82 +5,88 @@
   <meta name="color-scheme" content="dark">
   <link rel="stylesheet" href="../../../Picto/src/shared/styles/tokens.css">
   <style>
+    /* The WHOLE catalog renders on this one page in one Edge process.
+       Every state cell is its own shadow root loading exactly the CSS
+       modules that state needs — the same per-state isolation the old
+       one-page-per-state flow provided (CSS-module class names like
+       .btn or .row collide across modules on a shared page). Custom
+       properties from tokens.css inherit into the shadow trees. */
     * { box-sizing: border-box; }
     html, body {
       margin: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
       background: var(--color-bg-app);
       color: var(--color-text-primary);
       font-family: var(--font-family);
       font-size: 13px;
     }
-    #stage {
-      position: relative;
-      width: 100%;
-      height: 100%;
-      padding: 24px;
+    .cell {
+      position: absolute;
+      background: var(--color-bg-app);
+      /* Paint containment clips to the cell and makes it the containing
+         block for absolute AND fixed descendants (the modal backdrop),
+         WITHOUT promoting a compositing layer — a transform/layer here
+         changes alpha-blend rounding by one RGB level and adds an AA
+         ring, breaking exactness against the accepted candidates. */
+      contain: paint;
     }
-    button, input { margin: 0; }
-    .text-flex-demo { display: flex; }
-    /* InspectorField.module.css .popover carries the popoverText's font
-       metrics (13px / 1.5 / text-primary) as an absolutely positioned
-       glass overlay; neutralize only its overlay placement and chrome so
-       the typography renders in flow. */
-    .popover-text-demo {
-      position: static !important;
-      max-height: none !important;
-      overflow: visible !important;
-      background: none !important;
-      border: none !important;
-      border-radius: 0 !important;
-      box-shadow: none !important;
-      backdrop-filter: none !important;
-      -webkit-backdrop-filter: none !important;
-      animation: none !important;
-    }
-    .row-demo { width: 272px; --sidebar-row-height: 26px; --row-inset: 1px; }
-    .property-demo { width: 272px; }
-    .section-demo { width: 272px; }
-    .tooltip-shell {
-      display: inline-flex;
-      padding: 4px 6px;
-      border-radius: 4px;
-      background: var(--glass-bg);
-      border: 1px solid var(--color-border-secondary);
-      box-shadow: 0 2px 8px rgba(0,0,0,.3);
-      backdrop-filter: blur(16px);
-    }
-    .dropdown-demo {
-      position: relative;
-      display: inline-flex;
-      width: max-content;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .dropdown-demo .drop {
-      position: relative;
-      width: 100%;
-    }
-    .modal-demo { height: 220px; }
-    .menu-demo { position: relative !important; left: auto !important; top: auto !important; }
-    .palette-demo { margin: 0 !important; }
-    .selector-icon {
-      width: 20px; height: 20px; display: inline-flex;
-      align-items: center; justify-content: center; opacity: .5;
-    }
-    svg { display: block; }
   </style>
 </head>
 <body>
-  <main id="stage"></main>
   <script src="icon-fixtures.generated.js"></script>
+  <script src="sheet-layout.generated.js"></script>
   <script>
     const root = '../../../Picto/src/';
+    // Replicates the old per-state page's stage box inside each shadow
+    // root: 24px padding, plus the shared demo helper styles.
+    const cellCss = `
+      * { box-sizing: border-box; }
+      .stage { position: relative; width: 100%; height: 100%; padding: 24px; }
+      button, input { margin: 0; }
+      svg { display: block; }
+      .text-flex-demo { display: flex; }
+      .popover-text-demo {
+        position: static !important;
+        max-height: none !important;
+        overflow: visible !important;
+        background: none !important;
+        border: none !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        animation: none !important;
+      }
+      .row-demo { width: 272px; --sidebar-row-height: 26px; --row-inset: 1px; }
+      .property-demo { width: 272px; }
+      .section-demo { width: 272px; }
+      .tooltip-shell {
+        display: inline-flex;
+        padding: 4px 6px;
+        border-radius: 4px;
+        background: var(--glass-bg);
+        border: 1px solid var(--color-border-secondary);
+        box-shadow: 0 2px 8px rgba(0,0,0,.3);
+        backdrop-filter: blur(16px);
+      }
+      .dropdown-demo {
+        position: relative;
+        display: inline-flex;
+        width: max-content;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .dropdown-demo .drop { position: relative; width: 100%; }
+      .modal-demo { height: 220px; }
+      .menu-demo { position: relative !important; left: auto !important; top: auto !important; }
+      .palette-demo { margin: 0 !important; }
+      .selector-icon {
+        width: 20px; height: 20px; display: inline-flex;
+        align-items: center; justify-content: center; opacity: .5;
+      }
+    `;
     // Exact AppShell Settings action from AppShell.tsx lines 333–336:
     // shared .iconBtn geometry via .toggleBtn, 16px IconSettings, stroke 1.5.
-    const settingsIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg>';
+    const settingsIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg>';
     const settingsButton = (attrs = '', extraClass = '') =>
       `<button class="iconBtn toggleBtn ${extraClass}" aria-label="Settings" ${attrs}>${settingsIcon}</button>`;
     const variants = {
@@ -124,7 +130,7 @@
         // ContextMenu.module.css .label idiom — combining acute accents
         // (U+0301) that must stay attached to their base letters.
         css: 'shared/ui/ContextMenu/ContextMenu.module.css',
-        html: '<div class="text-flex-demo" style="width:100px"><span class="label">réservé déjà touché</span></div>',
+        html: '<div class="text-flex-demo" style="width:100px"><span class="label">réservé déjà touché</span></div>',
       },
       'text-truncated-emoji': {
         // ContextMenu.module.css .label idiom — an astral-plane emoji
@@ -299,8 +305,8 @@
         // dark fill pair.
         css: 'shared/styles/actionButton.module.css',
         html: '<button class="btn">Apply changes</button>',
-        postLayout() {
-          const btn = document.querySelector('.btn');
+        postLayout(scope) {
+          const btn = scope.querySelector('.btn');
           // Sampling runs with the transition disabled: reading the
           // computed background right after assigning it would start
           // the 150ms transition and return its t=0 (idle) value. The
@@ -349,8 +355,8 @@
       'icon-button-hover-mid': {
         css: ['shared/styles/iconButton.module.css', 'app/AppShell.module.css'],
         html: settingsButton(),
-        postLayout() {
-          const btn = document.querySelector('.iconBtn');
+        postLayout(scope) {
+          const btn = scope.querySelector('.iconBtn');
           btn.style.transition = 'none';
           // Five fixed 1/60s candidate advances through the 150ms
           // cubic-bezier(.4,0,.22,1) transition.
@@ -380,7 +386,7 @@
       'icon-button-keyboard-focused': {
         css: ['shared/styles/iconButton.module.css', 'app/AppShell.module.css'],
         html: settingsButton('autofocus'),
-        postLayout() { document.querySelector('.iconBtn').focus(); },
+        postLayout(scope) { scope.querySelector('.iconBtn').focus(); },
       },
       'switch-off': {
         css: 'shared/ui/ToggleSwitch/ToggleSwitch.module.css',
@@ -450,36 +456,57 @@
       light ? 'light' : 'dark';
     document.documentElement.style.colorScheme =
       light ? 'light' : 'dark';
-    const name = params.get('component') || 'action-button';
     // Icon variants are generated from the shipped source registry
     // (generate-icon-fixtures.py) rather than pasted here.
     Object.assign(variants, (window.iconFixtures && window.iconFixtures.variants) || {});
-    const entry = variants[name];
-    if (!entry) throw new Error(`Unknown component: ${name}`);
-    const styles = Array.isArray(entry.css) ? entry.css : [entry.css];
-    let loaded = 0;
-    for (const source of styles) {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = root + source;
-      link.onload = () => {
-        if (++loaded === styles.length) {
-          // A loaded stylesheet is not yet APPLIED: computed styles at
-          // link.onload can still be UA defaults (ButtonFace). Two
-          // animation frames guarantee a style recalc with the sheet
-          // in effect before any variant samples computed colors.
-          if (entry.postLayout)
-            requestAnimationFrame(() => requestAnimationFrame(() => {
-              entry.postLayout();
-              document.documentElement.dataset.ready = 'true';
-            }));
-          else
-            document.documentElement.dataset.ready = 'true';
-        }
-      };
-      document.head.appendChild(link);
+
+    const layout = window.sheetLayout;
+    document.body.style.width = layout.pageWidth + 'px';
+    document.body.style.height = layout.pageHeight + 'px';
+    let pendingStyles = 0;
+    const pendingLayouts = [];
+    for (const cell of layout.cells) {
+      const entry = variants[cell.name];
+      if (!entry) throw new Error(`Unknown catalog state: ${cell.name}`);
+      const host = document.createElement('div');
+      host.className = 'cell';
+      host.style.left = cell.x + 'px';
+      host.style.top = cell.y + 'px';
+      host.style.width = cell.w + 'px';
+      host.style.height = cell.h + 'px';
+      document.body.appendChild(host);
+      const shadow = host.attachShadow({ mode: 'open' });
+      const style = document.createElement('style');
+      style.textContent = cellCss;
+      shadow.appendChild(style);
+      const styles = Array.isArray(entry.css) ? entry.css : [entry.css];
+      for (const source of styles) {
+        pendingStyles++;
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = root + source;
+        link.onload = () => {
+          if (--pendingStyles === 0) allStylesLoaded();
+        };
+        shadow.appendChild(link);
+      }
+      const stage = document.createElement('div');
+      stage.className = 'stage';
+      stage.innerHTML = entry.html;
+      shadow.appendChild(stage);
+      if (entry.postLayout)
+        pendingLayouts.push(() => entry.postLayout(shadow));
     }
-    document.getElementById('stage').innerHTML = entry.html;
+    function allStylesLoaded() {
+      // A loaded stylesheet is not yet APPLIED: computed styles at
+      // link.onload can still be UA defaults (ButtonFace). Two
+      // animation frames guarantee a style recalc with every sheet in
+      // effect before any variant samples computed colors.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        for (const run of pendingLayouts) run();
+        document.documentElement.dataset.ready = 'true';
+      }));
+    }
   </script>
 </body>
 </html>

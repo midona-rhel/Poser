@@ -1,0 +1,153 @@
+{
+  "comment": "Single source for the component-sheet catalog: every accepted visual state, grouped one sheet per component. State names are shared verbatim with ComponentCatalog.cs (candidate) and picto-reference.html (reference); cell sizes are the capture window sizes. run.ps1 asserts both sides agree with this file.",
+  "components": [
+    {
+      "name": "text",
+      "title": "Text",
+      "states": [
+        { "name": "text-label", "label": "label", "width": 320, "height": 44 },
+        { "name": "text-caption", "label": "caption", "width": 320, "height": 44 },
+        { "name": "text-mono", "label": "mono value", "width": 320, "height": 44 },
+        { "name": "text-disabled", "label": "disabled row", "width": 320, "height": 74 },
+        { "name": "text-truncated", "label": "truncated", "width": 320, "height": 44 },
+        { "name": "text-truncated-cjk", "label": "truncated CJK", "width": 320, "height": 44 },
+        { "name": "text-truncated-combining", "label": "truncated combining", "width": 320, "height": 44 },
+        { "name": "text-truncated-emoji", "label": "truncated emoji", "width": 320, "height": 44 },
+        { "name": "text-truncated-fit", "label": "fits, no ellipsis", "width": 320, "height": 44 },
+        { "name": "text-truncated-narrow", "label": "narrower than ellipsis", "width": 320, "height": 44 },
+        { "name": "text-truncated-flow", "label": "truncation flow", "width": 320, "height": 44 },
+        { "name": "text-wrapped", "label": "wrapped", "width": 320, "height": 96 },
+        { "name": "text-wrapped-newline", "label": "wrapped + newline", "width": 320, "height": 130 },
+        { "name": "text-wrapped-overwide", "label": "over-wide token", "width": 320, "height": 100 },
+        { "name": "text-wrapped-flow", "label": "wrap flow", "width": 320, "height": 130 },
+        { "name": "text-ws-collapse", "label": "whitespace collapse", "width": 320, "height": 80 },
+        { "name": "text-ws-prewrap", "label": "pre-wrap", "width": 320, "height": 110 },
+        { "name": "text-ws-tab", "label": "tab stops", "width": 320, "height": 74 },
+        { "name": "text-ws-crlf", "label": "CRLF normalization", "width": 320, "height": 130 },
+        { "name": "text-align-end", "label": "end alignment", "width": 320, "height": 88 }
+      ]
+    },
+    {
+      "name": "icons",
+      "title": "Icons",
+      "states": [
+        { "name": "icons-grid-16", "label": "16px grid", "width": 232, "height": 256 },
+        { "name": "icons-grid-14", "label": "14px grid", "width": 216, "height": 238 },
+        { "name": "icons-states", "label": "tint states", "width": 136, "height": 184 }
+      ]
+    },
+    {
+      "name": "text-buttons",
+      "title": "Text buttons",
+      "states": [
+        { "name": "btn-secondary", "label": "secondary idle", "width": 320, "height": 80 },
+        { "name": "btn-secondary-hover", "label": "secondary hover", "width": 320, "height": 80 },
+        { "name": "btn-secondary-focus", "label": "secondary focus", "width": 320, "height": 80 },
+        { "name": "btn-secondary-disabled", "label": "secondary disabled", "width": 320, "height": 80 },
+        { "name": "btn-disabled-unicode", "label": "disabled unicode", "width": 320, "height": 80 },
+        { "name": "btn-primary", "label": "primary idle", "width": 320, "height": 80 },
+        { "name": "btn-primary-hover", "label": "primary hover", "width": 320, "height": 80 },
+        { "name": "btn-primary-focus", "label": "primary focus", "width": 320, "height": 80 },
+        { "name": "btn-primary-disabled", "label": "primary disabled", "width": 320, "height": 80 },
+        { "name": "btn-danger", "label": "danger idle", "width": 320, "height": 80 },
+        { "name": "btn-danger-hover", "label": "danger hover", "width": 320, "height": 80 },
+        { "name": "btn-danger-focus", "label": "danger focus", "width": 320, "height": 80 },
+        { "name": "btn-danger-disabled", "label": "danger disabled", "width": 320, "height": 80 },
+        { "name": "btn-width-content", "label": "content width", "width": 320, "height": 80 },
+        { "name": "btn-width-fixed", "label": "fixed width", "width": 320, "height": 80 },
+        { "name": "btn-width-fill", "label": "fill width", "width": 320, "height": 80 },
+        { "name": "btn-hover-exit", "label": "hover exit = idle", "width": 320, "height": 80 },
+        { "name": "btn-hover-mid", "label": "hover transition midpoint", "width": 320, "height": 80 }
+      ]
+    },
+    {
+      "name": "icon-button",
+      "title": "Icon button",
+      "states": [
+        { "name": "icon-button-idle", "label": "idle", "width": 120, "height": 80 },
+        { "name": "icon-button-hover", "label": "hover", "width": 120, "height": 80 },
+        { "name": "icon-button-pressed", "label": "pressed", "width": 120, "height": 80 },
+        { "name": "icon-button-held-outside", "label": "held outside", "width": 120, "height": 80 },
+        { "name": "icon-button-disabled", "label": "disabled", "width": 120, "height": 80 },
+        { "name": "icon-button-hover-mid", "label": "hover midpoint", "width": 120, "height": 80 },
+        { "name": "icon-button-hover-exit", "label": "hover exit = idle", "width": 120, "height": 80 },
+        { "name": "icon-button-keyboard-focused", "label": "keyboard focus", "width": 120, "height": 80 },
+        { "name": "icon-button-glyphs", "label": "glyph coverage", "width": 280, "height": 80 }
+      ]
+    },
+    {
+      "name": "switch",
+      "title": "Switch",
+      "states": [
+        { "name": "switch-off", "label": "off", "width": 120, "height": 80 },
+        { "name": "switch-on", "label": "on", "width": 120, "height": 80 }
+      ]
+    },
+    {
+      "name": "input",
+      "title": "Input",
+      "states": [
+        { "name": "text-input", "label": "text input", "width": 320, "height": 80 },
+        { "name": "search-input", "label": "search input", "width": 320, "height": 84 }
+      ]
+    },
+    {
+      "name": "dropdown",
+      "title": "Dropdown",
+      "states": [
+        { "name": "dropdown-closed", "label": "closed", "width": 320, "height": 80 },
+        { "name": "dropdown-open", "label": "open", "width": 320, "height": 280 }
+      ]
+    },
+    {
+      "name": "color-palette",
+      "title": "Color palette",
+      "states": [
+        { "name": "color-palette", "label": "swatches", "width": 220, "height": 80 }
+      ]
+    },
+    {
+      "name": "sidebar",
+      "title": "Sidebar row",
+      "states": [
+        { "name": "sidebar-row", "label": "row", "width": 320, "height": 80 },
+        { "name": "sidebar-row-selected", "label": "selected", "width": 320, "height": 80 }
+      ]
+    },
+    {
+      "name": "property-row",
+      "title": "Property row",
+      "states": [
+        { "name": "property-row", "label": "row", "width": 320, "height": 68 }
+      ]
+    },
+    {
+      "name": "section",
+      "title": "Section",
+      "states": [
+        { "name": "section", "label": "header", "width": 320, "height": 92 }
+      ]
+    },
+    {
+      "name": "tooltip",
+      "title": "Tooltip",
+      "states": [
+        { "name": "tooltip", "label": "kbd tooltip", "width": 240, "height": 80 }
+      ]
+    },
+    {
+      "name": "context-menu",
+      "title": "Context menu",
+      "states": [
+        { "name": "context-menu", "label": "menu", "width": 320, "height": 190 }
+      ]
+    },
+    {
+      "name": "modal",
+      "title": "Modal",
+      "states": [
+        { "name": "modal", "label": "glass modal", "width": 560, "height": 360 }
+      ]
+    }
+  ]
+}

@@ -1,66 +1,65 @@
-# UI conformance
+# UI conformance — component sheets
 
-This is a deterministic Picto-to-Crystarium pixel comparison, not a second UI
-preview. Picto references load the actual component CSS from the sibling
-`Picto` checkout. Crystarium candidates render the current `Poser.UI` assembly
-through a focused hidden D3D11 host.
+One labeled sheet per component, containing every accepted visual state:
+Picto reference, Crystarium candidate, red diff, and an overlay slider in one
+comparison window. This is a fast visual inspection tool, not a report
+generator — there are no per-state report pages.
 
-Run a named comparison:
+Run the default catalog (dark @ 100%, all components):
 
 ```powershell
-.\tools\ui-conformance\run.ps1 combobox
+.\tools\ui-conformance\run.ps1
 ```
 
-`combobox` expands to the closed and open dropdown states. Other groups are
-`text`, `button`, `icon-button`, `switch`, `input`, and `sidebar`; `all` runs the full
-catalog. Split the axes by what they detect: geometry is theme-invariant
-(Picto themes change color tokens only), so run scales against one theme
-(`-Scales 1,1.25,1.5 -Themes dark`). Color parity across the six supported
-themes is proven by the TOKEN CONTRACT, not rendering: the sibling Picto
-`tokens.css` is canonical, `PictoTokens.g.cs` is committed generated output
-(`generate-tokens.ps1`, developer-only — production consumes the committed
-file), and `verify-tokens.ps1` (`Crystarium.Capture --verify-tokens`) fails
-on source-hash drift, on any diff between a fresh regeneration and the
-committed file, and on any violation of the complete token-derived
-`Theme`-field mapping per theme cascade — with intentional differences
-classified once as extensions. Rendered non-dark themes remain available
-on demand (`-Themes light` …) as a compositing diagnostic, never as the
-color-parity gate. Candidate captures batch PER COMPONENT — one host
-process per component keeps the boot/D3D/atlas win with no cross-component
-state leakage; `verify-batch-isolation.ps1` demonstrates hash equality
-against fully isolated captures. Reference captures run six-wide in
-parallel, so each run stays in minutes. Use `-Clean` when beginning a new
-regression set.
-Without `-Clean`, new captures replace their matching entries and leave other
-components visible in the same catalog. `-OpenReport` opens that scrollable
-catalog in its own window.
-The combobox reference is Picto Settings' exact `Sort by / Date Added`
-`CmSelect`: its seven real options, intrinsic width, and open-menu rules.
-Auto is resolved by Poser at runtime; platform-material themes are
-deliberately unsupported.
+`run.ps1 text-buttons` limits candidate capture and composition to one sheet.
+`-OpenReport` opens the window. Warm default runs complete in seconds; the
+phase gate is ≤30 s target / ≤60 s hard, excluding compilation.
 
-The generated `artifacts/index.html` links each result. Every result contains:
+How the two sides produce the whole catalog:
 
-- the Picto reference raster;
-- the current Crystarium raster;
-- an exact red pixel-failure map with bounded mismatch regions;
-- measured foreground bounds, alignment, missing/extra coverage, color delta,
-  and bright/text-ink vertical offset;
-- the Picto source-manifest hash, the candidate-manifest hash (an ordered
-  SHA-256 manifest over the rendering binaries — `Poser.UI.dll`,
-  `Crystarium.Capture.dll`, the managed ImGui bindings, native
-  `cimgui.dll` — plus every resolvable candidate font file, written to
-  `artifacts/crystarium/candidate-manifest.json`), commit, and dirty
-  state. The reference manifest likewise records the browser executable
-  hash and the reference-side font identities. Preserved results from
-  another source, build, or rendering environment are marked stale.
+- **Picto side — ONE Edge process.** `picto-reference.html` renders every
+  state cell on a single page; each cell is its own shadow root loading
+  exactly the CSS modules that state needs (the same per-state isolation the
+  old one-page-per-state flow had, since CSS-module class names collide
+  across modules). `sheets.py --layout` positions the cells — origins snap
+  to multiples of 8 so 1.25×/1.5× device scales stay on integer pixels — and
+  one headless screenshot captures the page.
+- **Crystarium side — ONE capture process.** `Crystarium.Capture --batch`
+  renders each state in a fresh ImGui context with REAL pointer, keyboard,
+  and frame timing (hover transitions advance actual frames; pressed states
+  hold an actual primary button). States are never visually forced.
+- **Composition.** `sheets.py --compose` slices the catalog screenshot,
+  pairs each cell with its candidate capture, and stamps both sheets with
+  identical chrome and labels (diff-silent), then writes the red diff and
+  rebuilds `artifacts/index.html` — component list, combo selector,
+  Picto / Crystarium / Diff / Overlay modes, zoom, and per-cell mismatch
+  percentages plus provenance in a collapsed Diagnostics view.
+
+`sheet-catalog.json` is the single source for components, states, labels,
+and cell sizes; `run.ps1` asserts the candidate catalog (`--list`) and the
+generated icon fixtures agree with it, so neither side can drift silently.
+
+Diagnostics that are NOT part of the default run:
+
+- Scale sweeps (`-Scales 1,1.25,1.5`) — run when geometry code changes.
+- Non-dark themes (`-Themes light` …) — run when compositing code changes.
+  Six-theme COLOR parity is proven by `verify-tokens.ps1` (token equality),
+  never by rendered theme runs.
+- `verify-batch-isolation.ps1` — batch-vs-isolated capture equality.
+- `verify-button-clip.ps1`, `verify-icon-button.ps1`,
+  `verify-actionbar-allocation.ps1` — engine-level behavioral invariants
+  (release-inside, drag-out cancellation, clip, hover reconciliation).
+
+Provenance: the reference manifest hashes the browser executable, every
+reference source (including the sibling Picto CSS), and the resolved fonts;
+the candidate manifest hashes the rendering binaries and fonts. Both hashes
+and the candidate commit are recorded in each combo and shown in the
+window's Diagnostics. References are reused warm while the identity is
+unchanged; `-Clean` starts a fresh artifact tree.
 
 References render with `--disable-lcd-text`: the candidate's ImGui atlas is
-single-channel alpha (greyscale), in game as in capture, so ClearType subpixel
-fringe on the reference is un-matchable noise, not signal. What remains in the
-diffs is real rasterizer divergence — DirectWrite grid-fits outlines while the
-stb pipeline (the same one Dalamud renders with in game) is unhinted.
-
-Exact equality is the pass gate. The measurements explain likely causes but do
-not waive antialiasing differences. Generated captures and reports are ignored
-by Git.
+single-channel alpha, in game as in capture, so ClearType subpixel fringe is
+un-matchable noise. Remaining mismatch percentages are dominated by real
+rasterizer divergence (DirectWrite grid-fits outlines; the stb pipeline is
+unhinted) and browser blend rounding — judge the sheets visually; the
+numbers exist to localize and compare, not as a pass gate.
