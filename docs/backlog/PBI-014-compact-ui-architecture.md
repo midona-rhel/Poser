@@ -113,9 +113,10 @@ animation midpoint, sizing variants) — not hundreds of individual reports.
   pointer, keyboard, and frame timing** (the choreography that catches real
   defects), and the sheet is composited from the crops. States are never
   visually "forced" to fit a single frame.
-- The comparison window shows: control list, theme and scale selectors,
-  Picto / Crystarium / red diff, an overlay slider, sensible zoom. Numerical
-  diagnostics (exact %, provenance) remain available but hidden by default.
+- The comparison window shows: control list, theme and scale selectors, and
+  Picto / Crystarium / red diff side by side with sensible zoom. There is no
+  overlay mode. Numerical diagnostics (exact %, provenance) remain available
+  but hidden by default.
 
 Normal use and phase-2 gates:
 
