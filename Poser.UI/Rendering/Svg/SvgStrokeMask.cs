@@ -28,12 +28,14 @@ internal static class SvgStrokeMask
         public required Pixel[] Pixels { get; init; }
 
         public void Draw(
-            ImDrawListPtr draw, Vector2 origin, Vector4 color)
+            ImDrawListPtr draw, Vector2 origin, Vector4 color,
+            float groupOpacity, Vector4 background)
         {
             foreach (var pixel in Pixels)
             {
-                var tint = color;
-                tint.W *= pixel.Coverage / 255f;
+                var tint = GroupOverlay(
+                    color, pixel.Coverage / 255f,
+                    background, groupOpacity);
                 uint packed = ImGui.ColorConvertFloat4ToU32(
                     ColorEx.ApplyAlpha(tint));
                 var min = origin + new Vector2(pixel.X, pixel.Y);
@@ -50,7 +52,9 @@ internal static class SvgStrokeMask
         Func<Vector2, Vector2> svgToScreen,
         float scale,
         Vector4? tint,
-        float? strokeWidthOverride)
+        float? strokeWidthOverride,
+        float groupOpacity,
+        Vector4 groupBackground)
     {
         var strokes = new List<Stroke>();
         Vector4? baseColor = null;
@@ -109,7 +113,49 @@ internal static class SvgStrokeMask
         var color = tint.HasValue
             ? Multiply(stroke, tint.Value)
             : stroke;
-        mask.Draw(draw, origin, color);
+        mask.Draw(
+            draw, origin, color,
+            Math.Clamp(groupOpacity, 0f, 1f), groupBackground);
+    }
+
+    // The button background has already been drawn at background alpha ×
+    // group opacity. Solve the one source-over draw needed at each icon
+    // pixel so the final result equals: flatten background + icon first,
+    // then apply CSS element opacity once to that complete group.
+    private static Vector4 GroupOverlay(
+        Vector4 foreground, float coverage,
+        Vector4 background, float groupOpacity)
+    {
+        float foregroundAlpha = Math.Clamp(
+            foreground.W * coverage, 0f, 1f);
+        float backgroundAlpha = Math.Clamp(background.W, 0f, 1f);
+        float layerAlpha = foregroundAlpha
+            + backgroundAlpha * (1f - foregroundAlpha);
+        float groupedAlpha = layerAlpha * groupOpacity;
+        float drawnBackgroundAlpha = backgroundAlpha * groupOpacity;
+        float remaining = 1f - drawnBackgroundAlpha;
+        float overlayAlpha = remaining > 0.0001f
+            ? 1f - (1f - groupedAlpha) / remaining
+            : 1f;
+        overlayAlpha = Math.Clamp(overlayAlpha, 0f, 1f);
+        if (overlayAlpha <= 0.0001f)
+            return Vector4.Zero;
+
+        var foregroundRgb = new Vector3(
+            foreground.X, foreground.Y, foreground.Z);
+        var backgroundRgb = new Vector3(
+            background.X, background.Y, background.Z);
+        var groupedPremultiplied = groupOpacity * (
+            foregroundRgb * foregroundAlpha
+            + backgroundRgb * backgroundAlpha * (1f - foregroundAlpha));
+        var drawnBackgroundPremultiplied =
+            backgroundRgb * drawnBackgroundAlpha;
+        var overlayRgb = (
+            groupedPremultiplied
+            - drawnBackgroundPremultiplied * (1f - overlayAlpha))
+            / overlayAlpha;
+        overlayRgb = Vector3.Clamp(overlayRgb, Vector3.Zero, Vector3.One);
+        return new Vector4(overlayRgb, overlayAlpha);
     }
 
     private static Mask Build(

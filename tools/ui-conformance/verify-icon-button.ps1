@@ -90,6 +90,24 @@ if ($backdropResult -ne "PASS") {
 }
 Write-Host "destination-independent group opacity PASS (surface, raised, checker)"
 
+$pressedGroup = Invoke-Capture "icon-button-pressed" 1
+$heldOutsideGroup = Invoke-Capture "icon-button-held-outside" 1
+$heldOutsideResult = python -c @"
+import numpy as np
+from PIL import Image
+p = np.asarray(Image.open(r'$pressedGroup').convert('RGB')).astype(float)
+h = np.asarray(Image.open(r'$heldOutsideGroup').convert('RGB')).astype(float)
+d = p[4, 4]
+expected = d + .8 * (p - d)
+region = np.abs(h[24:52, 24:52] - expected[24:52, 24:52])
+valid = region.max() <= 2 and not np.array_equal(h, p)
+print('PASS' if valid else f'FAIL max={region.max()} changed={not np.array_equal(h, p)}')
+"@
+if ($heldOutsideResult -ne "PASS") {
+    throw "Held-outside element-group opacity failed: $heldOutsideResult"
+}
+Write-Host "held-outside group opacity PASS (active background, resting 0.8 group)"
+
 $reference = Join-Path $toolRoot `
     "artifacts\picto\icon-button-hover-mid@dark@1.png"
 $candidate = Join-Path $toolRoot `

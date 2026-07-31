@@ -43,17 +43,21 @@ public static partial class Crystarium
 
     private static void IconInComposited(
         Vector2 min, Vector2 max, TablerIcon icon,
-        float opacity = 1f, bool flipX = false, float? strokeWidth = null)
+        float opacity = 1f, Vector4 background = default,
+        bool flipX = false, float? strokeWidth = null)
         => DrawIconBox(
-            Tabler.Get(icon), min, max, null, 1f, opacity,
-            false, flipX, strokeWidth, compositeStroke: true);
+            Tabler.Get(icon), min, max, null, 1f, 1f,
+            false, flipX, strokeWidth, compositeStroke: true,
+            groupOpacity: opacity, groupBackground: background);
 
     private static void IconInComposited(
         Vector2 min, Vector2 max, string name,
-        float opacity = 1f, bool flipX = false, float? strokeWidth = null)
+        float opacity = 1f, Vector4 background = default,
+        bool flipX = false, float? strokeWidth = null)
         => DrawIconBox(
-            Tabler.Get(name), min, max, null, 1f, opacity,
-            false, flipX, strokeWidth, compositeStroke: true);
+            Tabler.Get(name), min, max, null, 1f, 1f,
+            false, flipX, strokeWidth, compositeStroke: true,
+            groupOpacity: opacity, groupBackground: background);
 
     /// <summary>Composed-control icon by registered name.</summary>
     public static void IconIn(
@@ -83,7 +87,9 @@ public static partial class Crystarium
         SvgDocument? doc, Vector2 min, Vector2 max, Vector4? color,
         float contentScale, float opacity, bool disabled, bool flipX,
         float? strokeWidth,
-        bool compositeStroke = false)
+        bool compositeStroke = false,
+        float groupOpacity = 1f,
+        Vector4 groupBackground = default)
     {
         if (doc == null)
             return;
@@ -93,7 +99,7 @@ public static partial class Crystarium
             tint.W *= ActiveTheme.Chrome.DisabledOpacity;
         SvgBoxCore(
             doc, min, max, tint, contentScale, flipX, strokeWidth,
-            compositeStroke);
+            compositeStroke, groupOpacity, groupBackground);
     }
 
     /// <summary>Background-SVG entry for box styling: uniform-fits the
@@ -111,7 +117,9 @@ public static partial class Crystarium
     private static void SvgBoxCore(
         SvgDocument doc, Vector2 min, Vector2 max, Vector4? tint,
         float contentScale, bool flipX, float? strokeWidth,
-        bool compositeStroke = false)
+        bool compositeStroke = false,
+        float groupOpacity = 1f,
+        Vector4 groupBackground = default)
     {
         float side = MathF.Min(max.X - min.X, max.Y - min.Y) * contentScale;
         if (side <= 0f)
@@ -122,7 +130,7 @@ public static partial class Crystarium
         if (compositeStroke)
             doc.RenderComposited(
                 ImGui.GetWindowDrawList(), boxMin, boxMax, tint, flipX,
-                strokeWidth);
+                strokeWidth, groupOpacity, groupBackground);
         else
             doc.Render(
                 ImGui.GetWindowDrawList(), boxMin, boxMax, tint, flipX,

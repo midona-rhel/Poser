@@ -62,6 +62,7 @@ $aliases = @{
         "icon-button-idle",
         "icon-button-hover",
         "icon-button-pressed",
+        "icon-button-held-outside",
         "icon-button-disabled",
         "icon-button-hover-mid",
         "icon-button-hover-exit",

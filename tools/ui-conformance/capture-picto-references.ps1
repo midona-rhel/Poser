@@ -61,6 +61,7 @@ $catalog = @(
     @{ Name = "icon-button-idle"; Width = 120; Height = 80 },
     @{ Name = "icon-button-hover"; Width = 120; Height = 80 },
     @{ Name = "icon-button-pressed"; Width = 120; Height = 80 },
+    @{ Name = "icon-button-held-outside"; Width = 120; Height = 80 },
     @{ Name = "icon-button-disabled"; Width = 120; Height = 80 },
     @{ Name = "icon-button-hover-mid"; Width = 120; Height = 80 },
     @{ Name = "icon-button-hover-exit"; Width = 120; Height = 80 },

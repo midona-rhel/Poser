@@ -143,12 +143,16 @@ public sealed class SvgDocument
 
     internal void RenderComposited(
         ImDrawListPtr drawList, Vector2 min, Vector2 max,
-        Vector4? tint = null, bool flipX = false, float? strokeWidth = null)
-        => RenderCore(drawList, min, max, tint, flipX, strokeWidth, true);
+        Vector4? tint = null, bool flipX = false, float? strokeWidth = null,
+        float groupOpacity = 1f, Vector4 groupBackground = default)
+        => RenderCore(
+            drawList, min, max, tint, flipX, strokeWidth, true,
+            groupOpacity, groupBackground);
 
     private void RenderCore(
         ImDrawListPtr drawList, Vector2 min, Vector2 max, Vector4? tint,
-        bool flipX, float? strokeWidth, bool compositeStroke)
+        bool flipX, float? strokeWidth, bool compositeStroke,
+        float groupOpacity = 1f, Vector4 groupBackground = default)
     {
         var size = max - min;
         if (size.X <= 0f || size.Y <= 0f) return;
@@ -172,7 +176,7 @@ public sealed class SvgDocument
 
         SvgRenderer.Render(
             drawList, Paths, ToScreen, scale, tint, strokeWidth,
-            compositeStroke);
+            compositeStroke, groupOpacity, groupBackground);
     }
 
     // ---------- helpers ----------

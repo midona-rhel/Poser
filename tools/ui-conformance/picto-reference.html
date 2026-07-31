@@ -336,6 +336,12 @@
         // reaches this state through a real held primary pointer.
         html: settingsButton('style="opacity:1;background:var(--color-active-overlay);transition:none"'),
       },
+      'icon-button-held-outside': {
+        css: ['shared/styles/iconButton.module.css', 'app/AppShell.module.css'],
+        // Pointer remains held after leaving: :active keeps its background,
+        // while loss of :hover returns the element-group opacity to .8.
+        html: settingsButton('style="opacity:.8;background:var(--color-active-overlay);transition:none"'),
+      },
       'icon-button-disabled': {
         css: ['shared/styles/iconButton.module.css', 'app/AppShell.module.css'],
         html: settingsButton('disabled', 'iconBtnDisabled'),

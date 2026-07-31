@@ -17,7 +17,9 @@ internal static class SvgRenderer
         float scale,
         Vector4? tint,
         float? strokeWidthOverride = null,
-        bool compositeStroke = false)
+        bool compositeStroke = false,
+        float groupOpacity = 1f,
+        Vector4 groupBackground = default)
     {
         bool useStrokeMask = compositeStroke;
         Vector4? compositeColor = null;
@@ -51,7 +53,7 @@ internal static class SvgRenderer
         {
             SvgStrokeMask.Draw(
                 drawList, paths, svgToScreen, scale, tint,
-                strokeWidthOverride);
+                strokeWidthOverride, groupOpacity, groupBackground);
         }
 
         foreach (var path in paths)

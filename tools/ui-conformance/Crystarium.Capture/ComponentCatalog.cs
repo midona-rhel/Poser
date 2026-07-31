@@ -69,6 +69,7 @@ internal static class ComponentCatalog
         new("icon-button-idle", 120, 80),
         new("icon-button-hover", 120, 80),
         new("icon-button-pressed", 120, 80),
+        new("icon-button-held-outside", 120, 80),
         new("icon-button-disabled", 120, 80),
         new("icon-button-hover-mid", 120, 80),
         new("icon-button-hover-exit", 120, 80),
@@ -186,6 +187,7 @@ internal static class ComponentCatalog
             || (name == "btn-hover-mid" && frame >= 34)
             || (name == "btn-hover-reconcile" && frame < 20)
             || name == "icon-button-pressed"
+            || (name == "icon-button-held-outside" && frame < 15)
             || (name == "icon-button-hover-exit" && frame < 15)
             // IconButton starts a CSS-shaped transition at t=0 on the
             // first hovered frame, so enter one frame earlier than the
@@ -211,7 +213,9 @@ internal static class ComponentCatalog
     public static IEnumerable<(int Button, bool Down)> MouseButtonEventsFor(
         string name, int frame)
     {
-        if (name == "icon-button-pressed" && frame == 5)
+        if ((name == "icon-button-pressed"
+                || name == "icon-button-held-outside")
+            && frame == 5)
             yield return (0, true);
     }
 
@@ -683,6 +687,7 @@ internal static class ComponentCatalog
                 break;
             case "icon-button-hover":
             case "icon-button-pressed":
+            case "icon-button-held-outside":
             case "icon-button-hover-mid":
             case "icon-button-hover-exit":
             case "icon-button-keyboard-focused":

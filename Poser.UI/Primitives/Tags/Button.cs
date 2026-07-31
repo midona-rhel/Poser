@@ -65,8 +65,9 @@ public static partial class Crystarium
             size,
             disabled,
             help,
-            (min, max, opacity) => DrawButtonIcon(
-                min, max, icon, iconSize, opacity, flipX, strokeWidth),
+            (min, max, opacity, background) => DrawButtonIcon(
+                min, max, icon, iconSize, opacity, background, flipX,
+                strokeWidth),
             onClick);
     }
 
@@ -86,8 +87,8 @@ public static partial class Crystarium
             size,
             disabled,
             help,
-            (min, max, opacity) => DrawButtonIcon(
-                min, max, icon, iconSize, opacity, strokeWidth),
+            (min, max, opacity, background) => DrawButtonIcon(
+                min, max, icon, iconSize, opacity, background, strokeWidth),
             onClick);
     }
 
@@ -506,7 +507,7 @@ public static partial class Crystarium
         Vector2 logicalSize,
         bool disabled,
         string? help,
-        Action<Vector2, Vector2, float> content,
+        Action<Vector2, Vector2, float, Vector4> content,
         Action? onClick)
     {
         float scale = ImGuiHelpers.GlobalScale;
@@ -520,7 +521,10 @@ public static partial class Crystarium
             : hit.Hovered
                 ? theme.Chrome.WeakOverlay
                 : Vector4.Zero;
-        float targetOpacity = hit.Hovered || hit.Active ? 1f : 0.8f;
+        // Picto's :active rule changes only the background. Opacity is
+        // controlled exclusively by :hover, so dragging a held button
+        // outside returns the complete element group to its resting .8.
+        float targetOpacity = hit.Hovered ? 1f : 0.8f;
         var (background, opacity) = AdvanceIconButtonVisual(
             identity,
             disabled ? Vector4.Zero : targetBackground,
@@ -547,7 +551,7 @@ public static partial class Crystarium
                     ColorEx.ApplyAlpha(fadedBackground)),
                 radius);
 
-            content(hit.ScreenMin, hit.ScreenMax, opacity);
+            content(hit.ScreenMin, hit.ScreenMax, opacity, background);
         }
         finally
         {
@@ -632,6 +636,7 @@ public static partial class Crystarium
         TablerIcon icon,
         float logicalSize,
         float opacity,
+        Vector4 background,
         bool flipX,
         float strokeWidth)
     {
@@ -640,6 +645,7 @@ public static partial class Crystarium
         IconInComposited(
             iconMin, iconMax, icon,
             opacity: opacity,
+            background: background,
             flipX: flipX,
             strokeWidth: strokeWidth);
     }
@@ -650,6 +656,7 @@ public static partial class Crystarium
         string icon,
         float logicalSize,
         float opacity,
+        Vector4 background,
         float strokeWidth)
     {
         var (iconMin, iconMax) = CenteredIconBounds(
@@ -657,6 +664,7 @@ public static partial class Crystarium
         IconInComposited(
             iconMin, iconMax, icon,
             opacity: opacity,
+            background: background,
             strokeWidth: strokeWidth);
     }
 
