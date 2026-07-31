@@ -118,40 +118,40 @@ record the exact file and selector used when its fixture is added.
 | 1 | Text | Picto typography | Labels, captions, mono values, disabled text, wrapping and truncation | `02d25f7` |
 | 2 | Icons | Picto Tabler icon use | Optical alignment, size, stroke, tint and disabled state | `b44a2f3` |
 | 3 | Text buttons | `actionButton` | Primary/secondary/destructive, content/fixed/fill, disabled | `d66806b` |
-| 4 | Icon buttons | `iconButton` | Toolbar, titlebar and row actions, hover/pressed/disabled | Pending |
-| 5 | Icon toggles | Active `iconButton` use | Selected state, persistence, tooltip and click ownership | Pending |
-| 6 | Switches | `ToggleSwitch` | Form switches, toolbar Physics/Animation, disabled state | Pending |
-| 7 | Checkboxes | Settings and form checkboxes | Checkbox, label ownership, disabled and checked states | Pending |
-| 8 | Text inputs | `GlassInput` | Plain, typed, invalid, disabled, focus, selection and commit/cancel | Pending |
-| 9 | Search/filter pill | Picto searchable inputs | Clear action, empty/non-empty, focused, clipped, disabled | Pending |
-| 10 | Dropdown | Settings `CmSelect` Sort By / Date Added | Closed/open, exact seven-option fixture, selected fill, separators, keyboard and dismissal | Pending |
-| 11 | Slider | Picto slider use | White thumb, primary fill, readout, disabled, notches and precision | Pending |
-| 12 | Numeric well | `InspectorField` numeric input | Typed edit, precision, modifiers, invalid text and commit/cancel | Pending |
-| 13 | Axis-well row | Picto inspector row grammar | XYZ sizing, hinge-axis wrapping, labels, typed state and fixed allocation | Pending |
-| 14 | Color well | Picto color trigger | RGB/RGBA, unavailable and disabled states | Pending |
-| 15 | Color picker/palette | `ColorPalette` / `ColorPicker` | Open/close, actor tints, popup ownership and occlusion | Pending |
-| 16 | Progress bar | Picto progress use | Determinate, busy and disabled states | Pending |
-| 17 | Status/outcome row | Picto status use | Busy/result text, action slot reservation and cancellation | Pending |
-| 18 | Segmented control | Picto segmented navigation | Content/fixed/fill, equal segments, selected and disabled | Pending |
-| 19 | Primary workspace tabs | Picto workspace navigation | Pose/Animation/Appearance; no width, scroll, or rail reflow | Pending |
-| 20 | Secondary content tabs | Picto compact tabs | Body/Face/Matrix/3D and comparable sub-navigation | Pending |
-| 21 | Sidebar row | `SidebarRow` | Selection fill, disclosure, actions, text clipping and exact row ownership | Pending |
-| 22 | Tree composition | `FolderTree` | Guides, categories, filtering, cascading state and disclosure persistence | Pending |
-| 23 | Property/form row | `PropertyRow` / `InspectorField` | Labels, controls, readouts, unavailable state and wrapped help | Pending |
-| 24 | Section/disclosure header | `InspectorSection` | Captions, separators, collapse state and exact content removal | Pending |
-| 25 | Titlebar | `WindowControls` / app shell | Status, undo/redo, global actions, collapse and drag regions | Pending |
-| 26 | Toolbar | Picto toolbar layouts | Sizing, grouping, right alignment, overflow and disabled state | Pending |
-| 27 | Page action bar | Picto action layouts | Allocated fill, intrinsic actions, wrapping and stable reserved slots | Pending |
-| 28 | Fixed footer | Picto footer layouts | Parenting/canvas footer, placement, separator, padding and centering | Pending |
-| 29 | Sidebar status bar | Picto shell status | Counts, FPS, undo/redo, fixed placement and optical alignment | Pending |
-| 30 | Scroll region | Picto scroll surfaces | Stable gutter, 20%-narrower thumb, padding symmetry, nested ownership | Pending |
-| 31 | Context menu | `ContextMenu` | Rows, separators, icons, selected/disabled, outside click and Escape | Pending |
-| 32 | Popover | Picto floating surface | Anchor/flip/clamp, dismissal, layering and no underlying interaction | Pending |
-| 33 | Search picker | Picto searchable picker | Filtering, rows, overflow, selection and frozen target | Pending |
-| 34 | Hover help | `KbdTooltip` | Delay, Picto transition, blur, edge placement and one-card ownership | Pending |
-| 35 | Modal | `GlassModal` | Backdrop, focus, dismissal, action layout and no click-through | Pending |
-| 36 | File dialog | Picto modal/file grammar | Header/list/footer, navigation, selection, scrolling and frozen target | Pending |
-| 37 | Shell composition | `OverlayShell` and Picto app shell | Sidebar/main/inspector/status chrome, stable width, collapse and tab transitions | Pending |
+| 4 | Icon buttons | `iconButton` | Toolbar, titlebar and row actions, hover/pressed/disabled | Superseded -> PBI-014 (inherited unaccepted work checkpointed at `d27d232`) |
+| 5 | Icon toggles | Active `iconButton` use | Selected state, persistence, tooltip and click ownership | Superseded -> PBI-014 |
+| 6 | Switches | `ToggleSwitch` | Form switches, toolbar Physics/Animation, disabled state | Superseded -> PBI-014 |
+| 7 | Checkboxes | Settings and form checkboxes | Checkbox, label ownership, disabled and checked states | Superseded -> PBI-014 |
+| 8 | Text inputs | `GlassInput` | Plain, typed, invalid, disabled, focus, selection and commit/cancel | Superseded -> PBI-014 |
+| 9 | Search/filter pill | Picto searchable inputs | Clear action, empty/non-empty, focused, clipped, disabled | Superseded -> PBI-014 |
+| 10 | Dropdown | Settings `CmSelect` Sort By / Date Added | Closed/open, exact seven-option fixture, selected fill, separators, keyboard and dismissal | Superseded -> PBI-014 |
+| 11 | Slider | Picto slider use | White thumb, primary fill, readout, disabled, notches and precision | Superseded -> PBI-014 |
+| 12 | Numeric well | `InspectorField` numeric input | Typed edit, precision, modifiers, invalid text and commit/cancel | Superseded -> PBI-014 |
+| 13 | Axis-well row | Picto inspector row grammar | XYZ sizing, hinge-axis wrapping, labels, typed state and fixed allocation | Superseded -> PBI-014 |
+| 14 | Color well | Picto color trigger | RGB/RGBA, unavailable and disabled states | Superseded -> PBI-014 |
+| 15 | Color picker/palette | `ColorPalette` / `ColorPicker` | Open/close, actor tints, popup ownership and occlusion | Superseded -> PBI-014 |
+| 16 | Progress bar | Picto progress use | Determinate, busy and disabled states | Superseded -> PBI-014 |
+| 17 | Status/outcome row | Picto status use | Busy/result text, action slot reservation and cancellation | Superseded -> PBI-014 |
+| 18 | Segmented control | Picto segmented navigation | Content/fixed/fill, equal segments, selected and disabled | Superseded -> PBI-014 |
+| 19 | Primary workspace tabs | Picto workspace navigation | Pose/Animation/Appearance; no width, scroll, or rail reflow | Superseded -> PBI-014 |
+| 20 | Secondary content tabs | Picto compact tabs | Body/Face/Matrix/3D and comparable sub-navigation | Superseded -> PBI-014 |
+| 21 | Sidebar row | `SidebarRow` | Selection fill, disclosure, actions, text clipping and exact row ownership | Superseded -> PBI-014 |
+| 22 | Tree composition | `FolderTree` | Guides, categories, filtering, cascading state and disclosure persistence | Superseded -> PBI-014 |
+| 23 | Property/form row | `PropertyRow` / `InspectorField` | Labels, controls, readouts, unavailable state and wrapped help | Superseded -> PBI-014 |
+| 24 | Section/disclosure header | `InspectorSection` | Captions, separators, collapse state and exact content removal | Superseded -> PBI-014 |
+| 25 | Titlebar | `WindowControls` / app shell | Status, undo/redo, global actions, collapse and drag regions | Superseded -> PBI-014 |
+| 26 | Toolbar | Picto toolbar layouts | Sizing, grouping, right alignment, overflow and disabled state | Superseded -> PBI-014 |
+| 27 | Page action bar | Picto action layouts | Allocated fill, intrinsic actions, wrapping and stable reserved slots | Superseded -> PBI-014 |
+| 28 | Fixed footer | Picto footer layouts | Parenting/canvas footer, placement, separator, padding and centering | Superseded -> PBI-014 |
+| 29 | Sidebar status bar | Picto shell status | Counts, FPS, undo/redo, fixed placement and optical alignment | Superseded -> PBI-014 |
+| 30 | Scroll region | Picto scroll surfaces | Stable gutter, 20%-narrower thumb, padding symmetry, nested ownership | Superseded -> PBI-014 |
+| 31 | Context menu | `ContextMenu` | Rows, separators, icons, selected/disabled, outside click and Escape | Superseded -> PBI-014 |
+| 32 | Popover | Picto floating surface | Anchor/flip/clamp, dismissal, layering and no underlying interaction | Superseded -> PBI-014 |
+| 33 | Search picker | Picto searchable picker | Filtering, rows, overflow, selection and frozen target | Superseded -> PBI-014 |
+| 34 | Hover help | `KbdTooltip` | Delay, Picto transition, blur, edge placement and one-card ownership | Superseded -> PBI-014 |
+| 35 | Modal | `GlassModal` | Backdrop, focus, dismissal, action layout and no click-through | Superseded -> PBI-014 |
+| 36 | File dialog | Picto modal/file grammar | Header/list/footer, navigation, selection, scrolling and frozen target | Superseded -> PBI-014 |
+| 37 | Shell composition | `OverlayShell` and Picto app shell | Sidebar/main/inspector/status chrome, stable width, collapse and tab transitions | Superseded -> PBI-014 |
 
 Each handoff covers only one numbered row.
 
@@ -213,21 +213,16 @@ In-game locations for user inspection:
 No visual/runtime claim:
 ```
 
-## Completion gate
+## Closure (historical)
 
-PBI-011 is complete only when every row has a user-accepted commit, the catalog
-contains every retained ordinary primitive and composite, the full six-theme /
-three-scale comparison run is generated, and static inspection finds:
-
-- no pane-local ordinary component implementation;
-- no duplicate component styling or popup ownership path;
-- no raw ordinary ImGui controls outside Crystarium internals;
-- no stale Picto fixture or unrelated reference component;
-- no optional-state or top-level-navigation reflow;
-- no unresolved geometry, color, state, flow, or interaction diff hidden by a
-  threshold.
-
-The final gate is one complete in-game pass over Pose, Animation, Appearance,
-Settings, sidebar/tree, inspector, matrices/maps, all floating surfaces, and the
-collapsed shell. Compilation and the comparison window support that decision;
-they do not replace it.
+PBI-011 closed after slices 1–3 (Text `02d25f7`, Icons `b44a2f3`, Text buttons
+`d66806b`) were accepted. Rows 4 onward were superseded by
+**PBI-014 — Compact UI architecture** (`docs/backlog/PBI-014-compact-ui-architecture.md`):
+the remaining controls are normalized during that structural migration and
+accepted through its component-sheet catalog instead of pre-migration slices.
+Icon-button work in flight at closure (commits `c853685..86ef855` plus the
+worktree checkpointed at `d27d232`) was inherited by PBI-014 but never
+separately accepted. The original completion gate below no longer applies;
+its intent — no pane-local component implementations, no duplicate styling or
+popup ownership paths, no raw ordinary ImGui outside Crystarium, and a final
+in-game pass — carries forward as PBI-014 acceptance criteria.
