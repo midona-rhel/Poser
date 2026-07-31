@@ -9,14 +9,10 @@ public static partial class Crystarium
 {
     public static Vector2 MeasureCheckbox(ControlStyle style = default)
     {
-        float scale = ImGuiHelpers.GlobalScale;
+        // Square by default: the box's content width IS its resolved side.
         float side = ControlSizing.Height(
             style.Height, ActiveTheme.Controls.CheckboxSize);
-        float width = ControlSizing.Width(
-            style.Width,
-            side,
-            ImGui.GetContentRegionAvail().X / scale);
-        return new Vector2(width, side) * scale;
+        return ControlSizing.Resolve(style, side, side).Size;
     }
 
     public static bool Checkbox(
@@ -30,9 +26,7 @@ public static partial class Crystarium
         float scale = ImGuiHelpers.GlobalScale;
         var measured = MeasureCheckbox(style);
         float side = measured.Y;
-        float width = measured.X;
-        var hit = Interactive.Reserve(
-            id, new Vector2(width, side), disabled);
+        var hit = Interactive.Reserve(id, measured, disabled);
         var boxMax = hit.ScreenMin + new Vector2(side);
         if (hit.Clicked)
         {
@@ -83,9 +77,8 @@ public static partial class Crystarium
                 2f * unit);
         }
 
-        if (!string.IsNullOrEmpty(help) &&
-            (hit.Hovered || (hit.Disabled &&
-                HoverHelp.HelpHovered(hit.ScreenMin, hit.ScreenMax))))
+        if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
+                hit, hit.Disabled, hit.ScreenMin, hit.ScreenMax))
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
         return hit.Clicked;
     }

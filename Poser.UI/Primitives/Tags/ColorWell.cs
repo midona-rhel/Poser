@@ -22,13 +22,13 @@ public static partial class Crystarium
         bool disabled = false,
         string? help = null)
     {
-        float scale = ImGuiHelpers.GlobalScale;
+        // The well is square by default: its content width IS the resolved
+        // side, so the side is settled first and fed back as the content.
         float side = ControlSizing.Height(
             style.Height, Crystarium.ActiveTheme.Controls.ColorWellSize);
-        float width = ControlSizing.Width(
-            style.Width, side, ImGui.GetContentRegionAvail().X / scale);
-        var size = new Vector2(width, side) * scale;
-        var hit = Interactive.Reserve(id, size, disabled);
+        var metrics = ControlSizing.Resolve(style, side, side);
+        float scale = metrics.Scale;
+        var hit = Interactive.Reserve(id, metrics.Size, disabled);
         var wellMax = hit.ScreenMin + new Vector2(side * scale);
 
         var dl = ImGui.GetWindowDrawList();
@@ -75,9 +75,8 @@ public static partial class Crystarium
             });
         if (changed)
             onChange(popupColor);
-        if (!string.IsNullOrEmpty(help)
-            && (hit.Hovered || (disabled
-                && HoverHelp.HelpHovered(hit.ScreenMin, hit.ScreenMax))))
+        if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
+                hit, disabled, hit.ScreenMin, hit.ScreenMax))
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
         return changed;
     }
@@ -94,13 +93,12 @@ public static partial class Crystarium
         ControlStyle style = default,
         string? help = null)
     {
-        float scale = ImGuiHelpers.GlobalScale;
+        // Same square contract as ColorWell above.
         float side = ControlSizing.Height(
             style.Height, Crystarium.ActiveTheme.Controls.ColorWellSize);
-        float width = ControlSizing.Width(
-            style.Width, side, ImGui.GetContentRegionAvail().X / scale);
-        var size = new Vector2(width, side) * scale;
-        var hit = Interactive.Reserve(id, size, disabled: false);
+        var metrics = ControlSizing.Resolve(style, side, side);
+        float scale = metrics.Scale;
+        var hit = Interactive.Reserve(id, metrics.Size, disabled: false);
 
         var dl = ImGui.GetWindowDrawList();
         var center = hit.ScreenMin + new Vector2(side * 0.5f * scale);

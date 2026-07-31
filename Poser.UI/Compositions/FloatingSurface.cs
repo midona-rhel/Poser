@@ -65,6 +65,33 @@ public static partial class Crystarium
             ImGui.OpenPopup(id);
         }
 
+        /// <summary>
+        /// One step of the exclusive-chain handshake: marks the surface
+        /// alive for this frame and reports whether it still owns its link
+        /// in the chain. False means an outer surface superseded it and the
+        /// caller must close — touching a surface that no longer exists is
+        /// a no-op, so the order inside is immaterial to the caller.
+        /// </summary>
+        internal static bool SyncExclusive(string id)
+        {
+            Interactive.TouchExclusive(id);
+            return Interactive.OwnsExclusive(id);
+        }
+
+        /// <summary>
+        /// The closing half of the handshake: releases the surface's link
+        /// (and everything nested under it) once it is no longer open.
+        /// Returns true when it released, so callers can bail in the same
+        /// statement.
+        /// </summary>
+        internal static bool ReleaseWhenClosed(string id, bool open)
+        {
+            if (open)
+                return false;
+            Interactive.ReleaseExclusive(id);
+            return true;
+        }
+
         public static void OpenWindow(string id) =>
             Interactive.ClaimExclusive(
                 id, InteractionLayer.FloatingWindow);
@@ -101,10 +128,10 @@ public static partial class Crystarium
                 | ImGuiWindowFlags.NoSavedSettings);
             if (open)
             {
-                Interactive.TouchExclusive(id);
+                bool owns = SyncExclusive(id);
                 var min = ImGui.GetWindowPos();
                 var max = min + ImGui.GetWindowSize();
-                if (!Interactive.OwnsExclusive(id))
+                if (!owns)
                 {
                     ImGui.CloseCurrentPopup();
                 }
@@ -123,8 +150,7 @@ public static partial class Crystarium
                 }
                 ImGui.EndPopup();
             }
-            if (!ImGui.IsPopupOpen(id))
-                Interactive.ReleaseExclusive(id);
+            ReleaseWhenClosed(id, ImGui.IsPopupOpen(id));
 
             ImGui.PopStyleColor();
             ImGui.PopStyleVar(3);
@@ -138,17 +164,13 @@ public static partial class Crystarium
             float height,
             Action<FloatingSurfaceFrame> body)
         {
-            if (open && !Interactive.OwnsExclusive(id))
+            if (open && !SyncExclusive(id))
             {
                 open = false;
                 return false;
             }
-            if (!open)
-            {
-                Interactive.ReleaseExclusive(id);
+            if (ReleaseWhenClosed(id, open))
                 return false;
-            }
-            Interactive.TouchExclusive(id);
             float scale = ImGuiHelpers.GlobalScale;
             var size = new Vector2(width, height) * scale;
             ImGui.SetNextWindowSize(size, ImGuiCond.Appearing);
@@ -183,8 +205,8 @@ public static partial class Crystarium
             }
             ImGui.End();
             ImGui.PopStyleVar(2);
-            if (!open)
-                Interactive.ReleaseExclusive(id);
+            // The window's own close button clears `open` mid-frame.
+            ReleaseWhenClosed(id, open);
             return visible;
         }
 
@@ -323,6 +345,50 @@ public static partial class Crystarium
                     ],
                 });
             drawList.PopClipRect();
+        }
+
+        /// <summary>
+        /// Places a surface on a preferred SIDE of a semantic target:
+        /// centred on that side at <paramref name="offset"/>, flipped to
+        /// the opposite side when the viewport edge is closer than the
+        /// surface, then clamped into the viewport. The third placement
+        /// rule alongside <see cref="PlaceAnchored"/> (below/above an
+        /// anchor) and <see cref="PlaceAtPoint"/> (shift-clamp a point).
+        /// </summary>
+        internal static Vector2 PlaceSide(
+            HoverHelpSide side,
+            Vector2 targetMin,
+            Vector2 targetMax,
+            Vector2 size,
+            float offset)
+        {
+            var display = ImGui.GetIO().DisplaySize;
+            var targetCenter = (targetMin + targetMax) * 0.5f;
+            Vector2 pos = side switch
+            {
+                HoverHelpSide.Top => new Vector2(targetCenter.X - size.X * 0.5f, targetMin.Y - offset - size.Y),
+                HoverHelpSide.Left => new Vector2(targetMin.X - offset - size.X, targetCenter.Y - size.Y * 0.5f),
+                HoverHelpSide.Right => new Vector2(targetMax.X + offset, targetCenter.Y - size.Y * 0.5f),
+                _ => new Vector2(targetCenter.X - size.X * 0.5f, targetMax.Y + offset),
+            };
+            switch (side)
+            {
+                case HoverHelpSide.Bottom when pos.Y + size.Y > display.Y:
+                    pos.Y = targetMin.Y - offset - size.Y;
+                    break;
+                case HoverHelpSide.Top when pos.Y < 0f:
+                    pos.Y = targetMax.Y + offset;
+                    break;
+                case HoverHelpSide.Right when pos.X + size.X > display.X:
+                    pos.X = targetMin.X - offset - size.X;
+                    break;
+                case HoverHelpSide.Left when pos.X < 0f:
+                    pos.X = targetMax.X + offset;
+                    break;
+            }
+            pos.X = Math.Clamp(pos.X, 0f, MathF.Max(0f, display.X - size.X));
+            pos.Y = Math.Clamp(pos.Y, 0f, MathF.Max(0f, display.Y - size.Y));
+            return pos;
         }
 
         private static Vector2 PlaceAnchored(

@@ -68,6 +68,18 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
   resolved by `WindowsFontFallback` shared verbatim between the game
   and the capture host. Measurement and rendering must share one
   resolved style value.
+- UiKernel: `Interactive.Reserve` is the ONE control hit-test (hover,
+  press/release, focus, keyboard activation, occlusion gate, and the
+  pointer events — click, double-click, drag begin/end/delta); widgets
+  never query ImGui input directly. `Motion` is the ONE keyed animation
+  store — (ImGuiID, channel) with a constant-rate ramp mode and an
+  elapsed-clock retarget mode, one prune policy; components own no
+  transition dictionaries. `ControlSizing.Resolve` is the ONE
+  style→logical→scaled resolution preamble. Popups claim/keep/release
+  the `Interactive` exclusive chain only through `FloatingSurface`'s
+  open/sync/release helpers, and all floating placement (anchored,
+  point, side-preference) lives in `FloatingSurface`. The disabled-help
+  hover gate is `HoverHelp.Gate`.
 - UI foundation: the active `Theme` value owns colors, typography, metrics,
   radii, shadows, motion, and optical corrections together; a theme change
   installs one complete replacement value rather than mutating tokens.

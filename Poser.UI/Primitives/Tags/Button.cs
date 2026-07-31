@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -211,15 +210,13 @@ public static partial class Crystarium
     private static readonly Transition BackgroundTransition =
         Transition.CubicBezier(0.15f, 0.25f, 0.1f, 0.25f, 1f);
 
-    private sealed class HoverState
-    {
-        public float Progress;
-        public int LastFrame;
-    }
-
-    // Component-owned transient hover state keyed by stable ImGui
-    // identity (the same seed InvisibleButton hashes).
-    private static readonly Dictionary<uint, HoverState> HoverStates = new();
+    // Motion channels this component owns. The store keys by stable ImGui
+    // identity (the same seed InvisibleButton hashes) plus the channel,
+    // so the two icon-button channels share one clock while the text
+    // button's hover ramp lives in the constant-rate store.
+    private const int HoverFillChannel = 0;
+    private const int IconBackgroundChannel = 0;
+    private const int IconOpacityChannel = 1;
 
     private static bool RenderTextButton(
         string id,
@@ -267,7 +264,12 @@ public static partial class Crystarium
         // The hover state advances EVERY frame — a disabled frame drives
         // it toward idle, so disabling while hovered and re-enabling away
         // from the pointer can never replay stale hover fill.
-        float eased = AdvanceHover(identity, hit.Hovered && !disabled);
+        float eased = BackgroundTransition.Evaluate(
+            Motion.Progress(
+                identity,
+                HoverFillChannel,
+                hit.Hovered && !disabled,
+                BackgroundTransition.DurationSeconds));
         if (disabled)
         {
             // .btn:disabled is CSS GROUP opacity — the element flattens
@@ -352,8 +354,8 @@ public static partial class Crystarium
                 draw, hit.ScreenMin, hit.ScreenMax, label, style, text);
         }
 
-        if (!string.IsNullOrEmpty(help) &&
-            (hit.Hovered || (hit.Disabled && HoverHelp.HelpHovered(hit.ScreenMin, hit.ScreenMax))))
+        if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
+                hit, hit.Disabled, hit.ScreenMin, hit.ScreenMax))
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
         if (hit.Activated)
             onClick?.Invoke();
@@ -441,7 +443,7 @@ public static partial class Crystarium
 
     /// <summary>Premultiplied-alpha interpolation — how Chromium
     /// transitions between rgba backgrounds of different alpha.</summary>
-    private static Vector4 PremultipliedLerp(Vector4 from, Vector4 to, float t)
+    internal static Vector4 PremultipliedLerp(Vector4 from, Vector4 to, float t)
     {
         float alpha = from.W + (to.W - from.W) * t;
         if (alpha <= 0f)
@@ -451,56 +453,12 @@ public static partial class Crystarium
         return new Vector4(rgb, alpha);
     }
 
-    private static float AdvanceHover(uint identity, bool hovered)
-    {
-        int frame = ImGui.GetFrameCount();
-        if (!HoverStates.TryGetValue(identity, out var state))
-        {
-            if (HoverStates.Count > 512)
-                PruneHoverStates(frame);
-            state = new HoverState { Progress = hovered ? 1f : 0f };
-            HoverStates[identity] = state;
-        }
-        float step = BackgroundTransition.DurationSeconds > 0f
-            ? ImGui.GetIO().DeltaTime / BackgroundTransition.DurationSeconds
-            : 1f;
-        state.Progress = Math.Clamp(
-            state.Progress + (hovered ? step : -step), 0f, 1f);
-        state.LastFrame = frame;
-        return BackgroundTransition.Evaluate(state.Progress);
-    }
-
-    private static void PruneHoverStates(int frame)
-    {
-        var stale = new List<uint>();
-        foreach (var (key, value) in HoverStates)
-            if (frame - value.LastFrame > 2)
-                stale.Add(key);
-        foreach (var key in stale)
-            HoverStates.Remove(key);
-    }
-
     // ---- Picto momentary icon button --------------------------------
 
     // iconButton.module.css: both animatable properties use the Picto
     // --ease-default timing function for 150ms.
     private static readonly Transition IconButtonTransition =
         Transition.CubicBezier(0.15f, 0.4f, 0f, 0.22f, 1f);
-
-    private sealed class IconButtonVisualState
-    {
-        public Vector4 Background;
-        public Vector4 FromBackground;
-        public Vector4 TargetBackground;
-        public float Opacity;
-        public float FromOpacity;
-        public float TargetOpacity;
-        public float Elapsed;
-        public int LastFrame;
-    }
-
-    private static readonly Dictionary<uint, IconButtonVisualState>
-        IconButtonVisualStates = new();
 
     private static bool RenderIconButton(
         string id,
@@ -525,10 +483,21 @@ public static partial class Crystarium
         // controlled exclusively by :hover, so dragging a held button
         // outside returns the complete element group to its resting .8.
         float targetOpacity = hit.Hovered ? 1f : 0.8f;
-        var (background, opacity) = AdvanceIconButtonVisual(
-            identity,
-            disabled ? Vector4.Zero : targetBackground,
-            disabled ? 0.8f : targetOpacity);
+        // One group under one identity: the background and the opacity
+        // share a clock, so pressing a button that is still fading in
+        // restarts both together, exactly like the CSS element does.
+        Span<MotionChannel> visual =
+        [
+            MotionChannel.Color(
+                IconBackgroundChannel,
+                disabled ? Vector4.Zero : targetBackground),
+            MotionChannel.Number(
+                IconOpacityChannel,
+                disabled ? 0.8f : targetOpacity),
+        ];
+        Motion.Toward(identity, IconButtonTransition, visual);
+        var background = visual[0].Value;
+        float opacity = visual[1].Scalar;
         if (disabled)
         {
             background = Vector4.Zero;
@@ -558,76 +527,12 @@ public static partial class Crystarium
             draw.PopClipRect();
         }
 
-        if (!string.IsNullOrEmpty(help) &&
-            (hit.Hovered || (hit.Disabled && HoverHelp.HelpHovered(hit.ScreenMin, hit.ScreenMax))))
+        if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
+                hit, hit.Disabled, hit.ScreenMin, hit.ScreenMax))
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
         if (hit.Activated)
             onClick?.Invoke();
         return hit.Activated;
-    }
-
-    private static (Vector4 Background, float Opacity)
-        AdvanceIconButtonVisual(
-            uint identity,
-            Vector4 targetBackground,
-            float targetOpacity)
-    {
-        int frame = ImGui.GetFrameCount();
-        if (!IconButtonVisualStates.TryGetValue(identity, out var state)
-            || frame <= state.LastFrame)
-        {
-            if (IconButtonVisualStates.Count > 512)
-                PruneIconButtonVisualStates(frame);
-            state = new IconButtonVisualState
-            {
-                Background = targetBackground,
-                FromBackground = targetBackground,
-                TargetBackground = targetBackground,
-                Opacity = targetOpacity,
-                FromOpacity = targetOpacity,
-                TargetOpacity = targetOpacity,
-                Elapsed = IconButtonTransition.DurationSeconds,
-                LastFrame = frame,
-            };
-            IconButtonVisualStates[identity] = state;
-            return (state.Background, state.Opacity);
-        }
-
-        if (state.TargetBackground != targetBackground
-            || state.TargetOpacity != targetOpacity)
-        {
-            state.FromBackground = state.Background;
-            state.TargetBackground = targetBackground;
-            state.FromOpacity = state.Opacity;
-            state.TargetOpacity = targetOpacity;
-            state.Elapsed = 0f;
-        }
-        else if (state.Elapsed < IconButtonTransition.DurationSeconds)
-        {
-            state.Elapsed = MathF.Min(
-                IconButtonTransition.DurationSeconds,
-                state.Elapsed + ImGui.GetIO().DeltaTime);
-            float linear = IconButtonTransition.DurationSeconds > 0f
-                ? state.Elapsed / IconButtonTransition.DurationSeconds
-                : 1f;
-            float eased = IconButtonTransition.Evaluate(linear);
-            state.Background = PremultipliedLerp(
-                state.FromBackground, state.TargetBackground, eased);
-            state.Opacity = state.FromOpacity
-                + (state.TargetOpacity - state.FromOpacity) * eased;
-        }
-        state.LastFrame = frame;
-        return (state.Background, state.Opacity);
-    }
-
-    private static void PruneIconButtonVisualStates(int frame)
-    {
-        var stale = new List<uint>();
-        foreach (var (key, value) in IconButtonVisualStates)
-            if (frame - value.LastFrame > 2)
-                stale.Add(key);
-        foreach (var key in stale)
-            IconButtonVisualStates.Remove(key);
     }
 
     private static void DrawButtonIcon(
@@ -719,8 +624,8 @@ public static partial class Crystarium
                 scale);
         }
 
-        if (!string.IsNullOrEmpty(help) &&
-            (hit.Hovered || (hit.Disabled && HoverHelp.HelpHovered(hit.ScreenMin, hit.ScreenMax))))
+        if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
+                hit, hit.Disabled, hit.ScreenMin, hit.ScreenMax))
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
         if (hit.Clicked)
             onClick?.Invoke();

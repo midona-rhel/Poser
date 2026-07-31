@@ -25,13 +25,12 @@ public static partial class Crystarium
         bool disabled = false)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        float height = ControlSizing.Height(
-            style.Height, ActiveTheme.Controls.WorkspaceHeight);
-        float width = ControlSizing.Width(
-            style.Width, ActiveTheme.Form.ValueColumnWidth,
-            ImGui.GetContentRegionAvail().X / scale);
+        var metrics = ControlSizing.Resolve(
+            style,
+            ActiveTheme.Form.ValueColumnWidth,
+            ActiveTheme.Controls.WorkspaceHeight);
         var pos = ImGui.GetCursorScreenPos();
-        var size = new Vector2(width, height) * scale;
+        var size = metrics.Size;
 
         if (_axisEditId == id && !disabled)
             return EditAxisWell(
@@ -40,8 +39,7 @@ public static partial class Crystarium
 
         var hit = Interactive.Reserve(id, size, disabled);
         bool changed = false;
-        if (hit.Hovered
-            && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+        if (hit.DoubleClicked)
         {
             _axisEditId = id;
             _axisEditValue = value;
@@ -50,7 +48,7 @@ public static partial class Crystarium
         else if (hit.Active)
         {
             ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEw);
-            float delta = ImGui.GetIO().MouseDelta.X;
+            float delta = hit.DragDelta.X;
             if (delta != 0f)
             {
                 float next = value + delta * perPixel
@@ -61,7 +59,7 @@ public static partial class Crystarium
             }
         }
 
-        if (ImGui.IsItemDeactivated())
+        if (hit.DragEnded)
             onCommit?.Invoke();
 
         DrawAxisWell(pos, size, axis, value, accent, format, hit.Active,

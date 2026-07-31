@@ -80,7 +80,8 @@ public static partial class Crystarium
         }
 
         public bool LastRowDoubleClicked() =>
-            ImGui.IsWindowHovered()
+            !Interactive.PointerOccluded()
+            && ImGui.IsWindowHovered()
             && ImGui.IsMouseHoveringRect(_lastRowMin, _lastRowMax)
             && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left);
 

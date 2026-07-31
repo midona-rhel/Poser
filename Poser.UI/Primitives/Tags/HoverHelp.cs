@@ -123,6 +123,18 @@ public static partial class Crystarium
                 ImGuiHoveredFlags.AllowWhenBlockedByActiveItem);
 
         /// <summary>
+        /// The ONE help gate for a reserved control: live hover from the
+        /// hit result, falling back to the geometric test for disabled
+        /// controls, which have no live item to hover.
+        /// </summary>
+        internal static bool Gate(
+            in InteractionResult hit,
+            bool disabled,
+            Vector2 min,
+            Vector2 max) =>
+            hit.Hovered || (disabled && HelpHovered(min, max));
+
+        /// <summary>
         /// Advances the state machine and draws the single card. Called
         /// exactly once per frame, after every window has drawn, so
         /// registrations from any pane are complete.
@@ -271,33 +283,13 @@ public static partial class Crystarium
             // Anchor to the centre of the semantic target on the
             // preferred side, flip when the viewport edge is closer than
             // the card, then clamp the remainder.
-            var display = ImGui.GetIO().DisplaySize;
-            var targetCenter = (c.Min + c.Max) * 0.5f;
             float offset = Crystarium.ActiveTheme.HoverHelp.TargetOffset * scale;
-            Vector2 pos = c.Side switch
-            {
-                HoverHelpSide.Top => new Vector2(targetCenter.X - cardW * 0.5f, c.Min.Y - offset - cardH),
-                HoverHelpSide.Left => new Vector2(c.Min.X - offset - cardW, targetCenter.Y - cardH * 0.5f),
-                HoverHelpSide.Right => new Vector2(c.Max.X + offset, targetCenter.Y - cardH * 0.5f),
-                _ => new Vector2(targetCenter.X - cardW * 0.5f, c.Max.Y + offset),
-            };
-            switch (c.Side)
-            {
-                case HoverHelpSide.Bottom when pos.Y + cardH > display.Y:
-                    pos.Y = c.Min.Y - offset - cardH;
-                    break;
-                case HoverHelpSide.Top when pos.Y < 0f:
-                    pos.Y = c.Max.Y + offset;
-                    break;
-                case HoverHelpSide.Right when pos.X + cardW > display.X:
-                    pos.X = c.Min.X - offset - cardW;
-                    break;
-                case HoverHelpSide.Left when pos.X < 0f:
-                    pos.X = c.Max.X + offset;
-                    break;
-            }
-            pos.X = Math.Clamp(pos.X, 0f, MathF.Max(0f, display.X - cardW));
-            pos.Y = Math.Clamp(pos.Y, 0f, MathF.Max(0f, display.Y - cardH));
+            var pos = FloatingSurface.PlaceSide(
+                c.Side,
+                c.Min,
+                c.Max,
+                new Vector2(cardW, cardH),
+                offset);
 
             // Mantine pop, transform-origin centre: scale .9 → 1 and
             // translateY 10px → 0 while opacity 0 → 1. CSS composes

@@ -32,8 +32,6 @@ public static partial class Crystarium
         // 12px text; chevron = Tabler IconSelector at 14 in a 20px slot, opacity .5.
         bool changed = false;
         float scale = ImGuiHelpers.GlobalScale;
-        float height = ControlSizing.Height(style.Height,
-            Crystarium.ActiveTheme.Controls.WorkspaceHeight) * scale;
         float rounding = Crystarium.ActiveTheme.Radii.Control * scale;
         float padLeft = Crystarium.ActiveTheme.Spacing.Six * scale;
         float padRight = Crystarium.ActiveTheme.Spacing.Three * scale;
@@ -58,9 +56,14 @@ public static partial class Crystarium
         float intrinsicWidth =
             borderSpan + padLeft + widestLabel + gap + chevronSlot + padRight;
 
-        float availableWidth = ImGui.GetContentRegionAvail().X / scale;
-        float totalWidth = ControlSizing.Width(
-            style.Width, intrinsicWidth / scale, availableWidth) * scale;
+        // The intrinsic span is only known after measuring the options, so
+        // the shared preamble runs here rather than at the top.
+        var metrics = ControlSizing.Resolve(
+            style,
+            intrinsicWidth / scale,
+            Crystarium.ActiveTheme.Controls.WorkspaceHeight);
+        float height = metrics.Height;
+        float totalWidth = metrics.Width;
         float minWidth =
             borderSpan + padLeft + gap + chevronSlot + padRight + 20f * scale;
         if (totalWidth < minWidth) totalWidth = minWidth;

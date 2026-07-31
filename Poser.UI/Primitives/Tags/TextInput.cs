@@ -38,11 +38,12 @@ public static partial class Crystarium
         string? help)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        float height = ControlSizing.Height(
-            style.Height, ActiveTheme.Controls.ComfortableHeight) * scale;
-        float availableWidth = ImGui.GetContentRegionAvail().X / scale;
-        float width = ControlSizing.Width(
-            style.Width, availableWidth, availableWidth) * scale;
+        var metrics = ControlSizing.Resolve(
+            style,
+            ImGui.GetContentRegionAvail().X / scale,
+            ActiveTheme.Controls.ComfortableHeight);
+        float height = metrics.Height;
+        float width = metrics.Width;
         var background = ActiveTheme.Chrome.InputWell;
         var border = ActiveTheme.Chrome.ControlBorder;
         float framePadY = (height - ImGui.GetTextLineHeight()) * 0.5f;
@@ -67,7 +68,10 @@ public static partial class Crystarium
         var inputMax = ImGui.GetItemRectMax();
         var cursorAfterInput = ImGui.GetCursorScreenPos();
         bool focused = ImGui.IsItemFocused() || ImGui.IsItemActive();
-        bool hovered = ImGui.IsItemHovered();
+        // InputText stays a native ImGui widget, so its help trigger takes
+        // the occlusion gate that Interactive.Reserve applies for us
+        // everywhere else.
+        bool hovered = ImGui.IsItemHovered() && !Interactive.PointerOccluded();
 
         ImGui.PopStyleVar(3);
         ImGui.PopStyleColor(4);
@@ -113,9 +117,16 @@ public static partial class Crystarium
                 inputMax.X - 13f * scale,
                 (inputMin.Y + inputMax.Y) * 0.5f);
             var hitPadding = new Vector2(9f) * scale;
-            bool clearHovered = ImGui.IsWindowHovered() &&
-                ImGui.IsMouseHoveringRect(
-                    center - hitPadding, center + hitPadding);
+            // The clear affordance is a real reserved hit area on the one
+            // interaction path, so it is occlusion-gated like every other
+            // control. It overlaps the native InputText submitted above,
+            // which must therefore yield hover/active arbitration to it.
+            ImGui.SetItemAllowOverlap();
+            ImGui.SetCursorScreenPos(center - hitPadding);
+            var clearHit = Interactive.Reserve(
+                $"{id}##clear", hitPadding * 2f, disabled: false);
+            ImGui.SetCursorScreenPos(cursorAfterInput);
+            bool clearHovered = clearHit.Hovered;
             uint circle = ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
                 ActiveTheme.Text with { W = clearHovered ? 0.62f : 0.42f }));
             ImGui.GetWindowDrawList().AddCircleFilled(
@@ -127,16 +138,13 @@ public static partial class Crystarium
                 center + new Vector2(iconSize * 0.5f),
                 TablerIcon.X,
                 ActiveTheme.SurfaceSunken with { W = 1f });
-            ImGui.SetCursorScreenPos(cursorAfterInput);
 
             if (clearHovered)
-            {
                 ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
-                if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-                {
-                    next = string.Empty;
-                    changed = true;
-                }
+            if (clearHit.Clicked)
+            {
+                next = string.Empty;
+                changed = true;
             }
         }
 

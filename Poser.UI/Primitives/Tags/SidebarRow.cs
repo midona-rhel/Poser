@@ -51,13 +51,14 @@ public static partial class Crystarium
         ControlStyle style = default)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        float height = ControlSizing.Height(
-            style.Height,
-            Crystarium.ActiveTheme.Controls.ListRowHeight) * scale;
-        float width = ControlSizing.Width(
-            style.Width,
+        // Content and Fill both resolve to the available region here, so
+        // UiWidth.Fixed is the only width path that changes the row.
+        var metrics = ControlSizing.Resolve(
+            style,
             ImGui.GetContentRegionAvail().X / scale,
-            ImGui.GetContentRegionAvail().X / scale) * scale;
+            Crystarium.ActiveTheme.Controls.ListRowHeight);
+        float height = metrics.Height;
+        float width = metrics.Width;
 
         // Rows stack seamlessly at exactly 26px (picto sidebar rhythm) — suppress
         // ImGui's ambient vertical ItemSpacing for the reserve.

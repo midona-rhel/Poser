@@ -72,9 +72,8 @@ public static partial class Crystarium
         dl.AddCircleFilled(center, knobRadius,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(knobColor)), 32);
 
-        if (!string.IsNullOrEmpty(help) &&
-            (hit.Hovered || (hit.Disabled &&
-                HoverHelp.HelpHovered(hit.ScreenMin, hit.ScreenMax))))
+        if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
+                hit, hit.Disabled, hit.ScreenMin, hit.ScreenMax))
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
         return hit.Clicked;
     }

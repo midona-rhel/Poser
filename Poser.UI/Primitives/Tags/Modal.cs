@@ -50,17 +50,13 @@ public static partial class Crystarium
 
         if (open && !ImGui.IsPopupOpen(popupId))
             FloatingSurface.OpenPopup(popupId);
-        if (!open)
-        {
-            Interactive.ReleaseExclusive(popupId);
+        if (FloatingSurface.ReleaseWhenClosed(popupId, open))
             return false;
-        }
-        if (!Interactive.OwnsExclusive(popupId))
+        if (!FloatingSurface.SyncExclusive(popupId))
         {
             onOpenChanged(false);
             return true;
         }
-        Interactive.TouchExclusive(popupId);
 
         float width = size switch
         {

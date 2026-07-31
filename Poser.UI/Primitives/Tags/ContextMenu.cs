@@ -157,7 +157,9 @@ public static partial class Crystarium
         {
             if (_phase == Phase.Hidden || _id != id)
                 return -1;
-            if (!Interactive.OwnsExclusive(ExclusiveKey(id)))
+            // Hand-rolled surface, same handshake: claim on open, sync
+            // every frame it draws, release on dismissal.
+            if (!FloatingSurface.SyncExclusive(ExclusiveKey(id)))
             {
                 DismissAll();
                 return -1;
@@ -181,7 +183,6 @@ public static partial class Crystarium
             }
 
             _lastOwnerFrame = ImGui.GetFrameCount();
-            Interactive.TouchExclusive(ExclusiveKey(id));
             float s = ImGuiHelpers.GlobalScale;
             double now = ImGui.GetTime();
             float t = (float)(now - _phaseStart);

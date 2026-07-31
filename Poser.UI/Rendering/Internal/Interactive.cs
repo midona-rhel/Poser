@@ -28,7 +28,9 @@ public readonly record struct InteractionOwner(
 
 /// <summary>
 /// Hit-test result from <see cref="Interactive.Reserve"/>: the placed rect, the
-/// pseudo-state derived from hover/active/disabled, and a click flag.
+/// pseudo-state derived from hover/active/disabled, the click flags, and the
+/// drag handshake. Controls never query ImGui item state themselves — every
+/// signal a control needs is reported here, already occlusion-gated.
 /// </summary>
 public readonly struct InteractionResult
 {
@@ -38,6 +40,16 @@ public readonly struct InteractionResult
     public readonly bool Clicked;
     public readonly bool Activated;
     public readonly bool Focused;
+    /// <summary>Left double-click while hovered — same gating as
+    /// <see cref="Clicked"/>.</summary>
+    public readonly bool DoubleClicked;
+    /// <summary>The frame the item took ImGui's active id (press).</summary>
+    public readonly bool DragBegan;
+    /// <summary>The frame the item released ImGui's active id.</summary>
+    public readonly bool DragEnded;
+    /// <summary>Pointer movement this frame while the item is active,
+    /// zero otherwise.</summary>
+    public readonly Vector2 DragDelta;
     public readonly InteractionOwner Owner;
 
     public InteractionResult(
@@ -47,6 +59,10 @@ public readonly struct InteractionResult
         bool clicked,
         bool activated,
         bool focused,
+        bool doubleClicked,
+        bool dragBegan,
+        bool dragEnded,
+        Vector2 dragDelta,
         InteractionOwner owner)
     {
         ScreenMin = min;
@@ -55,6 +71,10 @@ public readonly struct InteractionResult
         Clicked = clicked;
         Activated = activated;
         Focused = focused;
+        DoubleClicked = doubleClicked;
+        DragBegan = dragBegan;
+        DragEnded = dragEnded;
+        DragDelta = dragDelta;
         Owner = owner;
     }
 
@@ -325,6 +345,14 @@ public static class Interactive
         bool hovered = ImGui.IsItemHovered() && !disabled && !occluded;
         bool active = ImGui.IsItemActive() && !disabled && !occluded;
         bool clicked = ImGui.IsItemClicked() && !disabled && !occluded;
+        bool doubleClicked = hovered
+            && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left);
+        // Drag handshake: ImGui's own activation edges, plus the pointer
+        // delta while the item holds the active id. Disabled controls
+        // report none of it.
+        bool dragBegan = !disabled && ImGui.IsItemActivated();
+        bool dragEnded = !disabled && ImGui.IsItemDeactivated();
+        var dragDelta = active ? ImGui.GetIO().MouseDelta : Vector2.Zero;
         // The button RETURN is ImGui's release-inside semantic: pressing,
         // dragging out, and releasing does not activate. Enter joins it
         // explicitly; components with native button semantics can opt
@@ -343,7 +371,8 @@ public static class Interactive
         if (disabled) state |= PseudoState.Disabled;
 
         return new InteractionResult(
-            min, max, state, clicked, activated, focused && !disabled, owner);
+            min, max, state, clicked, activated, focused && !disabled,
+            doubleClicked, dragBegan, dragEnded, dragDelta, owner);
     }
 
     private static Occluder? HighestAt(

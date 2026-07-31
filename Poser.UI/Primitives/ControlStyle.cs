@@ -1,4 +1,7 @@
 using System;
+using System.Numerics;
+using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
 
@@ -77,8 +80,57 @@ public readonly record struct ControlStyle
     };
 }
 
+/// <summary>
+/// One control's resolved box: the frame scale, the logical (unscaled)
+/// span the style asked for, and the same span in pixels. Produced by
+/// <see cref="ControlSizing.Resolve"/> so every control derives its size
+/// through one preamble instead of re-deriving scale, available width,
+/// and the two <see cref="ControlSizing"/> lookups by hand.
+/// </summary>
+internal readonly struct ResolvedControl
+{
+    public ResolvedControl(
+        float scale,
+        float logicalWidth,
+        float logicalHeight)
+    {
+        Scale = scale;
+        LogicalWidth = logicalWidth;
+        LogicalHeight = logicalHeight;
+    }
+
+    /// <summary>ImGuiHelpers.GlobalScale at resolution time.</summary>
+    public readonly float Scale;
+    public readonly float LogicalWidth;
+    public readonly float LogicalHeight;
+
+    public float Width => LogicalWidth * Scale;
+    public float Height => LogicalHeight * Scale;
+    public Vector2 Size => new(Width, Height);
+}
+
 internal static class ControlSizing
 {
+    /// <summary>
+    /// The shared sizing preamble: scale, the available region in logical
+    /// units, and the width/height the style resolves to.
+    /// <paramref name="logicalContentWidth"/> is the control's intrinsic
+    /// (content) width in unscaled units — what
+    /// <see cref="UiWidthKind.Content"/> means for that control.
+    /// </summary>
+    public static ResolvedControl Resolve(
+        in ControlStyle style,
+        float logicalContentWidth,
+        float fallbackHeight)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        float availableLogical = ImGui.GetContentRegionAvail().X / scale;
+        return new ResolvedControl(
+            scale,
+            Width(style.Width, logicalContentWidth, availableLogical),
+            Height(style.Height, fallbackHeight));
+    }
+
     public static float Height(UiHeight height, float fallback) =>
         height.Kind switch
         {

@@ -32,20 +32,19 @@ public static partial class Crystarium
         Action? onCommit = null)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        float widthPx = ControlSizing.Width(
-            style.Width,
+        var metrics = ControlSizing.Resolve(
+            style,
             ImGui.GetContentRegionAvail().X / scale,
-            ImGui.GetContentRegionAvail().X / scale) * scale;
-        float controlHeight = ControlSizing.Height(
-            style.Height,
             Crystarium.ActiveTheme.Controls.SliderHeight);
+        float widthPx = metrics.Width;
+        float controlHeight = metrics.LogicalHeight;
 
         // Hit rect = thumb height (14px) across the full width.
         var size = new Vector2(
             MathF.Max(Crystarium.ActiveTheme.Controls.SwitchHeight * scale, widthPx),
-            controlHeight * scale);
+            metrics.Height);
         var hit = Interactive.Reserve(id, size, disabled);
-        if (!disabled && ImGui.IsItemActivated())
+        if (hit.DragBegan)
             onBegin?.Invoke();
 
         float half = controlHeight * 0.5f * scale;
@@ -112,9 +111,9 @@ public static partial class Crystarium
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(thumb)), 32);
 
         if (changed) onChange(value);
-        if (!disabled && ImGui.IsItemDeactivated())
+        if (hit.DragEnded)
             onCommit?.Invoke();
-        if (!string.IsNullOrEmpty(help) && ImGui.IsItemHovered())
+        if (!string.IsNullOrEmpty(help) && hit.Hovered)
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
 
         return changed;

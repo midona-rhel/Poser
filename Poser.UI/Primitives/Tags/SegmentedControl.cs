@@ -179,9 +179,7 @@ public static partial class Crystarium
                 disabled);
             string? help = itemHelp?.Invoke(i);
             if (!string.IsNullOrEmpty(help)
-                && (hit.Hovered
-                    || (disabled
-                        && HoverHelp.HelpHovered(tabMin, tabMax))))
+                && HoverHelp.Gate(hit, disabled, tabMin, tabMax))
                 HoverHelp.Explain(
                     $"{id}##help-{i}",
                     tabMin,
