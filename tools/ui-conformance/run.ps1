@@ -252,14 +252,20 @@ $referenceHash = (Get-FileHash -Algorithm SHA256 `
 $candidateDir = Join-Path $artifacts "crystarium"
 New-Item -ItemType Directory -Force -Path $candidateDir | Out-Null
 $batchFile = Join-Path $artifacts "candidate-batch.txt"
-@(foreach ($combo in $combos) {
+$batchLines = @(foreach ($combo in $combos) {
     foreach ($state in $states) {
         $png = Join-Path $candidateDir "$state@$($combo.Theme)@$($combo.Suffix).png"
         "$state`t$png`t$($combo.Scale.ToString($invariant))`t$($combo.Theme)"
     }
-}) | Set-Content -Encoding utf8 -LiteralPath $batchFile
-& $exe --batch $batchFile
-if ($LASTEXITCODE -ne 0) { throw "Crystarium batch capture failed." }
+})
+$batchLines | Set-Content -Encoding utf8 -LiteralPath $batchFile
+# One path per capture is noise on success and the whole story on failure.
+$batchOutput = & $exe --batch $batchFile 2>&1
+if ($LASTEXITCODE -ne 0) {
+    $batchOutput | ForEach-Object { Write-Host $_ }
+    throw "Crystarium batch capture failed."
+}
+Write-Host "candidate: $($batchLines.Count) states captured"
 
 $binDir = Split-Path -Parent $exe
 $candidateManifest = @(@(

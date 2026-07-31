@@ -13,8 +13,10 @@ One layout implementation drives both sides:
   the same code onto both sides, so they are byte-identical and diff-silent.
   It then rebuilds the comparison window (``artifacts/index.html``).
 
-Numerical diagnostics (per-cell mismatch, provenance) are recorded in the
-combo manifest and shown in the window only behind a collapsed details view.
+Numerical diagnostics (per-cell exact and significant mismatch, max channel
+delta, provenance) are recorded in the combo manifest and shown in the
+window only behind a collapsed details view. ``--verify-merge`` self-checks
+the provenance-gated manifest merge without needing any capture.
 """
 
 from __future__ import annotations
@@ -34,6 +36,10 @@ CATALOG_PATH = TOOL_ROOT / "sheet-catalog.json"
 PAGE_PAD = 16
 CELL_GAP = 16
 CONTENT_WIDTH = 656
+
+# A max-channel delta at or below this is invisible at 100% zoom (encoder
+# rounding, subpixel AA); above it the difference is a real design mismatch.
+SIGNIFICANT_DELTA = 8
 
 # Sheet chrome (physical px, unscaled — it is diagnostics, not product).
 SHEET_PAD = 16
@@ -152,18 +158,47 @@ def compose_sheet(title: str, slots: list[dict], size: tuple[int, int],
 
 
 def diff_sheet(reference: Image.Image, candidate: Image.Image
-               ) -> tuple[Image.Image, np.ndarray]:
+               ) -> tuple[Image.Image, np.ndarray, np.ndarray, np.ndarray]:
+    """Red heat map plus both mismatch channels and the raw per-pixel delta.
+
+    The visible heat map paints the SIGNIFICANT channel only; the exact
+    channel is a number in the diagnostics table, never a red pixel.
+    """
     ref = np.asarray(reference, dtype=np.int16)[:, :, :3]
     cand = np.asarray(candidate, dtype=np.int16)[:, :, :3]
     delta = np.abs(ref - cand).max(axis=2)
     exact = delta > 0
+    significant = delta > SIGNIFICANT_DELTA
     gray = np.clip(cand.mean(axis=2, keepdims=True) * 0.42, 0, 255)
     heat = np.repeat(gray, 3, axis=2).astype(np.uint8)
     strength = np.clip(delta.astype(np.float32) / 48.0, 0.25, 1.0)
-    heat[exact, 0] = 255
-    heat[exact, 1] = (heat[exact, 1] * (1 - strength[exact])).astype(np.uint8)
-    heat[exact, 2] = (heat[exact, 2] * (1 - strength[exact])).astype(np.uint8)
-    return Image.fromarray(heat, "RGB").convert("RGBA"), exact
+    heat[significant, 0] = 255
+    heat[significant, 1] = (
+        heat[significant, 1] * (1 - strength[significant])).astype(np.uint8)
+    heat[significant, 2] = (
+        heat[significant, 2] * (1 - strength[significant])).astype(np.uint8)
+    return (Image.fromarray(heat, "RGB").convert("RGBA"),
+            exact, significant, delta)
+
+
+def merge_components(prior_combo: dict | None, current_provenance: dict,
+                     current_components: list[dict],
+                     catalog_order: list[str]) -> list[dict]:
+    """Components a rewritten combo manifest should contain.
+
+    A partial run keeps the components it did not recompose ONLY when the
+    prior manifest was produced from the identical reference/candidate
+    identity; anything else is stale and is discarded rather than shown
+    next to fresh sheets.
+    """
+    prior = list((prior_combo or {}).get("components", []))
+    if not prior or (prior_combo or {}).get("provenance") != current_provenance:
+        return list(current_components)
+    order = {name: i for i, name in enumerate(catalog_order)}
+    fresh = {c["name"] for c in current_components}
+    kept = [c for c in prior if c["name"] not in fresh and c["name"] in order]
+    merged = kept + [c for c in current_components if c["name"] in order]
+    return sorted(merged, key=lambda c: order[c["name"]])
 
 
 def compose(args: argparse.Namespace) -> None:
@@ -229,18 +264,34 @@ def compose(args: argparse.Namespace) -> None:
         title = component["title"]
         picto = compose_sheet(title, slots, (sheet_w, sheet_h), ref_cells, font)
         cryst = compose_sheet(title, slots, (sheet_w, sheet_h), cand_cells, font)
-        diff, exact = diff_sheet(picto, cryst)
+        diff, exact, significant, delta = diff_sheet(picto, cryst)
 
+        # Component percentages are pixel-weighted: a one-pixel state must
+        # not carry the same weight as a full-width row.
         cells_report = []
+        total_pixels = 0
+        total_exact = 0
+        total_significant = 0
         for slot in slots:
-            region = exact[
-                slot["sy"]:slot["sy"] + slot["ph"],
-                slot["sx"]:slot["sx"] + slot["pw"],
-            ]
+            rows = slice(slot["sy"], slot["sy"] + slot["ph"])
+            cols = slice(slot["sx"], slot["sx"] + slot["pw"])
+            cell_exact = exact[rows, cols]
+            cell_significant = significant[rows, cols]
+            pixels = int(cell_exact.size)
+            exact_count = int(cell_exact.sum())
+            significant_count = int(cell_significant.sum())
+            total_pixels += pixels
+            total_exact += exact_count
+            total_significant += significant_count
             cells_report.append({
                 "name": slot["name"],
                 "label": slot["label"],
-                "mismatchPercent": round(float(region.mean() * 100), 3),
+                "exactPixels": exact_count,
+                "exactPercent": round(exact_count / pixels * 100, 3),
+                "significantPixels": significant_count,
+                "significantPercent": round(
+                    significant_count / pixels * 100, 3),
+                "maxChannelDelta": int(delta[rows, cols].max()),
             })
 
         base = component["name"]
@@ -250,40 +301,105 @@ def compose(args: argparse.Namespace) -> None:
         combo["components"].append({
             "name": base,
             "title": title,
-            "mismatchPercent": round(
-                float(np.mean([c["mismatchPercent"] for c in cells_report])), 3),
+            "exactPercent": round(total_exact / total_pixels * 100, 3),
+            "significantPercent": round(
+                total_significant / total_pixels * 100, 3),
             "cells": cells_report,
         })
 
     # Merge into any prior combo manifest so partial runs update their
-    # components and leave the rest visible.
+    # components and leave the rest visible — but only while the prior
+    # components describe the identical reference/candidate identity.
     combo_path = combo_dir / "combo.json"
-    if combo_path.exists() and args.components:
-        prior = json.loads(combo_path.read_text(encoding="utf-8"))
-        kept = [c for c in prior.get("components", [])
-                if c["name"] not in {c["name"] for c in combo["components"]}]
-        merged = kept + combo["components"]
-        order = {c["name"]: i for i, c in enumerate(load_catalog())}
-        combo["components"] = sorted(merged, key=lambda c: order[c["name"]])
+    prior = (json.loads(combo_path.read_text(encoding="utf-8"))
+             if combo_path.exists() else None)
+    combo["components"] = merge_components(
+        prior, combo["provenance"], combo["components"],
+        [c["name"] for c in load_catalog()])
     combo_path.write_text(json.dumps(combo, indent=1), encoding="utf-8")
-    write_window(artifacts)
+    write_window(artifacts, combo["provenance"])
     worst = max(
-        (c for c in combo["components"]), key=lambda c: c["mismatchPercent"])
+        (c for c in combo["components"]), key=lambda c: c["significantPercent"])
     print(f"sheets: {len(combo['components'])} components composed "
           f"({args.theme}@{suffix}); worst {worst['name']} "
-          f"{worst['mismatchPercent']}%")
+          f"{worst['significantPercent']}%")
 
 
-def write_window(artifacts: Path) -> None:
+def write_window(artifacts: Path, provenance: dict) -> None:
+    """Rebuild the window from the combos this run's identity produced.
+
+    Combos left over from an older reference or candidate identity keep
+    their files on disk but are hidden: the window never mixes identities.
+    """
     combos = []
     for combo_path in sorted(artifacts.glob("sheets/*/combo.json")):
         combo = json.loads(combo_path.read_text(encoding="utf-8"))
+        if combo.get("provenance") != provenance:
+            continue
         combo["dir"] = f"sheets/{combo_path.parent.name}"
         combos.append(combo)
     if not combos:
-        raise SystemExit("No composed sheets found.")
+        raise SystemExit(
+            "No composed sheets match this run's provenance; nothing to show.")
     html = WINDOW_TEMPLATE.replace("__DATA__", json.dumps(combos))
     (artifacts / "index.html").write_text(html, encoding="utf-8")
+
+
+def verify_merge() -> None:
+    """Deterministic self-check of the provenance gate on the merge rule."""
+    provenance = {
+        "referenceManifestSha256": "ref-aaa",
+        "candidateManifestSha256": "cand-aaa",
+        "candidateCommit": "commit-aaa",
+        "candidateDirty": False,
+    }
+    stale = {**provenance, "candidateManifestSha256": "cand-bbb"}
+    order = ["alpha", "beta", "gamma"]
+
+    def component(name: str, percent: float) -> dict:
+        return {
+            "name": name,
+            "title": name.title(),
+            "exactPercent": percent,
+            "significantPercent": percent,
+            "cells": [],
+        }
+
+    failures: list[str] = []
+
+    def check(case: str, actual, expected) -> None:
+        ok = actual == expected
+        print(f"{'PASS' if ok else 'FAIL'} {case}")
+        if not ok:
+            failures.append(f"{case}: expected {expected!r}, got {actual!r}")
+
+    prior = {"provenance": provenance,
+             "components": [component("gamma", 3.0), component("alpha", 1.0)]}
+    merged = merge_components(
+        prior, provenance, [component("beta", 2.0)], order)
+    check("matching provenance merges in catalog order",
+          [c["name"] for c in merged], ["alpha", "beta", "gamma"])
+
+    prior = {"provenance": stale,
+             "components": [component("gamma", 3.0), component("alpha", 1.0)]}
+    merged = merge_components(
+        prior, provenance, [component("beta", 2.0)], order)
+    check("mismatched provenance discards prior components",
+          [c["name"] for c in merged], ["beta"])
+
+    prior = {"provenance": provenance,
+             "components": [component("alpha", 1.0), component("beta", 9.0)]}
+    merged = merge_components(
+        prior, provenance, [component("beta", 2.0)], order)
+    check("superseded component is replaced, not duplicated",
+          [(c["name"], c["significantPercent"]) for c in merged],
+          [("alpha", 1.0), ("beta", 2.0)])
+
+    if failures:
+        for failure in failures:
+            print(f"  {failure}")
+        raise SystemExit(f"verify-merge: {len(failures)} case(s) failed.")
+    print("verify-merge: 3 cases passed")
 
 
 WINDOW_TEMPLATE = """<!doctype html>
@@ -300,19 +416,19 @@ nav button:hover{background:#ffffff10}
 nav button.active{background:#3297ff1f;color:#fff}
 nav .pct{color:#ffffff55;font-size:11px}
 nav .pct.hot{color:#ff7a86}
-main{flex:1;display:flex;flex-direction:column;min-width:0}
+main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
 header{display:flex;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid #ffffff14}
-header .modes{display:flex;background:#1c1d20;border-radius:7px;padding:2px}
-header .modes button{background:none;border:0;color:#ffffffaa;padding:5px 12px;border-radius:5px;cursor:pointer;font:inherit}
-header .modes button.active{background:#3297ff33;color:#fff}
+header .title{color:#ffffffcc}
 header .zoom{margin-left:auto;display:flex;gap:4px}
 header .zoom button{background:#1c1d20;border:1px solid #ffffff24;color:#ffffffcc;border-radius:5px;padding:4px 9px;cursor:pointer;font:inherit}
 header .zoom button.active{border-color:#3297ff;color:#fff}
-header input[type=range]{width:160px}
-#viewport{flex:1;overflow:auto;padding:16px}
-#stage{position:relative;width:max-content}
-#stage img{display:block;image-rendering:pixelated;transform-origin:top left}
-#stage .top{position:absolute;left:0;top:0}
+#columns{flex:1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));min-height:0}
+#columns section{display:flex;flex-direction:column;min-width:0;min-height:0;border-right:1px solid #ffffff14}
+#columns section:last-child{border-right:0}
+#columns h2{font-size:11px;font-weight:400;letter-spacing:.06em;text-transform:uppercase;color:#ffffff77;margin:0;padding:7px 12px;border-bottom:1px solid #ffffff0d}
+#columns .view{flex:1;overflow:auto;padding:12px}
+#columns .canvas{position:relative}
+#columns img{display:block;image-rendering:pixelated;transform-origin:top left}
 details{border-top:1px solid #ffffff14;padding:8px 14px;color:#ffffff99;max-height:34vh;overflow:auto}
 details table{border-collapse:collapse;margin-top:6px}
 details td,details th{padding:2px 12px 2px 0;text-align:left;font-weight:400;color:#ffffffaa}
@@ -326,18 +442,21 @@ code{color:#ffffff77}
 </nav>
 <main>
  <header>
-  <div class="modes" id="modes"></div>
-  <input type="range" id="mix" min="0" max="100" value="50" hidden>
+  <span class="title" id="title"></span>
   <div class="zoom" id="zoom"></div>
  </header>
- <div id="viewport"><div id="stage"></div></div>
+ <div id="columns">
+  <section><h2>Picto</h2><div class="view"><div class="canvas"><img id="img-picto"></div></div></section>
+  <section><h2>Crystarium</h2><div class="view"><div class="canvas"><img id="img-crystarium"></div></div></section>
+  <section><h2>Red diff</h2><div class="view"><div class="canvas"><img id="img-diff"></div></div></section>
+ </div>
  <details id="diag"><summary>Diagnostics</summary><div id="diagBody"></div></details>
 </main>
 <script>
 const DATA = __DATA__;
-const MODES = ["Picto", "Crystarium", "Diff", "Overlay"];
+const KINDS = ["picto", "crystarium", "diff"];
 const ZOOMS = [1, 2, 4];
-let combo = 0, comp = null, mode = 0, zoom = 1;
+let combo = 0, comp = null, zoom = 1;
 
 const comboSel = document.getElementById("combo");
 DATA.forEach((c, i) => {
@@ -356,8 +475,8 @@ function buildList() {
   components.forEach(c => {
     const b = document.createElement("button");
     const pct = document.createElement("span");
-    pct.className = "pct" + (c.mismatchPercent > 1 ? " hot" : "");
-    pct.textContent = c.mismatchPercent.toFixed(2) + "%";
+    pct.className = "pct" + (c.significantPercent > 1 ? " hot" : "");
+    pct.textContent = c.significantPercent.toFixed(2) + "%";
     b.textContent = c.title;
     b.appendChild(pct);
     if (c.name === comp) b.classList.add("active");
@@ -367,14 +486,6 @@ function buildList() {
   render();
 }
 
-const modesEl = document.getElementById("modes");
-MODES.forEach((m, i) => {
-  const b = document.createElement("button");
-  b.textContent = m;
-  if (i === mode) b.classList.add("active");
-  b.addEventListener("click", () => { mode = i; refreshHeader(); render(); });
-  modesEl.appendChild(b);
-});
 const zoomEl = document.getElementById("zoom");
 ZOOMS.forEach(z => {
   const b = document.createElement("button");
@@ -383,35 +494,59 @@ ZOOMS.forEach(z => {
   b.addEventListener("click", () => { zoom = z; refreshHeader(); render(); });
   zoomEl.appendChild(b);
 });
-const mix = document.getElementById("mix");
-mix.addEventListener("input", render);
+
+// The three columns are one instrument: scrolling any of them mirrors the
+// other two, so the same region of all three sheets stays under the eye.
+const images = KINDS.map(k => document.getElementById("img-" + k));
+const views = [...document.querySelectorAll("#columns .view")];
+let syncing = false;
+views.forEach(view => view.addEventListener("scroll", () => {
+  if (syncing) return;
+  syncing = true;
+  views.forEach(other => {
+    if (other === view) return;
+    other.scrollLeft = view.scrollLeft;
+    other.scrollTop = view.scrollTop;
+  });
+  // Mirrored scrolls fire their own events on the next frame; keep the
+  // guard up until they have all landed.
+  requestAnimationFrame(() => { syncing = false; });
+}));
+images.forEach(img => img.addEventListener("load", () => sizeCanvas(img)));
+
+function sizeCanvas(img) {
+  // transform:scale does not lay out, so the scroll box is sized here.
+  const canvas = img.parentElement;
+  canvas.style.width = (img.naturalWidth * zoom) + "px";
+  canvas.style.height = (img.naturalHeight * zoom) + "px";
+}
 
 function refreshHeader() {
-  [...modesEl.children].forEach((b, i) => b.classList.toggle("active", i === mode));
   [...zoomEl.children].forEach((b, i) => b.classList.toggle("active", ZOOMS[i] === zoom));
-  mix.hidden = mode !== 3;
 }
 
 function render() {
   refreshHeader();
   const c = DATA[combo];
   const entry = c.components.find(x => x.name === comp);
-  const stage = document.getElementById("stage");
-  const src = kind => c.dir + "/" + comp + "." + kind + ".png";
-  const img = (kind, cls) =>
-    `<img class="${cls || ""}" src="${src(kind)}" style="transform:scale(${zoom})">`;
-  if (mode === 0) stage.innerHTML = img("picto");
-  else if (mode === 1) stage.innerHTML = img("crystarium");
-  else if (mode === 2) stage.innerHTML = img("diff");
-  else stage.innerHTML = img("picto") +
-    `<div class="top" style="opacity:${mix.value / 100}">${img("crystarium")}</div>`;
+  document.getElementById("title").textContent =
+    entry.title + " \u00b7 " + entry.significantPercent.toFixed(2) + "% differing";
+  images.forEach((img, i) => {
+    const src = c.dir + "/" + comp + "." + KINDS[i] + ".png";
+    if (img.getAttribute("src") !== src) img.setAttribute("src", src);
+    img.style.transform = "scale(" + zoom + ")";
+    if (img.complete && img.naturalWidth) sizeCanvas(img);
+  });
   const p = c.provenance;
   const rows = entry.cells.map(cell =>
-    `<tr><td>${cell.label}</td><td class="${cell.mismatchPercent > 1 ? "hot" : ""}">` +
-    `${cell.mismatchPercent.toFixed(3)}%</td><td><code>${cell.name}</code></td></tr>`
+    `<tr><td>${cell.label}</td><td>${cell.exactPercent.toFixed(3)}%</td>` +
+    `<td class="${cell.significantPercent > 1 ? "hot" : ""}">` +
+    `${cell.significantPercent.toFixed(3)}%</td>` +
+    `<td>${cell.maxChannelDelta}</td><td><code>${cell.name}</code></td></tr>`
   ).join("");
   document.getElementById("diagBody").innerHTML =
-    `<table><tr><th>state</th><th>mismatch</th><th>id</th></tr>${rows}</table>` +
+    `<table><tr><th>state</th><th>exact</th><th>significant</th>` +
+    `<th>max \u0394</th><th>id</th></tr>${rows}</table>` +
     `<p>candidate <code>${p.candidateCommit.slice(0, 12)}${p.candidateDirty ? " + dirty" : ""}</code>` +
     ` \u00b7 reference manifest <code>${p.referenceManifestSha256.slice(0, 12)}</code>` +
     ` \u00b7 candidate manifest <code>${p.candidateManifestSha256.slice(0, 12)}</code></p>`;
@@ -426,6 +561,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--layout", action="store_true")
     parser.add_argument("--compose", action="store_true")
+    parser.add_argument("--verify-merge", action="store_true")
     parser.add_argument("--theme", default="dark")
     parser.add_argument("--scale", default="1")
     parser.add_argument("--suffix", default="1")
@@ -436,12 +572,15 @@ def main() -> None:
     parser.add_argument("--reference-hash", default="")
     parser.add_argument("--candidate-hash", default="")
     args = parser.parse_args()
+    if args.verify_merge:
+        verify_merge()
     if args.layout:
         write_layout()
     if args.compose:
         compose(args)
-    if not args.layout and not args.compose:
-        parser.error("nothing to do: pass --layout and/or --compose")
+    if not args.layout and not args.compose and not args.verify_merge:
+        parser.error(
+            "nothing to do: pass --layout, --compose and/or --verify-merge")
 
 
 if __name__ == "__main__":

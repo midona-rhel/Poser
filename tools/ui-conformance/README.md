@@ -31,9 +31,14 @@ How the two sides produce the whole catalog:
 - **Composition.** `sheets.py --compose` slices the catalog screenshot,
   pairs each cell with its candidate capture, and stamps both sheets with
   identical chrome and labels (diff-silent), then writes the red diff and
-  rebuilds `artifacts/index.html` — component list, combo selector,
-  Picto / Crystarium / Diff / Overlay modes, zoom, and per-cell mismatch
-  percentages plus provenance in a collapsed Diagnostics view.
+  rebuilds `artifacts/index.html` — component list, combo selector, three
+  synchronized columns (Picto | Crystarium | Red diff), zoom, and hidden
+  diagnostics (per-cell exact and significant percentages, max channel
+  delta, provenance) in a collapsed Diagnostics view. The visible diff and
+  the summary badges use SIGNIFICANT differences (max channel delta > 8);
+  exact counts stay diagnostics. Combos whose provenance does not match the
+  current run are hidden; partial runs merge into a combo only when its
+  provenance matches exactly (`sheets.py --verify-merge` self-checks this).
 
 `sheet-catalog.json` is the single source for components, states, labels,
 and cell sizes; `run.ps1` asserts the candidate catalog (`--list`) and the
