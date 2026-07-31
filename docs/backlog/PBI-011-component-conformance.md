@@ -2,7 +2,7 @@
 
 | Control | Value |
 |---|---|
-| Status | Slices 1–3 accepted; ready for slice 4 |
+| Status | Slices 1–3 accepted; remaining slices superseded by PBI-014 (controls normalize during the structural migration and are accepted through its catalog) |
 | Size | Extra large, delivered as individually accepted component slices |
 | Implementation owner | Claude |
 | Review owner | Codex |
