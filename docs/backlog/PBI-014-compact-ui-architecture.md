@@ -2,7 +2,7 @@
 
 | Control | Value |
 |---|---|
-| Status | Phases 1–2 accepted; phase 2 head `1e0501b` |
+| Status | Phases 1–3 accepted; phase 3 head `a62341d` |
 | Size | Extra large, delivered as individually accepted phases |
 | Implementation owner | Claude |
 | Review owner | Codex |
