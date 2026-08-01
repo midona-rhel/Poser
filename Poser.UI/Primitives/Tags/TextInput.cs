@@ -35,9 +35,9 @@ namespace Poser.UI;
 /// clears. It is kept as Poser's own, painted in the <c>.searchIcon</c>
 /// grammar (<c>--color-text-tertiary</c>, lifting to
 /// <c>--color-text-primary</c> under the pointer).</item>
-/// <item>The search glyph is the shipped <c>zoom-in</c>; the shipped icon
-/// set has no plain <c>search</c>, and adding one reflows the icon-grid
-/// conformance states. Same magnifier, plus an inner cross.</item>
+/// <item>The search glyph is the true Tabler <c>search</c> (GlassInput's
+/// IconSearch), added to the shipped set on user direction — the interim
+/// <c>zoom-in</c> stand-in read as a cross inside the lens.</item>
 /// <item>ImGui's FramePadding is symmetric, so the search variant's
 /// 30px leading inset (10 + 14 + 6) is mirrored on the right where CSS
 /// has 0. It also keeps the value clear of the clear affordance.</item>
@@ -216,7 +216,7 @@ public static partial class Crystarium
             IconIn(
                 iconMin,
                 iconMin + new Vector2(iconSide),
-                "zoom-in",
+                "search",
                 theme.TextMuted,
                 opacity: 0.6f);
         }

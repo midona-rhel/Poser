@@ -62,6 +62,17 @@ public static partial class Crystarium
                 0.42f, 0f, 1f, 1f); // CSS ease-in
 
 
+        /// <summary>
+        /// USER DEVIATION (recorded like selection-dominance): Picto's menu
+        /// rows sit their text visibly below true center — even in the
+        /// browser — because flex centers the LINE BOX while Segoe's
+        /// ascent-heavy ink hangs low inside it. Poser centers the INK:
+        /// label and shortcut rise by this logical offset so the text ink
+        /// centroid meets the icon ink centroid at the row center
+        /// (verified by measurement in the conformance capture).
+        /// </summary>
+        private const float RowInkRise = -2f;
+
         private static Phase _phase;
         private static string _id = string.Empty;
         private static ContextMenuItem[] _items = Array.Empty<ContextMenuItem>();
@@ -304,11 +315,17 @@ public static partial class Crystarium
                 var item = _items[i];
                 if (item.IsSeparator)
                 {
+                    // CSS .separator: 1px --color-border-secondary with
+                    // 2px block margins. The Border token, not the
+                    // hover-overlay it previously borrowed (equal in dark,
+                    // different in lightgray).
                     float lineY = y + 2f * s;
-                    dl.AddRectFilled(
+                    ControlPaint.Separator(
+                        dl,
                         new Vector2(left, lineY),
-                        new Vector2(right, lineY + MathF.Max(1f, 1f * s)),
-                        ImGui.ColorConvertFloat4ToU32(Crystarium.ActiveTheme.Chrome.WeakOverlay));
+                        right,
+                        s,
+                        Crystarium.ActiveTheme.Border);
                     y += Crystarium.ActiveTheme.Floating.MenuSeparatorBlock * s;
                     continue;
                 }
@@ -332,9 +349,10 @@ public static partial class Crystarium
 
                 if (hovered)
                     dl.AddRectFilled(rowMin, rowMax,
-                        ImGui.ColorConvertFloat4ToU32(item.Danger
-                            ? Crystarium.ActiveTheme.Chrome.DangerHover
-                            : Crystarium.ActiveTheme.Chrome.WeakOverlay),
+                        ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                            item.Danger
+                                ? Crystarium.ActiveTheme.Chrome.DangerHover
+                                : Crystarium.ActiveTheme.Chrome.WeakOverlay)),
                         Crystarium.ActiveTheme.Radii.Control * s);
 
                 float rowAlpha = item.Disabled ? Crystarium.ActiveTheme.Chrome.DisabledOpacity : 1f;
@@ -353,40 +371,51 @@ public static partial class Crystarium
                     + (Crystarium.ActiveTheme.Floating.MenuRowPadding
                         + Crystarium.ActiveTheme.Controls.IconSize
                         + Crystarium.ActiveTheme.Floating.MenuIconGap) * s;
-                var labelFont = FontRegistry.Resolve(
-                    FontFamily.Default,
-                    Crystarium.ActiveTheme.Typography.BodySize);
-                bool labelPushed = labelFont is { Available: true };
-                if (labelPushed) labelFont!.Push();
-                var labelSize = ImGui.CalcTextSize(item.Label);
-                dl.AddText(
-                    new Vector2(
-                        textX,
-                        rowMin.Y + (Crystarium.ActiveTheme.Controls.ListRowHeight * s
-                            - labelSize.Y) * 0.5f),
-                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(text)), item.Label);
-                if (labelPushed) labelFont!.Pop();
-
+                float rowHeightPx =
+                    Crystarium.ActiveTheme.Controls.ListRowHeight * s;
+                float rise = RowInkRise * s;
+                float labelRight = rowMax.X
+                    - Crystarium.ActiveTheme.Floating.MenuRowPadding * s;
                 if (item.Shortcut is { Length: > 0 } shortcut)
                 {
-                    var shortcutFont = FontRegistry.Resolve(
-                        FontFamily.Default,
-                        Crystarium.ActiveTheme.Typography.CaptionSize);
-                    bool shortcutPushed = shortcutFont is { Available: true };
-                    if (shortcutPushed) shortcutFont!.Push();
-                    var shortcutSize = ImGui.CalcTextSize(shortcut);
-                    dl.AddText(
+                    var shortcutStyle = new TextStyle
+                    {
+                        Size = Crystarium.ActiveTheme.Typography.CaptionSize,
+                        Color = text.Fade(0.5f),
+                    };
+                    var shortcutSize =
+                        Crystarium.MeasureText(shortcut, shortcutStyle);
+                    Crystarium.TextAt(
                         new Vector2(
-                            rowMax.X
-                                - Crystarium.ActiveTheme.Floating.MenuRowPadding * s
-                                - shortcutSize.X,
-                            rowMin.Y + (Crystarium.ActiveTheme.Controls.ListRowHeight * s
-                                - shortcutSize.Y) * 0.5f),
-                        ImGui.ColorConvertFloat4ToU32(
-                            ColorEx.ApplyAlpha(text.Fade(0.5f))),
-                        shortcut);
-                    if (shortcutPushed) shortcutFont!.Pop();
+                            labelRight - shortcutSize.X,
+                            rowMin.Y
+                                + (rowHeightPx - shortcutSize.Y) * 0.5f
+                                + rise),
+                        shortcut,
+                        shortcutStyle);
+                    // CSS .shortcut padding-left: 28px — the minimum
+                    // label-to-shortcut gap.
+                    labelRight -= shortcutSize.X + 28f * s;
                 }
+                var labelStyle = new TextStyle
+                {
+                    Size = Crystarium.ActiveTheme.Typography.BodySize,
+                    Color = text,
+                };
+                var labelSize =
+                    Crystarium.MeasureText(item.Label, labelStyle);
+                // CSS .label: flex 1, ellipsis — the canonical truncate,
+                // which the raw AddText path never honored.
+                Crystarium.TextAt(
+                    new Vector2(
+                        textX,
+                        rowMin.Y
+                            + (rowHeightPx - labelSize.Y) * 0.5f
+                            + rise),
+                    item.Label,
+                    labelStyle,
+                    TextConstraint.Truncate(
+                        MathF.Max(1f, labelRight - textX)));
 
                 y += Crystarium.ActiveTheme.Controls.ListRowHeight * s;
             }
