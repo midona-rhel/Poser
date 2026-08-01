@@ -76,7 +76,9 @@ internal static class Motion
     /// progress — the caller applies its own easing, because the same
     /// ramp can drive several eased properties. First sight seeds at the
     /// resting end of the requested state so a control that appears
-    /// already hovered does not fade in.
+    /// already hovered does not fade in — as does any sighting whose
+    /// stored frame is not strictly behind the current one, because there
+    /// is then no elapsed time to advance across.
     /// </summary>
     internal static float Progress(
         uint id, bool on, float durationSeconds)
@@ -89,11 +91,24 @@ internal static class Motion
             entry = new RampEntry { Progress = on ? 1f : 0f };
             Ramps[id] = entry;
         }
-        float step = durationSeconds > 0f
-            ? ImGui.GetIO().DeltaTime / durationSeconds
-            : 1f;
-        entry.Progress = Math.Clamp(
-            entry.Progress + (on ? step : -step), 0f, 1f);
+        // The stored frame must be strictly BEHIND this one for the clock
+        // between them to mean anything. A ramp drawn twice in one frame,
+        // or one met again across a recreated context whose frame counter
+        // restarted, carries no usable elapsed time — so it reseeds
+        // exactly as a first sighting does rather than advancing stale
+        // progress. Same rule as the grouped store's.
+        else if (frame <= entry.LastFrame)
+        {
+            entry.Progress = on ? 1f : 0f;
+        }
+        else
+        {
+            float step = durationSeconds > 0f
+                ? ImGui.GetIO().DeltaTime / durationSeconds
+                : 1f;
+            entry.Progress = Math.Clamp(
+                entry.Progress + (on ? step : -step), 0f, 1f);
+        }
         entry.LastFrame = frame;
         return entry.Progress;
     }

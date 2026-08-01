@@ -30,8 +30,15 @@ public static partial class Crystarium
     // The clear affordance is a reserved hit area, so pressing it takes
     // ImGui's active id away from the field the way any other control
     // would. Clearing is an edit of the field the user is still in, so
-    // the field takes focus back on the next frame it submits.
+    // the field takes focus back on the IMMEDIATELY following frame.
+    //
+    // The frame is part of the request because the identity alone is not
+    // enough: an id is only unique within a frame's id stack, so a request
+    // that outlived its frame could hand focus to a completely different
+    // control that happens to reuse the identity later. One frame of grace
+    // is exactly the lifetime the handover needs.
     private static uint _clearRefocusTarget;
+    private static int _clearRefocusFrame;
 
     private static bool TextInputCore(
         string id,
@@ -66,10 +73,18 @@ public static partial class Crystarium
         ImGui.SetNextItemWidth(width);
 
         uint identity = ImGui.GetID(id);
-        if (_clearRefocusTarget == identity)
+        if (_clearRefocusTarget != 0)
         {
-            _clearRefocusTarget = 0;
-            ImGui.SetKeyboardFocusHere();
+            // Anything but the very next frame — including a restarted
+            // frame counter — discards the request outright, whether or
+            // not this field is the one it named.
+            if (ImGui.GetFrameCount() != _clearRefocusFrame + 1)
+                _clearRefocusTarget = 0;
+            else if (_clearRefocusTarget == identity)
+            {
+                _clearRefocusTarget = 0;
+                ImGui.SetKeyboardFocusHere();
+            }
         }
 
         string next = value;
@@ -159,6 +174,7 @@ public static partial class Crystarium
                 next = string.Empty;
                 changed = true;
                 _clearRefocusTarget = identity;
+                _clearRefocusFrame = ImGui.GetFrameCount();
             }
         }
 

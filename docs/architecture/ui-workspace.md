@@ -71,9 +71,13 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
 - UiKernel: `Interactive.Reserve` is the ONE control hit-test — hover,
   press/release, focus, keyboard activation, and the pointer events
   (click, double-click, drag begin/end/delta), ALL occlusion-gated:
-  pointer events by pointer occlusion, Enter/Space by rect occlusion,
-  and drags by accepted ownership (a drag begun un-occluded ends
-  exactly once; a swallowed press never emits an end). The ONLY
+  pointer events by pointer occlusion, Enter/Space by keyboard
+  OWNERSHIP first (an open exclusive surface owns the keyboard
+  globally: only owners on its chain can be activated, whether or not
+  the surface covers the control, and the claim frame counts before any
+  rectangle exists) and by rect occlusion for ordinary overlapping
+  surfaces, and drags by accepted ownership (a drag begun un-occluded
+  ends exactly once; a swallowed press never emits an end). The ONLY
   remaining direct ImGui input queries are these named exceptions, and
   no new widget-local input handling may join them: native-widget
   wrappers (TextInput's InputText focus/hover), popup lifecycle
@@ -82,7 +86,10 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
   pointer-position value math. `Motion` is the ONE animation store —
   one group record per identity (channel set fixed per id, enforced;
   zero-duration snaps), a constant-rate ramp mode, one prune policy;
-  components own no transition dictionaries. `ControlSizing.Resolve`
+  BOTH modes reseed rather than advance when the stored frame is not
+  strictly behind the current one (same-frame duplicate, or a recreated
+  context whose counter restarted); components own no transition
+  dictionaries. `ControlSizing.Resolve`
   is the ONE style→logical→scaled resolution preamble. Popovers open
   only through `Crystarium.OpenPopover` (the lower-level primitive is
   internal); popups claim/keep/release the `Interactive` exclusive

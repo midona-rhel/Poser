@@ -273,6 +273,25 @@ public static class Interactive
         return HighestAt(point, owner) is not null;
     }
 
+    /// <summary>
+    /// Keyboard ownership, which is NOT geometric. An open exclusive
+    /// surface owns the keyboard outright: nothing outside the active
+    /// chain can be operated from it, whether or not the surface happens
+    /// to cover the control — a popup off to one side still takes Enter
+    /// away from the button behind it, and the frame a surface CLAIMS the
+    /// chain it has not registered a rectangle yet, so geometry could not
+    /// answer at all. Owners on (or nested inside) the active chain keep
+    /// the keyboard, so a focused control in an open modal still
+    /// activates.
+    /// </summary>
+    private static bool KeyboardDisowned(InteractionOwner owner)
+    {
+        if (_openingBarrier is { } barrier && IsHigher(barrier, owner))
+            return true;
+        return ExclusiveChain.Count > 0
+            && !SurfaceIsActive(owner.SurfaceToken);
+    }
+
     public static bool RectOccluded(
         InteractionOwner owner,
         Vector2 min,
@@ -377,18 +396,21 @@ public static class Interactive
         var dragDelta = active && _dragOwner == itemId
             ? ImGui.GetIO().MouseDelta
             : Vector2.Zero;
-        // Keyboard activation has no pointer to hit-test, so it takes the
-        // RECT occlusion gate instead: a control buried under an open
-        // surface cannot be operated from the keyboard either. The gate
-        // covers BOTH the explicit keys below and ImGui's own nav
-        // ACTIVATE, which arrives through `pressed` on the same frame.
+        // Keyboard activation has no pointer to hit-test, so it takes two
+        // gates instead. OWNERSHIP is the primary one: while an exclusive
+        // surface is open it owns the keyboard globally, so anything off
+        // its chain is unreachable regardless of geometry. The rect gate
+        // remains for ordinary non-exclusive surfaces that merely overlap
+        // the control. Both cover the explicit keys below AND ImGui's own
+        // nav ACTIVATE, which arrives through `pressed` on the same frame.
         bool enterPressed = focused && !disabled
             && (ImGui.IsKeyPressed(ImGuiKey.Enter)
                 || ImGui.IsKeyPressed(ImGuiKey.KeypadEnter));
         bool spacePressed = focused && !disabled
             && ImGui.IsKeyPressed(ImGuiKey.Space);
         bool keyboardBlocked = (enterPressed || spacePressed)
-            && RectOccluded(owner, min, max);
+            && (KeyboardDisowned(owner)
+                || RectOccluded(owner, min, max));
         // The button RETURN is ImGui's release-inside semantic: pressing,
         // dragging out, and releasing does not activate. Enter joins it
         // explicitly; components with native button semantics can opt
