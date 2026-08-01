@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using System.Text;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 
@@ -23,7 +24,9 @@ public static partial class Crystarium
     /// background with backdrop blur, one-pixel secondary border with the
     /// glass top edge, radius 4, and a 0 2px 8px black@30% shadow;
     /// one-line cards 24px tall with 6px horizontal padding, 13px text, a
-    /// 4px content gap, and 16px kbd shortcut badges.
+    /// 4px content gap, and 16px kbd shortcut badges on their own 3px
+    /// radius. The card declares no width, so it is content-sized and both
+    /// paddings AND both border edges widen it.
     ///
     /// The animation is Mantine's <c>pop</c> transition, exactly: OUT is
     /// opacity 0, scale(.9), translateY(10px); IN is opacity 1, scale(1).
@@ -246,43 +249,116 @@ public static partial class Crystarium
             return (lo + hi) * 0.5f;
         }
 
+        /// <summary>
+        /// <c>.content</c>: 13px regular in --color-text-primary.
+        /// </summary>
+        private static TextStyle ContentStyle => new()
+        {
+            Size = Crystarium.ActiveTheme.Typography.BodySize,
+            Weight = FontWeight.Regular,
+            Family = FontFamily.Default,
+            Color = Crystarium.ActiveTheme.Text,
+        };
+
+        /// <summary>
+        /// <c>.kbd</c>: 10px regular in --color-text-primary.
+        /// </summary>
+        private static TextStyle BadgeStyle => new()
+        {
+            Size = Crystarium.ActiveTheme.Typography.ShortcutSize,
+            Weight = FontWeight.Regular,
+            Family = FontFamily.Default,
+            Color = Crystarium.ActiveTheme.Text,
+        };
+
+        /// <summary>
+        /// Draws one styled run onto the card's FOREGROUND draw list.
+        ///
+        /// <para>This is the one place the card cannot use
+        /// <see cref="Crystarium.TextAt(Vector2, string, in TextStyle)"/>:
+        /// the canonical renderer emits into
+        /// <c>ImGui.GetWindowDrawList()</c>, and the card is composited on
+        /// <c>ImGui.GetForegroundDrawList()</c>. Routing the label through
+        /// it would put the glyphs on a different list from the chrome —
+        /// under every window instead of above them, and OUTSIDE the
+        /// vertex range <see cref="VertexTransform.ApplyPop"/> captures,
+        /// so the text would neither scale, rise, nor fade with the card.
+        /// Style resolution, alpha, and presentation form still come from
+        /// the canonical <see cref="TextStyle"/> path; only the draw list
+        /// differs, and it can only be unified by giving Text.cs a draw-
+        /// list overload.</para>
+        /// </summary>
+        private static void DrawRun(
+            ImDrawListPtr drawList, Vector2 position, string text, in TextStyle style)
+        {
+            float size = style.Size ?? Crystarium.ActiveTheme.Typography.BodySize;
+            var font = FontRegistry.Resolve(
+                style.Family, style.Weight ?? FontWeight.Regular, size);
+            bool pushed = font is { Available: true };
+            if (pushed) font!.Push();
+            try
+            {
+                drawList.AddText(
+                    position,
+                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                        style.Color ?? Crystarium.ActiveTheme.Text)),
+                    // The canonical measurer normalizes to NFC before it
+                    // measures, so the run drawn here must be the same
+                    // sequence or the card would size for a different one.
+                    text.IsNormalized(NormalizationForm.FormC)
+                        ? text
+                        : text.Normalize(NormalizationForm.FormC));
+            }
+            finally
+            {
+                if (pushed) font!.Pop();
+            }
+        }
+
         private static void Draw(in Candidate c, float inness)
         {
             float scale = ImGuiHelpers.GlobalScale;
+            var help = Crystarium.ActiveTheme.HoverHelp;
 
-            var textFont = FontRegistry.Resolve(FontFamily.Default, Crystarium.ActiveTheme.Typography.BodySize);
-            var badgeFont = FontRegistry.Resolve(FontFamily.Default, Crystarium.ActiveTheme.Typography.ShortcutSize);
-            bool textPushed = textFont is { Available: true };
-
-            // Measure the one-line content: text, then optional 16px kbd
-            // badges after 4px gaps.
-            if (textPushed) textFont!.Push();
-            var textSize = ImGui.CalcTextSize(c.Text);
-            if (textPushed) textFont!.Pop();
+            // Measure the one-line content through the CANONICAL text
+            // measurer, so the card sizes on exactly the face, weight, and
+            // presentation form the run will be drawn with: the label,
+            // then optional 16px kbd badges after 4px gaps.
+            var contentStyle = ContentStyle;
+            var badgeStyle = BadgeStyle;
+            var textSize = Crystarium.MeasureText(c.Text, contentStyle);
 
             string[] keys = string.IsNullOrEmpty(c.Shortcut)
                 ? Array.Empty<string>()
                 : c.Shortcut!.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             Span<float> badgeWidths = keys.Length <= 8 ? stackalloc float[keys.Length] : new float[keys.Length];
-            bool badgePushed = badgeFont is { Available: true };
-            if (badgePushed) badgeFont!.Push();
+            Span<Vector2> keySizes = keys.Length <= 8 ? stackalloc Vector2[keys.Length] : new Vector2[keys.Length];
             float badgesW = 0f;
             for (int i = 0; i < keys.Length; i++)
             {
+                keySizes[i] = Crystarium.MeasureText(keys[i], badgeStyle);
+                // box-sizing: border-box with no border, so the padded
+                // text width competes with min-width directly.
                 badgeWidths[i] = MathF.Max(
-                    Crystarium.ActiveTheme.HoverHelp.BadgeMinimumWidth * scale,
-                    ImGui.CalcTextSize(keys[i]).X + 2f * Crystarium.ActiveTheme.HoverHelp.BadgePaddingX * scale);
-                badgesW += Crystarium.ActiveTheme.HoverHelp.ContentGap * scale + badgeWidths[i];
+                    help.BadgeMinimumWidth * scale,
+                    keySizes[i].X + 2f * help.BadgePaddingX * scale);
+                badgesW += help.ContentGap * scale + badgeWidths[i];
             }
-            if (badgePushed) badgeFont!.Pop();
 
-            float cardW = Crystarium.ActiveTheme.HoverHelp.PaddingX * scale + textSize.X + badgesW + Crystarium.ActiveTheme.HoverHelp.PaddingX * scale;
-            float cardH = Crystarium.ActiveTheme.HoverHelp.CardHeight * scale;
+            // The card declares a height but no width, so it is
+            // content-sized: CSS adds BOTH horizontal paddings and BOTH
+            // border edges outside the content box. BoxRenderer paints the
+            // border inside the rect exactly as CSS does, so the border
+            // must be part of the rect the content is inset from.
+            float border = help.BorderWidth * scale;
+            float cardW = 2f * border + help.PaddingX * scale
+                + textSize.X + badgesW + help.PaddingX * scale;
+            float cardH = help.CardHeight * scale;
 
             // Anchor to the centre of the semantic target on the
             // preferred side, flip when the viewport edge is closer than
             // the card, then clamp the remainder.
-            float offset = Crystarium.ActiveTheme.HoverHelp.TargetOffset * scale;
+            float offset = help.TargetOffset * scale;
             var pos = FloatingSurface.PlaceSide(
                 c.Side,
                 c.Min,
@@ -294,8 +370,8 @@ public static partial class Crystarium
             // translateY 10px → 0 while opacity 0 → 1. CSS composes
             // `scale(k) translateY(y)` with the translation INSIDE the
             // scaled space, so the applied offset is y·k.
-            float k = Crystarium.ActiveTheme.HoverHelp.PopScaleOut + (1f - Crystarium.ActiveTheme.HoverHelp.PopScaleOut) * inness;
-            float rise = (1f - inness) * Crystarium.ActiveTheme.HoverHelp.PopRise * scale;
+            float k = help.PopScaleOut + (1f - help.PopScaleOut) * inness;
+            float rise = (1f - inness) * help.PopRise * scale;
             var center = pos + new Vector2(cardW, cardH) * 0.5f;
             var translate = new Vector2(0f, rise * k);
             var animMin = center + (pos - center) * k + translate;
@@ -325,12 +401,14 @@ public static partial class Crystarium
             // shadow, text, and badges together.
             int vtxStart = fg.VtxBuffer.Size;
 
-            var secondary = Crystarium.ActiveTheme.Chrome.WeakOverlay;
+            // border: 1px solid --color-border-secondary, with the top
+            // edge replaced by --glass-border-top.
+            var secondary = Crystarium.ActiveTheme.Border;
             BoxRenderer.Draw(fg, pos, pos + new Vector2(cardW, cardH), new BoxStyle
             {
                 BackgroundColor = GlassChrome.BackgroundColor,
                 BorderRadius = Crystarium.ActiveTheme.Radii.Medium,
-                BorderWidth = 1f,
+                BorderWidth = help.BorderWidth,
                 BorderTopColor = Crystarium.ActiveTheme.Glass.BorderTop,
                 BorderLeftColor = secondary,
                 BorderRightColor = secondary,
@@ -338,39 +416,34 @@ public static partial class Crystarium
                 BoxShadow = Crystarium.ActiveTheme.Shadows.HoverHelp,
             });
 
-            var theme = Crystarium.ActiveTheme;
-            float x = pos.X + Crystarium.ActiveTheme.HoverHelp.PaddingX * scale;
+            // The flex row runs inside the padding box, vertically centred
+            // by `align-items: center` on a card whose height is fixed.
+            float x = pos.X + border + help.PaddingX * scale;
             float midY = pos.Y + cardH * 0.5f;
 
-            if (textPushed) textFont!.Push();
-            fg.AddText(new Vector2(x, midY - textSize.Y * 0.5f),
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Text)), c.Text);
-            if (textPushed) textFont!.Pop();
+            DrawRun(fg, new Vector2(x, midY - textSize.Y * 0.5f),
+                c.Text, contentStyle);
             x += textSize.X;
 
-            if (keys.Length > 0)
+            for (int i = 0; i < keys.Length; i++)
             {
-                if (badgePushed) badgeFont!.Push();
-                uint badgeBg = ImGui.ColorConvertFloat4ToU32(
-                    ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.ControlHover));
-                uint badgeText = ImGui.ColorConvertFloat4ToU32(
-                    ColorEx.ApplyAlpha(theme.Text));
-                for (int i = 0; i < keys.Length; i++)
+                x += help.ContentGap * scale;
+                float bh = help.BadgeHeight * scale;
+                var bMin = new Vector2(x, midY - bh * 0.5f);
+                var bMax = new Vector2(x + badgeWidths[i], midY + bh * 0.5f);
+                // .kbd has a background and a 3px radius and NO border, so
+                // it is the same shared box paint the card uses, with the
+                // border members left unset.
+                BoxRenderer.Draw(fg, bMin, bMax, new BoxStyle
                 {
-                    x += Crystarium.ActiveTheme.HoverHelp.ContentGap * scale;
-                    float bh = Crystarium.ActiveTheme.HoverHelp.BadgeHeight * scale;
-                    var bMin = new Vector2(x, midY - bh * 0.5f);
-                    var bMax = new Vector2(x + badgeWidths[i], midY + bh * 0.5f);
-                    fg.AddRectFilled(bMin, bMax, badgeBg,
-                        Crystarium.ActiveTheme.Radii.Small * scale);
-                    var keySize = ImGui.CalcTextSize(keys[i]);
-                    fg.AddText(new Vector2(
-                            bMin.X + (badgeWidths[i] - keySize.X) * 0.5f,
-                            midY - keySize.Y * 0.5f),
-                        badgeText, keys[i]);
-                    x += badgeWidths[i];
-                }
-                if (badgePushed) badgeFont!.Pop();
+                    BackgroundColor = Crystarium.ActiveTheme.Chrome.ControlHover,
+                    BorderRadius = help.BadgeRadius,
+                });
+                DrawRun(fg, new Vector2(
+                        bMin.X + (badgeWidths[i] - keySizes[i].X) * 0.5f,
+                        midY - keySizes[i].Y * 0.5f),
+                    keys[i], badgeStyle);
+                x += badgeWidths[i];
             }
 
             int vtxEnd = fg.VtxBuffer.Size;

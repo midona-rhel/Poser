@@ -138,7 +138,8 @@
       "name": "tooltip",
       "title": "Tooltip",
       "states": [
-        { "name": "tooltip", "label": "kbd tooltip", "width": 240, "height": 80 }
+        { "name": "tooltip", "label": "kbd tooltip", "width": 240, "height": 80 },
+        { "name": "tooltip-pop-mid", "label": "pop entrance midpoint", "width": 240, "height": 80 }
       ]
     },
     {

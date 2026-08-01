@@ -98,6 +98,7 @@ internal static class ComponentCatalog
         new("property-row", 320, 68),
         new("section", 320, 92),
         new("tooltip", 240, 80),
+        new("tooltip-pop-mid", 240, 80),
         new("context-menu", 320, 190),
         new("modal", 560, 360),
     ];
@@ -174,6 +175,28 @@ internal static class ComponentCatalog
             Cell(5, 11f, Ui.ActiveTheme.Accent);
         }
     }
+
+    /// <summary>
+    /// First frame on which tooltip-pop-mid registers its help target.
+    ///
+    /// <para>HoverHelp is driven by <c>ImGui.GetTime()</c>, which advances
+    /// by the harness's fixed 1/60s step, so the entrance midpoint is
+    /// exact arithmetic rather than a wall-clock race. Registering on
+    /// frame F stamps the pending target at F; the 400ms open delay is
+    /// exactly 24 steps, so the entrance starts on frame F+24 and the
+    /// 150ms pop spans 9 further steps. The harness observes frame 38
+    /// (it presents the last two frames and reads back the prior buffer,
+    /// reproducing the legacy 40-present path), so F = 9 leaves
+    /// 38 - (9 + 24) = 5 elapsed steps — linear progress 5/9, the same
+    /// midpoint btn-hover-mid uses, eased by CSS <c>ease</c> to
+    /// 0.852283.</para>
+    ///
+    /// <para>Nine idle frames also drain any card the PREVIOUS batch
+    /// entry left open: its exit is the same 150ms = 9 steps, and the
+    /// unregistered frames null the pending id, so the delay measured
+    /// from frame 9 is the same in a batch as in an isolated capture.</para>
+    /// </summary>
+    public const int PopMidRegisterFrame = 9;
 
     public static Vector2 PointerFor(string name, float scale, int frame)
     {
@@ -891,13 +914,34 @@ internal static class ComponentCatalog
                     _ => { });
                 break;
             case "tooltip":
+                // The reference cell draws the KbdTooltip label box at the
+                // stage origin with no anchor at all, so the fixture pins
+                // the card there too: a Right placement is the only side
+                // whose result does not depend on the card's own measured
+                // width. Target right edge 18 + offset 6 = x 24; target
+                // centre y 36 - half the 24px card = y 24. Both hold at
+                // any global scale.
                 Ui.HoverHelp.Explain(
                     "##tooltip",
-                    new Vector2(24, 2) * scale,
-                    new Vector2(180, 18) * scale,
+                    new Vector2(6, 30) * scale,
+                    new Vector2(18, 42) * scale,
                     "Undo",
                     "Ctrl+Z",
-                    HoverHelpSide.Bottom);
+                    HoverHelpSide.Right);
+                break;
+            case "tooltip-pop-mid":
+                // The same card, captured mid-entrance. Registration
+                // starts at PopMidRegisterFrame so the 400ms open delay
+                // expires with a known number of 1/60s entrance steps left
+                // before the observed frame; see the constant.
+                if (frame >= PopMidRegisterFrame)
+                    Ui.HoverHelp.Explain(
+                        "##tooltip-pop-mid",
+                        new Vector2(6, 30) * scale,
+                        new Vector2(18, 42) * scale,
+                        "Undo",
+                        "Ctrl+Z",
+                        HoverHelpSide.Right);
                 break;
             case "context-menu":
                 if (frame == 0)

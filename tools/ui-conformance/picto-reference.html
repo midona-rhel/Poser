@@ -59,12 +59,21 @@
       .row-demo { width: 272px; --sidebar-row-height: 26px; --row-inset: 1px; }
       .property-demo { width: 272px; }
       .section-demo { width: 272px; }
+      /* KbdTooltip.tsx tooltipStyles.tooltip, verbatim: the Mantine
+         label box is a FIXED 24px flex row with no vertical padding, and
+         its top edge is the glass highlight rather than the secondary
+         border the other three sides use. (No backticks in this template
+         literal - a backtick here terminates cellCss and kills the whole
+         page script.) */
       .tooltip-shell {
         display: inline-flex;
-        padding: 4px 6px;
+        align-items: center;
+        height: 24px;
+        padding: 0 6px;
         border-radius: 4px;
         background: var(--glass-bg);
         border: 1px solid var(--color-border-secondary);
+        border-top: var(--glass-border-top);
         box-shadow: 0 2px 8px rgba(0,0,0,.3);
         backdrop-filter: blur(16px);
       }
@@ -516,6 +525,26 @@
       'tooltip': {
         css: 'shared/ui/KbdTooltip/KbdTooltip.module.css',
         html: '<div class="tooltip-shell"><span class="content">Undo <span class="kbd">Ctrl</span><span class="kbd">Z</span></span></div>',
+      },
+      'tooltip-pop-mid': {
+        // Deterministic mid-flight of the Mantine `pop` entrance
+        // (transitionProps={{ transition: 'pop', duration: 150 }}).
+        // Mantine's pop is OUT `opacity:0; transform:scale(.9)
+        // translateY(10px)` → IN `opacity:1; transform:scale(1)`, eased
+        // by the default CSS `ease` = cubic-bezier(.25,.1,.25,1) with
+        // transform-origin at the box centre; the shorter IN list pads
+        // with the identity translate, so scale and translateY
+        // interpolate independently. The candidate samples the same
+        // linear progress btn-hover-mid does — five 1/60s frames of a
+        // 150ms transition = 5/9 — which the curve eases to 0.852283,
+        // giving scale .9 + .1*.852283 = .9852283 and translateY
+        // 10*(1-.852283) = 1.47717px. `scale() translateY()` composes
+        // the translation INSIDE the scaled space, so the rendered rise
+        // is 1.45536px, exactly what the candidate's vertex transform
+        // applies. Every value is a constant of the curve, not of the
+        // theme, so no post-layout sampling is needed.
+        css: 'shared/ui/KbdTooltip/KbdTooltip.module.css',
+        html: '<div class="tooltip-shell" style="opacity: 0.852283; transform: scale(0.9852283) translateY(1.47717px); transform-origin: center center"><span class="content">Undo <span class="kbd">Ctrl</span><span class="kbd">Z</span></span></div>',
       },
       'context-menu': {
         css: 'shared/ui/ContextMenu/ContextMenu.module.css',

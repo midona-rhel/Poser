@@ -293,6 +293,8 @@ public readonly record struct Theme
             BadgeHeight = 16f,
             BadgeMinimumWidth = 16f,
             BadgePaddingX = 4f,
+            BadgeRadius = 3f,
+            BorderWidth = 1f,
             PopRise = 10f,
             PopScaleOut = 0.9f,
         },
@@ -721,16 +723,36 @@ public readonly record struct Theme
         public float ControlDisabledOpacity { get; init; }
     }
 
+    /// <summary>
+    /// KbdTooltip geometry, read straight off picto's
+    /// <c>KbdTooltip.tsx</c> tooltip styles and
+    /// <c>KbdTooltip.module.css</c>.
+    /// </summary>
     public readonly record struct HoverHelpTokens
     {
+        /// <summary>Mantine Tooltip <c>offset={6}</c>.</summary>
         public float TargetOffset { get; init; }
+        /// <summary>tooltip style <c>height: 24</c> (border-box).</summary>
         public float CardHeight { get; init; }
+        /// <summary>tooltip style <c>padding: '0 6px'</c>.</summary>
         public float PaddingX { get; init; }
+        /// <summary><c>.content { gap: 4px }</c>.</summary>
         public float ContentGap { get; init; }
+        /// <summary><c>.kbd { height: 16px }</c>.</summary>
         public float BadgeHeight { get; init; }
+        /// <summary><c>.kbd { min-width: 16px }</c>.</summary>
         public float BadgeMinimumWidth { get; init; }
+        /// <summary><c>.kbd { padding: 0 4px }</c>.</summary>
         public float BadgePaddingX { get; init; }
+        /// <summary><c>.kbd { border-radius: 3px }</c> — a badge-only
+        /// radius that is NOT Radii.Small (2px).</summary>
+        public float BadgeRadius { get; init; }
+        /// <summary>tooltip style <c>border: '1px solid …'</c>. The card
+        /// is content-sized, so the border adds to its outer width.</summary>
+        public float BorderWidth { get; init; }
+        /// <summary>Mantine <c>pop</c> OUT <c>translateY(10px)</c>.</summary>
         public float PopRise { get; init; }
+        /// <summary>Mantine <c>pop</c> OUT <c>scale(.9)</c>.</summary>
         public float PopScaleOut { get; init; }
     }
 }

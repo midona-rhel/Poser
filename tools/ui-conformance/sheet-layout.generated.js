@@ -549,6 +549,14 @@ window.sheetLayout = {
    "h": 80
   },
   {
+   "name": "tooltip-pop-mid",
+   "component": "tooltip",
+   "x": 272,
+   "y": 3840,
+   "w": 240,
+   "h": 80
+  },
+  {
    "name": "context-menu",
    "component": "context-menu",
    "x": 16,

@@ -220,6 +220,23 @@ def compose(args: argparse.Namespace) -> None:
     catalog_image = Image.open(catalog_png).convert("RGBA")
     cell_rects = {c["name"]: c for c in layout["cells"]}
 
+    # A script error in the reference page renders a blank document, which
+    # would silently diff every candidate against nothing. A real cell is
+    # never perfectly uniform (text, borders); abort when too many are.
+    catalog_array = np.asarray(catalog_image, dtype=np.int16)[:, :, :3]
+    uniform = 0
+    for rect in layout["cells"]:
+        crop = catalog_array[rect["y"]:rect["y"] + rect["h"],
+                             rect["x"]:rect["x"] + rect["w"]]
+        if crop.size and (crop.max(axis=(0, 1)) == crop.min(axis=(0, 1))).all():
+            uniform += 1
+    if uniform * 4 > len(layout["cells"]):
+        raise SystemExit(
+            f"Reference catalog looks blank: {uniform} of "
+            f"{len(layout['cells'])} cells are perfectly uniform - the "
+            "reference page script likely failed (check picto-reference.html "
+            "for JS errors; backticks inside template literals are fatal).")
+
     combo_dir = artifacts / "sheets" / f"{args.theme}@{suffix}"
     combo_dir.mkdir(parents=True, exist_ok=True)
     font = label_font()
