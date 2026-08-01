@@ -88,7 +88,13 @@ internal static class SvgStrokeMask
                     maxX = MathF.Max(maxX, point.X + extent);
                     maxY = MathF.Max(maxY, point.Y + extent);
                 }
-                if (points.Count >= 2)
+                // Tabler authors DOTS as near-zero segments ("h.01"): the
+                // dedupe above collapses them to one point, and the caps
+                // ARE the dot — a single-point round-capped subpath must
+                // survive as a cap disc, or every i-dot and keyboard dot
+                // in the set vanishes.
+                if (points.Count >= 2
+                    || (points.Count == 1 && path.RoundCaps))
                     strokes.Add(new(
                         points, width * 0.5f, subPath.Closed,
                         path.RoundCaps, path.RoundJoins));
