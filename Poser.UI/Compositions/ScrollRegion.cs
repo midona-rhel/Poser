@@ -69,7 +69,6 @@ public static partial class Crystarium
                 new SidebarRowProps
                 {
                     Icon = icon,
-                    NoExpanderSlot = true,
                     Selected = selected,
                     Badge = badge,
                     IconTexture = iconTexture,

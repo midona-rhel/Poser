@@ -956,7 +956,6 @@ internal static class ComponentCatalog
         {
             Icon = TablerIcon.User,
             Selected = selected,
-            NoExpanderSlot = true,
         };
         Ui.SidebarRow(
             "##sidebar-row",
@@ -973,10 +972,9 @@ internal static class ComponentCatalog
     /// <c>--row-inset: 21px</c>, which is what
     /// <see cref="SidebarRowProps.Inset"/> carries — showing the
     /// <c>.triangle</c> expander in both rotations next to a
-    /// <c>.count</c> badge. The expander slot is RESERVED here (no
-    /// <see cref="SidebarRowProps.NoExpanderSlot"/>), which is Poser's
-    /// documented deviation from picto's <c>margin-left:-20px</c> overlay
-    /// into the indent gutter.
+    /// <c>.count</c> badge. The expander is overlaid on the indent gutter
+    /// (picto's <c>margin-left:-20px</c>), so the icon, label and badge sit
+    /// exactly where the reference's do.
     /// </summary>
     private static void DrawSidebarTree(SidebarExpander expander)
     {
@@ -1006,7 +1004,6 @@ internal static class ComponentCatalog
         {
             Icon = TablerIcon.User,
             DropTarget = true,
-            NoExpanderSlot = true,
         };
         Ui.SidebarRow(
             "##sidebar-row",

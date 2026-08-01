@@ -29,10 +29,6 @@ public record struct SidebarRowProps
     public float Inset;
     public SidebarExpander Expander;
     public bool DropTarget;
-    /// <summary>Hides the reserved expander slot. Tree rows keep it so
-    /// siblings stay aligned; a flat list has nothing to align to and the
-    /// 16px would just be dead space.</summary>
-    public bool NoExpanderSlot;
     /// <summary>Reserves the standard icon column without drawing a glyph,
     /// so optional selection checks never move neighboring labels.</summary>
     public bool HideIcon;
@@ -43,9 +39,12 @@ public static partial class Crystarium
     /// <summary>The one animated channel of <c>.row::before</c>.</summary>
     private const int SidebarHighlightChannel = 0;
 
-    /// <summary><c>.expandArrow</c> width — the column Poser reserves for
-    /// it (see the deviation note on <see cref="SidebarRow"/>).</summary>
-    private const float SidebarExpanderSlot = 16f;
+    /// <summary><c>.expandArrow</c>'s <c>margin-right</c> — the only part
+    /// of its box model the row ever sees. Its <c>margin-left:-20px</c>
+    /// cancels the 16px width plus this 4px gap exactly, so the arrow box
+    /// costs the row no advance at all and lands on the indent gutter that
+    /// <c>padding-left</c> opened to its left.</summary>
+    private const float SidebarExpanderGap = 4f;
 
     /// <summary>
     /// 26px sidebar/tree row — transcription of picto
@@ -63,15 +62,25 @@ public static partial class Crystarium
     /// carrying a 14px glyph at opacity .85, then the 13px label, then the
     /// right-aligned 12px mono count.</para>
     ///
+    /// <para><see cref="SidebarRowProps.Expander"/> costs that content
+    /// nothing: <c>.expandArrow</c>'s <c>margin-left:-20px</c> cancels its
+    /// own 16px width plus its 4px <c>margin-right</c>, so the arrow is
+    /// overlaid on the indent gutter and every row lines up with its
+    /// non-expanding siblings at the same indent. Like the CSS, the arrow
+    /// is drawn wherever that lands — an indent-0 row with an expander puts
+    /// it left of the row, exactly as picto's negative margin would.</para>
+    ///
     /// <para>Deviations, all deliberate: <see cref="SidebarRowProps.Selected"/>
     /// beats hover (Picto's <c>.row:hover::before</c> out-specifies
     /// <c>.selected::before</c>, so its hovered selection reads WEAKER —
-    /// Poser keeps the selection dominant); the expander consumes a real
-    /// 16px column instead of Picto's <c>margin-left:-20px</c> overlay into
-    /// the indent gutter, because <see cref="SidebarRowProps.NoExpanderSlot"/>
-    /// is the alignment contract Poser trees rely on; and
+    /// Poser keeps the selection dominant); and
     /// <see cref="SidebarRowProps.HideIcon"/> keeps the icon box reserved
     /// where CSS would omit the element entirely.</para>
+    ///
+    /// <para>The whole row is one hit target; picto's separate
+    /// <c>.expandArrow</c> <c>onClick</c> (which stops propagation) has no
+    /// counterpart here, so a click anywhere — arrow included — returns the
+    /// row's click, as it did before the arrow moved.</para>
     /// </summary>
     public static bool SidebarRow(
         string id,
@@ -143,37 +152,40 @@ public static partial class Crystarium
         // CSS padding-left: --row-inset is that indent PLUS one pixel.
         float x = hit.ScreenMin.X + inset - 1f * scale;
 
+        // .expandArrow overlays the indent gutter — the 16px box ends one
+        // margin-right short of the content start and is pulled entirely
+        // back over the padding, so a row that can expand puts its icon,
+        // label and badge at exactly the same x as a sibling that cannot.
         // .triangle: a CSS border triangle (3.5px half-width, 5px tall) in
         // text-primary at opacity .7, pointing down when expanded and
-        // rotate(-90deg) — apex right — when collapsed.
+        // rotate(-90deg) — apex right — when collapsed. It is right-aligned
+        // in the arrow box (justify-content: flex-end) and its own
+        // margin-right:-2px pushes it 2px past that edge.
         if (props.Expander != SidebarExpander.None)
         {
-            var slotCenter = new Vector2(
-                x + SidebarExpanderSlot * 0.5f * scale,
+            const float half = 3.5f;
+            const float rise = 5f * 0.5f;
+            const float overhang = 2f;
+            var triangleCenter = new Vector2(
+                x + (overhang - half - SidebarExpanderGap) * scale,
                 hit.ScreenMin.Y + height * 0.5f);
             uint tri = ImGui.ColorConvertFloat4ToU32(
                 ColorEx.ApplyAlpha(theme.Text.Fade(0.70f)));
-            const float half = 3.5f;
-            const float rise = 5f * 0.5f;
             if (props.Expander == SidebarExpander.Open)
             {
                 dl.AddTriangleFilled(
-                    slotCenter + new Vector2(-half, -rise) * scale,
-                    slotCenter + new Vector2(half, -rise) * scale,
-                    slotCenter + new Vector2(0f, rise) * scale, tri);
+                    triangleCenter + new Vector2(-half, -rise) * scale,
+                    triangleCenter + new Vector2(half, -rise) * scale,
+                    triangleCenter + new Vector2(0f, rise) * scale, tri);
             }
             else
             {
                 dl.AddTriangleFilled(
-                    slotCenter + new Vector2(-rise, -half) * scale,
-                    slotCenter + new Vector2(rise, 0f) * scale,
-                    slotCenter + new Vector2(-rise, half) * scale, tri);
+                    triangleCenter + new Vector2(-rise, -half) * scale,
+                    triangleCenter + new Vector2(rise, 0f) * scale,
+                    triangleCenter + new Vector2(-rise, half) * scale, tri);
             }
         }
-        // The expander slot is reserved either way in a tree, so siblings
-        // stay aligned whether or not they have children.
-        if (!props.NoExpanderSlot)
-            x += SidebarExpanderSlot * scale;
 
         // ── .icon ────────────────────────────────────────────────────
         // A row-height square with a 2px left margin, centering picto's
