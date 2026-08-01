@@ -138,7 +138,7 @@ public sealed class GraphicalBonePane : IDisposable
                         rmin,
                         rmax,
                         ImGui.ColorConvertFloat4ToU32(
-                            Crystarium.ActiveTheme.Chrome.SidebarSelected));
+                            Crystarium.ActiveTheme.Chrome.AccentFill));
                     fg.AddRect(
                         rmin,
                         rmax,

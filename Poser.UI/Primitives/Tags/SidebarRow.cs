@@ -1,3 +1,4 @@
+using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures.TextureWraps;
@@ -21,7 +22,10 @@ public record struct SidebarRowProps
     /// <summary>Right-aligned mono badge (counts, "you", "spawned").</summary>
     public string? Badge;
     public bool Selected;
-    /// <summary>Left inset of the highlight pill + content (tree indent), unscaled px. 0 → picto default 1px.</summary>
+    /// <summary>Left inset of the highlight pill (CSS <c>--row-inset</c>,
+    /// which is the tree indent plus one pixel), unscaled px. 0 → picto
+    /// default 1px. Content sits one pixel left of it, at the CSS
+    /// <c>padding-left</c>.</summary>
     public float Inset;
     public SidebarExpander Expander;
     public bool DropTarget;
@@ -36,13 +40,38 @@ public record struct SidebarRowProps
 
 public static partial class Crystarium
 {
+    /// <summary>The one animated channel of <c>.row::before</c>.</summary>
+    private const int SidebarHighlightChannel = 0;
+
+    /// <summary><c>.expandArrow</c> width — the column Poser reserves for
+    /// it (see the deviation note on <see cref="SidebarRow"/>).</summary>
+    private const float SidebarExpanderSlot = 16f;
+
     /// <summary>
-    /// 26px sidebar/tree row — pixel transcription of picto
-    /// shared/ui/SidebarRow/SidebarRow.module.css: highlight is an inset pill
-    /// (left = --row-inset, bottom −1px, radius 5) — hover surface-hover
-    /// rgba(248,249,251,.05), selected surface-active .10, drop-inside
-    /// primary-10 bg + primary-30 border; CSS-triangle expander; 16px icon at
-    /// opacity .85→1; 13px label; mono 11px badge.
+    /// 26px sidebar/tree row — transcription of picto
+    /// shared/ui/SidebarRow/SidebarRow.module.css.
+    ///
+    /// <para>The highlight is the <c>::before</c> pseudo-element: inset to
+    /// <c>--row-inset</c> on the left, 1px short of the bottom, radius 5,
+    /// filled by <c>.row:hover</c> (surface-hover), <c>.selected</c>
+    /// (surface-active) or <c>.dropInside</c> (primary-10 over a
+    /// primary-30 hairline). Only its OPACITY transitions
+    /// (--duration-fast, --ease-default) — the background switches
+    /// instantly, so the highlight fades in and vanishes out exactly as
+    /// the CSS element does. Content starts at the CSS
+    /// <c>padding-left</c>: a row-height icon box with a 2px left margin
+    /// carrying a 14px glyph at opacity .85, then the 13px label, then the
+    /// right-aligned 12px mono count.</para>
+    ///
+    /// <para>Deviations, all deliberate: <see cref="SidebarRowProps.Selected"/>
+    /// beats hover (Picto's <c>.row:hover::before</c> out-specifies
+    /// <c>.selected::before</c>, so its hovered selection reads WEAKER —
+    /// Poser keeps the selection dominant); the expander consumes a real
+    /// 16px column instead of Picto's <c>margin-left:-20px</c> overlay into
+    /// the indent gutter, because <see cref="SidebarRowProps.NoExpanderSlot"/>
+    /// is the alignment contract Poser trees rely on; and
+    /// <see cref="SidebarRowProps.HideIcon"/> keeps the icon box reserved
+    /// where CSS would omit the element entirely.</para>
     /// </summary>
     public static bool SidebarRow(
         string id,
@@ -50,138 +79,195 @@ public static partial class Crystarium
         in SidebarRowProps props,
         ControlStyle style = default)
     {
-        float scale = ImGuiHelpers.GlobalScale;
+        var theme = ActiveTheme;
         // Content and Fill both resolve to the available region here, so
         // UiWidth.Fixed is the only width path that changes the row.
         var metrics = ControlSizing.Resolve(
             style,
-            ImGui.GetContentRegionAvail().X / scale,
-            Crystarium.ActiveTheme.Controls.ListRowHeight);
+            ImGui.GetContentRegionAvail().X / ImGuiHelpers.GlobalScale,
+            theme.Controls.ListRowHeight);
+        float scale = metrics.Scale;
         float height = metrics.Height;
-        float width = metrics.Width;
 
         // Rows stack seamlessly at exactly 26px (picto sidebar rhythm) — suppress
         // ImGui's ambient vertical ItemSpacing for the reserve.
         var spacing = ImGui.GetStyle().ItemSpacing;
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(spacing.X, 0f));
-        var hit = Interactive.Reserve(id, new Vector2(width, height), disabled: false);
+        uint identity = ImGui.GetID(id);
+        var hit = Interactive.Reserve(
+            id, new Vector2(metrics.Width, height), disabled: false);
         ImGui.PopStyleVar();
         var dl = ImGui.GetWindowDrawList();
+
         float inset = (props.Inset > 0f ? props.Inset : 1f) * scale;
 
-        // Highlight pill
-        var pillMin = new Vector2(hit.ScreenMin.X + inset, hit.ScreenMin.Y);
-        var pillMax = new Vector2(hit.ScreenMax.X, hit.ScreenMax.Y - 1f * scale);
-        float pillRadius = Crystarium.ActiveTheme.Radii.Control * scale;
-        if (props.DropTarget)
+        // ── .row::before ─────────────────────────────────────────────
+        // Which rule paints the pseudo-element this frame. Transparent
+        // means no rule matched, which is also why fading OUT is instant:
+        // the CSS background stops applying the moment the state drops.
+        var fill = props.DropTarget
+            ? theme.Chrome.AccentFill
+            : props.Selected
+                ? theme.Chrome.SidebarSelected
+                : hit.Hovered
+                    ? theme.Chrome.SidebarHover
+                    : Vector4.Zero;
+        Span<MotionChannel> highlight =
+        [
+            MotionChannel.Number(SidebarHighlightChannel, fill.W > 0f ? 1f : 0f),
+        ];
+        Motion.Toward(identity, Transition.PictoFast, highlight);
+        float pillOpacity = highlight[0].Scalar;
+        if (fill.W > 0f && pillOpacity > 0f)
         {
-            dl.AddRectFilled(pillMin, pillMax,
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.SidebarSelected)), pillRadius);
-            float bi = 0.5f * scale;
-            dl.AddRect(pillMin + new Vector2(bi, bi), pillMax - new Vector2(bi, bi),
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.SidebarSelectedBorder)),
-                pillRadius - bi, ImDrawFlags.None, 1f * scale);
-        }
-        else if (props.Selected)
-        {
-            dl.AddRectFilled(pillMin, pillMax,
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.SidebarHover)), pillRadius);
-        }
-        else if (hit.Hovered)
-        {
-            dl.AddRectFilled(pillMin, pillMax,
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.ControlFill)), pillRadius);
+            var border = props.DropTarget
+                ? theme.Chrome.AccentFillBorder.Fade(pillOpacity)
+                : (Vector4?)null;
+            BoxRenderer.Draw(
+                dl,
+                new Vector2(hit.ScreenMin.X + inset, hit.ScreenMin.Y),
+                // bottom: 1px.
+                new Vector2(hit.ScreenMax.X, hit.ScreenMax.Y - 1f * scale),
+                new BoxStyle
+                {
+                    BackgroundColor = fill.Fade(pillOpacity),
+                    BorderRadius = 5f,
+                    BorderWidth = border is null ? 0f : 1f,
+                    BorderTopColor = border,
+                    BorderRightColor = border,
+                    BorderBottomColor = border,
+                    BorderLeftColor = border,
+                });
         }
 
-        var theme = Crystarium.ActiveTheme;
-        float x = hit.ScreenMin.X + inset;
+        // CSS padding-left: --row-inset is that indent PLUS one pixel.
+        float x = hit.ScreenMin.X + inset - 1f * scale;
 
-        // Expander: CSS border-triangle (3.5px half-width, 5px tall), text-tertiary.
+        // .triangle: a CSS border triangle (3.5px half-width, 5px tall) in
+        // text-primary at opacity .7, pointing down when expanded and
+        // rotate(-90deg) — apex right — when collapsed.
         if (props.Expander != SidebarExpander.None)
         {
-            var slotCenter = new Vector2(x + 8f * scale, hit.ScreenMin.Y + height * 0.5f);
-            uint tri = ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Text with { W = 0.5f }));
+            var slotCenter = new Vector2(
+                x + SidebarExpanderSlot * 0.5f * scale,
+                hit.ScreenMin.Y + height * 0.5f);
+            uint tri = ImGui.ColorConvertFloat4ToU32(
+                ColorEx.ApplyAlpha(theme.Text.Fade(0.70f)));
+            const float half = 3.5f;
+            const float rise = 5f * 0.5f;
             if (props.Expander == SidebarExpander.Open)
             {
                 dl.AddTriangleFilled(
-                    slotCenter + new Vector2(-3.5f, -2.5f) * scale,
-                    slotCenter + new Vector2(3.5f, -2.5f) * scale,
-                    slotCenter + new Vector2(0f, 2.5f) * scale, tri);
+                    slotCenter + new Vector2(-half, -rise) * scale,
+                    slotCenter + new Vector2(half, -rise) * scale,
+                    slotCenter + new Vector2(0f, rise) * scale, tri);
             }
             else
             {
                 dl.AddTriangleFilled(
-                    slotCenter + new Vector2(-2.5f, -3.5f) * scale,
-                    slotCenter + new Vector2(2.5f, 0f) * scale,
-                    slotCenter + new Vector2(-2.5f, 3.5f) * scale, tri);
+                    slotCenter + new Vector2(-rise, -half) * scale,
+                    slotCenter + new Vector2(rise, 0f) * scale,
+                    slotCenter + new Vector2(-rise, half) * scale, tri);
             }
         }
         // The expander slot is reserved either way in a tree, so siblings
         // stay aligned whether or not they have children.
         if (!props.NoExpanderSlot)
-            x += 16f * scale;
+            x += SidebarExpanderSlot * scale;
 
-        // Icon 16px, opacity .85 → 1 on hover
-        float iconSize = Crystarium.ActiveTheme.Controls.IconSize * scale;
-        var iconTint = theme.Text with { W = hit.Hovered ? 1f : 0.85f };
-        var iconPos = new Vector2(x, hit.ScreenMin.Y + (height - iconSize) * 0.5f);
+        // ── .icon ────────────────────────────────────────────────────
+        // A row-height square with a 2px left margin, centering picto's
+        // 14px sidebar glyph. Opacity .85, raised to 1 by :hover — which
+        // for a game-supplied bitmap is a plain white tint at that alpha,
+        // exactly what a CSS opacity does to a non-SVG child.
+        float iconOpacity = hit.Hovered ? 1f : 0.85f;
+        float glyph = theme.Controls.SmallIconSize * scale;
+        float iconMargin = 2f * scale;
+        var glyphMin = theme.Optical.Snap(new Vector2(
+            x + iconMargin + (height - glyph) * 0.5f,
+            hit.ScreenMin.Y + (height - glyph) * 0.5f));
         if (!props.HideIcon && props.IconTexture is { } texture)
         {
-            dl.AddImage(texture.Handle, iconPos, iconPos + new Vector2(iconSize, iconSize));
+            dl.AddImage(
+                texture.Handle,
+                glyphMin,
+                glyphMin + new Vector2(glyph),
+                Vector2.Zero,
+                Vector2.One,
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                    new Vector4(1f, 1f, 1f, iconOpacity))));
         }
         else if (!props.HideIcon)
         {
             IconIn(
-                iconPos, iconPos + new Vector2(iconSize), props.Icon,
-                iconTint);
+                glyphMin, glyphMin + new Vector2(glyph), props.Icon,
+                theme.Text, opacity: iconOpacity);
         }
-        x += iconSize + Crystarium.ActiveTheme.Spacing.Three * scale;
+        x += iconMargin + height;
 
-        // Label 13px text-primary, on the shared sidebar optical baseline
-        var labelSize = ImGui.CalcTextSize(label);
-        dl.AddText(Crystarium.ActiveTheme.Optical.Snap(new Vector2(
+        // ── .label ───────────────────────────────────────────────────
+        // 13px regular text-primary, centered on the row's line box.
+        var labelStyle = new TextStyle
+        {
+            Size = theme.Typography.BodySize,
+            Color = theme.Text,
+        };
+        var labelSize = MeasureText(label, labelStyle);
+        TextAt(
+            new Vector2(
                 x,
                 hit.ScreenMin.Y + (height - labelSize.Y) * 0.5f
-                    + Crystarium.ActiveTheme.Optical.SidebarText * scale)),
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Text)), label);
+                    + theme.Optical.SidebarText * scale),
+            label,
+            labelStyle);
 
-        // Badge: mono 11px text-secondary, right padding 8
+        // ── .count ───────────────────────────────────────────────────
+        // 12px mono text-secondary, 4px from the row's right edge.
         if (!string.IsNullOrEmpty(props.Badge))
         {
-            var monoFont = FontRegistry.Resolve(
-                FontFamily.Mono, Crystarium.ActiveTheme.Typography.CaptionSize);
-            bool monoPushed = monoFont is { Available: true };
-            if (monoPushed) monoFont!.Push();
-            var badgeSize = ImGui.CalcTextSize(props.Badge);
-            dl.AddText(Crystarium.ActiveTheme.Optical.Snap(new Vector2(
-                    hit.ScreenMax.X - Crystarium.ActiveTheme.Spacing.Four * scale - badgeSize.X,
+            var badgeStyle = new TextStyle
+            {
+                Size = theme.Typography.LabelSize,
+                Family = FontFamily.Mono,
+                Color = theme.TextDim,
+            };
+            var badgeSize = MeasureText(props.Badge, badgeStyle);
+            TextAt(
+                new Vector2(
+                    hit.ScreenMax.X - theme.Spacing.Two * scale - badgeSize.X,
                     hit.ScreenMin.Y + (height - badgeSize.Y) * 0.5f
-                        + Crystarium.ActiveTheme.Optical.SidebarText * scale)),
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Text with { W = 0.72f })), props.Badge);
-            if (monoPushed) monoFont!.Pop();
+                        + theme.Optical.SidebarText * scale),
+                props.Badge,
+                badgeStyle);
         }
 
         return hit.Clicked;
     }
 
     /// <summary>
-    /// Sidebar section header — picto SidebarRow.module.css section header:
-    /// 24px, padding 0 10, 12px/500 text-tertiary.
+    /// Sidebar section header — picto SidebarRow.module.css
+    /// <c>.sectionTitleRow</c>/<c>.sectionTitle</c>: a 24px row inset by
+    /// its 1px margin plus 4px padding, carrying 12px/500 text-tertiary.
     /// </summary>
     public static void SidebarHeader(string text)
     {
         float scale = ImGuiHelpers.GlobalScale;
+        var theme = ActiveTheme;
         float height = 24f * scale;
         var origin = ImGui.GetCursorScreenPos();
 
-        var font = FontRegistry.Resolve(FontFamily.Default, FontWeight.Medium, Crystarium.ActiveTheme.Typography.LabelSize);
-        bool fontPushed = font is { Available: true };
-        if (fontPushed) font!.Push();
-        var textSize = ImGui.CalcTextSize(text);
-        ImGui.GetWindowDrawList().AddText(
-            origin + new Vector2(10f * scale, (height - textSize.Y) * 0.5f),
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Text with { W = 0.5f })), text);
-        if (fontPushed) font!.Pop();
+        var style = new TextStyle
+        {
+            Size = theme.Typography.LabelSize,
+            Weight = FontWeight.Medium,
+            Color = theme.TextMuted,
+        };
+        var textSize = MeasureText(text, style);
+        // margin-left 1 + padding-left 4.
+        TextAt(
+            origin + new Vector2(5f * scale, (height - textSize.Y) * 0.5f),
+            text,
+            style);
 
         var spacing = ImGui.GetStyle().ItemSpacing;
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(spacing.X, 0f));

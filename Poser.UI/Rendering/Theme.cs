@@ -260,6 +260,8 @@ public readonly record struct Theme
             Primary = PictoTokens.Dark.Primary,
             PrimaryHover = PictoTokens.Dark.Primary60,
             PrimaryFocus = PictoTokens.Dark.Primary50,
+            AccentFill = PictoTokens.Dark.Primary10,
+            AccentFillBorder = PictoTokens.Dark.Primary30,
             Checkmark = new(1f, 1f, 1f, 0.99f),
             Danger = PictoTokens.Dark.Negative,
             // Derivation: --color-negative at the hover-fill alpha.
@@ -272,11 +274,7 @@ public readonly record struct Theme
             ModalFooter = PictoTokens.Dark.Black10,
             SegmentShadow = new(0f, 0f, 0f, 0.25f),
             SegmentSelected = PictoTokens.Dark.Surface2,
-            // Poser's selected-row accent recipe is retained until the
-            // SidebarRow normalization phase; Picto's selected row uses its
-            // surface-active token instead.
-            SidebarSelected = PictoTokens.Dark.Primary10,
-            SidebarSelectedBorder = PictoTokens.Dark.Primary30,
+            SidebarSelected = PictoTokens.Dark.SurfaceActive,
             SidebarHover = PictoTokens.Dark.SurfaceHover,
             SwitchOff = new(128f / 255f, 128f / 255f, 128f / 255f, 0.25f),
             SwitchShadow = new(0f, 0f, 0f, 0.08f),
@@ -419,6 +417,8 @@ public readonly record struct Theme
                 Primary = primary,
                 PrimaryHover = PictoTokens.Light.Primary60,
                 PrimaryFocus = PictoTokens.Light.Primary50,
+                AccentFill = PictoTokens.Light.Primary10,
+                AccentFillBorder = PictoTokens.Light.Primary30,
                 Checkmark = new(1f, 1f, 1f, 0.99f),
                 UnavailableFill = new(0f, 0f, 0f, 0.08f),
                 ColorWellBorder = borderStrong,
@@ -428,10 +428,7 @@ public readonly record struct Theme
                 ModalFooter = PictoTokens.Light.Black10,
                 SegmentShadow = new(0f, 0f, 0f, 0.12f),
                 SegmentSelected = sunken,
-                // Retain Poser's selected-row accent recipe until SidebarRow
-                // normalization, while hover follows Picto's canonical rule.
-                SidebarSelected = PictoTokens.Light.Primary10,
-                SidebarSelectedBorder = PictoTokens.Light.Primary30,
+                SidebarSelected = PictoTokens.Light.SurfaceActive,
                 SidebarHover = PictoTokens.Light.SurfaceHover,
                 SwitchOff = new(0f, 0f, 0f, 0.20f),
                 SwitchShadow = new(0f, 0f, 0f, 0.08f),
@@ -691,6 +688,13 @@ public readonly record struct Theme
         public Vector4 Primary { get; init; }
         public Vector4 PrimaryHover { get; init; }
         public Vector4 PrimaryFocus { get; init; }
+        /// <summary>Accent wash behind primary-colored content
+        /// (--color-primary-10): sidebar drop-inside targets, marquee
+        /// selection, the rail's linked-bone pill.</summary>
+        public Vector4 AccentFill { get; init; }
+        /// <summary>The 1px edge that pairs with <see cref="AccentFill"/>
+        /// (--color-primary-30).</summary>
+        public Vector4 AccentFillBorder { get; init; }
         public Vector4 Checkmark { get; init; }
         public Vector4 Danger { get; init; }
         public Vector4 DangerHover { get; init; }
@@ -702,8 +706,11 @@ public readonly record struct Theme
         public Vector4 ModalFooter { get; init; }
         public Vector4 SegmentShadow { get; init; }
         public Vector4 SegmentSelected { get; init; }
+        /// <summary>SidebarRow.module.css <c>.selected::before</c> /
+        /// <c>.active::before</c> fill (--color-surface-active).</summary>
         public Vector4 SidebarSelected { get; init; }
-        public Vector4 SidebarSelectedBorder { get; init; }
+        /// <summary>SidebarRow.module.css <c>.row:hover::before</c> fill
+        /// (--color-surface-hover).</summary>
         public Vector4 SidebarHover { get; init; }
         public Vector4 SwitchOff { get; init; }
         public Vector4 SwitchShadow { get; init; }

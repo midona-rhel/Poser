@@ -84,7 +84,7 @@ public class PoseRailPane
                     pmin,
                     pmax,
                     ImGui.ColorConvertFloat4ToU32(
-                        Crystarium.ActiveTheme.Chrome.SidebarSelected),
+                        Crystarium.ActiveTheme.Chrome.AccentFill),
                     Crystarium.ActiveTheme.Radii.Surface * s);
                 ImGui.SetCursorScreenPos(pmin + new Vector2(5f, 3.5f) * s);
                 Crystarium.Icon(
