@@ -1,15 +1,18 @@
 # PBI-015 accounting: the ONE reproducible line count. Reported per slice.
 # Handwritten production = Poser.UI + Poser/UI + the plugin root, excluding
-# generated files. Tooling = tools/. Generated files and committed assets
+# generated files. Tooling source = every handwritten source file under
+# tools/ (.cs .py .ps1 .html .js .json; Markdown documentation is
+# intentionally excluded). Generated files and output/artifact directories
 # are never counted as handwritten lines.
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $generated = @("TablerSvgSources.cs", "PictoTokens.g.cs")
+$outputDirs = '\\(bin|obj|artifacts|out|node_modules|__pycache__)\\'
 
 function Count($paths, $filter) {
     $files = Get-ChildItem -Path $paths -Recurse -Include $filter -File |
         Where-Object {
-            $_.FullName -notmatch '\\(bin|obj)\\' -and
+            $_.FullName -notmatch $outputDirs -and
             $generated -notcontains $_.Name -and
             $_.Name -notmatch '\.generated\.'
         }
@@ -24,6 +27,6 @@ $pluginRoot = (Get-ChildItem "$root\Poser\*.cs" -File |
     Where-Object { $generated -notcontains $_.Name } |
     Get-Content | Measure-Object -Line).Lines
 $production = (Count @("$root\Poser.UI", "$root\Poser\UI") "*.cs") + $pluginRoot
-$tooling = Count @("$root\tools") @("*.cs", "*.py", "*.ps1")
+$tooling = Count @("$root\tools") @("*.cs", "*.py", "*.ps1", "*.html", "*.js", "*.json")
 "production handwritten: $production"
-"tooling handwritten:    $tooling"
+"tooling source:         $tooling"
