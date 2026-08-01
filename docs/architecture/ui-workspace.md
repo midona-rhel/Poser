@@ -152,6 +152,25 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
   widths into the same component (`ButtonAtWidth`); ActionBar measures
   its own items and resolves Fill against only its remaining
   allocation, never ambient window availability.
+- Sidebar row: two targets, ONE outcome. `Crystarium.SidebarRow` returns
+  `SidebarRowAction` (`None`/`Selected`/`Expander`), not a flag per
+  target, because picto's `.expandArrow` `onClick` stops propagation and
+  double activation must be unrepresentable. The arrow is a real reserved
+  item over the same 16px gutter box it draws (never a wider or invisible
+  rect), submitted AFTER the row, which yields arbitration to it through
+  `SetItemAllowOverlap` — the house pattern for an overlapping secondary
+  target. Activation is release-inside on whichever item OWNS the press,
+  so releasing on the arrow expands, releasing anywhere else on the row
+  selects, dragging off the pressed target cancels, and an
+  `SidebarExpander.None` row reserves no arrow so its whole width
+  selects. Row hover stays the PARENT's (the arrow is a child, so
+  pointing at it keeps the pill and the full-opacity icon), while
+  `.expandArrow:hover .triangle` — opacity .7 → 1 over `--duration-normal`
+  — is scoped to the arrow box alone and rides its own Motion identity,
+  since the highlight transitions at `--duration-fast` and one group
+  shares one clock. Proven by `--kernel-behavior`'s
+  `sidebar-expander-routing` and the `sidebar-row-expander-hover` sheet
+  state.
 - Hover help: `Crystarium.HoverHelp` is the ONE explanatory surface
   (picto KbdTooltip: 400 ms open, instant exit start, the 150 ms Mantine
   pop entering and exiting as one composited surface, glass card on the

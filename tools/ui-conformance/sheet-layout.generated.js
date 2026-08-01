@@ -509,9 +509,17 @@ window.sheetLayout = {
    "h": 80
   },
   {
-   "name": "sidebar-row-drop",
+   "name": "sidebar-row-expander-hover",
    "component": "sidebar",
    "x": 16,
+   "y": 3496,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "sidebar-row-drop",
+   "component": "sidebar",
+   "x": 352,
    "y": 3496,
    "w": 320,
    "h": 80

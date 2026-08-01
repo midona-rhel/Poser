@@ -116,6 +116,7 @@
         { "name": "sidebar-row-selected-hover", "label": "selected + hover", "width": 320, "height": 80 },
         { "name": "sidebar-row-collapsed", "label": "collapsed + badge", "width": 320, "height": 80 },
         { "name": "sidebar-row-expanded", "label": "expanded + badge", "width": 320, "height": 80 },
+        { "name": "sidebar-row-expander-hover", "label": "expander hover", "width": 320, "height": 80 },
         { "name": "sidebar-row-drop", "label": "drop target", "width": 320, "height": 80 }
       ]
     },

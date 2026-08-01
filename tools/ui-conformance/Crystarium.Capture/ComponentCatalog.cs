@@ -93,6 +93,7 @@ internal static class ComponentCatalog
         new("sidebar-row-selected-hover", 320, 80),
         new("sidebar-row-collapsed", 320, 80),
         new("sidebar-row-expanded", 320, 80),
+        new("sidebar-row-expander-hover", 320, 80),
         new("sidebar-row-drop", 320, 80),
         new("property-row", 320, 68),
         new("section", 320, 92),
@@ -207,13 +208,22 @@ internal static class ComponentCatalog
                     "icon-button-backdrop-", StringComparison.Ordinal)
                 && frame >= 33)
             || (name == "icon-button-hover-reconcile" && frame < 20);
+        // The expander hover is SCOPED to the arrow, so its pointer cannot
+        // be the shared row-body point: .expandArrow is the 16px gutter
+        // box that ends 4px before the content, which for the indent-1
+        // tree row (--row-inset 21 at the (24,24) stage origin) is
+        // x 24..40 over the 26px row — centre (32,37). Parking there
+        // proves the scoping too: at (84,40) the row would hover but the
+        // triangle would not lift.
         return inside
-            ? (name.StartsWith("icon-button", StringComparison.Ordinal)
-                ? (name.StartsWith(
-                        "icon-button-backdrop-", StringComparison.Ordinal)
-                    ? new Vector2(118, 38)
-                    : new Vector2(38, 38))
-                : new Vector2(84, 40)) * scale
+            ? (name == "sidebar-row-expander-hover"
+                ? new Vector2(32, 37)
+                : name.StartsWith("icon-button", StringComparison.Ordinal)
+                    ? (name.StartsWith(
+                            "icon-button-backdrop-", StringComparison.Ordinal)
+                        ? new Vector2(118, 38)
+                        : new Vector2(38, 38))
+                    : new Vector2(84, 40)) * scale
             : new Vector2(-1000, -1000);
     }
 
@@ -852,6 +862,11 @@ internal static class ComponentCatalog
                 DrawSidebar(selected: true);
                 break;
             case "sidebar-row-collapsed":
+            // The pointer PointerFor parks on the arrow box is what
+            // Interactive.Reserve hit-tests for the expander's own item,
+            // so .expandArrow:hover .triangle comes from real input — the
+            // row draws identically either way.
+            case "sidebar-row-expander-hover":
                 DrawSidebarTree(SidebarExpander.Collapsed);
                 break;
             case "sidebar-row-expanded":

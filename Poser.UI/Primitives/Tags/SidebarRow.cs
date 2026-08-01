@@ -8,6 +8,17 @@ namespace Poser.UI;
 
 public enum SidebarExpander { None, Collapsed, Open }
 
+/// <summary>
+/// What a release inside a <see cref="Crystarium.SidebarRow"/> activated.
+/// picto's <c>.expandArrow</c> <c>onClick</c> calls
+/// <c>stopPropagation</c>, so one gesture resolves to the expander or to
+/// the row and NEVER to both — a single value, rather than one flag per
+/// target, is what makes the double activation unrepresentable.
+/// <see cref="SidebarExpander.None"/> rows reserve no arrow at all, so
+/// their whole width selects.
+/// </summary>
+public enum SidebarRowAction { None, Selected, Expander }
+
 public record struct SidebarRowProps
 {
     public TablerIcon Icon;
@@ -39,12 +50,25 @@ public static partial class Crystarium
     /// <summary>The one animated channel of <c>.row::before</c>.</summary>
     private const int SidebarHighlightChannel = 0;
 
+    /// <summary>The one animated channel of <c>.triangle</c>'s opacity.
+    /// It rides its OWN identity rather than joining the highlight group:
+    /// the two are separate CSS elements with separate durations
+    /// (<c>--duration-fast</c> against <c>--duration-normal</c>), and a
+    /// Motion group shares one clock across its channels.</summary>
+    private const int SidebarExpanderChannel = 0;
+
     /// <summary><c>.expandArrow</c>'s <c>margin-right</c> — the only part
     /// of its box model the row ever sees. Its <c>margin-left:-20px</c>
     /// cancels the 16px width plus this 4px gap exactly, so the arrow box
     /// costs the row no advance at all and lands on the indent gutter that
     /// <c>padding-left</c> opened to its left.</summary>
     private const float SidebarExpanderGap = 4f;
+
+    /// <summary><c>.expandArrow</c>'s own <c>width</c>. With the gap above
+    /// it defines both the drawn gutter box and the hit rect — they are
+    /// the same rectangle, so the arrow can never be clickable where it is
+    /// not visible.</summary>
+    private const float SidebarExpanderWidth = 16f;
 
     /// <summary>
     /// 26px sidebar/tree row — transcription of picto
@@ -77,12 +101,22 @@ public static partial class Crystarium
     /// <see cref="SidebarRowProps.HideIcon"/> keeps the icon box reserved
     /// where CSS would omit the element entirely.</para>
     ///
-    /// <para>The whole row is one hit target; picto's separate
-    /// <c>.expandArrow</c> <c>onClick</c> (which stops propagation) has no
-    /// counterpart here, so a click anywhere — arrow included — returns the
-    /// row's click, as it did before the arrow moved.</para>
+    /// <para>The row carries picto's TWO targets. <c>.expandArrow</c> is
+    /// its own element whose <c>onClick</c> stops propagation, so it is
+    /// reserved here as its own item over the same 16px gutter box it
+    /// draws — the house overlapping-target pattern (TextInput's clear
+    /// affordance): the row is submitted first, yields hover and active
+    /// arbitration through <c>SetItemAllowOverlap</c>, and the arrow is
+    /// reserved after it, so a press landing on the arrow takes ImGui's
+    /// active id AWAY from the row. Activation is release-inside on
+    /// whichever item OWNS the press, which is what makes the outcomes
+    /// mutually exclusive: releasing on the arrow expands, releasing
+    /// anywhere else on the row selects, dragging off the pressed target
+    /// cancels, and no gesture can ever produce both. A
+    /// <see cref="SidebarExpander.None"/> row reserves no arrow, so its
+    /// whole width selects.</para>
     /// </summary>
-    public static bool SidebarRow(
+    public static SidebarRowAction SidebarRow(
         string id,
         string label,
         in SidebarRowProps props,
@@ -152,6 +186,15 @@ public static partial class Crystarium
         // CSS padding-left: --row-inset is that indent PLUS one pixel.
         float x = hit.ScreenMin.X + inset - 1f * scale;
 
+        // Release-inside on the ROW, unless the arrow below claims the
+        // gesture instead. Never hit.Clicked: a press is not an
+        // activation, and it is precisely the press frame on which BOTH
+        // items are momentarily live before the later one takes the
+        // active id.
+        var action = hit.Activated
+            ? SidebarRowAction.Selected
+            : SidebarRowAction.None;
+
         // .expandArrow overlays the indent gutter — the 16px box ends one
         // margin-right short of the content start and is pulled entirely
         // back over the padding, so a row that can expand puts its icon,
@@ -163,14 +206,51 @@ public static partial class Crystarium
         // margin-right:-2px pushes it 2px past that edge.
         if (props.Expander != SidebarExpander.None)
         {
+            // The arrow is a REAL reserved item over its own drawn box.
+            // The row was submitted first and yields to it here, so the
+            // later item wins hover and takes the active id on a press —
+            // ImGui then lets only the owner complete a release-inside.
+            // The row's own hover was already resolved above, while the
+            // arrow did not yet exist, which is exactly the CSS result:
+            // the arrow is a CHILD, so pointing at it keeps .row:hover on.
+            var arrowMax = new Vector2(
+                x - SidebarExpanderGap * scale, hit.ScreenMax.Y);
+            var arrowMin = new Vector2(
+                arrowMax.X - SidebarExpanderWidth * scale,
+                hit.ScreenMin.Y);
+            ImGui.SetItemAllowOverlap();
+            var cursorAfterRow = ImGui.GetCursorScreenPos();
+            ImGui.SetCursorScreenPos(arrowMin);
+            var arrowHit = Interactive.Reserve(
+                $"{id}##expander", arrowMax - arrowMin, disabled: false);
+            ImGui.SetCursorScreenPos(cursorAfterRow);
+            if (arrowHit.Activated)
+                action = SidebarRowAction.Expander;
+            // .expandArrow { cursor: pointer } — the row itself keeps the
+            // default arrow (.row { cursor: default }).
+            if (arrowHit.Hovered)
+                ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
+
             const float half = 3.5f;
             const float rise = 5f * 0.5f;
             const float overhang = 2f;
             var triangleCenter = new Vector2(
                 x + (overhang - half - SidebarExpanderGap) * scale,
                 hit.ScreenMin.Y + height * 0.5f);
+            // .expandArrow:hover .triangle lifts opacity .7 → 1 over
+            // --duration-normal. Scoped to the ARROW, not the row: the
+            // pointer must be on the gutter box for the lift to happen.
+            Span<MotionChannel> triangle =
+            [
+                MotionChannel.Number(
+                    SidebarExpanderChannel, arrowHit.Hovered ? 1f : 0.70f),
+            ];
+            Motion.Toward(
+                ImGui.GetID($"{id}##expander"),
+                Transition.PictoDefault,
+                triangle);
             uint tri = ImGui.ColorConvertFloat4ToU32(
-                ColorEx.ApplyAlpha(theme.Text.Fade(0.70f)));
+                ColorEx.ApplyAlpha(theme.Text.Fade(triangle[0].Scalar)));
             if (props.Expander == SidebarExpander.Open)
             {
                 dl.AddTriangleFilled(
@@ -253,7 +333,7 @@ public static partial class Crystarium
                 badgeStyle);
         }
 
-        return hit.Clicked;
+        return action;
     }
 
     /// <summary>

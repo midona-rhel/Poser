@@ -63,7 +63,10 @@ public static partial class Crystarium
             _lastRowMax = _lastRowMin + new Vector2(
                 ContentWidth * _scale,
                 Crystarium.ActiveTheme.Controls.ListRowHeight * _scale);
-            bool clicked = SidebarRow(
+            // A list row exposes no expander, so the row reserves no arrow
+            // and selection is its only reachable outcome — the bool stays
+            // the whole truth here.
+            return SidebarRow(
                 id,
                 label,
                 new SidebarRowProps
@@ -74,8 +77,8 @@ public static partial class Crystarium
                     IconTexture = iconTexture,
                     HideIcon = !iconVisible,
                 },
-                style with { Width = UiWidth.Fixed(ContentWidth) });
-            return clicked;
+                style with { Width = UiWidth.Fixed(ContentWidth) })
+                == SidebarRowAction.Selected;
         }
 
         public bool LastRowDoubleClicked() =>

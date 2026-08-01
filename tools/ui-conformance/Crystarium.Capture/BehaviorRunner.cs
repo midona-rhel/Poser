@@ -353,6 +353,10 @@ internal static class BehaviorSuites
         host.Check("textinput-clear-focus", ClearFocus(host, gap: 0));
         host.Check("refocus-expiry", ClearFocus(host, gap: 4));
 
+        // (i) A row carrying two overlapping targets routes ONE outcome
+        //     per gesture: the arrow and the row body can never both fire.
+        host.Check("sidebar-expander-routing", SidebarRouting(host));
+
         return host.Each();
 
         // The occlusion-shaped cases all read the same way: one input
@@ -605,6 +609,79 @@ internal static class BehaviorSuites
         probe.Want("context-reset", reset, 1f);
         probe.Want("same-frame-duplicate", duplicate, 0f);
         return probe;
+    }
+
+    /// <summary>
+    /// SidebarRow's two overlapping targets. picto's <c>.expandArrow</c>
+    /// stops propagation, so a gesture belongs to the arrow or to the row
+    /// and never to both; the arrow is reserved AFTER the row and takes
+    /// ImGui's active id from it on a press, so release-inside can only
+    /// ever be completed by the item that OWNS the press. The two straight
+    /// releases are each other's baseline (same row, same frames, one
+    /// point apart), and the two drags are the release-inside rule read
+    /// from both directions.
+    /// </summary>
+    private static Probe SidebarRouting(BehaviorHost host)
+    {
+        // The row sits at (24,24), 120 wide, at --row-inset 21 — so
+        // .expandArrow is the 16px gutter box at x 24..40 over the full
+        // 26px height, and BOTH points below are inside the row's own
+        // rect. Geometry therefore cannot be what separates them; the
+        // routing is.
+        var arrow = new Vector2(32, 37);
+        var label = new Vector2(100, 37);
+        var probe = new Probe();
+        probe.Want(
+            "release-on-arrow", Drive(_ => arrow), "expander=1 selected=0");
+        probe.Want(
+            "release-on-label", Drive(_ => label), "expander=0 selected=1");
+        // Pressed the arrow, released off it: the arrow owns the press and
+        // was not hovered at the release, and the row never owned it — so
+        // the drag-out cancels outright rather than falling through.
+        probe.Want(
+            "drag-arrow-to-label",
+            Drive(frame => frame < 6 ? arrow : label),
+            "expander=0 selected=0");
+        // The mirror: the ROW owns the press, the release lands inside the
+        // row (the arrow box is part of it), so the row selects — once.
+        probe.Want(
+            "drag-label-to-arrow",
+            Drive(frame => frame < 6 ? label : arrow),
+            "expander=0 selected=1");
+        // An expander-less row reserves no arrow at all, so the very same
+        // point is ordinary row body.
+        probe.Want(
+            "no-expander-whole-row-selects",
+            Drive(_ => arrow, SidebarExpander.None),
+            "expander=0 selected=1");
+        return probe;
+
+        string Drive(
+            Func<int, Vector2> pointer,
+            SidebarExpander expander = SidebarExpander.Collapsed)
+        {
+            int expanded = 0, selected = 0;
+            host.Case(Canvas, 16, _ =>
+            {
+                ImGui.SetCursorScreenPos(new Vector2(24, 24));
+                var props = new SidebarRowProps
+                {
+                    Icon = TablerIcon.Folder,
+                    Inset = 21f,
+                    Expander = expander,
+                };
+                switch (Ui.SidebarRow(
+                    "##kernel-sidebar",
+                    "Party members",
+                    in props,
+                    new ControlStyle { Width = UiWidth.Fixed(120) }))
+                {
+                    case SidebarRowAction.Expander: expanded++; break;
+                    case SidebarRowAction.Selected: selected++; break;
+                }
+            }, pointer, PressAt(5, 7));
+            return $"expander={expanded} selected={selected}";
+        }
     }
 
     /// <summary>
