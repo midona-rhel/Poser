@@ -903,6 +903,20 @@ internal static class ComponentCatalog
         ImGui.End();
     }
 
+    /// <summary>
+    /// Picto's <c>.palette</c> is a pill CONTAINER — 1px
+    /// <c>--color-border-secondary</c> over <c>rgba(0,0,0,.15)</c>,
+    /// <c>border-radius: 40px</c>, <c>padding: 0 6px</c>,
+    /// <c>min-height: 26px</c>, <c>gap: 2px</c> — holding four
+    /// <c>.swatchWrap</c>es. Crystarium has the swatch and no palette
+    /// container, so this fixture reproduces the container's BOX MODEL
+    /// (the inset its border and padding put on the first wrap, the 2px
+    /// gap, and the vertical centring inside its 24px content box) and
+    /// draws NONE of its chrome. Painting a pill here would compare
+    /// Crystarium against Crystarium; the absent container stays visible
+    /// in the diff instead, exactly as the property-row fixture leaves its
+    /// missing counterpart visible.
+    /// </summary>
     private static void DrawPalette()
     {
         Vector4[] colors =
@@ -912,10 +926,22 @@ internal static class ComponentCatalog
             new(0x51 / 255f, 0xcf / 255f, 0x66 / 255f, 1),
             new(1, 0x6b / 255f, 0x6b / 255f, 1),
         ];
+        const float paletteBorder = 1f;
+        const float palettePadX = 6f;
+        const float paletteHeight = 26f;
+        const float paletteGap = 2f;
+        const float wrap = 16f;
+
+        float scale = ImGuiHelpers.GlobalScale;
+        var origin = ImGui.GetCursorScreenPos();
+        float contentHeight = paletteHeight - paletteBorder * 2f;
+        var first = origin + new Vector2(
+            (paletteBorder + palettePadX) * scale,
+            (paletteBorder + (contentHeight - wrap) * 0.5f) * scale);
         for (int i = 0; i < colors.Length; i++)
         {
-            if (i > 0)
-                ImGui.SameLine(0, 8);
+            ImGui.SetCursorScreenPos(first + new Vector2(
+                i * (wrap + paletteGap) * scale, 0f));
             Ui.Swatch(
                 $"##swatch-{i}", colors[i], active: false);
         }
