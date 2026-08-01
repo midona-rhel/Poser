@@ -2,7 +2,7 @@
 
 | Control | Value |
 |---|---|
-| Status | Phases 1–3 accepted; phase 3 head `a62341d` |
+| Status | Phases 1–4 accepted at `c71d682`; phases 5–8 superseded by PBI-015 |
 | Size | Extra large, delivered as individually accepted phases |
 | Implementation owner | Claude |
 | Review owner | Codex |
@@ -11,6 +11,13 @@
 | Feature branch | `codex/ui-simplification-reset` |
 | Rollback pin / inherited baseline | `pbi-011-ui-conformance-pin-20260731` (`86ef855`) |
 | Pre-PBI checkpoint | `d27d232` — inherited icon-button/SVG/harness worktree, NOT accepted, excluded from phase accounting |
+
+> **Superseded scope.** Phase 4 closed at `c71d682`. The Chromium-atlas
+> experiment (`190d09f..956d582`) is retained only as a parked experiment;
+> it is not the base of the product rewrite. PBI-015 replaces phases 5–8
+> with the React-style component architecture requested after phase 4.
+> The remaining text below records the historical PBI-014 contract and must
+> not be used as current implementation instruction.
 
 The inherited baseline contains the accepted slices 1–3 (Text `02d25f7`,
 Icons `b44a2f3`, Text buttons `d66806b`) plus later icon-button work

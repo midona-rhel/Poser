@@ -1,0 +1,443 @@
+# PBI-015 — React-style component core over ImGui
+
+| Control | Value |
+|---|---|
+| Status | Definition ready for Claude/Codex review; implementation not started |
+| Size | Extra large, delivered through separately accepted vertical slices |
+| Accepted SVG base | `c71d6822c00e869001666246e589c197ee604395` |
+| Parked atlas experiment | `956d5824f7c65976786c12d32ddfd2b8f81806e7` |
+| Planned feature branch | `feature/pbi-015-reactive-ui-core`, from the accepted SVG base |
+| Implementation owner | Claude main loop; Opus 5 agents write implementation code |
+| Review owner | Codex |
+| Runtime and visual acceptance | User |
+| Supersedes | PBI-014 phases 5–8 |
+
+## Product and authoring contract
+
+The UI rendered at the accepted phase-4 SVG baseline is the product contract.
+Keep its pixels, flow, motion and behavior, using the component catalog at
+`tools/ui-conformance/artifacts/index.html` as the visual oracle. Undo the
+Chromium atlas direction: retain the accepted runtime SVG renderer. Its
+roughly 1.3–1.6k lines are a better trade than generated texture coverage,
+loader lifecycle and atlas memory.
+
+The rewrite succeeds only if authoring ordinary UI feels like writing a small
+Picto React component. A product author describes immutable props, children,
+local state where needed, handlers and a reusable style. They do not know
+about ImGui cursors, measuring, clipping, ID stacks, draw lists, pooling,
+surface ownership or pixel snapping.
+
+Picto uses React 18, Mantine 8, CSS Modules, Jotai/Zustand and Tabler — not
+Material UI. This PBI borrows React's component/state model and MUI's typed
+`sx`, variants and slots as an authoring vocabulary. The runtime stays C# and
+ImGui; no JavaScript dependency or browser is added.
+
+Concrete author-experience gates:
+
+- a reusable stateless control is normally one props type, one static render
+  function, and one small static style group;
+- a stateful control differs only by an explicit typed state record;
+- composition uses `Crystarium.Row`, `Column`, `Stack`, `Text`, `Svg`,
+  `Button`, fragments and ordinary children;
+- fixed children do not require hand-written ImGui IDs; dynamic/stateful
+  siblings require meaningful keys;
+- a basic clickable component must need no custom measure, paint or input
+  code;
+- migrated panes may not import ImGui for ordinary controls or layout.
+
+## Branch and rollback boundary
+
+Before implementation:
+
+1. tag `c71d682` as `pbi-014-phase4-svg-baseline`;
+2. tag `956d582` as `pbi-014-phase5-atlas-experiment`;
+3. create the feature branch directly from `c71d682`;
+4. carry this PBI onto that branch as the first docs-only commit.
+
+Do not revert the atlas commits in place and do not carry their loader,
+manifest or generated textures. The experiment remains available by tag.
+
+## Runtime model: React semantics without a DOM
+
+The system deliberately separates three concepts.
+
+**Component.** Reusable rendering logic receiving immutable props and
+returning declarations. A stateless component is a static function; it has no
+class or retained instance. A stateful class component has one retained
+instance and one typed state object inside its keyed component scope.
+
+**Frame element.** A compact tagged declaration in a per-frame arena: Box,
+Text, SVG/Image, Interactive, Native or Canvas. It may reference a style,
+behavior, content and a child range. Handles are discarded together after
+the frame. These are not allocated polymorphic element objects.
+
+**Component scope.** A small retained record identified by root, parent
+scope, component type and explicit key. It owns a stateful component instance,
+its state, refs and typed adapter cleanup. It does not own a retained layout
+or paint tree.
+
+There is no DOM, virtual-DOM mutation, query selector, class registry,
+stylesheet engine or general tree diff. Reconciliation matches component
+identity and state only; layout and paint declarations are rebuilt cheaply
+each frame.
+
+## Stateless and stateful components
+
+V1 supports functional/stateless composition and typed class state. It has
+no hooks, named state-cell dictionary, positional ordering or generic effect
+system.
+
+```csharp
+public static UiNode StatusPill(in StatusPillProps props) =>
+    Crystarium.Row(/* declarations */);
+
+public abstract class StatefulComponent<TProps, TState>
+{
+    protected abstract TState CreateState(in TProps props);
+    protected abstract UiNode Render(in TProps props, in TState state);
+    protected void SetState(Func<TState, TState> update);
+}
+```
+
+`UiNode` is an opaque value handle into the current frame arena, not an
+allocated object. `UiChildren` has a C# collection builder accepting a
+`ReadOnlySpan<UiNode>`; small collection expressions therefore remain stack/
+arena based. `UiNode.None` is skipped, making conditional children read as
+`condition ? Child() : UiNode.None`. C# evaluates inner arguments before the
+outer call, so children naturally enter the arena before their parent.
+
+State updates are batched and visible next frame. Controlled values remain
+the default: controls receive `Value` and `OnChange`, and props remain truth.
+Local component state is limited to disclosure, popup openness, drafts and
+picker-local selection. Scene, posing, selection, animation and appearance
+remain in existing services; persisted preferences remain configuration.
+Hover, press, focus, capture, motion and scroll offset belong to renderer or
+host state, not arbitrary component state.
+
+Every stateful component and dynamic sibling requires an explicit stable key.
+Implicit ordinal identity is allowed only for stateless, unconditional host
+children. Duplicate sibling keys and key/type reuse fail clearly in developer
+builds. A skipped/collapsed root is suspended rather than spuriously
+unmounted; unmount occurs only after a completed owning-root render proves
+the keyed scope absent.
+
+`UiKey` is a readonly, allocation-free tagged value supporting integer widths,
+`Guid` and literal strings. Compound stable domain IDs use a type-discriminated
+stable key factory; dynamic actor/bone rows never format strings for identity.
+
+Typed `Ref<T>` exposes focus, scrolling and the committed arranged rectangle.
+Refs become valid after commit and clear on unmount. Ordinary components own
+no native resources; cleanup is restricted to typed NativeHost and Portal
+adapters.
+
+## Authoring shape
+
+The exact names may adjust during the first proof, but the resulting product
+code must remain this direct:
+
+```csharp
+private static readonly UiStyle Root = Sx.Column(gap: 12, padding: 12);
+private static readonly UiStyle Actions = Sx.Row(gap: 8, justify: End);
+
+protected override UiNode Render(in Props props, in State state) =>
+    Crystarium.Column(
+        sx: Root,
+        children:
+        [
+            Crystarium.Row(
+                sx: Actions,
+                children:
+                [
+                    Crystarium.Button("Open in Glamourer", props.Open),
+                    Crystarium.Button("Reset", props.Reset),
+                ]),
+            Crystarium.Section(
+                key: "presentation",
+                title: "Presentation",
+                expanded: state.Expanded,
+                onExpandedChange: UpdateState(
+                    static (state, value) => state with
+                    {
+                        Expanded = value,
+                    }),
+                children: [/* ordinary rows */]),
+        ]);
+```
+
+`Crystarium` is the declarative host/component vocabulary. A render context
+provides typed framework context and refs; it is not a god-object factory for
+every control. Collection expressions are backed by pooled frame storage so
+the pleasant syntax does not require per-frame object graphs.
+
+Handlers stored in props are stable commands/delegates created outside
+`Render`. Stateful components use `UpdateState(static (state, value) => ...)`,
+which creates a small event token bound to the current scope; the static
+reducer is compiler-cached and allocates no closure. Event tokens and handler
+references live in the frame arena. Capturing lambdas created inside `Render`
+are forbidden and detected in developer diagnostics. Ordinary event props
+remain concise (`onClick`, `onFocus`, `onBlur`, `onPointerEnter`, and so on),
+and `help:` is a first-class behavior prop routed to HoverHelp.
+
+## Styling model
+
+Styling is one immutable typed value composed from contained concerns:
+
+```text
+Style/
+  UiStyle.cs          aggregate, `Sx.Extend`, merge and shared values
+  LayoutStyle.cs      row/column/stack, gap, margin and padding
+  SizeStyle.cs        content/fill/fixed, min/max and aspect
+  AlignmentStyle.cs  align, justify and self alignment
+  OverflowStyle.cs   visible, clip and scroll when introduced
+  BoxStyle.cs         fill, border, radius and outline
+  TypographyStyle.cs family, size, weight, line-height and foreground
+  PaintStyle.cs       shadow, icon tint and explicit alpha multiplier
+  MotionStyle.cs      paint transitions, duration and easing
+  StyleResolver.cs    sparse patches to concrete metric/paint styles
+```
+
+The split is conceptual ownership, not license to create universal CSS.
+Fields are added only for accepted controls or named product consumers. No
+file split exists merely to satisfy a line count.
+
+Styles compose by value through `Sx.Extend(baseStyle, patch)`, never C# class
+inheritance or selector specificity. Resolution is finite:
+
+```text
+inherited framework context and theme tokens
+→ component recipe
+→ typed variant
+→ instance `sx`
+→ component-owned pseudo-state paint patch
+```
+
+Typography and foreground inherit. Box, spacing, size and overflow do not.
+Generic subtree/group opacity and generic blur are excluded: accepted
+disabled compensation stays in `ControlPaint`, and backdrop blur stays with
+GlassChrome/FloatingSurface until a real compositing backend exists.
+
+Pseudo states are paint-only. They may change fill, border color, foreground,
+icon tint, shadow, cursor and opacity treatment; they may not change font
+metrics, border thickness, padding, gap, alignment or size. State precedence
+is explicit per recipe; accepted exceptions such as sidebar selection over
+hover remain deliberate.
+
+Complex controls expose typed slots rather than selectors or strings:
+
+```text
+Button:     Root, StartIcon, Label, EndIcon
+Dropdown:   Root, Value, Chevron, Popup, Item
+TextInput:  Root, LeadingIcon, Input, ClearAction
+SidebarRow: Root, Expander, Icon, Label, Actions, Badge
+```
+
+Each component accepts a root `sx`, a typed variant and typed slot styles.
+Theme recipes adapt the accepted `Theme` values first; Theme is not rewritten
+wholesale during foundation work.
+
+`UiStyle`/`StylePatch` are immutable value/arena data. Inline expressions such
+as `sx: Sx.Row(gap: 4)` are allocation-free and supported; authors hoist shared
+styles for reuse and clarity, not because the runtime requires it. Padding and
+margin accept uniform, axis and per-side forms. SVG foreground defaults to the
+inherited text foreground (`currentColor` semantics), so text and icons share
+the same color path.
+
+Motion is opt-in per paint property rather than blanket per component. For
+example, accepted Button hover transitions Background for 150 ms while border
+and text change immediately. The new motion description delegates to the
+accepted keyed Motion store and must preserve the existing midpoint fixtures.
+
+## Layout and flow
+
+V1 implements only the HTML-like box behavior Poser actually needs:
+
+- border-box content, fixed and fill sizing with min/max constraints;
+- row, column and in-rect stack;
+- padding, margin and gap, with no margin collapsing or auto margins;
+- start, center, end and stretch alignment;
+- deterministic fill of remaining space and deterministic overflow;
+- explicit form/column tracks when the Appearance slice requires them;
+- clipping, scrolling and stable gutters when a real migrated surface needs
+  them;
+- portal-owned anchoring and surface order, not generic z-index/positioning.
+
+No CSS Grid, wrap algorithm, float, table layout, selector cascade,
+percentage layout, generalized transform or browser shrink algorithm is
+implemented without a named consumer. Canvas/gizmo code keeps explicit
+coordinates inside its escape hatch.
+
+The frame pipeline is:
+
+```text
+build component declarations
+→ reconcile component scopes
+→ resolve metric styles
+→ measure intrinsic content under constraints
+→ arrange authoritative border/content rectangles and shared rounding
+→ traverse arranged nodes, submitting absolute ImGui items in order
+→ collect interaction, resolve paint-only state and paint
+→ commit state, refs and proven unmounts
+```
+
+Intrinsic measurement uses font metrics, SVG view boxes and image sizes. It
+never renders components twice or off-screen to discover size. Layout, clip,
+hit testing, paint, HoverHelp and resize notification use the same arranged
+rectangle. Logical units become scaled/snapped pixels centrally; parents own
+rounding distribution so sibling drift cannot accumulate.
+
+## Interaction, focus and portals
+
+The first router exposes only behavior required by current controls:
+
+- click/double-click and release-inside activation;
+- pointer enter/leave and down/up;
+- focus/blur and Enter/Space activation;
+- drag begin/update/end with pointer capture;
+- bubbling to logical parents with `StopPropagation`.
+
+General capture-phase events, arbitrary key/scroll dispatch and DOM-style
+event APIs are deferred until a named consumer requires them. The accepted
+`Interactive`, `Motion`, surface ownership and occlusion code begins as the
+private backend; it is not rewritten simultaneously with the authoring model.
+
+Menus, dropdowns, tooltips, popovers and modals use portals. A portal changes
+the visual surface but retains component identity, theme and logical ancestry.
+The existing surface stack owns topmost keyboard/pointer access, dismissal,
+clamping and drawing order. Portal state changes appear on the next frame.
+
+Named native escape hatches are text editing/IME, ImGui window/popup
+lifecycle, slider pointer-to-value math, color-picker internals, and custom
+matrix/gizmo/overlay canvases. Each receives arranged rectangles and returns
+events/value changes; it may not own surrounding layout or component chrome.
+
+## Rendering and SVG
+
+Retain FontRegistry/Text, BoxRenderer, ColorEx, GlassChrome, ControlPaint and
+the runtime SVG pipeline/document cache/source registries from `c71d682`.
+`SvgNode` delegates to a thin `SvgPainter`; controls do not parse, fit, tint
+or cache SVG independently. The Chromium atlas prototype remains a tagged
+experiment only.
+
+## Source boundaries
+
+```text
+Core/       frame arena, tagged nodes, roots, keys and component scopes
+State/      typed stateful instances, queued updates and refs
+Style/      contained styles, patches, recipes and resolution
+Layout/     constraints, box measure/arrange, row/column/stack/tracks
+Input/      behavior, interaction adapter, focus, capture and ownership
+Paint/      accepted box/text/SVG/image painters
+Portal/     portal adapter and surface host
+Hosts/      native ImGui and canvas escape hatches
+Components/ thin reusable controls with typed props, variants and slots
+```
+
+No reflection, runtime CSS, class-name registry, selector engine, LINQ in hot
+rendering, retained general DOM or partial-class dumping. Ordinary warm frames
+must have negligible managed allocation. Roughly 300–400 lines is a review
+trigger, not a mechanical split rule: each file must own one independently
+nameable responsibility.
+
+## Migration and severance
+
+The accepted static UI is frozen: no new product consumers. A one-way
+`UiRoot.Render(origin, size, build)` hosts the new tree inside an unmigrated
+pane. `NativeHost` and `LegacyHost` are named temporary boundaries with an
+inventory of their remaining owning surfaces; they gain no new consumers.
+
+Old controls are deleted when their final legacy surface migrates, not before.
+Every slice records the exact consumer inventory. No product feature logic is
+rewritten merely to migrate presentation.
+
+## Delivery phases
+
+### 0. Clean base and accounting
+
+Create both tags and the SVG-based branch, carry this definition, record the
+accepted catalog hashes, inventory legacy consumers/adapters and commit one
+reproducible handwritten production/tooling line-count command.
+
+### 1. Minimal spine and Button proof
+
+Implement the frame arena, tagged nodes, retained stateless/stateful component
+scopes with typed state, minimal style resolution, Box/Text/SVG, row/column/
+stack, `UiRoot`, and adapters to accepted input/motion/paint sufficient for
+Button. Show old accepted Button and new Button through the existing visible
+Picto | Crystarium | red-diff workflow; prove real release-inside, keyboard,
+disabled and per-property motion behavior. Prove `UiNode`/children/style/event
+construction adds no managed allocation on a warm frame, including the local
+state reducer path. Stop for API/architecture review. Target no more than
+roughly 1.8k new handwritten production lines.
+
+### 2. Dropdown state and portal proof
+
+Add only the state, ref, portal, overflow and focus behavior Dropdown proves
+necessary. Its visible sheet contains all relevant states. Do not add a
+general DOM event model or generalized scrolling.
+
+### 3. First complete surface — Appearance
+
+Add Form, ActionBar, ScrollRegion, tracks and the controls Appearance needs.
+Migrate Appearance completely through `UiRoot`, validate at 100%, 125% and
+150%, and delete every old implementation whose last consumer moved. This is
+the first product-authoring, reflow and net-deletion proof.
+
+### 4. Remaining leaf controls and surfaces
+
+Migrate by real dependency: Settings; shell/sidebar/pickers; Animation; then
+Pose inspector/rail/maps/matrix. Normalize each required control against the
+catalog immediately before its first migrated surface. Specialized gizmos and
+canvases retain their geometry while their surrounding chrome uses components.
+
+### 5. Severance and audit
+
+Delete the old static controls/compositions, ControlStyle/ControlSizing,
+PageForm, public legacy Interactive/Motion facades and pane-local layout
+helpers when their consumer inventory reaches zero. Grep for ordinary raw
+ImGui widgets, manual cursor layout and duplicate paint. Replace the oversized
+historical UI prose with one short durable architecture contract.
+
+## Slice gates
+
+1. The user-facing sheet remains exactly Picto | new Crystarium | red diff.
+   Accepted `c71d682` candidate crops/hashes provide automated legacy A/B;
+   no fourth legacy column or slow theme matrix is added.
+2. Significant pixels, bounds, motion and interaction do not regress without
+   an explicit user decision.
+3. One arranged rectangle owns layout, clip, item registration, paint and
+   help.
+4. Product authoring meets the simplicity contract above and does not expose
+   renderer mechanics.
+5. Old paths gain no consumers; each bridge has a recorded final owner and is
+   deleted when that owner migrates.
+6. Exact gross additions, deletions and net handwritten production/tooling
+   lines are reported.
+7. Each completed vertical product-surface slice is net-negative; the whole
+   PBI must be materially net-negative.
+8. In-game acceptance is required for composed surfaces; compilation is not
+   visual evidence.
+
+## Completion criteria
+
+- Stateless and typed-state components are intuitive to author and compose.
+- Keys, typed state, refs, controlled values and unmount rules are deterministic.
+- Style inheritance, variants, slots and `sx` have one typed resolution path.
+- Flow, resize, overflow, scrolling and rounding have one owner.
+- Input, focus, capture, motion, occlusion and portals have one owner.
+- Runtime SVG is the only icon rendering path.
+- Migrated panes contain no ordinary manual layout/input/paint recipes.
+- The accepted UI remains visually and behaviorally equivalent in game.
+- The whole rewrite is materially smaller: from about 23,756 handwritten
+  production UI lines toward <=18k, with <=16k a stretch rather than a reason
+  to hide ownership or rebuild magic.
+
+## Non-goals
+
+- A browser, DOM, retained layout tree or general virtual-DOM diff.
+- React hooks/effects, Concurrent Mode, Suspense or public memoization.
+- CSS parsing, selectors, class names, specificity or arbitrary HTML parity.
+- CSS Grid, general wrapping, tables or generic z-index positioning.
+- Generic subtree compositing or a second text/icon rasterizer.
+- Replacing application/domain state with component state.
+- Redesigning the accepted catalog during migration.
+- Reviving Norvrandt/Stylesheet/FlexSolver under new names.
