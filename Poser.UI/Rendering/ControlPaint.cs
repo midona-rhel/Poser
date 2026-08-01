@@ -90,9 +90,11 @@ internal static class ControlPaint
     /// this type exists: it is not optional decoration, it is the second
     /// half of the recipe, and it differs by content kind. A text run
     /// blends its glyphs over the faded fill, so it needs a COMPENSATED
-    /// color (<see cref="Label"/>); a glyph rendered by the icon path
-    /// already composites against the same backdrop the group does, so it
-    /// only needs its own opacity scaled (<see cref="Glyph"/>).</para>
+    /// color (<see cref="Label"/>). An icon gets the product's SIMPLE
+    /// glyph-opacity treatment (<see cref="Glyph"/>): its resting opacity
+    /// scaled by the group's — an accepted approximation, NOT exact CSS
+    /// group opacity; the icon path (IconIn) does no backdrop-aware
+    /// compositing.</para>
     ///
     /// <para>Both accessors read the caller's own content value, because
     /// the group does not decide what color the label is or how opaque

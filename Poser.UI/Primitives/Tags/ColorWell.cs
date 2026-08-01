@@ -46,6 +46,37 @@ public static partial class Crystarium
     /// swatch keeps the same silhouette.</summary>
     private const int SwatchSegments = 64;
 
+    /// <summary><c>.palette { min-height: 26px }</c> — the pill's
+    /// border-box height. Its 24px CONTENT box is what the 16px wraps
+    /// centre in, so this is not interchangeable with
+    /// <c>Controls.WorkspaceHeight</c>, which happens to share the
+    /// number but means a control's height.</summary>
+    private const float PaletteMinHeight = 26f;
+
+    /// <summary><c>.palette { padding: 0 6px }</c>.</summary>
+    private const float PalettePaddingX = 6f;
+
+    /// <summary><c>.palette { gap: 2px }</c> — flex gap, so n wraps
+    /// contribute n−1 gaps and a single wrap contributes none.</summary>
+    private const float PaletteGap = 2f;
+
+    /// <summary><c>.palette { border: 1px solid
+    /// var(--color-border-secondary) }</c> — the width; the colour is the
+    /// one <c>var()</c> in the module and comes from the theme.</summary>
+    private const float PaletteBorder = 1f;
+
+    /// <summary><c>.palette { border-radius: 40px }</c>. NOT
+    /// <c>Radii.Pill</c>: Picto writes <c>999px</c> where it means
+    /// "always a pill" (AuthWorkspace) and <c>40px</c> here, which only
+    /// reads as a pill while the box stays under 80px tall.</summary>
+    private const float PaletteRadius = 40f;
+
+    /// <summary><c>.palette { background: rgba(0, 0, 0, 0.15) }</c> — a
+    /// raw rgba in the module, NOT a <c>var()</c>, so it is identical in
+    /// every theme and belongs here rather than in ChromeTokens (no
+    /// tokens.css entry carries black at .15 either).</summary>
+    private static readonly Vector4 PaletteFill = new(0f, 0f, 0f, 0.15f);
+
     /// <summary>
     /// Color well — picto m5 <c>.well</c>: 26×26 (<c>Controls.ColorWellSize</c>;
     /// the mockup draws 28), radius 6, 1px <c>--color-border-primary</c>
@@ -166,9 +197,10 @@ public static partial class Crystarium
     /// motion channel. Selection is the m5 mockup's ring pair (2px
     /// <c>--color-bg-app</c> gap, then 2px <c>--color-primary</c>), the
     /// only source that describes one. Returns true when clicked.
-    /// <para>The pill <c>.palette</c> container the CSS module also
-    /// defines has no Crystarium counterpart — a swatch draws itself and
-    /// nothing else.</para>
+    /// <para>A swatch draws itself and nothing else: the pill
+    /// <c>.palette</c> container the same module defines is
+    /// <see cref="ColorPalette"/>, which owns the row's chrome and
+    /// spacing.</para>
     /// </summary>
     public static bool Swatch(
         string id,
@@ -221,6 +253,95 @@ public static partial class Crystarium
         if (!string.IsNullOrEmpty(help) && hit.Hovered)
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
         return hit.Clicked;
+    }
+
+    /// <summary>
+    /// Color palette — Picto's <c>shared/ui/ColorPalette</c>
+    /// <c>.palette</c>: the pill CONTAINER its <see cref="Swatch"/>es sit
+    /// in. A 1px <c>--color-border-secondary</c> border over
+    /// <c>rgba(0,0,0,.15)</c> at <c>border-radius: 40px</c>, with
+    /// <c>padding: 0 6px</c> and <c>min-height: 26px</c> around a
+    /// <c>flex-wrap: nowrap</c> row of 16px wraps separated by
+    /// <c>gap: 2px</c> and centred in the content box
+    /// (<c>align-items: center</c>).
+    /// <para>Every metric above is a raw px in the module; the single
+    /// <c>var()</c> it uses is the border colour, which is why that alone
+    /// reads from the theme and the rest are CSS literals, exactly like
+    /// the swatch metrics this file already carries.</para>
+    /// <para>The container takes no id and reserves no hit target: the
+    /// module declares no hover, focus, or click on <c>.palette</c>, so
+    /// the only interactive things here are the children, and they own
+    /// their own ids. <paramref name="count"/> is a parameter rather than
+    /// something the body reports because the pill is painted BEFORE its
+    /// children and therefore has to know its width first.</para>
+    /// <para>Three declarations are deliberately NOT implemented, all for
+    /// the same reason — they are the PARENT's half of the box model, and
+    /// modelling them here would be the CSS engine this deliberately is
+    /// not: <c>margin: 0 0 8px</c> (external spacing the placing caller
+    /// owns; Crystarium models no margins anywhere),
+    /// <c>align-self: center</c> (the parent's cross axis), and
+    /// <c>max-width: 100%</c> (the parent's content box — a caller that
+    /// needs the clamp asks for <see cref="UiWidth.Fill"/>, and the
+    /// natural width never reaches it on its own).</para>
+    /// </summary>
+    /// <param name="count">Number of swatch slots to lay out.</param>
+    /// <param name="swatch">Draws slot <c>i</c>; the cursor is already at
+    /// that slot's 16px top-left.</param>
+    /// <param name="style">Overrides the natural <c>width: fit-content</c>
+    /// and the 26px minimum height.</param>
+    public static void ColorPalette(
+        int count,
+        Action<int> swatch,
+        ControlStyle style = default)
+    {
+        // width: fit-content — border + padding on both sides, the wraps,
+        // and one gap between each adjacent pair.
+        float naturalWidth =
+            PaletteBorder * 2f
+            + PalettePaddingX * 2f
+            + count * SwatchWrapSize
+            + MathF.Max(0f, count - 1f) * PaletteGap;
+        var metrics = ControlSizing.Resolve(
+            style, naturalWidth, PaletteMinHeight);
+        float scale = metrics.Scale;
+        var origin = ImGui.GetCursorScreenPos();
+        var paletteMax = origin + metrics.Size;
+
+        var dl = ImGui.GetWindowDrawList();
+        var border = ActiveTheme.Border;  // --color-border-secondary
+        // Shared paint: BoxRenderer scales the radius, clamps it to the
+        // pill, and insets the 1px border into the border box.
+        BoxRenderer.Draw(dl, origin, paletteMax, new BoxStyle
+        {
+            BackgroundColor = PaletteFill,
+            BorderWidth = PaletteBorder,
+            BorderRadius = PaletteRadius,
+            BorderTopColor = border,
+            BorderRightColor = border,
+            BorderBottomColor = border,
+            BorderLeftColor = border,
+        });
+
+        // align-items: center inside the content box — the border box
+        // less its two borders — and the row starts after the padding.
+        float contentHeight = metrics.LogicalHeight - PaletteBorder * 2f;
+        var first = origin + new Vector2(
+            (PaletteBorder + PalettePaddingX) * scale,
+            (PaletteBorder + (contentHeight - SwatchWrapSize) * 0.5f)
+                * scale);
+        // overflow: hidden — a caller-fixed width narrower than the row
+        // clips it rather than letting wraps spill past the pill.
+        dl.PushClipRect(origin, paletteMax, true);
+        for (int i = 0; i < count; i++)
+        {
+            ImGui.SetCursorScreenPos(first + new Vector2(
+                i * (SwatchWrapSize + PaletteGap) * scale, 0f));
+            swatch(i);
+        }
+        dl.PopClipRect();
+
+        ImGui.SetCursorScreenPos(origin + new Vector2(0f, metrics.Height));
+        ImGui.Dummy(Vector2.Zero);
     }
 
     /// <summary>

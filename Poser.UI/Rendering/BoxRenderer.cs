@@ -84,8 +84,25 @@ internal static class BoxRenderer
         void DrawSide(Vector4? color, Vector2 c1, float a1Start, float a1End, Vector2 c2, float a2Start, float a2End)
         {
             if (!color.HasValue) return;
-            drawList.PathArcTo(c1, r, a1Start, a1End);
-            drawList.PathArcTo(c2, r, a2Start, a2End);
+            // A side whose straight run has vanished — the radius clamped to
+            // half the box, i.e. a pill's cap — has both of its corner arcs on
+            // the SAME centre. Two PathArcTo calls then repeat the vertex at
+            // the seam, and ImGui's AA stroke cannot normalize a zero-length
+            // segment: the miter collapses and that one pixel is painted
+            // several times over, several times too bright. One arc across
+            // the whole span is the identical geometry without the duplicate.
+            if (Vector2.DistanceSquared(c1, c2) < 1e-6f)
+            {
+                // a2End is the continuation of a1Start, so unwrap it past the
+                // 2π seam the right-hand side straddles.
+                float end = a2End >= a1Start ? a2End : a2End + 2f * PI;
+                drawList.PathArcTo(c1, r, a1Start, end);
+            }
+            else
+            {
+                drawList.PathArcTo(c1, r, a1Start, a1End);
+                drawList.PathArcTo(c2, r, a2Start, a2End);
+            }
             drawList.PathStroke(
                 ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(color.Value)),
                 ImDrawFlags.None, thickness);
