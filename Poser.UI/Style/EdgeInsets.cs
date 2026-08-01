@@ -1,4 +1,4 @@
-namespace Poser.UI.Reactive;
+namespace Poser.UI;
 
 public readonly struct EdgeInsets
 {

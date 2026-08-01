@@ -28,7 +28,7 @@ public sealed class AppearancePane
     private bool _openWetSurface = true;
     private bool _openExternalAppearance = true;
     private bool _openCharacterFile = true;
-    private readonly Crystarium.SearchPicker<ExternalItem> _picker =
+    private readonly LegacyCrystarium.SearchPicker<ExternalItem> _picker =
         new("appearance-external");
 
     /// <summary>The exact actor captured when a picker opened. A selection
@@ -43,9 +43,9 @@ public sealed class AppearancePane
     private bool _bodyBlocked;
     private string _bodyBlockedDetail = string.Empty;
 
-    private readonly Crystarium.FileDialog _mcdfImportBrowser =
+    private readonly LegacyCrystarium.FileDialog _mcdfImportBrowser =
         new("Import Character File", new[] { ".mcdf" }, isSaveMode: false);
-    private readonly Crystarium.FileDialog _mcdfExportBrowser =
+    private readonly LegacyCrystarium.FileDialog _mcdfExportBrowser =
         new("Export Character File", new[] { ".mcdf" }, isSaveMode: true);
     private string _mcdfPath =
         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
@@ -91,7 +91,7 @@ public sealed class AppearancePane
             _readoutAt = DateTime.MinValue;
         }
 
-        Crystarium.Page("appearance", origin, size, page =>
+        LegacyCrystarium.Page("appearance", origin, size, page =>
         {
             if (TargetActor() is not { } actor)
             {

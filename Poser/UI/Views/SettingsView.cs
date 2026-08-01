@@ -121,13 +121,13 @@ public static class SettingsView
         var bodyMax = new Vector2(max.X, max.Y - barHeight);
         var drawList = ImGui.GetWindowDrawList();
 
-        Crystarium.FloatingSurface.DrawChrome(
+        LegacyCrystarium.FloatingSurface.DrawChrome(
             drawList,
             min,
             max,
             theme.Radii.Window);
 
-        Crystarium.ActionBar(
+        LegacyCrystarium.ActionBar(
             "settings-header",
             min + new Vector2(inset, 0f),
             new Vector2(size.X - inset * 2f, barHeight),
@@ -155,7 +155,7 @@ public static class SettingsView
         float navigationInset = theme.Page.Inset * scale;
         ImGui.SetCursorScreenPos(
             bodyMin + new Vector2(navigationInset));
-        Crystarium.ScrollRegion(
+        LegacyCrystarium.ScrollRegion(
             "##settings-navigation",
             theme.Settings.NavigationWidth
                 - theme.Page.Inset * 2f,
@@ -181,14 +181,14 @@ public static class SettingsView
         float pageWidth = max.X - pageOrigin.X;
         float pageHeight = bodyMax.Y - pageOrigin.Y;
         ImGui.SetCursorScreenPos(pageOrigin);
-        Crystarium.ScrollRegion(
+        LegacyCrystarium.ScrollRegion(
             "##settings-page-scroll",
             pageWidth / scale,
             pageHeight / scale,
             region =>
             {
                 var contentOrigin = ImGui.GetCursorScreenPos();
-                Crystarium.Page(
+                LegacyCrystarium.Page(
                     "settings-page",
                     contentOrigin,
                     new Vector2(
@@ -204,7 +204,7 @@ public static class SettingsView
                 theme.Chrome.ModalFooter),
             theme.Radii.Window * scale,
             ImDrawFlags.RoundCornersBottom);
-        Crystarium.ActionBar(
+        LegacyCrystarium.ActionBar(
             "settings-footer",
             new Vector2(min.X + inset, bodyMax.Y),
             new Vector2(size.X - inset * 2f, barHeight),
@@ -228,7 +228,7 @@ public static class SettingsView
 
     private static void DrawPage(
         SettingsViewModel vm,
-        Crystarium.PageScope page)
+        LegacyCrystarium.PageScope page)
     {
         switch (vm.Category)
         {
@@ -255,7 +255,7 @@ public static class SettingsView
 
     private static void DrawGeneral(
         SettingsViewModel vm,
-        Crystarium.PageScope page)
+        LegacyCrystarium.PageScope page)
     {
         page.Section("BEHAVIOR", form =>
         {
@@ -274,7 +274,7 @@ public static class SettingsView
 
     private static void DrawDisplay(
         SettingsViewModel vm,
-        Crystarium.PageScope page)
+        LegacyCrystarium.PageScope page)
     {
         page.Section("BONE OVERLAY", form =>
         {
@@ -344,7 +344,7 @@ public static class SettingsView
 
     private static void DrawSkeleton(
         SettingsViewModel vm,
-        Crystarium.PageScope page)
+        LegacyCrystarium.PageScope page)
     {
         page.Section("SKELETON LINES", form =>
         {
@@ -372,7 +372,7 @@ public static class SettingsView
 
     private static void DrawUi(
         SettingsViewModel vm,
-        Crystarium.PageScope page)
+        LegacyCrystarium.PageScope page)
     {
         page.Section("LAYOUT", form =>
         {
@@ -397,7 +397,7 @@ public static class SettingsView
 
     private static void DrawKeybinds(
         SettingsViewModel vm,
-        Crystarium.PageScope page)
+        LegacyCrystarium.PageScope page)
     {
         page.Section("KEYBINDS", form =>
         {
@@ -420,7 +420,7 @@ public static class SettingsView
 
     private static void DrawAbout(
         SettingsViewModel vm,
-        Crystarium.PageScope page)
+        LegacyCrystarium.PageScope page)
     {
         page.Section("ABOUT", form =>
         {

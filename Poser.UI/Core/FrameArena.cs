@@ -1,5 +1,7 @@
 using System;
+using System.Diagnostics;
 using System.Numerics;
+using System.Threading;
 
 namespace Poser.UI.Reactive;
 
@@ -35,8 +37,15 @@ internal struct ElementRecord
     internal int EventScope;
     internal int EventReducer;
     internal int ScopeId;
-    // Paint parameters an Interactive leaf hands to its legacy painter.
-    internal byte Variant;
+    // Interactive paint: the arena object slot holding the retained
+    // IInteractivePainter (0 = none) plus the single byte of parameter the
+    // painter interprets — a variant, a tone, a level. The runtime never
+    // reads it, so no element kind is special-cased in the walk.
+    internal int PainterSlot;
+    internal byte PaintArg;
+    // The painter owns the box, so its subtree is clipped to it; the walk
+    // pushes the clip once around the whole child traversal.
+    internal bool ClipChildren;
     internal string? Help;
     // Filled by the layout pass in wave B.
     internal Vector2 LogicalSize;
@@ -45,12 +54,14 @@ internal struct ElementRecord
 }
 
 /// <summary>
-/// Per-frame storage for element declarations, child ranges, retained event
-/// references and small unmanaged payloads. Every buffer is grow-only and
-/// reset by index, so a warm frame allocates nothing.
+/// Per-frame storage for element declarations, child ranges and retained
+/// event references. Every buffer is grow-only and reset by index, so a warm
+/// frame allocates nothing.
 /// </summary>
 internal sealed class FrameArena
 {
+    private static int _nextArenaId;
+
     // Slot 0 of the element and object buffers is reserved so that a zeroed
     // handle (UiNode.None, UiEvent with slot 0) reads as "none".
     private ElementRecord[] _elements = new ElementRecord[256];
@@ -59,8 +70,6 @@ internal sealed class FrameArena
     private int _childCount;
     private object?[] _objects = new object?[64];
     private int _objectCount = 1;
-    private byte[] _values = new byte[512];
-    private int _valueCount;
 
     internal static FrameArena? Current { get; set; }
 
@@ -71,15 +80,37 @@ internal sealed class FrameArena
     /// <summary>Incremented by <see cref="Reset"/>; identifies the frame whose declarations are live.</summary>
     internal int FrameId { get; private set; }
 
+    /// <summary>Distinguishes one root's arena from another's, so a handle
+    /// carried across roots is caught instead of indexing a stranger.</summary>
+    internal int Id { get; } = Interlocked.Increment(ref _nextArenaId);
+
     internal int Count => _elementCount;
 
     internal ref ElementRecord this[int index] => ref _elements[index];
 
-    internal int AddElement(in ElementRecord record)
+    internal UiNode AddElement(in ElementRecord record)
     {
         Ensure(ref _elements, _elementCount + 1);
         _elements[_elementCount] = record;
-        return _elementCount++;
+        return new UiNode(_elementCount++, FrameId, Id);
+    }
+
+    /// <summary>
+    /// DEBUG provenance: a handle is an index, so one from another root or
+    /// from a previous frame would silently address whatever now lives at
+    /// that index. Release builds carry neither the fields nor the check.
+    /// </summary>
+    [Conditional("DEBUG")]
+    internal void ValidateNode(in UiNode node)
+    {
+#if DEBUG
+        if (node.IsNone)
+            return;
+        if (node.Arena != Id)
+            throw new InvalidOperationException("node from another root");
+        if (node.Frame != FrameId)
+            throw new InvalidOperationException("stale node from a previous frame");
+#endif
     }
 
     /// <summary>
@@ -101,7 +132,7 @@ internal sealed class FrameArena
         return start;
     }
 
-    internal UiNode ChildAt(int index) => new(_childIndices[index]);
+    internal UiNode ChildAt(int index) => new(_childIndices[index], FrameId, Id);
 
     internal int AddObject(object o)
     {
@@ -112,16 +143,6 @@ internal sealed class FrameArena
 
     internal object? GetObject(int slot) => slot <= 0 ? null : _objects[slot];
 
-    internal Span<byte> AddValue(int bytes, out int offset)
-    {
-        Ensure(ref _values, _valueCount + bytes);
-        offset = _valueCount;
-        _valueCount += bytes;
-        return _values.AsSpan(offset, bytes);
-    }
-
-    internal ReadOnlySpan<byte> GetValue(int offset, int bytes) => _values.AsSpan(offset, bytes);
-
     internal void Reset()
     {
         // Object slots hold delegates and strings: null them so a frame's
@@ -130,7 +151,6 @@ internal sealed class FrameArena
         _elementCount = 1;
         _childCount = 0;
         _objectCount = 1;
-        _valueCount = 0;
         FrameId++;
     }
 

@@ -4,7 +4,7 @@ using Dalamud.Interface.Textures.TextureWraps;
 
 namespace Poser.UI;
 
-public static partial class Crystarium
+public static partial class LegacyCrystarium
 {
     /// <summary>Image element. Renders an <see cref="IImageSource"/> at the given size.</summary>
     public static void Image(IImageSource source, Vector2 size, Vector4? tint = null)

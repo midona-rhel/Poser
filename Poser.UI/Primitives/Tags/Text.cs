@@ -140,7 +140,7 @@ public readonly record struct TextStyle
     public bool Disabled { get; init; }
 }
 
-public static partial class Crystarium
+public static partial class LegacyCrystarium
 {
     /// <summary>Plain inline body text from the active theme.</summary>
     public static void Text(string text)

@@ -5,7 +5,7 @@ using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
 
-public static partial class Crystarium
+public static partial class LegacyCrystarium
 {
     /// <summary>
     /// Determinate progress bar in the slider's track styling: a 4px

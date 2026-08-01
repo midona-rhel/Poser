@@ -1,15 +1,31 @@
 using System;
 using System.Numerics;
+using Poser.UI.Reactive;
 
-namespace Poser.UI.Reactive;
+namespace Poser.UI;
 
 public static partial class Crystarium
 {
+    // The host NAMES its own layout, so the caller's sx can still set size,
+    // margin and padding but never how the label is placed inside the box.
+    private static readonly UiStyle ButtonHostLayout = new(
+        UiStyleFields.Flow | UiStyleFields.Justify | UiStyleFields.Align,
+        UiFlow.Stack,
+        0f,
+        default,
+        default,
+        default,
+        default,
+        UiAlign.Center,
+        UiAlign.Center);
+
     /// <summary>
-    /// The Picto text button as ONE interactive leaf. The declaration
-    /// carries the intrinsic box and the paint parameters; the pixels come
-    /// from the legacy painter during the root's walk, so the retained and
-    /// imperative paths are the same button by construction.
+    /// The Picto text button as a real composition: an interactive HOST that
+    /// carries the intrinsic box and the retained painter, with the caption
+    /// as an ordinary <see cref="Text"/> child centered by the stack solver.
+    /// The box pixels come from the legacy painter, so the retained and
+    /// imperative paths are the same button by construction — but nothing in
+    /// the runtime knows a button exists.
     /// </summary>
     public static UiNode Button(
         string label,
@@ -52,26 +68,33 @@ public static partial class Crystarium
         in UiStyle sx,
         UiKey key)
     {
+        // The caption states NO color: it takes the foreground the painter
+        // resolves for the whole subtree, which is what makes the disabled
+        // group's compensated label a property of the button, not the text.
+        UiChildren caption = Text(label);
         ElementRecord record = default;
         record.Kind = ElementKind.Interactive;
-        record.Style = sx;
-        record.Text = label;
+        record.Style = UiStyle.Extend(sx, ButtonHostLayout);
         record.Key = key;
         record.Disabled = disabled;
-        record.Variant = (byte)variant;
+        record.PainterSlot = arena.AddObject(TextButtonPainter.Instance);
+        record.PaintArg = (byte)variant;
+        record.ClipChildren = true;
         record.Help = help;
         record.BehaviorSlot = behaviorSlot;
         record.EventScope = eventScope;
         record.EventReducer = eventReducer;
+        record.ChildStart = caption.Start;
+        record.ChildCount = caption.Count;
         // Fill is the solver's business; Content and Fixed are known here.
         float width = sx.Width.Kind switch
         {
             UiDimKind.Fixed => sx.Width.Value,
             UiDimKind.Fill => 0f,
-            _ => Poser.UI.Crystarium.IntrinsicButtonWidth(label, default),
+            _ => Poser.UI.LegacyCrystarium.IntrinsicButtonWidth(label, default),
         };
         record.LogicalSize = new Vector2(
-            width, Poser.UI.Crystarium.ButtonHeight(default));
-        return new UiNode(arena.AddElement(record));
+            width, Poser.UI.LegacyCrystarium.ButtonHeight(default));
+        return arena.AddElement(record);
     }
 }

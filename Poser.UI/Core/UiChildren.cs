@@ -1,7 +1,8 @@
 using System;
 using System.Runtime.CompilerServices;
+using Poser.UI.Reactive;
 
-namespace Poser.UI.Reactive;
+namespace Poser.UI;
 
 /// <summary>
 /// A range in the current frame arena's child buffer. Collection expressions
@@ -25,7 +26,10 @@ public readonly struct UiChildren
     /// <summary>None entries are dropped, so <c>cond ? Child() : UiNode.None</c> reads as a conditional child.</summary>
     public static UiChildren Create(ReadOnlySpan<UiNode> nodes)
     {
-        int start = FrameArena.Require().AddChildren(nodes, out int count);
+        FrameArena arena = FrameArena.Require();
+        for (int i = 0; i < nodes.Length; i++)
+            arena.ValidateNode(nodes[i]);
+        int start = arena.AddChildren(nodes, out int count);
         return new UiChildren(start, count);
     }
 

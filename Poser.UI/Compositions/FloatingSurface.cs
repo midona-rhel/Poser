@@ -22,7 +22,7 @@ public enum FloatingSurfaceTreatment
     Unframed,
 }
 
-public static partial class Crystarium
+public static partial class LegacyCrystarium
 {
     public static class FloatingSurface
     {
@@ -60,10 +60,10 @@ public static partial class Crystarium
                 id: id);
 
         /// <summary>
-        /// The implementation behind <see cref="Crystarium.OpenPopover"/>:
+        /// The implementation behind <see cref="LegacyCrystarium.OpenPopover"/>:
         /// claims the exclusive chain BEFORE ImGui's popup stack, so the
         /// surface owns input from the frame it opens. Deliberately
-        /// internal — <see cref="Crystarium.OpenPopover"/> is the one
+        /// internal — <see cref="LegacyCrystarium.OpenPopover"/> is the one
         /// public open path, and hiding this makes that compile-enforced
         /// for every assembly outside Poser.UI.
         /// </summary>

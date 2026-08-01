@@ -6,7 +6,7 @@ using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
 
-public static partial class Crystarium
+public static partial class LegacyCrystarium
 {
     /// <summary>
     /// Range slider. PBI-090 deliberately supersedes the original picto

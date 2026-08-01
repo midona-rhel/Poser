@@ -4,8 +4,8 @@ using System.Windows.Forms;
 using Dalamud.Bindings.ImGui;
 using Poser.UI;
 using Poser.UI.Reactive;
-using Ui = Poser.UI.Crystarium;
-using Rx = Poser.UI.Reactive.Crystarium;
+using Ui = Poser.UI.LegacyCrystarium;
+using Rx = Poser.UI.Crystarium;
 
 namespace Crystarium.Capture;
 
@@ -298,6 +298,11 @@ internal static class BehaviorSuites
 
         internal readonly record struct State(bool On);
 
+        /// <summary>The component's OWN mount factory: authors name a
+        /// component, never its three type arguments.</summary>
+        internal static UiNode Node(UiKey key) =>
+            Rx.Component<TogglePill, Props, State>(default, key);
+
         protected override State CreateState(in Props props) => new(false);
 
         protected override UiNode Render(in Props props, in State state)
@@ -336,6 +341,13 @@ internal static class BehaviorSuites
         host.Expect(
             "disabled", Drive(on, PressAt(5, 7), disabled: true), 0);
         host.Check("reducer-toggle", ReducerToggle(host));
+        host.Check("identity-reorder", IdentityReorder());
+        host.Check("identity-collision", IdentityCollision());
+        host.Check("identity-pruning", IdentityPruning(host));
+        host.Check("cursor-flow", CursorFlow(host));
+#if DEBUG
+        host.Check("stateful-key-required", StatefulKeyRequired(host));
+#endif
         host.Check("allocation-runtime", AllocationRuntime(host));
         host.Check("allocation-parity", AllocationParity(host));
         return host.Summary("reactive-button behavior: all cases pass");
@@ -380,8 +392,7 @@ internal static class BehaviorSuites
             root.Render(
                 ReactiveOrigin,
                 ImGui.GetContentRegionAvail(),
-                static () => Rx.Component<
-                    TogglePill, TogglePill.Props, TogglePill.State>(default));
+                static () => TogglePill.Node("toggle"));
             labels.Add(TogglePill.LastLabel);
         },
         _ => ReactiveInside,
@@ -401,6 +412,167 @@ internal static class BehaviorSuites
             "trace", string.Join(" ", transitions), "Off@0 On@8 Off@18");
         return probe;
     }
+
+    // ---- Identity: the path hash IS the contract ----------------------
+
+    /// <summary>
+    /// A KEYED element must keep its identity when it moves among its
+    /// siblings — that is the whole point of a key — while an UNKEYED one
+    /// must not, because position is all it has. Driven through the REAL
+    /// chain function, not a copy of its arithmetic.
+    /// </summary>
+    private static Probe IdentityReorder()
+    {
+        const ulong parent = 0x9E3779B97F4A7C15UL;
+        const int scope = 3;
+        var probe = new Probe();
+        probe.Want(
+            "keyed-survives-reorder",
+            UiRoot.DebugChain(parent, 0, ElementKind.Interactive, 7, scope)
+                == UiRoot.DebugChain(parent, 5, ElementKind.Interactive, 7, scope),
+            true);
+        probe.Want(
+            "unkeyed-follows-ordinal",
+            UiRoot.DebugChain(parent, 0, ElementKind.Interactive, UiKey.None, scope)
+                != UiRoot.DebugChain(parent, 5, ElementKind.Interactive, UiKey.None, scope),
+            true);
+        return probe;
+    }
+
+    /// <summary>
+    /// The chain must fold the COMPLETE key, not its 32-bit hash: two long
+    /// keys whose <c>GetHashCode</c> folds collide are still two different
+    /// rows. <c>ulong.GetHashCode</c> XORs the two dwords, so 0x1 and
+    /// 0x0000000200000003 fold identically (1^0 == 3^2) and every UiKey
+    /// hash built on that fold collides with them — the precondition the
+    /// case asserts before it can mean anything.
+    /// </summary>
+    private static Probe IdentityCollision()
+    {
+        const ulong parent = 0x243F6A8885A308D3UL;
+        const long first = 0x0000000000000001L;
+        const long second = 0x0000000200000003L;
+        var probe = new Probe();
+        probe.Want(
+            "precondition-folds-collide",
+            ((UiKey)first).GetHashCode() == ((UiKey)second).GetHashCode(),
+            true);
+        probe.Want(
+            "long-payload-survives-fold",
+            UiRoot.DebugChain(parent, 0, ElementKind.Interactive, first, 1)
+                != UiRoot.DebugChain(parent, 0, ElementKind.Interactive, second, 1),
+            true);
+        probe.Want(
+            "literal-ab-vs-ba",
+            UiRoot.DebugChain(parent, 0, ElementKind.Interactive, "ab", 1)
+                != UiRoot.DebugChain(parent, 0, ElementKind.Interactive, "ba", 1),
+            true);
+        return probe;
+    }
+
+    private static readonly Func<UiNode> TwoButtonTree = static () =>
+        Rx.Column(Sx.Gap(4f), [Rx.Button("One", NoOp), Rx.Button("Two", NoOp)]);
+
+    private static readonly Func<UiNode> OneButtonTree = static () =>
+        Rx.Column(Sx.Gap(4f), [Rx.Button("One", NoOp)]);
+
+    /// <summary>The id cache is keyed by PATH, so a tree that stops drawing
+    /// a row must stop paying for it: an unvisited entry is dropped at the
+    /// end of the frame that skipped it.</summary>
+    private static Probe IdentityPruning(BehaviorHost host)
+    {
+        var root = new UiRoot();
+        int wide = -1;
+        int narrow = -1;
+        host.Case(ReactiveCanvas, 20, frame =>
+        {
+            ImGui.SetCursorScreenPos(ReactiveOrigin);
+            root.Render(
+                ReactiveOrigin,
+                ImGui.GetContentRegionAvail(),
+                frame < 10 ? TwoButtonTree : OneButtonTree);
+            if (frame == 9)
+                wide = root.DebugInteractionIdCount;
+            if (frame == 19)
+                narrow = root.DebugInteractionIdCount;
+        }, _ => Offscreen);
+
+        var probe = new Probe();
+        probe.Want("two-buttons", wide, 2);
+        probe.Want("one-button", narrow, 1);
+        return probe;
+    }
+
+    /// <summary>
+    /// The cursor contract: a root paints absolutely but reserves its
+    /// arranged extent ONCE, so the item rect around the call is the whole
+    /// tree and imperative content written afterwards flows below it.
+    /// </summary>
+    private static Probe CursorFlow(BehaviorHost host)
+    {
+        var root = new UiRoot();
+        Vector2 rootOrigin = default;
+        Vector2 extent = default;
+        Vector2 itemMin = default;
+        Vector2 itemMax = default;
+        float belowTop = 0f;
+        host.Case(new Vector2(320, 240), 3, _ =>
+        {
+            ImGui.SetCursorScreenPos(ReactiveOrigin);
+            Ui.Button("Above", id: "##cursor-above");
+            rootOrigin = ImGui.GetCursorScreenPos();
+            extent = Ui.MeasureButton("Apply changes");
+            root.Render(
+                rootOrigin, ImGui.GetContentRegionAvail(), ParityTree);
+            itemMin = ImGui.GetItemRectMin();
+            itemMax = ImGui.GetItemRectMax();
+            Ui.Button("Below", id: "##cursor-below");
+            belowTop = ImGui.GetItemRectMin().Y;
+        }, _ => Offscreen);
+
+        var probe = new Probe();
+        // Every other want below compares defaults against defaults if the
+        // case never drew, so the extent is asserted non-empty first.
+        probe.Want(
+            "root-has-extent", extent.X > 0f && extent.Y > 0f, true);
+        probe.Want("item-min", itemMin, rootOrigin);
+        probe.Want("item-max", itemMax, rootOrigin + extent);
+        probe.Want(
+            "below-flows-under",
+            belowTop >= rootOrigin.Y + extent.Y,
+            true);
+        return probe;
+    }
+
+#if DEBUG
+    /// <summary>An unkeyed stateful mount is a bug the runtime refuses to
+    /// carry: matched by position, its state would follow its neighbour
+    /// through any reorder.</summary>
+    private static Probe StatefulKeyRequired(BehaviorHost host)
+    {
+        var root = new UiRoot();
+        bool threw = false;
+        host.Case(ReactiveCanvas, 1, _ =>
+        {
+            try
+            {
+                ImGui.SetCursorScreenPos(ReactiveOrigin);
+                root.Render(
+                    ReactiveOrigin,
+                    ImGui.GetContentRegionAvail(),
+                    static () => TogglePill.Node(UiKey.None));
+            }
+            catch (InvalidOperationException)
+            {
+                threw = true;
+            }
+        }, _ => Offscreen);
+
+        var probe = new Probe();
+        probe.Want("unkeyed-mount-throws", threw, true);
+        return probe;
+    }
+#endif
 
     /// <summary>
     /// A warm frame must allocate NOTHING: every buffer is pooled, every
@@ -447,8 +619,7 @@ internal static class BehaviorSuites
         Rx.Column(
             Sx.Gap(8f),
             [
-                Rx.Component<TokenProbe, TokenProbe.Props, TokenProbe.State>(
-                    default),
+                TokenProbe.Node("probe"),
                 Rx.Column(),
                 Rx.Column(),
             ]);
@@ -462,6 +633,9 @@ internal static class BehaviorSuites
         internal readonly record struct Props;
 
         internal readonly record struct State(bool On);
+
+        internal static UiNode Node(UiKey key) =>
+            Rx.Component<TokenProbe, Props, State>(default, key);
 
         protected override State CreateState(in Props props) => new(false);
 

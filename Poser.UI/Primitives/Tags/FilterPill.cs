@@ -11,7 +11,7 @@ namespace Poser.UI;
 /// 26px workspace rhythm ask for it explicitly through
 /// <see cref="ControlStyle"/>.</para>
 /// </summary>
-public static partial class Crystarium
+public static partial class LegacyCrystarium
 {
     public static bool FilterPill(
         string id,

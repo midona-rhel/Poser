@@ -33,7 +33,7 @@ public record struct ContextMenuItem
     public static ContextMenuItem Separator => new() { IsSeparator = true, Label = string.Empty };
 }
 
-public static partial class Crystarium
+public static partial class LegacyCrystarium
 {
     /// <summary>
     /// The ONE floating menu (Picto ContextMenu transcription): a 260px
@@ -384,8 +384,8 @@ public static partial class Crystarium
                         Color = text.Fade(0.5f),
                     };
                     var shortcutSize =
-                        Crystarium.MeasureText(shortcut, shortcutStyle);
-                    Crystarium.TextAt(
+                        LegacyCrystarium.MeasureText(shortcut, shortcutStyle);
+                    LegacyCrystarium.TextAt(
                         new Vector2(
                             labelRight - shortcutSize.X,
                             rowMin.Y
@@ -403,7 +403,7 @@ public static partial class Crystarium
                     Color = text,
                 };
                 var labelSize =
-                    Crystarium.MeasureText(item.Label, labelStyle);
+                    LegacyCrystarium.MeasureText(item.Label, labelStyle);
                 var labelPos = new Vector2(
                     textX,
                     rowMin.Y
@@ -415,13 +415,13 @@ public static partial class Crystarium
                 // Segoe's descenders reach a hair below it — an
                 // unconditional clip shaved the bottom off 'g'.
                 if (labelSize.X > labelWidth)
-                    Crystarium.TextAt(
+                    LegacyCrystarium.TextAt(
                         labelPos,
                         item.Label,
                         labelStyle,
                         TextConstraint.Truncate(labelWidth));
                 else
-                    Crystarium.TextAt(labelPos, item.Label, labelStyle);
+                    LegacyCrystarium.TextAt(labelPos, item.Label, labelStyle);
 
                 y += Crystarium.ActiveTheme.Controls.ListRowHeight * s;
             }

@@ -3,7 +3,7 @@ using System.Numerics;
 using System.Windows.Forms;
 using Dalamud.Bindings.ImGui;
 using Poser.UI;
-using Ui = Poser.UI.Crystarium;
+using Ui = Poser.UI.LegacyCrystarium;
 
 namespace Crystarium.Capture;
 

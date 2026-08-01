@@ -3,11 +3,11 @@ using Dalamud.Bindings.ImGui;
 using Poser.UI;
 using Dalamud.Interface.Utility;
 using FontFamily = Poser.UI.FontFamily;
-using Ui = Poser.UI.Crystarium;
-using Rx = Poser.UI.Reactive.Crystarium;
-using RxRoot = Poser.UI.Reactive.UiRoot;
-using Sx = Poser.UI.Reactive.Sx;
-using UiDim = Poser.UI.Reactive.UiDim;
+using Ui = Poser.UI.LegacyCrystarium;
+using Rx = Poser.UI.Crystarium;
+using RxRoot = Poser.UI.UiRoot;
+using Sx = Poser.UI.Sx;
+using UiDim = Poser.UI.UiDim;
 
 namespace Crystarium.Capture;
 

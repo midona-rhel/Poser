@@ -401,7 +401,7 @@ public sealed class GraphicalBonePane : IDisposable
         if (hoveredName != null
             && ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows))
         {
-            Crystarium.HoverHelp.Preview("gbp-dot",
+            LegacyCrystarium.HoverHelp.Preview("gbp-dot",
                 mouse - new Vector2(4f, 4f),
                 mouse + new Vector2(4f, 4f),
                 hoveredName);

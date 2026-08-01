@@ -7,7 +7,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace Poser.UI;
 
-public static partial class Crystarium
+public static partial class LegacyCrystarium
 {
     /// <summary>
     /// Movable, non-modal file window. Navigation and callbacks preserve the

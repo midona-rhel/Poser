@@ -1,4 +1,4 @@
-namespace Poser.UI.Reactive;
+namespace Poser.UI;
 
 /// <summary>
 /// Style factories. A flow factory is a COMPLETE layout description, so it

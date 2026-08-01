@@ -81,7 +81,7 @@ public sealed class AnimationPane
 
     public void Draw(System.Numerics.Vector2 origin, System.Numerics.Vector2 size)
     {
-        Crystarium.Page("animation", origin, size, page =>
+        LegacyCrystarium.Page("animation", origin, size, page =>
         {
             if (TargetActor() is not { } actor)
             {
@@ -156,7 +156,7 @@ public sealed class AnimationPane
     }
 
     private void DrawPlayback(
-        Crystarium.FormScope form,
+        LegacyCrystarium.FormScope form,
         ActorId actor,
         ActorAnimationReading reading,
         AnimationOverrides owned)
@@ -224,7 +224,7 @@ public sealed class AnimationPane
     }
 
     private void DrawStance(
-        Crystarium.FormScope form,
+        LegacyCrystarium.FormScope form,
         ActorId actor,
         ActorAnimationReading reading)
     {
@@ -292,7 +292,7 @@ public sealed class AnimationPane
     }
 
     private void DrawLayer(
-        Crystarium.FormScope form,
+        LegacyCrystarium.FormScope form,
         ActorId actor,
         ActorAnimationReading reading,
         AnimationOverrides owned,
@@ -397,7 +397,7 @@ public sealed class AnimationPane
     }
 
     private void DrawAdvancedControls(
-        Crystarium.FormScope form,
+        LegacyCrystarium.FormScope form,
         ActorId actor,
         ActorAnimationReading reading)
     {
@@ -417,7 +417,7 @@ public sealed class AnimationPane
     }
 
     private void DrawScrub(
-        Crystarium.FormScope form,
+        LegacyCrystarium.FormScope form,
         ActorId actor,
         ActorAnimationReading reading,
         string label,
@@ -503,7 +503,7 @@ public sealed class AnimationPane
     }
 
     private void DrawFace(
-        Crystarium.FormScope form,
+        LegacyCrystarium.FormScope form,
         ActorId actor,
         ActorAnimationReading reading)
     {
@@ -574,7 +574,7 @@ public sealed class AnimationPane
         if (_sceneMenuRequested)
         {
             _sceneMenuRequested = false;
-            Crystarium.FloatingMenu.Open(
+            LegacyCrystarium.FloatingMenu.Open(
                 "##anim-scene-menu",
                 Dalamud.Bindings.ImGui.ImGui.GetMousePos(),
                 [
@@ -592,7 +592,7 @@ public sealed class AnimationPane
                         TablerIcon.ArrowBackUp),
                 ]);
         }
-        switch (Crystarium.FloatingMenu.Draw("##anim-scene-menu"))
+        switch (LegacyCrystarium.FloatingMenu.Draw("##anim-scene-menu"))
         {
             case 0:
                 Report(_sceneActions.FreezeAll(), "Freeze all");

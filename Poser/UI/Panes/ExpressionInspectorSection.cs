@@ -14,7 +14,7 @@ public sealed class ExpressionInspectorSection
 
     public bool CanDraw => _expressions.IsAvailable;
 
-    public void Draw(Crystarium.FormScope form, IActor actor)
+    public void Draw(LegacyCrystarium.FormScope form, IActor actor)
     {
         // Units without resolvable target bones on this skeleton are hidden
         // rather than shown as dead rows.

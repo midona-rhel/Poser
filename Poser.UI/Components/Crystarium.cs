@@ -1,6 +1,8 @@
+using System;
 using System.Numerics;
+using Poser.UI.Reactive;
 
-namespace Poser.UI.Reactive;
+namespace Poser.UI;
 
 /// <summary>
 /// The declarative vocabulary. Every factory writes ONE element record into
@@ -11,6 +13,14 @@ namespace Poser.UI.Reactive;
 /// </summary>
 public static partial class Crystarium
 {
+    // Theme survives severance: the imperative controls and the retained
+    // vocabulary read ONE token value, so theme access keeps its natural
+    // name on both sides and no product call site changes as the legacy
+    // surface is retired.
+    public static Theme ActiveTheme => LegacyCrystarium.ActiveTheme;
+
+    public static void UseTheme(Theme theme) => LegacyCrystarium.UseTheme(theme);
+
     public static UiNode Row(UiStyle sx = default, UiChildren children = default, UiKey key = default) =>
         Box(UiFlow.Row, in sx, children, key);
 
@@ -30,7 +40,7 @@ public static partial class Crystarium
         record.TextSize = size ?? 0f;
         Tint(ref record, color);
         record.Key = key;
-        return new UiNode(FrameArena.Require().AddElement(record));
+        return FrameArena.Require().AddElement(record);
     }
 
     /// <summary>A Tabler glyph on a fixed logical square. The record stores
@@ -45,7 +55,7 @@ public static partial class Crystarium
         record.TextSize = size;
         Tint(ref record, color);
         record.Key = key;
-        return new UiNode(FrameArena.Require().AddElement(record));
+        return FrameArena.Require().AddElement(record);
     }
 
     /// <summary>
@@ -56,9 +66,24 @@ public static partial class Crystarium
     /// every ImGui identity it owns — follows the component, not its
     /// position.
     /// </summary>
-    public static UiNode Component<TComponent, TProps, TState>(in TProps props, UiKey key = default)
+    /// <remarks>
+    /// A stateful scope is matched by key, so an UNKEYED one is matched by
+    /// position and would hand a reordered list its neighbour's state. The
+    /// key is therefore mandatory, and the requirement is enforced where the
+    /// mount happens rather than left to review.
+    ///
+    /// The entry stays INTERNAL: a component is mounted through its OWN
+    /// static factory, so the three type arguments never appear at a call
+    /// site and the mount shape can change without breaking authors.
+    /// </remarks>
+    internal static UiNode Component<TComponent, TProps, TState>(in TProps props, UiKey key = default)
         where TComponent : StatefulComponent<TProps, TState>, new()
     {
+#if DEBUG
+        if (key.Kind == UiKeyKind.None)
+            throw new InvalidOperationException(
+                $"stateful components require an explicit stable key ({typeof(TComponent).Name})");
+#endif
         UiRoot root = UiRoot.Require();
         FrameArena arena = FrameArena.Require();
         ScopeTable.Scope scope = root.Scopes.GetOrCreate(
@@ -81,7 +106,7 @@ public static partial class Crystarium
         record.Key = key;
         record.ChildStart = children.Start;
         record.ChildCount = children.Count;
-        return new UiNode(FrameArena.Require().AddElement(record));
+        return FrameArena.Require().AddElement(record);
     }
 
     private static void Tint(ref ElementRecord record, Vector4? color)

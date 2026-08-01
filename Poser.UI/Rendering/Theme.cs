@@ -786,7 +786,7 @@ public readonly record struct Theme
     }
 }
 
-public static partial class Crystarium
+public static partial class LegacyCrystarium
 {
     public static Theme ActiveTheme { get; private set; } = Theme.PictoDark;
 

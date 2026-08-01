@@ -5,7 +5,7 @@ using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
 
-public static partial class Crystarium
+public static partial class LegacyCrystarium
 {
     /// <summary>
     /// <c>.drop max-height: calc(7 * 26px + 6 * 2px + 12px)</c> — the

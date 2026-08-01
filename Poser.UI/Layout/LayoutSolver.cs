@@ -25,13 +25,12 @@ internal static class LayoutSolver
         UiStyle style = arena[node].Style;
         Vector2 content = kind switch
         {
-            ElementKind.Text => Poser.UI.Crystarium.MeasureText(
+            ElementKind.Text => Poser.UI.LegacyCrystarium.MeasureText(
                 arena[node].Text ?? string.Empty, TextStyleOf(in arena[node]))
                 / ImGuiHelpers.GlobalScale,
             ElementKind.Svg => new Vector2(arena[node].TextSize),
-            // The component filled the leaf's intrinsic box at declaration
-            // time; only a Fill dimension is still open.
-            ElementKind.Interactive => arena[node].LogicalSize,
+            ElementKind.Interactive => MeasureInteractive(
+                arena, node, in style, availWidth, availHeight),
             _ => MeasureBox(arena, node, in style, availWidth, availHeight),
         };
 
@@ -50,7 +49,10 @@ internal static class LayoutSolver
 
         arena[node].LogicalPos = logicalOrigin;
         arena[node].LogicalSize = logicalSize;
-        if (arena[node].Kind != ElementKind.Box || arena[node].ChildCount == 0)
+        // Leaves declare no children, so ONE test covers every kind: an
+        // interactive element arranges its subtree exactly like a box, which
+        // is what lets a control's content be real composed elements.
+        if (arena[node].ChildCount == 0)
             return;
 
         UiStyle style = arena[node].Style;
@@ -121,11 +123,36 @@ internal static class LayoutSolver
 
     /// <summary>The text style a Text record declared; unset members fall
     /// back to the active theme inside the renderer.</summary>
-    internal static Poser.UI.TextStyle TextStyleOf(in ElementRecord record) => new()
+    internal static Poser.UI.TextStyle TextStyleOf(in ElementRecord record) =>
+        TextStyleOf(in record, null);
+
+    /// <summary>As above, with the walk's inherited foreground standing in
+    /// for an unstated color — currentColor, resolved by the nearest painter
+    /// above the run.</summary>
+    internal static Poser.UI.TextStyle TextStyleOf(
+        in ElementRecord record, Vector4? inheritedForeground) => new()
     {
         Size = record.TextSize > 0f ? record.TextSize : (float?)null,
-        Color = record.HasTextColor ? record.TextColor : (Vector4?)null,
+        Color = record.HasTextColor ? record.TextColor : inheritedForeground,
     };
+
+    /// <summary>The declaration already filled the control's intrinsic box,
+    /// so only a Fill dimension is still open — but its children measure
+    /// normally, because the subtree is laid out INSIDE that box.</summary>
+    private static Vector2 MeasureInteractive(
+        FrameArena arena, int node, in UiStyle style, float availWidth, float availHeight)
+    {
+        Vector2 intrinsic = arena[node].LogicalSize;
+        float innerWidth = MathF.Max(
+            0f, Resolve(style.Width, intrinsic.X, availWidth) - style.Padding.Horizontal);
+        float innerHeight = MathF.Max(
+            0f, Resolve(style.Height, intrinsic.Y, availHeight) - style.Padding.Vertical);
+        int start = arena[node].ChildStart;
+        int count = arena[node].ChildCount;
+        for (int i = 0; i < count; i++)
+            Measure(arena, arena.ChildAt(start + i).Index, innerWidth, innerHeight);
+        return intrinsic;
+    }
 
     private static Vector2 MeasureBox(
         FrameArena arena, int node, in UiStyle style, float availWidth, float availHeight)

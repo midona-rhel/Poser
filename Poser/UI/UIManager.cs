@@ -73,11 +73,11 @@ public sealed class UIManager : IUIManager
 
         Interactive.BeginFrame();
         _windows.System.Draw();
-        Crystarium.FloatingMenu.EndFrame();
+        LegacyCrystarium.FloatingMenu.EndFrame();
         // The one hover-help card renders after every window has drawn,
         // so registrations from any pane are complete and the card sits
         // on the foreground list above all of them.
-        Crystarium.HoverHelp.Render();
+        LegacyCrystarium.HoverHelp.Render();
         Interactive.EndFrame();
         HandleKeybinds();
     }

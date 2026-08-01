@@ -1,7 +1,7 @@
 using System;
 using System.Buffers.Binary;
 
-namespace Poser.UI.Reactive;
+namespace Poser.UI;
 
 internal enum UiKeyKind : byte
 {
@@ -77,6 +77,29 @@ public readonly struct UiKey : IEquatable<UiKey>
         UiKeyKind.Literal => HashCode.Combine(_kind, _text is null ? 0 : StringComparer.Ordinal.GetHashCode(_text)),
         _ => HashCode.Combine(_kind, _lo, _hi),
     };
+
+    /// <summary>
+    /// Folds the COMPLETE key representation into a path hash. Never routed
+    /// through <see cref="GetHashCode"/>: that collapses a 64-bit payload to
+    /// 32 bits, and two rows whose ids happen to fold together would then
+    /// share one interaction identity.
+    /// </summary>
+    internal ulong HashInto(ulong hash)
+    {
+        hash = UiRoot.Mix(hash, (byte)_kind);
+        switch (_kind)
+        {
+            case UiKeyKind.None:
+                return hash;
+            case UiKeyKind.Literal:
+                string text = _text ?? string.Empty;
+                for (int i = 0; i < text.Length; i++)
+                    hash = UiRoot.Mix(hash, text[i]);
+                return UiRoot.Mix(hash, (ulong)(uint)text.Length);
+            default:
+                return UiRoot.Mix(UiRoot.Mix(hash, _lo), _hi);
+        }
+    }
 
     public static bool operator ==(UiKey left, UiKey right) => left.Equals(right);
 

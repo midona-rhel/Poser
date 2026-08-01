@@ -6,7 +6,7 @@ using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
 
-public static partial class Crystarium
+public static partial class LegacyCrystarium
 {
     public static void ScrollRegion(
         string id,

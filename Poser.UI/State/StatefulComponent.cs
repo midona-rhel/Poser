@@ -1,9 +1,10 @@
 using System;
 using System.Diagnostics;
 using System.Reflection;
+using Poser.UI.Reactive;
 using Scope = Poser.UI.Reactive.ScopeTable.Scope;
 
-namespace Poser.UI.Reactive;
+namespace Poser.UI;
 
 /// <summary>
 /// Untyped handle the runtime holds for a stateful instance. Public only
@@ -17,8 +18,7 @@ public abstract class StatefulComponentBase
 
     internal abstract void ApplyReducer(Scope scope, Delegate reducer);
 
-    internal abstract void ApplyReducer<TValue>(Scope scope, Delegate reducer, TValue value)
-        where TValue : unmanaged;
+    internal abstract void ApplyReducer<TValue>(Scope scope, Delegate reducer, TValue value);
 
     private protected static int CacheReducer(Scope scope, Delegate reducer)
     {
@@ -64,7 +64,6 @@ public abstract class StatefulComponent<TProps, TState> : StatefulComponentBase
     }
 
     protected UiEvent<TValue> UpdateState<TValue>(Func<TState, TValue, TState> reducer)
-        where TValue : unmanaged
     {
         Scope scope = RequireScope();
         return new UiEvent<TValue>(scope.Id, CacheReducer(scope, reducer));
@@ -72,7 +71,12 @@ public abstract class StatefulComponent<TProps, TState> : StatefulComponentBase
 
     internal UiNode MountAndRender(Scope scope, in TProps props)
     {
-        scope.State ??= CreateState(props);
+        if (!scope.StateInitialized)
+        {
+            scope.State = CreateState(props);
+            scope.StateInitialized = true;
+        }
+
         if (scope.PendingState is not null)
         {
             scope.State = scope.PendingState;

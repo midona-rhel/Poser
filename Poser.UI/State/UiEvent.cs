@@ -1,7 +1,8 @@
 using System;
+using Poser.UI.Reactive;
 using Scope = Poser.UI.Reactive.ScopeTable.Scope;
 
-namespace Poser.UI.Reactive;
+namespace Poser.UI;
 
 /// <summary>
 /// Frame token binding a control's callback to one scope's cached reducer.
@@ -23,10 +24,10 @@ public readonly struct UiEvent
 
 /// <summary>
 /// As <see cref="UiEvent"/>, but the control supplies the value at dispatch
-/// time; the token never stores it.
+/// time; the token never stores it. The payload is unconstrained — dispatch
+/// is generic all the way down, so a reference payload boxes nothing either.
 /// </summary>
 public readonly struct UiEvent<TValue>
-    where TValue : unmanaged
 {
     internal readonly int ScopeId;
     internal readonly int ReducerSlot;
@@ -50,8 +51,7 @@ internal static class EventDispatch
     internal static void Enqueue(ScopeTable scopes, Scope scope, Delegate reducer) =>
         Component(scopes, scope).ApplyReducer(scope, reducer);
 
-    internal static void Enqueue<TValue>(ScopeTable scopes, Scope scope, Delegate reducer, TValue value)
-        where TValue : unmanaged =>
+    internal static void Enqueue<TValue>(ScopeTable scopes, Scope scope, Delegate reducer, TValue value) =>
         Component(scopes, scope).ApplyReducer(scope, reducer, value);
 
     private static StatefulComponentBase Component(ScopeTable scopes, Scope scope)

@@ -18,22 +18,19 @@ internal sealed class ScopeTable
             ComponentType = componentType;
             Key = key;
             LastSeenFrame = frame;
-            NewThisFrame = true;
-            // The only allocation a scope makes, and only once: every ImGui id
-            // pushed for this scope is a suffix of this string.
-            InteractionId = "##rx" + id.ToString();
         }
 
         internal int Id { get; }
         internal int Parent { get; }
         internal Type ComponentType { get; }
         internal UiKey Key { get; }
-        internal string InteractionId { get; }
         internal object? Instance;
         internal object? State;
         internal object? PendingState;
+        // Mount is proven by the FLAG, never by State being null: a component
+        // whose state is legitimately null would otherwise re-mount forever.
+        internal bool StateInitialized;
         internal int LastSeenFrame;
-        internal bool NewThisFrame;
 
         private Delegate?[] _reducers = new Delegate?[4];
         private int[] _reducerSlots = new int[4];
@@ -92,7 +89,6 @@ internal sealed class ScopeTable
                     $"Duplicate sibling key '{key}' for {componentType.Name}: keys must be unique among siblings of one type.");
 #endif
             existing.LastSeenFrame = frame;
-            existing.NewThisFrame = false;
             return existing;
         }
 

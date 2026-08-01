@@ -45,7 +45,7 @@ namespace Poser.UI;
 /// edit's existing idiom); the CSS declares no <c>::selection</c>.</item>
 /// </list>
 /// </summary>
-public static partial class Crystarium
+public static partial class LegacyCrystarium
 {
     public static bool TextInput(
         string id,

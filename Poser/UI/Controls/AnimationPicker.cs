@@ -117,7 +117,7 @@ public sealed class AnimationPicker
     {
         if (_openRequested)
         {
-            Crystarium.OpenPopover(PopupId);
+            LegacyCrystarium.OpenPopover(PopupId);
             _openRequested = false;
         }
         if (!ImGui.IsPopupOpen(PopupId))
@@ -126,7 +126,7 @@ public sealed class AnimationPicker
         var results = Results(out var kinds, out var kindIndex);
         bool showWeapon = ShowWeaponFilter;
         AnimationPick? picked = null;
-        Crystarium.Popover(PopupId, new PopoverProps
+        LegacyCrystarium.Popover(PopupId, new PopoverProps
         {
             Width = Crystarium.ActiveTheme.Picker.WideWidth,
             Height = HeightFor(results.Count, kinds.Count > 1, showWeapon),
@@ -215,7 +215,7 @@ public sealed class AnimationPicker
     }
 
     private AnimationPick? DrawBody(
-        Crystarium.PopoverScope popover,
+        LegacyCrystarium.PopoverScope popover,
         IReadOnlyList<TimelineEntry> results,
         List<AnimationKind?> kinds,
         int kindIndex,

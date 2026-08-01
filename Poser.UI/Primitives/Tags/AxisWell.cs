@@ -6,7 +6,7 @@ using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
 
-public static partial class Crystarium
+public static partial class LegacyCrystarium
 {
     private static string? _axisEditId;
     private static float _axisEditValue;

@@ -9,7 +9,7 @@ namespace Poser.UI;
 public enum SidebarExpander { None, Collapsed, Open }
 
 /// <summary>
-/// What a release inside a <see cref="Crystarium.SidebarRow"/> activated.
+/// What a release inside a <see cref="LegacyCrystarium.SidebarRow"/> activated.
 /// picto's <c>.expandArrow</c> <c>onClick</c> calls
 /// <c>stopPropagation</c>, so one gesture resolves to the expander or to
 /// the row and NEVER to both — a single value, rather than one flag per
@@ -45,7 +45,7 @@ public record struct SidebarRowProps
     public bool HideIcon;
 }
 
-public static partial class Crystarium
+public static partial class LegacyCrystarium
 {
     /// <summary>The one animated channel of <c>.row::before</c>.</summary>
     private const int SidebarHighlightChannel = 0;

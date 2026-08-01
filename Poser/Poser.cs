@@ -76,7 +76,7 @@ public class Poser : IDalamudPlugin
         FontRegistry.Register(pluginInterface.UiBuilder.FontAtlas);
 
         // Dalamud provides real backdrop blur for the retained glass surfaces.
-        Crystarium.FloatingSurface.BackdropBlurAvailable = true;
+        LegacyCrystarium.FloatingSurface.BackdropBlurAvailable = true;
 
         // Initialize UI Manager (triggers subscription to draw events)
         _ = _serviceProvider.GetRequiredService<IUIManager>();

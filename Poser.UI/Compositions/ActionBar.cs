@@ -13,7 +13,7 @@ public enum ActionBarSeparator
     Bottom,
 }
 
-public static partial class Crystarium
+public static partial class LegacyCrystarium
 {
     public static void ActionBar(
         string id,
@@ -239,7 +239,7 @@ public static partial class Crystarium
                         ImGui.SetCursorScreenPos(new(
                             x,
                             centerY - side * 0.5f));
-                        Crystarium.Checkbox(
+                        LegacyCrystarium.Checkbox(
                             $"{_id}-check-{i}",
                             item.Value,
                             item.OnToggle!,
@@ -280,7 +280,7 @@ public static partial class Crystarium
                         ImGui.SetCursorScreenPos(new(
                             max.X - switchWidth,
                             centerY - logicalHeight * scale * 0.5f));
-                        Crystarium.Switch(
+                        LegacyCrystarium.Switch(
                             $"{_id}-switch-{i}",
                             item.Value,
                             item.OnToggle!,

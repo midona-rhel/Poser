@@ -1,6 +1,6 @@
 using System;
 
-namespace Poser.UI.Reactive;
+namespace Poser.UI;
 
 public enum UiFlow : byte
 {

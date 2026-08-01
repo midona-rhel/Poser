@@ -19,7 +19,7 @@ public enum ButtonVariant
     Danger,
 }
 
-public static partial class Crystarium
+public static partial class LegacyCrystarium
 {
     public static bool Button(
         string label,
@@ -242,16 +242,32 @@ public static partial class Crystarium
     }
 
     /// <summary>
-    /// The text button's complete paint, split out so the retained
-    /// declarative tree can drive the SAME pixels from its own layout and
-    /// interaction pass. Everything visual lives here; the caller owns
-    /// only reservation, help, and activation.
+    /// The text button's complete paint. Everything visual lives here; the
+    /// caller owns only reservation, help, and activation.
     /// </summary>
     internal static void PaintTextButton(
         in InteractionResult hit,
         uint identity,
         string label,
         ControlStyle style,
+        ButtonVariant variant,
+        bool disabled)
+    {
+        var labelColor = PaintTextButtonBox(hit, identity, variant, disabled);
+        DrawButtonLabelClipped(
+            ImGui.GetWindowDrawList(), hit.ScreenMin, hit.ScreenMax,
+            label, style, labelColor);
+    }
+
+    /// <summary>
+    /// The button BOX alone — background, border, and the disabled group —
+    /// returning the color its label must take. Split out so the retained
+    /// declarative tree can drive the SAME pixels while composing the label
+    /// as a real child element instead of a painter argument.
+    /// </summary>
+    internal static Vector4 PaintTextButtonBox(
+        in InteractionResult hit,
+        uint identity,
         ButtonVariant variant,
         bool disabled)
     {
@@ -308,9 +324,7 @@ public static partial class Crystarium
             var content = ControlPaint.DisabledGroup(
                 draw, hit.ScreenMin, hit.ScreenMax,
                 radius, borderPx, fill, borderIdle, opacity);
-            DrawButtonLabelClipped(
-                draw, hit.ScreenMin, hit.ScreenMax, label, style,
-                content.Label(text));
+            return content.Label(text);
         }
         else
         {
@@ -334,16 +348,12 @@ public static partial class Crystarium
                 borderPx);
         }
 
-        if (!disabled)
-        {
-            // NO focus-visible outline — PRODUCT DECISION (user): this is
-            // a native-styled UI, not a web page; Picto's .btn:focus-visible
-            // ring is deliberately not reproduced. Keyboard activation
-            // (Enter/Space via Interactive.Reserve) still works; there is
-            // simply no web-style focus chrome anywhere in Crystarium.
-            DrawButtonLabelClipped(
-                draw, hit.ScreenMin, hit.ScreenMax, label, style, text);
-        }
+        // NO focus-visible outline — PRODUCT DECISION (user): this is a
+        // native-styled UI, not a web page; Picto's .btn:focus-visible ring
+        // is deliberately not reproduced. Keyboard activation (Enter/Space
+        // via Interactive.Reserve) still works; there is simply no web-style
+        // focus chrome anywhere in Crystarium.
+        return text;
     }
 
     private static TextStyle ButtonLabelStyle(

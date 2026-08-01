@@ -96,16 +96,16 @@ public static class BoneMatrixView
                 Weight = FontWeight.SemiBold,
                 Color = TextSecondary,
             };
-            Crystarium.TextAt(new Vector2(origin.X, y + 15f * s), section.Title, sectionStyle);
+            LegacyCrystarium.TextAt(new Vector2(origin.X, y + 15f * s), section.Title, sectionStyle);
             ImGui.SetCursorScreenPos(new Vector2(origin.X, y + 7f * s));
             ImGui.InvisibleButton($"##{idPrefix}-section-{sectionIndex}",
                 new Vector2(
                     MathF.Min(
                         width,
-                        Crystarium.MeasureText(section.Title, sectionStyle).X + 18f * s),
+                        LegacyCrystarium.MeasureText(section.Title, sectionStyle).X + 18f * s),
                     24f * s));
             if (ImGui.IsItemHovered())
-                Crystarium.HoverHelp.Explain($"bmv-section-{sectionIndex}",
+                LegacyCrystarium.HoverHelp.Explain($"bmv-section-{sectionIndex}",
                     ImGui.GetItemRectMin(), ImGui.GetItemRectMax(),
                     "Select every bone in this group · Ctrl adds to the selection");
             if (ImGui.IsItemClicked())
@@ -168,7 +168,7 @@ public static class BoneMatrixView
         float labelAvail = labelRight - pos.X;
         float labelY = pos.Y + (metrics.RowHeight - 12f) / 2f * s - 2f * s;
         if (labelAvail > 0f)
-            Crystarium.TextAt(
+            LegacyCrystarium.TextAt(
                 new Vector2(pos.X, labelY), row.Label, labelStyle,
                 TextConstraint.Truncate(labelAvail, TextAlign.End));
 
@@ -218,8 +218,8 @@ public static class BoneMatrixView
                     Family = FontFamily.Mono,
                     Color = pill.Selected ? TextPrimary : hovered ? TextPrimary : TextSecondary,
                 };
-                float tw = Crystarium.MeasureText(pill.Label, pillLabelStyle).X;
-                Crystarium.TextAt(new Vector2(center.X - tw / 2f, center.Y - 5f * s), pill.Label, pillLabelStyle);
+                float tw = LegacyCrystarium.MeasureText(pill.Label, pillLabelStyle).X;
+                LegacyCrystarium.TextAt(new Vector2(center.X - tw / 2f, center.Y - 5f * s), pill.Label, pillLabelStyle);
             }
 
             if (clicked)

@@ -7,7 +7,7 @@ using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
 
-public static partial class Crystarium
+public static partial class LegacyCrystarium
 {
     // ── InspectorSection.module.css constants ────────────────────────
     /// <summary><c>.section { border-top: 1px }</c>, in logical px — the
@@ -305,7 +305,7 @@ public static partial class Crystarium
                 ActiveTheme.Form.ValueColumnWidth * row.Scale;
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 style.Height, ActiveTheme.Controls.SliderHeight)));
-            Crystarium.Slider(
+            LegacyCrystarium.Slider(
                 id, value, minimum, maximum, next =>
                 {
                     displayedValue = next;
@@ -339,7 +339,7 @@ public static partial class Crystarium
                 style, row.ControlWidth / row.Scale, fillByDefault: false);
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 controlStyle.Height, ActiveTheme.Controls.SwitchHeight)));
-            Crystarium.Switch(id, value, onChange, controlStyle, disabled);
+            LegacyCrystarium.Switch(id, value, onChange, controlStyle, disabled);
             _page.EndRow(row, id, help);
         }
 
@@ -362,7 +362,7 @@ public static partial class Crystarium
                 style, row.ControlWidth / row.Scale, fillByDefault: false);
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 controlStyle.Height, ActiveTheme.Controls.SwitchHeight)));
-            Crystarium.Switch(id, value, onChange, controlStyle, disabled);
+            LegacyCrystarium.Switch(id, value, onChange, controlStyle, disabled);
             DrawActions(
                 actionScope.Items,
                 row.ControlOrigin.X + row.ControlWidth - actionWidth,
@@ -383,7 +383,7 @@ public static partial class Crystarium
                 style, row.ControlWidth / row.Scale, fillByDefault: false);
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 controlStyle.Height, ActiveTheme.Controls.CheckboxSize)));
-            Crystarium.Checkbox(
+            LegacyCrystarium.Checkbox(
                 id, value, onChange, controlStyle, disabled, help);
             _page.EndRow(row, id, help);
         }
@@ -398,7 +398,7 @@ public static partial class Crystarium
                 WorkspaceInRegion(style, row.ControlWidth / row.Scale);
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 controlStyle.Height, ActiveTheme.Controls.NavigationHeight)));
-            Crystarium.SegmentedControl(
+            LegacyCrystarium.SegmentedControl(
                 id, items, selected, onChange, controlStyle);
             _page.EndRow(row, id, help);
         }
@@ -413,7 +413,7 @@ public static partial class Crystarium
                 WorkspaceInRegion(style, row.ControlWidth / row.Scale);
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 controlStyle.Height, ActiveTheme.Controls.WorkspaceHeight)));
-            Crystarium.Dropdown(id, items, selected, onChange,
+            LegacyCrystarium.Dropdown(id, items, selected, onChange,
                 controlStyle, disabled);
             _page.EndRow(row, id, help);
         }
@@ -435,7 +435,7 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 controlStyle.Height,
                 ActiveTheme.Controls.WorkspaceHeight)));
-            Crystarium.ActionDropdown(
+            LegacyCrystarium.ActionDropdown(
                 id,
                 items,
                 selected,
@@ -475,8 +475,8 @@ public static partial class Crystarium
                 pickerStyle.Height,
                 ActiveTheme.Controls.WorkspaceHeight);
             ImGui.SetCursorScreenPos(row.CenterControl(controlHeight));
-            Crystarium.Button(
-                Crystarium.TruncateText(
+            LegacyCrystarium.Button(
+                LegacyCrystarium.TruncateText(
                     value,
                     new TextStyle { Size = ActiveTheme.Typography.LabelSize },
                     MathF.Max(1f,
@@ -521,7 +521,7 @@ public static partial class Crystarium
             float displayed = value;
             ImGui.SetCursorScreenPos(row.CenterControl(
                 ActiveTheme.Controls.WorkspaceHeight));
-            Crystarium.AxisWell(
+            LegacyCrystarium.AxisWell(
                 $"{id}-value",
                 "",
                 value,
@@ -543,7 +543,7 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(new(
                 row.ControlOrigin.X + wellWidth * row.Scale + gap,
                 row.CenterControl(ActiveTheme.Controls.SliderHeight).Y));
-            Crystarium.Slider(
+            LegacyCrystarium.Slider(
                 $"{id}-slider",
                 displayed,
                 minimum,
@@ -570,7 +570,7 @@ public static partial class Crystarium
                 WorkspaceInRegion(style, row.ControlWidth / row.Scale);
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 controlStyle.Height, ActiveTheme.Controls.WorkspaceHeight)));
-            Crystarium.TextInput(id, value, onChange,
+            LegacyCrystarium.TextInput(id, value, onChange,
                 controlStyle, placeholder, disabled);
             _page.EndRow(row, id, help);
         }
@@ -607,14 +607,14 @@ public static partial class Crystarium
                 fillByDefault: true);
             float renderedTriggerWidth = ResolveButtonWidth(
                 value, triggerStyle, triggerWidth / row.Scale) * row.Scale;
-            string display = Crystarium.TruncateText(value,
+            string display = LegacyCrystarium.TruncateText(value,
                 new TextStyle { Size = ActiveTheme.Typography.LabelSize },
                 MathF.Max(1f, renderedTriggerWidth
                     - ActiveTheme.Spacing.Six * 2f * row.Scale));
             float controlHeight = ControlSizing.Height(
                 triggerStyle.Height, ActiveTheme.Controls.WorkspaceHeight);
             ImGui.SetCursorScreenPos(row.CenterControl(controlHeight));
-            Crystarium.Button(display, select,
+            LegacyCrystarium.Button(display, select,
                 style: triggerStyle,
                 disabled: !available,
                 help: disabledHelp,
@@ -625,7 +625,7 @@ public static partial class Crystarium
                 ImGui.SetCursorScreenPos(new(
                     row.ControlOrigin.X + row.ControlWidth - resetWidth,
                     row.CenterControl(controlHeight).Y));
-                Crystarium.Button("Reset", reset, style: resetStyle,
+                LegacyCrystarium.Button("Reset", reset, style: resetStyle,
                     help: $"Restore the incoming {label.ToLowerInvariant()} exactly",
                     id: $"{id}-reset");
             }
@@ -662,7 +662,7 @@ public static partial class Crystarium
                     row.ControlOrigin.X
                         + i * (side * row.Scale + gap),
                     row.CenterControl(side).Y));
-                if (Crystarium.Swatch(
+                if (LegacyCrystarium.Swatch(
                         $"{id}-{i}",
                         colors[i],
                         selected == i,
@@ -842,7 +842,7 @@ public static partial class Crystarium
                 ImGui.SetCursorScreenPos(new(
                     originX + i * (width + gap),
                     controlY));
-                Crystarium.AxisWell(
+                LegacyCrystarium.AxisWell(
                     $"{id}-{axes[i]}",
                     axes[i],
                     axis == 0 ? value.X : axis == 1 ? value.Y : value.Z,
@@ -954,7 +954,7 @@ public static partial class Crystarium
                     _row.Origin.Y
                         + (ActiveTheme.Controls.FormRowHeight - side)
                         * 0.5f * _row.Scale));
-                Crystarium.ColorWell(
+                LegacyCrystarium.ColorWell(
                     $"{_id}-{item.Label}",
                     item.Value ?? Vector4.Zero,
                     item.OnChange,
@@ -1140,7 +1140,7 @@ public static partial class Crystarium
 
     private static Vector2 MeasureText(string text, float size,
         FontWeight weight, FontFamily family = FontFamily.Default)
-        => Crystarium.MeasureText(text,
+        => LegacyCrystarium.MeasureText(text,
             new TextStyle { Size = size, Weight = weight, Family = family });
 
     private static void DrawText(Vector2 position, float width, float size,
@@ -1149,7 +1149,7 @@ public static partial class Crystarium
     {
         if (!(width > 0f))
             return;
-        Crystarium.TextAt(position, text,
+        LegacyCrystarium.TextAt(position, text,
             new TextStyle { Size = size, Weight = weight, Family = family, Color = color },
             TextConstraint.Truncate(width));
     }
@@ -1162,8 +1162,8 @@ public static partial class Crystarium
             return;
         var style = new TextStyle
         { Size = size, Weight = weight, Family = family, Color = color };
-        float lineHeight = Crystarium.MeasureText(text, style).Y;
-        Crystarium.TextAt(new(position.X,
+        float lineHeight = LegacyCrystarium.MeasureText(text, style).Y;
+        LegacyCrystarium.TextAt(new(position.X,
                 position.Y + (region.Y - lineHeight) * 0.5f),
             text, style, TextConstraint.Truncate(region.X));
     }
@@ -1175,8 +1175,8 @@ public static partial class Crystarium
         if (!(width > 0f))
             return;
         var style = new TextStyle { Size = size, Family = family, Color = color };
-        float lineHeight = Crystarium.MeasureText(text, style).Y;
-        Crystarium.TextAt(
+        float lineHeight = LegacyCrystarium.MeasureText(text, style).Y;
+        LegacyCrystarium.TextAt(
             new(position.X, position.Y + (height - lineHeight) * 0.5f),
             text, style,
             TextConstraint.Truncate(width, TextAlign.End));
