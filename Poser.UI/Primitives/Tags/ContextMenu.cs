@@ -404,18 +404,24 @@ public static partial class Crystarium
                 };
                 var labelSize =
                     Crystarium.MeasureText(item.Label, labelStyle);
-                // CSS .label: flex 1, ellipsis — the canonical truncate,
-                // which the raw AddText path never honored.
-                Crystarium.TextAt(
-                    new Vector2(
-                        textX,
-                        rowMin.Y
-                            + (rowHeightPx - labelSize.Y) * 0.5f
-                            + rise),
-                    item.Label,
-                    labelStyle,
-                    TextConstraint.Truncate(
-                        MathF.Max(1f, labelRight - textX)));
+                var labelPos = new Vector2(
+                    textX,
+                    rowMin.Y
+                        + (rowHeightPx - labelSize.Y) * 0.5f
+                        + rise);
+                float labelWidth = MathF.Max(1f, labelRight - textX);
+                // CSS .label: flex 1, ellipsis. Constrain ONLY on
+                // overflow: the truncate path clips to the line box, and
+                // Segoe's descenders reach a hair below it — an
+                // unconditional clip shaved the bottom off 'g'.
+                if (labelSize.X > labelWidth)
+                    Crystarium.TextAt(
+                        labelPos,
+                        item.Label,
+                        labelStyle,
+                        TextConstraint.Truncate(labelWidth));
+                else
+                    Crystarium.TextAt(labelPos, item.Label, labelStyle);
 
                 y += Crystarium.ActiveTheme.Controls.ListRowHeight * s;
             }
