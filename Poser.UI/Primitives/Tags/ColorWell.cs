@@ -46,6 +46,16 @@ public static partial class Crystarium
     /// swatch keeps the same silhouette.</summary>
     private const int SwatchSegments = 64;
 
+    /// <summary>ImGui's <c>AddCircle</c> does not stroke on the radius it
+    /// is handed: BOTH its branches build the path at
+    /// <c>radius - 0.5f</c> before <c>PathStroke</c> centres the band on
+    /// it. <c>AddCircleFilled</c> uses the radius as given, so a ring and
+    /// the disc it hugs are half a pixel out of register unless the bias
+    /// is added back. It is deliberately NOT multiplied by the UI scale:
+    /// it is a rasterizer offset in FRAMEBUFFER pixels, the same half
+    /// pixel at 1×, 1.25×, and 1.5×.</summary>
+    private const float CircleStrokeBias = 0.5f;
+
     /// <summary><c>.palette { min-height: 26px }</c> — the pill's
     /// border-box height. Its 24px CONTENT box is what the 16px wraps
     /// centre in, so this is not interchangeable with
@@ -268,12 +278,13 @@ public static partial class Crystarium
     /// <c>var()</c> it uses is the border colour, which is why that alone
     /// reads from the theme and the rest are CSS literals, exactly like
     /// the swatch metrics this file already carries.</para>
-    /// <para>The container takes no id and reserves no hit target: the
-    /// module declares no hover, focus, or click on <c>.palette</c>, so
-    /// the only interactive things here are the children, and they own
-    /// their own ids. <paramref name="count"/> is a parameter rather than
-    /// something the body reports because the pill is painted BEFORE its
-    /// children and therefore has to know its width first.</para>
+    /// <para>The container takes no id and reserves no hit target — it
+    /// reserves LAYOUT, not input: the module declares no hover, focus, or
+    /// click on <c>.palette</c>, so the only interactive things here are
+    /// the children, and they own their own ids.
+    /// <paramref name="count"/> is a parameter rather than something the
+    /// body reports because the pill is painted BEFORE its children and
+    /// therefore has to know its width first.</para>
     /// <para>Three declarations are deliberately NOT implemented, all for
     /// the same reason — they are the PARENT's half of the box model, and
     /// modelling them here would be the CSS engine this deliberately is
@@ -332,16 +343,38 @@ public static partial class Crystarium
         // overflow: hidden — a caller-fixed width narrower than the row
         // clips it rather than letting wraps spill past the pill.
         dl.PushClipRect(origin, paletteMax, true);
-        for (int i = 0; i < count; i++)
+        try
         {
-            ImGui.SetCursorScreenPos(first + new Vector2(
-                i * (SwatchWrapSize + PaletteGap) * scale, 0f));
-            swatch(i);
+            for (int i = 0; i < count; i++)
+            {
+                ImGui.SetCursorScreenPos(first + new Vector2(
+                    i * (SwatchWrapSize + PaletteGap) * scale, 0f));
+                swatch(i);
+            }
         }
-        dl.PopClipRect();
-
-        ImGui.SetCursorScreenPos(origin + new Vector2(0f, metrics.Height));
-        ImGui.Dummy(Vector2.Zero);
+        finally
+        {
+            // Both of these are GLOBAL for the rest of the frame — the
+            // window's draw list clip stack and the window's cursor — so a
+            // swatch callback that throws must not be able to strand
+            // either one. The unwind still leaves the palette's box
+            // correctly reserved, because the reservation IS the restore.
+            dl.PopClipRect();
+            // Flow reservation. The children drew at ABSOLUTE positions
+            // and reserved only their own 16px wraps, none of which is the
+            // container's box; the pill itself was pure draw-list paint.
+            // So the palette claims its FULL resolved rect here, as the
+            // LAST item it emits — which is what a same-line or measuring
+            // consumer reads (ImGui's SameLine and content-extent both
+            // follow the most recent item, not the cursor). Reserving from
+            // `origin` rather than from wherever the last child left the
+            // cursor is also what makes an EMPTY palette (count 0) reserve
+            // its min-height by min-padding-width pill instead of nothing,
+            // and it leaves the cursor exactly where the reservation's own
+            // flow puts it: the next line under the pill.
+            ImGui.SetCursorScreenPos(origin);
+            ImGui.Dummy(metrics.Size);
+        }
     }
 
     /// <summary>
@@ -352,6 +385,12 @@ public static partial class Crystarium
     /// only survives while every ring colour is opaque — the palette's
     /// hover ring is <c>--color-text-tertiary</c> at 50% white and a disc
     /// would tint the swatch's own gap through it.
+    /// <para>The band must land on exactly
+    /// <c>[innerRadius, innerRadius + width]</c>, which is the radial span
+    /// CSS gives a spread/inset shadow. The mid-radius alone does not get
+    /// there because of <see cref="CircleStrokeBias"/>: the radius handed
+    /// to <c>AddCircle</c> is the one ImGui shrinks, so it is the one that
+    /// carries the correction.</para>
     /// </summary>
     private static void SwatchRing(
         ImDrawListPtr drawList,
@@ -364,7 +403,7 @@ public static partial class Crystarium
             return;
         drawList.AddCircle(
             center,
-            innerRadius + width * 0.5f,
+            innerRadius + width * 0.5f + CircleStrokeBias,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(color)),
             SwatchSegments,
             width);
