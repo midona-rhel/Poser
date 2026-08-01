@@ -29,6 +29,32 @@ public static partial class Crystarium
     /// renders in <c>.btnChevron</c>.</summary>
     private const string ChevronIcon = "selector";
 
+    /// <summary>
+    /// The OPAQUE fill <c>.drop</c> wears — the color the trigger already
+    /// SHOWS at rest, not the token it is painted with.
+    ///
+    /// <para><c>.btn</c> and <c>.drop</c> share
+    /// <c>--color-subtle-overlay</c>, which is white at 10%: a TRANSLUCENT
+    /// token whose result belongs to whatever sits behind it. Behind the
+    /// trigger is the window surface; behind the popup is the popup's own
+    /// <c>--shadow-panel</c>, whose solid core <see cref="BoxRenderer"/>
+    /// lays down before the fill. The one token therefore reads visibly
+    /// darker on the menu than on the closed control the menu is supposed
+    /// to continue. Flattening it over <see cref="Theme.Surface"/> yields
+    /// that resting appearance as an opaque color, and the opacity is the
+    /// point: shadow, blur, or whatever the menu overhangs can no longer
+    /// tint it.</para>
+    ///
+    /// <para>The BORDER token is deliberately NOT flattened.
+    /// <see cref="BoxRenderer"/> strokes the border over the fill, so
+    /// <c>--color-border-secondary</c> over this opaque fill composites to
+    /// the trigger's border pixel by construction — flattening it first
+    /// would compute the identical number a second time and hide where the
+    /// match comes from.</para>
+    /// </summary>
+    private static Vector4 PopupFill(in Theme theme) =>
+        ColorEx.FlattenOver(theme.Chrome.ControlHover, theme.Surface);
+
     public static bool Dropdown(
         string id, string[] items, int selected, Action<int> onChange,
         ControlStyle style = default, bool disabled = false, string? help = null) =>
@@ -52,9 +78,10 @@ public static partial class Crystarium
     /// <c>.optActive</c>). The module declares no <c>:hover</c> and no
     /// <c>transition</c> on <c>.btn</c>, so the trigger has no hover
     /// paint and no motion channel.
-    /// One product deviation: <c>.drop</c> takes the trigger's background
-    /// and border tokens instead of <c>--glass-bg</c>, so the open
-    /// dropdown reads as one continuous control.
+    /// One product deviation: <c>.drop</c> takes the trigger's APPEARANCE
+    /// instead of <c>--glass-bg</c>, so the open dropdown reads as one
+    /// continuous control. Appearance, not token: see
+    /// <see cref="PopupFill"/>.
     /// </summary>
     private static bool DropdownCore(
         string id, string[] items, int selected, Action<int> onChange,
@@ -230,9 +257,10 @@ public static partial class Crystarium
                 {
                     // PRODUCT DEVIATION from `.drop { background: var(--glass-bg) }`:
                     // the popup wears the TRIGGER's own surface so the open
-                    // control reads as one object. Same fill token and same
-                    // border token as `.btn`; the CSS glass recipe is not used.
-                    BackgroundColor = triggerFill,
+                    // control reads as one object. Opaque by construction —
+                    // see PopupFill — and the same border token as `.btn`;
+                    // the CSS glass recipe is not used.
+                    BackgroundColor = PopupFill(theme),
                     BorderWidth = 1f,
                     BorderRadius = radius,
                     BorderTopColor = triggerBorder,

@@ -66,10 +66,20 @@ public static partial class Crystarium
 
         private enum Phase { Hidden, Entering, Open, Exiting }
 
+        /// <summary>
+        /// A registration's two INDEPENDENT timing opt-outs.
+        /// <paramref name="Instant"/> drops the 400 ms open DELAY (what
+        /// <see cref="Preview"/> asks for: a truncation readout must not
+        /// make the reader wait). <paramref name="Animated"/> keeps or
+        /// drops the 150 ms pop TRANSITION. They are separate axes because
+        /// they answer separate questions — "how long before it appears"
+        /// and "does its appearance move" — and a caller may want either
+        /// one alone.
+        /// </summary>
         private readonly record struct Candidate(
             uint Id, Vector2 Min, Vector2 Max, string Text,
             string? Shortcut, HoverHelpSide Side, bool Instant,
-            InteractionOwner Owner);
+            bool Animated, InteractionOwner Owner);
 
         private static Candidate? _candidate;
         private static uint? _pendingId;
@@ -79,13 +89,33 @@ public static partial class Crystarium
         private static double _phaseStart;
 
         /// <summary>
+        /// The CURRENT card's pop length — zero when the card opted out of
+        /// animation. A zero-length transition completes in the frame it
+        /// starts, so the entrance lands settled and the exit removes the
+        /// card at once, while everything else about the card is untouched:
+        /// the 400 ms delay, the single-card rule, placement, and chrome
+        /// all read the same members they always did. This is the ONLY
+        /// place the option acts. <see cref="Draw"/> is deliberately NOT
+        /// branched — a card at inness 1 already runs scale 1, rise 0, and
+        /// full opacity through the same vertex path, so an unanimated card
+        /// is pixel-for-pixel a settled animated one.
+        /// </summary>
+        private static float PopDuration =>
+            _card.Animated ? Crystarium.ActiveTheme.Motion.HoverPop : 0f;
+
+        /// <summary>
         /// Registers explanatory help for a hovered target. Call every
         /// frame the semantic target is hovered — including disabled
         /// controls explaining why they are unavailable. The 400 ms
         /// delay, single-card rule, and placement are handled here.
+        /// <paramref name="animated"/> false renders the card at its
+        /// settled state — full scale, no rise, full opacity — the frame
+        /// it opens and removes it the frame it closes; the 400 ms delay
+        /// is unaffected, since motion and latency are separate axes.
         /// </summary>
         public static void Explain(string id, Vector2 targetMin, Vector2 targetMax,
-            string text, string? shortcut = null, HoverHelpSide side = HoverHelpSide.Bottom)
+            string text, string? shortcut = null, HoverHelpSide side = HoverHelpSide.Bottom,
+            bool animated = true)
         {
             if (text.Length == 0)
                 return;
@@ -94,21 +124,25 @@ public static partial class Crystarium
             // windows or ID scopes are distinct targets.
             _candidate = new Candidate(
                 ImGui.GetID(id), targetMin, targetMax, text, shortcut, side,
-                Instant: false, Interactive.CurrentOwner);
+                Instant: false, animated, Interactive.CurrentOwner);
         }
 
         /// <summary>
         /// Registers a truncation-only preview: the same chrome without
-        /// the explanatory 400 ms delay.
+        /// the explanatory 400 ms delay. <paramref name="animated"/>
+        /// carries the same meaning as on <see cref="Explain"/> — passing
+        /// false alongside the preview's own instant open is how a caller
+        /// asks for a readout with no timing behaviour at all.
         /// </summary>
         public static void Preview(string id, Vector2 targetMin, Vector2 targetMax,
-            string text, HoverHelpSide side = HoverHelpSide.Bottom)
+            string text, HoverHelpSide side = HoverHelpSide.Bottom,
+            bool animated = true)
         {
             if (text.Length == 0)
                 return;
             _candidate = new Candidate(
                 ImGui.GetID(id), targetMin, targetMax, text, null, side,
-                Instant: true, Interactive.CurrentOwner);
+                Instant: true, animated, Interactive.CurrentOwner);
         }
 
         /// <summary>
@@ -184,7 +218,7 @@ public static partial class Crystarium
                             // from the current visual state, as a CSS
                             // transition would.
                             _phase = Phase.Entering;
-                            _phaseStart = now - InverseProgress(inness) * Crystarium.ActiveTheme.Motion.HoverPop;
+                            _phaseStart = now - InverseProgress(inness) * PopDuration;
                         }
                     }
                 }
@@ -203,9 +237,9 @@ public static partial class Crystarium
                     BeginExit(now);
             }
 
-            if (_phase == Phase.Entering && now - _phaseStart >= Crystarium.ActiveTheme.Motion.HoverPop)
+            if (_phase == Phase.Entering && now - _phaseStart >= PopDuration)
                 _phase = Phase.Open;
-            if (_phase == Phase.Exiting && now - _phaseStart >= Crystarium.ActiveTheme.Motion.HoverPop)
+            if (_phase == Phase.Exiting && now - _phaseStart >= PopDuration)
                 _phase = Phase.Hidden;
             if (_phase == Phase.Hidden)
                 return;
@@ -219,14 +253,19 @@ public static partial class Crystarium
         {
             float inness = CurrentInness(now);
             _phase = Phase.Exiting;
-            _phaseStart = now - InverseProgress(1f - inness) * Crystarium.ActiveTheme.Motion.HoverPop;
+            _phaseStart = now - InverseProgress(1f - inness) * PopDuration;
         }
 
         /// <summary>How far IN (0 = Mantine OUT, 1 = Mantine IN) the card
         /// currently is on the ease curve.</summary>
         private static float CurrentInness(double now)
         {
-            float p = (float)Math.Clamp((now - _phaseStart) / Crystarium.ActiveTheme.Motion.HoverPop, 0.0, 1.0);
+            float duration = PopDuration;
+            // A zero-length transition is fully elapsed the instant it
+            // starts, which is also the only sane reading of 0/0.
+            float p = duration <= 0f
+                ? 1f
+                : (float)Math.Clamp((now - _phaseStart) / duration, 0.0, 1.0);
             return _phase switch
             {
                 Phase.Entering => PopEase.Evaluate(p),
