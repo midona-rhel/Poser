@@ -88,7 +88,12 @@ internal static class ComponentCatalog
         new("dropdown-open", 320, 280),
         new("color-palette", 220, 80),
         new("sidebar-row", 320, 80),
+        new("sidebar-row-hover", 320, 80),
         new("sidebar-row-selected", 320, 80),
+        new("sidebar-row-selected-hover", 320, 80),
+        new("sidebar-row-collapsed", 320, 80),
+        new("sidebar-row-expanded", 320, 80),
+        new("sidebar-row-drop", 320, 80),
         new("property-row", 320, 68),
         new("section", 320, 92),
         new("tooltip", 240, 80),
@@ -175,7 +180,11 @@ internal static class ComponentCatalog
             return new Vector2(40, 40) * scale;
         // Hover states park the pointer inside the control; hover-exit
         // leaves after 15 frames so the 150ms background transition has
-        // settled back to idle by capture.
+        // settled back to idle by capture. The shared inside point (84,40)
+        // is inside every -hover fixture's rect, including the sidebar
+        // rows (272x26 at the (24,24) stage origin) — sidebar hover is
+        // therefore real pointer input hit-tested by Interactive.Reserve,
+        // never a flag.
         // btn-hover-mid targets five 1/60s hover frames of the 150ms
         // transition = linear progress 5/9, captured mid-flight on the
         // fixed-timestep final frame. The harness's queued-event-to-
@@ -829,10 +838,27 @@ internal static class ComponentCatalog
                 DrawPalette();
                 break;
             case "sidebar-row":
+            case "sidebar-row-hover":
+                // Hover is NOT a flag here: the pointer parked over the
+                // row rect by PointerFor is what Interactive.Reserve
+                // hit-tests, so .row:hover comes from real input.
                 DrawSidebar(selected: false);
                 break;
             case "sidebar-row-selected":
+            case "sidebar-row-selected-hover":
+                // Same real pointer, over a SELECTED row: the deliberate
+                // Poser deviation (selection stays dominant where Picto's
+                // .row:hover::before out-specifies .selected::before).
                 DrawSidebar(selected: true);
+                break;
+            case "sidebar-row-collapsed":
+                DrawSidebarTree(SidebarExpander.Collapsed);
+                break;
+            case "sidebar-row-expanded":
+                DrawSidebarTree(SidebarExpander.Open);
+                break;
+            case "sidebar-row-drop":
+                DrawSidebarDrop();
                 break;
             case "property-row":
                 // No retained Crystarium counterpart exists. An empty
@@ -930,6 +956,56 @@ internal static class ComponentCatalog
         {
             Icon = TablerIcon.User,
             Selected = selected,
+            NoExpanderSlot = true,
+        };
+        Ui.SidebarRow(
+            "##sidebar-row",
+            "Midona Rhel",
+            in props,
+            new ControlStyle
+            {
+                Width = UiWidth.Fixed(272),
+            });
+    }
+
+    /// <summary>
+    /// Tree row at indent 1 — CSS <c>padding-left: 20px</c> with
+    /// <c>--row-inset: 21px</c>, which is what
+    /// <see cref="SidebarRowProps.Inset"/> carries — showing the
+    /// <c>.triangle</c> expander in both rotations next to a
+    /// <c>.count</c> badge. The expander slot is RESERVED here (no
+    /// <see cref="SidebarRowProps.NoExpanderSlot"/>), which is Poser's
+    /// documented deviation from picto's <c>margin-left:-20px</c> overlay
+    /// into the indent gutter.
+    /// </summary>
+    private static void DrawSidebarTree(SidebarExpander expander)
+    {
+        var props = new SidebarRowProps
+        {
+            Icon = TablerIcon.Folder,
+            Badge = "12",
+            Inset = 21f,
+            Expander = expander,
+        };
+        Ui.SidebarRow(
+            "##sidebar-row",
+            "Party members",
+            in props,
+            new ControlStyle
+            {
+                Width = UiWidth.Fixed(272),
+            });
+    }
+
+    /// <summary><see cref="SidebarRowProps.DropTarget"/> is the row's only
+    /// drop-state input; it paints picto's <c>.dropInside::before</c>
+    /// (primary-10 over a 1px primary-30 hairline).</summary>
+    private static void DrawSidebarDrop()
+    {
+        var props = new SidebarRowProps
+        {
+            Icon = TablerIcon.User,
+            DropTarget = true,
             NoExpanderSlot = true,
         };
         Ui.SidebarRow(

@@ -2,7 +2,7 @@
 // Do not hand-edit.
 window.sheetLayout = {
  "pageWidth": 688,
- "pageHeight": 4296,
+ "pageHeight": 4584,
  "cells": [
   {
    "name": "text-label",
@@ -469,7 +469,7 @@ window.sheetLayout = {
    "h": 80
   },
   {
-   "name": "sidebar-row-selected",
+   "name": "sidebar-row-hover",
    "component": "sidebar",
    "x": 352,
    "y": 3208,
@@ -477,10 +477,50 @@ window.sheetLayout = {
    "h": 80
   },
   {
+   "name": "sidebar-row-selected",
+   "component": "sidebar",
+   "x": 16,
+   "y": 3304,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "sidebar-row-selected-hover",
+   "component": "sidebar",
+   "x": 352,
+   "y": 3304,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "sidebar-row-collapsed",
+   "component": "sidebar",
+   "x": 16,
+   "y": 3400,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "sidebar-row-expanded",
+   "component": "sidebar",
+   "x": 352,
+   "y": 3400,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "sidebar-row-drop",
+   "component": "sidebar",
+   "x": 16,
+   "y": 3496,
+   "w": 320,
+   "h": 80
+  },
+  {
    "name": "property-row",
    "component": "property-row",
    "x": 16,
-   "y": 3320,
+   "y": 3608,
    "w": 320,
    "h": 68
   },
@@ -488,7 +528,7 @@ window.sheetLayout = {
    "name": "section",
    "component": "section",
    "x": 16,
-   "y": 3424,
+   "y": 3712,
    "w": 320,
    "h": 92
   },
@@ -496,7 +536,7 @@ window.sheetLayout = {
    "name": "tooltip",
    "component": "tooltip",
    "x": 16,
-   "y": 3552,
+   "y": 3840,
    "w": 240,
    "h": 80
   },
@@ -504,7 +544,7 @@ window.sheetLayout = {
    "name": "context-menu",
    "component": "context-menu",
    "x": 16,
-   "y": 3664,
+   "y": 3952,
    "w": 320,
    "h": 190
   },
@@ -512,7 +552,7 @@ window.sheetLayout = {
    "name": "modal",
    "component": "modal",
    "x": 16,
-   "y": 3888,
+   "y": 4176,
    "w": 560,
    "h": 360
   }

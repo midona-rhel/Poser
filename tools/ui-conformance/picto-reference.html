@@ -89,6 +89,32 @@
     const settingsIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg>';
     const settingsButton = (attrs = '', extraClass = '') =>
       `<button class="iconBtn toggleBtn ${extraClass}" aria-label="Settings" ${attrs}>${settingsIcon}</button>`;
+    // ── SidebarRow ────────────────────────────────────────────────
+    // Headless capture cannot produce a real :hover, and the hovered
+    // declarations live on ::before, which no inline style can reach.
+    // The rule below therefore restates .row:hover::before and
+    // .row:hover .icon VERBATIM behind a marker class of the SAME
+    // specificity (0,2,0), so the cascade resolves exactly as Blink's
+    // would with a pointer over the row — including against
+    // .selected::before (0,1,0), which it out-specifies.
+    const sidebarHoverRule = '<style>'
+      + '.row.isHover::before { background: var(--color-surface-hover); opacity: 1; }'
+      + '.row.isHover .icon { opacity: 1; }'
+      + '</style>';
+    // Same hand-matched glyph the accepted sidebar-row cells carry.
+    const sidebarUserIcon = '<span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M5 21a7 7 0 0 1 14 0"/></svg></span>';
+    // Poser.UI/Icons/TablerSvgSources.cs ["folder"], verbatim.
+    const sidebarFolderIcon = '<span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2"/></svg></span>';
+    // StandardRow's indent-1 rowStyle from SidebarRow.tsx:
+    // paddingLeft = 1 * INDENT_PX, --row-inset = 1 * INDENT_PX + 1.
+    // The expander is the real .expandArrow/.triangle markup, which
+    // picto pulls back over the indent gutter with margin-left:-20px.
+    const sidebarTreeRow = (rotation) =>
+      '<div class="row row-demo" style="padding-left:20px;--row-inset:21px">'
+      + `<div class="expandArrow"><span class="triangle ${rotation}"></span></div>`
+      + sidebarFolderIcon
+      + '<span class="label">Party members</span>'
+      + '<span class="count">12</span></div>';
     const variants = {
       'text-label': {
         // Picto typography: src/app/globals.css body — 13px
@@ -420,9 +446,45 @@
         css: 'shared/ui/SidebarRow/SidebarRow.module.css',
         html: '<div class="row row-demo"><span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M5 21a7 7 0 0 1 14 0"/></svg></span><span class="label">Midona Rhel</span></div>',
       },
+      'sidebar-row-hover': {
+        // .row:hover::before — --color-surface-hover at opacity 1 — plus
+        // .row:hover .icon lifting the glyph from .85 to full opacity.
+        css: 'shared/ui/SidebarRow/SidebarRow.module.css',
+        html: sidebarHoverRule
+          + `<div class="row row-demo isHover">${sidebarUserIcon}<span class="label">Midona Rhel</span></div>`,
+      },
       'sidebar-row-selected': {
         css: 'shared/ui/SidebarRow/SidebarRow.module.css',
         html: '<div class="row row-demo selected"><span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M5 21a7 7 0 0 1 14 0"/></svg></span><span class="label">Midona Rhel</span></div>',
+      },
+      'sidebar-row-selected-hover': {
+        // PICTO'S TRUE RESULT, not Poser's. .row:hover::before (0,2,0)
+        // out-specifies .selected::before (0,1,0) and neither is
+        // !important, so picto paints a hovered SELECTED row with the
+        // WEAKER hover fill — the selection visually disappears under the
+        // pointer. Poser deviates deliberately (SidebarRow.cs: Selected
+        // beats hover), so this cell is expected to diff, and the diff is
+        // the record of that decision.
+        css: 'shared/ui/SidebarRow/SidebarRow.module.css',
+        html: sidebarHoverRule
+          + `<div class="row row-demo selected isHover">${sidebarUserIcon}<span class="label">Midona Rhel</span></div>`,
+      },
+      'sidebar-row-collapsed': {
+        // .triangle.collapsed — rotate(-90deg), apex right.
+        css: 'shared/ui/SidebarRow/SidebarRow.module.css',
+        html: sidebarTreeRow('collapsed'),
+      },
+      'sidebar-row-expanded': {
+        // .triangle.expanded — rotate(0deg), apex down.
+        css: 'shared/ui/SidebarRow/SidebarRow.module.css',
+        html: sidebarTreeRow('expanded'),
+      },
+      'sidebar-row-drop': {
+        // dropPosition === 'inside' → .dropInside::before: --color-primary-10
+        // over a 1px --color-primary-30 hairline, opacity 1 !important.
+        // This is the treatment SidebarRowProps.DropTarget maps to.
+        css: 'shared/ui/SidebarRow/SidebarRow.module.css',
+        html: `<div class="row row-demo dropInside">${sidebarUserIcon}<span class="label">Midona Rhel</span></div>`,
       },
       'property-row': {
         css: 'shared/ui/PropertyRow/PropertyRow.module.css',
