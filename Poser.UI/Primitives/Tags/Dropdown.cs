@@ -115,35 +115,23 @@ public static partial class Crystarium
         var triggerFill = theme.Chrome.ControlHover;  // --color-subtle-overlay
         var triggerBorder = theme.Border;             // --color-border-secondary
         var labelColor = theme.Text;                  // --color-text-primary
-        float groupOpacity = 1f;
+        float chevronOpacity = ChevronOpacity;
         if (disabled)
         {
             // CmSelect declares NO :disabled rule; this borrows the Picto
             // action-button family's `.btn:disabled { opacity: .35 }`
-            // GROUP opacity, reproduced the same way Button does — the
-            // chrome draws non-overlapping (fill inset to the border's
-            // inner edge, the ring carrying the analytically flattened
-            // border-over-fill) and the label compensates so glyphs over
-            // the faded fill land on the group result.
-            groupOpacity = theme.Chrome.ControlDisabledOpacity;
-            drawList.AddRectFilled(
-                valueMin + new Vector2(borderPx),
-                valueMax - new Vector2(borderPx),
-                ImGui.ColorConvertFloat4ToU32(
-                    ColorEx.ApplyAlpha(triggerFill.Fade(groupOpacity))),
-                MathF.Max(0f, radius * scale - borderPx));
-            drawList.AddRect(
-                valueMin + new Vector2(borderPx * 0.5f),
-                valueMax - new Vector2(borderPx * 0.5f),
-                ImGui.ColorConvertFloat4ToU32(
-                    ColorEx.ApplyAlpha(
-                        ColorEx.FlattenOver(triggerBorder, triggerFill)
-                            .Fade(groupOpacity))),
-                MathF.Max(0f, radius * scale - borderPx * 0.5f),
-                ImDrawFlags.None,
-                borderPx);
-            labelColor = ColorEx.DisabledLabelCompensation(
-                labelColor, triggerFill, theme.Surface, groupOpacity);
+            // GROUP opacity — the SAME recipe Button uses, so it comes
+            // from the one implementation rather than a second copy. The
+            // trigger has two pieces of content inside that group and
+            // both take their transform from the same return value: the
+            // label compensates, the chevron scales its `.btnChevron`
+            // opacity.
+            var content = ControlPaint.DisabledGroup(
+                drawList, valueMin, valueMax,
+                radius * scale, borderPx, triggerFill, triggerBorder,
+                theme.Chrome.ControlDisabledOpacity);
+            labelColor = content.Label(labelColor);
+            chevronOpacity = content.Glyph(ChevronOpacity);
         }
         else
         {
@@ -200,7 +188,7 @@ public static partial class Crystarium
             iconMin,
             iconMin + new Vector2(iconSpan),
             ChevronIcon,
-            opacity: ChevronOpacity * groupOpacity);
+            opacity: chevronOpacity);
 
         ImGui.SetCursorScreenPos(pos + new Vector2(0, height));
 

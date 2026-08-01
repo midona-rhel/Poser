@@ -91,27 +91,14 @@ public static partial class Crystarium
         {
             // m5 declares no disabled well; this borrows the Picto action
             // button family's `.btn:disabled { opacity: .35 }` GROUP
-            // opacity, reproduced the way Button and Dropdown do — the
-            // chrome draws non-overlapping (fill inset to the border's
-            // inner edge, the ring carrying the analytically flattened
-            // border-over-fill). There is no text to compensate.
-            float groupOpacity = theme.Chrome.ControlDisabledOpacity;
-            dl.AddRectFilled(
-                wellMin + new Vector2(borderPx),
-                wellMax - new Vector2(borderPx),
-                ImGui.ColorConvertFloat4ToU32(
-                    ColorEx.ApplyAlpha(fill.Fade(groupOpacity))),
-                MathF.Max(0f, radius * scale - borderPx));
-            dl.AddRect(
-                wellMin + new Vector2(borderPx * 0.5f),
-                wellMax - new Vector2(borderPx * 0.5f),
-                ImGui.ColorConvertFloat4ToU32(
-                    ColorEx.ApplyAlpha(
-                        ColorEx.FlattenOver(border, fill)
-                            .Fade(groupOpacity))),
-                MathF.Max(0f, radius * scale - borderPx * 0.5f),
-                ImDrawFlags.None,
-                borderPx);
+            // opacity — the same recipe Button and Dropdown use, from the
+            // one implementation. The well is chrome ONLY: its content is
+            // the fill itself, so the returned content transform has
+            // nothing to apply to and is deliberately dropped.
+            ControlPaint.DisabledGroup(
+                dl, wellMin, wellMax,
+                radius * scale, borderPx, fill, border,
+                theme.Chrome.ControlDisabledOpacity);
         }
         else
         {

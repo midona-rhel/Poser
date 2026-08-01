@@ -271,37 +271,21 @@ public static partial class Crystarium
         if (disabled)
         {
             // .btn:disabled is CSS GROUP opacity — the element flattens
-            // before 0.35 applies once. ONE path reproduces it through
-            // the existing renderers: the chrome draws non-overlapping
-            // (fill inset to the border's inner edge, the ring carrying
-            // the analytically flattened border-over-fill color — exact
-            // for every backdrop), and the label draws through the
-            // canonical TextAt path with COMPENSATED color and alpha so
-            // that blending the glyphs over the faded fill lands on the
-            // group result. For translucent fills the compensation is
-            // exact for every backdrop and every glyph coverage; for an
-            // opaque fill (Primary) it is exact over the theme surface
-            // and bounded by 0.2275·|surface − backdrop| elsewhere,
-            // because affine over-blending cannot express a group over
-            // an unknown backdrop.
-            var ring = ColorEx.FlattenOver(borderIdle, fill).Fade(opacity);
-            var fillFaded = fill.Fade(opacity);
-            draw.AddRectFilled(
-                hit.ScreenMin + new Vector2(borderPx),
-                hit.ScreenMax - new Vector2(borderPx),
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(fillFaded)),
-                MathF.Max(0f, radius - borderPx));
-            draw.AddRect(
-                hit.ScreenMin + new Vector2(inset),
-                hit.ScreenMax - new Vector2(inset),
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(ring)),
-                MathF.Max(0f, radius - inset),
-                ImDrawFlags.None,
-                borderPx);
-            var compensated = ColorEx.DisabledLabelCompensation(
-                text, fill, theme.Surface, opacity);
+            // before 0.35 applies once. This is THE canonical recipe;
+            // ControlPaint.DisabledGroup owns it now, and the label draws
+            // through the canonical TextAt path with the compensated
+            // color the recipe hands back. For translucent fills that
+            // compensation is exact for every backdrop and every glyph
+            // coverage; for an opaque fill (Primary) it is exact over the
+            // theme surface and bounded by 0.2275·|surface − backdrop|
+            // elsewhere, because affine over-blending cannot express a
+            // group over an unknown backdrop.
+            var content = ControlPaint.DisabledGroup(
+                draw, hit.ScreenMin, hit.ScreenMax,
+                radius, borderPx, fill, borderIdle, opacity);
             DrawButtonLabelClipped(
-                draw, hit.ScreenMin, hit.ScreenMax, label, style, compensated);
+                draw, hit.ScreenMin, hit.ScreenMax, label, style,
+                content.Label(text));
         }
         else
         {
