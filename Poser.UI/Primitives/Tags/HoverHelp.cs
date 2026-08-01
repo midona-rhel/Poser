@@ -2,7 +2,6 @@ using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
-using Poser.UI.Effects;
 
 namespace Poser.UI;
 

@@ -43,7 +43,7 @@ public static partial class Crystarium
                     ? ActiveTheme.Text
                     : ActiveTheme.Text with { W = 0.72f };
                 if (disabled)
-                    color.W *= ActiveTheme.Chrome.DisabledOpacity;
+                    color = color.Fade(ActiveTheme.Chrome.DisabledOpacity);
                 drawList.PushClipRect(min, max, true);
                 drawList.AddText(
                     min + (max - min - textSize) * 0.5f,

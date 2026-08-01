@@ -3,7 +3,6 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility;
-using Poser.UI.Effects;
 
 namespace Poser.UI;
 
@@ -251,8 +250,9 @@ public static partial class Crystarium
                                     + Crystarium.ActiveTheme.Optical.DropdownText * scale);
                             popupDrawList.AddText(
                                 itemTextPos,
-                                ColorEx.ApplyAlpha(
-                                    Crystarium.ActiveTheme.Text).ToU32(),
+                                ImGui.ColorConvertFloat4ToU32(
+                                    ColorEx.ApplyAlpha(
+                                        Crystarium.ActiveTheme.Text)),
                                 itemDisplay);
                             if (itemDisplay != items[i] && itemHovered)
                                 HoverHelp.Preview(

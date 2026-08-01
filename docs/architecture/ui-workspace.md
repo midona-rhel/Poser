@@ -35,8 +35,9 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
   ONE icon geometry path: min-side square fit, centering, whole-pixel
   snap, tint composition (theme text × opacity × disabled opacity), the
   optional stroke-width override (Tabler React `stroke` prop), and SVG
-  round caps/joins honored by the stroke renderer. Composed controls and
-  `BoxStyle.BackgroundSvg` route through it; no control carries its own
+  round caps/joins honored by the stroke renderer. Composed controls
+  route through it (`BoxStyle.BackgroundSvg` was deleted with the dead
+  paint paths — phase 4); no control carries its own
   fit/center/tint recipe. Fonts: CSS-size conversion lives in `FontRegistry` — sizes
   are CSS-pixel semantics scaled per font file; there is NO glyph offset
   and no per-widget font padding: with that sizing ImGui's baseline

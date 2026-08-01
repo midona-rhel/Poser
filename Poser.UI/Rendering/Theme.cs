@@ -156,10 +156,6 @@ public readonly record struct Theme
         Radii = new() { None = 0f, Small = 2f, Medium = 4f, Control = 6f, Surface = 8f, Window = 10f, Large = 12f, Pill = 999f },
         Shadows = new()
         {
-            Small = new(0f, 1f, 2f, new(0f, 0f, 0f, 0.15f)),
-            Medium = new(0f, 2f, 6f, new(0f, 0f, 0f, 0.20f)),
-            Large = new(0f, 4f, 12f, new(0f, 0f, 0f, 0.30f)),
-            ExtraLarge = new(0f, 8f, 24f, new(0f, 0f, 0f, 0.35f)),
             HoverHelp = new(0f, 2f, 8f, new(0f, 0f, 0f, 0.30f)),
             Panel = new(0f, 3f, 12f, new(0f, 0f, 0f, 0.30f)),
             PanelRing = new(0f, 0f, 0f, new(0f, 0f, 0f, 0.50f), spread: 1f),
@@ -574,10 +570,6 @@ public readonly record struct Theme
 
     public readonly record struct ShadowTokens
     {
-        public BoxShadow Small { get; init; }
-        public BoxShadow Medium { get; init; }
-        public BoxShadow Large { get; init; }
-        public BoxShadow ExtraLarge { get; init; }
         public BoxShadow HoverHelp { get; init; }
         public BoxShadow Panel { get; init; }
         public BoxShadow PanelRing { get; init; }

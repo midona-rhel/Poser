@@ -175,9 +175,12 @@ public static partial class Crystarium
                 float lineY = MathF.Round(
                     headerTop + headerHeight * 0.5f
                         + ActiveTheme.Optical.SectionChrome * _scale);
-                ImGui.GetWindowDrawList().AddRectFilled(new(separatorX, lineY),
-                    new(_origin.X + _width, lineY + MathF.Max(1f, _scale)),
-                    ImGui.ColorConvertFloat4ToU32(FormSeparatorColor));
+                ControlPaint.Separator(
+                    ImGui.GetWindowDrawList(),
+                    new(separatorX, lineY),
+                    _origin.X + _width,
+                    _scale,
+                    FormSeparatorColor);
             }
 
             _y += ActiveTheme.Page.SectionHeaderHeight;

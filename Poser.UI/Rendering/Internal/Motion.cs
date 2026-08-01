@@ -209,7 +209,7 @@ internal static class Motion
             {
                 ref var lane = ref entry.Lanes[i];
                 lane.Value = channels[i].Premultiplied
-                    ? Crystarium.PremultipliedLerp(
+                    ? ColorEx.PremultipliedLerp(
                         lane.From, lane.Target, eased)
                     : new Vector4(
                         lane.From.X

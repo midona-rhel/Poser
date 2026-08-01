@@ -338,11 +338,10 @@ public static partial class Crystarium
                         Crystarium.ActiveTheme.Radii.Control * s);
 
                 float rowAlpha = item.Disabled ? Crystarium.ActiveTheme.Chrome.DisabledOpacity : 1f;
-                var text = item.Danger ? Crystarium.ActiveTheme.Chrome.Danger : Crystarium.ActiveTheme.Chrome.Text;
-                text.W *= rowAlpha;
+                var text = (item.Danger ? Crystarium.ActiveTheme.Chrome.Danger : Crystarium.ActiveTheme.Chrome.Text).Fade(rowAlpha);
                 // Raw tint: the canonical icon path applies the global
                 // ImGui alpha exactly once inside the SVG renderer.
-                var iconTint = text with { W = text.W * (hovered ? 1f : 0.8f) };
+                var iconTint = text.Fade(hovered ? 1f : 0.8f);
 
                 ImGui.SetCursorScreenPos(new Vector2(
                     rowMin.X + Crystarium.ActiveTheme.Floating.MenuRowPadding * s,
@@ -384,7 +383,7 @@ public static partial class Crystarium
                             rowMin.Y + (Crystarium.ActiveTheme.Controls.ListRowHeight * s
                                 - shortcutSize.Y) * 0.5f),
                         ImGui.ColorConvertFloat4ToU32(
-                            ColorEx.ApplyAlpha(text with { W = text.W * 0.5f })),
+                            ColorEx.ApplyAlpha(text.Fade(0.5f))),
                         shortcut);
                     if (shortcutPushed) shortcutFont!.Pop();
                 }

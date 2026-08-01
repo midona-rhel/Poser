@@ -93,10 +93,9 @@ public static partial class Crystarium
     {
         if (doc == null)
             return;
-        var tint = color ?? ActiveTheme.Text;
-        tint.W *= opacity;
+        var tint = (color ?? ActiveTheme.Text).Fade(opacity);
         if (disabled)
-            tint.W *= ActiveTheme.Chrome.DisabledOpacity;
+            tint = tint.Fade(ActiveTheme.Chrome.DisabledOpacity);
         SvgBoxCore(
             doc, min, max, tint, contentScale, flipX, strokeWidth,
             compositeStroke, groupOpacity, groupBackground);

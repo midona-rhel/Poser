@@ -67,8 +67,7 @@ public static partial class Crystarium
         float pos = max > min ? Math.Clamp((value - min) / (max - min), 0f, 1f) : 0f;
         float thumbX = x0 + pos * (x1 - x0);
 
-        var track = Crystarium.ActiveTheme.Chrome.ControlBorder;
-        track.W *= alpha;
+        var track = Crystarium.ActiveTheme.Chrome.ControlBorder.Fade(alpha);
         dl.AddRectFilled(
             new Vector2(hit.ScreenMin.X, cy - Crystarium.ActiveTheme.Controls.SliderTrackHeight * 0.5f * scale),
             new Vector2(hit.ScreenMax.X, cy + Crystarium.ActiveTheme.Controls.SliderTrackHeight * 0.5f * scale),
@@ -79,8 +78,7 @@ public static partial class Crystarium
         // remainder above stays neutral.
         if (thumbX - hit.ScreenMin.X > 1f * scale)
         {
-            var fill = Crystarium.ActiveTheme.Palette.Primary;
-            fill.W *= alpha;
+            var fill = Crystarium.ActiveTheme.Palette.Primary.Fade(alpha);
             dl.AddRectFilled(
                 new Vector2(hit.ScreenMin.X, cy - Crystarium.ActiveTheme.Controls.SliderTrackHeight * 0.5f * scale),
                 new Vector2(thumbX, cy + Crystarium.ActiveTheme.Controls.SliderTrackHeight * 0.5f * scale),
@@ -105,8 +103,7 @@ public static partial class Crystarium
         }
 
         // thumb: 14px circle, solid white over the fill boundary
-        var thumb = Crystarium.ActiveTheme.Palette.White;
-        thumb.W *= alpha;
+        var thumb = Crystarium.ActiveTheme.Palette.White.Fade(alpha);
         dl.AddCircleFilled(new Vector2(thumbX, cy), half,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(thumb)), 32);
 

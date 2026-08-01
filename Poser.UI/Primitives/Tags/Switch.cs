@@ -43,10 +43,10 @@ public static partial class Crystarium
         // Shared disabled fade for retained controls.
         float opacity = disabled ? Crystarium.ActiveTheme.Chrome.ControlDisabledOpacity : 1f;
 
-        var trackColor = value
+        var trackColor = (value
             ? Crystarium.ActiveTheme.Chrome.Primary          // --color-primary
-            : Crystarium.ActiveTheme.Chrome.SwitchOff;     // rgba(128,128,128,.25)
-        trackColor = trackColor with { W = trackColor.W * opacity };
+            : Crystarium.ActiveTheme.Chrome.SwitchOff)     // rgba(128,128,128,.25)
+            .Fade(opacity);
         dl.AddRectFilled(hit.ScreenMin, hit.ScreenMax,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(trackColor)),
             Crystarium.ActiveTheme.Controls.SwitchHeight * 0.5f * scale);
@@ -64,11 +64,13 @@ public static partial class Crystarium
 
         // knob drop shadow (0 1px 3px rgba(0,0,0,.2)) — cheap two-ring approximation
         dl.AddCircleFilled(center + new Vector2(0f, 1f * scale), knobRadius + scale,
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.SwitchShadow with { W = Crystarium.ActiveTheme.Chrome.SwitchShadow.W * opacity })), 32);
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.SwitchShadow.Fade(opacity))), 32);
         dl.AddCircleFilled(center + new Vector2(0f, 1f * scale), knobRadius + 0.4f * scale,
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.SwitchHighlight with { W = Crystarium.ActiveTheme.Chrome.SwitchHighlight.W * opacity })), 32);
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.SwitchHighlight.Fade(opacity))), 32);
 
-        var knobColor = (value ? Crystarium.ActiveTheme.Chrome.Text : Crystarium.ActiveTheme.Chrome.TextMuted) with { W = (value ? Crystarium.ActiveTheme.Chrome.Text.W : Crystarium.ActiveTheme.Chrome.TextMuted.W) * opacity };
+        var knobColor = (value
+            ? Crystarium.ActiveTheme.Chrome.Text
+            : Crystarium.ActiveTheme.Chrome.TextMuted).Fade(opacity);
         dl.AddCircleFilled(center, knobRadius,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(knobColor)), 32);
 

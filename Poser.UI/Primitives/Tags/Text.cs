@@ -240,7 +240,7 @@ public static partial class Crystarium
         var weight = style.Weight ?? FontWeight.Regular;
         var color = style.Color ?? ActiveTheme.Text;
         if (style.Disabled)
-            color.W *= ActiveTheme.Chrome.DisabledOpacity;
+            color = color.Fade(ActiveTheme.Chrome.DisabledOpacity);
         var font = FontRegistry.Resolve(style.Family, weight, size);
         bool pushed = font is { Available: true };
         if (pushed)

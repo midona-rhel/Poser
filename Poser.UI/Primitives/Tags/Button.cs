@@ -2,7 +2,6 @@ using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
-using Poser.UI.Effects;
 
 namespace Poser.UI;
 
@@ -285,10 +284,8 @@ public static partial class Crystarium
             // and bounded by 0.2275·|surface − backdrop| elsewhere,
             // because affine over-blending cannot express a group over
             // an unknown backdrop.
-            var ring = FlattenOver(borderIdle, fill);
-            ring.W *= opacity;
-            var fillFaded = fill;
-            fillFaded.W *= opacity;
+            var ring = ColorEx.FlattenOver(borderIdle, fill).Fade(opacity);
+            var fillFaded = fill.Fade(opacity);
             draw.AddRectFilled(
                 hit.ScreenMin + new Vector2(borderPx),
                 hit.ScreenMax - new Vector2(borderPx),
@@ -301,7 +298,7 @@ public static partial class Crystarium
                 MathF.Max(0f, radius - inset),
                 ImDrawFlags.None,
                 borderPx);
-            var compensated = DisabledLabelCompensation(
+            var compensated = ColorEx.DisabledLabelCompensation(
                 text, fill, theme.Surface, opacity);
             DrawButtonLabelClipped(
                 draw, hit.ScreenMin, hit.ScreenMax, label, style, compensated);
@@ -312,7 +309,7 @@ public static partial class Crystarium
             // CSS element composites against the page; the background
             // follows the 150ms hover transition with PREMULTIPLIED
             // color interpolation, as Chromium interpolates rgba.
-            var background = PremultipliedLerp(fill, fillHover, eased);
+            var background = ColorEx.PremultipliedLerp(fill, fillHover, eased);
             var border = hit.Hovered ? borderHover : borderIdle;
             draw.AddRectFilled(
                 hit.ScreenMin,
@@ -335,19 +332,8 @@ public static partial class Crystarium
             // invents one. Disabled buttons draw their label inside the
             // group surface above and can neither focus nor hover.
             if (hit.Focused && Interactive.KeyboardNavActive)
-            {
-                float offset = 1f * scale;
-                float thickness = 2f * scale;
-                float expand = offset + thickness * 0.5f;
-                draw.AddRect(
-                    hit.ScreenMin - new Vector2(expand),
-                    hit.ScreenMax + new Vector2(expand),
-                    ImGui.ColorConvertFloat4ToU32(
-                        ColorEx.ApplyAlpha(theme.Chrome.PrimaryHover)),
-                    radius + expand,
-                    ImDrawFlags.None,
-                    thickness);
-            }
+                ControlPaint.FocusRing(
+                    draw, hit.ScreenMin, hit.ScreenMax, radius, scale);
 
             DrawButtonLabelClipped(
                 draw, hit.ScreenMin, hit.ScreenMax, label, style, text);
@@ -388,68 +374,6 @@ public static partial class Crystarium
         {
             draw.PopClipRect();
         }
-    }
-
-    /// <summary>Top layer composited over the bottom layer (source-over),
-    /// returned straight-alpha — the flattened color a CSS element shows
-    /// where the two overlap before any group opacity applies.</summary>
-    private static Vector4 FlattenOver(Vector4 top, Vector4 bottom)
-    {
-        float alpha = top.W + bottom.W * (1f - top.W);
-        if (alpha <= 0f)
-            return default;
-        var rgb = (new Vector3(top.X, top.Y, top.Z) * top.W
-            + new Vector3(bottom.X, bottom.Y, bottom.Z)
-                * bottom.W * (1f - top.W)) / alpha;
-        return new Vector4(rgb, alpha);
-    }
-
-    /// <summary>
-    /// Compensated label color/alpha for the disabled group: drawing
-    /// glyphs at coverage c over the ALREADY-faded fill must equal the
-    /// CSS flatten-then-fade result. For fill alpha < 1 the solution is
-    /// exact for every backdrop: alpha = o(1−af)/(1−o·af) and the color
-    /// absorbs the excess fill contribution. An opaque fill admits no
-    /// backdrop-independent solution, so it references the theme
-    /// surface (the capture backdrop) instead.
-    /// </summary>
-    private static Vector4 DisabledLabelCompensation(
-        Vector4 text, Vector4 fill, Vector4 surface, float groupOpacity)
-    {
-        float af = fill.W;
-        if (af < 0.999f)
-        {
-            float alpha = groupOpacity * (1f - af) / (1f - groupOpacity * af);
-            var rgb = (new Vector3(text.X, text.Y, text.Z) * groupOpacity
-                - new Vector3(fill.X, fill.Y, fill.Z)
-                    * (groupOpacity * af * (1f - alpha))) / alpha;
-            return new Vector4(
-                Math.Clamp(rgb.X, 0f, 1f),
-                Math.Clamp(rgb.Y, 0f, 1f),
-                Math.Clamp(rgb.Z, 0f, 1f),
-                alpha * text.W);
-        }
-        var opaque = new Vector3(text.X, text.Y, text.Z)
-            - (new Vector3(fill.X, fill.Y, fill.Z)
-                - new Vector3(surface.X, surface.Y, surface.Z))
-                * (1f - groupOpacity);
-        return new Vector4(
-            Math.Clamp(opaque.X, 0f, 1f),
-            Math.Clamp(opaque.Y, 0f, 1f),
-            Math.Clamp(opaque.Z, 0f, 1f),
-            groupOpacity * text.W);
-    }
-
-    /// <summary>Premultiplied-alpha interpolation — how Chromium
-    /// transitions between rgba backgrounds of different alpha.</summary>
-    internal static Vector4 PremultipliedLerp(Vector4 from, Vector4 to, float t)
-    {
-        float alpha = from.W + (to.W - from.W) * t;
-        if (alpha <= 0f)
-            return default;
-        var rgb = (new Vector3(from.X, from.Y, from.Z) * from.W * (1f - t)
-            + new Vector3(to.X, to.Y, to.Z) * to.W * t) / alpha;
-        return new Vector4(rgb, alpha);
     }
 
     // ---- Picto momentary icon button --------------------------------
@@ -507,8 +431,7 @@ public static partial class Crystarium
         // Shared .iconBtn is exactly 5px, independent of the 6px radius
         // used by Picto's bordered actionButton family.
         float radius = 5f * scale;
-        var fadedBackground = background;
-        fadedBackground.W *= opacity;
+        var fadedBackground = background.Fade(opacity);
         draw.PushClipRect(hit.ScreenMin, hit.ScreenMax, true);
         try
         {
@@ -604,7 +527,7 @@ public static partial class Crystarium
             : hit.Hovered
                 ? ActiveTheme.Chrome.WeakOverlay
                 : Vector4.Zero;
-        background.W *= opacity;
+        background = background.Fade(opacity);
         var draw = ImGui.GetWindowDrawList();
         draw.AddRectFilled(
             hit.ScreenMin,

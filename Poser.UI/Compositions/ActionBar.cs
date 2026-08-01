@@ -31,12 +31,12 @@ public static partial class Crystarium
             float lineY = separator == ActionBarSeparator.Top
                 ? origin.Y
                 : origin.Y + size.Y - MathF.Max(1f, scale);
-            ImGui.GetWindowDrawList().AddRectFilled(
+            ControlPaint.Separator(
+                ImGui.GetWindowDrawList(),
                 new(origin.X, lineY),
-                new(
-                    origin.X + size.X,
-                    lineY + MathF.Max(1f, scale)),
-                ImGui.ColorConvertFloat4ToU32(FormSeparatorColor));
+                origin.X + size.X,
+                scale,
+                FormSeparatorColor);
         }
         scope.Draw(origin, size, scale, alignRight: false);
         if (right != null)

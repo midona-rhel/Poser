@@ -120,18 +120,20 @@ public static partial class Crystarium
             if (FloatingSurface.CloseButton($"{_id}-close"))
                 _open = false;
 
-            DrawHairline(
+            ControlPaint.Separator(
                 drawList,
                 new Vector2(frame.Min.X, frame.Min.Y + barHeight),
-                new Vector2(frame.Max.X, frame.Min.Y + barHeight),
-                scale);
+                frame.Max.X,
+                scale,
+                FormSeparatorColor);
 
             float footerTop = frame.Max.Y - barHeight;
-            DrawHairline(
+            ControlPaint.Separator(
                 drawList,
                 new Vector2(frame.Min.X, footerTop),
-                new Vector2(frame.Max.X, footerTop),
-                scale);
+                frame.Max.X,
+                scale,
+                FormSeparatorColor);
 
             float bodyInset = Crystarium.ActiveTheme.Floating.ModalBodyPadding * scale;
             float bodyVertical = Crystarium.ActiveTheme.Spacing.Four * scale;
@@ -354,18 +356,6 @@ public static partial class Crystarium
                     },
                     placeholder: "File name");
             }
-        }
-
-        private static void DrawHairline(
-            ImDrawListPtr drawList,
-            Vector2 min,
-            Vector2 max,
-            float scale)
-        {
-            drawList.AddRectFilled(
-                min,
-                new Vector2(max.X, max.Y + MathF.Max(1f, scale)),
-                ImGui.ColorConvertFloat4ToU32(FormSeparatorColor));
         }
 
         private void Confirm()

@@ -35,10 +35,9 @@ public static partial class Crystarium
         }
 
         float opacity = disabled ? ActiveTheme.Chrome.DisabledOpacity : 1f;
-        var background = value
+        var background = (value
             ? ActiveTheme.Chrome.Primary
-            : ActiveTheme.Chrome.InputWell;
-        background.W *= opacity;
+            : ActiveTheme.Chrome.InputWell).Fade(opacity);
         var draw = ImGui.GetWindowDrawList();
         float radius = ActiveTheme.Radii.Medium * scale;
         draw.AddRectFilled(
@@ -49,8 +48,7 @@ public static partial class Crystarium
 
         if (!value)
         {
-            var border = ActiveTheme.Glass.BorderBottom;
-            border.W *= opacity;
+            var border = ActiveTheme.Glass.BorderBottom.Fade(opacity);
             float inset = 0.5f * scale;
             draw.AddRect(
                 hit.ScreenMin + new Vector2(inset),
@@ -62,8 +60,7 @@ public static partial class Crystarium
         }
         else
         {
-            var check = ActiveTheme.Chrome.Checkmark;
-            check.W *= opacity;
+            var check = ActiveTheme.Chrome.Checkmark.Fade(opacity);
             float iconSpan = side * (10f / 14f);
             float unit = iconSpan / 24f;
             var origin = hit.ScreenMin +

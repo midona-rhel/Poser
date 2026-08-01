@@ -202,8 +202,8 @@ public static partial class Crystarium
             : ActiveTheme.Chrome.ControlBorder;
         if (disabled)
         {
-            fill.W *= ActiveTheme.Chrome.DisabledOpacity;
-            border.W *= ActiveTheme.Chrome.DisabledOpacity;
+            fill = fill.Fade(ActiveTheme.Chrome.DisabledOpacity);
+            border = border.Fade(ActiveTheme.Chrome.DisabledOpacity);
         }
         draw.AddRectFilled(
             pos, max,
