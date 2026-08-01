@@ -2,7 +2,11 @@
 # (artifacts/crystarium/*.png) against the accepted hash set. Fails on any
 # added, missing, or changed state, so "accepted baseline" is enforced, not
 # just recorded. Run after a full default catalog capture.
-param([string]$Accepted = "$PSScriptRoot\accepted-c71d682-hashes.txt")
+# -AllowAdded: slice development adds new states; the accepted file grows only on user acceptance.
+param(
+    [string]$Accepted = "$PSScriptRoot\accepted-c71d682-hashes.txt",
+    [switch]$AllowAdded
+)
 $ErrorActionPreference = "Stop"
 
 $acceptedMap = @{}
@@ -24,8 +28,11 @@ $changed = @($acceptedMap.Keys | Where-Object {
 foreach ($n in $added)   { "ADDED:   $n" }
 foreach ($n in $missing) { "MISSING: $n" }
 foreach ($n in $changed) { "CHANGED: $n" }
-if ($added.Count + $missing.Count + $changed.Count -gt 0) {
+$fatal = $missing.Count + $changed.Count
+if (-not $AllowAdded) { $fatal += $added.Count }
+if ($fatal -gt 0) {
     "FAIL: $($added.Count) added, $($missing.Count) missing, $($changed.Count) changed vs accepted set."
     exit 1
 }
-"PASS: all $($acceptedMap.Count) candidate states match the accepted hashes."
+"PASS: all $($acceptedMap.Count) candidate states match the accepted hashes" +
+    $(if ($added.Count -gt 0) { " ($($added.Count) added, not yet accepted)." } else { "." })

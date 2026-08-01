@@ -3,7 +3,9 @@ using System.Numerics;
 using System.Windows.Forms;
 using Dalamud.Bindings.ImGui;
 using Poser.UI;
+using Poser.UI.Reactive;
 using Ui = Poser.UI.Crystarium;
+using Rx = Poser.UI.Reactive.Crystarium;
 
 namespace Crystarium.Capture;
 
@@ -258,6 +260,263 @@ internal static class BehaviorSuites
             }, pointer, mouse, key);
             return (activations, $"{size.X}x{size.Y}");
         }
+    }
+
+    // ---- Reactive text button: the retained path's own contract -------
+
+    // The reactive fixtures stage at the same (24,24) origin the pixel
+    // catalog uses; the button is ~110x32 there, so this point is inside
+    // it for BOTH toggle labels as well as "Apply changes".
+    private static readonly Vector2 ReactiveCanvas = new(320, 120);
+    private static readonly Vector2 ReactiveOrigin = new(24, 24);
+    private static readonly Vector2 ReactiveInside =
+        ReactiveOrigin + new Vector2(40, 14);
+    private static readonly Vector2 ReactiveOutside = new(300, 110);
+
+    private static readonly Action NoOp = static () => { };
+
+    /// <summary>The parity fixture: ONE reactive button, so its warm-frame
+    /// bytes compare one-to-one against the identical legacy button. Hoisted
+    /// so the callback itself is a retained instance: a delegate allocated
+    /// per frame would be measuring the harness, not the runtime.</summary>
+    private static readonly Func<UiNode> ParityTree = static () =>
+        Rx.Button("Apply changes", NoOp);
+
+    /// <summary>
+    /// Tooling-only component (never shipped): one reducer-driven label, so
+    /// a click's effect is observable as text. Its state is a record struct,
+    /// which is the shape a warm frame must not allocate for.
+    /// </summary>
+    private sealed class TogglePill
+        : StatefulComponent<TogglePill.Props, TogglePill.State>
+    {
+        /// <summary>What the LAST Render observed — the probe reads the
+        /// state the frame actually drew, not the reducer's return.</summary>
+        internal static string LastLabel = string.Empty;
+
+        internal readonly record struct Props;
+
+        internal readonly record struct State(bool On);
+
+        protected override State CreateState(in Props props) => new(false);
+
+        protected override UiNode Render(in Props props, in State state)
+        {
+            LastLabel = state.On ? "On" : "Off";
+            return Rx.Column(
+                Sx.Gap(8f),
+                [
+                    Rx.Button(
+                        LastLabel,
+                        UpdateState(static s => s with { On = !s.On })),
+                ]);
+        }
+    }
+
+    internal static int ReactiveButton() =>
+        Suite(
+            "Crystarium reactive-button behavior", 320, 120,
+            ReactiveButtonCases);
+
+    private static int ReactiveButtonCases(BehaviorHost host)
+    {
+        Func<int, Vector2> on = _ => ReactiveInside;
+        Func<int, Vector2> away = _ => Offscreen;
+        host.Expect("release-inside", Drive(on, PressAt(5, 7)), 1);
+        host.Expect(
+            "drag-out",
+            Drive(
+                frame => frame < 6 ? ReactiveInside : ReactiveOutside,
+                PressAt(5, 7)),
+            0);
+        host.Expect("enter", Drive(away, key: TabThen(ImGuiKey.Enter)), 1);
+        // Text-button parity: Space is NOT an activation key, so the
+        // retained path must refuse it exactly as the imperative one does.
+        host.Expect("space-not", Drive(away, key: TabThen(ImGuiKey.Space)), 0);
+        host.Expect(
+            "disabled", Drive(on, PressAt(5, 7), disabled: true), 0);
+        host.Check("reducer-toggle", ReducerToggle(host));
+        host.Check("allocation-runtime", AllocationRuntime(host));
+        host.Check("allocation-parity", AllocationParity(host));
+        return host.Summary("reactive-button behavior: all cases pass");
+
+        int Drive(
+            Func<int, Vector2> pointer,
+            Func<int, (bool HasEvent, bool Down)>? mouse = null,
+            Func<int, (bool HasEvent, ImGuiKey Key, bool Down)>? key = null,
+            bool disabled = false)
+        {
+            int activations = 0;
+            var root = new UiRoot();
+            host.Case(ReactiveCanvas, 12, _ =>
+            {
+                ImGui.SetCursorScreenPos(ReactiveOrigin);
+                root.Render(
+                    ReactiveOrigin,
+                    ImGui.GetContentRegionAvail(),
+                    () => Rx.Button(
+                        "Apply changes",
+                        () => activations++,
+                        disabled: disabled));
+            }, pointer, mouse, key);
+            return activations;
+        }
+    }
+
+    /// <summary>
+    /// A reducer's result is QUEUED: the activation at the release frame
+    /// cannot be observed by the frame that painted the press, only by the
+    /// next build. Two full press/release gestures therefore have to read
+    /// Off -> On -> Off with each flip landing exactly one frame after its
+    /// release.
+    /// </summary>
+    private static Probe ReducerToggle(BehaviorHost host)
+    {
+        var root = new UiRoot();
+        var labels = new List<string>();
+        host.Case(ReactiveCanvas, 22, _ =>
+        {
+            ImGui.SetCursorScreenPos(ReactiveOrigin);
+            root.Render(
+                ReactiveOrigin,
+                ImGui.GetContentRegionAvail(),
+                static () => Rx.Component<
+                    TogglePill, TogglePill.Props, TogglePill.State>(default));
+            labels.Add(TogglePill.LastLabel);
+        },
+        _ => ReactiveInside,
+        frame => frame is 5 or 15
+            ? (true, true)
+            : frame is 7 or 17 ? (true, false) : default);
+
+        var transitions = new List<string>();
+        for (int i = 0; i < labels.Count; i++)
+        {
+            if (i == 0 || labels[i] != labels[i - 1])
+                transitions.Add($"{labels[i]}@{i}");
+        }
+
+        var probe = new Probe();
+        probe.Want(
+            "trace", string.Join(" ", transitions), "Off@0 On@8 Off@18");
+        return probe;
+    }
+
+    /// <summary>
+    /// A warm frame must allocate NOTHING: every buffer is pooled, every
+    /// reducer and handler is a retained delegate, and the interaction id
+    /// strings are formatted once. The legacy button is measured under the
+    /// identical host only when the reactive number is non-zero, so a
+    /// failure carries its own baseline instead of a bare byte count.
+    /// </summary>
+    // The PBI gate is "construction ADDS no allocation on a warm frame":
+    // (a) the retained runtime alone allocates zero, and (b) a reactive
+    // button costs no more than the identical legacy button. The shared
+    // painter's own per-frame bytes (MeasureText/Reserve marshalling)
+    // predate this runtime and are reported by (b)'s numbers, not owned
+    // by this suite.
+    private static Probe AllocationRuntime(BehaviorHost host)
+    {
+        long runtime = MeasureTree(host, LeaflessTree);
+        var probe = new Probe();
+        if (runtime != 0)
+            probe.Fault(
+                $"runtime construction allocated {runtime} bytes over "
+                + "100 warm frames (want 0)");
+        return probe;
+    }
+
+    private static Probe AllocationParity(BehaviorHost host)
+    {
+        long reactive = MeasureAllocation(host, reactive: true);
+        long legacy = MeasureAllocation(host, reactive: false);
+        var probe = new Probe();
+        if (reactive > legacy)
+            probe.Fault(
+                $"one reactive button allocated {reactive} bytes over 100 "
+                + $"warm frames; the identical legacy button {legacy} — the "
+                + "retained path added bytes of its own");
+        return probe;
+    }
+
+    /// <summary>Everything the RUNTIME owns and nothing the legacy painter
+    /// does: build, children, styles, a keyed component scope, reducer-token
+    /// construction, layout, paint walk, and scope commit. This is the tree
+    /// the zero-byte gate measures.</summary>
+    private static readonly Func<UiNode> LeaflessTree = static () =>
+        Rx.Column(
+            Sx.Gap(8f),
+            [
+                Rx.Component<TokenProbe, TokenProbe.Props, TokenProbe.State>(
+                    default),
+                Rx.Column(),
+                Rx.Column(),
+            ]);
+
+    /// <summary>Tooling-only component with no legacy leaf: its Render
+    /// constructs an UpdateState token every frame, so the reducer-cache
+    /// path sits inside the zero-byte measurement.</summary>
+    private sealed class TokenProbe
+        : StatefulComponent<TokenProbe.Props, TokenProbe.State>
+    {
+        internal readonly record struct Props;
+
+        internal readonly record struct State(bool On);
+
+        protected override State CreateState(in Props props) => new(false);
+
+        protected override UiNode Render(in Props props, in State state)
+        {
+            _ = UpdateState(static s => s with { On = !s.On });
+            return Rx.Column();
+        }
+    }
+
+    /// <summary>Bytes allocated by the DRAW BODY over frames 20..119.
+    /// Bracketing the body rather than the whole case keeps the harness's
+    /// own per-frame cost out of the number.</summary>
+    private static long MeasureTree(BehaviorHost host, Func<UiNode> tree)
+    {
+        var root = new UiRoot();
+        long allocated = 0;
+        host.Case(ReactiveCanvas, 120, frame =>
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            ImGui.SetCursorScreenPos(ReactiveOrigin);
+            root.Render(
+                ReactiveOrigin, ImGui.GetContentRegionAvail(), tree);
+            long after = GC.GetAllocatedBytesForCurrentThread();
+            if (frame >= 20)
+                allocated += after - before;
+        }, _ => Offscreen);
+        return allocated;
+    }
+
+    private static long MeasureAllocation(BehaviorHost host, bool reactive)
+    {
+        var root = new UiRoot();
+        long allocated = 0;
+        host.Case(ReactiveCanvas, 120, frame =>
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            ImGui.SetCursorScreenPos(ReactiveOrigin);
+            if (reactive)
+            {
+                root.Render(
+                    ReactiveOrigin,
+                    ImGui.GetContentRegionAvail(),
+                    ParityTree);
+            }
+            else
+            {
+                Ui.Button("Apply changes", id: "##alloc-legacy");
+            }
+
+            long after = GC.GetAllocatedBytesForCurrentThread();
+            if (frame >= 20)
+                allocated += after - before;
+        }, _ => Offscreen);
+        return allocated;
     }
 
     // ---- Interaction kernel -------------------------------------------

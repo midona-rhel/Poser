@@ -58,6 +58,27 @@
       ]
     },
     {
+      "name": "reactive-buttons",
+      "title": "Reactive buttons (PBI-015)",
+      "states": [
+        { "name": "rbtn-secondary", "label": "secondary idle", "width": 320, "height": 80 },
+        { "name": "rbtn-secondary-hover", "label": "secondary hover", "width": 320, "height": 80 },
+        { "name": "rbtn-secondary-disabled", "label": "secondary disabled", "width": 320, "height": 80 },
+        { "name": "rbtn-disabled-unicode", "label": "disabled unicode", "width": 320, "height": 80 },
+        { "name": "rbtn-primary", "label": "primary idle", "width": 320, "height": 80 },
+        { "name": "rbtn-primary-hover", "label": "primary hover", "width": 320, "height": 80 },
+        { "name": "rbtn-primary-disabled", "label": "primary disabled", "width": 320, "height": 80 },
+        { "name": "rbtn-danger", "label": "danger idle", "width": 320, "height": 80 },
+        { "name": "rbtn-danger-hover", "label": "danger hover", "width": 320, "height": 80 },
+        { "name": "rbtn-danger-disabled", "label": "danger disabled", "width": 320, "height": 80 },
+        { "name": "rbtn-width-content", "label": "content width", "width": 320, "height": 80 },
+        { "name": "rbtn-width-fixed", "label": "fixed width", "width": 320, "height": 80 },
+        { "name": "rbtn-width-fill", "label": "fill width", "width": 320, "height": 80 },
+        { "name": "rbtn-hover-exit", "label": "hover exit = idle", "width": 320, "height": 80 },
+        { "name": "rbtn-hover-mid", "label": "hover transition midpoint", "width": 320, "height": 80 }
+      ]
+    },
+    {
       "name": "icon-button",
       "title": "Icon button",
       "states": [

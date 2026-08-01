@@ -391,6 +391,88 @@
             `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})`;
         },
       },
+      // PBI-015 reactive twins. The reference for rbtn-X is the SAME
+      // Picto markup as btn-X, deliberately duplicated rather than
+      // aliased: the candidate's two paths are then held to one
+      // reference, so a divergence can only be the candidate's.
+      'rbtn-secondary': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn">Apply changes</button>',
+      },
+      'rbtn-secondary-hover': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn" style="background: var(--color-subtle-overlay)">Apply changes</button>',
+      },
+      'rbtn-secondary-disabled': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn" disabled>Apply changes</button>',
+      },
+      'rbtn-disabled-unicode': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn" disabled>Wait 待機 x̃ €</button>',
+      },
+      'rbtn-primary': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn btnPrimary">Apply changes</button>',
+      },
+      'rbtn-primary-hover': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn btnPrimary" style="background: var(--color-primary-60); border-color: var(--color-primary-60)">Apply changes</button>',
+      },
+      'rbtn-primary-disabled': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn btnPrimary" disabled>Apply changes</button>',
+      },
+      'rbtn-danger': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn btnDanger">Apply changes</button>',
+      },
+      'rbtn-danger-hover': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn btnDanger" style="background: rgba(255, 71, 87, 0.15)">Apply changes</button>',
+      },
+      'rbtn-danger-disabled': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn btnDanger" disabled>Apply changes</button>',
+      },
+      'rbtn-width-content': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn">OK</button>',
+      },
+      'rbtn-width-fixed': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn" style="width:160px">Apply changes</button>',
+      },
+      'rbtn-width-fill': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<div style="width:240px"><button class="btn" style="width:100%">Apply changes</button></div>',
+      },
+      'rbtn-hover-exit': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn">Apply changes</button>',
+      },
+      'rbtn-hover-mid': {
+        css: 'shared/styles/actionButton.module.css',
+        html: '<button class="btn">Apply changes</button>',
+        postLayout(scope) {
+          const btn = scope.querySelector('.btn');
+          btn.style.transition = 'none';
+          const parse = (c) => {
+            const m = c.match(/rgba?\(([^)]+)\)/)[1]
+              .split(',').map(Number);
+            return [m[0], m[1], m[2], m.length > 3 ? m[3] : 1];
+          };
+          const idle = parse(getComputedStyle(btn).backgroundColor);
+          btn.style.background = 'var(--color-subtle-overlay)';
+          const hover = parse(getComputedStyle(btn).backgroundColor);
+          const t = 0.852283;
+          const a = idle[3] + (hover[3] - idle[3]) * t;
+          const rgb = [0, 1, 2].map((i) =>
+            (idle[i] * idle[3] * (1 - t) + hover[i] * hover[3] * t) / a);
+          btn.style.background =
+            `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})`;
+        },
+      },
       'icon-button-idle': {
         css: ['shared/styles/iconButton.module.css', 'app/AppShell.module.css'],
         html: settingsButton(),

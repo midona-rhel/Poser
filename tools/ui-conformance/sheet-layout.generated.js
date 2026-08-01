@@ -2,7 +2,7 @@
 // Do not hand-edit.
 window.sheetLayout = {
  "pageWidth": 688,
- "pageHeight": 4696,
+ "pageHeight": 5480,
  "cells": [
   {
    "name": "text-label",
@@ -309,10 +309,130 @@ window.sheetLayout = {
    "h": 80
   },
   {
+   "name": "rbtn-secondary",
+   "component": "reactive-buttons",
+   "x": 16,
+   "y": 2152,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rbtn-secondary-hover",
+   "component": "reactive-buttons",
+   "x": 352,
+   "y": 2152,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rbtn-secondary-disabled",
+   "component": "reactive-buttons",
+   "x": 16,
+   "y": 2248,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rbtn-disabled-unicode",
+   "component": "reactive-buttons",
+   "x": 352,
+   "y": 2248,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rbtn-primary",
+   "component": "reactive-buttons",
+   "x": 16,
+   "y": 2344,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rbtn-primary-hover",
+   "component": "reactive-buttons",
+   "x": 352,
+   "y": 2344,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rbtn-primary-disabled",
+   "component": "reactive-buttons",
+   "x": 16,
+   "y": 2440,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rbtn-danger",
+   "component": "reactive-buttons",
+   "x": 352,
+   "y": 2440,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rbtn-danger-hover",
+   "component": "reactive-buttons",
+   "x": 16,
+   "y": 2536,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rbtn-danger-disabled",
+   "component": "reactive-buttons",
+   "x": 352,
+   "y": 2536,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rbtn-width-content",
+   "component": "reactive-buttons",
+   "x": 16,
+   "y": 2632,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rbtn-width-fixed",
+   "component": "reactive-buttons",
+   "x": 352,
+   "y": 2632,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rbtn-width-fill",
+   "component": "reactive-buttons",
+   "x": 16,
+   "y": 2728,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rbtn-hover-exit",
+   "component": "reactive-buttons",
+   "x": 352,
+   "y": 2728,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rbtn-hover-mid",
+   "component": "reactive-buttons",
+   "x": 16,
+   "y": 2824,
+   "w": 320,
+   "h": 80
+  },
+  {
    "name": "icon-button-idle",
    "component": "icon-button",
    "x": 16,
-   "y": 2152,
+   "y": 2936,
    "w": 120,
    "h": 80
   },
@@ -320,7 +440,7 @@ window.sheetLayout = {
    "name": "icon-button-hover",
    "component": "icon-button",
    "x": 152,
-   "y": 2152,
+   "y": 2936,
    "w": 120,
    "h": 80
   },
@@ -328,7 +448,7 @@ window.sheetLayout = {
    "name": "icon-button-pressed",
    "component": "icon-button",
    "x": 288,
-   "y": 2152,
+   "y": 2936,
    "w": 120,
    "h": 80
   },
@@ -336,7 +456,7 @@ window.sheetLayout = {
    "name": "icon-button-held-outside",
    "component": "icon-button",
    "x": 424,
-   "y": 2152,
+   "y": 2936,
    "w": 120,
    "h": 80
   },
@@ -344,7 +464,7 @@ window.sheetLayout = {
    "name": "icon-button-disabled",
    "component": "icon-button",
    "x": 16,
-   "y": 2248,
+   "y": 3032,
    "w": 120,
    "h": 80
   },
@@ -352,7 +472,7 @@ window.sheetLayout = {
    "name": "icon-button-hover-mid",
    "component": "icon-button",
    "x": 152,
-   "y": 2248,
+   "y": 3032,
    "w": 120,
    "h": 80
   },
@@ -360,7 +480,7 @@ window.sheetLayout = {
    "name": "icon-button-hover-exit",
    "component": "icon-button",
    "x": 288,
-   "y": 2248,
+   "y": 3032,
    "w": 120,
    "h": 80
   },
@@ -368,7 +488,7 @@ window.sheetLayout = {
    "name": "icon-button-glyphs",
    "component": "icon-button",
    "x": 16,
-   "y": 2344,
+   "y": 3128,
    "w": 280,
    "h": 80
   },
@@ -376,7 +496,7 @@ window.sheetLayout = {
    "name": "switch-off",
    "component": "switch",
    "x": 16,
-   "y": 2456,
+   "y": 3240,
    "w": 120,
    "h": 80
   },
@@ -384,7 +504,7 @@ window.sheetLayout = {
    "name": "switch-on",
    "component": "switch",
    "x": 152,
-   "y": 2456,
+   "y": 3240,
    "w": 120,
    "h": 80
   },
@@ -392,7 +512,7 @@ window.sheetLayout = {
    "name": "text-input",
    "component": "input",
    "x": 16,
-   "y": 2568,
+   "y": 3352,
    "w": 320,
    "h": 80
   },
@@ -400,7 +520,7 @@ window.sheetLayout = {
    "name": "input-placeholder",
    "component": "input",
    "x": 352,
-   "y": 2568,
+   "y": 3352,
    "w": 320,
    "h": 80
   },
@@ -408,7 +528,7 @@ window.sheetLayout = {
    "name": "search-input",
    "component": "input",
    "x": 16,
-   "y": 2664,
+   "y": 3448,
    "w": 320,
    "h": 84
   },
@@ -416,7 +536,7 @@ window.sheetLayout = {
    "name": "search-clear-hover",
    "component": "input",
    "x": 352,
-   "y": 2664,
+   "y": 3448,
    "w": 320,
    "h": 84
   },
@@ -424,7 +544,7 @@ window.sheetLayout = {
    "name": "dropdown-closed",
    "component": "dropdown",
    "x": 16,
-   "y": 2784,
+   "y": 3568,
    "w": 320,
    "h": 80
   },
@@ -432,7 +552,7 @@ window.sheetLayout = {
    "name": "dropdown-open",
    "component": "dropdown",
    "x": 352,
-   "y": 2784,
+   "y": 3568,
    "w": 320,
    "h": 280
   },
@@ -440,7 +560,7 @@ window.sheetLayout = {
    "name": "color-palette",
    "component": "color-palette",
    "x": 16,
-   "y": 3096,
+   "y": 3880,
    "w": 220,
    "h": 80
   },
@@ -448,7 +568,7 @@ window.sheetLayout = {
    "name": "sidebar-row",
    "component": "sidebar",
    "x": 16,
-   "y": 3208,
+   "y": 3992,
    "w": 320,
    "h": 80
   },
@@ -456,7 +576,7 @@ window.sheetLayout = {
    "name": "sidebar-row-hover",
    "component": "sidebar",
    "x": 352,
-   "y": 3208,
+   "y": 3992,
    "w": 320,
    "h": 80
   },
@@ -464,7 +584,7 @@ window.sheetLayout = {
    "name": "sidebar-row-selected",
    "component": "sidebar",
    "x": 16,
-   "y": 3304,
+   "y": 4088,
    "w": 320,
    "h": 80
   },
@@ -472,7 +592,7 @@ window.sheetLayout = {
    "name": "sidebar-row-selected-hover",
    "component": "sidebar",
    "x": 352,
-   "y": 3304,
+   "y": 4088,
    "w": 320,
    "h": 80
   },
@@ -480,7 +600,7 @@ window.sheetLayout = {
    "name": "sidebar-row-collapsed",
    "component": "sidebar",
    "x": 16,
-   "y": 3400,
+   "y": 4184,
    "w": 320,
    "h": 80
   },
@@ -488,7 +608,7 @@ window.sheetLayout = {
    "name": "sidebar-row-expanded",
    "component": "sidebar",
    "x": 352,
-   "y": 3400,
+   "y": 4184,
    "w": 320,
    "h": 80
   },
@@ -496,7 +616,7 @@ window.sheetLayout = {
    "name": "sidebar-row-expander-hover",
    "component": "sidebar",
    "x": 16,
-   "y": 3496,
+   "y": 4280,
    "w": 320,
    "h": 80
   },
@@ -504,7 +624,7 @@ window.sheetLayout = {
    "name": "sidebar-row-drop",
    "component": "sidebar",
    "x": 352,
-   "y": 3496,
+   "y": 4280,
    "w": 320,
    "h": 80
   },
@@ -512,7 +632,7 @@ window.sheetLayout = {
    "name": "property-row",
    "component": "property-row",
    "x": 16,
-   "y": 3608,
+   "y": 4392,
    "w": 320,
    "h": 68
   },
@@ -520,7 +640,7 @@ window.sheetLayout = {
    "name": "section",
    "component": "section",
    "x": 16,
-   "y": 3712,
+   "y": 4496,
    "w": 320,
    "h": 92
   },
@@ -528,7 +648,7 @@ window.sheetLayout = {
    "name": "section-expanded",
    "component": "section",
    "x": 352,
-   "y": 3712,
+   "y": 4496,
    "w": 320,
    "h": 92
   },
@@ -536,7 +656,7 @@ window.sheetLayout = {
    "name": "section-hover",
    "component": "section",
    "x": 16,
-   "y": 3824,
+   "y": 4608,
    "w": 320,
    "h": 92
   },
@@ -544,7 +664,7 @@ window.sheetLayout = {
    "name": "tooltip",
    "component": "tooltip",
    "x": 16,
-   "y": 3952,
+   "y": 4736,
    "w": 240,
    "h": 80
   },
@@ -552,7 +672,7 @@ window.sheetLayout = {
    "name": "tooltip-pop-mid",
    "component": "tooltip",
    "x": 272,
-   "y": 3952,
+   "y": 4736,
    "w": 240,
    "h": 80
   },
@@ -560,7 +680,7 @@ window.sheetLayout = {
    "name": "context-menu",
    "component": "context-menu",
    "x": 16,
-   "y": 4064,
+   "y": 4848,
    "w": 320,
    "h": 190
   },
@@ -568,7 +688,7 @@ window.sheetLayout = {
    "name": "modal",
    "component": "modal",
    "x": 16,
-   "y": 4288,
+   "y": 5072,
    "w": 560,
    "h": 360
   }

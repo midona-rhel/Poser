@@ -4,6 +4,10 @@ using Poser.UI;
 using Dalamud.Interface.Utility;
 using FontFamily = Poser.UI.FontFamily;
 using Ui = Poser.UI.Crystarium;
+using Rx = Poser.UI.Reactive.Crystarium;
+using RxRoot = Poser.UI.Reactive.UiRoot;
+using Sx = Poser.UI.Reactive.Sx;
+using UiDim = Poser.UI.Reactive.UiDim;
 
 namespace Crystarium.Capture;
 
@@ -63,6 +67,26 @@ internal static class ComponentCatalog
         new("bar-allocation", 340, 140, Hidden: true),
         new("btn-hover-exit", 320, 80),
         new("btn-hover-mid", 320, 80),
+        // PBI-015: the SAME states driven through the retained reactive
+        // root. Every rbtn-X must capture byte-identical to btn-X, which
+        // is what makes the declarative path the same button rather than
+        // a lookalike — see verify-reactive-button.ps1.
+        new("rbtn-secondary", 320, 80),
+        new("rbtn-secondary-hover", 320, 80),
+        new("rbtn-secondary-disabled", 320, 80),
+        new("rbtn-disabled-unicode", 320, 80),
+        new("rbtn-primary", 320, 80),
+        new("rbtn-primary-hover", 320, 80),
+        new("rbtn-primary-disabled", 320, 80),
+        new("rbtn-danger", 320, 80),
+        new("rbtn-danger-hover", 320, 80),
+        new("rbtn-danger-disabled", 320, 80),
+        new("rbtn-width-content", 320, 80),
+        new("rbtn-width-fixed", 320, 80),
+        new("rbtn-width-fill", 320, 80),
+        new("rbtn-hover-exit", 320, 80),
+        new("rbtn-hover-mid", 320, 80),
+        new("rbtn-hover-reconcile", 320, 80, Hidden: true),
         new("icon-button-idle", 120, 80),
         new("icon-button-hover", 120, 80),
         new("icon-button-pressed", 120, 80),
@@ -123,6 +147,16 @@ internal static class ComponentCatalog
         new("Despawn", TablerIcon.X, danger: true),
     ];
 
+    // One retained root per STATE. A state runs 40 frames in a fresh ImGui
+    // context, and the root is what carries scopes, motion identity and the
+    // interaction-id cache across them — so it must outlive the frame loop
+    // and must never be shared with the next state, whose context is gone.
+    private static RxRoot? reactiveRoot;
+    private static string? reactiveRootState;
+    // A static build callback cannot capture the frame counter, so the
+    // frame-dependent fixture parameter is parked here instead.
+    private static bool reactiveDisabled;
+
     public static IReadOnlyList<ComponentSpec> All =>
         Specs.Where(spec => !spec.Hidden).ToArray();
 
@@ -135,6 +169,17 @@ internal static class ComponentCatalog
             : throw new ArgumentException(
                 $"Unknown component '{name}'. " +
                 $"Expected one of: {string.Join(", ", Specs.Select(x => x.Name))}.");
+
+    private static RxRoot ReactiveRoot(string state)
+    {
+        if (reactiveRootState != state)
+        {
+            reactiveRoot = new RxRoot();
+            reactiveRootState = state;
+        }
+
+        return reactiveRoot!;
+    }
 
     private static void DrawIconGrid(Vector2 origin, float size)
     {
@@ -219,6 +264,12 @@ internal static class ComponentCatalog
             || (name == "btn-hover-exit" && frame < 15)
             || (name == "btn-hover-mid" && frame >= 34)
             || (name == "btn-hover-reconcile" && frame < 20)
+            // The reactive twins share their btn counterpart's choreography
+            // exactly; identical input is what makes the byte-identity
+            // assertion a statement about the RENDERER, not the script.
+            || (name == "rbtn-hover-exit" && frame < 15)
+            || (name == "rbtn-hover-mid" && frame >= 34)
+            || (name == "rbtn-hover-reconcile" && frame < 20)
             || name == "icon-button-pressed"
             || (name == "icon-button-held-outside" && frame < 15)
             || (name == "icon-button-hover-exit" && frame < 15)
@@ -679,6 +730,98 @@ internal static class ComponentCatalog
                     "Apply changes",
                     disabled: frame is >= 18 and <= 30,
                     id: "##btn");
+                break;
+            // ---- Reactive twins (PBI-015) ---------------------------
+            // Same stage origin, same label, same variant, same pointer
+            // script as the btn family above; only the PATH differs, so
+            // any pixel difference is the retained runtime's own.
+            case "rbtn-secondary":
+            case "rbtn-secondary-hover":
+            case "rbtn-hover-exit":
+            case "rbtn-hover-mid":
+                ReactiveRoot(name).Render(
+                    origin,
+                    ImGui.GetContentRegionAvail(),
+                    static () => Rx.Button("Apply changes"));
+                break;
+            case "rbtn-secondary-disabled":
+                ReactiveRoot(name).Render(
+                    origin,
+                    ImGui.GetContentRegionAvail(),
+                    static () => Rx.Button("Apply changes", disabled: true));
+                break;
+            case "rbtn-disabled-unicode":
+                ReactiveRoot(name).Render(
+                    origin,
+                    ImGui.GetContentRegionAvail(),
+                    static () => Rx.Button("Wait 待機 x̃ €", disabled: true));
+                break;
+            case "rbtn-primary":
+            case "rbtn-primary-hover":
+                ReactiveRoot(name).Render(
+                    origin,
+                    ImGui.GetContentRegionAvail(),
+                    static () => Rx.Button(
+                        "Apply changes", variant: ButtonVariant.Primary));
+                break;
+            case "rbtn-primary-disabled":
+                ReactiveRoot(name).Render(
+                    origin,
+                    ImGui.GetContentRegionAvail(),
+                    static () => Rx.Button(
+                        "Apply changes",
+                        variant: ButtonVariant.Primary,
+                        disabled: true));
+                break;
+            case "rbtn-danger":
+            case "rbtn-danger-hover":
+                ReactiveRoot(name).Render(
+                    origin,
+                    ImGui.GetContentRegionAvail(),
+                    static () => Rx.Button(
+                        "Apply changes", variant: ButtonVariant.Danger));
+                break;
+            case "rbtn-danger-disabled":
+                ReactiveRoot(name).Render(
+                    origin,
+                    ImGui.GetContentRegionAvail(),
+                    static () => Rx.Button(
+                        "Apply changes",
+                        variant: ButtonVariant.Danger,
+                        disabled: true));
+                break;
+            case "rbtn-width-content":
+                ReactiveRoot(name).Render(
+                    origin,
+                    ImGui.GetContentRegionAvail(),
+                    static () => Rx.Button("OK"));
+                break;
+            case "rbtn-width-fixed":
+                ReactiveRoot(name).Render(
+                    origin,
+                    ImGui.GetContentRegionAvail(),
+                    static () => Rx.Button(
+                        "Apply changes",
+                        sx: Sx.Size(UiDim.Fixed(160f), UiDim.Content)));
+                break;
+            case "rbtn-width-fill":
+                // The root's own allocation IS the bounded region here, so
+                // Fill resolves the 240px span the legacy twin gets from a
+                // child window. Render takes PHYSICAL pixels.
+                ReactiveRoot(name).Render(
+                    origin,
+                    new Vector2(240f, 40f) * ImGuiHelpers.GlobalScale,
+                    static () => Rx.Button(
+                        "Apply changes",
+                        sx: Sx.Size(UiDim.Fill, UiDim.Content)));
+                break;
+            case "rbtn-hover-reconcile":
+                reactiveDisabled = frame is >= 18 and <= 30;
+                ReactiveRoot(name).Render(
+                    origin,
+                    ImGui.GetContentRegionAvail(),
+                    static () => Rx.Button(
+                        "Apply changes", disabled: reactiveDisabled));
                 break;
             case "bar-allocation":
             {

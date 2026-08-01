@@ -231,6 +231,31 @@ public static partial class Crystarium
         var size = logicalSize * scale;
         uint identity = ImGui.GetID(id);
         var hit = Interactive.Reserve(id, size, disabled);
+        PaintTextButton(hit, identity, label, style, variant, disabled);
+
+        if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
+                hit, hit.Disabled, hit.ScreenMin, hit.ScreenMax))
+            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
+        if (hit.Activated)
+            onClick?.Invoke();
+        return hit.Activated;
+    }
+
+    /// <summary>
+    /// The text button's complete paint, split out so the retained
+    /// declarative tree can drive the SAME pixels from its own layout and
+    /// interaction pass. Everything visual lives here; the caller owns
+    /// only reservation, help, and activation.
+    /// </summary>
+    internal static void PaintTextButton(
+        in InteractionResult hit,
+        uint identity,
+        string label,
+        ControlStyle style,
+        ButtonVariant variant,
+        bool disabled)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
         var theme = ActiveTheme;
         float opacity = disabled ? theme.Chrome.ControlDisabledOpacity : 1f;
 
@@ -319,13 +344,6 @@ public static partial class Crystarium
             DrawButtonLabelClipped(
                 draw, hit.ScreenMin, hit.ScreenMax, label, style, text);
         }
-
-        if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
-                hit, hit.Disabled, hit.ScreenMin, hit.ScreenMax))
-            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
-        if (hit.Activated)
-            onClick?.Invoke();
-        return hit.Activated;
     }
 
     private static TextStyle ButtonLabelStyle(
@@ -561,7 +579,7 @@ public static partial class Crystarium
             opacity: opacity);
     }
 
-    private static float ButtonHeight(ControlStyle style) =>
+    internal static float ButtonHeight(ControlStyle style) =>
         ControlSizing.Height(style.Height, ActiveTheme.Controls.ComfortableHeight);
 
     private static Vector2 IconButtonSize(ControlStyle style)
