@@ -72,10 +72,12 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
   press/release, focus, keyboard activation, and the pointer events
   (click, double-click, drag begin/end/delta), ALL occlusion-gated:
   pointer events by pointer occlusion, Enter/Space by keyboard
-  OWNERSHIP first (an open exclusive surface owns the keyboard
-  globally: only owners on its chain can be activated, whether or not
-  the surface covers the control, and the claim frame counts before any
-  rectangle exists) and by rect occlusion for ordinary overlapping
+  OWNERSHIP first (while the exclusive chain is open its TOPMOST link
+  owns the keyboard globally: only owners on that link can be
+  activated, whether or not the surface covers the control, so an
+  ancestor surface cannot be Entered from behind its child and regains
+  the keyboard when the child releases; the claim frame counts before
+  any rectangle exists) and by rect occlusion for ordinary overlapping
   surfaces, and drags by accepted ownership (a drag begun un-occluded
   ends exactly once; a swallowed press never emits an end). The ONLY
   remaining direct ImGui input queries are these named exceptions, and

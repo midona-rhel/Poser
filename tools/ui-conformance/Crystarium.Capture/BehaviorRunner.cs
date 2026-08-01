@@ -324,6 +324,11 @@ internal static class BehaviorSuites
         host.Check(
             "keyboard-claim-barrier", barrier.Activated == 0, $"{barrier}");
 
+        // (e2) Only the chain TAIL owns the keyboard: a control inside the
+        //      PARENT surface loses Enter while a child is open, and takes
+        //      it back the moment the child releases.
+        host.Check("keyboard-nested-child", NestedKeyboard(host));
+
         // (f) Ownership, not the current occlusion state, is what pairs
         //     the drag edges: a surface opening over a HELD control must
         //     not swallow the release.
@@ -441,6 +446,63 @@ internal static class BehaviorSuites
         {
             Interactive.ReleaseExclusive(OccluderId);
         }
+    }
+
+    /// <summary>A control living INSIDE a parent exclusive surface, with a
+    /// nested child claimed over frames 5..8. Enter lands at frame 6 (child
+    /// open, so the parent is off the chain tail) and Space at frame 10
+    /// (child released, so the parent owns the keyboard again).</summary>
+    private static Probe NestedKeyboard(BehaviorHost host)
+    {
+        const string parent = "##kernel-parent";
+        const string child = "##kernel-child";
+        int underChild = 0, afterChild = 0;
+        Interactive.ReleaseExclusive(parent);
+        try
+        {
+            host.Case(Canvas, 16, frame =>
+            {
+                // The parent claims from world scope, the child from
+                // inside the parent, so the chain nests rather than
+                // replaces.
+                if (!Interactive.OwnsExclusive(parent))
+                    Interactive.ClaimExclusive(parent);
+                var owner = Interactive.BeginOwner(
+                    parent, InteractionLayer.Modal, Vector2.Zero, Canvas);
+                if (frame is >= 5 and <= 8)
+                {
+                    if (Interactive.OwnsExclusive(child))
+                        Interactive.TouchExclusive(child);
+                    else
+                        Interactive.ClaimExclusive(child);
+                }
+                else
+                {
+                    Interactive.ReleaseExclusive(child);
+                }
+                ImGui.SetCursorScreenPos(new Vector2(24, 24));
+                var hit = Interactive.Reserve(
+                    TargetId,
+                    new Vector2(28f),
+                    disabled: false,
+                    activateOnSpace: true);
+                if (hit.Activated)
+                {
+                    if (frame <= 8) underChild++;
+                    else afterChild++;
+                }
+                Interactive.EndOwner(owner);
+            }, _ => Offscreen, key: TabEnterSpace);
+        }
+        finally
+        {
+            Interactive.ReleaseExclusive(parent);
+        }
+
+        var probe = new Probe();
+        probe.Want("enter-under-child", underChild, 0);
+        probe.Want("space-after-release", afterChild, 1);
+        return probe;
     }
 
     /// <summary>Motion's channel-set contract. Needs frames only for the

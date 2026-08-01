@@ -274,22 +274,26 @@ public static class Interactive
     }
 
     /// <summary>
-    /// Keyboard ownership, which is NOT geometric. An open exclusive
-    /// surface owns the keyboard outright: nothing outside the active
-    /// chain can be operated from it, whether or not the surface happens
-    /// to cover the control — a popup off to one side still takes Enter
-    /// away from the button behind it, and the frame a surface CLAIMS the
-    /// chain it has not registered a rectangle yet, so geometry could not
-    /// answer at all. Owners on (or nested inside) the active chain keep
-    /// the keyboard, so a focused control in an open modal still
-    /// activates.
+    /// Keyboard ownership, which is NOT geometric. While the exclusive
+    /// chain is open its TOPMOST link owns the keyboard outright, whether
+    /// or not that surface happens to cover the control: a popup off to
+    /// one side still takes Enter away from the button behind it, and on
+    /// the frame a surface CLAIMS the chain it has registered no rectangle
+    /// at all, so geometry could not answer either way.
+    ///
+    /// Only the chain TAIL owns it — an ancestor is not merely lower, it
+    /// is inactive for the keyboard. A modal with a dropdown open inside
+    /// it hands the keyboard to the dropdown, so the modal's own controls
+    /// cannot be Entered from behind their child; they remain
+    /// pointer-visible under the ordinary geometry rules, and take the
+    /// keyboard back the moment the child releases its link.
     /// </summary>
     private static bool KeyboardDisowned(InteractionOwner owner)
     {
         if (_openingBarrier is { } barrier && IsHigher(barrier, owner))
             return true;
         return ExclusiveChain.Count > 0
-            && !SurfaceIsActive(owner.SurfaceToken);
+            && SurfaceIndex(owner.SurfaceToken) != ExclusiveChain.Count - 1;
     }
 
     public static bool RectOccluded(
