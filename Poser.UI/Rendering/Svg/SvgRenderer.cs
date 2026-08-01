@@ -21,33 +21,35 @@ internal static class SvgRenderer
         float groupOpacity = 1f,
         Vector4 groupBackground = default)
     {
-        bool useStrokeMask = compositeStroke;
+        // Stroke-only single-color icons ALWAYS take the union mask — not
+        // just composited ones. The polyline fallback overdraws: its round
+        // caps/joins are filled circles blended ON TOP of the polyline
+        // body, so a translucent tint alpha-stacks wherever they overlap
+        // (the seam where Tabler's two circle arcs meet read ~35% heavier
+        // than the ring — user-reported). The mask emits each pixel once
+        // from a supersampled union, like the browser's analytic stroke.
+        // Filled/multicolor SVGs keep the legacy paint ordering.
+        bool useStrokeMask = true;
         Vector4? compositeColor = null;
-        if (useStrokeMask)
+        foreach (var path in paths)
         {
-            foreach (var path in paths)
+            if (path.Fill.HasValue)
             {
-                if (path.Fill.HasValue)
+                useStrokeMask = false;
+                break;
+            }
+            if (path.Stroke is { } stroke)
+            {
+                if (compositeColor.HasValue
+                    && compositeColor.Value != stroke)
                 {
-                    // Preserve established paint ordering for custom
-                    // filled/multicolor SVGs. IconButton's Tabler outlines
-                    // are stroke-only and take the composited mask path.
                     useStrokeMask = false;
                     break;
                 }
-                if (path.Stroke is { } stroke)
-                {
-                    if (compositeColor.HasValue
-                        && compositeColor.Value != stroke)
-                    {
-                        useStrokeMask = false;
-                        break;
-                    }
-                    compositeColor = stroke;
-                }
+                compositeColor = stroke;
             }
-            useStrokeMask &= compositeColor.HasValue;
         }
+        useStrokeMask &= compositeColor.HasValue;
 
         if (useStrokeMask)
         {

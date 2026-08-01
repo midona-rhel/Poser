@@ -158,6 +158,16 @@ internal static class SvgStrokeMask
         return new Vector4(overlayRgb, overlayAlpha);
     }
 
+    // Coverage is AREA-estimated over a 4x4 subsample grid per pixel. A
+    // single center sample makes brightness a function of distance LUCK:
+    // a round cap or join disc landing near a pixel center produces a
+    // full-brightness dot (the seam where Tabler's two circle arcs meet
+    // read ~35% heavier than the ring), while mid-chord pixels ramp low.
+    // Averaging subsamples approximates the box convolution the browser's
+    // analytic rasterizer computes, so rings read evenly. The mask is
+    // cached, so the 16x build cost is paid once per icon identity.
+    private const int Subsamples = 4;
+
     private static Mask Build(
         List<Stroke> strokes,
         Vector2 origin,
@@ -169,8 +179,18 @@ internal static class SvgStrokeMask
         {
             for (int x = 0; x < width; x++)
             {
-                var point = origin + new Vector2(x + 0.5f, y + 0.5f);
-                float coverage = Coverage(strokes, point);
+                float coverage = 0f;
+                for (int sy = 0; sy < Subsamples; sy++)
+                {
+                    for (int sx = 0; sx < Subsamples; sx++)
+                    {
+                        var point = origin + new Vector2(
+                            x + (sx + 0.5f) / Subsamples,
+                            y + (sy + 0.5f) / Subsamples);
+                        coverage += Coverage(strokes, point);
+                    }
+                }
+                coverage /= Subsamples * Subsamples;
                 if (coverage > 0f)
                     pixels.Add(new(
                         checked((short)x),
