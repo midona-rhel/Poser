@@ -274,22 +274,6 @@ internal static class ComponentCatalog
             yield return (0, true);
     }
 
-    /// <summary>Key events for keyboard-driven states: focus fixtures Tab
-    /// onto their single control, producing real nav focus — and, for a
-    /// native inputable widget, the real editing activation ImGui gives a
-    /// tab-navigated field.</summary>
-    public static IEnumerable<(ImGuiKey Key, bool Down)> KeyEventsFor(
-        string name, int frame)
-    {
-        if (!name.EndsWith("-focus", StringComparison.Ordinal)
-            && name != "icon-button-keyboard-focused")
-            yield break;
-        if (frame == 5)
-            yield return (ImGuiKey.Tab, true);
-        if (frame == 6)
-            yield return (ImGuiKey.Tab, false);
-    }
-
     public static void Draw(string name, int frame, Vector2 canvas)
     {
         ImGui.SetNextWindowPos(Vector2.Zero);

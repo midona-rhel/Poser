@@ -70,7 +70,7 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
   and the capture host. Measurement and rendering must share one
   resolved style value.
 - UiKernel: `Interactive.Reserve` is the ONE control hit-test — hover,
-  press/release, focus, keyboard activation, and the pointer events
+  press/release, keyboard activation, and the pointer events
   (click, double-click, drag begin/end/delta), ALL occlusion-gated:
   pointer events by pointer occlusion, Enter/Space by keyboard
   OWNERSHIP first (while the exclusive chain is open its TOPMOST link
@@ -130,16 +130,17 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
   Bare/Selected/Slashed are icon/toggle-only. Geometry: 32px default
   height, 16px horizontal padding, 6px radius, 1px border, label
   centered through the canonical text path and CLIPPED to the visual
-  bounds; measurement, drawing, hit testing, the keyboard
-  focus-visible outline (2px primary-60, offset 1px), and layout
-  reservation resolve from the same rectangle. The background follows
-  Picto's 150ms ease hover transition via component-owned transient
-  state keyed by stable ImGui identity; borders and text switch
-  instantly like the CSS. Activation is release-inside (drag-out
-  cancels); Enter/Space activate a keyboard-focused button; pointer
-  interaction never shows the focus outline; disabled buttons cannot
-  focus or activate, take no hover styling, and keep their HoverHelp
-  explanation. `.btn:disabled` is CSS GROUP opacity reproduced through
+  bounds; measurement, drawing, hit testing, and layout reservation
+  resolve from the same rectangle. NO component draws focus-visible
+  chrome — PRODUCT DECISION: native-styled UI, not web; Picto's
+  :focus-visible outlines are deliberately not reproduced anywhere.
+  The background follows Picto's 150ms ease hover transition through
+  the Motion store keyed by stable ImGui identity; borders and text
+  switch instantly like the CSS. Activation is release-inside
+  (drag-out cancels); Enter/Space activate through the kernel's
+  keyboard-ownership rules with no visual focus state; disabled
+  buttons cannot activate, take no hover styling, and keep their
+  HoverHelp explanation. `.btn:disabled` is CSS GROUP opacity reproduced through
   the ONE existing drawing path: non-overlapping chrome (fill inset to
   the border's inner edge, the ring carrying the analytically
   flattened border-over-fill color) plus the canonical TextAt label

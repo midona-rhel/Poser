@@ -204,9 +204,6 @@ internal static class Program
                         var pointer = ComponentCatalog.PointerFor(
                             entry.Name, entry.Scale, frame);
                         io.AddMousePosEvent(pointer.X, pointer.Y);
-                        foreach (var (key, down) in
-                            ComponentCatalog.KeyEventsFor(entry.Name, frame))
-                            io.AddKeyEvent(key, down);
                         foreach (var (button, down) in
                             ComponentCatalog.MouseButtonEventsFor(
                                 entry.Name, frame))

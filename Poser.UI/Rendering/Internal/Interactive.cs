@@ -39,7 +39,6 @@ public readonly struct InteractionResult
     public readonly PseudoState State;
     public readonly bool Clicked;
     public readonly bool Activated;
-    public readonly bool Focused;
     /// <summary>Left double-click while hovered — same gating as
     /// <see cref="Clicked"/>.</summary>
     public readonly bool DoubleClicked;
@@ -63,7 +62,6 @@ public readonly struct InteractionResult
         PseudoState state,
         bool clicked,
         bool activated,
-        bool focused,
         bool doubleClicked,
         bool dragBegan,
         bool dragEnded,
@@ -75,7 +73,6 @@ public readonly struct InteractionResult
         State = state;
         Clicked = clicked;
         Activated = activated;
-        Focused = focused;
         DoubleClicked = doubleClicked;
         DragBegan = dragBegan;
         DragEnded = dragEnded;
@@ -140,7 +137,6 @@ public static class Interactive
         _nextOrder = 0;
         _frame = ImGui.GetFrameCount();
         _openingBarrier = null;
-        UpdateInputModality();
     }
 
     public static void EndFrame()
@@ -340,24 +336,6 @@ public static class Interactive
         }
     }
 
-    /// <summary>True after keyboard navigation (Tab/arrows), false after
-    /// any pointer press — the CSS :focus-visible modality signal.</summary>
-    public static bool KeyboardNavActive { get; private set; }
-
-    internal static void UpdateInputModality()
-    {
-        if (ImGui.IsKeyPressed(ImGuiKey.Tab)
-            || ImGui.IsKeyPressed(ImGuiKey.LeftArrow)
-            || ImGui.IsKeyPressed(ImGuiKey.RightArrow)
-            || ImGui.IsKeyPressed(ImGuiKey.UpArrow)
-            || ImGui.IsKeyPressed(ImGuiKey.DownArrow))
-            KeyboardNavActive = true;
-        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left)
-            || ImGui.IsMouseClicked(ImGuiMouseButton.Right)
-            || ImGui.IsMouseClicked(ImGuiMouseButton.Middle))
-            KeyboardNavActive = false;
-    }
-
     public static InteractionResult Reserve(
         string id,
         Vector2 size,
@@ -431,7 +409,7 @@ public static class Interactive
         if (disabled) state |= PseudoState.Disabled;
 
         return new InteractionResult(
-            min, max, state, clicked, activated, focused && !disabled,
+            min, max, state, clicked, activated,
             doubleClicked, dragBegan, dragEnded, dragDelta, owner);
     }
 
