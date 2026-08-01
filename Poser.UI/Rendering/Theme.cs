@@ -85,6 +85,10 @@ public readonly record struct Theme
             WorkspaceHeight = 26f,
             ComfortableHeight = 32f,
             NavigationHeight = 30f,
+            SearchHeight = 36f,
+            InputPaddingX = 10f,
+            SearchIconGap = 6f,
+            InputDisabledOpacity = 0.50f,
             ShellIconAction = 28f,
             ListRowHeight = 26f,
             CheckboxSize = 14f,
@@ -467,6 +471,26 @@ public readonly record struct Theme
         public float WorkspaceHeight { get; init; }
         public float ComfortableHeight { get; init; }
         public float NavigationHeight { get; init; }
+
+        /// <summary>GlassInput <c>.searchWrap { height: 36px }</c> — the
+        /// search variant's own box, taller than <c>.input</c>'s 32.</summary>
+        public float SearchHeight { get; init; }
+
+        /// <summary>GlassInput <c>.input { padding: 0 10px }</c>, which is
+        /// also <c>.searchWrap { padding: 0 0 0 10px }</c>. Not a
+        /// <see cref="SpacingTokens"/> step — the 2/4/6/8/12/16 scale has
+        /// no 10.</summary>
+        public float InputPaddingX { get; init; }
+
+        /// <summary>GlassInput <c>.searchWrap { gap: 6px }</c> — between
+        /// the leading icon and the field.</summary>
+        public float SearchIconGap { get; init; }
+
+        /// <summary>GlassInput <c>.input:disabled { opacity: 0.5 }</c>,
+        /// pushed as ImGui's DisabledAlpha so the WHOLE field (frame,
+        /// border, value, placeholder) fades as one CSS box.</summary>
+        public float InputDisabledOpacity { get; init; }
+
         public float ShellIconAction { get; init; }
         public float ListRowHeight { get; init; }
         public float CheckboxSize { get; init; }

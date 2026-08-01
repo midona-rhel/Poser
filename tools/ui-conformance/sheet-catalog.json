@@ -88,7 +88,10 @@
       "title": "Input",
       "states": [
         { "name": "text-input", "label": "text input", "width": 320, "height": 80 },
-        { "name": "search-input", "label": "search input", "width": 320, "height": 84 }
+        { "name": "input-placeholder", "label": "placeholder", "width": 320, "height": 80 },
+        { "name": "input-focus", "label": "keyboard focus", "width": 320, "height": 80 },
+        { "name": "search-input", "label": "search input", "width": 320, "height": 84 },
+        { "name": "search-clear-hover", "label": "clear hover", "width": 320, "height": 84 }
       ]
     },
     {

@@ -2,7 +2,7 @@
 // Do not hand-edit.
 window.sheetLayout = {
  "pageWidth": 688,
- "pageHeight": 4696,
+ "pageHeight": 4896,
  "cells": [
   {
    "name": "text-label",
@@ -429,10 +429,34 @@ window.sheetLayout = {
    "h": 80
   },
   {
-   "name": "search-input",
+   "name": "input-placeholder",
    "component": "input",
    "x": 352,
    "y": 2664,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "input-focus",
+   "component": "input",
+   "x": 16,
+   "y": 2760,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "search-input",
+   "component": "input",
+   "x": 352,
+   "y": 2760,
+   "w": 320,
+   "h": 84
+  },
+  {
+   "name": "search-clear-hover",
+   "component": "input",
+   "x": 16,
+   "y": 2864,
    "w": 320,
    "h": 84
   },
@@ -440,7 +464,7 @@ window.sheetLayout = {
    "name": "dropdown-closed",
    "component": "dropdown",
    "x": 16,
-   "y": 2784,
+   "y": 2984,
    "w": 320,
    "h": 80
   },
@@ -448,7 +472,7 @@ window.sheetLayout = {
    "name": "dropdown-open",
    "component": "dropdown",
    "x": 352,
-   "y": 2784,
+   "y": 2984,
    "w": 320,
    "h": 280
   },
@@ -456,7 +480,7 @@ window.sheetLayout = {
    "name": "color-palette",
    "component": "color-palette",
    "x": 16,
-   "y": 3096,
+   "y": 3296,
    "w": 220,
    "h": 80
   },
@@ -464,7 +488,7 @@ window.sheetLayout = {
    "name": "sidebar-row",
    "component": "sidebar",
    "x": 16,
-   "y": 3208,
+   "y": 3408,
    "w": 320,
    "h": 80
   },
@@ -472,7 +496,7 @@ window.sheetLayout = {
    "name": "sidebar-row-hover",
    "component": "sidebar",
    "x": 352,
-   "y": 3208,
+   "y": 3408,
    "w": 320,
    "h": 80
   },
@@ -480,7 +504,7 @@ window.sheetLayout = {
    "name": "sidebar-row-selected",
    "component": "sidebar",
    "x": 16,
-   "y": 3304,
+   "y": 3504,
    "w": 320,
    "h": 80
   },
@@ -488,7 +512,7 @@ window.sheetLayout = {
    "name": "sidebar-row-selected-hover",
    "component": "sidebar",
    "x": 352,
-   "y": 3304,
+   "y": 3504,
    "w": 320,
    "h": 80
   },
@@ -496,7 +520,7 @@ window.sheetLayout = {
    "name": "sidebar-row-collapsed",
    "component": "sidebar",
    "x": 16,
-   "y": 3400,
+   "y": 3600,
    "w": 320,
    "h": 80
   },
@@ -504,7 +528,7 @@ window.sheetLayout = {
    "name": "sidebar-row-expanded",
    "component": "sidebar",
    "x": 352,
-   "y": 3400,
+   "y": 3600,
    "w": 320,
    "h": 80
   },
@@ -512,7 +536,7 @@ window.sheetLayout = {
    "name": "sidebar-row-expander-hover",
    "component": "sidebar",
    "x": 16,
-   "y": 3496,
+   "y": 3696,
    "w": 320,
    "h": 80
   },
@@ -520,7 +544,7 @@ window.sheetLayout = {
    "name": "sidebar-row-drop",
    "component": "sidebar",
    "x": 352,
-   "y": 3496,
+   "y": 3696,
    "w": 320,
    "h": 80
   },
@@ -528,7 +552,7 @@ window.sheetLayout = {
    "name": "property-row",
    "component": "property-row",
    "x": 16,
-   "y": 3608,
+   "y": 3808,
    "w": 320,
    "h": 68
   },
@@ -536,7 +560,7 @@ window.sheetLayout = {
    "name": "section",
    "component": "section",
    "x": 16,
-   "y": 3712,
+   "y": 3912,
    "w": 320,
    "h": 92
   },
@@ -544,7 +568,7 @@ window.sheetLayout = {
    "name": "section-expanded",
    "component": "section",
    "x": 352,
-   "y": 3712,
+   "y": 3912,
    "w": 320,
    "h": 92
   },
@@ -552,7 +576,7 @@ window.sheetLayout = {
    "name": "section-hover",
    "component": "section",
    "x": 16,
-   "y": 3824,
+   "y": 4024,
    "w": 320,
    "h": 92
   },
@@ -560,7 +584,7 @@ window.sheetLayout = {
    "name": "tooltip",
    "component": "tooltip",
    "x": 16,
-   "y": 3952,
+   "y": 4152,
    "w": 240,
    "h": 80
   },
@@ -568,7 +592,7 @@ window.sheetLayout = {
    "name": "tooltip-pop-mid",
    "component": "tooltip",
    "x": 272,
-   "y": 3952,
+   "y": 4152,
    "w": 240,
    "h": 80
   },
@@ -576,7 +600,7 @@ window.sheetLayout = {
    "name": "context-menu",
    "component": "context-menu",
    "x": 16,
-   "y": 4064,
+   "y": 4264,
    "w": 320,
    "h": 190
   },
@@ -584,7 +608,7 @@ window.sheetLayout = {
    "name": "modal",
    "component": "modal",
    "x": 16,
-   "y": 4288,
+   "y": 4488,
    "w": 560,
    "h": 360
   }

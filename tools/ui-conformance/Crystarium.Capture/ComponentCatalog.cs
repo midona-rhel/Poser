@@ -83,7 +83,10 @@ internal static class ComponentCatalog
         new("switch-off", 120, 80),
         new("switch-on", 120, 80),
         new("text-input", 320, 80),
+        new("input-placeholder", 320, 80),
+        new("input-focus", 320, 80),
         new("search-input", 320, 84),
+        new("search-clear-hover", 320, 84),
         new("dropdown-closed", 320, 80),
         new("dropdown-open", 320, 280),
         new("color-palette", 220, 80),
@@ -244,9 +247,16 @@ internal static class ComponentCatalog
         // padding 10) above its 26px .header, so the shared (84,40) point
         // lands in the padding, ABOVE the interactive row. The header
         // spans y 45..71 at the (24,24) stage origin; its centre is 58.
+        // The clear affordance is SCOPED to its 18px hit area: the field
+        // is 272 wide at the (24,24) origin, so its right edge is 296 and
+        // the affordance centres 13px in at (283, 42) over the 36px
+        // search row. The shared (84,40) point would hover the field but
+        // not the affordance.
         return inside
             ? (name == "section-hover"
                 ? new Vector2(84, 58)
+                : name == "search-clear-hover"
+                ? new Vector2(283, 42)
                 : name == "sidebar-row-expander-hover"
                 ? new Vector2(32, 37)
                 : name.StartsWith("icon-button", StringComparison.Ordinal)
@@ -270,7 +280,9 @@ internal static class ComponentCatalog
     }
 
     /// <summary>Key events for keyboard-driven states: focus fixtures Tab
-    /// onto their single control, producing real nav focus.</summary>
+    /// onto their single control, producing real nav focus — and, for a
+    /// native inputable widget, the real editing activation ImGui gives a
+    /// tab-navigated field.</summary>
     public static IEnumerable<(ImGuiKey Key, bool Down)> KeyEventsFor(
         string name, int frame)
     {
@@ -840,9 +852,52 @@ internal static class ComponentCatalog
                         Width = UiWidth.Fixed(272),
                     });
                 break;
+            // ::placeholder is what an EMPTY field shows; the fixture
+            // therefore carries no value at all.
+            case "input-placeholder":
+                Ui.TextInput(
+                    "##input-placeholder",
+                    string.Empty,
+                    _ => { },
+                    new ControlStyle
+                    {
+                        Width = UiWidth.Fixed(272),
+                    },
+                    placeholder: "Filter scene…");
+                break;
+            // .input:focus, reached the way a user reaches it: the Tab in
+            // KeyEventsFor gives the native InputText REAL keyboard focus
+            // (ImGui activates an inputable item on tab-nav), so the
+            // border swap here is the widget's own focus state, and the
+            // caret is the real editing caret.
+            case "input-focus":
+                Ui.TextInput(
+                    "##input-focus",
+                    string.Empty,
+                    _ => { },
+                    new ControlStyle
+                    {
+                        Width = UiWidth.Fixed(272),
+                    },
+                    placeholder: "Filter scene…");
+                break;
             case "search-input":
                 Ui.FilterPill(
                     "##search",
+                    "Search",
+                    _ => { },
+                    "Search",
+                    new ControlStyle
+                    {
+                        Width = UiWidth.Fixed(272),
+                    });
+                break;
+            // The clear affordance under a REAL pointer: PointerFor parks
+            // it on the reserved hit area, which wins hover arbitration
+            // from the InputText it overlaps.
+            case "search-clear-hover":
+                Ui.FilterPill(
+                    "##search-clear-hover",
                     "Search",
                     _ => { },
                     "Search",
