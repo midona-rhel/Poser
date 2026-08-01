@@ -102,7 +102,8 @@ public readonly record struct Theme
         {
             Inset = 12f,
             MaximumContentWidth = 660f,
-            SectionGap = 12f,
+            SectionMarginTop = 10f,
+            SectionPaddingTop = 10f,
             ActionGap = 8f,
             SectionHeaderHeight = 26f,
             StatusLineHeight = 20f,
@@ -218,7 +219,6 @@ public readonly record struct Theme
             ButtonText = 1f,
             ActionBarText = 1f,
             AxisText = 0f,
-            SectionChrome = -1.5f,
         },
         Motion = new() { Fast = 0.10f, Default = 0.20f, Slow = 0.40f, MenuExit = 0.08f, HoverOpenDelay = 0.40f, HoverPop = 0.15f },
         Palette = new()
@@ -485,7 +485,13 @@ public readonly record struct Theme
     {
         public float Inset { get; init; }
         public float MaximumContentWidth { get; init; }
-        public float SectionGap { get; init; }
+        /// <summary>InspectorSection <c>.section { margin-top }</c>.</summary>
+        public float SectionMarginTop { get; init; }
+
+        /// <summary>InspectorSection <c>.section { padding-top }</c> —
+        /// the gap between the top rule and the header row.</summary>
+        public float SectionPaddingTop { get; init; }
+
         public float ActionGap { get; init; }
         public float SectionHeaderHeight { get; init; }
         public float StatusLineHeight { get; init; }
@@ -634,7 +640,6 @@ public readonly record struct Theme
         public float ButtonText { get; init; }
         public float ActionBarText { get; init; }
         public float AxisText { get; init; }
-        public float SectionChrome { get; init; }
 
         public Vector2 Snap(Vector2 position) =>
             new(MathF.Round(position.X), MathF.Round(position.Y));

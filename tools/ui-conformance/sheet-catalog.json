@@ -131,7 +131,9 @@
       "name": "section",
       "title": "Section",
       "states": [
-        { "name": "section", "label": "header", "width": 320, "height": 92 }
+        { "name": "section", "label": "header", "width": 320, "height": 92 },
+        { "name": "section-expanded", "label": "expanded", "width": 320, "height": 92 },
+        { "name": "section-hover", "label": "header hover", "width": 320, "height": 92 }
       ]
     },
     {

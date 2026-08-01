@@ -9,6 +9,28 @@ namespace Poser.UI;
 
 public static partial class Crystarium
 {
+    // ── InspectorSection.module.css constants ────────────────────────
+    /// <summary><c>.section { border-top: 1px }</c>, in logical px — the
+    /// height the flow cursor gives the rule between the section's
+    /// margin and its padding.</summary>
+    private const float SectionRuleThickness = 1f;
+
+    /// <summary><c>.chevron { width: 24px }</c>.</summary>
+    private const float SectionChevronSlot = 24f;
+
+    /// <summary><c>.chevron { opacity: .3 }</c> — the resting collapsed
+    /// rung.</summary>
+    private const float SectionChevronOpacity = 0.3f;
+
+    /// <summary><c>.chevronExpanded { opacity: 0 }</c>.</summary>
+    private const float SectionChevronExpandedOpacity = 0f;
+
+    /// <summary><c>.header:hover .chevron { opacity: 1 !important }</c>.
+    /// </summary>
+    private const float SectionChevronHoverOpacity = 1f;
+
+    private const int SectionChevronChannel = 0;
+
     private static Vector4 FormLabelColor => ActiveTheme.FormLabel;
     private static Vector4 FormHintColor => ActiveTheme.FormHint;
     private static Vector4 FormValueColor => ActiveTheme.FormValue;
@@ -71,7 +93,6 @@ public static partial class Crystarium
         private readonly float _width;
         private readonly float _scale;
         private float _y;
-        private bool _hasFlowContent;
 
         internal PageScope(string id, Vector2 origin, float width, float scale)
         {
@@ -87,7 +108,6 @@ public static partial class Crystarium
                 _width, ActiveTheme.Typography.LabelSize, FontWeight.Regular,
                 FormHintColor, text);
             _y = ActiveTheme.Controls.FormRowHeight;
-            _hasFlowContent = true;
         }
 
         public void Actions(Action<ActionScope> left, Action<ActionScope>? right = null)
@@ -113,7 +133,6 @@ public static partial class Crystarium
                     $"{_id}-actions");
             }
             _y += ActiveTheme.Controls.FormRowHeight;
-            _hasFlowContent = true;
         }
 
         public void Status(string? text, string? help = null)
@@ -129,7 +148,6 @@ public static partial class Crystarium
             RegisterHelp($"{_id}-status", new(_origin.X, top),
                 new(_origin.X + _width, top + height), help);
             _y += ActiveTheme.Page.StatusLineHeight;
-            _hasFlowContent = true;
         }
 
         public void Section(string title, Action<FormScope> content) =>
@@ -139,54 +157,75 @@ public static partial class Crystarium
             Action<FormScope> content) =>
             DrawSection(title, open, onOpenChanged, content);
 
+        /// <summary>
+        /// InspectorSection.module.css, whole box. <c>.section</c> leads
+        /// with <c>margin-top: 10px</c>, a 1px
+        /// <c>--color-border-secondary</c> <c>border-top</c> and
+        /// <c>padding-top: 10px</c>; the rule is the section's ONLY
+        /// separator, drawn above the header rather than beside the
+        /// title. Then the 26px <c>.header</c> flex row: <c>.title</c> at
+        /// the content edge, <c>.chevron</c> pushed to the far edge by
+        /// <c>margin-left: auto</c>.
+        ///
+        /// <para>The margin is unconditional the way a block margin is —
+        /// the reference cell shows the rule 10px below the stage origin
+        /// for a section with nothing above it.</para>
+        /// </summary>
         private void DrawSection(string title, bool open,
             Action<bool>? onOpenChanged, Action<FormScope> content)
         {
-            if (_hasFlowContent)
-                _y += ActiveTheme.Page.SectionGap;
+            var page = ActiveTheme.Page;
+            _y += page.SectionMarginTop;
+            ControlPaint.Separator(
+                ImGui.GetWindowDrawList(),
+                new(_origin.X, MathF.Round(_origin.Y + _y * _scale)),
+                _origin.X + _width,
+                _scale,
+                FormSeparatorColor);
+            _y += SectionRuleThickness + page.SectionPaddingTop;
 
             float headerTop = _origin.Y + _y * _scale;
-            float headerHeight = ActiveTheme.Page.SectionHeaderHeight * _scale;
-            float textX = _origin.X;
+            float headerHeight = page.SectionHeaderHeight * _scale;
+            float titleWidth = _width;
+            bool hovered = false;
+            uint headerIdentity = 0;
             if (onOpenChanged != null)
             {
+                string headerId = $"{_id}-section-{title}";
                 ImGui.SetCursorScreenPos(new(_origin.X, headerTop));
-                var hit = Interactive.Reserve($"{_id}-section-{title}",
+                var hit = Interactive.Reserve(headerId,
                     new(_width, headerHeight), disabled: false);
+                hovered = hit.Hovered;
+                headerIdentity = ImGui.GetID(headerId);
                 if (hit.Clicked)
                     onOpenChanged(!open);
-                float chromeOffset =
-                    ActiveTheme.Optical.SectionChrome * _scale;
-                DrawDisclosure(ImGui.GetWindowDrawList(),
-                    new(_origin.X + ActiveTheme.Spacing.One * _scale,
-                        headerTop + headerHeight * 0.5f
-                            + chromeOffset), open, _scale);
-                textX += ActiveTheme.Spacing.Six * _scale;
+                // The glyph box the flex row hands the chevron. `.title`
+                // has no shrink floor in CSS and would simply overrun it;
+                // truncating at the slot is the draw-list equivalent.
+                titleWidth -= SectionChevronSlot * _scale;
             }
 
-            float titleWidth = MeasureText(title,
-                ActiveTheme.Typography.CaptionSize, FontWeight.SemiBold).X;
-            DrawTextCentered(new(textX, headerTop), new(titleWidth, headerHeight),
-                ActiveTheme.Typography.CaptionSize, FontWeight.SemiBold,
-                FormLabelColor, title);
-            float separatorX = textX + titleWidth + ActiveTheme.Page.ActionGap * _scale;
-            if (separatorX < _origin.X + _width)
-            {
-                float lineY = MathF.Round(
-                    headerTop + headerHeight * 0.5f
-                        + ActiveTheme.Optical.SectionChrome * _scale);
-                ControlPaint.Separator(
-                    ImGui.GetWindowDrawList(),
-                    new(separatorX, lineY),
-                    _origin.X + _width,
-                    _scale,
-                    FormSeparatorColor);
-            }
+            // `.header { color: --color-text-tertiary }` lifted to
+            // --color-text-primary by `.header:hover`. The row declares no
+            // transition, so the swap is instant — only the chevron's own
+            // opacity animates. The chevron inherits this same
+            // `currentColor`.
+            var headerColor = ColorEx.ApplyAlpha(
+                hovered ? ActiveTheme.Text : FormLabelColor);
+            if (onOpenChanged != null)
+                DrawDisclosure(
+                    headerIdentity,
+                    new(_origin.X + _width, headerTop + headerHeight * 0.5f),
+                    headerColor, open, hovered, _scale);
+            // `.title { font-weight: 600; font-size: 12px }`.
+            DrawTextCentered(new(_origin.X, headerTop),
+                new(titleWidth, headerHeight),
+                ActiveTheme.Typography.LabelSize, FontWeight.SemiBold,
+                headerColor, title);
 
-            _y += ActiveTheme.Page.SectionHeaderHeight;
+            _y += page.SectionHeaderHeight;
             if (open)
                 content(new FormScope(this, title));
-            _hasFlowContent = true;
         }
 
         internal FormRowScope BeginRow(string label)
@@ -1047,24 +1086,49 @@ public static partial class Crystarium
             ? style with { Height = UiHeight.Workspace }
             : style;
 
-    private static void DrawDisclosure(ImDrawListPtr drawList,
-        Vector2 center, bool open, float scale)
+    /// <summary>
+    /// InspectorSection <c>.chevron</c>: a 24px flex box pinned to the
+    /// header's far edge by <c>margin-left: auto</c>, holding
+    /// <c>&lt;IconChevronRight size={14} /&gt;</c>. Collapsed it sits at
+    /// <c>opacity: .3</c> pointing right; <c>.chevronExpanded</c> takes it
+    /// to <c>opacity: 0</c> and <c>rotate(90deg)</c>, which the shipped
+    /// chevron-down glyph already IS — a draw list cannot rotate an SVG,
+    /// so the rotation is a glyph swap and only the opacity animates over
+    /// the declared 200ms <c>--ease-default</c> transition.
+    ///
+    /// <para>Deviation: the module ALSO declares
+    /// <c>.section:hover .chevron { opacity: .5 }</c> — a section-wide
+    /// hover including the content below the header. Only the header owns
+    /// an interaction rect here, so the .5 rung is unreachable and the
+    /// chevron goes straight from its resting rung to the
+    /// <c>.header:hover</c> rung.</para>
+    /// </summary>
+    private static void DrawDisclosure(
+        uint identity, Vector2 headerRight, Vector4 color,
+        bool open, bool hovered, float scale)
     {
-        uint color = ImGui.ColorConvertFloat4ToU32(FormLabelColor);
-        if (open)
-        {
-            drawList.AddLine(center + new Vector2(-3f, -1.5f) * scale,
-                center + new Vector2(0f, 1.5f) * scale, color, 1.4f * scale);
-            drawList.AddLine(center + new Vector2(0f, 1.5f) * scale,
-                center + new Vector2(3f, -1.5f) * scale, color, 1.4f * scale);
-        }
-        else
-        {
-            drawList.AddLine(center + new Vector2(-1.5f, -3f) * scale,
-                center + new Vector2(1.5f, 0f) * scale, color, 1.4f * scale);
-            drawList.AddLine(center + new Vector2(1.5f, 0f) * scale,
-                center + new Vector2(-1.5f, 3f) * scale, color, 1.4f * scale);
-        }
+        float target = hovered
+            ? SectionChevronHoverOpacity
+            : open ? SectionChevronExpandedOpacity : SectionChevronOpacity;
+        Span<MotionChannel> fade =
+        [
+            MotionChannel.Number(SectionChevronChannel, target),
+        ];
+        Motion.Toward(identity, Transition.PictoDefault, fade);
+        float opacity = fade[0].Scalar;
+        if (opacity <= 0f)
+            return;
+        float glyph = ActiveTheme.Controls.SmallIconSize * scale;
+        var center = new Vector2(
+            headerRight.X - SectionChevronSlot * 0.5f * scale,
+            headerRight.Y);
+        var min = center - new Vector2(glyph * 0.5f);
+        IconIn(
+            min,
+            min + new Vector2(glyph),
+            open ? TablerIcon.ChevronDown : TablerIcon.ChevronRight,
+            color,
+            opacity: opacity);
     }
 
     private static void RegisterHelp(string id, Vector2 min, Vector2 max,

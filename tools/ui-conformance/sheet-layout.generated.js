@@ -2,7 +2,7 @@
 // Do not hand-edit.
 window.sheetLayout = {
  "pageWidth": 688,
- "pageHeight": 4584,
+ "pageHeight": 4696,
  "cells": [
   {
    "name": "text-label",
@@ -541,10 +541,26 @@ window.sheetLayout = {
    "h": 92
   },
   {
+   "name": "section-expanded",
+   "component": "section",
+   "x": 352,
+   "y": 3712,
+   "w": 320,
+   "h": 92
+  },
+  {
+   "name": "section-hover",
+   "component": "section",
+   "x": 16,
+   "y": 3824,
+   "w": 320,
+   "h": 92
+  },
+  {
    "name": "tooltip",
    "component": "tooltip",
    "x": 16,
-   "y": 3840,
+   "y": 3952,
    "w": 240,
    "h": 80
   },
@@ -552,7 +568,7 @@ window.sheetLayout = {
    "name": "tooltip-pop-mid",
    "component": "tooltip",
    "x": 272,
-   "y": 3840,
+   "y": 3952,
    "w": 240,
    "h": 80
   },
@@ -560,7 +576,7 @@ window.sheetLayout = {
    "name": "context-menu",
    "component": "context-menu",
    "x": 16,
-   "y": 3952,
+   "y": 4064,
    "w": 320,
    "h": 190
   },
@@ -568,7 +584,7 @@ window.sheetLayout = {
    "name": "modal",
    "component": "modal",
    "x": 16,
-   "y": 4176,
+   "y": 4288,
    "w": 560,
    "h": 360
   }

@@ -97,6 +97,8 @@ internal static class ComponentCatalog
         new("sidebar-row-drop", 320, 80),
         new("property-row", 320, 68),
         new("section", 320, 92),
+        new("section-expanded", 320, 92),
+        new("section-hover", 320, 92),
         new("tooltip", 240, 80),
         new("tooltip-pop-mid", 240, 80),
         new("context-menu", 320, 190),
@@ -238,8 +240,14 @@ internal static class ComponentCatalog
         // x 24..40 over the 26px row — centre (32,37). Parking there
         // proves the scoping too: at (84,40) the row would hover but the
         // triangle would not lift.
+        // InspectorSection puts 21px of chrome (margin 10 + 1px rule +
+        // padding 10) above its 26px .header, so the shared (84,40) point
+        // lands in the padding, ABOVE the interactive row. The header
+        // spans y 45..71 at the (24,24) stage origin; its centre is 58.
         return inside
-            ? (name == "sidebar-row-expander-hover"
+            ? (name == "section-hover"
+                ? new Vector2(84, 58)
+                : name == "sidebar-row-expander-hover"
                 ? new Vector2(32, 37)
                 : name.StartsWith("icon-button", StringComparison.Ordinal)
                     ? (name.StartsWith(
@@ -903,13 +911,28 @@ internal static class ComponentCatalog
                 // candidate is intentional: the report marks the Picto
                 // foreground as missing instead of comparing invented chrome.
                 break;
+            // Collapsed, expanded and header-hover all draw the SAME call;
+            // only `open` and the parked pointer differ, so the chevron
+            // rung each state reports comes from the component, never from
+            // a fixture flag.
             case "section":
+            case "section-hover":
                 Ui.Section(
                     "##section",
                     "GENERAL",
                     origin,
                     272 * scale,
                     open: false,
+                    _ => { },
+                    _ => { });
+                break;
+            case "section-expanded":
+                Ui.Section(
+                    "##section",
+                    "GENERAL",
+                    origin,
+                    272 * scale,
+                    open: true,
                     _ => { },
                     _ => { });
                 break;

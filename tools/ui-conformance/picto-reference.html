@@ -110,6 +110,27 @@
       + '.row.isHover::before { background: var(--color-surface-hover); opacity: 1; }'
       + '.row.isHover .icon { opacity: 1; }'
       + '</style>';
+    // ── InspectorSection ──────────────────────────────────────────
+    // .header:hover cannot be produced headlessly, so its two
+    // declarations are restated behind a marker class at the SAME
+    // specificity: .header:hover is (0,2,0) and .header:hover .chevron is
+    // (0,3,0) carrying the important flag that is what actually beats
+    // .chevronExpanded (opacity 0) and .section:hover .chevron (.5).
+    const sectionHoverRule = '<style>'
+      + '.header.isHover { color: var(--color-text-primary); }'
+      + '.header.isHover .chevron { opacity: 1 !important; }'
+      + '</style>';
+    // InspectorSection.tsx renders IconChevronRight at size 14 for BOTH
+    // states; .chevronExpanded rotates that same glyph 90deg.
+    // Tabler React always emits round caps/joins; the old cell omitted
+    // them (butt caps), which was reference-side error, not ours.
+    const sectionChevron = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>';
+    const inspectorSection = (expanded, hover) =>
+      '<section class="section section-demo"><div class="header'
+      + (hover ? ' isHover' : '')
+      + '"><span class="title">GENERAL</span><span class="chevron'
+      + (expanded ? ' chevronExpanded' : '')
+      + '">' + sectionChevron + '</span></div></section>';
     // Same hand-matched glyph the accepted sidebar-row cells carry.
     const sidebarUserIcon = '<span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M5 21a7 7 0 0 1 14 0"/></svg></span>';
     // Poser.UI/Icons/TablerSvgSources.cs ["folder"], verbatim.
@@ -518,9 +539,26 @@
         css: 'shared/ui/PropertyRow/PropertyRow.module.css',
         html: '<div class="row property-demo"><span class="label">Opacity</span><span class="value valueMono">1.000</span></div>',
       },
+      // Collapsed: .chevron at its resting opacity .3, pointing right.
+      // (Byte-identical markup to the accepted cell this state has always
+      // carried - the helper only factors it out for the two below.)
       'section': {
         css: 'shared/ui/InspectorSection/InspectorSection.module.css',
-        html: '<section class="section section-demo"><div class="header"><span class="title">GENERAL</span><span class="chevron"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div></section>',
+        html: inspectorSection(false, false),
+      },
+      // .chevronExpanded: opacity 0 and rotate(90deg). The glyph really
+      // is invisible at rest - the module hides the affordance until the
+      // section or its header is hovered.
+      'section-expanded': {
+        css: 'shared/ui/InspectorSection/InspectorSection.module.css',
+        html: inspectorSection(true, false),
+      },
+      // .header:hover: the row lifts to --color-text-primary and drags
+      // the inherited currentColor chevron with it, and the chevron's own
+      // opacity goes to 1.
+      'section-hover': {
+        css: 'shared/ui/InspectorSection/InspectorSection.module.css',
+        html: sectionHoverRule + inspectorSection(false, true),
       },
       'tooltip': {
         css: 'shared/ui/KbdTooltip/KbdTooltip.module.css',
