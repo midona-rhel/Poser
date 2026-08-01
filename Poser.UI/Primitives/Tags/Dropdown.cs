@@ -1,13 +1,34 @@
 using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
 
 public static partial class Crystarium
 {
+    /// <summary>
+    /// <c>.drop max-height: calc(7 * 26px + 6 * 2px + 12px)</c> — the
+    /// dropdown scrolls past seven rows. A CSS literal, not a token: the
+    /// shared Picker.MaximumRows belongs to the search pickers.
+    /// </summary>
+    private const int DropVisibleRows = 7;
+
+    /// <summary>CmSelect.tsx places the portal at
+    /// <c>top: cssRect.bottom + 4</c>.</summary>
+    private const float DropAnchorGap = 4f;
+
+    /// <summary><c>.btnChevron { width: 20px }</c> — the fixed slot the
+    /// 14px IconSelector centers in.</summary>
+    private const float ChevronSlot = 20f;
+
+    /// <summary><c>.btnChevron { opacity: .5 }</c>.</summary>
+    private const float ChevronOpacity = 0.5f;
+
+    /// <summary>Tabler <c>IconSelector</c>, the glyph CmSelect.tsx
+    /// renders in <c>.btnChevron</c>.</summary>
+    private const string ChevronIcon = "selector";
+
     public static bool Dropdown(
         string id, string[] items, int selected, Action<int> onChange,
         ControlStyle style = default, bool disabled = false, string? help = null) =>
@@ -18,6 +39,23 @@ public static partial class Crystarium
         ControlStyle style = default, bool disabled = false, string? help = null) =>
         DropdownCore(id, items, selected, onChange, style, disabled, help, previewText, true);
 
+    /// <summary>
+    /// Picto's <c>shared/ui/CmSelect</c>. The trigger is <c>.btn</c>
+    /// (26px, <c>padding: 0 6px 0 12px</c>, <c>gap: 6px</c>, radius 6,
+    /// <c>--color-subtle-overlay</c> over a 1px
+    /// <c>--color-border-secondary</c>, 12px <c>--color-text-primary</c>,
+    /// then the 20px <c>.btnChevron</c> slot); the portal is
+    /// <c>.drop</c> (the same 1px border and radius, 4px padding, 2px
+    /// row gap, <c>--shadow-panel</c>) over
+    /// <c>.opt</c> rows (26px, <c>padding: 0 8px</c>, radius 4,
+    /// <c>--color-hover-overlay</c> for both <c>:hover</c> and
+    /// <c>.optActive</c>). The module declares no <c>:hover</c> and no
+    /// <c>transition</c> on <c>.btn</c>, so the trigger has no hover
+    /// paint and no motion channel.
+    /// One product deviation: <c>.drop</c> takes the trigger's background
+    /// and border tokens instead of <c>--glass-bg</c>, so the open
+    /// dropdown reads as one continuous control.
+    /// </summary>
     private static bool DropdownCore(
         string id, string[] items, int selected, Action<int> onChange,
         ControlStyle style, bool disabled, string? help,
@@ -25,127 +63,157 @@ public static partial class Crystarium
     {
         if (items.Length == 0) return false;
         string popupId = $"{id}_popup";
-        // Trigger is a single pill — pixel transcription of picto
-        // shared/ui/CmSelect/CmSelect.module.css (.btn): 26px, padding 0 6px 0 12px,
-        // gap 6, radius 6, bg subtle-overlay white@.10, border 1px white@.08,
-        // 12px text; chevron = Tabler IconSelector at 14 in a 20px slot, opacity .5.
         bool changed = false;
         float scale = ImGuiHelpers.GlobalScale;
-        float rounding = Crystarium.ActiveTheme.Radii.Control * scale;
-        float padLeft = Crystarium.ActiveTheme.Spacing.Six * scale;
-        float padRight = Crystarium.ActiveTheme.Spacing.Three * scale;
-        float gap = Crystarium.ActiveTheme.Spacing.Three * scale;
-        float chevronSlot = Crystarium.ActiveTheme.Controls.SwitchHeight * scale;
-        float borderSpan = 2f * scale;
+        var theme = ActiveTheme;
+        float radius = theme.Radii.Control;          // border-radius: 6px
+        float borderPx = 1f * scale;                 // border: 1px solid
+        float padLeft = theme.Spacing.Six * scale;   // padding-left: 12px
+        float padRight = theme.Spacing.Three * scale;// padding-right: 6px
+        float gap = theme.Spacing.Three * scale;     // gap: 6px
+        float chevronSlot = ChevronSlot * scale;
 
-        // CmSelect's base contract is intrinsic sizing: the widest option
-        // determines the label span. Fixed and Fill may override that width,
-        // but Content/Unspecified must never inherit the surrounding region.
-        var fontHandle = FontRegistry.Resolve(
-            FontFamily.Default, Crystarium.ActiveTheme.Typography.LabelSize);
-        bool fontPushed = fontHandle is { Available: true };
-        if (fontPushed) fontHandle!.Push();
+        // .btn font: 12px --font-family at --color-text-primary.
+        var labelStyle = new TextStyle { Size = theme.Typography.LabelSize };
+
+        // CmSelect's base contract is intrinsic sizing: the invisible
+        // .sizer spans force the label area to the WIDEST option, so
+        // Content/Unspecified must never inherit the surrounding region.
+        // Fixed and Fill may still override the resolved width.
         float widestLabel = 0f;
         foreach (string item in items)
-            widestLabel = MathF.Max(
-                widestLabel, ImGui.CalcTextSize(item).X);
+            widestLabel = MathF.Max(widestLabel, MeasureText(item, labelStyle).X);
         if (!string.IsNullOrEmpty(previewText))
             widestLabel = MathF.Max(
-                widestLabel, ImGui.CalcTextSize(previewText).X);
+                widestLabel, MeasureText(previewText!, labelStyle).X);
+        // CSS border-box: both borders + both paddings + label + gap + slot.
         float intrinsicWidth =
-            borderSpan + padLeft + widestLabel + gap + chevronSlot + padRight;
+            borderPx * 2f + padLeft + widestLabel + gap + chevronSlot + padRight;
 
         // The intrinsic span is only known after measuring the options, so
         // the shared preamble runs here rather than at the top.
         var metrics = ControlSizing.Resolve(
-            style,
-            intrinsicWidth / scale,
-            Crystarium.ActiveTheme.Controls.WorkspaceHeight);
+            style, intrinsicWidth / scale, theme.Controls.WorkspaceHeight);
         float height = metrics.Height;
         float totalWidth = metrics.Width;
         float minWidth =
-            borderSpan + padLeft + gap + chevronSlot + padRight + 20f * scale;
+            borderPx * 2f + padLeft + gap + chevronSlot + padRight + 20f * scale;
         if (totalWidth < minWidth) totalWidth = minWidth;
 
         var pos = ImGui.GetCursorScreenPos();
         var drawList = ImGui.GetWindowDrawList();
-        var valuePos = pos;
-        var valueEnd = valuePos + new Vector2(totalWidth, height);
-        var btnEnd = valueEnd; // popup positioning below anchors to the pill
 
-        ImGui.SetCursorScreenPos(valuePos);
+        ImGui.SetCursorScreenPos(pos);
         var trigger = Interactive.Reserve(
             $"{id}_value", new Vector2(totalWidth, height), disabled);
         bool valueHovered = trigger.Hovered;
         if (trigger.Clicked)
             OpenPopover(popupId);
+        var valueMin = trigger.ScreenMin;
+        var valueMax = trigger.ScreenMax;
 
-        var valueBg = ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.ControlHover);
-        drawList.AddRectFilled(valuePos, valueEnd, ImGui.ColorConvertFloat4ToU32(valueBg), rounding);
-
-        float borderWidth = scale;
-        if (borderWidth > 0f)
+        var triggerFill = theme.Chrome.ControlHover;  // --color-subtle-overlay
+        var triggerBorder = theme.Border;             // --color-border-secondary
+        var labelColor = theme.Text;                  // --color-text-primary
+        float groupOpacity = 1f;
+        if (disabled)
         {
-            var borderColor = ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.WeakOverlay);
-            float bi = borderWidth * 0.5f; // stroke inside the box like CSS
-            drawList.AddRect(valuePos + new Vector2(bi, bi), valueEnd - new Vector2(bi, bi),
-                ImGui.ColorConvertFloat4ToU32(borderColor),
-                System.MathF.Max(0f, rounding - bi), ImDrawFlags.None, borderWidth);
+            // CmSelect declares NO :disabled rule; this borrows the Picto
+            // action-button family's `.btn:disabled { opacity: .35 }`
+            // GROUP opacity, reproduced the same way Button does — the
+            // chrome draws non-overlapping (fill inset to the border's
+            // inner edge, the ring carrying the analytically flattened
+            // border-over-fill) and the label compensates so glyphs over
+            // the faded fill land on the group result.
+            groupOpacity = theme.Chrome.ControlDisabledOpacity;
+            drawList.AddRectFilled(
+                valueMin + new Vector2(borderPx),
+                valueMax - new Vector2(borderPx),
+                ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(triggerFill.Fade(groupOpacity))),
+                MathF.Max(0f, radius * scale - borderPx));
+            drawList.AddRect(
+                valueMin + new Vector2(borderPx * 0.5f),
+                valueMax - new Vector2(borderPx * 0.5f),
+                ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(
+                        ColorEx.FlattenOver(triggerBorder, triggerFill)
+                            .Fade(groupOpacity))),
+                MathF.Max(0f, radius * scale - borderPx * 0.5f),
+                ImDrawFlags.None,
+                borderPx);
+            labelColor = ColorEx.DisabledLabelCompensation(
+                labelColor, triggerFill, theme.Surface, groupOpacity);
         }
+        else
+        {
+            BoxRenderer.Draw(drawList, valueMin, valueMax, new BoxStyle
+            {
+                BackgroundColor = triggerFill,
+                BorderWidth = 1f,
+                BorderRadius = radius,
+                BorderTopColor = triggerBorder,
+                BorderRightColor = triggerBorder,
+                BorderBottomColor = triggerBorder,
+                BorderLeftColor = triggerBorder,
+            });
+        }
+
+        // CSS content box: the 1px border is inside the border box, so
+        // padding measures from the border's INNER edge.
+        float contentLeft = valueMin.X + borderPx + padLeft;
+        float contentRight = valueMax.X - borderPx - padRight;
+        float chevronLeft = contentRight - chevronSlot;
+        float labelWidth = chevronLeft - gap - contentLeft;
 
         string currentText = previewText ??
             ((selected >= 0 && selected < items.Length) ? items[selected] : "");
-        float textPadding = padLeft;
-        float textAvail = totalWidth - padLeft - gap - chevronSlot - padRight;
-        string display = TruncateText(currentText, textAvail);
-        var textSize = ImGui.CalcTextSize(display);
-        var textColor = ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Text);
-        // Optical baseline: the font's reported bounds sit one pixel above
-        // the visual center of the pill.
-        var textPos = new Vector2(
-            valuePos.X + padLeft,
-            valuePos.Y + (height - textSize.Y) / 2f
-                + Crystarium.ActiveTheme.Optical.DropdownText * scale);
-        drawList.AddText(textPos, ImGui.ColorConvertFloat4ToU32(textColor), display);
-
-        if (fontPushed) fontHandle!.Pop();
-        // Truncation-only preview: same chrome, no explanatory delay.
-        if (display != currentText && valueHovered)
-            HoverHelp.Preview($"{id}-full", valuePos, valueEnd, currentText);
-
-        // Chevron: Tabler IconSelector ("M8 9l4 -4l4 4" + "M16 15l-4 4l-4 -4",
-        // 24-grid, stroke 2, round caps) at 14px, opacity .5.
+        var triggerLabelStyle = labelStyle with { Color = labelColor };
+        bool labelClipped = false;
+        if (labelWidth > 0f && currentText.Length > 0)
         {
-            float iconSpan = Crystarium.ActiveTheme.Controls.SmallIconSize * scale;
-            float unit = iconSpan / 24f;
-            var slotOrigin = new Vector2(valueEnd.X - padRight - chevronSlot, valuePos.Y);
-            var origin = slotOrigin + new Vector2((chevronSlot - iconSpan) * 0.5f, (height - iconSpan) * 0.5f);
-            var chevColor = ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Text with { W = 0.5f });
-            uint chevU32 = ImGui.ColorConvertFloat4ToU32(chevColor);
-            float stroke = 2f * unit;
-            drawList.PathLineTo(origin + new Vector2(8f, 9f) * unit);
-            drawList.PathLineTo(origin + new Vector2(12f, 5f) * unit);
-            drawList.PathLineTo(origin + new Vector2(16f, 9f) * unit);
-            drawList.PathStroke(chevU32, ImDrawFlags.None, stroke);
-            drawList.PathLineTo(origin + new Vector2(16f, 15f) * unit);
-            drawList.PathLineTo(origin + new Vector2(12f, 19f) * unit);
-            drawList.PathLineTo(origin + new Vector2(8f, 15f) * unit);
-            drawList.PathStroke(chevU32, ImDrawFlags.None, stroke);
+            var measured = MeasureText(currentText, triggerLabelStyle);
+            labelClipped = measured.X > labelWidth;
+            // `align-items: center` on the 24px content box. The
+            // canonical text path snaps the origin itself, so the old
+            // Optical.DropdownText nudge is gone — it pushed the run a
+            // pixel BELOW the reference baseline.
+            TextAt(
+                new Vector2(
+                    contentLeft,
+                    valueMin.Y + (height - measured.Y) * 0.5f),
+                currentText,
+                triggerLabelStyle,
+                TextConstraint.Truncate(labelWidth));
         }
+
+        // Truncation-only preview: same chrome, no explanatory delay.
+        if (labelClipped && valueHovered)
+            HoverHelp.Preview($"{id}-full", valueMin, valueMax, currentText);
+
+        // .btnChevron: <IconSelector size={14} /> centered in the 20px slot.
+        float iconSpan = theme.Controls.SmallIconSize * scale;
+        var iconMin = new Vector2(
+            chevronLeft + (chevronSlot - iconSpan) * 0.5f,
+            valueMin.Y + (height - iconSpan) * 0.5f);
+        IconIn(
+            iconMin,
+            iconMin + new Vector2(iconSpan),
+            ChevronIcon,
+            opacity: ChevronOpacity * groupOpacity);
 
         ImGui.SetCursorScreenPos(pos + new Vector2(0, height));
 
-        // Popup
-        int visibleItems = Math.Min(
-            items.Length,
-            Crystarium.ActiveTheme.Picker.MaximumRows);
-        float rowGap =
-            Crystarium.ActiveTheme.Floating.DropdownRowGap * scale;
-        float itemListHeight = visibleItems * height
-            + Math.Max(0, visibleItems - 1) * rowGap;
-        float popupPadding =
-            Crystarium.ActiveTheme.Floating.PopupPadding * scale;
-        float popupHeight = itemListHeight + popupPadding * 2f;
+        // ---- .drop ----------------------------------------------------
+        int visibleItems = Math.Min(items.Length, DropVisibleRows);
+        float rowHeight = height;                              // .opt height: 26px
+        float rowGap = theme.Floating.DropdownRowGap * scale;  // gap: 2px
+        float itemListHeight =
+            visibleItems * rowHeight + Math.Max(0, visibleItems - 1) * rowGap;
+        // .drop is content-box: its own 1px border plus 4px padding sit
+        // outside the row list, so the popup's content inset is both.
+        float dropInset = borderPx + theme.Floating.PopupPadding * scale;
+        float popupHeight = itemListHeight + dropInset * 2f;
         int popupSelected = selected;
         bool popupChanged = false;
         FloatingSurface.Popup(
@@ -154,9 +222,12 @@ public static partial class Crystarium
             {
                 Width = totalWidth / scale,
                 Height = popupHeight / scale,
-                Padding = popupPadding / scale,
-                AnchorMin = valuePos,
-                AnchorMax = valueEnd,
+                Padding = dropInset / scale,
+                AnchorMin = valueMin,
+                // The shared anchored placement adds Floating.AnchorGap;
+                // CmSelect asks for 4px, so the anchor carries the rest.
+                AnchorMax = valueMax + new Vector2(
+                    0f, (DropAnchorGap - theme.Floating.AnchorGap) * scale),
                 Treatment = FloatingSurfaceTreatment.Unframed,
             },
             () =>
@@ -164,11 +235,25 @@ public static partial class Crystarium
                 var popupMin = ImGui.GetWindowPos();
                 var popupMax = popupMin + ImGui.GetWindowSize();
                 var popupDrawList = ImGui.GetWindowDrawList();
-                popupDrawList.AddRectFilled(
-                    popupMin,
-                    popupMax,
-                    ImGui.ColorConvertFloat4ToU32(valueBg),
-                    rounding);
+                // --shadow-panel must escape the popup's own clip.
+                popupDrawList.PushClipRect(
+                    Vector2.Zero, ImGui.GetIO().DisplaySize, false);
+                BoxRenderer.Draw(popupDrawList, popupMin, popupMax, new BoxStyle
+                {
+                    // PRODUCT DEVIATION from `.drop { background: var(--glass-bg) }`:
+                    // the popup wears the TRIGGER's own surface so the open
+                    // control reads as one object. Same fill token and same
+                    // border token as `.btn`; the CSS glass recipe is not used.
+                    BackgroundColor = triggerFill,
+                    BorderWidth = 1f,
+                    BorderRadius = radius,
+                    BorderTopColor = triggerBorder,
+                    BorderRightColor = triggerBorder,
+                    BorderBottomColor = triggerBorder,
+                    BorderLeftColor = triggerBorder,
+                    BoxShadows = [theme.Shadows.Panel, theme.Shadows.PanelRing],
+                });
+                popupDrawList.PopClipRect();
 
                 float regionWidth = ImGui.GetContentRegionAvail().X / scale;
                 ScrollRegion(
@@ -177,22 +262,14 @@ public static partial class Crystarium
                     itemListHeight / scale,
                     region =>
                     {
-                        var optFont = FontRegistry.Resolve(
-                            FontFamily.Default,
-                            Crystarium.ActiveTheme.Typography.LabelSize);
-                        bool optFontPushed = optFont is { Available: true };
-                        if (optFontPushed) optFont!.Push();
-                        float optPadLeft =
-                            Crystarium.ActiveTheme.Spacing.Four * scale;
-                        float optPadRight = optPadLeft;
-                        float optRounding =
-                            Crystarium.ActiveTheme.Radii.Medium * scale;
-                        uint hoverFill = ImGui.ColorConvertFloat4ToU32(
-                            ColorEx.ApplyAlpha(
-                                Crystarium.ActiveTheme.Chrome.WeakOverlay));
-                        uint selectedFill = ImGui.ColorConvertFloat4ToU32(
-                            ColorEx.ApplyAlpha(
-                                Crystarium.ActiveTheme.Chrome.ControlFill));
+                        float optPad = theme.Spacing.Four * scale; // padding: 0 8px
+                        float optRadius = theme.Radii.Medium * scale;
+                        // .opt:hover is --color-menu-hover and .optActive
+                        // is --color-hover-overlay — the SAME token, and
+                        // :hover outranks .optActive on specificity, so
+                        // one fill covers both states.
+                        uint rowFill = ImGui.ColorConvertFloat4ToU32(
+                            ColorEx.ApplyAlpha(theme.Chrome.WeakOverlay));
                         var spacing = ImGui.GetStyle().ItemSpacing;
                         ImGui.PushStyleVar(
                             ImGuiStyleVar.ItemSpacing,
@@ -204,13 +281,9 @@ public static partial class Crystarium
                             var itemPos = ImGui.GetCursorScreenPos();
                             bool scrolls = items.Length > visibleItems;
                             var hitSize = new Vector2(
-                                (scrolls
-                                    ? region.ContentWidth
-                                    : regionWidth) * scale,
-                                height);
-                            var fillSize = new Vector2(
-                                regionWidth * scale,
-                                height);
+                                (scrolls ? region.ContentWidth : regionWidth) * scale,
+                                rowHeight);
+                            var fillSize = new Vector2(regionWidth * scale, rowHeight);
 
                             ImGui.PushID(i);
                             var itemHit = Interactive.Reserve(
@@ -227,34 +300,28 @@ public static partial class Crystarium
                             }
                             bool itemHovered = itemHit.Hovered;
 
-                            if (isSelected)
+                            if (isSelected || itemHovered)
                                 popupDrawList.AddRectFilled(
                                     itemPos,
                                     itemPos + fillSize,
-                                    selectedFill,
-                                    optRounding);
-                            else if (itemHovered)
-                                popupDrawList.AddRectFilled(
-                                    itemPos,
-                                    itemPos + fillSize,
-                                    hoverFill,
-                                    optRounding);
+                                    rowFill,
+                                    optRadius);
 
-                            string itemDisplay = TruncateText(
-                                items[i],
-                                hitSize.X - optPadLeft - optPadRight);
-                            var itemTextSize = ImGui.CalcTextSize(itemDisplay);
-                            var itemTextPos = new Vector2(
-                                itemPos.X + optPadLeft,
-                                itemPos.Y + (height - itemTextSize.Y) * 0.5f
-                                    + Crystarium.ActiveTheme.Optical.DropdownText * scale);
-                            popupDrawList.AddText(
-                                itemTextPos,
-                                ImGui.ColorConvertFloat4ToU32(
-                                    ColorEx.ApplyAlpha(
-                                        Crystarium.ActiveTheme.Text)),
-                                itemDisplay);
-                            if (itemDisplay != items[i] && itemHovered)
+                            float optWidth = hitSize.X - optPad * 2f;
+                            bool optClipped = false;
+                            if (optWidth > 0f && items[i].Length > 0)
+                            {
+                                var optSize = MeasureText(items[i], labelStyle);
+                                optClipped = optSize.X > optWidth;
+                                TextAt(
+                                    new Vector2(
+                                        itemPos.X + optPad,
+                                        itemPos.Y + (rowHeight - optSize.Y) * 0.5f),
+                                    items[i],
+                                    labelStyle,
+                                    TextConstraint.Truncate(optWidth));
+                            }
+                            if (optClipped && itemHovered)
                                 HoverHelp.Preview(
                                     $"{id}-item-{i}",
                                     itemPos,
@@ -265,24 +332,11 @@ public static partial class Crystarium
                             if (i < items.Length - 1)
                                 ImGui.SetCursorScreenPos(new Vector2(
                                     itemPos.X,
-                                    itemPos.Y + height + rowGap));
+                                    itemPos.Y + rowHeight + rowGap));
                         }
 
                         ImGui.PopStyleVar();
-                        if (optFontPushed) optFont!.Pop();
                     });
-
-                float borderWidth = scale;
-                float borderInset = borderWidth * 0.5f;
-                popupDrawList.AddRect(
-                    popupMin + new Vector2(borderInset),
-                    popupMax - new Vector2(borderInset),
-                    ImGui.ColorConvertFloat4ToU32(
-                        ColorEx.ApplyAlpha(
-                            Crystarium.ActiveTheme.Chrome.WeakOverlay)),
-                    MathF.Max(0f, rounding - borderInset),
-                    ImDrawFlags.None,
-                    borderWidth);
             });
 
         if (popupChanged)
@@ -291,27 +345,8 @@ public static partial class Crystarium
         }
 
         if (!string.IsNullOrEmpty(help) && valueHovered)
-            HoverHelp.Explain(id, valuePos, valueEnd, help!);
+            HoverHelp.Explain(id, valueMin, valueMax, help!);
 
         return changed;
-    }
-
-    private static string TruncateText(string text, float maxWidth)
-    {
-        if (string.IsNullOrEmpty(text)) return text;
-        var size = ImGui.CalcTextSize(text);
-        if (size.X <= maxWidth) return text;
-        const string ellipsis = "…";
-        var ellipsisSize = ImGui.CalcTextSize(ellipsis);
-        float available = maxWidth - ellipsisSize.X;
-        if (available <= 0) return ellipsis;
-        int left = 0, right = text.Length;
-        while (left < right)
-        {
-            int mid = (left + right + 1) / 2;
-            var sub = ImGui.CalcTextSize(text[..mid]);
-            if (sub.X <= available) left = mid; else right = mid - 1;
-        }
-        return left == 0 ? ellipsis : text[..left] + ellipsis;
     }
 }

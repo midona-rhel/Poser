@@ -217,7 +217,6 @@ public readonly record struct Theme
             SidebarText = -1f,
             ButtonText = 1f,
             ActionBarText = 1f,
-            DropdownText = 1f,
             AxisText = 0f,
             SectionChrome = -1.5f,
         },
@@ -635,7 +634,6 @@ public readonly record struct Theme
         public float SidebarText { get; init; }
         public float ButtonText { get; init; }
         public float ActionBarText { get; init; }
-        public float DropdownText { get; init; }
         public float AxisText { get; init; }
         public float SectionChrome { get; init; }
 
