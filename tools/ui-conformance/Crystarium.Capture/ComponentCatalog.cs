@@ -45,16 +45,13 @@ internal static class ComponentCatalog
         new("icons-states", 136, 184),
         new("btn-secondary", 320, 80),
         new("btn-secondary-hover", 320, 80),
-        new("btn-secondary-focus", 320, 80),
         new("btn-secondary-disabled", 320, 80),
         new("btn-disabled-unicode", 320, 80),
         new("btn-primary", 320, 80),
         new("btn-primary-hover", 320, 80),
-        new("btn-primary-focus", 320, 80),
         new("btn-primary-disabled", 320, 80),
         new("btn-danger", 320, 80),
         new("btn-danger-hover", 320, 80),
-        new("btn-danger-focus", 320, 80),
         new("btn-danger-disabled", 320, 80),
         new("btn-width-content", 320, 80),
         new("btn-width-fixed", 320, 80),
@@ -73,7 +70,6 @@ internal static class ComponentCatalog
         new("icon-button-disabled", 120, 80),
         new("icon-button-hover-mid", 120, 80),
         new("icon-button-hover-exit", 120, 80),
-        new("icon-button-keyboard-focused", 120, 80),
         new("icon-button-glyphs", 280, 80),
         new("icon-button-explicit-size", 120, 88, Hidden: true),
         new("icon-button-hover-reconcile", 120, 80, Hidden: true),
@@ -84,7 +80,6 @@ internal static class ComponentCatalog
         new("switch-on", 120, 80),
         new("text-input", 320, 80),
         new("input-placeholder", 320, 80),
-        new("input-focus", 320, 80),
         new("search-input", 320, 84),
         new("search-clear-hover", 320, 84),
         new("dropdown-closed", 320, 80),
@@ -582,7 +577,6 @@ internal static class ComponentCatalog
                 break;
             case "btn-secondary":
             case "btn-secondary-hover":
-            case "btn-secondary-focus":
             case "btn-hover-exit":
             case "btn-hover-mid":
                 // actionButton.module.css .btn — hover/focus states are
@@ -603,7 +597,6 @@ internal static class ComponentCatalog
                 break;
             case "btn-primary":
             case "btn-primary-hover":
-            case "btn-primary-focus":
                 Ui.Button(
                     "Apply changes",
                     variant: ButtonVariant.Primary,
@@ -618,7 +611,6 @@ internal static class ComponentCatalog
                 break;
             case "btn-danger":
             case "btn-danger-hover":
-            case "btn-danger-focus":
                 Ui.Button(
                     "Apply changes",
                     variant: ButtonVariant.Danger,
@@ -752,7 +744,6 @@ internal static class ComponentCatalog
             case "icon-button-held-outside":
             case "icon-button-hover-mid":
             case "icon-button-hover-exit":
-            case "icon-button-keyboard-focused":
                 Ui.IconButton(
                     TablerIcon.Settings,
                     id: "##icon-button");
@@ -866,21 +857,6 @@ internal static class ComponentCatalog
                     placeholder: "Filter scene…");
                 break;
             // .input:focus, reached the way a user reaches it: the Tab in
-            // KeyEventsFor gives the native InputText REAL keyboard focus
-            // (ImGui activates an inputable item on tab-nav), so the
-            // border swap here is the widget's own focus state, and the
-            // caret is the real editing caret.
-            case "input-focus":
-                Ui.TextInput(
-                    "##input-focus",
-                    string.Empty,
-                    _ => { },
-                    new ControlStyle
-                    {
-                        Width = UiWidth.Fixed(272),
-                    },
-                    placeholder: "Filter scene…");
-                break;
             case "search-input":
                 Ui.FilterPill(
                     "##search",

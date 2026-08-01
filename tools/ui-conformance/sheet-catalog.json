@@ -42,16 +42,13 @@
       "states": [
         { "name": "btn-secondary", "label": "secondary idle", "width": 320, "height": 80 },
         { "name": "btn-secondary-hover", "label": "secondary hover", "width": 320, "height": 80 },
-        { "name": "btn-secondary-focus", "label": "secondary focus", "width": 320, "height": 80 },
         { "name": "btn-secondary-disabled", "label": "secondary disabled", "width": 320, "height": 80 },
         { "name": "btn-disabled-unicode", "label": "disabled unicode", "width": 320, "height": 80 },
         { "name": "btn-primary", "label": "primary idle", "width": 320, "height": 80 },
         { "name": "btn-primary-hover", "label": "primary hover", "width": 320, "height": 80 },
-        { "name": "btn-primary-focus", "label": "primary focus", "width": 320, "height": 80 },
         { "name": "btn-primary-disabled", "label": "primary disabled", "width": 320, "height": 80 },
         { "name": "btn-danger", "label": "danger idle", "width": 320, "height": 80 },
         { "name": "btn-danger-hover", "label": "danger hover", "width": 320, "height": 80 },
-        { "name": "btn-danger-focus", "label": "danger focus", "width": 320, "height": 80 },
         { "name": "btn-danger-disabled", "label": "danger disabled", "width": 320, "height": 80 },
         { "name": "btn-width-content", "label": "content width", "width": 320, "height": 80 },
         { "name": "btn-width-fixed", "label": "fixed width", "width": 320, "height": 80 },
@@ -71,7 +68,6 @@
         { "name": "icon-button-disabled", "label": "disabled", "width": 120, "height": 80 },
         { "name": "icon-button-hover-mid", "label": "hover midpoint", "width": 120, "height": 80 },
         { "name": "icon-button-hover-exit", "label": "hover exit = idle", "width": 120, "height": 80 },
-        { "name": "icon-button-keyboard-focused", "label": "keyboard focus", "width": 120, "height": 80 },
         { "name": "icon-button-glyphs", "label": "glyph coverage", "width": 280, "height": 80 }
       ]
     },
@@ -89,7 +85,6 @@
       "states": [
         { "name": "text-input", "label": "text input", "width": 320, "height": 80 },
         { "name": "input-placeholder", "label": "placeholder", "width": 320, "height": 80 },
-        { "name": "input-focus", "label": "keyboard focus", "width": 320, "height": 80 },
         { "name": "search-input", "label": "search input", "width": 320, "height": 84 },
         { "name": "search-clear-hover", "label": "clear hover", "width": 320, "height": 84 }
       ]
@@ -127,7 +122,7 @@
       "name": "property-row",
       "title": "Property row",
       "states": [
-        { "name": "property-row", "label": "row", "width": 320, "height": 68 }
+        { "name": "property-row", "label": "row (no Crystarium primitive yet - phases 6/7)", "width": 320, "height": 68 }
       ]
     },
     {

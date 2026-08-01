@@ -194,16 +194,17 @@ public static partial class Crystarium
         ImGui.PopStyleColor(6);
 
         var draw = ImGui.GetWindowDrawList();
-        // .input's 1px border, whose color IS :focus. .searchInput has
+        // .input's 1px border. Picto's :focus swaps its color to
+        // primary-50; PRODUCT DECISION (user): no focus chrome anywhere —
+        // native-styled UI, the caret is the focus signal. The border
+        // stays ControlBorder in every state. .searchInput has
         // `border: none`, so the search variant paints nothing here.
         if (!search)
             draw.AddRect(
                 inputMin,
                 inputMax,
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
-                    focused
-                        ? theme.Chrome.PrimaryFocus
-                        : theme.Chrome.ControlBorder)),
+                ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(theme.Chrome.ControlBorder)),
                 radius,
                 ImDrawFlags.None,
                 border);

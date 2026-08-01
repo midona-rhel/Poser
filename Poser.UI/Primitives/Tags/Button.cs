@@ -311,14 +311,11 @@ public static partial class Crystarium
 
         if (!disabled)
         {
-            // .btn:focus-visible — 2px primary-60 outline offset 1px,
-            // shown for keyboard focus only; pointer interaction never
-            // invents one. Disabled buttons draw their label inside the
-            // group surface above and can neither focus nor hover.
-            if (hit.Focused && Interactive.KeyboardNavActive)
-                ControlPaint.FocusRing(
-                    draw, hit.ScreenMin, hit.ScreenMax, radius, scale);
-
+            // NO focus-visible outline — PRODUCT DECISION (user): this is
+            // a native-styled UI, not a web page; Picto's .btn:focus-visible
+            // ring is deliberately not reproduced. Keyboard activation
+            // (Enter/Space via Interactive.Reserve) still works; there is
+            // simply no web-style focus chrome anywhere in Crystarium.
             DrawButtonLabelClipped(
                 draw, hit.ScreenMin, hit.ScreenMax, label, style, text);
         }

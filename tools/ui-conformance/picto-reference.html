@@ -303,10 +303,6 @@
         css: 'shared/styles/actionButton.module.css',
         html: '<button class="btn" style="background: var(--color-subtle-overlay)">Apply changes</button>',
       },
-      'btn-secondary-focus': {
-        css: 'shared/styles/actionButton.module.css',
-        html: '<button class="btn" style="outline: 2px solid var(--color-primary-60); outline-offset: 1px">Apply changes</button>',
-      },
       'btn-secondary-disabled': {
         css: 'shared/styles/actionButton.module.css',
         html: '<button class="btn" disabled>Apply changes</button>',
@@ -326,10 +322,6 @@
         css: 'shared/styles/actionButton.module.css',
         html: '<button class="btn btnPrimary" style="background: var(--color-primary-60); border-color: var(--color-primary-60)">Apply changes</button>',
       },
-      'btn-primary-focus': {
-        css: 'shared/styles/actionButton.module.css',
-        html: '<button class="btn btnPrimary" style="outline: 2px solid var(--color-primary-60); outline-offset: 1px">Apply changes</button>',
-      },
       'btn-primary-disabled': {
         css: 'shared/styles/actionButton.module.css',
         html: '<button class="btn btnPrimary" disabled>Apply changes</button>',
@@ -341,10 +333,6 @@
       'btn-danger-hover': {
         css: 'shared/styles/actionButton.module.css',
         html: '<button class="btn btnDanger" style="background: rgba(255, 71, 87, 0.15)">Apply changes</button>',
-      },
-      'btn-danger-focus': {
-        css: 'shared/styles/actionButton.module.css',
-        html: '<button class="btn btnDanger" style="outline: 2px solid var(--color-primary-60); outline-offset: 1px">Apply changes</button>',
       },
       'btn-danger-disabled': {
         css: 'shared/styles/actionButton.module.css',
@@ -458,11 +446,6 @@
         css: ['shared/styles/iconButton.module.css', 'app/AppShell.module.css'],
         html: settingsButton(),
       },
-      'icon-button-keyboard-focused': {
-        css: ['shared/styles/iconButton.module.css', 'app/AppShell.module.css'],
-        html: settingsButton('autofocus'),
-        postLayout(scope) { scope.querySelector('.iconBtn').focus(); },
-      },
       'switch-off': {
         css: 'shared/ui/ToggleSwitch/ToggleSwitch.module.css',
         html: '<span class="toggle"><span class="track"></span><span class="knob"></span></span>',
@@ -481,18 +464,6 @@
         // field, focused or not.
         css: 'shared/ui/GlassInput/GlassInput.module.css',
         html: '<input class="input" style="width:272px" placeholder="Filter scene…" readonly>',
-      },
-      'input-focus': {
-        // GlassInput declares NO outline for either variant
-        // (.input { outline: none }); the whole :focus treatment is
-        // .input:focus { border-color: var(--color-primary-50) }, which
-        // is restated inline on the real class exactly as the
-        // btn-*-focus cells restate theirs. A really-focused reference
-        // would also carry a blinking caret that a screenshot cannot
-        // hold still; the candidate takes REAL keyboard focus, so its
-        // caret is an expected residual difference.
-        css: 'shared/ui/GlassInput/GlassInput.module.css',
-        html: '<input class="input" style="width:272px;border-color:var(--color-primary-50)" placeholder="Filter scene…" readonly>',
       },
       'search-input': {
         // .searchWrap has no background, no border and no radius, and

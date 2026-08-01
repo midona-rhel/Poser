@@ -12,40 +12,6 @@ namespace Poser.UI;
 internal static class ControlPaint
 {
     /// <summary>
-    /// THE keyboard focus-visible ring (<c>:focus-visible</c>): a 2px
-    /// primary-hover outline offset 1px outside the control's rect.
-    ///
-    /// <para>Pointer interaction never invents one — the caller keeps the
-    /// gate (<c>hit.Focused &amp;&amp; Interactive.KeyboardNavActive</c>)
-    /// because only the caller knows whether the control is focusable at
-    /// all. This method only paints.</para>
-    /// </summary>
-    /// <param name="drawList">Draw list to render into.</param>
-    /// <param name="min">Top-left of the control's visual rect.</param>
-    /// <param name="max">Bottom-right of the control's visual rect.</param>
-    /// <param name="radius">The control's ALREADY-SCALED corner radius.</param>
-    /// <param name="scale">Global UI scale.</param>
-    public static void FocusRing(
-        ImDrawListPtr drawList,
-        Vector2 min,
-        Vector2 max,
-        float radius,
-        float scale)
-    {
-        float offset = 1f * scale;
-        float thickness = 2f * scale;
-        float expand = offset + thickness * 0.5f;
-        drawList.AddRect(
-            min - new Vector2(expand),
-            max + new Vector2(expand),
-            ImGui.ColorConvertFloat4ToU32(
-                ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.PrimaryHover)),
-            radius + expand,
-            ImDrawFlags.None,
-            thickness);
-    }
-
-    /// <summary>
     /// The 1px hairline separator: a filled rect one physical pixel tall
     /// (<c>max(1, scale)</c>, so it never vanishes below 1x and never
     /// blurs into a half-pixel above it).
@@ -135,8 +101,7 @@ internal static class ControlPaint
     /// rather than an approximation of one.</para>
     ///
     /// <para>The caller keeps its own disabled-opacity constant: WHICH
-    /// opacity a control fades to is a per-control decision, the same way
-    /// <see cref="FocusRing"/> leaves the focus gate to the caller.</para>
+    /// opacity a control fades to is a per-control decision.</para>
     /// </summary>
     /// <param name="drawList">Draw list to render into.</param>
     /// <param name="min">Top-left of the control's border box.</param>
