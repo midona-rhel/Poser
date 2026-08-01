@@ -20,7 +20,7 @@ accessor across nearly all product files and is not itemized.
 | IconButton | Views/AppShellView.cs |
 | TemporaryIconToggle | Views/AppShellView.cs |
 | FileDialog | Panes/AppearancePane.cs, Panes/PoseFileInspectorSection.cs |
-| Page / PageScope / FormScope / Section | Panes/AnimationPane.cs, Panes/AppearancePane.cs, Views/SettingsView.cs |
+| Page / PageScope / FormScope / Section | Panes/AnimationPane.cs, Panes/AppearancePane.cs, Panes/ExpressionInspectorSection.cs, Panes/PoseFileInspectorSection.cs, Panes/PoseInspectorPane.cs, Views/SettingsView.cs |
 | FloatingSurface | ../Poser.cs, Views/AppShellView.cs, Views/SettingsView.cs, Windows/SkeletonOverlayWindow.cs |
 | Modal | Windows/MainWindow.cs |
 | Popover / OpenPopover / PopoverScope | Controls/AnimationPicker.cs |
