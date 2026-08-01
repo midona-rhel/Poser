@@ -43,12 +43,17 @@ public readonly struct InteractionResult
     /// <summary>Left double-click while hovered — same gating as
     /// <see cref="Clicked"/>.</summary>
     public readonly bool DoubleClicked;
-    /// <summary>The frame the item took ImGui's active id (press).</summary>
+    /// <summary>The frame the item took ImGui's active id (press) with
+    /// the press ACCEPTED — enabled and not under a higher surface. A
+    /// swallowed press reports neither this nor
+    /// <see cref="DragEnded"/>.</summary>
     public readonly bool DragBegan;
-    /// <summary>The frame the item released ImGui's active id.</summary>
+    /// <summary>The frame the item released an accepted drag. Pairs with
+    /// <see cref="DragBegan"/> exactly once, even when a surface opens
+    /// over the control mid-drag.</summary>
     public readonly bool DragEnded;
-    /// <summary>Pointer movement this frame while the item is active,
-    /// zero otherwise.</summary>
+    /// <summary>Pointer movement this frame while the item owns an
+    /// accepted drag and is active, zero otherwise.</summary>
     public readonly Vector2 DragDelta;
     public readonly InteractionOwner Owner;
 
@@ -113,6 +118,13 @@ public static class Interactive
     private static int _nextSurfaceToken;
     private static int _frame;
     private static InteractionOwner? _openingBarrier;
+
+    // The ImGui id whose drag press was ACCEPTED (unoccluded, enabled).
+    // Ownership is what pairs DragBegan with DragEnded: a press swallowed
+    // by an occluder never records an owner and therefore can never
+    // produce a release, while an accepted drag keeps reporting its
+    // release even if a surface opens over the control mid-drag.
+    private static uint? _dragOwner;
 
     public static InteractionOwner CurrentOwner =>
         OwnerStack.Count == 0
@@ -347,22 +359,44 @@ public static class Interactive
         bool clicked = ImGui.IsItemClicked() && !disabled && !occluded;
         bool doubleClicked = hovered
             && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left);
-        // Drag handshake: ImGui's own activation edges, plus the pointer
-        // delta while the item holds the active id. Disabled controls
-        // report none of it.
-        bool dragBegan = !disabled && ImGui.IsItemActivated();
-        bool dragEnded = !disabled && ImGui.IsItemDeactivated();
-        var dragDelta = active ? ImGui.GetIO().MouseDelta : Vector2.Zero;
+        // Drag handshake: ImGui's own activation edges, gated by drag
+        // OWNERSHIP rather than by the current occlusion state, plus the
+        // pointer delta while the owning item holds the active id.
+        // Disabled controls, and presses landing under a higher surface,
+        // never take ownership and therefore report neither edge.
+        uint itemId = ImGui.GetID(id);
+        bool dragBegan = false;
+        if (!disabled && !occluded && ImGui.IsItemActivated())
+        {
+            dragBegan = true;
+            _dragOwner = itemId;
+        }
+        bool dragEnded = ImGui.IsItemDeactivated() && _dragOwner == itemId;
+        if (dragEnded)
+            _dragOwner = null;
+        var dragDelta = active && _dragOwner == itemId
+            ? ImGui.GetIO().MouseDelta
+            : Vector2.Zero;
+        // Keyboard activation has no pointer to hit-test, so it takes the
+        // RECT occlusion gate instead: a control buried under an open
+        // surface cannot be operated from the keyboard either. The gate
+        // covers BOTH the explicit keys below and ImGui's own nav
+        // ACTIVATE, which arrives through `pressed` on the same frame.
+        bool enterPressed = focused && !disabled
+            && (ImGui.IsKeyPressed(ImGuiKey.Enter)
+                || ImGui.IsKeyPressed(ImGuiKey.KeypadEnter));
+        bool spacePressed = focused && !disabled
+            && ImGui.IsKeyPressed(ImGuiKey.Space);
+        bool keyboardBlocked = (enterPressed || spacePressed)
+            && RectOccluded(owner, min, max);
         // The button RETURN is ImGui's release-inside semantic: pressing,
         // dragging out, and releasing does not activate. Enter joins it
         // explicitly; components with native button semantics can opt
         // into explicit Space activation without changing other controls.
-        bool activated = pressed && !disabled && !occluded;
-        if (focused && !disabled
-            && (ImGui.IsKeyPressed(ImGuiKey.Enter)
-                || ImGui.IsKeyPressed(ImGuiKey.KeypadEnter)
-                || (activateOnSpace
-                    && ImGui.IsKeyPressed(ImGuiKey.Space))))
+        bool activated =
+            pressed && !disabled && !occluded && !keyboardBlocked;
+        if (!keyboardBlocked
+            && (enterPressed || (activateOnSpace && spacePressed)))
             activated = true;
 
         PseudoState state = PseudoState.None;

@@ -68,18 +68,30 @@ Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
   resolved by `WindowsFontFallback` shared verbatim between the game
   and the capture host. Measurement and rendering must share one
   resolved style value.
-- UiKernel: `Interactive.Reserve` is the ONE control hit-test (hover,
-  press/release, focus, keyboard activation, occlusion gate, and the
-  pointer events — click, double-click, drag begin/end/delta); widgets
-  never query ImGui input directly. `Motion` is the ONE keyed animation
-  store — (ImGuiID, channel) with a constant-rate ramp mode and an
-  elapsed-clock retarget mode, one prune policy; components own no
-  transition dictionaries. `ControlSizing.Resolve` is the ONE
-  style→logical→scaled resolution preamble. Popups claim/keep/release
-  the `Interactive` exclusive chain only through `FloatingSurface`'s
-  open/sync/release helpers, and all floating placement (anchored,
-  point, side-preference) lives in `FloatingSurface`. The disabled-help
-  hover gate is `HoverHelp.Gate`.
+- UiKernel: `Interactive.Reserve` is the ONE control hit-test — hover,
+  press/release, focus, keyboard activation, and the pointer events
+  (click, double-click, drag begin/end/delta), ALL occlusion-gated:
+  pointer events by pointer occlusion, Enter/Space by rect occlusion,
+  and drags by accepted ownership (a drag begun un-occluded ends
+  exactly once; a swallowed press never emits an end). The ONLY
+  remaining direct ImGui input queries are these named exceptions, and
+  no new widget-local input handling may join them: native-widget
+  wrappers (TextInput's InputText focus/hover), popup lifecycle
+  (FloatingMenu dismissal, HoverHelp's geometric help hover — the ONE
+  help surface), AxisWell's deferred inline-edit block, and Slider's
+  pointer-position value math. `Motion` is the ONE animation store —
+  one group record per identity (channel set fixed per id, enforced;
+  zero-duration snaps), a constant-rate ramp mode, one prune policy;
+  components own no transition dictionaries. `ControlSizing.Resolve`
+  is the ONE style→logical→scaled resolution preamble. Popovers open
+  only through `Crystarium.OpenPopover` (the lower-level primitive is
+  internal); popups claim/keep/release the `Interactive` exclusive
+  chain only through `FloatingSurface`'s open/sync/release helpers,
+  and all floating placement (anchored, point, side-preference) lives
+  in `FloatingSurface`. The disabled-help hover gate is
+  `HoverHelp.Gate`. These invariants are proven by
+  `verify-kernel.ps1` (`--kernel-behavior`), run when kernel code
+  changes.
 - UI foundation: the active `Theme` value owns colors, typography, metrics,
   radii, shadows, motion, and optical corrections together; a theme change
   installs one complete replacement value rather than mutating tokens.

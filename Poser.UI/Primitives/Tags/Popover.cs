@@ -24,9 +24,12 @@ public record struct PopoverProps
 public static partial class Crystarium
 {
     /// <summary>
-    /// Opens the popover with <paramref name="id"/>: the one open path,
-    /// claiming the exclusive chain before ImGui's popup stack so the
-    /// surface owns input while it is up.
+    /// Opens the popover, dropdown, colour picker or modal registered
+    /// under <paramref name="id"/>. This is the ONE open path: it claims
+    /// the exclusive chain before ImGui's popup stack, so the surface
+    /// owns input — and occludes what is under it — from the frame it
+    /// opens. Calling <c>ImGui.OpenPopup</c> directly skips that claim
+    /// and leaves the surface unable to occlude anything.
     /// </summary>
     public static void OpenPopover(string id) => FloatingSurface.OpenPopup(id);
 
@@ -41,10 +44,11 @@ public static partial class Crystarium
     /// ContextMenu it is a fixed size and scrolls, and unlike Modal it
     /// does not block input behind it.
     ///
-    /// Open it with <see cref="Open"/> — never <c>ImGui.OpenPopup</c>
-    /// directly, which would skip the exclusive-chain claim and leave the
-    /// popover unable to occlude what is under it. Returns true while it
-    /// is open, after invoking <paramref name="body"/>.
+    /// Open it with <see cref="OpenPopover(string)"/> — never
+    /// <c>ImGui.OpenPopup</c> directly, which would skip the
+    /// exclusive-chain claim and leave the popover unable to occlude what
+    /// is under it. Returns true while it is open, after invoking
+    /// <paramref name="body"/>.
     /// </summary>
     public static bool Popover(string id, in PopoverProps props, Action body)
         => FloatingSurface.Popup(

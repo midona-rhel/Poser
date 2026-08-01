@@ -49,7 +49,7 @@ public static partial class Crystarium
         string popupId = $"{title}##{id}";
 
         if (open && !ImGui.IsPopupOpen(popupId))
-            FloatingSurface.OpenPopup(popupId);
+            OpenPopover(popupId);
         if (FloatingSurface.ReleaseWhenClosed(popupId, open))
             return false;
         if (!FloatingSurface.SyncExclusive(popupId))

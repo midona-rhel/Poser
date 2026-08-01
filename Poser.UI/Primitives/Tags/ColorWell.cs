@@ -44,7 +44,7 @@ public static partial class Crystarium
 
         string popupId = id + "_picker";
         if (hit.Clicked && !disabled)
-            FloatingSurface.OpenPopup(popupId);
+            OpenPopover(popupId);
 
         bool changed = false;
         var popupColor = color;

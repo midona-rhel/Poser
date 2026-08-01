@@ -117,7 +117,7 @@ public sealed class AnimationPicker
     {
         if (_openRequested)
         {
-            Crystarium.FloatingSurface.OpenPopup(PopupId);
+            Crystarium.OpenPopover(PopupId);
             _openRequested = false;
         }
         if (!ImGui.IsPopupOpen(PopupId))

@@ -59,7 +59,15 @@ public static partial class Crystarium
                     ActiveTheme.Floating.CloseActionSize),
                 id: id);
 
-        public static void OpenPopup(string id)
+        /// <summary>
+        /// The implementation behind <see cref="Crystarium.OpenPopover"/>:
+        /// claims the exclusive chain BEFORE ImGui's popup stack, so the
+        /// surface owns input from the frame it opens. Deliberately
+        /// internal — <see cref="Crystarium.OpenPopover"/> is the one
+        /// public open path, and hiding this makes that compile-enforced
+        /// for every assembly outside Poser.UI.
+        /// </summary>
+        internal static void OpenPopup(string id)
         {
             Interactive.ClaimExclusive(id);
             ImGui.OpenPopup(id);

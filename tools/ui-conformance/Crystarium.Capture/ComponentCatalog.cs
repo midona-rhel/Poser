@@ -814,8 +814,7 @@ internal static class ComponentCatalog
                 break;
             case "dropdown-open":
                 if (frame == 0)
-                    Ui.FloatingSurface.OpenPopup(
-                        "##dropdown-open_popup");
+                    Ui.OpenPopover("##dropdown-open_popup");
                 Ui.Dropdown(
                     "##dropdown-open",
                     DropdownItems,

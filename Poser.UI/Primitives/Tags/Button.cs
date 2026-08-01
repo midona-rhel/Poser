@@ -210,11 +210,11 @@ public static partial class Crystarium
     private static readonly Transition BackgroundTransition =
         Transition.CubicBezier(0.15f, 0.25f, 0.1f, 0.25f, 1f);
 
-    // Motion channels this component owns. The store keys by stable ImGui
-    // identity (the same seed InvisibleButton hashes) plus the channel,
-    // so the two icon-button channels share one clock while the text
-    // button's hover ramp lives in the constant-rate store.
-    private const int HoverFillChannel = 0;
+    // Motion channels this component owns. Both stores key by stable
+    // ImGui identity (the same seed InvisibleButton hashes); the two
+    // icon-button channels share one elapsed clock under that identity,
+    // while the text button's hover ramp is the identity's single
+    // constant-rate entry and needs no channel of its own.
     private const int IconBackgroundChannel = 0;
     private const int IconOpacityChannel = 1;
 
@@ -267,7 +267,6 @@ public static partial class Crystarium
         float eased = BackgroundTransition.Evaluate(
             Motion.Progress(
                 identity,
-                HoverFillChannel,
                 hit.Hovered && !disabled,
                 BackgroundTransition.DurationSeconds));
         if (disabled)

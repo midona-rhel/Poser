@@ -79,7 +79,7 @@ public static partial class Crystarium
             $"{id}_value", new Vector2(totalWidth, height), disabled);
         bool valueHovered = trigger.Hovered;
         if (trigger.Clicked)
-            FloatingSurface.OpenPopup(popupId);
+            OpenPopover(popupId);
 
         var valueBg = ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.ControlHover);
         drawList.AddRectFilled(valuePos, valueEnd, ImGui.ColorConvertFloat4ToU32(valueBg), rounding);

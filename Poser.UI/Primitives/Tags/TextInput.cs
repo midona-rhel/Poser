@@ -27,6 +27,12 @@ public static partial class Crystarium
         string? help = null) =>
         TextInputCore(id, value, onChange, style, placeholder, true, disabled, help);
 
+    // The clear affordance is a reserved hit area, so pressing it takes
+    // ImGui's active id away from the field the way any other control
+    // would. Clearing is an edit of the field the user is still in, so
+    // the field takes focus back on the next frame it submits.
+    private static uint _clearRefocusTarget;
+
     private static bool TextInputCore(
         string id,
         string value,
@@ -58,6 +64,13 @@ public static partial class Crystarium
             ActiveTheme.Radii.Medium * scale);
         ImGui.PushStyleVar(ImGuiStyleVar.FrameBorderSize, 1f);
         ImGui.SetNextItemWidth(width);
+
+        uint identity = ImGui.GetID(id);
+        if (_clearRefocusTarget == identity)
+        {
+            _clearRefocusTarget = 0;
+            ImGui.SetKeyboardFocusHere();
+        }
 
         string next = value;
         if (disabled) ImGui.BeginDisabled();
@@ -145,6 +158,7 @@ public static partial class Crystarium
             {
                 next = string.Empty;
                 changed = true;
+                _clearRefocusTarget = identity;
             }
         }
 
