@@ -48,6 +48,9 @@ internal static class Program
         if (args.Length == 1 && args[0] == "--reactive-button-behavior")
             return BehaviorSuites.ReactiveButton();
 
+        if (args.Length == 1 && args[0] == "--reactive-dropdown-behavior")
+            return BehaviorSuites.ReactiveDropdown();
+
         if (args.Length == 1 && args[0] == "--kernel-behavior")
             return BehaviorSuites.Kernel();
 
@@ -93,6 +96,7 @@ internal static class Program
                 "       Crystarium.Capture --measure <cssSize>\n" +
                 "       Crystarium.Capture --icon-button-behavior\n" +
                 "       Crystarium.Capture --reactive-button-behavior\n" +
+                "       Crystarium.Capture --reactive-dropdown-behavior\n" +
                 "       Crystarium.Capture --kernel-behavior\n" +
                 "       Crystarium.Capture --generate-tokens <tokens.css> <out.g.cs>\n" +
                 "       Crystarium.Capture --verify-tokens [<tokens.css> <committed.g.cs>]\n" +

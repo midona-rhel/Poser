@@ -22,6 +22,12 @@ internal static class LayoutSolver
             return;
 
         ElementKind kind = arena[node].Kind;
+        if (kind == ElementKind.Portal)
+        {
+            MeasureDetached(arena, node);
+            return;
+        }
+
         UiStyle style = arena[node].Style;
         Vector2 content = kind switch
         {
@@ -46,6 +52,12 @@ internal static class LayoutSolver
     {
         if (node == 0)
             return;
+
+        if (arena[node].Kind == ElementKind.Portal)
+        {
+            ArrangeDetached(arena, node, logicalOrigin);
+            return;
+        }
 
         arena[node].LogicalPos = logicalOrigin;
         arena[node].LogicalSize = logicalSize;
@@ -121,10 +133,81 @@ internal static class LayoutSolver
         }
     }
 
+    /// <summary>
+    /// The span a portal's floating surface occupies, logical. A zero authored
+    /// width means "as wide as the ANCHOR": a Fill-sized trigger has no span
+    /// until the solver grants it, which is long after its menu was declared.
+    /// </summary>
+    internal static Vector2 PortalSurface(FrameArena arena, int node)
+    {
+        Vector2 authored = arena[node].PortalContentSize;
+        int anchor = arena[node].AnchorNode;
+        return authored.X > 0f || anchor == 0
+            ? authored
+            : new Vector2(arena[anchor].LogicalSize.X, authored.Y);
+    }
+
+    /// <summary>
+    /// The box a portal's DETACHED subtree is laid out in: the surface less
+    /// its padding, with the scroll viewport's authored height standing in
+    /// when the children scroll past it.
+    /// </summary>
+    internal static Vector2 PortalContent(FrameArena arena, int node)
+    {
+        Vector2 surface = PortalSurface(arena, node);
+        float padding = arena[node].PortalPadding * 2f;
+        float height = arena[node].ScrollRegionHeight > 0f
+            ? arena[node].ScrollRegionHeight
+            : MathF.Max(0f, surface.Y - padding);
+        return new Vector2(MathF.Max(0f, surface.X - padding), height);
+    }
+
+    /// <summary>
+    /// A portal is OUT OF FLOW: it contributes nothing to its parent's box, so
+    /// its subtree is measured against the SURFACE's constraints rather than
+    /// whatever the parent had left over.
+    /// </summary>
+    private static void MeasureDetached(FrameArena arena, int node)
+    {
+        Vector2 content = PortalContent(arena, node);
+        int start = arena[node].ChildStart;
+        int count = arena[node].ChildCount;
+        for (int i = 0; i < count; i++)
+            Measure(arena, arena.ChildAt(start + i).Index, content.X, content.Y);
+        arena[node].LogicalSize = Vector2.Zero;
+    }
+
+    /// <summary>
+    /// The subtree is placed from the surface's own origin, not the parent's:
+    /// the walk re-anchors it at the popup's cursor, so a portal child's
+    /// arranged position is already surface-relative.
+    /// </summary>
+    private static void ArrangeDetached(FrameArena arena, int node, Vector2 logicalOrigin)
+    {
+        arena[node].LogicalPos = logicalOrigin;
+        arena[node].LogicalSize = Vector2.Zero;
+        Vector2 content = PortalContent(arena, node);
+        int start = arena[node].ChildStart;
+        int count = arena[node].ChildCount;
+        for (int i = 0; i < count; i++)
+            Arrange(arena, arena.ChildAt(start + i).Index, Vector2.Zero, content);
+    }
+
     /// <summary>The text style a Text record declared; unset members fall
     /// back to the active theme inside the renderer.</summary>
     internal static Poser.UI.TextStyle TextStyleOf(in ElementRecord record) =>
         TextStyleOf(in record, null);
+
+    /// <summary>
+    /// The logical width a text run is CUT to, or 0 for an intrinsic run. A
+    /// run whose box was SIZED — Fixed by its author, Fill by its siblings —
+    /// is the CSS <c>overflow: hidden</c> box and truncates to what it was
+    /// arranged. That is deliberately the only rule: the span a label may
+    /// occupy inside a Fill-width control is not knowable until the solver has
+    /// granted the control its own, so an authored number could not express it.
+    /// </summary>
+    internal static float? TextClip(in ElementRecord record) =>
+        record.Style.Width.Kind == UiDimKind.Content ? null : record.LogicalSize.X;
 
     /// <summary>As above, with the walk's inherited foreground standing in
     /// for an unstated color — currentColor, resolved by the nearest painter

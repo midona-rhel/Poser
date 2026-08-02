@@ -1,5 +1,3 @@
-using System.Numerics;
-
 namespace Poser.UI.Reactive;
 
 /// <summary>
@@ -15,8 +13,14 @@ internal sealed class TextButtonPainter : IInteractivePainter
     {
     }
 
-    public Vector4 Paint(
-        in Poser.UI.InteractionResult hit, uint identity, byte paintArg, bool disabled) =>
-        Poser.UI.LegacyCrystarium.PaintTextButtonBox(
-            hit, identity, (Poser.UI.ButtonVariant)paintArg, disabled);
+    public PaintOutput Paint(in PaintInput input) =>
+        // A button carries no glyph opacity of its own: the box states none,
+        // so its content stays on whatever a nested icon asked for.
+        new(
+            Poser.UI.LegacyCrystarium.PaintTextButtonBox(
+                input.Hit,
+                input.Identity,
+                (Poser.UI.ButtonVariant)input.Arg,
+                input.Disabled),
+            1f);
 }

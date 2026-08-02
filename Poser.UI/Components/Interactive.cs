@@ -17,6 +17,12 @@ public static partial class Crystarium
     /// means "measure me like a box": the solver then derives the size from
     /// the composed children and <paramref name="sx"/>, which is what makes a
     /// hit box out of arbitrary content. A declared box still wins.</param>
+    /// <param name="dispatchMode">Which input edge fires, and whether
+    /// <paramref name="arg"/> rides along. See
+    /// <see cref="Reactive.DispatchMode"/>.</param>
+    /// <param name="opensPortalNode">The portal this element opens, 0 for
+    /// none. The portal must already be declared, which it is: children are
+    /// written into the arena before their parent.</param>
     internal static UiNode InteractiveCore(
         in UiStyle sx,
         UiChildren children,
@@ -29,7 +35,11 @@ public static partial class Crystarium
         IInteractivePainter? painter,
         byte paintArg,
         bool clipChildren,
-        Vector2 declaredLogicalSize)
+        Vector2 declaredLogicalSize,
+        byte dispatchMode = Reactive.DispatchMode.Activated,
+        int arg = 0,
+        bool closesPortal = false,
+        int opensPortalNode = 0)
     {
         FrameArena arena = FrameArena.Require();
         arena.ValidateChildren(children);
@@ -48,6 +58,10 @@ public static partial class Crystarium
         record.ChildStart = children.Start;
         record.ChildCount = children.Count;
         record.LogicalSize = declaredLogicalSize;
+        record.DispatchMode = dispatchMode;
+        record.Arg = arg;
+        record.ClosesPortal = closesPortal;
+        record.OpensPortalNode = opensPortalNode;
         return arena.AddElement(record);
     }
 

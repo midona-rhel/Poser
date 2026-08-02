@@ -119,6 +119,14 @@
       ]
     },
     {
+      "name": "reactive-dropdown",
+      "title": "Reactive dropdown (PBI-015)",
+      "states": [
+        { "name": "rdd-closed", "label": "closed", "width": 320, "height": 80 },
+        { "name": "rdd-open", "label": "open", "width": 320, "height": 280 }
+      ]
+    },
+    {
       "name": "color-palette",
       "title": "Color palette",
       "states": [

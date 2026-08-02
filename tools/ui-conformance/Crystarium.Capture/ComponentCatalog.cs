@@ -108,6 +108,11 @@ internal static class ComponentCatalog
         new("search-clear-hover", 320, 84),
         new("dropdown-closed", 320, 80),
         new("dropdown-open", 320, 280),
+        // PBI-015 wave H: the SAME two dropdown states driven through the
+        // retained reactive root. rdd-X must capture byte-identical to
+        // dropdown-X — see verify-reactive-dropdown.ps1.
+        new("rdd-closed", 320, 80),
+        new("rdd-open", 320, 280),
         new("color-palette", 220, 80),
         new("sidebar-row", 320, 80),
         new("sidebar-row-hover", 320, 80),
@@ -137,6 +142,11 @@ internal static class ComponentCatalog
         "File Size",
         "Duration",
     ];
+
+    /// <summary>Hoisted so the reactive fixture's build closure stays
+    /// static: a handler allocated per frame would be the harness's cost,
+    /// not the runtime's.</summary>
+    private static readonly Action<int> NoOpSelect = static _ => { };
 
     private static readonly ContextMenuItem[] MenuItems =
     [
@@ -270,6 +280,13 @@ internal static class ComponentCatalog
             || (name == "rbtn-hover-exit" && frame < 15)
             || (name == "rbtn-hover-mid" && frame >= 34)
             || (name == "rbtn-hover-reconcile" && frame < 20)
+            // The reactive portal id is PATH-derived, so the open state
+            // cannot be staged with an OpenPopover call the way the legacy
+            // twin is: the menu is opened the honest way, by a real click
+            // on the trigger. The pointer leaves on frame 5 so the settled
+            // capture shows exactly what dropdown-open shows — trigger
+            // unhovered, popup open, no row under the pointer.
+            || (name == "rdd-open" && frame is >= 1 and <= 4)
             || name == "icon-button-pressed"
             || (name == "icon-button-held-outside" && frame < 15)
             || (name == "icon-button-hover-exit" && frame < 15)
@@ -298,8 +315,13 @@ internal static class ComponentCatalog
         // the affordance centres 13px in at (283, 42) over the 36px
         // search row. The shared (84,40) point would hover the field but
         // not the affordance.
+        // The dropdown trigger is the 26px .btn at the (24,24) stage origin,
+        // wide enough for "Date Modified" plus the chevron slot; this point
+        // is inside it and clear of both edges.
         return inside
-            ? (name == "section-hover"
+            ? (name == "rdd-open"
+                ? new Vector2(64, 37)
+                : name == "section-hover"
                 ? new Vector2(84, 58)
                 : name == "search-clear-hover"
                 ? new Vector2(283, 42)
@@ -323,6 +345,12 @@ internal static class ComponentCatalog
                 || name == "icon-button-held-outside")
             && frame == 5)
             yield return (0, true);
+        // rdd-open's menu is opened by a real press/release on the trigger,
+        // inside the frames PointerFor parks the pointer there.
+        if (name == "rdd-open" && frame == 2)
+            yield return (0, true);
+        if (name == "rdd-open" && frame == 4)
+            yield return (0, false);
     }
 
     public static void Draw(string name, int frame, Vector2 canvas)
@@ -1032,6 +1060,18 @@ internal static class ComponentCatalog
                     {
                         Width = UiWidth.Content,
                     });
+                break;
+            // ---- Reactive dropdown twins (PBI-015 wave H) -----------
+            // Same stage origin, same fixture, same Content width; the
+            // open state reaches its menu through a real click instead of
+            // the legacy twin's staged OpenPopover, because the retained
+            // portal's handle is derived from the element path.
+            case "rdd-closed":
+            case "rdd-open":
+                ReactiveRoot(name).Render(
+                    origin,
+                    ImGui.GetContentRegionAvail(),
+                    static () => Rx.Dropdown(DropdownItems, 0, NoOpSelect));
                 break;
             case "color-palette":
                 DrawPalette();

@@ -2,6 +2,7 @@ using System.Drawing;
 using System.Numerics;
 using System.Windows.Forms;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility;
 using Poser.UI;
 using Poser.UI.Reactive;
 using Ui = Poser.UI.LegacyCrystarium;
@@ -982,6 +983,382 @@ internal static class BehaviorSuites
             if (frame >= 20)
                 allocated += after - before;
         }, _ => Offscreen);
+        return allocated;
+    }
+
+    // ---- Reactive dropdown: the portal control's own contract ----------
+    //
+    // Everything here is out of the pixel fixtures' reach: a menu that opens
+    // on a real click, a row that reports its index, the four ways a menu
+    // closes, and the first typed UiEvent<TValue> dispatch. Nothing is a
+    // hardcoded rectangle — the trigger and row boxes are derived from the
+    // SAME measurement seams the control lays itself out with, so a fixture
+    // that drifts fails as a geometry probe rather than as a mystery.
+
+    private static readonly Vector2 DropCanvas = new(360, 320);
+    private static readonly Vector2 DropOrigin = new(24, 24);
+    private static readonly Vector2 DropOutside = new(340, 300);
+
+    private static readonly string[] DropItems =
+    [
+        "Date Added",
+        "Date Created",
+        "Date Modified",
+        "Name",
+        "Rating",
+        "File Size",
+        "Duration",
+    ];
+
+    private static readonly Action<int> DropNoOp = static _ => { };
+
+    /// <summary>The parity fixture: one closed reactive dropdown, so its
+    /// warm-frame bytes compare one-to-one against the identical legacy
+    /// control. Hoisted for the same reason <see cref="ParityTree"/> is.
+    /// </summary>
+    private static readonly Func<UiNode> DropParityTree = static () =>
+        Rx.Dropdown(DropItems, 0, DropNoOp);
+
+    /// <summary>The trigger and menu boxes the fixtures aim at, all read off
+    /// the control's own seams: <c>MeasureDropdown</c> for the trigger,
+    /// <c>MeasureDropdownPopup</c> for the panel, and
+    /// <c>FloatingSurface</c>'s anchored placement (below the anchor at the
+    /// shared gap, with CmSelect's remainder riding on the anchor) for where
+    /// the panel lands.</summary>
+    private readonly record struct DropGeometry(
+        Vector2 TriggerMin,
+        Vector2 TriggerMax,
+        Vector2 PopupMin,
+        Vector2 PopupMax,
+        float RowHeight,
+        float RowGap,
+        float DropInset)
+    {
+        internal Vector2 TriggerCenter => (TriggerMin + TriggerMax) * 0.5f;
+
+        internal Vector2 RowCenter(int index) => new(
+            (PopupMin.X + PopupMax.X) * 0.5f,
+            PopupMin.Y + DropInset
+                + index * (RowHeight + RowGap) + RowHeight * 0.5f);
+    }
+
+    private static DropGeometry dropGeometry;
+
+    private static DropGeometry MeasureDrop()
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        Ui.DropdownMetrics metrics =
+            Ui.MeasureDropdown(DropItems, null, default);
+        Ui.DropdownPopupMetrics popup =
+            Ui.MeasureDropdownPopup(DropItems.Length, metrics.LogicalHeight);
+        var triggerMax =
+            DropOrigin + new Vector2(metrics.Width, metrics.Height);
+        var popupMin = new Vector2(
+            DropOrigin.X,
+            triggerMax.Y + popup.AnchorGapCompensation
+                + Ui.ActiveTheme.Floating.AnchorGap * scale);
+        return new DropGeometry(
+            DropOrigin,
+            triggerMax,
+            popupMin,
+            popupMin + new Vector2(metrics.Width, popup.PopupHeight),
+            popup.RowHeight,
+            popup.RowGap,
+            popup.DropInset);
+    }
+
+    internal static int ReactiveDropdown() =>
+        Suite(
+            "Crystarium reactive-dropdown behavior", 360, 320,
+            ReactiveDropdownCases);
+
+    private static int ReactiveDropdownCases(BehaviorHost host)
+    {
+        host.Check("geometry", DropGeometryProbe(host));
+        DropGeometry geo = dropGeometry;
+        Vector2 trigger = geo.TriggerCenter;
+        Vector2 row0 = geo.RowCenter(0);
+        Vector2 row2 = geo.RowCenter(2);
+
+        // Reserve reports Clicked on the PRESS frame, so every gesture below
+        // is named by its press; the release two frames later only ends it.
+        host.Expect(
+            "open-select",
+            Drive(
+                16,
+                frame => frame < 6 ? trigger : row2,
+                Presses(2, 8)),
+            "fired=1 last=2");
+        host.Expect(
+            "select-closes",
+            Drive(
+                22,
+                frame => frame < 6 ? trigger : row2,
+                Presses(2, 8, 14)),
+            "fired=1 last=2");
+        // Row 0 IS the selected row: it reports nothing and still closes, so
+        // the follow-up aimed at a DIFFERENT row proves the close happened
+        // rather than merely that the reselect was silent.
+        host.Expect(
+            "reselect-noop",
+            Drive(
+                22,
+                frame => frame < 6 ? trigger : frame < 12 ? row0 : row2,
+                Presses(2, 8, 14)),
+            "fired=0 last=-1");
+        host.Expect(
+            "outside-dismiss",
+            Drive(
+                22,
+                frame => frame < 6
+                    ? trigger
+                    : frame < 12 ? DropOutside : row2,
+                Presses(2, 8, 14)),
+            "fired=0 last=-1");
+        host.Expect(
+            "escape-dismiss",
+            Drive(
+                22,
+                frame => frame < 6 ? trigger : row2,
+                Presses(2, 14),
+                frame => frame switch
+                {
+                    8 => (true, ImGuiKey.Escape, true),
+                    9 => (true, ImGuiKey.Escape, false),
+                    _ => default,
+                }),
+            "fired=0 last=-1");
+        host.Expect(
+            "disabled-no-open",
+            Drive(
+                16,
+                frame => frame < 6 ? trigger : row2,
+                Presses(2, 8),
+                disabled: true),
+            "fired=0 last=-1");
+        // Text-button parity in reverse: the imperative dropdown opens on
+        // POINTER click only, so the retained trigger must refuse Enter.
+        host.Expect(
+            "keyboard-parity",
+            Drive(
+                18,
+                frame => frame < 8 ? Offscreen : row2,
+                Presses(12),
+                TabThen(ImGuiKey.Enter)),
+            "fired=0 last=-1");
+        host.Check("uievent-int", UiEventInt(host));
+        host.Check(
+            "allocation-closed-parity", DropAllocationParity(host, false));
+        host.Check(
+            "allocation-open-parity", DropAllocationParity(host, true));
+        return host.Summary("reactive-dropdown behavior: all cases pass");
+
+        string Drive(
+            int frames,
+            Func<int, Vector2> pointer,
+            Func<int, (bool HasEvent, bool Down)> mouse,
+            Func<int, (bool HasEvent, ImGuiKey Key, bool Down)>? key = null,
+            bool disabled = false)
+        {
+            int fired = 0;
+            int last = -1;
+            var root = new UiRoot();
+            host.Case(DropCanvas, frames, _ =>
+            {
+                ImGui.SetCursorScreenPos(DropOrigin);
+                root.Render(
+                    DropOrigin,
+                    ImGui.GetContentRegionAvail(),
+                    () => Rx.Dropdown(
+                        DropItems,
+                        0,
+                        index =>
+                        {
+                            fired++;
+                            last = index;
+                        },
+                        disabled: disabled));
+            }, pointer, mouse, key);
+            return $"fired={fired} last={last}";
+        }
+    }
+
+    /// <summary>A press/release pair at each listed DOWN frame; the release
+    /// lands two frames later, so a gesture never straddles the next.
+    /// </summary>
+    private static Func<int, (bool HasEvent, bool Down)> Presses(
+        params int[] downs) =>
+        frame =>
+        {
+            foreach (int down in downs)
+            {
+                if (frame == down)
+                    return (true, true);
+                if (frame == down + 2)
+                    return (true, false);
+            }
+
+            return default;
+        };
+
+    /// <summary>
+    /// The derived geometry, checked against what the runtime actually
+    /// reserved before any case aims at it: the root reserves its arranged
+    /// extent, and a portal is out of flow, so the item rect around Render
+    /// IS the trigger. Without this a missed click would read as a broken
+    /// contract instead of a stale rectangle.
+    /// </summary>
+    private static Probe DropGeometryProbe(BehaviorHost host)
+    {
+        var root = new UiRoot();
+        DropGeometry computed = default;
+        Vector2 itemMin = default;
+        Vector2 itemMax = default;
+        host.Case(DropCanvas, 2, _ =>
+        {
+            computed = MeasureDrop();
+            ImGui.SetCursorScreenPos(DropOrigin);
+            root.Render(
+                DropOrigin, ImGui.GetContentRegionAvail(), DropParityTree);
+            itemMin = ImGui.GetItemRectMin();
+            itemMax = ImGui.GetItemRectMax();
+        }, _ => Offscreen);
+        dropGeometry = computed;
+
+        var probe = new Probe();
+        probe.Want("trigger-origin", itemMin, computed.TriggerMin);
+        // The walk rounds its boxes and the measurement seam does not, so a
+        // sub-pixel span difference is expected; a ROW of difference is not.
+        probe.Want(
+            "trigger-span",
+            Vector2.Distance(itemMax, computed.TriggerMax) <= 1f,
+            true);
+        probe.Want(
+            "popup-on-canvas", computed.PopupMax.Y <= DropCanvas.Y, true);
+        probe.Want(
+            "rows-inside-popup",
+            computed.RowCenter(DropItems.Length - 1).Y
+                < computed.PopupMax.Y - computed.DropInset,
+            true);
+        return probe;
+    }
+
+    /// <summary>
+    /// Tooling-only component (never shipped) bound through the TYPED event
+    /// path: the chosen index rides the dispatch record rather than a
+    /// captured closure, so this is the first proof a
+    /// <c>UiEvent&lt;TValue&gt;</c> reaches its reducer with its value.
+    /// </summary>
+    private sealed class SelectCell
+        : StatefulComponent<SelectCell.Props, SelectCell.State>
+    {
+        /// <summary>What the LAST Render observed.</summary>
+        internal static int LastSeen = -1;
+
+        internal readonly record struct Props;
+
+        internal readonly record struct State(int Selected);
+
+        internal static UiNode Node(UiKey key) =>
+            Rx.Component<SelectCell, Props, State>(default, key);
+
+        protected override State CreateState(in Props props) => new(0);
+
+        protected override UiNode Render(in Props props, in State state)
+        {
+            LastSeen = state.Selected;
+            return Rx.Dropdown(
+                DropItems,
+                state.Selected,
+                UpdateState<int>(static (s, i) => s with { Selected = i }));
+        }
+    }
+
+    private static Probe UiEventInt(BehaviorHost host)
+    {
+        DropGeometry geo = dropGeometry;
+        Vector2 trigger = geo.TriggerCenter;
+        Vector2 row3 = geo.RowCenter(3);
+        var root = new UiRoot();
+        var seen = new List<int>();
+        SelectCell.LastSeen = -1;
+        host.Case(DropCanvas, 16, _ =>
+        {
+            ImGui.SetCursorScreenPos(DropOrigin);
+            root.Render(
+                DropOrigin,
+                ImGui.GetContentRegionAvail(),
+                static () => SelectCell.Node("select"));
+            seen.Add(SelectCell.LastSeen);
+        },
+        frame => frame < 6 ? trigger : row3,
+        Presses(2, 8));
+
+        var transitions = new List<string>();
+        for (int i = 0; i < seen.Count; i++)
+        {
+            if (i == 0 || seen[i] != seen[i - 1])
+                transitions.Add($"{seen[i]}@{i}");
+        }
+
+        var probe = new Probe();
+        // The reducer is QUEUED: the row's press at frame 8 can only be
+        // observed by the build that follows it.
+        probe.Want("trace", string.Join(" ", transitions), "0@0 3@9");
+        return probe;
+    }
+
+    /// <summary>The dropdown's own warm-frame gate: the retained control may
+    /// cost no more than the identical imperative one, closed or open. Both
+    /// sides run under the SAME host and the SAME input script, so the open
+    /// comparison is a menu each path opened by a real click.</summary>
+    private static Probe DropAllocationParity(BehaviorHost host, bool open)
+    {
+        long reactive = MeasureDropAllocation(host, true, open);
+        long legacy = MeasureDropAllocation(host, false, open);
+        var probe = new Probe();
+        if (reactive > legacy)
+            probe.Fault(
+                $"a {(open ? "open" : "closed")} reactive dropdown allocated "
+                + $"{reactive} bytes over 100 warm frames; the identical "
+                + $"legacy dropdown {legacy} — the retained path added bytes "
+                + "of its own");
+        else
+            Console.WriteLine(
+                $"allocation-{(open ? "open" : "closed")}-parity "
+                + $"reactive={reactive} legacy={legacy}");
+        return probe;
+    }
+
+    private static long MeasureDropAllocation(
+        BehaviorHost host, bool reactive, bool open)
+    {
+        Vector2 trigger = dropGeometry.TriggerCenter;
+        var root = new UiRoot();
+        long allocated = 0;
+        host.Case(DropCanvas, 120, frame =>
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            ImGui.SetCursorScreenPos(DropOrigin);
+            if (reactive)
+            {
+                root.Render(
+                    DropOrigin,
+                    ImGui.GetContentRegionAvail(),
+                    DropParityTree);
+            }
+            else
+            {
+                Ui.Dropdown(
+                    "##alloc-legacy-dropdown", DropItems, 0, DropNoOp);
+            }
+
+            long after = GC.GetAllocatedBytesForCurrentThread();
+            if (frame >= 20)
+                allocated += after - before;
+        },
+        frame => open && frame is >= 1 and <= 4 ? trigger : Offscreen,
+        open ? Presses(2) : null);
         return allocated;
     }
 

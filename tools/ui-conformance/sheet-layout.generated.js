@@ -2,7 +2,7 @@
 // Do not hand-edit.
 window.sheetLayout = {
  "pageWidth": 688,
- "pageHeight": 5480,
+ "pageHeight": 5792,
  "cells": [
   {
    "name": "text-label",
@@ -557,10 +557,26 @@ window.sheetLayout = {
    "h": 280
   },
   {
+   "name": "rdd-closed",
+   "component": "reactive-dropdown",
+   "x": 16,
+   "y": 3880,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rdd-open",
+   "component": "reactive-dropdown",
+   "x": 352,
+   "y": 3880,
+   "w": 320,
+   "h": 280
+  },
+  {
    "name": "color-palette",
    "component": "color-palette",
    "x": 16,
-   "y": 3880,
+   "y": 4192,
    "w": 220,
    "h": 80
   },
@@ -568,7 +584,7 @@ window.sheetLayout = {
    "name": "sidebar-row",
    "component": "sidebar",
    "x": 16,
-   "y": 3992,
+   "y": 4304,
    "w": 320,
    "h": 80
   },
@@ -576,7 +592,7 @@ window.sheetLayout = {
    "name": "sidebar-row-hover",
    "component": "sidebar",
    "x": 352,
-   "y": 3992,
+   "y": 4304,
    "w": 320,
    "h": 80
   },
@@ -584,7 +600,7 @@ window.sheetLayout = {
    "name": "sidebar-row-selected",
    "component": "sidebar",
    "x": 16,
-   "y": 4088,
+   "y": 4400,
    "w": 320,
    "h": 80
   },
@@ -592,7 +608,7 @@ window.sheetLayout = {
    "name": "sidebar-row-selected-hover",
    "component": "sidebar",
    "x": 352,
-   "y": 4088,
+   "y": 4400,
    "w": 320,
    "h": 80
   },
@@ -600,7 +616,7 @@ window.sheetLayout = {
    "name": "sidebar-row-collapsed",
    "component": "sidebar",
    "x": 16,
-   "y": 4184,
+   "y": 4496,
    "w": 320,
    "h": 80
   },
@@ -608,7 +624,7 @@ window.sheetLayout = {
    "name": "sidebar-row-expanded",
    "component": "sidebar",
    "x": 352,
-   "y": 4184,
+   "y": 4496,
    "w": 320,
    "h": 80
   },
@@ -616,7 +632,7 @@ window.sheetLayout = {
    "name": "sidebar-row-expander-hover",
    "component": "sidebar",
    "x": 16,
-   "y": 4280,
+   "y": 4592,
    "w": 320,
    "h": 80
   },
@@ -624,7 +640,7 @@ window.sheetLayout = {
    "name": "sidebar-row-drop",
    "component": "sidebar",
    "x": 352,
-   "y": 4280,
+   "y": 4592,
    "w": 320,
    "h": 80
   },
@@ -632,7 +648,7 @@ window.sheetLayout = {
    "name": "property-row",
    "component": "property-row",
    "x": 16,
-   "y": 4392,
+   "y": 4704,
    "w": 320,
    "h": 68
   },
@@ -640,7 +656,7 @@ window.sheetLayout = {
    "name": "section",
    "component": "section",
    "x": 16,
-   "y": 4496,
+   "y": 4808,
    "w": 320,
    "h": 92
   },
@@ -648,7 +664,7 @@ window.sheetLayout = {
    "name": "section-expanded",
    "component": "section",
    "x": 352,
-   "y": 4496,
+   "y": 4808,
    "w": 320,
    "h": 92
   },
@@ -656,7 +672,7 @@ window.sheetLayout = {
    "name": "section-hover",
    "component": "section",
    "x": 16,
-   "y": 4608,
+   "y": 4920,
    "w": 320,
    "h": 92
   },
@@ -664,7 +680,7 @@ window.sheetLayout = {
    "name": "tooltip",
    "component": "tooltip",
    "x": 16,
-   "y": 4736,
+   "y": 5048,
    "w": 240,
    "h": 80
   },
@@ -672,7 +688,7 @@ window.sheetLayout = {
    "name": "tooltip-pop-mid",
    "component": "tooltip",
    "x": 272,
-   "y": 4736,
+   "y": 5048,
    "w": 240,
    "h": 80
   },
@@ -680,7 +696,7 @@ window.sheetLayout = {
    "name": "context-menu",
    "component": "context-menu",
    "x": 16,
-   "y": 4848,
+   "y": 5160,
    "w": 320,
    "h": 190
   },
@@ -688,7 +704,7 @@ window.sheetLayout = {
    "name": "modal",
    "component": "modal",
    "x": 16,
-   "y": 5072,
+   "y": 5384,
    "w": 560,
    "h": 360
   }

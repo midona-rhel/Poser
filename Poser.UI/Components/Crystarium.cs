@@ -30,14 +30,30 @@ public static partial class Crystarium
     public static UiNode Stack(UiStyle sx = default, UiChildren children = default, UiKey key = default) =>
         Box(UiFlow.Stack, in sx, children, key);
 
-    /// <summary>A text run at its intrinsic size. Unset size and color
-    /// resolve from the active theme inside the renderer.</summary>
-    public static UiNode Text(string text, float? size = null, Vector4? color = null, UiKey key = default)
+    /// <summary>A text run. Unset size and color resolve from the active theme
+    /// inside the renderer. A run left at its Content width is never cut; one
+    /// SIZED by <paramref name="sx"/> — Fixed here, or Fill against its
+    /// siblings — truncates to the box it was arranged, exactly like the CSS
+    /// <c>overflow: hidden</c> label it stands for.</summary>
+    public static UiNode Text(
+        string text, float? size = null, Vector4? color = null,
+        UiStyle sx = default, UiKey key = default) =>
+        TextCore(text, size, color, in sx, key, previewOnClip: false);
+
+    /// <summary>As above, with the truncation readout a control's own label
+    /// wants: a cut run offers its full text while the CONTROL is hovered.
+    /// Internal because it is only ever right for a label a control owns —
+    /// composed body text answers to its own layout, not to a hit box.</summary>
+    internal static UiNode TextCore(
+        string text, float? size, Vector4? color, in UiStyle sx, UiKey key,
+        bool previewOnClip)
     {
         ElementRecord record = default;
         record.Kind = ElementKind.Text;
         record.Text = text;
         record.TextSize = size ?? 0f;
+        record.Style = sx;
+        record.TextPreviewOnClip = previewOnClip;
         Tint(ref record, color);
         record.Key = key;
         return FrameArena.Require().AddElement(record);
@@ -47,12 +63,29 @@ public static partial class Crystarium
     /// the registry NAME, which is a compile-time literal, so declaring an
     /// icon costs no allocation.</summary>
     public static UiNode Svg(
-        Poser.UI.TablerIcon icon, float size = 16f, Vector4? color = null, UiKey key = default)
+        Poser.UI.TablerIcon icon, float size = 16f, Vector4? color = null, UiKey key = default) =>
+        SvgCore(Poser.UI.Tabler.NameFor(icon), size, color, true, 1f, key);
+
+    /// <summary>
+    /// Registry-NAME form, for the glyphs the enum does not carry, plus the two
+    /// knobs a control-owned glyph needs: its own opacity, and whether
+    /// currentColor reaches it at all. A glyph that opts OUT takes the icon
+    /// renderer's default tint, which is what a control wants when its
+    /// foreground is a compensated LABEL color the glyph must not borrow.
+    /// </summary>
+    internal static UiNode Svg(
+        string name, float size, bool inheritsColor, float opacity, UiKey key = default) =>
+        SvgCore(name, size, null, inheritsColor, opacity, key);
+
+    private static UiNode SvgCore(
+        string name, float size, Vector4? color, bool inheritsColor, float opacity, UiKey key)
     {
         ElementRecord record = default;
         record.Kind = ElementKind.Svg;
-        record.Text = Poser.UI.Tabler.NameFor(icon);
+        record.Text = name;
         record.TextSize = size;
+        record.SvgInheritsColor = inheritsColor;
+        record.SvgOpacity = opacity;
         Tint(ref record, color);
         record.Key = key;
         return FrameArena.Require().AddElement(record);

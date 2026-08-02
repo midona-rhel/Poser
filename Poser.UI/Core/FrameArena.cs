@@ -11,6 +11,28 @@ internal enum ElementKind : byte
     Text,
     Svg,
     Interactive,
+    // APPEND ONLY: the interaction path hash mixes this byte, so moving an
+    // existing kind would re-identify every element already declared under it.
+    Portal,
+}
+
+/// <summary>
+/// Which input edge dispatches an interactive element, and whether
+/// <see cref="ElementRecord.Arg"/> rides along with it. One byte rather than
+/// two fields because the edge and the payload are one authored decision: a
+/// control that fires on the raw press is a menu, and a menu says WHICH row.
+/// </summary>
+internal static class DispatchMode
+{
+    /// <summary>Click-release or Enter, no payload — the button edge.</summary>
+    internal const byte Activated = 0;
+
+    /// <summary>The raw press edge, no payload — what a menu trigger opens on.</summary>
+    internal const byte Clicked = 1;
+
+    /// <summary>The raw press edge carrying <see cref="ElementRecord.Arg"/> to
+    /// an <see cref="Action{T}"/> handler or a valued reducer.</summary>
+    internal const byte ClickedWithArg = 2;
 }
 
 /// <summary>
@@ -47,6 +69,35 @@ internal struct ElementRecord
     // pushes the clip once around the whole child traversal.
     internal bool ClipChildren;
     internal string? Help;
+    // The dispatch payload: whatever small int the element stands for — a row
+    // index on a menu row, a flag on a portal. See DispatchMode.
+    internal int Arg;
+    internal byte DispatchMode;
+    // Menu wiring. A trigger names the portal it opens (0 = none); a portal
+    // names the element it hangs under, which is also its PARENT, because the
+    // popup handle and the anchor rect are both read off that one path.
+    internal int OpensPortalNode;
+    internal int AnchorNode;
+    // Closing is the ELEMENT's business, not the handler's: the legacy menu
+    // closes on every click, including the one that changes nothing.
+    internal bool ClosesPortal;
+    // Portal box, all logical. A zero width means "as wide as the anchor" —
+    // a Fill-sized trigger has no span until the solver grants it.
+    internal Vector2 PortalContentSize;
+    internal float PortalPadding;
+    internal float PortalAnchorCompensation;
+    // The scroll viewport's logical height, 0 for a surface whose children do
+    // not scroll. Only the height is authored: the viewport's width is the
+    // surface's content region, which the popup window itself reports.
+    internal float ScrollRegionHeight;
+    // Svg: 0 reads as 1. A control-owned glyph opts OUT of currentColor when
+    // its tint must come from the icon renderer's own default instead.
+    internal float SvgOpacity;
+    internal bool SvgInheritsColor;
+    // Text: a run whose box was SIZED (Fixed or Fill) truncates to it, exactly
+    // like the CSS box it stands for; an intrinsic run is never cut. When set,
+    // a truncated run offers the full text as a hover readout.
+    internal bool TextPreviewOnClip;
     // Filled by the layout pass in wave B.
     internal Vector2 LogicalSize;
     internal Vector2 LogicalPos;

@@ -29,19 +29,35 @@ internal static class InteractionAdapter
     /// Routes one activation. A plain <see cref="Action"/> runs inline; a
     /// component event is a (scope, reducer-slot) pair, so the reducer is
     /// looked up by slot and queued against its owning scope — the result
-    /// lands in PendingState and the NEXT build observes it.
+    /// lands in PendingState and the NEXT build observes it. Whether the
+    /// handler takes the element's <see cref="ElementRecord.Arg"/> is the
+    /// DECLARATION's business, not a runtime type test: a menu row states one
+    /// dispatch mode and both handler shapes follow from it.
     /// </summary>
     internal static void Dispatch(UiRoot root, in ElementRecord record)
     {
+        bool valued = record.DispatchMode == Reactive.DispatchMode.ClickedWithArg;
         if (record.EventReducer != 0)
         {
             ScopeTable.Scope? scope = root.Scopes.Find(record.EventScope);
-            if (scope is not null && root.Arena.GetObject(record.EventReducer) is Delegate reducer)
+            if (scope is null || root.Arena.GetObject(record.EventReducer) is not Delegate reducer)
+                return;
+            if (valued)
+                EventDispatch.Enqueue(root.Scopes, scope, reducer, record.Arg);
+            else
                 EventDispatch.Enqueue(root.Scopes, scope, reducer);
             return;
         }
 
-        if (root.Arena.GetObject(record.BehaviorSlot) is Action action)
+        object? behavior = root.Arena.GetObject(record.BehaviorSlot);
+        if (valued)
+        {
+            if (behavior is Action<int> valuedHandler)
+                valuedHandler(record.Arg);
+            return;
+        }
+
+        if (behavior is Action action)
             action();
     }
 }
