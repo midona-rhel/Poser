@@ -326,7 +326,8 @@ internal sealed class PickerCell<T>
             padding: 0f,
             anchorCompensation: 0f,
             scrollRegionHeight: bodyHeight,
-            capChildHitWidth: false,
+            // Rows paint under the gutter; their hit targets must not.
+            capChildHitWidth: true,
             surface: null,
             // The shared glass shell IS .panel — the --glass-* border trio,
             // --radius-lg and --shadow-panel — so the host draws it.
@@ -385,15 +386,15 @@ internal sealed class PickerCell<T>
         return Crystarium.InteractiveCore(
             Sx.Row(
                 gap: theme.Spacing.Three,
-                padding: new EdgeInsets(
-                    Crystarium.PickerRowPadding, 0f,
-                    Crystarium.PickerRowPadding, 0f),
-                // The GUTTER IS the padding: the pill runs from the gutter
-                // base to the gutter boundary - the reserved bar space is the
-                // right inset, so nothing is added on that side.
+                // The GUTTER IS the padding — the accepted dropdown asymmetry:
+                // the pill PAINTS across the gutter to the panel edge (the bar
+                // overlays it when scrolling, no dead strip beside the thumb),
+                // while the LABEL pads out of the gutter and the hit target is
+                // capped clear of the bar by the portal.
+                padding: new EdgeInsets(0f, 0f, theme.Scrollbar.GutterWidth, 0f),
                 margin: new EdgeInsets(theme.Scrollbar.GutterWidth, 0f, 0f, 0f),
                 align: UiAlign.Center,
-                width: UiDim.Fixed(width - theme.Scrollbar.GutterWidth),
+                width: UiDim.Fixed(width),
                 height: UiDim.Fixed(Crystarium.PickerRowHeight)),
             [
                 check,
@@ -435,10 +436,11 @@ internal sealed class PickerCell<T>
                 // where the labels above it start (slot + gap past the pill
                 // edge at the gutter base).
                 padding: new EdgeInsets(
-                    Crystarium.PickerCheckSlot + theme.Spacing.Three, 0f, 0f, 0f),
+                    Crystarium.PickerCheckSlot + theme.Spacing.Three, 0f,
+                    theme.Scrollbar.GutterWidth, 0f),
                 margin: new EdgeInsets(theme.Scrollbar.GutterWidth, 0f, 0f, 0f),
                 align: UiAlign.Center,
-                width: UiDim.Fixed(width - theme.Scrollbar.GutterWidth),
+                width: UiDim.Fixed(width),
                 height: UiDim.Fixed(Crystarium.PickerRowHeight)),
             Crystarium.Text(
                 text, theme.Typography.CaptionSize, theme.FormHint,

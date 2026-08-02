@@ -66,10 +66,21 @@ returning declarations. A stateless component is a static function; it has no
 class or retained instance. A stateful class component has one retained
 instance and one typed state object inside its keyed component scope.
 
-**Frame element.** A compact tagged declaration in a per-frame arena: Box,
-Text, SVG/Image, Interactive, Native or Canvas. It may reference a style,
-behavior, content and a child range. Handles are discarded together after
-the frame. These are not allocated polymorphic element objects.
+**Frame element.** REVISED 2026-08-02 (user decision, supersedes the tagged
+Box/Text/SVG/Interactive/Native taxonomy): there is ONE element. Every
+per-frame arena record carries the same optional facets — a stylesheet
+reference plus inline patch, a child range, a typed listener set, leaf
+content (text run or glyph), an optional floating surface, an optional
+native island, a key. Interactivity is not a species: the PRESENCE of
+listeners (or help) is what reserves a hit rect. Layout, iteration, state
+resolution, painting, motion ramps, help and dispatch are implemented once
+on this base; a control never reimplements any of them. Handles are
+discarded together after the frame; records are pooled, never allocated
+polymorphic objects. The container/interactable split was measured to be
+wrong: every phase-1..3A wave paid a retrofit at that boundary (interactive
+children, box painters, dispatch-mode bytes, painter-adapter classes that
+decode untyped Arg conventions back into meaning), and the split is
+deleted rather than patched further.
 
 **Component scope.** A small retained record identified by root, parent
 scope, component type and explicit key. It owns a stateful component instance,
@@ -132,120 +143,73 @@ adapters.
 
 ## Authoring shape
 
-The exact names may adjust during the first proof, but the resulting product
-code must remain this direct:
+REVISED 2026-08-02 (user decision, supersedes the factory-method vocabulary):
+a control IS its props. Every control is a readonly record struct whose
+init-properties are its complete spec — `required` on what is mandatory,
+everything else optional and falling through to its stylesheet — with ONE
+implicit conversion to `UiNode` that writes the arena record. No factory
+methods, no positional-argument forms, no Action/UiEvent overload pairs.
 
 ```csharp
-private static readonly UiStyle Root = Sx.Column(gap: 12, padding: 12);
-private static readonly UiStyle Actions = Sx.Row(gap: 8, justify: End);
-
-protected override UiNode Render(in Props props, in State state) =>
-    Crystarium.Column(
-        sx: Root,
-        children:
-        [
-            Crystarium.Row(
-                sx: Actions,
-                children:
-                [
-                    Crystarium.Button("Open in Glamourer", props.Open),
-                    Crystarium.Button("Reset", props.Reset),
-                ]),
-            Crystarium.Section(
-                key: "presentation",
-                title: "Presentation",
-                expanded: state.Expanded,
-                onExpandedChange: UpdateState(
-                    static (state, value) => state with
-                    {
-                        Expanded = value,
-                    }),
-                children: [/* ordinary rows */]),
-        ]);
+new Button
+{
+    Label = "Hello World",
+    Style = ButtonStyle.Danger,              // named preset -> theme sheet
+    StyleSheet = new() { Width = 20, Height = 20, Opacity = 0.5f },
+    OnClick = _onClickHandler,               // one UiHandler type, both worlds
+}
 ```
 
-`Crystarium` is the declarative host/component vocabulary. A render context
-provides typed framework context and refs; it is not a god-object factory for
-every control. Collection expressions are backed by pooled frame storage so
-the pleasant syntax does not require per-frame object graphs.
+Prop-bags compose directly in children (the implicit conversion feeds the
+collection builder), and a control's whole "implementation" is its
+conversion operator mapping props onto the one Element. Target: every
+control at most HALF its pre-revision size; a control that needs a
+painter-adapter class decoding untyped conventions (the SectionHeaderPainter
+shape: `input.Arg != 0` meaning "expanded") is the named anti-pattern this
+revision deletes.
 
-Handlers stored in props are stable commands/delegates created outside
-`Render`. Stateful components use `UpdateState(static (state, value) => ...)`,
-which creates a small event token bound to the current scope; the static
-reducer is compiler-cached and allocates no closure. Event tokens and handler
-references live in the frame arena. Capturing lambdas created inside `Render`
-are forbidden and detected in developer diagnostics. Ordinary event props
-remain concise (`onClick`, `onFocus`, `onBlur`, `onPointerEnter`, and so on),
-and `help:` is a first-class behavior prop routed to HoverHelp.
+Handlers stored in props are stable delegates created outside `Render`
+(instance method groups allocate per frame in C# — hoist to fields).
+`UiHandler` / `UiHandler<T>` wrap plain delegates and component
+`UpdateState` tokens through implicit conversions; dispatch is typed and
+implemented once on the base. Capturing lambdas created inside `Render`
+remain forbidden and detected in developer diagnostics. `Help` is a
+first-class prop on every element.
 
 ## Styling model
 
-Styling is one immutable typed value composed from contained concerns:
+REVISED 2026-08-02 (user decision, supersedes the Sx patch vocabulary and
+typed-slot styling): styling is ONE typed stylesheet record, `ElementSheet`.
+Every visual and layout property an element can carry, every one optional —
+a null field is NOT part of the spec, and resolution falls through
+inline patch → active state sub-sheet → family sheet → inherited context →
+renderer default. State looks are NESTED SUB-SHEETS (`Hover`, `Active`,
+`Disabled`, `Selected`): sparse patches over the base, so "disabled
+styling" is data the base resolves, never painter arithmetic in a control.
+The theme declares one sheet per control family (`Theme.Styles.Button`,
+`.ButtonDanger`, `.Row`, `.SectionHeader`, …); variants are sheets, built
+with `with`-expressions at theme construction — the ButtonVariant enum and
+per-painter palette switches die.
 
-```text
-Style/
-  UiStyle.cs          aggregate, `Sx.Extend`, merge and shared values
-  LayoutStyle.cs      row/column/stack, gap, margin and padding
-  SizeStyle.cs        content/fill/fixed, min/max and aspect
-  AlignmentStyle.cs  align, justify and self alignment
-  OverflowStyle.cs   visible, clip and scroll when introduced
-  BoxStyle.cs         fill, border, radius and outline
-  TypographyStyle.cs family, size, weight, line-height and foreground
-  PaintStyle.cs       shadow, icon tint and explicit alpha multiplier
-  MotionStyle.cs      paint transitions, duration and easing
-  StyleResolver.cs    sparse patches to concrete metric/paint styles
-```
+Sheets are immutable records allocated once when the theme is built; the
+runtime never merges them. The walk flattens the chain into a small
+resolved struct once per element per frame — allocation-free — and that
+resolved value drives box paint, label paint, glyph tint, motion ramps and
+child inheritance uniformly.
 
-The split is conceptual ownership, not license to create universal CSS.
-Fields are added only for accepted controls or named product consumers. No
-file split exists merely to satisfy a line count.
-
-Styles compose by value through `Sx.Extend(baseStyle, patch)`, never C# class
-inheritance or selector specificity. Resolution is finite:
-
-```text
-inherited framework context and theme tokens
-→ component recipe
-→ typed variant
-→ instance `sx`
-→ component-owned pseudo-state paint patch
-```
-
-Typography and foreground inherit. Box, spacing, size and overflow do not.
-Generic subtree/group opacity and generic blur are excluded: accepted
-disabled compensation stays in `ControlPaint`, and backdrop blur stays with
-GlassChrome/FloatingSurface until a real compositing backend exists.
-
-Pseudo states are paint-only. They may change fill, border color, foreground,
-icon tint, shadow, cursor and opacity treatment; they may not change font
-metrics, border thickness, padding, gap, alignment or size. State precedence
-is explicit per recipe; accepted exceptions such as sidebar selection over
-hover remain deliberate.
-
-Complex controls expose typed slots rather than selectors or strings:
-
-```text
-Button:     Root, StartIcon, Label, EndIcon
-Dropdown:   Root, Value, Chevron, Popup, Item
-TextInput:  Root, LeadingIcon, Input, ClearAction
-SidebarRow: Root, Expander, Icon, Label, Actions, Badge
-```
-
-Each component accepts a root `sx`, a typed variant and typed slot styles.
-Theme recipes adapt the accepted `Theme` values first; Theme is not rewritten
-wholesale during foundation work.
-
-`UiStyle`/`StylePatch` are immutable value/arena data. Inline expressions such
-as `sx: Sx.Row(gap: 4)` are allocation-free and supported; authors hoist shared
-styles for reuse and clarity, not because the runtime requires it. Padding and
-margin accept uniform, axis and per-side forms. SVG foreground defaults to the
-inherited text foreground (`currentColor` semantics), so text and icons share
-the same color path.
-
-Motion is opt-in per paint property rather than blanket per component. For
-example, accepted Button hover transitions Background for 150 ms while border
-and text change immediately. The new motion description delegates to the
-accepted keyed Motion store and must preserve the existing midpoint fixtures.
+Rules that survive from the original model, unchanged in intent: fields are
+added only for accepted controls or named product consumers; pseudo states
+are paint-only (they may not change font metrics, border thickness,
+padding, gap, alignment or size); state precedence is Disabled > Active >
+Hover > Selected with named accepted exceptions (sidebar selection over
+hover); typography and foreground inherit, box/spacing/size do not; glyph
+tint defaults to the inherited foreground (currentColor); motion is opt-in
+per paint property via the sheet's `Transition`, delegating to the accepted
+keyed Motion store and preserving the existing midpoint fixtures; the
+accepted disabled recipes are expressed as sheet data (`GroupOpacity` for
+the compensated group fade, `Opacity` for flat fades) and implemented once
+by the base painter. Theme tokens are not rewritten wholesale — sheets
+adapt the accepted `Theme` values.
 
 ## Layout and flow
 
