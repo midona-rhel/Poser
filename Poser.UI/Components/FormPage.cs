@@ -118,6 +118,20 @@ public static partial class Crystarium
             help,
             key);
 
+    public static UiNode FormCheckbox(
+        string label, bool value, UiHandler<bool> onChange, string? help = null,
+        bool disabled = false, UiKey key = default) =>
+        FormRow(
+            label,
+            new Checkbox
+            {
+                Value = value,
+                OnToggle = onChange,
+                Disabled = disabled,
+            },
+            help,
+            key);
+
     public static UiNode FormActions(
         string label, UiChildren buttons, string? help = null, UiKey key = default) =>
         FormRow(

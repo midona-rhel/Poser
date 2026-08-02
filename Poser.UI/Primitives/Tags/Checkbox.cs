@@ -23,25 +23,43 @@ public static partial class LegacyCrystarium
         bool disabled = false,
         string? help = null)
     {
-        float scale = ImGuiHelpers.GlobalScale;
         var measured = MeasureCheckbox(style);
-        float side = measured.Y;
         var hit = Interactive.Reserve(id, measured, disabled);
-        var boxMax = hit.ScreenMin + new Vector2(side);
         if (hit.Clicked)
         {
             value = !value;
             onChange(value);
         }
 
+        PaintCheckboxBox(
+            ImGui.GetWindowDrawList(), hit.ScreenMin, measured.Y, value,
+            disabled);
+
+        if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
+                hit, hit.Disabled, hit.ScreenMin, hit.ScreenMax))
+            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
+        return hit.Clicked;
+    }
+
+    /// <summary>
+    /// The box's PAINT alone — the fill, the unchecked inset ring, the
+    /// Tabler check polyline, the disabled fade — so the retained twin
+    /// drives the same pixels. <paramref name="side"/> is the resolved
+    /// PHYSICAL side, the leading square of whatever was reserved.
+    /// </summary>
+    internal static void PaintCheckboxBox(
+        ImDrawListPtr draw, Vector2 boxMin, float side, bool value,
+        bool disabled)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        var boxMax = boxMin + new Vector2(side);
         float opacity = disabled ? ActiveTheme.Chrome.DisabledOpacity : 1f;
         var background = (value
             ? ActiveTheme.Chrome.Primary
             : ActiveTheme.Chrome.InputWell).Fade(opacity);
-        var draw = ImGui.GetWindowDrawList();
         float radius = ActiveTheme.Radii.Medium * scale;
         draw.AddRectFilled(
-            hit.ScreenMin,
+            boxMin,
             boxMax,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(background)),
             radius);
@@ -51,7 +69,7 @@ public static partial class LegacyCrystarium
             var border = ActiveTheme.Glass.BorderBottom.Fade(opacity);
             float inset = 0.5f * scale;
             draw.AddRect(
-                hit.ScreenMin + new Vector2(inset),
+                boxMin + new Vector2(inset),
                 boxMax - new Vector2(inset),
                 ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(border)),
                 MathF.Max(0f, radius - inset),
@@ -63,8 +81,7 @@ public static partial class LegacyCrystarium
             var check = ActiveTheme.Chrome.Checkmark.Fade(opacity);
             float iconSpan = side * (10f / 14f);
             float unit = iconSpan / 24f;
-            var origin = hit.ScreenMin +
-                new Vector2((side - iconSpan) * 0.5f);
+            var origin = boxMin + new Vector2((side - iconSpan) * 0.5f);
             draw.PathLineTo(origin + new Vector2(5f, 12f) * unit);
             draw.PathLineTo(origin + new Vector2(10f, 17f) * unit);
             draw.PathLineTo(origin + new Vector2(20f, 7f) * unit);
@@ -73,10 +90,5 @@ public static partial class LegacyCrystarium
                 ImDrawFlags.None,
                 2f * unit);
         }
-
-        if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
-                hit, hit.Disabled, hit.ScreenMin, hit.ScreenMax))
-            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
-        return hit.Clicked;
     }
 }

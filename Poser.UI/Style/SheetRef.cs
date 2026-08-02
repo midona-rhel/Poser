@@ -38,6 +38,7 @@ public enum SheetFamily : short
     Slider,
     ProgressTrack,
     ColorWell,
+    Checkbox,
 
     // Page structure.
     PageOuter,

@@ -199,6 +199,14 @@ internal static class ThemeStyles
                 Height = UiDim.Fixed(controls.ColorWellSize),
             },
         };
+        sheets[(int)SheetFamily.Checkbox] = new()
+        {
+            Layout = new()
+            {
+                Width = UiDim.Fixed(controls.CheckboxSize),
+                Height = UiDim.Fixed(controls.CheckboxSize),
+            },
+        };
 
         // ---- page structure -------------------------------------------------
         // The page's own boxes. Each is a sheet rather than an argument list

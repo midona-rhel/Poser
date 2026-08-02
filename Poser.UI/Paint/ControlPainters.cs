@@ -212,6 +212,28 @@ internal sealed class SwatchPainter : IPainter
     }
 }
 
+/// <summary>The form checkbox's box — the one Tags seam, driven by the
+/// element's Selected exactly as the switch drives its knob.</summary>
+internal sealed class FormCheckboxPainter : IPainter
+{
+    internal static readonly FormCheckboxPainter Instance = new();
+
+    private FormCheckboxPainter()
+    {
+    }
+
+    public PaintResult Paint(in PaintContext context)
+    {
+        Poser.UI.LegacyCrystarium.PaintCheckboxBox(
+            context.DrawList,
+            context.Min,
+            context.Size.Y,
+            context.Record.Selected,
+            context.Record.Disabled);
+        return default;
+    }
+}
+
 /// <summary>
 /// The bar's 1px edge rule, painted on the BORDER box so it reaches the
 /// window edges the bar spans — and steals no height from the content row,
