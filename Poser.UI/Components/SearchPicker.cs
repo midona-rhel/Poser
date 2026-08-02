@@ -388,12 +388,12 @@ internal sealed class PickerCell<T>
                 padding: new EdgeInsets(
                     Crystarium.PickerRowPadding, 0f,
                     Crystarium.PickerRowPadding, 0f),
-                margin: new EdgeInsets(
-                    theme.Scrollbar.GutterWidth - Crystarium.PickerRowPadding, 0f,
-                    theme.Scrollbar.GutterWidth - Crystarium.PickerRowPadding, 0f),
+                // The GUTTER IS the padding: the pill runs from the gutter
+                // base to the gutter boundary - the reserved bar space is the
+                // right inset, so nothing is added on that side.
+                margin: new EdgeInsets(theme.Scrollbar.GutterWidth, 0f, 0f, 0f),
                 align: UiAlign.Center,
-                width: UiDim.Fixed(
-                    width - (theme.Scrollbar.GutterWidth - Crystarium.PickerRowPadding) * 2f),
+                width: UiDim.Fixed(width - theme.Scrollbar.GutterWidth),
                 height: UiDim.Fixed(Crystarium.PickerRowHeight)),
             [
                 check,
@@ -436,11 +436,9 @@ internal sealed class PickerCell<T>
                 // edge at the gutter base).
                 padding: new EdgeInsets(
                     Crystarium.PickerCheckSlot + theme.Spacing.Three, 0f, 0f, 0f),
-                margin: new EdgeInsets(
-                    theme.Scrollbar.GutterWidth, 0f,
-                    theme.Scrollbar.GutterWidth, 0f),
+                margin: new EdgeInsets(theme.Scrollbar.GutterWidth, 0f, 0f, 0f),
                 align: UiAlign.Center,
-                width: UiDim.Fixed(width - theme.Scrollbar.GutterWidth * 2f),
+                width: UiDim.Fixed(width - theme.Scrollbar.GutterWidth),
                 height: UiDim.Fixed(Crystarium.PickerRowHeight)),
             Crystarium.Text(
                 text, theme.Typography.CaptionSize, theme.FormHint,
