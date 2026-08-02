@@ -81,7 +81,12 @@ public readonly record struct Theme
         Spacing = new() { One = 2f, Two = 4f, Three = 6f, Four = 8f, Six = 12f, Eight = 16f },
         Controls = new()
         {
-            FormRowHeight = 30f,
+            // USER 2026-08-02: 30 → 34. Stacked full-height controls (the
+            // 30px segmented pill) proved the transcribed 30px band leaves
+            // property rows no separation; the pitch is a deliberate
+            // deviation from Picto's rhythm, moved HERE so the legacy page
+            // and the reactive sheet stay one number.
+            FormRowHeight = 34f,
             WorkspaceHeight = 26f,
             ComfortableHeight = 32f,
             NavigationHeight = 30f,

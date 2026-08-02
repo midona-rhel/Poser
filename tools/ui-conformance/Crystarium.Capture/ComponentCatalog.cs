@@ -171,7 +171,7 @@ internal static class ComponentCatalog
         // PBI-015 phase 3B: the Settings chassis and its two new controls,
         // renderable where pixels can be measured instead of reported.
         new("rsettings-frame", 770, 570),
-        new("rsegmented", 420, 60),
+        new("rsegmented", 420, 90),
         new("rswatches", 340, 60),
         new("tooltip", 240, 80),
         new("tooltip-pop-mid", 240, 80),
@@ -451,13 +451,23 @@ internal static class ComponentCatalog
     private static readonly string[] SegmentedFixtureItems =
         ["Left", "Right", "Floating", "Hidden"];
 
+    /// <summary>TWO stacked segmented rows — the exact shape that proved the
+    /// 30px band left full-height controls no separation (user 2026-08-02),
+    /// so the row pitch stays inspectable where it regressed.</summary>
     private static readonly Func<UiNode> SegmentedTree = static () =>
-        new Segmented
+        new Column
         {
-            Items = SegmentedFixtureItems,
-            Selected = 1,
-            OnChange = FormNoOpInt,
-            Width = 380f,
+            Style = new()
+            {
+                Layout = new() { Width = UiDim.Fixed(400f) },
+            },
+            Children =
+            [
+                Poser.UI.Crystarium.FormSegmented(
+                    "Entity sidebar", SegmentedFixtureItems, 0, FormNoOpInt, 270f),
+                Poser.UI.Crystarium.FormSegmented(
+                    "Inspector", SegmentedFixtureItems, 1, FormNoOpInt, 270f),
+            ],
         };
 
     private static readonly Vector4[] SwatchFixtureColors =
