@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -57,59 +57,5 @@ internal sealed class NumericWellIsland : INativeElement
                 Width = UiWidth.Fixed((max.X - min.X) / scale),
             },
             _disabled);
-    }
-}
-
-/// <summary>
-/// A picker-trigger bridge, retained by the caller. The legacy picker's
-/// <c>Open</c> captures its anchor from the JUST-RESERVED item — a contract
-/// the retained path cannot honour, because dispatch runs after the walk when
-/// the last item is the root's own reservation. The trigger therefore stays
-/// the imperative button inside the tree's box until the picker itself
-/// migrates, and dies with it.
-/// </summary>
-public sealed class PickerTriggerState
-{
-    internal readonly PickerTriggerIsland Island = new();
-}
-
-internal sealed class PickerTriggerIsland : INativeElement
-{
-    private string _value = string.Empty;
-    private Action? _onOpen;
-    private bool _disabled;
-    private string? _help;
-
-    internal void Bind(string value, Action onOpen, bool disabled, string? help)
-    {
-        _value = value;
-        _onOpen = onOpen;
-        _disabled = disabled;
-        _help = help;
-    }
-
-    public void Draw(string id, Vector2 min, Vector2 max)
-    {
-        float scale = ImGuiHelpers.GlobalScale;
-        float width = (max.X - min.X) / scale;
-        // The imperative picker row's own recipe: the caption cut to the
-        // trigger's padded box before the button renders it.
-        string caption = LegacyCrystarium.TruncateText(
-            _value,
-            new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize },
-            MathF.Max(
-                1f,
-                (max.X - min.X)
-                    - Crystarium.ActiveTheme.Spacing.Six * 2f * scale));
-        LegacyCrystarium.Button(
-            caption,
-            _onOpen,
-            style: ControlStyle.Workspace with
-            {
-                Width = UiWidth.Fixed(width),
-            },
-            disabled: _disabled,
-            help: _help,
-            id: id);
     }
 }

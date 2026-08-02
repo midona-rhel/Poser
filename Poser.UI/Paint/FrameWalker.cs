@@ -315,7 +315,7 @@ internal sealed class FrameWalker
         Label(
             in record, foreground, hash, origin, scale, min, max, ownHover,
             hoverMin, hoverMax);
-        Glyph(in record, foreground, min, max, glyphOpacity);
+        Glyph(in record, foreground, min, max, glyphOpacity, scale, draw);
 
         if (record.ChildCount > 0)
         {
@@ -514,10 +514,23 @@ internal sealed class FrameWalker
         }
     }
 
+    /// <summary>
+    /// The element's own MARK. A stated texture wins over a stated glyph: an
+    /// image is the concrete thing a row is about, and the glyph beside it is
+    /// the fallback for the rows whose image never resolved — so both may be
+    /// declared and exactly one paints.
+    /// </summary>
     private static void Glyph(
         in ElementRecord record, Vector4? foreground,
-        Vector2 min, Vector2 max, float opacity)
+        Vector2 min, Vector2 max, float opacity, float scale,
+        ImDrawListPtr draw)
     {
+        if (record.Texture != 0)
+        {
+            Texture(in record, min, max, opacity, scale, draw);
+            return;
+        }
+
         if (record.Glyph is not { } glyph)
             return;
         Poser.UI.LegacyCrystarium.IconIn(
@@ -527,6 +540,42 @@ internal sealed class FrameWalker
             record.GlyphNoInherit ? null : foreground,
             opacity: opacity,
             strokeWidth: record.GlyphStroke > 0f ? record.GlyphStroke : null);
+    }
+
+    /// <summary>
+    /// A host image on a logical square, centred on the PADDED content box and
+    /// snapped whole-pixel exactly as the glyph path centres its own square.
+    /// The tint is white at the inherited glyph opacity and nothing else: an
+    /// image carries its own colour, so currentColor would recolour the game's
+    /// art.
+    /// </summary>
+    private static void Texture(
+        in ElementRecord record, Vector2 min, Vector2 max, float opacity,
+        float scale, ImDrawListPtr draw)
+    {
+        ref readonly Poser.UI.ResolvedLayout layout = ref record.Layout;
+        Vector2 contentMin = min + new Vector2(
+            layout.Padding.Left, layout.Padding.Top) * scale;
+        Vector2 contentMax = max - new Vector2(
+            layout.Padding.Right, layout.Padding.Bottom) * scale;
+        float stated = record.TextureSize > 0f
+            ? record.TextureSize
+            : Poser.UI.Crystarium.ActiveTheme.Controls.IconSize;
+        float side = MathF.Min(
+            stated * scale,
+            MathF.Min(contentMax.X - contentMin.X, contentMax.Y - contentMin.Y));
+        if (side <= 0f)
+            return;
+        Vector2 boxMin = Poser.UI.Crystarium.ActiveTheme.Optical.Snap(
+            (contentMin + contentMax) * 0.5f - new Vector2(side) * 0.5f);
+        draw.AddImage(
+            new ImTextureID(record.Texture),
+            boxMin,
+            boxMin + new Vector2(side),
+            Vector2.Zero,
+            Vector2.One,
+            ImGui.ColorConvertFloat4ToU32(
+                Poser.UI.ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, opacity))));
     }
 
     /// <summary>

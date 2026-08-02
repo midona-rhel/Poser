@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Globalization;
 using System.Numerics;
 
@@ -116,44 +116,6 @@ public static partial class Crystarium
                         Disabled = disabled,
                         StyleSheet = Element.Sized(UiDim.Fill, null),
                     },
-                ],
-            },
-            help,
-            key);
-    }
-
-    /// <summary>
-    /// The picker row with an ARBITRARY action cluster — the trigger fills
-    /// what the actions leave. The trigger is the retained bridge island the
-    /// caller holds until the legacy picker itself migrates.
-    /// </summary>
-    public static UiNode FormPickerActions(
-        string label, string value, Action onOpen, PickerTriggerState trigger,
-        UiChildren actions = default, string? help = null,
-        string? triggerHelp = null, bool disabled = false, UiKey key = default)
-    {
-        trigger.Island.Bind(value, onOpen, disabled, triggerHelp);
-        return FormRow(
-            label,
-            new Row
-            {
-                Sheet = SheetFamily.ActionGroupFill,
-                Children =
-                [
-                    new Element
-                    {
-                        Style = Element.Sized(
-                            UiDim.Fill,
-                            UiDim.Fixed(ActiveTheme.Controls.WorkspaceHeight)),
-                        Native = trigger.Island,
-                    },
-                    actions.Count == 0
-                        ? UiNode.None
-                        : new Row
-                        {
-                            Sheet = SheetFamily.ActionGroup,
-                            Children = actions,
-                        },
                 ],
             },
             help,

@@ -154,7 +154,6 @@ internal static class ServiceRegistration
         services.AddSingleton<PoseFileInspectorSection>();
         services.AddSingleton<PoseInspectorPane>();
         services.AddSingleton<PoseRailPane>();
-        services.AddSingleton<UI.Controls.AnimationPicker>();
         services.AddSingleton<AnimationPane>();
         services.AddSingleton<AppearancePane>();
         services.AddSingleton<GraphicalBonePane>();

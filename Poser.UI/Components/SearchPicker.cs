@@ -12,11 +12,17 @@ namespace Poser.UI;
 /// 40px <c>.header</c>, the 36px <c>.searchArea</c>/<c>.searchRow</c>, and the
 /// 28px <c>.checkRow</c> list.
 ///
-/// <para>Two variants share one component because they share everything except
-/// what a row's activation MEANS: single-select picks and closes, multi-select
-/// toggles and stays. Both are CONTROLLED, and the only state the component
-/// owns is the filter query — a draft nobody outside the open surface can act
-/// on.</para>
+/// <para>THERE IS ONE PICKER. Every variant — single-select, multi-select, the
+/// animation catalog — is this component told different props, because they
+/// share everything except what a row's activation MEANS: single-select picks
+/// and closes, multi-select toggles and stays. A surface that needs more (an
+/// icon column, a badge, head strips that narrow the search, its own query)
+/// states it as an OPTIONAL prop; a new picker is never the answer, and a
+/// caller that states none of them declares the tree this file always
+/// declared.</para>
+///
+/// <para>Both are CONTROLLED, and the only state the component owns is the
+/// filter query — a draft nobody outside the open surface can act on.</para>
 /// </summary>
 public static partial class Crystarium
 {
@@ -149,7 +155,8 @@ public static partial class Crystarium
         return PickerCell<T>.Node(in props, PickerKey(key, "multi-picker"));
     }
 
-    /// <summary>The bare surface, for the conformance fixtures.</summary>
+    /// <summary>The bare cell — the conformance fixtures' entry, and the one
+    /// every wrapper above mounts.</summary>
     internal static UiNode PickerSurface<T>(in PickerProps<T> props, UiKey key)
         where T : class =>
         PickerCell<T>.Node(in props, key);
@@ -160,8 +167,24 @@ public static partial class Crystarium
         key.Kind == UiKeyKind.None ? fallback : key;
 }
 
+/// <summary>
+/// One head strip: a segmented control the surface shows between its caption
+/// and its search field. ABSENCE is what turns the capability off — a null
+/// strip declares nothing and costs the surface no height — so a picker that
+/// never wanted one is the same tree it always was.
+/// </summary>
+public readonly record struct PickerSegment(
+    string[] Labels, int Selected, Action<int> OnChange);
+
 /// <summary>Everything the picker is TOLD. A record struct, so a frame's props
-/// travel by reference and cost nothing.</summary>
+/// travel by reference and cost nothing.
+///
+/// <para>Everything from <see cref="Query"/> down is an OPTIONAL capability,
+/// defaulted off: the icon slot, the badge, the head strips and the wide panel
+/// exist because the animation surface needs them, and a caller that states
+/// none of them declares the same tree the Appearance pickers always
+/// did.</para>
+/// </summary>
 internal readonly record struct PickerProps<T>(
     string TriggerLabel,
     string? Caption,
@@ -178,7 +201,24 @@ internal readonly record struct PickerProps<T>(
     bool Disabled,
     string? DisabledHelp,
     bool Multi,
-    UiDim TriggerWidth)
+    UiDim TriggerWidth,
+    // The caller's OWN filter, told the component's query. It replaces both
+    // Items and the built-in name contains, because a catalog whose search
+    // matches ids and narrows by kind cannot be expressed as a predicate over
+    // a label — and because a list the caller memoizes costs a closed surface
+    // nothing.
+    Func<string, IReadOnlyList<T>>? Query = null,
+    Func<T, nint>? ItemTexture = null,
+    Func<T, TablerIcon?>? ItemGlyph = null,
+    Func<T, string?>? ItemBadge = null,
+    // A row's identity in the CALLER's terms, so a list that reorders under a
+    // keystroke does not hand a row its neighbour's state. Absent, a row is
+    // keyed by position as it always was.
+    Func<T, long>? ItemContentKey = null,
+    PickerSegment? Segment = null,
+    PickerSegment? SecondSegment = null,
+    // Logical panel width; 0 takes the theme's picker width.
+    float Width = 0f)
     where T : class;
 
 /// <summary>
@@ -213,25 +253,37 @@ internal sealed class PickerCell<T>
     protected override UiNode Render(in PickerProps<T> props, in State state)
     {
         Theme theme = Crystarium.ActiveTheme;
-        float panelWidth = theme.Picker.Width;
+        float panelWidth = props.Width > 0f ? props.Width : theme.Picker.Width;
+        // The list the surface is SHOWING. A caller that owns its own filter
+        // is handed the query and answers with the whole visible list; every
+        // count below — the panel's height included — is that list's.
+        IReadOnlyList<T> items = props.Query is { } query
+            ? query(state.Query)
+            : props.Items;
         // A caption band is the MULTI variant's; the single-select surface is
         // search + list (user: the form row's own label already names the
         // pick), and the panel shrinks by the band it does not have.
         bool hasHeader = !string.IsNullOrEmpty(props.Caption);
         float headerHeight = hasHeader ? Crystarium.PickerHeaderHeight : 0f;
+        // A head strip is a segmented pill breathing the list's own vertical
+        // pad on each side, and a surface without one pays for nothing.
+        float stripHeight = theme.Controls.NavigationHeight
+            + Crystarium.PickerListVPad * 2f;
+        int strips = (props.Segment is null ? 0 : 1)
+            + (props.SecondSegment is null ? 0 : 1);
         // The panel is its OWN composition's height — chrome + padded rows —
         // not the legacy picker's ListRowHeight arithmetic, which undershot
         // and left the list permanently scrolled with the last pill riding
         // the viewport edge.
         int visibleRows = Math.Clamp(
-            props.Items.Count, theme.Picker.MinimumRows, theme.Picker.MaximumRows);
+            items.Count, theme.Picker.MinimumRows, theme.Picker.MaximumRows);
         float bodyHeight = Crystarium.PickerListVPad * 2f
             + visibleRows * Crystarium.PickerRowHeight;
-        float panelHeight =
-            headerHeight + Crystarium.PickerSearchHeight + bodyHeight;
+        float panelHeight = headerHeight + strips * stripHeight
+            + Crystarium.PickerSearchHeight + bodyHeight;
 
         _filter.Bind(this, Ambient!, state.Query, panelWidth);
-        _items.Bind(in props);
+        _items.Bind(in props, items);
 
         // ---- .header ------------------------------------------------------
         // USER RULE 2026-08-02 (supersedes OverlayShell's inline 10): every
@@ -286,26 +338,36 @@ internal sealed class PickerCell<T>
                     Crystarium.PickerSearchHeight)),
         };
 
+        // ---- head strips ----------------------------------------------------
+        // Pill-edge to window-edge is the BAR WIDTH on both sides: padding on
+        // the left, the bar itself on the right. A strip is inset by the same
+        // arithmetic as a row, so the pill and the rows under it share one x.
+        float pillInset = inset * Crystarium.PickerBarShare;
+        float rowWidth = MathF.Max(0f, panelWidth - pillInset * 2f);
+        UiNode firstStrip = Strip(props.Segment, rowWidth, pillInset, stripHeight, 0);
+        UiNode secondStrip =
+            Strip(props.SecondSegment, rowWidth, pillInset, stripHeight, 1);
+
         // ---- .body ---------------------------------------------------------
         // The rows are ONE child of the surface, not many: a portal re-anchors
         // each of its own children at the surface origin.
         FrameArena arena = FrameArena.Require();
-        Span<UiNode> rows = arena.ScratchNodes(props.Items.Count + 1);
+        Span<UiNode> rows = arena.ScratchNodes(items.Count + 1);
         int count = 0;
-        // Pill-edge to window-edge is the BAR WIDTH on both sides: padding on
-        // the left, the bar itself on the right.
-        float rowWidth = MathF.Max(
-            0f, panelWidth - inset * Crystarium.PickerBarShare * 2f);
         if (props.LoadError is { } error)
         {
             rows[count++] = EmptyLine(error, rowWidth);
         }
         else
         {
-            for (int i = 0; i < props.Items.Count; i++)
+            // A caller that owns the filter already applied the query; the
+            // built-in name contains is the DEFAULT filter, not a second one.
+            bool prefiltered = props.Query is not null;
+            for (int i = 0; i < items.Count; i++)
             {
-                T item = props.Items[i];
-                if (state.Query.Length > 0
+                T item = items[i];
+                if (!prefiltered
+                    && state.Query.Length > 0
                     && !props.ItemLabel(item).Contains(
                         state.Query, StringComparison.OrdinalIgnoreCase))
                     continue;
@@ -335,7 +397,7 @@ internal sealed class PickerCell<T>
         };
 
         UiNode portal = Crystarium.Portal(
-            [header, search, body],
+            [header, firstStrip, secondStrip, search, body],
             contentSize: new Vector2(panelWidth, panelHeight),
             // OverlayShell's .panel has NO padding: the header, the search area
             // and the list each run edge to edge and own their own insets.
@@ -350,8 +412,8 @@ internal sealed class PickerCell<T>
             surface: PickerSurfacePainter.Instance,
             treatment: FloatingSurfaceTreatment.Unframed,
             // The chrome above the list never scrolls; without a caption band
-            // that chrome is the search area alone.
-            scrollFromChild: hasHeader ? 2 : 1,
+            // and without head strips that chrome is the search area alone.
+            scrollFromChild: (hasHeader ? 1 : 0) + strips + 1,
             // Half-width bar: bar + its padding = the left content base.
             scrollGutter: inset * Crystarium.PickerBarShare);
 
@@ -408,6 +470,20 @@ internal sealed class PickerCell<T>
                 : UiChildren.Empty,
         };
 
+        // The icon slot: the caller's resolved image, or the glyph it named as
+        // the fallback for the rows the game gives no icon for. BOTH are
+        // stated on one element — the mark is a facet, not a species — and the
+        // walker paints the texture when there is one.
+        UiNode icon =
+            props.ItemTexture is null && props.ItemGlyph is null
+                ? UiNode.None
+                : IconSlot(
+                    props.ItemTexture is { } toTexture ? toTexture(item) : 0,
+                    props.ItemGlyph is { } toGlyph ? toGlyph(item) : null,
+                    theme.Controls.IconSize);
+
+        string? badge = props.ItemBadge is { } toBadge ? toBadge(item) : null;
+
         return new Element
         {
             Sheet = SheetFamily.PickerRow,
@@ -418,10 +494,13 @@ internal sealed class PickerCell<T>
             On = new Listeners { OnPick = _items.Dispatch },
             // Picking is a decision and closes; toggling is not and does not.
             ClosesPortal = !props.Multi,
-            Key = index,
+            Key = props.ItemContentKey is { } contentKey
+                ? contentKey(item)
+                : index,
             Children =
             [
                 check,
+                icon,
                 // .checkLabel { flex:1; min-width:0; overflow:hidden;
                 // text-overflow: ellipsis }
                 new Label
@@ -440,7 +519,55 @@ internal sealed class PickerCell<T>
                         },
                     },
                 },
+                string.IsNullOrEmpty(badge)
+                    ? UiNode.None
+                    : new Label { Text = badge!, Sheet = SheetFamily.Readout },
             ],
+        };
+    }
+
+    /// <summary>The row's leading mark on its own square. A childless element,
+    /// so the mark centres on the box the sheet gave it and nothing has to
+    /// centre anything else.</summary>
+    private static UiNode IconSlot(nint texture, TablerIcon? fallback, float side) =>
+        new Element
+        {
+            Style = Element.Sized(UiDim.Fixed(side), UiDim.Fixed(side)),
+            Texture = texture,
+            Glyph = texture == 0 ? fallback : null,
+            GlyphSize = side,
+        };
+
+    /// <summary>One head strip, or nothing at all. The pill is inset by the
+    /// row's own pill inset, so the strip and the list share one left edge.
+    /// </summary>
+    private static UiNode Strip(
+        PickerSegment? segment, float width, float inset, float height, int ordinal)
+    {
+        if (segment is not { } strip)
+            return UiNode.None;
+        return new Element
+        {
+            Sheet = SheetFamily.PickerRule,
+            Style = new()
+            {
+                Layout = new()
+                {
+                    Padding = new EdgeInsets(
+                        inset, Crystarium.PickerListVPad,
+                        inset, Crystarium.PickerListVPad),
+                    Width = UiDim.Fill,
+                    Height = UiDim.Fixed(height),
+                },
+            },
+            Key = ordinal,
+            Children = new Segmented
+            {
+                Items = strip.Labels,
+                Selected = strip.Selected,
+                OnChange = strip.OnChange,
+                Width = width,
+            },
         };
     }
 
@@ -532,9 +659,9 @@ internal sealed class PickerCell<T>
 
         internal ItemBridge() => Dispatch = Invoke;
 
-        internal void Bind(in PickerProps<T> props)
+        internal void Bind(in PickerProps<T> props, IReadOnlyList<T> items)
         {
-            _items = props.Items;
+            _items = items;
             _itemKey = props.ItemKey;
             _selected = props.SelectedKeys;
             _onPick = props.OnPick;

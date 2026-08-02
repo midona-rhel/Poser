@@ -92,6 +92,18 @@ public readonly record struct Element
     /// </summary>
     internal bool GlyphNoInherit { get; init; }
 
+    /// <summary>
+    /// A host-owned image handle — Dalamud's <c>ImTextureID</c> — drawn as the
+    /// element's leaf mark; 0 is none. A texture is NOT tinted with
+    /// currentColor: a game icon carries its own colour, so the only thing the
+    /// tree composes onto it is the inherited glyph opacity.
+    /// </summary>
+    public nint Texture { get; init; }
+
+    /// <summary>Logical side of the texture square; 0 takes the theme's icon
+    /// size.</summary>
+    internal float TextureSize { get; init; }
+
     /// <summary>The escape hatch, for geometry a sheet cannot express.</summary>
     internal IPainter? Painter { get; init; }
 
@@ -128,6 +140,8 @@ public readonly record struct Element
         record.GlyphSize = element.GlyphSize;
         record.GlyphStroke = element.GlyphStroke;
         record.GlyphNoInherit = element.GlyphNoInherit;
+        record.Texture = element.Texture;
+        record.TextureSize = element.TextureSize;
         record.Preview = element.Preview;
         record.Disabled = element.Disabled;
         record.Selected = element.Selected;

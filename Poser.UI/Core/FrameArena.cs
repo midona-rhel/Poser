@@ -40,6 +40,12 @@ internal struct ElementRecord
     internal float GlyphSize;
     internal float GlyphStroke;
     internal bool GlyphNoInherit;
+
+    /// <summary>A host-owned image handle, 0 for none. It WINS over the glyph:
+    /// the fallback is stated beside it so a row that never resolves its icon
+    /// still draws one.</summary>
+    internal nint Texture;
+    internal float TextureSize;
     internal bool Preview;
 
     internal bool Disabled;
