@@ -54,25 +54,32 @@ public sealed class AnimationPane
     private ActorId? _pickActor;
     private AnimationSlot? _pickSlot;
 
-    // ── paired-attribute rows (user 2026-08-03) ──────────────────────────
-    // Each pair owns an equal half of the control cell. The second caption
-    // wears the FormLabel TONE at its natural width — the family's fixed
-    // slot overflowed the half — with one stated 16px gap to its control.
-    private static readonly ElementSheet PairTrack = new()
+    // ── paired-attribute bands (user 2026-08-03, round 3) ────────────────
+    // The band splits at the ROW's middle, not the control cell's: each half
+    // is its own miniature form row — the FormLabel slot then the control —
+    // so both pairs read identically and the second caption starts exactly
+    // at half the row.
+    private static readonly ElementSheet PairHalf = new()
     {
         Layout = new()
         {
             Flow = UiFlow.Row,
             Align = UiAlign.Center,
             Width = UiDim.Fill,
-            Gap = 16f,
         },
     };
 
-    private static readonly ElementSheet PairCaption = new()
-    {
-        Layout = new() { Width = UiDim.Content },
-    };
+    /// <summary>A 34px band of two mirrored label+control halves.</summary>
+    private static UiNode PairBand(UiChildren left, UiChildren right) =>
+        new Element
+        {
+            Sheet = SheetFamily.FormRow,
+            Children =
+            [
+                new Row { Style = PairHalf, Children = left },
+                new Row { Style = PairHalf, Children = right },
+            ],
+        };
 
     // ── retained native islands ──────────────────────────────────────────
     private readonly PickerTriggerState _baseTrigger = new();
@@ -377,101 +384,73 @@ public sealed class AnimationPane
         handlers.Pose = reading.Pose;
         handlers.PoseFamily = poseFamily;
 
-        // USER 2026-08-03: paired attributes split the control cell into two
-        // EQUAL half-tracks, each pair left-aligned in its own. The second
-        // attribute's caption wears the FormLabel sheet — the same fixed slot
-        // the label column uses — so caption-to-control spacing matches the
-        // row's own by construction, and "Lock position" starts exactly at
-        // the middle.
         return
         [
-            Crystarium.FormRow(
-                "Stance",
+            PairBand(
                 [
-                    new Row
+                    new Label { Text = "Stance", Sheet = SheetFamily.FormLabel },
+                    new Dropdown
                     {
-                        Sheet = SheetFamily.ActionGroupFill,
-                        Children = new Dropdown
-                        {
-                            Items = StanceLabels,
-                            Selected = stanceIndex,
-                            OnChange = handlers.PickStance,
-                            Preview = StanceName(reading.Stance),
-                            ReselectFires = true,
-                            Disabled = !supported,
-                            Help = supported
-                                ? "Pose family — picking one returns the actor to it"
-                                : "Stance changes are unavailable",
-                            // Intrinsic width — the widest option, not the
-                            // half-track (user: Fill read way too wide).
-                        },
+                        Items = StanceLabels,
+                        Selected = stanceIndex,
+                        OnChange = handlers.PickStance,
+                        Preview = StanceName(reading.Stance),
+                        ReselectFires = true,
+                        Disabled = !supported,
+                        Help = supported
+                            ? "Pose family — picking one returns the actor to it"
+                            : "Stance changes are unavailable",
+                    },
+                ],
+                [
+                    new Label
+                    {
+                        Text = $"Pose {reading.Pose}",
+                        Sheet = SheetFamily.FormLabel,
                     },
                     new Row
                     {
-                        Style = PairTrack,
+                        Sheet = SheetFamily.ActionGroup,
                         Children =
                         [
-                            new Label
+                            new Button
                             {
-                                Text = $"Pose {reading.Pose}",
-                                Sheet = SheetFamily.FormLabel,
-                                Style = PairCaption,
+                                Label = "Previous",
+                                Dense = true,
+                                OnClick = handlers.PreviousPose,
+                                Disabled = poseDisabled,
+                                Help = "Previous pose (wraps)",
                             },
-                            new Row
+                            new Button
                             {
-                                Sheet = SheetFamily.ActionGroup,
-                                Children =
-                                [
-                                    new Button
-                                    {
-                                        Label = "Previous",
-                                        Dense = true,
-                                        OnClick = handlers.PreviousPose,
-                                        Disabled = poseDisabled,
-                                        Help = "Previous pose (wraps)",
-                                    },
-                                    new Button
-                                    {
-                                        Label = "Next",
-                                        Dense = true,
-                                        OnClick = handlers.NextPose,
-                                        Disabled = poseDisabled,
-                                        Help = "Next pose (wraps)",
-                                    },
-                                ],
+                                Label = "Next",
+                                Dense = true,
+                                OnClick = handlers.NextPose,
+                                Disabled = poseDisabled,
+                                Help = "Next pose (wraps)",
                             },
                         ],
                     },
                 ]),
-            Crystarium.FormRow(
-                "Weapon",
+            PairBand(
                 [
-                    new Row
+                    new Label { Text = "Weapon", Sheet = SheetFamily.FormLabel },
+                    new Switch
                     {
-                        Sheet = SheetFamily.ActionGroupFill,
-                        Children = new Switch
-                        {
-                            Value = reading.WeaponDrawn,
-                            OnToggle = handlers.SetWeaponDrawn,
-                        },
+                        Value = reading.WeaponDrawn,
+                        OnToggle = handlers.SetWeaponDrawn,
                     },
-                    new Row
+                ],
+                [
+                    new Label
                     {
-                        Style = PairTrack,
-                        Children =
-                        [
-                            new Label
-                            {
-                                Text = "Lock position",
-                                Sheet = SheetFamily.FormLabel,
-                                Style = PairCaption,
-                            },
-                            new Switch
-                            {
-                                Value = owned.PositionLock,
-                                OnToggle = handlers.SetPositionLock,
-                            },
-                        ],
+                        Text = "Lock position",
+                        Sheet = SheetFamily.FormLabel,
+                    },
+                    new Switch
+                    {
+                        Value = owned.PositionLock,
+                        OnToggle = handlers.SetPositionLock,
                     },
                 ]),
         ];
