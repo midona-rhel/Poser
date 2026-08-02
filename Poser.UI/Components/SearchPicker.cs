@@ -219,12 +219,16 @@ internal sealed class PickerCell<T>
         // pick), and the panel shrinks by the band it does not have.
         bool hasHeader = !string.IsNullOrEmpty(props.Caption);
         float headerHeight = hasHeader ? Crystarium.PickerHeaderHeight : 0f;
+        // The panel is its OWN composition's height — chrome + padded rows —
+        // not the legacy picker's ListRowHeight arithmetic, which undershot
+        // and left the list permanently scrolled with the last pill riding
+        // the viewport edge.
+        int visibleRows = Math.Clamp(
+            props.Items.Count, theme.Picker.MinimumRows, theme.Picker.MaximumRows);
+        float bodyHeight = Crystarium.PickerListVPad * 2f
+            + visibleRows * Crystarium.PickerRowHeight;
         float panelHeight =
-            PanelHeight(props.Items.Count, theme)
-            - (hasHeader ? 0f : Crystarium.PickerHeaderHeight)
-            + Crystarium.PickerListVPad * 2f;
-        float bodyHeight = MathF.Max(
-            0f, panelHeight - headerHeight - Crystarium.PickerSearchHeight);
+            headerHeight + Crystarium.PickerSearchHeight + bodyHeight;
 
         _filter.Bind(this, Ambient!, state.Query, panelWidth);
         _items.Bind(in props);
@@ -264,7 +268,8 @@ internal sealed class PickerCell<T>
         // text over the labels.
         float searchMargin = MathF.Max(
             0f,
-            inset + Crystarium.PickerRowPadding - Crystarium.PickerSearchInnerPad);
+            inset * Crystarium.PickerBarShare + Crystarium.PickerRowPadding
+                - Crystarium.PickerSearchInnerPad);
         UiNode search = new Element
         {
             Sheet = SheetFamily.PickerRule,
@@ -287,10 +292,10 @@ internal sealed class PickerCell<T>
         FrameArena arena = FrameArena.Require();
         Span<UiNode> rows = arena.ScratchNodes(props.Items.Count + 1);
         int count = 0;
-        // USER RULE (capitals): pill-edge to window-edge is the SAME total on
-        // both sides, scrollbar included — margin 12 each side, the bar
-        // occupying the rightmost 6 of its 12.
-        float rowWidth = MathF.Max(0f, panelWidth - inset * 2f);
+        // Pill-edge to window-edge is the BAR WIDTH on both sides: padding on
+        // the left, the bar itself on the right.
+        float rowWidth = MathF.Max(
+            0f, panelWidth - inset * Crystarium.PickerBarShare * 2f);
         if (props.LoadError is { } error)
         {
             rows[count++] = EmptyLine(error, rowWidth);
@@ -460,22 +465,6 @@ internal sealed class PickerCell<T>
             Height = UiDim.Fixed(height),
         },
     };
-
-    /// <summary>
-    /// The surface box, unchanged from the imperative picker's own token
-    /// arithmetic — deliberately. The redesign is of the panel's CONTENTS.
-    /// </summary>
-    private static float PanelHeight(int resultCount, Theme theme)
-    {
-        int rows = Math.Clamp(
-            resultCount, theme.Picker.MinimumRows, theme.Picker.MaximumRows);
-        return theme.Floating.PopoverPadding * 2f
-            + theme.Controls.ListRowHeight
-            + theme.Spacing.Two
-            + theme.Controls.WorkspaceHeight
-            + theme.Spacing.Two
-            + rows * theme.Controls.ListRowHeight;
-    }
 
     /// <summary>
     /// The filter field: OverlayShell's <c>.searchRow</c>, which GlassInput's

@@ -204,13 +204,16 @@ internal static class ThemeStyles
         // The page's own boxes. Each is a sheet rather than an argument list
         // because a page states ROLES: an outer inset, a measured column, a
         // band, a cell, a run of actions.
+        // The GUTTER IS the right inset (user: headers showed 12 + the shell
+        // gutter = twice the left) — the page pads only its left; the shell's
+        // reserved bar space is the right padding.
         sheets[(int)SheetFamily.PageOuter] = new()
         {
             Layout = new()
             {
                 Flow = UiFlow.Column,
                 Padding = new EdgeInsets(
-                    theme.Page.Inset, 0f, theme.Page.Inset, theme.Page.Inset),
+                    theme.Page.Inset, 0f, 0f, theme.Page.Inset),
                 Width = UiDim.Fill,
             },
         };
@@ -364,12 +367,12 @@ internal static class ThemeStyles
         // the press shares hover's so a held row does not blink.
         LookSheet rowHover = new() { Colors = new() { Fill = chrome.WeakOverlay } };
         LookSheet rowSelected = new() { Colors = new() { Fill = chrome.ActiveOverlay } };
-        // USER RULE 2026-08-02 (stated in capitals): the width from a pill's
-        // edge to the WINDOW edge is the SAME on both sides, the scrollbar
-        // included — left margin = gutter (12), right = half-bar (6) + its
-        // equal pad (6). The check slot breathes its 7 INSIDE the pill, and
-        // the pill breathes 2 against each neighbouring row in the unchanged
-        // 28px pitch.
+        // USER RULE 2026-08-02 (halved on review): pill-edge to window-edge
+        // is the BAR WIDTH on both sides — on the left as padding, on the
+        // right as the bar itself. The check slot breathes its 7 INSIDE the
+        // pill, and the pill breathes 2 against each neighbouring row in the
+        // unchanged 28px pitch.
+        float pillInset = gutter * Crystarium.PickerBarShare;
         LayoutSheet pickerBand = new()
         {
             Flow = UiFlow.Row,
@@ -379,9 +382,9 @@ internal static class ThemeStyles
             Padding = new EdgeInsets(
                 Crystarium.PickerRowPadding, 0f, Crystarium.PickerRowPadding, 0f),
             Margin = new EdgeInsets(
-                gutter,
+                pillInset,
                 Crystarium.PickerPillVGap,
-                gutter,
+                pillInset,
                 Crystarium.PickerPillVGap),
         };
         sheets[(int)SheetFamily.PickerRow] = new()

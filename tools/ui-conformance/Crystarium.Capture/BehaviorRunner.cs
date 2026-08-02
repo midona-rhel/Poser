@@ -1789,16 +1789,15 @@ internal static class BehaviorSuites
             triggerMax.Y + Ui.ActiveTheme.Floating.AnchorGap * scale);
         // The same clamp/height arithmetic the component runs, so a fixture
         // that drifts fails as a geometry probe rather than as a mystery.
+        // The behavior fixtures carry a caption, so the header band counts.
         int rows = Math.Clamp(
             PickItems.Length,
             Ui.ActiveTheme.Picker.MinimumRows,
             Ui.ActiveTheme.Picker.MaximumRows);
-        float panelHeight = Ui.ActiveTheme.Floating.PopoverPadding * 2f
-            + Ui.ActiveTheme.Controls.ListRowHeight
-            + Ui.ActiveTheme.Spacing.Two
-            + Ui.ActiveTheme.Controls.WorkspaceHeight
-            + Ui.ActiveTheme.Spacing.Two
-            + rows * Ui.ActiveTheme.Controls.ListRowHeight;
+        float panelHeight = Rx.PickerHeaderHeight
+            + Rx.PickerSearchHeight
+            + Rx.PickerListVPad * 2f
+            + rows * Rx.PickerRowHeight;
         return new PickGeometry(
             PickOrigin,
             triggerMax,
