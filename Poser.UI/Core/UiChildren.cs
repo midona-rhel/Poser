@@ -48,7 +48,15 @@ public readonly struct UiChildren
 
     public static implicit operator UiChildren(UiNode single) => Create(new ReadOnlySpan<UiNode>(in single));
 
-    public Enumerator GetEnumerator() => new(this);
+    // Deleting the enumerator is not an option: [CollectionBuilder] binds
+    // collection expressions only on an enumerable type. Validating here
+    // closes the one consumption path that skipped provenance.
+    public Enumerator GetEnumerator()
+    {
+        FrameArena arena = FrameArena.Require();
+        arena.ValidateChildren(this);
+        return new(this);
+    }
 
     public struct Enumerator
     {
