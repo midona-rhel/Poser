@@ -31,6 +31,17 @@ public static partial class Crystarium
     /// <c>border-radius: --radius-md</c>.</summary>
     internal const float PickerRowHeight = 28f;
 
+    /// <summary>USER FEEDBACK 2026-08-02 (final): the check slot breathes its
+    /// own square inset — (28 − 14) / 2 — INSIDE the pill, and still lands at
+    /// the gutter base (5 + 7 = 12) under the search glyph; labels sit at
+    /// 12 + 14 + 6 = 32 under the search text.</summary>
+    internal const float PickerRowPadding = (PickerRowHeight - PickerCheckSlot) * 0.5f;
+
+    /// <summary>Where the shell's NARROWED thumb visibly begins inside the
+    /// gutter (measured contact point). The pill's right edge stops exactly
+    /// there: touching the bar, never under it.</summary>
+    internal const float PickerThumbInset = 3f;
+
     /// <summary>FilterPill's own left pad (TextInput's search layout, legacy
     /// and shared) — the search row's margin tops it up to the gutter base.
     /// </summary>
@@ -248,9 +259,13 @@ internal sealed class PickerCell<T>
         FrameArena arena = FrameArena.Require();
         Span<UiNode> rows = arena.ScratchNodes(props.Items.Count + 1);
         int count = 0;
-        // The list scrolls, so its rows live inside the gutter exactly as every
-        // other scrolled surface's content does.
-        float rowWidth = MathF.Max(0f, panelWidth - inset);
+        // The row BOX spans between the sheet's margins: pill edge at 5 on
+        // the left, the thumb's visible edge on the right.
+        float rowWidth = MathF.Max(
+            0f,
+            panelWidth
+                - (inset - Crystarium.PickerRowPadding)
+                - (inset - Crystarium.PickerThumbInset));
         if (props.LoadError is { } error)
         {
             rows[count++] = EmptyLine(error, rowWidth);

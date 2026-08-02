@@ -362,15 +362,22 @@ internal static class ThemeStyles
         // overlay, and the check glyph is what marks the selection. Both looks
         // AND the press carry the same fill, so a held row does not blink.
         LookSheet rowFill = new() { Colors = new() { Fill = chrome.ControlHover } };
+        // USER FEEDBACK 2026-08-02 (final picker row geometry): the check
+        // slot sits at the gutter base (12, under the search glyph) with its
+        // square 7px breathing INSIDE the pill, so the pill's own edge is at
+        // 12 - 7 = 5; on the right the pill stops exactly at the narrowed
+        // thumb's visible edge - touching the bar, never under it, and a
+        // near-symmetric inset when no bar shows.
         LayoutSheet pickerBand = new()
         {
             Flow = UiFlow.Row,
             Align = UiAlign.Center,
             Height = UiDim.Fixed(Crystarium.PickerRowHeight),
-            // The GUTTER IS the padding: the pill paints across it to the panel
-            // edge while the label pads out of it.
-            Padding = new EdgeInsets(0f, 0f, gutter, 0f),
-            Margin = new EdgeInsets(gutter, 0f, 0f, 0f),
+            Padding = new EdgeInsets(
+                Crystarium.PickerRowPadding, 0f, Crystarium.PickerRowPadding, 0f),
+            Margin = new EdgeInsets(
+                gutter - Crystarium.PickerRowPadding, 0f,
+                gutter - Crystarium.PickerThumbInset, 0f),
         };
         sheets[(int)SheetFamily.PickerRow] = new()
         {
@@ -385,10 +392,11 @@ internal static class ThemeStyles
             Layout = pickerBand with
             {
                 // No check slot on an empty line: the row pads its text to
-                // where the labels above it start.
+                // where the labels above it start (pill pad + slot + gap).
                 Padding = new EdgeInsets(
-                    Crystarium.PickerCheckSlot + theme.Spacing.Three, 0f,
-                    gutter, 0f),
+                    Crystarium.PickerRowPadding + Crystarium.PickerCheckSlot
+                        + theme.Spacing.Three,
+                    0f, Crystarium.PickerRowPadding, 0f),
             },
         };
         sheets[(int)SheetFamily.PickerRule] = new()
