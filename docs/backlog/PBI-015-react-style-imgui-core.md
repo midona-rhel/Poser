@@ -258,7 +258,11 @@ V1 implements only the HTML-like box behavior Poser actually needs:
 - deterministic fill of remaining space and deterministic overflow;
 - explicit form/column tracks when the Appearance slice requires them;
 - clipping, scrolling and stable gutters when a real migrated surface needs
-  them;
+  them. Gutter rule (user decision, 2026-08-02): every scrollable view insets
+  its content by the scrollbar gutter width on BOTH sides — the right inset
+  is padding or the bar itself, and the bar appearing or disappearing never
+  reflows content. The accepted Page inset (12 = gutter width) already
+  satisfies it; new reactive surfaces state it explicitly;
 - portal-owned anchoring and surface order, not generic z-index/positioning.
 
 No CSS Grid, wrap algorithm, float, table layout, selector cascade,

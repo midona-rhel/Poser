@@ -40,17 +40,18 @@ public static partial class Crystarium
     /// <c>border-radius: --radius-md</c>.</summary>
     internal const float PickerRowHeight = 28f;
 
-    /// <summary>USER DECISION 2026-08-02, supersedes <c>.checkRow</c>'s
-    /// <c>padding: 0 6px</c>: the check slot breathes EQUALLY on its top,
-    /// bottom and left — (28 − 14) / 2 — and the pill is inset from the panel
-    /// so the slot still lands at absolute x 10, under the search icon; labels
-    /// therefore stay under the search text (3 + 7 + 14 + 6 = 30 on both
-    /// lines).</summary>
-    internal const float PickerRowPadding = (PickerRowHeight - PickerCheckSlot) * 0.5f;
+    /// <summary>USER DECISION 2026-08-02 (final of three iterations),
+    /// supersedes <c>.checkRow</c>'s <c>padding: 0 6px</c>: the pill's own
+    /// edge sits at the FULL gutter base — visible padding beats internal
+    /// breathing — so the check slot rides the pill's edge at x 12, under
+    /// the search glyph, and labels sit at 12 + 14 + 6 = 32, under the
+    /// search text.</summary>
+    internal const float PickerRowPadding = 0f;
 
-    /// <summary>The pill's inset from the panel edge; see
-    /// <see cref="PickerRowPadding"/> for the arithmetic that fixes it.</summary>
-    internal const float PickerListInset = PickerHeaderPadding - PickerRowPadding;
+    /// <summary>FilterPill's own left pad (TextInput's search layout, legacy
+    /// and shared) — the search row's margin tops it up to the gutter base.
+    /// </summary>
+    internal const float PickerSearchInnerPad = 10f;
 
     /// <summary><c>.checkBox</c> is 14px, and the single-select check occupies
     /// the SAME slot so the two variants' labels line up.</summary>
@@ -241,12 +242,16 @@ internal sealed class PickerCell<T>
         _items.Bind(in props);
 
         // ---- .header ------------------------------------------------------
+        // USER RULE 2026-08-02 (supersedes OverlayShell's inline 10): every
+        // scrollable view insets its content by the scrollbar gutter width on
+        // BOTH sides — the right inset is padding or the bar itself, and the
+        // bar appearing never reflows content. The header shares the base so
+        // every line in the surface starts on one x.
+        float contentInset = theme.Scrollbar.GutterWidth;
         UiNode header = Crystarium.PaintedBox(
             UiFlow.Row,
             Sx.Row(
-                padding: new EdgeInsets(
-                    Crystarium.PickerHeaderPadding, 0f,
-                    Crystarium.PickerHeaderPadding, 0f),
+                padding: new EdgeInsets(contentInset, 0f, contentInset, 0f),
                 align: UiAlign.Center,
                 width: UiDim.Fill,
                 height: UiDim.Fixed(Crystarium.PickerHeaderHeight)),
@@ -257,14 +262,24 @@ internal sealed class PickerCell<T>
             PickerRulePainter.Instance);
 
         // ---- .searchArea > .searchRow --------------------------------------
+        // The island's OWN left pad is FilterPill's legacy 10 (shared with the
+        // shell, untouchable); a margin makes up the difference so the search
+        // glyph sits at the content base, and the width stops at the gutter
+        // boundary like every row below it.
+        float searchMargin = MathF.Max(
+            0f, contentInset - Crystarium.PickerSearchInnerPad);
         UiNode search = Crystarium.PaintedBox(
             UiFlow.Row,
             Sx.Row(
+                padding: new EdgeInsets(searchMargin, 0f, 0f, 0f),
                 align: UiAlign.Center,
                 width: UiDim.Fill,
                 height: UiDim.Fixed(Crystarium.PickerSearchHeight)),
             Crystarium.Native(
-                _filter, new Vector2(panelWidth, Crystarium.PickerSearchHeight)),
+                _filter,
+                new Vector2(
+                    panelWidth - searchMargin - contentInset,
+                    Crystarium.PickerSearchHeight)),
             default,
             PickerRulePainter.Instance);
 
@@ -374,10 +389,11 @@ internal sealed class PickerCell<T>
                     Crystarium.PickerRowPadding, 0f,
                     Crystarium.PickerRowPadding, 0f),
                 margin: new EdgeInsets(
-                    Crystarium.PickerListInset, 0f,
-                    Crystarium.PickerListInset, 0f),
+                    theme.Scrollbar.GutterWidth - Crystarium.PickerRowPadding, 0f,
+                    theme.Scrollbar.GutterWidth - Crystarium.PickerRowPadding, 0f),
                 align: UiAlign.Center,
-                width: UiDim.Fixed(width - Crystarium.PickerListInset * 2f),
+                width: UiDim.Fixed(
+                    width - (theme.Scrollbar.GutterWidth - Crystarium.PickerRowPadding) * 2f),
                 height: UiDim.Fixed(Crystarium.PickerRowHeight)),
             [
                 check,
@@ -415,14 +431,16 @@ internal sealed class PickerCell<T>
     private static UiNode EmptyLine(string text, Theme theme, float width) =>
         Crystarium.Row(
             Sx.Row(
+                // No check slot on an empty line: the row pads the text to
+                // where the labels above it start (slot + gap past the pill
+                // edge at the gutter base).
                 padding: new EdgeInsets(
-                    Crystarium.PickerRowPadding, 0f,
-                    Crystarium.PickerRowPadding, 0f),
+                    Crystarium.PickerCheckSlot + theme.Spacing.Three, 0f, 0f, 0f),
                 margin: new EdgeInsets(
-                    Crystarium.PickerListInset, 0f,
-                    Crystarium.PickerListInset, 0f),
+                    theme.Scrollbar.GutterWidth, 0f,
+                    theme.Scrollbar.GutterWidth, 0f),
                 align: UiAlign.Center,
-                width: UiDim.Fixed(width - Crystarium.PickerListInset * 2f),
+                width: UiDim.Fixed(width - theme.Scrollbar.GutterWidth * 2f),
                 height: UiDim.Fixed(Crystarium.PickerRowHeight)),
             Crystarium.Text(
                 text, theme.Typography.CaptionSize, theme.FormHint,
