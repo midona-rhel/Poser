@@ -147,14 +147,23 @@ public static partial class LegacyCrystarium
                 {
                     var owner = Interactive.BeginOwner(
                         id, InteractionLayer.Popup, min, max);
-                    if (props.Treatment == FloatingSurfaceTreatment.Glass)
-                        DrawChrome(
-                            ImGui.GetWindowDrawList(),
-                            min,
-                            max,
-                            Crystarium.ActiveTheme.Radii.Surface);
-                    body();
-                    Interactive.EndOwner(owner);
+                    try
+                    {
+                        if (props.Treatment == FloatingSurfaceTreatment.Glass)
+                            DrawChrome(
+                                ImGui.GetWindowDrawList(),
+                                min,
+                                max,
+                                Crystarium.ActiveTheme.Radii.Surface);
+                        body();
+                    }
+                    finally
+                    {
+                        // Balanced under finally: a throwing body must not
+                        // strand the popup's owner for every enclosing
+                        // surface to trip over.
+                        Interactive.EndOwner(owner);
+                    }
                 }
                 ImGui.EndPopup();
             }

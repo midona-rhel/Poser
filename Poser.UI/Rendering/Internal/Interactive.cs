@@ -177,10 +177,30 @@ public static class Interactive
 
     public static void EndOwner(InteractionOwner owner)
     {
-        if (OwnerStack.Count == 0 || OwnerStack[^1] != owner)
-            throw new InvalidOperationException(
-                $"Interaction owner stack mismatch for '{owner.Id}'.");
-        OwnerStack.RemoveAt(OwnerStack.Count - 1);
+        if (OwnerStack.Count > 0 && OwnerStack[^1] == owner)
+        {
+            OwnerStack.RemoveAt(OwnerStack.Count - 1);
+            return;
+        }
+
+        // An exception between Begin and End unwinds through EVERY enclosing
+        // finally: the inner owner dangles, and if the outer End threw here it
+        // would REPLACE the propagating exception — the log then shows only
+        // the mismatch and never the cause (2026-08-03, the shell masked the
+        // animation pane's real error for a whole session). When the owner is
+        // deeper in the stack this is that unwind: pop down to and through it
+        // and let the true exception keep travelling.
+        for (int i = OwnerStack.Count - 1; i >= 0; i--)
+        {
+            if (OwnerStack[i] != owner)
+                continue;
+            OwnerStack.RemoveRange(i, OwnerStack.Count - i);
+            return;
+        }
+
+        // Not on the stack at all: a genuine misuse, worth its exception.
+        throw new InvalidOperationException(
+            $"Interaction owner stack mismatch for '{owner.Id}'.");
     }
 
     public static void RegisterOccluder(Vector2 min, Vector2 max) =>
