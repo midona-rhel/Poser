@@ -38,11 +38,19 @@ public static partial class Crystarium
     internal const float PickerRowPadding = (PickerRowHeight - PickerCheckSlot) * 0.5f;
 
     /// <summary>USER DESIGN 2026-08-02: the picker's bar is HALF the shell
-    /// gutter, and bar + its padding = the list items' left content base —
-    /// 6 + 6 = 12 — so the right side balances the left whether the bar is
-    /// showing or not. The pill's right margin is therefore exactly the
-    /// gutter, no thumb-contact arithmetic.</summary>
+    /// gutter, and the pill breathes the SAME 5px against the bar as against
+    /// the panel's left edge — symmetric gaps around the pill, bar showing
+    /// or not.</summary>
     internal const float PickerBarShare = 0.5f;
+
+    /// <summary>USER FEEDBACK 2026-08-02: the selection pill breathes
+    /// vertically too — 2px off each neighbouring row, inside the unchanged
+    /// 28px pitch.</summary>
+    internal const float PickerPillVGap = 2f;
+
+    /// <summary>USER FEEDBACK 2026-08-02: the list itself breathes against
+    /// the chrome above and the panel bottom.</summary>
+    internal const float PickerListVPad = 4f;
 
     /// <summary>USER FEEDBACK 2026-08-02: the search field's clear cross
     /// breathes off the gutter instead of sitting flush against it.</summary>
@@ -212,7 +220,9 @@ internal sealed class PickerCell<T>
         bool hasHeader = !string.IsNullOrEmpty(props.Caption);
         float headerHeight = hasHeader ? Crystarium.PickerHeaderHeight : 0f;
         float panelHeight =
-            PanelHeight(props.Items.Count, theme) - (hasHeader ? 0f : Crystarium.PickerHeaderHeight);
+            PanelHeight(props.Items.Count, theme)
+            - (hasHeader ? 0f : Crystarium.PickerHeaderHeight)
+            + Crystarium.PickerListVPad * 2f;
         float bodyHeight = MathF.Max(
             0f, panelHeight - headerHeight - Crystarium.PickerSearchHeight);
 
@@ -250,9 +260,11 @@ internal sealed class PickerCell<T>
         // ---- .searchArea > .searchRow --------------------------------------
         // The island's OWN left pad is FilterPill's legacy 10 (shared with the
         // shell, untouchable); a margin makes up the difference so the search
-        // glyph sits at the content base, and the width stops at the gutter
-        // boundary like every row below it.
-        float searchMargin = MathF.Max(0f, inset - Crystarium.PickerSearchInnerPad);
+        // glyph sits over the CHECK ICONS (pill edge + its pad) and the search
+        // text over the labels.
+        float searchMargin = MathF.Max(
+            0f,
+            inset + Crystarium.PickerRowPadding - Crystarium.PickerSearchInnerPad);
         UiNode search = new Element
         {
             Sheet = SheetFamily.PickerRule,
@@ -275,12 +287,10 @@ internal sealed class PickerCell<T>
         FrameArena arena = FrameArena.Require();
         Span<UiNode> rows = arena.ScratchNodes(props.Items.Count + 1);
         int count = 0;
-        // The row BOX spans between the sheet's margins: pill edge at 5 on
-        // the left, the full gutter (half-width bar + its equal padding) on
-        // the right.
-        float rowWidth = MathF.Max(
-            0f,
-            panelWidth - (inset - Crystarium.PickerRowPadding) - inset);
+        // USER RULE (capitals): pill-edge to window-edge is the SAME total on
+        // both sides, scrollbar included — margin 12 each side, the bar
+        // occupying the rightmost 6 of its 12.
+        float rowWidth = MathF.Max(0f, panelWidth - inset * 2f);
         if (props.LoadError is { } error)
         {
             rows[count++] = EmptyLine(error, rowWidth);
@@ -301,13 +311,21 @@ internal sealed class PickerCell<T>
                 rows[count++] = EmptyLine("No matches.", rowWidth);
         }
 
-        // The column spans the FULL panel: a row's 12px margin plus its
-        // under-gutter run is exactly the panel width, and the solver clamps
-        // a child to its parent's grant — a rowWidth column would cut every
-        // pill at the gutter boundary.
+        // The column spans the FULL panel (the solver clamps a child to its
+        // parent's grant), and pads the list vertically so the first and
+        // last pills breathe against the chrome and the panel bottom.
         UiNode body = new Column
         {
-            Style = Element.Sized(UiDim.Fixed(panelWidth), null),
+            Style = new()
+            {
+                Layout = new()
+                {
+                    Width = UiDim.Fixed(panelWidth),
+                    Padding = new EdgeInsets(
+                        0f, Crystarium.PickerListVPad,
+                        0f, Crystarium.PickerListVPad),
+                },
+            },
             Children = UiChildren.Create(rows[..count]),
         };
 
@@ -490,15 +508,15 @@ internal sealed class PickerCell<T>
 
         public void Draw(string id, Vector2 min, Vector2 max)
         {
+            _ = min;
             _ = max;
-            // MEASURED against the real panel geometry: the placeholder ink
-            // centres 2px LOW in the 36px band, so the island lifts by 2.
-            Dalamud.Bindings.ImGui.ImGui.SetCursorScreenPos(new Vector2(
-                min.X,
-                min.Y - 2f * Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale));
+            // MEASURED: the text ink centres 2px low in the band, and lifting
+            // the BOX took the glyph with it — so the rise goes to the text
+            // alone through the field's own knob.
             LegacyCrystarium.FilterPill(
                 id, _query, _onChange, "Search by name",
-                new ControlStyle { Width = UiWidth.Fixed(_width) });
+                new ControlStyle { Width = UiWidth.Fixed(_width) },
+                textRise: -2f);
         }
 
         private void Change(string next)

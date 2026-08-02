@@ -93,7 +93,8 @@ public static partial class LegacyCrystarium
         bool clearable,
         bool search,
         bool disabled,
-        string? help)
+        string? help,
+        float textRise = 0f)
     {
         float scale = ImGuiHelpers.GlobalScale;
         var theme = ActiveTheme;
@@ -127,8 +128,11 @@ public static partial class LegacyCrystarium
         if (fontPushed)
             font!.Push();
 
+        // textRise lifts the TEXT alone (negative raises) — the caller's box
+        // and the leading glyph stay put. Zero everywhere the pixels are
+        // accepted; the picker's band states its own measured rise.
         float framePadY = MathF.Max(
-            0f, (height - ImGui.GetTextLineHeight()) * 0.5f);
+            0f, (height - ImGui.GetTextLineHeight()) * 0.5f + textRise * scale);
 
         if (disabled)
         {

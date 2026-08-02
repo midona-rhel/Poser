@@ -13,12 +13,15 @@ namespace Poser.UI;
 /// </summary>
 public static partial class LegacyCrystarium
 {
+    /// <param name="textRise">Lifts the text alone, negative raises; the box
+    /// and the leading glyph stay put. Zero for every accepted surface.</param>
     public static bool FilterPill(
         string id,
         string value,
         System.Action<string> onChange,
         string placeholder,
-        ControlStyle style = default)
+        ControlStyle style = default,
+        float textRise = 0f)
         => TextInputCore(
             id,
             value,
@@ -28,5 +31,6 @@ public static partial class LegacyCrystarium
             clearable: true,
             search: true,
             disabled: false,
-            help: null);
+            help: null,
+            textRise);
 }

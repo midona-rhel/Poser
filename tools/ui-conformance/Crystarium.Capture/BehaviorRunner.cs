@@ -1772,6 +1772,7 @@ internal static class BehaviorSuites
         internal Vector2 RowCenter(int index) => new(
             PanelMin.X + 120f,
             PanelMin.Y + Rx.PickerHeaderHeight + Rx.PickerSearchHeight
+                + Rx.PickerListVPad
                 + index * Rx.PickerRowHeight + Rx.PickerRowHeight * 0.5f);
     }
 

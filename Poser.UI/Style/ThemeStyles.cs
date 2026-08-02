@@ -359,34 +359,38 @@ internal static class ThemeStyles
 
         // OverlayShell .checkRow, with the accepted 2026-08-02 decision in
         // place of --color-primary-10: hover and selection share the whiteish
-        // overlay, and the check glyph is what marks the selection. Both looks
-        // AND the press carry the same fill, so a held row does not blink.
-        LookSheet rowFill = new() { Colors = new() { Fill = chrome.ControlHover } };
-        // USER FEEDBACK 2026-08-02 (final picker row geometry): the check
-        // slot sits at the gutter base (12, under the search glyph) with its
-        // square 7px breathing INSIDE the pill, so the pill's own edge is at
-        // 12 - 7 = 5; on the right the pill stops exactly at the narrowed
-        // thumb's visible edge - touching the bar, never under it, and a
-        // near-symmetric inset when no bar shows.
+        // USER 2026-08-02: selected and hovered are DIFFERENT whiteish tones —
+        // selected carries the stronger overlay, hover the fainter one, and
+        // the press shares hover's so a held row does not blink.
+        LookSheet rowHover = new() { Colors = new() { Fill = chrome.WeakOverlay } };
+        LookSheet rowSelected = new() { Colors = new() { Fill = chrome.ActiveOverlay } };
+        // USER RULE 2026-08-02 (stated in capitals): the width from a pill's
+        // edge to the WINDOW edge is the SAME on both sides, the scrollbar
+        // included — left margin = gutter (12), right = half-bar (6) + its
+        // equal pad (6). The check slot breathes its 7 INSIDE the pill, and
+        // the pill breathes 2 against each neighbouring row in the unchanged
+        // 28px pitch.
         LayoutSheet pickerBand = new()
         {
             Flow = UiFlow.Row,
             Align = UiAlign.Center,
-            Height = UiDim.Fixed(Crystarium.PickerRowHeight),
+            Height = UiDim.Fixed(
+                Crystarium.PickerRowHeight - Crystarium.PickerPillVGap * 2f),
             Padding = new EdgeInsets(
                 Crystarium.PickerRowPadding, 0f, Crystarium.PickerRowPadding, 0f),
-            // Right margin = the full gutter: the half-width bar plus its
-            // equal padding balances the left content base (6 + 6 = 12).
             Margin = new EdgeInsets(
-                gutter - Crystarium.PickerRowPadding, 0f, gutter, 0f),
+                gutter,
+                Crystarium.PickerPillVGap,
+                gutter,
+                Crystarium.PickerPillVGap),
         };
         sheets[(int)SheetFamily.PickerRow] = new()
         {
             Layout = pickerBand with { Gap = theme.Spacing.Three },
             Shape = new() { Radius = theme.Radii.Control },
-            Hover = rowFill,
-            Active = rowFill,
-            Selected = rowFill,
+            Hover = rowHover,
+            Active = rowHover,
+            Selected = rowSelected,
         };
         sheets[(int)SheetFamily.PickerEmptyRow] = new()
         {
