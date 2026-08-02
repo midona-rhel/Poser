@@ -153,6 +153,7 @@ public sealed class AppearancePane
             new Section
             {
                 Title = "GENERAL",
+                NoDivider = true,
                 Expanded = _openGeneral,
                 OnExpandedChange = _toggleGeneral,
                 Children = _openGeneral
@@ -292,7 +293,7 @@ public sealed class AppearancePane
         return
         [
             Crystarium.FormSelectorPicker(
-                "Collection", _collectionReadout, "Penumbra collection",
+                "Collection", _collectionReadout,
                 _collectionItems, ItemName, ItemKey,
                 _collectionKey, _collectionLoadError,
                 handlers.PickCollection, handlers.OpenCollections,
@@ -311,7 +312,6 @@ public sealed class AppearancePane
                 external.DesignOwned
                     ? external.DesignName ?? "Design"
                     : "None applied",
-                "Glamourer design",
                 _designItems, ItemName, ItemKey, null, _designLoadError,
                 handlers.PickDesign, handlers.OpenDesigns, handlers.ResetDesign,
                 available: glamourer.Available && !mcdfOwned,
@@ -328,7 +328,6 @@ public sealed class AppearancePane
                 external.TemporaryBodyProfile != null
                     ? external.BodyProfileName ?? "Profile"
                     : "Automatic",
-                "Customize+ profile",
                 _bodyProfileItems, ItemName, ItemKey, null, _bodyProfileLoadError,
                 handlers.PickBodyProfile, handlers.OpenBodyProfiles,
                 handlers.ResetBodyProfile,

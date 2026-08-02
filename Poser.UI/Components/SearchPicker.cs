@@ -45,6 +45,10 @@ public static partial class Crystarium
     /// thumb — a 2px breath, neither touching nor under it.</summary>
     internal const float PickerThumbGap = 2f;
 
+    /// <summary>USER FEEDBACK 2026-08-02: the search field's clear cross
+    /// breathes off the gutter instead of sitting flush against it.</summary>
+    internal const float PickerSearchClearPad = 6f;
+
     /// <summary>FilterPill's own left pad (TextInput's search layout, legacy
     /// and shared) — the search row's margin tops it up to the gutter base.
     /// </summary>
@@ -69,7 +73,6 @@ public static partial class Crystarium
     public static UiNode FormSelectorPicker<T>(
         string label,
         string value,
-        string caption,
         IReadOnlyList<T> items,
         Func<T, string> itemLabel,
         Func<T, string> itemKey,
@@ -85,8 +88,10 @@ public static partial class Crystarium
         UiKey key = default)
         where T : class
     {
+        // No caption band (user: the row's own label already names the pick);
+        // the surface is search + list. The multi variant keeps its header.
         PickerProps<T> props = new(
-            value, caption, items, itemLabel, itemKey, selectedKey, null,
+            value, null, items, itemLabel, itemKey, selectedKey, null,
             loadError, onPick, null, onOpen, Dense: true, Disabled: !available,
             DisabledHelp: disabledHelp, Multi: false, TriggerWidth: UiDim.Fill);
         return FormRow(
@@ -152,7 +157,7 @@ public static partial class Crystarium
 /// travel by reference and cost nothing.</summary>
 internal readonly record struct PickerProps<T>(
     string TriggerLabel,
-    string Caption,
+    string? Caption,
     IReadOnlyList<T> Items,
     Func<T, string> ItemLabel,
     Func<T, string> ItemKey,
@@ -202,10 +207,15 @@ internal sealed class PickerCell<T>
     {
         Theme theme = Crystarium.ActiveTheme;
         float panelWidth = theme.Picker.Width;
-        float panelHeight = PanelHeight(props.Items.Count, theme);
+        // A caption band is the MULTI variant's; the single-select surface is
+        // search + list (user: the form row's own label already names the
+        // pick), and the panel shrinks by the band it does not have.
+        bool hasHeader = !string.IsNullOrEmpty(props.Caption);
+        float headerHeight = hasHeader ? Crystarium.PickerHeaderHeight : 0f;
+        float panelHeight =
+            PanelHeight(props.Items.Count, theme) - (hasHeader ? 0f : Crystarium.PickerHeaderHeight);
         float bodyHeight = MathF.Max(
-            0f,
-            panelHeight - Crystarium.PickerHeaderHeight - Crystarium.PickerSearchHeight);
+            0f, panelHeight - headerHeight - Crystarium.PickerSearchHeight);
 
         _filter.Bind(this, Ambient!, state.Query, panelWidth);
         _items.Bind(in props);
@@ -216,7 +226,7 @@ internal sealed class PickerCell<T>
         // BOTH sides, and the bar appearing never reflows content. The header
         // shares the base so every line in the surface starts on one x.
         float inset = theme.Scrollbar.GutterWidth;
-        UiNode header = new Element
+        UiNode header = !hasHeader ? UiNode.None : new Element
         {
             Sheet = SheetFamily.PickerRule,
             Style = Rule(
@@ -224,7 +234,7 @@ internal sealed class PickerCell<T>
             Painter = PickerRulePainter.Instance,
             Children = new Label
             {
-                Text = props.Caption,
+                Text = props.Caption!,
                 Style = new()
                 {
                     Colors = new() { Foreground = theme.TextMuted },
@@ -250,10 +260,14 @@ internal sealed class PickerCell<T>
             Style = Rule(
                 new EdgeInsets(searchMargin, 0f, 0f, 0f), Crystarium.PickerSearchHeight),
             Painter = PickerRulePainter.Instance,
+            // The extra right inset is the clear-cross's breathing (user
+            // feedback: the x sat flush against the gutter).
             Children = Crystarium.Native(
                 _filter,
                 new Vector2(
-                    panelWidth - searchMargin - inset, Crystarium.PickerSearchHeight)),
+                    panelWidth - searchMargin - inset
+                        - Crystarium.PickerSearchClearPad,
+                    Crystarium.PickerSearchHeight)),
         };
 
         // ---- .body ---------------------------------------------------------
@@ -313,9 +327,9 @@ internal sealed class PickerCell<T>
             // The shared glass shell IS .panel — the --glass-* border trio,
             // --radius-lg and --shadow-panel — so the host draws it.
             treatment: FloatingSurfaceTreatment.Glass,
-            // The header and the search area are chrome of the surface, not
-            // content of the list: only what follows them scrolls.
-            scrollFromChild: 2);
+            // The chrome above the list never scrolls; without a caption band
+            // that chrome is the search area alone.
+            scrollFromChild: hasHeader ? 2 : 1);
 
         return new TriggerButton
         {

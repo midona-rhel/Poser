@@ -2006,7 +2006,7 @@ internal static class BehaviorSuites
     /// the runtime.</summary>
     private static readonly Func<UiNode> PickRowTree = static () =>
         Rx.FormSelectorPicker(
-            "Model", "Date Modified", "Sort by", PickItems,
+            "Model", "Date Modified", PickItems,
             static item => item, static item => item, "Date Created", null,
             PickNoOpPick, PickNoOp, PickNoOp, available: true, owned: true);
 
@@ -2026,7 +2026,7 @@ internal static class BehaviorSuites
 
     private static readonly Func<UiNode> PickLargeRowTree = static () =>
         Rx.FormSelectorPicker(
-            "Model", "Date Modified", "Sort by", PickItemsLarge,
+            "Model", "Date Modified", PickItemsLarge,
             static item => item, static item => item, "Option 01", null,
             PickNoOpPick, PickNoOp, PickNoOp, available: true, owned: true);
 

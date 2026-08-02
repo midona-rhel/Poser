@@ -48,7 +48,8 @@ internal sealed class SwitchPainter : IPainter
     {
         Poser.UI.LegacyCrystarium.PaintSwitch(
             context.DrawList, context.Hit.ScreenMin, context.Hit.ScreenMax,
-            context.Record.Selected, context.Record.Disabled);
+            context.Record.Selected, context.Record.Disabled,
+            context.Identity);
         return default;
     }
 }

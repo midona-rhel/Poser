@@ -231,7 +231,9 @@ internal static class ComponentCatalog
     private static PickerProps<string> PickerFixtureProps(bool multi) =>
         new(
             "Date Modified",
-            "Sort by",
+            // The single-select surface carries NO caption band (product
+            // shape); the multi variant keeps its header.
+            multi ? "Sort by" : null,
             DropdownItems,
             static item => item,
             static item => item,

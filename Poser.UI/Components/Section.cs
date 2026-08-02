@@ -22,6 +22,10 @@ public readonly record struct Section
     /// not come from its position.</summary>
     public required UiKey Key { get; init; }
 
+    /// <summary>USER FEEDBACK 2026-08-02: the rule is a divider BETWEEN
+    /// sections — the page's first section sets this and draws none.</summary>
+    public bool NoDivider { get; init; }
+
     /// <summary>A single child needs no collection: user-defined
     /// conversions do not chain, so the one-child form is stated.</summary>
     public static implicit operator UiChildren(Section section) => (UiNode)section;
@@ -45,11 +49,13 @@ public readonly record struct Section
             Children =
             [
                 Crystarium.Spacer(page.SectionMarginTop),
-                new Element
-                {
-                    Sheet = SheetFamily.SectionRule,
-                    Painter = SectionRulePainter.Instance,
-                },
+                section.NoDivider
+                    ? UiNode.None
+                    : new Element
+                    {
+                        Sheet = SheetFamily.SectionRule,
+                        Painter = SectionRulePainter.Instance,
+                    },
                 Crystarium.Spacer(page.SectionPaddingTop),
                 header,
                 section.Expanded
