@@ -412,6 +412,8 @@ internal sealed class PickerCell<T>
                         {
                             FontSize = theme.Typography.BodySize,
                             Overflow = TextOverflow.Truncate,
+                            // USER measurement: row text sat 1px low.
+                            InkRise = -1f,
                         },
                     },
                 },
@@ -488,14 +490,12 @@ internal sealed class PickerCell<T>
 
         public void Draw(string id, Vector2 min, Vector2 max)
         {
-            // FilterPill renders at SearchHeight from the cursor; the island
-            // centres that control in the band it was given (user feedback:
-            // the text sat high).
-            float control = Crystarium.ActiveTheme.Controls.SearchHeight
-                * Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+            _ = max;
+            // MEASURED against the real panel geometry: the placeholder ink
+            // centres 2px LOW in the 36px band, so the island lifts by 2.
             Dalamud.Bindings.ImGui.ImGui.SetCursorScreenPos(new Vector2(
                 min.X,
-                min.Y + MathF.Max(0f, (max.Y - min.Y - control) * 0.5f)));
+                min.Y - 2f * Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale));
             LegacyCrystarium.FilterPill(
                 id, _query, _onChange, "Search by name",
                 new ControlStyle { Width = UiWidth.Fixed(_width) });

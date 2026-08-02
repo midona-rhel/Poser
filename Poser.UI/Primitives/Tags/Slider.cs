@@ -150,8 +150,13 @@ public static partial class LegacyCrystarium
             }
         }
 
-        // thumb: 14px circle, solid white over the fill boundary
-        var thumb = Crystarium.ActiveTheme.Palette.White.Fade(alpha);
+        // thumb: 14px circle, solid white over the fill boundary. The thumb
+        // OCCLUDES: a disabled thumb fades by flattening over the surface
+        // rather than by alpha, so the track can never show through it
+        // (user: "the scrubber shows the partially filled slider behind it").
+        var thumb = ColorEx.FlattenOver(
+            Crystarium.ActiveTheme.Palette.White.Fade(alpha),
+            Crystarium.ActiveTheme.Surface);
         dl.AddCircleFilled(new Vector2(thumbX, cy), half,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(thumb)), 32);
     }

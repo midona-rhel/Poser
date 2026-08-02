@@ -156,6 +156,8 @@ internal static class StyleResolver
             resolved.Weight = weight;
         if (type.Overflow is { } overflow)
             resolved.Overflow = overflow;
+        if (type.InkRise is { } rise)
+            resolved.InkRise = rise;
     }
 
     private static void Apply(ref ResolvedLayout resolved, in LayoutSheet? sheet)

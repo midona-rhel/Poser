@@ -33,6 +33,12 @@ internal struct ResolvedType
     internal FontWeight? Weight;
     internal TextOverflow Overflow;
 
+    /// <summary>Optical rise for a run centred in a list band — the glyph
+    /// atlas leans below the midline, so centred row text reads low without
+    /// it (ContextMenu's accepted RowInkRise, as typed data). Logical,
+    /// applied at PAINT; the measure never sees it.</summary>
+    internal float InkRise;
+
     /// <summary>The style a run measures and draws with. An unstated size or
     /// weight resolves inside the renderer, which keeps ONE default per token.
     /// </summary>

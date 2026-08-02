@@ -33,7 +33,9 @@ internal sealed class PickerSurfacePainter : IPortalSurfacePainter
                     Poser.UI.LegacyCrystarium.FloatingSurface.FillColor,
                     theme.Surface),
                 BorderWidth = 1f,
-                BorderRadius = theme.Radii.Large,
+                // The GLASS shell drew at the popup's own Surface rounding;
+                // the opaque panel keeps it (user caught the 12 vs 8 change).
+                BorderRadius = theme.Radii.Surface,
                 BorderTopColor = theme.Border,
                 BorderRightColor = theme.Border,
                 BorderBottomColor = theme.Border,

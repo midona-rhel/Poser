@@ -16,4 +16,10 @@ public readonly record struct TypographySheet
     /// EXPLICIT: sizing says how much room a run occupies, not that it may
     /// not spill.</summary>
     public TextOverflow? Overflow { get; init; }
+
+    /// <summary>Optical rise for a run centred in a list band, in logical px
+    /// (negative lifts). Glyph ink leans below the midline, so centred row
+    /// text reads low without it — ContextMenu's accepted RowInkRise, as
+    /// typed data. Paint-only: measurement never sees it.</summary>
+    public float? InkRise { get; init; }
 }

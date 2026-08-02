@@ -448,7 +448,9 @@ internal sealed class FrameWalker
         Vector2 position = origin + (contentOrigin
             + new Vector2(
                 Offset(layout.Justify, span.X, box.X),
-                Offset(layout.Align, span.Y, box.Y))) * scale;
+                // The sheet's optical rise: centred row ink leans below the
+                // midline, so a list band lifts its run by the stated amount.
+                Offset(layout.Align, span.Y, box.Y) + record.Type.InkRise)) * scale;
 
         bool clipped = record.ClipChildren;
         ImDrawListPtr draw = default;
