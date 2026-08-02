@@ -48,7 +48,13 @@ public readonly record struct Section
             Key = section.Key,
             Children =
             [
-                Crystarium.Spacer(page.SectionMarginTop),
+                // Without a divider there is nothing the margin separates
+                // FROM: the first section keeps only the header's own offset,
+                // so GENERAL sits as far under the page top as every other
+                // header sits under its rule.
+                section.NoDivider
+                    ? UiNode.None
+                    : Crystarium.Spacer(page.SectionMarginTop),
                 section.NoDivider
                     ? UiNode.None
                     : new Element

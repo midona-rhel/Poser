@@ -5,6 +5,50 @@ using Dalamud.Interface.Utility;
 namespace Poser.UI.Reactive;
 
 /// <summary>
+/// The picker's panel, OPAQUE. The glass shell is translucency, and in game
+/// (no backdrop blur) the page bleeds straight through it — sliders visible
+/// inside an open picker. Same accepted resolution as the dropdown popup:
+/// the glass tone flattened over the surface, under a 1px border and the
+/// panel shadows, at OverlayShell's <c>--radius-lg</c>.
+/// </summary>
+internal sealed class PickerSurfacePainter : IPortalSurfacePainter
+{
+    internal static readonly PickerSurfacePainter Instance = new();
+
+    private PickerSurfacePainter()
+    {
+    }
+
+    public void Paint(ImDrawListPtr drawList, Vector2 min, Vector2 max)
+    {
+        Theme theme = Poser.UI.Crystarium.ActiveTheme;
+        // The shadows escape the popup's own clip exactly as the dropdown's do.
+        drawList.PushClipRect(
+            Vector2.Zero, ImGui.GetIO().DisplaySize, false);
+        try
+        {
+            Poser.UI.BoxRenderer.Draw(drawList, min, max, new Poser.UI.BoxStyle
+            {
+                BackgroundColor = Poser.UI.ColorEx.FlattenOver(
+                    Poser.UI.LegacyCrystarium.FloatingSurface.FillColor,
+                    theme.Surface),
+                BorderWidth = 1f,
+                BorderRadius = theme.Radii.Large,
+                BorderTopColor = theme.Border,
+                BorderRightColor = theme.Border,
+                BorderBottomColor = theme.Border,
+                BorderLeftColor = theme.Border,
+                BoxShadows = [theme.Shadows.Panel, theme.Shadows.PanelRing],
+            });
+        }
+        finally
+        {
+            drawList.PopClipRect();
+        }
+    }
+}
+
+/// <summary>
 /// OverlayShell's <c>box-shadow: 0 -1px 0 var(--color-border-secondary) inset</c>
 /// — the hairline the header and the search area each carry along their BOTTOM
 /// edge. An inset shadow is painted inside the box, so it costs the band no

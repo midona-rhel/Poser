@@ -323,10 +323,11 @@ internal sealed class PickerCell<T>
             scrollRegionHeight: bodyHeight,
             // Rows paint under the gutter; their hit targets must not.
             capChildHitWidth: true,
-            surface: null,
-            // The shared glass shell IS .panel — the --glass-* border trio,
-            // --radius-lg and --shadow-panel — so the host draws it.
-            treatment: FloatingSurfaceTreatment.Glass,
+            // OPAQUE panel (user: elements bled through the glass in game -
+            // the dropdown precedent), so the treatment is bare and the
+            // painter owns fill, border and shadows.
+            surface: PickerSurfacePainter.Instance,
+            treatment: FloatingSurfaceTreatment.Unframed,
             // The chrome above the list never scrolls; without a caption band
             // that chrome is the search area alone.
             scrollFromChild: hasHeader ? 2 : 1);
@@ -487,10 +488,14 @@ internal sealed class PickerCell<T>
 
         public void Draw(string id, Vector2 min, Vector2 max)
         {
-            // The walk already placed the cursor; the island's whole contract
-            // is to stay inside the box it was given.
-            _ = min;
-            _ = max;
+            // FilterPill renders at SearchHeight from the cursor; the island
+            // centres that control in the band it was given (user feedback:
+            // the text sat high).
+            float control = Crystarium.ActiveTheme.Controls.SearchHeight
+                * Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+            Dalamud.Bindings.ImGui.ImGui.SetCursorScreenPos(new Vector2(
+                min.X,
+                min.Y + MathF.Max(0f, (max.Y - min.Y - control) * 0.5f)));
             LegacyCrystarium.FilterPill(
                 id, _query, _onChange, "Search by name",
                 new ControlStyle { Width = UiWidth.Fixed(_width) });
