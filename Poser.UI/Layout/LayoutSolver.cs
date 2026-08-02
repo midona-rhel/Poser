@@ -199,15 +199,17 @@ internal static class LayoutSolver
         TextStyleOf(in record, null);
 
     /// <summary>
-    /// The logical width a text run is CUT to, or 0 for an intrinsic run. A
-    /// run whose box was SIZED — Fixed by its author, Fill by its siblings —
-    /// is the CSS <c>overflow: hidden</c> box and truncates to what it was
-    /// arranged. That is deliberately the only rule: the span a label may
+    /// The logical width a text run is CUT to, or null for a run that renders
+    /// at its intrinsic width. Sizing does NOT imply clipping — only
+    /// <see cref="Poser.UI.TextOverflow.Truncate"/> does — but the CUT itself
+    /// is the solver's number rather than an authored one: the span a label may
     /// occupy inside a Fill-width control is not knowable until the solver has
-    /// granted the control its own, so an authored number could not express it.
+    /// granted the control its own.
     /// </summary>
     internal static float? TextClip(in ElementRecord record) =>
-        record.Style.Width.Kind == UiDimKind.Content ? null : record.LogicalSize.X;
+        record.TextOverflow == Poser.UI.TextOverflow.Truncate
+            ? record.LogicalSize.X
+            : null;
 
     /// <summary>As above, with the walk's inherited foreground standing in
     /// for an unstated color — currentColor, resolved by the nearest painter

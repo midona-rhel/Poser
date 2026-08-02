@@ -25,10 +25,18 @@ namespace Crystarium.Capture;
 internal sealed class BehaviorHost
 {
     private readonly ImFontAtlasPtr atlas;
+    /// <summary>Makes the suite's root context current again. Typed as a
+    /// callback so the host never has to name the binding's context handle.
+    /// </summary>
+    private readonly Action restoreRoot;
     private readonly List<(string Name, bool Ok, string Detail)> results =
         new();
 
-    internal BehaviorHost(ImFontAtlasPtr atlas) => this.atlas = atlas;
+    internal BehaviorHost(ImFontAtlasPtr atlas, Action restoreRoot)
+    {
+        this.atlas = atlas;
+        this.restoreRoot = restoreRoot;
+    }
 
     internal void Check(string name, bool ok, string detail) =>
         results.Add((name, ok, detail));
@@ -77,7 +85,8 @@ internal sealed class BehaviorHost
         Action<int> body,
         Func<int, Vector2>? pointer = null,
         Func<int, (bool HasEvent, bool Down)>? mouse = null,
-        Func<int, (bool HasEvent, ImGuiKey Key, bool Down)>? key = null)
+        Func<int, (bool HasEvent, ImGuiKey Key, bool Down)>? key = null,
+        Func<int, float>? wheel = null)
     {
         var context = ImGui.CreateContext(atlas);
         ImGui.SetCurrentContext(context);
@@ -99,6 +108,11 @@ internal sealed class BehaviorHost
                     io.AddMouseButtonEvent(0, click.Down);
                 if (key?.Invoke(frame) is { HasEvent: true } stroke)
                     io.AddKeyEvent(stroke.Key, stroke.Down);
+                // Mirrors the capture loop's wheel hook, in the same units
+                // (ImGui notches). ImGui drops a zero wheel event before it
+                // queues it, so an unscripted case pays nothing.
+                if (wheel?.Invoke(frame) is { } notches)
+                    io.AddMouseWheelEvent(0f, notches);
                 ImGui.NewFrame();
                 Interactive.BeginFrame();
                 ImGui.SetNextWindowPos(Vector2.Zero);
@@ -119,6 +133,13 @@ internal sealed class BehaviorHost
         }
         finally
         {
+            // Mirror the capture host: make the SUITE's root current before
+            // destroying the case's context. DestroyContext clears the
+            // current context when the context it destroys is the current
+            // one, and every measurement seam reaches for ImGui — so a suite
+            // that derived geometry between cases would otherwise dereference
+            // a null context and hang the process rather than throw.
+            restoreRoot();
             ImGui.DestroyContext(context);
         }
     }
@@ -196,7 +217,9 @@ internal static class BehaviorSuites
             if (!FontRegistry.Ready)
                 throw new InvalidOperationException(
                     $"Font atlas is not ready: {FontRegistry.LastError}");
-            return cases(new BehaviorHost(ImGui.GetIO().Fonts));
+            return cases(new BehaviorHost(
+                ImGui.GetIO().Fonts,
+                () => ImGui.SetCurrentContext(rootContext)));
         }
         finally
         {
@@ -1012,6 +1035,26 @@ internal static class BehaviorSuites
 
     private static readonly Action<int> DropNoOp = static _ => { };
 
+    /// <summary>
+    /// Past the 32-element threshold the arena's scratch span replaced: a
+    /// menu this long used to cost a <c>new UiNode[n]</c> every frame, so the
+    /// warm-frame comparison against the identical legacy control is what
+    /// proves the scratch path allocates nothing.
+    /// </summary>
+    private static readonly string[] DropItemsLarge = BuildLargeItems();
+
+    private static string[] BuildLargeItems()
+    {
+        var items = new string[40];
+        for (int i = 0; i < items.Length; i++)
+            items[i] = "Option " + i.ToString(
+                "00", System.Globalization.CultureInfo.InvariantCulture);
+        return items;
+    }
+
+    private static readonly Func<UiNode> DropLargeTree = static () =>
+        Rx.Dropdown(DropItemsLarge, 0, DropNoOp);
+
     /// <summary>The parity fixture: one closed reactive dropdown, so its
     /// warm-frame bytes compare one-to-one against the identical legacy
     /// control. Hoisted for the same reason <see cref="ParityTree"/> is.
@@ -1065,6 +1108,21 @@ internal static class BehaviorSuites
             popup.RowHeight,
             popup.RowGap,
             popup.DropInset);
+    }
+
+    /// <summary>The same control one row position to the right, derived by
+    /// TRANSLATION rather than by a second measurement — the seams are only
+    /// callable inside a case.</summary>
+    private static DropGeometry Beside(in DropGeometry geometry, float dx)
+    {
+        var delta = new Vector2(dx, 0f);
+        return geometry with
+        {
+            TriggerMin = geometry.TriggerMin + delta,
+            TriggerMax = geometry.TriggerMax + delta,
+            PopupMin = geometry.PopupMin + delta,
+            PopupMax = geometry.PopupMax + delta,
+        };
     }
 
     internal static int ReactiveDropdown() =>
@@ -1147,10 +1205,12 @@ internal static class BehaviorSuites
                 TabThen(ImGuiKey.Enter)),
             "fired=0 last=-1");
         host.Check("uievent-int", UiEventInt(host));
+        host.Check("supersession", Supersession(host));
         host.Check(
             "allocation-closed-parity", DropAllocationParity(host, false));
         host.Check(
             "allocation-open-parity", DropAllocationParity(host, true));
+        host.Check("allocation-large", DropAllocationLarge(host));
         return host.Summary("reactive-dropdown behavior: all cases pass");
 
         string Drive(
@@ -1308,6 +1368,187 @@ internal static class BehaviorSuites
         return probe;
     }
 
+    // ---- Supersession: one open menu at a time -------------------------
+    //
+    // SIDE BY SIDE, and that is the whole design of the fixture. A menu is an
+    // exclusive surface that hangs DOWNWARD from its trigger, so two stacked
+    // dropdowns put B underneath A's panel: the press meant to supersede A
+    // would land on one of A's own rows instead, and if it landed on the
+    // SELECTED row it would take the silent reselect-close path — a=0,
+    // aLast=-1, menu closed, B never reached. That reproduces a supersession
+    // failure exactly without any supersession bug existing, so the case
+    // would be measuring its own layout. Placing B horizontally clear makes
+    // the collision impossible by construction rather than by arithmetic,
+    // and `b-clear-of-a-menu` asserts it so the fixture cannot drift back.
+    private static readonly Vector2 SupersessionCanvas = new(680, 320);
+    private const float SupersessionGap = 40f;
+
+    /// <summary>
+    /// Two independent reactive dropdowns, one root. The ACCEPTED backend's
+    /// dismissal policy (ImGui popups make every other window's content
+    /// unhoverable while open) means the first press on B's trigger only
+    /// dismisses A — it does not open B; the second press opens B normally.
+    /// This case asserts PARITY with that accepted behavior, anchored by the
+    /// imperative twin run at identical geometry: if either path ever gains
+    /// or loses first-press supersession, the anchor breaks and the case
+    /// fails. Making the first press open B would be a deliberate behavior
+    /// change to the shared backend — a product decision, not a twin's.
+    /// </summary>
+    private static Probe Supersession(BehaviorHost host)
+    {
+        DropGeometry a = dropGeometry;
+        DropGeometry b = Beside(
+            in a, a.TriggerMax.X - a.TriggerMin.X + SupersessionGap);
+
+        var probe = new Probe();
+        // The fixture's own precondition, asserted before anything is read
+        // from it: B's trigger must be clear of A's panel, or every result
+        // below is a statement about occlusion instead of supersession.
+        probe.Want("b-clear-of-a-menu", b.TriggerMin.X >= a.PopupMax.X, true);
+        // The BASELINE the other two are read against: B on its own, opened
+        // and selected with no A in the story at all. Without it a silent
+        // "b=0" could equally mean a broken supersession or a stale
+        // rectangle, and the case would name the wrong culprit.
+        probe.Want(
+            "b-alone", Alone(b.RowCenter(1)), "a=0 aLast=-1 b=1 bLast=1");
+        probe.Want(
+            "a-rows-gone", Drive(a.RowCenter(2)),
+            "a=0 aLast=-1 b=0 bLast=-1");
+        // First press on B's uncovered trigger: dismisses A ONLY. The value
+        // asserted here is the accepted backend's, proven by the twin below.
+        string reactive = Drive(b.RowCenter(1));
+        probe.Want(
+            "first-press-dismisses-only", reactive,
+            "a=0 aLast=-1 b=0 bLast=-1");
+        // The parity anchor: the imperative control at identical geometry
+        // under the identical script. Either path changing first-press
+        // semantics breaks this equality before anything else does.
+        probe.Want("legacy-parity", reactive, Legacy(b.RowCenter(1)));
+        probe.Want(
+            "second-press-opens", Retry(b.RowCenter(1)),
+            "a=0 aLast=-1 b=1 bLast=1");
+
+        // Evidence, printed unconditionally so a failure arrives with the
+        // frames that produced it instead of a bare counter.
+        Console.WriteLine(
+            $"supersession-geometry a-trigger={Rect(a.TriggerMin, a.TriggerMax)} "
+            + $"a-popup={Rect(a.PopupMin, a.PopupMax)} "
+            + $"b-trigger={Rect(b.TriggerMin, b.TriggerMax)}");
+        Console.WriteLine("supersession-trace " + Trace(b.RowCenter(1)));
+        return probe;
+
+        static string Rect(Vector2 min, Vector2 max) =>
+            $"x{min.X:0}..{max.X:0},y{min.Y:0}..{max.Y:0}";
+
+        // The IMPERATIVE control at the identical geometry under the
+        // identical script: the one comparison that separates "the retained
+        // path regressed" from "neither path supersedes".
+        string Legacy(Vector2 row)
+        {
+            int aFired = 0, bFired = 0, aLast = -1, bLast = -1;
+            host.Case(SupersessionCanvas, 20, _ =>
+            {
+                var content = new ControlStyle { Width = UiWidth.Content };
+                ImGui.SetCursorScreenPos(a.TriggerMin);
+                Ui.Dropdown(
+                    "##sup-legacy-a", DropItems, 0,
+                    index => { aFired++; aLast = index; }, content);
+                ImGui.SetCursorScreenPos(b.TriggerMin);
+                Ui.Dropdown(
+                    "##sup-legacy-b", DropItems, 0,
+                    index => { bFired++; bLast = index; }, content);
+            },
+            frame => frame < 6
+                ? a.TriggerCenter
+                : frame < 12 ? b.TriggerCenter : row,
+            Presses(2, 8, 14));
+            return $"a={aFired} aLast={aLast} b={bFired} bLast={bLast}";
+        }
+
+        // A open, then TWO presses on B's trigger, then B's row: the first
+        // press is spent dismissing A (the accepted policy), the second
+        // opens B, and the row then fires exactly once.
+        string Retry(Vector2 row) => Run(
+            26,
+            frame => frame < 6
+                ? a.TriggerCenter
+                : frame < 18 ? b.TriggerCenter : row,
+            Presses(2, 8, 14, 20));
+
+        // Per-frame pointer occlusion at world scope, which is what decides
+        // whether B's trigger can see the press at all.
+        string Trace(Vector2 row)
+        {
+            var frames = new List<string>();
+            int aFired = 0, bFired = 0;
+            var root = new UiRoot();
+            host.Case(SupersessionCanvas, 20, frame =>
+            {
+                ImGui.SetCursorScreenPos(DropOrigin);
+                root.Render(
+                    DropOrigin,
+                    ImGui.GetContentRegionAvail(),
+                    () => Rx.Row(
+                        Sx.Row(gap: SupersessionGap),
+                        [
+                            Rx.Dropdown(
+                                DropItems, 0, _ => aFired++, key: "a"),
+                            Rx.Dropdown(
+                                DropItems, 0, _ => bFired++, key: "b"),
+                        ]));
+                frames.Add(
+                    $"{frame}:{(Interactive.PointerOccluded() ? "occ" : "free")}"
+                    + $"/a{aFired}b{bFired}");
+            },
+            frame => frame < 6
+                ? a.TriggerCenter
+                : frame < 12 ? b.TriggerCenter : row,
+            Presses(2, 8, 14));
+            return string.Join(" ", frames);
+        }
+
+        string Alone(Vector2 row) => Run(
+            16,
+            frame => frame < 6 ? b.TriggerCenter : row,
+            Presses(2, 8));
+
+        string Drive(Vector2 third) => Run(
+            20,
+            frame => frame < 6
+                ? a.TriggerCenter
+                : frame < 12 ? b.TriggerCenter : third,
+            Presses(2, 8, 14));
+
+        string Run(
+            int frames,
+            Func<int, Vector2> pointer,
+            Func<int, (bool HasEvent, bool Down)> mouse)
+        {
+            int aFired = 0, bFired = 0, aLast = -1, bLast = -1;
+            var root = new UiRoot();
+            host.Case(SupersessionCanvas, frames, _ =>
+            {
+                ImGui.SetCursorScreenPos(DropOrigin);
+                root.Render(
+                    DropOrigin,
+                    ImGui.GetContentRegionAvail(),
+                    () => Rx.Row(
+                        Sx.Row(gap: SupersessionGap),
+                        [
+                            Rx.Dropdown(
+                                DropItems, 0,
+                                index => { aFired++; aLast = index; },
+                                key: "a"),
+                            Rx.Dropdown(
+                                DropItems, 0,
+                                index => { bFired++; bLast = index; },
+                                key: "b"),
+                        ]));
+            }, pointer, mouse);
+            return $"a={aFired} aLast={aLast} b={bFired} bLast={bLast}";
+        }
+    }
+
     /// <summary>The dropdown's own warm-frame gate: the retained control may
     /// cost no more than the identical imperative one, closed or open. Both
     /// sides run under the SAME host and the SAME input script, so the open
@@ -1330,8 +1571,44 @@ internal static class BehaviorSuites
         return probe;
     }
 
+    /// <summary>
+    /// The >32-item gate. A 40-row menu is past the threshold the arena's
+    /// scratch span replaced, so the comparison against the identical legacy
+    /// 40-item control is what shows the per-frame row buffer costs nothing.
+    /// Closed, because the subject is CONSTRUCTION: the rows are built every
+    /// frame whether the menu is up or not.
+    /// </summary>
+    private static Probe DropAllocationLarge(BehaviorHost host)
+    {
+        long reactive = MeasureDropAllocation(
+            host, true, false, DropItemsLarge, DropLargeTree,
+            "##alloc-legacy-large");
+        long legacy = MeasureDropAllocation(
+            host, false, false, DropItemsLarge, DropLargeTree,
+            "##alloc-legacy-large");
+        var probe = new Probe();
+        if (reactive > legacy)
+            probe.Fault(
+                $"a closed {DropItemsLarge.Length}-item reactive dropdown "
+                + $"allocated {reactive} bytes over 100 warm frames; the "
+                + $"identical legacy dropdown {legacy} — the retained path "
+                + "added bytes of its own");
+        else
+            Console.WriteLine(
+                $"allocation-large items={DropItemsLarge.Length} "
+                + $"reactive={reactive} legacy={legacy}");
+        return probe;
+    }
+
     private static long MeasureDropAllocation(
-        BehaviorHost host, bool reactive, bool open)
+        BehaviorHost host, bool reactive, bool open) =>
+        MeasureDropAllocation(
+            host, reactive, open, DropItems, DropParityTree,
+            "##alloc-legacy-dropdown");
+
+    private static long MeasureDropAllocation(
+        BehaviorHost host, bool reactive, bool open, string[] items,
+        Func<UiNode> tree, string legacyId)
     {
         Vector2 trigger = dropGeometry.TriggerCenter;
         var root = new UiRoot();
@@ -1345,12 +1622,11 @@ internal static class BehaviorSuites
                 root.Render(
                     DropOrigin,
                     ImGui.GetContentRegionAvail(),
-                    DropParityTree);
+                    tree);
             }
             else
             {
-                Ui.Dropdown(
-                    "##alloc-legacy-dropdown", DropItems, 0, DropNoOp);
+                Ui.Dropdown(legacyId, items, 0, DropNoOp);
             }
 
             long after = GC.GetAllocatedBytesForCurrentThread();

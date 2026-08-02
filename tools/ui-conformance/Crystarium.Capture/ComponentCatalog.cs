@@ -113,6 +113,12 @@ internal static class ComponentCatalog
         // dropdown-X — see verify-reactive-dropdown.ps1.
         new("rdd-closed", 320, 80),
         new("rdd-open", 320, 280),
+        // PBI-015 wave K: the same two paths with a GENUINELY SCROLLED list —
+        // ten items past the seven-row viewport, wheeled down by real
+        // ImGuiIO wheel events. Hidden: the two are compared against each
+        // other, not against a Picto reference.
+        new("dd-scrolled", 320, 280, Hidden: true),
+        new("rdd-scrolled", 320, 280, Hidden: true),
         new("color-palette", 220, 80),
         new("sidebar-row", 320, 80),
         new("sidebar-row-hover", 320, 80),
@@ -141,6 +147,29 @@ internal static class ComponentCatalog
         "Rating",
         "File Size",
         "Duration",
+    ];
+
+    /// <summary>
+    /// A SIBLING of <see cref="DropdownItems"/> rather than an extension of
+    /// it: the seven-item fixture's captures are frozen, so the scrolled
+    /// states get their own list. Ten items past the seven-row viewport is
+    /// 278px of rows in a 194px window — one wheel notch scrolls it far
+    /// enough to carry the selected row 0 clear off the top. Every added
+    /// name is narrower than "Date Modified", so the trigger and panel keep
+    /// the intrinsic width the seven-item fixture resolves.
+    /// </summary>
+    private static readonly string[] DropdownItemsScrolled =
+    [
+        "Date Added",
+        "Date Created",
+        "Date Modified",
+        "Name",
+        "Rating",
+        "File Size",
+        "Duration",
+        "Type",
+        "Author",
+        "Extension",
     ];
 
     /// <summary>Hoisted so the reactive fixture's build closure stays
@@ -253,10 +282,49 @@ internal static class ComponentCatalog
     /// </summary>
     public const int PopMidRegisterFrame = 9;
 
+    /// <summary>
+    /// The frame the scrolled fixtures deliver their wheel notch on: late
+    /// enough that the reactive menu (opened by a real click at frame 2) is
+    /// already up, early enough that the pointer is long gone by the
+    /// presented frames.
+    /// </summary>
+    private const int ScrollWheelFrame = 10;
+
+    /// <summary>
+    /// Vertical wheel for a frame, in ImGui notches — the units
+    /// <c>AddMouseWheelEvent</c> takes. A notch is
+    /// <c>min(5 * fontSize, 0.67 * viewport)</c>, which is a FONT metric and
+    /// so not something a fixture should depend on; two notches overshoot
+    /// this list's 84px of travel (ten 26px rows on 2px gaps inside a 194px
+    /// seven-row viewport) from any plausible font size, so the scroll
+    /// clamps to its maximum and lands on exactly three rows whatever the
+    /// atlas resolves. Zero on every other frame and every other state, and
+    /// ImGui drops a zero wheel event before it queues it.
+    /// </summary>
+    public static float WheelFor(string name, int frame) =>
+        (name is "dd-scrolled" or "rdd-scrolled") && frame == ScrollWheelFrame
+            ? -2f
+            : 0f;
+
     public static Vector2 PointerFor(string name, float scale, int frame)
     {
         if (name == "context-menu")
             return new Vector2(40, 40) * scale;
+        // The scrolled fixtures need the pointer INSIDE the popup list on the
+        // wheel frame — ImGui routes the wheel to the hovered window — and
+        // parked offscreen well before the presented frames, so the settled
+        // capture shows no hovered row. (64,120) is inside the seven-row
+        // viewport of a menu anchored under the (24,24) trigger; (64,37) is
+        // the trigger itself, which only the reactive twin has to click
+        // because its portal handle is path-derived.
+        if (name is "dd-scrolled" or "rdd-scrolled")
+        {
+            if (name == "rdd-scrolled" && frame is >= 1 and <= 4)
+                return new Vector2(64, 37) * scale;
+            return frame is >= 6 and <= 16
+                ? new Vector2(64, 120) * scale
+                : new Vector2(-1000, -1000);
+        }
         // Hover states park the pointer inside the control; hover-exit
         // leaves after 15 frames so the 150ms background transition has
         // settled back to idle by capture. The shared inside point (84,40)
@@ -350,6 +418,12 @@ internal static class ComponentCatalog
         if (name == "rdd-open" && frame == 2)
             yield return (0, true);
         if (name == "rdd-open" && frame == 4)
+            yield return (0, false);
+        // Same choreography for the scrolled reactive twin; the wheel notch
+        // lands six frames after the release, with the menu already up.
+        if (name == "rdd-scrolled" && frame == 2)
+            yield return (0, true);
+        if (name == "rdd-scrolled" && frame == 4)
             yield return (0, false);
     }
 
@@ -1072,6 +1146,31 @@ internal static class ComponentCatalog
                     origin,
                     ImGui.GetContentRegionAvail(),
                     static () => Rx.Dropdown(DropdownItems, 0, NoOpSelect));
+                break;
+            // ---- Genuinely scrolled twins (PBI-015 wave K) ----------
+            // Ten items, one wheel notch down. The legacy twin stages its
+            // menu the same way dropdown-open does; the reactive one earns
+            // it with a real click. Both are then wheeled by the SAME
+            // event on the SAME frame with the pointer at the SAME point.
+            case "dd-scrolled":
+                if (frame == 0)
+                    Ui.OpenPopover("##dd-scrolled_popup");
+                Ui.Dropdown(
+                    "##dd-scrolled",
+                    DropdownItemsScrolled,
+                    0,
+                    _ => { },
+                    new ControlStyle
+                    {
+                        Width = UiWidth.Content,
+                    });
+                break;
+            case "rdd-scrolled":
+                ReactiveRoot(name).Render(
+                    origin,
+                    ImGui.GetContentRegionAvail(),
+                    static () => Rx.Dropdown(
+                        DropdownItemsScrolled, 0, NoOpSelect));
                 break;
             case "color-palette":
                 DrawPalette();

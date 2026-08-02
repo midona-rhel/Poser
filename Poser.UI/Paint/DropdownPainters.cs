@@ -48,8 +48,9 @@ internal sealed class DropdownRowPainter : IInteractivePainter
                 input.Hit.ScreenMin,
                 input.BoxSize,
                 Poser.UI.Crystarium.ActiveTheme.Radii.Medium * ImGuiHelpers.GlobalScale);
-        // `.opt` declares no color, so the label keeps the theme default.
-        return new PaintOutput(null, 1f);
+        // `.opt` declares neither a color nor a glyph opacity, so its content
+        // keeps the theme default and whatever the surface already resolved.
+        return new PaintOutput(null, null);
     }
 }
 

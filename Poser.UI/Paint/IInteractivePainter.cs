@@ -5,9 +5,9 @@ namespace Poser.UI.Reactive;
 
 /// <summary>
 /// Everything one painter is handed. A struct rather than a parameter list
-/// because two of these are NOT the element's obvious geometry: the reserved
-/// hit rect can be narrower than the arranged box, and inside a portal the
-/// surface a control's own box belongs on is not the current window's.
+/// because one of these is NOT the element's obvious geometry: the reserved
+/// hit rect can be narrower than the arranged box, so a painter that wants the
+/// box it was ARRANGED must be told it.
 /// </summary>
 internal readonly struct PaintInput
 {
@@ -44,10 +44,10 @@ internal readonly struct PaintInput
     /// row keeps a full-width fill under a gutter-free hit.</summary>
     internal readonly Vector2 BoxSize;
 
-    /// <summary>The list the element's own box belongs on: the current
-    /// window's, except inside a portal, where it is the POPUP window's. A
-    /// scroll region is a child window with its own list, and a menu row's
-    /// fill is drawn on the surface it sits on, not on the viewport.</summary>
+    /// <summary>The list the element's own box belongs on: the CURRENT
+    /// window's, resolved by the walk where it paints. A popup is a window and
+    /// a scroll region is a child window, each with its own list, so a menu
+    /// row's fill lands on the same list as the label inside it.</summary>
     internal readonly ImDrawListPtr DrawList;
 }
 
@@ -57,7 +57,7 @@ internal readonly struct PaintInput
 /// </summary>
 internal readonly struct PaintOutput
 {
-    internal PaintOutput(Vector4? foreground, float svgOpacity)
+    internal PaintOutput(Vector4? foreground, float? svgOpacity)
     {
         Foreground = foreground;
         SvgOpacity = svgOpacity;
@@ -68,7 +68,13 @@ internal readonly struct PaintOutput
     /// than on a value the row would have to restate.</summary>
     internal readonly Vector4? Foreground;
 
-    internal readonly float SvgOpacity;
+    /// <summary>null leaves the inherited glyph opacity untouched; a stated
+    /// value COMPOSES onto it (inherited *= stated), so a box that dims its
+    /// glyphs dims whatever its ancestors already dimmed rather than
+    /// overwriting it. A painter that has no opinion states nothing — 1f is
+    /// an opinion that happens to be identity, and only reads as one because
+    /// the composition is multiplicative.</summary>
+    internal readonly float? SvgOpacity;
 }
 
 /// <summary>

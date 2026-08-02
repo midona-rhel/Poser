@@ -22,5 +22,5 @@ internal sealed class TextButtonPainter : IInteractivePainter
                 input.Identity,
                 (Poser.UI.ButtonVariant)input.Arg,
                 input.Disabled),
-            1f);
+            null);
 }

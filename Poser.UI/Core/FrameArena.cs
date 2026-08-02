@@ -94,9 +94,10 @@ internal struct ElementRecord
     // its tint must come from the icon renderer's own default instead.
     internal float SvgOpacity;
     internal bool SvgInheritsColor;
-    // Text: a run whose box was SIZED (Fixed or Fill) truncates to it, exactly
-    // like the CSS box it stands for; an intrinsic run is never cut. When set,
-    // a truncated run offers the full text as a hover readout.
+    // Text: overflow is the run's OWN declaration, never inferred from its
+    // width — see TextOverflow. The preview flag is separate and only means
+    // anything under Truncate: a cut run offers the full text as a readout.
+    internal Poser.UI.TextOverflow TextOverflow;
     internal bool TextPreviewOnClip;
     // Filled by the layout pass in wave B.
     internal Vector2 LogicalSize;
@@ -121,6 +122,8 @@ internal sealed class FrameArena
     private int _childCount;
     private object?[] _objects = new object?[64];
     private int _objectCount = 1;
+    private UiNode[] _scratchNodes = new UiNode[64];
+    private int _scratchCount;
 
     internal static FrameArena? Current { get; set; }
 
@@ -242,14 +245,44 @@ internal sealed class FrameArena
 
     internal object? GetObject(int slot) => slot <= 0 ? null : _objects[slot];
 
+    /// <summary>
+    /// Working room for a declaration that must assemble a VARIABLE number of
+    /// handles before handing them to <see cref="Poser.UI.UiChildren"/>. The
+    /// buffer is grow-only and reset — never freed — by <see cref="Reset"/>, so
+    /// a menu of any length costs a warm frame nothing; a
+    /// <c>stackalloc</c>-with-heap-fallback would allocate the moment the list
+    /// got long, which is exactly when it matters.
+    ///
+    /// <para>Spans are BUMP-allocated, so two live at once never overlap. A
+    /// request that GROWS the buffer reallocates it and invalidates every span
+    /// handed out earlier in the frame: consume one before asking for the next.
+    /// </para>
+    /// </summary>
+    internal Span<UiNode> ScratchNodes(int count)
+    {
+        if (count <= 0)
+            return default;
+        Ensure(ref _scratchNodes, _scratchCount + count);
+        int start = _scratchCount;
+        _scratchCount += count;
+        // Cleared so an unwritten slot reads as UiNode.None rather than as
+        // last frame's element at that index.
+        Span<UiNode> span = _scratchNodes.AsSpan(start, count);
+        span.Clear();
+        return span;
+    }
+
     internal void Reset()
     {
         // Object slots hold delegates and strings: null them so a frame's
         // references die with it, but keep every buffer at its high-water mark.
+        // Scratch handles are plain ints, so rewinding the bump cursor is the
+        // whole reset.
         Array.Clear(_objects, 0, _objectCount);
         _elementCount = 1;
         _childCount = 0;
         _objectCount = 1;
+        _scratchCount = 0;
         FrameId++;
     }
 

@@ -216,6 +216,13 @@ internal static class Program
                             ComponentCatalog.MouseButtonEventsFor(
                                 entry.Name, frame))
                             io.AddMouseButtonEvent(button, down);
+                        // Wheel is real input like the rest: ImGui routes it
+                        // to the hovered window, so the fixture's pointer
+                        // script is what decides which list scrolls. A zero
+                        // wheel is dropped before it is queued, so the
+                        // unconditional call costs the other states nothing.
+                        io.AddMouseWheelEvent(
+                            0f, ComponentCatalog.WheelFor(entry.Name, frame));
 
                         ImGui.NewFrame();
                         Interactive.BeginFrame();

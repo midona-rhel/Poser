@@ -100,8 +100,9 @@ public static partial class Crystarium
             _ => metrics.Width / scale,
         };
         float labelSize = theme.Typography.LabelSize;
-        // A label is a SIZED box in both places it appears, so it truncates to
-        // what it was arranged and offers the full text on hover.
+        // A label fills its row in both places it appears and is explicitly
+        // cut to it, offering the full text on hover — CmSelect's own
+        // `text-overflow: ellipsis`, stated rather than inferred from the Fill.
         UiStyle labelBox = Sx.Size(UiDim.Fill, default);
 
         // ---- .drop ---------------------------------------------------------
@@ -112,15 +113,18 @@ public static partial class Crystarium
             align: UiAlign.Center,
             width: UiDim.Fill);
 
-        UiNode[]? spill = items.Length > 32 ? new UiNode[items.Length] : null;
-        Span<UiNode> rows = spill ?? stackalloc UiNode[32];
-        rows = rows[..items.Length];
+        // Frame-scoped scratch, at EVERY item count: a stackalloc/heap split
+        // would only trade one branch for an allocation the moment a menu got
+        // long, and the arena's buffer is already there.
+        Span<UiNode> rows = FrameArena.Require().ScratchNodes(items.Length);
         for (int i = 0; i < items.Length; i++)
         {
             bool isSelected = i == selected;
             rows[i] = InteractiveCore(
                 in rowLayout,
-                TextCore(items[i], labelSize, null, in labelBox, default, previewOnClip: true),
+                TextCore(
+                    items[i], labelSize, null, in labelBox, default,
+                    TextOverflow.Truncate, previewOnClip: true),
                 key: i,
                 disabled: false,
                 help: null,
@@ -161,7 +165,9 @@ public static partial class Crystarium
                     0f),
                 align: UiAlign.Center),
             [
-                TextCore(current, labelSize, null, in labelBox, default, previewOnClip: true),
+                TextCore(
+                    current, labelSize, null, in labelBox, default,
+                    TextOverflow.Truncate, previewOnClip: true),
                 // .btnChevron: the 14px glyph centered in its fixed 20px slot.
                 // The 0.5 opacity is the BOX's, so it arrives as the subtree's
                 // inherited glyph opacity rather than as a number stated twice.

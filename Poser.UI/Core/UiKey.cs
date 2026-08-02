@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using Poser.UI.Reactive;
 
 namespace Poser.UI;
 
@@ -86,7 +87,7 @@ public readonly struct UiKey : IEquatable<UiKey>
     /// </summary>
     internal ulong HashInto(ulong hash)
     {
-        hash = UiRoot.Mix(hash, (byte)_kind);
+        hash = IdentityCache.Mix(hash, (byte)_kind);
         switch (_kind)
         {
             case UiKeyKind.None:
@@ -94,10 +95,10 @@ public readonly struct UiKey : IEquatable<UiKey>
             case UiKeyKind.Literal:
                 string text = _text ?? string.Empty;
                 for (int i = 0; i < text.Length; i++)
-                    hash = UiRoot.Mix(hash, text[i]);
-                return UiRoot.Mix(hash, (ulong)(uint)text.Length);
+                    hash = IdentityCache.Mix(hash, text[i]);
+                return IdentityCache.Mix(hash, (ulong)(uint)text.Length);
             default:
-                return UiRoot.Mix(UiRoot.Mix(hash, _lo), _hi);
+                return IdentityCache.Mix(IdentityCache.Mix(hash, _lo), _hi);
         }
     }
 

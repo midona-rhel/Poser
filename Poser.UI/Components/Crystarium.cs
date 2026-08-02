@@ -31,28 +31,31 @@ public static partial class Crystarium
         Box(UiFlow.Stack, in sx, children, key);
 
     /// <summary>A text run. Unset size and color resolve from the active theme
-    /// inside the renderer. A run left at its Content width is never cut; one
-    /// SIZED by <paramref name="sx"/> — Fixed here, or Fill against its
-    /// siblings — truncates to the box it was arranged, exactly like the CSS
-    /// <c>overflow: hidden</c> label it stands for.</summary>
+    /// inside the renderer. <paramref name="overflow"/> is what decides whether
+    /// the run is cut — sizing it through <paramref name="sx"/> says how much
+    /// room it takes, not that it may not spill, exactly as in CSS.</summary>
     public static UiNode Text(
         string text, float? size = null, Vector4? color = null,
-        UiStyle sx = default, UiKey key = default) =>
-        TextCore(text, size, color, in sx, key, previewOnClip: false);
+        UiStyle sx = default, TextOverflow overflow = TextOverflow.Visible,
+        UiKey key = default) =>
+        TextCore(text, size, color, in sx, key, overflow, previewOnClip: false);
 
     /// <summary>As above, with the truncation readout a control's own label
     /// wants: a cut run offers its full text while the CONTROL is hovered.
     /// Internal because it is only ever right for a label a control owns —
-    /// composed body text answers to its own layout, not to a hit box.</summary>
+    /// composed body text answers to its own layout, not to a hit box. The
+    /// readout means nothing without <see cref="TextOverflow.Truncate"/>,
+    /// which is why the two stay separate arguments.</summary>
     internal static UiNode TextCore(
         string text, float? size, Vector4? color, in UiStyle sx, UiKey key,
-        bool previewOnClip)
+        TextOverflow overflow, bool previewOnClip)
     {
         ElementRecord record = default;
         record.Kind = ElementKind.Text;
         record.Text = text;
         record.TextSize = size ?? 0f;
         record.Style = sx;
+        record.TextOverflow = overflow;
         record.TextPreviewOnClip = previewOnClip;
         Tint(ref record, color);
         record.Key = key;
