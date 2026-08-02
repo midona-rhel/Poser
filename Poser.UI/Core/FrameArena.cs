@@ -5,90 +5,6 @@ using System.Threading;
 
 namespace Poser.UI.Reactive;
 
-internal enum ElementKind : byte
-{
-    Box,
-    Text,
-    Svg,
-    Interactive,
-    // APPEND ONLY: the interaction path hash mixes this byte, so moving an
-    // existing kind would re-identify every element already declared under it.
-    Portal,
-
-    /// <summary>
-    /// The named escape hatch: an arranged rectangle whose CONTENT is drawn by
-    /// imperative ImGui. The runtime places the cursor and hands the island its
-    /// box and its retained id; everything inside — widgets, focus, IME — is the
-    /// island's own. It may not paint outside the rect it was given, which is
-    /// what keeps the solver the single authority on layout.
-    /// </summary>
-    Native,
-}
-
-/// <summary>
-/// Which input edge dispatches an interactive element, and whether
-/// <see cref="ElementRecord.Arg"/> rides along with it. One byte rather than
-/// two fields because the edge and the payload are one authored decision: a
-/// control that fires on the raw press is a menu, and a menu says WHICH row.
-/// </summary>
-internal static class DispatchMode
-{
-    /// <summary>Click-release or Enter, no payload — the button edge.</summary>
-    internal const byte Activated = 0;
-
-    /// <summary>The raw press edge, no payload — what a menu trigger opens on.</summary>
-    internal const byte Clicked = 1;
-
-    /// <summary>The raw press edge carrying <see cref="ElementRecord.Arg"/> to
-    /// an <see cref="Action{T}"/> handler or a valued reducer.</summary>
-    internal const byte ClickedWithArg = 2;
-
-    /// <summary>The click edge carrying the NEGATION of
-    /// <see cref="ElementRecord.Arg"/> as a bool — a controlled toggle, whose
-    /// element stores the value it is currently showing and whose handler is
-    /// told the value it was just asked for.</summary>
-    internal const byte Toggled = 3;
-
-    /// <summary>
-    /// Continuous drag: every frame the element is active, the pointer's x is
-    /// turned into a value inside <see cref="ElementRecord.F0"/>..<see cref="ElementRecord.F1"/>
-    /// and dispatched as a float. The element's own normalized position is
-    /// updated BEFORE its painter runs, so the frame that moves the pointer is
-    /// the frame that draws the thumb under it.
-    /// </summary>
-    internal const byte Drag = 4;
-
-    /// <summary>
-    /// Opens (and then hosts, every frame) the shared colour-picker popover
-    /// keyed off the element's own identity. The value never travels through
-    /// the activation buffer: the popup edits inline, which is the native
-    /// boundary this mode exists to reach.
-    /// </summary>
-    internal const byte ColorPopup = 5;
-
-    /// <summary>
-    /// The RELEASE edge carrying <see cref="ElementRecord.Arg"/> as an index
-    /// into a list the declaration also stored. The payload a handler wants is
-    /// the ITEM, not its position, and only the declaration knows the element
-    /// type — so the index is resolved through a retained typed bridge rather
-    /// than by boxing the item into the record.
-    ///
-    /// <para>Release rather than press, because the list row it exists for is
-    /// the legacy <c>SidebarRow</c>, which selects on release-inside.</para>
-    /// </summary>
-    internal const byte ActivatedItem = 6;
-}
-
-/// <summary>
-/// One list's index-to-item dispatch, retained by whoever declared the list so
-/// that binding a row costs no per-frame allocation. The runtime never learns
-/// the element type: it hands over an index and the bridge does the rest.
-/// </summary>
-internal interface IItemDispatch
-{
-    void Invoke(int index);
-}
-
 /// <summary>
 /// An island of imperative ImGui inside the retained tree — the named native
 /// escape hatch. The runtime resolves the identity, places the cursor at
@@ -101,114 +17,133 @@ internal interface INativeElement
 }
 
 /// <summary>
-/// One tagged frame declaration. Plain mutable fields on purpose: records live
-/// in a pooled array and are written by index, never copied per frame.
+/// One frame declaration. There is ONE record type because there is one
+/// element: every facet below is optional, and a control is a projection onto
+/// this shape rather than a species of it. Plain mutable fields on purpose —
+/// records live in a pooled array and are written by index, never copied per
+/// frame.
 /// </summary>
 internal struct ElementRecord
 {
-    internal ElementKind Kind;
-    internal UiStyle Style;
-    // Text label for Text, source name for Svg.
+    /// <summary>The family sheet, and the frame-scoped inline patch (0 = the
+    /// element states nothing of its own). The patch lives in a bump arena so
+    /// a record never carries a fat sheet copy.</summary>
+    internal Poser.UI.SheetRef Sheet;
+    internal int PatchSlot;
+
+    internal Poser.UI.Listeners On;
+
+    // Leaf content. Two nullable facets, NOT two species: an element with
+    // neither is a box, one with both is a box that draws a run and a glyph.
     internal string? Text;
-    internal float TextSize;
-    internal byte TextWeight;
-    internal Poser.UI.FontFamily TextFamily;
-    internal Vector4 TextColor;
-    internal bool HasTextColor;
-    internal UiKey Key;
+    internal string? Glyph;
+    internal float GlyphSize;
+    internal float GlyphStroke;
+    internal bool GlyphNoInherit;
+    internal bool Preview;
+
+    internal bool Disabled;
+    internal bool Selected;
+    internal string? Help;
+    internal Poser.UI.UiKey Key;
+
     internal int ChildStart;
     internal int ChildCount;
-    // Index into the arena object slots, 0 when the element has no behavior.
-    // Reserved for plain Action handlers; component events ride the two int
-    // fields below so a UiEvent token never has to be boxed into a slot.
-    internal int BehaviorSlot;
-    internal int EventScope;
-    internal int EventReducer;
     internal int ScopeId;
-    // Interactive paint: the arena object slot holding the retained
-    // IInteractivePainter (0 = none) plus the single byte of parameter the
-    // painter interprets — a variant, a tone, a level. The runtime never
-    // reads it, so no element kind is special-cased in the walk.
-    internal int PainterSlot;
-    internal byte PaintArg;
-    // The painter owns the box, so its subtree is clipped to it; the walk
-    // pushes the clip once around the whole child traversal.
+
+    /// <summary>The normalized 0..1 position a ranged control shows. Written
+    /// by the drag path BEFORE paint, so the thumb lands under the pointer on
+    /// the frame the pointer moved.</summary>
+    internal float Value;
+
+    /// <summary>What <see cref="Poser.UI.Listeners.OnPick"/> reports.</summary>
+    internal int Index;
+
+    /// <summary>The escape hatch for geometry a sheet cannot express.</summary>
+    internal IPainter? Painter;
+
+    /// <summary>The painter owns the box, so its subtree is clipped to it;
+    /// the walk pushes the clip once around the whole child traversal.</summary>
     internal bool ClipChildren;
-    internal string? Help;
-    // The dispatch payload: whatever small int the element stands for — a row
-    // index on a menu row, a flag on a portal. See DispatchMode.
-    internal int Arg;
-    internal byte DispatchMode;
-    // Menu wiring. A trigger names the portal it opens (0 = none); a portal
-    // names the element it hangs under, which is also its PARENT, because the
-    // popup handle and the anchor rect are both read off that one path.
+
+    // Floating-surface wiring. A trigger names the portal it opens; the
+    // portal's own geometry lives in the side arena, keyed by this slot.
     internal int OpensPortalNode;
-    internal int AnchorNode;
-    // Closing is the ELEMENT's business, not the handler's: the legacy menu
-    // closes on every click, including the one that changes nothing.
     internal bool ClosesPortal;
-    // The arena object slot holding an INativeElement, 0 for every other kind.
+    internal Poser.UI.Activation ActivateOn;
+    internal int PortalSlot;
+
+    /// <summary>The arena object slot holding an <see cref="INativeElement"/>.</summary>
     internal int NativeSlot;
-    // Portal box, all logical. A zero width means "as wide as the anchor" —
-    // a Fill-sized trigger has no span until the solver grants it.
-    internal Vector2 PortalContentSize;
-    internal float PortalPadding;
-    internal float PortalAnchorCompensation;
-    // The scroll viewport's logical height, 0 for a surface whose children do
-    // not scroll. Only the height is authored: the viewport's width is the
-    // surface's content region, which the popup window itself reports.
-    internal float ScrollRegionHeight;
-    // Index of the first child INSIDE the scroll viewport. The children before
-    // it are the surface's fixed head — a caption, a filter field — and stay
-    // out of the scrolled region, which is what lets a picker scroll its rows
-    // alone. 0 scrolls everything, and is what a menu declares.
-    internal int PortalScrollFromChild;
-    // The surface treatment, mirroring FloatingSurfaceTreatment: a portal that
-    // paints its own panel takes Unframed, one that wants the shared glass
-    // shell takes Glass. Stated rather than inferred from the painter slot,
-    // because "no painter" and "the host draws the chrome" are two decisions.
-    internal byte PortalTreatment;
-    // Svg: 0 reads as 1. A control-owned glyph opts OUT of currentColor when
-    // its tint must come from the icon renderer's own default instead.
-    internal float SvgOpacity;
-    internal bool SvgInheritsColor;
-    // Svg: the glyph's stroke in the icon's own 24-unit viewBox, 0 for the
-    // renderer's default. A small glyph needs a heavier stroke to stay legible
-    // and the reference states one, so it is authored rather than derived.
-    internal float SvgStroke;
-    // Text: overflow is the run's OWN declaration, never inferred from its
-    // width — see TextOverflow. The preview flag is separate and only means
-    // anything under Truncate: a cut run offers the full text as a readout.
-    internal Poser.UI.TextOverflow TextOverflow;
-    internal bool TextPreviewOnClip;
-    // The three authored numbers a ranged control carries: the range's minimum
-    // and maximum, and the value's normalized 0..1 position inside it. Only a
-    // painter's seam and DispatchMode.Drag read them — a progress bar states
-    // F2 alone, a slider states all three.
-    internal float F0;
-    internal float F1;
-    internal float F2;
-    // Filled by the layout pass in wave B.
+
+    // Filled by the layout pass. Typography is resolved there because a run's
+    // intrinsic box is made of it, and no pseudo state can reach it.
+    internal Poser.UI.ResolvedLayout Layout;
+    internal Poser.UI.ResolvedType Type;
+
+    /// <summary>The run's PHYSICAL measure, taken once by the measure pass and
+    /// reused by the paint.</summary>
+    internal Vector2 TextSize;
     internal Vector2 LogicalSize;
     internal Vector2 LogicalPos;
-    internal bool Disabled;
 }
 
 /// <summary>
-/// Per-frame storage for element declarations, child ranges and retained
-/// event references. Every buffer is grow-only and reset by index, so a warm
-/// frame allocates nothing.
+/// A floating surface's own geometry, kept OFF the element record: a portal is
+/// rare and its box is fat, so the one element pays nothing for the facet it
+/// does not use.
+/// </summary>
+internal struct PortalRecord
+{
+    /// <summary>Logical surface span. A ZERO width means "as wide as the
+    /// anchor" — a Fill-sized trigger has no span until the solver grants it.
+    /// </summary>
+    internal Vector2 ContentSize;
+    internal float Padding;
+    internal float AnchorCompensation;
+
+    /// <summary>The scroll viewport's logical height; 0 for a surface whose
+    /// children do not scroll.</summary>
+    internal float ScrollRegionHeight;
+
+    /// <summary>Index of the first child INSIDE the viewport. The children
+    /// before it are the surface's fixed head.</summary>
+    internal int ScrollFromChild;
+
+    /// <summary>Mirrors <see cref="Poser.UI.FloatingSurfaceTreatment"/>.</summary>
+    internal byte Treatment;
+
+    /// <summary>Reserve the first interactive layer clear of the scrollbar
+    /// gutter while their boxes keep the full width.</summary>
+    internal bool CapChildHitWidth;
+
+    /// <summary>The element the surface hangs under, which is also its
+    /// parent: the popup handle and the anchor rect are both read off that
+    /// one path.</summary>
+    internal int AnchorNode;
+
+    internal IPortalSurfacePainter? Surface;
+}
+
+/// <summary>
+/// Per-frame storage for element declarations, child ranges, inline sheet
+/// patches, portal geometry and retained references. Every buffer is grow-only
+/// and reset by index, so a warm frame allocates nothing.
 /// </summary>
 internal sealed class FrameArena
 {
     private static int _nextArenaId;
 
-    // Slot 0 of the element and object buffers is reserved so that a zeroed
-    // handle (UiNode.None, UiEvent with slot 0) reads as "none".
+    // Slot 0 of every buffer is reserved so that a zeroed handle reads as
+    // "none".
     private ElementRecord[] _elements = new ElementRecord[256];
     private int _elementCount = 1;
     private int[] _childIndices = new int[512];
     private int _childCount;
+    private Poser.UI.ElementSheet[] _patches = new Poser.UI.ElementSheet[64];
+    private int _patchCount = 1;
+    private PortalRecord[] _portals = new PortalRecord[8];
+    private int _portalCount = 1;
     private object?[] _objects = new object?[64];
     private int _objectCount = 1;
     private UiNode[] _scratchNodes = new UiNode[64];
@@ -231,11 +166,34 @@ internal sealed class FrameArena
 
     internal ref ElementRecord this[int index] => ref _elements[index];
 
+    internal ref PortalRecord Portal(int slot) => ref _portals[slot];
+
+    /// <summary>The inline patch a record named, or null when it named none.
+    /// Returned by reference: a patch is a fat struct and the resolver only
+    /// reads it.</summary>
+    internal ref readonly Poser.UI.ElementSheet Patch(int slot) => ref _patches[slot];
+
+    internal bool HasPatch(int slot) => slot > 0;
+
     internal UiNode AddElement(in ElementRecord record)
     {
         Ensure(ref _elements, _elementCount + 1);
         _elements[_elementCount] = record;
         return new UiNode(_elementCount++, FrameId, Id);
+    }
+
+    internal int AddPatch(in Poser.UI.ElementSheet patch)
+    {
+        Ensure(ref _patches, _patchCount + 1);
+        _patches[_patchCount] = patch;
+        return _patchCount++;
+    }
+
+    internal int AddPortal(in PortalRecord portal)
+    {
+        Ensure(ref _portals, _portalCount + 1);
+        _portals[_portalCount] = portal;
+        return _portalCount++;
     }
 
     /// <summary>
@@ -338,9 +296,7 @@ internal sealed class FrameArena
     /// Working room for a declaration that must assemble a VARIABLE number of
     /// handles before handing them to <see cref="Poser.UI.UiChildren"/>. The
     /// buffer is grow-only and reset — never freed — by <see cref="Reset"/>, so
-    /// a menu of any length costs a warm frame nothing; a
-    /// <c>stackalloc</c>-with-heap-fallback would allocate the moment the list
-    /// got long, which is exactly when it matters.
+    /// a menu of any length costs a warm frame nothing.
     ///
     /// <para>Spans are BUMP-allocated, so two live at once never overlap. A
     /// request that GROWS the buffer reallocates it and invalidates every span
@@ -363,13 +319,18 @@ internal sealed class FrameArena
 
     internal void Reset()
     {
-        // Object slots hold delegates and strings: null them so a frame's
-        // references die with it, but keep every buffer at its high-water mark.
-        // Scratch handles are plain ints, so rewinding the bump cursor is the
-        // whole reset.
+        // Records now hold delegates directly (the listener set) and painters
+        // and strings besides, so the USED RANGE is cleared rather than merely
+        // rewound: a frame's references must die with it. Every buffer keeps
+        // its high-water mark, so the clear is the whole cost.
+        Array.Clear(_elements, 0, _elementCount);
+        Array.Clear(_patches, 0, _patchCount);
+        Array.Clear(_portals, 0, _portalCount);
         Array.Clear(_objects, 0, _objectCount);
         _elementCount = 1;
         _childCount = 0;
+        _patchCount = 1;
+        _portalCount = 1;
         _objectCount = 1;
         _scratchCount = 0;
         FrameId++;

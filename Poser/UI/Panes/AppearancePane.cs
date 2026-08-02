@@ -150,31 +150,46 @@ public sealed class AppearancePane
         return Crystarium.Page(
         [
             Crystarium.PageStatus(_status),
-            Crystarium.Section(
-                "GENERAL", _openGeneral, _toggleGeneral,
-                _openGeneral
+            new Section
+            {
+                Title = "GENERAL",
+                Expanded = _openGeneral,
+                OnExpandedChange = _toggleGeneral,
+                Children = _openGeneral
                     ? GeneralRows(handlers, owned, reading)
                     : UiChildren.Empty,
-                "general"),
-            Crystarium.Section(
-                "WET SURFACE", _openWetSurface, _toggleWetSurface,
-                _openWetSurface
+                Key = "general",
+            },
+            new Section
+            {
+                Title = "WET SURFACE",
+                Expanded = _openWetSurface,
+                OnExpandedChange = _toggleWetSurface,
+                Children = _openWetSurface
                     ? WetSurfaceRows(handlers, owned, reading)
                     : UiChildren.Empty,
-                "wet-surface"),
-            Crystarium.Section(
-                "EXTERNAL APPEARANCE", _openExternalAppearance,
-                _toggleExternalAppearance,
-                _openExternalAppearance
+                Key = "wet-surface",
+            },
+            new Section
+            {
+                Title = "EXTERNAL APPEARANCE",
+                Expanded = _openExternalAppearance,
+                OnExpandedChange = _toggleExternalAppearance,
+                Children = _openExternalAppearance
                     ? ExternalAppearanceRows(handlers, external)
                     : UiChildren.Empty,
-                "external-appearance"),
-            Crystarium.Section(
-                "CHARACTER FILE (MCDF)", _openCharacterFile, _toggleCharacterFile,
-                _openCharacterFile
+                Key = "external-appearance",
+            },
+            new Section
+            {
+                Title = "CHARACTER FILE (MCDF)",
+                Expanded = _openCharacterFile,
+                OnExpandedChange = _toggleCharacterFile,
+                Children = _openCharacterFile
                     ? CharacterFileRows(handlers, external)
                     : UiChildren.Empty,
-                "character-file"),
+                Key = "character-file",
+            },
         ]);
     }
 
@@ -189,15 +204,23 @@ public sealed class AppearancePane
             Crystarium.FormActions(
                 "Appearance",
                 [
-                    Crystarium.FormButton(
-                        "Open in Glamourer", handlers.OpenGlamourer,
-                        disabled: !glamourer.Available,
-                        help: glamourer.Available
+                    new Button
+                    {
+                        Label = "Open in Glamourer",
+                        Dense = true,
+                        OnClick = handlers.OpenGlamourer,
+                        Disabled = !glamourer.Available,
+                        Help = glamourer.Available
                             ? "Open this actor in Glamourer."
-                            : glamourer.Detail),
-                    Crystarium.FormButton(
-                        "Reset appearance", handlers.ResetAppearance,
-                        help: "Restore this actor's incoming opacity, tints, and wetness"),
+                            : glamourer.Detail,
+                    },
+                    new Button
+                    {
+                        Label = "Reset appearance",
+                        Dense = true,
+                        OnClick = handlers.ResetAppearance,
+                        Help = "Restore this actor's incoming opacity, tints, and wetness",
+                    },
                 ]),
             Crystarium.FormSlider(
                 "Opacity", owned.Opacity ?? reading.Opacity, 0f, 1f,
@@ -361,26 +384,37 @@ public sealed class AppearancePane
                     ?? (cleanupPending ? "Cleanup pending" : "None"),
                 unavailable: !mcdfOwnedNow,
                 [
-                    Crystarium.FormButton(
-                        "Import…", handlers.ImportMcdf,
-                        help: "Apply a .mcdf character file (mods, appearance, body scale) to only this actor"),
-                    Crystarium.FormButton(
-                        "Export…", handlers.ExportMcdf,
-                        disabled: !exportable,
-                        help: !penumbra.Available
+                    new Button
+                    {
+                        Label = "Import…",
+                        Dense = true,
+                        OnClick = handlers.ImportMcdf,
+                        Help = "Apply a .mcdf character file (mods, appearance, body scale) to only this actor",
+                    },
+                    new Button
+                    {
+                        Label = "Export…",
+                        Dense = true,
+                        OnClick = handlers.ExportMcdf,
+                        Disabled = !exportable,
+                        Help = !penumbra.Available
                             ? penumbra.Detail
                             : !glamourer.Available
                                 ? glamourer.Detail
                                 : mcdfOwnedNow
                                     ? "Reset MCDF first — an imported file is never repackaged"
-                                    : "Save this actor's mods, appearance, and body scale as a .mcdf"),
+                                    : "Save this actor's mods, appearance, and body scale as a .mcdf",
+                    },
                     showReset
-                        ? Crystarium.FormButton(
-                            mcdfOwnedNow ? "Reset MCDF" : "Retry cleanup",
-                            handlers.ResetMcdf,
-                            help: mcdfOwnedNow
+                        ? new Button
+                        {
+                            Label = mcdfOwnedNow ? "Reset MCDF" : "Retry cleanup",
+                            Dense = true,
+                            OnClick = handlers.ResetMcdf,
+                            Help = mcdfOwnedNow
                                 ? "Remove everything this character file applied and restore the incoming external state"
-                                : "Retry deleting extracted files left behind by a failed import")
+                                : "Retry deleting extracted files left behind by a failed import",
+                        }
                         : UiNode.None,
                 ],
                 help: "Import a Mare/Brio/Ktisis character file onto only this actor, or export this actor's current mods, appearance, and body scale");

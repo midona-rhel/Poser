@@ -14,29 +14,22 @@ public static partial class Crystarium
     /// composition all live in ImGui's own retained widget state.
     ///
     /// <para><paramref name="element"/> is RETAINED by the caller, not
-    /// synthesized per frame: the arena's object slot holds a reference, so a
-    /// warm frame costs nothing, and the island's own per-frame inputs are
-    /// written into its fields exactly as a portal body's are.</para>
+    /// synthesized per frame, so a warm frame costs nothing.</para>
     ///
-    /// <para>Internal for the same reason <see cref="Portal"/> is: an island is
-    /// a control's own machinery. A caller that reached for one directly would
-    /// be opting out of layout, paint and identity all at once, and the escape
-    /// hatch is only sound where a control has already decided it needs it.
-    /// </para>
+    /// <para>Internal for the same reason <see cref="Portal"/> is: a caller
+    /// that reached for one directly would be opting out of layout, paint and
+    /// identity all at once.</para>
     /// </summary>
-    /// <param name="logicalSize">The island's intrinsic box, declared the way
-    /// an interactive leaf declares its own. The solver still resolves a Fill
-    /// or Fixed dimension over it.</param>
     internal static UiNode Native(
         INativeElement element, Vector2 logicalSize, UiKey key = default)
     {
         ArgumentNullException.ThrowIfNull(element);
-        FrameArena arena = FrameArena.Require();
-        ElementRecord record = default;
-        record.Kind = ElementKind.Native;
-        record.Key = key;
-        record.LogicalSize = logicalSize;
-        record.NativeSlot = arena.AddObject(element);
-        return arena.AddElement(record);
+        return new Element
+        {
+            Style = Element.Sized(
+                UiDim.Fixed(logicalSize.X), UiDim.Fixed(logicalSize.Y)),
+            Native = element,
+            Key = key,
+        };
     }
 }

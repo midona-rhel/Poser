@@ -36,6 +36,11 @@ internal sealed class IdentityCache
         /// a truncation readout ("-full") on the run.</summary>
         internal string? Alternate;
 
+        /// <summary>The truncation readout's own name. Separate from
+        /// <see cref="Alternate"/> because one element can need both: a picker
+        /// trigger owns a surface AND cuts its own caption.</summary>
+        internal string? Preview;
+
         internal PortalHost.PortalBody? Body;
         internal int LastSeenFrame;
     }
@@ -50,15 +55,15 @@ internal sealed class IdentityCache
     /// <summary>Live interaction-id paths; the pruning invariant's probe.</summary>
     internal int Count => _interactionIds.Count;
 
-    // Path identity: parent path, element kind, the author's key OR the
-    // sibling ordinal, and the owning component scope. A KEYED element drops
-    // the ordinal outright — that is what lets a reordered list carry its
-    // hover and motion state with it instead of inheriting its neighbour's.
+    // Path identity: parent path, the author's key OR the sibling ordinal, and
+    // the owning component scope. A KEYED element drops the ordinal outright —
+    // that is what lets a reordered list carry its hover and motion state with
+    // it instead of inheriting its neighbour's. There is no kind byte to mix:
+    // there is one element.
     internal static ulong Chain(
-        ulong parentHash, int ordinal, ElementKind kind, UiKey key, int scopeId)
+        ulong parentHash, int ordinal, UiKey key, int scopeId)
     {
         ulong hash = parentHash == 0UL ? FnvOffset : parentHash;
-        hash = Mix(hash, (byte)kind);
         hash = key.Kind != UiKeyKind.None
             ? key.HashInto(hash)
             : Mix(hash, (ulong)(uint)ordinal);
@@ -90,12 +95,19 @@ internal sealed class IdentityCache
         return entry;
     }
 
-    /// <summary>The one derived name a path is allowed. Suffixing is a retained
+    /// <summary>The derived names a path is allowed. Suffixing is a retained
     /// string, not a per-frame concatenation.</summary>
     internal string AlternateId(ulong hash, string suffix)
     {
         IdEntry entry = Entry(hash);
         return entry.Alternate ??= entry.Id + suffix;
+    }
+
+    /// <inheritdoc cref="AlternateId"/>
+    internal string PreviewId(ulong hash)
+    {
+        IdEntry entry = Entry(hash);
+        return entry.Preview ??= entry.Id + "-full";
     }
 
     internal string InteractionId(ulong hash)

@@ -3,10 +3,13 @@ using Dalamud.Bindings.ImGui;
 using Poser.UI;
 using Dalamud.Interface.Utility;
 using FontFamily = Poser.UI.FontFamily;
+// System.Windows.Forms and Poser.UI both export these names; the harness
+// hosts a WinForms window, so the control types are named explicitly.
+using Button = Poser.UI.Button;
+using Label = Poser.UI.Label;
 using Ui = Poser.UI.LegacyCrystarium;
 using Rx = Poser.UI.Crystarium;
 using RxRoot = Poser.UI.UiRoot;
-using Sx = Poser.UI.Sx;
 using UiDim = Poser.UI.UiDim;
 
 namespace Crystarium.Capture;
@@ -266,32 +269,45 @@ internal static class ComponentCatalog
     /// <summary>Fixed 200px, exactly as the legacy fixture asks: the thumb
     /// centre is then arithmetic rather than a function of the cell.</summary>
     private static readonly Func<UiNode> SliderTree = static () =>
-        Rx.Slider(
-            0.4f, 0f, 1f, FormNoOpFloat,
-            sx: Sx.Size(UiDim.Fixed(200f), default));
+        new Slider
+        {
+            Value = 0.4f,
+            Max = 1f,
+            OnChange = FormNoOpFloat,
+            StyleSheet = new() { Layout = new() { Width = UiDim.Fixed(200f) } },
+        };
 
     private static readonly Func<UiNode> SliderDisabledTree = static () =>
-        Rx.Slider(
-            0.4f, 0f, 1f, FormNoOpFloat, disabled: true,
-            sx: Sx.Size(UiDim.Fixed(200f), default));
+        new Slider
+        {
+            Value = 0.4f,
+            Max = 1f,
+            OnChange = FormNoOpFloat,
+            Disabled = true,
+            StyleSheet = new() { Layout = new() { Width = UiDim.Fixed(200f) } },
+        };
 
     private static readonly Func<UiNode> ColorWellTree = static () =>
-        Rx.ColorWell(new Vector4(0.8f, 0.3f, 0.2f, 1f), FormNoOpColor);
+        new ColorWell
+        {
+            Color = new Vector4(0.8f, 0.3f, 0.2f, 1f),
+            OnChange = FormNoOpColor,
+        };
 
     /// <summary>The absent-weapon well: a null tint reaches the twin as
     /// Vector4.Zero with disabled set, which is what makes it paint
     /// UnavailableFill instead of the colour it does not have.</summary>
     private static readonly Func<UiNode> ColorWellDisabledTree = static () =>
-        Rx.ColorWell(Vector4.Zero, FormNoOpColor, disabled: true);
+        new ColorWell { OnChange = FormNoOpColor, Disabled = true };
 
     private static readonly Func<UiNode> ProgressTree = static () =>
-        Rx.Progress(0.4f, 200f);
+        new Progress { Fraction = 0.4f, Width = UiDim.Fixed(200f) };
 
     private static readonly Func<UiNode> SwitchOffTree = static () =>
-        Rx.Switch(false, FormNoOpBool);
+        new Switch { OnToggle = FormNoOpBool };
 
     private static readonly Func<UiNode> SwitchOnTree = static () =>
-        Rx.Switch(true, FormNoOpBool);
+        new Switch { Value = true, OnToggle = FormNoOpBool };
 
     /// <summary>
     /// The section twins carry NO content, because the legacy fixture they
@@ -301,10 +317,21 @@ internal static class ComponentCatalog
     /// reference side does not have.
     /// </summary>
     private static readonly Func<UiNode> SectionTree = static () =>
-        Rx.Section("GENERAL", false, FormNoOpBool, UiChildren.Empty, "section");
+        new Section
+        {
+            Title = "GENERAL",
+            OnExpandedChange = FormNoOpBool,
+            Key = "section",
+        };
 
     private static readonly Func<UiNode> SectionExpandedTree = static () =>
-        Rx.Section("GENERAL", true, FormNoOpBool, UiChildren.Empty, "section");
+        new Section
+        {
+            Title = "GENERAL",
+            Expanded = true,
+            OnExpandedChange = FormNoOpBool,
+            Key = "section",
+        };
 
     private static readonly ContextMenuItem[] MenuItems =
     [
@@ -994,67 +1021,90 @@ internal static class ComponentCatalog
                 ReactiveRoot(name).Render(
                     origin,
                     ImGui.GetContentRegionAvail(),
-                    static () => Rx.Button("Apply changes"));
+                    static () => new Button { Label = "Apply changes" });
                 break;
             case "rbtn-secondary-disabled":
                 ReactiveRoot(name).Render(
                     origin,
                     ImGui.GetContentRegionAvail(),
-                    static () => Rx.Button("Apply changes", disabled: true));
+                    static () => new Button
+                    {
+                        Label = "Apply changes",
+                        Disabled = true,
+                    });
                 break;
             case "rbtn-disabled-unicode":
                 ReactiveRoot(name).Render(
                     origin,
                     ImGui.GetContentRegionAvail(),
-                    static () => Rx.Button("Wait 待機 x̃ €", disabled: true));
+                    static () => new Button
+                    {
+                        Label = "Wait 待機 x̃ €",
+                        Disabled = true,
+                    });
                 break;
             case "rbtn-primary":
             case "rbtn-primary-hover":
                 ReactiveRoot(name).Render(
                     origin,
                     ImGui.GetContentRegionAvail(),
-                    static () => Rx.Button(
-                        "Apply changes", variant: ButtonVariant.Primary));
+                    static () => new Button
+                    {
+                        Label = "Apply changes",
+                        Style = ButtonStyle.Primary,
+                    });
                 break;
             case "rbtn-primary-disabled":
                 ReactiveRoot(name).Render(
                     origin,
                     ImGui.GetContentRegionAvail(),
-                    static () => Rx.Button(
-                        "Apply changes",
-                        variant: ButtonVariant.Primary,
-                        disabled: true));
+                    static () => new Button
+                    {
+                        Label = "Apply changes",
+                        Style = ButtonStyle.Primary,
+                        Disabled = true,
+                    });
                 break;
             case "rbtn-danger":
             case "rbtn-danger-hover":
                 ReactiveRoot(name).Render(
                     origin,
                     ImGui.GetContentRegionAvail(),
-                    static () => Rx.Button(
-                        "Apply changes", variant: ButtonVariant.Danger));
+                    static () => new Button
+                    {
+                        Label = "Apply changes",
+                        Style = ButtonStyle.Danger,
+                    });
                 break;
             case "rbtn-danger-disabled":
                 ReactiveRoot(name).Render(
                     origin,
                     ImGui.GetContentRegionAvail(),
-                    static () => Rx.Button(
-                        "Apply changes",
-                        variant: ButtonVariant.Danger,
-                        disabled: true));
+                    static () => new Button
+                    {
+                        Label = "Apply changes",
+                        Style = ButtonStyle.Danger,
+                        Disabled = true,
+                    });
                 break;
             case "rbtn-width-content":
                 ReactiveRoot(name).Render(
                     origin,
                     ImGui.GetContentRegionAvail(),
-                    static () => Rx.Button("OK"));
+                    static () => new Button { Label = "OK" });
                 break;
             case "rbtn-width-fixed":
                 ReactiveRoot(name).Render(
                     origin,
                     ImGui.GetContentRegionAvail(),
-                    static () => Rx.Button(
-                        "Apply changes",
-                        sx: Sx.Size(UiDim.Fixed(160f), UiDim.Content)));
+                    static () => new Button
+                    {
+                        Label = "Apply changes",
+                        StyleSheet = new()
+                        {
+                            Layout = new() { Width = UiDim.Fixed(160f) },
+                        },
+                    });
                 break;
             case "rbtn-width-fill":
                 // The root's own allocation IS the bounded region here, so
@@ -1063,17 +1113,25 @@ internal static class ComponentCatalog
                 ReactiveRoot(name).Render(
                     origin,
                     new Vector2(240f, 40f) * ImGuiHelpers.GlobalScale,
-                    static () => Rx.Button(
-                        "Apply changes",
-                        sx: Sx.Size(UiDim.Fill, UiDim.Content)));
+                    static () => new Button
+                    {
+                        Label = "Apply changes",
+                        StyleSheet = new()
+                        {
+                            Layout = new() { Width = UiDim.Fill },
+                        },
+                    });
                 break;
             case "rbtn-hover-reconcile":
                 reactiveDisabled = frame is >= 18 and <= 30;
                 ReactiveRoot(name).Render(
                     origin,
                     ImGui.GetContentRegionAvail(),
-                    static () => Rx.Button(
-                        "Apply changes", disabled: reactiveDisabled));
+                    static () => new Button
+                    {
+                        Label = "Apply changes",
+                        Disabled = reactiveDisabled,
+                    });
                 break;
             case "bar-allocation":
             {
@@ -1403,7 +1461,11 @@ internal static class ComponentCatalog
                 ReactiveRoot(name).Render(
                     origin,
                     ImGui.GetContentRegionAvail(),
-                    static () => Rx.Dropdown(DropdownItems, 0, NoOpSelect));
+                    static () => new Dropdown
+                    {
+                        Items = DropdownItems,
+                        OnChange = NoOpSelect,
+                    });
                 break;
             // ---- Genuinely scrolled twins (PBI-015 wave K) ----------
             // Ten items, one wheel notch down. The legacy twin stages its
@@ -1427,8 +1489,11 @@ internal static class ComponentCatalog
                 ReactiveRoot(name).Render(
                     origin,
                     ImGui.GetContentRegionAvail(),
-                    static () => Rx.Dropdown(
-                        DropdownItemsScrolled, 0, NoOpSelect));
+                    static () => new Dropdown
+                    {
+                        Items = DropdownItemsScrolled,
+                        OnChange = NoOpSelect,
+                    });
                 break;
             case "color-palette":
                 DrawPalette();

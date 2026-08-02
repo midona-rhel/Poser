@@ -72,15 +72,42 @@ public readonly struct UiEvent<TValue>
 /// </summary>
 internal static class EventDispatch
 {
-    internal static void Enqueue(ScopeTable scopes, Scope scope, Delegate reducer) =>
-        Component(scopes, scope).ApplyReducer(scope, reducer);
-
-    internal static void Enqueue<TValue>(ScopeTable scopes, Scope scope, Delegate reducer, TValue value) =>
-        Component(scopes, scope).ApplyReducer(scope, reducer, value);
-
-    private static StatefulComponentBase Component(ScopeTable scopes, Scope scope)
+    /// <summary>The token half of <see cref="UiHandler"/>: the reducer is
+    /// looked up by slot and queued against its owning scope, so the result
+    /// lands in PendingState and the NEXT build observes it.</summary>
+    internal static void Dispatch(UiRoot root, in UiEvent token)
     {
-        _ = scopes;
+        if (Resolve(root, token.ScopeId, token.ReducerSlot) is not
+            (Scope scope, Delegate reducer))
+            return;
+        Component(scope).ApplyReducer(scope, reducer);
+    }
+
+    /// <inheritdoc cref="Dispatch(UiRoot, in UiEvent)"/>
+    internal static void Dispatch<TValue>(
+        UiRoot root, in UiEvent<TValue> token, TValue value)
+    {
+        if (Resolve(root, token.ScopeId, token.ReducerSlot) is not
+            (Scope scope, Delegate reducer))
+            return;
+        Component(scope).ApplyReducer(scope, reducer, value);
+    }
+
+    private static (Scope, Delegate)? Resolve(UiRoot root, int scopeId, int slot)
+    {
+        if (slot == 0)
+            return null;
+        Scope? scope = root.Scopes.Find(scopeId);
+        return scope is not null && root.Arena.GetObject(slot) is Delegate reducer
+            ? (scope, reducer)
+            : null;
+    }
+
+    internal static void Enqueue<TValue>(Scope scope, Delegate reducer, TValue value) =>
+        Component(scope).ApplyReducer(scope, reducer, value);
+
+    private static StatefulComponentBase Component(Scope scope)
+    {
         return scope.Instance as StatefulComponentBase
             ?? throw new InvalidOperationException(
                 $"Scope {scope.Id} ({scope.ComponentType.Name}) has no stateful component instance to reduce.");

@@ -5,150 +5,116 @@ using Poser.UI.Reactive;
 
 namespace Poser.UI;
 
-public static partial class Crystarium
+/// <summary>
+/// Picto's <c>CmSelect</c>: an interactive trigger carrying the closed box's
+/// seam, with the label, the chevron and the whole open menu as ordinary
+/// composed elements. The pixels come from the same measurement and paint
+/// seams the imperative control uses, so the two paths are one dropdown by
+/// construction.
+///
+/// <para>Reselect semantics follow the imperative control: clicking the row
+/// that is already selected closes the menu and reports nothing, which is why
+/// that row is the one row with no handler wired.</para>
+/// </summary>
+public readonly record struct Dropdown
 {
-    // The trigger NAMES its own layout: both pieces of chrome are stretched
-    // over the whole box, so the caller's sx can still set the control's size
-    // and margin but never how the menu hangs off it.
-    private static readonly UiStyle DropdownHostLayout = new(
-        UiStyleFields.Flow | UiStyleFields.Justify | UiStyleFields.Align,
-        UiFlow.Stack,
-        0f,
-        default,
-        default,
-        default,
-        default,
-        UiAlign.Stretch,
-        UiAlign.Stretch);
+    public required string[] Items { get; init; }
 
-    /// <summary>
-    /// Picto's <c>CmSelect</c> as a real composition: an interactive trigger
-    /// carrying the closed box's painter, with the label, the chevron and the
-    /// whole open menu as ordinary composed elements. The pixels come from the
-    /// same measurement and paint seams the imperative control uses, so the two
-    /// paths are one dropdown by construction.
-    ///
-    /// <para>Reselect semantics follow the imperative control: clicking the
-    /// row that is already selected closes the menu and reports nothing, which
-    /// is why that row is the one row with no handler wired.</para>
-    /// </summary>
-    public static UiNode Dropdown(
-        string[] items,
-        int selected,
-        Action<int> onChange,
-        bool disabled = false,
-        string? help = null,
-        UiStyle sx = default,
-        UiKey key = default)
-    {
-        ArgumentNullException.ThrowIfNull(items);
-        FrameArena arena = FrameArena.Require();
-        return EmitDropdown(
-            items, selected, onChange is null ? 0 : arena.AddObject(onChange),
-            0, 0, disabled, help, in sx, key);
-    }
+    public int Selected { get; init; }
 
-    /// <summary>Component-event form: the token is two ints, so binding a
-    /// reducer to a dropdown boxes nothing — not even the chosen index, which
-    /// rides the record and dispatches through the typed reducer path.</summary>
-    public static UiNode Dropdown(
-        string[] items,
-        int selected,
-        UiEvent<int> onChange,
-        bool disabled = false,
-        string? help = null,
-        UiStyle sx = default,
-        UiKey key = default)
-    {
-        ArgumentNullException.ThrowIfNull(items);
-        FrameArena.Require().ValidateEvent(onChange);
-        return EmitDropdown(
-            items, selected, 0, onChange.ScopeId, onChange.ReducerSlot,
-            disabled, help, in sx, key);
-    }
+    public UiHandler<int> OnChange { get; init; }
 
-    private static UiNode EmitDropdown(
-        string[] items,
-        int selected,
-        int behaviorSlot,
-        int eventScope,
-        int eventReducer,
-        bool disabled,
-        string? help,
-        in UiStyle sx,
-        UiKey key)
+    public bool Disabled { get; init; }
+
+    public string? Help { get; init; }
+
+    public ElementSheet? StyleSheet { get; init; }
+
+    public UiKey Key { get; init; }
+
+    /// <summary>A single child needs no collection: user-defined
+    /// conversions do not chain, so the one-child form is stated.</summary>
+    public static implicit operator UiChildren(Dropdown dropdown) => (UiNode)dropdown;
+
+    public static implicit operator UiNode(Dropdown dropdown) => dropdown.Emit();
+
+    private UiNode Emit()
     {
-        if (items.Length == 0)
+        ArgumentNullException.ThrowIfNull(Items);
+        if (Items.Length == 0)
             return UiNode.None;
 
         float scale = ImGuiHelpers.GlobalScale;
-        Theme theme = ActiveTheme;
+        Theme theme = Crystarium.ActiveTheme;
         // Content sizing is INTRINSIC here — the widest option, never the
-        // surrounding region — so the shared preamble runs with no style and
-        // the two overriding kinds are resolved against the solver instead.
+        // surrounding region.
         LegacyCrystarium.DropdownMetrics metrics =
-            LegacyCrystarium.MeasureDropdown(items, null, default);
+            LegacyCrystarium.MeasureDropdown(Items, null, default);
         LegacyCrystarium.DropdownPopupMetrics popup =
-            LegacyCrystarium.MeasureDropdownPopup(items.Length, metrics.LogicalHeight);
+            LegacyCrystarium.MeasureDropdownPopup(Items.Length, metrics.LogicalHeight);
 
-        float triggerWidth = sx.Width.Kind switch
+        UiDim authored = StyleSheet?.Layout?.Width ?? default;
+        float triggerWidth = authored.Kind switch
         {
-            UiDimKind.Fixed => sx.Width.Value,
+            UiDimKind.Fixed => authored.Value,
             // Fill is the solver's business, and so is everything measured off
             // it: the menu takes its own width from the anchor after the fact.
             UiDimKind.Fill => 0f,
             _ => metrics.Width / scale,
         };
         float labelSize = theme.Typography.LabelSize;
-        // A label fills its row in both places it appears and is explicitly
-        // cut to it, offering the full text on hover — CmSelect's own
+        // A label fills its row in both places it appears and is explicitly cut
+        // to it, offering the full text on hover — CmSelect's own
         // `text-overflow: ellipsis`, stated rather than inferred from the Fill.
-        UiStyle labelBox = Sx.Size(UiDim.Fill, default);
+        ElementSheet labelBox = new()
+        {
+            Layout = new() { Width = UiDim.Fill },
+            Type = new() { FontSize = labelSize, Overflow = TextOverflow.Truncate },
+        };
 
         // ---- .drop ---------------------------------------------------------
-        float rowHeight = popup.RowHeight / scale;
-        float optPad = theme.Spacing.Four;                  // padding: 0 8px
-        UiStyle rowLayout = Sx.Row(
-            padding: new EdgeInsets(optPad, 0f, optPad, 0f),
-            align: UiAlign.Center,
-            width: UiDim.Fill);
-
-        // Frame-scoped scratch, at EVERY item count: a stackalloc/heap split
-        // would only trade one branch for an allocation the moment a menu got
-        // long, and the arena's buffer is already there.
-        Span<UiNode> rows = FrameArena.Require().ScratchNodes(items.Length);
-        for (int i = 0; i < items.Length; i++)
+        ElementSheet rowBox = new()
         {
-            bool isSelected = i == selected;
-            rows[i] = InteractiveCore(
-                in rowLayout,
-                TextCore(
-                    items[i], labelSize, null, in labelBox, default,
-                    TextOverflow.Truncate, previewOnClip: true),
-                key: i,
-                disabled: false,
-                help: null,
+            Layout = new() { Height = UiDim.Fixed(popup.RowHeight / scale) },
+            Type = new() { FontSize = labelSize, Overflow = TextOverflow.Truncate },
+        };
+        // Frame-scoped scratch, at EVERY item count: the arena's buffer is
+        // already there, and a stackalloc/heap split would allocate the moment
+        // a menu got long.
+        Span<UiNode> rows = FrameArena.Require().ScratchNodes(Items.Length);
+        for (int i = 0; i < Items.Length; i++)
+        {
+            bool isSelected = i == Selected;
+            rows[i] = new Element
+            {
+                Sheet = SheetFamily.DropdownRow,
+                Style = rowBox,
+                Text = Items[i],
+                Preview = true,
+                Selected = isSelected,
+                Index = i,
                 // The selected row reports nothing and still closes: the close
                 // is the ELEMENT's, so the missing handler costs it nothing.
-                behaviorSlot: isSelected ? 0 : behaviorSlot,
-                eventScope: isSelected ? 0 : eventScope,
-                eventReducer: isSelected ? 0 : eventReducer,
-                painter: DropdownRowPainter.Instance,
-                paintArg: (byte)(isSelected ? 1 : 0),
-                clipChildren: false,
-                declaredLogicalSize: new Vector2(0f, rowHeight),
-                dispatchMode: Reactive.DispatchMode.ClickedWithArg,
-                arg: i,
-                closesPortal: true);
+                On = new Listeners { OnPick = isSelected ? default : OnChange },
+                Painter = DropdownRowPainter.Instance,
+                // A menu row answers the press, exactly as the imperative menu does.
+                ActivateOn = Activation.Press,
+                ClosesPortal = true,
+                Key = i,
+            };
         }
 
-        UiNode portal = Portal(
-            Column(Sx.Column(gap: popup.RowGap / scale), UiChildren.Create(rows)),
+        UiNode portal = Crystarium.Portal(
+            new Column
+            {
+                Style = new() { Layout = new() { Gap = popup.RowGap / scale } },
+                Children = UiChildren.Create(rows),
+            },
             contentSize: new Vector2(triggerWidth, popup.PopupHeight / scale),
             padding: popup.DropInset / scale,
             anchorCompensation: popup.AnchorGapCompensation / scale,
             scrollRegionHeight: popup.ItemListHeight / scale,
-            capChildHitWidth: items.Length > popup.VisibleItems,
+            capChildHitWidth: Items.Length > popup.VisibleItems,
             surface: DropdownSurfacePainter.Instance,
             // The panel is the painter's, and every row scrolls: a menu has no
             // chrome above its list. Both stated rather than defaulted, so the
@@ -157,55 +123,77 @@ public static partial class Crystarium
             scrollFromChild: 0);
 
         // ---- .btn ----------------------------------------------------------
-        string current = selected >= 0 && selected < items.Length ? items[selected] : string.Empty;
+        string current = Selected >= 0 && Selected < Items.Length
+            ? Items[Selected]
+            : string.Empty;
         // CSS content box: the 1px border sits INSIDE the border box, so
         // padding measures from the border's inner edge.
-        UiNode chrome = Row(
-            Sx.Row(
-                gap: metrics.Gap / scale,
-                padding: new EdgeInsets(
-                    (metrics.BorderPx + metrics.PadLeft) / scale,
-                    0f,
-                    (metrics.BorderPx + metrics.PadRight) / scale,
-                    0f),
-                align: UiAlign.Center),
+        UiNode chrome = new Row
+        {
+            Style = new()
+            {
+                Layout = new()
+                {
+                    Gap = metrics.Gap / scale,
+                    Padding = new EdgeInsets(
+                        (metrics.BorderPx + metrics.PadLeft) / scale, 0f,
+                        (metrics.BorderPx + metrics.PadRight) / scale, 0f),
+                    Align = UiAlign.Center,
+                },
+            },
+            Children =
             [
-                TextCore(
-                    current, labelSize, null, in labelBox, default,
-                    TextOverflow.Truncate, previewOnClip: true),
-                // .btnChevron: the 14px glyph centered in its fixed 20px slot.
+                new Label { Text = current, Style = labelBox, Preview = true },
+                // .btnChevron: the 14px glyph centred in its fixed 20px slot.
                 // The 0.5 opacity is the BOX's, so it arrives as the subtree's
                 // inherited glyph opacity rather than as a number stated twice.
-                Stack(
-                    Sx.Stack(
-                        justify: UiAlign.Center,
-                        align: UiAlign.Center,
-                        width: UiDim.Fixed(metrics.ChevronSlot / scale)),
-                    Svg(
-                        LegacyCrystarium.ChevronIcon,
-                        theme.Controls.SmallIconSize,
-                        inheritsColor: false,
-                        opacity: 1f)),
-            ]);
+                new Stack
+                {
+                    Style = new()
+                    {
+                        Layout = new()
+                        {
+                            Justify = UiAlign.Center,
+                            Align = UiAlign.Center,
+                            Width = UiDim.Fixed(metrics.ChevronSlot / scale),
+                        },
+                    },
+                    Children = new Glyph
+                    {
+                        Name = LegacyCrystarium.ChevronIcon,
+                        Size = theme.Controls.SmallIconSize,
+                        NoInherit = true,
+                    },
+                },
+            ],
+        };
 
-        // The trigger truncates its label through the text constraint and
-        // draws nothing outside its own box, so it needs no clip rect.
-        UiNode trigger = InteractiveCore(
-            UiStyle.Extend(sx, DropdownHostLayout),
-            [chrome, portal],
-            key,
-            disabled,
-            help,
-            behaviorSlot: 0,
-            eventScope: 0,
-            eventReducer: 0,
-            painter: DropdownTriggerPainter.Instance,
-            paintArg: 0,
-            clipChildren: false,
-            declaredLogicalSize: new Vector2(triggerWidth, metrics.LogicalHeight),
-            dispatchMode: Reactive.DispatchMode.Clicked,
-            opensPortalNode: portal.Index);
-        AnchorPortal(portal, trigger);
+        // The trigger truncates its label through the text constraint and draws
+        // nothing outside its own box, so it needs no clip rect.
+        UiNode trigger = new Element
+        {
+            Sheet = SheetFamily.DropdownTrigger,
+            // Fill stays the solver's; Content becomes the widest option, which
+            // no sheet can know.
+            Style = (StyleSheet ?? default) with
+            {
+                Layout = (StyleSheet?.Layout ?? default) with
+                {
+                    Width = authored.Kind == UiDimKind.Fill
+                        ? UiDim.Fill
+                        : UiDim.Fixed(triggerWidth),
+                    Height = UiDim.Fixed(metrics.LogicalHeight),
+                },
+            },
+            Painter = DropdownTriggerPainter.Instance,
+            Disabled = Disabled,
+            Help = Help,
+            Key = Key,
+            Children = [chrome, portal],
+            ActivateOn = Activation.Press,
+            OpensPortalNode = portal.Index,
+        };
+        Crystarium.AnchorPortal(portal, trigger);
         return trigger;
     }
 }

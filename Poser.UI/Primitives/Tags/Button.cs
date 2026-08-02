@@ -194,19 +194,19 @@ public static partial class LegacyCrystarium
 
     // .btnDanger literals from actionButton.module.css — CSS constants,
     // not theme tokens, identical across every Picto theme.
-    private static readonly Vector4 DangerText =
+    internal static readonly Vector4 DangerText =
         new(1f, 154f / 255f, 164f / 255f, 1f);            // #ff9aa4
-    private static readonly Vector4 DangerBorder =
+    internal static readonly Vector4 DangerBorder =
         new(1f, 71f / 255f, 87f / 255f, 0.35f);           // rgba(255,71,87,.35)
-    private static readonly Vector4 DangerFill =
+    internal static readonly Vector4 DangerFill =
         new(1f, 71f / 255f, 87f / 255f, 0.08f);           // rgba(255,71,87,.08)
-    private static readonly Vector4 DangerFillHover =
+    internal static readonly Vector4 DangerFillHover =
         new(1f, 71f / 255f, 87f / 255f, 0.15f);           // rgba(255,71,87,.15)
 
     /// <summary>.btn's <c>transition: background 150ms ease</c> — CSS
     /// `ease` is cubic-bezier(0.25, 0.1, 0.25, 1). Background only; the
     /// border and text switch instantly, exactly like the CSS.</summary>
-    private static readonly Transition BackgroundTransition =
+    internal static readonly Transition BackgroundTransition =
         Transition.CubicBezier(0.15f, 0.25f, 0.1f, 0.25f, 1f);
 
     // Motion channels this component owns. Both stores key by stable

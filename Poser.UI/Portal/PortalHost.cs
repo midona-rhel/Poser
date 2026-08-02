@@ -65,12 +65,13 @@ internal sealed class PortalHost
         body.Node = node;
         body.Hash = hash;
         body.Scale = scale;
+        ref PortalRecord portal = ref _arena.Portal(record.PortalSlot);
 
         // The anchor is the portal's PARENT, so its hash is the one the walk
         // just came through and its rect is derived exactly as the walk
         // derives every other box.
-        Vector2 anchorPos = _arena[record.AnchorNode].LogicalPos;
-        Vector2 anchorSize = _arena[record.AnchorNode].LogicalSize;
+        Vector2 anchorPos = _arena[portal.AnchorNode].LogicalPos;
+        Vector2 anchorSize = _arena[portal.AnchorNode].LogicalSize;
         Vector2 anchorMin = origin + new Vector2(
             MathF.Round(anchorPos.X * scale), MathF.Round(anchorPos.Y * scale));
         Vector2 anchorMax = origin + new Vector2(
@@ -78,7 +79,7 @@ internal sealed class PortalHost
             MathF.Round((anchorPos.Y + anchorSize.Y) * scale));
         // The shared anchored placement already adds its own gap; a surface
         // that wants a different one carries the rest on the anchor.
-        anchorMax.Y += record.PortalAnchorCompensation * scale;
+        anchorMax.Y += portal.AnchorCompensation * scale;
 
         Vector2 surface = LayoutSolver.PortalSurface(_arena, node);
         Poser.UI.LegacyCrystarium.FloatingSurface.Popup(
@@ -87,10 +88,10 @@ internal sealed class PortalHost
             {
                 Width = surface.X,
                 Height = surface.Y,
-                Padding = record.PortalPadding,
+                Padding = portal.Padding,
                 AnchorMin = anchorMin,
                 AnchorMax = anchorMax,
-                Treatment = (Poser.UI.FloatingSurfaceTreatment)record.PortalTreatment,
+                Treatment = (Poser.UI.FloatingSurfaceTreatment)portal.Treatment,
             },
             body.Surface);
     }
@@ -98,13 +99,14 @@ internal sealed class PortalHost
     private void RunPortalSurface(PortalBody body)
     {
         int node = body.Node;
+        ref PortalRecord portal = ref _arena.Portal(_arena[node].PortalSlot);
         Vector2 min = ImGui.GetWindowPos();
-        if (_arena.GetObject(_arena[node].PainterSlot) is IPortalSurfacePainter surface)
+        if (portal.Surface is { } surface)
             surface.Paint(
                 ImGui.GetWindowDrawList(), min, min + ImGui.GetWindowSize());
 
         Vector2 origin = ImGui.GetCursorScreenPos();
-        float viewport = _arena[node].ScrollRegionHeight;
+        float viewport = portal.ScrollRegionHeight;
         int count = _arena[node].ChildCount;
         if (viewport <= 0f)
         {
@@ -115,7 +117,7 @@ internal sealed class PortalHost
         // The fixed head is walked on the POPUP, before the viewport exists —
         // a caption and a filter field are chrome of the surface, not content
         // of the list, so nothing about them may scroll.
-        int head = Math.Min(_arena[node].PortalScrollFromChild, count);
+        int head = Math.Min(portal.ScrollFromChild, count);
         if (head > 0)
             WalkPortalChildren(body, origin, 0f, 0, head);
 
@@ -145,7 +147,7 @@ internal sealed class PortalHost
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(spacing.X, 0f));
         try
         {
-            float cap = _arena[body.Node].Arg != 0
+            float cap = _arena.Portal(_arena[body.Node].PortalSlot).CapChildHitWidth
                 ? region.ContentWidth * body.Scale
                 : 0f;
             WalkPortalChildren(

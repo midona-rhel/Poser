@@ -30,7 +30,7 @@ public sealed class UiRoot
         // subtree on the way out, so the pair is mutually referential by nature.
         // Wired here, once, rather than resolved anywhere at paint time.
         _portals = new PortalHost(_arena, _ids, _walker);
-        _walker.Bind(_portals);
+        _walker.Bind(_portals, this);
     }
 
     internal static UiRoot? Ambient { get; private set; }
@@ -44,8 +44,8 @@ public sealed class UiRoot
 
     /// <inheritdoc cref="IdentityCache.Chain"/>
     internal static ulong DebugChain(
-        ulong parentHash, int ordinal, ElementKind kind, UiKey key, int scopeId) =>
-        IdentityCache.Chain(parentHash, ordinal, kind, key, scopeId);
+        ulong parentHash, int ordinal, UiKey key, int scopeId) =>
+        IdentityCache.Chain(parentHash, ordinal, key, scopeId);
 
     internal static UiRoot Require() =>
         Ambient ?? throw new InvalidOperationException(
@@ -115,7 +115,8 @@ public sealed class UiRoot
         {
             float availWidth = size.X / scale;
             float availHeight = size.Y / scale;
-            LayoutSolver.Measure(_arena, root.Index, availWidth, availHeight);
+            LayoutSolver.Measure(
+                _arena, root.Index, availWidth, availHeight, InheritedType.Root);
             Vector2 measured = _arena[root.Index].LogicalSize;
             LayoutSolver.Arrange(
                 _arena,
@@ -127,10 +128,7 @@ public sealed class UiRoot
 
             _walker.Walk(root.Index, origin, scale);
             for (int i = 0; i < _walker.ActivatedCount; i++)
-                InteractionAdapter.Dispatch(
-                    this,
-                    in _arena[_walker.ActivatedNode(i)],
-                    _walker.ActivatedValue(i));
+                _walker.Dispatch(i);
 
             ImGui.SetCursorScreenPos(origin);
             ImGui.Dummy(_arena[root.Index].LogicalSize * scale);

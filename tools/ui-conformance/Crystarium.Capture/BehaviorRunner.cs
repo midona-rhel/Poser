@@ -7,6 +7,10 @@ using Poser.UI;
 using Poser.UI.Reactive;
 using Ui = Poser.UI.LegacyCrystarium;
 using Rx = Poser.UI.Crystarium;
+// WinForms owns the hidden host window, so its Button/Label collide with the
+// retained vocabulary's prop-bags by name; the aliases pick the UI ones.
+using Button = Poser.UI.Button;
+using Label = Poser.UI.Label;
 
 namespace Crystarium.Capture;
 
@@ -314,7 +318,7 @@ internal static class BehaviorSuites
     /// so the callback itself is a retained instance: a delegate allocated
     /// per frame would be measuring the harness, not the runtime.</summary>
     private static readonly Func<UiNode> ParityTree = static () =>
-        Rx.Button("Apply changes", NoOp);
+        new Button { Label = "Apply changes", OnClick = NoOp };
 
     /// <summary>
     /// Tooling-only component (never shipped): one reducer-driven label, so
@@ -342,13 +346,18 @@ internal static class BehaviorSuites
         protected override UiNode Render(in Props props, in State state)
         {
             LastLabel = state.On ? "On" : "Off";
-            return Rx.Column(
-                Sx.Gap(8f),
+            return new Column
+            {
+                Style = new() { Layout = new() { Gap = 8f } },
+                Children =
                 [
-                    Rx.Button(
-                        LastLabel,
-                        UpdateState(static s => s with { On = !s.On })),
-                ]);
+                    new Button
+                    {
+                        Label = LastLabel,
+                        OnClick = UpdateState(static s => s with { On = !s.On }),
+                    },
+                ],
+            };
         }
     }
 
@@ -406,10 +415,12 @@ internal static class BehaviorSuites
                 root.Render(
                     ReactiveOrigin,
                     ImGui.GetContentRegionAvail(),
-                    () => Rx.Button(
-                        "Apply changes",
-                        () => activations++,
-                        disabled: disabled));
+                    () => new Button
+                    {
+                        Label = "Apply changes",
+                        OnClick = (Action)(() => activations++),
+                        Disabled = disabled,
+                    });
             }, pointer, mouse, key);
             return activations;
         }
@@ -479,13 +490,18 @@ internal static class BehaviorSuites
             LastSeen = state ?? "<null>";
             // The caption is CONSTANT so the hit box never moves; the state
             // under test is read from the probe, not from the label.
-            return Rx.Column(
-                Sx.Gap(8f),
+            return new Column
+            {
+                Style = new() { Layout = new() { Gap = 8f } },
+                Children =
                 [
-                    Rx.Button(
-                        "Cycle",
-                        UpdateState(static s => s is null ? "b" : null)),
-                ]);
+                    new Button
+                    {
+                        Label = "Cycle",
+                        OnClick = UpdateState(static s => s is null ? "b" : null),
+                    },
+                ],
+            };
         }
     }
 
@@ -558,9 +574,14 @@ internal static class BehaviorSuites
                 root.Render(
                     ReactiveOrigin,
                     ImGui.GetContentRegionAvail(),
-                    () => Rx.Interactive(
-                        children: [Rx.Text("hit me")],
-                        onClick: () => hits++));
+                    () => new Element
+                    {
+                        Children = [new Label { Text = "hit me" }],
+                        On = new Listeners
+                        {
+                            OnClick = (Action)(() => hits++),
+                        },
+                    });
             }, pointer, PressAt(5, 7));
             return hits;
         }
@@ -579,15 +600,17 @@ internal static class BehaviorSuites
         const ulong parent = 0x9E3779B97F4A7C15UL;
         const int scope = 3;
         var probe = new Probe();
+        // The kind byte is gone from the chain: there is now ONE element, so
+        // ordinal, key and scope are the whole of an identity.
         probe.Want(
             "keyed-survives-reorder",
-            UiRoot.DebugChain(parent, 0, ElementKind.Interactive, 7, scope)
-                == UiRoot.DebugChain(parent, 5, ElementKind.Interactive, 7, scope),
+            UiRoot.DebugChain(parent, 0, 7, scope)
+                == UiRoot.DebugChain(parent, 5, 7, scope),
             true);
         probe.Want(
             "unkeyed-follows-ordinal",
-            UiRoot.DebugChain(parent, 0, ElementKind.Interactive, UiKey.None, scope)
-                != UiRoot.DebugChain(parent, 5, ElementKind.Interactive, UiKey.None, scope),
+            UiRoot.DebugChain(parent, 0, UiKey.None, scope)
+                != UiRoot.DebugChain(parent, 5, UiKey.None, scope),
             true);
         return probe;
     }
@@ -610,24 +633,37 @@ internal static class BehaviorSuites
             "precondition-folds-collide",
             ((UiKey)first).GetHashCode() == ((UiKey)second).GetHashCode(),
             true);
+        // The kind byte is gone from the chain: there is now ONE element.
         probe.Want(
             "long-payload-survives-fold",
-            UiRoot.DebugChain(parent, 0, ElementKind.Interactive, first, 1)
-                != UiRoot.DebugChain(parent, 0, ElementKind.Interactive, second, 1),
+            UiRoot.DebugChain(parent, 0, first, 1)
+                != UiRoot.DebugChain(parent, 0, second, 1),
             true);
         probe.Want(
             "literal-ab-vs-ba",
-            UiRoot.DebugChain(parent, 0, ElementKind.Interactive, "ab", 1)
-                != UiRoot.DebugChain(parent, 0, ElementKind.Interactive, "ba", 1),
+            UiRoot.DebugChain(parent, 0, "ab", 1)
+                != UiRoot.DebugChain(parent, 0, "ba", 1),
             true);
         return probe;
     }
 
     private static readonly Func<UiNode> TwoButtonTree = static () =>
-        Rx.Column(Sx.Gap(4f), [Rx.Button("One", NoOp), Rx.Button("Two", NoOp)]);
+        new Column
+        {
+            Style = new() { Layout = new() { Gap = 4f } },
+            Children =
+            [
+                new Button { Label = "One", OnClick = NoOp },
+                new Button { Label = "Two", OnClick = NoOp },
+            ],
+        };
 
     private static readonly Func<UiNode> OneButtonTree = static () =>
-        Rx.Column(Sx.Gap(4f), [Rx.Button("One", NoOp)]);
+        new Column
+        {
+            Style = new() { Layout = new() { Gap = 4f } },
+            Children = [new Button { Label = "One", OnClick = NoOp }],
+        };
 
     /// <summary>The id cache is keyed by PATH, so a tree that stops drawing
     /// a row must stop paying for it: an unvisited entry is dropped at the
@@ -741,27 +777,27 @@ internal static class BehaviorSuites
 
     private static readonly Func<UiNode> CaptureChildren = static () =>
     {
-        staleChildren = [Rx.Text("captured")];
-        return Rx.Column(children: staleChildren);
+        staleChildren = [new Label { Text = "captured" }];
+        return new Column { Children = staleChildren };
     };
 
     private static readonly Func<UiNode> ReuseChildren = static () =>
-        Rx.Column(children: staleChildren);
+        new Column { Children = staleChildren };
 
     private static readonly Func<UiNode> CaptureEvent = static () =>
         EventProbe.Node("stale-event");
 
     private static readonly Func<UiNode> ReuseEvent = static () =>
-        Rx.Button("Stale", staleEvent);
+        new Button { Label = "Stale", OnClick = staleEvent };
 
     private static readonly Func<UiNode> CaptureForeign = static () =>
     {
-        foreignChildren = [Rx.Text("owned")];
-        return Rx.Column(children: foreignChildren);
+        foreignChildren = [new Label { Text = "owned" }];
+        return new Column { Children = foreignChildren };
     };
 
     private static readonly Func<UiNode> ReuseForeign = static () =>
-        Rx.Column(children: foreignChildren);
+        new Column { Children = foreignChildren };
 
     /// <summary>Tooling-only component that leaks its own reducer token so a
     /// LATER frame can try to bind it.</summary>
@@ -780,7 +816,7 @@ internal static class BehaviorSuites
         protected override UiNode Render(in Props props, in State state)
         {
             staleEvent = UpdateState(static s => s with { On = !s.On });
-            return Rx.Column();
+            return new Column();
         }
     }
 
@@ -903,13 +939,16 @@ internal static class BehaviorSuites
     /// construction, layout, paint walk, and scope commit. This is the tree
     /// the zero-byte gate measures.</summary>
     private static readonly Func<UiNode> LeaflessTree = static () =>
-        Rx.Column(
-            Sx.Gap(8f),
+        new Column
+        {
+            Style = new() { Layout = new() { Gap = 8f } },
+            Children =
             [
                 TokenProbe.Node("probe"),
-                Rx.Column(),
-                Rx.Column(),
-            ]);
+                new Column(),
+                new Column(),
+            ],
+        };
 
     /// <summary>Tooling-only component with no legacy leaf: its Render
     /// constructs an UpdateState token every frame, so the reducer-cache
@@ -929,7 +968,7 @@ internal static class BehaviorSuites
         protected override UiNode Render(in Props props, in State state)
         {
             _ = UpdateState(static s => s with { On = !s.On });
-            return Rx.Column();
+            return new Column();
         }
     }
 
@@ -942,8 +981,11 @@ internal static class BehaviorSuites
     /// Reserve marshalling) is not this case's subject, so no leaf is
     /// drawn.</summary>
     private static readonly UiBuilder<GapProps> GapTree =
-        static (in GapProps props) => Rx.Column(
-            Sx.Gap(props.Gap), [Rx.Column(), Rx.Column()]);
+        static (in GapProps props) => new Column
+        {
+            Style = new() { Layout = new() { Gap = props.Gap } },
+            Children = [new Column(), new Column()],
+        };
 
     private static Probe AllocationDynamicProps(BehaviorHost host)
     {
@@ -1063,14 +1105,14 @@ internal static class BehaviorSuites
     }
 
     private static readonly Func<UiNode> DropLargeTree = static () =>
-        Rx.Dropdown(DropItemsLarge, 0, DropNoOp);
+        new Dropdown { Items = DropItemsLarge, Selected = 0, OnChange = DropNoOp };
 
     /// <summary>The parity fixture: one closed reactive dropdown, so its
     /// warm-frame bytes compare one-to-one against the identical legacy
     /// control. Hoisted for the same reason <see cref="ParityTree"/> is.
     /// </summary>
     private static readonly Func<UiNode> DropParityTree = static () =>
-        Rx.Dropdown(DropItems, 0, DropNoOp);
+        new Dropdown { Items = DropItems, Selected = 0, OnChange = DropNoOp };
 
     /// <summary>The trigger and menu boxes the fixtures aim at, all read off
     /// the control's own seams: <c>MeasureDropdown</c> for the trigger,
@@ -1239,15 +1281,17 @@ internal static class BehaviorSuites
                 root.Render(
                     DropOrigin,
                     ImGui.GetContentRegionAvail(),
-                    () => Rx.Dropdown(
-                        DropItems,
-                        0,
-                        index =>
+                    () => new Dropdown
+                    {
+                        Items = DropItems,
+                        Selected = 0,
+                        OnChange = (Action<int>)(index =>
                         {
                             fired++;
                             last = index;
-                        },
-                        disabled: disabled));
+                        }),
+                        Disabled = disabled,
+                    });
             }, pointer, mouse, key);
             return $"fired={fired} last={last}";
         }
@@ -1337,10 +1381,12 @@ internal static class BehaviorSuites
         protected override UiNode Render(in Props props, in State state)
         {
             LastSeen = state.Selected;
-            return Rx.Dropdown(
-                DropItems,
-                state.Selected,
-                UpdateState<int>(static (s, i) => s with { Selected = i }));
+            return new Dropdown
+            {
+                Items = DropItems,
+                Selected = state.Selected,
+                OnChange = UpdateState<int>(static (s, i) => s with { Selected = i }),
+            };
         }
     }
 
@@ -1498,14 +1544,30 @@ internal static class BehaviorSuites
                 root.Render(
                     DropOrigin,
                     ImGui.GetContentRegionAvail(),
-                    () => Rx.Row(
-                        Sx.Row(gap: SupersessionGap),
+                    () => new Row
+                    {
+                        Style = new()
+                        {
+                            Layout = new() { Gap = SupersessionGap },
+                        },
+                        Children =
                         [
-                            Rx.Dropdown(
-                                DropItems, 0, _ => aFired++, key: "a"),
-                            Rx.Dropdown(
-                                DropItems, 0, _ => bFired++, key: "b"),
-                        ]));
+                            new Dropdown
+                            {
+                                Items = DropItems,
+                                Selected = 0,
+                                OnChange = (Action<int>)(_ => aFired++),
+                                Key = "a",
+                            },
+                            new Dropdown
+                            {
+                                Items = DropItems,
+                                Selected = 0,
+                                OnChange = (Action<int>)(_ => bFired++),
+                                Key = "b",
+                            },
+                        ],
+                    });
                 frames.Add(
                     $"{frame}:{(Interactive.PointerOccluded() ? "occ" : "free")}"
                     + $"/a{aFired}b{bFired}");
@@ -1542,18 +1604,32 @@ internal static class BehaviorSuites
                 root.Render(
                     DropOrigin,
                     ImGui.GetContentRegionAvail(),
-                    () => Rx.Row(
-                        Sx.Row(gap: SupersessionGap),
+                    () => new Row
+                    {
+                        Style = new()
+                        {
+                            Layout = new() { Gap = SupersessionGap },
+                        },
+                        Children =
                         [
-                            Rx.Dropdown(
-                                DropItems, 0,
-                                index => { aFired++; aLast = index; },
-                                key: "a"),
-                            Rx.Dropdown(
-                                DropItems, 0,
-                                index => { bFired++; bLast = index; },
-                                key: "b"),
-                        ]));
+                            new Dropdown
+                            {
+                                Items = DropItems,
+                                Selected = 0,
+                                OnChange = (Action<int>)(
+                                    index => { aFired++; aLast = index; }),
+                                Key = "a",
+                            },
+                            new Dropdown
+                            {
+                                Items = DropItems,
+                                Selected = 0,
+                                OnChange = (Action<int>)(
+                                    index => { bFired++; bLast = index; }),
+                                Key = "b",
+                            },
+                        ],
+                    });
             }, pointer, mouse);
             return $"a={aFired} aLast={aLast} b={bFired} bLast={bLast}";
         }
@@ -2063,7 +2139,9 @@ internal static class BehaviorSuites
             null,
             multi || tally is null ? null : tally.Pick,
             multi && tally is not null ? tally.Toggle : null,
-            tally is null ? null : tally.Opened,
+            // OnOpen is a UiHandler now, so the absent case is `default`
+            // rather than a null delegate.
+            (Action?)(tally is null ? null : tally.Opened),
             Dense: false,
             Disabled: false,
             DisabledHelp: null,
@@ -2139,12 +2217,17 @@ internal static class BehaviorSuites
     /// <summary>The fixed 200px slider the catalog fixture draws, so the
     /// geometry probe measures the same box the sheet gates.</summary>
     private static readonly Func<UiNode> FormSliderTree = static () =>
-        Rx.Slider(
-            0.4f, 0f, 1f, FormNoOpFloat,
-            sx: Sx.Size(UiDim.Fixed(200f), default));
+        new Slider
+        {
+            Value = 0.4f,
+            Min = 0f,
+            Max = 1f,
+            OnChange = FormNoOpFloat,
+            StyleSheet = new() { Layout = new() { Width = UiDim.Fixed(200f) } },
+        };
 
     private static readonly Func<UiNode> FormSwitchTree = static () =>
-        Rx.Switch(false, FormNoOpBool);
+        new Switch { Value = false, OnToggle = FormNoOpBool };
 
     /// <summary>
     /// The boxes the form fixtures aim at, all read off the controls' own
@@ -2303,15 +2386,22 @@ internal static class BehaviorSuites
             root.Render(
                 FormOrigin,
                 ImGui.GetContentRegionAvail(),
-                () => Rx.Slider(
-                    value, 0f, 1f,
-                    next =>
+                () => new Slider
+                {
+                    Value = value,
+                    Min = 0f,
+                    Max = 1f,
+                    OnChange = (Action<float>)(next =>
                     {
                         value = next;
                         frames.Add(current);
                         values.Add(next);
+                    }),
+                    StyleSheet = new()
+                    {
+                        Layout = new() { Width = UiDim.Fixed(200f) },
                     },
-                    sx: Sx.Size(UiDim.Fixed(200f), default)));
+                });
         },
         frame => geo.TrackPoint(DragOffset(frame)),
         PressAt(DragDownFrame, DragUpFrame));
@@ -2358,11 +2448,19 @@ internal static class BehaviorSuites
             root.Render(
                 FormOrigin,
                 ImGui.GetContentRegionAvail(),
-                () => Rx.Slider(
-                    value, 0f, 1f,
-                    next => { value = next; reports++; },
-                    disabled: true,
-                    sx: Sx.Size(UiDim.Fixed(200f), default)));
+                () => new Slider
+                {
+                    Value = value,
+                    Min = 0f,
+                    Max = 1f,
+                    OnChange = (Action<float>)(
+                        next => { value = next; reports++; }),
+                    Disabled = true,
+                    StyleSheet = new()
+                    {
+                        Layout = new() { Width = UiDim.Fixed(200f) },
+                    },
+                });
         },
         frame => geo.TrackPoint(DragOffset(frame)),
         PressAt(DragDownFrame, DragUpFrame));
@@ -2398,10 +2496,13 @@ internal static class BehaviorSuites
                 root.Render(
                     FormOrigin,
                     ImGui.GetContentRegionAvail(),
-                    () => Rx.Switch(
-                        shown,
-                        next => { fired++; trace.Add(next); },
-                        disabled: disabled));
+                    () => new Switch
+                    {
+                        Value = shown,
+                        OnToggle = (Action<bool>)(
+                            next => { fired++; trace.Add(next); }),
+                        Disabled = disabled,
+                    });
             },
             frame => frame is >= 1 and <= 6 ? geo.SwitchCenter : Offscreen,
             Presses(2));
@@ -2410,11 +2511,19 @@ internal static class BehaviorSuites
     }
 
     private static readonly Func<UiNode> FormColorWellTree = static () =>
-        Rx.ColorWell(new Vector4(0.8f, 0.3f, 0.2f, 1f), FormNoOpColor);
+        new ColorWell
+        {
+            Color = new Vector4(0.8f, 0.3f, 0.2f, 1f),
+            OnChange = FormNoOpColor,
+        };
 
     private static readonly Func<UiNode> FormColorWellDisabledTree =
-        static () => Rx.ColorWell(
-            new Vector4(0.8f, 0.3f, 0.2f, 1f), FormNoOpColor, disabled: true);
+        static () => new ColorWell
+        {
+            Color = new Vector4(0.8f, 0.3f, 0.2f, 1f),
+            OnChange = FormNoOpColor,
+            Disabled = true,
+        };
 
     /// <summary>
     /// The well's popup, which the pixel sheet cannot reach: its handle is
@@ -2518,11 +2627,20 @@ internal static class BehaviorSuites
             root.Render(
                 FormOrigin,
                 new Vector2(FormRowSize.X * scale, ImGui.GetContentRegionAvail().Y),
-                () => Rx.Section(
-                    "GENERAL", expanded,
-                    next => { fired++; trace.Add(next); expanded = next; },
-                    [Rx.FormStatus("Row A"), Rx.FormStatus("Row B")],
-                    "section"));
+                () => new Section
+                {
+                    Title = "GENERAL",
+                    Expanded = expanded,
+                    OnExpandedChange = (Action<bool>)(next =>
+                    {
+                        fired++;
+                        trace.Add(next);
+                        expanded = next;
+                    }),
+                    Children =
+                        [Rx.FormStatus("Row A"), Rx.FormStatus("Row B")],
+                    Key = "section",
+                });
             // Frame 1 is the settled collapsed extent; frame 3 is the frame
             // AFTER the press at 2, which is where the rows must have arrived.
             if (frame == 1)
@@ -2581,9 +2699,15 @@ internal static class BehaviorSuites
                     new Vector2(
                         FormRowSize.X * scale,
                         ImGui.GetContentRegionAvail().Y),
-                    () => Rx.Section(
-                        "GENERAL", expanded, next => expanded = next,
-                        UiChildren.Empty, "section"));
+                    () => new Section
+                    {
+                        Title = "GENERAL",
+                        Expanded = expanded,
+                        OnExpandedChange = (Action<bool>)(
+                            next => expanded = next),
+                        Children = UiChildren.Empty,
+                        Key = "section",
+                    });
                 if (frame != sample)
                     return;
                 int end = list.VtxBuffer.Size;
@@ -2654,7 +2778,8 @@ internal static class BehaviorSuites
                 FormRowSize * ImGuiHelpers.GlobalScale,
                 () => Rx.FormSlider(
                     "Weight", value, 0f, 1f,
-                    next => { value = next; lastReported = next; }));
+                    (Action<float>)(
+                        next => { value = next; lastReported = next; })));
         },
         frame => new Vector2(
             thumbSpanStart + DragOffset(frame) * pixel, rowMiddle),
@@ -2724,7 +2849,7 @@ internal static class BehaviorSuites
                     FormRowSize * ImGuiHelpers.GlobalScale,
                     () => Rx.FormSelector(
                         "Model", "Date Modified",
-                        () => selects++, () => resets++,
+                        (Action)(() => selects++), (Action)(() => resets++),
                         available: true, owned: owned));
             },
             frame => frame is >= 1 and <= 6 ? point : Offscreen,
@@ -2735,10 +2860,15 @@ internal static class BehaviorSuites
 
     private static readonly Func<UiNode> FormRowTree = static () =>
         Rx.Page(
-            Rx.Section(
-                "Alloc", true, FormNoOpBool,
-                Rx.FormSlider("Weight", 0.4f, 0f, 1f, FormNoOpFloat),
-                "alloc"));
+            new Section
+            {
+                Title = "Alloc",
+                Expanded = true,
+                OnExpandedChange = FormNoOpBool,
+                Children =
+                    Rx.FormSlider("Weight", 0.4f, 0f, 1f, FormNoOpFloat),
+                Key = "alloc",
+            });
 
     private static readonly Action<Ui.FormScope> LegacyFormRowBody =
         static form => form.Slider("Weight", 0.4f, 0f, 1f, FormNoOpFloat);
