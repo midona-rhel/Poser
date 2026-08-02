@@ -139,9 +139,6 @@ public sealed class AnimationPane
     private static readonly float[] SpeedMarks = [0f, 1f];
     private static readonly float[] UnitMarks = [1f];
 
-    private static readonly ElementSheet FillWidth =
-        new() { Layout = new() { Width = UiDim.Fill } };
-
     public AnimationPane(
         AnimationSession animation,
         AnimationCatalog catalog,
@@ -405,7 +402,8 @@ public sealed class AnimationPane
                             Help = supported
                                 ? "Pose family — picking one returns the actor to it"
                                 : "Stance changes are unavailable",
-                            StyleSheet = FillWidth,
+                            // Intrinsic width — the widest option, not the
+                            // half-track (user: Fill read way too wide).
                         },
                     },
                     new Row
