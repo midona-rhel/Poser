@@ -137,8 +137,10 @@ internal sealed class FrameWalker
                     record.HasTextColor
                         ? record.TextColor
                         : (record.SvgInheritsColor ? context.Foreground : null),
-                    opacity: (record.SvgOpacity > 0f ? record.SvgOpacity : 1f)
-                        * context.SvgOpacity);
+                    // SvgCore always writes the element's own opacity. Keep
+                    // zero meaningful instead of treating it as an unset
+                    // sentinel; inherited opacity is composed separately.
+                    opacity: record.SvgOpacity * context.SvgOpacity);
                 break;
             case ElementKind.Portal:
                 // Its children live on the floating surface, so the portal
