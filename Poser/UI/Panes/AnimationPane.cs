@@ -54,6 +54,26 @@ public sealed class AnimationPane
     private ActorId? _pickActor;
     private AnimationSlot? _pickSlot;
 
+    // ── paired-attribute rows (user 2026-08-03) ──────────────────────────
+    // Each pair owns an equal half of the control cell. The second caption
+    // wears the FormLabel TONE at its natural width — the family's fixed
+    // slot overflowed the half — with one stated 16px gap to its control.
+    private static readonly ElementSheet PairTrack = new()
+    {
+        Layout = new()
+        {
+            Flow = UiFlow.Row,
+            Align = UiAlign.Center,
+            Width = UiDim.Fill,
+            Gap = 16f,
+        },
+    };
+
+    private static readonly ElementSheet PairCaption = new()
+    {
+        Layout = new() { Width = UiDim.Content },
+    };
+
     // ── retained native islands ──────────────────────────────────────────
     private readonly PickerTriggerState _baseTrigger = new();
     private readonly PickerTriggerState _expressionTrigger = new();
@@ -390,29 +410,37 @@ public sealed class AnimationPane
                     },
                     new Row
                     {
-                        Sheet = SheetFamily.ActionGroupFill,
+                        Style = PairTrack,
                         Children =
                         [
                             new Label
                             {
                                 Text = $"Pose {reading.Pose}",
                                 Sheet = SheetFamily.FormLabel,
+                                Style = PairCaption,
                             },
-                            new Button
+                            new Row
                             {
-                                Label = "Previous",
-                                Dense = true,
-                                OnClick = handlers.PreviousPose,
-                                Disabled = poseDisabled,
-                                Help = "Previous pose (wraps)",
-                            },
-                            new Button
-                            {
-                                Label = "Next",
-                                Dense = true,
-                                OnClick = handlers.NextPose,
-                                Disabled = poseDisabled,
-                                Help = "Next pose (wraps)",
+                                Sheet = SheetFamily.ActionGroup,
+                                Children =
+                                [
+                                    new Button
+                                    {
+                                        Label = "Previous",
+                                        Dense = true,
+                                        OnClick = handlers.PreviousPose,
+                                        Disabled = poseDisabled,
+                                        Help = "Previous pose (wraps)",
+                                    },
+                                    new Button
+                                    {
+                                        Label = "Next",
+                                        Dense = true,
+                                        OnClick = handlers.NextPose,
+                                        Disabled = poseDisabled,
+                                        Help = "Next pose (wraps)",
+                                    },
+                                ],
                             },
                         ],
                     },
@@ -431,13 +459,14 @@ public sealed class AnimationPane
                     },
                     new Row
                     {
-                        Sheet = SheetFamily.ActionGroupFill,
+                        Style = PairTrack,
                         Children =
                         [
                             new Label
                             {
                                 Text = "Lock position",
                                 Sheet = SheetFamily.FormLabel,
+                                Style = PairCaption,
                             },
                             new Switch
                             {
