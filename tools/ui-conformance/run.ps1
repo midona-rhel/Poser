@@ -47,7 +47,11 @@ if ($Clean -and (Test-Path -LiteralPath $artifacts)) {
 
 # Compilation is excluded from the timed run (the performance gate
 # covers capture + composition of the warm default catalog).
-dotnet build $project -c Debug --no-restore -p:NuGetAudit=false
+# --no-incremental is deliberate: MSBuild's up-to-date check has served a
+# STALE Poser.UI.dll copy under OneDrive timestamp skew, silently composing
+# old pixels while reporting success. The full build costs ~3s; a capture
+# of yesterday's binary costs a debugging session.
+dotnet build $project -c Debug --no-restore --no-incremental -p:NuGetAudit=false
 if ($LASTEXITCODE -ne 0) { throw "Capture host build failed." }
 
 $stopwatch = [Diagnostics.Stopwatch]::StartNew()

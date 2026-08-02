@@ -251,9 +251,24 @@ internal sealed class FrameWalker
 
         ImDrawListPtr draw = ImGui.GetWindowDrawList();
         uint identity = id is null ? 0u : ImGui.GetID(id);
+        // THE GUTTER IS THE PADDING (user rule): inside a gutter-capped
+        // scroll, a row's fill PAINTS across the bar's reserved space to the
+        // window edge — the bar overlays it, no dead strip beside the thumb.
+        // The child clip would cut the fill at the content region, so it is
+        // widened HORIZONTALLY only; the vertical bounds stay the viewport's.
+        bool underGutter = context.HitWidthCap > 0f && record.Painter is null;
+        if (underGutter)
+            draw.PushClipRect(
+                draw.GetClipRectMin(),
+                new Vector2(
+                    ImGui.GetWindowPos().X + ImGui.GetWindowSize().X,
+                    draw.GetClipRectMax().Y),
+                false);
         BoxPaint.Result box = BoxPaint.Draw(
             draw, min, max, in style, identity, hovered, disabled,
             ownsBox: record.Painter is null);
+        if (underGutter)
+            draw.PopClipRect();
 
         Vector4? foreground = box.Foreground;
         float glyphOpacity = context.GlyphOpacity * box.GlyphOpacity;
@@ -295,13 +310,17 @@ internal sealed class FrameWalker
 
         if (record.ChildCount > 0)
         {
+            // The cap is CONSUMED by the first reserving layer — a scrolling
+            // menu narrows its rows, not whatever a row contains — but a
+            // plain container (the list's column) passes it through, or the
+            // rows underneath would never see it.
             WalkContext childContext = new(
                 foreground ?? context.Foreground,
                 glyphOpacity,
                 ownHover,
                 hoverMin,
                 hoverMax,
-                0f);
+                reserves ? 0f : context.HitWidthCap);
             bool clipped = record.ClipChildren;
             if (clipped)
                 draw.PushClipRect(min, max, true);

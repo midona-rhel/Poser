@@ -271,9 +271,13 @@ internal sealed class PickerCell<T>
                 rows[count++] = EmptyLine("No matches.", rowWidth);
         }
 
+        // The column spans the FULL panel: a row's 12px margin plus its
+        // under-gutter run is exactly the panel width, and the solver clamps
+        // a child to its parent's grant — a rowWidth column would cut every
+        // pill at the gutter boundary.
         UiNode body = new Column
         {
-            Style = Element.Sized(UiDim.Fixed(rowWidth), null),
+            Style = Element.Sized(UiDim.Fixed(panelWidth), null),
             Children = UiChildren.Create(rows[..count]),
         };
 
