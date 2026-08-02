@@ -93,6 +93,20 @@ public static partial class LegacyCrystarium
         string[] items,
         ControlStyle style = default)
     {
+        var layout = LabelSegmentLayout(items, style);
+        return new(layout.TotalWidth, layout.TotalHeight);
+    }
+
+    /// <summary>
+    /// The label variant's full per-tab geometry — the ONE layout resolution
+    /// the imperative control uses, exposed so the retained twin sizes its
+    /// tabs from the same implementation. All values are PHYSICAL pixels,
+    /// exactly as the control resolves them.
+    /// </summary>
+    internal static SegmentLayout LabelSegmentLayout(
+        string[] items,
+        ControlStyle style = default)
+    {
         var font = FontRegistry.Resolve(
             FontFamily.Default,
             ActiveTheme.Typography.LabelSize);
@@ -108,7 +122,7 @@ public static partial class LegacyCrystarium
                 + padding * 2f);
         if (fontPushed)
             font!.Pop();
-        return new(layout.TotalWidth, layout.TotalHeight);
+        return layout;
     }
 
     public static Vector2 MeasureSegmentedControl(
@@ -194,22 +208,7 @@ public static partial class LegacyCrystarium
 
             bool active = i == selected;
             if (active)
-            {
-                drawList.AddRectFilled(
-                    tabMin + new Vector2(0f, scale),
-                    tabMax + new Vector2(0f, scale),
-                    ImGui.ColorConvertFloat4ToU32(
-                        ColorEx.ApplyAlpha(
-                            ActiveTheme.Chrome.SegmentShadow)),
-                    ActiveTheme.Radii.Control * scale);
-                drawList.AddRectFilled(
-                    tabMin,
-                    tabMax,
-                    ImGui.ColorConvertFloat4ToU32(
-                        ColorEx.ApplyAlpha(
-                            ActiveTheme.Chrome.SegmentSelected)),
-                    ActiveTheme.Radii.Control * scale);
-            }
+                PaintSegmentActive(drawList, tabMin, tabMax);
             draw(
                 drawList,
                 i,
@@ -227,7 +226,30 @@ public static partial class LegacyCrystarium
         return changed;
     }
 
-    private readonly record struct SegmentLayout(
+    /// <summary>The selected tab's fill pair — the 1px SegmentShadow drop
+    /// under the SegmentSelected fill — shared by the imperative control and
+    /// the retained tab painter so the two stay one paint.</summary>
+    internal static void PaintSegmentActive(
+        ImDrawListPtr drawList, Vector2 tabMin, Vector2 tabMax)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        drawList.AddRectFilled(
+            tabMin + new Vector2(0f, scale),
+            tabMax + new Vector2(0f, scale),
+            ImGui.ColorConvertFloat4ToU32(
+                ColorEx.ApplyAlpha(
+                    ActiveTheme.Chrome.SegmentShadow)),
+            ActiveTheme.Radii.Control * scale);
+        drawList.AddRectFilled(
+            tabMin,
+            tabMax,
+            ImGui.ColorConvertFloat4ToU32(
+                ColorEx.ApplyAlpha(
+                    ActiveTheme.Chrome.SegmentSelected)),
+            ActiveTheme.Radii.Control * scale);
+    }
+
+    internal readonly record struct SegmentLayout(
         float[] Widths,
         float Padding,
         float Gap,

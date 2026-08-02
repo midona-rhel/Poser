@@ -126,6 +126,64 @@ public static partial class Crystarium
             help,
             key);
 
+    /// <summary>Segmented row: the pill fills the control cell, which the
+    /// caller states because tab widths exist before the solver runs.</summary>
+    public static UiNode FormSegmented(
+        string label, string[] items, int selected, UiHandler<int> onChange,
+        float width, string? help = null, UiKey key = default) =>
+        FormRow(
+            label,
+            new Segmented
+            {
+                Items = items,
+                Selected = selected,
+                OnChange = onChange,
+                Width = width,
+            },
+            help,
+            key);
+
+    /// <summary>Accent swatch row on the action rhythm; a name list rides as
+    /// per-dot help.</summary>
+    public static UiNode FormSwatches(
+        string label, System.Collections.Generic.IReadOnlyList<Vector4> colors,
+        int selected, UiHandler<int> onChange,
+        System.Collections.Generic.IReadOnlyList<string>? names = null,
+        string? help = null, UiKey key = default) =>
+        FormRow(
+            label,
+            new Swatches
+            {
+                Colors = colors,
+                Selected = selected,
+                OnChange = onChange,
+                Names = names,
+            },
+            help,
+            key);
+
+    /// <summary>A read-only value alone on its band — the body-size variant
+    /// of the value run, exactly as the imperative row draws it.</summary>
+    public static UiNode FormReadOnly(
+        string label, string value, string? help = null,
+        bool unavailable = false, UiKey key = default) =>
+        FormRow(
+            label,
+            new Label
+            {
+                Text = value,
+                Sheet = unavailable ? SheetFamily.Hint : SheetFamily.FormValue,
+                Style = new()
+                {
+                    Type = new()
+                    {
+                        FontSize = ActiveTheme.Typography.BodySize,
+                    },
+                },
+            },
+            help,
+            key);
+
     /// <summary>
     /// The picker row. Two inversions of the imperative row are deliberate and
     /// preserved: the reset action owns a PERMANENT slot so ownership changes

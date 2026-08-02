@@ -262,15 +262,37 @@ public static partial class LegacyCrystarium
         ControlStyle style = default,
         string? help = null)
     {
-        var theme = ActiveTheme;
         // Same square contract as ColorWell above.
         float side = ControlSizing.Height(style.Height, SwatchWrapSize);
         var metrics = ControlSizing.Resolve(style, side, side);
-        float scale = metrics.Scale;
         var hit = Interactive.Reserve(id, metrics.Size, disabled: false);
 
-        var dl = ImGui.GetWindowDrawList();
-        var center = hit.ScreenMin + new Vector2(side * 0.5f * scale);
+        PaintSwatchDot(
+            ImGui.GetWindowDrawList(), hit.ScreenMin, side, color, active,
+            hit.Hovered);
+
+        if (!string.IsNullOrEmpty(help) && hit.Hovered)
+            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
+        return hit.Clicked;
+    }
+
+    /// <summary>
+    /// The swatch's PAINT alone — the hover ring, the active ring pair, the
+    /// dot and its inset ring — so the retained twin drives the same pixels.
+    /// <paramref name="side"/> is the wrap's LOGICAL side; the dot follows it
+    /// with the ring gap held constant, exactly as the control scales.
+    /// </summary>
+    internal static void PaintSwatchDot(
+        ImDrawListPtr dl,
+        Vector2 boxMin,
+        float side,
+        Vector4 color,
+        bool active,
+        bool hovered)
+    {
+        var theme = ActiveTheme;
+        float scale = ImGuiHelpers.GlobalScale;
+        var center = boxMin + new Vector2(side * 0.5f * scale);
         float wrapRadius = side * 0.5f * scale;
         float dotRadius = MathF.Max(
             0f, wrapRadius - SwatchRingGap * scale);
@@ -278,7 +300,7 @@ public static partial class LegacyCrystarium
         // .swatchWrap:hover — spread-only shadow on the WRAP, so the band
         // is the 1px annulus just outside it and the 1px of wrap showing
         // around the dot stays untouched.
-        if (hit.Hovered)
+        if (hovered)
             SwatchRing(
                 dl, center, wrapRadius, SwatchHoverRing * scale,
                 theme.TextMuted);            // --color-text-tertiary
@@ -302,10 +324,6 @@ public static partial class LegacyCrystarium
             dl, center, dotRadius - SwatchInsetRing * scale,
             SwatchInsetRing * scale,
             theme.Chrome.ControlHover);      // --color-subtle-overlay
-
-        if (!string.IsNullOrEmpty(help) && hit.Hovered)
-            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
-        return hit.Clicked;
     }
 
     /// <summary>

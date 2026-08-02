@@ -110,31 +110,6 @@ public static partial class LegacyCrystarium
             _y = ActiveTheme.Controls.FormRowHeight;
         }
 
-        public void Actions(Action<ActionScope> left, Action<ActionScope>? right = null)
-        {
-            var leftScope = new ActionScope();
-            left(leftScope);
-            float top = _origin.Y + _y * _scale;
-            if (right != null)
-            {
-                var rightScope = new ActionScope();
-                right(rightScope);
-                float groupGap = ActiveTheme.Page.ActionGap * _scale;
-                float groupWidth = MathF.Max(0f, (_width - groupGap) * 0.5f);
-                DrawActions(leftScope.Items, _origin.X, groupWidth, top, false,
-                    $"{_id}-actions");
-                DrawActions(rightScope.Items,
-                    _origin.X + groupWidth + groupGap, groupWidth, top, true,
-                    $"{_id}-actions-right");
-            }
-            else
-            {
-                DrawActions(leftScope.Items, _origin.X, _width, top, false,
-                    $"{_id}-actions");
-            }
-            _y += ActiveTheme.Controls.FormRowHeight;
-        }
-
         public void Status(string? text, string? help = null)
         {
             if (string.IsNullOrEmpty(text))
@@ -367,21 +342,6 @@ public static partial class LegacyCrystarium
             _page.EndRow(row, id, help);
         }
 
-        public void Segmented(string label, string[] items,
-            int selected, Action<int> onChange, string? help = null,
-            ControlStyle style = default)
-        {
-            string id = Id(label);
-            var row = _page.BeginRow(label);
-            var controlStyle =
-                WorkspaceInRegion(style, row.ControlWidth / row.Scale);
-            ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
-                controlStyle.Height, ActiveTheme.Controls.NavigationHeight)));
-            LegacyCrystarium.SegmentedControl(
-                id, items, selected, onChange, controlStyle);
-            _page.EndRow(row, id, help);
-        }
-
         public void Dropdown(string label, string[] items,
             int selected, Action<int> onChange, string? help = null,
             bool disabled = false, ControlStyle style = default)
@@ -567,89 +527,6 @@ public static partial class LegacyCrystarium
             _page.EndRow(row, id, help);
         }
 
-        public void ColorWells(string label, Action<ColorWellScope> content,
-            string? help = null)
-        {
-            string id = Id(label);
-            var row = _page.BeginRow(label);
-            var wells = new ColorWellScope(row, id);
-            content(wells);
-            wells.Draw();
-            _page.EndRow(row, id, help);
-        }
-
-        public void Swatches(
-            string label,
-            IReadOnlyList<Vector4> colors,
-            int selected,
-            Action<int> onChange,
-            IReadOnlyList<string>? names = null,
-            string? help = null)
-        {
-            string id = Id(label);
-            var row = _page.BeginRow(label);
-            float side = ActiveTheme.Controls.ColorWellSize;
-            float gap = ActiveTheme.Page.ActionGap * row.Scale;
-            for (int i = 0; i < colors.Count; i++)
-            {
-                int index = i;
-                ImGui.SetCursorScreenPos(new(
-                    row.ControlOrigin.X
-                        + i * (side * row.Scale + gap),
-                    row.CenterControl(side).Y));
-                if (LegacyCrystarium.Swatch(
-                        $"{id}-{i}",
-                        colors[i],
-                        selected == i,
-                        ControlStyle.Square(side),
-                        names != null && i < names.Count
-                            ? names[i]
-                            : null))
-                    onChange(index);
-            }
-            _page.EndRow(row, id, help);
-        }
-
-        public void ReadOnly(string label, string value, string? help = null,
-            bool unavailable = false)
-        {
-            string id = Id(label);
-            var row = _page.BeginRow(label);
-            DrawTextCentered(row.ControlOrigin,
-                new(row.ControlWidth, ActiveTheme.Controls.FormRowHeight * row.Scale),
-                ActiveTheme.Typography.BodySize, FontWeight.Regular,
-                unavailable ? FormHintColor : FormValueColor, value);
-            _page.EndRow(row, id, help);
-        }
-
-        public void ReadOnlyWithActions(string label, string value,
-            Action<ActionScope> content, string? help = null,
-            bool unavailable = false)
-        {
-            string id = Id(label);
-            var row = _page.BeginRow(label);
-            var actions = new ActionScope();
-            content(actions);
-            float actionWidth = MeasureActions(
-                actions.Items, row.Scale, row.ControlWidth);
-            float gap = actions.Items.Count > 0
-                ? ActiveTheme.Page.ActionGap * row.Scale
-                : 0f;
-            float valueWidth = MathF.Max(0f,
-                row.ControlWidth - actionWidth - gap);
-            // DrawTextCentered truncates to the same width and style
-            // itself — no pre-truncation pass.
-            DrawTextCentered(row.ControlOrigin,
-                new(valueWidth, ActiveTheme.Controls.FormRowHeight * row.Scale),
-                ActiveTheme.Typography.CaptionSize, FontWeight.Regular,
-                unavailable ? FormHintColor : FormValueColor,
-                value);
-            DrawActions(actions.Items,
-                row.ControlOrigin.X + row.ControlWidth - actionWidth,
-                actionWidth, row.Origin.Y, true, id);
-            _page.EndRow(row, id, help);
-        }
-
         public void Status(string text, string? help = null)
         {
             string id = Id("status");
@@ -665,24 +542,6 @@ public static partial class LegacyCrystarium
         {
             string id = Id(text);
             var row = _page.BeginRow(text);
-            _page.EndRow(row, id, help);
-        }
-
-        public void AxisWells(string label, Action<string, float> drawAxis,
-            string? help = null)
-        {
-            string id = Id(label);
-            var row = _page.BeginRow(label);
-            float gap = ActiveTheme.Form.AxisGap * row.Scale;
-            float width = (row.ControlWidth - gap * 2f) / 3f;
-            string[] axes = ["X", "Y", "Z"];
-            for (int i = 0; i < axes.Length; i++)
-            {
-                ImGui.SetCursorScreenPos(new(
-                    row.ControlOrigin.X + i * (width + gap),
-                    row.CenterControl(ActiveTheme.Controls.WorkspaceHeight).Y));
-                drawAxis(axes[i], width / row.Scale);
-            }
             _page.EndRow(row, id, help);
         }
 
@@ -765,96 +624,7 @@ public static partial class LegacyCrystarium
                     : null);
         }
 
-        public void CustomCanvas(string label, Action<FormRowScope> draw,
-            string? help = null)
-        {
-            string id = Id(label);
-            var row = _page.BeginRow(label);
-            draw(row);
-            _page.EndRow(row, id, help);
-        }
-
         private string Id(string label) => _page.RowId(_section, label);
-    }
-
-    public sealed class ColorWellScope
-    {
-        private readonly FormRowScope _row;
-        private readonly string _id;
-        private readonly List<ColorWellItem> _items = new();
-
-        private readonly record struct ColorWellItem(
-            string Label,
-            Vector4? Value,
-            Action<Vector4> OnChange,
-            string? UnavailableHelp,
-            ControlStyle Style);
-
-        internal ColorWellScope(in FormRowScope row, string id)
-        {
-            _row = row;
-            _id = id;
-        }
-
-        public void Well(string label, Vector4? value, Action<Vector4> onChange,
-            string? unavailableHelp = null, ControlStyle style = default)
-        {
-            _items.Add(new(
-                label, value, onChange, unavailableHelp, style));
-        }
-
-        internal void Draw()
-        {
-            if (_items.Count == 0)
-                return;
-            float trackWidth = _row.ControlWidth / _items.Count;
-            for (int i = 0; i < _items.Count; i++)
-            {
-                var item = _items[i];
-                float labelWidth = MeasureText(
-                    item.Label,
-                    ActiveTheme.Typography.CaptionSize,
-                    FontWeight.Regular).X;
-                var controlStyle = InRegion(
-                    item.Style,
-                    trackWidth / _row.Scale,
-                    fillByDefault: false);
-                float side = ControlSizing.Height(
-                    controlStyle.Height,
-                    ActiveTheme.Controls.ColorWellSize);
-                float width = ControlSizing.Width(
-                    controlStyle.Width,
-                    side,
-                    trackWidth / _row.Scale);
-                float gap = ActiveTheme.Page.ActionGap * _row.Scale;
-                float groupWidth = labelWidth + gap + width * _row.Scale;
-                float trackX = _row.ControlOrigin.X + i * trackWidth;
-                float groupX = trackX + MathF.Max(
-                    0f, (trackWidth - groupWidth) * 0.5f);
-                DrawTextCentered(
-                    new(groupX, _row.Origin.Y),
-                    new(
-                        labelWidth,
-                        ActiveTheme.Controls.FormRowHeight * _row.Scale),
-                    ActiveTheme.Typography.CaptionSize,
-                    FontWeight.Regular,
-                    FormHintColor,
-                    item.Label);
-                ImGui.SetCursorScreenPos(new(
-                    groupX + labelWidth + gap,
-                    _row.Origin.Y
-                        + (ActiveTheme.Controls.FormRowHeight - side)
-                        * 0.5f * _row.Scale));
-                LegacyCrystarium.ColorWell(
-                    $"{_id}-{item.Label}",
-                    item.Value ?? Vector4.Zero,
-                    item.OnChange,
-                    controlStyle,
-                    rgbOnly: true,
-                    disabled: item.Value == null,
-                    help: item.UnavailableHelp);
-            }
-        }
     }
 
     public readonly record struct FormRowScope

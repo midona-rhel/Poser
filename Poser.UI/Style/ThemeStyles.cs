@@ -426,6 +426,189 @@ internal static class ThemeStyles
         };
         sheets[(int)SheetFamily.PickerCheckSlot] = new() { Layout = checkSlot };
         sheets[(int)SheetFamily.PickerCheckBox] = new() { Layout = checkSlot };
+
+        // ---- window chassis -------------------------------------------------
+        // The action bar: a bar-height column padded to the header inset, its
+        // content row centring items in whatever the 1px rule leaves.
+        sheets[(int)SheetFamily.ActionBarBox] = new()
+        {
+            Layout = new()
+            {
+                Flow = UiFlow.Column,
+                Width = UiDim.Fill,
+                Height = UiDim.Fixed(theme.Floating.ModalBarHeight),
+                Padding = new EdgeInsets(
+                    theme.Floating.HeaderInset, 0f,
+                    theme.Floating.HeaderInset, 0f),
+            },
+        };
+        sheets[(int)SheetFamily.ActionBarRow] = new()
+        {
+            Layout = new()
+            {
+                Flow = UiFlow.Row,
+                Align = UiAlign.Center,
+                Width = UiDim.Fill,
+                Height = UiDim.Fill,
+                Gap = theme.Page.ActionGap,
+            },
+        };
+        sheets[(int)SheetFamily.ActionBarTitle] = new()
+        {
+            Type = new()
+            {
+                FontSize = type.LabelSize,
+                InkRise = theme.Optical.ActionBarText,
+            },
+            Colors = new() { Foreground = theme.FormLabel },
+        };
+        sheets[(int)SheetFamily.BarRule] = new()
+        {
+            Layout = new()
+            {
+                Flow = UiFlow.Row,
+                Width = UiDim.Fill,
+                Height = UiDim.Fixed(1f),
+            },
+            Colors = new() { Fill = theme.FormSeparator },
+        };
+        // iconButton.module.css: resting .8 opacity glyph, hover lifts to 1
+        // over a weak overlay, the press swaps the stronger overlay in.
+        sheets[(int)SheetFamily.IconAction] = new()
+        {
+            Layout = new()
+            {
+                Flow = UiFlow.Stack,
+                Justify = UiAlign.Center,
+                Align = UiAlign.Center,
+                Width = UiDim.Fixed(theme.Floating.CloseActionSize),
+                Height = UiDim.Fixed(theme.Floating.CloseActionSize),
+            },
+            Shape = new() { Radius = 5f },
+            Motion = new() { Fill = LegacyCrystarium.BackgroundTransition },
+            Colors = new()
+            {
+                Foreground = theme.Text with { W = theme.Text.W * 0.8f },
+            },
+            Hover = new()
+            {
+                Colors = new()
+                {
+                    Fill = chrome.WeakOverlay,
+                    Foreground = theme.Text,
+                },
+            },
+            Active = new()
+            {
+                Colors = new()
+                {
+                    Fill = chrome.ActiveOverlay,
+                    Foreground = theme.Text,
+                },
+            },
+        };
+
+        // ---- settings navigation rail ---------------------------------------
+        sheets[(int)SheetFamily.NavRail] = new()
+        {
+            Layout = new()
+            {
+                Flow = UiFlow.Column,
+                Height = UiDim.Fill,
+                Padding = new EdgeInsets(
+                    theme.Page.Inset, theme.Page.Inset,
+                    theme.Page.Inset, theme.Page.Inset),
+            },
+            Colors = new() { Fill = theme.SurfaceRaised },
+        };
+        // SidebarRow's states as data: hover and selection fill the row pill
+        // at radius 5; the label rides the sidebar's optical rise.
+        sheets[(int)SheetFamily.NavRow] = new()
+        {
+            Layout = new()
+            {
+                Flow = UiFlow.Row,
+                Align = UiAlign.Center,
+                Width = UiDim.Fill,
+                Height = UiDim.Fixed(controls.ListRowHeight),
+            },
+            Shape = new() { Radius = 5f },
+            Hover = new() { Colors = new() { Fill = chrome.SidebarHover } },
+            Selected = new() { Colors = new() { Fill = chrome.SidebarSelected } },
+        };
+        sheets[(int)SheetFamily.NavIconSlot] = new()
+        {
+            Layout = new()
+            {
+                Flow = UiFlow.Stack,
+                Justify = UiAlign.Center,
+                Align = UiAlign.Center,
+                Width = UiDim.Fixed(controls.ListRowHeight),
+                Height = UiDim.Fixed(controls.ListRowHeight),
+                Margin = new EdgeInsets(2f, 0f, 0f, 0f),
+            },
+        };
+        sheets[(int)SheetFamily.NavLabel] = new()
+        {
+            Type = new()
+            {
+                FontSize = type.BodySize,
+                Overflow = TextOverflow.Truncate,
+                InkRise = theme.Optical.SidebarText,
+            },
+            Colors = new() { Foreground = theme.Text },
+            Layout = new() { Width = UiDim.Fill },
+        };
+
+        // ---- settings form controls ------------------------------------------
+        // The segmented pill: the InputWell trough whose chrome padding is the
+        // navigation/workspace height difference, exactly as the control
+        // resolves it.
+        float segmentPad =
+            (controls.NavigationHeight - controls.WorkspaceHeight) * 0.5f;
+        sheets[(int)SheetFamily.SegmentPill] = new()
+        {
+            Layout = new()
+            {
+                Flow = UiFlow.Row,
+                Align = UiAlign.Center,
+                Height = UiDim.Fixed(controls.NavigationHeight),
+                Padding = new EdgeInsets(
+                    segmentPad, segmentPad, segmentPad, segmentPad),
+                Gap = theme.Spacing.One,
+            },
+            Shape = new() { Radius = theme.Radii.Surface },
+            Colors = new() { Fill = chrome.InputWell },
+        };
+        // The tab's tones are the control's: resting text at .72, hover and
+        // selection at full — the selected fill pair stays the painter's.
+        sheets[(int)SheetFamily.SegmentTab] = new()
+        {
+            Layout = new()
+            {
+                Flow = UiFlow.Stack,
+                Justify = UiAlign.Center,
+                Align = UiAlign.Center,
+                Height = UiDim.Fixed(controls.WorkspaceHeight),
+            },
+            Type = new()
+            {
+                FontSize = type.LabelSize,
+                Overflow = TextOverflow.Clip,
+            },
+            Colors = new() { Foreground = theme.Text with { W = 0.72f } },
+            Hover = new() { Colors = new() { Foreground = theme.Text } },
+            Selected = new() { Colors = new() { Foreground = theme.Text } },
+        };
+        sheets[(int)SheetFamily.SwatchBox] = new()
+        {
+            Layout = new()
+            {
+                Flow = UiFlow.Stack,
+                Width = UiDim.Fixed(controls.ColorWellSize),
+                Height = UiDim.Fixed(controls.ColorWellSize),
+            },
+        };
         return sheets;
     }
 

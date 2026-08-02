@@ -140,5 +140,103 @@ internal sealed class SectionHeaderPainter : IPainter
     }
 }
 
+/// <summary>
+/// The section header with NOTHING to disclose: same seam, default hit, open
+/// forever — which is exactly what the imperative non-collapsible section
+/// hands it. No reservation, so a static title never hovers.
+/// </summary>
+internal sealed class StaticSectionHeaderPainter : IPainter
+{
+    internal static readonly StaticSectionHeaderPainter Instance = new();
+
+    private StaticSectionHeaderPainter()
+    {
+    }
+
+    public bool NeedsHit => false;
+
+    public bool OwnsText => true;
+
+    public PaintResult Paint(in PaintContext context)
+    {
+        Poser.UI.LegacyCrystarium.PaintSectionHeader(
+            default,
+            0,
+            context.Record.Text ?? string.Empty,
+            true,
+            context.Min,
+            context.Size.X);
+        return default;
+    }
+}
+
+/// <summary>The selected segment's fill pair; the tab's text and tones are
+/// the base's, driven by the sheet's states.</summary>
+internal sealed class SegmentTabPainter : IPainter
+{
+    internal static readonly SegmentTabPainter Instance = new();
+
+    private SegmentTabPainter()
+    {
+    }
+
+    public PaintResult Paint(in PaintContext context)
+    {
+        if (context.Record.Selected)
+            Poser.UI.LegacyCrystarium.PaintSegmentActive(
+                context.DrawList, context.Min, context.Max);
+        return default;
+    }
+}
+
+/// <summary>The accent swatch dot. The colour it shows is the sheet's
+/// resolved fill; selection is the element's, hover is the hit's.</summary>
+internal sealed class SwatchPainter : IPainter
+{
+    internal static readonly SwatchPainter Instance = new();
+
+    private SwatchPainter()
+    {
+    }
+
+    public PaintResult Paint(in PaintContext context)
+    {
+        Poser.UI.LegacyCrystarium.PaintSwatchDot(
+            context.DrawList,
+            context.Min,
+            context.Size.Y / ImGuiHelpers.GlobalScale,
+            context.Style.Fill ?? default,
+            context.Record.Selected,
+            context.Hit.Hovered);
+        return default;
+    }
+}
+
+/// <summary>The modal footer band: the ModalFooter fill rounded to the
+/// window's bottom corners, exactly as the imperative chassis painted it.
+/// </summary>
+internal sealed class ModalFooterPainter : IPainter
+{
+    internal static readonly ModalFooterPainter Instance = new();
+
+    private ModalFooterPainter()
+    {
+    }
+
+    public bool NeedsHit => false;
+
+    public PaintResult Paint(in PaintContext context)
+    {
+        var theme = Poser.UI.LegacyCrystarium.ActiveTheme;
+        context.DrawList.AddRectFilled(
+            context.Min,
+            context.Max,
+            ImGui.ColorConvertFloat4ToU32(theme.Chrome.ModalFooter),
+            theme.Radii.Window * ImGuiHelpers.GlobalScale,
+            ImDrawFlags.RoundCornersBottom);
+        return default;
+    }
+}
+
 // Dropdown painters live in DropdownPainters.cs and the picker's in
 // PickerPainters.cs, so the two component rewrites own disjoint files.

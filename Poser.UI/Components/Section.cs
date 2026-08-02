@@ -33,14 +33,27 @@ public readonly record struct Section
     public static implicit operator UiNode(Section section)
     {
         Theme.PageTokens page = Crystarium.ActiveTheme.Page;
-        UiNode header = new Element
-        {
-            Sheet = SheetFamily.SectionHeader,
-            Text = section.Title,
-            Selected = section.Expanded,
-            On = new Listeners { OnToggle = section.OnExpandedChange },
-            Painter = SectionHeaderPainter.Instance,
-        };
+        // No toggle handler means no disclosure AT ALL: the header paints
+        // through the same seam with the default hit the imperative
+        // non-collapsible section hands it — open forever, never hovering.
+        bool collapsible = !section.OnExpandedChange.IsNone;
+        bool expanded = !collapsible || section.Expanded;
+        UiNode header = collapsible
+            ? new Element
+            {
+                Sheet = SheetFamily.SectionHeader,
+                Text = section.Title,
+                Selected = section.Expanded,
+                On = new Listeners { OnToggle = section.OnExpandedChange },
+                Painter = SectionHeaderPainter.Instance,
+            }
+            : new Element
+            {
+                Sheet = SheetFamily.SectionHeader,
+                Text = section.Title,
+                Selected = true,
+                Painter = StaticSectionHeaderPainter.Instance,
+            };
 
         return new Column
         {
@@ -64,7 +77,7 @@ public readonly record struct Section
                     },
                 Crystarium.Spacer(page.SectionPaddingTop),
                 header,
-                section.Expanded
+                expanded
                     ? new Column
                     {
                         Style = new() { Layout = new() { Width = UiDim.Fill } },

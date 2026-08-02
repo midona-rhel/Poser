@@ -63,6 +63,25 @@ public enum SheetFamily : short
     PickerCheckSlot,
     PickerCheckBox,
 
+    // Window chassis: the action bar, its title, the 1px rule it wears, and
+    // the icon-sized action beside it.
+    ActionBarBox,
+    ActionBarRow,
+    ActionBarTitle,
+    BarRule,
+    IconAction,
+
+    // Settings navigation rail.
+    NavRail,
+    NavRow,
+    NavIconSlot,
+    NavLabel,
+
+    // Settings form controls.
+    SegmentPill,
+    SegmentTab,
+    SwatchBox,
+
     Count,
 }
 
