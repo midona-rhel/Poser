@@ -52,6 +52,7 @@ public enum SheetFamily : short
     ValueCell,
     ColorWellTrack,
     FormRow,
+    PairHalf,
     SectionHeader,
     SectionRule,
 

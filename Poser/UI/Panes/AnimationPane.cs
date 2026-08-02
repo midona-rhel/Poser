@@ -54,33 +54,6 @@ public sealed class AnimationPane
     private ActorId? _pickActor;
     private AnimationSlot? _pickSlot;
 
-    // ── paired-attribute bands (user 2026-08-03, round 3) ────────────────
-    // The band splits at the ROW's middle, not the control cell's: each half
-    // is its own miniature form row — the FormLabel slot then the control —
-    // so both pairs read identically and the second caption starts exactly
-    // at half the row.
-    private static readonly ElementSheet PairHalf = new()
-    {
-        Layout = new()
-        {
-            Flow = UiFlow.Row,
-            Align = UiAlign.Center,
-            Width = UiDim.Fill,
-        },
-    };
-
-    /// <summary>A 34px band of two mirrored label+control halves.</summary>
-    private static UiNode PairBand(UiChildren left, UiChildren right) =>
-        new Element
-        {
-            Sheet = SheetFamily.FormRow,
-            Children =
-            [
-                new Row { Style = PairHalf, Children = left },
-                new Row { Style = PairHalf, Children = right },
-            ],
-        };
-
     // ── retained native islands ──────────────────────────────────────────
     private readonly PickerTriggerState _baseTrigger = new();
     private readonly PickerTriggerState _expressionTrigger = new();
@@ -386,73 +359,57 @@ public sealed class AnimationPane
 
         return
         [
-            PairBand(
-                [
-                    new Label { Text = "Stance", Sheet = SheetFamily.FormLabel },
-                    new Dropdown
-                    {
-                        Items = StanceLabels,
-                        Selected = stanceIndex,
-                        OnChange = handlers.PickStance,
-                        Preview = StanceName(reading.Stance),
-                        ReselectFires = true,
-                        Disabled = !supported,
-                        Help = supported
-                            ? "Pose family — picking one returns the actor to it"
-                            : "Stance changes are unavailable",
-                    },
-                ],
-                [
-                    new Label
-                    {
-                        Text = $"Pose {reading.Pose}",
-                        Sheet = SheetFamily.FormLabel,
-                    },
-                    new Row
-                    {
-                        Sheet = SheetFamily.ActionGroup,
-                        Children =
-                        [
-                            new Button
-                            {
-                                Label = "Previous",
-                                Dense = true,
-                                OnClick = handlers.PreviousPose,
-                                Disabled = poseDisabled,
-                                Help = "Previous pose (wraps)",
-                            },
-                            new Button
-                            {
-                                Label = "Next",
-                                Dense = true,
-                                OnClick = handlers.NextPose,
-                                Disabled = poseDisabled,
-                                Help = "Next pose (wraps)",
-                            },
-                        ],
-                    },
-                ]),
-            PairBand(
-                [
-                    new Label { Text = "Weapon", Sheet = SheetFamily.FormLabel },
-                    new Switch
-                    {
-                        Value = reading.WeaponDrawn,
-                        OnToggle = handlers.SetWeaponDrawn,
-                    },
-                ],
-                [
-                    new Label
-                    {
-                        Text = "Lock position",
-                        Sheet = SheetFamily.FormLabel,
-                    },
-                    new Switch
-                    {
-                        Value = owned.PositionLock,
-                        OnToggle = handlers.SetPositionLock,
-                    },
-                ]),
+            Crystarium.FormPair(
+                "Stance",
+                new Dropdown
+                {
+                    Items = StanceLabels,
+                    Selected = stanceIndex,
+                    OnChange = handlers.PickStance,
+                    Preview = StanceName(reading.Stance),
+                    ReselectFires = true,
+                    Disabled = !supported,
+                    Help = supported
+                        ? "Pose family — picking one returns the actor to it"
+                        : "Stance changes are unavailable",
+                },
+                $"Pose {reading.Pose}",
+                new Row
+                {
+                    Sheet = SheetFamily.ActionGroup,
+                    Children =
+                    [
+                        new Button
+                        {
+                            Label = "Previous",
+                            Dense = true,
+                            OnClick = handlers.PreviousPose,
+                            Disabled = poseDisabled,
+                            Help = "Previous pose (wraps)",
+                        },
+                        new Button
+                        {
+                            Label = "Next",
+                            Dense = true,
+                            OnClick = handlers.NextPose,
+                            Disabled = poseDisabled,
+                            Help = "Next pose (wraps)",
+                        },
+                    ],
+                }),
+            Crystarium.FormPair(
+                "Weapon",
+                new Switch
+                {
+                    Value = reading.WeaponDrawn,
+                    OnToggle = handlers.SetWeaponDrawn,
+                },
+                "Lock position",
+                new Switch
+                {
+                    Value = owned.PositionLock,
+                    OnToggle = handlers.SetPositionLock,
+                }),
         ];
     }
 

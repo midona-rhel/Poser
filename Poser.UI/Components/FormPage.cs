@@ -202,6 +202,52 @@ public static partial class Crystarium
             help,
             key);
 
+    /// <summary>
+    /// The paired-attribute band (USER 2026-08-03): two mirrored halves of
+    /// the FULL row, each its own miniature form row — the FormLabel slot,
+    /// then the control — so the second column starts at exactly half the
+    /// band and both pairs share one caption-to-control rhythm. A two-cell
+    /// flex layout, stated as one.
+    /// </summary>
+    public static UiNode FormPair(
+        string leftLabel, UiNode left,
+        string rightLabel, UiNode right,
+        UiKey key = default) =>
+        new Element
+        {
+            Sheet = SheetFamily.FormRow,
+            Key = key,
+            Children =
+            [
+                new Row
+                {
+                    Sheet = SheetFamily.PairHalf,
+                    Children =
+                    [
+                        new Label
+                        {
+                            Text = leftLabel,
+                            Sheet = SheetFamily.FormLabel,
+                        },
+                        left,
+                    ],
+                },
+                new Row
+                {
+                    Sheet = SheetFamily.PairHalf,
+                    Children =
+                    [
+                        new Label
+                        {
+                            Text = rightLabel,
+                            Sheet = SheetFamily.FormLabel,
+                        },
+                        right,
+                    ],
+                },
+            ],
+        };
+
     public static UiNode FormCheckbox(
         string label, bool value, UiHandler<bool> onChange, string? help = null,
         bool disabled = false, UiKey key = default) =>

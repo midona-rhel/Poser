@@ -315,6 +315,17 @@ internal static class ThemeStyles
                 Height = UiDim.Fixed(controls.FormRowHeight),
             },
         };
+        // One half of a FormPair band: a miniature form row that splits the
+        // band equally with its sibling.
+        sheets[(int)SheetFamily.PairHalf] = new()
+        {
+            Layout = new()
+            {
+                Flow = UiFlow.Row,
+                Align = UiAlign.Center,
+                Width = UiDim.Fill,
+            },
+        };
         sheets[(int)SheetFamily.SectionHeader] = new()
         {
             Layout = new()
