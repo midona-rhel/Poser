@@ -69,14 +69,14 @@ public readonly record struct Dropdown
         ElementSheet labelBox = new()
         {
             Layout = new() { Width = UiDim.Fill },
-            Type = new() { FontSize = labelSize, Overflow = TextOverflow.Truncate },
+            Type = new() { FontSize = labelSize, Overflow = TextOverflow.Clip },
         };
 
         // ---- .drop ---------------------------------------------------------
         ElementSheet rowBox = new()
         {
             Layout = new() { Height = UiDim.Fixed(popup.RowHeight / scale) },
-            Type = new() { FontSize = labelSize, Overflow = TextOverflow.Truncate },
+            Type = new() { FontSize = labelSize, Overflow = TextOverflow.Clip },
         };
         // Frame-scoped scratch, at EVERY item count: the arena's buffer is
         // already there, and a stackalloc/heap split would allocate the moment

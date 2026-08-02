@@ -151,9 +151,30 @@ internal sealed class PortalHost
             float cap = _arena.Portal(_arena[body.Node].PortalSlot).CapChildHitWidth
                 ? region.ContentWidth * body.Scale
                 : 0f;
-            WalkPortalChildren(
-                body, ImGui.GetCursorScreenPos(), cap, body.Head,
-                _arena[body.Node].ChildCount);
+            Vector2 origin = ImGui.GetCursorScreenPos();
+            int count = _arena[body.Node].ChildCount;
+            WalkPortalChildren(body, origin, cap, body.Head, count);
+
+            // Trailing breathing — a last row's margin, the list's bottom
+            // padding — is INVISIBLE to ImGui's scroll extent: no item covers
+            // it, so max-scroll would end at the last reservation and pin the
+            // last pill to the viewport edge. A zero-size reservation at the
+            // content's true bottom keeps the stated gap scrollable.
+            float bottom = 0f;
+            ref ElementRecord node = ref _arena[body.Node];
+            for (int i = body.Head; i < count; i++)
+            {
+                int child = _arena.ChildAt(node.ChildStart + i).Index;
+                bottom = MathF.Max(
+                    bottom,
+                    _arena[child].LogicalPos.Y + _arena[child].LogicalSize.Y
+                        + _arena[child].Layout.Margin.Bottom);
+            }
+
+            float top = LayoutSolver.PortalScrollTop(_arena, body.Node);
+            ImGui.SetCursorScreenPos(new Vector2(
+                origin.X, origin.Y + (bottom - top) * body.Scale));
+            ImGui.Dummy(Vector2.Zero);
         }
         finally
         {

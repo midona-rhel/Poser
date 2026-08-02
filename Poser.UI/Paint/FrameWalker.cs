@@ -439,10 +439,10 @@ internal sealed class FrameWalker
         Vector2 span = new(
             MathF.Max(0f, record.LogicalSize.X - layout.Padding.Horizontal),
             MathF.Max(0f, record.LogicalSize.Y - layout.Padding.Vertical));
-        // Sizing says how much room a run occupies; only Truncate says it may
-        // not spill. A cut run therefore fills its box and a visible one takes
-        // its intrinsic width, and the alignment places whichever it is.
-        bool cut = record.Type.Overflow == Poser.UI.TextOverflow.Truncate;
+        // Sizing says how much room a run occupies; only Truncate/Clip say it
+        // may not spill. A cut run therefore fills its box and a visible one
+        // takes its intrinsic width, and the alignment places whichever it is.
+        bool cut = record.Type.Overflow != Poser.UI.TextOverflow.Visible;
         Vector2 box = new(
             cut ? span.X : measured.X / scale, measured.Y / scale);
         Vector2 position = origin + (contentOrigin
@@ -473,6 +473,16 @@ internal sealed class FrameWalker
             float clip = box.X * scale;
             if (clip <= 0f)
                 return;
+            // Truncate constrains ONLY on overflow — the clip's snapped edge
+            // can shave a fitting run's descender. Clip mode keeps the
+            // legacy always-clip behavior for byte-frozen twins.
+            if (measured.X <= clip
+                && record.Type.Overflow == Poser.UI.TextOverflow.Truncate)
+            {
+                Poser.UI.LegacyCrystarium.TextAt(position, text, textStyle);
+                return;
+            }
+
             Poser.UI.LegacyCrystarium.TextAt(
                 position, text, textStyle, Poser.UI.TextConstraint.Truncate(clip));
             // Truncation-only readout: same chrome as help, no explanatory

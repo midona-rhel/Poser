@@ -16,7 +16,13 @@ public enum TextOverflow : byte
     Visible,
 
     /// <summary>The run is cut to the arranged box, with the renderer's own
-    /// ellipsis treatment. The only mode the truncation readout means
-    /// anything in.</summary>
+    /// ellipsis treatment — applied ONLY when the run overflows, because the
+    /// clip's snapped line-height edge can shave a fitting run's descender
+    /// (the accepted parity lesson, and a user-caught regression).</summary>
     Truncate,
+
+    /// <summary>As <see cref="Truncate"/>, but the clip applies to a FITTING
+    /// run too — the legacy renderer's behavior, shave included. Only for
+    /// twins whose pixels are byte-frozen against a legacy control.</summary>
+    Clip,
 }
