@@ -11,7 +11,7 @@ public static partial class LegacyCrystarium
     /// circular hit/hover target the 14px dot centers in. A CSS literal,
     /// not a token: <c>Controls.ColorWellSize</c> is the WELL's side and
     /// the two are different components.</summary>
-    private const float SwatchWrapSize = 16f;
+    internal const float SwatchWrapSize = 16f;
 
     /// <summary>The wrap is 16px around a 14px <c>.swatch</c>, i.e. 1px of
     /// wrap shows on every side. DEVIATION: the CSS pins the dot at an
@@ -61,31 +61,31 @@ public static partial class LegacyCrystarium
     /// centre in, so this is not interchangeable with
     /// <c>Controls.WorkspaceHeight</c>, which happens to share the
     /// number but means a control's height.</summary>
-    private const float PaletteMinHeight = 26f;
+    internal const float PaletteMinHeight = 26f;
 
     /// <summary><c>.palette { padding: 0 6px }</c>.</summary>
-    private const float PalettePaddingX = 6f;
+    internal const float PalettePaddingX = 6f;
 
     /// <summary><c>.palette { gap: 2px }</c> — flex gap, so n wraps
     /// contribute n−1 gaps and a single wrap contributes none.</summary>
-    private const float PaletteGap = 2f;
+    internal const float PaletteGap = 2f;
 
     /// <summary><c>.palette { border: 1px solid
     /// var(--color-border-secondary) }</c> — the width; the colour is the
     /// one <c>var()</c> in the module and comes from the theme.</summary>
-    private const float PaletteBorder = 1f;
+    internal const float PaletteBorder = 1f;
 
     /// <summary><c>.palette { border-radius: 40px }</c>. NOT
     /// <c>Radii.Pill</c>: Picto writes <c>999px</c> where it means
     /// "always a pill" (AuthWorkspace) and <c>40px</c> here, which only
     /// reads as a pill while the box stays under 80px tall.</summary>
-    private const float PaletteRadius = 40f;
+    internal const float PaletteRadius = 40f;
 
     /// <summary><c>.palette { background: rgba(0, 0, 0, 0.15) }</c> — a
     /// raw rgba in the module, NOT a <c>var()</c>, so it is identical in
     /// every theme and belongs here rather than in ChromeTokens (no
     /// tokens.css entry carries black at .15 either).</summary>
-    private static readonly Vector4 PaletteFill = new(0f, 0f, 0f, 0.15f);
+    internal static readonly Vector4 PaletteFill = new(0f, 0f, 0f, 0.15f);
 
     /// <summary>
     /// Color well — picto m5 <c>.well</c>: 26×26 (<c>Controls.ColorWellSize</c>;

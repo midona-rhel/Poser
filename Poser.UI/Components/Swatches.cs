@@ -6,9 +6,10 @@ using Poser.UI.Reactive;
 namespace Poser.UI;
 
 /// <summary>
-/// A run of accent swatches on the form's action rhythm. Each dot's colour is
-/// its sheet fill, its rings the one swatch paint the imperative control uses;
-/// selection is the element's, and a name rides as the dot's own help.
+/// Picto's ColorPalette: the dark pill holding a run of 16px swatch wraps.
+/// Each dot's colour is its sheet fill, its rings the one swatch paint the
+/// imperative control uses; selection is the element's, and a name rides as
+/// the dot's own help.
 /// </summary>
 public readonly record struct Swatches
 {
@@ -51,7 +52,7 @@ public readonly record struct Swatches
 
         return new Row
         {
-            Sheet = SheetFamily.ActionGroup,
+            Sheet = SheetFamily.SwatchPalette,
             Key = Key,
             Children = UiChildren.Create(dots),
         };

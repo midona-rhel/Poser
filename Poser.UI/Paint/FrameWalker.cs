@@ -440,11 +440,14 @@ internal sealed class FrameWalker
             MathF.Max(0f, record.LogicalSize.X - layout.Padding.Horizontal),
             MathF.Max(0f, record.LogicalSize.Y - layout.Padding.Vertical));
         // Sizing says how much room a run occupies; only Truncate/Clip say it
-        // may not spill. A cut run therefore fills its box and a visible one
-        // takes its intrinsic width, and the alignment places whichever it is.
+        // may not spill. A cut run's PLACEMENT box is what actually renders —
+        // the measured run until it overflows, the span once it does —
+        // otherwise a fitting run in a stretched box degenerates every
+        // alignment to left (user-caught: segmented tab captions).
         bool cut = record.Type.Overflow != Poser.UI.TextOverflow.Visible;
         Vector2 box = new(
-            cut ? span.X : measured.X / scale, measured.Y / scale);
+            cut ? MathF.Min(span.X, measured.X / scale) : measured.X / scale,
+            measured.Y / scale);
         Vector2 position = origin + (contentOrigin
             + new Vector2(
                 Offset(layout.Justify, span.X, box.X),
@@ -470,7 +473,10 @@ internal sealed class FrameWalker
 
             // A sized box that collapsed to nothing draws nothing, exactly as
             // the imperative controls skip a label with no room left for it.
-            float clip = box.X * scale;
+            // The constraint is the SPAN's, not the placement box's: cutting
+            // at exactly the measured width shaves the final glyph under
+            // fractional scaling.
+            float clip = span.X * scale;
             if (clip <= 0f)
                 return;
             // Truncate constrains ONLY on overflow — the clip's snapped edge

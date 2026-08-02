@@ -33,9 +33,6 @@ public readonly record struct ActionBar
 
     public static implicit operator UiNode(ActionBar bar)
     {
-        UiNode rule = bar.Separator == ActionBarSeparator.None
-            ? UiNode.None
-            : new Element { Sheet = SheetFamily.BarRule };
         UiNode content = new Row
         {
             Sheet = SheetFamily.ActionBarRow,
@@ -48,17 +45,32 @@ public readonly record struct ActionBar
                 new Row { Sheet = SheetFamily.ActionGroup, Children = bar.Right },
             ],
         };
-        UiNode box = new Column
+        // The rule is the BOX's painter, not a flowed child: it spans the
+        // bar's full border box — the window edges, past the header inset —
+        // and steals no height, so items centre on the whole bar (USER
+        // 2026-08-02: rules reach the edges; footer buttons sat 1px low).
+        UiNode box = new Element
         {
             Sheet = SheetFamily.ActionBarBox,
+            Painter = bar.Separator switch
+            {
+                ActionBarSeparator.Top => Reactive.BarSeparatorPainter.Top,
+                ActionBarSeparator.Bottom => Reactive.BarSeparatorPainter.Bottom,
+                _ => null,
+            },
             Key = bar.FooterChrome ? default : bar.Key,
-            Children = bar.Separator == ActionBarSeparator.Top
-                ? [rule, content]
-                : [content, rule],
+            Children = content,
         };
         return bar.FooterChrome
             ? new Element
             {
+                // The wrapper STATES the bar height: a sibling Fill resolves
+                // against declared extents, and an unsized wrapper would let
+                // it swallow the footer's 44 and push the bar off the window
+                // (user-caught: the rail rule ran through the footer band).
+                Style = Element.Sized(
+                    UiDim.Fill,
+                    UiDim.Fixed(Crystarium.ActiveTheme.Floating.ModalBarHeight)),
                 Painter = Reactive.ModalFooterPainter.Instance,
                 Key = bar.Key,
                 Children = box,

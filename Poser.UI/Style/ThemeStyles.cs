@@ -594,19 +594,51 @@ internal static class ThemeStyles
             Type = new()
             {
                 FontSize = type.LabelSize,
-                Overflow = TextOverflow.Clip,
+                // Truncate, NOT Clip: the always-shave path anchors the run
+                // left, and a tab's caption must stay centred (user-caught).
+                Overflow = TextOverflow.Truncate,
             },
             Colors = new() { Foreground = theme.Text with { W = 0.72f } },
             Hover = new() { Colors = new() { Foreground = theme.Text } },
             Selected = new() { Colors = new() { Foreground = theme.Text } },
+        };
+        // Picto's shared/ui/ColorPalette: the dark pill the 16px swatch wraps
+        // sit in — the ONE swatch presentation (user 2026-08-02: the palette
+        // treatment from the test gallery, not bare form-sized dots).
+        sheets[(int)SheetFamily.SwatchPalette] = new()
+        {
+            Layout = new()
+            {
+                Flow = UiFlow.Row,
+                Align = UiAlign.Center,
+                Height = UiDim.Fixed(LegacyCrystarium.PaletteMinHeight),
+                Padding = new EdgeInsets(
+                    LegacyCrystarium.PaletteBorder
+                        + LegacyCrystarium.PalettePaddingX,
+                    0f,
+                    LegacyCrystarium.PaletteBorder
+                        + LegacyCrystarium.PalettePaddingX,
+                    0f),
+                Gap = LegacyCrystarium.PaletteGap,
+            },
+            Shape = new()
+            {
+                Radius = LegacyCrystarium.PaletteRadius,
+                BorderWidth = LegacyCrystarium.PaletteBorder,
+            },
+            Colors = new()
+            {
+                Fill = LegacyCrystarium.PaletteFill,
+                Border = theme.Border,
+            },
         };
         sheets[(int)SheetFamily.SwatchBox] = new()
         {
             Layout = new()
             {
                 Flow = UiFlow.Stack,
-                Width = UiDim.Fixed(controls.ColorWellSize),
-                Height = UiDim.Fixed(controls.ColorWellSize),
+                Width = UiDim.Fixed(LegacyCrystarium.SwatchWrapSize),
+                Height = UiDim.Fixed(LegacyCrystarium.SwatchWrapSize),
             },
         };
         return sheets;

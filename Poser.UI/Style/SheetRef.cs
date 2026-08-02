@@ -80,6 +80,7 @@ public enum SheetFamily : short
     // Settings form controls.
     SegmentPill,
     SegmentTab,
+    SwatchPalette,
     SwatchBox,
 
     Count,

@@ -212,6 +212,15 @@
       ]
     },
     {
+      "name": "reactive-settings",
+      "title": "Reactive settings chassis (PBI-015 3B)",
+      "states": [
+        { "name": "rsettings-frame", "label": "frame", "width": 770, "height": 570 },
+        { "name": "rsegmented", "label": "segmented", "width": 420, "height": 60 },
+        { "name": "rswatches", "label": "palette", "width": 340, "height": 60 }
+      ]
+    },
+    {
       "name": "tooltip",
       "title": "Tooltip",
       "states": [

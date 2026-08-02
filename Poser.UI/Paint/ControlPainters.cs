@@ -212,6 +212,35 @@ internal sealed class SwatchPainter : IPainter
     }
 }
 
+/// <summary>
+/// The bar's 1px edge rule, painted on the BORDER box so it reaches the
+/// window edges the bar spans — and steals no height from the content row,
+/// which centres on the full bar exactly as the imperative bar centred.
+/// </summary>
+internal sealed class BarSeparatorPainter : IPainter
+{
+    internal static readonly BarSeparatorPainter Top = new(top: true);
+    internal static readonly BarSeparatorPainter Bottom = new(top: false);
+
+    private readonly bool _top;
+
+    private BarSeparatorPainter(bool top) => _top = top;
+
+    public bool NeedsHit => false;
+
+    public PaintResult Paint(in PaintContext context)
+    {
+        float thickness = System.MathF.Max(1f, ImGuiHelpers.GlobalScale);
+        float y = _top ? context.Min.Y : context.Max.Y - thickness;
+        context.DrawList.AddRectFilled(
+            new Vector2(context.Min.X, y),
+            new Vector2(context.Max.X, y + thickness),
+            ImGui.ColorConvertFloat4ToU32(
+                Poser.UI.LegacyCrystarium.ActiveTheme.FormSeparator));
+        return default;
+    }
+}
+
 /// <summary>The modal footer band: the ModalFooter fill rounded to the
 /// window's bottom corners, exactly as the imperative chassis painted it.
 /// </summary>

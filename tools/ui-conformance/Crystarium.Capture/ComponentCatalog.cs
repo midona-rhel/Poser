@@ -168,6 +168,11 @@ internal static class ComponentCatalog
         new("rsection", 320, 92),
         new("rsection-expanded", 320, 92),
         new("rsection-hover", 320, 92),
+        // PBI-015 phase 3B: the Settings chassis and its two new controls,
+        // renderable where pixels can be measured instead of reported.
+        new("rsettings-frame", 770, 570),
+        new("rsegmented", 420, 60),
+        new("rswatches", 340, 60),
         new("tooltip", 240, 80),
         new("tooltip-pop-mid", 240, 80),
         new("context-menu", 320, 190),
@@ -262,6 +267,10 @@ internal static class ComponentCatalog
     /// legacy twin only in what it allocates is not the comparison this sheet
     /// claims to make.
     /// </summary>
+    private static readonly Action FormNoOp = static () => { };
+
+    private static readonly Action<int> FormNoOpInt = static _ => { };
+
     private static readonly Action<float> FormNoOpFloat = static _ => { };
 
     private static readonly Action<bool> FormNoOpBool = static _ => { };
@@ -333,6 +342,139 @@ internal static class ComponentCatalog
             Expanded = true,
             OnExpandedChange = FormNoOpBool,
             Key = "section",
+        };
+
+    /// <summary>
+    /// Diagnostic chassis at the Settings window's own 720x520: the
+    /// rotated-H rules (full-width header/footer rules bridged by the nav
+    /// rule), the footer band with its comfortable buttons, and a rail with
+    /// a selected row — everything the in-game window reports against,
+    /// renderable where pixels can be inspected.
+    /// </summary>
+    private static readonly Func<UiNode> SettingsFrameTree = static () =>
+        new Column
+        {
+            Style = new()
+            {
+                Layout = new() { Width = UiDim.Fill, Height = UiDim.Fill },
+            },
+            Children =
+            [
+                new ActionBar
+                {
+                    Left = ActionBar.Title("Settings"),
+                    Right = new IconAction
+                    {
+                        Icon = TablerIcon.X,
+                        OnClick = FormNoOp,
+                    },
+                    Separator = ActionBarSeparator.Bottom,
+                    Key = "header",
+                },
+                new Row
+                {
+                    Style = new()
+                    {
+                        Layout = new()
+                        {
+                            Width = UiDim.Fill,
+                            Height = UiDim.Fill,
+                        },
+                    },
+                    Children =
+                    [
+                        new Column
+                        {
+                            Sheet = SheetFamily.NavRail,
+                            Style = new()
+                            {
+                                Layout = new() { Width = UiDim.Fixed(199f) },
+                            },
+                            Children =
+                            [
+                                SettingsNavRow(0, "General", TablerIcon.Sliders, false),
+                                SettingsNavRow(1, "Display", TablerIcon.Monitor, true),
+                            ],
+                        },
+                        new Element
+                        {
+                            Sheet = SheetFamily.BarRule,
+                            Style = new()
+                            {
+                                Layout = new()
+                                {
+                                    Width = UiDim.Fixed(1f),
+                                    Height = UiDim.Fill,
+                                },
+                            },
+                        },
+                    ],
+                },
+                new ActionBar
+                {
+                    Right =
+                    [
+                        new Button { Label = "Cancel", OnClick = FormNoOp },
+                        new Button
+                        {
+                            Label = "Save",
+                            Style = ButtonStyle.Primary,
+                            OnClick = FormNoOp,
+                        },
+                    ],
+                    Separator = ActionBarSeparator.Top,
+                    FooterChrome = true,
+                    Key = "footer",
+                },
+            ],
+        };
+
+    private static UiNode SettingsNavRow(
+        int index, string label, TablerIcon icon, bool selected) => new Element
+    {
+        Sheet = SheetFamily.NavRow,
+        Selected = selected,
+        Index = index,
+        On = new Poser.UI.Listeners { OnPick = FormNoOpInt },
+        Key = index,
+        Children =
+        [
+            new Stack
+            {
+                Sheet = SheetFamily.NavIconSlot,
+                Children = new Glyph { Icon = icon, Size = 14f },
+            },
+            new Poser.UI.Label { Text = label, Sheet = SheetFamily.NavLabel },
+        ],
+    };
+
+    private static readonly string[] SegmentedFixtureItems =
+        ["Left", "Right", "Floating", "Hidden"];
+
+    private static readonly Func<UiNode> SegmentedTree = static () =>
+        new Segmented
+        {
+            Items = SegmentedFixtureItems,
+            Selected = 1,
+            OnChange = FormNoOpInt,
+            Width = 380f,
+        };
+
+    private static readonly Vector4[] SwatchFixtureColors =
+    [
+        new(0.50f, 0.50f, 0.50f, 1f),
+        new(1f, 1f, 1f, 1f),
+        new(0.16f, 0.21f, 0.43f, 1f),
+        new(0.27f, 0.20f, 0.46f, 1f),
+        new(0.94f, 0.62f, 0.10f, 1f),
+    ];
+
+    private static readonly Func<UiNode> SwatchesTree = static () =>
+        new Swatches
+        {
+            Colors = SwatchFixtureColors,
+            Selected = 2,
+            OnChange = FormNoOpInt,
         };
 
     private static readonly ContextMenuItem[] MenuItems =
@@ -1579,6 +1721,23 @@ internal static class ComponentCatalog
                     new Vector2(
                         272f * scale, ImGui.GetContentRegionAvail().Y),
                     SectionExpandedTree);
+                break;
+            case "rsettings-frame":
+                Ui.FloatingSurface.DrawChrome(
+                    ImGui.GetWindowDrawList(),
+                    origin,
+                    origin + new Vector2(720f, 520f) * scale,
+                    Ui.ActiveTheme.Radii.Window);
+                ReactiveRoot(name).Render(
+                    origin, new Vector2(720f, 520f) * scale, SettingsFrameTree);
+                break;
+            case "rsegmented":
+                ReactiveRoot(name).Render(
+                    origin, new Vector2(420f, 60f) * scale, SegmentedTree);
+                break;
+            case "rswatches":
+                ReactiveRoot(name).Render(
+                    origin, new Vector2(340f, 60f) * scale, SwatchesTree);
                 break;
             case "tooltip":
                 // The reference cell draws the KbdTooltip label box at the

@@ -128,7 +128,13 @@ internal static class LayoutSolver
                 : (row ? measured.X : measured.Y);
             float crossSpan = MathF.Max(
                 0f, crossAvail - (row ? margin.Vertical : margin.Horizontal));
+            // A cross-axis Fill is the container's cross span BY CONSTRUCTION,
+            // not its own measure: the measure pass resolved it against the
+            // parent's raw avail, which can exceed this container's actual
+            // grant (user-caught: the nav rule ran past its row through the
+            // footer band).
             float crossSize = style.Align == Poser.UI.UiAlign.Stretch
+                    || IsFillCross(in cs, row)
                 ? crossSpan
                 : (row ? measured.Y : measured.X);
             float crossPos = (row ? contentOrigin.Y + margin.Top : contentOrigin.X + margin.Left)
@@ -338,6 +344,9 @@ internal static class LayoutSolver
 
     private static bool IsFillMain(in Poser.UI.ResolvedLayout style, bool row) =>
         (row ? style.Width.Kind : style.Height.Kind) == Poser.UI.UiDimKind.Fill;
+
+    private static bool IsFillCross(in Poser.UI.ResolvedLayout style, bool row) =>
+        (row ? style.Height.Kind : style.Width.Kind) == Poser.UI.UiDimKind.Fill;
 
     /// <summary>
     /// The width axis, clamped by MaxWidth. The clamp is applied at EVERY width

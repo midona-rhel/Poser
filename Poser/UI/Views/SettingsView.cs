@@ -350,6 +350,8 @@ public sealed class SettingsView
                             OnClick = _save,
                         },
                     ],
+                    // Rotated-H chassis (user 2026-08-02): full-width rules
+                    // above AND below the body, the nav rule bridging them.
                     Separator = ActionBarSeparator.Top,
                     FooterChrome = true,
                     Key = "footer",
