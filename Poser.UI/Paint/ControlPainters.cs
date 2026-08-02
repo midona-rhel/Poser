@@ -20,15 +20,12 @@ internal sealed class SliderPainter : IPainter
 
     public PaintResult Paint(in PaintContext context)
     {
-        // Marks are deliberately none: Appearance's sliders declare no
-        // notches, and a mark list is a per-element allocation the record has
-        // nowhere to keep.
         Poser.UI.LegacyCrystarium.PaintSlider(
             context.DrawList,
             context.Hit.ScreenMin,
             context.Hit.ScreenMax,
             context.Record.Value,
-            null,
+            context.Record.Marks,
             context.Record.On.Min,
             context.Record.On.Max,
             context.Record.Disabled);

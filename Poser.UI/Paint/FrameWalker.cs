@@ -23,6 +23,7 @@ internal sealed class FrameWalker
         Click,
         Toggle,
         Drag,
+        DragEnd,
         Pick,
     }
 
@@ -132,7 +133,15 @@ internal sealed class FrameWalker
                 on.OnToggle.Invoke(_root, !record.Selected);
                 break;
             case Fired.Drag:
+                // The begin edge rides EVERY change, exactly as the imperative
+                // rows call their onBegin — the session-opening handlers it
+                // feeds are idempotent by contract.
+                if (!on.OnDragBegin.IsNone)
+                    on.OnDragBegin.Invoke(_root);
                 on.OnDrag.Invoke(_root, _activatedValue[index]);
+                break;
+            case Fired.DragEnd:
+                on.OnDragEnd.Invoke(_root);
                 break;
             case Fired.Pick:
                 on.OnPick.Invoke(_root, record.Index);
@@ -533,6 +542,14 @@ internal sealed class FrameWalker
         if (!float.IsNaN(dragged))
         {
             Activate(node, Fired.Drag, dragged);
+            return;
+        }
+
+        // The release that ends a drag is the gesture's COMMIT, not a click:
+        // it fires the end edge and nothing else.
+        if (hit.DragEnded && !record.On.OnDragEnd.IsNone)
+        {
+            Activate(node, Fired.DragEnd, 0f);
             return;
         }
 

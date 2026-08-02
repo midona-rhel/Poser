@@ -56,6 +56,10 @@ internal struct ElementRecord
     /// the frame the pointer moved.</summary>
     internal float Value;
 
+    /// <summary>Notch positions in the control's value space; a caller-retained
+    /// reference, never synthesized per frame.</summary>
+    internal float[]? Marks;
+
     /// <summary>What <see cref="Poser.UI.Listeners.OnPick"/> reports.</summary>
     internal int Index;
 

@@ -18,6 +18,15 @@ public readonly record struct Slider
 
     public UiHandler<float> OnChange { get; init; }
 
+    /// <summary>The gesture edges: begin rides every change (handlers are
+    /// idempotent by contract), end fires once on release.</summary>
+    public UiHandler OnBegin { get; init; }
+
+    public UiHandler OnCommit { get; init; }
+
+    /// <summary>Notch positions in value space; a caller-retained array.</summary>
+    public float[]? Marks { get; init; }
+
     public bool Disabled { get; init; }
 
     public string? Help { get; init; }
@@ -41,9 +50,12 @@ public readonly record struct Slider
         On = new Listeners
         {
             OnDrag = control.OnChange,
+            OnDragBegin = control.OnBegin,
+            OnDragEnd = control.OnCommit,
             Min = control.Min,
             Max = control.Max,
         },
+        Marks = control.Marks,
         Painter = SliderPainter.Instance,
         Disabled = control.Disabled,
         Help = control.Help,

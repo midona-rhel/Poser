@@ -71,6 +71,12 @@ public readonly record struct Element
     /// slider's thumb, the bar's fill.</summary>
     public float Value { get; init; }
 
+    /// <summary>Notch positions for a ranged control, in the control's own
+    /// value space. A REFERENCE the caller retains (a static array at every
+    /// current call site), so stating marks allocates nothing per frame.
+    /// </summary>
+    public float[]? Marks { get; init; }
+
     /// <summary>The index <see cref="Listeners.OnPick"/> reports.</summary>
     public int Index { get; init; }
 
@@ -128,6 +134,7 @@ public readonly record struct Element
         record.Help = element.Help;
         record.Key = element.Key;
         record.Value = element.Value;
+        record.Marks = element.Marks;
         record.Index = element.Index;
         record.Painter = element.Painter;
         record.ClipChildren = element.ClipChildren;

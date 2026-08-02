@@ -32,6 +32,15 @@ public readonly record struct Listeners
     /// it.</summary>
     public UiHandler<float> OnDrag { get; init; }
 
+    /// <summary>Fired BEFORE each <see cref="OnDrag"/> dispatch — the same
+    /// per-change edge the imperative rows hand their <c>onBegin</c>, which is
+    /// why a session-opening handler must be idempotent (every current one
+    /// is).</summary>
+    public UiHandler OnDragBegin { get; init; }
+
+    /// <summary>The gesture's commit: fired once when the drag releases.</summary>
+    public UiHandler OnDragEnd { get; init; }
+
     /// <summary>Activation carrying the element's item index.</summary>
     public UiHandler<int> OnPick { get; init; }
 
@@ -55,11 +64,14 @@ public readonly record struct Listeners
         OnClick.Validate(arena);
         OnToggle.Validate(arena);
         OnDrag.Validate(arena);
+        OnDragBegin.Validate(arena);
+        OnDragEnd.Validate(arena);
         OnPick.Validate(arena);
         OnColor.Validate(arena);
     }
 
     internal bool Any =>
         !OnClick.IsNone || !OnToggle.IsNone || !OnDrag.IsNone
+        || !OnDragBegin.IsNone || !OnDragEnd.IsNone
         || !OnPick.IsNone || !OnColor.IsNone;
 }

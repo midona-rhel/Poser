@@ -1,3 +1,4 @@
+using System;
 using System.Globalization;
 using System.Numerics;
 
@@ -75,6 +76,89 @@ public static partial class Crystarium
             help,
             ActiveTheme.Controls.FormRowHeight,
             key);
+
+    /// <summary>
+    /// The well-and-track row: the drag-to-scrub numeric well on the value
+    /// column, the slider absorbing the rest. The well is the retained native
+    /// island the caller holds; the row binds it and places it. Clamping and
+    /// gesture-begin folding are the CALLER's (its handlers already do both),
+    /// exactly as the imperative row left them.
+    /// </summary>
+    public static UiNode FormNumericSlider(
+        string label, float value, float minimum, float maximum,
+        Action<float> onChange, NumericWellState well, float perPixel,
+        string format = "0.00", float[]? marks = null,
+        Action? onBegin = null, Action? onCommit = null,
+        string? help = null, bool disabled = false, UiKey key = default)
+    {
+        well.Island.Bind(value, onChange, onCommit, perPixel, format, disabled);
+        return FormRow(
+            label,
+            new Row
+            {
+                Sheet = SheetFamily.ActionGroupFill,
+                Children =
+                [
+                    Native(
+                        well.Island,
+                        new Vector2(
+                            ActiveTheme.Form.ValueColumnWidth,
+                            ActiveTheme.Controls.WorkspaceHeight)),
+                    new Slider
+                    {
+                        Value = value,
+                        Min = minimum,
+                        Max = maximum,
+                        OnChange = onChange,
+                        OnBegin = onBegin,
+                        OnCommit = onCommit,
+                        Marks = marks,
+                        Disabled = disabled,
+                        StyleSheet = Element.Sized(UiDim.Fill, null),
+                    },
+                ],
+            },
+            help,
+            key);
+    }
+
+    /// <summary>
+    /// The picker row with an ARBITRARY action cluster — the trigger fills
+    /// what the actions leave. The trigger is the retained bridge island the
+    /// caller holds until the legacy picker itself migrates.
+    /// </summary>
+    public static UiNode FormPickerActions(
+        string label, string value, Action onOpen, PickerTriggerState trigger,
+        UiChildren actions = default, string? help = null,
+        string? triggerHelp = null, bool disabled = false, UiKey key = default)
+    {
+        trigger.Island.Bind(value, onOpen, disabled, triggerHelp);
+        return FormRow(
+            label,
+            new Row
+            {
+                Sheet = SheetFamily.ActionGroupFill,
+                Children =
+                [
+                    new Element
+                    {
+                        Style = Element.Sized(
+                            UiDim.Fill,
+                            UiDim.Fixed(ActiveTheme.Controls.WorkspaceHeight)),
+                        Native = trigger.Island,
+                    },
+                    actions.Count == 0
+                        ? UiNode.None
+                        : new Row
+                        {
+                            Sheet = SheetFamily.ActionGroup,
+                            Children = actions,
+                        },
+                ],
+            },
+            help,
+            key);
+    }
 
     /// <summary>Slider row: the track takes the control cell less the value
     /// column, and the readout is right-aligned mono inside it.</summary>
