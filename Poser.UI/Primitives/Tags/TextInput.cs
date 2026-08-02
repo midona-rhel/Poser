@@ -84,6 +84,11 @@ public static partial class LegacyCrystarium
     private static uint _clearRefocusTarget;
     private static int _clearRefocusFrame;
 
+    /// <summary>The one risen field currently being edited — ImGui allows a
+    /// single active id, so a string suffices. Last frame's answer, because
+    /// focus is only known after the widget.</summary>
+    private static string? _risenActiveId;
+
     private static bool TextInputCore(
         string id,
         string value,
@@ -131,8 +136,19 @@ public static partial class LegacyCrystarium
         // textRise lifts the TEXT alone (negative raises) — the caller's box
         // and the leading glyph stay put. Zero everywhere the pixels are
         // accepted; the picker's band states its own measured rise.
+        //
+        // The rise applies to the RESTING band only, where it was measured
+        // (the placeholder): the caret rides the frame padding, so a risen
+        // pad pokes the full-line-height caret above the optical band (user
+        // 2026-08-03: "the blinking text indicator feels too high"). While
+        // the field is ACTIVE it uses the standard centred padding — the
+        // shell search field's accepted appearance. Focus is known only
+        // after the widget, so the state is last frame's, one frame late on
+        // the transition.
+        float appliedRise = _risenActiveId == id ? 0f : textRise;
         float framePadY = MathF.Max(
-            0f, (height - ImGui.GetTextLineHeight()) * 0.5f + textRise * scale);
+            0f,
+            (height - ImGui.GetTextLineHeight()) * 0.5f + appliedRise * scale);
 
         if (disabled)
         {
@@ -189,6 +205,10 @@ public static partial class LegacyCrystarium
         // merely the nav id. Nav landing on the first item of a window
         // would otherwise light every field up permanently.
         bool focused = ImGui.IsItemActive();
+        if (focused && textRise != 0f)
+            _risenActiveId = id;
+        else if (_risenActiveId == id)
+            _risenActiveId = null;
         // InputText stays a native ImGui widget, so its help trigger takes
         // the occlusion gate that Interactive.Reserve applies for us
         // everywhere else.

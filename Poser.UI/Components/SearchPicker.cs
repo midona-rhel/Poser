@@ -396,8 +396,10 @@ internal sealed class PickerCell<T>
             Children = UiChildren.Create(rows[..count]),
         };
 
+        // USER 2026-08-03: the filter strips read as refinements OF the
+        // search, so they sit below it.
         UiNode portal = Crystarium.Portal(
-            [header, firstStrip, secondStrip, search, body],
+            [header, search, firstStrip, secondStrip, body],
             contentSize: new Vector2(panelWidth, panelHeight),
             // OverlayShell's .panel has NO padding: the header, the search area
             // and the list each run edge to edge and own their own insets.

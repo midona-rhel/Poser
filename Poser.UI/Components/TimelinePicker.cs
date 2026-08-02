@@ -27,7 +27,6 @@ public static partial class Crystarium
     public static UiNode FormTimelinePicker<T>(
         string label,
         string value,
-        string caption,
         Func<string, IReadOnlyList<T>> entries,
         Func<T, string> itemLabel,
         Func<T, string> itemKey,
@@ -49,8 +48,10 @@ public static partial class Crystarium
         where T : class
     {
         ArgumentNullException.ThrowIfNull(entries);
+        // Captionless, like the accepted single-select: the form row's own
+        // label already names the pick (user 2026-08-03).
         PickerProps<T> props = new(
-            value, caption, [], itemLabel, itemKey, selectedKey, null,
+            value, null, [], itemLabel, itemKey, selectedKey, null,
             loadError, onPick, null, onOpen, Dense: true, Disabled: disabled,
             DisabledHelp: triggerHelp, Multi: false, TriggerWidth: UiDim.Fill,
             Query: entries,
