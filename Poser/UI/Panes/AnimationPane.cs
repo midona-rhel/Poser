@@ -360,50 +360,80 @@ public sealed class AnimationPane
         handlers.Pose = reading.Pose;
         handlers.PoseFamily = poseFamily;
 
+        // USER 2026-08-03: paired attributes share a band — the stance
+        // dropdown carries the pose stepper on its right, the weapon switch
+        // carries the position lock. The second attribute's caption is a
+        // plain run, so the churning pose index costs no identity.
         return
         [
             Crystarium.FormRow(
                 "Stance",
-                new Dropdown
+                new Row
                 {
-                    Items = StanceLabels,
-                    Selected = stanceIndex,
-                    OnChange = handlers.PickStance,
-                    Preview = StanceName(reading.Stance),
-                    ReselectFires = true,
-                    Disabled = !supported,
-                    Help = supported
-                        ? "Pose family — picking one returns the actor to it"
-                        : "Stance changes are unavailable",
-                    StyleSheet = FillWidth,
+                    Sheet = SheetFamily.ActionGroupFill,
+                    Children =
+                    [
+                        new Dropdown
+                        {
+                            Items = StanceLabels,
+                            Selected = stanceIndex,
+                            OnChange = handlers.PickStance,
+                            Preview = StanceName(reading.Stance),
+                            ReselectFires = true,
+                            Disabled = !supported,
+                            Help = supported
+                                ? "Pose family — picking one returns the actor to it"
+                                : "Stance changes are unavailable",
+                            StyleSheet = FillWidth,
+                        },
+                        new Label
+                        {
+                            Text = $"Pose {reading.Pose}",
+                            Sheet = SheetFamily.Caption,
+                        },
+                        new Button
+                        {
+                            Label = "Previous",
+                            Dense = true,
+                            OnClick = handlers.PreviousPose,
+                            Disabled = poseDisabled,
+                            Help = "Previous pose (wraps)",
+                        },
+                        new Button
+                        {
+                            Label = "Next",
+                            Dense = true,
+                            OnClick = handlers.NextPose,
+                            Disabled = poseDisabled,
+                            Help = "Next pose (wraps)",
+                        },
+                    ],
                 }),
-            // The label churns with the pose index, so identity is pinned by
-            // the key rather than by the text.
-            Crystarium.FormActions(
-                $"Pose {reading.Pose}",
-                [
-                    new Button
-                    {
-                        Label = "Previous",
-                        Dense = true,
-                        OnClick = handlers.PreviousPose,
-                        Disabled = poseDisabled,
-                        Help = "Previous pose (wraps)",
-                    },
-                    new Button
-                    {
-                        Label = "Next",
-                        Dense = true,
-                        OnClick = handlers.NextPose,
-                        Disabled = poseDisabled,
-                        Help = "Next pose (wraps)",
-                    },
-                ],
-                key: "pose-step"),
-            Crystarium.FormSwitch(
-                "Weapon", reading.WeaponDrawn, handlers.SetWeaponDrawn),
-            Crystarium.FormSwitch(
-                "Lock position", owned.PositionLock, handlers.SetPositionLock),
+            Crystarium.FormRow(
+                "Weapon",
+                new Row
+                {
+                    Sheet = SheetFamily.ActionGroupFill,
+                    Children =
+                    [
+                        new Switch
+                        {
+                            Value = reading.WeaponDrawn,
+                            OnToggle = handlers.SetWeaponDrawn,
+                        },
+                        new Element { Style = FillWidth },
+                        new Label
+                        {
+                            Text = "Lock position",
+                            Sheet = SheetFamily.Caption,
+                        },
+                        new Switch
+                        {
+                            Value = owned.PositionLock,
+                            OnToggle = handlers.SetPositionLock,
+                        },
+                    ],
+                }),
         ];
     }
 
