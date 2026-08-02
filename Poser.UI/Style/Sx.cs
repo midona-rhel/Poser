@@ -11,7 +11,8 @@ public static class Sx
 {
     private const UiStyleFields AllFields =
         UiStyleFields.Flow | UiStyleFields.Gap | UiStyleFields.Padding | UiStyleFields.Margin |
-        UiStyleFields.Width | UiStyleFields.Height | UiStyleFields.Justify | UiStyleFields.Align;
+        UiStyleFields.Width | UiStyleFields.Height | UiStyleFields.Justify | UiStyleFields.Align |
+        UiStyleFields.MaxWidth;
 
     public static UiStyle Row(
         float gap = 0,
@@ -20,8 +21,9 @@ public static class Sx
         UiAlign justify = UiAlign.Start,
         UiAlign align = UiAlign.Start,
         UiDim width = default,
-        UiDim height = default) =>
-        new(AllFields, UiFlow.Row, gap, padding, margin, width, height, justify, align);
+        UiDim height = default,
+        float maxWidth = 0f) =>
+        new(AllFields, UiFlow.Row, gap, padding, margin, width, height, justify, align, maxWidth);
 
     public static UiStyle Column(
         float gap = 0,
@@ -30,8 +32,9 @@ public static class Sx
         UiAlign justify = UiAlign.Start,
         UiAlign align = UiAlign.Start,
         UiDim width = default,
-        UiDim height = default) =>
-        new(AllFields, UiFlow.Column, gap, padding, margin, width, height, justify, align);
+        UiDim height = default,
+        float maxWidth = 0f) =>
+        new(AllFields, UiFlow.Column, gap, padding, margin, width, height, justify, align, maxWidth);
 
     public static UiStyle Stack(
         float gap = 0,
@@ -40,8 +43,9 @@ public static class Sx
         UiAlign justify = UiAlign.Start,
         UiAlign align = UiAlign.Start,
         UiDim width = default,
-        UiDim height = default) =>
-        new(AllFields, UiFlow.Stack, gap, padding, margin, width, height, justify, align);
+        UiDim height = default,
+        float maxWidth = 0f) =>
+        new(AllFields, UiFlow.Stack, gap, padding, margin, width, height, justify, align, maxWidth);
 
     public static UiStyle Pad(EdgeInsets padding) =>
         new(UiStyleFields.Padding, default, 0, padding, default, default, default, default, default);
@@ -54,6 +58,9 @@ public static class Sx
 
     public static UiStyle Size(UiDim w, UiDim h) =>
         new(UiStyleFields.Width | UiStyleFields.Height, default, 0, default, default, w, h, default, default);
+
+    public static UiStyle MaxWidth(float maxWidth) =>
+        new(UiStyleFields.MaxWidth, default, 0, default, default, default, default, default, default, maxWidth);
 
     public static UiStyle Justify(UiAlign justify) =>
         new(UiStyleFields.Justify, default, 0, default, default, default, default, justify, default);

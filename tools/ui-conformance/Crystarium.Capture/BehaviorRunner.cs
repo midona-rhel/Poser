@@ -86,7 +86,8 @@ internal sealed class BehaviorHost
         Func<int, Vector2>? pointer = null,
         Func<int, (bool HasEvent, bool Down)>? mouse = null,
         Func<int, (bool HasEvent, ImGuiKey Key, bool Down)>? key = null,
-        Func<int, float>? wheel = null)
+        Func<int, float>? wheel = null,
+        Func<int, string?>? text = null)
     {
         var context = ImGui.CreateContext(atlas);
         ImGui.SetCurrentContext(context);
@@ -113,6 +114,15 @@ internal sealed class BehaviorHost
                 // queues it, so an unscripted case pays nothing.
                 if (wheel?.Invoke(frame) is { } notches)
                     io.AddMouseWheelEvent(0f, notches);
+                // Typed characters, for the one thing a retained tree cannot
+                // own: a native text field. They only land where ImGui has an
+                // active InputText, so a case that wants them has to focus the
+                // field first, exactly as a user does.
+                if (text?.Invoke(frame) is { Length: > 0 } typed)
+                {
+                    foreach (char typedChar in typed)
+                        io.AddInputCharacter(typedChar);
+                }
                 ImGui.NewFrame();
                 Interactive.BeginFrame();
                 ImGui.SetNextWindowPos(Vector2.Zero);
@@ -1635,6 +1645,1155 @@ internal static class BehaviorSuites
         },
         frame => open && frame is >= 1 and <= 4 ? trigger : Offscreen,
         open ? Presses(2) : null);
+        return allocated;
+    }
+
+    // ---- Reactive picker (PBI-015 wave O) -----------------------------
+    //
+    // The picker is a REDESIGN, so pixels are judged against Picto and the
+    // contract is judged here: that the surface opens on its trigger, that
+    // the filter island's typing reaches the component's own state, that a
+    // single-select row picks its ITEM and closes, that a multi-select row
+    // toggles and does NOT, and that the multi variant is genuinely
+    // controlled — it reports flips and stores nothing.
+
+    private static readonly Vector2 PickCanvas = new(400, 440);
+    private static readonly Vector2 PickOrigin = new(24, 24);
+    private static readonly Vector2 PickOutside = new(380, 420);
+
+    private static readonly string[] PickItems =
+    [
+        "Date Added",
+        "Date Created",
+        "Date Modified",
+        "Name",
+        "Rating",
+        "File Size",
+        "Duration",
+    ];
+
+    /// <summary>The panel and row boxes, all read off the control's own
+    /// numbers: the trigger from the button seam, the panel from the picker's
+    /// token arithmetic, and the placement from FloatingSurface's anchored
+    /// rule (below the anchor at the shared gap).</summary>
+    private readonly record struct PickGeometry(
+        Vector2 TriggerMin, Vector2 TriggerMax, Vector2 PanelMin, Vector2 PanelMax)
+    {
+        internal Vector2 TriggerCenter => (TriggerMin + TriggerMax) * 0.5f;
+
+        /// <summary>Centre of the .header band: inside the surface, so pointer
+        /// occlusion reports it, but on no row and no field — the one point
+        /// that observes an open picker without touching it.</summary>
+        internal Vector2 HeaderCenter => new(
+            PanelMin.X + 120f, PanelMin.Y + Rx.PickerHeaderHeight * 0.5f);
+
+        /// <summary>Centre of the search field, for the click that focuses it.
+        /// </summary>
+        internal Vector2 SearchCenter => new(
+            PanelMin.X + 120f,
+            PanelMin.Y + Rx.PickerHeaderHeight + Rx.PickerSearchHeight * 0.5f);
+
+        internal Vector2 RowCenter(int index) => new(
+            PanelMin.X + 120f,
+            PanelMin.Y + Rx.PickerHeaderHeight + Rx.PickerSearchHeight
+                + index * Rx.PickerRowHeight + Rx.PickerRowHeight * 0.5f);
+    }
+
+    private static PickGeometry pickGeometry;
+
+    private static PickGeometry MeasurePick()
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        var triggerMax = PickOrigin + new Vector2(
+            Ui.IntrinsicButtonWidth("Date Modified", default),
+            Ui.ButtonHeight(default));
+        var panelMin = new Vector2(
+            PickOrigin.X,
+            triggerMax.Y + Ui.ActiveTheme.Floating.AnchorGap * scale);
+        // The same clamp/height arithmetic the component runs, so a fixture
+        // that drifts fails as a geometry probe rather than as a mystery.
+        int rows = Math.Clamp(
+            PickItems.Length,
+            Ui.ActiveTheme.Picker.MinimumRows,
+            Ui.ActiveTheme.Picker.MaximumRows);
+        float panelHeight = Ui.ActiveTheme.Floating.PopoverPadding * 2f
+            + Ui.ActiveTheme.Controls.ListRowHeight
+            + Ui.ActiveTheme.Spacing.Two
+            + Ui.ActiveTheme.Controls.WorkspaceHeight
+            + Ui.ActiveTheme.Spacing.Two
+            + rows * Ui.ActiveTheme.Controls.ListRowHeight;
+        return new PickGeometry(
+            PickOrigin,
+            triggerMax,
+            panelMin,
+            panelMin + new Vector2(Ui.ActiveTheme.Picker.Width, panelHeight) * scale);
+    }
+
+    /// <summary>What a picker run observed. One shape for both variants: the
+    /// single one never toggles and the multi one never picks, so a stray
+    /// dispatch on the wrong callback shows up as a non-empty trace.</summary>
+    private sealed class PickTally
+    {
+        public int Picks;
+        public string PickTrace = string.Empty;
+        public string ToggleTrace = string.Empty;
+        public int Opens;
+        public int OpenFrames;
+        /// <summary>Whether a surface still owned the exclusive chain on the
+        /// LAST frame — which is what "the popup is still up" means.</summary>
+        public bool Open;
+
+        public void Pick(string item)
+        {
+            Picks++;
+            PickTrace = PickTrace.Length == 0 ? item : PickTrace + "|" + item;
+        }
+
+        public void Toggle(string item, bool selected)
+        {
+            string entry = item + (selected ? "+" : "-");
+            ToggleTrace = ToggleTrace.Length == 0
+                ? entry
+                : ToggleTrace + "|" + entry;
+        }
+
+        public void Opened() => Opens++;
+
+        public override string ToString() =>
+            $"opens={Opens} picks={Picks} pick=[{PickTrace}] "
+            + $"toggles=[{ToggleTrace}] open={Open}";
+    }
+
+    internal static int ReactivePicker() =>
+        Suite("Crystarium reactive-picker behavior", 400, 440, ReactivePickerCases);
+
+    private static int ReactivePickerCases(BehaviorHost host)
+    {
+        host.Check("geometry", PickGeometryProbe(host));
+        PickGeometry geo = pickGeometry;
+        Vector2 trigger = geo.TriggerCenter;
+
+        // (1) The trigger opens the surface AND tells the caller to load it.
+        host.Expect(
+            "open-on-trigger",
+            Single(host, 14, f => f < 6 ? trigger : geo.HeaderCenter, Presses(2))
+                .ToString(),
+            "opens=1 picks=0 pick=[] toggles=[] open=True");
+
+        // (2) A row picks its ITEM, exactly once, and the surface closes. The
+        //     second press lands where row 2 was: nothing may answer it.
+        PickTally select = Single(
+            host, 24,
+            f => f < 6 ? trigger : geo.RowCenter(2),
+            Presses(2, 8, 16));
+        host.Expect(
+            "select-dispatches",
+            $"{select.Picks} {select.PickTrace}", "1 Date Modified");
+        host.Expect(
+            "select-closes", $"{select.OpenFrames > 0} {select.Open}", "True False");
+
+        // (3) Reselecting the row that is ALREADY chosen still reports it: a
+        //     single-select picker has no silent row, unlike a menu.
+        host.Expect(
+            "reselect-reports",
+            Single(host, 16, f => f < 6 ? trigger : geo.RowCenter(1), Presses(2, 8))
+                .PickTrace,
+            "Date Created");
+
+        // (4) A press outside dismisses without picking anything.
+        host.Expect(
+            "dismiss-outside",
+            Single(
+                host, 24,
+                f => f < 6 ? trigger : f < 14 ? PickOutside : geo.RowCenter(2),
+                Presses(2, 8, 16)).ToString(),
+            "opens=1 picks=0 pick=[] toggles=[] open=False");
+
+        host.Check("filter-types", FilterTyping(host));
+
+        // ---- multi variant ------------------------------------------------
+        // (5) Toggling reports the flip and LEAVES THE SURFACE OPEN.
+        PickTally toggle = Multi(
+            host, 24, f => f < 6 ? trigger : geo.RowCenter(2), Presses(2, 8, 16));
+        host.Expect(
+            "toggle-does-not-close", toggle.Open && toggle.OpenFrames > 0, true);
+        // Row 2 is not in the fixture's selected set, so both presses report it
+        // turning ON: the flip is derived from what the CALLER shows, and this
+        // caller (deliberately) shows nothing changing.
+        host.Expect(
+            "toggle-controlled", toggle.ToggleTrace,
+            "Date Modified+|Date Modified+");
+
+        // (6) Two DIFFERENT rows accumulate, in order, with no close between.
+        PickTally accumulate = Multi(
+            host, 30,
+            f => f < 6 ? trigger : f < 14 ? geo.RowCenter(0) : geo.RowCenter(3),
+            Presses(2, 8, 16));
+        host.Expect(
+            "multiple-toggles-accumulate", accumulate.ToggleTrace,
+            "Date Added+|Name+");
+        host.Expect("accumulate-stays-open", accumulate.Open, true);
+
+        // (7) Dismissal is not a revert: the callbacks fired before it and the
+        //     selection lives with the caller, so closing changes nothing the
+        //     component owned — it owned none of it.
+        PickTally dismissed = Multi(
+            host, 30,
+            f => f < 6 ? trigger : f < 14 ? geo.RowCenter(0) : PickOutside,
+            Presses(2, 8, 16));
+        host.Expect(
+            "dismiss-keeps-selection",
+            $"{dismissed.ToggleTrace} open={dismissed.Open}",
+            "Date Added+ open=False");
+
+        host.Check("allocation-closed-parity", PickAllocationParity(host));
+        return host.Summary("reactive-picker behavior: all cases pass");
+    }
+
+    /// <summary>The derived geometry, checked against what the runtime actually
+    /// reserved: the root reserves its arranged extent and a portal is out of
+    /// flow, so the item rect around Render IS the trigger.</summary>
+    private static Probe PickGeometryProbe(BehaviorHost host)
+    {
+        var root = new UiRoot();
+        PickGeometry computed = default;
+        Vector2 itemMin = default;
+        Vector2 itemMax = default;
+        host.Case(PickCanvas, 2, _ =>
+        {
+            computed = MeasurePick();
+            ImGui.SetCursorScreenPos(PickOrigin);
+            root.Render(
+                PickOrigin, ImGui.GetContentRegionAvail(),
+                () => Rx.PickerSurface(PickProps(false, null, null), "probe"));
+            itemMin = ImGui.GetItemRectMin();
+            itemMax = ImGui.GetItemRectMax();
+        }, _ => Offscreen);
+        pickGeometry = computed;
+
+        var probe = new Probe();
+        probe.Want("trigger-origin", itemMin, computed.TriggerMin);
+        probe.Want(
+            "trigger-span",
+            Vector2.Distance(itemMax, computed.TriggerMax) <= 1f, true);
+        // The panel must fit BELOW the trigger on this canvas, or every row
+        // point below is a statement about the flip rule instead of the rows.
+        probe.Want("panel-on-canvas", computed.PanelMax.Y <= PickCanvas.Y, true);
+        probe.Want(
+            "rows-inside-body",
+            computed.RowCenter(5).Y < computed.PanelMax.Y, true);
+        return probe;
+    }
+
+    /// <summary>
+    /// The filter island reaching the component's own state. The field is
+    /// focused the way a user focuses it — a click — then three characters are
+    /// typed; the assertion is POSITIONAL, because a filtered list is only
+    /// observable as which item the first row now stands for.
+    /// </summary>
+    private static Probe FilterTyping(BehaviorHost host)
+    {
+        PickGeometry geo = pickGeometry;
+        var probe = new Probe();
+        // Unfiltered, row 0 is "Date Added".
+        probe.Want("row0-unfiltered", Row0(null), "Date Added");
+        // "rat" matches "Rating" alone, so row 0 becomes it — which can only
+        // be true if the typed characters reached the component's query.
+        probe.Want("row0-filtered", Row0("rat"), "Rating");
+        return probe;
+
+        string Row0(string? typed)
+        {
+            var tally = Single(
+                host, 40,
+                frame => frame < 6
+                    ? geo.TriggerCenter
+                    : frame < 14 ? geo.SearchCenter : geo.RowCenter(0),
+                Presses(2, 8, 30),
+                text: typed is null
+                    ? null
+                    : frame => frame == 16 ? typed : null);
+            return tally.PickTrace;
+        }
+    }
+
+    /// <summary>The picker's warm-frame gate. The retained control builds its
+    /// whole surface every frame, open or closed, so the comparison is against
+    /// the imperative pair the legacy Appearance row draws for the same closed
+    /// state: the trigger button plus the picker's own idle Draw.</summary>
+    private static readonly Action PickNoOp = static () => { };
+
+    private static readonly Action<string> PickNoOpPick = static _ => { };
+
+    /// <summary>Hoisted for the same reason the dropdown's parity tree is: a
+    /// build closure allocated per frame would be the harness's cost charged to
+    /// the runtime.</summary>
+    private static readonly Func<UiNode> PickRowTree = static () =>
+        Rx.FormSelectorPicker(
+            "Model", "Date Modified", "Sort by", PickItems,
+            static item => item, static item => item, "Date Created", null,
+            PickNoOpPick, PickNoOp, PickNoOp, available: true, owned: true);
+
+    /// <summary>The same row past the scratch threshold: forty items build
+    /// forty rows every frame whether the surface is up or not, so this is what
+    /// shows a CLOSED picker's rows cost nothing.</summary>
+    private static readonly string[] PickItemsLarge = BuildPickItems();
+
+    private static string[] BuildPickItems()
+    {
+        var items = new string[40];
+        for (int i = 0; i < items.Length; i++)
+            items[i] = "Option " + i.ToString(
+                "00", System.Globalization.CultureInfo.InvariantCulture);
+        return items;
+    }
+
+    private static readonly Func<UiNode> PickLargeRowTree = static () =>
+        Rx.FormSelectorPicker(
+            "Model", "Date Modified", "Sort by", PickItemsLarge,
+            static item => item, static item => item, "Option 01", null,
+            PickNoOpPick, PickNoOp, PickNoOp, available: true, owned: true);
+
+    /// <summary>
+    /// The picker's warm-frame gate, CALIBRATED against the retained control
+    /// that already shipped rather than against the imperative row.
+    ///
+    /// <para>Two measured facts decide the shape of this case. First, the
+    /// retained runtime costs bytes PER DECLARED ROW on every warm frame,
+    /// whether the surface is up or not — the shipped dropdown does it too, and
+    /// this case measures that rather than assuming it. Second, the retained
+    /// path cannot early-return the way an idle imperative picker does: the
+    /// popup call IS the open test, so a closed retained surface pays for its
+    /// placement every frame. Neither is the picker's doing, and a straight
+    /// <c>reactive &lt;= legacy</c> assertion would therefore be a claim about
+    /// the runtime wearing this control's name.</para>
+    ///
+    /// <para>So the ASSERTION is the one thing that is this control's own: the
+    /// picker's richer row — a check slot, a box and a truncating label — may
+    /// cost no more per row than the menu's plain one. The imperative row's
+    /// number is reported beside it, ungated, because it is the number a reader
+    /// will want and not the number this control can be held to.</para>
+    /// </summary>
+    private static Probe PickAllocationParity(BehaviorHost host)
+    {
+        const int span = 40 - 7;
+        long reactive = MeasurePickAllocation(host, PickRowTree);
+        long large = MeasurePickAllocation(host, PickLargeRowTree);
+        long legacy = MeasurePickAllocation(host, null);
+        long pickPerRow = (large - reactive) / span;
+        // The shipped retained control's own per-row cost, measured here under
+        // the same host and the same 100 warm frames, so the comparison cannot
+        // drift against a number written down once.
+        long menu = MeasureDropAllocation(host, true, false);
+        long menuLarge = MeasureDropAllocation(
+            host, true, false, DropItemsLarge, DropLargeTree,
+            "##alloc-legacy-large");
+        long menuPerRow = (menuLarge - menu) / span;
+
+        var probe = new Probe();
+        if (pickPerRow > menuPerRow)
+            probe.Fault(
+                $"a closed picker row costs {pickPerRow} bytes a warm frame "
+                + $"against the shipped retained menu's {menuPerRow} — the "
+                + "picker's row added bytes of its own");
+        Console.WriteLine(
+            $"allocation-closed picker={reactive} picker-large={large} "
+            + $"picker-per-row={pickPerRow} menu-per-row={menuPerRow} "
+            + $"legacy-row={legacy}");
+        return probe;
+    }
+
+    private static long MeasurePickAllocation(BehaviorHost host, Func<UiNode>? tree)
+    {
+        var root = new UiRoot();
+        var legacyPicker = new Ui.SearchPicker<string>("alloc");
+        long allocated = 0;
+        host.Case(PickCanvas, 120, frame =>
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            ImGui.SetCursorScreenPos(PickOrigin);
+            if (tree is not null)
+            {
+                root.Render(PickOrigin, ImGui.GetContentRegionAvail(), tree);
+            }
+            else
+            {
+                // PageForm.Selector's control cell, drawn with the same seams
+                // it uses: the measured label, the Fill-width trigger carrying
+                // the truncated value, the permanent Reset slot, and the idle
+                // picker the row owns.
+                var workspace = ControlStyle.Workspace;
+                Ui.Text("Model");
+                float resetWidth = Ui.IntrinsicButtonWidth("Reset", workspace);
+                string display = Ui.TruncateText(
+                    "Date Modified",
+                    new TextStyle { Size = Ui.ActiveTheme.Typography.LabelSize },
+                    200f);
+                ImGui.SetCursorScreenPos(PickOrigin);
+                Ui.Button(
+                    display, PickNoOp,
+                    style: workspace with { Width = UiWidth.Fixed(200f) },
+                    id: "##alloc-picker-trigger");
+                ImGui.SetCursorScreenPos(PickOrigin + new Vector2(220f, 0f));
+                Ui.Button(
+                    "Reset", PickNoOp,
+                    style: workspace with { Width = UiWidth.Fixed(resetWidth) },
+                    help: "Restore the incoming model exactly",
+                    id: "##alloc-picker-reset");
+                legacyPicker.Draw();
+            }
+
+            long after = GC.GetAllocatedBytesForCurrentThread();
+            if (frame >= 20)
+                allocated += after - before;
+        }, _ => Offscreen);
+        return allocated;
+    }
+
+    private static PickerProps<string> PickProps(
+        bool multi, PickTally? tally, IReadOnlySet<string>? selected) =>
+        new(
+            "Date Modified",
+            "Sort by",
+            PickItems,
+            static item => item,
+            static item => item,
+            multi ? null : "Date Created",
+            multi ? selected ?? PickEmpty : null,
+            null,
+            multi || tally is null ? null : tally.Pick,
+            multi && tally is not null ? tally.Toggle : null,
+            tally is null ? null : tally.Opened,
+            Dense: false,
+            Disabled: false,
+            DisabledHelp: null,
+            Multi: multi,
+            TriggerWidth: default);
+
+    private static readonly IReadOnlySet<string> PickEmpty =
+        new HashSet<string>();
+
+    private static PickTally Single(
+        BehaviorHost host, int frames, Func<int, Vector2> pointer,
+        Func<int, (bool HasEvent, bool Down)> mouse,
+        Func<int, string?>? text = null) =>
+        Run(host, frames, pointer, mouse, text, multi: false);
+
+    private static PickTally Multi(
+        BehaviorHost host, int frames, Func<int, Vector2> pointer,
+        Func<int, (bool HasEvent, bool Down)> mouse) =>
+        Run(host, frames, pointer, mouse, null, multi: true);
+
+    private static PickTally Run(
+        BehaviorHost host, int frames, Func<int, Vector2> pointer,
+        Func<int, (bool HasEvent, bool Down)> mouse, Func<int, string?>? text,
+        bool multi)
+    {
+        var tally = new PickTally();
+        var root = new UiRoot();
+        host.Case(PickCanvas, frames, _ =>
+        {
+            ImGui.SetCursorScreenPos(PickOrigin);
+            root.Render(
+                PickOrigin, ImGui.GetContentRegionAvail(),
+                () => Rx.PickerSurface(PickProps(multi, tally, null), "case"));
+            // Openness is read from the KERNEL, not inferred from a callback:
+            // a surface that closed itself never tells anyone. An exclusive
+            // surface occludes the world while it is up, which is the same
+            // signal the supersession case reads.
+            tally.Open = Interactive.PointerOccluded();
+            if (tally.Open)
+                tally.OpenFrames++;
+        }, pointer, mouse, null, null, text);
+        return tally;
+    }
+
+    // ---- Reactive form system (PBI-015 wave P) ------------------------
+    //
+    // The twins are byte-gated against their imperative counterparts, so the
+    // PIXELS need nothing from this file. What the sheet cannot reach is
+    // everything the form system does between frames: a drag that has to
+    // report a value per frame and stop the moment the button comes up, a
+    // controlled toggle that must fire exactly once, a popup a retained
+    // element opens over a path-derived id, a disclosure whose content
+    // appears next frame while its chevron keeps animating, the readout's
+    // one-frame controlled lag, and a reset slot that is permanent but empty
+    // until the row is owned. Every rectangle below is derived from the
+    // control's own tokens and checked against what the runtime reserved.
+
+    private static readonly Vector2 FormCanvas = new(400, 240);
+    private static readonly Vector2 FormOrigin = new(24, 24);
+    private static readonly Vector2 FormOutside = new(380, 220);
+
+    /// <summary>The bare-control fixtures' measure. 300 logical px is wider
+    /// than the label column plus the value column, so a form row's slider
+    /// track and its reset slot both have real spans to aim at.</summary>
+    private static readonly Vector2 FormRowSize = new(300, 40);
+
+    private static readonly Action<float> FormNoOpFloat = static _ => { };
+
+    private static readonly Action<bool> FormNoOpBool = static _ => { };
+
+    private static readonly Action<Vector4> FormNoOpColor = static _ => { };
+
+    /// <summary>The fixed 200px slider the catalog fixture draws, so the
+    /// geometry probe measures the same box the sheet gates.</summary>
+    private static readonly Func<UiNode> FormSliderTree = static () =>
+        Rx.Slider(
+            0.4f, 0f, 1f, FormNoOpFloat,
+            sx: Sx.Size(UiDim.Fixed(200f), default));
+
+    private static readonly Func<UiNode> FormSwitchTree = static () =>
+        Rx.Switch(false, FormNoOpBool);
+
+    /// <summary>
+    /// The boxes the form fixtures aim at, all read off the controls' own
+    /// tokens: the slider is the catalog's fixed 200px track, the switch its
+    /// intrinsic pill, and the well its square side. Each is checked against
+    /// what the runtime actually reserved before any case aims at it, so a
+    /// missed press reads as a stale rectangle rather than a broken contract.
+    /// </summary>
+    private readonly record struct FormGeometry(
+        Vector2 SliderMin,
+        Vector2 SliderMax,
+        Vector2 SwitchMin,
+        Vector2 SwitchMax,
+        Vector2 WellMin,
+        Vector2 WellMax)
+    {
+        internal Vector2 SwitchCenter => (SwitchMin + SwitchMax) * 0.5f;
+
+        internal Vector2 WellCenter => (WellMin + WellMax) * 0.5f;
+
+        /// <summary>
+        /// The pointer x <paramref name="offset"/> WHOLE pixels along the span
+        /// the thumb's centre can occupy — the same inset-by-half-a-thumb span
+        /// <c>SliderValueAt</c> inverts. Whole pixels because ImGui truncates a
+        /// queued mouse position to integers: a fractional target would be
+        /// delivered as a different point than the one the expectation was
+        /// computed from, and the case would be measuring the harness.
+        /// </summary>
+        internal float TrackX(int offset) =>
+            SliderMin.X + (SliderMax.Y - SliderMin.Y) * 0.5f + offset;
+
+        internal Vector2 TrackPoint(int offset) => new(
+            TrackX(offset), (SliderMin.Y + SliderMax.Y) * 0.5f);
+
+        /// <summary>The value the runtime will report for a pointer at
+        /// <paramref name="offset"/>, through the SAME seam the walk uses.
+        /// </summary>
+        internal float ValueAt(int offset) => Ui.SliderValueAt(
+            TrackX(offset), SliderMin, SliderMax, 0f, 1f);
+    }
+
+    private static FormGeometry formGeometry;
+
+    internal static int ReactiveForm() =>
+        Suite("Crystarium reactive-form behavior", 400, 240, ReactiveFormCases);
+
+    private static int ReactiveFormCases(BehaviorHost host)
+    {
+        host.Check("geometry", FormGeometryProbe(host));
+        host.Check("slider-drag", SliderDrag(host));
+        host.Check("slider-disabled", SliderDisabled(host));
+        host.Check("switch-toggle", SwitchToggle(host));
+        host.Check("colorwell-popup", ColorWellPopup(host));
+        host.Check("section-toggle", SectionToggle(host));
+        host.Check("form-slider-readout", FormSliderReadout(host));
+        host.Check("form-selector-reset", FormSelectorReset(host));
+        host.Check("allocation-form-row", FormRowAllocation(host));
+        return host.Summary("reactive-form behavior: all cases pass");
+    }
+
+    /// <summary>The derived boxes against what the runtime reserved. The root
+    /// reserves its arranged extent, and each of these trees is ONE leaf, so
+    /// the item rect around Render IS that leaf's box.</summary>
+    private static Probe FormGeometryProbe(BehaviorHost host)
+    {
+        var probe = new Probe();
+        (Vector2 Min, Vector2 Max) slider = Reserved(FormSliderTree);
+        (Vector2 Min, Vector2 Max) toggle = Reserved(FormSwitchTree);
+        (Vector2 Min, Vector2 Max) well = Reserved(FormColorWellTree);
+        formGeometry = new FormGeometry(
+            slider.Min, slider.Max, toggle.Min, toggle.Max, well.Min, well.Max);
+
+        var expected = default((Vector2 Slider, Vector2 Switch, float Well));
+        host.Case(FormCanvas, 1, _ =>
+        {
+            Theme.ControlTokens controls = Ui.ActiveTheme.Controls;
+            float scale = ImGuiHelpers.GlobalScale;
+            expected = (
+                new Vector2(200f, controls.SliderHeight) * scale,
+                new Vector2(controls.SwitchWidth, controls.SwitchHeight) * scale,
+                controls.ColorWellSize * scale);
+        }, _ => Offscreen);
+
+        probe.Want("slider-origin", slider.Min, FormOrigin);
+        probe.Want("slider-span", slider.Max - slider.Min, expected.Slider);
+        probe.Want("switch-origin", toggle.Min, FormOrigin);
+        probe.Want("switch-span", toggle.Max - toggle.Min, expected.Switch);
+        probe.Want("well-origin", well.Min, FormOrigin);
+        probe.Want(
+            "well-span", well.Max - well.Min,
+            new Vector2(expected.Well, expected.Well));
+        return probe;
+
+        (Vector2 Min, Vector2 Max) Reserved(Func<UiNode> tree)
+        {
+            var root = new UiRoot();
+            Vector2 min = default;
+            Vector2 max = default;
+            host.Case(FormCanvas, 2, _ =>
+            {
+                ImGui.SetCursorScreenPos(FormOrigin);
+                root.Render(FormOrigin, ImGui.GetContentRegionAvail(), tree);
+                min = ImGui.GetItemRectMin();
+                max = ImGui.GetItemRectMax();
+            }, _ => Offscreen);
+            return (min, max);
+        }
+    }
+
+    /// <summary>Where the pointer sits on each frame of the drag script: it
+    /// hovers the track before the press, walks right across ten frames, then
+    /// holds its final position well before the release. Holding is what makes
+    /// the last reported value unambiguous — the runtime reports on CHANGE, so
+    /// a still pointer reports nothing and the release cannot add one more.
+    /// </summary>
+    private const int DragDownFrame = 2;
+
+    private const int DragUpFrame = 18;
+
+    /// <summary>The pointer's final resting offset along the thumb span, in
+    /// whole pixels. 140 of the fixed track's 186 is comfortably inside it and
+    /// well clear of every earlier step.</summary>
+    private const int DragFinalOffset = 140;
+
+    private static int DragOffset(int frame) => frame switch
+    {
+        < 4 => 18,
+        <= 13 => 18 + (frame - 3) * 9,
+        < 20 => DragFinalOffset,
+        // AFTER the release the pointer keeps moving, still over the track.
+        // "Reports only while active" is only proved by a move the control
+        // has to ignore; a pointer left still would prove nothing.
+        _ => DragFinalOffset + 8,
+    };
+
+    /// <summary>
+    /// The drag contract: a held track reports a value per pointer move, the
+    /// values walk with the pointer, the last one is the value under the
+    /// pointer where the drag ended, and nothing is reported outside the hold.
+    /// The fixture feeds each reported value straight back, which is what a
+    /// controlled caller does and what makes the sequence a real trace rather
+    /// than a repeated delta against a frozen 0.4.
+    /// </summary>
+    private static Probe SliderDrag(BehaviorHost host)
+    {
+        FormGeometry geo = formGeometry;
+        var frames = new List<int>();
+        var values = new List<float>();
+        float value = 0.4f;
+        var root = new UiRoot();
+        int current = 0;
+        host.Case(FormCanvas, 26, frame =>
+        {
+            current = frame;
+            ImGui.SetCursorScreenPos(FormOrigin);
+            root.Render(
+                FormOrigin,
+                ImGui.GetContentRegionAvail(),
+                () => Rx.Slider(
+                    value, 0f, 1f,
+                    next =>
+                    {
+                        value = next;
+                        frames.Add(current);
+                        values.Add(next);
+                    },
+                    sx: Sx.Size(UiDim.Fixed(200f), default)));
+        },
+        frame => geo.TrackPoint(DragOffset(frame)),
+        PressAt(DragDownFrame, DragUpFrame));
+
+        var probe = new Probe();
+        probe.Want("reported", values.Count >= 3, true);
+        if (values.Count == 0)
+            return probe;
+        bool monotonic = true;
+        for (int i = 1; i < values.Count; i++)
+            monotonic &= values[i] > values[i - 1];
+        probe.Want("monotonic", monotonic, true);
+        probe.Want(
+            "ends-at-release-x",
+            MathF.Abs(values[^1] - geo.ValueAt(DragFinalOffset)) < 1e-4f,
+            true);
+        // Reserve reports the press on the frame it lands, and the pointer has
+        // been still for four frames before the release, so the whole trace
+        // must sit inside the hold.
+        probe.Want("no-report-before-press", frames[0] >= DragDownFrame, true);
+        probe.Want("no-report-after-release", frames[^1] <= DragUpFrame, true);
+        // Invariant: a decimal comma would not be the number the assertion
+        // above compared, and this line is what a reviewer reads.
+        Console.WriteLine(string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"slider-drag reports={values.Count} first={values[0]:0.####} "
+            + $"last={values[^1]:0.####} "
+            + $"want-last={geo.ValueAt(DragFinalOffset):0.####} "
+            + $"frames={frames[0]}..{frames[^1]}"));
+        return probe;
+    }
+
+    /// <summary>The same gesture on a disabled track: the walk never even
+    /// computes a value, so nothing is reported at all.</summary>
+    private static Probe SliderDisabled(BehaviorHost host)
+    {
+        FormGeometry geo = formGeometry;
+        int reports = 0;
+        float value = 0.4f;
+        var root = new UiRoot();
+        host.Case(FormCanvas, 26, _ =>
+        {
+            ImGui.SetCursorScreenPos(FormOrigin);
+            root.Render(
+                FormOrigin,
+                ImGui.GetContentRegionAvail(),
+                () => Rx.Slider(
+                    value, 0f, 1f,
+                    next => { value = next; reports++; },
+                    disabled: true,
+                    sx: Sx.Size(UiDim.Fixed(200f), default)));
+        },
+        frame => geo.TrackPoint(DragOffset(frame)),
+        PressAt(DragDownFrame, DragUpFrame));
+
+        var probe = new Probe();
+        probe.Want("reports", reports, 0);
+        probe.Want("value-untouched", value, 0.4f);
+        return probe;
+    }
+
+    /// <summary>The toggle's contract: one click reports the NEGATION of what
+    /// the element was showing, exactly once, and a disabled toggle reports
+    /// nothing for the same gesture.</summary>
+    private static Probe SwitchToggle(BehaviorHost host)
+    {
+        FormGeometry geo = formGeometry;
+        var probe = new Probe();
+        probe.Want("enabled", Drive(false), "1 True");
+        // The same click on a toggle already showing True must report False:
+        // the element reports the negation of what it SHOWS, not a stored flag.
+        probe.Want("negates-shown", Drive(true), "1 False");
+        probe.Want("disabled", Drive(false, disabled: true), "0 ");
+        return probe;
+
+        string Drive(bool shown, bool disabled = false)
+        {
+            int fired = 0;
+            var trace = new List<bool>();
+            var root = new UiRoot();
+            host.Case(FormCanvas, 14, _ =>
+            {
+                ImGui.SetCursorScreenPos(FormOrigin);
+                root.Render(
+                    FormOrigin,
+                    ImGui.GetContentRegionAvail(),
+                    () => Rx.Switch(
+                        shown,
+                        next => { fired++; trace.Add(next); },
+                        disabled: disabled));
+            },
+            frame => frame is >= 1 and <= 6 ? geo.SwitchCenter : Offscreen,
+            Presses(2));
+            return $"{fired} {string.Join("|", trace)}";
+        }
+    }
+
+    private static readonly Func<UiNode> FormColorWellTree = static () =>
+        Rx.ColorWell(new Vector4(0.8f, 0.3f, 0.2f, 1f), FormNoOpColor);
+
+    private static readonly Func<UiNode> FormColorWellDisabledTree =
+        static () => Rx.ColorWell(
+            new Vector4(0.8f, 0.3f, 0.2f, 1f), FormNoOpColor, disabled: true);
+
+    /// <summary>
+    /// The well's popup, which the pixel sheet cannot reach: its handle is
+    /// derived from the element PATH, so no fixture can name it and the open
+    /// state has to be read off ImGui's own popup stack instead. That reads
+    /// "some popup is up", and the tree is one well with nothing else that can
+    /// open one — which the DISABLED run below turns from an argument into a
+    /// control: same gesture, same tree, no popup.
+    /// </summary>
+    private static Probe ColorWellPopup(BehaviorHost host)
+    {
+        FormGeometry geo = formGeometry;
+        var probe = new Probe();
+        // Frames 6..12 observe the settled surface; the outside press lands at
+        // 14 and frames 20..25 observe the dismissal.
+        (int Held, int After) opened = Drive(FormColorWellTree);
+        probe.Want("opens-on-click", opened.Held, 7);
+        probe.Want("outside-dismisses", opened.After, 0);
+        (int Held, int After) blocked = Drive(FormColorWellDisabledTree);
+        probe.Want("disabled-never-opens", blocked.Held, 0);
+        return probe;
+
+        (int Held, int After) Drive(Func<UiNode> tree)
+        {
+            int held = 0;
+            int after = 0;
+            var root = new UiRoot();
+            host.Case(FormCanvas, 26, frame =>
+            {
+                ImGui.SetCursorScreenPos(FormOrigin);
+                root.Render(FormOrigin, ImGui.GetContentRegionAvail(), tree);
+                // Sampled AFTER the walk: the surface is declared during it,
+                // because the popup call is itself the open test.
+                bool open = ImGui.IsPopupOpen(
+                    string.Empty, ImGuiPopupFlags.AnyPopup);
+                if (!open)
+                    return;
+                if (frame is >= 6 and <= 12)
+                    held++;
+                if (frame >= 20)
+                    after++;
+            },
+            frame => frame is >= 1 and <= 4
+                ? geo.WellCenter
+                : frame is >= 13 and <= 17 ? FormOutside : Offscreen,
+            PressAt(2, 4).Then(PressAt(14, 16)));
+            return (held, after);
+        }
+    }
+
+    /// <summary>Two press/release scripts on one timeline. Composed rather
+    /// than written out so each gesture stays readable as a press and a
+    /// release at named frames.</summary>
+    private static Func<int, (bool HasEvent, bool Down)> Then(
+        this Func<int, (bool HasEvent, bool Down)> first,
+        Func<int, (bool HasEvent, bool Down)> second) =>
+        frame => first(frame) is { HasEvent: true } hit ? hit : second(frame);
+
+    /// <summary>The section's two plain content rows. Hoisted so the toggle
+    /// case's extent numbers are arithmetic on the row token rather than on
+    /// whatever a lambda happened to build.</summary>
+    private const int SectionContentRows = 2;
+
+    /// <summary>
+    /// The disclosure's contract in three parts: the header reports the
+    /// NEGATION once per click, the content rows are in the tree the very next
+    /// frame (read off the root's own reserved extent, which is the only thing
+    /// a row's presence changes), and the chevron keeps animating after the
+    /// flip — proved by digesting the vertices the header emitted on two
+    /// frames that are both EXPANDED, so the glyph swap cannot be what differs.
+    /// </summary>
+    private static Probe SectionToggle(BehaviorHost host)
+    {
+        var probe = new Probe();
+        Theme.PageTokens page = default;
+        float rowHeight = 0f;
+        float scale = 1f;
+        host.Case(FormCanvas, 1, _ =>
+        {
+            page = Ui.ActiveTheme.Page;
+            rowHeight = Ui.ActiveTheme.Controls.FormRowHeight;
+            scale = ImGuiHelpers.GlobalScale;
+        }, _ => Offscreen);
+        float collapsed = page.SectionMarginTop + 1f + page.SectionPaddingTop
+            + page.SectionHeaderHeight;
+        var headerCenter = new Vector2(
+            FormOrigin.X + FormRowSize.X * scale * 0.5f,
+            FormOrigin.Y
+                + (page.SectionMarginTop + 1f + page.SectionPaddingTop
+                    + page.SectionHeaderHeight * 0.5f) * scale);
+
+        int fired = 0;
+        var trace = new List<bool>();
+        bool expanded = false;
+        float beforeExtent = 0f;
+        float afterExtent = 0f;
+        var root = new UiRoot();
+        host.Case(FormCanvas, 16, frame =>
+        {
+            ImGui.SetCursorScreenPos(FormOrigin);
+            root.Render(
+                FormOrigin,
+                new Vector2(FormRowSize.X * scale, ImGui.GetContentRegionAvail().Y),
+                () => Rx.Section(
+                    "GENERAL", expanded,
+                    next => { fired++; trace.Add(next); expanded = next; },
+                    [Rx.FormStatus("Row A"), Rx.FormStatus("Row B")],
+                    "section"));
+            // Frame 1 is the settled collapsed extent; frame 3 is the frame
+            // AFTER the press at 2, which is where the rows must have arrived.
+            if (frame == 1)
+                beforeExtent = ImGui.GetItemRectSize().Y;
+            if (frame == 3)
+                afterExtent = ImGui.GetItemRectSize().Y;
+        },
+        frame => frame is >= 1 and <= 6 ? headerCenter : Offscreen,
+        Presses(2));
+
+        probe.Want("reports-once", $"{fired} {string.Join("|", trace)}", "1 True");
+        probe.Want("collapsed-extent", beforeExtent, collapsed * scale);
+        probe.Want(
+            "expanded-extent-next-frame", afterExtent,
+            (collapsed + SectionContentRows * rowHeight) * scale);
+        probe.Want(
+            "chevron-motion",
+            ChevronMotion(host, headerCenter, scale), string.Empty);
+        return probe;
+    }
+
+    /// <summary>
+    /// The chevron's motion, read off the vertices the header emitted rather
+    /// than off a motion store this harness cannot name (the channel is keyed
+    /// by the element's path-derived ImGui id). Both sampled frames are
+    /// EXPANDED and the content is empty, so the only thing that can differ
+    /// between them is the disclosure's own opacity — which is exactly what
+    /// the 200ms transition is. The unclicked control run pins the other half:
+    /// a section nothing touches emits the same vertices on both frames.
+    /// </summary>
+    private static string ChevronMotion(
+        BehaviorHost host, Vector2 headerCenter, float scale)
+    {
+        ulong movedEarly = Digest(true, 5);
+        ulong movedLate = Digest(true, 44);
+        ulong stillEarly = Digest(false, 5);
+        ulong stillLate = Digest(false, 44);
+        if (movedEarly == movedLate)
+            return "the chevron did not advance after the flip";
+        return stillEarly == stillLate
+            ? string.Empty
+            : "an untouched header changed on its own";
+
+        unsafe ulong Digest(bool click, int sample)
+        {
+            bool expanded = false;
+            ulong digest = 0;
+            var root = new UiRoot();
+            host.Case(FormCanvas, sample + 1, frame =>
+            {
+                ImDrawListPtr list = ImGui.GetWindowDrawList();
+                int start = list.VtxBuffer.Size;
+                ImGui.SetCursorScreenPos(FormOrigin);
+                root.Render(
+                    FormOrigin,
+                    new Vector2(
+                        FormRowSize.X * scale,
+                        ImGui.GetContentRegionAvail().Y),
+                    () => Rx.Section(
+                        "GENERAL", expanded, next => expanded = next,
+                        UiChildren.Empty, "section"));
+                if (frame != sample)
+                    return;
+                int end = list.VtxBuffer.Size;
+                var vertices = (ImDrawVert*)list.VtxBuffer.Data;
+                ulong hash = 14695981039346656037UL;
+                for (int i = start; i < end; i++)
+                {
+                    hash = Mix(hash, BitConverter.SingleToUInt32Bits(
+                        vertices[i].Pos.X));
+                    hash = Mix(hash, BitConverter.SingleToUInt32Bits(
+                        vertices[i].Pos.Y));
+                    hash = Mix(hash, vertices[i].Col);
+                }
+                digest = hash;
+            },
+            frame => click && frame is >= 1 and <= 6
+                ? headerCenter
+                : Offscreen,
+            click ? Presses(2) : null);
+            return digest;
+        }
+
+        static ulong Mix(ulong hash, uint word) =>
+            (hash ^ word) * 1099511628211UL;
+    }
+
+    /// <summary>
+    /// The readout's controlled round trip. The row builds its readout from
+    /// the value the CALLER hands it, so mid-drag the string is one frame
+    /// behind the value being reported — that lag is the contract, not a bug,
+    /// and the assertion is therefore made on a settled post-release frame,
+    /// where the caller's state has caught up and the two must agree exactly.
+    /// </summary>
+    private static Probe FormSliderReadout(BehaviorHost host)
+    {
+        var probe = new Probe();
+        float thumbSpanStart = 0f;
+        float rowMiddle = 0f;
+        float pixel = 1f;
+        host.Case(FormCanvas, 1, _ =>
+        {
+            float scale = ImGuiHelpers.GlobalScale;
+            pixel = scale;
+            // The row's own arithmetic: a fixed label column, then the control
+            // cell less the value column, and the track fills what is left —
+            // inset by half a thumb, which is where the drag span starts.
+            thumbSpanStart = FormOrigin.X
+                + (Ui.ActiveTheme.Form.LabelColumnWidth
+                    + Ui.ActiveTheme.Controls.SliderHeight * 0.5f) * scale;
+            rowMiddle = FormOrigin.Y
+                + Ui.ActiveTheme.Controls.FormRowHeight * 0.5f * scale;
+        }, _ => Offscreen);
+
+        float value = 0.4f;
+        string readout = string.Empty;
+        float lastReported = float.NaN;
+        var root = new UiRoot();
+        host.Case(FormCanvas, 26, _ =>
+        {
+            ImGui.SetCursorScreenPos(FormOrigin);
+            // The row is built from the caller's value, so the string the row
+            // shows is that value formatted — captured here, at build time,
+            // which is the frame the row draws it.
+            readout = value.ToString(
+                "0.00", System.Globalization.CultureInfo.InvariantCulture);
+            root.Render(
+                FormOrigin,
+                FormRowSize * ImGuiHelpers.GlobalScale,
+                () => Rx.FormSlider(
+                    "Weight", value, 0f, 1f,
+                    next => { value = next; lastReported = next; }));
+        },
+        frame => new Vector2(
+            thumbSpanStart + DragOffset(frame) * pixel, rowMiddle),
+        PressAt(DragDownFrame, DragUpFrame));
+
+        probe.Want("dragged", !float.IsNaN(lastReported), true);
+        if (float.IsNaN(lastReported))
+            return probe;
+        probe.Want("moved-off-start", lastReported != 0.4f, true);
+        probe.Want(
+            "readout-matches-final",
+            readout,
+            lastReported.ToString(
+                "0.00", System.Globalization.CultureInfo.InvariantCulture));
+        Console.WriteLine(string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"form-slider-readout readout=\"{readout}\" "
+            + $"final={lastReported:0.####}"));
+        return probe;
+    }
+
+    /// <summary>
+    /// The selector row's two inversions. The reset slot is PERMANENT, so an
+    /// unowned row keeps the same trigger width and simply has nothing in the
+    /// slot: a press there must reach neither callback. An owned row puts the
+    /// button in it, and pressing it must reset WITHOUT selecting — the two
+    /// live in the same cell and only their boxes keep them apart.
+    /// </summary>
+    private static Probe FormSelectorReset(BehaviorHost host)
+    {
+        var probe = new Probe();
+        var resetPoint = default(Vector2);
+        var triggerPoint = default(Vector2);
+        host.Case(FormCanvas, 1, _ =>
+        {
+            float scale = ImGuiHelpers.GlobalScale;
+            float resetWidth = Rx.FormButtonWidth("Reset") * scale;
+            float rowMiddle = FormOrigin.Y
+                + Ui.ActiveTheme.Controls.FormRowHeight * 0.5f * scale;
+            resetPoint = new Vector2(
+                FormOrigin.X + FormRowSize.X * scale - resetWidth * 0.5f,
+                rowMiddle);
+            triggerPoint = new Vector2(
+                FormOrigin.X
+                    + (Ui.ActiveTheme.Form.LabelColumnWidth + 20f) * scale,
+                rowMiddle);
+        }, _ => Offscreen);
+
+        probe.Want("unowned-slot-is-empty", Drive(false, resetPoint), "0 0");
+        probe.Want("owned-slot-resets", Drive(true, resetPoint), "0 1");
+        // The control: the same owned row, pressed on its TRIGGER, must select
+        // and not reset — otherwise "0 1" above would prove only that presses
+        // land somewhere.
+        probe.Want("owned-trigger-selects", Drive(true, triggerPoint), "1 0");
+        return probe;
+
+        string Drive(bool owned, Vector2 point)
+        {
+            int selects = 0;
+            int resets = 0;
+            var root = new UiRoot();
+            host.Case(FormCanvas, 14, _ =>
+            {
+                ImGui.SetCursorScreenPos(FormOrigin);
+                root.Render(
+                    FormOrigin,
+                    FormRowSize * ImGuiHelpers.GlobalScale,
+                    () => Rx.FormSelector(
+                        "Model", "Date Modified",
+                        () => selects++, () => resets++,
+                        available: true, owned: owned));
+            },
+            frame => frame is >= 1 and <= 6 ? point : Offscreen,
+            Presses(2));
+            return $"{selects} {resets}";
+        }
+    }
+
+    private static readonly Func<UiNode> FormRowTree = static () =>
+        Rx.Page(
+            Rx.Section(
+                "Alloc", true, FormNoOpBool,
+                Rx.FormSlider("Weight", 0.4f, 0f, 1f, FormNoOpFloat),
+                "alloc"));
+
+    private static readonly Action<Ui.FormScope> LegacyFormRowBody =
+        static form => form.Slider("Weight", 0.4f, 0f, 1f, FormNoOpFloat);
+
+    private static readonly Action<Ui.PageScope> LegacyFormPageBody =
+        static page => page.Section(
+            "Alloc", true, FormNoOpBool, LegacyFormRowBody);
+
+    /// <summary>
+    /// The form row's warm-frame gate, held to the ceiling wave O measured
+    /// rather than to parity. Two facts decide the shape. The retained runtime
+    /// costs bytes PER DECLARED ELEMENT on every warm frame — a form row is a
+    /// band, a label, a control cell, a track and a readout where the
+    /// imperative row is one cursor and two draw calls — and that overhead is
+    /// the RUNTIME's, not this row's. And the row builds its readout string
+    /// every frame on both paths, so neither side is allocation-free to begin
+    /// with. The gate is therefore the honest ceiling (3x) with BOTH numbers
+    /// reported, which is what a reviewer needs and what a parity claim would
+    /// have hidden.
+    /// </summary>
+    private static Probe FormRowAllocation(BehaviorHost host)
+    {
+        long reactive = MeasureFormRowAllocation(host, true);
+        long legacy = MeasureFormRowAllocation(host, false);
+        var probe = new Probe();
+        if (reactive > legacy * 3)
+            probe.Fault(
+                $"a reactive form-slider row allocated {reactive} bytes over "
+                + $"100 warm frames against the identical legacy row's "
+                + $"{legacy} — past the 3x runtime-overhead ceiling");
+        Console.WriteLine(string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"allocation-form-row reactive={reactive} legacy={legacy} "
+            + $"ratio={(legacy == 0 ? 0d : (double)reactive / legacy):0.00}"));
+        return probe;
+    }
+
+    private static long MeasureFormRowAllocation(
+        BehaviorHost host, bool reactive)
+    {
+        var root = new UiRoot();
+        long allocated = 0;
+        host.Case(FormCanvas, 120, frame =>
+        {
+            Vector2 size = FormCanvas - FormOrigin;
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            ImGui.SetCursorScreenPos(FormOrigin);
+            if (reactive)
+                root.Render(FormOrigin, size, FormRowTree);
+            else
+                Ui.Page("##alloc-form", FormOrigin, size, LegacyFormPageBody);
+            long after = GC.GetAllocatedBytesForCurrentThread();
+            if (frame >= 20)
+                allocated += after - before;
+        }, _ => Offscreen);
         return allocated;
     }
 

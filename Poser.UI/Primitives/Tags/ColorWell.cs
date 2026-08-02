@@ -118,6 +118,33 @@ public static partial class LegacyCrystarium
         var wellMin = hit.ScreenMin;
         var wellMax = wellMin + new Vector2(side * scale);
 
+        PaintColorWellBox(hit, color, disabled);
+
+        if (hit.Clicked && !disabled)
+            OpenPopover(ColorWellPopupId(id));
+
+        bool changed = DrawColorWellPopup(
+            id, wellMin, wellMax, color, rgbOnly, onChange);
+        if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
+                hit, disabled, wellMin, wellMax))
+            HoverHelp.Explain(id, wellMin, wellMax, help!);
+        return changed;
+    }
+
+    /// <summary>
+    /// The well's BOX alone — fill, border, and the disabled group — so
+    /// the retained twin drives the SAME pixels. The well is the LEADING
+    /// SQUARE of the reserved rect: a caller may widen the control, and
+    /// the swatch stays as wide as it is tall.
+    /// </summary>
+    internal static void PaintColorWellBox(
+        in InteractionResult hit, Vector4 color, bool disabled)
+    {
+        var theme = ActiveTheme;
+        float scale = ImGuiHelpers.GlobalScale;
+        var wellMin = hit.ScreenMin;
+        var wellMax = wellMin + new Vector2(hit.ScreenMax.Y - hit.ScreenMin.Y);
+
         var dl = ImGui.GetWindowDrawList();
         float radius = theme.Radii.Control;
         float borderPx = 1f * scale;
@@ -140,39 +167,58 @@ public static partial class LegacyCrystarium
                 dl, wellMin, wellMax,
                 radius * scale, borderPx, fill, border,
                 theme.Chrome.ControlDisabledOpacity);
+            return;
         }
-        else
+
+        // Shared paint: BoxRenderer scales the radius and insets the
+        // 1px border to the CSS border box itself, so the old
+        // hand-written — and unscaled — half-pixel inset is gone.
+        BoxRenderer.Draw(dl, wellMin, wellMax, new BoxStyle
         {
-            // Shared paint: BoxRenderer scales the radius and insets the
-            // 1px border to the CSS border box itself, so the old
-            // hand-written — and unscaled — half-pixel inset is gone.
-            BoxRenderer.Draw(dl, wellMin, wellMax, new BoxStyle
-            {
-                BackgroundColor = fill,
-                BorderWidth = 1f,
-                BorderRadius = radius,
-                BorderTopColor = border,
-                BorderRightColor = border,
-                BorderBottomColor = border,
-                BorderLeftColor = border,
-            });
-        }
+            BackgroundColor = fill,
+            BorderWidth = 1f,
+            BorderRadius = radius,
+            BorderTopColor = border,
+            BorderRightColor = border,
+            BorderBottomColor = border,
+            BorderLeftColor = border,
+        });
+    }
 
-        string popupId = id + "_picker";
-        if (hit.Clicked && !disabled)
-            OpenPopover(popupId);
+    /// <summary>The popover handle the well opens, derived from the
+    /// control id in ONE place so the opener and the surface cannot drift
+    /// apart.</summary>
+    internal static string ColorWellPopupId(string id) => id + "_picker";
 
+    /// <summary>
+    /// The picker popup's mechanics — the anchored glass surface and the
+    /// raw <c>ColorPicker4</c> inside it. The picker interior is the named
+    /// NATIVE boundary and is deliberately not transcribed; this exists so
+    /// a twin can stage the identical popup instead of copying it. Returns
+    /// true on the frames the picker edits, having already reported the new
+    /// colour to <paramref name="onChange"/>.
+    /// </summary>
+    internal static bool DrawColorWellPopup(
+        string id,
+        Vector2 anchorMin,
+        Vector2 anchorMax,
+        Vector4 color,
+        bool rgbOnly,
+        Action<Vector4> onChange)
+    {
+        var theme = ActiveTheme;
+        float scale = ImGuiHelpers.GlobalScale;
         bool changed = false;
         var popupColor = color;
         FloatingSurface.Popup(
-            popupId,
+            ColorWellPopupId(id),
             new FloatingSurfaceProps
             {
                 Width = theme.Floating.ColorPickerWidth,
                 Height = theme.Floating.ColorPickerHeight,
                 Padding = theme.Floating.ColorPickerPadding,
-                AnchorMin = wellMin,
-                AnchorMax = wellMax,
+                AnchorMin = anchorMin,
+                AnchorMax = anchorMax,
             },
             () =>
             {
@@ -191,9 +237,6 @@ public static partial class LegacyCrystarium
             });
         if (changed)
             onChange(popupColor);
-        if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
-                hit, disabled, wellMin, wellMax))
-            HoverHelp.Explain(id, wellMin, wellMax, help!);
         return changed;
     }
 

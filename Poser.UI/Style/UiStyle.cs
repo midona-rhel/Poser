@@ -45,7 +45,7 @@ public readonly struct UiDim
 }
 
 [Flags]
-internal enum UiStyleFields : byte
+internal enum UiStyleFields : ushort
 {
     None = 0,
     Flow = 1 << 0,
@@ -56,6 +56,7 @@ internal enum UiStyleFields : byte
     Height = 1 << 5,
     Justify = 1 << 6,
     Align = 1 << 7,
+    MaxWidth = 1 << 8,
 }
 
 /// <summary>
@@ -75,6 +76,12 @@ public readonly struct UiStyle
     public readonly UiAlign Justify;
     public readonly UiAlign Align;
 
+    /// <summary>CSS <c>max-width</c>, logical; 0 is "none". The CLAMP, not a
+    /// size: a Fill box still takes what it is offered and then stops growing
+    /// at this, which is the only way a centred or inset page column can be
+    /// both elastic and capped.</summary>
+    public readonly float MaxWidth;
+
     internal UiStyle(
         UiStyleFields set,
         UiFlow flow,
@@ -84,8 +91,10 @@ public readonly struct UiStyle
         UiDim width,
         UiDim height,
         UiAlign justify,
-        UiAlign align)
+        UiAlign align,
+        float maxWidth = 0f)
     {
+        MaxWidth = maxWidth;
         Set = set;
         Flow = flow;
         Gap = gap;
@@ -109,6 +118,7 @@ public readonly struct UiStyle
             (set & UiStyleFields.Width) != 0 ? patch.Width : baseStyle.Width,
             (set & UiStyleFields.Height) != 0 ? patch.Height : baseStyle.Height,
             (set & UiStyleFields.Justify) != 0 ? patch.Justify : baseStyle.Justify,
-            (set & UiStyleFields.Align) != 0 ? patch.Align : baseStyle.Align);
+            (set & UiStyleFields.Align) != 0 ? patch.Align : baseStyle.Align,
+            (set & UiStyleFields.MaxWidth) != 0 ? patch.MaxWidth : baseStyle.MaxWidth);
     }
 }

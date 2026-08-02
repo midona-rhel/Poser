@@ -106,7 +106,9 @@ $sources = @(
     "..\Picto\src\shared\ui\KbdTooltip\KbdTooltip.module.css",
     "..\Picto\src\shared\ui\ContextMenu\ContextMenu.module.css",
     "..\Picto\src\shared\ui\GlassModal\GlassModal.module.css",
-    "..\Picto\src\shared\ui\InspectorField\InspectorField.module.css"
+    "..\Picto\src\shared\ui\InspectorField\InspectorField.module.css",
+    "..\Picto\src\shared\ui\OverlayShell\OverlayShell.module.css",
+    "..\Picto\src\features\viewer\video\VideoPlayer.module.css"
 )
 if (!(Test-Path -LiteralPath $Browser -PathType Leaf)) {
     throw "Reference browser was not found at '$Browser'."

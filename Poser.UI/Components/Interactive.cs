@@ -39,7 +39,12 @@ public static partial class Crystarium
         byte dispatchMode = Reactive.DispatchMode.Activated,
         int arg = 0,
         bool closesPortal = false,
-        int opensPortalNode = 0)
+        int opensPortalNode = 0,
+        float f0 = 0f,
+        float f1 = 0f,
+        float f2 = 0f,
+        string? text = null,
+        Vector4? tint = null)
     {
         FrameArena arena = FrameArena.Require();
         arena.ValidateChildren(children);
@@ -62,6 +67,18 @@ public static partial class Crystarium
         record.Arg = arg;
         record.ClosesPortal = closesPortal;
         record.OpensPortalNode = opensPortalNode;
+        record.F0 = f0;
+        record.F1 = f1;
+        record.F2 = f2;
+        // Authored values a painter's seam reads and the runtime never does:
+        // the title a header draws, the colour a well shows.
+        record.Text = text;
+        if (tint is { } value)
+        {
+            record.TextColor = value;
+            record.HasTextColor = true;
+        }
+
         return arena.AddElement(record);
     }
 

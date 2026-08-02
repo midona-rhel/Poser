@@ -101,6 +101,30 @@
       ]
     },
     {
+      "name": "form-controls",
+      "title": "Form controls",
+      "states": [
+        { "name": "slider", "label": "slider 0.4", "width": 320, "height": 80 },
+        { "name": "slider-disabled", "label": "slider disabled", "width": 320, "height": 80 },
+        { "name": "colorwell", "label": "color well", "width": 320, "height": 80 },
+        { "name": "colorwell-disabled", "label": "color well, absent value", "width": 320, "height": 80 },
+        { "name": "progress", "label": "progress 0.4", "width": 320, "height": 80 }
+      ]
+    },
+    {
+      "name": "reactive-form-controls",
+      "title": "Reactive form controls (PBI-015)",
+      "states": [
+        { "name": "rslider", "label": "slider 0.4", "width": 320, "height": 80 },
+        { "name": "rslider-disabled", "label": "slider disabled", "width": 320, "height": 80 },
+        { "name": "rcolorwell", "label": "color well", "width": 320, "height": 80 },
+        { "name": "rcolorwell-disabled", "label": "color well, absent value", "width": 320, "height": 80 },
+        { "name": "rprogress", "label": "progress 0.4", "width": 320, "height": 80 },
+        { "name": "rswitch-off", "label": "switch off", "width": 120, "height": 80 },
+        { "name": "rswitch-on", "label": "switch on", "width": 120, "height": 80 }
+      ]
+    },
+    {
       "name": "input",
       "title": "Input",
       "states": [
@@ -124,6 +148,21 @@
       "states": [
         { "name": "rdd-closed", "label": "closed", "width": 320, "height": 80 },
         { "name": "rdd-open", "label": "open", "width": 320, "height": 280 }
+      ]
+    },
+    {
+      "name": "search-picker",
+      "title": "Search picker",
+      "states": [
+        { "name": "picker-open", "label": "open", "width": 320, "height": 280 }
+      ]
+    },
+    {
+      "name": "reactive-picker",
+      "title": "Reactive picker (PBI-015)",
+      "states": [
+        { "name": "rpicker-open", "label": "single", "width": 320, "height": 280 },
+        { "name": "rpicker-multi", "label": "multi", "width": 320, "height": 280 }
       ]
     },
     {
@@ -161,6 +200,15 @@
         { "name": "section", "label": "header", "width": 320, "height": 92 },
         { "name": "section-expanded", "label": "expanded", "width": 320, "height": 92 },
         { "name": "section-hover", "label": "header hover", "width": 320, "height": 92 }
+      ]
+    },
+    {
+      "name": "reactive-section",
+      "title": "Reactive section (PBI-015)",
+      "states": [
+        { "name": "rsection", "label": "header", "width": 320, "height": 92 },
+        { "name": "rsection-expanded", "label": "expanded", "width": 320, "height": 92 },
+        { "name": "rsection-hover", "label": "header hover", "width": 320, "height": 92 }
       ]
     },
     {

@@ -60,6 +60,10 @@ internal sealed class FrameWalker
     private readonly IdentityCache _ids;
     private PortalHost _portals = null!;
     private int[] _activated = new int[16];
+    // The one payload an activation cannot recover from its own record: a drag
+    // reports where the POINTER was, and the record only keeps where the value
+    // ended up. Parallel to _activated, and meaningless for every other mode.
+    private float[] _activatedValue = new float[16];
     private int _activatedCount;
 
     internal FrameWalker(FrameArena arena, IdentityCache ids)
@@ -81,6 +85,9 @@ internal sealed class FrameWalker
 
     internal int ActivatedNode(int index) => _activated[index];
 
+    /// <inheritdoc cref="_activatedValue"/>
+    internal float ActivatedValue(int index) => _activatedValue[index];
+
     /// <summary>Paints one arranged tree at an already-physical
     /// <paramref name="origin"/>, and refills the activation buffer.</summary>
     internal void Walk(int node, Vector2 origin, float scale)
@@ -93,13 +100,18 @@ internal sealed class FrameWalker
     /// standing in. A portal is a detached surface in every sense: nothing above
     /// it tints its content, and its subtree's boxes belong to that window — the
     /// popup, or its scrolling child.</summary>
+    /// <param name="first">First child to walk, and <paramref name="last"/> is
+    /// one past the last. A surface whose head does not scroll walks the range
+    /// TWICE, onto two different windows — but the ordinal each child hands the
+    /// identity chain is its position among ALL the portal's children, so a
+    /// row's identity does not move when a caption is added above it.</param>
     internal void WalkDetachedChildren(
-        int node, Vector2 origin, float scale, ulong parentHash, float hitWidthCap)
+        int node, Vector2 origin, float scale, ulong parentHash, float hitWidthCap,
+        int first, int last)
     {
         int start = _arena[node].ChildStart;
-        int count = _arena[node].ChildCount;
         WalkContext context = WalkContext.Detached(hitWidthCap);
-        for (int i = 0; i < count; i++)
+        for (int i = first; i < last; i++)
             Paint(
                 _arena.ChildAt(start + i).Index, origin, scale, parentHash, i,
                 in context);
@@ -126,6 +138,13 @@ internal sealed class FrameWalker
         ImDrawListPtr draw = default;
         switch (record.Kind)
         {
+            case ElementKind.Box:
+                // Decoration: a box that names a painter is painted BEFORE its
+                // children and reserves nothing, so a bar, a rule or a help
+                // registration costs the tree no hit box.
+                if (record.PainterSlot != 0)
+                    PaintDecoration(in record, hash, min, max);
+                break;
             case ElementKind.Text:
                 PaintText(in record, hash, origin, scale, in context);
                 break;
@@ -140,12 +159,25 @@ internal sealed class FrameWalker
                     // SvgCore always writes the element's own opacity. Keep
                     // zero meaningful instead of treating it as an unset
                     // sentinel; inherited opacity is composed separately.
-                    opacity: record.SvgOpacity * context.SvgOpacity);
+                    opacity: record.SvgOpacity * context.SvgOpacity,
+                    strokeWidth: record.SvgStroke > 0f ? record.SvgStroke : null);
                 break;
             case ElementKind.Portal:
                 // Its children live on the floating surface, so the portal
                 // walks them itself and this one never descends.
                 _portals.Declare(node, in record, hash, parentHash, origin, scale);
+                return;
+            case ElementKind.Native:
+                // The named escape hatch. The runtime's whole contribution is
+                // the identity, the cursor and the rect; a leaf besides, so
+                // nothing below it is walked.
+                if (_arena.GetObject(record.NativeSlot) is INativeElement island)
+                {
+                    string nativeId = _ids.InteractionId(hash);
+                    ImGui.SetCursorScreenPos(min);
+                    island.Draw(nativeId, min, max);
+                }
+
                 return;
             case ElementKind.Interactive:
                 childContext = PaintInteractive(node, ref record, hash, min, max, in context);
@@ -171,6 +203,32 @@ internal sealed class FrameWalker
             if (clipped)
                 draw.PopClipRect();
         }
+    }
+
+    /// <summary>A decorative box's paint. The hit is SYNTHESIZED — the element
+    /// reserved nothing, so the only true thing about it is the rect — and the
+    /// painter is handed the same id the runtime would have minted, which is
+    /// what lets a geometric help registration name a stable target.</summary>
+    private void PaintDecoration(
+        in ElementRecord record, ulong hash, Vector2 min, Vector2 max)
+    {
+        if (_arena.GetObject(record.PainterSlot) is not IInteractivePainter painter)
+            return;
+        string id = _ids.InteractionId(hash);
+        Poser.UI.InteractionResult hit = new(
+            min,
+            max,
+            record.Disabled ? Poser.UI.PseudoState.Disabled : default,
+            clicked: false,
+            activated: false,
+            doubleClicked: false,
+            dragBegan: false,
+            dragEnded: false,
+            dragDelta: Vector2.Zero,
+            owner: default);
+        painter.Paint(new PaintInput(
+            in hit, ImGui.GetID(id), record.PaintArg, record.Disabled,
+            max - min, ImGui.GetWindowDrawList(), id, in record));
     }
 
     private void PaintText(
@@ -225,6 +283,29 @@ internal sealed class FrameWalker
         Poser.UI.InteractionResult hit = InteractionAdapter.Reserve(
             id, min, reserve, record.Disabled);
 
+        // BEFORE the painter, exactly as the imperative slider settles its value
+        // before it draws: the thumb must land under the pointer on the frame the
+        // pointer moved, not on the next one.
+        float dragged = 0f;
+        bool dragging = false;
+        if (record.DispatchMode == Reactive.DispatchMode.Drag && hit.Active && !hit.Disabled)
+        {
+            float next = Poser.UI.LegacyCrystarium.SliderValueAt(
+                ImGui.GetIO().MousePos.X, hit.ScreenMin, hit.ScreenMax, record.F0, record.F1);
+            float normalized = record.F1 > record.F0
+                ? Math.Clamp((next - record.F0) / (record.F1 - record.F0), 0f, 1f)
+                : 0f;
+            // NaN is "no value under the pointer" — the span or the range is
+            // empty — and an unchanged position is not an edit, so neither one
+            // reports anything.
+            if (!float.IsNaN(next) && normalized != record.F2)
+            {
+                record.F2 = normalized;
+                dragged = next;
+                dragging = true;
+            }
+        }
+
         Vector4? foreground = context.Foreground;
         float svgOpacity = context.SvgOpacity;
         if (_arena.GetObject(record.PainterSlot) is IInteractivePainter painter)
@@ -234,7 +315,7 @@ internal sealed class FrameWalker
             // box belongs on.
             PaintOutput output = painter.Paint(new PaintInput(
                 in hit, ImGui.GetID(id), record.PaintArg, record.Disabled,
-                box, ImGui.GetWindowDrawList()));
+                box, ImGui.GetWindowDrawList(), id, in record));
             foreground = output.Foreground ?? foreground;
             // A stated opacity COMPOSES onto what the subtree already had; an
             // unstated one leaves it exactly where it was.
@@ -255,7 +336,21 @@ internal sealed class FrameWalker
         WalkContext childContext = new(
             foreground, svgOpacity, hit.Hovered, hit.ScreenMin, hit.ScreenMax, 0f);
 
-        bool fired = record.DispatchMode == Reactive.DispatchMode.Activated
+        if (record.DispatchMode == Reactive.DispatchMode.ColorPopup)
+        {
+            ColorPopup(in record, id, hit);
+            return childContext;
+        }
+
+        if (record.DispatchMode == Reactive.DispatchMode.Drag)
+        {
+            if (dragging)
+                Activate(node, dragged);
+            return childContext;
+        }
+
+        bool fired = record.DispatchMode is Reactive.DispatchMode.Activated
+                or Reactive.DispatchMode.ActivatedItem
             ? hit.Activated
             : hit.Clicked;
         if (!fired)
@@ -266,9 +361,38 @@ internal sealed class FrameWalker
         // the menu without changing anything closes it all the same.
         if (record.ClosesPortal)
             ImGui.CloseCurrentPopup();
-        if (_activatedCount == _activated.Length)
-            Array.Resize(ref _activated, _activated.Length * 2);
-        _activated[_activatedCount++] = node;
+        Activate(node, 0f);
         return childContext;
+    }
+
+    private void Activate(int node, float value)
+    {
+        if (_activatedCount == _activated.Length)
+        {
+            Array.Resize(ref _activated, _activated.Length * 2);
+            Array.Resize(ref _activatedValue, _activatedValue.Length * 2);
+        }
+
+        _activatedValue[_activatedCount] = value;
+        _activated[_activatedCount++] = node;
+    }
+
+    /// <summary>
+    /// The colour well's whole behaviour: the click opens the shared popover
+    /// INLINE, for the same reason a menu trigger does, and the surface is
+    /// declared every frame because the popup call is itself the open test. The
+    /// picker inside it edits and reports directly — the named native boundary.
+    /// </summary>
+    private void ColorPopup(
+        in ElementRecord record, string id, in Poser.UI.InteractionResult hit)
+    {
+        if (hit.Clicked && !hit.Disabled)
+            Poser.UI.LegacyCrystarium.OpenPopover(
+                Poser.UI.LegacyCrystarium.ColorWellPopupId(id));
+        if (_arena.GetObject(record.BehaviorSlot) is not Action<Vector4> onChange)
+            return;
+        Poser.UI.LegacyCrystarium.DrawColorWellPopup(
+            id, hit.ScreenMin, hit.ScreenMax, record.TextColor,
+            rgbOnly: record.Arg != 0, onChange);
     }
 }

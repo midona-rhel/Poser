@@ -149,7 +149,12 @@ public static partial class Crystarium
             anchorCompensation: popup.AnchorGapCompensation / scale,
             scrollRegionHeight: popup.ItemListHeight / scale,
             capChildHitWidth: items.Length > popup.VisibleItems,
-            surface: DropdownSurfacePainter.Instance);
+            surface: DropdownSurfacePainter.Instance,
+            // The panel is the painter's, and every row scrolls: a menu has no
+            // chrome above its list. Both stated rather than defaulted, so the
+            // picker's opposite choices read as choices.
+            treatment: FloatingSurfaceTreatment.Unframed,
+            scrollFromChild: 0);
 
         // ---- .btn ----------------------------------------------------------
         string current = selected >= 0 && selected < items.Length ? items[selected] : string.Empty;

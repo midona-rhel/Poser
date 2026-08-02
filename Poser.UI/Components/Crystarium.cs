@@ -37,8 +37,11 @@ public static partial class Crystarium
     public static UiNode Text(
         string text, float? size = null, Vector4? color = null,
         UiStyle sx = default, TextOverflow overflow = TextOverflow.Visible,
+        FontFamily family = default, FontWeight? weight = null,
         UiKey key = default) =>
-        TextCore(text, size, color, in sx, key, overflow, previewOnClip: false);
+        TextCore(
+            text, size, color, in sx, key, overflow, previewOnClip: false,
+            family, weight);
 
     /// <summary>As above, with the truncation readout a control's own label
     /// wants: a cut run offers its full text while the CONTROL is hovered.
@@ -48,12 +51,18 @@ public static partial class Crystarium
     /// which is why the two stay separate arguments.</summary>
     internal static UiNode TextCore(
         string text, float? size, Vector4? color, in UiStyle sx, UiKey key,
-        TextOverflow overflow, bool previewOnClip)
+        TextOverflow overflow, bool previewOnClip, FontFamily family = default,
+        FontWeight? weight = null)
     {
         ElementRecord record = default;
         record.Kind = ElementKind.Text;
         record.Text = text;
         record.TextSize = size ?? 0f;
+        record.TextFamily = family;
+        // The enum's values are 400/500/600, so the hundreds digit is the whole
+        // of it and zero stays free to mean "unstated" — which resolves Regular
+        // inside the renderer rather than here.
+        record.TextWeight = weight is { } stated ? (byte)((int)stated / 100) : (byte)0;
         record.Style = sx;
         record.TextOverflow = overflow;
         record.TextPreviewOnClip = previewOnClip;
@@ -67,7 +76,17 @@ public static partial class Crystarium
     /// icon costs no allocation.</summary>
     public static UiNode Svg(
         Poser.UI.TablerIcon icon, float size = 16f, Vector4? color = null, UiKey key = default) =>
-        SvgCore(Poser.UI.Tabler.NameFor(icon), size, color, true, 1f, key);
+        SvgCore(Poser.UI.Tabler.NameFor(icon), size, color, true, 1f, 0f, key);
+
+    /// <summary>As above, with the glyph's stroke stated in the icon's own
+    /// 24-unit viewBox. Small glyphs need a heavier one to read at all, and the
+    /// weight belongs to the DECLARATION — it is a property of how the icon is
+    /// used, not of the icon.</summary>
+    internal static UiNode Svg(
+        Poser.UI.TablerIcon icon, float size, Vector4? color, float strokeWidth,
+        UiKey key = default) =>
+        SvgCore(
+            Poser.UI.Tabler.NameFor(icon), size, color, true, 1f, strokeWidth, key);
 
     /// <summary>
     /// Registry-NAME form, for the glyphs the enum does not carry, plus the two
@@ -78,10 +97,11 @@ public static partial class Crystarium
     /// </summary>
     internal static UiNode Svg(
         string name, float size, bool inheritsColor, float opacity, UiKey key = default) =>
-        SvgCore(name, size, null, inheritsColor, opacity, key);
+        SvgCore(name, size, null, inheritsColor, opacity, 0f, key);
 
     private static UiNode SvgCore(
-        string name, float size, Vector4? color, bool inheritsColor, float opacity, UiKey key)
+        string name, float size, Vector4? color, bool inheritsColor, float opacity,
+        float strokeWidth, UiKey key)
     {
         ElementRecord record = default;
         record.Kind = ElementKind.Svg;
@@ -89,6 +109,7 @@ public static partial class Crystarium
         record.TextSize = size;
         record.SvgInheritsColor = inheritsColor;
         record.SvgOpacity = opacity;
+        record.SvgStroke = strokeWidth;
         Tint(ref record, color);
         record.Key = key;
         return FrameArena.Require().AddElement(record);
@@ -134,7 +155,29 @@ public static partial class Crystarium
         return node;
     }
 
-    private static UiNode Box(UiFlow flow, in UiStyle sx, UiChildren children, UiKey key)
+    private static UiNode Box(UiFlow flow, in UiStyle sx, UiChildren children, UiKey key) =>
+        BoxCore(flow, in sx, children, key, null, 0, null, 0f);
+
+    /// <summary>
+    /// A box that DECORATES: it reserves nothing and takes no input, but the
+    /// walk hands its painter the same rect and identity an interactive element
+    /// would get, before its children. That covers a bar, a rule, and a
+    /// geometric help registration with one shape.
+    /// </summary>
+    internal static UiNode PaintedBox(
+        UiFlow flow,
+        in UiStyle sx,
+        UiChildren children,
+        UiKey key,
+        IInteractivePainter painter,
+        byte paintArg = 0,
+        string? help = null,
+        float f2 = 0f) =>
+        BoxCore(flow, in sx, children, key, painter, paintArg, help, f2);
+
+    private static UiNode BoxCore(
+        UiFlow flow, in UiStyle sx, UiChildren children, UiKey key,
+        IInteractivePainter? painter, byte paintArg, string? help, float f2)
     {
         FrameArena arena = FrameArena.Require();
         arena.ValidateChildren(children);
@@ -147,6 +190,10 @@ public static partial class Crystarium
         record.Key = key;
         record.ChildStart = children.Start;
         record.ChildCount = children.Count;
+        record.PainterSlot = painter is null ? 0 : arena.AddObject(painter);
+        record.PaintArg = paintArg;
+        record.Help = help;
+        record.F2 = f2;
         return arena.AddElement(record);
     }
 

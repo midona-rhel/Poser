@@ -39,7 +39,31 @@ public static partial class LegacyCrystarium
             onChange(value);
         }
 
-        var dl = ImGui.GetWindowDrawList();
+        PaintSwitch(
+            ImGui.GetWindowDrawList(), hit.ScreenMin, hit.ScreenMax,
+            value, disabled);
+
+        if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
+                hit, hit.Disabled, hit.ScreenMin, hit.ScreenMax))
+            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
+        return hit.Clicked;
+    }
+
+    /// <summary>
+    /// The toggle's pixels alone — pill, knob shadow rings, knob — so the
+    /// retained twin drives the SAME paint. The knob metrics are
+    /// PROPORTIONAL to the resolved box, so the seam recovers the caller's
+    /// control scale from the rect it is handed rather than taking it as a
+    /// parameter: the box is the single source both paths already agree on.
+    /// </summary>
+    internal static void PaintSwitch(
+        ImDrawListPtr dl, Vector2 min, Vector2 max, bool value, bool disabled)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        float logicalWidth = (max.X - min.X) / scale;
+        float logicalHeight = (max.Y - min.Y) / scale;
+        float controlScale =
+            logicalHeight / Crystarium.ActiveTheme.Controls.SwitchHeight;
         // Shared disabled fade for retained controls.
         float opacity = disabled ? Crystarium.ActiveTheme.Chrome.ControlDisabledOpacity : 1f;
 
@@ -47,7 +71,7 @@ public static partial class LegacyCrystarium
             ? Crystarium.ActiveTheme.Chrome.Primary          // --color-primary
             : Crystarium.ActiveTheme.Chrome.SwitchOff)     // rgba(128,128,128,.25)
             .Fade(opacity);
-        dl.AddRectFilled(hit.ScreenMin, hit.ScreenMax,
+        dl.AddRectFilled(min, max,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(trackColor)),
             Crystarium.ActiveTheme.Controls.SwitchHeight * 0.5f * scale);
 
@@ -58,7 +82,7 @@ public static partial class LegacyCrystarium
         float knobTravel = logicalWidth - knobSize - knobInset * 2f;
         float knobLeft = (knobInset + (value ? knobTravel : 0f)) * scale;
         float knobRadius = knobSize * 0.5f * scale;
-        var center = hit.ScreenMin + new Vector2(
+        var center = min + new Vector2(
             knobLeft + knobRadius,
             logicalHeight * 0.5f * scale);
 
@@ -73,10 +97,5 @@ public static partial class LegacyCrystarium
             : Crystarium.ActiveTheme.Chrome.TextMuted).Fade(opacity);
         dl.AddCircleFilled(center, knobRadius,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(knobColor)), 32);
-
-        if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
-                hit, hit.Disabled, hit.ScreenMin, hit.ScreenMax))
-            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
-        return hit.Clicked;
     }
 }

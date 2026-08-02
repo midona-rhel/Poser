@@ -26,6 +26,12 @@ public static partial class Crystarium
     /// <param name="capChildHitWidth">Reserve the first interactive layer clear
     /// of the scrollbar gutter while their boxes keep the full width. Only
     /// meaningful with <paramref name="scrollRegionHeight"/>.</param>
+    /// <param name="scrollFromChild">Index of the first child INSIDE the scroll
+    /// viewport; the children before it are the surface's fixed head. 0 scrolls
+    /// everything, which is what a menu wants and a picker does not.</param>
+    /// <param name="treatment">Whether the host draws the shared glass shell
+    /// around the surface, or the surface paints its own panel through
+    /// <paramref name="surface"/>.</param>
     internal static UiNode Portal(
         UiChildren children,
         Vector2 contentSize,
@@ -34,6 +40,8 @@ public static partial class Crystarium
         float scrollRegionHeight,
         bool capChildHitWidth,
         IPortalSurfacePainter? surface,
+        FloatingSurfaceTreatment treatment = FloatingSurfaceTreatment.Unframed,
+        int scrollFromChild = 0,
         UiKey key = default)
     {
         FrameArena arena = FrameArena.Require();
@@ -47,6 +55,8 @@ public static partial class Crystarium
         record.PortalPadding = padding;
         record.PortalAnchorCompensation = anchorCompensation;
         record.ScrollRegionHeight = scrollRegionHeight;
+        record.PortalScrollFromChild = scrollFromChild;
+        record.PortalTreatment = (byte)treatment;
         record.Arg = capChildHitWidth ? 1 : 0;
         // A portal paints ONE box and never reserves, so it has no interactive
         // painter to compete for the slot.

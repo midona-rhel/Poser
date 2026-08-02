@@ -14,6 +14,15 @@ internal enum ElementKind : byte
     // APPEND ONLY: the interaction path hash mixes this byte, so moving an
     // existing kind would re-identify every element already declared under it.
     Portal,
+
+    /// <summary>
+    /// The named escape hatch: an arranged rectangle whose CONTENT is drawn by
+    /// imperative ImGui. The runtime places the cursor and hands the island its
+    /// box and its retained id; everything inside — widgets, focus, IME — is the
+    /// island's own. It may not paint outside the rect it was given, which is
+    /// what keeps the solver the single authority on layout.
+    /// </summary>
+    Native,
 }
 
 /// <summary>
@@ -33,6 +42,62 @@ internal static class DispatchMode
     /// <summary>The raw press edge carrying <see cref="ElementRecord.Arg"/> to
     /// an <see cref="Action{T}"/> handler or a valued reducer.</summary>
     internal const byte ClickedWithArg = 2;
+
+    /// <summary>The click edge carrying the NEGATION of
+    /// <see cref="ElementRecord.Arg"/> as a bool — a controlled toggle, whose
+    /// element stores the value it is currently showing and whose handler is
+    /// told the value it was just asked for.</summary>
+    internal const byte Toggled = 3;
+
+    /// <summary>
+    /// Continuous drag: every frame the element is active, the pointer's x is
+    /// turned into a value inside <see cref="ElementRecord.F0"/>..<see cref="ElementRecord.F1"/>
+    /// and dispatched as a float. The element's own normalized position is
+    /// updated BEFORE its painter runs, so the frame that moves the pointer is
+    /// the frame that draws the thumb under it.
+    /// </summary>
+    internal const byte Drag = 4;
+
+    /// <summary>
+    /// Opens (and then hosts, every frame) the shared colour-picker popover
+    /// keyed off the element's own identity. The value never travels through
+    /// the activation buffer: the popup edits inline, which is the native
+    /// boundary this mode exists to reach.
+    /// </summary>
+    internal const byte ColorPopup = 5;
+
+    /// <summary>
+    /// The RELEASE edge carrying <see cref="ElementRecord.Arg"/> as an index
+    /// into a list the declaration also stored. The payload a handler wants is
+    /// the ITEM, not its position, and only the declaration knows the element
+    /// type — so the index is resolved through a retained typed bridge rather
+    /// than by boxing the item into the record.
+    ///
+    /// <para>Release rather than press, because the list row it exists for is
+    /// the legacy <c>SidebarRow</c>, which selects on release-inside.</para>
+    /// </summary>
+    internal const byte ActivatedItem = 6;
+}
+
+/// <summary>
+/// One list's index-to-item dispatch, retained by whoever declared the list so
+/// that binding a row costs no per-frame allocation. The runtime never learns
+/// the element type: it hands over an index and the bridge does the rest.
+/// </summary>
+internal interface IItemDispatch
+{
+    void Invoke(int index);
+}
+
+/// <summary>
+/// An island of imperative ImGui inside the retained tree — the named native
+/// escape hatch. The runtime resolves the identity, places the cursor at
+/// <paramref name="min"/> and hands over the arranged rect; the island owns
+/// every widget it draws inside it and MUST NOT paint outside it.
+/// </summary>
+internal interface INativeElement
+{
+    void Draw(string id, Vector2 min, Vector2 max);
 }
 
 /// <summary>
@@ -47,6 +112,7 @@ internal struct ElementRecord
     internal string? Text;
     internal float TextSize;
     internal byte TextWeight;
+    internal Poser.UI.FontFamily TextFamily;
     internal Vector4 TextColor;
     internal bool HasTextColor;
     internal UiKey Key;
@@ -81,6 +147,8 @@ internal struct ElementRecord
     // Closing is the ELEMENT's business, not the handler's: the legacy menu
     // closes on every click, including the one that changes nothing.
     internal bool ClosesPortal;
+    // The arena object slot holding an INativeElement, 0 for every other kind.
+    internal int NativeSlot;
     // Portal box, all logical. A zero width means "as wide as the anchor" —
     // a Fill-sized trigger has no span until the solver grants it.
     internal Vector2 PortalContentSize;
@@ -90,15 +158,36 @@ internal struct ElementRecord
     // not scroll. Only the height is authored: the viewport's width is the
     // surface's content region, which the popup window itself reports.
     internal float ScrollRegionHeight;
+    // Index of the first child INSIDE the scroll viewport. The children before
+    // it are the surface's fixed head — a caption, a filter field — and stay
+    // out of the scrolled region, which is what lets a picker scroll its rows
+    // alone. 0 scrolls everything, and is what a menu declares.
+    internal int PortalScrollFromChild;
+    // The surface treatment, mirroring FloatingSurfaceTreatment: a portal that
+    // paints its own panel takes Unframed, one that wants the shared glass
+    // shell takes Glass. Stated rather than inferred from the painter slot,
+    // because "no painter" and "the host draws the chrome" are two decisions.
+    internal byte PortalTreatment;
     // Svg: 0 reads as 1. A control-owned glyph opts OUT of currentColor when
     // its tint must come from the icon renderer's own default instead.
     internal float SvgOpacity;
     internal bool SvgInheritsColor;
+    // Svg: the glyph's stroke in the icon's own 24-unit viewBox, 0 for the
+    // renderer's default. A small glyph needs a heavier stroke to stay legible
+    // and the reference states one, so it is authored rather than derived.
+    internal float SvgStroke;
     // Text: overflow is the run's OWN declaration, never inferred from its
     // width — see TextOverflow. The preview flag is separate and only means
     // anything under Truncate: a cut run offers the full text as a readout.
     internal Poser.UI.TextOverflow TextOverflow;
     internal bool TextPreviewOnClip;
+    // The three authored numbers a ranged control carries: the range's minimum
+    // and maximum, and the value's normalized 0..1 position inside it. Only a
+    // painter's seam and DispatchMode.Drag read them — a progress bar states
+    // F2 alone, a slider states all three.
+    internal float F0;
+    internal float F1;
+    internal float F2;
     // Filled by the layout pass in wave B.
     internal Vector2 LogicalSize;
     internal Vector2 LogicalPos;

@@ -2,7 +2,7 @@
 // Do not hand-edit.
 window.sheetLayout = {
  "pageWidth": 688,
- "pageHeight": 5792,
+ "pageHeight": 7264,
  "cells": [
   {
    "name": "text-label",
@@ -509,10 +509,106 @@ window.sheetLayout = {
    "h": 80
   },
   {
+   "name": "slider",
+   "component": "form-controls",
+   "x": 16,
+   "y": 3352,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "slider-disabled",
+   "component": "form-controls",
+   "x": 352,
+   "y": 3352,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "colorwell",
+   "component": "form-controls",
+   "x": 16,
+   "y": 3448,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "colorwell-disabled",
+   "component": "form-controls",
+   "x": 352,
+   "y": 3448,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "progress",
+   "component": "form-controls",
+   "x": 16,
+   "y": 3544,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rslider",
+   "component": "reactive-form-controls",
+   "x": 16,
+   "y": 3656,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rslider-disabled",
+   "component": "reactive-form-controls",
+   "x": 352,
+   "y": 3656,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rcolorwell",
+   "component": "reactive-form-controls",
+   "x": 16,
+   "y": 3752,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rcolorwell-disabled",
+   "component": "reactive-form-controls",
+   "x": 352,
+   "y": 3752,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rprogress",
+   "component": "reactive-form-controls",
+   "x": 16,
+   "y": 3848,
+   "w": 320,
+   "h": 80
+  },
+  {
+   "name": "rswitch-off",
+   "component": "reactive-form-controls",
+   "x": 352,
+   "y": 3848,
+   "w": 120,
+   "h": 80
+  },
+  {
+   "name": "rswitch-on",
+   "component": "reactive-form-controls",
+   "x": 488,
+   "y": 3848,
+   "w": 120,
+   "h": 80
+  },
+  {
    "name": "text-input",
    "component": "input",
    "x": 16,
-   "y": 3352,
+   "y": 3960,
    "w": 320,
    "h": 80
   },
@@ -520,7 +616,7 @@ window.sheetLayout = {
    "name": "input-placeholder",
    "component": "input",
    "x": 352,
-   "y": 3352,
+   "y": 3960,
    "w": 320,
    "h": 80
   },
@@ -528,7 +624,7 @@ window.sheetLayout = {
    "name": "search-input",
    "component": "input",
    "x": 16,
-   "y": 3448,
+   "y": 4056,
    "w": 320,
    "h": 84
   },
@@ -536,7 +632,7 @@ window.sheetLayout = {
    "name": "search-clear-hover",
    "component": "input",
    "x": 352,
-   "y": 3448,
+   "y": 4056,
    "w": 320,
    "h": 84
   },
@@ -544,7 +640,7 @@ window.sheetLayout = {
    "name": "dropdown-closed",
    "component": "dropdown",
    "x": 16,
-   "y": 3568,
+   "y": 4176,
    "w": 320,
    "h": 80
   },
@@ -552,7 +648,7 @@ window.sheetLayout = {
    "name": "dropdown-open",
    "component": "dropdown",
    "x": 352,
-   "y": 3568,
+   "y": 4176,
    "w": 320,
    "h": 280
   },
@@ -560,7 +656,7 @@ window.sheetLayout = {
    "name": "rdd-closed",
    "component": "reactive-dropdown",
    "x": 16,
-   "y": 3880,
+   "y": 4488,
    "w": 320,
    "h": 80
   },
@@ -568,7 +664,31 @@ window.sheetLayout = {
    "name": "rdd-open",
    "component": "reactive-dropdown",
    "x": 352,
-   "y": 3880,
+   "y": 4488,
+   "w": 320,
+   "h": 280
+  },
+  {
+   "name": "picker-open",
+   "component": "search-picker",
+   "x": 16,
+   "y": 4800,
+   "w": 320,
+   "h": 280
+  },
+  {
+   "name": "rpicker-open",
+   "component": "reactive-picker",
+   "x": 16,
+   "y": 5112,
+   "w": 320,
+   "h": 280
+  },
+  {
+   "name": "rpicker-multi",
+   "component": "reactive-picker",
+   "x": 352,
+   "y": 5112,
    "w": 320,
    "h": 280
   },
@@ -576,7 +696,7 @@ window.sheetLayout = {
    "name": "color-palette",
    "component": "color-palette",
    "x": 16,
-   "y": 4192,
+   "y": 5424,
    "w": 220,
    "h": 80
   },
@@ -584,7 +704,7 @@ window.sheetLayout = {
    "name": "sidebar-row",
    "component": "sidebar",
    "x": 16,
-   "y": 4304,
+   "y": 5536,
    "w": 320,
    "h": 80
   },
@@ -592,7 +712,7 @@ window.sheetLayout = {
    "name": "sidebar-row-hover",
    "component": "sidebar",
    "x": 352,
-   "y": 4304,
+   "y": 5536,
    "w": 320,
    "h": 80
   },
@@ -600,7 +720,7 @@ window.sheetLayout = {
    "name": "sidebar-row-selected",
    "component": "sidebar",
    "x": 16,
-   "y": 4400,
+   "y": 5632,
    "w": 320,
    "h": 80
   },
@@ -608,7 +728,7 @@ window.sheetLayout = {
    "name": "sidebar-row-selected-hover",
    "component": "sidebar",
    "x": 352,
-   "y": 4400,
+   "y": 5632,
    "w": 320,
    "h": 80
   },
@@ -616,7 +736,7 @@ window.sheetLayout = {
    "name": "sidebar-row-collapsed",
    "component": "sidebar",
    "x": 16,
-   "y": 4496,
+   "y": 5728,
    "w": 320,
    "h": 80
   },
@@ -624,7 +744,7 @@ window.sheetLayout = {
    "name": "sidebar-row-expanded",
    "component": "sidebar",
    "x": 352,
-   "y": 4496,
+   "y": 5728,
    "w": 320,
    "h": 80
   },
@@ -632,7 +752,7 @@ window.sheetLayout = {
    "name": "sidebar-row-expander-hover",
    "component": "sidebar",
    "x": 16,
-   "y": 4592,
+   "y": 5824,
    "w": 320,
    "h": 80
   },
@@ -640,7 +760,7 @@ window.sheetLayout = {
    "name": "sidebar-row-drop",
    "component": "sidebar",
    "x": 352,
-   "y": 4592,
+   "y": 5824,
    "w": 320,
    "h": 80
   },
@@ -648,7 +768,7 @@ window.sheetLayout = {
    "name": "property-row",
    "component": "property-row",
    "x": 16,
-   "y": 4704,
+   "y": 5936,
    "w": 320,
    "h": 68
   },
@@ -656,7 +776,7 @@ window.sheetLayout = {
    "name": "section",
    "component": "section",
    "x": 16,
-   "y": 4808,
+   "y": 6040,
    "w": 320,
    "h": 92
   },
@@ -664,7 +784,7 @@ window.sheetLayout = {
    "name": "section-expanded",
    "component": "section",
    "x": 352,
-   "y": 4808,
+   "y": 6040,
    "w": 320,
    "h": 92
   },
@@ -672,7 +792,31 @@ window.sheetLayout = {
    "name": "section-hover",
    "component": "section",
    "x": 16,
-   "y": 4920,
+   "y": 6152,
+   "w": 320,
+   "h": 92
+  },
+  {
+   "name": "rsection",
+   "component": "reactive-section",
+   "x": 16,
+   "y": 6280,
+   "w": 320,
+   "h": 92
+  },
+  {
+   "name": "rsection-expanded",
+   "component": "reactive-section",
+   "x": 352,
+   "y": 6280,
+   "w": 320,
+   "h": 92
+  },
+  {
+   "name": "rsection-hover",
+   "component": "reactive-section",
+   "x": 16,
+   "y": 6392,
    "w": 320,
    "h": 92
   },
@@ -680,7 +824,7 @@ window.sheetLayout = {
    "name": "tooltip",
    "component": "tooltip",
    "x": 16,
-   "y": 5048,
+   "y": 6520,
    "w": 240,
    "h": 80
   },
@@ -688,7 +832,7 @@ window.sheetLayout = {
    "name": "tooltip-pop-mid",
    "component": "tooltip",
    "x": 272,
-   "y": 5048,
+   "y": 6520,
    "w": 240,
    "h": 80
   },
@@ -696,7 +840,7 @@ window.sheetLayout = {
    "name": "context-menu",
    "component": "context-menu",
    "x": 16,
-   "y": 5160,
+   "y": 6632,
    "w": 320,
    "h": 190
   },
@@ -704,7 +848,7 @@ window.sheetLayout = {
    "name": "modal",
    "component": "modal",
    "x": 16,
-   "y": 5384,
+   "y": 6856,
    "w": 560,
    "h": 360
   }

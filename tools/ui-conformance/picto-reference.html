@@ -164,6 +164,48 @@
       + sidebarFolderIcon
       + '<span class="label">Party members</span>'
       + '<span class="count">12</span></div>';
+    // ── Color well ────────────────────────────────────────────────
+    // ColorWell.cs cites "picto m5 .well". There is NO .well anywhere in
+    // the Picto source tree: the frozen docs/mockups/m5-settings.html is
+    // the only description of that component, so its rule is restated
+    // here VERBATIM (the same technique the hover rules above use) and
+    // the cell loads tokens.css, which is what the rule's single var()
+    // resolves against. 28px is the mockup's side; the component resolves
+    // Controls.ColorWellSize = 26, which is a recorded deviation.
+    const m5WellRule = '<style>'
+      + '.well { width: 28px; height: 28px; border-radius: 6px;'
+      + ' border: 1px solid var(--color-border-primary); cursor: pointer; }'
+      + '</style>';
+    // ── Search picker (OverlayShell) ──────────────────────────────
+    // OverlayShell.module.css IS Picto's floating picker shell — the tag
+    // picker, folder picker, AI tagger and batch rename all mount in it —
+    // and it carries every part SearchPicker.cs draws: the glass .panel
+    // (--glass-* border trio, --radius-lg, --shadow-panel), a .header
+    // caption, a 36px .searchArea/.searchRow holding .searchIcon +
+    // .searchInput, and the .checkRow/.checkBox/.checkLabel list rows.
+    // The panel box is pinned to the geometry FloatingSurface's
+    // PlaceAnchored resolves for the candidate — 300x258 clamped to
+    // (20,22) inside the 320x280 cell — so the diff reports the CONTENT,
+    // not where the surface landed.
+    const pickerCheckIcon = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5l10 -10"/></svg>';
+    const pickerRow = (label, active) =>
+      '<div class="checkRow' + (active ? ' checkRowActive' : '') + '">'
+      + '<span class="checkBox' + (active ? ' checkBoxChecked' : '') + '">'
+      + (active ? pickerCheckIcon : '')
+      + '</span><span class="checkLabel">' + label + '</span></div>';
+    const pickerItems = [
+      'Date Added', 'Date Created', 'Date Modified', 'Name',
+      'Rating', 'File Size', 'Duration',
+    ];
+    const pickerPanel =
+      '<div class="panel" style="left:20px;top:22px;width:300px;height:258px">'
+      + '<div class="header">Sort by</div>'
+      + '<div class="searchArea"><div class="searchRow">'
+      + glassSearchIcon
+      + '<input class="searchInput" placeholder="Search by name" readonly>'
+      + '</div></div><div class="body">'
+      + pickerItems.map((label, i) => pickerRow(label, i === 1)).join('')
+      + '</div></div>';
     const variants = {
       'text-label': {
         // Picto typography: src/app/globals.css body — 13px
@@ -536,6 +578,117 @@
         css: 'shared/ui/ToggleSwitch/ToggleSwitch.module.css',
         html: '<span class="toggle"><span class="track trackOn"></span><span class="knob knobOn"></span></span>',
       },
+      // ── Form controls (PBI-015 wave L) ──────────────────────────
+      // Slider.cs's header cites "the original picto transcription" and
+      // describes it exactly: a 4px track at radius 2 in
+      // --color-border-primary under a 14px circular thumb. The one
+      // Picto rule with that geometry is GlassModal.module.css
+      // .rangeInput, whose thumb is --color-primary. PBI-090
+      // deliberately supersedes the COLORING (solid white thumb, track
+      // filled with --color-primary from the minimum to the value); the
+      // reference stays Picto's and the diff records the decision.
+      // The 200px wrapper is 14px tall and centres the input so the
+      // track lands on the candidate's centreline, which is the slider
+      // HIT box's centre, not the track element's own.
+      'slider': {
+        css: 'shared/ui/GlassModal/GlassModal.module.css',
+        html: '<div style="display:flex;align-items:center;height:14px;width:200px"><input class="rangeInput" type="range" min="0" max="1" step="0.01" value="0.4" style="width:200px"></div>',
+      },
+      // GlassModal declares NO disabled slider — no :disabled selector
+      // exists for .rangeInput anywhere in Picto — so the reference is
+      // the unchanged enabled row and the whole 0.5 fade the component
+      // applies is the recorded deviation.
+      'slider-disabled': {
+        css: 'shared/ui/GlassModal/GlassModal.module.css',
+        html: '<div style="display:flex;align-items:center;height:14px;width:200px"><input class="rangeInput" type="range" min="0" max="1" step="0.01" value="0.4" style="width:200px" disabled></div>',
+      },
+      // m5 .well filled with the fixture colour (0.8, 0.3, 0.2 →
+      // #cc4d33, ImGui's round-to-nearest float→u8).
+      'colorwell': {
+        css: 'shared/styles/tokens.css',
+        html: m5WellRule + '<div class="well" style="background:#cc4d33"></div>',
+      },
+      // The absent-weapon well. m5 declares neither a disabled nor an
+      // empty well, so the reference is the SAME rule with no background
+      // at all — the mockup's own rendering of a well carrying no colour.
+      // Both the borrowed .btn:disabled group opacity (.35) and the
+      // UnavailableFill the component substitutes are deviations with no
+      // reference source, and both land in this cell's diff.
+      'colorwell-disabled': {
+        css: 'shared/styles/tokens.css',
+        html: m5WellRule + '<div class="well"></div>',
+      },
+      // ProgressBar.cs transcribes "the slider's track styling" — the
+      // GlassModal .rangeInput track above — and adds a primary fill for
+      // the completed fraction. Picto's only DETERMINATE progress
+      // rendering is VideoPlayer.module.css .progressBar/.progressTrack/
+      // .progressFill: the same 4px radius-2 track, at white .15 rather
+      // than the token's white .14, filled with white .95 inside a 16px
+      // flex row. That is the real thing, so that is the reference; the
+      // primary-blue fill and the component's 14px (slider-height) box
+      // are the recorded deviations.
+      'progress': {
+        css: 'features/viewer/video/VideoPlayer.module.css',
+        html: '<div class="progressBar" style="width:200px"><div class="progressTrack"><div class="progressFill" style="width:40%"></div></div></div>',
+      },
+      // PBI-015 wave P reactive twins. The reference for each rX is the
+      // SAME Picto markup as its legacy twin, deliberately duplicated
+      // rather than aliased on the same terms as rbtn-X and rdd-X: the
+      // candidate's two paths are then held to one reference, so a
+      // divergence can only be the candidate's. Every recorded deviation
+      // named in the legacy cells above — the slider's white fill and
+      // thumb, GlassModal's missing :disabled selector, m5's missing
+      // disabled well, VideoPlayer's white progress fill — lands in these
+      // cells identically, because the pixels are literally the same.
+      'rslider': {
+        css: 'shared/ui/GlassModal/GlassModal.module.css',
+        html: '<div style="display:flex;align-items:center;height:14px;width:200px"><input class="rangeInput" type="range" min="0" max="1" step="0.01" value="0.4" style="width:200px"></div>',
+      },
+      'rslider-disabled': {
+        css: 'shared/ui/GlassModal/GlassModal.module.css',
+        html: '<div style="display:flex;align-items:center;height:14px;width:200px"><input class="rangeInput" type="range" min="0" max="1" step="0.01" value="0.4" style="width:200px" disabled></div>',
+      },
+      'rcolorwell': {
+        css: 'shared/styles/tokens.css',
+        html: m5WellRule + '<div class="well" style="background:#cc4d33"></div>',
+      },
+      'rcolorwell-disabled': {
+        css: 'shared/styles/tokens.css',
+        html: m5WellRule + '<div class="well"></div>',
+      },
+      'rprogress': {
+        css: 'features/viewer/video/VideoPlayer.module.css',
+        html: '<div class="progressBar" style="width:200px"><div class="progressTrack"><div class="progressFill" style="width:40%"></div></div></div>',
+      },
+      'rswitch-off': {
+        css: 'shared/ui/ToggleSwitch/ToggleSwitch.module.css',
+        html: '<span class="toggle"><span class="track"></span><span class="knob"></span></span>',
+      },
+      'rswitch-on': {
+        css: 'shared/ui/ToggleSwitch/ToggleSwitch.module.css',
+        html: '<span class="toggle"><span class="track trackOn"></span><span class="knob knobOn"></span></span>',
+      },
+      'picker-open': {
+        css: 'shared/ui/OverlayShell/OverlayShell.module.css',
+        html: pickerPanel,
+      },
+      // PBI-015 wave O. The retained picker is a deliberate REDESIGN toward
+      // this very panel, so the reference is the SAME OverlayShell markup,
+      // duplicated rather than aliased on the same terms as rdd-X: one
+      // reference, three candidates, and the numbers say which path is
+      // closer. rpicker-multi is the checkbox variant the .checkRow markup
+      // literally describes, so it is expected to be the closest of the
+      // three; rpicker-open trades the .checkBox for a bare tick because a
+      // single-select row has nothing to un-check, and that box is its one
+      // expected diff.
+      'rpicker-open': {
+        css: 'shared/ui/OverlayShell/OverlayShell.module.css',
+        html: pickerPanel,
+      },
+      'rpicker-multi': {
+        css: 'shared/ui/OverlayShell/OverlayShell.module.css',
+        html: pickerPanel,
+      },
       'text-input': {
         css: 'shared/ui/GlassInput/GlassInput.module.css',
         html: '<input class="input" style="width:272px" value="Filter scene…" readonly>',
@@ -668,6 +821,20 @@
       // the inherited currentColor chevron with it, and the chevron's own
       // opacity goes to 1.
       'section-hover': {
+        css: 'shared/ui/InspectorSection/InspectorSection.module.css',
+        html: sectionHoverRule + inspectorSection(false, true),
+      },
+      // PBI-015 wave P reactive twins, duplicated on the same terms as the
+      // form-control cells above: one reference, two candidate paths.
+      'rsection': {
+        css: 'shared/ui/InspectorSection/InspectorSection.module.css',
+        html: inspectorSection(false, false),
+      },
+      'rsection-expanded': {
+        css: 'shared/ui/InspectorSection/InspectorSection.module.css',
+        html: inspectorSection(true, false),
+      },
+      'rsection-hover': {
         css: 'shared/ui/InspectorSection/InspectorSection.module.css',
         html: sectionHoverRule + inspectorSection(false, true),
       },

@@ -381,12 +381,24 @@ Add only the state, ref, portal, overflow and focus behavior Dropdown proves
 necessary. Its visible sheet contains all relevant states. Do not add a
 general DOM event model or generalized scrolling.
 
-### 3. First complete surface — Appearance
+### 3. First complete surfaces — Appearance, then Settings (two checkpoints)
 
-Add Form, ActionBar, ScrollRegion, tracks and the controls Appearance needs.
-Migrate Appearance completely through `UiRoot`, validate at 100%, 125% and
-150%, and delete every old implementation whose last consumer moved. This is
-the first product-authoring, reflow and net-deletion proof.
+Accepted 2026-08-02 (user decision): phase 3 is a two-step checkpoint so the
+net-negative gate is measured on real diffs, not estimates. 3A — build only
+what Appearance consumes (Page/Section/form rows and their tracks; Slider,
+Switch, ColorWell, Progress twins; a portal SearchPicker), keep FileDialog
+and the raw ColorPicker4 interior as named legacy/native boundaries, add the
+missing Slider/ColorWell/Progress/SearchPicker comparison states, migrate
+Appearance fully, delete its sole-consumer paths (SearchPicker, the Selector
+and Progress row members, ProgressBar), and stop for code, comparison-window
+and in-game review; this intermediate commit may be net-positive. 3B — add
+only Settings-specific compositions (ActionBar, Swatches, Segmented, shared
+scrolling), migrate Settings fully, and delete every newly orphaned
+implementation and PageForm member. The combined phase-3 range from the
+phase-2 acceptance must be net-negative; if Appearance plus Settings cannot
+reach that, stop with the real diff and ownership ledger before expanding
+scope. Animation and Pose surfaces stay in phase 4. Validate at 100%, 125%
+and 150%.
 
 ### 4. Remaining leaf controls and surfaces
 

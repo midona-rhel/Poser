@@ -127,7 +127,10 @@ public sealed class UiRoot
 
             _walker.Walk(root.Index, origin, scale);
             for (int i = 0; i < _walker.ActivatedCount; i++)
-                InteractionAdapter.Dispatch(this, in _arena[_walker.ActivatedNode(i)]);
+                InteractionAdapter.Dispatch(
+                    this,
+                    in _arena[_walker.ActivatedNode(i)],
+                    _walker.ActivatedValue(i));
 
             ImGui.SetCursorScreenPos(origin);
             ImGui.Dummy(_arena[root.Index].LogicalSize * scale);

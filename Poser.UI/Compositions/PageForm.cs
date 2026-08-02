@@ -176,52 +176,31 @@ public static partial class LegacyCrystarium
         {
             var page = ActiveTheme.Page;
             _y += page.SectionMarginTop;
-            ControlPaint.Separator(
+            PaintSectionRule(
                 ImGui.GetWindowDrawList(),
-                new(_origin.X, MathF.Round(_origin.Y + _y * _scale)),
-                _origin.X + _width,
-                _scale,
-                FormSeparatorColor);
+                new(_origin.X, _origin.Y + _y * _scale),
+                _width,
+                _scale);
             _y += SectionRuleThickness + page.SectionPaddingTop;
 
             float headerTop = _origin.Y + _y * _scale;
             float headerHeight = page.SectionHeaderHeight * _scale;
-            float titleWidth = _width;
-            bool hovered = false;
+            var hit = default(InteractionResult);
             uint headerIdentity = 0;
             if (onOpenChanged != null)
             {
                 string headerId = $"{_id}-section-{title}";
                 ImGui.SetCursorScreenPos(new(_origin.X, headerTop));
-                var hit = Interactive.Reserve(headerId,
+                hit = Interactive.Reserve(headerId,
                     new(_width, headerHeight), disabled: false);
-                hovered = hit.Hovered;
                 headerIdentity = ImGui.GetID(headerId);
                 if (hit.Clicked)
                     onOpenChanged(!open);
-                // The glyph box the flex row hands the chevron. `.title`
-                // has no shrink floor in CSS and would simply overrun it;
-                // truncating at the slot is the draw-list equivalent.
-                titleWidth -= SectionChevronSlot * _scale;
             }
 
-            // `.header { color: --color-text-tertiary }` lifted to
-            // --color-text-primary by `.header:hover`. The row declares no
-            // transition, so the swap is instant — only the chevron's own
-            // opacity animates. The chevron inherits this same
-            // `currentColor`.
-            var headerColor = ColorEx.ApplyAlpha(
-                hovered ? ActiveTheme.Text : FormLabelColor);
-            if (onOpenChanged != null)
-                DrawDisclosure(
-                    headerIdentity,
-                    new(_origin.X + _width, headerTop + headerHeight * 0.5f),
-                    headerColor, open, hovered, _scale);
-            // `.title { font-weight: 600; font-size: 12px }`.
-            DrawTextCentered(new(_origin.X, headerTop),
-                new(titleWidth, headerHeight),
-                ActiveTheme.Typography.LabelSize, FontWeight.SemiBold,
-                headerColor, title);
+            PaintSectionHeader(
+                hit, headerIdentity, title, open,
+                new(_origin.X, headerTop), _width);
 
             _y += page.SectionHeaderHeight;
             if (open)
@@ -588,50 +567,6 @@ public static partial class LegacyCrystarium
             _page.EndRow(row, id, help);
         }
 
-        public void Selector(string label, string value, Action select, Action reset,
-            bool available, bool owned, string? help = null,
-            string? disabledHelp = null, ControlStyle style = default)
-        {
-            string id = Id(label);
-            var row = _page.BeginRow(label);
-            float gap = ActiveTheme.Page.ActionGap * row.Scale;
-            var resetStyle =
-                Workspace(style) with { Width = UiWidth.Content };
-            // The optional reset action owns a permanent slot so ownership
-            // changes never resize the selector under the pointer.
-            float resetWidth = MeasureButton("Reset", resetStyle).X;
-            float triggerWidth = row.ControlWidth - resetWidth - gap;
-            var triggerStyle = InRegion(
-                Workspace(style),
-                triggerWidth / row.Scale,
-                fillByDefault: true);
-            float renderedTriggerWidth = ResolveButtonWidth(
-                value, triggerStyle, triggerWidth / row.Scale) * row.Scale;
-            string display = LegacyCrystarium.TruncateText(value,
-                new TextStyle { Size = ActiveTheme.Typography.LabelSize },
-                MathF.Max(1f, renderedTriggerWidth
-                    - ActiveTheme.Spacing.Six * 2f * row.Scale));
-            float controlHeight = ControlSizing.Height(
-                triggerStyle.Height, ActiveTheme.Controls.WorkspaceHeight);
-            ImGui.SetCursorScreenPos(row.CenterControl(controlHeight));
-            LegacyCrystarium.Button(display, select,
-                style: triggerStyle,
-                disabled: !available,
-                help: disabledHelp,
-                id: id);
-
-            if (owned)
-            {
-                ImGui.SetCursorScreenPos(new(
-                    row.ControlOrigin.X + row.ControlWidth - resetWidth,
-                    row.CenterControl(controlHeight).Y));
-                LegacyCrystarium.Button("Reset", reset, style: resetStyle,
-                    help: $"Restore the incoming {label.ToLowerInvariant()} exactly",
-                    id: $"{id}-reset");
-            }
-            _page.EndRow(row, id, help);
-        }
-
         public void ColorWells(string label, Action<ColorWellScope> content,
             string? help = null)
         {
@@ -712,50 +647,6 @@ public static partial class LegacyCrystarium
             DrawActions(actions.Items,
                 row.ControlOrigin.X + row.ControlWidth - actionWidth,
                 actionWidth, row.Origin.Y, true, id);
-            _page.EndRow(row, id, help);
-        }
-
-        public void Progress(string label, float fraction, string readout,
-            Action? cancel = null, bool cancelDisabled = false,
-            string? cancelHelp = null, string? help = null,
-            ControlStyle cancelStyle = default)
-        {
-            string id = Id(label);
-            var row = _page.BeginRow(label);
-            float gap = ActiveTheme.Page.ActionGap * row.Scale;
-            float readoutWidth = MeasureText(readout,
-                ActiveTheme.Typography.CaptionSize, FontWeight.Regular,
-                FontFamily.Mono).X;
-            float actionLimit = MathF.Max(0f,
-                row.ControlWidth
-                    - ActiveTheme.Form.ValueColumnWidth * row.Scale
-                    - readoutWidth
-                    - gap * 2f);
-            var actions = new ActionScope();
-            if (cancel != null)
-                actions.Button("Cancel", cancel, cancelStyle,
-                    cancelDisabled, cancelHelp);
-            float actionWidth = actions.Items.Count > 0
-                ? MeasureActions(
-                    actions.Items, row.Scale, actionLimit) + gap
-                : 0f;
-            float barWidth = MathF.Max(
-                ActiveTheme.Form.ValueColumnWidth * row.Scale,
-                row.ControlWidth - actionWidth - readoutWidth - gap);
-            ImGui.SetCursorScreenPos(row.CenterControl(
-                ActiveTheme.Controls.SliderHeight));
-            ProgressBar(fraction, barWidth / row.Scale);
-            DrawTextRight(new(row.ControlOrigin.X + barWidth + gap, row.Origin.Y),
-                readoutWidth, ActiveTheme.Controls.FormRowHeight * row.Scale,
-                ActiveTheme.Typography.CaptionSize, FontFamily.Mono,
-                FormLabelColor, readout);
-            if (cancel != null)
-            {
-                DrawActions(actions.Items,
-                    row.ControlOrigin.X + row.ControlWidth
-                        - (actionWidth - gap),
-                    actionWidth - gap, row.Origin.Y, true, id);
-            }
             _page.EndRow(row, id, help);
         }
 
@@ -1085,6 +976,68 @@ public static partial class LegacyCrystarium
         style.Height.Kind == UiHeightKind.Natural
             ? style with { Height = UiHeight.Workspace }
             : style;
+
+    /// <summary>
+    /// <c>.section { border-top: 1px solid --color-border-secondary }</c>:
+    /// the rule above a section header, and the section's ONLY separator.
+    /// The y is rounded HERE — the rule is a hairline and the flow that
+    /// places it carries fractional logical spans, so snapping is part of
+    /// the paint rather than something each caller remembers.
+    /// <paramref name="origin"/> is the rule's unrounded left end.
+    /// </summary>
+    internal static void PaintSectionRule(
+        ImDrawListPtr drawList, Vector2 origin, float width, float scale) =>
+        ControlPaint.Separator(
+            drawList,
+            new(origin.X, MathF.Round(origin.Y)),
+            origin.X + width,
+            scale,
+            FormSeparatorColor);
+
+    /// <summary>
+    /// The 26px <c>.header</c> row's content — the <c>.title</c> and the
+    /// <c>.chevron</c> — so the retained twin drives the SAME pixels while
+    /// owning its own hit rect. The chevron is drawn BEFORE the title, as
+    /// the flex row's own order.
+    /// <para><paramref name="identity"/> is the header's ImGui id and
+    /// doubles as the interactive flag: a static header (no
+    /// <c>onOpenChanged</c>) reserves nothing, so it has no id, no
+    /// disclosure, no motion channel, and no 24px slot shrinking the
+    /// title. Zero is therefore "not interactive", which is exactly what a
+    /// header that never called <c>GetID</c> has.</para>
+    /// </summary>
+    internal static void PaintSectionHeader(
+        in InteractionResult hit, uint identity, string title, bool open,
+        Vector2 min, float width)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        float headerHeight = ActiveTheme.Page.SectionHeaderHeight * scale;
+        bool hovered = hit.Hovered;
+        // The glyph box the flex row hands the chevron. `.title`
+        // has no shrink floor in CSS and would simply overrun it;
+        // truncating at the slot is the draw-list equivalent.
+        float titleWidth = identity != 0
+            ? width - SectionChevronSlot * scale
+            : width;
+
+        // `.header { color: --color-text-tertiary }` lifted to
+        // --color-text-primary by `.header:hover`. The row declares no
+        // transition, so the swap is instant — only the chevron's own
+        // opacity animates. The chevron inherits this same
+        // `currentColor`.
+        var headerColor = ColorEx.ApplyAlpha(
+            hovered ? ActiveTheme.Text : FormLabelColor);
+        if (identity != 0)
+            DrawDisclosure(
+                identity,
+                new(min.X + width, min.Y + headerHeight * 0.5f),
+                headerColor, open, hovered, scale);
+        // `.title { font-weight: 600; font-size: 12px }`.
+        DrawTextCentered(min,
+            new(titleWidth, headerHeight),
+            ActiveTheme.Typography.LabelSize, FontWeight.SemiBold,
+            headerColor, title);
+    }
 
     /// <summary>
     /// InspectorSection <c>.chevron</c>: a 24px flex box pinned to the

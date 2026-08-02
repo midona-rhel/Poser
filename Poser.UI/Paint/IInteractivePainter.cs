@@ -9,7 +9,7 @@ namespace Poser.UI.Reactive;
 /// hit rect can be narrower than the arranged box, so a painter that wants the
 /// box it was ARRANGED must be told it.
 /// </summary>
-internal readonly struct PaintInput
+internal readonly ref struct PaintInput
 {
     internal PaintInput(
         in Poser.UI.InteractionResult hit,
@@ -17,7 +17,9 @@ internal readonly struct PaintInput
         byte arg,
         bool disabled,
         Vector2 boxSize,
-        ImDrawListPtr drawList)
+        ImDrawListPtr drawList,
+        string id,
+        in ElementRecord record)
     {
         Hit = hit;
         Identity = identity;
@@ -25,6 +27,8 @@ internal readonly struct PaintInput
         Disabled = disabled;
         BoxSize = boxSize;
         DrawList = drawList;
+        Id = id;
+        Record = ref record;
     }
 
     internal readonly Poser.UI.InteractionResult Hit;
@@ -49,6 +53,20 @@ internal readonly struct PaintInput
     /// a scroll region is a child window, each with its own list, so a menu
     /// row's fill lands on the same list as the label inside it.</summary>
     internal readonly ImDrawListPtr DrawList;
+
+    /// <summary>The element's retained interaction-id string. A painter that
+    /// registers hover help needs the SAME name the runtime would have used, and
+    /// only the identity cache knows it.</summary>
+    internal readonly string Id;
+
+    /// <summary>
+    /// The element's own declaration, for the painters whose seam takes authored
+    /// values the runtime itself never reads — a colour, a range, a title.
+    /// <see cref="Arg"/> and <see cref="Disabled"/> stay separate fields because
+    /// the runtime DOES read those two, and a resolved input is not an authored
+    /// one.
+    /// </summary>
+    internal readonly ref readonly ElementRecord Record;
 }
 
 /// <summary>

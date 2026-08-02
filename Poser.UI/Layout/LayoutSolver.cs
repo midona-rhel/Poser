@@ -35,13 +35,17 @@ internal static class LayoutSolver
                 arena[node].Text ?? string.Empty, TextStyleOf(in arena[node]))
                 / ImGuiHelpers.GlobalScale,
             ElementKind.Svg => new Vector2(arena[node].TextSize),
+            // A native island is a LEAF that declared its own box, exactly as
+            // an interactive leaf does — the solver still resolves a Fill or
+            // Fixed dimension over it, and nothing inside it is measurable.
+            ElementKind.Native => arena[node].LogicalSize,
             ElementKind.Interactive => MeasureInteractive(
                 arena, node, in style, availWidth, availHeight),
             _ => MeasureBox(arena, node, in style, availWidth, availHeight),
         };
 
         arena[node].LogicalSize = new Vector2(
-            Resolve(style.Width, content.X, availWidth),
+            ResolveWidth(in style, content.X, availWidth),
             Resolve(style.Height, content.Y, availHeight));
     }
 
@@ -167,13 +171,41 @@ internal static class LayoutSolver
     /// its subtree is measured against the SURFACE's constraints rather than
     /// whatever the parent had left over.
     /// </summary>
+    /// <summary>
+    /// The logical Y at which a portal's SCROLLED region starts: the stacked
+    /// height of the fixed head above it. Read by the walk, which has to place
+    /// the scroll child window itself, and by <see cref="ArrangeDetached"/>,
+    /// which places the head in the first place — one definition, so the
+    /// viewport can never land somewhere the head did not end.
+    /// </summary>
+    internal static float PortalScrollTop(FrameArena arena, int node)
+    {
+        int start = arena[node].ChildStart;
+        int head = Math.Min(arena[node].PortalScrollFromChild, arena[node].ChildCount);
+        float y = 0f;
+        for (int i = 0; i < head; i++)
+            y += arena[arena.ChildAt(start + i).Index].LogicalSize.Y;
+        return y;
+    }
+
     private static void MeasureDetached(FrameArena arena, int node)
     {
         Vector2 content = PortalContent(arena, node);
+        Vector2 surface = PortalSurface(arena, node);
+        // The head is measured against what the SURFACE has left, not against
+        // the viewport: a caption band above a 190px list is not constrained by
+        // the list's height.
+        float headHeight = MathF.Max(
+            0f, surface.Y - arena[node].PortalPadding * 2f);
         int start = arena[node].ChildStart;
         int count = arena[node].ChildCount;
+        int head = Math.Min(arena[node].PortalScrollFromChild, count);
         for (int i = 0; i < count; i++)
-            Measure(arena, arena.ChildAt(start + i).Index, content.X, content.Y);
+            Measure(
+                arena,
+                arena.ChildAt(start + i).Index,
+                content.X,
+                i < head ? headHeight : content.Y);
         arena[node].LogicalSize = Vector2.Zero;
     }
 
@@ -181,6 +213,11 @@ internal static class LayoutSolver
     /// The subtree is placed from the surface's own origin, not the parent's:
     /// the walk re-anchors it at the popup's cursor, so a portal child's
     /// arranged position is already surface-relative.
+    ///
+    /// <para>A surface with a fixed HEAD places it as a plain vertical stack
+    /// from the content origin, then starts the scrolled children over again at
+    /// zero — because the walk re-anchors those a second time, at the scroll
+    /// child window's own cursor.</para>
     /// </summary>
     private static void ArrangeDetached(FrameArena arena, int node, Vector2 logicalOrigin)
     {
@@ -189,7 +226,17 @@ internal static class LayoutSolver
         Vector2 content = PortalContent(arena, node);
         int start = arena[node].ChildStart;
         int count = arena[node].ChildCount;
-        for (int i = 0; i < count; i++)
+        int head = Math.Min(arena[node].PortalScrollFromChild, count);
+        float y = 0f;
+        for (int i = 0; i < head; i++)
+        {
+            int child = arena.ChildAt(start + i).Index;
+            float band = arena[child].LogicalSize.Y;
+            Arrange(arena, child, new Vector2(0f, y), new Vector2(content.X, band));
+            y += band;
+        }
+
+        for (int i = head; i < count; i++)
             Arrange(arena, arena.ChildAt(start + i).Index, Vector2.Zero, content);
     }
 
@@ -218,6 +265,10 @@ internal static class LayoutSolver
         in ElementRecord record, Vector4? inheritedForeground) => new()
     {
         Size = record.TextSize > 0f ? record.TextSize : (float?)null,
+        Family = record.TextFamily,
+        Weight = record.TextWeight > 0
+            ? (Poser.UI.FontWeight)(record.TextWeight * 100)
+            : (Poser.UI.FontWeight?)null,
         Color = record.HasTextColor ? record.TextColor : inheritedForeground,
     };
 
@@ -234,7 +285,7 @@ internal static class LayoutSolver
             return MeasureBox(arena, node, in style, availWidth, availHeight);
 
         float innerWidth = MathF.Max(
-            0f, Resolve(style.Width, intrinsic.X, availWidth) - style.Padding.Horizontal);
+            0f, ResolveWidth(in style, intrinsic.X, availWidth) - style.Padding.Horizontal);
         float innerHeight = MathF.Max(
             0f, Resolve(style.Height, intrinsic.Y, availHeight) - style.Padding.Vertical);
         int start = arena[node].ChildStart;
@@ -249,7 +300,7 @@ internal static class LayoutSolver
     {
         // A Content box offers its children everything it was offered.
         float innerWidth = MathF.Max(
-            0f, Resolve(style.Width, availWidth, availWidth) - style.Padding.Horizontal);
+            0f, ResolveWidth(in style, availWidth, availWidth) - style.Padding.Horizontal);
         float innerHeight = MathF.Max(
             0f, Resolve(style.Height, availHeight, availHeight) - style.Padding.Vertical);
 
@@ -318,6 +369,18 @@ internal static class LayoutSolver
 
     private static bool IsFillMain(in UiStyle style, bool row) =>
         (row ? style.Width.Kind : style.Height.Kind) == UiDimKind.Fill;
+
+    /// <summary>
+    /// The width axis, clamped by <see cref="UiStyle.MaxWidth"/>. The clamp is
+    /// applied at EVERY width resolution — the element's own box and the span it
+    /// offers its children — so a capped Fill column measures, arranges, and
+    /// cuts its content at the cap rather than only drawing narrow.
+    /// </summary>
+    private static float ResolveWidth(in UiStyle style, float content, float available)
+    {
+        float width = Resolve(style.Width, content, available);
+        return style.MaxWidth > 0f && width > style.MaxWidth ? style.MaxWidth : width;
+    }
 
     private static float Resolve(in UiDim dim, float content, float available) => dim.Kind switch
     {

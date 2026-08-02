@@ -27,6 +27,10 @@ internal sealed class PortalHost
         internal int Node;
         internal ulong Hash;
         internal float Scale;
+        /// <summary>First child inside the viewport, resolved by the surface
+        /// pass and read by the scroll pass — the two halves of one walk.
+        /// </summary>
+        internal int Head;
 
         internal PortalBody(PortalHost host)
         {
@@ -86,7 +90,7 @@ internal sealed class PortalHost
                 Padding = record.PortalPadding,
                 AnchorMin = anchorMin,
                 AnchorMax = anchorMax,
-                Treatment = Poser.UI.FloatingSurfaceTreatment.Unframed,
+                Treatment = (Poser.UI.FloatingSurfaceTreatment)record.PortalTreatment,
             },
             body.Surface);
     }
@@ -99,13 +103,30 @@ internal sealed class PortalHost
             surface.Paint(
                 ImGui.GetWindowDrawList(), min, min + ImGui.GetWindowSize());
 
+        Vector2 origin = ImGui.GetCursorScreenPos();
         float viewport = _arena[node].ScrollRegionHeight;
+        int count = _arena[node].ChildCount;
         if (viewport <= 0f)
         {
-            WalkPortalChildren(body, ImGui.GetCursorScreenPos(), 0f);
+            WalkPortalChildren(body, origin, 0f, 0, count);
             return;
         }
 
+        // The fixed head is walked on the POPUP, before the viewport exists —
+        // a caption and a filter field are chrome of the surface, not content
+        // of the list, so nothing about them may scroll.
+        int head = Math.Min(_arena[node].PortalScrollFromChild, count);
+        if (head > 0)
+            WalkPortalChildren(body, origin, 0f, 0, head);
+
+        // The viewport starts where the head ended, which the solver already
+        // resolved — never at whatever cursor the head's last reservation
+        // happened to leave behind.
+        ImGui.SetCursorScreenPos(new Vector2(
+            origin.X,
+            origin.Y + MathF.Round(
+                LayoutSolver.PortalScrollTop(_arena, node) * body.Scale)));
+        body.Head = head;
         Poser.UI.LegacyCrystarium.ScrollRegion(
             _ids.AlternateId(body.Hash, "-scroll"),
             ImGui.GetContentRegionAvail().X / body.Scale,
@@ -127,7 +148,9 @@ internal sealed class PortalHost
             float cap = _arena[body.Node].Arg != 0
                 ? region.ContentWidth * body.Scale
                 : 0f;
-            WalkPortalChildren(body, ImGui.GetCursorScreenPos(), cap);
+            WalkPortalChildren(
+                body, ImGui.GetCursorScreenPos(), cap, body.Head,
+                _arena[body.Node].ChildCount);
         }
         finally
         {
@@ -135,7 +158,8 @@ internal sealed class PortalHost
         }
     }
 
-    private void WalkPortalChildren(PortalBody body, Vector2 origin, float hitWidthCap)
+    private void WalkPortalChildren(
+        PortalBody body, Vector2 origin, float hitWidthCap, int first, int last)
         => _walker.WalkDetachedChildren(
-            body.Node, origin, body.Scale, body.Hash, hitWidthCap);
+            body.Node, origin, body.Scale, body.Hash, hitWidthCap, first, last);
 }

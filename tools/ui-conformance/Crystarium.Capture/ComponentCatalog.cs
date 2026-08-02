@@ -102,6 +102,26 @@ internal static class ComponentCatalog
         new("icon-button-backdrop-checker", 160, 80, Hidden: true),
         new("switch-off", 120, 80),
         new("switch-on", 120, 80),
+        // PBI-015 wave L: the legacy comparison states for the controls
+        // Appearance consumes, so the reactive twins land on a byte-gate
+        // instead of on nothing.
+        new("slider", 320, 80),
+        new("slider-disabled", 320, 80),
+        new("colorwell", 320, 80),
+        new("colorwell-disabled", 320, 80),
+        new("progress", 320, 80),
+        // PBI-015 wave P: the SAME five form-control states plus the two
+        // switch states driven through the retained reactive root. Every
+        // rX must capture byte-identical to its legacy twin — the twins
+        // share the wave-M paint seam, so a differing byte is the retained
+        // runtime's own. See verify-reactive-form.ps1.
+        new("rslider", 320, 80),
+        new("rslider-disabled", 320, 80),
+        new("rcolorwell", 320, 80),
+        new("rcolorwell-disabled", 320, 80),
+        new("rprogress", 320, 80),
+        new("rswitch-off", 120, 80),
+        new("rswitch-on", 120, 80),
         new("text-input", 320, 80),
         new("input-placeholder", 320, 80),
         new("search-input", 320, 84),
@@ -119,6 +139,13 @@ internal static class ComponentCatalog
         // other, not against a Picto reference.
         new("dd-scrolled", 320, 280, Hidden: true),
         new("rdd-scrolled", 320, 280, Hidden: true),
+        new("picker-open", 320, 280),
+        // PBI-015 wave O: the retained picker is a REDESIGN, not a twin —
+        // the surface box is unchanged (so one reference cell judges both)
+        // and everything inside it is OverlayShell. Judged against the
+        // Picto reference, never against picker-open.
+        new("rpicker-open", 320, 280),
+        new("rpicker-multi", 320, 280),
         new("color-palette", 220, 80),
         new("sidebar-row", 320, 80),
         new("sidebar-row-hover", 320, 80),
@@ -132,6 +159,12 @@ internal static class ComponentCatalog
         new("section", 320, 92),
         new("section-expanded", 320, 92),
         new("section-hover", 320, 92),
+        // PBI-015 wave P: the same three section states through the
+        // retained root. Same 272px measure, same choreography, same
+        // header paint seam — so byte-identity is the gate here too.
+        new("rsection", 320, 92),
+        new("rsection-expanded", 320, 92),
+        new("rsection-hover", 320, 92),
         new("tooltip", 240, 80),
         new("tooltip-pop-mid", 240, 80),
         new("context-menu", 320, 190),
@@ -177,6 +210,102 @@ internal static class ComponentCatalog
     /// not the runtime's.</summary>
     private static readonly Action<int> NoOpSelect = static _ => { };
 
+    /// <summary>
+    /// The reference cell's active row is index 1, so both picker fixtures
+    /// select "Date Created" — the single one by key, the multi one by a
+    /// one-element set, which is the whole difference between the two
+    /// controlled shapes.
+    /// </summary>
+    private static readonly HashSet<string> PickerSelected = ["Date Created"];
+
+    private static readonly Action<string> PickerNoOpPick = static _ => { };
+
+    private static readonly Action<string, bool> PickerNoOpToggle =
+        static (_, _) => { };
+
+    private static readonly Action PickerNoOpOpen = static () => { };
+
+    private static PickerProps<string> PickerFixtureProps(bool multi) =>
+        new(
+            "Date Modified",
+            "Sort by",
+            DropdownItems,
+            static item => item,
+            static item => item,
+            multi ? null : DropdownItems[1],
+            multi ? PickerSelected : null,
+            null,
+            multi ? null : PickerNoOpPick,
+            multi ? PickerNoOpToggle : null,
+            PickerNoOpOpen,
+            Dense: false,
+            Disabled: false,
+            DisabledHelp: null,
+            Multi: multi,
+            TriggerWidth: default);
+
+    private static readonly Func<UiNode> PickerSingleTree = static () =>
+        Rx.PickerSurface(PickerFixtureProps(false), "fixture");
+
+    private static readonly Func<UiNode> PickerMultiTree = static () =>
+        Rx.PickerSurface(PickerFixtureProps(true), "fixture");
+
+    /// <summary>
+    /// The wave-P form twins. Every callback and every build closure is
+    /// hoisted for the same reason the picker's are: a delegate allocated per
+    /// frame would be the harness's cost, and a fixture that differs from its
+    /// legacy twin only in what it allocates is not the comparison this sheet
+    /// claims to make.
+    /// </summary>
+    private static readonly Action<float> FormNoOpFloat = static _ => { };
+
+    private static readonly Action<bool> FormNoOpBool = static _ => { };
+
+    private static readonly Action<Vector4> FormNoOpColor = static _ => { };
+
+    /// <summary>Fixed 200px, exactly as the legacy fixture asks: the thumb
+    /// centre is then arithmetic rather than a function of the cell.</summary>
+    private static readonly Func<UiNode> SliderTree = static () =>
+        Rx.Slider(
+            0.4f, 0f, 1f, FormNoOpFloat,
+            sx: Sx.Size(UiDim.Fixed(200f), default));
+
+    private static readonly Func<UiNode> SliderDisabledTree = static () =>
+        Rx.Slider(
+            0.4f, 0f, 1f, FormNoOpFloat, disabled: true,
+            sx: Sx.Size(UiDim.Fixed(200f), default));
+
+    private static readonly Func<UiNode> ColorWellTree = static () =>
+        Rx.ColorWell(new Vector4(0.8f, 0.3f, 0.2f, 1f), FormNoOpColor);
+
+    /// <summary>The absent-weapon well: a null tint reaches the twin as
+    /// Vector4.Zero with disabled set, which is what makes it paint
+    /// UnavailableFill instead of the colour it does not have.</summary>
+    private static readonly Func<UiNode> ColorWellDisabledTree = static () =>
+        Rx.ColorWell(Vector4.Zero, FormNoOpColor, disabled: true);
+
+    private static readonly Func<UiNode> ProgressTree = static () =>
+        Rx.Progress(0.4f, 200f);
+
+    private static readonly Func<UiNode> SwitchOffTree = static () =>
+        Rx.Switch(false, FormNoOpBool);
+
+    private static readonly Func<UiNode> SwitchOnTree = static () =>
+        Rx.Switch(true, FormNoOpBool);
+
+    /// <summary>
+    /// The section twins carry NO content, because the legacy fixture they
+    /// are gated against carries none either: <c>Ui.Section</c> is handed an
+    /// empty <c>FormScope</c> body, so an expanded legacy section draws its
+    /// rule, its header and nothing else. Rows here would be pixels the
+    /// reference side does not have.
+    /// </summary>
+    private static readonly Func<UiNode> SectionTree = static () =>
+        Rx.Section("GENERAL", false, FormNoOpBool, UiChildren.Empty, "section");
+
+    private static readonly Func<UiNode> SectionExpandedTree = static () =>
+        Rx.Section("GENERAL", true, FormNoOpBool, UiChildren.Empty, "section");
+
     private static readonly ContextMenuItem[] MenuItems =
     [
         new("Set game target", TablerIcon.Crosshair),
@@ -195,6 +324,14 @@ internal static class ComponentCatalog
     // A static build callback cannot capture the frame counter, so the
     // frame-dependent fixture parameter is parked here instead.
     private static bool reactiveDisabled;
+
+    /// <summary>
+    /// SearchPicker is a RETAINED object — it stores the anchor rect its
+    /// Open call sampled and has to outlive the frame loop — but its popup
+    /// lives in the per-state ImGui context, so the instance is rebuilt on
+    /// frame 0 of every run rather than shared with the next state.
+    /// </summary>
+    private static Ui.SearchPicker<string>? searchPicker;
 
     public static IReadOnlyList<ComponentSpec> All =>
         Specs.Where(spec => !spec.Hidden).ToArray();
@@ -355,6 +492,11 @@ internal static class ComponentCatalog
             // capture shows exactly what dropdown-open shows — trigger
             // unhovered, popup open, no row under the pointer.
             || (name == "rdd-open" && frame is >= 1 and <= 4)
+            // Same choreography for the picker twins: the surface is opened
+            // by a real press on the trigger, and the pointer leaves before
+            // the presented frames so no row is hovered at capture.
+            || (name.StartsWith("rpicker-", StringComparison.Ordinal)
+                && frame is >= 1 and <= 4)
             || name == "icon-button-pressed"
             || (name == "icon-button-held-outside" && frame < 15)
             || (name == "icon-button-hover-exit" && frame < 15)
@@ -388,8 +530,11 @@ internal static class ComponentCatalog
         // is inside it and clear of both edges.
         return inside
             ? (name == "rdd-open"
+                || name.StartsWith("rpicker-", StringComparison.Ordinal)
                 ? new Vector2(64, 37)
-                : name == "section-hover"
+                // The reactive section twin shares the legacy header's box
+                // exactly, so it shares the point that lands on it.
+                : name is "section-hover" or "rsection-hover"
                 ? new Vector2(84, 58)
                 : name == "search-clear-hover"
                 ? new Vector2(283, 42)
@@ -424,6 +569,11 @@ internal static class ComponentCatalog
         if (name == "rdd-scrolled" && frame == 2)
             yield return (0, true);
         if (name == "rdd-scrolled" && frame == 4)
+            yield return (0, false);
+        // The picker twins open the same honest way.
+        if (name.StartsWith("rpicker-", StringComparison.Ordinal) && frame == 2)
+            yield return (0, true);
+        if (name.StartsWith("rpicker-", StringComparison.Ordinal) && frame == 4)
             yield return (0, false);
     }
 
@@ -1062,6 +1212,114 @@ internal static class ComponentCatalog
                 Ui.Switch(
                     "##switch-on", true, _ => { });
                 break;
+            // ---- Form controls (PBI-015 wave L) ---------------------
+            // The four controls PageForm hands the Appearance pane, in the
+            // exact shapes that pane asks for. A Fixed 200px width keeps
+            // the slider's geometry independent of the canvas, so the
+            // thumb centre is arithmetic (24 + 7 + .4 * 186) rather than
+            // a function of the cell.
+            case "slider":
+            case "slider-disabled":
+                Ui.Slider(
+                    "##slider",
+                    0.4f,
+                    0f,
+                    1f,
+                    _ => { },
+                    new ControlStyle { Width = UiWidth.Fixed(200f) },
+                    disabled: name == "slider-disabled");
+                break;
+            case "colorwell":
+                Ui.ColorWell(
+                    "##colorwell",
+                    new Vector4(0.8f, 0.3f, 0.2f, 1f),
+                    _ => { },
+                    rgbOnly: true);
+                break;
+            // The absent-weapon well, exactly as PageForm.ColorWellScope
+            // passes it: a null tint becomes Vector4.Zero with disabled
+            // set, which is what makes the well paint UnavailableFill
+            // instead of the colour it does not have.
+            case "colorwell-disabled":
+                Ui.ColorWell(
+                    "##colorwell-disabled",
+                    Vector4.Zero,
+                    _ => { },
+                    rgbOnly: true,
+                    disabled: true);
+                break;
+            case "progress":
+                Ui.ProgressBar(0.4f, 200f);
+                break;
+            // ---- Reactive form twins (PBI-015 wave P) ----------------
+            // Same stage origin, same values, same fixed 200px measure as
+            // the five states above and the two switch states further up;
+            // only the PATH differs, so any pixel difference is the
+            // retained runtime's own.
+            case "rslider":
+                ReactiveRoot(name).Render(
+                    origin, ImGui.GetContentRegionAvail(), SliderTree);
+                break;
+            case "rslider-disabled":
+                ReactiveRoot(name).Render(
+                    origin, ImGui.GetContentRegionAvail(),
+                    SliderDisabledTree);
+                break;
+            case "rcolorwell":
+                ReactiveRoot(name).Render(
+                    origin, ImGui.GetContentRegionAvail(), ColorWellTree);
+                break;
+            case "rcolorwell-disabled":
+                ReactiveRoot(name).Render(
+                    origin, ImGui.GetContentRegionAvail(),
+                    ColorWellDisabledTree);
+                break;
+            case "rprogress":
+                ReactiveRoot(name).Render(
+                    origin, ImGui.GetContentRegionAvail(), ProgressTree);
+                break;
+            case "rswitch-off":
+                ReactiveRoot(name).Render(
+                    origin, ImGui.GetContentRegionAvail(), SwitchOffTree);
+                break;
+            case "rswitch-on":
+                ReactiveRoot(name).Render(
+                    origin, ImGui.GetContentRegionAvail(), SwitchOnTree);
+                break;
+            // SearchPicker samples its anchor from the CURRENT ImGui item,
+            // so Open must follow the trigger immediately; and Open only
+            // requests the popover — Draw is what opens it, the same frame.
+            // Opening once on frame 0 (not every frame) is what makes the
+            // remaining 39 frames a settled surface rather than a
+            // re-entering one.
+            case "picker-open":
+                Ui.Button("Date Modified", id: "##picker-trigger");
+                if (frame == 0)
+                {
+                    searchPicker = new Ui.SearchPicker<string>("catalog");
+                    searchPicker.Open(
+                        "catalog",
+                        "Sort by",
+                        DropdownItems,
+                        static item => item,
+                        static item => item,
+                        selectedKey: DropdownItems[1]);
+                }
+                searchPicker!.Draw();
+                break;
+            // ---- Reactive picker (PBI-015 wave O) --------------------
+            // The SAME trigger the legacy fixture draws, at the same stage
+            // origin, so the comparison isolates the panel: the surface
+            // clamps to (20,22) either way and covers the button. The menu
+            // is earned by a real click, as every retained portal's is.
+            case "rpicker-open":
+                ReactiveRoot(name).Render(
+                    origin, ImGui.GetContentRegionAvail(), PickerSingleTree);
+                break;
+            case "rpicker-multi":
+                ReactiveRoot(name).Render(
+                    origin, ImGui.GetContentRegionAvail(), PickerMultiTree);
+                break;
             case "text-input":
                 Ui.TextInput(
                     "##text-input",
@@ -1232,6 +1490,28 @@ internal static class ComponentCatalog
                     open: true,
                     _ => { },
                     _ => { });
+                break;
+            // ---- Reactive section twins (PBI-015 wave P) -------------
+            // The legacy fixture is handed an explicit 272px measure, so
+            // the retained root gets the same span rather than whatever
+            // the cell leaves: the width is the fixture's, not the
+            // canvas's, on both paths. Collapsed, expanded and header-
+            // hover all build the SAME call; only `expanded` and the
+            // parked pointer differ.
+            case "rsection":
+            case "rsection-hover":
+                ReactiveRoot(name).Render(
+                    origin,
+                    new Vector2(
+                        272f * scale, ImGui.GetContentRegionAvail().Y),
+                    SectionTree);
+                break;
+            case "rsection-expanded":
+                ReactiveRoot(name).Render(
+                    origin,
+                    new Vector2(
+                        272f * scale, ImGui.GetContentRegionAvail().Y),
+                    SectionExpandedTree);
                 break;
             case "tooltip":
                 // The reference cell draws the KbdTooltip label box at the
