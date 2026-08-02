@@ -24,6 +24,16 @@ public readonly record struct Dropdown
 
     public UiHandler<int> OnChange { get; init; }
 
+    /// <summary>Trigger caption override — the ActionDropdown's preview: what
+    /// the closed box says when the selection is outside the list (a stance
+    /// the options don't carry) or wants friendlier words than the row.</summary>
+    public string? Preview { get; init; }
+
+    /// <summary>ActionDropdown semantics: picking the selected row REPORTS
+    /// (re-posing the same stance is an action), where the plain dropdown's
+    /// reselect closes silently.</summary>
+    public bool ReselectFires { get; init; }
+
     public bool Disabled { get; init; }
 
     public string? Help { get; init; }
@@ -95,7 +105,12 @@ public readonly record struct Dropdown
                 Index = i,
                 // The selected row reports nothing and still closes: the close
                 // is the ELEMENT's, so the missing handler costs it nothing.
-                On = new Listeners { OnPick = isSelected ? default : OnChange },
+                // ActionDropdown semantics invert that — a reselect IS the
+                // action.
+                On = new Listeners
+                {
+                    OnPick = isSelected && !ReselectFires ? default : OnChange,
+                },
                 // A menu row answers the press, exactly as the imperative menu does.
                 ActivateOn = Activation.Press,
                 ClosesPortal = true,
@@ -122,9 +137,10 @@ public readonly record struct Dropdown
             scrollFromChild: 0);
 
         // ---- .btn ----------------------------------------------------------
-        string current = Selected >= 0 && Selected < Items.Length
-            ? Items[Selected]
-            : string.Empty;
+        string current = Preview
+            ?? (Selected >= 0 && Selected < Items.Length
+                ? Items[Selected]
+                : string.Empty);
         // CSS content box: the 1px border sits INSIDE the border box, so
         // padding measures from the border's inner edge.
         UiNode chrome = new Row
