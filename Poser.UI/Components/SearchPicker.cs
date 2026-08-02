@@ -37,13 +37,12 @@ public static partial class Crystarium
     /// 12 + 14 + 6 = 32 under the search text.</summary>
     internal const float PickerRowPadding = (PickerRowHeight - PickerCheckSlot) * 0.5f;
 
-    /// <summary>Where the shell's NARROWED thumb visibly begins inside the
-    /// gutter (measured contact point).</summary>
-    internal const float PickerThumbInset = 3f;
-
-    /// <summary>USER FEEDBACK 2026-08-02: the pill stops a hair SHORT of the
-    /// thumb — a 2px breath, neither touching nor under it.</summary>
-    internal const float PickerThumbGap = 2f;
+    /// <summary>USER DESIGN 2026-08-02: the picker's bar is HALF the shell
+    /// gutter, and bar + its padding = the list items' left content base —
+    /// 6 + 6 = 12 — so the right side balances the left whether the bar is
+    /// showing or not. The pill's right margin is therefore exactly the
+    /// gutter, no thumb-contact arithmetic.</summary>
+    internal const float PickerBarShare = 0.5f;
 
     /// <summary>USER FEEDBACK 2026-08-02: the search field's clear cross
     /// breathes off the gutter instead of sitting flush against it.</summary>
@@ -277,12 +276,11 @@ internal sealed class PickerCell<T>
         Span<UiNode> rows = arena.ScratchNodes(props.Items.Count + 1);
         int count = 0;
         // The row BOX spans between the sheet's margins: pill edge at 5 on
-        // the left, a 2px breath short of the thumb on the right.
+        // the left, the full gutter (half-width bar + its equal padding) on
+        // the right.
         float rowWidth = MathF.Max(
             0f,
-            panelWidth
-                - (inset - Crystarium.PickerRowPadding)
-                - (inset - Crystarium.PickerThumbInset + Crystarium.PickerThumbGap));
+            panelWidth - (inset - Crystarium.PickerRowPadding) - inset);
         if (props.LoadError is { } error)
         {
             rows[count++] = EmptyLine(error, rowWidth);
@@ -330,7 +328,9 @@ internal sealed class PickerCell<T>
             treatment: FloatingSurfaceTreatment.Unframed,
             // The chrome above the list never scrolls; without a caption band
             // that chrome is the search area alone.
-            scrollFromChild: hasHeader ? 2 : 1);
+            scrollFromChild: hasHeader ? 2 : 1,
+            // Half-width bar: bar + its padding = the left content base.
+            scrollGutter: inset * Crystarium.PickerBarShare);
 
         return new TriggerButton
         {

@@ -106,6 +106,10 @@ internal struct PortalRecord
     /// children do not scroll.</summary>
     internal float ScrollRegionHeight;
 
+    /// <summary>The reserved bar width for the portal's scroll wrap, logical;
+    /// zero takes the theme's shell gutter.</summary>
+    internal float ScrollGutter;
+
     /// <summary>Index of the first child INSIDE the viewport. The children
     /// before it are the surface's fixed head.</summary>
     internal int ScrollFromChild;

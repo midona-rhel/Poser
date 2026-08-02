@@ -30,6 +30,7 @@ public static partial class Crystarium
         IPortalSurfacePainter? surface,
         FloatingSurfaceTreatment treatment = FloatingSurfaceTreatment.Unframed,
         int scrollFromChild = 0,
+        float scrollGutter = 0f,
         UiKey key = default)
     {
         FrameArena arena = FrameArena.Require();
@@ -44,6 +45,7 @@ public static partial class Crystarium
             Padding = padding,
             AnchorCompensation = anchorCompensation,
             ScrollRegionHeight = scrollRegionHeight,
+            ScrollGutter = scrollGutter,
             ScrollFromChild = scrollFromChild,
             Treatment = (byte)treatment,
             CapChildHitWidth = capChildHitWidth,

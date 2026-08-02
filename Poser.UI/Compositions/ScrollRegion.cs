@@ -8,14 +8,21 @@ namespace Poser.UI;
 
 public static partial class LegacyCrystarium
 {
+    /// <param name="gutterWidth">The reserved bar width, logical; null takes
+    /// the theme's shell gutter. A floating surface may state a narrower bar
+    /// (the picker's is half the shell's), and the reserve is unconditional
+    /// either way so the bar appearing never reflows content.</param>
     public static void ScrollRegion(
         string id,
         float width,
         float height,
-        Action<ScrollRegionScope> content)
+        Action<ScrollRegionScope> content,
+        float? gutterWidth = null)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        PushScrollbarStyle();
+        float gutter = gutterWidth
+            ?? Crystarium.ActiveTheme.Scrollbar.GutterWidth;
+        PushScrollbarStyle(gutter);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         bool visible = ImGui.BeginChild(
             id,
@@ -24,9 +31,7 @@ public static partial class LegacyCrystarium
             ImGuiWindowFlags.NoSavedSettings);
         if (visible)
         {
-            float contentWidth = MathF.Max(
-                0f,
-                width - Crystarium.ActiveTheme.Scrollbar.GutterWidth);
+            float contentWidth = MathF.Max(0f, width - gutter);
             content(new ScrollRegionScope(contentWidth, scale));
         }
         NarrowVisibleScrollbarThumb();
@@ -106,13 +111,13 @@ public static partial class LegacyCrystarium
         }
     }
 
-    private static void PushScrollbarStyle()
+    private static void PushScrollbarStyle(float? gutterWidth = null)
     {
         float scale = ImGuiHelpers.GlobalScale;
         var text = Crystarium.ActiveTheme.Text;
         ImGui.PushStyleVar(
             ImGuiStyleVar.ScrollbarSize,
-            Crystarium.ActiveTheme.Scrollbar.GutterWidth * scale);
+            (gutterWidth ?? Crystarium.ActiveTheme.Scrollbar.GutterWidth) * scale);
         ImGui.PushStyleVar(
             ImGuiStyleVar.ScrollbarRounding,
             Crystarium.ActiveTheme.Scrollbar.Radius * scale);

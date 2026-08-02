@@ -133,7 +133,8 @@ internal sealed class PortalHost
             _ids.AlternateId(body.Hash, "-scroll"),
             ImGui.GetContentRegionAvail().X / body.Scale,
             viewport,
-            body.Scroll);
+            body.Scroll,
+            portal.ScrollGutter > 0f ? portal.ScrollGutter : null);
     }
 
     private void RunPortalScroll(

@@ -375,9 +375,10 @@ internal static class ThemeStyles
             Height = UiDim.Fixed(Crystarium.PickerRowHeight),
             Padding = new EdgeInsets(
                 Crystarium.PickerRowPadding, 0f, Crystarium.PickerRowPadding, 0f),
+            // Right margin = the full gutter: the half-width bar plus its
+            // equal padding balances the left content base (6 + 6 = 12).
             Margin = new EdgeInsets(
-                gutter - Crystarium.PickerRowPadding, 0f,
-                gutter - Crystarium.PickerThumbInset + Crystarium.PickerThumbGap, 0f),
+                gutter - Crystarium.PickerRowPadding, 0f, gutter, 0f),
         };
         sheets[(int)SheetFamily.PickerRow] = new()
         {
