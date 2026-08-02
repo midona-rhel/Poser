@@ -295,19 +295,23 @@ internal sealed class PickerCell<T>
             // content of the list: only what follows them scrolls.
             scrollFromChild: 2);
 
-        return new Button
+        return new TriggerButton
         {
-            Label = props.TriggerLabel,
-            Dense = props.Dense,
-            Disabled = props.Disabled,
-            Help = props.DisabledHelp,
-            // The press that opens is the caller's chance to LOAD what the
-            // surface is about to show.
-            OnClick = props.OnOpen,
-            StyleSheet = props.TriggerWidth.Kind == UiDimKind.Content
-                ? null
-                : Element.Sized(props.TriggerWidth, null),
-        }.WithPortal(portal);
+            Button = new Button
+            {
+                Label = props.TriggerLabel,
+                Dense = props.Dense,
+                Disabled = props.Disabled,
+                Help = props.DisabledHelp,
+                // The press that opens is the caller's chance to LOAD what
+                // the surface is about to show.
+                OnClick = props.OnOpen,
+                StyleSheet = props.TriggerWidth.Kind == UiDimKind.Content
+                    ? null
+                    : Element.Sized(props.TriggerWidth, null),
+            },
+            Surface = portal,
+        };
     }
 
     /// <summary>One <c>.checkRow</c>. The row carries the index into the

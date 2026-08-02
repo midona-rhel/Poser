@@ -334,6 +334,13 @@ internal static class ThemeStyles
                 Align = UiAlign.Stretch,
             },
         };
+        // CmSelect .opt: :hover and .optActive are the same token, and the
+        // press carries it too so a held row does not blink. The fill is the
+        // base's — the row needs no painter.
+        LookSheet optFill = new()
+        {
+            Colors = new() { Fill = chrome.WeakOverlay },
+        };
         sheets[(int)SheetFamily.DropdownRow] = new()
         {
             Layout = new()
@@ -344,6 +351,10 @@ internal static class ThemeStyles
                 Align = UiAlign.Center,
                 Width = UiDim.Fill,
             },
+            Shape = new() { Radius = theme.Radii.Medium },
+            Hover = optFill,
+            Active = optFill,
+            Selected = optFill,
         };
 
         // OverlayShell .checkRow, with the accepted 2026-08-02 decision in

@@ -96,7 +96,6 @@ public readonly record struct Dropdown
                 // The selected row reports nothing and still closes: the close
                 // is the ELEMENT's, so the missing handler costs it nothing.
                 On = new Listeners { OnPick = isSelected ? default : OnChange },
-                Painter = DropdownRowPainter.Instance,
                 // A menu row answers the press, exactly as the imperative menu does.
                 ActivateOn = Activation.Press,
                 ClosesPortal = true,

@@ -5,8 +5,11 @@ using Dalamud.Interface.Utility;
 namespace Poser.UI.Reactive;
 
 /// <summary>
-/// The closed <c>.btn</c> box. Both pieces of content the trigger holds take
-/// their treatment from this one return value: the label is the resolved
+/// The closed <c>.btn</c> box. A HOOK for the same reason CheckBoxPainter is
+/// one: the legacy box draws its border as four mitred per-side path strokes
+/// (BoxRenderer), which is not the base's single centred stroke — the frozen
+/// pixels demand the seam. Both pieces of content the trigger holds take
+/// their treatment from the one return value: the label is the resolved
 /// foreground, the chevron is the subtree's glyph opacity.
 /// </summary>
 internal sealed class DropdownTriggerPainter : IPainter
@@ -26,31 +29,8 @@ internal sealed class DropdownTriggerPainter : IPainter
     }
 }
 
-/// <summary>
-/// One <c>.opt</c> row's state fill. <c>:hover</c> and <c>.optActive</c> are
-/// the same token, so one test covers both. The fill spans the ARRANGED box
-/// rather than the reservation: a scrolling menu reserves rows clear of the
-/// scrollbar gutter but still paints them across the whole surface.
-/// </summary>
-internal sealed class DropdownRowPainter : IPainter
-{
-    internal static readonly DropdownRowPainter Instance = new();
-
-    private DropdownRowPainter()
-    {
-    }
-
-    public PaintResult Paint(in PaintContext context)
-    {
-        if (context.Record.Selected || context.Hit.Hovered)
-            Poser.UI.LegacyCrystarium.PaintDropdownRowFill(
-                context.DrawList,
-                context.Min,
-                context.Size,
-                Poser.UI.Crystarium.ActiveTheme.Radii.Medium * ImGuiHelpers.GlobalScale);
-        return default;
-    }
-}
+// The row's state fill is the DropdownRow sheet's (Hover/Active/Selected
+// looks over the base box paint) — no painter.
 
 /// <summary>The open <c>.drop</c> panel behind the rows.</summary>
 internal sealed class DropdownSurfacePainter : IPortalSurfacePainter
