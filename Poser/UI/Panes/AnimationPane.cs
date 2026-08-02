@@ -97,11 +97,17 @@ public sealed class AnimationPane
     private static readonly Func<TimelineEntry, string> TimelineName =
         static entry => entry.Name;
 
-    /// <summary>A row's identity in the catalog's own terms — the timeline and
-    /// the slot it plays in — so a list that reorders under a keystroke never
-    /// hands a row its neighbour's state.</summary>
+    /// <summary>A row's identity in the catalog's own terms — the timeline,
+    /// the KIND it is offered as, and the slot it plays in — so a list that
+    /// reorders under a keystroke never hands a row its neighbour's state.
+    /// The kind is load-bearing: under the All tab one timeline id can appear
+    /// through two kinds (an expression also reachable as a raw timeline),
+    /// and the identity cache refuses the duplicate the legacy ImGui ids
+    /// silently aliased (in-game crash, 2026-08-03).</summary>
     private static readonly Func<TimelineEntry, long> TimelineContentKey =
-        static entry => ((long)entry.TimelineId << 8) | (long)(int)entry.Slot;
+        static entry => ((long)entry.TimelineId << 16)
+            | ((long)(int)entry.Kind << 8)
+            | (long)(int)entry.Slot;
 
     /// <summary>Glyph for rows the game gives no icon for — every raw
     /// timeline. Keyed by kind so the column still reads at a glance.</summary>
