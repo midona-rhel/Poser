@@ -79,19 +79,20 @@ public sealed class UiRoot
         // The static trampoline is cached by the compiler, so routing the
         // parameterless form through the typed core costs one call, not one
         // allocation.
-        Render(origin, size, in build, static tree => tree());
+        Render(origin, size, in build, static (in Func<UiNode> tree) => tree());
     }
 
     /// <summary>
     /// As <see cref="Render(Vector2, Vector2, Func{UiNode})"/>, but the build
-    /// callback receives <paramref name="props"/>. This is the ALLOCATION-FREE
-    /// form for a tree whose inputs change per frame: a lambda that closed
-    /// over those inputs would allocate on every frame, so the props travel as
-    /// an argument and the callback stays static. The parameterless overload
-    /// remains the right one for a tree built from static state alone.
+    /// callback receives <paramref name="props"/> BY REFERENCE. This is the
+    /// ALLOCATION-FREE form for a tree whose inputs change per frame: a lambda
+    /// that closed over those inputs would allocate on every frame, so the
+    /// props travel as an argument and the callback stays static. The
+    /// parameterless overload remains the right one for a tree built from
+    /// static state alone.
     /// </summary>
     public void Render<TProps>(
-        Vector2 origin, Vector2 size, in TProps props, Func<TProps, UiNode> build)
+        Vector2 origin, Vector2 size, in TProps props, UiBuilder<TProps> build)
     {
         ArgumentNullException.ThrowIfNull(build);
         float scale = ImGuiHelpers.GlobalScale;
@@ -106,7 +107,7 @@ public sealed class UiRoot
         UiNode root;
         try
         {
-            root = build(props);
+            root = build(in props);
             _arena.ValidateNode(root);
         }
         finally

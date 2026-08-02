@@ -283,7 +283,13 @@ Intrinsic measurement uses font metrics, SVG view boxes and image sizes. It
 never renders components twice or off-screen to discover size. Layout, clip,
 hit testing, paint, HoverHelp and resize notification use the same arranged
 rectangle. Logical units become scaled/snapped pixels centrally; parents own
-rounding distribution so sibling drift cannot accumulate.
+rounding distribution so sibling drift cannot accumulate. Accepted
+2026-08-02 (user decision, phase-1 review): centrally snapped edges are the
+geometry contract at every scale — at fractional scales this deliberately
+diverges sub-pixel from the legacy fractional-rect draw (equivalent against
+the Picto oracle: 3.208% vs 3.217% average significant at 125%), and text
+keeps its single snapping owner (Optical.Snap) by painting at the unrounded
+position.
 
 ## Interaction, focus and portals
 

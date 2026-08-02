@@ -76,14 +76,17 @@ public static partial class Crystarium
     /// static factory, so the three type arguments never appear at a call
     /// site and the mount shape can change without breaking authors.
     /// </remarks>
-    internal static UiNode Component<TComponent, TProps, TState>(in TProps props, UiKey key = default)
+    internal static UiNode Component<TComponent, TProps, TState>(in TProps props, UiKey key)
         where TComponent : StatefulComponent<TProps, TState>, new()
     {
-#if DEBUG
+        // Unconditional: a release build that silently matched by position
+        // would hand a reordered list its neighbour's state, which is a
+        // corruption no DEBUG-only guard may be trusted to have caught.
         if (key.Kind == UiKeyKind.None)
-            throw new InvalidOperationException(
-                $"stateful components require an explicit stable key ({typeof(TComponent).Name})");
-#endif
+            throw new ArgumentException(
+                $"stateful components require an explicit stable key ({typeof(TComponent).Name})",
+                nameof(key));
+
         UiRoot root = UiRoot.Require();
         FrameArena arena = FrameArena.Require();
         ScopeTable.Scope scope = root.Scopes.GetOrCreate(
@@ -97,6 +100,8 @@ public static partial class Crystarium
 
     private static UiNode Box(UiFlow flow, in UiStyle sx, UiChildren children, UiKey key)
     {
+        FrameArena arena = FrameArena.Require();
+        arena.ValidateChildren(children);
         ElementRecord record = default;
         record.Kind = ElementKind.Box;
         // The factory NAMES the flow, so it always wins over the patch.
@@ -106,7 +111,7 @@ public static partial class Crystarium
         record.Key = key;
         record.ChildStart = children.Start;
         record.ChildCount = children.Count;
-        return FrameArena.Require().AddElement(record);
+        return arena.AddElement(record);
     }
 
     private static void Tint(ref ElementRecord record, Vector4? color)

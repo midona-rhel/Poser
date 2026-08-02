@@ -114,6 +114,54 @@ internal sealed class FrameArena
     }
 
     /// <summary>
+    /// The same provenance rule for a child RANGE, checked where a range is
+    /// written into a record. An empty range names no storage, so it is
+    /// always valid — that is what keeps <c>default</c> and
+    /// <see cref="Poser.UI.UiChildren.Empty"/> usable anywhere.
+    /// </summary>
+    [Conditional("DEBUG")]
+    internal void ValidateChildren(in Poser.UI.UiChildren children)
+    {
+#if DEBUG
+        if (children.Count == 0)
+            return;
+        if (children.Arena != Id)
+            throw new InvalidOperationException("children from another root");
+        if (children.Frame != FrameId)
+            throw new InvalidOperationException("stale children from a previous frame");
+#endif
+    }
+
+    /// <summary>The same rule for a reducer token, checked where a control
+    /// writes one into its record. A none token names no slot.</summary>
+    [Conditional("DEBUG")]
+    internal void ValidateEvent(in Poser.UI.UiEvent token)
+    {
+#if DEBUG
+        if (token.IsNone)
+            return;
+        if (token.Arena != Id)
+            throw new InvalidOperationException("event from another root");
+        if (token.Frame != FrameId)
+            throw new InvalidOperationException("stale event from a previous frame");
+#endif
+    }
+
+    /// <inheritdoc cref="ValidateEvent(in Poser.UI.UiEvent)"/>
+    [Conditional("DEBUG")]
+    internal void ValidateEvent<TValue>(in Poser.UI.UiEvent<TValue> token)
+    {
+#if DEBUG
+        if (token.IsNone)
+            return;
+        if (token.Arena != Id)
+            throw new InvalidOperationException("event from another root");
+        if (token.Frame != FrameId)
+            throw new InvalidOperationException("stale event from a previous frame");
+#endif
+    }
+
+    /// <summary>
     /// Copies the non-None node indices into the child buffer and returns the
     /// range start; <paramref name="count"/> receives the copied length.
     /// </summary>

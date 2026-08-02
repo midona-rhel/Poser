@@ -7,16 +7,29 @@ namespace Poser.UI;
 /// <summary>
 /// Frame token binding a control's callback to one scope's cached reducer.
 /// Slot 0 is the reserved arena object slot, so a default token is "no handler".
+/// Under DEBUG the token also carries the arena and frame that minted it, on
+/// the same terms as <see cref="UiNode"/>: a slot index outlives nothing.
 /// </summary>
 public readonly struct UiEvent
 {
     internal readonly int ScopeId;
     internal readonly int ReducerSlot;
+#if DEBUG
+    internal readonly int Frame;
+    internal readonly int Arena;
+#endif
 
-    internal UiEvent(int scopeId, int reducerSlot)
+    internal UiEvent(int scopeId, int reducerSlot, int frame, int arena)
     {
         ScopeId = scopeId;
         ReducerSlot = reducerSlot;
+#if DEBUG
+        Frame = frame;
+        Arena = arena;
+#else
+        _ = frame;
+        _ = arena;
+#endif
     }
 
     internal bool IsNone => ReducerSlot == 0;
@@ -31,11 +44,22 @@ public readonly struct UiEvent<TValue>
 {
     internal readonly int ScopeId;
     internal readonly int ReducerSlot;
+#if DEBUG
+    internal readonly int Frame;
+    internal readonly int Arena;
+#endif
 
-    internal UiEvent(int scopeId, int reducerSlot)
+    internal UiEvent(int scopeId, int reducerSlot, int frame, int arena)
     {
         ScopeId = scopeId;
         ReducerSlot = reducerSlot;
+#if DEBUG
+        Frame = frame;
+        Arena = arena;
+#else
+        _ = frame;
+        _ = arena;
+#endif
     }
 
     internal bool IsNone => ReducerSlot == 0;

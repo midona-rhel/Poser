@@ -30,6 +30,11 @@ internal sealed class ScopeTable
         // Mount is proven by the FLAG, never by State being null: a component
         // whose state is legitimately null would otherwise re-mount forever.
         internal bool StateInitialized;
+        // A QUEUED update is proven by its own flag for the same reason: a
+        // reducer that returns null has still produced a new state, so the
+        // promotion and the chaining read both key off this, never off
+        // PendingState being non-null.
+        internal bool HasPendingState;
         internal int LastSeenFrame;
 
         private Delegate?[] _reducers = new Delegate?[4];

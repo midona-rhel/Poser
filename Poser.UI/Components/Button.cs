@@ -38,7 +38,7 @@ public static partial class Crystarium
     {
         FrameArena arena = FrameArena.Require();
         return Emit(
-            arena, label, onClick is null ? 0 : arena.AddObject(onClick),
+            label, onClick is null ? 0 : arena.AddObject(onClick),
             0, 0, variant, disabled, help, in sx, key);
     }
 
@@ -51,13 +51,15 @@ public static partial class Crystarium
         bool disabled = false,
         string? help = null,
         UiStyle sx = default,
-        UiKey key = default) =>
-        Emit(
-            FrameArena.Require(), label, 0, onClick.ScopeId, onClick.ReducerSlot,
+        UiKey key = default)
+    {
+        FrameArena.Require().ValidateEvent(onClick);
+        return Emit(
+            label, 0, onClick.ScopeId, onClick.ReducerSlot,
             variant, disabled, help, in sx, key);
+    }
 
     private static UiNode Emit(
-        FrameArena arena,
         string label,
         int behaviorSlot,
         int eventScope,
@@ -72,20 +74,6 @@ public static partial class Crystarium
         // resolves for the whole subtree, which is what makes the disabled
         // group's compensated label a property of the button, not the text.
         UiChildren caption = Text(label);
-        ElementRecord record = default;
-        record.Kind = ElementKind.Interactive;
-        record.Style = UiStyle.Extend(sx, ButtonHostLayout);
-        record.Key = key;
-        record.Disabled = disabled;
-        record.PainterSlot = arena.AddObject(TextButtonPainter.Instance);
-        record.PaintArg = (byte)variant;
-        record.ClipChildren = true;
-        record.Help = help;
-        record.BehaviorSlot = behaviorSlot;
-        record.EventScope = eventScope;
-        record.EventReducer = eventReducer;
-        record.ChildStart = caption.Start;
-        record.ChildCount = caption.Count;
         // Fill is the solver's business; Content and Fixed are known here.
         float width = sx.Width.Kind switch
         {
@@ -93,8 +81,18 @@ public static partial class Crystarium
             UiDimKind.Fill => 0f,
             _ => Poser.UI.LegacyCrystarium.IntrinsicButtonWidth(label, default),
         };
-        record.LogicalSize = new Vector2(
-            width, Poser.UI.LegacyCrystarium.ButtonHeight(default));
-        return arena.AddElement(record);
+        return InteractiveCore(
+            UiStyle.Extend(sx, ButtonHostLayout),
+            caption,
+            key,
+            disabled,
+            help,
+            behaviorSlot,
+            eventScope,
+            eventReducer,
+            TextButtonPainter.Instance,
+            (byte)variant,
+            clipChildren: true,
+            new Vector2(width, Poser.UI.LegacyCrystarium.ButtonHeight(default)));
     }
 }

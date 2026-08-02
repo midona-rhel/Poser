@@ -341,15 +341,21 @@ internal static class BehaviorSuites
         host.Expect(
             "disabled", Drive(on, PressAt(5, 7), disabled: true), 0);
         host.Check("reducer-toggle", ReducerToggle(host));
+        host.Check("nullable-state", NullableState(host));
+        host.Check("interactive-composition", InteractiveComposition(host));
         host.Check("identity-reorder", IdentityReorder());
         host.Check("identity-collision", IdentityCollision());
         host.Check("identity-pruning", IdentityPruning(host));
         host.Check("cursor-flow", CursorFlow(host));
-#if DEBUG
         host.Check("stateful-key-required", StatefulKeyRequired(host));
+#if DEBUG
+        host.Check("stale-children", StaleChildren(host));
+        host.Check("stale-event", StaleEvent(host));
+        host.Check("foreign-root-children", ForeignRootChildren(host));
 #endif
         host.Check("allocation-runtime", AllocationRuntime(host));
         host.Check("allocation-parity", AllocationParity(host));
+        host.Check("allocation-dynamic-props", AllocationDynamicProps(host));
         return host.Summary("reactive-button behavior: all cases pass");
 
         int Drive(
@@ -411,6 +417,119 @@ internal static class BehaviorSuites
         probe.Want(
             "trace", string.Join(" ", transitions), "Off@0 On@8 Off@18");
         return probe;
+    }
+
+    /// <summary>
+    /// Tooling-only component whose state is a NULLABLE reference: null is a
+    /// legitimate value here, not "unset". Mount, promotion and reducer
+    /// chaining must therefore all key off their own flags — a runtime that
+    /// read "PendingState is null" as "nothing queued" would swallow the null
+    /// frame and leave the previous value on screen.
+    /// </summary>
+    private sealed class NullableCell
+        : StatefulComponent<NullableCell.Props, string?>
+    {
+        /// <summary>What the LAST Render observed, with the null frame
+        /// spelled out so the trace can name it.</summary>
+        internal static string LastSeen = string.Empty;
+
+        internal readonly record struct Props;
+
+        internal static UiNode Node(UiKey key) =>
+            Rx.Component<NullableCell, Props, string?>(default, key);
+
+        protected override string? CreateState(in Props props) => "a";
+
+        protected override UiNode Render(in Props props, in string? state)
+        {
+            LastSeen = state ?? "<null>";
+            // The caption is CONSTANT so the hit box never moves; the state
+            // under test is read from the probe, not from the label.
+            return Rx.Column(
+                Sx.Gap(8f),
+                [
+                    Rx.Button(
+                        "Cycle",
+                        UpdateState(static s => s is null ? "b" : null)),
+                ]);
+        }
+    }
+
+    /// <summary>Three gestures cycle "a" -> null -> "b" -> null, each flip
+    /// landing one frame after its release exactly as a non-null reducer's
+    /// does.</summary>
+    private static Probe NullableState(BehaviorHost host)
+    {
+        var root = new UiRoot();
+        var seen = new List<string>();
+        host.Case(ReactiveCanvas, 32, _ =>
+        {
+            ImGui.SetCursorScreenPos(ReactiveOrigin);
+            root.Render(
+                ReactiveOrigin,
+                ImGui.GetContentRegionAvail(),
+                static () => NullableCell.Node("nullable"));
+            seen.Add(NullableCell.LastSeen);
+        },
+        _ => ReactiveInside,
+        frame => frame is 5 or 15 or 25
+            ? (true, true)
+            : frame is 7 or 17 or 27 ? (true, false) : default);
+
+        var transitions = new List<string>();
+        for (int i = 0; i < seen.Count; i++)
+        {
+            if (i == 0 || seen[i] != seen[i - 1])
+                transitions.Add($"{seen[i]}@{i}");
+        }
+
+        var probe = new Probe();
+        probe.Want(
+            "trace",
+            string.Join(" ", transitions),
+            "a@0 <null>@8 b@18 <null>@28");
+        return probe;
+    }
+
+    // ---- Composition: a hit box around ordinary content ----------------
+
+    // Inside any plausible measurement of the "hit me" run, and far enough
+    // from the edges that rounding cannot put it outside.
+    private static readonly Vector2 ComposedInside =
+        ReactiveOrigin + new Vector2(6, 6);
+
+    /// <summary>
+    /// A clickable built from PUBLIC vocabulary alone — no painter, no
+    /// declared box, no internals. Its hit area can only have come from the
+    /// composed text, so release-inside activating and drag-out not is proof
+    /// the element measured its own content.
+    /// </summary>
+    private static Probe InteractiveComposition(BehaviorHost host)
+    {
+        var probe = new Probe();
+        probe.Want("release-inside", Drive(_ => ComposedInside), 1);
+        probe.Want(
+            "drag-out",
+            Drive(frame => frame < 6 ? ComposedInside : ReactiveOutside),
+            0);
+        return probe;
+
+        int Drive(Func<int, Vector2> pointer)
+        {
+            int hits = 0;
+            var root = new UiRoot();
+            host.Case(ReactiveCanvas, 12, _ =>
+            {
+                ImGui.SetCursorScreenPos(ReactiveOrigin);
+                root.Render(
+                    ReactiveOrigin,
+                    ImGui.GetContentRegionAvail(),
+                    () => Rx.Interactive(
+                        children: [Rx.Text("hit me")],
+                        onClick: () => hits++));
+            }, pointer, PressAt(5, 7));
+            return hits;
+        }
     }
 
     // ---- Identity: the path hash IS the contract ----------------------
@@ -544,10 +663,10 @@ internal static class BehaviorSuites
         return probe;
     }
 
-#if DEBUG
     /// <summary>An unkeyed stateful mount is a bug the runtime refuses to
-    /// carry: matched by position, its state would follow its neighbour
-    /// through any reorder.</summary>
+    /// carry in ANY configuration: matched by position, its state would
+    /// follow its neighbour through any reorder, so the refusal is an
+    /// ArgumentException that ships rather than a DEBUG assertion.</summary>
     private static Probe StatefulKeyRequired(BehaviorHost host)
     {
         var root = new UiRoot();
@@ -562,7 +681,7 @@ internal static class BehaviorSuites
                     ImGui.GetContentRegionAvail(),
                     static () => TogglePill.Node(UiKey.None));
             }
-            catch (InvalidOperationException)
+            catch (ArgumentException)
             {
                 threw = true;
             }
@@ -570,6 +689,140 @@ internal static class BehaviorSuites
 
         var probe = new Probe();
         probe.Want("unkeyed-mount-throws", threw, true);
+        return probe;
+    }
+
+#if DEBUG
+    // ---- Arena-handle provenance --------------------------------------
+    //
+    // A UiChildren range and a UiEvent token are both INDICES into per-frame
+    // arena storage, exactly as a UiNode is. Carried into the next frame or
+    // into another root they would address a stranger, so each is stamped
+    // with its arena and frame and checked where it is consumed. The static
+    // fields below are the smuggling channel the cases need.
+
+    private static UiChildren staleChildren;
+    private static UiEvent staleEvent;
+    private static UiChildren foreignChildren;
+
+    private static readonly Func<UiNode> CaptureChildren = static () =>
+    {
+        staleChildren = [Rx.Text("captured")];
+        return Rx.Column(children: staleChildren);
+    };
+
+    private static readonly Func<UiNode> ReuseChildren = static () =>
+        Rx.Column(children: staleChildren);
+
+    private static readonly Func<UiNode> CaptureEvent = static () =>
+        EventProbe.Node("stale-event");
+
+    private static readonly Func<UiNode> ReuseEvent = static () =>
+        Rx.Button("Stale", staleEvent);
+
+    private static readonly Func<UiNode> CaptureForeign = static () =>
+    {
+        foreignChildren = [Rx.Text("owned")];
+        return Rx.Column(children: foreignChildren);
+    };
+
+    private static readonly Func<UiNode> ReuseForeign = static () =>
+        Rx.Column(children: foreignChildren);
+
+    /// <summary>Tooling-only component that leaks its own reducer token so a
+    /// LATER frame can try to bind it.</summary>
+    private sealed class EventProbe
+        : StatefulComponent<EventProbe.Props, EventProbe.State>
+    {
+        internal readonly record struct Props;
+
+        internal readonly record struct State(bool On);
+
+        internal static UiNode Node(UiKey key) =>
+            Rx.Component<EventProbe, Props, State>(default, key);
+
+        protected override State CreateState(in Props props) => new(false);
+
+        protected override UiNode Render(in Props props, in State state)
+        {
+            staleEvent = UpdateState(static s => s with { On = !s.On });
+            return Rx.Column();
+        }
+    }
+
+    private static Probe StaleChildren(BehaviorHost host) =>
+        Provenance(
+            host, "stale-children-message",
+            "stale children from a previous frame", CaptureChildren,
+            ReuseChildren);
+
+    private static Probe StaleEvent(BehaviorHost host) =>
+        Provenance(
+            host, "stale-event-message",
+            "stale event from a previous frame", CaptureEvent, ReuseEvent);
+
+    /// <summary>Both roots render on the SAME frame index, so the frame
+    /// stamps match and only the arena identity can be what rejects the
+    /// range.</summary>
+    private static Probe ForeignRootChildren(BehaviorHost host)
+    {
+        var owner = new UiRoot();
+        var stranger = new UiRoot();
+        string message = "no throw";
+        host.Case(ReactiveCanvas, 1, _ =>
+        {
+            ImGui.SetCursorScreenPos(ReactiveOrigin);
+            owner.Render(
+                ReactiveOrigin, ImGui.GetContentRegionAvail(),
+                CaptureForeign);
+            try
+            {
+                ImGui.SetCursorScreenPos(ReactiveOrigin);
+                stranger.Render(
+                    ReactiveOrigin, ImGui.GetContentRegionAvail(),
+                    ReuseForeign);
+            }
+            catch (InvalidOperationException ex)
+            {
+                message = ex.Message;
+            }
+        }, _ => Offscreen);
+
+        var probe = new Probe();
+        probe.Want("message", message, "children from another root");
+        return probe;
+    }
+
+    /// <summary>Frame 0 captures the handle, frame 1 consumes it under the
+    /// same root: the arena matches, so only the frame stamp can reject
+    /// it.</summary>
+    private static Probe Provenance(
+        BehaviorHost host,
+        string name,
+        string expected,
+        Func<UiNode> capture,
+        Func<UiNode> reuse)
+    {
+        var root = new UiRoot();
+        string message = "no throw";
+        host.Case(ReactiveCanvas, 2, frame =>
+        {
+            try
+            {
+                ImGui.SetCursorScreenPos(ReactiveOrigin);
+                root.Render(
+                    ReactiveOrigin,
+                    ImGui.GetContentRegionAvail(),
+                    frame == 0 ? capture : reuse);
+            }
+            catch (InvalidOperationException ex)
+            {
+                message = ex.Message;
+            }
+        }, _ => Offscreen);
+
+        var probe = new Probe();
+        probe.Want(name, message, expected);
         return probe;
     }
 #endif
@@ -644,6 +897,45 @@ internal static class BehaviorSuites
             _ = UpdateState(static s => s with { On = !s.On });
             return Rx.Column();
         }
+    }
+
+    /// <summary>Props that CHANGE every frame. A build closing over this
+    /// would allocate a delegate per frame; travelling as an argument to a
+    /// static <see cref="UiBuilder{TProps}"/> it must not.</summary>
+    private readonly record struct GapProps(float Gap);
+
+    /// <summary>Boxes only: the known legacy leaf cost (MeasureText and
+    /// Reserve marshalling) is not this case's subject, so no leaf is
+    /// drawn.</summary>
+    private static readonly UiBuilder<GapProps> GapTree =
+        static (in GapProps props) => Rx.Column(
+            Sx.Gap(props.Gap), [Rx.Column(), Rx.Column()]);
+
+    private static Probe AllocationDynamicProps(BehaviorHost host)
+    {
+        var root = new UiRoot();
+        long allocated = 0;
+        host.Case(ReactiveCanvas, 120, frame =>
+        {
+            // Three distinct gaps, so the tree really is rebuilt from
+            // changing inputs rather than a constant hoisted by the JIT.
+            var props = new GapProps(4f + (frame % 3) * 2f);
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            ImGui.SetCursorScreenPos(ReactiveOrigin);
+            root.Render(
+                ReactiveOrigin, ImGui.GetContentRegionAvail(), in props,
+                GapTree);
+            long after = GC.GetAllocatedBytesForCurrentThread();
+            if (frame >= 20)
+                allocated += after - before;
+        }, _ => Offscreen);
+
+        var probe = new Probe();
+        if (allocated != 0)
+            probe.Fault(
+                $"a tree built from CHANGING props allocated {allocated} "
+                + "bytes over 100 warm frames (want 0)");
+        return probe;
     }
 
     /// <summary>Bytes allocated by the DRAW BODY over frames 20..119.

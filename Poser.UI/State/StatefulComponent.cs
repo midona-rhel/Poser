@@ -20,10 +20,10 @@ public abstract class StatefulComponentBase
 
     internal abstract void ApplyReducer<TValue>(Scope scope, Delegate reducer, TValue value);
 
-    private protected static int CacheReducer(Scope scope, Delegate reducer)
+    private protected static int CacheReducer(Scope scope, Delegate reducer, FrameArena arena)
     {
         RejectCapture(reducer);
-        return scope.ReducerSlot(reducer, FrameArena.Require());
+        return scope.ReducerSlot(reducer, arena);
     }
 
     private protected static Scope RequireScope() =>
@@ -60,13 +60,17 @@ public abstract class StatefulComponent<TProps, TState> : StatefulComponentBase
     protected UiEvent UpdateState(Func<TState, TState> reducer)
     {
         Scope scope = RequireScope();
-        return new UiEvent(scope.Id, CacheReducer(scope, reducer));
+        FrameArena arena = FrameArena.Require();
+        return new UiEvent(
+            scope.Id, CacheReducer(scope, reducer, arena), arena.FrameId, arena.Id);
     }
 
     protected UiEvent<TValue> UpdateState<TValue>(Func<TState, TValue, TState> reducer)
     {
         Scope scope = RequireScope();
-        return new UiEvent<TValue>(scope.Id, CacheReducer(scope, reducer));
+        FrameArena arena = FrameArena.Require();
+        return new UiEvent<TValue>(
+            scope.Id, CacheReducer(scope, reducer, arena), arena.FrameId, arena.Id);
     }
 
     internal UiNode MountAndRender(Scope scope, in TProps props)
@@ -77,10 +81,11 @@ public abstract class StatefulComponent<TProps, TState> : StatefulComponentBase
             scope.StateInitialized = true;
         }
 
-        if (scope.PendingState is not null)
+        if (scope.HasPendingState)
         {
             scope.State = scope.PendingState;
             scope.PendingState = null;
+            scope.HasPendingState = false;
         }
 
         Scope? previous = Ambient;
@@ -96,11 +101,22 @@ public abstract class StatefulComponent<TProps, TState> : StatefulComponentBase
     }
 
     internal override void ApplyReducer(Scope scope, Delegate reducer) =>
-        scope.PendingState = ((Func<TState, TState>)reducer)(Live(scope));
+        Queue(scope, ((Func<TState, TState>)reducer)(Live(scope)));
 
     internal override void ApplyReducer<TValue>(Scope scope, Delegate reducer, TValue value) =>
-        scope.PendingState = ((Func<TState, TValue, TState>)reducer)(Live(scope), value);
+        Queue(scope, ((Func<TState, TValue, TState>)reducer)(Live(scope), value));
 
-    // Chained updates in one frame each see the previous reduced result.
-    private static TState Live(Scope scope) => (TState)(scope.PendingState ?? scope.State)!;
+    // Queueing is the FLAG's business: a reducer returning null has still
+    // produced a state, and the next build must observe that null.
+    private static void Queue(Scope scope, TState next)
+    {
+        scope.PendingState = next;
+        scope.HasPendingState = true;
+    }
+
+    // Chained updates in one frame each see the previous reduced result —
+    // again by the flag, so a null result composes instead of reverting the
+    // chain to the state the frame started with.
+    private static TState Live(Scope scope) =>
+        (TState)(scope.HasPendingState ? scope.PendingState : scope.State)!;
 }

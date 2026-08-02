@@ -138,11 +138,16 @@ internal static class LayoutSolver
 
     /// <summary>The declaration already filled the control's intrinsic box,
     /// so only a Fill dimension is still open — but its children measure
-    /// normally, because the subtree is laid out INSIDE that box.</summary>
+    /// normally, because the subtree is laid out INSIDE that box. A control
+    /// that declared NO box at all measures like an ordinary box, so a hit
+    /// area can be sized by whatever content was composed into it.</summary>
     private static Vector2 MeasureInteractive(
         FrameArena arena, int node, in UiStyle style, float availWidth, float availHeight)
     {
         Vector2 intrinsic = arena[node].LogicalSize;
+        if (intrinsic == Vector2.Zero)
+            return MeasureBox(arena, node, in style, availWidth, availHeight);
+
         float innerWidth = MathF.Max(
             0f, Resolve(style.Width, intrinsic.X, availWidth) - style.Padding.Horizontal);
         float innerHeight = MathF.Max(
