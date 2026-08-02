@@ -149,7 +149,7 @@ internal static class Program
         }
 
         Application.SetHighDpiMode(HighDpiMode.DpiUnaware);
-        using var form = new Form
+        using var form = new CaptureForm
         {
             Text = "Crystarium capture",
             ClientSize = new Size(maxWidth, maxHeight),
@@ -287,7 +287,7 @@ internal static class Program
     private static unsafe int Measure(float size)
     {
         Application.SetHighDpiMode(HighDpiMode.DpiUnaware);
-        using var form = new Form
+        using var form = new CaptureForm
         {
             Text = "Crystarium measure",
             ClientSize = new Size(64, 64),

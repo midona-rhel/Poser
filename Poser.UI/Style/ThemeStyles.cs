@@ -377,7 +377,7 @@ internal static class ThemeStyles
                 Crystarium.PickerRowPadding, 0f, Crystarium.PickerRowPadding, 0f),
             Margin = new EdgeInsets(
                 gutter - Crystarium.PickerRowPadding, 0f,
-                gutter - Crystarium.PickerThumbInset, 0f),
+                gutter - Crystarium.PickerThumbInset + Crystarium.PickerThumbGap, 0f),
         };
         sheets[(int)SheetFamily.PickerRow] = new()
         {

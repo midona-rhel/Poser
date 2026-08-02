@@ -208,7 +208,7 @@ internal static class BehaviorSuites
         string title, int width, int height, Func<BehaviorHost, int> cases)
     {
         Application.SetHighDpiMode(HighDpiMode.DpiUnaware);
-        using var form = new Form
+        using var form = new CaptureForm
         {
             Text = title,
             ClientSize = new Size(width, height),
