@@ -1001,6 +1001,9 @@ public class MainWindow : Window
         items.Add(new ContextMenuItem(
             "Export pose…", TablerIcon.DeviceFloppy,
             disabled: !actor.HasSkeleton));
+        items.Add(new ContextMenuItem(
+            "Auto-saves…", TablerIcon.ArrowBackUp,
+            disabled: !actor.HasSkeleton));
         actions.Add(null); // separator
         actions.Add(() =>
         {
@@ -1011,6 +1014,11 @@ public class MainWindow : Window
         {
             if (actor.Skeleton is { } exportSkeleton)
                 _poseFileSection.OpenExport(exportSkeleton);
+        });
+        actions.Add(() =>
+        {
+            if (actor.Skeleton is { } recoverSkeleton)
+                _poseFileSection.OpenAutoSaves(recoverSkeleton);
         });
 
         if (_spawnService.IsSpawnedActor(actor))

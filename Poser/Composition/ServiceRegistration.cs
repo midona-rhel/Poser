@@ -151,6 +151,23 @@ internal static class ServiceRegistration
         services.AddSingleton<CommandRouter>();
 
         services.AddSingleton<IPoseFileService, PoseFileService>();
+        // Factory-registered on purpose: the scene services are handed over as
+        // factories so constructing the auto-save does NOT construct them. They
+        // wipe their state from their own GPose-exit handlers, and the EventBus
+        // dispatches in subscription order — taking them as plain constructor
+        // arguments would subscribe them first and leave the exit snapshot
+        // nothing to write.
+        services.AddSingleton<IAutoSaveService>(sp => new AutoSaveService(
+            sp.GetRequiredService<IPluginLog>(),
+            sp.GetRequiredService<IFramework>(),
+            sp.GetRequiredService<IEventBus>(),
+            sp.GetRequiredService<IGPoseService>(),
+            sp.GetRequiredService<IActorManager>,
+            sp.GetRequiredService<ISkeletonService>,
+            sp.GetRequiredService<IBonePosingService>,
+            sp.GetRequiredService<IPoseFileService>,
+            sp.GetRequiredService<ConfigurationService>(),
+            sp.GetRequiredService<IDalamudPluginInterface>()));
         return services;
     }
 

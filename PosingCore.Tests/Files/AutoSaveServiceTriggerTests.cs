@@ -1,0 +1,292 @@
+using System;
+using System.IO;
+using NSubstitute;
+using Poser.Core;
+using Poser.Tests.Fixtures;
+
+namespace Poser.Tests.Files;
+
+/// <summary>
+/// When a snapshot happens: interval arming/disarming, gating on the config
+/// flag and on GPose, and the GPose-exit edge.
+/// </summary>
+public class AutoSaveServiceTriggerTests
+{
+    private static readonly DateTime T0 = new(2026, 3, 4, 6, 0, 0, DateTimeKind.Utc);
+
+    private static DateTime At(int seconds) => T0.AddSeconds(seconds);
+
+    [Fact]
+    public void Tick_never_saves_while_disabled()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = false;
+        h.Settings.IntervalSeconds = 60;
+        h.AddActor("Alpha");
+
+        h.TickAt(At(0));
+        h.TickAt(At(60));
+        h.TickAt(At(6000));
+
+        Assert.Equal(0, h.ExportCallCount);
+        Assert.Empty(Directory.GetDirectories(h.Root));
+        Assert.Null(h.Service.LastSaveUtc);
+    }
+
+    [Fact]
+    public void Tick_never_saves_outside_gpose()
+    {
+        using var h = new AutoSaveHarness();
+        h.GPose.IsGPosing.Returns(false);
+        h.Settings.IntervalSeconds = 60;
+        h.AddActor("Alpha");
+
+        h.TickAt(At(0));
+        h.TickAt(At(60));
+        h.TickAt(At(6000));
+
+        Assert.Equal(0, h.ExportCallCount);
+        Assert.Empty(Directory.GetDirectories(h.Root));
+    }
+
+    [Fact]
+    public void Tick_arms_on_the_first_tick_and_saves_exactly_one_interval_later()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.IntervalSeconds = 60;
+        h.AddActor("Alpha");
+
+        h.TickAt(At(0));
+        Assert.Equal(0, h.ExportCallCount);   // entering GPose never saves immediately
+
+        h.TickAt(At(59));
+        Assert.Equal(0, h.ExportCallCount);
+
+        h.TickAt(At(60));
+        Assert.Equal(1, h.ExportCallCount);
+        Assert.Equal(At(60), h.Service.LastSaveUtc);
+    }
+
+    [Fact]
+    public void Leaving_and_re_entering_gpose_re_arms_the_interval()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.IntervalSeconds = 60;
+        h.AddActor("Alpha");
+
+        h.TickAt(At(0));                      // armed, due at 60
+
+        h.GPose.IsGPosing.Returns(false);
+        h.TickAt(At(30));                     // disarmed
+
+        h.GPose.IsGPosing.Returns(true);
+        h.TickAt(At(31));                     // re-armed, due at 91
+
+        h.TickAt(At(60));
+        Assert.Equal(0, h.ExportCallCount);   // the pre-exit schedule is gone
+
+        h.TickAt(At(90));
+        Assert.Equal(0, h.ExportCallCount);
+
+        h.TickAt(At(91));
+        Assert.Equal(1, h.ExportCallCount);
+    }
+
+    [Fact]
+    public void Disabling_mid_session_disarms_and_re_enabling_re_arms()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.IntervalSeconds = 60;
+        h.AddActor("Alpha");
+
+        h.TickAt(At(0));                      // armed, due at 60
+        h.Settings.Enabled = false;
+        h.TickAt(At(30));                     // disarmed
+        h.Settings.Enabled = true;
+        h.TickAt(At(40));                     // re-armed, due at 100
+
+        h.TickAt(At(99));
+        Assert.Equal(0, h.ExportCallCount);
+
+        h.TickAt(At(100));
+        Assert.Equal(1, h.ExportCallCount);
+    }
+
+    [Fact]
+    public void A_shorter_interval_configured_before_arming_is_honoured()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.IntervalSeconds = 10;
+        h.AddActor("Alpha");
+
+        h.TickAt(At(0));
+        h.TickAt(At(9));
+        Assert.Equal(0, h.ExportCallCount);
+
+        h.TickAt(At(10));
+        Assert.Equal(1, h.ExportCallCount);
+    }
+
+    /// <summary>
+    /// Implemented contract (AutoSaveService.Tick): the interval is re-read on
+    /// every tick, but the already-scheduled due time is not retro-shifted. A
+    /// config change therefore takes effect at the NEXT scheduling — no restart
+    /// and no re-configure call anywhere.
+    /// </summary>
+    [Fact]
+    public void A_shorter_interval_configured_mid_session_applies_to_the_next_arming()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.IntervalSeconds = 60;
+        h.AddActor("Alpha");
+
+        h.TickAt(At(0));                      // armed, due at 60
+        h.TickAt(At(60));                     // save 1, re-armed at 120
+        Assert.Equal(1, h.ExportCallCount);
+
+        h.Settings.IntervalSeconds = 10;      // no restart, no re-configure call
+
+        h.TickAt(At(119));
+        Assert.Equal(1, h.ExportCallCount);
+
+        h.TickAt(At(120));                    // save 2, re-armed with 10 -> 130
+        Assert.Equal(2, h.ExportCallCount);
+
+        h.TickAt(At(129));
+        Assert.Equal(2, h.ExportCallCount);
+
+        h.TickAt(At(130));
+        Assert.Equal(3, h.ExportCallCount);
+    }
+
+    [Fact]
+    public void A_longer_interval_configured_mid_session_applies_to_the_next_arming()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.IntervalSeconds = 60;
+        h.AddActor("Alpha");
+
+        h.TickAt(At(0));                      // armed, due at 60
+        h.TickAt(At(60));                     // save 1, re-armed at 120
+        Assert.Equal(1, h.ExportCallCount);
+
+        h.Settings.IntervalSeconds = 120;
+
+        h.TickAt(At(120));                    // save 2, re-armed with 120 -> 240
+        Assert.Equal(2, h.ExportCallCount);
+
+        h.TickAt(At(239));
+        Assert.Equal(2, h.ExportCallCount);
+
+        h.TickAt(At(240));
+        Assert.Equal(3, h.ExportCallCount);
+    }
+
+    [Fact]
+    public void Leaving_gpose_takes_one_final_snapshot()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = true;
+        h.Settings.CleanOnExit = false;
+        var alpha = h.AddActor("Alpha");
+        h.AddActor("Beta", authored: false);
+
+        h.Service.OnGPoseStateChanged(new GPoseStateChangedEvent(false));
+
+        Assert.Equal(1, h.ExportCallCount);
+        var folder = Path.Combine(h.Root, h.StampNow());
+        h.PoseFiles.Received(1).ExportPose(alpha.Skeletons, Path.Combine(folder, "Alpha.pose"));
+        Assert.Single(Directory.GetDirectories(h.Root));
+    }
+
+    [Fact]
+    public void Entering_gpose_does_not_snapshot_or_clean()
+    {
+        using var h = new AutoSaveHarness();
+        h.SeedSnapshot("2026-03-04 05-00-00Z");
+        h.AddActor("Alpha");
+
+        h.Service.OnGPoseStateChanged(new GPoseStateChangedEvent(true));
+
+        Assert.Equal(0, h.ExportCallCount);
+        Assert.Single(Directory.GetDirectories(h.Root));
+    }
+
+    [Fact]
+    public void Leaving_gpose_with_CleanOnExit_deletes_every_snapshot_and_exports_nothing()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = true;
+        h.Settings.CleanOnExit = true;
+        h.AddActor("Alpha");
+
+        h.SeedSnapshot("2026-03-04 05-00-00Z", withFile: true);
+        h.SeedSnapshot("2026-03-04 05-01-00Z", withFile: true);
+        h.SeedSnapshot("2026-03-04 05-02-00Z", withFile: true);
+
+        h.Service.OnGPoseStateChanged(new GPoseStateChangedEvent(false));
+
+        Assert.Equal(0, h.ExportCallCount);
+        Assert.Empty(Directory.GetDirectories(h.Root));
+        Assert.True(Directory.Exists(h.Root), "only the snapshots go, not the root");
+    }
+
+    [Fact]
+    public void Leaving_gpose_while_disabled_neither_exports_nor_deletes()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = false;
+        h.Settings.CleanOnExit = true;   // must be ignored while disabled
+        h.AddActor("Alpha");
+
+        h.SeedSnapshot("2026-03-04 05-00-00Z", withFile: true);
+        h.SeedSnapshot("2026-03-04 05-01-00Z", withFile: true);
+
+        h.Service.OnGPoseStateChanged(new GPoseStateChangedEvent(false));
+
+        Assert.Equal(0, h.ExportCallCount);
+        Assert.Equal(2, Directory.GetDirectories(h.Root).Length);
+    }
+
+    [Fact]
+    public void Leaving_gpose_disarms_the_interval_even_when_disabled()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.IntervalSeconds = 60;
+        h.AddActor("Alpha");
+
+        h.TickAt(At(0));                                                  // armed, due at 60
+        h.Settings.Enabled = false;
+        h.Service.OnGPoseStateChanged(new GPoseStateChangedEvent(false));  // disarms first
+        h.Settings.Enabled = true;
+
+        h.TickAt(At(60));                                                 // re-arms, due at 120
+        Assert.Equal(0, h.ExportCallCount);
+
+        h.TickAt(At(120));
+        Assert.Equal(1, h.ExportCallCount);
+    }
+
+    [Fact]
+    public void Constructor_subscribes_to_the_gpose_event()
+    {
+        using var h = new AutoSaveHarness();
+
+        _ = h.Service;
+
+        h.EventBus.Received(1).Subscribe(Arg.Any<Action<GPoseStateChangedEvent>>());
+    }
+
+    [Fact]
+    public void Dispose_is_idempotent()
+    {
+        using var h = new AutoSaveHarness();
+        var service = h.Service;
+
+        service.Dispose();
+        service.Dispose();
+
+        // Unhooking twice would remove a second, unrelated subscription.
+        h.EventBus.Received(1).Unsubscribe(Arg.Any<Action<GPoseStateChangedEvent>>());
+    }
+}

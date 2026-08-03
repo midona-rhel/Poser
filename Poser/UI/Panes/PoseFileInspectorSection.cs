@@ -26,6 +26,7 @@ public sealed class PoseFileInspectorSection
     private readonly SelectionSession _selection;
     private readonly ISkeletonService _skeletons;
     private readonly Config.ConfigurationService _config;
+    private readonly IAutoSaveService _autoSave;
     private string _status = string.Empty;
     private readonly Crystarium.FileDialog _importBrowser =
         new("Import Pose", new[] { ".pose", ".cmp" }, isSaveMode: false);
@@ -46,13 +47,15 @@ public sealed class PoseFileInspectorSection
         CleanPoseFacade poseFacade,
         SelectionSession selection,
         ISkeletonService skeletons,
-        Config.ConfigurationService config)
+        Config.ConfigurationService config,
+        IAutoSaveService autoSave)
     {
         _poseFiles = poseFiles;
         _poseFacade = poseFacade;
         _selection = selection;
         _skeletons = skeletons;
         _config = config;
+        _autoSave = autoSave;
     }
 
     public void DrawBrowsers()
@@ -84,6 +87,7 @@ public sealed class PoseFileInspectorSection
         {
             actions.Button("Import…", () => OpenImport(skeleton));
             actions.Button("Export…", () => OpenExport(skeleton));
+            actions.Button("Auto-saves…", () => OpenAutoSaves(skeleton));
             actions.Button("Library…", () => OnLibraryRequested?.Invoke());
         });
 
@@ -102,11 +106,33 @@ public sealed class PoseFileInspectorSection
             return;
         }
 
+        BrowseAndImport(skeleton, _lastPath, rememberPath: true);
+    }
+
+    /// <summary>
+    /// The recovery path: the same import browser rooted at the auto-save
+    /// directory, so a recovered pose travels the identical import pipeline.
+    /// The library redirect does NOT apply — the library scans configured
+    /// source folders, not the auto-save root — and the chosen folder is not
+    /// remembered, so the next Import… still opens where the user last was.
+    /// </summary>
+    public void OpenAutoSaves(ISkeleton skeleton)
+    {
+        BrowseAndImport(skeleton, _autoSave.RootDirectory, rememberPath: false);
+    }
+
+    /// <summary>The one import callback every entry point shares.</summary>
+    private void BrowseAndImport(
+        ISkeleton skeleton,
+        string initialPath,
+        bool rememberPath)
+    {
         // The actor is frozen at dialog open; the Selected-scope selection
         // freezes as complete BoneIds at dialog confirmation.
-        _importBrowser.Open(_lastPath, path =>
+        _importBrowser.Open(initialPath, path =>
         {
-            _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
+            if (rememberPath)
+                _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
             var imported = _poseFacade.ImportPose(
                 skeleton.Actor, path, BuildOptions(), FreezeSelectedScope());
             _status = imported.Success

@@ -36,6 +36,32 @@ interchange with Brio and (via name conversion) Anamnesis.
   confirmation; the target actor freezes at dialog open. In-memory
   copy/stash uses `PortablePose` and is equally history-integrated.
 
+## Auto-save
+
+- While in GPose, every actor passing the authored-edits predicate (any
+  bone stack with a null layer — `CleanPoseFacade.HasAuthoredEdits`
+  semantics) exports through the normal `IPoseFileService.ExportPose`
+  path — auto-saves are byte-model-identical to manual exports — into
+  `<pluginConfigDir>/AutoSaves/<yyyy-MM-dd HH-mm-ssZ>/<actor>.pose`
+  (UTC, 24-hour, name order == time order; names sanitized, duplicates
+  suffixed ` (2)`). No actor qualifies → no folder. First save lands one
+  full interval after entering GPose, then every interval.
+- GPose exit takes one final snapshot while the pose is still intact —
+  the auto-save handler MUST stay first in `GPoseStateChangedEvent`
+  subscription order (eager-resolve order in `Poser.cs`; the scene
+  services are injected as factories to keep it so). Disconnect and
+  posing-disable both surface as this same edge. With clean-on-exit the
+  exit instead deletes all snapshots — a crash never runs it, so
+  snapshots survive for recovery.
+- Retention prunes from DISK to the configured count (newest-first by
+  folder name, floor 1), so it holds across restarts. Every IO failure
+  logs an Error with the path and never aborts the remaining
+  actors/folders. Recovery: FILES → "Auto-saves…" (also actor context
+  menu) opens the import browser rooted at the auto-save directory; a
+  recovered file flows through the standard import pipeline. Settings
+  (General → AUTO-SAVE): enabled, interval 10–600 s, kept count 1–50,
+  clean-on-exit — read live each tick.
+
 ## Character files (MCDF)
 
 - MCDF v1 (Mare/Brio/Ktisis interchange) is a legacy K4os LZ4 stream:

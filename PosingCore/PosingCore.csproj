@@ -21,6 +21,7 @@
 		<!-- Transitional runtime implementations now live in Poser.Game while
 		     their native entity storage is migrated out of this assembly. -->
 		<InternalsVisibleTo Include="Poser.Game" />
+		<InternalsVisibleTo Include="PosingCore.Tests" />
 		<EmbeddedResource Include="Data\GraphicalBones\GraphicalBonePosePositions.json" />
 		<EmbeddedResource Include="Data\GraphicalBones\Images\*.png" />
 		<EmbeddedResource Include="Data\Expressions\*.json" />

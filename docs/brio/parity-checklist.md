@@ -95,7 +95,12 @@ Brio: `AutoSaveService` timer during GPose writing a scene file and, with
 clean-on-exit, and a "View Auto-Saves" browser (`Game/Core/AutoSaveService.cs`,
 `FileUIHelpers.cs:33-69`).
 
-**Poser:** absent. Nothing writes poses without an explicit export.
+**Poser:** implemented (awaiting in-game validation) — `AutoSaveService`
+(`PosingCore/Files/AutoSaveService.cs`): interval + GPose-exit snapshots of
+authored-edit actors via `ExportPose` into `<configDir>/AutoSaves/<UTC>/`,
+disk-based retention, clean-on-exit, Settings rows (General → AUTO-SAVE),
+FILES "Auto-saves…" recovery entry. Normative:
+`docs/features/files-and-transfer.md` § Auto-save.
 
 **Task:** Add an auto-save service: while in GPose, on a configurable interval, export every
 actor with authored edits via the existing `PoseFileService.Export` into

@@ -18,6 +18,7 @@ public class PoserConfiguration : IPluginConfiguration
     public UIConfiguration UI { get; set; } = new();
     public IntegrationConfiguration Integration { get; set; } = new();
     public LibraryConfiguration Library { get; set; } = new();
+    public AutoSaveConfiguration AutoSave { get; set; } = new();
 
     // Behavior (Settings -> General)
     public bool OpenOnGPoseEnter { get; set; } = true;
