@@ -263,6 +263,20 @@
       "states": [
         { "name": "rfiledialog", "label": "title bar, nav band, rail + explorer, footer", "width": 760, "height": 500 }
       ]
+    },
+    {
+      "name": "imperative-tree",
+      "title": "Imperative tree row (PBI-016)",
+      "states": [
+        { "name": "i-treerow", "label": "root, branch, fork, terminal, collapsed", "width": 300, "height": 190 }
+      ]
+    },
+    {
+      "name": "imperative-window-frame",
+      "title": "Imperative window frame (PBI-016)",
+      "states": [
+        { "name": "i-settings-frame", "label": "settings frame", "width": 770, "height": 570 }
+      ]
     }
   ]
 }

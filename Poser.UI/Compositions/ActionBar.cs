@@ -333,21 +333,25 @@ public static partial class LegacyCrystarium
             }
         }
 
-        /// <summary>Bar-height-centered label, truncated to its band.</summary>
+        /// <summary>Bar-height-centered label, truncated to its band. The
+        /// constraint applies only on overflow: the truncate clip's snapped
+        /// edge shaves a fitting run's descender otherwise.</summary>
         private static void DrawLabelInBand(
             Vector2 min, Vector2 band, float size, string label)
         {
             if (!(band.X > 0f))
                 return;
-            LegacyCrystarium.TextInBand(
-                min, band, label,
-                new TextStyle
-                {
-                    Size = size,
-                    Weight = FontWeight.Regular,
-                    Color = FormLabelColor,
-                },
-                TextConstraint.Truncate(band.X));
+            var style = new TextStyle
+            {
+                Size = size,
+                Weight = FontWeight.Regular,
+                Color = FormLabelColor,
+            };
+            if (LegacyCrystarium.MeasureText(label, style).X <= band.X)
+                LegacyCrystarium.TextInBand(min, band, label, style);
+            else
+                LegacyCrystarium.TextInBand(
+                    min, band, label, style, TextConstraint.Truncate(band.X));
         }
 
         private static float Measure(Item item, float scale) =>

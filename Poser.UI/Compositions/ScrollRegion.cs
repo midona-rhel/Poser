@@ -62,13 +62,13 @@ public static partial class LegacyCrystarium
             bool iconVisible = true,
             ControlStyle style = default)
         {
-            // A list row exposes no expander, so the row reserves no arrow
-            // and selection is its only reachable outcome — the bool stays
-            // the whole truth here.
-            return SidebarRow(
+            // A list row is a depth-0 tree row that exposes no expander, so it
+            // reserves no chevron and selection is its only reachable outcome —
+            // the bool stays the whole truth here.
+            return TreeRow(
                 id,
                 label,
-                new SidebarRowProps
+                new TreeRowProps
                 {
                     Icon = icon,
                     Selected = selected,
@@ -77,7 +77,7 @@ public static partial class LegacyCrystarium
                     HideIcon = !iconVisible,
                 },
                 style with { Width = UiWidth.Fixed(ContentWidth) })
-                == SidebarRowAction.Selected;
+                == TreeRowAction.Selected;
         }
 
         public void Empty(string text)

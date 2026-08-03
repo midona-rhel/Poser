@@ -2,7 +2,7 @@
 // Do not hand-edit.
 window.sheetLayout = {
  "pageWidth": 688,
- "pageHeight": 9112,
+ "pageHeight": 9944,
  "cells": [
   {
    "name": "text-label",
@@ -907,6 +907,22 @@ window.sheetLayout = {
    "y": 8560,
    "w": 760,
    "h": 500
+  },
+  {
+   "name": "i-treerow",
+   "component": "imperative-tree",
+   "x": 16,
+   "y": 9096,
+   "w": 300,
+   "h": 190
+  },
+  {
+   "name": "i-settings-frame",
+   "component": "imperative-window-frame",
+   "x": 16,
+   "y": 9320,
+   "w": 770,
+   "h": 570
   }
  ]
 };

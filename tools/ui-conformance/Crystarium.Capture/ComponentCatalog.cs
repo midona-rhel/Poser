@@ -191,11 +191,19 @@ internal static class ComponentCatalog
         // root — so the guides, the chevron, the pill and the badge are all
         // one capture.
         new("rtreerow", 300, 190),
+        // PBI-016: the same six rows through the IMPERATIVE TreeRow. The
+        // golden is the reactive capture above, so the two are compared
+        // byte-for-byte, not by eye.
+        new("i-treerow", 300, 190),
         // PBI-015: the file surface's whole chassis — title bar, navigation
         // band, quick rail beside the explorer, footer — driven off an
         // INJECTED listing, so the capture touches no filesystem and is the
         // same picture on every machine.
         new("rfiledialog", 760, 500),
+        // PBI-016: the same Settings frame through the IMPERATIVE
+        // WindowFrame. The golden is the reactive capture above, so the two
+        // states are compared byte-for-byte, not by eye.
+        new("i-settings-frame", 770, 570),
     ];
 
     private static readonly string[] DropdownItems =
@@ -935,13 +943,11 @@ internal static class ComponentCatalog
                     "icon-button-backdrop-", StringComparison.Ordinal)
                 && frame >= 33)
             || (name == "icon-button-hover-reconcile" && frame < 20);
-        // The expander hover is SCOPED to the arrow, so its pointer cannot
-        // be the shared row-body point: .expandArrow is the 16px gutter
-        // box that ends 4px before the content, which for the indent-1
-        // tree row (--row-inset 21 at the (24,24) stage origin) is
-        // x 24..40 over the 26px row — centre (32,37). Parking there
-        // proves the scoping too: at (84,40) the row would hover but the
-        // triangle would not lift.
+        // The expander hover is SCOPED to the chevron, so its pointer cannot
+        // be the shared row-body point: a ROOT chevron is the 18px box at the
+        // row's left edge, which at the (24,24) stage origin is x 24..42 over
+        // the 26px row — centre (33,37). Parking there proves the scoping too:
+        // at (84,40) the row would hover but the triangle would not lift.
         // InspectorSection puts 21px of chrome (margin 10 + 1px rule +
         // padding 10) above its 26px .header, so the shared (84,40) point
         // lands in the padding, ABOVE the interactive row. The header
@@ -965,7 +971,7 @@ internal static class ComponentCatalog
                 : name == "search-clear-hover"
                 ? new Vector2(283, 42)
                 : name == "sidebar-row-expander-hover"
-                ? new Vector2(32, 37)
+                ? new Vector2(33, 37)
                 : name.StartsWith("icon-button", StringComparison.Ordinal)
                     ? (name.StartsWith(
                             "icon-button-backdrop-", StringComparison.Ordinal)
@@ -1986,6 +1992,9 @@ internal static class ComponentCatalog
                 ReactiveRoot(name).Render(
                     origin, new Vector2(720f, 520f) * scale, SettingsFrameTree);
                 break;
+            case "i-settings-frame":
+                DrawImperativeSettingsFrame(origin, scale);
+                break;
             case "rsegmented":
                 ReactiveRoot(name).Render(
                     origin, new Vector2(420f, 120f) * scale, SegmentedTree);
@@ -2077,6 +2086,9 @@ internal static class ComponentCatalog
                 ReactiveRoot(name).Render(
                     origin, new Vector2(250f, 120f) * scale, TreeRowTree);
                 break;
+            case "i-treerow":
+                DrawImperativeTreeRow(origin, scale);
+                break;
             case "rfiledialog":
                 if (frame == 0)
                 {
@@ -2110,6 +2122,82 @@ internal static class ComponentCatalog
     }
 
     /// <summary>
+    /// The Settings frame drawn imperatively: <c>Ui.WindowFrame</c> paints the
+    /// chrome, the two bars and the rail band, and this fixture fills the rail
+    /// the way a caller does. The rows are drawn from primitives rather than
+    /// through SidebarRow — the accepted rail row has no pill inset and a full
+    /// -opacity glyph, which SidebarRow's picto row does not — so the row draw
+    /// moves into the shared row component when phase 1 lands it.
+    /// </summary>
+    private static void DrawImperativeSettingsFrame(Vector2 origin, float scale)
+    {
+        var theme = Ui.ActiveTheme;
+        var rects = Ui.WindowFrame(
+            "i-settings",
+            origin,
+            new Vector2(720f, 520f) * scale,
+            new WindowFrameProps
+            {
+                Title = "Settings",
+                OnClose = static () => { },
+                CloseHelp = "Close settings",
+                RailWidth = theme.Settings.NavigationWidth,
+                FooterRight = static right =>
+                {
+                    right.Button(
+                        "Cancel", static () => { },
+                        style: ControlStyle.Comfortable);
+                    right.Button(
+                        "Save", static () => { },
+                        style: ControlStyle.Comfortable,
+                        variant: ButtonVariant.Primary);
+                },
+            });
+
+        float inset = theme.Page.Inset * scale;
+        var rowOrigin = rects.Rail.Min + new Vector2(inset);
+        float rowWidth = rects.Rail.Size.X - inset * 2f;
+        DrawImperativeNavRow(
+            rowOrigin, rowWidth, "General", TablerIcon.Sliders, false, scale);
+        DrawImperativeNavRow(
+            rowOrigin + new Vector2(
+                0f, theme.Controls.ListRowHeight * scale),
+            rowWidth, "Display", TablerIcon.Monitor, true, scale);
+    }
+
+    private static void DrawImperativeNavRow(
+        Vector2 min, float width, string label, TablerIcon icon,
+        bool selected, float scale)
+    {
+        var theme = Ui.ActiveTheme;
+        float height = theme.Controls.ListRowHeight * scale;
+        var max = min + new Vector2(width, height);
+        if (selected)
+            ImGui.GetWindowDrawList().AddRectFilled(
+                min,
+                max,
+                ImGui.ColorConvertFloat4ToU32(theme.Chrome.SidebarSelected),
+                5f * scale);
+        // A row-height icon slot at a 2px left margin, carrying the 14px
+        // sidebar glyph; the label starts where the slot ends.
+        float glyph = 14f * scale;
+        var slotMin = new Vector2(min.X + 2f * scale, min.Y);
+        var glyphMin = slotMin + new Vector2((height - glyph) * 0.5f);
+        Ui.IconIn(glyphMin, glyphMin + new Vector2(glyph), icon);
+        float labelX = slotMin.X + height;
+        Ui.TextInBand(
+            new Vector2(labelX, min.Y),
+            new Vector2(max.X - labelX, height),
+            label,
+            new TextStyle
+            {
+                Size = theme.Typography.BodySize,
+                Color = theme.Text,
+            },
+            besideIcon: true);
+    }
+
+    /// <summary>
     /// Picto's <c>.palette</c> pill holding four <c>.swatchWrap</c>es.
     /// Both halves are now real Crystarium primitives:
     /// <c>Ui.ColorPalette</c> paints the container chrome and owns the
@@ -2132,12 +2220,12 @@ internal static class ComponentCatalog
 
     private static void DrawSidebar(bool selected)
     {
-        var props = new SidebarRowProps
+        var props = new TreeRowProps
         {
             Icon = TablerIcon.User,
             Selected = selected,
         };
-        Ui.SidebarRow(
+        Ui.TreeRow(
             "##sidebar-row",
             "Midona Rhel",
             in props,
@@ -2148,24 +2236,21 @@ internal static class ComponentCatalog
     }
 
     /// <summary>
-    /// Tree row at indent 1 — CSS <c>padding-left: 20px</c> with
-    /// <c>--row-inset: 21px</c>, which is what
-    /// <see cref="SidebarRowProps.Inset"/> carries — showing the
-    /// <c>.triangle</c> expander in both rotations next to a
-    /// <c>.count</c> badge. The expander is overlaid on the indent gutter
-    /// (picto's <c>margin-left:-20px</c>), so the icon, label and badge sit
-    /// exactly where the reference's do.
+    /// A ROOT row that discloses: the chevron in its own 16px slot beside the
+    /// mark, with the badge right-aligned at the content edge, so the expander
+    /// in both rotations and the count are one capture. Deliberately depth 0 —
+    /// a lone nested row would draw a trunk with no neighbours to join, and the
+    /// guide shapes are gated by the six-row <c>i-treerow</c> scene instead.
     /// </summary>
     private static void DrawSidebarTree(SidebarExpander expander)
     {
-        var props = new SidebarRowProps
+        var props = new TreeRowProps
         {
             Icon = TablerIcon.Folder,
             Badge = "12",
-            Inset = 21f,
             Expander = expander,
         };
-        Ui.SidebarRow(
+        Ui.TreeRow(
             "##sidebar-row",
             "Party members",
             in props,
@@ -2175,17 +2260,17 @@ internal static class ComponentCatalog
             });
     }
 
-    /// <summary><see cref="SidebarRowProps.DropTarget"/> is the row's only
+    /// <summary><see cref="TreeRowProps.DropTarget"/> is the row's only
     /// drop-state input; it paints picto's <c>.dropInside::before</c>
     /// (primary-10 over a 1px primary-30 hairline).</summary>
     private static void DrawSidebarDrop()
     {
-        var props = new SidebarRowProps
+        var props = new TreeRowProps
         {
             Icon = TablerIcon.User,
             DropTarget = true,
         };
-        Ui.SidebarRow(
+        Ui.TreeRow(
             "##sidebar-row",
             "Midona Rhel",
             in props,
@@ -2193,5 +2278,86 @@ internal static class ComponentCatalog
             {
                 Width = UiWidth.Fixed(272),
             });
+    }
+
+    /// <summary>
+    /// The SAME six-row tree the reactive fixture builds, through the
+    /// imperative row. 250 wide, not the cell's 300: the strip and the badge
+    /// are right-anchored, so a row that overran the cell would cut the very
+    /// things this fixture exists to show. The golden is the reactive capture,
+    /// so the two states are compared byte-for-byte, not by eye.
+    /// </summary>
+    private static void DrawImperativeTreeRow(Vector2 origin, float scale)
+    {
+        var row = new ControlStyle { Width = UiWidth.Fixed(250) };
+        var square = new ControlStyle
+        {
+            Width = UiWidth.Fixed(20),
+            Height = UiHeight.Fixed(20),
+        };
+        // The cell has no container to indent the flow, so each band is seated
+        // at the stage origin explicitly — the reactive twin's Column does the
+        // same job on its side.
+        float pitch = Ui.ActiveTheme.Controls.ListRowHeight * scale;
+        void Seat(int index) =>
+            ImGui.SetCursorScreenPos(origin + new Vector2(0f, index * pitch));
+
+        Seat(0);
+        var actor = new TreeRowProps
+        {
+            Icon = TablerIcon.User,
+            Expander = SidebarExpander.Open,
+        };
+        Ui.TreeRow("##i-treerow-actor", "Midona Rhel", in actor, row);
+
+        Seat(1);
+        var spine = new TreeRowProps { Depth = 1, ActionSlots = 2 };
+        Ui.TreeRow(
+            "##i-treerow-spine", "Spine", in spine, out var strip, row);
+        ImGui.SetCursorScreenPos(strip);
+        Ui.IconButton(
+            TablerIcon.Crosshair, id: "##i-treerow-target", style: square);
+        ImGui.SetCursorScreenPos(strip + new Vector2(22f * scale, 0f));
+        Ui.TemporaryIconToggle(
+            TablerIcon.Eye, selected: true, id: "##i-treerow-visible",
+            style: square);
+
+        // The FORK: a nested row that itself discloses — the split trunk with
+        // the cutout around its chevron — plus its child, whose trunk mask
+        // carries the continuing depth-1 line.
+        Seat(2);
+        var arms = new TreeRowProps
+        {
+            Depth = 1,
+            Expander = SidebarExpander.Open,
+        };
+        Ui.TreeRow("##i-treerow-arms", "Arms", in arms, row);
+
+        Seat(3);
+        var hand = new TreeRowProps
+        {
+            Depth = 2,
+            Trunks = 0b10,
+            IsLastChild = true,
+        };
+        Ui.TreeRow("##i-treerow-l-hand", "L Hand", in hand, row);
+
+        Seat(4);
+        var head = new TreeRowProps
+        {
+            Depth = 1,
+            IsLastChild = true,
+            Selected = true,
+            Badge = "12",
+        };
+        Ui.TreeRow("##i-treerow-head", "Head", in head, row);
+
+        Seat(5);
+        var companion = new TreeRowProps
+        {
+            Icon = TablerIcon.Paw,
+            Expander = SidebarExpander.Collapsed,
+        };
+        Ui.TreeRow("##i-treerow-companion", "Chocobo", in companion, row);
     }
 }

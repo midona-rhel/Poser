@@ -3279,7 +3279,7 @@ internal static class BehaviorSuites
     }
 
     /// <summary>
-    /// SidebarRow's two overlapping targets. picto's <c>.expandArrow</c>
+    /// TreeRow's two overlapping targets. picto's <c>.expandArrow</c>
     /// stops propagation, so a gesture belongs to the arrow or to the row
     /// and never to both; the arrow is reserved AFTER the row and takes
     /// ImGui's active id from it on a press, so release-inside can only
@@ -3290,12 +3290,11 @@ internal static class BehaviorSuites
     /// </summary>
     private static Probe SidebarRouting(BehaviorHost host)
     {
-        // The row sits at (24,24), 120 wide, at --row-inset 21 — so
-        // .expandArrow is the 16px gutter box at x 24..40 over the full
-        // 26px height, and BOTH points below are inside the row's own
-        // rect. Geometry therefore cannot be what separates them; the
-        // routing is.
-        var arrow = new Vector2(32, 37);
+        // The row sits at (24,24), 120 wide, at depth 0 — so the chevron is
+        // the 18px box at its left edge, x 24..42 over the full 26px height,
+        // and BOTH points below are inside the row's own rect. Geometry
+        // therefore cannot be what separates them; the routing is.
+        var arrow = new Vector2(33, 37);
         var label = new Vector2(100, 37);
         var probe = new Probe();
         probe.Want(
@@ -3331,20 +3330,19 @@ internal static class BehaviorSuites
             host.Case(Canvas, 16, _ =>
             {
                 ImGui.SetCursorScreenPos(new Vector2(24, 24));
-                var props = new SidebarRowProps
+                var props = new TreeRowProps
                 {
                     Icon = TablerIcon.Folder,
-                    Inset = 21f,
                     Expander = expander,
                 };
-                switch (Ui.SidebarRow(
+                switch (Ui.TreeRow(
                     "##kernel-sidebar",
                     "Party members",
                     in props,
                     new ControlStyle { Width = UiWidth.Fixed(120) }))
                 {
-                    case SidebarRowAction.Expander: expanded++; break;
-                    case SidebarRowAction.Selected: selected++; break;
+                    case TreeRowAction.Expander: expanded++; break;
+                    case TreeRowAction.Selected: selected++; break;
                 }
             }, pointer, PressAt(5, 7));
             return $"expander={expanded} selected={selected}";
