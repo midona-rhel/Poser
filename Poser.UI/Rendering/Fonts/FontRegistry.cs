@@ -50,6 +50,7 @@ public static class FontRegistry
     }
 
     private static readonly Dictionary<Key, IFontHandle> _cache = new();
+    private static readonly Dictionary<Key, float> _inkRise = new();
     private static readonly HashSet<Key> _required = new();
     private static readonly HashSet<Key> _failed = new();
 
@@ -178,6 +179,42 @@ public static class FontRegistry
         if (_cache.TryGetValue(key, out var handle)) return handle;
 
         return CacheHandle(key);
+    }
+
+    /// <summary>
+    /// CSS pixels to ADD to a line-box-centered y so the INK is centered
+    /// instead. A line box is ascent+descent, but the eye judges centering
+    /// by the cap-to-baseline band, and a font's internal leading is
+    /// asymmetric — text centered on the line box therefore reads low.
+    /// This is the metric replacement for the per-surface optical constants.
+    /// Negative lifts the run. Scale-free: multiply by GlobalScale at the
+    /// call site. 0 when the face has no readable metrics.
+    /// </summary>
+    public static float InkRise(FontFamily family, FontWeight weight, float sizePx)
+    {
+        if (family == FontFamily.Icon) return 0f;
+        int px = Math.Max(1, (int)MathF.Round(sizePx));
+        var key = new Key(family, NormalizeWeight(family, weight), px);
+        if (_inkRise.TryGetValue(key, out var cached)) return cached;
+        float rise = ComputeInkRise(key);
+        _inkRise[key] = rise;
+        return rise;
+    }
+
+    private static float ComputeInkRise(Key key)
+    {
+        // No file means the Dalamud default font, whose metrics this
+        // registry does not own — leave those runs line-box centered.
+        string? file = ResolveFile(key.Family, key.Weight);
+        if (file == null) return 0f;
+        var face = TtfMetrics.Face(file);
+        if (!face.Valid) return 0f;
+
+        float size = key.SizePx;
+        float ascentPx = face.AscentEm * size;
+        float capPx = face.CapHeightEm * size;
+        float lineHeightPx = face.LineHeightEm * size;
+        return lineHeightPx * 0.5f - (ascentPx - capPx * 0.5f);
     }
 
     private static void Require(FontFamily family, FontWeight weight, float size)
@@ -311,6 +348,7 @@ public static class FontRegistry
     {
         foreach (var h in _cache.Values) h.Dispose();
         _cache.Clear();
+        _inkRise.Clear(); // keyed like the handle cache and derived from _files
         _required.Clear();
         _failed.Clear();
         _files.Clear();

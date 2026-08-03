@@ -231,42 +231,44 @@ public static partial class LegacyCrystarium
             : pad
                 + axisSize.X
                 + ActiveTheme.Form.AxisLabelGap * scale;
-        float axisY = pos.Y
-            + (size.Y - axisSize.Y) * 0.5f
-            + ActiveTheme.Optical.AxisText * scale;
+        // The well's own mono face stays pushed for the slot geometry
+        // above; TextInBand resolves the same handle and ink-centers both
+        // runs on the well.
+        var wellStyle = new TextStyle
+        {
+            Size = ActiveTheme.Typography.LabelSize,
+            Family = FontFamily.Mono,
+        };
         if (axis.Length > 0)
         {
             draw.PushClipRect(
                 pos + new Vector2(inset),
                 new Vector2(pos.X + axisSlot, max.Y - inset),
                 true);
-            draw.AddText(
-                new Vector2(
-                    pos.X + pad,
-                    axisY),
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(accent)),
-                axis);
+            TextInBand(
+                new Vector2(pos.X + pad, pos.Y),
+                new Vector2(axisSize.X, size.Y),
+                axis,
+                wellStyle with { Color = accent });
             draw.PopClipRect();
         }
         if (drawValue)
         {
             string text =
                 value.ToString(format, CultureInfo.InvariantCulture);
-            var textSize = ImGui.CalcTextSize(text);
-            float textY = pos.Y
-                + (size.Y - textSize.Y) * 0.5f
-                + ActiveTheme.Optical.AxisText * scale;
             draw.PushClipRect(
                 new Vector2(pos.X + axisSlot, pos.Y + inset),
                 max - new Vector2(inset),
                 true);
-            draw.AddText(
-                new Vector2(
-                    max.X - pad - textSize.X,
-                    textY),
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
-                    disabled ? ActiveTheme.TextDim : ActiveTheme.Text)),
-                text);
+            TextInBand(
+                new Vector2(pos.X + axisSlot, pos.Y),
+                new Vector2(max.X - pad - (pos.X + axisSlot), size.Y),
+                text,
+                wellStyle with
+                {
+                    Color = disabled ? ActiveTheme.TextDim : ActiveTheme.Text,
+                },
+                TextAlign.End);
             draw.PopClipRect();
         }
         if (pushed)

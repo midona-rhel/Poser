@@ -205,8 +205,6 @@ public static partial class LegacyCrystarium
                 ? origin.X + size.X - totalWidth
                 : origin.X;
             float centerY = origin.Y + size.Y * 0.5f;
-            float labelOffset =
-                ActiveTheme.Optical.ActionBarText * scale;
             for (int i = 0; i < _items.Count; i++)
             {
                 if (i > 0)
@@ -224,12 +222,9 @@ public static partial class LegacyCrystarium
                 switch (item.Kind)
                 {
                     case ItemKind.Label:
-                        DrawTextCentered(
-                            min + new Vector2(0f, labelOffset),
-                            max - min,
+                        DrawLabelInBand(
+                            min, max - min,
                             ActiveTheme.Typography.LabelSize,
-                            FontWeight.Regular,
-                            FormLabelColor,
                             item.Label);
                         break;
                     case ItemKind.Checkbox:
@@ -247,12 +242,10 @@ public static partial class LegacyCrystarium
                             item.Disabled);
                         float textX = x + side
                             + ActiveTheme.Spacing.Three * scale;
-                        DrawTextCentered(
-                            new(textX, min.Y + labelOffset),
+                        DrawLabelInBand(
+                            new(textX, min.Y),
                             new(max.X - textX, max.Y - min.Y),
                             ActiveTheme.Typography.CaptionSize,
-                            FontWeight.Regular,
-                            FormLabelColor,
                             item.Label);
                         break;
                     }
@@ -270,12 +263,10 @@ public static partial class LegacyCrystarium
                         float labelWidth = width
                             - switchWidth
                             - ActiveTheme.Spacing.Three * scale;
-                        DrawTextCentered(
-                            min + new Vector2(0f, labelOffset),
+                        DrawLabelInBand(
+                            min,
                             new(labelWidth, max.Y - min.Y),
                             ActiveTheme.Typography.CaptionSize,
-                            FontWeight.Regular,
-                            FormLabelColor,
                             item.Label);
                         ImGui.SetCursorScreenPos(new(
                             max.X - switchWidth,
@@ -340,6 +331,23 @@ public static partial class LegacyCrystarium
                     item.Help);
                 x += width;
             }
+        }
+
+        /// <summary>Bar-height-centered label, truncated to its band.</summary>
+        private static void DrawLabelInBand(
+            Vector2 min, Vector2 band, float size, string label)
+        {
+            if (!(band.X > 0f))
+                return;
+            LegacyCrystarium.TextInBand(
+                min, band, label,
+                new TextStyle
+                {
+                    Size = size,
+                    Weight = FontWeight.Regular,
+                    Color = FormLabelColor,
+                },
+                TextConstraint.Truncate(band.X));
         }
 
         private static float Measure(Item item, float scale) =>

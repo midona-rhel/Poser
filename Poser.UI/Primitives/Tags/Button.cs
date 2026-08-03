@@ -372,12 +372,10 @@ public static partial class LegacyCrystarium
         string label, ControlStyle style, Vector4 color)
     {
         var labelStyle = ButtonLabelStyle(style, color);
-        var measured = MeasureText(label, labelStyle);
-        var position = min + (max - min - measured) * 0.5f;
         draw.PushClipRect(min, max, true);
         try
         {
-            TextAt(position, label, labelStyle);
+            TextInBand(min, max - min, label, labelStyle, TextAlign.Center);
         }
         finally
         {

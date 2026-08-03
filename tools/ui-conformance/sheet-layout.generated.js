@@ -2,7 +2,7 @@
 // Do not hand-edit.
 window.sheetLayout = {
  "pageWidth": 688,
- "pageHeight": 7264,
+ "pageHeight": 9112,
  "cells": [
   {
    "name": "text-label",
@@ -821,10 +821,42 @@ window.sheetLayout = {
    "h": 92
   },
   {
+   "name": "rsettings-frame",
+   "component": "reactive-settings",
+   "x": 16,
+   "y": 6520,
+   "w": 770,
+   "h": 570
+  },
+  {
+   "name": "rsegmented",
+   "component": "reactive-settings",
+   "x": 16,
+   "y": 7112,
+   "w": 420,
+   "h": 150
+  },
+  {
+   "name": "rswatches",
+   "component": "reactive-settings",
+   "x": 16,
+   "y": 7280,
+   "w": 340,
+   "h": 60
+  },
+  {
+   "name": "ricon-actions",
+   "component": "reactive-settings",
+   "x": 376,
+   "y": 7280,
+   "w": 240,
+   "h": 60
+  },
+  {
    "name": "tooltip",
    "component": "tooltip",
    "x": 16,
-   "y": 6520,
+   "y": 7376,
    "w": 240,
    "h": 80
   },
@@ -832,7 +864,7 @@ window.sheetLayout = {
    "name": "tooltip-pop-mid",
    "component": "tooltip",
    "x": 272,
-   "y": 6520,
+   "y": 7376,
    "w": 240,
    "h": 80
   },
@@ -840,7 +872,7 @@ window.sheetLayout = {
    "name": "context-menu",
    "component": "context-menu",
    "x": 16,
-   "y": 6632,
+   "y": 7488,
    "w": 320,
    "h": 190
   },
@@ -848,9 +880,33 @@ window.sheetLayout = {
    "name": "modal",
    "component": "modal",
    "x": 16,
-   "y": 6856,
+   "y": 7712,
    "w": 560,
    "h": 360
+  },
+  {
+   "name": "rscrollarea",
+   "component": "reactive-scroll",
+   "x": 16,
+   "y": 8104,
+   "w": 320,
+   "h": 200
+  },
+  {
+   "name": "rtreerow",
+   "component": "reactive-tree",
+   "x": 16,
+   "y": 8336,
+   "w": 300,
+   "h": 190
+  },
+  {
+   "name": "rfiledialog",
+   "component": "reactive-file-dialog",
+   "x": 16,
+   "y": 8560,
+   "w": 760,
+   "h": 500
   }
  ]
 };

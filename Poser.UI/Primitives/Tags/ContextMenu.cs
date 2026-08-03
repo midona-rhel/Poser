@@ -62,16 +62,11 @@ public static partial class LegacyCrystarium
                 0.42f, 0f, 1f, 1f); // CSS ease-in
 
 
-        /// <summary>
-        /// USER DEVIATION (recorded like selection-dominance): Picto's menu
-        /// rows sit their text visibly below true center — even in the
-        /// browser — because flex centers the LINE BOX while Segoe's
-        /// ascent-heavy ink hangs low inside it. Poser centers the INK:
-        /// label and shortcut rise by this logical offset so the text ink
-        /// centroid meets the icon ink centroid at the row center
-        /// (verified by measurement in the conformance capture).
-        /// </summary>
-        private const float RowInkRise = -2f;
+        // USER DEVIATION (recorded like selection-dominance): Picto's menu
+        // rows sit their text visibly below true center even in the browser,
+        // because flex centers the LINE BOX. Poser centers the INK, and a
+        // menu row is icon-adjacent by construction — label and shortcut go
+        // through TextInBand's besideIcon mode, which owns that seat now.
 
         private static Phase _phase;
         private static string _id = string.Empty;
@@ -373,7 +368,6 @@ public static partial class LegacyCrystarium
                         + Crystarium.ActiveTheme.Floating.MenuIconGap) * s;
                 float rowHeightPx =
                     Crystarium.ActiveTheme.Controls.ListRowHeight * s;
-                float rise = RowInkRise * s;
                 float labelRight = rowMax.X
                     - Crystarium.ActiveTheme.Floating.MenuRowPadding * s;
                 if (item.Shortcut is { Length: > 0 } shortcut)
@@ -385,14 +379,13 @@ public static partial class LegacyCrystarium
                     };
                     var shortcutSize =
                         LegacyCrystarium.MeasureText(shortcut, shortcutStyle);
-                    LegacyCrystarium.TextAt(
-                        new Vector2(
-                            labelRight - shortcutSize.X,
-                            rowMin.Y
-                                + (rowHeightPx - shortcutSize.Y) * 0.5f
-                                + rise),
+                    LegacyCrystarium.TextInBand(
+                        new Vector2(rowMin.X, rowMin.Y),
+                        new Vector2(labelRight - rowMin.X, rowHeightPx),
                         shortcut,
-                        shortcutStyle);
+                        shortcutStyle,
+                        TextAlign.End,
+                        besideIcon: true);
                     // CSS .shortcut padding-left: 28px — the minimum
                     // label-to-shortcut gap.
                     labelRight -= shortcutSize.X + 28f * s;
@@ -404,24 +397,27 @@ public static partial class LegacyCrystarium
                 };
                 var labelSize =
                     LegacyCrystarium.MeasureText(item.Label, labelStyle);
-                var labelPos = new Vector2(
-                    textX,
-                    rowMin.Y
-                        + (rowHeightPx - labelSize.Y) * 0.5f
-                        + rise);
                 float labelWidth = MathF.Max(1f, labelRight - textX);
+                var labelBand = new Vector2(labelWidth, rowHeightPx);
                 // CSS .label: flex 1, ellipsis. Constrain ONLY on
                 // overflow: the truncate path clips to the line box, and
                 // Segoe's descenders reach a hair below it — an
                 // unconditional clip shaved the bottom off 'g'.
                 if (labelSize.X > labelWidth)
-                    LegacyCrystarium.TextAt(
-                        labelPos,
+                    LegacyCrystarium.TextInBand(
+                        new Vector2(textX, rowMin.Y),
+                        labelBand,
                         item.Label,
                         labelStyle,
-                        TextConstraint.Truncate(labelWidth));
+                        TextConstraint.Truncate(labelWidth),
+                        besideIcon: true);
                 else
-                    LegacyCrystarium.TextAt(labelPos, item.Label, labelStyle);
+                    LegacyCrystarium.TextInBand(
+                        new Vector2(textX, rowMin.Y),
+                        labelBand,
+                        item.Label,
+                        labelStyle,
+                        besideIcon: true);
 
                 y += Crystarium.ActiveTheme.Controls.ListRowHeight * s;
             }

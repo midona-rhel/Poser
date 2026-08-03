@@ -298,20 +298,18 @@ public static partial class LegacyCrystarium
         x += iconMargin + height;
 
         // ── .label ───────────────────────────────────────────────────
-        // 13px regular text-primary, centered on the row's line box.
+        // 13px regular text-primary, ink-centered on the row.
         var labelStyle = new TextStyle
         {
             Size = theme.Typography.BodySize,
             Color = theme.Text,
         };
-        var labelSize = MeasureText(label, labelStyle);
-        TextAt(
-            new Vector2(
-                x,
-                hit.ScreenMin.Y + (height - labelSize.Y) * 0.5f
-                    + theme.Optical.SidebarText * scale),
+        TextInBand(
+            new Vector2(x, hit.ScreenMin.Y),
+            new Vector2(hit.ScreenMax.X - x, height),
             label,
-            labelStyle);
+            labelStyle,
+            besideIcon: true);
 
         // ── .count ───────────────────────────────────────────────────
         // 12px mono text-secondary, 4px from the row's right edge.
@@ -323,14 +321,14 @@ public static partial class LegacyCrystarium
                 Family = FontFamily.Mono,
                 Color = theme.TextDim,
             };
-            var badgeSize = MeasureText(props.Badge, badgeStyle);
-            TextAt(
+            TextInBand(
+                new Vector2(x, hit.ScreenMin.Y),
                 new Vector2(
-                    hit.ScreenMax.X - theme.Spacing.Two * scale - badgeSize.X,
-                    hit.ScreenMin.Y + (height - badgeSize.Y) * 0.5f
-                        + theme.Optical.SidebarText * scale),
+                    hit.ScreenMax.X - theme.Spacing.Two * scale - x, height),
                 props.Badge,
-                badgeStyle);
+                badgeStyle,
+                TextAlign.End,
+                besideIcon: true);
         }
 
         return action;

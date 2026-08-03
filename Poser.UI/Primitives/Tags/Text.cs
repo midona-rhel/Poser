@@ -33,10 +33,12 @@ public enum TextWhitespace
 /// pins the run's end to the end edge — a truncated run keeps its
 /// ellipsis on that edge when truncation begins, and a raw overflow run
 /// (narrower-than-ellipsis box) shows its END with the start clipped,
-/// exactly as an end-aligned CSS line overflows.</summary>
+/// exactly as an end-aligned CSS line overflows. Center splits the
+/// leftover width, going negative on overflow like End does.</summary>
 public enum TextAlign
 {
     Start,
+    Center,
     End,
 }
 
@@ -173,6 +175,66 @@ public static partial class LegacyCrystarium
         Vector2 position, string text, in TextStyle style, TextConstraint constraint)
         => DrawTextRun(position, text, style, constraint);
 
+    /// <summary>
+    /// Extra lift, in CSS px, for a run seated beside an icon: the eye
+    /// judges that run against the ICON's ink centroid, not the band
+    /// centre. Calibrated (2026-08-03) so that with the metric ink rise
+    /// this lands BOTH accepted seats — the golden tree row and the
+    /// context menu row — on their measured pixel exactly.
+    /// </summary>
+    public const float IconAdjacentInkBias = -1.5f;
+
+    /// <summary>Snaps an ink-centered baseline seat, breaking ties toward
+    /// the SMALLER y. A tie resolved low reproduces the exact defect
+    /// <see cref="TextInBand"/> exists to kill.</summary>
+    private static float InkSnapY(float y) => MathF.Ceiling(y - 0.5f);
+
+    /// <summary>
+    /// THE way to center one line of text in a band. Vertically it seats
+    /// the INK — the cap-to-baseline band — on the band's midline, using
+    /// the face's real metrics (<see cref="FontRegistry.InkRise"/>) instead
+    /// of a per-surface tuned constant; line-box centering alone reads low
+    /// because internal leading is asymmetric. Two modes: the default
+    /// band-centered seat, and <paramref name="besideIcon"/>, which adds
+    /// <see cref="IconAdjacentInkBias"/>. Horizontally the run's box is
+    /// placed by <paramref name="align"/>.
+    /// </summary>
+    public static void TextInBand(
+        Vector2 bandMin, Vector2 bandSize, string text, in TextStyle style,
+        TextAlign align = TextAlign.Start, bool besideIcon = false)
+        => TextInBand(
+            bandMin, bandSize, text, style,
+            TextConstraint.Intrinsic, align, besideIcon);
+
+    /// <summary>Band-centered text under a typed constraint. The
+    /// constraint's own width is the box aligned inside the band, and the
+    /// constraint's own alignment governs the run inside that box.</summary>
+    public static void TextInBand(
+        Vector2 bandMin, Vector2 bandSize, string text, in TextStyle style,
+        TextConstraint constraint, TextAlign align = TextAlign.Start,
+        bool besideIcon = false)
+    {
+        var measured = MeasureText(text, style);
+        float boxWidth = constraint.Mode == TextConstraint.FitMode.Intrinsic
+            ? measured.X
+            : constraint.Width;
+        float size = style.Size ?? ActiveTheme.Typography.BodySize;
+        float rise = FontRegistry.InkRise(
+            style.Family, style.Weight ?? FontWeight.Regular, size);
+        if (besideIcon)
+            rise += IconAdjacentInkBias;
+        // Y is snapped HERE, by the ink-snap, so the tie policy applies;
+        // the renderer's Optical.Snap then rounds an already-whole y to
+        // itself and keeps owning X. Optical.Snap is unchanged globally.
+        TextAt(
+            new Vector2(
+                bandMin.X + AlignOffset(align, bandSize.X, boxWidth),
+                InkSnapY(
+                    bandMin.Y + (bandSize.Y - measured.Y) * 0.5f
+                    + rise * ImGuiHelpers.GlobalScale)),
+            text, style, constraint);
+    }
+
     /// <summary>Measures the run at its intrinsic size.</summary>
     public static Vector2 MeasureText(string text, in TextStyle style)
     {
@@ -276,9 +338,10 @@ public static partial class LegacyCrystarium
                     // at the box edge with the start clipped.
                     float natural = ImGui.GetTextLineHeight();
                     string fitted = TruncateResolved(text, constraint.Width);
-                    float offset = constraint.Alignment == TextAlign.End
-                        ? constraint.Width - FractionalTextWidth(fitted)
-                        : 0f;
+                    float offset = AlignOffset(
+                        constraint.Alignment,
+                        constraint.Width,
+                        FractionalTextWidth(fitted));
                     dl.PushClipRect(
                         origin,
                         origin + new Vector2(constraint.Width, natural),
@@ -313,9 +376,10 @@ public static partial class LegacyCrystarium
                     foreach (var line in WrapResolved(
                         text, constraint.Width, constraint.Whitespace))
                     {
-                        float offset = constraint.Alignment == TextAlign.End
-                            ? constraint.Width - MeasureLine(line)
-                            : 0f;
+                        float offset = AlignOffset(
+                            constraint.Alignment,
+                            constraint.Width,
+                            MeasureLine(line));
                         DrawLine(
                             dl,
                             new Vector2(
@@ -337,6 +401,14 @@ public static partial class LegacyCrystarium
                 font!.Pop();
         }
     }
+
+    private static float AlignOffset(TextAlign alignment, float box, float run) =>
+        alignment switch
+        {
+            TextAlign.Center => (box - run) * 0.5f,
+            TextAlign.End => box - run,
+            _ => 0f,
+        };
 
     /// <summary>
     /// Unquantized run width from per-glyph advances at the current
