@@ -60,6 +60,7 @@ public static class FontRegistry
 
     private static readonly Dictionary<Key, IFontHandle> _cache = new();
     private static readonly Dictionary<Key, float> _inkRise = new();
+    private static readonly Dictionary<Key, float> _ascentOverCap = new();
     private static readonly HashSet<Key> _required = new();
     private static readonly HashSet<Key> _failed = new();
 
@@ -302,6 +303,33 @@ public static class FontRegistry
         return rise;
     }
 
+    /// <summary>
+    /// CSS px between the line-box TOP and the cap top — the dead band
+    /// above any ink. A native field's caret and selection span the full
+    /// line box, so this is exactly what they overhang above the text
+    /// they belong to. Scale-free like <see cref="InkRise"/>; 0 when the
+    /// face has no readable metrics.
+    /// </summary>
+    public static float AscentOverCap(FontFamily family, FontWeight weight, float sizePx)
+    {
+        if (family == FontFamily.Icon) return 0f;
+        int px = Math.Max(1, (int)MathF.Round(sizePx));
+        var key = new Key(family, NormalizeWeight(family, weight), px);
+        if (_ascentOverCap.TryGetValue(key, out var cached)) return cached;
+        float band = ComputeAscentOverCap(key);
+        _ascentOverCap[key] = band;
+        return band;
+    }
+
+    private static float ComputeAscentOverCap(Key key)
+    {
+        string? file = ResolveFile(key.Family, key.Weight);
+        if (file == null) return 0f;
+        var face = TtfMetrics.Face(file);
+        if (!face.Valid) return 0f;
+        return (face.AscentEm - face.CapHeightEm) * key.SizePx;
+    }
+
     private static float ComputeInkRise(Key key)
     {
         // No file means the Dalamud default font, whose metrics this
@@ -458,6 +486,7 @@ public static class FontRegistry
         _cache.Clear();
         _bakeLight = false;
         _inkRise.Clear(); // keyed like the handle cache and derived from _files
+        _ascentOverCap.Clear();
         _required.Clear();
         _failed.Clear();
         _files.Clear();

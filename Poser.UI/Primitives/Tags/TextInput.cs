@@ -84,6 +84,12 @@ public static partial class Crystarium
     private static uint _clearRefocusTarget;
     private static int _clearRefocusFrame;
 
+    /// <summary>CSS px of the ascent-over-cap dead band KEPT above the cap
+    /// top when a native field's caret is trimmed: tall diacritics (É, Å)
+    /// reach into that band and keep their marks under this headroom.
+    /// Bigger reads as a taller caret.</summary>
+    internal const float CaretHeadroom = 2f;
+
     private static bool TextInputCore(
         string id,
         string value,
@@ -183,6 +189,25 @@ public static partial class Crystarium
         ImGui.SetCursorScreenPos(boxMin + new Vector2(0f, rise));
         ImGui.SetNextItemWidth(width);
 
+        // The native caret and selection span the full LINE BOX, whose top
+        // sits the ascent-over-cap dead band above any ink — a caret far
+        // taller than the text it belongs to (user: "the blinking text
+        // indicator is too tall"). The widget is clipped to the band the
+        // eye reads: the dead band is scissored off, minus
+        // CaretHeadroom so tall diacritics keep their marks. Glyph ink
+        // below cap top is untouched.
+        float caretTrim = (FontRegistry.AscentOverCap(
+                FontFamily.Default, FontWeight.Regular,
+                theme.Typography.BodySize)
+            - CaretHeadroom) * scale;
+        bool caretClipped = caretTrim > 0f;
+        if (caretClipped)
+            draw.PushClipRect(
+                new Vector2(
+                    boxMin.X, boxMin.Y + rise + framePadY + caretTrim),
+                boxMax,
+                true);
+
         uint identity = ImGui.GetID(id);
         if (_clearRefocusTarget != 0)
         {
@@ -200,6 +225,8 @@ public static partial class Crystarium
 
         string next = value;
         bool changed = ImGui.InputText(id, ref next);
+        if (caretClipped)
+            draw.PopClipRect();
 
         // The item rect is the RISEN widget; the box chrome below anchors
         // to the intended box rect instead. Only the placeholder tracks
