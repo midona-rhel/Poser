@@ -19,7 +19,7 @@ public enum ButtonVariant
     Danger,
 }
 
-public static partial class LegacyCrystarium
+public static partial class Crystarium
 {
     public static bool Button(
         string label,

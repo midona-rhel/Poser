@@ -84,8 +84,8 @@ public readonly record struct Theme
             // USER 2026-08-02: 30 → 34. Stacked full-height controls (the
             // 30px segmented pill) proved the transcribed 30px band leaves
             // property rows no separation; the pitch is a deliberate
-            // deviation from Picto's rhythm, moved HERE so the legacy page
-            // and the reactive sheet stay one number.
+            // deviation from Picto's rhythm, kept HERE so every form row
+            // reads one number.
             FormRowHeight = 34f,
             WorkspaceHeight = 26f,
             ComfortableHeight = 32f,
@@ -227,13 +227,6 @@ public readonly record struct Theme
                 new(183f / 255f, 140f / 255f, 1f, 1f),
                 new(1f, 143f / 255f, 163f / 255f, 1f),
             ],
-        },
-        Optical = new()
-        {
-            SidebarText = -1f,
-            ButtonText = 1f,
-            ActionBarText = 1f,
-            AxisText = 0f,
         },
         Motion = new() { Fast = 0.10f, Default = 0.20f, Slow = 0.40f, MenuExit = 0.08f, HoverOpenDelay = 0.40f, HoverPop = 0.15f },
         Palette = new()
@@ -675,13 +668,10 @@ public readonly record struct Theme
         public Vector4[] AccentOptions { get; init; }
     }
 
+    /// <summary>Pixel-grid rounding. The per-band text nudges this once
+    /// carried are gone: text seats on font metrics, not a token.</summary>
     public readonly record struct OpticalTokens
     {
-        public float SidebarText { get; init; }
-        public float ButtonText { get; init; }
-        public float ActionBarText { get; init; }
-        public float AxisText { get; init; }
-
         public Vector2 Snap(Vector2 position) =>
             new(MathF.Round(position.X), MathF.Round(position.Y));
     }
@@ -803,7 +793,7 @@ public readonly record struct Theme
     }
 }
 
-public static partial class LegacyCrystarium
+public static partial class Crystarium
 {
     public static Theme ActiveTheme { get; private set; } = Theme.PictoDark;
 

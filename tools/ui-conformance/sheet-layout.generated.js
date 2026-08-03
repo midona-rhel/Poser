@@ -2,7 +2,7 @@
 // Do not hand-edit.
 window.sheetLayout = {
  "pageWidth": 688,
- "pageHeight": 10744,
+ "pageHeight": 6944,
  "cells": [
   {
    "name": "text-label",
@@ -309,130 +309,10 @@ window.sheetLayout = {
    "h": 80
   },
   {
-   "name": "rbtn-secondary",
-   "component": "reactive-buttons",
-   "x": 16,
-   "y": 2152,
-   "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rbtn-secondary-hover",
-   "component": "reactive-buttons",
-   "x": 352,
-   "y": 2152,
-   "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rbtn-secondary-disabled",
-   "component": "reactive-buttons",
-   "x": 16,
-   "y": 2248,
-   "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rbtn-disabled-unicode",
-   "component": "reactive-buttons",
-   "x": 352,
-   "y": 2248,
-   "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rbtn-primary",
-   "component": "reactive-buttons",
-   "x": 16,
-   "y": 2344,
-   "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rbtn-primary-hover",
-   "component": "reactive-buttons",
-   "x": 352,
-   "y": 2344,
-   "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rbtn-primary-disabled",
-   "component": "reactive-buttons",
-   "x": 16,
-   "y": 2440,
-   "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rbtn-danger",
-   "component": "reactive-buttons",
-   "x": 352,
-   "y": 2440,
-   "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rbtn-danger-hover",
-   "component": "reactive-buttons",
-   "x": 16,
-   "y": 2536,
-   "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rbtn-danger-disabled",
-   "component": "reactive-buttons",
-   "x": 352,
-   "y": 2536,
-   "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rbtn-width-content",
-   "component": "reactive-buttons",
-   "x": 16,
-   "y": 2632,
-   "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rbtn-width-fixed",
-   "component": "reactive-buttons",
-   "x": 352,
-   "y": 2632,
-   "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rbtn-width-fill",
-   "component": "reactive-buttons",
-   "x": 16,
-   "y": 2728,
-   "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rbtn-hover-exit",
-   "component": "reactive-buttons",
-   "x": 352,
-   "y": 2728,
-   "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rbtn-hover-mid",
-   "component": "reactive-buttons",
-   "x": 16,
-   "y": 2824,
-   "w": 320,
-   "h": 80
-  },
-  {
    "name": "icon-button-idle",
    "component": "icon-button",
    "x": 16,
-   "y": 2936,
+   "y": 2152,
    "w": 120,
    "h": 80
   },
@@ -440,7 +320,7 @@ window.sheetLayout = {
    "name": "icon-button-hover",
    "component": "icon-button",
    "x": 152,
-   "y": 2936,
+   "y": 2152,
    "w": 120,
    "h": 80
   },
@@ -448,7 +328,7 @@ window.sheetLayout = {
    "name": "icon-button-pressed",
    "component": "icon-button",
    "x": 288,
-   "y": 2936,
+   "y": 2152,
    "w": 120,
    "h": 80
   },
@@ -456,7 +336,7 @@ window.sheetLayout = {
    "name": "icon-button-held-outside",
    "component": "icon-button",
    "x": 424,
-   "y": 2936,
+   "y": 2152,
    "w": 120,
    "h": 80
   },
@@ -464,7 +344,7 @@ window.sheetLayout = {
    "name": "icon-button-disabled",
    "component": "icon-button",
    "x": 16,
-   "y": 3032,
+   "y": 2248,
    "w": 120,
    "h": 80
   },
@@ -472,7 +352,7 @@ window.sheetLayout = {
    "name": "icon-button-hover-mid",
    "component": "icon-button",
    "x": 152,
-   "y": 3032,
+   "y": 2248,
    "w": 120,
    "h": 80
   },
@@ -480,7 +360,7 @@ window.sheetLayout = {
    "name": "icon-button-hover-exit",
    "component": "icon-button",
    "x": 288,
-   "y": 3032,
+   "y": 2248,
    "w": 120,
    "h": 80
   },
@@ -488,7 +368,7 @@ window.sheetLayout = {
    "name": "icon-button-glyphs",
    "component": "icon-button",
    "x": 16,
-   "y": 3128,
+   "y": 2344,
    "w": 280,
    "h": 80
   },
@@ -496,7 +376,7 @@ window.sheetLayout = {
    "name": "switch-off",
    "component": "switch",
    "x": 16,
-   "y": 3240,
+   "y": 2456,
    "w": 120,
    "h": 80
   },
@@ -504,7 +384,7 @@ window.sheetLayout = {
    "name": "switch-on",
    "component": "switch",
    "x": 152,
-   "y": 3240,
+   "y": 2456,
    "w": 120,
    "h": 80
   },
@@ -512,7 +392,7 @@ window.sheetLayout = {
    "name": "slider",
    "component": "form-controls",
    "x": 16,
-   "y": 3352,
+   "y": 2568,
    "w": 320,
    "h": 80
   },
@@ -520,7 +400,7 @@ window.sheetLayout = {
    "name": "slider-disabled",
    "component": "form-controls",
    "x": 352,
-   "y": 3352,
+   "y": 2568,
    "w": 320,
    "h": 80
   },
@@ -528,7 +408,7 @@ window.sheetLayout = {
    "name": "colorwell",
    "component": "form-controls",
    "x": 16,
-   "y": 3448,
+   "y": 2664,
    "w": 320,
    "h": 80
   },
@@ -536,7 +416,7 @@ window.sheetLayout = {
    "name": "colorwell-disabled",
    "component": "form-controls",
    "x": 352,
-   "y": 3448,
+   "y": 2664,
    "w": 320,
    "h": 80
   },
@@ -544,71 +424,15 @@ window.sheetLayout = {
    "name": "progress",
    "component": "form-controls",
    "x": 16,
-   "y": 3544,
+   "y": 2760,
    "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rslider",
-   "component": "reactive-form-controls",
-   "x": 16,
-   "y": 3656,
-   "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rslider-disabled",
-   "component": "reactive-form-controls",
-   "x": 352,
-   "y": 3656,
-   "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rcolorwell",
-   "component": "reactive-form-controls",
-   "x": 16,
-   "y": 3752,
-   "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rcolorwell-disabled",
-   "component": "reactive-form-controls",
-   "x": 352,
-   "y": 3752,
-   "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rprogress",
-   "component": "reactive-form-controls",
-   "x": 16,
-   "y": 3848,
-   "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rswitch-off",
-   "component": "reactive-form-controls",
-   "x": 352,
-   "y": 3848,
-   "w": 120,
-   "h": 80
-  },
-  {
-   "name": "rswitch-on",
-   "component": "reactive-form-controls",
-   "x": 488,
-   "y": 3848,
-   "w": 120,
    "h": 80
   },
   {
    "name": "text-input",
    "component": "input",
    "x": 16,
-   "y": 3960,
+   "y": 2872,
    "w": 320,
    "h": 80
   },
@@ -616,7 +440,7 @@ window.sheetLayout = {
    "name": "input-placeholder",
    "component": "input",
    "x": 352,
-   "y": 3960,
+   "y": 2872,
    "w": 320,
    "h": 80
   },
@@ -624,7 +448,7 @@ window.sheetLayout = {
    "name": "search-input",
    "component": "input",
    "x": 16,
-   "y": 4056,
+   "y": 2968,
    "w": 320,
    "h": 84
   },
@@ -632,7 +456,7 @@ window.sheetLayout = {
    "name": "search-clear-hover",
    "component": "input",
    "x": 352,
-   "y": 4056,
+   "y": 2968,
    "w": 320,
    "h": 84
   },
@@ -640,7 +464,7 @@ window.sheetLayout = {
    "name": "dropdown-closed",
    "component": "dropdown",
    "x": 16,
-   "y": 4176,
+   "y": 3088,
    "w": 320,
    "h": 80
   },
@@ -648,39 +472,7 @@ window.sheetLayout = {
    "name": "dropdown-open",
    "component": "dropdown",
    "x": 352,
-   "y": 4176,
-   "w": 320,
-   "h": 280
-  },
-  {
-   "name": "rdd-closed",
-   "component": "reactive-dropdown",
-   "x": 16,
-   "y": 4488,
-   "w": 320,
-   "h": 80
-  },
-  {
-   "name": "rdd-open",
-   "component": "reactive-dropdown",
-   "x": 352,
-   "y": 4488,
-   "w": 320,
-   "h": 280
-  },
-  {
-   "name": "rpicker-open",
-   "component": "reactive-picker",
-   "x": 16,
-   "y": 4800,
-   "w": 320,
-   "h": 280
-  },
-  {
-   "name": "rpicker-multi",
-   "component": "reactive-picker",
-   "x": 352,
-   "y": 4800,
+   "y": 3088,
    "w": 320,
    "h": 280
   },
@@ -688,7 +480,7 @@ window.sheetLayout = {
    "name": "color-palette",
    "component": "color-palette",
    "x": 16,
-   "y": 5112,
+   "y": 3400,
    "w": 220,
    "h": 80
   },
@@ -696,7 +488,7 @@ window.sheetLayout = {
    "name": "sidebar-row",
    "component": "sidebar",
    "x": 16,
-   "y": 5224,
+   "y": 3512,
    "w": 320,
    "h": 80
   },
@@ -704,7 +496,7 @@ window.sheetLayout = {
    "name": "sidebar-row-hover",
    "component": "sidebar",
    "x": 352,
-   "y": 5224,
+   "y": 3512,
    "w": 320,
    "h": 80
   },
@@ -712,7 +504,7 @@ window.sheetLayout = {
    "name": "sidebar-row-selected",
    "component": "sidebar",
    "x": 16,
-   "y": 5320,
+   "y": 3608,
    "w": 320,
    "h": 80
   },
@@ -720,7 +512,7 @@ window.sheetLayout = {
    "name": "sidebar-row-selected-hover",
    "component": "sidebar",
    "x": 352,
-   "y": 5320,
+   "y": 3608,
    "w": 320,
    "h": 80
   },
@@ -728,7 +520,7 @@ window.sheetLayout = {
    "name": "sidebar-row-collapsed",
    "component": "sidebar",
    "x": 16,
-   "y": 5416,
+   "y": 3704,
    "w": 320,
    "h": 80
   },
@@ -736,7 +528,7 @@ window.sheetLayout = {
    "name": "sidebar-row-expanded",
    "component": "sidebar",
    "x": 352,
-   "y": 5416,
+   "y": 3704,
    "w": 320,
    "h": 80
   },
@@ -744,7 +536,7 @@ window.sheetLayout = {
    "name": "sidebar-row-expander-hover",
    "component": "sidebar",
    "x": 16,
-   "y": 5512,
+   "y": 3800,
    "w": 320,
    "h": 80
   },
@@ -752,7 +544,7 @@ window.sheetLayout = {
    "name": "sidebar-row-drop",
    "component": "sidebar",
    "x": 352,
-   "y": 5512,
+   "y": 3800,
    "w": 320,
    "h": 80
   },
@@ -760,7 +552,7 @@ window.sheetLayout = {
    "name": "property-row",
    "component": "property-row",
    "x": 16,
-   "y": 5624,
+   "y": 3912,
    "w": 320,
    "h": 68
   },
@@ -768,7 +560,7 @@ window.sheetLayout = {
    "name": "section",
    "component": "section",
    "x": 16,
-   "y": 5728,
+   "y": 4016,
    "w": 320,
    "h": 92
   },
@@ -776,7 +568,7 @@ window.sheetLayout = {
    "name": "section-expanded",
    "component": "section",
    "x": 352,
-   "y": 5728,
+   "y": 4016,
    "w": 320,
    "h": 92
   },
@@ -784,71 +576,15 @@ window.sheetLayout = {
    "name": "section-hover",
    "component": "section",
    "x": 16,
-   "y": 5840,
+   "y": 4128,
    "w": 320,
    "h": 92
-  },
-  {
-   "name": "rsection",
-   "component": "reactive-section",
-   "x": 16,
-   "y": 5968,
-   "w": 320,
-   "h": 92
-  },
-  {
-   "name": "rsection-expanded",
-   "component": "reactive-section",
-   "x": 352,
-   "y": 5968,
-   "w": 320,
-   "h": 92
-  },
-  {
-   "name": "rsection-hover",
-   "component": "reactive-section",
-   "x": 16,
-   "y": 6080,
-   "w": 320,
-   "h": 92
-  },
-  {
-   "name": "rsettings-frame",
-   "component": "reactive-settings",
-   "x": 16,
-   "y": 6208,
-   "w": 770,
-   "h": 570
-  },
-  {
-   "name": "rsegmented",
-   "component": "reactive-settings",
-   "x": 16,
-   "y": 6800,
-   "w": 420,
-   "h": 150
-  },
-  {
-   "name": "rswatches",
-   "component": "reactive-settings",
-   "x": 16,
-   "y": 6968,
-   "w": 340,
-   "h": 60
-  },
-  {
-   "name": "ricon-actions",
-   "component": "reactive-settings",
-   "x": 376,
-   "y": 6968,
-   "w": 240,
-   "h": 60
   },
   {
    "name": "tooltip",
    "component": "tooltip",
    "x": 16,
-   "y": 7064,
+   "y": 4256,
    "w": 240,
    "h": 80
   },
@@ -856,7 +592,7 @@ window.sheetLayout = {
    "name": "tooltip-pop-mid",
    "component": "tooltip",
    "x": 272,
-   "y": 7064,
+   "y": 4256,
    "w": 240,
    "h": 80
   },
@@ -864,7 +600,7 @@ window.sheetLayout = {
    "name": "context-menu",
    "component": "context-menu",
    "x": 16,
-   "y": 7176,
+   "y": 4368,
    "w": 320,
    "h": 190
   },
@@ -872,39 +608,15 @@ window.sheetLayout = {
    "name": "modal",
    "component": "modal",
    "x": 16,
-   "y": 7400,
+   "y": 4592,
    "w": 560,
    "h": 360
-  },
-  {
-   "name": "rscrollarea",
-   "component": "reactive-scroll",
-   "x": 16,
-   "y": 7792,
-   "w": 320,
-   "h": 200
-  },
-  {
-   "name": "rtreerow",
-   "component": "reactive-tree",
-   "x": 16,
-   "y": 8024,
-   "w": 300,
-   "h": 190
-  },
-  {
-   "name": "rfiledialog",
-   "component": "reactive-file-dialog",
-   "x": 16,
-   "y": 8248,
-   "w": 760,
-   "h": 500
   },
   {
    "name": "i-treerow",
    "component": "imperative-tree",
    "x": 16,
-   "y": 8784,
+   "y": 4984,
    "w": 300,
    "h": 190
   },
@@ -912,7 +624,7 @@ window.sheetLayout = {
    "name": "i-settings-frame",
    "component": "imperative-window-frame",
    "x": 16,
-   "y": 9008,
+   "y": 5208,
    "w": 770,
    "h": 570
   },
@@ -920,7 +632,7 @@ window.sheetLayout = {
    "name": "i-picker-open",
    "component": "imperative-picker",
    "x": 16,
-   "y": 9616,
+   "y": 5816,
    "w": 320,
    "h": 280
   },
@@ -928,7 +640,7 @@ window.sheetLayout = {
    "name": "i-picker-multi",
    "component": "imperative-picker",
    "x": 352,
-   "y": 9616,
+   "y": 5816,
    "w": 320,
    "h": 280
   },
@@ -936,7 +648,7 @@ window.sheetLayout = {
    "name": "i-filedialog",
    "component": "imperative-file-dialog",
    "x": 16,
-   "y": 9928,
+   "y": 6128,
    "w": 760,
    "h": 500
   },
@@ -944,7 +656,7 @@ window.sheetLayout = {
    "name": "i-segmented",
    "component": "imperative-controls",
    "x": 16,
-   "y": 10464,
+   "y": 6664,
    "w": 420,
    "h": 150
   },
@@ -952,7 +664,7 @@ window.sheetLayout = {
    "name": "i-swatches",
    "component": "imperative-controls",
    "x": 16,
-   "y": 10632,
+   "y": 6832,
    "w": 340,
    "h": 60
   },
@@ -960,7 +672,7 @@ window.sheetLayout = {
    "name": "i-icon-actions",
    "component": "imperative-controls",
    "x": 376,
-   "y": 10632,
+   "y": 6832,
    "w": 240,
    "h": 60
   }

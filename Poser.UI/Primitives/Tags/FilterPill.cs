@@ -11,7 +11,7 @@ namespace Poser.UI;
 /// 26px workspace rhythm ask for it explicitly through
 /// <see cref="ControlStyle"/>.</para>
 /// </summary>
-public static partial class LegacyCrystarium
+public static partial class Crystarium
 {
     /// <param name="textRise">Lifts the text alone, negative raises; the box
     /// and the leading glyph stay put. Zero for every accepted surface.</param>

@@ -866,7 +866,7 @@ public class MainWindow : Window
     {
         if (!_gPoseService.IsGPosing)
         {
-            LegacyCrystarium.TextAt(origin + new Vector2(0f, 8f) * ImGuiHelpers.GlobalScale, "Enter GPose to start posing.", new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.FormHint });
+            Crystarium.TextAt(origin + new Vector2(0f, 8f) * ImGuiHelpers.GlobalScale, "Enter GPose to start posing.", new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.FormHint });
             return;
         }
 
@@ -931,10 +931,10 @@ public class MainWindow : Window
                 null,
                 () => _propService.SpawnProp(),
             };
-            LegacyCrystarium.FloatingMenu.Open("##sidebar-add", ImGui.GetMousePos(), items);
+            Crystarium.FloatingMenu.Open("##sidebar-add", ImGui.GetMousePos(), items);
         }
 
-        int clicked = LegacyCrystarium.FloatingMenu.Draw("##sidebar-add");
+        int clicked = Crystarium.FloatingMenu.Draw("##sidebar-add");
         if (clicked >= 0 && clicked < _addActions.Count)
             _addActions[clicked]?.Invoke();
     }
@@ -979,7 +979,7 @@ public class MainWindow : Window
         if (!resolved.Success)
         {
             _ctxActorId = null;
-            LegacyCrystarium.FloatingMenu.Dismiss("##actor-ctx");
+            Crystarium.FloatingMenu.Dismiss("##actor-ctx");
             return;
         }
         var actor = resolved.Value!;
@@ -1038,9 +1038,9 @@ public class MainWindow : Window
         if (_ctxOpenRequested)
         {
             _ctxOpenRequested = false;
-            LegacyCrystarium.FloatingMenu.Open("##actor-ctx", ImGui.GetMousePos(), items.ToArray());
+            Crystarium.FloatingMenu.Open("##actor-ctx", ImGui.GetMousePos(), items.ToArray());
         }
-        int clicked = LegacyCrystarium.FloatingMenu.Draw("##actor-ctx");
+        int clicked = Crystarium.FloatingMenu.Draw("##actor-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
     }
@@ -1062,7 +1062,7 @@ public class MainWindow : Window
         {
             _ctxBoneId = null;
             _ctxBoneOverlayBones = null;
-            LegacyCrystarium.FloatingMenu.Dismiss("##bone-ctx");
+            Crystarium.FloatingMenu.Dismiss("##bone-ctx");
             return;
         }
 
@@ -1097,9 +1097,9 @@ public class MainWindow : Window
         if (_boneCtxOpenRequested)
         {
             _boneCtxOpenRequested = false;
-            LegacyCrystarium.FloatingMenu.Open("##bone-ctx", ImGui.GetMousePos(), items);
+            Crystarium.FloatingMenu.Open("##bone-ctx", ImGui.GetMousePos(), items);
         }
-        int clicked = LegacyCrystarium.FloatingMenu.Draw("##bone-ctx");
+        int clicked = Crystarium.FloatingMenu.Draw("##bone-ctx");
         switch (clicked)
         {
             case 0 when descriptor.Parent is { } parent:
@@ -1157,7 +1157,7 @@ public class MainWindow : Window
         if (!ownerPresent)
         {
             _ctxOverlayBones = null;
-            LegacyCrystarium.FloatingMenu.Dismiss("##overlay-ctx");
+            Crystarium.FloatingMenu.Dismiss("##overlay-ctx");
             return;
         }
         bool visible = _overlayPresentation.AreVisible(bones);
@@ -1170,27 +1170,27 @@ public class MainWindow : Window
         if (_overlayCtxOpenRequested)
         {
             _overlayCtxOpenRequested = false;
-            LegacyCrystarium.FloatingMenu.Open(
+            Crystarium.FloatingMenu.Open(
                 "##overlay-ctx", ImGui.GetMousePos(), items);
         }
-        if (LegacyCrystarium.FloatingMenu.Draw("##overlay-ctx") == 0)
+        if (Crystarium.FloatingMenu.Draw("##overlay-ctx") == 0)
             _overlayPresentation.SetVisible(bones, !visible);
     }
 
     private void DrawRenameModal()
     {
         if (!_renameOpen || _renameTarget is not { } target) return;
-        LegacyCrystarium.Modal(
+        Crystarium.Modal(
             "##rename-actor",
             _renameOpen,
             next => _renameOpen = next,
             "Rename actor",
             () =>
         {
-            LegacyCrystarium.TextInput(
+            Crystarium.TextInput(
                 "##rename-input", _renameValue, next => _renameValue = next);
             ImGui.Dummy(new Vector2(0f, 8f * ImGuiHelpers.GlobalScale));
-            if (LegacyCrystarium.Button(
+            if (Crystarium.Button(
                     "Save",
                     variant: ButtonVariant.Primary,
                     id: "rename-save"))
@@ -1199,7 +1199,7 @@ public class MainWindow : Window
                 _renameOpen = false;
             }
             ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
-            if (LegacyCrystarium.Button("Clear", id: "rename-clear",
+            if (Crystarium.Button("Clear", id: "rename-clear",
                 help: "Remove the nickname and show the real name"))
             {
                 Config.ConfigurationService.Instance.SetNickname(target.LogicalId, null);

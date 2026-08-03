@@ -4,7 +4,7 @@ using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
 
-public static partial class LegacyCrystarium
+public static partial class Crystarium
 {
     /// <summary>
     /// iOS-style toggle switch — pixel transcription of picto

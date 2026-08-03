@@ -58,27 +58,6 @@
       ]
     },
     {
-      "name": "reactive-buttons",
-      "title": "Reactive buttons (PBI-015)",
-      "states": [
-        { "name": "rbtn-secondary", "label": "secondary idle", "width": 320, "height": 80 },
-        { "name": "rbtn-secondary-hover", "label": "secondary hover", "width": 320, "height": 80 },
-        { "name": "rbtn-secondary-disabled", "label": "secondary disabled", "width": 320, "height": 80 },
-        { "name": "rbtn-disabled-unicode", "label": "disabled unicode", "width": 320, "height": 80 },
-        { "name": "rbtn-primary", "label": "primary idle", "width": 320, "height": 80 },
-        { "name": "rbtn-primary-hover", "label": "primary hover", "width": 320, "height": 80 },
-        { "name": "rbtn-primary-disabled", "label": "primary disabled", "width": 320, "height": 80 },
-        { "name": "rbtn-danger", "label": "danger idle", "width": 320, "height": 80 },
-        { "name": "rbtn-danger-hover", "label": "danger hover", "width": 320, "height": 80 },
-        { "name": "rbtn-danger-disabled", "label": "danger disabled", "width": 320, "height": 80 },
-        { "name": "rbtn-width-content", "label": "content width", "width": 320, "height": 80 },
-        { "name": "rbtn-width-fixed", "label": "fixed width", "width": 320, "height": 80 },
-        { "name": "rbtn-width-fill", "label": "fill width", "width": 320, "height": 80 },
-        { "name": "rbtn-hover-exit", "label": "hover exit = idle", "width": 320, "height": 80 },
-        { "name": "rbtn-hover-mid", "label": "hover transition midpoint", "width": 320, "height": 80 }
-      ]
-    },
-    {
       "name": "icon-button",
       "title": "Icon button",
       "states": [
@@ -112,19 +91,6 @@
       ]
     },
     {
-      "name": "reactive-form-controls",
-      "title": "Reactive form controls (PBI-015)",
-      "states": [
-        { "name": "rslider", "label": "slider 0.4", "width": 320, "height": 80 },
-        { "name": "rslider-disabled", "label": "slider disabled", "width": 320, "height": 80 },
-        { "name": "rcolorwell", "label": "color well", "width": 320, "height": 80 },
-        { "name": "rcolorwell-disabled", "label": "color well, absent value", "width": 320, "height": 80 },
-        { "name": "rprogress", "label": "progress 0.4", "width": 320, "height": 80 },
-        { "name": "rswitch-off", "label": "switch off", "width": 120, "height": 80 },
-        { "name": "rswitch-on", "label": "switch on", "width": 120, "height": 80 }
-      ]
-    },
-    {
       "name": "input",
       "title": "Input",
       "states": [
@@ -140,22 +106,6 @@
       "states": [
         { "name": "dropdown-closed", "label": "closed", "width": 320, "height": 80 },
         { "name": "dropdown-open", "label": "open", "width": 320, "height": 280 }
-      ]
-    },
-    {
-      "name": "reactive-dropdown",
-      "title": "Reactive dropdown (PBI-015)",
-      "states": [
-        { "name": "rdd-closed", "label": "closed", "width": 320, "height": 80 },
-        { "name": "rdd-open", "label": "open", "width": 320, "height": 280 }
-      ]
-    },
-    {
-      "name": "reactive-picker",
-      "title": "Reactive picker (PBI-015)",
-      "states": [
-        { "name": "rpicker-open", "label": "single", "width": 320, "height": 280 },
-        { "name": "rpicker-multi", "label": "multi", "width": 320, "height": 280 }
       ]
     },
     {
@@ -196,25 +146,6 @@
       ]
     },
     {
-      "name": "reactive-section",
-      "title": "Reactive section (PBI-015)",
-      "states": [
-        { "name": "rsection", "label": "header", "width": 320, "height": 92 },
-        { "name": "rsection-expanded", "label": "expanded", "width": 320, "height": 92 },
-        { "name": "rsection-hover", "label": "header hover", "width": 320, "height": 92 }
-      ]
-    },
-    {
-      "name": "reactive-settings",
-      "title": "Reactive settings chassis (PBI-015 3B)",
-      "states": [
-        { "name": "rsettings-frame", "label": "frame", "width": 770, "height": 570 },
-        { "name": "rsegmented", "label": "stacked segmented rows", "width": 420, "height": 150 },
-        { "name": "rswatches", "label": "palette", "width": 340, "height": 60 },
-        { "name": "ricon-actions", "label": "icon actions", "width": 240, "height": 60 }
-      ]
-    },
-    {
       "name": "tooltip",
       "title": "Tooltip",
       "states": [
@@ -234,27 +165,6 @@
       "title": "Modal",
       "states": [
         { "name": "modal", "label": "glass modal", "width": 560, "height": 360 }
-      ]
-    },
-    {
-      "name": "reactive-scroll",
-      "title": "Reactive scroll area (PBI-015)",
-      "states": [
-        { "name": "rscrollarea", "label": "20 rows in a 160px viewport", "width": 320, "height": 200 }
-      ]
-    },
-    {
-      "name": "reactive-tree",
-      "title": "Reactive tree row (PBI-015)",
-      "states": [
-        { "name": "rtreerow", "label": "root, branch, terminal, collapsed", "width": 300, "height": 190 }
-      ]
-    },
-    {
-      "name": "reactive-file-dialog",
-      "title": "Reactive file surface (PBI-015)",
-      "states": [
-        { "name": "rfiledialog", "label": "title bar, nav band, rail + explorer, footer", "width": 760, "height": 500 }
       ]
     },
     {

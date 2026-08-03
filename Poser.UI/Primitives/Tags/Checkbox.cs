@@ -5,7 +5,7 @@ using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
 
-public static partial class LegacyCrystarium
+public static partial class Crystarium
 {
     public static Vector2 MeasureCheckbox(ControlStyle style = default)
     {

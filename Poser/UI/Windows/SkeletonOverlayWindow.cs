@@ -279,7 +279,7 @@ public class SkeletonOverlayWindow : Window
         if (hoveredActor != null && !pointerBlocked)
         {
             var overlayMouse = ImGui.GetMousePos();
-            LegacyCrystarium.HoverHelp.Preview("sow-actor",
+            Crystarium.HoverHelp.Preview("sow-actor",
                 overlayMouse - new Vector2(4f, 4f), overlayMouse + new Vector2(4f, 4f),
                 $"{hoveredActor.Name} — actor transform");
         }
@@ -462,7 +462,7 @@ public class SkeletonOverlayWindow : Window
             return;
 
         var labels = _hoveredBones.Select(bone => bone.Name).ToArray();
-        int clicked = LegacyCrystarium.FloatingSurface.HoverList(
+        int clicked = Crystarium.FloatingSurface.HoverList(
             HoverListOwnerId,
             _hoverAnchor,
             labels,

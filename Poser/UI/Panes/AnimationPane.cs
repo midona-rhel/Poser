@@ -19,7 +19,7 @@ namespace Poser.UI;
 /// contract. Runtime ownership remains in <see cref="AnimationSession"/>.
 ///
 /// <para>Every animation choice goes through the ONE shared
-/// <see cref="LegacyCrystarium.SearchPicker{T}"/>. What used to be a picker of
+/// <see cref="Crystarium.SearchPicker{T}"/>. What used to be a picker of
 /// its own is now this pane's CATALOG FEED — the query, the badge, the icon and
 /// the head strips a catalog row needs, handed to that picker as options.</para>
 /// </summary>
@@ -35,7 +35,7 @@ public sealed class AnimationPane
     /// <summary>One surface for every picker row: the row that opened it is
     /// remembered in <see cref="_openFeed"/>, so the rows share a single
     /// popup.</summary>
-    private readonly LegacyCrystarium.SearchPicker<TimelineEntry> _picker =
+    private readonly Crystarium.SearchPicker<TimelineEntry> _picker =
         new("animation");
 
     private bool _openGeneral = true;
@@ -186,7 +186,7 @@ public sealed class AnimationPane
 
     public void Draw(Vector2 origin, Vector2 size)
     {
-        LegacyCrystarium.Page("animation", origin, size, page =>
+        Crystarium.Page("animation", origin, size, page =>
         {
             if (TargetActor() is not { } actor)
             {
@@ -266,7 +266,7 @@ public sealed class AnimationPane
     // ── sections ─────────────────────────────────────────────────────────
 
     private void DrawPlayback(
-        LegacyCrystarium.FormScope form,
+        Crystarium.FormScope form,
         ActorId actor,
         ActorAnimationReading reading,
         AnimationOverrides owned)
@@ -331,7 +331,7 @@ public sealed class AnimationPane
     /// <summary>Stance is two PAIRED rows: the family beside its pose stepper,
     /// the weapon state beside the position lock.</summary>
     private void DrawStance(
-        LegacyCrystarium.FormScope form,
+        Crystarium.FormScope form,
         ActorId actor,
         ActorAnimationReading reading)
     {
@@ -355,7 +355,7 @@ public sealed class AnimationPane
                 var theme = Crystarium.ActiveTheme;
                 ImGui.SetCursorScreenPos(
                     cell.Center(theme.Controls.WorkspaceHeight));
-                LegacyCrystarium.ActionDropdown(
+                Crystarium.ActionDropdown(
                     "##anim-stance",
                     StanceLabels,
                     stanceIndex,
@@ -399,7 +399,7 @@ public sealed class AnimationPane
             {
                 ImGui.SetCursorScreenPos(cell.Center(
                     Crystarium.ActiveTheme.Controls.SwitchHeight));
-                LegacyCrystarium.Switch(
+                Crystarium.Switch(
                     "##anim-weapon-drawn",
                     reading.WeaponDrawn,
                     next => Report(
@@ -410,7 +410,7 @@ public sealed class AnimationPane
             {
                 ImGui.SetCursorScreenPos(cell.Center(
                     Crystarium.ActiveTheme.Controls.SwitchHeight));
-                LegacyCrystarium.Switch(
+                Crystarium.Switch(
                     "##anim-position-lock",
                     owned.PositionLock,
                     next => Report(
@@ -422,7 +422,7 @@ public sealed class AnimationPane
     /// <summary>The pose stepper seats itself in its pair cell: two equal
     /// tracks split by the action gap.</summary>
     private static void PoseStepper(
-        LegacyCrystarium.FormPairCell cell,
+        Crystarium.FormPairCell cell,
         bool disabled,
         Action onPrevious,
         Action onNext)
@@ -437,7 +437,7 @@ public sealed class AnimationPane
         };
         var top = cell.Center(theme.Controls.WorkspaceHeight);
         ImGui.SetCursorScreenPos(top);
-        LegacyCrystarium.Button(
+        Crystarium.Button(
             "Previous",
             onPrevious,
             style: style,
@@ -446,7 +446,7 @@ public sealed class AnimationPane
             id: "##anim-pose-previous");
         ImGui.SetCursorScreenPos(
             new Vector2(top.X + width * cell.Scale + gap, top.Y));
-        LegacyCrystarium.Button(
+        Crystarium.Button(
             "Next",
             onNext,
             style: style,
@@ -456,7 +456,7 @@ public sealed class AnimationPane
     }
 
     private void DrawLayer(
-        LegacyCrystarium.FormScope form,
+        Crystarium.FormScope form,
         ActorId actor,
         ActorAnimationReading reading,
         AnimationOverrides owned,
@@ -558,7 +558,7 @@ public sealed class AnimationPane
     }
 
     private void DrawAdvancedControls(
-        LegacyCrystarium.FormScope form,
+        Crystarium.FormScope form,
         ActorId actor,
         ActorAnimationReading reading)
     {
@@ -578,7 +578,7 @@ public sealed class AnimationPane
     }
 
     private void DrawScrub(
-        LegacyCrystarium.FormScope form,
+        Crystarium.FormScope form,
         ActorId actor,
         ActorAnimationReading reading,
         string label,
@@ -646,7 +646,7 @@ public sealed class AnimationPane
     }
 
     private void DrawFace(
-        LegacyCrystarium.FormScope form,
+        Crystarium.FormScope form,
         ActorId actor,
         ActorAnimationReading reading)
     {
@@ -1041,7 +1041,7 @@ public sealed class AnimationPane
         if (_sceneMenuRequested)
         {
             _sceneMenuRequested = false;
-            LegacyCrystarium.FloatingMenu.Open(
+            Crystarium.FloatingMenu.Open(
                 "##anim-scene-menu",
                 ImGui.GetMousePos(),
                 [
@@ -1059,7 +1059,7 @@ public sealed class AnimationPane
                         TablerIcon.ArrowBackUp),
                 ]);
         }
-        switch (LegacyCrystarium.FloatingMenu.Draw("##anim-scene-menu"))
+        switch (Crystarium.FloatingMenu.Draw("##anim-scene-menu"))
         {
             case 0:
                 Report(_sceneActions.FreezeAll(), "Freeze all");

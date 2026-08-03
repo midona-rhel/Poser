@@ -21,7 +21,7 @@ public record struct PopoverProps
     public float Padding;
 }
 
-public static partial class LegacyCrystarium
+public static partial class Crystarium
 {
     /// <summary>
     /// Opens the popover, dropdown, colour picker or modal registered

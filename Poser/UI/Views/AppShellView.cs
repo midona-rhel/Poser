@@ -191,7 +191,7 @@ public static class AppShellView
     private static string _redoEmptyHelp = string.Empty;
 
     private static Vector4 Glass =>
-        LegacyCrystarium.FloatingSurface.FillColor;
+        Crystarium.FloatingSurface.FillColor;
     private static Vector4 BorderPrimary =>
         Crystarium.ActiveTheme.Chrome.ControlBorder;
     private static Vector4 BorderSecondary =>
@@ -224,9 +224,9 @@ public static class AppShellView
             float radius = Crystarium.ActiveTheme.Radii.Window;
 
             // One shell-level blur; child panels only add translucent fills.
-            LegacyCrystarium.FloatingSurface.PrependShellBlur(
+            Crystarium.FloatingSurface.PrependShellBlur(
                 dl, min, max, radius * s);
-            LegacyCrystarium.FloatingSurface.DrawChrome(
+            Crystarium.FloatingSurface.DrawChrome(
                 dl, min, max, radius, shadow: false, blur: false);
 
             SyncKeybindHelp();
@@ -335,8 +335,8 @@ public static class AppShellView
             Color = theme.Chrome.Text,
         };
         float x = min.X + TitleInset * s;
-        float nameWidth = LegacyCrystarium.MeasureText("Poser", nameStyle).X;
-        LegacyCrystarium.TextInBand(
+        float nameWidth = Crystarium.MeasureText("Poser", nameStyle).X;
+        Crystarium.TextInBand(
             new Vector2(x, min.Y), new Vector2(nameWidth, height),
             "Poser", nameStyle);
         if (!vm.GPoseActive)
@@ -349,7 +349,7 @@ public static class AppShellView
             Weight = FontWeight.Medium,
             Color = success,
         };
-        float textWidth = LegacyCrystarium.MeasureText("GPose", pillStyle).X;
+        float textWidth = Crystarium.MeasureText("GPose", pillStyle).X;
         float pillHeight = PillHeight * s;
         float dot = DotSize * s;
         var pillMin = new Vector2(
@@ -367,7 +367,7 @@ public static class AppShellView
             pillMin.Y + (pillHeight - dot) * 0.5f);
         dl.AddCircleFilled(
             dotMin + new Vector2(dot * 0.5f), dot * 0.5f, U32(success));
-        LegacyCrystarium.TextInBand(
+        Crystarium.TextInBand(
             new Vector2(dotMin.X + dot + theme.Spacing.Three * s, pillMin.Y),
             new Vector2(textWidth, pillHeight),
             "GPose",
@@ -499,7 +499,7 @@ public static class AppShellView
             "##shell-settings", help: "Open Poser settings");
         x -= step;
         ImGui.SetCursorScreenPos(new Vector2(x, y));
-        LegacyCrystarium.TemporaryIconToggle(
+        Crystarium.TemporaryIconToggle(
             TablerIcon.Armature,
             vm.SkeletonOverlayOn,
             () => vm.OnSkeletonOverlay?.Invoke(!vm.SkeletonOverlayOn),
@@ -561,14 +561,14 @@ public static class AppShellView
             Color = theme.TextMuted,
             Family = FontFamily.Mono,
         };
-        float leftWidth = LegacyCrystarium.MeasureText(vm.StatusLeft, style).X;
-        LegacyCrystarium.TextInBand(
+        float leftWidth = Crystarium.MeasureText(vm.StatusLeft, style).X;
+        Crystarium.TextInBand(
             new Vector2(dotMin.X + dot + StatusTextGap * s, min.Y),
             new Vector2(leftWidth, height),
             vm.StatusLeft,
             style);
-        float rightWidth = LegacyCrystarium.MeasureText(vm.StatusRight, style).X;
-        LegacyCrystarium.TextInBand(
+        float rightWidth = Crystarium.MeasureText(vm.StatusRight, style).X;
+        Crystarium.TextInBand(
             new Vector2(max.X - StatusInset * s - rightWidth, min.Y),
             new Vector2(rightWidth, height),
             vm.StatusRight,
@@ -613,11 +613,11 @@ public static class AppShellView
             // selector uses, not hand-drawn buttons; alignFirstTabToCursor
             // lands the first tab's LABEL on the content inset, because the
             // pill's dark chrome is decoration and not padding.
-            var size = LegacyCrystarium.MeasureSegmentedControl(_tabLabels);
+            var size = Crystarium.MeasureSegmentedControl(_tabLabels);
             ImGui.SetCursorScreenPos(new Vector2(
                 min.X + inset,
                 min.Y + (ToolbarHeight * s - size.Y) * 0.5f));
-            LegacyCrystarium.SegmentedControl(
+            Crystarium.SegmentedControl(
                 "##shell-tabs",
                 _tabLabels,
                 _tabActive,
@@ -628,7 +628,7 @@ public static class AppShellView
         // Actor physics occupies ONE stable right-aligned slot on every
         // workspace tab: a tab change never replaces it with selection text and
         // never moves it.
-        LegacyCrystarium.ActionBar(
+        Crystarium.ActionBar(
             "shell-workspace-actions",
             new Vector2(min.X + inset, min.Y),
             new Vector2(max.X - min.X - inset * 2f, ToolbarHeight * s),
@@ -706,7 +706,7 @@ public static class AppShellView
             else
             {
                 ImGui.SetCursorScreenPos(viewportCursor);
-                LegacyCrystarium.ScrollRegion(
+                Crystarium.ScrollRegion(
                     "##shell-content-scroll",
                     childSize.X / s,
                     childSize.Y / s,
@@ -764,7 +764,7 @@ public static class AppShellView
             railMin, new Vector2(railMin.X + 1f * s, max.Y), U32(BorderPrimary));
 
         ImGui.SetCursorScreenPos(railMin + new Vector2(0f, 12f) * s);
-        LegacyCrystarium.ScrollRegion(
+        Crystarium.ScrollRegion(
             "##shell-rail",
             railWidth / s - 1f,
             (max.Y - railMin.Y) / s - 24f,
@@ -794,7 +794,7 @@ public static class AppShellView
         string? help = null)
     {
         ImGui.SetCursorScreenPos(position);
-        LegacyCrystarium.IconButton(
+        Crystarium.IconButton(
             icon, onClick, ControlStyle.Square(side), disabled, help, id, flipX);
     }
 
@@ -807,7 +807,7 @@ public static class AppShellView
         string? help = null)
     {
         ImGui.SetCursorScreenPos(position);
-        LegacyCrystarium.IconButton(
+        Crystarium.IconButton(
             icon, onClick, ControlStyle.Square(side), help: help, id: id);
     }
 
@@ -823,10 +823,10 @@ public static class AppShellView
         Action<int> onChange,
         Func<int, string?>? itemHelp = null)
     {
-        var size = LegacyCrystarium.MeasureSegmentedControl(items);
+        var size = Crystarium.MeasureSegmentedControl(items);
         ImGui.SetCursorScreenPos(
             new Vector2(x, bandTop + (bandHeight - size.Y) * 0.5f));
-        LegacyCrystarium.SegmentedControl(
+        Crystarium.SegmentedControl(
             id, items, selected, onChange, itemHelp: itemHelp);
         return x + size.X;
     }
@@ -842,10 +842,10 @@ public static class AppShellView
         Func<int, bool>? itemDisabled = null,
         Func<int, string?>? itemHelp = null)
     {
-        var size = LegacyCrystarium.MeasureSegmentedControl(items);
+        var size = Crystarium.MeasureSegmentedControl(items);
         ImGui.SetCursorScreenPos(
             new Vector2(x, bandTop + (bandHeight - size.Y) * 0.5f));
-        LegacyCrystarium.SegmentedControl(
+        Crystarium.SegmentedControl(
             id,
             items,
             selected,
@@ -859,7 +859,7 @@ public static class AppShellView
         ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(color));
 
     private static void DrawOuterGlassBorder(Vector2 min, Vector2 max) =>
-        LegacyCrystarium.FloatingSurface.DrawBorder(
+        Crystarium.FloatingSurface.DrawBorder(
             min, max, Crystarium.ActiveTheme.Radii.Window);
 
     private static void SyncTabs(AppShellViewModel vm)
@@ -898,6 +898,6 @@ public static class AppShellView
     /// <summary>Cancels an in-progress numeric axis edit, for example when selection changes.</summary>
     public static void CancelAxisEdit()
     {
-        LegacyCrystarium.CancelAxisEdit();
+        Crystarium.CancelAxisEdit();
     }
 }

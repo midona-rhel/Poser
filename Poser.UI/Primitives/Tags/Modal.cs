@@ -14,7 +14,7 @@ public enum ModalSize
     Large,
 }
 
-public static partial class LegacyCrystarium
+public static partial class Crystarium
 {
     // Footer right-alignment uses the previous frame's measured width (standard
     // ImGui trick — avoids double-rendering children and their ID collisions).
@@ -27,11 +27,11 @@ public static partial class LegacyCrystarium
     /// border); 16px body padding; 44px footer (black@.10, inset top border,
     /// right-aligned children). Real ImGui modal popup — blocks input behind it.
     /// <code>
-    ///   if (LegacyCrystarium.Button("Open")) modalOpen = true;
-    ///   LegacyCrystarium.Modal("##import", modalOpen,
+    ///   if (Crystarium.Button("Open")) modalOpen = true;
+    ///   Crystarium.Modal("##import", modalOpen,
     ///       next => modalOpen = next, "Import pose",
     ///       body: () => { ... },
-    ///       footer: () => LegacyCrystarium.Button("Import", Import,
+    ///       footer: () => Crystarium.Button("Import", Import,
     ///           ButtonVariant.Primary));
     /// </code>
     /// </summary>

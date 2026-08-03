@@ -15,7 +15,7 @@ public enum HoverHelpSide
     Right,
 }
 
-public static partial class LegacyCrystarium
+public static partial class Crystarium
 {
     /// <summary>
     /// The ONE explanatory hover-help renderer — a transcription of
@@ -314,7 +314,7 @@ public static partial class LegacyCrystarium
         /// Draws one styled run onto the card's FOREGROUND draw list.
         ///
         /// <para>This is the one place the card cannot use
-        /// <see cref="LegacyCrystarium.TextAt(Vector2, string, in TextStyle)"/>:
+        /// <see cref="Crystarium.TextAt(Vector2, string, in TextStyle)"/>:
         /// the canonical renderer emits into
         /// <c>ImGui.GetWindowDrawList()</c>, and the card is composited on
         /// <c>ImGui.GetForegroundDrawList()</c>. Routing the label through
@@ -365,7 +365,7 @@ public static partial class LegacyCrystarium
             // then optional 16px kbd badges after 4px gaps.
             var contentStyle = ContentStyle;
             var badgeStyle = BadgeStyle;
-            var textSize = LegacyCrystarium.MeasureText(c.Text, contentStyle);
+            var textSize = Crystarium.MeasureText(c.Text, contentStyle);
 
             string[] keys = string.IsNullOrEmpty(c.Shortcut)
                 ? Array.Empty<string>()
@@ -375,7 +375,7 @@ public static partial class LegacyCrystarium
             float badgesW = 0f;
             for (int i = 0; i < keys.Length; i++)
             {
-                keySizes[i] = LegacyCrystarium.MeasureText(keys[i], badgeStyle);
+                keySizes[i] = Crystarium.MeasureText(keys[i], badgeStyle);
                 // box-sizing: border-box with no border, so the padded
                 // text width competes with min-width directly.
                 badgeWidths[i] = MathF.Max(

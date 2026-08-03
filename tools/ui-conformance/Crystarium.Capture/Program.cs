@@ -3,7 +3,7 @@ using System.Numerics;
 using System.Windows.Forms;
 using Dalamud.Bindings.ImGui;
 using Poser.UI;
-using Ui = Poser.UI.LegacyCrystarium;
+using Ui = Poser.UI.Crystarium;
 
 namespace Crystarium.Capture;
 
@@ -44,18 +44,6 @@ internal static class Program
 
         if (args.Length == 1 && args[0] == "--icon-button-behavior")
             return BehaviorSuites.IconButton();
-
-        if (args.Length == 1 && args[0] == "--reactive-button-behavior")
-            return BehaviorSuites.ReactiveButton();
-
-        if (args.Length == 1 && args[0] == "--reactive-dropdown-behavior")
-            return BehaviorSuites.ReactiveDropdown();
-
-        if (args.Length == 1 && args[0] == "--reactive-picker-behavior")
-            return BehaviorSuites.ReactivePicker();
-
-        if (args.Length == 1 && args[0] == "--reactive-form-behavior")
-            return BehaviorSuites.ReactiveForm();
 
         if (args.Length == 1 && args[0] == "--kernel-behavior")
             return BehaviorSuites.Kernel();
@@ -104,10 +92,6 @@ internal static class Program
                 "       Crystarium.Capture --batch <listfile>\n" +
                 "       Crystarium.Capture --measure <cssSize>\n" +
                 "       Crystarium.Capture --icon-button-behavior\n" +
-                "       Crystarium.Capture --reactive-button-behavior\n" +
-                "       Crystarium.Capture --reactive-dropdown-behavior\n" +
-                "       Crystarium.Capture --reactive-picker-behavior\n" +
-                "       Crystarium.Capture --reactive-form-behavior\n" +
                 "       Crystarium.Capture --kernel-behavior\n" +
                 "       Crystarium.Capture --sidebar-perf\n" +
                 "       Crystarium.Capture --generate-tokens <tokens.css> <out.g.cs>\n" +
@@ -228,14 +212,6 @@ internal static class Program
                             ComponentCatalog.MouseButtonEventsFor(
                                 entry.Name, frame))
                             io.AddMouseButtonEvent(button, down);
-                        // Wheel is real input like the rest: ImGui routes it
-                        // to the hovered window, so the fixture's pointer
-                        // script is what decides which list scrolls. A zero
-                        // wheel is dropped before it is queued, so the
-                        // unconditional call costs the other states nothing.
-                        io.AddMouseWheelEvent(
-                            0f, ComponentCatalog.WheelFor(entry.Name, frame));
-
                         ImGui.NewFrame();
                         Interactive.BeginFrame();
                         ComponentCatalog.Draw(

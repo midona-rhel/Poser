@@ -41,7 +41,7 @@ public record struct PickerOptions<T> where T : class
     public float Width;
 }
 
-public static partial class LegacyCrystarium
+public static partial class Crystarium
 {
     // ---- OverlayShell geometry ------------------------------------------
     /// <summary><c>.header</c>: the caption band the MULTI variant carries.

@@ -14,13 +14,13 @@ namespace Poser.UI;
 /// with your Crystarium tree.
 ///
 /// <code>
-///   public class MyWindow : LegacyCrystarium.View
+///   public class MyWindow : Crystarium.View
 ///   {
 ///       public MyWindow() : base("My Window") { Size = new Vector2(400, 300); }
 ///       protected override void Body()
 ///       {
-///           LegacyCrystarium.Text("Hello");
-///           LegacyCrystarium.Card(() => LegacyCrystarium.Text("Body"));
+///           Crystarium.Text("Hello");
+///           Crystarium.Card(() => Crystarium.Text("Body"));
 ///       }
 ///   }
 /// </code>

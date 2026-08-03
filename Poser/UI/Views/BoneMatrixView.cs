@@ -96,16 +96,16 @@ public static class BoneMatrixView
                 Weight = FontWeight.SemiBold,
                 Color = TextSecondary,
             };
-            LegacyCrystarium.TextAt(new Vector2(origin.X, y + 15f * s), section.Title, sectionStyle);
+            Crystarium.TextAt(new Vector2(origin.X, y + 15f * s), section.Title, sectionStyle);
             ImGui.SetCursorScreenPos(new Vector2(origin.X, y + 7f * s));
             ImGui.InvisibleButton($"##{idPrefix}-section-{sectionIndex}",
                 new Vector2(
                     MathF.Min(
                         width,
-                        LegacyCrystarium.MeasureText(section.Title, sectionStyle).X + 18f * s),
+                        Crystarium.MeasureText(section.Title, sectionStyle).X + 18f * s),
                     24f * s));
             if (ImGui.IsItemHovered())
-                LegacyCrystarium.HoverHelp.Explain($"bmv-section-{sectionIndex}",
+                Crystarium.HoverHelp.Explain($"bmv-section-{sectionIndex}",
                     ImGui.GetItemRectMin(), ImGui.GetItemRectMax(),
                     "Select every bone in this group · Ctrl adds to the selection");
             if (ImGui.IsItemClicked())
@@ -168,7 +168,7 @@ public static class BoneMatrixView
         float labelAvail = labelRight - pos.X;
         float labelY = pos.Y + (metrics.RowHeight - 12f) / 2f * s - 2f * s;
         if (labelAvail > 0f)
-            LegacyCrystarium.TextAt(
+            Crystarium.TextAt(
                 new Vector2(pos.X, labelY), row.Label, labelStyle,
                 TextConstraint.Truncate(labelAvail, TextAlign.End));
 
@@ -218,10 +218,10 @@ public static class BoneMatrixView
                     Family = FontFamily.Mono,
                     Color = pill.Selected ? TextPrimary : hovered ? TextPrimary : TextSecondary,
                 };
-                float tw = LegacyCrystarium.MeasureText(pill.Label, pillLabelStyle).X;
+                float tw = Crystarium.MeasureText(pill.Label, pillLabelStyle).X;
                 // USER 2026-08-03: the pill caption sat one pixel low — the
                 // same line-box-vs-ink defect every raw centring inherits.
-                LegacyCrystarium.TextAt(new Vector2(center.X - tw / 2f, center.Y - 6f * s), pill.Label, pillLabelStyle);
+                Crystarium.TextAt(new Vector2(center.X - tw / 2f, center.Y - 6f * s), pill.Label, pillLabelStyle);
             }
 
             if (clicked)

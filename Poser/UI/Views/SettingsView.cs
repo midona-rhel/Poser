@@ -58,7 +58,7 @@ public sealed class SettingsViewModel
 }
 
 /// <summary>
-/// Settings: the shared <see cref="LegacyCrystarium.WindowFrame"/> is the whole
+/// Settings: the shared <see cref="Crystarium.WindowFrame"/> is the whole
 /// chassis — chrome, both bars, the rail band and its rule — and this view only
 /// fills the two rectangles it hands back. The rail carries the category rows,
 /// the body hosts the page through the shared scroll seam exactly as the shell
@@ -123,7 +123,7 @@ public static class SettingsView
             theme.Settings.Width,
             theme.Settings.Height) * scale;
 
-        var rects = LegacyCrystarium.WindowFrame(
+        var rects = Crystarium.WindowFrame(
             "settings",
             origin,
             size,
@@ -164,7 +164,7 @@ public static class SettingsView
         float scale = ImGuiHelpers.GlobalScale;
         float inset = theme.Page.Inset;
         ImGui.SetCursorScreenPos(rail.Min + new Vector2(inset * scale));
-        LegacyCrystarium.ScrollRegion(
+        Crystarium.ScrollRegion(
             "##settings-navigation",
             rail.Size.X / scale - inset * 2f,
             rail.Size.Y / scale - inset * 2f,
@@ -223,9 +223,9 @@ public static class SettingsView
         var slotMin = new Vector2(
             hit.ScreenMin.X + NavigationIconMargin * scale, hit.ScreenMin.Y);
         var glyphMin = slotMin + new Vector2((height - glyph) * 0.5f);
-        LegacyCrystarium.IconIn(glyphMin, glyphMin + new Vector2(glyph), icon);
+        Crystarium.IconIn(glyphMin, glyphMin + new Vector2(glyph), icon);
         float labelX = slotMin.X + height;
-        LegacyCrystarium.TextInBand(
+        Crystarium.TextInBand(
             new Vector2(labelX, hit.ScreenMin.Y),
             new Vector2(hit.ScreenMax.X - labelX, height),
             label,
@@ -245,11 +245,11 @@ public static class SettingsView
         float scale = ImGuiHelpers.GlobalScale;
         float height = body.Size.Y;
         ImGui.SetCursorScreenPos(body.Min);
-        LegacyCrystarium.ScrollRegion(
+        Crystarium.ScrollRegion(
             "##settings-page-scroll",
             body.Size.X / scale,
             height / scale,
-            region => LegacyCrystarium.Page(
+            region => Crystarium.Page(
                 "settings-page",
                 ImGui.GetCursorScreenPos(),
                 new Vector2(region.ContentWidth * scale, height),
@@ -258,7 +258,7 @@ public static class SettingsView
 
     private static void DrawCategory(
         SettingsViewModel vm,
-        LegacyCrystarium.PageScope page)
+        Crystarium.PageScope page)
     {
         switch (vm.Category)
         {
@@ -285,7 +285,7 @@ public static class SettingsView
 
     private static void DrawGeneral(
         SettingsViewModel vm,
-        LegacyCrystarium.PageScope page)
+        Crystarium.PageScope page)
     {
         page.Section("BEHAVIOR", form =>
         {
@@ -304,7 +304,7 @@ public static class SettingsView
 
     private static void DrawDisplay(
         SettingsViewModel vm,
-        LegacyCrystarium.PageScope page)
+        Crystarium.PageScope page)
     {
         page.Section("BONE OVERLAY", form =>
         {
@@ -374,7 +374,7 @@ public static class SettingsView
 
     private static void DrawSkeleton(
         SettingsViewModel vm,
-        LegacyCrystarium.PageScope page)
+        Crystarium.PageScope page)
     {
         page.Section("SKELETON LINES", form =>
         {
@@ -402,7 +402,7 @@ public static class SettingsView
 
     private static void DrawUi(
         SettingsViewModel vm,
-        LegacyCrystarium.PageScope page)
+        Crystarium.PageScope page)
     {
         page.Section("LAYOUT", form =>
         {
@@ -427,7 +427,7 @@ public static class SettingsView
 
     private static void DrawKeybinds(
         SettingsViewModel vm,
-        LegacyCrystarium.PageScope page)
+        Crystarium.PageScope page)
     {
         page.Section("KEYBINDS", form =>
         {
@@ -450,7 +450,7 @@ public static class SettingsView
 
     private static void DrawAbout(
         SettingsViewModel vm,
-        LegacyCrystarium.PageScope page)
+        Crystarium.PageScope page)
     {
         page.Section("ABOUT", form =>
         {

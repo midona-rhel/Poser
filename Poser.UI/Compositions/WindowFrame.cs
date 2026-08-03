@@ -12,7 +12,7 @@ public readonly record struct WindowFrameRect(Vector2 Min, Vector2 Max)
 }
 
 /// <summary>
-/// What <see cref="LegacyCrystarium.WindowFrame"/> drew and what it left to the
+/// What <see cref="Crystarium.WindowFrame"/> drew and what it left to the
 /// caller: the two bars are already painted, the rail band and the body are
 /// empty rectangles their owner fills.
 /// </summary>
@@ -64,20 +64,20 @@ public readonly record struct WindowFrameProps
     public float BandHeight { get; init; }
 
     /// <summary>The host window already painted the glass — which
-    /// <see cref="LegacyCrystarium.FloatingSurface.Window"/> does for every
+    /// <see cref="Crystarium.FloatingSurface.Window"/> does for every
     /// window it hosts — so the frame must not paint a second shadow over the
     /// first. A surface on a bare host leaves this unstated.</summary>
     public bool HostPaintsChrome { get; init; }
 
     /// <summary>The footer's left cluster. Stating either cluster is what
     /// makes the footer band exist.</summary>
-    public Action<LegacyCrystarium.ActionBarScope>? FooterLeft { get; init; }
+    public Action<Crystarium.ActionBarScope>? FooterLeft { get; init; }
 
     /// <summary>The footer's right cluster.</summary>
-    public Action<LegacyCrystarium.ActionBarScope>? FooterRight { get; init; }
+    public Action<Crystarium.ActionBarScope>? FooterRight { get; init; }
 }
 
-public static partial class LegacyCrystarium
+public static partial class Crystarium
 {
     /// <summary>
     /// THE WINDOW FRAME, and there is one. Every floating Poser window is this

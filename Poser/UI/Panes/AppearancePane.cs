@@ -17,7 +17,7 @@ namespace Poser.UI;
 /// pane owns state and callbacks; Crystarium owns every row and placement.
 ///
 /// <para>All three external-appearance rows drive ONE shared
-/// <see cref="LegacyCrystarium.SearchPicker{T}"/>: the surface is drained at
+/// <see cref="Crystarium.SearchPicker{T}"/>: the surface is drained at
 /// the top of the frame and dispatched by owner name, so a selection change
 /// while a popover is open cannot retarget the pending pick.</para>
 /// </summary>
@@ -33,7 +33,7 @@ public sealed class AppearancePane
     private bool _openExternalAppearance = true;
     private bool _openCharacterFile = true;
 
-    private readonly LegacyCrystarium.SearchPicker<ExternalItem> _picker =
+    private readonly Crystarium.SearchPicker<ExternalItem> _picker =
         new("appearance-external");
 
     private static readonly Func<ExternalItem, string> ItemName =
@@ -53,9 +53,9 @@ public sealed class AppearancePane
     private bool _bodyBlocked;
     private string _bodyBlockedDetail = string.Empty;
 
-    private readonly LegacyCrystarium.FileDialog _mcdfImportBrowser =
+    private readonly Crystarium.FileDialog _mcdfImportBrowser =
         new("Import Character File", new[] { ".mcdf" }, isSaveMode: false);
-    private readonly LegacyCrystarium.FileDialog _mcdfExportBrowser =
+    private readonly Crystarium.FileDialog _mcdfExportBrowser =
         new("Export Character File", new[] { ".mcdf" }, isSaveMode: true);
     private string _mcdfPath =
         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
@@ -85,7 +85,7 @@ public sealed class AppearancePane
     {
         DrainPicker();
 
-        LegacyCrystarium.Page("appearance", origin, size, page =>
+        Crystarium.Page("appearance", origin, size, page =>
         {
             if (TargetActor() is not { } actor)
             {
@@ -146,7 +146,7 @@ public sealed class AppearancePane
     }
 
     private void GeneralRows(
-        LegacyCrystarium.FormScope form,
+        Crystarium.FormScope form,
         ActorId actor,
         PresentationOverrides owned,
         PresentationReading reading)
@@ -195,7 +195,7 @@ public sealed class AppearancePane
     }
 
     private void WetSurfaceRows(
-        LegacyCrystarium.FormScope form,
+        Crystarium.FormScope form,
         ActorId actor,
         PresentationOverrides owned,
         PresentationReading reading)
@@ -230,7 +230,7 @@ public sealed class AppearancePane
     }
 
     private void ExternalAppearanceRows(
-        LegacyCrystarium.FormScope form,
+        Crystarium.FormScope form,
         ActorId actor,
         IntegrationOverrides external)
     {
@@ -291,7 +291,7 @@ public sealed class AppearancePane
     }
 
     private void CharacterFileRows(
-        LegacyCrystarium.FormScope form,
+        Crystarium.FormScope form,
         ActorId actor,
         IntegrationOverrides external)
     {

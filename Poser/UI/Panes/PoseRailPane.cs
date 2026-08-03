@@ -63,9 +63,9 @@ public class PoseRailPane
         var (who, sub, linked) = _inspector.RailHeader();
         if (who.Length > 0)
         {
-            LegacyCrystarium.TextAt(cursor, who, new TextStyle { Size = Crystarium.ActiveTheme.Typography.BodySize, Weight = FontWeight.Medium, Color = Crystarium.ActiveTheme.Text });
+            Crystarium.TextAt(cursor, who, new TextStyle { Size = Crystarium.ActiveTheme.Typography.BodySize, Weight = FontWeight.Medium, Color = Crystarium.ActiveTheme.Text });
             if (sub.Length > 0)
-                LegacyCrystarium.TextAt(cursor + new Vector2(0f, 17f) * s, sub, new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Color = Crystarium.ActiveTheme.TextMuted, Family = FontFamily.Mono });
+                Crystarium.TextAt(cursor + new Vector2(0f, 17f) * s, sub, new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Color = Crystarium.ActiveTheme.TextMuted, Family = FontFamily.Mono });
 
             if (linked >= 2)
             {
@@ -77,7 +77,7 @@ public class PoseRailPane
                     Weight = FontWeight.Medium,
                     Color = Crystarium.ActiveTheme.AccentHover,
                 };
-                float pillW = (16f + 8f + LegacyCrystarium.MeasureText(count, countStyle).X / s) * s;
+                float pillW = (16f + 8f + Crystarium.MeasureText(count, countStyle).X / s) * s;
                 var pmin = new Vector2(cursor.X + width - pillW, cursor.Y);
                 var pmax = pmin + new Vector2(pillW, 18f * s);
                 dl.AddRectFilled(
@@ -87,13 +87,13 @@ public class PoseRailPane
                         Crystarium.ActiveTheme.Chrome.AccentFill),
                     Crystarium.ActiveTheme.Radii.Surface * s);
                 ImGui.SetCursorScreenPos(pmin + new Vector2(5f, 3.5f) * s);
-                LegacyCrystarium.Icon(
+                Crystarium.Icon(
                     "link",
                     11f,
                     Crystarium.ActiveTheme.AccentHover);
-                LegacyCrystarium.TextAt(pmin + new Vector2(19f, 2f) * s, count, countStyle);
-                if (LegacyCrystarium.HoverHelp.HelpHovered(pmin, pmax))
-                    LegacyCrystarium.HoverHelp.Explain("rail-linked-pill", pmin, pmax,
+                Crystarium.TextAt(pmin + new Vector2(19f, 2f) * s, count, countStyle);
+                if (Crystarium.HoverHelp.HelpHovered(pmin, pmax))
+                    Crystarium.HoverHelp.Explain("rail-linked-pill", pmin, pmax,
                         "Linked editing — edits apply to these bones");
             }
             cursor.Y += (sub.Length > 0 ? 36f : 22f) * s;
@@ -103,7 +103,7 @@ public class PoseRailPane
             {
                 // Always clickable: clearing overrides is a safe no-op when
                 // none exist.
-                if (LegacyCrystarium.Button("Reset transform",
+                if (Crystarium.Button("Reset transform",
                         id: "rail-actor-reset",
                         help: "Restore the actor's original transform",
                         style: ControlStyle.Workspace))
@@ -111,11 +111,11 @@ public class PoseRailPane
             }
             else
             {
-                if (LegacyCrystarium.Button("Reset bone", id: "rail-bone-reset",
+                if (Crystarium.Button("Reset bone", id: "rail-bone-reset",
                     help: "Reset this bone's pose", style: ControlStyle.Workspace))
                     _inspector.ResetPrimaryBone();
                 ImGui.SameLine(0f, 6f * s);
-                if (LegacyCrystarium.Button("Select children", id: "rail-children",
+                if (Crystarium.Button("Select children", id: "rail-children",
                     help: "Add descendant bones to the selection", style: ControlStyle.Workspace))
                     _inspector.SelectChildren();
             }
@@ -123,7 +123,7 @@ public class PoseRailPane
         }
         else
         {
-            LegacyCrystarium.TextAt(cursor, "Nothing selected", new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.FormHint });
+            Crystarium.TextAt(cursor, "Nothing selected", new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.FormHint });
             cursor.Y += 22f * s;
         }
 
@@ -238,7 +238,7 @@ public class PoseRailPane
             // Ring emphasis only — no cursor-following markers.
             ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
             var ringMouse = ImGui.GetMousePos();
-            LegacyCrystarium.HoverHelp.Explain("rail-gizmo-ring",
+            Crystarium.HoverHelp.Explain("rail-gizmo-ring",
                 ringMouse - new Vector2(4f, 4f), ringMouse + new Vector2(4f, 4f),
                 $"{RotationGizmoRings.AxisName(hoverAxis)} · drag along the ring");
         }

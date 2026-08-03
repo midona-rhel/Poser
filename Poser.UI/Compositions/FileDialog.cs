@@ -48,7 +48,7 @@ internal interface IFileListingSource
     string DefaultPath { get; }
 }
 
-public static partial class LegacyCrystarium
+public static partial class Crystarium
 {
     /// <summary>
     /// The file surface: the shared <see cref="WindowFrame"/> is the whole

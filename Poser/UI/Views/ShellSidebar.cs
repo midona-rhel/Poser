@@ -118,7 +118,7 @@ public sealed class ShellSidebar
     private bool[] _kept = new bool[64];
     private int[] _keptDepth = new int[64];
 
-    private readonly Action<LegacyCrystarium.ScrollRegionScope> _drawTree;
+    private readonly Action<Crystarium.ScrollRegionScope> _drawTree;
     private readonly Action<string> _setSearch;
 
     /// <summary>The frame's view model. Written by <see cref="Draw"/> before
@@ -165,7 +165,7 @@ public sealed class ShellSidebar
         // The pill spans the cell between the content inset and the 1px rule.
         float pillWidth = MathF.Max(1f, width - inset * 2f - 1f);
         ImGui.SetCursorScreenPos(origin + new Vector2(inset, SearchTop) * scale);
-        LegacyCrystarium.FilterPill(
+        Crystarium.FilterPill(
             SearchId,
             vm.SidebarSearch,
             _setSearch,
@@ -178,7 +178,7 @@ public sealed class ShellSidebar
         // cannot push the sidebar's primary navigation affordance out of view.
         float treeHeight = MathF.Max(1f, size.Y / scale - SearchBandHeight);
         ImGui.SetCursorScreenPos(origin + new Vector2(0f, SearchBandHeight * scale));
-        LegacyCrystarium.ScrollRegion(TreeId, width, treeHeight, _drawTree);
+        Crystarium.ScrollRegion(TreeId, width, treeHeight, _drawTree);
     }
 
     // ── the cache ────────────────────────────────────────────────────────
@@ -393,7 +393,7 @@ public sealed class ShellSidebar
 
     // ── the tree ─────────────────────────────────────────────────────────
 
-    private void DrawTree(LegacyCrystarium.ScrollRegionScope region)
+    private void DrawTree(Crystarium.ScrollRegionScope region)
     {
         var theme = Crystarium.ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
@@ -463,7 +463,7 @@ public sealed class ShellSidebar
         };
 
         ImGui.SetCursorScreenPos(at);
-        var action = LegacyCrystarium.TreeRow(
+        var action = Crystarium.TreeRow(
             entry.Id,
             row.Label,
             in props,
@@ -499,11 +499,11 @@ public sealed class ShellSidebar
             Weight = FontWeight.Medium,
             Color = theme.TextMuted,
         };
-        LegacyCrystarium.TextInBand(
+        Crystarium.TextInBand(
             new Vector2(
                 at.X + theme.Spacing.Two * scale,
                 at.Y + theme.Spacing.Two * scale),
-            new Vector2(width * scale, LegacyCrystarium.MeasureText(
+            new Vector2(width * scale, Crystarium.MeasureText(
                 section.Title, style).Y),
             section.Title,
             style,
@@ -515,7 +515,7 @@ public sealed class ShellSidebar
         float side = theme.Controls.SwitchHeight;
         ImGui.SetCursorScreenPos(new Vector2(
             at.X + (width - theme.Scrollbar.GutterWidth - side) * scale, at.Y));
-        if (LegacyCrystarium.IconButton(
+        if (Crystarium.IconButton(
                 TablerIcon.Plus,
                 style: ControlStyle.Square(side),
                 id: entry.Id))
@@ -543,7 +543,7 @@ public sealed class ShellSidebar
             if (row.ActorActions)
             {
                 ImGui.SetCursorScreenPos(origin);
-                if (LegacyCrystarium.IconButton(
+                if (Crystarium.IconButton(
                         TablerIcon.Crosshair,
                         style: square,
                         help: "Set game target",
@@ -551,7 +551,7 @@ public sealed class ShellSidebar
                     _vm.OnActorTarget?.Invoke(row);
 
                 ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
-                if (LegacyCrystarium.TemporaryIconToggle(
+                if (Crystarium.TemporaryIconToggle(
                         TablerIcon.Eye,
                         selected: false,
                         style: square,
@@ -561,7 +561,7 @@ public sealed class ShellSidebar
                     _vm.OnActorVisibility?.Invoke(row);
 
                 ImGui.SetCursorScreenPos(origin + new Vector2(step * 2f, 0f));
-                if (LegacyCrystarium.TemporaryIconToggle(
+                if (Crystarium.TemporaryIconToggle(
                         TablerIcon.PlayerPlay,
                         selected: false,
                         style: square,
@@ -578,7 +578,7 @@ public sealed class ShellSidebar
                 return;
             bool visible = _vm.IsOverlayVisible?.Invoke(bones) ?? true;
             ImGui.SetCursorScreenPos(origin);
-            if (LegacyCrystarium.TemporaryIconToggle(
+            if (Crystarium.TemporaryIconToggle(
                     visible ? TablerIcon.Eye : TablerIcon.EyeOff,
                     selected: false,
                     style: square,

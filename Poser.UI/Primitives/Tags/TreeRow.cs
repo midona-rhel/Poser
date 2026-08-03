@@ -9,7 +9,7 @@ namespace Poser.UI;
 public enum SidebarExpander { None, Collapsed, Open }
 
 /// <summary>
-/// What one gesture on a <see cref="LegacyCrystarium.TreeRow"/> resolved to. A
+/// What one gesture on a <see cref="Crystarium.TreeRow"/> resolved to. A
 /// single value, not a flag per target: the row and its disclosure are two
 /// overlapping reserves and ImGui lets only the item that OWNS the press
 /// complete a release, so a double activation is unrepresentable.
@@ -85,7 +85,7 @@ public record struct TreeRowProps
     public float ActionSide;
 }
 
-public static partial class LegacyCrystarium
+public static partial class Crystarium
 {
     /// <summary>The indent one level costs.</summary>
     private const float TreeIndent = 20f;

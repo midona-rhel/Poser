@@ -19,7 +19,7 @@ public sealed class ExpressionInspectorSection
     /// header rather than an empty one.</summary>
     public bool CanDraw => _expressions.IsAvailable;
 
-    public void Draw(LegacyCrystarium.FormScope form, IActor actor)
+    public void Draw(Crystarium.FormScope form, IActor actor)
     {
         var units = _expressions.GetUnits(actor);
         int drawn = 0;
@@ -46,7 +46,7 @@ public sealed class ExpressionInspectorSection
     /// <summary>One unit's weight row. A bidirectional unit reads from -1, a
     /// one-way unit from 0; both are shown as a percentage.</summary>
     private void DrawUnit(
-        LegacyCrystarium.FormScope form,
+        Crystarium.FormScope form,
         IActor actor,
         string id,
         string label,
@@ -59,7 +59,7 @@ public sealed class ExpressionInspectorSection
             next => _expressions.SetWeight(actor, id, next),
             format: "0%");
 
-    private void DrawReset(LegacyCrystarium.FormScope form, IActor actor)
+    private void DrawReset(Crystarium.FormScope form, IActor actor)
     {
         bool active = _expressions.HasActiveExpression(actor);
         form.Actions("Expression", actions => actions.Button(

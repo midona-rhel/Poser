@@ -3,14 +3,7 @@ using Dalamud.Bindings.ImGui;
 using Poser.UI;
 using Dalamud.Interface.Utility;
 using FontFamily = Poser.UI.FontFamily;
-// System.Windows.Forms and Poser.UI both export these names; the harness
-// hosts a WinForms window, so the control types are named explicitly.
-using Button = Poser.UI.Button;
-using Label = Poser.UI.Label;
-using Ui = Poser.UI.LegacyCrystarium;
-using Rx = Poser.UI.Crystarium;
-using RxRoot = Poser.UI.UiRoot;
-using UiDim = Poser.UI.UiDim;
+using Ui = Poser.UI.Crystarium;
 
 namespace Crystarium.Capture;
 
@@ -70,26 +63,6 @@ internal static class ComponentCatalog
         new("bar-allocation", 340, 140, Hidden: true),
         new("btn-hover-exit", 320, 80),
         new("btn-hover-mid", 320, 80),
-        // PBI-015: the SAME states driven through the retained reactive
-        // root. Every rbtn-X must capture byte-identical to btn-X, which
-        // is what makes the declarative path the same button rather than
-        // a lookalike — see verify-reactive-button.ps1.
-        new("rbtn-secondary", 320, 80),
-        new("rbtn-secondary-hover", 320, 80),
-        new("rbtn-secondary-disabled", 320, 80),
-        new("rbtn-disabled-unicode", 320, 80),
-        new("rbtn-primary", 320, 80),
-        new("rbtn-primary-hover", 320, 80),
-        new("rbtn-primary-disabled", 320, 80),
-        new("rbtn-danger", 320, 80),
-        new("rbtn-danger-hover", 320, 80),
-        new("rbtn-danger-disabled", 320, 80),
-        new("rbtn-width-content", 320, 80),
-        new("rbtn-width-fixed", 320, 80),
-        new("rbtn-width-fill", 320, 80),
-        new("rbtn-hover-exit", 320, 80),
-        new("rbtn-hover-mid", 320, 80),
-        new("rbtn-hover-reconcile", 320, 80, Hidden: true),
         new("icon-button-idle", 120, 80),
         new("icon-button-hover", 120, 80),
         new("icon-button-pressed", 120, 80),
@@ -105,51 +78,20 @@ internal static class ComponentCatalog
         new("icon-button-backdrop-checker", 160, 80, Hidden: true),
         new("switch-off", 120, 80),
         new("switch-on", 120, 80),
-        // PBI-015 wave L: the legacy comparison states for the controls
-        // Appearance consumes, so the reactive twins land on a byte-gate
-        // instead of on nothing.
+        // The form controls Appearance consumes.
         new("slider", 320, 80),
         new("slider-disabled", 320, 80),
         new("colorwell", 320, 80),
         new("colorwell-disabled", 320, 80),
         new("progress", 320, 80),
-        // PBI-015 wave P: the SAME five form-control states plus the two
-        // switch states driven through the retained reactive root. Every
-        // rX must capture byte-identical to its legacy twin — the twins
-        // share the wave-M paint seam, so a differing byte is the retained
-        // runtime's own. See verify-reactive-form.ps1.
-        new("rslider", 320, 80),
-        new("rslider-disabled", 320, 80),
-        new("rcolorwell", 320, 80),
-        new("rcolorwell-disabled", 320, 80),
-        new("rprogress", 320, 80),
-        new("rswitch-off", 120, 80),
-        new("rswitch-on", 120, 80),
         new("text-input", 320, 80),
         new("input-placeholder", 320, 80),
         new("search-input", 320, 84),
         new("search-clear-hover", 320, 84),
         new("dropdown-closed", 320, 80),
         new("dropdown-open", 320, 280),
-        // PBI-015 wave H: the SAME two dropdown states driven through the
-        // retained reactive root. rdd-X must capture byte-identical to
-        // dropdown-X — see verify-reactive-dropdown.ps1.
-        new("rdd-closed", 320, 80),
-        new("rdd-open", 320, 280),
-        // PBI-015 wave K: the same two paths with a GENUINELY SCROLLED list —
-        // ten items past the seven-row viewport, wheeled down by real
-        // ImGuiIO wheel events. Hidden: the two are compared against each
-        // other, not against a Picto reference.
-        new("dd-scrolled", 320, 280, Hidden: true),
-        new("rdd-scrolled", 320, 280, Hidden: true),
-        // PBI-015 wave O: the retained picker is a REDESIGN, not a twin —
-        // the surface box is unchanged (so one reference cell judges both)
-        // and everything inside it is OverlayShell. Judged against the
-        // Picto reference.
-        new("rpicker-open", 320, 280),
-        new("rpicker-multi", 320, 280),
-        // PBI-016: the same two scenes through the IMPERATIVE SearchPicker.
-        // The golden is the reactive capture above, so the two are compared
+        // PBI-016: two scenes through the imperative SearchPicker. The
+        // golden is golden-rebuild/rpicker-*.png, so these are compared
         // byte-for-byte, not by eye.
         new("i-picker-open", 320, 280),
         new("i-picker-multi", 320, 280),
@@ -166,55 +108,21 @@ internal static class ComponentCatalog
         new("section", 320, 92),
         new("section-expanded", 320, 92),
         new("section-hover", 320, 92),
-        // PBI-015 wave P: the same three section states through the
-        // retained root. Same 272px measure, same choreography, same
-        // header paint seam — so byte-identity is the gate here too.
-        new("rsection", 320, 92),
-        new("rsection-expanded", 320, 92),
-        new("rsection-hover", 320, 92),
-        // PBI-015 phase 3B: the Settings chassis and its two new controls,
-        // renderable where pixels can be measured instead of reported.
-        new("rsettings-frame", 770, 570),
-        new("rsegmented", 420, 150),
-        new("rswatches", 340, 60),
-        // PBI-015 titlebar widening: the icon-sized action in every shape the
-        // shell asks for — enum glyph, registry name, mirrored glyph, and the
-        // persistent toggle both plain and slashed.
-        new("ricon-actions", 240, 60),
         new("tooltip", 240, 80),
         new("tooltip-pop-mid", 240, 80),
         new("context-menu", 320, 190),
         new("modal", 560, 360),
-        // PBI-015: the in-window scroll container. Twenty 26px rows in a 160px
-        // viewport is 520px of content — the overflow is the point, so the
-        // capture must show a bar and a cut last row.
-        new("rscrollarea", 320, 200),
-        // PBI-015: the shell's tree row as a component. Four rows carry every
-        // shape the sidebar draws — a root disclosure, a T branch with an
-        // action strip, a selected terminal L with a badge, and a collapsed
-        // root — so the guides, the chevron, the pill and the badge are all
-        // one capture.
-        new("rtreerow", 300, 190),
-        // PBI-016: the same six rows through the IMPERATIVE TreeRow. The
-        // golden is the reactive capture above, so the two are compared
-        // byte-for-byte, not by eye.
+        // PBI-016: six rows through the imperative TreeRow, against the
+        // golden-rebuild/rtreerow.png golden.
         new("i-treerow", 300, 190),
-        // PBI-015: the file surface's whole chassis — title bar, navigation
-        // band, quick rail beside the explorer, footer — driven off an
-        // INJECTED listing, so the capture touches no filesystem and is the
-        // same picture on every machine.
-        new("rfiledialog", 760, 500),
-        // PBI-016 phase 4a: the same file surface through the IMPERATIVE
-        // dialog. The golden is the reactive capture above, so the two are
-        // compared byte-for-byte, not by eye.
+        // PBI-016 phase 4a: the file surface through the imperative
+        // dialog, against the golden-rebuild/rfiledialog.png golden.
         new("i-filedialog", 760, 500),
-        // PBI-016: the same Settings frame through the IMPERATIVE
-        // WindowFrame. The golden is the reactive capture above, so the two
-        // states are compared byte-for-byte, not by eye.
+        // PBI-016: the Settings frame through the imperative WindowFrame,
+        // against the golden-rebuild/rsettings-frame.png golden.
         new("i-settings-frame", 770, 570),
-        // PBI-016 phase 1: the three widened controls through their
-        // IMPERATIVE entry points. Each golden is the reactive capture of the
-        // same name, so these are compared byte-for-byte, not by eye.
+        // PBI-016 phase 1: three widened controls through their imperative
+        // entry points, each against its golden-rebuild/r<name>.png golden.
         new("i-segmented", 420, 150),
         new("i-swatches", 340, 60),
         new("i-icon-actions", 240, 60),
@@ -232,34 +140,6 @@ internal static class ComponentCatalog
     ];
 
     /// <summary>
-    /// A SIBLING of <see cref="DropdownItems"/> rather than an extension of
-    /// it: the seven-item fixture's captures are frozen, so the scrolled
-    /// states get their own list. Ten items past the seven-row viewport is
-    /// 278px of rows in a 194px window — one wheel notch scrolls it far
-    /// enough to carry the selected row 0 clear off the top. Every added
-    /// name is narrower than "Date Modified", so the trigger and panel keep
-    /// the intrinsic width the seven-item fixture resolves.
-    /// </summary>
-    private static readonly string[] DropdownItemsScrolled =
-    [
-        "Date Added",
-        "Date Created",
-        "Date Modified",
-        "Name",
-        "Rating",
-        "File Size",
-        "Duration",
-        "Type",
-        "Author",
-        "Extension",
-    ];
-
-    /// <summary>Hoisted so the reactive fixture's build closure stays
-    /// static: a handler allocated per frame would be the harness's cost,
-    /// not the runtime's.</summary>
-    private static readonly Action<int> NoOpSelect = static _ => { };
-
-    /// <summary>
     /// The reference cell's active row is index 1, so both picker fixtures
     /// select "Date Created" — the single one by key, the multi one by a
     /// one-element set, which is the whole difference between the two
@@ -267,178 +147,8 @@ internal static class ComponentCatalog
     /// </summary>
     private static readonly HashSet<string> PickerSelected = ["Date Created"];
 
-    private static readonly Action<string> PickerNoOpPick = static _ => { };
-
     private static readonly Action<string, bool> PickerNoOpToggle =
         static (_, _) => { };
-
-    private static readonly Action PickerNoOpOpen = static () => { };
-
-    private static PickerProps<string> PickerFixtureProps(bool multi) =>
-        new(
-            "Date Modified",
-            // The single-select surface carries NO caption band (product
-            // shape); the multi variant keeps its header.
-            multi ? "Sort by" : null,
-            DropdownItems,
-            static item => item,
-            static item => item,
-            multi ? null : DropdownItems[1],
-            multi ? PickerSelected : null,
-            null,
-            multi ? null : PickerNoOpPick,
-            multi ? PickerNoOpToggle : null,
-            PickerNoOpOpen,
-            Dense: false,
-            Disabled: false,
-            DisabledHelp: null,
-            Multi: multi,
-            TriggerWidth: default);
-
-    private static readonly Func<UiNode> PickerSingleTree = static () =>
-        Rx.PickerSurface(PickerFixtureProps(false), "fixture");
-
-    private static readonly Func<UiNode> PickerMultiTree = static () =>
-        Rx.PickerSurface(PickerFixtureProps(true), "fixture");
-
-    /// <summary>
-    /// The wave-P form twins. Every callback and every build closure is
-    /// hoisted for the same reason the picker's are: a delegate allocated per
-    /// frame would be the harness's cost, and a fixture that differs from its
-    /// legacy twin only in what it allocates is not the comparison this sheet
-    /// claims to make.
-    /// </summary>
-    private static readonly Action FormNoOp = static () => { };
-
-    private static readonly Action<int> FormNoOpInt = static _ => { };
-
-    private static readonly Action<float> FormNoOpFloat = static _ => { };
-
-    private static readonly Action<bool> FormNoOpBool = static _ => { };
-
-    private static readonly Action<Vector4> FormNoOpColor = static _ => { };
-
-    /// <summary>Fixed 200px, exactly as the legacy fixture asks: the thumb
-    /// centre is then arithmetic rather than a function of the cell.</summary>
-    private static readonly Func<UiNode> SliderTree = static () =>
-        new Slider
-        {
-            Value = 0.4f,
-            Max = 1f,
-            OnChange = FormNoOpFloat,
-            StyleSheet = new() { Layout = new() { Width = UiDim.Fixed(200f) } },
-        };
-
-    private static readonly Func<UiNode> SliderDisabledTree = static () =>
-        new Slider
-        {
-            Value = 0.4f,
-            Max = 1f,
-            OnChange = FormNoOpFloat,
-            Disabled = true,
-            StyleSheet = new() { Layout = new() { Width = UiDim.Fixed(200f) } },
-        };
-
-    private static readonly Func<UiNode> ColorWellTree = static () =>
-        new ColorWell
-        {
-            Color = new Vector4(0.8f, 0.3f, 0.2f, 1f),
-            OnChange = FormNoOpColor,
-        };
-
-    /// <summary>The absent-weapon well: a null tint reaches the twin as
-    /// Vector4.Zero with disabled set, which is what makes it paint
-    /// UnavailableFill instead of the colour it does not have.</summary>
-    private static readonly Func<UiNode> ColorWellDisabledTree = static () =>
-        new ColorWell { OnChange = FormNoOpColor, Disabled = true };
-
-    private static readonly Func<UiNode> ProgressTree = static () =>
-        new Progress { Fraction = 0.4f, Width = UiDim.Fixed(200f) };
-
-    private static readonly Func<UiNode> SwitchOffTree = static () =>
-        new Switch { OnToggle = FormNoOpBool };
-
-    private static readonly Func<UiNode> SwitchOnTree = static () =>
-        new Switch { Value = true, OnToggle = FormNoOpBool };
-
-    /// <summary>
-    /// The section twins carry NO content, because the legacy fixture they
-    /// are gated against carries none either: <c>Ui.Section</c> is handed an
-    /// empty <c>FormScope</c> body, so an expanded legacy section draws its
-    /// rule, its header and nothing else. Rows here would be pixels the
-    /// reference side does not have.
-    /// </summary>
-    private static readonly Func<UiNode> SectionTree = static () =>
-        new Section
-        {
-            Title = "GENERAL",
-            OnExpandedChange = FormNoOpBool,
-            Key = "section",
-        };
-
-    private static readonly Func<UiNode> SectionExpandedTree = static () =>
-        new Section
-        {
-            Title = "GENERAL",
-            Expanded = true,
-            OnExpandedChange = FormNoOpBool,
-            Key = "section",
-        };
-
-    /// <summary>
-    /// Diagnostic chassis at the Settings window's own 720x520: the
-    /// rotated-H rules (full-width header/footer rules bridged by the nav
-    /// rule), the footer band with its comfortable buttons, and a rail with
-    /// a selected row — everything the in-game window reports against,
-    /// renderable where pixels can be inspected.
-    /// </summary>
-    /// <summary>
-    /// Declared through the SHARED chassis, and byte-gated against the
-    /// hand-built frame it replaced: Settings is accepted pixel-for-pixel, so
-    /// this fixture is what proves the extraction reproduced its geometry
-    /// rather than approximated it.
-    /// </summary>
-    private static readonly Func<UiNode> SettingsFrameTree = static () =>
-        new WindowChassis
-        {
-            Title = "Settings",
-            OnClose = FormNoOp,
-            RailWidth = 200f,
-            Rail =
-            [
-                SettingsNavRow(0, "General", TablerIcon.Sliders, false),
-                SettingsNavRow(1, "Display", TablerIcon.Monitor, true),
-            ],
-            FooterRight =
-            [
-                new Button { Label = "Cancel", OnClick = FormNoOp },
-                new Button
-                {
-                    Label = "Save",
-                    Style = ButtonStyle.Primary,
-                    OnClick = FormNoOp,
-                },
-            ],
-        };
-
-    private static UiNode SettingsNavRow(
-        int index, string label, TablerIcon icon, bool selected) => new Element
-    {
-        Sheet = SheetFamily.NavRow,
-        Selected = selected,
-        Index = index,
-        On = new Poser.UI.Listeners { OnPick = FormNoOpInt },
-        Key = index,
-        Children =
-        [
-            new Stack
-            {
-                Sheet = SheetFamily.NavIconSlot,
-                Children = new Glyph { Icon = icon, Size = 14f },
-            },
-            new Poser.UI.Label { Text = label, Sheet = SheetFamily.NavLabel },
-        ],
-    };
 
     private static readonly string[] SegmentedFixtureItems =
         ["Left", "Right", "Floating", "Hidden"];
@@ -456,96 +166,6 @@ internal static class ComponentCatalog
     private static readonly Func<int, bool> SegmentedFixtureDisabled =
         static index => index == 2;
 
-    /// <summary>Two stacked LABEL rows — the exact shape that proved the 30px
-    /// band left full-height controls no separation (user 2026-08-02), so the
-    /// row pitch stays inspectable where it regressed — then the ICON variant
-    /// twice: once placed normally, once with AlignFirstTabToCursor, so the
-    /// negative chrome-padding margin either shifts the pill or it does not.
-    /// </summary>
-    private static readonly Func<UiNode> SegmentedTree = static () =>
-        new Column
-        {
-            Style = new()
-            {
-                Layout = new() { Width = UiDim.Fixed(400f) },
-            },
-            Children =
-            [
-                Poser.UI.Crystarium.FormSegmented(
-                    "Entity sidebar", SegmentedFixtureItems, 0, FormNoOpInt, 270f),
-                Poser.UI.Crystarium.FormSegmented(
-                    "Inspector", SegmentedFixtureItems, 1, FormNoOpInt, 270f),
-                new Segmented
-                {
-                    Icons = SegmentedFixtureIcons,
-                    Selected = 1,
-                    OnChange = FormNoOpInt,
-                    ItemDisabled = SegmentedFixtureDisabled,
-                    Key = "icons",
-                },
-                new Segmented
-                {
-                    Icons = SegmentedFixtureIcons,
-                    Selected = 1,
-                    OnChange = FormNoOpInt,
-                    ItemDisabled = SegmentedFixtureDisabled,
-                    AlignFirstTabToCursor = true,
-                    Key = "icons-aligned",
-                },
-            ],
-        };
-
-    /// <summary>The five icon-action shapes the shell titlebar asks for, on one
-    /// row: the enum glyph, a registry name the enum lacks, a mirrored glyph, a
-    /// selected toggle and a slashed one.</summary>
-    private static readonly Func<UiNode> IconActionsTree = static () =>
-        new Row
-        {
-            Style = new()
-            {
-                Layout = new() { Gap = 8f, Align = UiAlign.Center },
-            },
-            Children =
-            [
-                new IconAction
-                {
-                    Icon = TablerIcon.Settings,
-                    OnClick = FormNoOp,
-                    Size = 28f,
-                    Key = "enum",
-                },
-                IconAction.Named("x") with
-                {
-                    OnClick = FormNoOp,
-                    Size = 28f,
-                    Key = "named",
-                },
-                new IconAction
-                {
-                    Icon = TablerIcon.ArrowBackUp,
-                    OnClick = FormNoOp,
-                    FlipX = true,
-                    Size = 28f,
-                    Key = "flipped",
-                },
-                new IconAction
-                {
-                    Icon = TablerIcon.Eye,
-                    OnClick = FormNoOp,
-                    Selected = true,
-                    Key = "selected",
-                },
-                new IconAction
-                {
-                    Icon = TablerIcon.Eye,
-                    OnClick = FormNoOp,
-                    Selected = false,
-                    Slashed = true,
-                    Key = "slashed",
-                },
-            ],
-        };
-
     private static readonly Vector4[] SwatchFixtureColors =
     [
         new(0.50f, 0.50f, 0.50f, 1f),
@@ -554,141 +174,6 @@ internal static class ComponentCatalog
         new(0.27f, 0.20f, 0.46f, 1f),
         new(0.94f, 0.62f, 0.10f, 1f),
     ];
-
-    private static readonly Func<UiNode> SwatchesTree = static () =>
-        new Swatches
-        {
-            Colors = SwatchFixtureColors,
-            Selected = 2,
-            OnChange = FormNoOpInt,
-        };
-
-    /// <summary>
-    /// The in-window scroll container, overflowing on purpose: twenty 26px
-    /// rows is 520px of content in a 160px viewport, so the capture shows the
-    /// gutter's bar, a cut last row, and — because every other row carries the
-    /// Selected overlay — exactly where each row's band starts. The rows are
-    /// stateful sheets with no listeners, which is what proves the identity
-    /// chain still reserves twenty distinct hit paths through the seam.
-    /// </summary>
-    private static readonly Func<UiNode> ScrollAreaTree = static () =>
-    {
-        UiNode[] rows = new UiNode[20];
-        for (int i = 0; i < rows.Length; i++)
-            rows[i] = new Poser.UI.Element
-            {
-                Sheet = SheetFamily.DropdownRow,
-                Style = new()
-                {
-                    Layout = new() { Height = UiDim.Fixed(26f) },
-                },
-                Text = $"Row {i + 1:00}",
-                Selected = i % 2 == 0,
-                Key = i,
-            };
-
-        return new ScrollArea
-        {
-            Height = UiDim.Fixed(160f),
-            CapChildHitWidth = true,
-            Children = UiChildren.Create(rows),
-            Key = "scroll",
-        };
-    };
-
-    /// <summary>
-    /// The sidebar tree, in the four shapes the shell actually draws: a root
-    /// that discloses (chevron in its 16px slot, icon, no guides), a nested
-    /// leaf with siblings below it (full trunk + arm) carrying an action strip,
-    /// the LAST nested leaf (hard L) selected and badged, and a collapsed root.
-    /// The rows are keyed by name because a tree reorders under disclosure.
-    /// </summary>
-    private static readonly Func<UiNode> TreeRowTree = static () =>
-        new Column
-        {
-            Style = new()
-            {
-                Layout = new() { Width = UiDim.Fixed(250f) },
-            },
-            Children =
-            [
-                new TreeRow
-                {
-                    Label = "Midona Rhel",
-                    Icon = TablerIcon.User,
-                    Expander = SidebarExpander.Open,
-                    OnSelect = FormNoOp,
-                    OnToggleExpand = FormNoOp,
-                    Key = "actor",
-                },
-                new TreeRow
-                {
-                    Label = "Spine",
-                    Depth = 1,
-                    OnSelect = FormNoOp,
-                    Actions =
-                    [
-                        new IconAction
-                        {
-                            Icon = TablerIcon.Crosshair,
-                            OnClick = FormNoOp,
-                            Size = 20f,
-                            Key = "target",
-                        },
-                        new IconAction
-                        {
-                            Icon = TablerIcon.Eye,
-                            OnClick = FormNoOp,
-                            Selected = true,
-                            Size = 20f,
-                            Key = "visible",
-                        },
-                    ],
-                    Key = "spine",
-                },
-                // The FORK: a nested row that itself discloses — the split
-                // trunk with the cutout around its chevron — plus its child,
-                // whose trunk mask carries the continuing depth-1 line. The
-                // one branch shape the first four rows cannot reach.
-                new TreeRow
-                {
-                    Label = "Arms",
-                    Depth = 1,
-                    Expander = SidebarExpander.Open,
-                    OnSelect = FormNoOp,
-                    OnToggleExpand = FormNoOp,
-                    Key = "arms",
-                },
-                new TreeRow
-                {
-                    Label = "L Hand",
-                    Depth = 2,
-                    Trunks = 0b10,
-                    IsLastChild = true,
-                    OnSelect = FormNoOp,
-                    Key = "l-hand",
-                },
-                new TreeRow
-                {
-                    Label = "Head",
-                    Depth = 1,
-                    IsLastChild = true,
-                    Selected = true,
-                    Badge = "12",
-                    OnSelect = FormNoOp,
-                    Key = "head",
-                },
-                new TreeRow
-                {
-                    Label = "Chocobo",
-                    Icon = TablerIcon.Paw,
-                    Expander = SidebarExpander.Collapsed,
-                    OnSelect = FormNoOp,
-                    OnToggleExpand = FormNoOp,
-                    Key = "companion",
-                },
-            ],
-        };
 
     /// <summary>
     /// The file surface's INJECTED disk. Every timestamp is frozen and every
@@ -746,10 +231,10 @@ internal static class ComponentCatalog
         }
     }
 
-    /// <summary>The file surface is RETAINED — it owns a UiRoot, a history
-    /// stack and two native islands — but its root's identity cache lives in
-    /// the per-state ImGui context, so the instance is rebuilt on frame 0 of
-    /// every run rather than shared with the next state.</summary>
+    /// <summary>The dialog carries a history stack across frames, but its
+    /// ImGui ids live in the per-state context — so the instance is rebuilt
+    /// on frame 0 of every run rather than shared with the next state.
+    /// </summary>
     private static Ui.FileDialog? fileDialog;
 
     private static readonly string[] FileDialogExtensions = [".pose"];
@@ -762,16 +247,6 @@ internal static class ComponentCatalog
         ContextMenuItem.Separator,
         new("Despawn", TablerIcon.X, danger: true),
     ];
-
-    // One retained root per STATE. A state runs 40 frames in a fresh ImGui
-    // context, and the root is what carries scopes, motion identity and the
-    // interaction-id cache across them — so it must outlive the frame loop
-    // and must never be shared with the next state, whose context is gone.
-    private static RxRoot? reactiveRoot;
-    private static string? reactiveRootState;
-    // A static build callback cannot capture the frame counter, so the
-    // frame-dependent fixture parameter is parked here instead.
-    private static bool reactiveDisabled;
 
     /// <summary>
     /// SearchPicker is a RETAINED object — it stores the anchor rect its
@@ -793,17 +268,6 @@ internal static class ComponentCatalog
             : throw new ArgumentException(
                 $"Unknown component '{name}'. " +
                 $"Expected one of: {string.Join(", ", Specs.Select(x => x.Name))}.");
-
-    private static RxRoot ReactiveRoot(string state)
-    {
-        if (reactiveRootState != state)
-        {
-            reactiveRoot = new RxRoot();
-            reactiveRootState = state;
-        }
-
-        return reactiveRoot!;
-    }
 
     private static void DrawIconGrid(Vector2 origin, float size)
     {
@@ -867,49 +331,10 @@ internal static class ComponentCatalog
     /// </summary>
     public const int PopMidRegisterFrame = 9;
 
-    /// <summary>
-    /// The frame the scrolled fixtures deliver their wheel notch on: late
-    /// enough that the reactive menu (opened by a real click at frame 2) is
-    /// already up, early enough that the pointer is long gone by the
-    /// presented frames.
-    /// </summary>
-    private const int ScrollWheelFrame = 10;
-
-    /// <summary>
-    /// Vertical wheel for a frame, in ImGui notches — the units
-    /// <c>AddMouseWheelEvent</c> takes. A notch is
-    /// <c>min(5 * fontSize, 0.67 * viewport)</c>, which is a FONT metric and
-    /// so not something a fixture should depend on; two notches overshoot
-    /// this list's 84px of travel (ten 26px rows on 2px gaps inside a 194px
-    /// seven-row viewport) from any plausible font size, so the scroll
-    /// clamps to its maximum and lands on exactly three rows whatever the
-    /// atlas resolves. Zero on every other frame and every other state, and
-    /// ImGui drops a zero wheel event before it queues it.
-    /// </summary>
-    public static float WheelFor(string name, int frame) =>
-        (name is "dd-scrolled" or "rdd-scrolled") && frame == ScrollWheelFrame
-            ? -2f
-            : 0f;
-
     public static Vector2 PointerFor(string name, float scale, int frame)
     {
         if (name == "context-menu")
             return new Vector2(40, 40) * scale;
-        // The scrolled fixtures need the pointer INSIDE the popup list on the
-        // wheel frame — ImGui routes the wheel to the hovered window — and
-        // parked offscreen well before the presented frames, so the settled
-        // capture shows no hovered row. (64,120) is inside the seven-row
-        // viewport of a menu anchored under the (24,24) trigger; (64,37) is
-        // the trigger itself, which only the reactive twin has to click
-        // because its portal handle is path-derived.
-        if (name is "dd-scrolled" or "rdd-scrolled")
-        {
-            if (name == "rdd-scrolled" && frame is >= 1 and <= 4)
-                return new Vector2(64, 37) * scale;
-            return frame is >= 6 and <= 16
-                ? new Vector2(64, 120) * scale
-                : new Vector2(-1000, -1000);
-        }
         // Hover states park the pointer inside the control; hover-exit
         // leaves after 15 frames so the 150ms background transition has
         // settled back to idle by capture. The shared inside point (84,40)
@@ -927,24 +352,6 @@ internal static class ComponentCatalog
             || (name == "btn-hover-exit" && frame < 15)
             || (name == "btn-hover-mid" && frame >= 34)
             || (name == "btn-hover-reconcile" && frame < 20)
-            // The reactive twins share their btn counterpart's choreography
-            // exactly; identical input is what makes the byte-identity
-            // assertion a statement about the RENDERER, not the script.
-            || (name == "rbtn-hover-exit" && frame < 15)
-            || (name == "rbtn-hover-mid" && frame >= 34)
-            || (name == "rbtn-hover-reconcile" && frame < 20)
-            // The reactive portal id is PATH-derived, so the open state
-            // cannot be staged with an OpenPopover call the way the legacy
-            // twin is: the menu is opened the honest way, by a real click
-            // on the trigger. The pointer leaves on frame 5 so the settled
-            // capture shows exactly what dropdown-open shows — trigger
-            // unhovered, popup open, no row under the pointer.
-            || (name == "rdd-open" && frame is >= 1 and <= 4)
-            // Same choreography for the picker twins: the surface is opened
-            // by a real press on the trigger, and the pointer leaves before
-            // the presented frames so no row is hovered at capture.
-            || (name.StartsWith("rpicker-", StringComparison.Ordinal)
-                && frame is >= 1 and <= 4)
             || name == "icon-button-pressed"
             || (name == "icon-button-held-outside" && frame < 15)
             || (name == "icon-button-hover-exit" && frame < 15)
@@ -971,16 +378,8 @@ internal static class ComponentCatalog
         // the affordance centres 13px in at (283, 42) over the 36px
         // search row. The shared (84,40) point would hover the field but
         // not the affordance.
-        // The dropdown trigger is the 26px .btn at the (24,24) stage origin,
-        // wide enough for "Date Modified" plus the chevron slot; this point
-        // is inside it and clear of both edges.
         return inside
-            ? (name == "rdd-open"
-                || name.StartsWith("rpicker-", StringComparison.Ordinal)
-                ? new Vector2(64, 37)
-                // The reactive section twin shares the legacy header's box
-                // exactly, so it shares the point that lands on it.
-                : name is "section-hover" or "rsection-hover"
+            ? (name == "section-hover"
                 ? new Vector2(84, 58)
                 : name == "search-clear-hover"
                 ? new Vector2(283, 42)
@@ -1004,23 +403,6 @@ internal static class ComponentCatalog
                 || name == "icon-button-held-outside")
             && frame == 5)
             yield return (0, true);
-        // rdd-open's menu is opened by a real press/release on the trigger,
-        // inside the frames PointerFor parks the pointer there.
-        if (name == "rdd-open" && frame == 2)
-            yield return (0, true);
-        if (name == "rdd-open" && frame == 4)
-            yield return (0, false);
-        // Same choreography for the scrolled reactive twin; the wheel notch
-        // lands six frames after the release, with the menu already up.
-        if (name == "rdd-scrolled" && frame == 2)
-            yield return (0, true);
-        if (name == "rdd-scrolled" && frame == 4)
-            yield return (0, false);
-        // The picker twins open the same honest way.
-        if (name.StartsWith("rpicker-", StringComparison.Ordinal) && frame == 2)
-            yield return (0, true);
-        if (name.StartsWith("rpicker-", StringComparison.Ordinal) && frame == 4)
-            yield return (0, false);
     }
 
     public static void Draw(string name, int frame, Vector2 canvas)
@@ -1429,129 +811,6 @@ internal static class ComponentCatalog
                     disabled: frame is >= 18 and <= 30,
                     id: "##btn");
                 break;
-            // ---- Reactive twins (PBI-015) ---------------------------
-            // Same stage origin, same label, same variant, same pointer
-            // script as the btn family above; only the PATH differs, so
-            // any pixel difference is the retained runtime's own.
-            case "rbtn-secondary":
-            case "rbtn-secondary-hover":
-            case "rbtn-hover-exit":
-            case "rbtn-hover-mid":
-                ReactiveRoot(name).Render(
-                    origin,
-                    ImGui.GetContentRegionAvail(),
-                    static () => new Button { Label = "Apply changes" });
-                break;
-            case "rbtn-secondary-disabled":
-                ReactiveRoot(name).Render(
-                    origin,
-                    ImGui.GetContentRegionAvail(),
-                    static () => new Button
-                    {
-                        Label = "Apply changes",
-                        Disabled = true,
-                    });
-                break;
-            case "rbtn-disabled-unicode":
-                ReactiveRoot(name).Render(
-                    origin,
-                    ImGui.GetContentRegionAvail(),
-                    static () => new Button
-                    {
-                        Label = "Wait 待機 x̃ €",
-                        Disabled = true,
-                    });
-                break;
-            case "rbtn-primary":
-            case "rbtn-primary-hover":
-                ReactiveRoot(name).Render(
-                    origin,
-                    ImGui.GetContentRegionAvail(),
-                    static () => new Button
-                    {
-                        Label = "Apply changes",
-                        Style = ButtonStyle.Primary,
-                    });
-                break;
-            case "rbtn-primary-disabled":
-                ReactiveRoot(name).Render(
-                    origin,
-                    ImGui.GetContentRegionAvail(),
-                    static () => new Button
-                    {
-                        Label = "Apply changes",
-                        Style = ButtonStyle.Primary,
-                        Disabled = true,
-                    });
-                break;
-            case "rbtn-danger":
-            case "rbtn-danger-hover":
-                ReactiveRoot(name).Render(
-                    origin,
-                    ImGui.GetContentRegionAvail(),
-                    static () => new Button
-                    {
-                        Label = "Apply changes",
-                        Style = ButtonStyle.Danger,
-                    });
-                break;
-            case "rbtn-danger-disabled":
-                ReactiveRoot(name).Render(
-                    origin,
-                    ImGui.GetContentRegionAvail(),
-                    static () => new Button
-                    {
-                        Label = "Apply changes",
-                        Style = ButtonStyle.Danger,
-                        Disabled = true,
-                    });
-                break;
-            case "rbtn-width-content":
-                ReactiveRoot(name).Render(
-                    origin,
-                    ImGui.GetContentRegionAvail(),
-                    static () => new Button { Label = "OK" });
-                break;
-            case "rbtn-width-fixed":
-                ReactiveRoot(name).Render(
-                    origin,
-                    ImGui.GetContentRegionAvail(),
-                    static () => new Button
-                    {
-                        Label = "Apply changes",
-                        StyleSheet = new()
-                        {
-                            Layout = new() { Width = UiDim.Fixed(160f) },
-                        },
-                    });
-                break;
-            case "rbtn-width-fill":
-                // The root's own allocation IS the bounded region here, so
-                // Fill resolves the 240px span the legacy twin gets from a
-                // child window. Render takes PHYSICAL pixels.
-                ReactiveRoot(name).Render(
-                    origin,
-                    new Vector2(240f, 40f) * ImGuiHelpers.GlobalScale,
-                    static () => new Button
-                    {
-                        Label = "Apply changes",
-                        StyleSheet = new()
-                        {
-                            Layout = new() { Width = UiDim.Fill },
-                        },
-                    });
-                break;
-            case "rbtn-hover-reconcile":
-                reactiveDisabled = frame is >= 18 and <= 30;
-                ReactiveRoot(name).Render(
-                    origin,
-                    ImGui.GetContentRegionAvail(),
-                    static () => new Button
-                    {
-                        Label = "Apply changes",
-                        Disabled = reactiveDisabled,
-                    });
-                break;
             case "bar-allocation":
             {
                 // ActionBar allocation invariant: Content + Fixed + Fill
@@ -1689,7 +948,7 @@ internal static class ComponentCatalog
                 Ui.Switch(
                     "##switch-on", true, _ => { });
                 break;
-            // ---- Form controls (PBI-015 wave L) ---------------------
+            // ---- Form controls ---------------------------------------
             // The four controls PageForm hands the Appearance pane, in the
             // exact shapes that pane asks for. A Fixed 200px width keeps
             // the slider's geometry independent of the canvas, so the
@@ -1728,44 +987,8 @@ internal static class ComponentCatalog
             case "progress":
                 Ui.ProgressBar(0.4f, 200f);
                 break;
-            // ---- Reactive form twins (PBI-015 wave P) ----------------
-            // Same stage origin, same values, same fixed 200px measure as
-            // the five states above and the two switch states further up;
-            // only the PATH differs, so any pixel difference is the
-            // retained runtime's own.
-            case "rslider":
-                ReactiveRoot(name).Render(
-                    origin, ImGui.GetContentRegionAvail(), SliderTree);
-                break;
-            case "rslider-disabled":
-                ReactiveRoot(name).Render(
-                    origin, ImGui.GetContentRegionAvail(),
-                    SliderDisabledTree);
-                break;
-            case "rcolorwell":
-                ReactiveRoot(name).Render(
-                    origin, ImGui.GetContentRegionAvail(), ColorWellTree);
-                break;
-            case "rcolorwell-disabled":
-                ReactiveRoot(name).Render(
-                    origin, ImGui.GetContentRegionAvail(),
-                    ColorWellDisabledTree);
-                break;
-            case "rprogress":
-                ReactiveRoot(name).Render(
-                    origin, ImGui.GetContentRegionAvail(), ProgressTree);
-                break;
-            case "rswitch-off":
-                ReactiveRoot(name).Render(
-                    origin, ImGui.GetContentRegionAvail(), SwitchOffTree);
-                break;
-            case "rswitch-on":
-                ReactiveRoot(name).Render(
-                    origin, ImGui.GetContentRegionAvail(), SwitchOnTree);
-                break;
             // ---- Imperative picker (PBI-016) -------------------------
-            // The same two scenes and the same trigger as the reactive
-            // states below, so the goldens judge them byte-for-byte.
+            // Judged byte-for-byte against golden-rebuild/rpicker-*.png.
             // SearchPicker samples its anchor from the CURRENT ImGui item,
             // so Open must follow the trigger immediately; and Open only
             // requests the popover — Draw is what opens it, the same frame.
@@ -1801,19 +1024,6 @@ internal static class ComponentCatalog
                         PickerNoOpToggle);
                 }
                 searchPicker!.Draw();
-                break;
-            // ---- Reactive picker (PBI-015 wave O) --------------------
-            // The SAME trigger the legacy fixture draws, at the same stage
-            // origin, so the comparison isolates the panel: the surface
-            // clamps to (20,22) either way and covers the button. The menu
-            // is earned by a real click, as every retained portal's is.
-            case "rpicker-open":
-                ReactiveRoot(name).Render(
-                    origin, ImGui.GetContentRegionAvail(), PickerSingleTree);
-                break;
-            case "rpicker-multi":
-                ReactiveRoot(name).Render(
-                    origin, ImGui.GetContentRegionAvail(), PickerMultiTree);
                 break;
             case "text-input":
                 Ui.TextInput(
@@ -1888,50 +1098,6 @@ internal static class ComponentCatalog
                         Width = UiWidth.Content,
                     });
                 break;
-            // ---- Reactive dropdown twins (PBI-015 wave H) -----------
-            // Same stage origin, same fixture, same Content width; the
-            // open state reaches its menu through a real click instead of
-            // the legacy twin's staged OpenPopover, because the retained
-            // portal's handle is derived from the element path.
-            case "rdd-closed":
-            case "rdd-open":
-                ReactiveRoot(name).Render(
-                    origin,
-                    ImGui.GetContentRegionAvail(),
-                    static () => new Dropdown
-                    {
-                        Items = DropdownItems,
-                        OnChange = NoOpSelect,
-                    });
-                break;
-            // ---- Genuinely scrolled twins (PBI-015 wave K) ----------
-            // Ten items, one wheel notch down. The legacy twin stages its
-            // menu the same way dropdown-open does; the reactive one earns
-            // it with a real click. Both are then wheeled by the SAME
-            // event on the SAME frame with the pointer at the SAME point.
-            case "dd-scrolled":
-                if (frame == 0)
-                    Ui.OpenPopover("##dd-scrolled_popup");
-                Ui.Dropdown(
-                    "##dd-scrolled",
-                    DropdownItemsScrolled,
-                    0,
-                    _ => { },
-                    new ControlStyle
-                    {
-                        Width = UiWidth.Content,
-                    });
-                break;
-            case "rdd-scrolled":
-                ReactiveRoot(name).Render(
-                    origin,
-                    ImGui.GetContentRegionAvail(),
-                    static () => new Dropdown
-                    {
-                        Items = DropdownItemsScrolled,
-                        OnChange = NoOpSelect,
-                    });
-                break;
             case "color-palette":
                 DrawPalette();
                 break;
@@ -1964,7 +1130,7 @@ internal static class ComponentCatalog
                 DrawSidebarDrop();
                 break;
             case "property-row":
-                // No retained Crystarium counterpart exists. An empty
+                // No Crystarium counterpart exists yet. An empty
                 // candidate is intentional: the report marks the Picto
                 // foreground as missing instead of comparing invented chrome.
                 break;
@@ -1993,51 +1159,8 @@ internal static class ComponentCatalog
                     _ => { },
                     _ => { });
                 break;
-            // ---- Reactive section twins (PBI-015 wave P) -------------
-            // The legacy fixture is handed an explicit 272px measure, so
-            // the retained root gets the same span rather than whatever
-            // the cell leaves: the width is the fixture's, not the
-            // canvas's, on both paths. Collapsed, expanded and header-
-            // hover all build the SAME call; only `expanded` and the
-            // parked pointer differ.
-            case "rsection":
-            case "rsection-hover":
-                ReactiveRoot(name).Render(
-                    origin,
-                    new Vector2(
-                        272f * scale, ImGui.GetContentRegionAvail().Y),
-                    SectionTree);
-                break;
-            case "rsection-expanded":
-                ReactiveRoot(name).Render(
-                    origin,
-                    new Vector2(
-                        272f * scale, ImGui.GetContentRegionAvail().Y),
-                    SectionExpandedTree);
-                break;
-            case "rsettings-frame":
-                Ui.FloatingSurface.DrawChrome(
-                    ImGui.GetWindowDrawList(),
-                    origin,
-                    origin + new Vector2(720f, 520f) * scale,
-                    Ui.ActiveTheme.Radii.Window);
-                ReactiveRoot(name).Render(
-                    origin, new Vector2(720f, 520f) * scale, SettingsFrameTree);
-                break;
             case "i-settings-frame":
                 DrawImperativeSettingsFrame(origin, scale);
-                break;
-            case "rsegmented":
-                ReactiveRoot(name).Render(
-                    origin, new Vector2(420f, 120f) * scale, SegmentedTree);
-                break;
-            case "ricon-actions":
-                ReactiveRoot(name).Render(
-                    origin, new Vector2(200f, 32f) * scale, IconActionsTree);
-                break;
-            case "rswatches":
-                ReactiveRoot(name).Render(
-                    origin, new Vector2(340f, 60f) * scale, SwatchesTree);
                 break;
             case "i-segmented":
                 DrawImperativeSegmented(origin, scale);
@@ -2120,44 +1243,8 @@ internal static class ComponentCatalog
                     ModalSize.Small,
                     height: 220);
                 break;
-            case "rscrollarea":
-                ReactiveRoot(name).Render(
-                    origin, new Vector2(280f, 160f) * scale, ScrollAreaTree);
-                break;
-            case "rtreerow":
-                // 250 wide, not the cell's 300: the strip and the badge are
-                // RIGHT-anchored, so a row that overran the cell would cut the
-                // very things this fixture exists to show.
-                ReactiveRoot(name).Render(
-                    origin, new Vector2(250f, 120f) * scale, TreeRowTree);
-                break;
             case "i-treerow":
                 DrawImperativeTreeRow(origin, scale);
-                break;
-            case "rfiledialog":
-                if (frame == 0)
-                {
-                    fileDialog = new Ui.FileDialog(
-                        "Import Pose", FileDialogExtensions)
-                    {
-                        Source = FileDialogListing.Instance,
-                    };
-                    // Rehome, not Open: Open claims the exclusive chain for a
-                    // window nobody draws here, which would occlude the cell.
-                    fileDialog.Rehome(FileDialogListing.Folder);
-                }
-
-                // PBI-016 phase 4a: the dialog behind this state is the
-                // IMPERATIVE one now — the retained tree it was named for is
-                // gone — so it paints its own glass and the fixture no longer
-                // draws a second. The state renders i-filedialog until phase 6
-                // retires it; the frozen golden PNG is what i-filedialog is
-                // judged against.
-                fileDialog!.RenderFrame(
-                    origin,
-                    new Vector2(
-                        Ui.ActiveTheme.FileDialog.Width,
-                        Ui.ActiveTheme.FileDialog.Height) * scale);
                 break;
             case "i-filedialog":
                 if (frame == 0)
@@ -2170,8 +1257,7 @@ internal static class ComponentCatalog
                     fileDialog.Rehome(FileDialogListing.Folder);
                 }
 
-                // No DrawChrome here: the imperative frame paints its own
-                // glass, which the retained root left to its caller.
+                // No DrawChrome here: the frame paints its own glass.
                 fileDialog!.RenderFrame(
                     origin,
                     new Vector2(
@@ -2262,7 +1348,7 @@ internal static class ComponentCatalog
     }
 
     /// <summary>
-    /// The same four segmented rows the reactive fixture builds, through the
+    /// The four segmented rows of golden-rebuild/rsegmented.png, through the
     /// IMPERATIVE control. DEVIATION: the golden's two label rows are FORM
     /// rows, and PageForm is another agent's file this phase, so the band is
     /// seated by hand — the 34px FormRowHeight pitch, the 94px label column,
@@ -2284,9 +1370,9 @@ internal static class ComponentCatalog
         void LabelRow(int index, string label, int selected)
         {
             var bandMin = origin + new Vector2(0f, index * band);
-            // The retained row centres the run's LINE BOX in the band and
-            // snaps; TextInBand's ink-metric seat is a different rule and
-            // would land a pixel off the golden.
+            // The golden centres the run's LINE BOX in the band and snaps;
+            // TextInBand's ink-metric seat is a different rule and would
+            // land a pixel off it.
             var measured = Ui.MeasureText(label, labelStyle);
             Ui.TextAt(
                 new Vector2(
@@ -2328,7 +1414,7 @@ internal static class ComponentCatalog
     /// <summary>The five icon-action shapes on one row through the IMPERATIVE
     /// entry points: the enum glyph, a registry name, a mirrored glyph, then
     /// the persistent toggle selected and slashed. 28px squares on the
-    /// reactive fixture's 8px gap.</summary>
+    /// golden's 8px gap.</summary>
     private static void DrawImperativeIconActions(Vector2 origin, float scale)
     {
         float pitch = (Ui.ActiveTheme.Controls.ShellIconAction + 8f) * scale;
@@ -2435,11 +1521,11 @@ internal static class ComponentCatalog
     }
 
     /// <summary>
-    /// The SAME six-row tree the reactive fixture builds, through the
+    /// The six-row tree of golden-rebuild/rtreerow.png, through the
     /// imperative row. 250 wide, not the cell's 300: the strip and the badge
     /// are right-anchored, so a row that overran the cell would cut the very
-    /// things this fixture exists to show. The golden is the reactive capture,
-    /// so the two states are compared byte-for-byte, not by eye.
+    /// things this fixture exists to show. Compared byte-for-byte, not by
+    /// eye.
     /// </summary>
     private static void DrawImperativeTreeRow(Vector2 origin, float scale)
     {
@@ -2450,8 +1536,8 @@ internal static class ComponentCatalog
             Height = UiHeight.Fixed(20),
         };
         // The cell has no container to indent the flow, so each band is seated
-        // at the stage origin explicitly — the reactive twin's Column does the
-        // same job on its side.
+        // at the stage origin explicitly — the golden's column does the same
+        // job on its side.
         float pitch = Ui.ActiveTheme.Controls.ListRowHeight * scale;
         void Seat(int index) =>
             ImGui.SetCursorScreenPos(origin + new Vector2(0f, index * pitch));

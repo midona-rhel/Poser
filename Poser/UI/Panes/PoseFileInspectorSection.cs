@@ -25,9 +25,9 @@ public sealed class PoseFileInspectorSection
     private readonly SelectionSession _selection;
     private readonly ISkeletonService _skeletons;
     private string _status = string.Empty;
-    private readonly LegacyCrystarium.FileDialog _importBrowser =
+    private readonly Crystarium.FileDialog _importBrowser =
         new("Import Pose", new[] { ".pose", ".cmp" }, isSaveMode: false);
-    private readonly LegacyCrystarium.FileDialog _exportBrowser =
+    private readonly Crystarium.FileDialog _exportBrowser =
         new("Export Pose", new[] { ".pose" }, isSaveMode: true);
     private string _lastPath =
         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
@@ -53,7 +53,7 @@ public sealed class PoseFileInspectorSection
         _exportBrowser.Draw();
     }
 
-    public void Draw(LegacyCrystarium.FormScope form, ISkeleton skeleton)
+    public void Draw(Crystarium.FormScope form, ISkeleton skeleton)
     {
         form.Dropdown("Scope", ScopeOptions, _scope, next => _scope = next);
 

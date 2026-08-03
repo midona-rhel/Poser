@@ -13,7 +13,7 @@ public enum ActionBarSeparator
     Bottom,
 }
 
-public static partial class LegacyCrystarium
+public static partial class Crystarium
 {
     public static void ActionBar(
         string id,
@@ -234,7 +234,7 @@ public static partial class LegacyCrystarium
                         ImGui.SetCursorScreenPos(new(
                             x,
                             centerY - side * 0.5f));
-                        LegacyCrystarium.Checkbox(
+                        Crystarium.Checkbox(
                             $"{_id}-check-{i}",
                             item.Value,
                             item.OnToggle!,
@@ -271,7 +271,7 @@ public static partial class LegacyCrystarium
                         ImGui.SetCursorScreenPos(new(
                             max.X - switchWidth,
                             centerY - logicalHeight * scale * 0.5f));
-                        LegacyCrystarium.Switch(
+                        Crystarium.Switch(
                             $"{_id}-switch-{i}",
                             item.Value,
                             item.OnToggle!,
@@ -347,10 +347,10 @@ public static partial class LegacyCrystarium
                 Weight = FontWeight.Regular,
                 Color = FormLabelColor,
             };
-            if (LegacyCrystarium.MeasureText(label, style).X <= band.X)
-                LegacyCrystarium.TextInBand(min, band, label, style);
+            if (Crystarium.MeasureText(label, style).X <= band.X)
+                Crystarium.TextInBand(min, band, label, style);
             else
-                LegacyCrystarium.TextInBand(
+                Crystarium.TextInBand(
                     min, band, label, style, TextConstraint.Truncate(band.X));
         }
 

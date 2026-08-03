@@ -5,7 +5,7 @@ using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
 
-public static partial class LegacyCrystarium
+public static partial class Crystarium
 {
     /// <summary>
     /// Inline (cursor-flow) Tabler icon at a LOGICAL CSS-pixel size —

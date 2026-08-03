@@ -6,7 +6,7 @@ using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
 
-public static partial class LegacyCrystarium
+public static partial class Crystarium
 {
     /// <param name="gutterWidth">The reserved bar width, logical; null takes
     /// the theme's shell gutter. A floating surface may state a narrower bar

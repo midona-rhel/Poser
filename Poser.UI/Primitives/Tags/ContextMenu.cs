@@ -33,7 +33,7 @@ public record struct ContextMenuItem
     public static ContextMenuItem Separator => new() { IsSeparator = true, Label = string.Empty };
 }
 
-public static partial class LegacyCrystarium
+public static partial class Crystarium
 {
     /// <summary>
     /// The ONE floating menu (Picto ContextMenu transcription): a 260px
@@ -378,8 +378,8 @@ public static partial class LegacyCrystarium
                         Color = text.Fade(0.5f),
                     };
                     var shortcutSize =
-                        LegacyCrystarium.MeasureText(shortcut, shortcutStyle);
-                    LegacyCrystarium.TextInBand(
+                        Crystarium.MeasureText(shortcut, shortcutStyle);
+                    Crystarium.TextInBand(
                         new Vector2(rowMin.X, rowMin.Y),
                         new Vector2(labelRight - rowMin.X, rowHeightPx),
                         shortcut,
@@ -396,7 +396,7 @@ public static partial class LegacyCrystarium
                     Color = text,
                 };
                 var labelSize =
-                    LegacyCrystarium.MeasureText(item.Label, labelStyle);
+                    Crystarium.MeasureText(item.Label, labelStyle);
                 float labelWidth = MathF.Max(1f, labelRight - textX);
                 var labelBand = new Vector2(labelWidth, rowHeightPx);
                 // CSS .label: flex 1, ellipsis. Constrain ONLY on
@@ -404,7 +404,7 @@ public static partial class LegacyCrystarium
                 // Segoe's descenders reach a hair below it — an
                 // unconditional clip shaved the bottom off 'g'.
                 if (labelSize.X > labelWidth)
-                    LegacyCrystarium.TextInBand(
+                    Crystarium.TextInBand(
                         new Vector2(textX, rowMin.Y),
                         labelBand,
                         item.Label,
@@ -412,7 +412,7 @@ public static partial class LegacyCrystarium
                         TextConstraint.Truncate(labelWidth),
                         besideIcon: true);
                 else
-                    LegacyCrystarium.TextInBand(
+                    Crystarium.TextInBand(
                         new Vector2(textX, rowMin.Y),
                         labelBand,
                         item.Label,

@@ -6,7 +6,7 @@ using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
 
-public static partial class LegacyCrystarium
+public static partial class Crystarium
 {
     /// <summary><c>.swatchWrap { width: 16px; height: 16px }</c> — the
     /// circular hit/hover target the 14px dot centers in. A CSS literal,
