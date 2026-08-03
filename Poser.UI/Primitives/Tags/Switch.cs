@@ -59,10 +59,10 @@ public static partial class Crystarium
     /// and the track's <c>background-color .2s ease</c> — one ramp drives all
     /// three, keyed by the caller's identity. Zero identity paints the end
     /// state (a capture's static frames, a disabled fixture).</summary>
-    internal static readonly Transition SwitchTransition =
+    private static readonly Transition SwitchTransition =
         Transition.CubicBezier(0.2f, 0.25f, 0.1f, 0.25f, 1f);
 
-    internal static void PaintSwitch(
+    private static void PaintSwitch(
         ImDrawListPtr dl, Vector2 min, Vector2 max, bool value, bool disabled,
         uint identity = 0)
     {
@@ -71,7 +71,7 @@ public static partial class Crystarium
         float logicalHeight = (max.Y - min.Y) / scale;
         float controlScale =
             logicalHeight / Crystarium.ActiveTheme.Controls.SwitchHeight;
-        // Shared disabled fade for retained controls.
+        // Shared control disabled fade.
         float opacity = disabled ? Crystarium.ActiveTheme.Chrome.ControlDisabledOpacity : 1f;
 
         float eased = value ? 1f : 0f;
@@ -105,9 +105,10 @@ public static partial class Crystarium
         dl.AddCircleFilled(center + new Vector2(0f, 1f * scale), knobRadius + 0.4f * scale,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.SwitchHighlight.Fade(opacity))), 32);
 
+        // Knob is white in every scheme, opacity .6 off → 1 on per the spec.
         var knobColor = ColorEx.PremultipliedLerp(
-                Crystarium.ActiveTheme.Chrome.TextMuted,
-                Crystarium.ActiveTheme.Chrome.Text,
+                Crystarium.ActiveTheme.Chrome.SwitchKnob.Fade(0.6f),
+                Crystarium.ActiveTheme.Chrome.SwitchKnob,
                 eased)
             .Fade(opacity);
         dl.AddCircleFilled(center, knobRadius,

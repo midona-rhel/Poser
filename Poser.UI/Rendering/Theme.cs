@@ -284,6 +284,7 @@ public readonly record struct Theme
             SidebarSelected = PictoTokens.Dark.SurfaceActive,
             SidebarHover = PictoTokens.Dark.SurfaceHover,
             SwitchOff = new(128f / 255f, 128f / 255f, 128f / 255f, 0.25f),
+            SwitchKnob = new(1f, 1f, 1f, 1f),
             SwitchShadow = new(0f, 0f, 0f, 0.08f),
             SwitchHighlight = new(0f, 0f, 0f, 0.10f),
             IconHover = new(0.8f, 0.8f, 0.8f, 0.8f),
@@ -750,6 +751,9 @@ public readonly record struct Theme
         /// (--color-surface-hover).</summary>
         public Vector4 SidebarHover { get; init; }
         public Vector4 SwitchOff { get; init; }
+        /// <summary>ToggleSwitch.module.css knob fill — white in every scheme
+        /// (the spec's 16px white knob), so no theme overrides it.</summary>
+        public Vector4 SwitchKnob { get; init; }
         public Vector4 SwitchShadow { get; init; }
         public Vector4 SwitchHighlight { get; init; }
         public Vector4 IconHover { get; init; }
