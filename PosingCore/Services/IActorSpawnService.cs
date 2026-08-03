@@ -58,4 +58,11 @@ public interface IActorSpawnService : IDisposable
 
     /// <summary>Current companion attachment (None when empty or no slot).</summary>
     CompanionAttachment GetCompanionInfo(IActor owner);
+
+    /// <summary>
+    /// Whether the actor reserved a companion slot when it spawned. Without
+    /// one <see cref="SetCompanion"/> can only fail, so a surface asks before
+    /// it offers the choice.
+    /// </summary>
+    bool HasCompanionSlot(IActor actor);
 }

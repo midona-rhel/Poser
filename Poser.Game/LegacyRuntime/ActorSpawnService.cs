@@ -370,6 +370,12 @@ public unsafe class ActorSpawnService : IActorSpawnService
         return ReadCompanionInfo(character);
     }
 
+    public bool HasCompanionSlot(IActor actor)
+    {
+        var character = (Character*)actor.Address;
+        return character != null && character->ChildObject != null;
+    }
+
     private static CompanionAttachment ReadCompanionInfo(Character* native)
     {
         if (native->ChildObject == null)

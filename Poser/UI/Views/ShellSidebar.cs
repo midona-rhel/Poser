@@ -445,8 +445,10 @@ public sealed class ShellSidebar
             Icon = row.IconName == null ? row.Icon : null,
             IconName = row.IconName,
             // Nested rows draw no mark; their guide column already spans the
-            // same distance the root's icon cell does.
-            HideIcon = row.Depth > 0,
+            // same distance the root's icon cell does. Actor rows are the
+            // exception: an attached companion nests but stays an actor, and
+            // its kind mark reads the same at any depth.
+            HideIcon = row.Depth > 0 && !row.ActorActions,
             Badge = string.IsNullOrEmpty(row.Count) ? null : row.Count,
             Depth = row.Depth,
             Trunks = entry.Trunks,

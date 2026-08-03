@@ -6,6 +6,7 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Poser.Application.Animation;
+using Poser.Application.Companions;
 using Poser.Application.Posing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
@@ -128,6 +129,8 @@ internal static class ServiceRegistration
         services.AddSingleton<AnimationCatalog>();
         services.AddSingleton<AnimationSceneActions>();
         services.AddSingleton<Game.Animation.AnimationCatalogLoader>();
+        services.AddSingleton<CompanionCatalog>();
+        services.AddSingleton<Game.Companions.CompanionCatalogLoader>();
         services.AddSingleton<Game.Animation.FacialPoseCapture>();
         services.AddSingleton<CleanSceneLifecycle>();
         services.AddSingleton<IEditorState, EditorState>();
@@ -155,6 +158,7 @@ internal static class ServiceRegistration
         services.AddSingleton<PoseInspectorPane>();
         services.AddSingleton<PoseRailPane>();
         services.AddSingleton<AnimationPane>();
+        services.AddSingleton<CompanionSection>();
         services.AddSingleton<AppearancePane>();
         services.AddSingleton<GraphicalBonePane>();
         services.AddSingleton<SkeletonOverlayPresentation>();
