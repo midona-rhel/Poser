@@ -142,13 +142,17 @@ internal static class ComponentCatalog
         // other, not against a Picto reference.
         new("dd-scrolled", 320, 280, Hidden: true),
         new("rdd-scrolled", 320, 280, Hidden: true),
-        new("picker-open", 320, 280),
         // PBI-015 wave O: the retained picker is a REDESIGN, not a twin —
         // the surface box is unchanged (so one reference cell judges both)
         // and everything inside it is OverlayShell. Judged against the
-        // Picto reference, never against picker-open.
+        // Picto reference.
         new("rpicker-open", 320, 280),
         new("rpicker-multi", 320, 280),
+        // PBI-016: the same two scenes through the IMPERATIVE SearchPicker.
+        // The golden is the reactive capture above, so the two are compared
+        // byte-for-byte, not by eye.
+        new("i-picker-open", 320, 280),
+        new("i-picker-multi", 320, 280),
         new("color-palette", 220, 80),
         new("sidebar-row", 320, 80),
         new("sidebar-row-hover", 320, 80),
@@ -204,6 +208,12 @@ internal static class ComponentCatalog
         // WindowFrame. The golden is the reactive capture above, so the two
         // states are compared byte-for-byte, not by eye.
         new("i-settings-frame", 770, 570),
+        // PBI-016 phase 1: the three widened controls through their
+        // IMPERATIVE entry points. Each golden is the reactive capture of the
+        // same name, so these are compared byte-for-byte, not by eye.
+        new("i-segmented", 420, 150),
+        new("i-swatches", 340, 60),
+        new("i-icon-actions", 240, 60),
     ];
 
     private static readonly string[] DropdownItems =
@@ -1749,24 +1759,42 @@ internal static class ComponentCatalog
                 ReactiveRoot(name).Render(
                     origin, ImGui.GetContentRegionAvail(), SwitchOnTree);
                 break;
+            // ---- Imperative picker (PBI-016) -------------------------
+            // The same two scenes and the same trigger as the reactive
+            // states below, so the goldens judge them byte-for-byte.
             // SearchPicker samples its anchor from the CURRENT ImGui item,
             // so Open must follow the trigger immediately; and Open only
             // requests the popover — Draw is what opens it, the same frame.
             // Opening once on frame 0 (not every frame) is what makes the
             // remaining 39 frames a settled surface rather than a
             // re-entering one.
-            case "picker-open":
-                Ui.Button("Date Modified", id: "##picker-trigger");
+            case "i-picker-open":
+                Ui.Button("Date Modified", id: "##i-picker-trigger");
                 if (frame == 0)
                 {
                     searchPicker = new Ui.SearchPicker<string>("catalog");
                     searchPicker.Open(
                         "catalog",
-                        "Sort by",
                         DropdownItems,
                         static item => item,
                         static item => item,
                         selectedKey: DropdownItems[1]);
+                }
+                searchPicker!.Draw();
+                break;
+            case "i-picker-multi":
+                Ui.Button("Date Modified", id: "##i-picker-trigger");
+                if (frame == 0)
+                {
+                    searchPicker = new Ui.SearchPicker<string>("catalog");
+                    searchPicker.OpenMulti(
+                        "catalog",
+                        "Sort by",
+                        DropdownItems,
+                        static item => item,
+                        static item => item,
+                        PickerSelected,
+                        PickerNoOpToggle);
                 }
                 searchPicker!.Draw();
                 break;
@@ -2007,6 +2035,19 @@ internal static class ComponentCatalog
                 ReactiveRoot(name).Render(
                     origin, new Vector2(340f, 60f) * scale, SwatchesTree);
                 break;
+            case "i-segmented":
+                DrawImperativeSegmented(origin, scale);
+                break;
+            case "i-swatches":
+                Ui.SwatchPalette(
+                    "##i-swatches",
+                    SwatchFixtureColors,
+                    2,
+                    static _ => { });
+                break;
+            case "i-icon-actions":
+                DrawImperativeIconActions(origin, scale);
+                break;
             case "tooltip":
                 // The reference cell draws the KbdTooltip label box at the
                 // stage origin with no anchor at all, so the fixture pins
@@ -2195,6 +2236,96 @@ internal static class ComponentCatalog
                 Color = theme.Text,
             },
             besideIcon: true);
+    }
+
+    /// <summary>
+    /// The same four segmented rows the reactive fixture builds, through the
+    /// IMPERATIVE control. DEVIATION: the golden's two label rows are FORM
+    /// rows, and PageForm is another agent's file this phase, so the band is
+    /// seated by hand — the 34px FormRowHeight pitch, the 94px label column,
+    /// the pill centred in the band — which is the geometry a form row
+    /// resolves anyway. The two icon rows differ only in the trough shift.
+    /// </summary>
+    private static void DrawImperativeSegmented(Vector2 origin, float scale)
+    {
+        var theme = Ui.ActiveTheme;
+        float band = theme.Controls.FormRowHeight * scale;
+        float pill = theme.Controls.NavigationHeight * scale;
+        var control = new ControlStyle { Width = UiWidth.Fixed(270) };
+        var labelStyle = new TextStyle
+        {
+            Size = theme.Typography.LabelSize,
+            Color = theme.FormLabel,
+        };
+
+        void LabelRow(int index, string label, int selected)
+        {
+            var bandMin = origin + new Vector2(0f, index * band);
+            // The retained row centres the run's LINE BOX in the band and
+            // snaps; TextInBand's ink-metric seat is a different rule and
+            // would land a pixel off the golden.
+            var measured = Ui.MeasureText(label, labelStyle);
+            Ui.TextAt(
+                new Vector2(
+                    MathF.Round(bandMin.X),
+                    MathF.Round(bandMin.Y + (band - measured.Y) * 0.5f)),
+                label,
+                labelStyle);
+            ImGui.SetCursorScreenPos(bandMin + new Vector2(
+                theme.Form.LabelColumnWidth * scale, (band - pill) * 0.5f));
+            Ui.SegmentedControl(
+                $"##i-segmented-{index}",
+                SegmentedFixtureItems,
+                selected,
+                static _ => { },
+                control);
+        }
+
+        LabelRow(0, "Entity sidebar", 0);
+        LabelRow(1, "Inspector", 1);
+
+        var icons = origin + new Vector2(0f, 2f * band);
+        ImGui.SetCursorScreenPos(icons);
+        Ui.SegmentedControl(
+            "##i-segmented-icons",
+            SegmentedFixtureIcons,
+            1,
+            static _ => { },
+            itemDisabled: SegmentedFixtureDisabled);
+        ImGui.SetCursorScreenPos(icons + new Vector2(0f, pill));
+        Ui.SegmentedControl(
+            "##i-segmented-icons-aligned",
+            SegmentedFixtureIcons,
+            1,
+            static _ => { },
+            alignFirstTabToCursor: true,
+            itemDisabled: SegmentedFixtureDisabled);
+    }
+
+    /// <summary>The five icon-action shapes on one row through the IMPERATIVE
+    /// entry points: the enum glyph, a registry name, a mirrored glyph, then
+    /// the persistent toggle selected and slashed. 28px squares on the
+    /// reactive fixture's 8px gap.</summary>
+    private static void DrawImperativeIconActions(Vector2 origin, float scale)
+    {
+        float pitch = (Ui.ActiveTheme.Controls.ShellIconAction + 8f) * scale;
+        void Seat(int index) =>
+            ImGui.SetCursorScreenPos(origin + new Vector2(index * pitch, 0f));
+
+        Seat(0);
+        Ui.IconButton(TablerIcon.Settings, id: "##i-icon-enum");
+        Seat(1);
+        Ui.IconButton("x", id: "##i-icon-named");
+        Seat(2);
+        Ui.IconButton(
+            TablerIcon.ArrowBackUp, id: "##i-icon-flipped", flipX: true);
+        Seat(3);
+        Ui.TemporaryIconToggle(
+            TablerIcon.Eye, selected: true, id: "##i-icon-selected");
+        Seat(4);
+        Ui.TemporaryIconToggle(
+            TablerIcon.Eye, selected: false, id: "##i-icon-slashed",
+            slashed: true);
     }
 
     /// <summary>

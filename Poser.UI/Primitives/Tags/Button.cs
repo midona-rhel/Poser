@@ -69,6 +69,10 @@ public static partial class LegacyCrystarium
             onClick);
     }
 
+    /// <summary>The registry-NAME form, for the glyphs the enum does not carry
+    /// ("chevron-down", "x"). Every facet of the enum form is reachable here,
+    /// mirroring included: a name is a different way to say WHICH glyph, not a
+    /// smaller button.</summary>
     public static bool IconButton(
         string icon,
         Action? onClick = null,
@@ -76,6 +80,7 @@ public static partial class LegacyCrystarium
         bool disabled = false,
         string? help = null,
         string? id = null,
+        bool flipX = false,
         float iconSize = 16f,
         float strokeWidth = 1.5f)
     {
@@ -86,7 +91,8 @@ public static partial class LegacyCrystarium
             disabled,
             help,
             (min, max, opacity, background) => DrawButtonIcon(
-                min, max, icon, iconSize, opacity, background, strokeWidth),
+                min, max, icon, iconSize, opacity, background, flipX,
+                strokeWidth),
             onClick);
     }
 
@@ -128,7 +134,8 @@ public static partial class LegacyCrystarium
         bool disabled = false,
         string? help = null,
         string? id = null,
-        bool slashed = false)
+        bool slashed = false,
+        bool flipX = false)
     {
         var size = IconButtonSize(style);
         return RenderTemporaryIconToggle(
@@ -139,7 +146,7 @@ public static partial class LegacyCrystarium
             disabled,
             help,
             (min, max, opacity) => DrawLegacyButtonIcon(
-                min, max, icon, opacity),
+                min, max, icon, opacity, flipX),
             onClick);
     }
 
@@ -496,6 +503,7 @@ public static partial class LegacyCrystarium
         float logicalSize,
         float opacity,
         Vector4 background,
+        bool flipX,
         float strokeWidth)
     {
         var (iconMin, iconMax) = CenteredIconBounds(
@@ -504,6 +512,7 @@ public static partial class LegacyCrystarium
             iconMin, iconMax, icon,
             opacity: opacity,
             background: background,
+            flipX: flipX,
             strokeWidth: strokeWidth);
     }
 
@@ -613,12 +622,14 @@ public static partial class LegacyCrystarium
         Vector2 min,
         Vector2 max,
         string icon,
-        float opacity)
+        float opacity,
+        bool flipX)
     {
         IconIn(
             min, max, icon,
             contentScale: ActiveTheme.Controls.IconContentScale,
-            opacity: opacity);
+            opacity: opacity,
+            flipX: flipX);
     }
 
     internal static float ButtonHeight(ControlStyle style) =>

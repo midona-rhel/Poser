@@ -57,12 +57,18 @@ public static partial class LegacyCrystarium
         return changed;
     }
 
+    /// <summary>Icon variant: square tabs whose natural width IS the control's
+    /// width. Same trough, same selection paint, same per-tab refusal and help
+    /// as the label variant — including
+    /// <paramref name="alignFirstTabToCursor"/>, which is a property of the
+    /// TROUGH, not of what a tab carries.</summary>
     public static bool SegmentedControl(
         string id,
         TablerIcon[] items,
         int selected,
         Action<int> onChange,
         ControlStyle style = default,
+        bool alignFirstTabToCursor = false,
         Func<int, bool>? itemDisabled = null,
         Func<int, string?>? itemHelp = null) =>
         SegmentedControlCore(
@@ -71,7 +77,7 @@ public static partial class LegacyCrystarium
             selected,
             onChange,
             style,
-            false,
+            alignFirstTabToCursor,
             itemDisabled,
             itemHelp,
             IconSegmentWidth,

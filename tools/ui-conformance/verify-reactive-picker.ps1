@@ -93,22 +93,10 @@ if ((Test-Path -LiteralPath $single) -and (Test-Path -LiteralPath $multi)) {
     }
 }
 
-# ---- The redesign actually happened --------------------------------------
-# rpicker-open must NOT equal picker-open. Wave O's whole premise is that the
-# retained picker stopped being a transcription; an equal hash would mean the
-# OverlayShell chrome never landed.
-$legacy = Join-Path $work "picker-open@$($Scale.ToString($invariant)).png"
-& $exe picker-open $legacy $Scale.ToString($invariant) dark | Out-Null
-if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $single)) {
-    $a = (Get-FileHash -Algorithm SHA256 -LiteralPath $single).Hash
-    $b = (Get-FileHash -Algorithm SHA256 -LiteralPath $legacy).Hash
-    if ($a -eq $b) {
-        Write-Host "FAIL rpicker-open is byte-identical to picker-open"
-        $failures += "redesign-missing"
-    } else {
-        Write-Host "PASS rpicker-open != picker-open (the redesign is present)"
-    }
-}
+# The old "redesign happened" check compared rpicker-open against picker-open;
+# that state died with the pre-redesign imperative picker (PBI-016 phase 1) and
+# the silent skip it left was worse than no check. The distinct-states check
+# above carries what remains of the assertion.
 
 # ---- Behavior ------------------------------------------------------------
 & $exe --reactive-picker-behavior

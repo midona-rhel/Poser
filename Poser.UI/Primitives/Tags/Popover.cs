@@ -117,15 +117,18 @@ public static partial class LegacyCrystarium
         public void Caption(string text)
         {
             MoveToCurrent();
-            DrawTextCentered(
+            LabelInBand(
                 ImGui.GetCursorScreenPos(),
                 new Vector2(
                     _width,
                     ActiveTheme.Page.StatusLineHeight) * _scale,
-                ActiveTheme.Typography.CaptionSize,
-                FontWeight.Medium,
-                FormLabelColor,
-                text);
+                text,
+                new TextStyle
+                {
+                    Size = ActiveTheme.Typography.CaptionSize,
+                    Weight = FontWeight.Medium,
+                    Color = FormLabelColor,
+                });
             Advance(
                 ActiveTheme.Page.StatusLineHeight
                 + ActiveTheme.Spacing.Two);

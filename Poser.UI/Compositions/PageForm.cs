@@ -187,11 +187,11 @@ public static partial class LegacyCrystarium
             float top = _origin.Y + _y * _scale;
             var row = new FormRowScope(new(_origin.X, top), _width, _scale);
             if (!string.IsNullOrEmpty(label))
-                DrawTextCentered(row.Origin,
-                    new(ActiveTheme.Form.LabelColumnWidth * _scale,
-                        ActiveTheme.Controls.FormRowHeight * _scale),
-                    ActiveTheme.Typography.LabelSize, FontWeight.Regular,
-                    FormLabelColor, label);
+                FormLabel(
+                    row.Origin,
+                    ActiveTheme.Form.LabelColumnWidth * _scale,
+                    _scale,
+                    label);
             return row;
         }
 
@@ -531,10 +531,15 @@ public static partial class LegacyCrystarium
         {
             string id = Id("status");
             var row = _page.BeginRow(string.Empty);
-            DrawTextCentered(row.Origin,
+            LabelInBand(
+                row.Origin,
                 new(row.Width, ActiveTheme.Controls.FormRowHeight * row.Scale),
-                ActiveTheme.Typography.CaptionSize, FontWeight.Regular,
-                FormHintColor, text);
+                text,
+                new TextStyle
+                {
+                    Size = ActiveTheme.Typography.CaptionSize,
+                    Color = FormHintColor,
+                });
             _page.EndRow(row, id, help);
         }
 
@@ -543,6 +548,43 @@ public static partial class LegacyCrystarium
             string id = Id(text);
             var row = _page.BeginRow(text);
             _page.EndRow(row, id, help);
+        }
+
+        /// <summary>
+        /// Two controls on one form row. The band splits at the ROW MIDDLE and
+        /// each half is a miniature form row — the same label slot, then the
+        /// control — so the two read as a pair rather than as a control with a
+        /// stray field beside it. Each callback is handed its own control cell
+        /// and seats itself there.
+        /// </summary>
+        public void Pair(
+            string leftLabel,
+            Action<FormPairCell> drawLeft,
+            string rightLabel,
+            Action<FormPairCell> drawRight,
+            string? help = null)
+        {
+            ArgumentNullException.ThrowIfNull(drawLeft);
+            ArgumentNullException.ThrowIfNull(drawRight);
+            string id = Id($"{leftLabel}-{rightLabel}");
+            var row = _page.BeginRow(string.Empty);
+            float half = row.Width * 0.5f;
+            DrawHalf(in row, row.Origin.X, half, leftLabel, drawLeft);
+            DrawHalf(in row, row.Origin.X + half, half, rightLabel, drawRight);
+            _page.EndRow(row, id, help);
+        }
+
+        private static void DrawHalf(
+            in FormRowScope row, float x, float span, string label,
+            Action<FormPairCell> draw)
+        {
+            float column = ActiveTheme.Form.LabelColumnWidth * row.Scale;
+            if (!string.IsNullOrEmpty(label))
+                FormLabel(new Vector2(x, row.Origin.Y), column, row.Scale, label);
+            draw(new FormPairCell(
+                new Vector2(x + column, row.Origin.Y),
+                MathF.Max(0f, span - column),
+                row.Scale));
         }
 
         public void AxisVector(
@@ -625,6 +667,20 @@ public static partial class LegacyCrystarium
         }
 
         private string Id(string label) => _page.RowId(_section, label);
+    }
+
+    /// <summary>One half of a <see cref="LegacyCrystarium.FormScope.Pair"/>
+    /// row: the control's screen origin at the row's TOP, its pixel width, and
+    /// the frame scale. <see cref="Center"/> seats a control of a known logical
+    /// height exactly as <see cref="FormRowScope.CenterControl"/> does.
+    /// </summary>
+    public readonly record struct FormPairCell(
+        Vector2 Origin, float Width, float Scale)
+    {
+        public Vector2 Center(float controlHeight) => new(
+            Origin.X,
+            Origin.Y + (ActiveTheme.Controls.FormRowHeight - controlHeight)
+                * 0.5f * Scale);
     }
 
     public readonly record struct FormRowScope
@@ -803,10 +859,16 @@ public static partial class LegacyCrystarium
                 new(min.X + width, min.Y + headerHeight * 0.5f),
                 headerColor, open, hovered, scale);
         // `.title { font-weight: 600; font-size: 12px }`.
-        DrawTextCentered(min,
+        LabelInBand(
+            min,
             new(titleWidth, headerHeight),
-            ActiveTheme.Typography.LabelSize, FontWeight.SemiBold,
-            headerColor, title);
+            title,
+            new TextStyle
+            {
+                Size = ActiveTheme.Typography.LabelSize,
+                Weight = FontWeight.SemiBold,
+                Color = headerColor,
+            });
     }
 
     /// <summary>
@@ -877,19 +939,19 @@ public static partial class LegacyCrystarium
             TextConstraint.Truncate(width));
     }
 
-    private static void DrawTextCentered(Vector2 position, Vector2 region,
-        float size, FontWeight weight, Vector4 color, string text,
-        FontFamily family = FontFamily.Default)
-    {
-        if (!(region.X > 0f))
-            return;
-        var style = new TextStyle
-        { Size = size, Weight = weight, Family = family, Color = color };
-        float lineHeight = LegacyCrystarium.MeasureText(text, style).Y;
-        LegacyCrystarium.TextAt(new(position.X,
-                position.Y + (region.Y - lineHeight) * 0.5f),
-            text, style, TextConstraint.Truncate(region.X));
-    }
+    /// <summary>The form's label slot: 12px regular in the label column,
+    /// band-centred at the row height.</summary>
+    private static void FormLabel(
+        Vector2 origin, float columnWidth, float scale, string label) =>
+        LabelInBand(
+            origin,
+            new(columnWidth, ActiveTheme.Controls.FormRowHeight * scale),
+            label,
+            new TextStyle
+            {
+                Size = ActiveTheme.Typography.LabelSize,
+                Color = FormLabelColor,
+            });
 
     private static void DrawTextRight(Vector2 position, float width,
         float height, float size, FontFamily family, Vector4 color,

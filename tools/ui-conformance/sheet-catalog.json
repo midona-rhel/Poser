@@ -151,13 +151,6 @@
       ]
     },
     {
-      "name": "search-picker",
-      "title": "Search picker",
-      "states": [
-        { "name": "picker-open", "label": "open", "width": 320, "height": 280 }
-      ]
-    },
-    {
       "name": "reactive-picker",
       "title": "Reactive picker (PBI-015)",
       "states": [
@@ -276,6 +269,23 @@
       "title": "Imperative window frame (PBI-016)",
       "states": [
         { "name": "i-settings-frame", "label": "settings frame", "width": 770, "height": 570 }
+      ]
+    },
+    {
+      "name": "imperative-picker",
+      "title": "Imperative picker (PBI-016)",
+      "states": [
+        { "name": "i-picker-open", "label": "single", "width": 320, "height": 280 },
+        { "name": "i-picker-multi", "label": "multi", "width": 320, "height": 280 }
+      ]
+    },
+    {
+      "name": "imperative-controls",
+      "title": "Imperative segmented, swatches, icon actions (PBI-016)",
+      "states": [
+        { "name": "i-segmented", "label": "stacked segmented rows", "width": 420, "height": 150 },
+        { "name": "i-swatches", "label": "palette", "width": 340, "height": 60 },
+        { "name": "i-icon-actions", "label": "icon actions", "width": 240, "height": 60 }
       ]
     }
   ]

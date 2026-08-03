@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -436,6 +437,44 @@ public static partial class LegacyCrystarium
             ImGui.SetCursorScreenPos(origin);
             ImGui.Dummy(metrics.Size);
         }
+    }
+
+    /// <summary>
+    /// The palette ROW in one call: the <see cref="ColorPalette"/> pill filled
+    /// with one <see cref="Swatch"/> per colour, the selection carried by index
+    /// and a name list riding as per-dot help. The two-part form stays public
+    /// for callers whose slots are not a colour list; this is what an accent
+    /// row actually asks for.
+    /// <para>Every click reports, including one on the already-selected dot: a
+    /// palette is a set of copy targets, so "picked" is the event, not
+    /// "changed". Returns true on the frames a dot was clicked.</para>
+    /// </summary>
+    public static bool SwatchPalette(
+        string id,
+        IReadOnlyList<Vector4> colors,
+        int selected,
+        Action<int> onChange,
+        IReadOnlyList<string>? names = null,
+        ControlStyle style = default)
+    {
+        bool picked = false;
+        ColorPalette(
+            colors.Count,
+            index =>
+            {
+                if (!Swatch(
+                        $"{id}##{index}",
+                        colors[index],
+                        index == selected,
+                        help: names is not null && index < names.Count
+                            ? names[index]
+                            : null))
+                    return;
+                picked = true;
+                onChange(index);
+            },
+            style);
+        return picked;
     }
 
     /// <summary>
