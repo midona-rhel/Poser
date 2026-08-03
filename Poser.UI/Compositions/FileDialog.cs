@@ -297,7 +297,17 @@ public static partial class LegacyCrystarium
                 Rail = new ScrollArea
                 {
                     Height = UiDim.Fill,
-                    Style = new() { Layout = new() { Width = UiDim.Fill } },
+                    // The rail wears the raised surface the Settings nav rail
+                    // wears — the frame's left panel is chrome, not page
+                    // (user 2026-08-03: the glass was missing).
+                    Style = new()
+                    {
+                        Layout = new() { Width = UiDim.Fill },
+                        Colors = new()
+                        {
+                            Fill = Crystarium.ActiveTheme.SurfaceRaised,
+                        },
+                    },
                     CapChildHitWidth = true,
                     Children = QuickRows(),
                     Key = "quick",
@@ -339,10 +349,10 @@ public static partial class LegacyCrystarium
 
         /// <summary>
         /// The navigation band: the history pair, the parent step, and the path
-        /// editor filling everything they leave. It is the SAME action bar the
-        /// title and the footer wear — a band padded to the header inset with a
-        /// stretching middle — minus the rule, because the rule above it
-        /// already separated the chrome.
+        /// editor filling everything they leave — closed by its own full-width
+        /// rule, so the chrome band and the browsing surface below read as two
+        /// segments (user 2026-08-03). History wears PLAIN left/right arrows:
+        /// the undo pair means edit history, not travel (user).
         /// </summary>
         private UiNode Navigation(Theme theme) => new UiActionBar
         {
@@ -350,19 +360,16 @@ public static partial class LegacyCrystarium
             [
                 new IconAction
                 {
-                    Icon = TablerIcon.ArrowBackUp,
+                    Icon = TablerIcon.ArrowLeft,
                     OnClick = _goBack,
                     Disabled = _back.Count == 0,
                     Size = NavActionSize,
                     Help = "Back",
                     Key = "back",
                 },
-                // A redo arrow IS the undo arrow reflected, and the registry
-                // carries one of them.
                 new IconAction
                 {
-                    Icon = TablerIcon.ArrowBackUp,
-                    FlipX = true,
+                    Icon = TablerIcon.ArrowRight,
                     OnClick = _goForward,
                     Disabled = _forward.Count == 0,
                     Size = NavActionSize,
@@ -384,6 +391,7 @@ public static partial class LegacyCrystarium
                 UiDim.Fill,
                 UiDim.Fixed(theme.Controls.ComfortableHeight),
                 "path"),
+            Separator = ActionBarSeparator.Bottom,
             Key = "nav",
         };
 
@@ -408,9 +416,13 @@ public static partial class LegacyCrystarium
                             Layout = new()
                             {
                                 Width = UiDim.Fill,
+                                // NO right padding: the bar sits on the
+                                // window edge and IS the right inset (user
+                                // 2026-08-03 — it floated mid-panel); the
+                                // rows inset their own trailing content.
                                 Padding = new EdgeInsets(
                                     theme.Page.Inset, theme.Page.Inset,
-                                    theme.Page.Inset, theme.Page.Inset),
+                                    0f, theme.Page.Inset),
                             },
                         },
                         CapChildHitWidth = true,
@@ -525,6 +537,16 @@ public static partial class LegacyCrystarium
                 rows[i] = new Element
                 {
                     Sheet = SheetFamily.NavRow,
+                    // Under the gutter: content stops at the bar, the fill
+                    // may bleed (the row's own right padding is the inset).
+                    Style = new()
+                    {
+                        Layout = new()
+                        {
+                            Padding = new EdgeInsets(
+                                0f, 0f, theme.Scrollbar.GutterWidth, 0f),
+                        },
+                    },
                     Selected = string.Equals(
                         entry.FullPath, _selectedPath, StringComparison.OrdinalIgnoreCase),
                     Index = i,

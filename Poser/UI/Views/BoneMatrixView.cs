@@ -219,7 +219,9 @@ public static class BoneMatrixView
                     Color = pill.Selected ? TextPrimary : hovered ? TextPrimary : TextSecondary,
                 };
                 float tw = LegacyCrystarium.MeasureText(pill.Label, pillLabelStyle).X;
-                LegacyCrystarium.TextAt(new Vector2(center.X - tw / 2f, center.Y - 5f * s), pill.Label, pillLabelStyle);
+                // USER 2026-08-03: the pill caption sat one pixel low — the
+                // same line-box-vs-ink defect every raw centring inherits.
+                LegacyCrystarium.TextAt(new Vector2(center.X - tw / 2f, center.Y - 6f * s), pill.Label, pillLabelStyle);
             }
 
             if (clicked)

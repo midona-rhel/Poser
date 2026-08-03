@@ -941,7 +941,10 @@ internal sealed class ShellFrame
                 Width = UiDim.Fill,
                 Height = UiDim.Fixed(theme.Floating.CloseActionSize),
                 Align = UiAlign.Start,
-                Padding = new EdgeInsets(theme.Spacing.Two, 0f, 0f, 0f),
+                // Right inset = the gutter: the header's plus stops at the
+                // bar like every row's content (user 2026-08-03 overflow).
+                Padding = new EdgeInsets(
+                    theme.Spacing.Two, 0f, theme.Scrollbar.GutterWidth, 0f),
                 Margin = index > 0
                     ? new EdgeInsets(0f, theme.Spacing.Four, 0f, 0f)
                     : null,
@@ -1008,6 +1011,9 @@ internal sealed class ShellFrame
             OnToggleExpand = ui.ToggleExpand,
             OnContext = ui.Context,
             Actions = RowActions(vm, row, ui, theme),
+            // The sidebar scrolls: content stops at the gutter, fills bleed
+            // under the bar (user 2026-08-03 — actions hid behind it).
+            TrailingInset = theme.Scrollbar.GutterWidth,
             Key = ui.Key,
         };
     }

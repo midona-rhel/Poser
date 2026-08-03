@@ -139,6 +139,11 @@ public readonly record struct TreeRow
     /// <summary>Right-aligned mono readout (counts, "you", "spawned").</summary>
     public string? Badge { get; init; }
 
+    /// <summary>Right padding for the row's CONTENT under a scroll gutter:
+    /// the fill still bleeds to the window edge, the badge and actions stop
+    /// here. A row outside a gutter states nothing.</summary>
+    public float TrailingInset { get; init; }
+
     /// <summary>0 is a root row; each level costs one indent.</summary>
     public int Depth { get; init; }
 
@@ -323,6 +328,19 @@ public readonly record struct TreeRow
             // SidebarRow's states as data — the pill's fills, its radius and
             // the label's optical rise are the navigation family's already.
             Sheet = SheetFamily.NavRow,
+            // Under a gutter the FILL bleeds to the window edge but the
+            // CONTENT — badge, actions — must stop at the content width, or
+            // it hides behind the bar (user 2026-08-03). The inset is the
+            // row's right padding; the pill painter paints the border box.
+            Style = TrailingInset > 0f
+                ? new ElementSheet
+                {
+                    Layout = new()
+                    {
+                        Padding = new EdgeInsets(0f, 0f, TrailingInset, 0f),
+                    },
+                }
+                : null,
             Selected = Selected,
             On = new Listeners { OnClick = OnSelect, OnContext = OnContext },
             Painter = TreeRowPillPainter.Instance,

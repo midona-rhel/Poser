@@ -36,9 +36,15 @@ internal sealed class TreeRowPillPainter : IPainter
         float inset = depth == 0
             ? Poser.UI.TreeRow.RootPillInset
             : Poser.UI.TreeRow.TrunkX(depth) + Poser.UI.TreeRow.PillClearance;
+        // The pill's right edge is the CONTENT edge: under a gutter the row
+        // pads its trailing content by the bar width, and the highlight
+        // stops with it (user 2026-08-03 — the accepted picker rule, not
+        // full bleed).
         context.DrawList.AddRectFilled(
             new Vector2(context.Min.X + inset * scale, context.Min.Y),
-            new Vector2(context.Max.X, context.Max.Y - scale),
+            new Vector2(
+                context.Max.X - context.Record.Layout.Padding.Right * scale,
+                context.Max.Y - scale),
             ImGui.ColorConvertFloat4ToU32(Poser.UI.ColorEx.ApplyAlpha(fill)),
             context.Style.Radius * scale);
         return default;
@@ -58,9 +64,12 @@ internal sealed class TreeGuidePainter : IPainter
     {
     }
 
-    /// <summary>One PHYSICAL pixel — the user's correction is stated in device
-    /// pixels, so it does not grow with the global scale.</summary>
-    private const float Drop = 1f;
+    /// <summary>PHYSICAL pixels — the user's correction is stated in device
+    /// pixels, so it does not grow with the global scale. Two rounds: one at
+    /// extraction, one more in-game (2026-08-03, "the vertical line is still
+    /// too high up") — the chevron gap and every junction re-verified at the
+    /// second offset.</summary>
+    private const float Drop = 2f;
 
     public bool NeedsHit => false;
 
