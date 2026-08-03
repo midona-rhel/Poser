@@ -213,6 +213,19 @@ public static partial class LegacyCrystarium
             _onToggle = onToggle;
         }
 
+        /// <summary>
+        /// Re-states the options of an OPEN surface. The strips are controlled
+        /// like everything else here — their selection lives in the caller — so
+        /// a segment click has to reach the next frame's draw. A caller with
+        /// strips calls this each frame before <see cref="Draw"/>; a caller
+        /// without them never needs it.
+        /// </summary>
+        public void Update(in PickerOptions<T> options)
+        {
+            if (ImGui.IsPopupOpen(_popupId))
+                _options = options;
+        }
+
         /// <summary>Draws the surface if it is up. Returns the single-select
         /// pick — a multi toggle reports through its own callback, because a
         /// toggle is not the end of the interaction.</summary>
