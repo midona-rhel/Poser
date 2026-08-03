@@ -84,11 +84,6 @@ public static partial class Crystarium
     private static uint _clearRefocusTarget;
     private static int _clearRefocusFrame;
 
-    /// <summary>The one risen field currently being edited — ImGui allows a
-    /// single active id, so a string suffices. Last frame's answer, because
-    /// focus is only known after the widget.</summary>
-    private static string? _risenActiveId;
-
     private static bool TextInputCore(
         string id,
         string value,
@@ -98,8 +93,7 @@ public static partial class Crystarium
         bool clearable,
         bool search,
         bool disabled,
-        string? help,
-        float textRise = 0f)
+        string? help)
     {
         float scale = ImGuiHelpers.GlobalScale;
         var theme = ActiveTheme;
@@ -133,22 +127,24 @@ public static partial class Crystarium
         if (fontPushed)
             font!.Push();
 
-        // textRise lifts the TEXT alone (negative raises) — the caller's box
-        // and the leading glyph stay put. Zero everywhere the pixels are
-        // accepted; the picker's band states its own measured rise.
-        //
-        // The rise applies to the RESTING band only, where it was measured
-        // (the placeholder): the caret rides the frame padding, so a risen
-        // pad pokes the full-line-height caret above the optical band (user
-        // 2026-08-03: "the blinking text indicator feels too high"). While
-        // the field is ACTIVE it uses the standard centred padding — the
-        // shell search field's accepted appearance. Focus is known only
-        // after the widget, so the state is last frame's, one frame late on
-        // the transition.
-        float appliedRise = _risenActiveId == id ? 0f : textRise;
+        // The metric ink seat for the native widget. FramePadding CANNOT
+        // reseat text inside a fixed box — ImGui derives the frame height
+        // FROM it (FontSize + 2·pad) — so the padding keeps the line-box
+        // value that makes the frame exactly `height` tall, and the WHOLE
+        // widget is submitted risen by the metric rise instead: value,
+        // caret, and selection lift together while the box chrome (fill,
+        // border, icons) is painted at the intended rect below. This
+        // replaces the per-surface textRise knob and the resting/active
+        // split that knob needed.
         float framePadY = MathF.Max(
-            0f,
-            (height - ImGui.GetTextLineHeight()) * 0.5f + appliedRise * scale);
+            0f, (height - ImGui.GetTextLineHeight()) * 0.5f);
+        float rise = FontRegistry.InkRise(
+            FontFamily.Default, FontWeight.Regular,
+            theme.Typography.BodySize) * scale;
+
+        var boxMin = ImGui.GetCursorScreenPos();
+        var boxMax = boxMin + new Vector2(width, height);
+        var draw = ImGui.GetWindowDrawList();
 
         if (disabled)
         {
@@ -158,13 +154,20 @@ public static partial class Crystarium
             ImGui.BeginDisabled();
         }
 
-        // .searchInput has `background: none`; .input has --color-black-20.
-        // Neither declares a :hover or :active background, so all three
-        // frame slots take the one fill.
-        var fill = search ? Vector4.Zero : theme.Chrome.InputWell;
-        ImGui.PushStyleColor(ImGuiCol.FrameBg, fill);
-        ImGui.PushStyleColor(ImGuiCol.FrameBgHovered, fill);
-        ImGui.PushStyleColor(ImGuiCol.FrameBgActive, fill);
+        // .input's --color-black-20 fill, painted at the BOX rect (inside
+        // the disabled bracket so it dims with the group); the native
+        // frame below is transparent so the risen widget brings no box of
+        // its own. .searchInput has `background: none`.
+        if (!search)
+            draw.AddRectFilled(
+                boxMin,
+                boxMax,
+                ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(theme.Chrome.InputWell)),
+                radius);
+        ImGui.PushStyleColor(ImGuiCol.FrameBg, Vector4.Zero);
+        ImGui.PushStyleColor(ImGuiCol.FrameBgHovered, Vector4.Zero);
+        ImGui.PushStyleColor(ImGuiCol.FrameBgActive, Vector4.Zero);
         ImGui.PushStyleColor(ImGuiCol.Text, theme.Text);
         ImGui.PushStyleColor(
             ImGuiCol.TextSelectedBg, theme.Chrome.Primary with { W = 0.32f });
@@ -177,6 +180,7 @@ public static partial class Crystarium
         // The border is painted below instead: its COLOR is the whole
         // :focus treatment, and focus is only known after submission.
         ImGui.PushStyleVar(ImGuiStyleVar.FrameBorderSize, 0f);
+        ImGui.SetCursorScreenPos(boxMin + new Vector2(0f, rise));
         ImGui.SetNextItemWidth(width);
 
         uint identity = ImGui.GetID(id);
@@ -197,18 +201,16 @@ public static partial class Crystarium
         string next = value;
         bool changed = ImGui.InputText(id, ref next);
 
+        // The item rect is the RISEN widget; the box chrome below anchors
+        // to the intended box rect instead. Only the placeholder tracks
+        // the item rect — it must overlay exactly where the native value
+        // renders.
         var inputMin = ImGui.GetItemRectMin();
-        var inputMax = ImGui.GetItemRectMax();
-        var cursorAfterInput = ImGui.GetCursorScreenPos();
-        // :focus is the DOM sense — the caret is in the field and typing
-        // goes there — which for a native InputText is the ACTIVE id, not
-        // merely the nav id. Nav landing on the first item of a window
-        // would otherwise light every field up permanently.
-        bool focused = ImGui.IsItemActive();
-        if (focused && textRise != 0f)
-            _risenActiveId = id;
-        else if (_risenActiveId == id)
-            _risenActiveId = null;
+        // The flow cursor advanced from the risen item; put it back where
+        // the un-risen box would have left it.
+        var cursorAfterInput = ImGui.GetCursorScreenPos()
+            - new Vector2(0f, rise);
+        ImGui.SetCursorScreenPos(cursorAfterInput);
         // InputText stays a native ImGui widget, so its help trigger takes
         // the occlusion gate that Interactive.Reserve applies for us
         // everywhere else.
@@ -217,7 +219,6 @@ public static partial class Crystarium
         ImGui.PopStyleVar(3);
         ImGui.PopStyleColor(6);
 
-        var draw = ImGui.GetWindowDrawList();
         // .input's 1px border. Picto's :focus swaps its color to
         // primary-50; PRODUCT DECISION (user): no focus chrome anywhere —
         // native-styled UI, the caret is the focus signal. The border
@@ -225,8 +226,8 @@ public static partial class Crystarium
         // `border: none`, so the search variant paints nothing here.
         if (!search)
             draw.AddRect(
-                inputMin,
-                inputMax,
+                boxMin,
+                boxMax,
                 ImGui.ColorConvertFloat4ToU32(
                     ColorEx.ApplyAlpha(theme.Chrome.ControlBorder)),
                 radius,
@@ -236,8 +237,8 @@ public static partial class Crystarium
         if (search)
         {
             var iconMin = new Vector2(
-                inputMin.X + padX,
-                inputMin.Y + (height - iconSide) * 0.5f);
+                boxMin.X + padX,
+                boxMin.Y + (height - iconSide) * 0.5f);
             IconIn(
                 iconMin,
                 iconMin + new Vector2(iconSide),
@@ -263,8 +264,8 @@ public static partial class Crystarium
         if (clearable && !disabled && next.Length > 0)
         {
             var center = new Vector2(
-                inputMax.X - 13f * scale,
-                (inputMin.Y + inputMax.Y) * 0.5f);
+                boxMax.X - 13f * scale,
+                (boxMin.Y + boxMax.Y) * 0.5f);
             var hitPadding = new Vector2(9f) * scale;
             // The clear affordance is a real reserved hit area on the one
             // interaction path, so it is occlusion-gated like every other
@@ -298,7 +299,7 @@ public static partial class Crystarium
 
         if (changed) onChange(next);
         if (!string.IsNullOrEmpty(help) && hovered)
-            HoverHelp.Explain(id, inputMin, inputMax, help!);
+            HoverHelp.Explain(id, boxMin, boxMax, help!);
         return changed;
     }
 }

@@ -499,12 +499,12 @@ public sealed class ShellSidebar
             Weight = FontWeight.Medium,
             Color = theme.TextMuted,
         };
+        // The band is the header SLOT, not the run's own line box — a band
+        // equal to the measured height collapses the centering term and the
+        // seat degenerates to a hand pad.
         Crystarium.TextInBand(
-            new Vector2(
-                at.X + theme.Spacing.Two * scale,
-                at.Y + theme.Spacing.Two * scale),
-            new Vector2(width * scale, Crystarium.MeasureText(
-                section.Title, style).Y),
+            new Vector2(at.X + theme.Spacing.Two * scale, at.Y),
+            new Vector2(width * scale, entry.Height * scale),
             section.Title,
             style,
             TextAlign.Start);
@@ -546,7 +546,7 @@ public sealed class ShellSidebar
                 if (Crystarium.IconButton(
                         TablerIcon.Crosshair,
                         style: square,
-                        help: "Set game target",
+                        help: "Target this actor in game",
                         id: "##target"))
                     _vm.OnActorTarget?.Invoke(row);
 

@@ -134,13 +134,12 @@ public static partial class Crystarium
         {
             var measured = MeasureText(currentText, triggerLabelStyle);
             labelClipped = measured.X > labelWidth;
-            // `align-items: center` on the 24px content box. The canonical
-            // text path snaps the origin itself; no per-surface nudge may be
-            // added here — one pushes the run below the reference baseline.
-            TextAt(
-                new Vector2(
-                    contentLeft,
-                    valueMin.Y + (height - measured.Y) * 0.5f),
+            // `align-items: center` on the 24px content box, on the INK:
+            // TextInBand's metric seat replaces the line-box centre, which
+            // reads low. No per-surface nudge on top of it.
+            TextInBand(
+                new Vector2(contentLeft, valueMin.Y),
+                new Vector2(labelWidth, height),
                 currentText,
                 triggerLabelStyle,
                 TextConstraint.Truncate(labelWidth));
@@ -242,10 +241,9 @@ public static partial class Crystarium
                             {
                                 var optSize = MeasureText(items[i], labelStyle);
                                 optClipped = optSize.X > optWidth;
-                                TextAt(
-                                    new Vector2(
-                                        itemPos.X + optPad,
-                                        itemPos.Y + (rowHeight - optSize.Y) * 0.5f),
+                                TextInBand(
+                                    new Vector2(itemPos.X + optPad, itemPos.Y),
+                                    new Vector2(optWidth, rowHeight),
                                     items[i],
                                     labelStyle,
                                     TextConstraint.Truncate(optWidth));
@@ -360,6 +358,10 @@ public static partial class Crystarium
         float minWidth =
             borderPx * 2f + padLeft + gap + chevronSlot + padRight + 20f * scale;
         if (totalWidth < minWidth) totalWidth = minWidth;
+        // The floor keeps a free-standing trigger usable; a track cap is a
+        // containment contract, so it outranks the floor and the label
+        // absorbs the squeeze.
+        totalWidth = ControlSizing.Cap(totalWidth / scale, style.MaxWidth) * scale;
 
         return new DropdownMetrics(
             totalWidth, resolved.Height, resolved.LogicalHeight, widestLabel,

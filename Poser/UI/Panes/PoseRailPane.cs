@@ -98,7 +98,7 @@ public class PoseRailPane
                     TextAlign.Start, besideIcon: true);
                 if (Crystarium.HoverHelp.HelpHovered(pmin, pmax))
                     Crystarium.HoverHelp.Explain("rail-linked-pill", pmin, pmax,
-                        "Linked editing — edits apply to these bones");
+                        "Edits apply to all the bones counted here");
             }
             cursor.Y += (sub.Length > 0 ? 36f : 22f) * s;
 
@@ -109,14 +109,14 @@ public class PoseRailPane
                 // none exist.
                 if (Crystarium.Button("Reset transform",
                         id: "rail-actor-reset",
-                        help: "Restore the actor's original transform",
+                        help: "Restore every selected actor's original position, rotation, and scale",
                         style: ControlStyle.Workspace))
                     _inspector.ResetActorTransform();
             }
             else
             {
                 if (Crystarium.Button("Reset bone", id: "rail-bone-reset",
-                    help: "Reset this bone's pose", style: ControlStyle.Workspace))
+                    help: "Reset the pose of the first bone you selected, leaving any others as they are", style: ControlStyle.Workspace))
                     _inspector.ResetPrimaryBone();
                 ImGui.SameLine(0f, 6f * s);
                 if (Crystarium.Button("Select children", id: "rail-children",
@@ -244,7 +244,7 @@ public class PoseRailPane
             var ringMouse = ImGui.GetMousePos();
             Crystarium.HoverHelp.Explain("rail-gizmo-ring",
                 ringMouse - new Vector2(4f, 4f), ringMouse + new Vector2(4f, 4f),
-                $"{RotationGizmoRings.AxisName(hoverAxis)} · drag along the ring");
+                $"{RotationGizmoRings.AxisName(hoverAxis)} · drag along the ring to rotate · Shift faster, Ctrl finer");
         }
 
         return d + 8f * s;

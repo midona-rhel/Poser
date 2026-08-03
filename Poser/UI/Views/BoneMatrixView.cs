@@ -166,10 +166,11 @@ public static class BoneMatrixView
             Color = TextSecondary,
         };
         float labelAvail = labelRight - pos.X;
-        float labelY = pos.Y + (metrics.RowHeight - 12f) / 2f * s - 2f * s;
         if (labelAvail > 0f)
-            Crystarium.TextAt(
-                new Vector2(pos.X, labelY), row.Label, labelStyle,
+            Crystarium.TextInBand(
+                new Vector2(pos.X, pos.Y),
+                new Vector2(labelAvail, metrics.RowHeight * s),
+                row.Label, labelStyle,
                 TextConstraint.Truncate(labelAvail, TextAlign.End));
 
         float x = pos.X + width - pillsW;
@@ -218,10 +219,11 @@ public static class BoneMatrixView
                     Family = FontFamily.Mono,
                     Color = pill.Selected ? TextPrimary : hovered ? TextPrimary : TextSecondary,
                 };
-                float tw = Crystarium.MeasureText(pill.Label, pillLabelStyle).X;
-                // Ink-centred, not line-box-centred: raw centring seats the
-                // caption one pixel low.
-                Crystarium.TextAt(new Vector2(center.X - tw / 2f, center.Y - 6f * s), pill.Label, pillLabelStyle);
+                Crystarium.TextInBand(
+                    new Vector2(center.X - radius, center.Y - radius),
+                    new Vector2(metrics.PillSize, metrics.PillSize) * s,
+                    pill.Label, pillLabelStyle,
+                    TextAlign.Center);
             }
 
             if (clicked)

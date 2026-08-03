@@ -190,6 +190,27 @@ public static partial class Crystarium
     private static float InkSnapY(float y) => MathF.Ceiling(y - 0.5f);
 
     /// <summary>
+    /// The ink-seated y <see cref="TextInBand"/> applies, for the sites
+    /// that cannot route through it because their glyphs land on a
+    /// different draw list (the foreground-composited hover card). Same
+    /// metrics, same snap, same <paramref name="besideIcon"/> bias — a
+    /// caller seats its own run at this y and nowhere else.
+    /// </summary>
+    internal static float InkSeatY(
+        float bandMinY, float bandHeight, float measuredHeight,
+        in TextStyle style, bool besideIcon = false)
+    {
+        float size = style.Size ?? ActiveTheme.Typography.BodySize;
+        float rise = FontRegistry.InkRise(
+            style.Family, style.Weight ?? FontWeight.Regular, size);
+        if (besideIcon)
+            rise += IconAdjacentInkBias;
+        return InkSnapY(
+            bandMinY + (bandHeight - measuredHeight) * 0.5f
+            + rise * ImGuiHelpers.GlobalScale);
+    }
+
+    /// <summary>
     /// THE way to center one line of text in a band. Vertically it seats
     /// the INK — the cap-to-baseline band — on the band's midline, using
     /// the face's real metrics (<see cref="FontRegistry.InkRise"/>) instead
@@ -218,20 +239,13 @@ public static partial class Crystarium
         float boxWidth = constraint.Mode == TextConstraint.FitMode.Intrinsic
             ? measured.X
             : constraint.Width;
-        float size = style.Size ?? ActiveTheme.Typography.BodySize;
-        float rise = FontRegistry.InkRise(
-            style.Family, style.Weight ?? FontWeight.Regular, size);
-        if (besideIcon)
-            rise += IconAdjacentInkBias;
-        // Y is snapped HERE, by the ink-snap, so the tie policy applies;
-        // the renderer's Optical.Snap then rounds an already-whole y to
+        // Y is snapped inside InkSeatY, so the tie policy applies; the
+        // renderer's Optical.Snap then rounds an already-whole y to
         // itself and keeps owning X. Optical.Snap is unchanged globally.
         TextAt(
             new Vector2(
                 bandMin.X + AlignOffset(align, bandSize.X, boxWidth),
-                InkSnapY(
-                    bandMin.Y + (bandSize.Y - measured.Y) * 0.5f
-                    + rise * ImGuiHelpers.GlobalScale)),
+                InkSeatY(bandMin.Y, bandSize.Y, measured.Y, style, besideIcon)),
             text, style, constraint);
     }
 

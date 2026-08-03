@@ -92,11 +92,6 @@ public static partial class Crystarium
 
     private const float PickerCheckStroke = 3f;
 
-    /// <summary>MEASURED: the field's ink centres 2px low in its band, and
-    /// lifting the BOX took the glyph with it — so the rise goes to the text
-    /// alone through the field's own knob.</summary>
-    private const float PickerSearchTextRise = -2f;
-
     /// <summary>
     /// THE picker. Every variant — single-select, multi-select, a catalog with
     /// marks and head strips — is this object told different things, because
@@ -392,8 +387,7 @@ public static partial class Crystarium
                 {
                     Width = UiWidth.Fixed(
                         _panelWidth - searchMargin - inset - PickerSearchClearPad),
-                },
-                PickerSearchTextRise);
+                });
             y += PickerSearchHeight;
 
             // The strips read as refinements OF the search, so they sit below
