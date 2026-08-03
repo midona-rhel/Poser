@@ -16,7 +16,6 @@ namespace Poser.UI;
 /// </summary>
 public class SettingsWindow : Window
 {
-    private readonly SettingsView _view = new();
     private SettingsViewModel _vm = new();
     private bool _saving;
 
@@ -60,7 +59,7 @@ public class SettingsWindow : Window
             min + ImGui.GetWindowSize());
         try
         {
-            _view.Draw(_vm, min);
+            SettingsView.Draw(_vm, min);
         }
         finally
         {

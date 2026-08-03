@@ -125,8 +125,12 @@ public static partial class LegacyCrystarium
             _y += ActiveTheme.Page.StatusLineHeight;
         }
 
-        public void Section(string title, Action<FormScope> content) =>
-            DrawSection(title, true, null, content);
+        /// <param name="divider">USER 2026-08-02: the rule is a divider BETWEEN
+        /// sections, so a page's FIRST section states false and draws neither
+        /// the rule nor the margin above it.</param>
+        public void Section(
+            string title, Action<FormScope> content, bool divider = true) =>
+            DrawSection(title, true, null, content, divider);
 
         public void Section(string title, bool open, Action<bool> onOpenChanged,
             Action<FormScope> content) =>
@@ -142,21 +146,27 @@ public static partial class LegacyCrystarium
         /// the content edge, <c>.chevron</c> pushed to the far edge by
         /// <c>margin-left: auto</c>.
         ///
-        /// <para>The margin is unconditional the way a block margin is —
-        /// the reference cell shows the rule 10px below the stage origin
-        /// for a section with nothing above it.</para>
+        /// <para>The margin belongs to the rule: a section that draws no
+        /// divider keeps only the header's own padding, so it sits as far
+        /// under the page top as every other header sits under its rule.
+        /// </para>
         /// </summary>
         private void DrawSection(string title, bool open,
-            Action<bool>? onOpenChanged, Action<FormScope> content)
+            Action<bool>? onOpenChanged, Action<FormScope> content,
+            bool divider = true)
         {
             var page = ActiveTheme.Page;
-            _y += page.SectionMarginTop;
-            PaintSectionRule(
-                ImGui.GetWindowDrawList(),
-                new(_origin.X, _origin.Y + _y * _scale),
-                _width,
-                _scale);
-            _y += SectionRuleThickness + page.SectionPaddingTop;
+            if (divider)
+            {
+                _y += page.SectionMarginTop;
+                PaintSectionRule(
+                    ImGui.GetWindowDrawList(),
+                    new(_origin.X, _origin.Y + _y * _scale),
+                    _width,
+                    _scale);
+                _y += SectionRuleThickness;
+            }
+            _y += page.SectionPaddingTop;
 
             float headerTop = _origin.Y + _y * _scale;
             float headerHeight = page.SectionHeaderHeight * _scale;
@@ -339,6 +349,24 @@ public static partial class LegacyCrystarium
                 controlStyle.Height, ActiveTheme.Controls.CheckboxSize)));
             LegacyCrystarium.Checkbox(
                 id, value, onChange, controlStyle, disabled, help);
+            _page.EndRow(row, id, help);
+        }
+
+        /// <summary>Segmented row: the pill fills the control cell at its own
+        /// navigation height, not the workspace height a text control takes.
+        /// </summary>
+        public void Segmented(string label, string[] items,
+            int selected, Action<int> onChange, string? help = null,
+            ControlStyle style = default)
+        {
+            string id = Id(label);
+            var row = _page.BeginRow(label);
+            var controlStyle = InRegion(
+                style, row.ControlWidth / row.Scale, fillByDefault: true);
+            ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
+                controlStyle.Height, ActiveTheme.Controls.NavigationHeight)));
+            LegacyCrystarium.SegmentedControl(
+                id, items, selected, onChange, controlStyle);
             _page.EndRow(row, id, help);
         }
 
@@ -527,6 +555,89 @@ public static partial class LegacyCrystarium
             _page.EndRow(row, id, help);
         }
 
+        /// <summary>Equal tracks, one per well, each centring its own
+        /// caption-plus-well group.</summary>
+        public void ColorWells(string label, Action<ColorWellScope> content,
+            string? help = null)
+        {
+            string id = Id(label);
+            var row = _page.BeginRow(label);
+            var wells = new ColorWellScope(row, id);
+            content(wells);
+            wells.Draw();
+            _page.EndRow(row, id, help);
+        }
+
+        /// <summary>The colour-choice row: the palette pill at its natural
+        /// width, seated in the band. A name list rides as per-dot help.
+        /// </summary>
+        public void Swatches(
+            string label,
+            IReadOnlyList<Vector4> colors,
+            int selected,
+            Action<int> onChange,
+            IReadOnlyList<string>? names = null,
+            string? help = null)
+        {
+            string id = Id(label);
+            var row = _page.BeginRow(label);
+            ImGui.SetCursorScreenPos(row.CenterControl(PaletteMinHeight));
+            LegacyCrystarium.SwatchPalette(
+                id, colors, selected, onChange, names);
+            _page.EndRow(row, id, help);
+        }
+
+        /// <summary>A read-only value alone on its band, at body size.
+        /// </summary>
+        public void ReadOnly(string label, string value, string? help = null,
+            bool unavailable = false)
+        {
+            string id = Id(label);
+            var row = _page.BeginRow(label);
+            LabelInBand(
+                row.ControlOrigin,
+                new(row.ControlWidth,
+                    ActiveTheme.Controls.FormRowHeight * row.Scale),
+                value,
+                new TextStyle
+                {
+                    Size = ActiveTheme.Typography.BodySize,
+                    Color = unavailable ? FormHintColor : FormValueColor,
+                });
+            _page.EndRow(row, id, help);
+        }
+
+        /// <summary>A read-only value with right-anchored actions; the value
+        /// is cut to whatever the actions leave it.</summary>
+        public void ReadOnlyWithActions(string label, string value,
+            Action<ActionScope> content, string? help = null,
+            bool unavailable = false)
+        {
+            string id = Id(label);
+            var row = _page.BeginRow(label);
+            var actions = new ActionScope();
+            content(actions);
+            float actionWidth = MeasureActions(
+                actions.Items, row.Scale, row.ControlWidth);
+            float gap = actions.Items.Count > 0
+                ? ActiveTheme.Page.ActionGap * row.Scale
+                : 0f;
+            LabelInBand(
+                row.ControlOrigin,
+                new(MathF.Max(0f, row.ControlWidth - actionWidth - gap),
+                    ActiveTheme.Controls.FormRowHeight * row.Scale),
+                value,
+                new TextStyle
+                {
+                    Size = ActiveTheme.Typography.CaptionSize,
+                    Color = unavailable ? FormHintColor : FormValueColor,
+                });
+            DrawActions(actions.Items,
+                row.ControlOrigin.X + row.ControlWidth - actionWidth,
+                actionWidth, row.Origin.Y, true, id);
+            _page.EndRow(row, id, help);
+        }
+
         public void Status(string text, string? help = null)
         {
             string id = Id("status");
@@ -667,6 +778,89 @@ public static partial class LegacyCrystarium
         }
 
         private string Id(string label) => _page.RowId(_section, label);
+    }
+
+    /// <summary>The wells of one <see cref="FormScope.ColorWells"/> row. Each
+    /// well takes an equal track and centres its caption-plus-well group in it;
+    /// a null value is an UNAVAILABLE well — disabled, neutral fill, explaining
+    /// itself through <c>unavailableHelp</c>.</summary>
+    public sealed class ColorWellScope
+    {
+        private readonly FormRowScope _row;
+        private readonly string _id;
+        private readonly List<ColorWellItem> _items = new();
+
+        private readonly record struct ColorWellItem(
+            string Label,
+            Vector4? Value,
+            Action<Vector4> OnChange,
+            string? UnavailableHelp,
+            ControlStyle Style);
+
+        internal ColorWellScope(in FormRowScope row, string id)
+        {
+            _row = row;
+            _id = id;
+        }
+
+        public void Well(string label, Vector4? value, Action<Vector4> onChange,
+            string? unavailableHelp = null, ControlStyle style = default) =>
+            _items.Add(new(label, value, onChange, unavailableHelp, style));
+
+        internal void Draw()
+        {
+            if (_items.Count == 0)
+                return;
+            float trackWidth = _row.ControlWidth / _items.Count;
+            for (int i = 0; i < _items.Count; i++)
+            {
+                var item = _items[i];
+                float labelWidth = MeasureText(
+                    item.Label,
+                    ActiveTheme.Typography.CaptionSize,
+                    FontWeight.Regular).X;
+                var controlStyle = InRegion(
+                    item.Style,
+                    trackWidth / _row.Scale,
+                    fillByDefault: false);
+                float side = ControlSizing.Height(
+                    controlStyle.Height,
+                    ActiveTheme.Controls.ColorWellSize);
+                float width = ControlSizing.Width(
+                    controlStyle.Width,
+                    side,
+                    trackWidth / _row.Scale);
+                float gap = ActiveTheme.Page.ActionGap * _row.Scale;
+                float groupWidth = labelWidth + gap + width * _row.Scale;
+                float trackX = _row.ControlOrigin.X + i * trackWidth;
+                float groupX = trackX + MathF.Max(
+                    0f, (trackWidth - groupWidth) * 0.5f);
+                LabelInBand(
+                    new(groupX, _row.Origin.Y),
+                    new(
+                        labelWidth,
+                        ActiveTheme.Controls.FormRowHeight * _row.Scale),
+                    item.Label,
+                    new TextStyle
+                    {
+                        Size = ActiveTheme.Typography.CaptionSize,
+                        Color = FormHintColor,
+                    });
+                ImGui.SetCursorScreenPos(new(
+                    groupX + labelWidth + gap,
+                    _row.Origin.Y
+                        + (ActiveTheme.Controls.FormRowHeight - side)
+                        * 0.5f * _row.Scale));
+                LegacyCrystarium.ColorWell(
+                    $"{_id}-{item.Label}",
+                    item.Value ?? Vector4.Zero,
+                    item.OnChange,
+                    controlStyle,
+                    rgbOnly: true,
+                    disabled: item.Value == null,
+                    help: item.UnavailableHelp);
+            }
+        }
     }
 
     /// <summary>One half of a <see cref="LegacyCrystarium.FormScope.Pair"/>

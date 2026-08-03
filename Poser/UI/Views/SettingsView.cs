@@ -58,20 +58,27 @@ public sealed class SettingsViewModel
 }
 
 /// <summary>
-/// The Settings chassis, DECLARED: one root for the frame — the header and
-/// footer action bars, the navigation rail, the 1px rule between rail and
-/// page — and one for the page, hosted inside the shared scroll seam exactly
-/// as the shell hosts a pane. The window chrome stays the one legacy paint
-/// seam, and the rebind capture is the named raw-input boundary, running
-/// after the tree as it always has.
+/// Settings: the shared <see cref="LegacyCrystarium.WindowFrame"/> is the whole
+/// chassis — chrome, both bars, the rail band and its rule — and this view only
+/// fills the two rectangles it hands back. The rail carries the category rows,
+/// the body hosts the page through the shared scroll seam exactly as the shell
+/// hosts a pane, and the rebind capture runs last as the named raw-input
+/// boundary.
 /// </summary>
-public sealed class SettingsView
+public static class SettingsView
 {
     public static float DesignWidth =>
         Crystarium.ActiveTheme.Settings.Width;
 
     public static float DesignHeight =>
         Crystarium.ActiveTheme.Settings.Height;
+
+    /// <summary>The rail row's glyph slot: a 2px left margin, then a row-height
+    /// square the small glyph centres in; the label starts where it ends.
+    /// </summary>
+    private const float NavigationIconMargin = 2f;
+
+    private const float NavigationPillRadius = 5f;
 
     private static readonly (TablerIcon Icon, string Label)[] Nav =
     {
@@ -108,400 +115,357 @@ public sealed class SettingsView
         new(70f / 255f, 50f / 255f, 117f / 255f, 1f),
     ];
 
-    private readonly UiRoot _frame = new();
-    private readonly UiRoot _page = new();
-    private readonly Action<LegacyCrystarium.ScrollRegionScope> _pageBody;
-
-    /// <summary>The vm the CURRENT frame binds. The hoisted handlers below
-    /// close over the field, so the binder replacing its vm on open costs no
-    /// rebinding — every dispatch reads whichever vm this frame drew.</summary>
-    private SettingsViewModel? _vm;
-
-    /// <summary>The control-cell width the page scroll resolved this frame,
-    /// which segmented tabs need BEFORE the solver runs.</summary>
-    private float _controlWidth;
-
-    private float _pageHeightPx;
-
-    // ── hoisted handlers ─────────────────────────────────────────────────
-    // A build path may allocate no delegate, so every callback the tree names
-    // is a field closing over `this` and dispatching against `_vm`.
-    private readonly Action<int> _setCategory;
-    private readonly Action _close;
-    private readonly Action _cancel;
-    private readonly Action _save;
-    private readonly Action _openRepository;
-    private readonly Action<bool> _setOpenOnGPose;
-    private readonly Action<bool> _setCloseWithGPose;
-    private readonly Action<float> _setDotRadius;
-    private readonly Action<Vector4> _setOverlaySelected;
-    private readonly Action<Vector4> _setOverlayHovered;
-    private readonly Action<Vector4> _setOverlayInactive;
-    private readonly Action<Vector4> _setOverlayIkChain;
-    private readonly Action<Vector4> _setOverlayMirrored;
-    private readonly Action<bool> _setNsfwBones;
-    private readonly Action<bool> _setAnonymousMode;
-    private readonly Action<int> _setTheme;
-    private readonly Action<int> _setAccent;
-    private readonly Action<bool> _setShowLines;
-    private readonly Action<float> _setLineThickness;
-    private readonly Action<float> _setLineOpacity;
-    private readonly Action<int> _setSidebarDock;
-    private readonly Action<int> _setInspectorDock;
-    private readonly Action<bool> _setTreeGuides;
-    private readonly Action[] _toggleRebind;
-
-    public SettingsView()
+    public static void Draw(SettingsViewModel vm, Vector2 origin)
     {
-        _pageBody = PageBody;
-        _setCategory = next => _vm!.Category = next;
-        _close = () => _vm!.OnClose?.Invoke();
-        _cancel = () => _vm!.OnCancel?.Invoke();
-        _save = () => _vm!.OnSave?.Invoke();
-        _openRepository = () => _vm!.OnOpenRepository?.Invoke();
-        _setOpenOnGPose = next => _vm!.OpenOnGPose = next;
-        _setCloseWithGPose = next => _vm!.CloseWithGPose = next;
-        _setDotRadius = next => _vm!.BoneDotRadius = next;
-        _setOverlaySelected = next => _vm!.OverlaySelected = next;
-        _setOverlayHovered = next => _vm!.OverlayHovered = next;
-        _setOverlayInactive = next => _vm!.OverlayInactive = next;
-        _setOverlayIkChain = next => _vm!.OverlayIkChain = next;
-        _setOverlayMirrored = next => _vm!.OverlayMirrored = next;
-        _setNsfwBones = next => _vm!.NsfwBones = next;
-        _setAnonymousMode = next => _vm!.AnonymousMode = next;
-        _setTheme = next =>
-        {
-            _vm!.Theme = (UITheme)next;
-            _vm.OnThemePreview?.Invoke(_vm.Theme);
-        };
-        _setAccent = next => _vm!.AccentIndex = next;
-        _setShowLines = next => _vm!.ShowSkeletonLines = next;
-        _setLineThickness = next => _vm!.BoneLineThickness = next;
-        _setLineOpacity = next => _vm!.BoneLineOpacity = next;
-        _setSidebarDock = next => _vm!.SidebarDock = next;
-        _setInspectorDock = next => _vm!.InspectorDock = next;
-        _setTreeGuides = next => _vm!.TreeGuides = next;
-        _toggleRebind = new Action[7];
-        for (int i = 0; i < _toggleRebind.Length; i++)
-        {
-            int index = i;
-            _toggleRebind[i] = () => _vm!.RebindingIndex =
-                _vm.RebindingIndex == index ? -1 : index;
-        }
-    }
-
-    /// <summary>Everything one frame's build is TOLD; the view reference is
-    /// what the static builder reaches its state through.</summary>
-    private readonly record struct Props(SettingsView View);
-
-    public void Draw(SettingsViewModel vm, Vector2 origin)
-    {
-        _vm = vm;
         var theme = Crystarium.ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
         var size = new Vector2(
             theme.Settings.Width,
             theme.Settings.Height) * scale;
-        var min = origin;
-        var max = origin + size;
-        float barHeight = theme.Floating.ModalBarHeight * scale;
-        float navigationWidth = theme.Settings.NavigationWidth * scale;
 
-        var props = new Props(this);
-        // The glass and the frame are the CHASSIS' one statement; Settings
-        // states the slots and nothing about the window.
-        WindowChassis.Render(
-            _frame, min, size, in props,
-            static (in Props p) => p.View.BuildFrame());
+        var rects = LegacyCrystarium.WindowFrame(
+            "settings",
+            origin,
+            size,
+            new WindowFrameProps
+            {
+                Title = "Settings",
+                OnClose = () => vm.OnClose?.Invoke(),
+                CloseHelp = "Close settings",
+                RailWidth = theme.Settings.NavigationWidth,
+                FooterRight = right =>
+                {
+                    right.Button(
+                        "Cancel",
+                        () => vm.OnCancel?.Invoke(),
+                        style: ControlStyle.Comfortable);
+                    right.Button(
+                        "Save",
+                        () => vm.OnSave?.Invoke(),
+                        style: ControlStyle.Comfortable,
+                        variant: ButtonVariant.Primary);
+                },
+            });
 
-        // The page is hosted by the shared scroll seam, exactly as the shell
-        // hosts a pane: the region owns the gutter and the viewport, the
-        // declared tree renders inside it.
-        var pageOrigin = new Vector2(
-            min.X + navigationWidth,
-            min.Y + barHeight);
-        _pageHeightPx = max.Y - barHeight - pageOrigin.Y;
-        ImGui.SetCursorScreenPos(pageOrigin);
-        LegacyCrystarium.ScrollRegion(
-            "##settings-page-scroll",
-            (max.X - pageOrigin.X) / scale,
-            _pageHeightPx / scale,
-            _pageBody);
+        DrawNavigation(vm, rects.Rail);
+        DrawPage(vm, rects.Body);
 
         if (vm.RebindingIndex >= 0)
             CaptureRebind(vm);
     }
 
-    private void PageBody(LegacyCrystarium.ScrollRegionScope region)
+    /// <summary>The rail's content: the frame owns the band and its rule, this
+    /// owns the inset and the rows.</summary>
+    private static void DrawNavigation(
+        SettingsViewModel vm,
+        WindowFrameRect rail)
     {
         var theme = Crystarium.ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
-        _controlWidth = MathF.Min(
-                region.ContentWidth - theme.Page.Inset,
-                theme.Page.MaximumContentWidth)
-            - theme.Form.LabelColumnWidth;
-        var props = new Props(this);
-        _page.Render(
-            ImGui.GetCursorScreenPos(),
-            new Vector2(region.ContentWidth * scale, _pageHeightPx),
-            in props,
-            static (in Props p) => p.View.BuildPage());
+        float inset = theme.Page.Inset;
+        ImGui.SetCursorScreenPos(rail.Min + new Vector2(inset * scale));
+        LegacyCrystarium.ScrollRegion(
+            "##settings-navigation",
+            rail.Size.X / scale - inset * 2f,
+            rail.Size.Y / scale - inset * 2f,
+            region =>
+            {
+                for (int i = 0; i < Nav.Length; i++)
+                    if (NavigationRow(
+                            $"##settings-nav-{i}",
+                            Nav[i].Label,
+                            Nav[i].Icon,
+                            vm.Category == i,
+                            region.ContentWidth * scale))
+                        vm.Category = i;
+            });
     }
 
-    private UiNode BuildFrame()
+    /// <summary>
+    /// One rail row. The settings rail is NOT a tree row: its pill runs flush
+    /// to the row box and its glyph is full opacity, so the row is drawn here
+    /// from primitives rather than through <c>TreeRow</c>. Only Settings has
+    /// this shape, so it stays private to the view.
+    /// </summary>
+    private static bool NavigationRow(
+        string id,
+        string label,
+        TablerIcon icon,
+        bool selected,
+        float width)
     {
-        var vm = _vm!;
         var theme = Crystarium.ActiveTheme;
-        var rows = new UiNode[Nav.Length];
-        for (int i = 0; i < Nav.Length; i++)
-        {
-            rows[i] = new Element
+        float scale = ImGuiHelpers.GlobalScale;
+        float height = theme.Controls.ListRowHeight * scale;
+
+        // Rows stack flush at the row height: the ambient vertical spacing is
+        // the surrounding flow's, not the rail's.
+        var spacing = ImGui.GetStyle().ItemSpacing;
+        ImGui.PushStyleVar(
+            ImGuiStyleVar.ItemSpacing, new Vector2(spacing.X, 0f));
+        var hit = Interactive.Reserve(
+            id, new Vector2(width, height), disabled: false);
+        ImGui.PopStyleVar();
+
+        var fill = selected
+            ? theme.Chrome.SidebarSelected
+            : hit.Hovered
+                ? theme.Chrome.SidebarHover
+                : Vector4.Zero;
+        if (fill.W > 0f)
+            ImGui.GetWindowDrawList().AddRectFilled(
+                hit.ScreenMin,
+                hit.ScreenMax,
+                ImGui.ColorConvertFloat4ToU32(fill),
+                NavigationPillRadius * scale);
+
+        float glyph = theme.Controls.SmallIconSize * scale;
+        var slotMin = new Vector2(
+            hit.ScreenMin.X + NavigationIconMargin * scale, hit.ScreenMin.Y);
+        var glyphMin = slotMin + new Vector2((height - glyph) * 0.5f);
+        LegacyCrystarium.IconIn(glyphMin, glyphMin + new Vector2(glyph), icon);
+        float labelX = slotMin.X + height;
+        LegacyCrystarium.TextInBand(
+            new Vector2(labelX, hit.ScreenMin.Y),
+            new Vector2(hit.ScreenMax.X - labelX, height),
+            label,
+            new TextStyle
             {
-                Sheet = SheetFamily.NavRow,
-                Selected = vm.Category == i,
-                Index = i,
-                On = new Listeners { OnPick = _setCategory },
-                Key = i,
-                Children =
-                [
-                    new Stack
-                    {
-                        Sheet = SheetFamily.NavIconSlot,
-                        Children = new Glyph
-                        {
-                            Icon = Nav[i].Icon,
-                            Size = theme.Controls.SmallIconSize,
-                        },
-                    },
-                    new Label { Text = Nav[i].Label, Sheet = SheetFamily.NavLabel },
-                ],
-            };
-        }
-
-        // The frame is the SHARED chassis: the title bar, the rail and its
-        // bridging rule, and the footer band are its statement, not this
-        // view's. The BODY slot stays empty on purpose — the page is hosted
-        // below in the shared scroll seam, exactly as the shell hosts a pane.
-        return new WindowChassis
-        {
-            Title = "Settings",
-            OnClose = _close,
-            CloseHelp = "Close settings",
-            Rail = UiChildren.Create(rows),
-            RailWidth = theme.Settings.NavigationWidth,
-            FooterRight =
-            [
-                new Button { Label = "Cancel", OnClick = _cancel },
-                new Button
-                {
-                    Label = "Save",
-                    Style = ButtonStyle.Primary,
-                    OnClick = _save,
-                },
-            ],
-        };
-    }
-
-    private UiNode BuildPage()
-    {
-        var vm = _vm!;
-        return vm.Category switch
-        {
-            0 => BuildGeneral(vm),
-            1 => BuildDisplay(vm),
-            2 => BuildSkeleton(vm),
-            3 => BuildUi(vm),
-            4 => BuildKeybinds(vm),
-            _ => BuildAbout(vm),
-        };
-    }
-
-    private UiNode BuildGeneral(SettingsViewModel vm) => Crystarium.Page(
-    [
-        new Section
-        {
-            Title = "BEHAVIOR",
-            NoDivider = true,
-            Key = "behavior",
-            Children =
-            [
-                Crystarium.FormSwitch(
-                    "Open with GPose", vm.OpenOnGPose, _setOpenOnGPose,
-                    help: "Show Poser automatically when entering GPose"),
-                Crystarium.FormSwitch(
-                    "Close with GPose", vm.CloseWithGPose, _setCloseWithGPose,
-                    help: "Hide all Poser windows when leaving GPose"),
-            ],
-        },
-    ]);
-
-    private UiNode BuildDisplay(SettingsViewModel vm) => Crystarium.Page(
-    [
-        new Section
-        {
-            Title = "BONE OVERLAY",
-            NoDivider = true,
-            Key = "bone-overlay",
-            Children =
-            [
-                Crystarium.FormSlider(
-                    "Bone dot radius", vm.BoneDotRadius, 2f, 12f,
-                    _setDotRadius, format: "0 px"),
-                Crystarium.FormColorWells(
-                    "Overlay colors",
-                    [
-                        Crystarium.ColorWellCell(
-                            "Selected", vm.OverlaySelected, _setOverlaySelected),
-                        Crystarium.ColorWellCell(
-                            "Hovered", vm.OverlayHovered, _setOverlayHovered),
-                        Crystarium.ColorWellCell(
-                            "Inactive", vm.OverlayInactive, _setOverlayInactive),
-                        Crystarium.ColorWellCell(
-                            "IK chain", vm.OverlayIkChain, _setOverlayIkChain),
-                        Crystarium.ColorWellCell(
-                            "Mirrored", vm.OverlayMirrored, _setOverlayMirrored),
-                    ]),
-            ],
-        },
-        new Section
-        {
-            Title = "FILTERS & PRIVACY",
-            Key = "filters",
-            Children =
-            [
-                Crystarium.FormSwitch(
-                    "NSFW bones", vm.NsfwBones, _setNsfwBones,
-                    help: "Show IVCS and extended bone groups"),
-                Crystarium.FormSwitch(
-                    "Anonymous mode", vm.AnonymousMode, _setAnonymousMode,
-                    help: "Mask character names throughout the UI"),
-            ],
-        },
-        new Section
-        {
-            Title = "THEME",
-            Key = "theme",
-            Children =
-            [
-                Crystarium.FormSwatches(
-                    "Theme", ThemeSwatches, (int)vm.Theme, _setTheme,
-                    ThemeLabels),
-                Crystarium.FormSwatches(
-                    "Accent",
-                    Crystarium.ActiveTheme.Settings.AccentOptions,
-                    vm.AccentIndex,
-                    _setAccent),
-            ],
-        },
-    ]);
-
-    private UiNode BuildSkeleton(SettingsViewModel vm) => Crystarium.Page(
-    [
-        new Section
-        {
-            Title = "SKELETON LINES",
-            NoDivider = true,
-            Key = "skeleton-lines",
-            Children =
-            [
-                Crystarium.FormSwitch(
-                    "Show lines", vm.ShowSkeletonLines, _setShowLines,
-                    help: "Connect parent and child bones in the overlay"),
-                Crystarium.FormSlider(
-                    "Line thickness", vm.BoneLineThickness, 0.5f, 4f,
-                    _setLineThickness, format: "0.0 px"),
-                Crystarium.FormSlider(
-                    "Line opacity", vm.BoneLineOpacity, 0f, 1f,
-                    _setLineOpacity, format: "0%"),
-            ],
-        },
-    ]);
-
-    private UiNode BuildUi(SettingsViewModel vm) => Crystarium.Page(
-    [
-        new Section
-        {
-            Title = "LAYOUT",
-            NoDivider = true,
-            Key = "layout",
-            Children =
-            [
-                Crystarium.FormSegmented(
-                    "Entity sidebar", DockOptions, vm.SidebarDock,
-                    _setSidebarDock, _controlWidth),
-                Crystarium.FormSegmented(
-                    "Inspector", DockOptions, vm.InspectorDock,
-                    _setInspectorDock, _controlWidth),
-            ],
-        },
-        new Section
-        {
-            Title = "TREE",
-            Key = "tree",
-            Children = Crystarium.FormSwitch(
-                "Tree guide lines", vm.TreeGuides, _setTreeGuides,
-                help: "Show hierarchy connector lines"),
-        },
-    ]);
-
-    private UiNode BuildKeybinds(SettingsViewModel vm)
-    {
-        var rows = new UiNode[vm.Keybinds.Length];
-        for (int i = 0; i < vm.Keybinds.Length; i++)
-        {
-            bool rebinding = vm.RebindingIndex == i;
-            rows[i] = Crystarium.FormReadOnlyActions(
-                vm.Keybinds[i].Action,
-                rebinding ? "Press a key…" : vm.Keybinds[i].Binding,
-                unavailable: false,
-                [
-                    new Button
-                    {
-                        Label = rebinding ? "Cancel" : "Rebind",
-                        Dense = true,
-                        OnClick = _toggleRebind[i],
-                    },
-                ],
-                key: i);
-        }
-
-        return Crystarium.Page(
-        [
-            new Section
-            {
-                Title = "KEYBINDS",
-                NoDivider = true,
-                Key = "keybinds",
-                Children = UiChildren.Create(rows),
+                Size = theme.Typography.BodySize,
+                Color = theme.Text,
             },
-        ]);
+            besideIcon: true);
+        return hit.Activated;
     }
 
-    private UiNode BuildAbout(SettingsViewModel vm) => Crystarium.Page(
-    [
-        new Section
-        {
-            Title = "ABOUT",
-            NoDivider = true,
-            Key = "about",
-            Children =
-            [
-                Crystarium.FormReadOnly("Poser", vm.Version),
-                Crystarium.FormReadOnly("Stack", "Crystarium · PosingCore"),
-                Crystarium.FormActions(
-                    "Source",
-                    new Button
-                    {
-                        Label = "Open repository",
-                        Dense = true,
-                        OnClick = _openRepository,
-                    }),
-                Crystarium.FormStatus(
-                    "Design system transcribed from Picto. Brio and Ktisis are interaction references."),
-            ],
-        },
-    ]);
+    /// <summary>The body slot: one scroll seam holding the category page.
+    /// </summary>
+    private static void DrawPage(SettingsViewModel vm, WindowFrameRect body)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        float height = body.Size.Y;
+        ImGui.SetCursorScreenPos(body.Min);
+        LegacyCrystarium.ScrollRegion(
+            "##settings-page-scroll",
+            body.Size.X / scale,
+            height / scale,
+            region => LegacyCrystarium.Page(
+                "settings-page",
+                ImGui.GetCursorScreenPos(),
+                new Vector2(region.ContentWidth * scale, height),
+                page => DrawCategory(vm, page)));
+    }
 
+    private static void DrawCategory(
+        SettingsViewModel vm,
+        LegacyCrystarium.PageScope page)
+    {
+        switch (vm.Category)
+        {
+            case 0:
+                DrawGeneral(vm, page);
+                break;
+            case 1:
+                DrawDisplay(vm, page);
+                break;
+            case 2:
+                DrawSkeleton(vm, page);
+                break;
+            case 3:
+                DrawUi(vm, page);
+                break;
+            case 4:
+                DrawKeybinds(vm, page);
+                break;
+            default:
+                DrawAbout(vm, page);
+                break;
+        }
+    }
+
+    private static void DrawGeneral(
+        SettingsViewModel vm,
+        LegacyCrystarium.PageScope page)
+    {
+        page.Section("BEHAVIOR", form =>
+        {
+            form.Switch(
+                "Open with GPose",
+                vm.OpenOnGPose,
+                next => vm.OpenOnGPose = next,
+                "Show Poser automatically when entering GPose");
+            form.Switch(
+                "Close with GPose",
+                vm.CloseWithGPose,
+                next => vm.CloseWithGPose = next,
+                "Hide all Poser windows when leaving GPose");
+        }, divider: false);
+    }
+
+    private static void DrawDisplay(
+        SettingsViewModel vm,
+        LegacyCrystarium.PageScope page)
+    {
+        page.Section("BONE OVERLAY", form =>
+        {
+            form.Slider(
+                "Bone dot radius",
+                vm.BoneDotRadius,
+                2f,
+                12f,
+                next => vm.BoneDotRadius = next,
+                format: "0 px");
+            form.ColorWells("Overlay colors", wells =>
+            {
+                wells.Well(
+                    "Selected",
+                    vm.OverlaySelected,
+                    next => vm.OverlaySelected = next);
+                wells.Well(
+                    "Hovered",
+                    vm.OverlayHovered,
+                    next => vm.OverlayHovered = next);
+                wells.Well(
+                    "Inactive",
+                    vm.OverlayInactive,
+                    next => vm.OverlayInactive = next);
+                wells.Well(
+                    "IK chain",
+                    vm.OverlayIkChain,
+                    next => vm.OverlayIkChain = next);
+                wells.Well(
+                    "Mirrored",
+                    vm.OverlayMirrored,
+                    next => vm.OverlayMirrored = next);
+            });
+        }, divider: false);
+        page.Section("FILTERS & PRIVACY", form =>
+        {
+            form.Switch(
+                "NSFW bones",
+                vm.NsfwBones,
+                next => vm.NsfwBones = next,
+                "Show IVCS and extended bone groups");
+            form.Switch(
+                "Anonymous mode",
+                vm.AnonymousMode,
+                next => vm.AnonymousMode = next,
+                "Mask character names throughout the UI");
+        });
+        page.Section("THEME", form =>
+        {
+            form.Swatches(
+                "Theme",
+                ThemeSwatches,
+                (int)vm.Theme,
+                next =>
+                {
+                    vm.Theme = (UITheme)next;
+                    vm.OnThemePreview?.Invoke(vm.Theme);
+                },
+                ThemeLabels);
+            form.Swatches(
+                "Accent",
+                Crystarium.ActiveTheme.Settings.AccentOptions,
+                vm.AccentIndex,
+                next => vm.AccentIndex = next);
+        });
+    }
+
+    private static void DrawSkeleton(
+        SettingsViewModel vm,
+        LegacyCrystarium.PageScope page)
+    {
+        page.Section("SKELETON LINES", form =>
+        {
+            form.Switch(
+                "Show lines",
+                vm.ShowSkeletonLines,
+                next => vm.ShowSkeletonLines = next,
+                "Connect parent and child bones in the overlay");
+            form.Slider(
+                "Line thickness",
+                vm.BoneLineThickness,
+                0.5f,
+                4f,
+                next => vm.BoneLineThickness = next,
+                format: "0.0 px");
+            form.Slider(
+                "Line opacity",
+                vm.BoneLineOpacity,
+                0f,
+                1f,
+                next => vm.BoneLineOpacity = next,
+                format: "0%");
+        }, divider: false);
+    }
+
+    private static void DrawUi(
+        SettingsViewModel vm,
+        LegacyCrystarium.PageScope page)
+    {
+        page.Section("LAYOUT", form =>
+        {
+            form.Segmented(
+                "Entity sidebar",
+                DockOptions,
+                vm.SidebarDock,
+                next => vm.SidebarDock = next);
+            form.Segmented(
+                "Inspector",
+                DockOptions,
+                vm.InspectorDock,
+                next => vm.InspectorDock = next);
+        }, divider: false);
+        page.Section("TREE", form =>
+            form.Switch(
+                "Tree guide lines",
+                vm.TreeGuides,
+                next => vm.TreeGuides = next,
+                "Show hierarchy connector lines"));
+    }
+
+    private static void DrawKeybinds(
+        SettingsViewModel vm,
+        LegacyCrystarium.PageScope page)
+    {
+        page.Section("KEYBINDS", form =>
+        {
+            for (int i = 0; i < vm.Keybinds.Length; i++)
+            {
+                int index = i;
+                bool rebinding = vm.RebindingIndex == index;
+                form.ReadOnlyWithActions(
+                    vm.Keybinds[index].Action,
+                    rebinding
+                        ? "Press a key…"
+                        : vm.Keybinds[index].Binding,
+                    actions => actions.Button(
+                        rebinding ? "Cancel" : "Rebind",
+                        () => vm.RebindingIndex =
+                            rebinding ? -1 : index));
+            }
+        }, divider: false);
+    }
+
+    private static void DrawAbout(
+        SettingsViewModel vm,
+        LegacyCrystarium.PageScope page)
+    {
+        page.Section("ABOUT", form =>
+        {
+            form.ReadOnly("Poser", vm.Version);
+            form.ReadOnly("Stack", "Crystarium · PosingCore");
+            form.Actions("Source", actions => actions.Button(
+                "Open repository",
+                () => vm.OnOpenRepository?.Invoke()));
+            form.Status(
+                "Design system transcribed from Picto. Brio and Ktisis are interaction references.");
+        }, divider: false);
+    }
+
+    /// <summary>The raw-input boundary: while a row is rebinding, the next key
+    /// press becomes its binding and Escape abandons the capture.</summary>
     private static void CaptureRebind(SettingsViewModel vm)
     {
         var io = ImGui.GetIO();
