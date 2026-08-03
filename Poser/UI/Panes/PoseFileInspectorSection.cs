@@ -11,10 +11,9 @@ using Poser.Services;
 namespace Poser.UI;
 
 /// <summary>
-/// Selective pose import/export controls hosted by the Pose rail. The section
-/// DECLARES its rows into the rail's tree rather than drawing them; the two
-/// file dialogs stay imperative and are pumped as a named legacy boundary from
-/// the pane's content column.
+/// Selective pose import/export controls hosted by the Pose rail. The two file
+/// dialogs are pumped from the pane's content column rather than from here, so
+/// they survive a rail collapse.
 /// </summary>
 public sealed class PoseFileInspectorSection
 {
@@ -36,22 +35,6 @@ public sealed class PoseFileInspectorSection
     private bool _rotation = true, _position = true, _scale;
     private bool _descendants = true, _reset;
 
-    /// <summary>The skeleton the build wrote, read by the two dialog
-    /// openers.</summary>
-    private ISkeleton? _skeleton;
-
-    // ── hoisted handlers ─────────────────────────────────────────────────
-    // A build path may allocate no delegate, so every callback the rows name
-    // is a field.
-    private readonly Action<int> _setScope;
-    private readonly Action<bool> _setDescendants;
-    private readonly Action<bool> _setPosition;
-    private readonly Action<bool> _setRotation;
-    private readonly Action<bool> _setScale;
-    private readonly Action<bool> _setResetFirst;
-    private readonly Action _openImport;
-    private readonly Action _openExport;
-
     public PoseFileInspectorSection(
         IPoseFileService poseFiles,
         CleanPoseFacade poseFacade,
@@ -62,22 +45,6 @@ public sealed class PoseFileInspectorSection
         _poseFacade = poseFacade;
         _selection = selection;
         _skeletons = skeletons;
-        _setScope = next => _scope = next;
-        _setDescendants = next => _descendants = next;
-        _setPosition = next => _position = next;
-        _setRotation = next => _rotation = next;
-        _setScale = next => _scale = next;
-        _setResetFirst = next => _reset = next;
-        _openImport = () =>
-        {
-            if (_skeleton is { } skeleton)
-                OpenImport(skeleton);
-        };
-        _openExport = () =>
-        {
-            if (_skeleton is { } skeleton)
-                OpenExport(skeleton);
-        };
     }
 
     public void DrawBrowsers()
@@ -86,45 +53,32 @@ public sealed class PoseFileInspectorSection
         _exportBrowser.Draw();
     }
 
-    public UiChildren Rows(ISkeleton skeleton)
+    public void Draw(LegacyCrystarium.FormScope form, ISkeleton skeleton)
     {
-        _skeleton = skeleton;
-        return
-        [
-            Crystarium.FormDropdown("Scope", ScopeOptions, _scope, _setScope),
-            _scope == 3
-                ? Crystarium.FormCheckbox(
-                    "Descendants",
-                    _descendants,
-                    _setDescendants,
-                    help: "Include descendants of selected bones")
-                : UiNode.None,
-            Crystarium.FormCheckbox("Translation", _position, _setPosition),
-            Crystarium.FormCheckbox("Rotation", _rotation, _setRotation),
-            Crystarium.FormCheckbox("Scale", _scale, _setScale),
-            Crystarium.FormCheckbox(
-                "Reset first",
-                _reset,
-                _setResetFirst,
-                help: "Reset affected bones before importing"),
-            Crystarium.FormActions(
-                "Pose file",
-                [
-                    new Button
-                    {
-                        Label = "Import…",
-                        Dense = true,
-                        OnClick = _openImport,
-                    },
-                    new Button
-                    {
-                        Label = "Export…",
-                        Dense = true,
-                        OnClick = _openExport,
-                    },
-                ]),
-            Crystarium.FormStatus(_status),
-        ];
+        form.Dropdown("Scope", ScopeOptions, _scope, next => _scope = next);
+
+        if (_scope == 3)
+            form.Checkbox(
+                "Descendants",
+                _descendants,
+                next => _descendants = next,
+                help: "Include descendants of selected bones");
+        form.Checkbox("Translation", _position, next => _position = next);
+        form.Checkbox("Rotation", _rotation, next => _rotation = next);
+        form.Checkbox("Scale", _scale, next => _scale = next);
+        form.Checkbox(
+            "Reset first",
+            _reset,
+            next => _reset = next,
+            help: "Reset affected bones before importing");
+        form.Actions("Pose file", actions =>
+        {
+            actions.Button("Import…", () => OpenImport(skeleton));
+            actions.Button("Export…", () => OpenExport(skeleton));
+        });
+
+        if (_status.Length > 0)
+            form.Status(_status);
     }
 
     private void OpenImport(ISkeleton skeleton)

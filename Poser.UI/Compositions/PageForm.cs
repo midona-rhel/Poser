@@ -51,6 +51,9 @@ public static partial class LegacyCrystarium
         page.Complete(origin, size.X);
     }
 
+    /// <param name="divider">The rule is a divider BETWEEN sections, so the
+    /// first section of a rail states false and draws neither the rule nor the
+    /// margin above it.</param>
     public static float Section(
         string id,
         string title,
@@ -58,12 +61,13 @@ public static partial class LegacyCrystarium
         float width,
         bool open,
         Action<bool> onOpenChanged,
-        Action<FormScope> content)
+        Action<FormScope> content,
+        bool divider = true)
     {
         float scale = ImGuiHelpers.GlobalScale;
         var page = new PageScope(id, origin, width, scale);
         page.DrawStandaloneSection(
-            title, open, onOpenChanged, content);
+            title, open, onOpenChanged, content, divider);
         page.Complete(origin, width);
         return page.LogicalHeight * scale;
     }
@@ -132,9 +136,11 @@ public static partial class LegacyCrystarium
             string title, Action<FormScope> content, bool divider = true) =>
             DrawSection(title, true, null, content, divider);
 
+        /// <param name="divider">Same rule for a collapsible section: a page's
+        /// FIRST section states false.</param>
         public void Section(string title, bool open, Action<bool> onOpenChanged,
-            Action<FormScope> content) =>
-            DrawSection(title, open, onOpenChanged, content);
+            Action<FormScope> content, bool divider = true) =>
+            DrawSection(title, open, onOpenChanged, content, divider);
 
         /// <summary>
         /// InspectorSection.module.css, whole box. <c>.section</c> leads
@@ -230,8 +236,9 @@ public static partial class LegacyCrystarium
             string title,
             bool open,
             Action<bool> onOpenChanged,
-            Action<FormScope> content) =>
-            DrawSection(title, open, onOpenChanged, content);
+            Action<FormScope> content,
+            bool divider = true) =>
+            DrawSection(title, open, onOpenChanged, content, divider);
 
         internal string RowId(string section, string label) =>
             $"##{_id}-{section}-{label}";
@@ -461,6 +468,96 @@ public static partial class LegacyCrystarium
                     row.Origin.Y,
                     true,
                     id);
+            _page.EndRow(row, id, help);
+        }
+
+        /// <summary>
+        /// A picker trigger with an optional Reset beside it. Two inversions of
+        /// the plain <see cref="Picker"/> row are deliberate: the reset owns a
+        /// PERMANENT slot so ownership changes never resize the trigger under
+        /// the pointer, and the unavailability help sits on the BUTTON while
+        /// the row's own help sits on the row.
+        /// </summary>
+        public void Selector(string label, string value, Action select, Action reset,
+            bool available, bool owned, string? help = null,
+            string? disabledHelp = null, ControlStyle style = default)
+        {
+            string id = Id(label);
+            var row = _page.BeginRow(label);
+            float gap = ActiveTheme.Page.ActionGap * row.Scale;
+            var resetStyle = Workspace(style) with { Width = UiWidth.Content };
+            float resetWidth = MeasureButton("Reset", resetStyle).X;
+            float triggerWidth = row.ControlWidth - resetWidth - gap;
+            var triggerStyle = InRegion(
+                Workspace(style), triggerWidth / row.Scale, fillByDefault: true);
+            float renderedTriggerWidth = ResolveButtonWidth(
+                value, triggerStyle, triggerWidth / row.Scale) * row.Scale;
+            string display = LegacyCrystarium.TruncateText(
+                value,
+                new TextStyle { Size = ActiveTheme.Typography.LabelSize },
+                MathF.Max(1f,
+                    renderedTriggerWidth
+                        - ActiveTheme.Spacing.Six * 2f * row.Scale));
+            float controlHeight = ControlSizing.Height(
+                triggerStyle.Height, ActiveTheme.Controls.WorkspaceHeight);
+            ImGui.SetCursorScreenPos(row.CenterControl(controlHeight));
+            LegacyCrystarium.Button(
+                display, select, style: triggerStyle,
+                disabled: !available, help: disabledHelp, id: id);
+
+            if (owned)
+            {
+                ImGui.SetCursorScreenPos(new(
+                    row.ControlOrigin.X + row.ControlWidth - resetWidth,
+                    row.CenterControl(controlHeight).Y));
+                LegacyCrystarium.Button(
+                    "Reset", reset, style: resetStyle,
+                    help: $"Restore the incoming {label.ToLowerInvariant()} exactly",
+                    id: $"{id}-reset");
+            }
+            _page.EndRow(row, id, help);
+        }
+
+        /// <summary>Progress row: the bar absorbs whatever the readout and the
+        /// cancel action leave.</summary>
+        public void Progress(string label, float fraction, string readout,
+            Action? cancel = null, bool cancelDisabled = false,
+            string? cancelHelp = null, string? help = null,
+            ControlStyle cancelStyle = default)
+        {
+            string id = Id(label);
+            var row = _page.BeginRow(label);
+            float gap = ActiveTheme.Page.ActionGap * row.Scale;
+            float readoutWidth = MeasureText(readout,
+                ActiveTheme.Typography.CaptionSize, FontWeight.Regular,
+                FontFamily.Mono).X;
+            float actionLimit = MathF.Max(0f,
+                row.ControlWidth
+                    - ActiveTheme.Form.ValueColumnWidth * row.Scale
+                    - readoutWidth
+                    - gap * 2f);
+            var actions = new ActionScope();
+            if (cancel != null)
+                actions.Button("Cancel", cancel, cancelStyle,
+                    cancelDisabled, cancelHelp);
+            float actionWidth = actions.Items.Count > 0
+                ? MeasureActions(actions.Items, row.Scale, actionLimit) + gap
+                : 0f;
+            float barWidth = MathF.Max(
+                ActiveTheme.Form.ValueColumnWidth * row.Scale,
+                row.ControlWidth - actionWidth - readoutWidth - gap);
+            ImGui.SetCursorScreenPos(row.CenterControl(
+                ActiveTheme.Controls.SliderHeight));
+            ProgressBar(fraction, barWidth / row.Scale);
+            DrawTextRight(
+                new(row.ControlOrigin.X + barWidth + gap, row.Origin.Y),
+                readoutWidth, ActiveTheme.Controls.FormRowHeight * row.Scale,
+                ActiveTheme.Typography.CaptionSize, FontFamily.Mono,
+                FormLabelColor, readout);
+            if (cancel != null)
+                DrawActions(actions.Items,
+                    row.ControlOrigin.X + row.ControlWidth - (actionWidth - gap),
+                    actionWidth - gap, row.Origin.Y, true, id);
             _page.EndRow(row, id, help);
         }
 

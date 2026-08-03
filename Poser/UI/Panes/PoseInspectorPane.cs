@@ -137,54 +137,6 @@ public class PoseInspectorPane
     private bool _openIk;
     private bool _openPose = true;
 
-    // ── the rail's retained surface ──────────────────────────────────────
-
-    /// <summary>
-    /// The rail's ONE retained surface. The sections are DECLARED, not drawn:
-    /// the root paints absolutely at the origin the shell rail hands it and
-    /// contributes to the surrounding flow with a single closing Dummy of its
-    /// arranged extent — which is exactly what the rail's ScrollRegion
-    /// measures.
-    /// </summary>
-    private readonly UiRoot _railRoot = new();
-
-    /// <summary>
-    /// The vertical span the rail build is OFFERED. It is an allowance, not a
-    /// reservation: nothing in the tree fills the cross axis, so the root
-    /// still reserves its true measured height. The rail hands
-    /// <see cref="DrawRailSections"/> a width and no height, so the number
-    /// only has to exceed any pose rail that can exist.
-    /// </summary>
-    private const float RailHeightAllowance = 4096f;
-
-    // ── hoisted handlers ─────────────────────────────────────────────────
-    // A build path may allocate no delegate, so every callback the tree names
-    // is a field. These six depend on nothing per-target.
-    private readonly Action<bool> _toggleTranslation;
-    private readonly Action<bool> _toggleExpression;
-    private readonly Action<bool> _toggleFiles;
-    private readonly Action<bool> _toggleGaze;
-    private readonly Action<bool> _toggleIk;
-    private readonly Action<bool> _togglePose;
-
-    /// <summary>The transform section's retained wells and callbacks. One
-    /// holder for the pane's life: the rows dispatch against the readings the
-    /// build writes onto it, so the target may change without allocating.
-    /// </summary>
-    private readonly TransformUi _transformUi;
-
-    /// <summary>The gaze section's callbacks, likewise for the pane's life.
-    /// The actor is a field the build writes rather than a capture, because a
-    /// resolved <see cref="IActor"/> is a per-frame view rather than a stable
-    /// identity.</summary>
-    private readonly GazeUi _gazeUi;
-
-    private readonly PoseActionsUi _poseActionsUi;
-
-    /// <summary>The IK chain's ~17 callbacks, rebuilt when the chain changes.
-    /// </summary>
-    private IkUi? _ikUi;
-
     /// <summary>The gaze picker's candidate scratch: retained and refilled, so
     /// a per-frame list never lands on the heap. The names array is
     /// reallocated only when the scene's actor count changes, because a
@@ -243,15 +195,6 @@ public class PoseInspectorPane
         _cleanPose = cleanPose;
         _gazeService = gazeService;
         _editorState = editorState;
-        _toggleTranslation = next => _openTranslation = next;
-        _toggleExpression = next => _openExpression = next;
-        _toggleFiles = next => _openFiles = next;
-        _toggleGaze = next => _openGaze = next;
-        _toggleIk = next => _openIk = next;
-        _togglePose = next => _openPose = next;
-        _transformUi = new TransformUi(this);
-        _gazeUi = new GazeUi(this);
-        _poseActionsUi = new PoseActionsUi(this);
         Reset3DCamera();
     }
 
@@ -504,122 +447,87 @@ public class PoseInspectorPane
         ClearTransformSession();
     }
 
-    /// <summary>Everything one frame's rail build is TOLD. The pane reference
-    /// is what the static builder reaches its services through — reading a
-    /// service allocates nothing, and a closure over them would allocate on
-    /// every frame.</summary>
-    private readonly record struct RailProps(PoseInspectorPane Pane);
-
-    /// <summary>The inspector sections, declared inside the shell rail.</summary>
+    /// <summary>The inspector sections, drawn inside the shell rail.</summary>
     public void DrawRailSections(Vector2 origin, float width)
     {
         // The gesture guards are a PER-FRAME contract of the transform
-        // SESSION, not of the transform rows: running them from inside the
-        // build would skip them whenever TRANSLATION was collapsed, and a
-        // cancelled gesture would stay stranded until the section reopened.
+        // SESSION, not of the transform rows: running them from inside
+        // DrawTransform would skip them whenever TRANSLATION was collapsed,
+        // and a cancelled gesture would stay stranded until the section
+        // reopened.
         UpdateGestureGuards();
-        RailProps props = new(this);
-        _railRoot.Render(
-            origin,
-            new Vector2(width, RailHeightAllowance),
-            in props,
-            static (in RailProps p) => p.Pane.BuildRail());
-    }
 
-    private UiNode BuildRail()
-    {
+        var cursor = origin;
+
+        void Section(
+            string id,
+            string title,
+            bool open,
+            Action<bool> setOpen,
+            Action<LegacyCrystarium.FormScope> content,
+            bool divider = true) =>
+            cursor.Y += LegacyCrystarium.Section(
+                $"pose-rail-{id}",
+                title,
+                cursor,
+                width,
+                open,
+                setOpen,
+                content,
+                divider);
+
+        // The rule is a divider BETWEEN sections, and TRANSLATION is
+        // unconditional and therefore always the rail's first.
+        Section(
+            "translation",
+            "TRANSLATION",
+            _openTranslation,
+            next => _openTranslation = next,
+            DrawTransform,
+            divider: false);
+
         var actor = OwningActor();
         var skeleton = OwningSkeleton();
-        return new Column
+        if (actor != null && _expressionSection.CanDraw)
+            Section(
+                "expression",
+                "EXPRESSION",
+                _openExpression,
+                next => _openExpression = next,
+                form => _expressionSection.Draw(form, actor));
+        if (skeleton != null)
+            Section(
+                "files",
+                "FILES",
+                _openFiles,
+                next => _openFiles = next,
+                form => _poseFileSection.Draw(form, skeleton));
+        if (actor != null)
+            Section(
+                "gaze",
+                "GAZE",
+                _openGaze,
+                next => _openGaze = next,
+                form => DrawGaze(form, actor));
+        if (skeleton != null)
         {
-            Style = new()
-            {
-                Layout = new()
-                {
-                    Width = UiDim.Fill,
-                    // The imperative page closed on the shared inset, and the
-                    // rail's scroll extent is measured from what this root
-                    // reserves — so the trailing breathing space is the
-                    // column's bottom padding.
-                    Padding = new EdgeInsets(
-                        0f, 0f, 0f, Crystarium.ActiveTheme.Page.Inset),
-                },
-            },
-            Children =
-            [
-                new Section
-                {
-                    Title = "TRANSLATION",
-                    // The rule is a divider BETWEEN sections, and TRANSLATION
-                    // is unconditional and therefore always the rail's first.
-                    NoDivider = true,
-                    Expanded = _openTranslation,
-                    OnExpandedChange = _toggleTranslation,
-                    Children = _openTranslation
-                        ? TransformRows()
-                        : UiChildren.Empty,
-                    Key = "translation",
-                },
-                actor != null && _expressionSection.CanDraw
-                    ? (UiNode)new Section
-                    {
-                        Title = "EXPRESSION",
-                        Expanded = _openExpression,
-                        OnExpandedChange = _toggleExpression,
-                        Children = _openExpression
-                            ? _expressionSection.Rows(actor)
-                            : UiChildren.Empty,
-                        Key = "expression",
-                    }
-                    : UiNode.None,
-                skeleton != null
-                    ? (UiNode)new Section
-                    {
-                        Title = "FILES",
-                        Expanded = _openFiles,
-                        OnExpandedChange = _toggleFiles,
-                        Children = _openFiles
-                            ? _poseFileSection.Rows(skeleton)
-                            : UiChildren.Empty,
-                        Key = "files",
-                    }
-                    : UiNode.None,
-                actor != null
-                    ? (UiNode)new Section
-                    {
-                        Title = "GAZE",
-                        Expanded = _openGaze,
-                        OnExpandedChange = _toggleGaze,
-                        Children = _openGaze
-                            ? GazeRows(actor)
-                            : UiChildren.Empty,
-                        Key = "gaze",
-                    }
-                    : UiNode.None,
-                skeleton != null && _primary is { Kind: SceneEntityKind.Bone }
-                    ? (UiNode)new Section
-                    {
-                        Title = "IK",
-                        Expanded = _openIk,
-                        OnExpandedChange = _toggleIk,
-                        Children = _openIk ? IkRows() : UiChildren.Empty,
-                        Key = "ik",
-                    }
-                    : UiNode.None,
-                skeleton != null
-                    ? (UiNode)new Section
-                    {
-                        Title = "POSE",
-                        Expanded = _openPose,
-                        OnExpandedChange = _togglePose,
-                        Children = _openPose
-                            ? PoseActionRows(skeleton)
-                            : UiChildren.Empty,
-                        Key = "pose",
-                    }
-                    : UiNode.None,
-            ],
-        };
+            if (_primary is { Kind: SceneEntityKind.Bone })
+                Section(
+                    "ik",
+                    "IK",
+                    _openIk,
+                    next => _openIk = next,
+                    DrawIk);
+
+            Section(
+                "pose",
+                "POSE",
+                _openPose,
+                next => _openPose = next,
+                form => DrawPoseActions(form, skeleton));
+        }
+
+        ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
     }
 
     /// <summary>Whether any bone carries a Poser-authored layer (the
@@ -1127,144 +1035,90 @@ public class PoseInspectorPane
 
     // ── sections ─────────────────────────────────────────────────────────
 
-    private UiChildren TransformRows()
+    /// <summary>
+    /// The three axis rows and the ONE gesture they share: the local functions
+    /// close over the frame's running position/euler/scale, so the composed
+    /// transform is assembled from all three rather than from three
+    /// independent rows.
+    /// </summary>
+    private void DrawTransform(LegacyCrystarium.FormScope form)
     {
         var (transform, canEdit) = ReadTransform();
-        var ui = _transformUi;
-        ui.Transform = transform;
-        ui.CanEdit = canEdit;
-        ui.Position = transform.Position;
-        ui.Euler = _dragEuler ?? PoseMath.QuaternionToEuler(transform.Rotation);
-        ui.Scale = transform.Scale;
+        var pos = transform.Position;
+        var euler = _dragEuler ?? PoseMath.QuaternionToEuler(transform.Rotation);
+        var scale = transform.Scale;
 
-        return
-        [
-            Crystarium.FormAxisVector(
-                "Translation",
-                ui.Position,
-                ui.ApplyTranslate,
-                ui.Commit,
-                ui.PositionX,
-                ui.PositionY,
-                ui.PositionZ,
-                0.005f,
-                "0.000",
-                disabled: !canEdit),
-            Crystarium.FormAxisVector(
-                "Rotation",
-                ui.Euler,
-                ui.ApplyRotate,
-                ui.CommitRotate,
-                ui.RotationX,
-                ui.RotationY,
-                ui.RotationZ,
-                0.5f,
-                "0.000",
-                disabled: !canEdit),
-            Crystarium.FormAxisVector(
-                "Scale",
-                ui.Scale,
-                ui.ApplyScale,
-                ui.Commit,
-                ui.ScaleX,
-                ui.ScaleY,
-                ui.ScaleZ,
-                0.005f,
-                "0.000",
-                disabled: !canEdit),
-            !canEdit && _entity is IActor
-                ? Crystarium.FormStatus(
-                    "Freeze the actor's animation to move it.")
-                : UiNode.None,
-        ];
-    }
-
-    /// <summary>
-    /// The transform section's retained wells and the one gesture the three
-    /// rows share. The handlers dispatch against the readings the build writes
-    /// here, exactly as the imperative row's local functions closed over the
-    /// frame's locals — so the composed transform is still assembled from the
-    /// running position/euler/scale rather than from three independent rows.
-    /// </summary>
-    private sealed class TransformUi
-    {
-        internal readonly NumericWellState PositionX = new();
-        internal readonly NumericWellState PositionY = new();
-        internal readonly NumericWellState PositionZ = new();
-        internal readonly NumericWellState RotationX = new();
-        internal readonly NumericWellState RotationY = new();
-        internal readonly NumericWellState RotationZ = new();
-        internal readonly NumericWellState ScaleX = new();
-        internal readonly NumericWellState ScaleY = new();
-        internal readonly NumericWellState ScaleZ = new();
-
-        // Written by the build, read at dispatch.
-        internal Transform Transform;
-        internal bool CanEdit;
-        internal Vector3 Position;
-        internal Vector3 Euler;
-        internal Vector3 Scale;
-
-        internal readonly Action<Vector3> ApplyTranslate;
-        internal readonly Action<Vector3> ApplyRotate;
-        internal readonly Action<Vector3> ApplyScale;
-        internal readonly Action Commit;
-        internal readonly Action CommitRotate;
-
-        internal TransformUi(PoseInspectorPane pane)
+        void Apply(Vector3 next, DomainOperation operation)
         {
-            void Apply(Vector3 next, DomainOperation operation)
+            if (!canEdit || _gestureRestartSuppressed)
+                return;
+            BeginTransformSession(transform, operation);
+            if (operation == DomainOperation.Translate)
+                pos = next;
+            else if (operation == DomainOperation.Rotate)
             {
-                if (!CanEdit || pane._gestureRestartSuppressed)
-                    return;
-                pane.BeginTransformSession(Transform, operation);
-                if (operation == DomainOperation.Translate)
-                    Position = next;
-                else if (operation == DomainOperation.Rotate)
-                {
-                    Euler = next;
-                    pane._dragEuler = next;
-                }
-                else
-                    Scale = next;
-                pane.ApplyTransformSession(new Transform
-                {
-                    Position = Position,
-                    Rotation = pane._dragEuler.HasValue
-                        ? PoseMath.EulerToQuaternion(Euler)
-                        : Transform.Rotation,
-                    Scale = Scale,
-                });
+                euler = next;
+                _dragEuler = next;
             }
-
-            void CommitSession()
+            else
+                scale = next;
+            ApplyTransformSession(new Transform
             {
-                if (CanEdit)
-                    pane.CommitTransformSession();
-                pane.ClearTransformSession();
-            }
-
-            ApplyTranslate = next => Apply(next, DomainOperation.Translate);
-            ApplyRotate = next => Apply(next, DomainOperation.Rotate);
-            ApplyScale = next => Apply(next, DomainOperation.Scale);
-            Commit = CommitSession;
-            CommitRotate = () =>
-            {
-                CommitSession();
-                pane._dragEuler = null;
-            };
+                Position = pos,
+                Rotation = _dragEuler.HasValue
+                    ? PoseMath.EulerToQuaternion(euler)
+                    : transform.Rotation,
+                Scale = scale,
+            });
         }
+
+        void Commit()
+        {
+            if (canEdit)
+                CommitTransformSession();
+            ClearTransformSession();
+        }
+
+        form.AxisVector(
+            "Translation",
+            pos,
+            next => Apply(next, DomainOperation.Translate),
+            Commit,
+            0.005f,
+            "0.000",
+            disabled: !canEdit);
+        form.AxisVector(
+            "Rotation",
+            euler,
+            next => Apply(next, DomainOperation.Rotate),
+            () =>
+            {
+                Commit();
+                // The numeric wells re-derive from the quaternion again.
+                _dragEuler = null;
+            },
+            0.5f,
+            "0.000",
+            disabled: !canEdit);
+        form.AxisVector(
+            "Scale",
+            scale,
+            next => Apply(next, DomainOperation.Scale),
+            Commit,
+            0.005f,
+            "0.000",
+            disabled: !canEdit);
+
+        if (!canEdit && _entity is IActor)
+            form.Status("Freeze the actor's animation to move it.");
     }
 
     // Quiet inline note after an Actor-mode click with no valid target actor.
     private bool _gazeActorUnavailableNote;
 
-    private UiChildren GazeRows(IActor actor)
+    private void DrawGaze(LegacyCrystarium.FormScope form, IActor actor)
     {
-        var ui = _gazeUi;
-        ui.Actor = actor;
         var state = _gazeService.GetGazeState(actor);
-        ui.State = state;
 
         // Target discovery is scene membership: every other actor the
         // SceneSession snapshot represents is eligible — the same read
@@ -1285,10 +1139,34 @@ public class PoseInspectorPane
             GazeTargetMode.Camera => 2,
             _ => 3,
         };
+        form.Dropdown("Mode", GazeModeOptions, mode, selected =>
+        {
+            if (selected == 3 && others.Count == 0)
+            {
+                _gazeActorUnavailableNote = true;
+            }
+            else
+            {
+                _gazeActorUnavailableNote = false;
+                _gazeService.SetGazeMode(actor, selected switch
+                {
+                    0 => GazeTargetMode.None,
+                    1 => GazeTargetMode.Forward,
+                    2 => GazeTargetMode.Camera,
+                    _ => GazeTargetMode.Entity,
+                });
+            }
+            state = _gazeService.GetGazeState(actor);
+        });
 
-        bool note = _gazeActorUnavailableNote && others.Count == 0;
-        if (!note)
+        if (_gazeActorUnavailableNote && others.Count == 0)
+            form.Status("Actor mode needs another actor in the scene.");
+        else
             _gazeActorUnavailableNote = false;
+
+        DrawGazePart(form, "Eyes", GazeTargetType.Eyes, actor, state);
+        DrawGazePart(form, "Head", GazeTargetType.Head, actor, state);
+        DrawGazePart(form, "Body", GazeTargetType.Body, actor, state);
 
         var targetAddress = _gazeService.GetGazeTargetAddress(actor);
         string[] names;
@@ -1314,150 +1192,53 @@ public class PoseInspectorPane
                     current = i;
             }
         }
-
-        return
-        [
-            Crystarium.FormDropdown("Mode", GazeModeOptions, mode, ui.SetMode),
-            note
-                ? Crystarium.FormStatus(
-                    "Actor mode needs another actor in the scene.")
-                : UiNode.None,
-            GazePartRow(ui.Eyes, actor, state),
-            GazePartRow(ui.Head, actor, state),
-            GazePartRow(ui.Body, actor, state),
-            Crystarium.FormDropdown(
-                "At",
-                names,
-                current,
-                ui.SetTarget,
-                help: "Actor gaze target",
-                disabled: state.Mode != GazeTargetMode.Entity
-                    || others.Count == 0),
-        ];
+        form.Dropdown(
+            "At",
+            names,
+            current,
+            next =>
+            {
+                if (next >= 0
+                    && next < others.Count
+                    && _bindings.Resolve(others[next].Id) is
+                        { Success: true, Value: { } live })
+                    _gazeService.SetGazeTarget(actor, live);
+            },
+            help: "Actor gaze target",
+            disabled: state.Mode != GazeTargetMode.Entity
+                || others.Count == 0);
     }
 
-    private UiNode GazePartRow(GazePartUi part, IActor actor, GazeState state)
+    private void DrawGazePart(
+        LegacyCrystarium.FormScope form,
+        string label,
+        GazeTargetType part,
+        IActor actor,
+        GazeState state)
     {
         bool off = state.Mode == GazeTargetMode.None;
-        bool enabled = !off && state.TargetType.HasFlag(part.Part);
-        bool locked = _gazeService.IsPartLocked(actor, part.Part);
-        bool lockAvailable = !off && state.TargetType.HasFlag(part.Part);
-        part.Locked = locked;
-        return Crystarium.FormSwitchActions(
-            part.Label,
+        bool enabled = !off && state.TargetType.HasFlag(part);
+        bool locked = _gazeService.IsPartLocked(actor, part);
+        bool lockAvailable = !off && state.TargetType.HasFlag(part);
+        form.SwitchActions(
+            label,
             enabled,
-            part.SetEnabled,
-            new Button
+            next =>
             {
-                Label = locked ? "Unlock" : "Lock",
-                Dense = true,
-                OnClick = part.ToggleLock,
-                Disabled = !lockAvailable,
-                Help = "Freeze this gaze part at its current target",
-                // The caption swaps with the lock, so identity may not be
-                // derived from it.
-                Key = "lock",
+                var flags = next
+                    ? state.TargetType | part
+                    : state.TargetType & ~part;
+                _gazeService.SetGazeParts(actor, flags);
             },
+            actions => actions.Button(
+                locked ? "Unlock" : "Lock",
+                () => _gazeService.SetPartLock(actor, part, !locked),
+                disabled: !lockAvailable,
+                help: "Freeze this gaze part at its current target"),
             disabled: off,
             help: off
                 ? "Choose a gaze mode to control this part"
                 : "Include this part in gaze control");
-    }
-
-    /// <summary>The gaze section's callbacks. The actor is written by the
-    /// build rather than captured: a resolved <see cref="IActor"/> is a
-    /// per-frame view of a stable id, not an identity a delegate may
-    /// hold.</summary>
-    private sealed class GazeUi
-    {
-        // Written by the build, read at dispatch.
-        internal IActor? Actor;
-        internal GazeState? State;
-
-        internal readonly GazePartUi Eyes;
-        internal readonly GazePartUi Head;
-        internal readonly GazePartUi Body;
-
-        internal readonly Action<int> SetMode;
-        internal readonly Action<int> SetTarget;
-
-        internal GazeUi(PoseInspectorPane pane)
-        {
-            Eyes = new GazePartUi(pane, this, "Eyes", GazeTargetType.Eyes);
-            Head = new GazePartUi(pane, this, "Head", GazeTargetType.Head);
-            Body = new GazePartUi(pane, this, "Body", GazeTargetType.Body);
-
-            SetMode = selected =>
-            {
-                if (Actor is not { } actor)
-                    return;
-                if (selected == 3 && pane._gazeOthers.Count == 0)
-                {
-                    pane._gazeActorUnavailableNote = true;
-                }
-                else
-                {
-                    pane._gazeActorUnavailableNote = false;
-                    pane._gazeService.SetGazeMode(actor, selected switch
-                    {
-                        0 => GazeTargetMode.None,
-                        1 => GazeTargetMode.Forward,
-                        2 => GazeTargetMode.Camera,
-                        _ => GazeTargetMode.Entity,
-                    });
-                }
-                State = pane._gazeService.GetGazeState(actor);
-            };
-
-            SetTarget = next =>
-            {
-                var others = pane._gazeOthers;
-                if (Actor is { } actor
-                    && next >= 0
-                    && next < others.Count
-                    && pane._bindings.Resolve(others[next].Id) is
-                        { Success: true, Value: { } live })
-                    pane._gazeService.SetGazeTarget(actor, live);
-            };
-        }
-    }
-
-    /// <summary>One gaze part's caption and its two callbacks.</summary>
-    private sealed class GazePartUi
-    {
-        internal readonly string Label;
-        internal readonly GazeTargetType Part;
-
-        // Written by the build, read at dispatch.
-        internal bool Locked;
-
-        internal readonly Action<bool> SetEnabled;
-        internal readonly Action ToggleLock;
-
-        internal GazePartUi(
-            PoseInspectorPane pane,
-            GazeUi gaze,
-            string label,
-            GazeTargetType part)
-        {
-            Label = label;
-            Part = part;
-            SetEnabled = next =>
-            {
-                if (gaze.Actor is not { } actor
-                    || gaze.State is not { } state)
-                    return;
-                var flags = next
-                    ? state.TargetType | part
-                    : state.TargetType & ~part;
-                pane._gazeService.SetGazeParts(actor, flags);
-            };
-            ToggleLock = () =>
-            {
-                if (gaze.Actor is { } actor)
-                    pane._gazeService.SetPartLock(actor, part, !Locked);
-            };
-        }
     }
 
     // Preserve the raw hinge-axis wells while dragging. Valid intermediate
@@ -1465,499 +1246,267 @@ public class PoseInspectorPane
     // scrub; the runtime keeps the normalized configuration.
     private Vector3? _ikAxisScratch;
 
-    private UiChildren IkRows()
+    private void DrawIk(LegacyCrystarium.FormScope form)
     {
         if (_primary is not { Kind: SceneEntityKind.Bone, Bone: { } boneId })
-            return UiChildren.Empty;
+            return;
         var ikTarget = TransformTargetId.ForBone(boneId);
-        var ui = IkHandlers(ikTarget);
         var config = _ikPort.Get(ikTarget);
-        ui.Config = config;
+
+        void Apply(Domain.Posing.IkChainConfig next)
+        {
+            if (_ikPort.Set(ikTarget, next).Success)
+                config = _ikPort.Get(ikTarget);
+        }
 
         bool eligible = config != null;
         bool armed = config?.Enabled == true;
-        UiNode live = Crystarium.FormSwitchActions(
+        form.SwitchActions(
             "Live IK",
             armed,
-            ui.SetEnabled,
-            new Button
+            next =>
             {
-                Label = "Reset defaults",
-                Dense = true,
-                OnClick = ui.ResetDefaults,
-                Disabled = !eligible,
-                Help = "Restore this chain's IK defaults",
+                if (config != null)
+                    Apply(config with { Enabled = next });
             },
+            actions => actions.Button(
+                "Reset defaults",
+                () =>
+                {
+                    _ikPort.ResetDefaults(ikTarget);
+                    config = _ikPort.Get(ikTarget);
+                },
+                disabled: !eligible,
+                help: "Restore this chain's IK defaults"),
             disabled: !eligible,
             help: eligible
                 ? "Solve this chain toward the gizmo target while you pose"
                 : "This bone has no IK chain — select a hand or foot");
         if (config == null)
-            return live;
+            return;
 
         bool twoJointAvailable = _ikPort.IsTwoJointAvailable(ikTarget);
-        ui.TwoJointAvailable = twoJointAvailable;
         var solverItems = twoJointAvailable
             ? TwoJointSolverItems : CcdSolverItems;
         int solverIndex = config.Solver == Domain.Posing.IkSolver.Ccd
             ? solverItems.Length - 1
             : 0;
-        ui.SolverIndex = solverIndex;
-        UiNode solver = Crystarium.FormDropdown(
+        form.Dropdown(
             "Solver",
             solverItems,
             solverIndex,
-            ui.PickSolver,
+            next =>
+            {
+                var solver = twoJointAvailable && solverIndex == 0
+                    ? Domain.Posing.IkSolver.TwoJoint
+                    : Domain.Posing.IkSolver.Ccd;
+                if (twoJointAvailable)
+                    solver = next == 0
+                        ? Domain.Posing.IkSolver.TwoJoint
+                        : Domain.Posing.IkSolver.Ccd;
+                Apply(config with { Solver = solver });
+            },
             help: "Two Joint is anatomical; CCD bends any chain toward the target");
 
         if (config.Solver == Domain.Posing.IkSolver.TwoJoint)
         {
             int modeIndex =
                 config.TargetMode == Domain.Posing.IkTargetMode.Fixed ? 1 : 0;
-            var definition =
-                Domain.Posing.IkChains.ForEndpoint(boneId.CanonicalName)!;
-            var labels = definition.IsArm ? ArmJointLabels : LegJointLabels;
-            var helps = definition.IsArm ? ArmJointHelp : LegJointHelp;
-            var axis = _ikAxisScratch ?? config.HingeAxis;
-            return
-            [
-                live,
-                solver,
-                Crystarium.FormDropdown(
-                    "Target",
-                    TargetModeItems,
-                    modeIndex,
-                    ui.PickTargetMode,
-                    help: "Relative follows the current pose; Fixed pins a world-space goal"),
-                Crystarium.FormSwitch(
-                    "Constraints",
-                    config.EnforceConstraints,
-                    ui.SetConstraints,
-                    help: "Keep joints inside their anatomical limits"),
-                Crystarium.FormSwitch(
-                    "End rotation",
-                    config.EnforceEndRotation,
-                    ui.SetEndRotation,
-                    help: "Rotate the end bone to match the target"),
-                // The three gain rows swap their CAPTIONS between arm and leg
-                // chains, so their identity is stated rather than derived from
-                // the label the imperative row used.
-                Crystarium.FormSlider(
-                    labels[0],
-                    config.FirstJointGain,
-                    0f,
-                    1f,
-                    ui.SetFirstGain,
-                    help: helps[0],
-                    key: "first-joint"),
-                Crystarium.FormSlider(
-                    labels[1],
-                    config.SecondJointGain,
-                    0f,
-                    1f,
-                    ui.SetSecondGain,
-                    help: helps[1],
-                    key: "second-joint"),
-                Crystarium.FormSlider(
-                    labels[2],
-                    config.EndJointGain,
-                    0f,
-                    1f,
-                    ui.SetEndGain,
-                    help: helps[2],
-                    key: "end-joint"),
-                Crystarium.FormSlider(
-                    "Hinge min",
-                    config.HingeMinDegrees,
-                    0f,
-                    180f,
-                    ui.SetHingeMin,
-                    format: "0°",
-                    help: "Smallest allowed hinge bend"),
-                Crystarium.FormSlider(
-                    "Hinge max",
-                    config.HingeMaxDegrees,
-                    0f,
-                    180f,
-                    ui.SetHingeMax,
-                    format: "0°",
-                    help: "Largest allowed hinge bend"),
-                Crystarium.FormLabelRow(
-                    "Hinge axis",
-                    "The local axis the middle joint bends around"),
-                Crystarium.FormAxisVector(
-                    "",
-                    axis,
-                    ui.SetHingeAxis,
-                    ui.CommitHingeAxis,
-                    ui.HingeX,
-                    ui.HingeY,
-                    ui.HingeZ,
-                    0.005f,
-                    "0.000"),
-            ];
-        }
-
-        return
-        [
-            live,
-            solver,
-            Crystarium.FormSwitch(
-                "Constraints",
-                config.EnforceConstraints,
-                ui.SetConstraints,
-                help: "Keep joints inside their anatomical limits"),
-            Crystarium.FormSlider(
-                "Depth",
-                config.CcdDepth,
-                1f,
-                20f,
-                ui.SetCcdDepth,
-                format: "0",
-                help: "How many parent bones the solver may move"),
-            Crystarium.FormSlider(
-                "Iterations",
-                config.CcdIterations,
-                1f,
-                60f,
-                ui.SetCcdIterations,
-                format: "0",
-                help: "Solver passes per update"),
-            Crystarium.FormSlider(
-                "Gain",
-                config.CcdGain,
-                0f,
-                1f,
-                ui.SetCcdGain,
-                help: "How far each pass moves toward the target"),
-        ];
-    }
-
-    private IkUi IkHandlers(TransformTargetId target)
-    {
-        if (_ikUi is null || !_ikUi.Target.Equals(target))
-            _ikUi = new IkUi(this, target);
-        return _ikUi;
-    }
-
-    /// <summary>
-    /// ONE chain's fixed callbacks, constructed once and reused for every
-    /// frame that chain stays selected. Each handler closes over the target,
-    /// so building them inside the tree would allocate seventeen delegates per
-    /// frame; the config they compose against is written here by the build.
-    /// The <c>with</c>-allocation on interaction is deliberate — a record
-    /// copy per gesture step is not a per-frame cost.
-    /// </summary>
-    private sealed class IkUi
-    {
-        internal readonly TransformTargetId Target;
-        internal readonly NumericWellState HingeX = new();
-        internal readonly NumericWellState HingeY = new();
-        internal readonly NumericWellState HingeZ = new();
-
-        // Written by the build, read at dispatch.
-        internal Domain.Posing.IkChainConfig? Config;
-        internal bool TwoJointAvailable;
-        internal int SolverIndex;
-
-        internal readonly Action<bool> SetEnabled;
-        internal readonly Action ResetDefaults;
-        internal readonly Action<int> PickSolver;
-        internal readonly Action<int> PickTargetMode;
-        internal readonly Action<bool> SetConstraints;
-        internal readonly Action<bool> SetEndRotation;
-        internal readonly Action<float> SetFirstGain;
-        internal readonly Action<float> SetSecondGain;
-        internal readonly Action<float> SetEndGain;
-        internal readonly Action<float> SetHingeMin;
-        internal readonly Action<float> SetHingeMax;
-        internal readonly Action<Vector3> SetHingeAxis;
-        internal readonly Action CommitHingeAxis;
-        internal readonly Action<float> SetCcdDepth;
-        internal readonly Action<float> SetCcdIterations;
-        internal readonly Action<float> SetCcdGain;
-
-        internal IkUi(PoseInspectorPane pane, TransformTargetId target)
-        {
-            Target = target;
-
-            void Apply(Domain.Posing.IkChainConfig next)
-            {
-                if (pane._ikPort.Set(target, next).Success)
-                    Config = pane._ikPort.Get(target);
-            }
-
-            SetEnabled = next =>
-            {
-                if (Config is { } config)
-                    Apply(config with { Enabled = next });
-            };
-            ResetDefaults = () =>
-            {
-                pane._ikPort.ResetDefaults(target);
-                Config = pane._ikPort.Get(target);
-            };
-            PickSolver = next =>
-            {
-                if (Config is not { } config)
-                    return;
-                var solver = TwoJointAvailable && SolverIndex == 0
-                    ? Domain.Posing.IkSolver.TwoJoint
-                    : Domain.Posing.IkSolver.Ccd;
-                if (TwoJointAvailable)
-                    solver = next == 0
-                        ? Domain.Posing.IkSolver.TwoJoint
-                        : Domain.Posing.IkSolver.Ccd;
-                Apply(config with { Solver = solver });
-            };
-            PickTargetMode = next =>
-            {
-                if (Config is { } config)
+            form.Dropdown(
+                "Target",
+                TargetModeItems,
+                modeIndex,
+                next =>
                     Apply(config with
                     {
                         TargetMode = next == 1
                             ? Domain.Posing.IkTargetMode.Fixed
                             : Domain.Posing.IkTargetMode.Relative,
-                    });
-            };
-            SetConstraints = next =>
-            {
-                if (Config is { } config)
-                    Apply(config with { EnforceConstraints = next });
-            };
-            SetEndRotation = next =>
-            {
-                if (Config is { } config)
-                    Apply(config with { EnforceEndRotation = next });
-            };
-            SetFirstGain = next =>
-            {
-                if (Config is { } config)
-                    Apply(config with { FirstJointGain = next });
-            };
-            SetSecondGain = next =>
-            {
-                if (Config is { } config)
-                    Apply(config with { SecondJointGain = next });
-            };
-            SetEndGain = next =>
-            {
-                if (Config is { } config)
-                    Apply(config with { EndJointGain = next });
-            };
-            SetHingeMin = next =>
-            {
-                if (Config is { } config)
+                    }),
+                help: "Relative follows the current pose; Fixed pins a world-space goal");
+            form.Switch(
+                "Constraints",
+                config.EnforceConstraints,
+                next => Apply(config with { EnforceConstraints = next }),
+                help: "Keep joints inside their anatomical limits");
+            form.Switch(
+                "End rotation",
+                config.EnforceEndRotation,
+                next => Apply(config with { EnforceEndRotation = next }),
+                help: "Rotate the end bone to match the target");
+
+            // The three gain rows swap their captions between arm and leg
+            // chains; both triples are fixed text.
+            var definition =
+                Domain.Posing.IkChains.ForEndpoint(boneId.CanonicalName)!;
+            var labels = definition.IsArm ? ArmJointLabels : LegJointLabels;
+            var helps = definition.IsArm ? ArmJointHelp : LegJointHelp;
+            form.Slider(
+                labels[0],
+                config.FirstJointGain,
+                0f,
+                1f,
+                next => Apply(config with { FirstJointGain = next }),
+                help: helps[0]);
+            form.Slider(
+                labels[1],
+                config.SecondJointGain,
+                0f,
+                1f,
+                next => Apply(config with { SecondJointGain = next }),
+                help: helps[1]);
+            form.Slider(
+                labels[2],
+                config.EndJointGain,
+                0f,
+                1f,
+                next => Apply(config with { EndJointGain = next }),
+                help: helps[2]);
+            form.Slider(
+                "Hinge min",
+                config.HingeMinDegrees,
+                0f,
+                180f,
+                next =>
                     Apply(config with
                     {
                         HingeMinDegrees = next,
                         HingeMaxDegrees = MathF.Max(
                             next, config.HingeMaxDegrees),
-                    });
-            };
-            SetHingeMax = next =>
-            {
-                if (Config is { } config)
+                    }),
+                format: "0°",
+                help: "Smallest allowed hinge bend");
+            form.Slider(
+                "Hinge max",
+                config.HingeMaxDegrees,
+                0f,
+                180f,
+                next =>
                     Apply(config with
                     {
                         HingeMaxDegrees = next,
                         HingeMinDegrees = MathF.Min(
                             next, config.HingeMinDegrees),
-                    });
-            };
-            SetHingeAxis = next =>
-            {
-                pane._ikAxisScratch = next;
-                if (Config is { } config)
+                    }),
+                format: "0°",
+                help: "Largest allowed hinge bend");
+
+            form.Label(
+                "Hinge axis",
+                "The local axis the middle joint bends around");
+            var axis = _ikAxisScratch ?? config.HingeAxis;
+            form.AxisVector(
+                "",
+                axis,
+                next =>
+                {
+                    _ikAxisScratch = next;
                     Apply(config with { HingeAxis = next });
-            };
-            CommitHingeAxis = () => pane._ikAxisScratch = null;
-            SetCcdDepth = next =>
-            {
-                if (Config is { } config)
-                    Apply(config with { CcdDepth = (int)MathF.Round(next) });
-            };
-            SetCcdIterations = next =>
-            {
-                if (Config is { } config)
+                },
+                () => _ikAxisScratch = null,
+                0.005f,
+                "0.000",
+                fullWidth: true);
+        }
+        else
+        {
+            form.Switch(
+                "Constraints",
+                config.EnforceConstraints,
+                next => Apply(config with { EnforceConstraints = next }),
+                help: "Keep joints inside their anatomical limits");
+            form.Slider(
+                "Depth",
+                config.CcdDepth,
+                1f,
+                20f,
+                next =>
+                    Apply(config with
+                    {
+                        CcdDepth = (int)MathF.Round(next),
+                    }),
+                format: "0",
+                help: "How many parent bones the solver may move");
+            form.Slider(
+                "Iterations",
+                config.CcdIterations,
+                1f,
+                60f,
+                next =>
                     Apply(config with
                     {
                         CcdIterations = (int)MathF.Round(next),
-                    });
-            };
-            SetCcdGain = next =>
-            {
-                if (Config is { } config)
-                    Apply(config with { CcdGain = next });
-            };
+                    }),
+                format: "0",
+                help: "Solver passes per update");
+            form.Slider(
+                "Gain",
+                config.CcdGain,
+                0f,
+                1f,
+                next => Apply(config with { CcdGain = next }),
+                help: "How far each pass moves toward the target");
         }
     }
 
-    private UiChildren PoseActionRows(ISkeleton skeleton)
+    private void DrawPoseActions(
+        LegacyCrystarium.FormScope form,
+        ISkeleton skeleton)
     {
-        var ui = _poseActionsUi;
         var bone = _entity as IBone;
-        ui.Skeleton = skeleton;
-        ui.Bone = bone;
         bool hasAuthoredEdits = _cleanPose.HasAuthoredEdits(skeleton.Actor);
-        bool hasStash = _cleanPose.HasStash;
-        return
-        [
-            Crystarium.FormActions(
-                "Edit",
-                [
-                    bone != null
-                        ? (UiNode)new Button
-                        {
-                            Label = "Flip bone",
-                            Dense = true,
-                            OnClick = ui.FlipBone,
-                            Help = "Flip this bone's edit to the other side",
-                        }
-                        : UiNode.None,
-                    new Button
-                    {
-                        Label = "Mirror edits",
-                        Dense = true,
-                        OnClick = ui.Mirror,
-                        Disabled = !hasAuthoredEdits,
-                        Help = hasAuthoredEdits
-                            ? "Mirror your edits to the other side"
-                            : "No edits to mirror",
-                    },
-                ]),
-            Crystarium.FormActions(
-                "Reset",
-                [
-                    bone != null
-                        ? (UiNode)new Button
-                        {
-                            Label = "Bone",
-                            Dense = true,
-                            OnClick = ui.ResetBone,
-                        }
-                        : UiNode.None,
-                    new Button
-                    {
-                        Label = "Body",
-                        Dense = true,
-                        OnClick = ui.ResetBody,
-                    },
-                    new Button
-                    {
-                        Label = "Face",
-                        Dense = true,
-                        OnClick = ui.ResetFace,
-                    },
-                    new Button
-                    {
-                        Label = "Hair",
-                        Dense = true,
-                        OnClick = ui.ResetHair,
-                    },
-                ]),
-            Crystarium.FormActions(
-                "Reset all",
-                new Button
-                {
-                    Label = "All",
-                    Dense = true,
-                    OnClick = ui.ResetAll,
-                    Help = "Reset pose, expression, gaze, IK, animation, appearance, and external integrations for this actor",
-                }),
-            Crystarium.FormActions(
-                "Transfer",
-                [
-                    new Button
-                    {
-                        Label = "Stash",
-                        Dense = true,
-                        OnClick = ui.Stash,
-                        Help = "Copy the current pose to the stash",
-                    },
-                    new Button
-                    {
-                        Label = "Apply stash",
-                        Dense = true,
-                        OnClick = ui.ApplyStash,
-                        Disabled = !hasStash,
-                        // A live clock: this one string is minted per frame
-                        // because it says something different every second.
-                        Help = hasStash
-                            ? $"Stashed {_cleanPose.StashedAt:HH:mm:ss}"
-                            : "Nothing stashed yet",
-                    },
-                ]),
-        ];
-    }
-
-    /// <summary>The POSE section's callbacks. The skeleton and the primary
-    /// bone are fields the build writes, so the section's nine actions are
-    /// allocated once for the pane's life.</summary>
-    private sealed class PoseActionsUi
-    {
-        // Written by the build, read at dispatch.
-        internal ISkeleton? Skeleton;
-        internal IBone? Bone;
-
-        internal readonly Action FlipBone;
-        internal readonly Action Mirror;
-        internal readonly Action ResetBone;
-        internal readonly Action ResetBody;
-        internal readonly Action ResetFace;
-        internal readonly Action ResetHair;
-        internal readonly Action ResetAll;
-        internal readonly Action Stash;
-        internal readonly Action ApplyStash;
-
-        internal PoseActionsUi(PoseInspectorPane pane)
+        form.Actions("Edit", actions =>
         {
-            FlipBone = () =>
-            {
-                if (Bone is { } bone)
-                    pane._cleanPose.FlipBone(bone);
-            };
-            Mirror = () =>
-            {
-                if (Skeleton is { } skeleton)
-                    pane._cleanPose.Mirror(skeleton.Actor);
-            };
-            ResetBone = () =>
-            {
-                if (Bone is { } bone)
-                    pane._cleanPose.ResetBone(bone);
-            };
-            ResetBody = () =>
-            {
-                if (Skeleton is { } skeleton)
-                    pane._cleanPose.Reset(skeleton.Actor, PoseRegion.Body);
-            };
-            ResetFace = () =>
-            {
-                if (Skeleton is { } skeleton)
-                    pane._cleanPose.Reset(skeleton.Actor, PoseRegion.Face);
-            };
-            ResetHair = () =>
-            {
-                if (Skeleton is { } skeleton)
-                    pane._cleanPose.Reset(skeleton.Actor, PoseRegion.Hair);
-            };
-            ResetAll = () =>
-            {
-                if (Skeleton is { } skeleton)
-                    pane._cleanPose.ResetAll(skeleton.Actor);
-            };
-            Stash = () =>
-            {
-                if (Skeleton is { } skeleton)
-                    pane._cleanPose.Stash(skeleton.Actor);
-            };
-            ApplyStash = () =>
-            {
-                if (Skeleton is { } skeleton)
-                    pane._cleanPose.ApplyStash(skeleton.Actor);
-            };
-        }
+            if (bone != null)
+                actions.Button(
+                    "Flip bone",
+                    () => _cleanPose.FlipBone(bone),
+                    help: "Flip this bone's edit to the other side");
+            actions.Button(
+                "Mirror edits",
+                () => _cleanPose.Mirror(skeleton.Actor),
+                disabled: !hasAuthoredEdits,
+                help: hasAuthoredEdits
+                    ? "Mirror your edits to the other side"
+                    : "No edits to mirror");
+        });
+        form.Actions("Reset", actions =>
+        {
+            if (bone != null)
+                actions.Button(
+                    "Bone", () => _cleanPose.ResetBone(bone));
+            actions.Button(
+                "Body",
+                () => _cleanPose.Reset(skeleton.Actor, PoseRegion.Body));
+            actions.Button(
+                "Face",
+                () => _cleanPose.Reset(skeleton.Actor, PoseRegion.Face));
+            actions.Button(
+                "Hair",
+                () => _cleanPose.Reset(skeleton.Actor, PoseRegion.Hair));
+        });
+        form.Actions("Reset all", actions => actions.Button(
+            "All",
+            () => _cleanPose.ResetAll(skeleton.Actor),
+            help: "Reset pose, expression, gaze, IK, animation, appearance, and external integrations for this actor"));
+
+        bool hasStash = _cleanPose.HasStash;
+        form.Actions("Transfer", actions =>
+        {
+            actions.Button(
+                "Stash",
+                () => _cleanPose.Stash(skeleton.Actor),
+                help: "Copy the current pose to the stash");
+            actions.Button(
+                "Apply stash",
+                () => _cleanPose.ApplyStash(skeleton.Actor),
+                disabled: !hasStash,
+                // A live clock: this one string says something different
+                // every second.
+                help: hasStash
+                    ? $"Stashed {_cleanPose.StashedAt:HH:mm:ss}"
+                    : "Nothing stashed yet");
+        });
     }
 
     // ── M11 rail helpers (header summary, children, flip, freeze state) ──
