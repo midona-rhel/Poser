@@ -163,6 +163,17 @@ internal sealed class Dx11Renderer : IDisposable
         return view.NativePointer;
     }
 
+    /// <summary>Crystarium's icon-texture uploader: the same device path the
+    /// font atlas takes, so the harness exercises the baked-quad icon draw
+    /// the plugin uses. The renderer owns every texture it makes, so the
+    /// cache needs no keepalive.</summary>
+    public unsafe (nint Handle, IDisposable? Keepalive) CreateIconTexture(
+        byte[] pixels, int width, int height)
+    {
+        fixed (byte* data = pixels)
+            return (CreateTexture(data, width, height), null);
+    }
+
     public void DestroyTexture(nint id)
     {
         if (_textures.Remove((ulong)id, out var texture))

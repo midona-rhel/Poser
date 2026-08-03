@@ -150,6 +150,7 @@ internal static class Program
 
         using var renderer = new Dx11Renderer();
         renderer.Initialize(form.Handle, maxWidth, maxHeight);
+        Ui.IconTextureUploader = renderer.CreateIconTexture;
         // The root context exists to own the shared font atlas; every
         // entry renders in its OWN context created over that atlas, so
         // no ImGui interaction, timing, or widget state can survive from
@@ -253,6 +254,8 @@ internal static class Program
         }
         finally
         {
+            // Before the renderer goes: the baked icon handles are its.
+            Ui.IconTextureUploader = null;
             FontRegistry.Dispose();
             ImGui.DestroyContext(rootContext);
         }

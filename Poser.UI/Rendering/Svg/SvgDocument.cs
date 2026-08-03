@@ -22,6 +22,14 @@ public sealed class SvgDocument
     public Vector2 ViewBoxMin { get; private set; } = Vector2.Zero;
     public Vector2 ViewBoxSize { get; private set; } = new Vector2(100, 100);
 
+    private static int _nextCacheId;
+
+    /// <summary>Process-stable identity for the baked-icon texture cache.
+    /// Documents are parsed once and kept, so this is the cheapest key part
+    /// there is.</summary>
+    internal int CacheId { get; } =
+        System.Threading.Interlocked.Increment(ref _nextCacheId);
+
     /// <summary>Parse SVG XML text.</summary>
     public static SvgDocument Parse(string xml)
     {
@@ -154,11 +162,53 @@ public sealed class SvgDocument
         bool flipX, float? strokeWidth, bool compositeStroke,
         float groupOpacity = 1f, Vector4 groupBackground = default)
     {
-        var size = max - min;
-        if (size.X <= 0f || size.Y <= 0f) return;
-        if (ViewBoxSize.X <= 0f || ViewBoxSize.Y <= 0f) return;
+        if (!Fits(min, max)) return;
 
-        // Uniform fit: scale = min(scaleX, scaleY); centered.
+        // Warm path: one cached quad. No geometry, no closure, no
+        // per-sub-path point buffers, no per-pixel rect.
+        if (SvgIconTextureCache.TryDraw(
+                drawList, this, min, max, tint, flipX, strokeWidth,
+                groupOpacity, groupBackground))
+            return;
+
+        var (toScreen, scale) = Geometry(min, max, flipX);
+        SvgRenderer.Render(
+            drawList, Paths, toScreen, scale, tint, strokeWidth,
+            compositeStroke, groupOpacity, groupBackground);
+    }
+
+    /// <summary>The painter's own coverage for this exact draw, as an RGBA8
+    /// bitmap. False means the document is not one the mask can express, so
+    /// the painter owns it; true with a zero size means it paints nothing.
+    /// </summary>
+    internal bool TryBakeMask(
+        Vector2 min, Vector2 max, Vector4? tint, bool flipX,
+        float? strokeWidth, float groupOpacity, Vector4 groupBackground,
+        out Vector2 origin, out int width, out int height, out byte[] rgba)
+    {
+        origin = default;
+        width = 0;
+        height = 0;
+        rgba = [];
+        if (!Fits(min, max) || !SvgRenderer.UsesStrokeMask(Paths))
+            return false;
+        var (toScreen, scale) = Geometry(min, max, flipX);
+        SvgStrokeMask.Bake(
+            Paths, toScreen, scale, tint, strokeWidth,
+            groupOpacity, groupBackground,
+            out origin, out width, out height, out rgba);
+        return true;
+    }
+
+    private bool Fits(Vector2 min, Vector2 max) =>
+        max.X - min.X > 0f && max.Y - min.Y > 0f
+        && ViewBoxSize.X > 0f && ViewBoxSize.Y > 0f;
+
+    /// <summary>Uniform fit: scale = min(scaleX, scaleY); centered.</summary>
+    private (Func<Vector2, Vector2> ToScreen, float Scale) Geometry(
+        Vector2 min, Vector2 max, bool flipX)
+    {
+        var size = max - min;
         float scaleX = size.X / ViewBoxSize.X;
         float scaleY = size.Y / ViewBoxSize.Y;
         float scale = MathF.Min(scaleX, scaleY);
@@ -174,9 +224,7 @@ public sealed class SvgDocument
             return origin + new Vector2(localX * scale, (svgPt.Y - ViewBoxMin.Y) * scale);
         }
 
-        SvgRenderer.Render(
-            drawList, Paths, ToScreen, scale, tint, strokeWidth,
-            compositeStroke, groupOpacity, groupBackground);
+        return (ToScreen, scale);
     }
 
     // ---------- helpers ----------

@@ -75,6 +75,17 @@ public class Poser : IDalamudPlugin
         // presentation surface can measure with a fallback face.
         FontRegistry.Register(pluginInterface.UiBuilder.FontAtlas);
 
+        // Icons bake to a texture once and draw as one quad after that; the
+        // wrap is the keepalive, so the cache disposing an entry releases it.
+        Crystarium.IconTextureUploader = (pixels, width, height) =>
+        {
+            var wrap = textureProvider.CreateFromRaw(
+                RawImageSpecification.Rgba32(width, height),
+                pixels,
+                "Crystarium icon");
+            return ((nint)wrap.Handle.Handle, wrap);
+        };
+
         // Dalamud provides real backdrop blur for the retained glass surfaces.
         Crystarium.FloatingSurface.BackdropBlurAvailable = true;
 
@@ -138,6 +149,7 @@ public class Poser : IDalamudPlugin
     public void Dispose()
     {
         _commandManager.RemoveHandler(CommandName);
+        Crystarium.IconTextureUploader = null;
         FontRegistry.Dispose();
         _serviceProvider.Dispose();
     }

@@ -33,16 +33,22 @@ internal static class SvgStrokeMask
         {
             foreach (var pixel in Pixels)
             {
-                var tint = GroupOverlay(
-                    color, pixel.Coverage / 255f,
-                    background, groupOpacity);
-                uint packed = ImGui.ColorConvertFloat4ToU32(
-                    ColorEx.ApplyAlpha(tint));
+                uint packed = Packed(
+                    color, pixel.Coverage, background, groupOpacity);
                 var min = origin + new Vector2(pixel.X, pixel.Y);
                 draw.AddRectFilled(min, min + Vector2.One, packed);
             }
         }
     }
+
+    /// <summary>The colour one mask pixel is drawn in. The painter and the
+    /// baked texture MUST agree byte for byte, so both come from here.
+    /// </summary>
+    private static uint Packed(
+        Vector4 color, byte coverage, Vector4 background, float groupOpacity)
+        => ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+            GroupOverlay(
+                color, coverage / 255f, background, groupOpacity)));
 
     private static readonly Dictionary<ulong, Mask> Cache = new();
 
@@ -56,6 +62,81 @@ internal static class SvgStrokeMask
         float groupOpacity,
         Vector4 groupBackground)
     {
+        if (!TryResolve(
+                paths, svgToScreen, scale, strokeWidthOverride,
+                out var mask, out var origin, out _, out _, out var stroke))
+            return;
+        var color = tint.HasValue
+            ? Multiply(stroke, tint.Value)
+            : stroke;
+        mask.Draw(
+            draw, origin, color,
+            Math.Clamp(groupOpacity, 0f, 1f), groupBackground);
+    }
+
+    /// <summary>
+    /// The same coverage the painter draws, as a straight-alpha RGBA8 bitmap
+    /// the host can upload once and blit as a single quad. Every pixel goes
+    /// through <see cref="Packed"/>, so the texture is the painter's own
+    /// output — the quad is a transport change, not a rendering change.
+    /// </summary>
+    internal static void Bake(
+        IReadOnlyList<SvgPath> paths,
+        Func<Vector2, Vector2> svgToScreen,
+        float scale,
+        Vector4? tint,
+        float? strokeWidthOverride,
+        float groupOpacity,
+        Vector4 groupBackground,
+        out Vector2 origin,
+        out int width,
+        out int height,
+        out byte[] rgba)
+    {
+        if (!TryResolve(
+                paths, svgToScreen, scale, strokeWidthOverride,
+                out var mask, out origin, out width, out height,
+                out var stroke))
+        {
+            origin = default;
+            width = 0;
+            height = 0;
+            rgba = [];
+            return;
+        }
+
+        var color = tint.HasValue ? Multiply(stroke, tint.Value) : stroke;
+        float opacity = Math.Clamp(groupOpacity, 0f, 1f);
+        rgba = new byte[width * height * 4];
+        foreach (var pixel in mask.Pixels)
+        {
+            uint packed = Packed(
+                color, pixel.Coverage, groupBackground, opacity);
+            int at = (pixel.Y * width + pixel.X) * 4;
+            rgba[at] = (byte)packed;
+            rgba[at + 1] = (byte)(packed >> 8);
+            rgba[at + 2] = (byte)(packed >> 16);
+            rgba[at + 3] = (byte)(packed >> 24);
+        }
+    }
+
+    private static bool TryResolve(
+        IReadOnlyList<SvgPath> paths,
+        Func<Vector2, Vector2> svgToScreen,
+        float scale,
+        float? strokeWidthOverride,
+        out Mask mask,
+        out Vector2 origin,
+        out int widthPixels,
+        out int heightPixels,
+        out Vector4 baseStroke)
+    {
+        mask = null!;
+        origin = default;
+        widthPixels = 0;
+        heightPixels = 0;
+        baseStroke = default;
+
         var strokes = new List<Stroke>();
         Vector4? baseColor = null;
         float minX = float.MaxValue;
@@ -102,26 +183,21 @@ internal static class SvgStrokeMask
         }
 
         if (strokes.Count == 0 || baseColor is not { } stroke)
-            return;
+            return false;
 
-        var origin = new Vector2(MathF.Floor(minX), MathF.Floor(minY));
-        int widthPixels = Math.Max(1, (int)MathF.Ceiling(maxX) - (int)origin.X);
-        int heightPixels = Math.Max(1, (int)MathF.Ceiling(maxY) - (int)origin.Y);
+        baseStroke = stroke;
+        origin = new Vector2(MathF.Floor(minX), MathF.Floor(minY));
+        widthPixels = Math.Max(1, (int)MathF.Ceiling(maxX) - (int)origin.X);
+        heightPixels = Math.Max(1, (int)MathF.Ceiling(maxY) - (int)origin.Y);
         ulong key = Hash(strokes, origin, widthPixels, heightPixels);
-        if (!Cache.TryGetValue(key, out var mask))
+        if (!Cache.TryGetValue(key, out mask!))
         {
             if (Cache.Count >= MaxCachedMasks)
                 Cache.Clear();
             mask = Build(strokes, origin, widthPixels, heightPixels);
             Cache[key] = mask;
         }
-
-        var color = tint.HasValue
-            ? Multiply(stroke, tint.Value)
-            : stroke;
-        mask.Draw(
-            draw, origin, color,
-            Math.Clamp(groupOpacity, 0f, 1f), groupBackground);
+        return true;
     }
 
     // The button background has already been drawn at background alpha ×

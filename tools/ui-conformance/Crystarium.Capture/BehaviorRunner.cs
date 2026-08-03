@@ -213,6 +213,7 @@ internal static class BehaviorSuites
         form.Show();
         using var renderer = new Dx11Renderer();
         renderer.Initialize(form.Handle, width, height);
+        Ui.IconTextureUploader = renderer.CreateIconTexture;
         var rootContext = ImGui.CreateContext();
         try
         {
@@ -231,6 +232,8 @@ internal static class BehaviorSuites
         }
         finally
         {
+            // Before the renderer goes: the baked icon handles are its.
+            Ui.IconTextureUploader = null;
             FontRegistry.Dispose();
             ImGui.DestroyContext(rootContext);
         }
