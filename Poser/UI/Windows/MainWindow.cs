@@ -165,10 +165,12 @@ public class MainWindow : Window
         _vm.OnGizmoSpace = i => _editorState.TransformOrientation = (TransformOrientation)i;
         _vm.OnRotationPivot = i => _editorState.RotationPivot = (Core.RotationPivot)i;
         _vm.OnSymmetry = i => _editorState.SymmetryMode = (SymmetryMode)i;
+        // The switch's polarity is "physics simulating"; the service's is
+        // "freeze requested".
         _vm.OnPhysics = on =>
         {
             if (SelectedActorId() is { } actor)
-                _animation.SetPhysicsFrozen(actor, on);
+                _animation.SetPhysicsFrozen(actor, !on);
         };
         _vm.OnUndo = Undo;
         _vm.OnRedo = Redo;
@@ -396,8 +398,11 @@ public class MainWindow : Window
         var toolbarActor = SelectedActorId();
         _vm.PhysicsAvailable = toolbarActor is { } actorId
             && _animation.IsSupported(actorId);
-        _vm.PhysicsOn = toolbarActor is { } physicsActor
-            && _animation.OwnsPhysics(physicsActor);
+        // OwnsPhysics means "this actor holds a freeze", so the switch is ON
+        // unless the selected actor froze; no actor shows the game default,
+        // physics simulating (disabled either way via PhysicsAvailable).
+        _vm.PhysicsOn = toolbarActor is not { } physicsActor
+            || !_animation.OwnsPhysics(physicsActor);
         _vm.SkeletonOverlayOn = GetSkeletonOverlayOn?.Invoke() ?? false;
         _vm.CanUndo = _cleanTransforms.CanUndo;
         _vm.CanRedo = _cleanTransforms.CanRedo;

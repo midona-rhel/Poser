@@ -639,9 +639,11 @@ public static class AppShellView
                     "Physics",
                     vm.PhysicsOn,
                     next => vm.OnPhysics?.Invoke(next),
-                    vm.PhysicsAvailable
-                        ? "Enable or disable physics for the selected actor"
-                        : "Select an actor or bone to control physics",
+                    !vm.PhysicsAvailable
+                        ? "Select an actor or bone to control physics"
+                        : vm.PhysicsOn
+                            ? "Switch off to freeze physics for the selected actor"
+                            : "Switch on to resume physics for the selected actor",
                     disabled: !vm.PhysicsAvailable);
                 if (vm.ShowPopOut)
                     right.Icon(
