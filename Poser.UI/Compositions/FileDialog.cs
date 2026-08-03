@@ -4,11 +4,6 @@ using System.IO;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
-using Poser.UI.Reactive;
-// LegacyCrystarium declares imperative ActionBar/Button METHODS, so the
-// declarative prop bags of the same names are reached through aliases.
-using UiActionBar = Poser.UI.ActionBar;
-using UiButton = Poser.UI.Button;
 
 namespace Poser.UI;
 
@@ -56,15 +51,13 @@ internal interface IFileListingSource
 public static partial class LegacyCrystarium
 {
     /// <summary>
-    /// The file surface, DECLARED: one retained root paints the whole frame —
-    /// the title bar, the navigation band, the quick rail beside the explorer,
-    /// the optional preview column and the footer — inside the same movable,
-    /// non-modal window the imperative dialog always opened. Navigation and
-    /// callbacks preserve the legacy close-before-invoke ordering.
+    /// The file surface: the shared <see cref="WindowFrame"/> is the whole
+    /// chassis — chrome, title bar, navigation band, quick rail and footer —
+    /// and this fills the rectangles it hands back. Navigation and callbacks
+    /// preserve the legacy close-before-invoke ordering.
     ///
     /// <para>THE PUBLIC SHAPE IS FROZEN: the constructor, <see cref="Open"/>
-    /// and <see cref="Draw"/> are what four call sites already speak, so the
-    /// rebuild is entirely behind them.</para>
+    /// and <see cref="Draw"/> are what four call sites already speak.</para>
     /// </summary>
     public sealed class FileDialog
     {
@@ -80,6 +73,13 @@ public static partial class LegacyCrystarium
 
         /// <summary>A row's leading mark, on the list-row band.</summary>
         private const float EntryIconSlot = 22f;
+
+        /// <summary>A rail row's glyph slot: a 2px left margin, then a
+        /// row-height square; the label starts where it ends.</summary>
+        private const float QuickIconMargin = 2f;
+
+        /// <summary>The row highlight's corner.</summary>
+        private const float RowPillRadius = 5f;
 
         /// <summary>The preview panel's caption band.</summary>
         private const float PreviewCaptionHeight = 20f;
@@ -98,7 +98,6 @@ public static partial class LegacyCrystarium
         private readonly bool _isSaveMode;
         private readonly string _id;
 
-        private readonly UiRoot _root = new();
         private readonly List<FileQuickEntry> _quick = new();
         private readonly List<FileListingEntry> _entries = new();
         private readonly List<FileListingEntry> _scratch = new();
@@ -128,29 +127,6 @@ public static partial class LegacyCrystarium
         private FilePreviewResult? _preview;
         private string? _previewPath;
 
-        /// <summary>The double-click detector. The runtime dispatches CLICKS,
-        /// so the second one inside ImGui's own double-click interval on the
-        /// same row is what "double-click" means here — which keeps the gesture
-        /// out of the kernel for the one surface that wants it.</summary>
-        private string? _lastClickPath;
-        private double _lastClickAt;
-
-        // ── hoisted handlers ─────────────────────────────────────────────────
-        // A build path may allocate no delegate, so every callback the tree
-        // names is a field closing over `this` and dispatching against the
-        // per-frame state the build wrote.
-        private readonly Action _close;
-        private readonly Action _goBack;
-        private readonly Action _goForward;
-        private readonly Action _goUp;
-        private readonly Action _confirm;
-        private readonly Action<int> _pickEntry;
-        private readonly Action<int> _pickQuick;
-
-        private readonly PathIsland _pathIsland;
-        private readonly NameIsland _nameIsland;
-        private readonly PreviewPainter _previewPainter = new();
-
         /// <summary>The listing seam. Defaulted to the real filesystem; a
         /// fixture replaces it before the first <see cref="Rehome"/>.</summary>
         internal IFileListingSource Source = LocalFileListing.Instance;
@@ -164,15 +140,6 @@ public static partial class LegacyCrystarium
             _extensions = extensions;
             _isSaveMode = isSaveMode;
             _id = $"##file-dialog-{Guid.NewGuid():N}";
-            _pathIsland = new PathIsland(this);
-            _nameIsland = new NameIsland(this);
-            _close = () => _open = false;
-            _goBack = Back;
-            _goForward = Forward;
-            _goUp = Up;
-            _confirm = Confirm;
-            _pickEntry = PickEntry;
-            _pickQuick = PickQuick;
         }
 
         /// <summary>
@@ -237,436 +204,497 @@ public static partial class LegacyCrystarium
             NavigateTo(initialPath);
         }
 
+        private void DrawFrame(FloatingSurfaceFrame frame) =>
+            RenderFrame(frame.Min, frame.Size, hostPaintsChrome: true);
+
         /// <summary>
         /// The frame, rendered into a caller-owned box. The window is the
         /// PRODUCT's host; the chassis has to be inspectable without one, which
         /// is what the conformance fixture calls.
-        ///
-        /// <para>The glass is NOT painted here, which is the one thing this
-        /// surface does differently from Settings: <c>FloatingSurface.Window</c>
-        /// already draws the chrome for every window it hosts, so
-        /// <see cref="WindowChassis.Render"/> — the entry for a surface that
-        /// owns its own window paint — would draw a second shadow over the
-        /// first.</para>
         /// </summary>
-        internal void RenderFrame(Vector2 origin, Vector2 size)
-        {
-            // Asking the provider is a SELECTION-change edge, not a frame one,
-            // and it must not happen inside a build: a build is pure over the
-            // state the frame started with.
-            if (!string.Equals(_previewPath, _selectedPath, StringComparison.Ordinal))
-            {
-                _previewPath = _selectedPath;
-                _preview = _selectedPath is { } path && !_selectedIsDirectory
-                    ? FilePreview?.Invoke(path)
-                    : null;
-            }
-
-            var props = new Props(this);
-            _root.Render(
-                origin, size, in props, static (in Props p) => p.Dialog.Build());
-        }
-
-        private void DrawFrame(FloatingSurfaceFrame frame) =>
-            RenderFrame(frame.Min, frame.Size);
-
-        /// <summary>Everything one frame's build is TOLD; the dialog reference
-        /// is what the static builder reaches its state through.</summary>
-        private readonly record struct Props(FileDialog Dialog);
-
-        // ── the frame ────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// The frame is the SHARED chassis, told this surface's slots: the
-        /// title bar and the footer band are its statement, the navigation row
-        /// is the band it offers, the quick menu is its rail, and the explorer
-        /// and preview are its body.
-        /// </summary>
-        private UiNode Build()
+        /// <param name="hostPaintsChrome"><c>FloatingSurface.Window</c> already
+        /// draws the glass for every window it hosts, so the product path tells
+        /// the frame not to draw a second shadow over the first.</param>
+        internal void RenderFrame(
+            Vector2 origin, Vector2 size, bool hostPaintsChrome = false)
         {
             Theme theme = Crystarium.ActiveTheme;
+            float scale = ImGuiHelpers.GlobalScale;
+            ResolvePreview();
+
             bool canConfirm = _isSaveMode
                 ? _fileName.Trim().Length > 0
                 : SelectedFile is not null;
-            return new WindowChassis
-            {
-                Title = _title,
-                OnClose = _close,
-                CloseHelp = "Close",
-                Band = Navigation(theme),
-                Rail = new ScrollArea
+            string confirmLabel = _isSaveMode ? "Save" : "Load";
+
+            var rects = WindowFrame(
+                _id,
+                origin,
+                size,
+                new WindowFrameProps
                 {
-                    Height = UiDim.Fill,
-                    // The rail wears the raised surface the Settings nav rail
-                    // wears — the frame's left panel is chrome, not page
-                    // (user 2026-08-03: the glass was missing).
-                    Style = new()
+                    Title = _title,
+                    OnClose = Close,
+                    CloseHelp = "Close",
+                    RailWidth = theme.FileDialog.RailWidth,
+                    BandHeight = theme.Floating.ModalBarHeight,
+                    HostPaintsChrome = hostPaintsChrome,
+                    FooterRight = right =>
                     {
-                        Layout = new() { Width = UiDim.Fill },
-                        Colors = new()
-                        {
-                            Fill = Crystarium.ActiveTheme.SurfaceRaised,
-                        },
+                        right.Button(
+                            "Cancel",
+                            Close,
+                            style: ControlStyle.Comfortable);
+                        right.Button(
+                            confirmLabel,
+                            Confirm,
+                            disabled: !canConfirm,
+                            style: ControlStyle.Comfortable,
+                            variant: ButtonVariant.Primary);
                     },
-                    CapChildHitWidth = true,
-                    Children = QuickRows(),
-                    Key = "quick",
-                },
-                RailWidth = theme.FileDialog.RailWidth,
-                Body = Body(theme),
-                // The footer's left slot STRETCHES: the name a save is about,
-                // or the name a load has chosen, reaching the actions.
-                FooterFill = _isSaveMode
-                    ? Crystarium.Native(
-                        _nameIsland,
-                        UiDim.Fill,
-                        UiDim.Fixed(theme.Controls.ComfortableHeight),
-                        "name")
-                    : new Label
-                    {
-                        Text = SelectedFile is { } chosen
-                            ? Path.GetFileName(chosen)
-                            : "No file selected",
-                        Sheet = SelectedFile is null
-                            ? SheetFamily.Hint
-                            : SheetFamily.FormValue,
-                        Preview = true,
-                    },
-                FooterRight =
-                [
-                    new UiButton { Label = "Cancel", OnClick = _close, Key = "cancel" },
-                    new UiButton
-                    {
-                        Label = _isSaveMode ? "Save" : "Load",
-                        Style = ButtonStyle.Primary,
-                        OnClick = _confirm,
-                        Disabled = !canConfirm,
-                        Key = "confirm",
-                    },
-                ],
-            };
+                });
+
+            DrawNavigation(rects.Band, scale);
+            DrawQuick(rects.Rail, scale);
+            DrawBody(rects.Body, scale);
+            DrawFooterFill(rects.Footer, confirmLabel, scale);
         }
+
+        /// <summary>Asking the provider is a SELECTION-change edge, not a frame
+        /// one: the column would otherwise cost a host render every frame.
+        /// </summary>
+        private void ResolvePreview()
+        {
+            if (string.Equals(_previewPath, _selectedPath, StringComparison.Ordinal))
+                return;
+            _previewPath = _selectedPath;
+            _preview = _selectedPath is { } path && !_selectedIsDirectory
+                ? FilePreview?.Invoke(path)
+                : null;
+        }
+
+        // ── the frame's slots ────────────────────────────────────────────────
 
         /// <summary>
         /// The navigation band: the history pair, the parent step, and the path
-        /// editor filling everything they leave — closed by its own full-width
-        /// rule, so the chrome band and the browsing surface below read as two
-        /// segments (user 2026-08-03). History wears PLAIN left/right arrows:
-        /// the undo pair means edit history, not travel (user).
+        /// editor filling everything they leave. History wears PLAIN left/right
+        /// arrows — the undo pair means edit history, not travel (user).
         /// </summary>
-        private UiNode Navigation(Theme theme) => new UiActionBar
+        private void DrawNavigation(WindowFrameRect band, float scale)
         {
-            Left =
-            [
-                new IconAction
-                {
-                    Icon = TablerIcon.ArrowLeft,
-                    OnClick = _goBack,
-                    Disabled = _back.Count == 0,
-                    Size = NavActionSize,
-                    Help = "Back",
-                    Key = "back",
-                },
-                new IconAction
-                {
-                    Icon = TablerIcon.ArrowRight,
-                    OnClick = _goForward,
-                    Disabled = _forward.Count == 0,
-                    Size = NavActionSize,
-                    Help = "Forward",
-                    Key = "forward",
-                },
-                new IconAction
-                {
-                    Icon = TablerIcon.ArrowUp,
-                    OnClick = _goUp,
-                    Disabled = Source.Parent(_currentPath) is null,
-                    Size = NavActionSize,
-                    Help = "Open the parent folder",
-                    Key = "up",
-                },
-            ],
-            Fill = Crystarium.Native(
-                _pathIsland,
-                UiDim.Fill,
-                UiDim.Fixed(theme.Controls.ComfortableHeight),
-                "path"),
-            Separator = ActionBarSeparator.Bottom,
-            Key = "nav",
-        };
+            Theme theme = Crystarium.ActiveTheme;
+            float inset = theme.Floating.HeaderInset * scale;
+            float gap = theme.Page.ActionGap * scale;
+            var square = ControlStyle.Square(NavActionSize);
 
-        /// <summary>The chassis' BODY slot: the explorer, and the preview
-        /// column that exists only while the provider answered.</summary>
-        private UiNode Body(Theme theme)
-        {
-            bool preview = _preview is not null;
-            return new Row
-            {
-                Style = new()
+            ActionBar(
+                $"{_id}-nav",
+                new Vector2(band.Min.X + inset, band.Min.Y),
+                new Vector2(band.Size.X - inset * 2f, band.Size.Y),
+                left =>
                 {
-                    Layout = new() { Width = UiDim.Fill, Height = UiDim.Fill },
+                    left.Icon(
+                        TablerIcon.ArrowLeft, Back, "Back",
+                        _back.Count == 0, square);
+                    left.Icon(
+                        TablerIcon.ArrowRight, Forward, "Forward",
+                        _forward.Count == 0, square);
+                    left.Icon(
+                        TablerIcon.ArrowUp, Up, "Open the parent folder",
+                        Source.Parent(_currentPath) is null, square);
                 },
-                Children =
-                [
-                    new ScrollArea
-                    {
-                        Height = UiDim.Fill,
-                        Style = new()
-                        {
-                            Layout = new()
-                            {
-                                Width = UiDim.Fill,
-                                // NO right padding: the bar sits on the
-                                // window edge and IS the right inset (user
-                                // 2026-08-03 — it floated mid-panel); the
-                                // rows inset their own trailing content.
-                                Padding = new EdgeInsets(
-                                    theme.Page.Inset, theme.Page.Inset,
-                                    0f, theme.Page.Inset),
-                            },
-                        },
-                        CapChildHitWidth = true,
-                        Children = EntryRows(theme),
-                        Key = "entries",
-                    },
-                    preview ? Rule() : UiNode.None,
-                    preview ? Preview(theme) : UiNode.None,
-                ],
-            };
+                null,
+                ActionBarSeparator.None);
+
+            // The editor takes the band's whole middle: past the three actions,
+            // stopping one gap short of the trailing inset — where the bar's
+            // (empty) right cluster stands.
+            float control = theme.Controls.ComfortableHeight * scale;
+            float pathX = band.Min.X + inset + (NavActionSize * scale + gap) * 3f;
+            float pathWidth = band.Max.X - inset - gap - pathX;
+            ImGui.SetCursorScreenPos(new Vector2(
+                pathX, band.Min.Y + (band.Size.Y - control) * 0.5f));
+            TextInput(
+                $"{_id}-path",
+                _pathEdit,
+                next => _pathEdit = next,
+                new ControlStyle
+                {
+                    Height = UiHeight.Comfortable,
+                    Width = UiWidth.Fixed(MathF.Max(1f, pathWidth / scale)),
+                },
+                placeholder: "Path");
+            // Committing is leaving the field having edited it — Enter
+            // deactivates a native InputText, so one test covers both the
+            // keypress and the click away.
+            if (ImGui.IsItemDeactivatedAfterEdit())
+                CommitPath();
         }
 
-        private static UiNode Rule() => new Element
+        /// <summary>The rail's content: the frame owns the band and its rule,
+        /// this owns the inset and the rows.</summary>
+        private void DrawQuick(WindowFrameRect rail, float scale)
         {
-            Sheet = SheetFamily.BarRule,
-            Style = new()
-            {
-                Layout = new()
+            Theme theme = Crystarium.ActiveTheme;
+            float inset = theme.Page.Inset;
+            int picked = -1;
+            ImGui.SetCursorScreenPos(rail.Min + new Vector2(inset * scale));
+            ScrollRegion(
+                $"{_id}-quick",
+                rail.Size.X / scale - inset * 2f,
+                rail.Size.Y / scale - inset * 2f,
+                region =>
                 {
-                    Width = UiDim.Fixed(1f),
-                    Height = UiDim.Fill,
-                },
-            },
-        };
-
-        private UiChildren QuickRows()
-        {
-            FrameArena arena = FrameArena.Require();
-            Span<UiNode> rows = arena.ScratchNodes(_quick.Count);
-            for (int i = 0; i < _quick.Count; i++)
-            {
-                FileQuickEntry entry = _quick[i];
-                rows[i] = new Element
-                {
-                    Sheet = SheetFamily.NavRow,
-                    Selected = string.Equals(
-                        entry.Path, _currentPath, StringComparison.OrdinalIgnoreCase),
-                    Index = i,
-                    On = new Listeners { OnPick = _pickQuick },
-                    Key = entry.Path,
-                    Children =
-                    [
-                        new Stack
-                        {
-                            Sheet = SheetFamily.NavIconSlot,
-                            Children = new Glyph
-                            {
-                                Icon = entry.Icon,
-                                Size = Crystarium.ActiveTheme.Controls.SmallIconSize,
-                            },
-                        },
-                        new Label
-                        {
-                            Text = entry.Name,
-                            Sheet = SheetFamily.NavLabel,
-                            Preview = true,
-                        },
-                    ],
-                };
-            }
-
-            return UiChildren.Create(rows);
+                    float width = RowWidth(region) * scale;
+                    for (int i = 0; i < _quick.Count; i++)
+                    {
+                        FileQuickEntry entry = _quick[i];
+                        var hit = Row(
+                            $"{_id}-quick-{entry.Path}",
+                            width,
+                            region.ContentWidth * scale,
+                            string.Equals(
+                                entry.Path,
+                                _currentPath,
+                                StringComparison.OrdinalIgnoreCase),
+                            scale);
+                        float height = hit.Size.Y;
+                        float glyph = theme.Controls.SmallIconSize * scale;
+                        var slot = new Vector2(
+                            hit.ScreenMin.X + QuickIconMargin * scale,
+                            hit.ScreenMin.Y);
+                        var mark = slot + new Vector2((height - glyph) * 0.5f);
+                        IconIn(mark, mark + new Vector2(glyph), entry.Icon);
+                        float labelX = slot.X + height;
+                        RowLabel(
+                            new Vector2(labelX, hit.ScreenMin.Y),
+                            new Vector2(hit.ScreenMax.X - labelX, height),
+                            entry.Name,
+                            theme.Text);
+                        if (hit.Activated)
+                            picked = i;
+                    }
+                });
+            // Applied after the region closes: travelling refills the listing
+            // the loop is walking.
+            if (picked >= 0)
+                Travel(_quick[picked].Path);
         }
 
-        private UiChildren EntryRows(Theme theme)
+        /// <summary>The body slot: the explorer, and the preview column that
+        /// exists only while the provider answered.</summary>
+        private void DrawBody(WindowFrameRect body, float scale)
         {
-            if (_lastError is { } error)
-                return new Element
-                {
-                    Style = new()
-                    {
-                        Layout = new()
-                        {
-                            Width = UiDim.Fill,
-                            Height = UiDim.Fixed(theme.Controls.ListRowHeight),
-                        },
-                    },
-                    Children = new Label
-                    {
-                        Text = error,
-                        Sheet = SheetFamily.Hint,
-                        Style = new()
-                        {
-                            Colors = new() { Foreground = theme.Danger },
-                        },
-                    },
-                };
-
-            if (_entries.Count == 0)
-                return new Element
-                {
-                    Style = new()
-                    {
-                        Layout = new()
-                        {
-                            Width = UiDim.Fill,
-                            Height = UiDim.Fixed(theme.Controls.ListRowHeight),
-                        },
-                    },
-                    Children = new Label
-                    {
-                        Text = "This folder is empty.",
-                        Sheet = SheetFamily.Hint,
-                    },
-                };
-
-            FrameArena arena = FrameArena.Require();
-            Span<UiNode> rows = arena.ScratchNodes(_entries.Count);
-            for (int i = 0; i < _entries.Count; i++)
+            float right = body.Max.X;
+            if (_preview is { } preview)
             {
-                FileListingEntry entry = _entries[i];
-                rows[i] = new Element
-                {
-                    Sheet = SheetFamily.NavRow,
-                    // Under the gutter: content stops at the bar, the fill
-                    // may bleed (the row's own right padding is the inset).
-                    Style = new()
-                    {
-                        Layout = new()
-                        {
-                            Padding = new EdgeInsets(
-                                0f, 0f, theme.Scrollbar.GutterWidth, 0f),
-                        },
-                    },
-                    Selected = string.Equals(
-                        entry.FullPath, _selectedPath, StringComparison.OrdinalIgnoreCase),
-                    Index = i,
-                    On = new Listeners { OnPick = _pickEntry },
-                    // A listing reorders under every navigation, so a row keyed
-                    // by position would hand its neighbour's hover to whatever
-                    // slid into its place.
-                    Key = entry.FullPath,
-                    Children =
-                    [
-                        new Stack
-                        {
-                            Style = new()
-                            {
-                                Layout = new()
-                                {
-                                    Flow = UiFlow.Stack,
-                                    Justify = UiAlign.Center,
-                                    Align = UiAlign.Center,
-                                    Width = UiDim.Fixed(EntryIconSlot),
-                                    Height = UiDim.Fill,
-                                },
-                            },
-                            Children = new Glyph
-                            {
-                                Icon = entry.IsDirectory
-                                    ? TablerIcon.Folder
-                                    : TablerIcon.FileText,
-                                Size = theme.Controls.SmallIconSize,
-                            },
-                        },
-                        new Label
-                        {
-                            Text = entry.Name,
-                            Sheet = SheetFamily.NavLabel,
-                            Preview = true,
-                        },
-                        new Label
-                        {
-                            Text = Modified(entry.Modified),
-                            Sheet = SheetFamily.Readout,
-                            Style = new()
-                            {
-                                Layout = new()
-                                {
-                                    Width = UiDim.Fixed(ModifiedColumnWidth),
-                                    Justify = UiAlign.End,
-                                    Margin = new EdgeInsets(
-                                        theme.Spacing.Two, 0f, 0f, 0f),
-                                },
-                            },
-                        },
-                    ],
-                };
+                Theme previewTheme = Crystarium.ActiveTheme;
+                float rule = MathF.Max(1f, scale);
+                float column = previewTheme.FileDialog.PreviewWidth * scale;
+                right = body.Max.X - column - rule;
+                ImGui.GetWindowDrawList().AddRectFilled(
+                    new Vector2(right, body.Min.Y),
+                    new Vector2(right + rule, body.Max.Y),
+                    ImGui.ColorConvertFloat4ToU32(FormSeparatorColor));
+                DrawPreview(
+                    new WindowFrameRect(
+                        new Vector2(right + rule, body.Min.Y), body.Max),
+                    preview,
+                    scale);
             }
 
-            return UiChildren.Create(rows);
+            DrawEntries(
+                new WindowFrameRect(
+                    body.Min, new Vector2(right, body.Max.Y)),
+                scale);
         }
 
         /// <summary>
-        /// The preview column, which exists only while the provider answered.
-        /// The image is a hook rather than the element's own texture slot: the
-        /// base paints a host image on a SQUARE, and a portrait render fitted
-        /// into a tall column is the one geometry that square cannot express.
+        /// The explorer. NO right padding on the region: the bar sits on the
+        /// window edge and IS the right inset (user 2026-08-03 — it floated
+        /// mid-panel); a row's own trailing padding is what keeps its content
+        /// clear of the bar while its highlight bleeds under it.
         /// </summary>
-        private UiNode Preview(Theme theme)
+        private void DrawEntries(WindowFrameRect body, float scale)
         {
-            FilePreviewResult result = _preview!.Value;
-            _previewPainter.Bind(result.Texture, result.Size);
-            return new Column
-            {
-                Style = new()
+            Theme theme = Crystarium.ActiveTheme;
+            float inset = theme.Page.Inset;
+            int picked = -1;
+            bool second = false;
+            ImGui.SetCursorScreenPos(body.Min + new Vector2(inset * scale));
+            ScrollRegion(
+                $"{_id}-entries",
+                body.Size.X / scale - inset,
+                body.Size.Y / scale - inset * 2f,
+                region =>
                 {
-                    Layout = new()
+                    if (_lastError is { } error)
                     {
-                        Width = UiDim.Fixed(theme.FileDialog.PreviewWidth),
-                        Height = UiDim.Fill,
-                        Padding = new EdgeInsets(
-                            theme.Page.Inset, theme.Page.Inset,
-                            theme.Page.Inset, theme.Page.Inset),
-                        Align = UiAlign.Center,
-                    },
+                        Status(region, error, theme.Danger, scale);
+                        return;
+                    }
+
+                    if (_entries.Count == 0)
+                    {
+                        Status(
+                            region, "This folder is empty.",
+                            FormHintColor, scale);
+                        return;
+                    }
+
+                    float width = RowWidth(region) * scale;
+                    for (int i = 0; i < _entries.Count; i++)
+                    {
+                        FileListingEntry entry = _entries[i];
+                        var hit = Row(
+                            $"{_id}-entry-{entry.FullPath}",
+                            width,
+                            region.ContentWidth * scale,
+                            string.Equals(
+                                entry.FullPath,
+                                _selectedPath,
+                                StringComparison.OrdinalIgnoreCase),
+                            scale);
+                        float height = hit.Size.Y;
+                        float glyph = theme.Controls.SmallIconSize * scale;
+                        var mark = hit.ScreenMin + new Vector2(
+                            (EntryIconSlot * scale - glyph) * 0.5f,
+                            (height - glyph) * 0.5f);
+                        IconIn(
+                            mark,
+                            mark + new Vector2(glyph),
+                            entry.IsDirectory
+                                ? TablerIcon.Folder
+                                : TablerIcon.FileText);
+
+                        float readoutWidth = ModifiedColumnWidth * scale;
+                        float readoutX = hit.ScreenMax.X - readoutWidth;
+                        float labelX = hit.ScreenMin.X + EntryIconSlot * scale;
+                        RowLabel(
+                            new Vector2(labelX, hit.ScreenMin.Y),
+                            new Vector2(
+                                readoutX - theme.Spacing.Two * scale - labelX,
+                                height),
+                            entry.Name,
+                            theme.Text);
+                        TextInBand(
+                            new Vector2(readoutX, hit.ScreenMin.Y),
+                            new Vector2(readoutWidth, height),
+                            Modified(entry.Modified),
+                            new TextStyle
+                            {
+                                Size = theme.Typography.CaptionSize,
+                                Family = FontFamily.Mono,
+                                Color = FormLabelColor,
+                            },
+                            TextAlign.End);
+
+                        if (!hit.Activated && !hit.DoubleClicked)
+                            continue;
+                        picked = i;
+                        second = hit.DoubleClicked;
+                    }
+                });
+            if (picked >= 0)
+                PickEntry(picked, second);
+        }
+
+        /// <summary>
+        /// The preview column. The image is aspect-fitted into whatever the
+        /// caption leaves: the host renders a portrait or a landscape and the
+        /// column has to seat either without cropping.
+        /// </summary>
+        private static void DrawPreview(
+            WindowFrameRect column, in FilePreviewResult preview, float scale)
+        {
+            Theme theme = Crystarium.ActiveTheme;
+            float inset = theme.Page.Inset * scale;
+            var min = column.Min + new Vector2(inset);
+            var max = column.Max - new Vector2(inset);
+            bool captioned = !string.IsNullOrEmpty(preview.Caption);
+            float caption = captioned ? PreviewCaptionHeight * scale : 0f;
+            var box = new Vector2(max.X - min.X, max.Y - min.Y - caption);
+            var drawList = ImGui.GetWindowDrawList();
+
+            if (preview.Texture != 0
+                && box.X > 0f && box.Y > 0f
+                && preview.Size.X > 0f && preview.Size.Y > 0f)
+            {
+                float fit = MathF.Min(
+                    box.X / preview.Size.X, box.Y / preview.Size.Y);
+                Vector2 size = preview.Size * fit;
+                Vector2 imageMin = theme.Optical.Snap(
+                    min + (box - size) * 0.5f);
+                drawList.AddImage(
+                    new ImTextureID(preview.Texture),
+                    imageMin,
+                    imageMin + size,
+                    Vector2.Zero,
+                    Vector2.One,
+                    ImGui.ColorConvertFloat4ToU32(Vector4.One));
+            }
+
+            if (!captioned)
+                return;
+            TextInBand(
+                new Vector2(min.X, max.Y - caption),
+                new Vector2(max.X - min.X, caption),
+                preview.Caption!,
+                new TextStyle
+                {
+                    Size = theme.Typography.CaptionSize,
+                    Color = FormHintColor,
                 },
-                Children =
-                [
-                    new Element
+                TextAlign.Center);
+        }
+
+        /// <summary>
+        /// The footer's left slot STRETCHES: the name a save is about, or the
+        /// name a load has chosen, reaching the actions. It starts one action
+        /// gap past the header inset, where the bar's empty left cluster ends.
+        /// </summary>
+        private void DrawFooterFill(
+            WindowFrameRect footer, string confirmLabel, float scale)
+        {
+            Theme theme = Crystarium.ActiveTheme;
+            float inset = theme.Floating.HeaderInset * scale;
+            float gap = theme.Page.ActionGap * scale;
+            float x = footer.Min.X + inset + gap;
+            float actions =
+                MeasureButton("Cancel", ControlStyle.Comfortable).X
+                + gap
+                + MeasureButton(confirmLabel, ControlStyle.Comfortable).X;
+            float width = MathF.Max(
+                0f, footer.Max.X - inset - actions - gap - x);
+
+            if (_isSaveMode)
+            {
+                float control = theme.Controls.ComfortableHeight * scale;
+                ImGui.SetCursorScreenPos(new Vector2(
+                    x, footer.Min.Y + (footer.Size.Y - control) * 0.5f));
+                TextInput(
+                    $"{_id}-name",
+                    _fileName,
+                    next => _fileName = next,
+                    new ControlStyle
                     {
-                        Style = new()
-                        {
-                            Layout = new()
-                            {
-                                Width = UiDim.Fill,
-                                Height = UiDim.Fill,
-                            },
-                        },
-                        Painter = _previewPainter,
+                        Height = UiHeight.Comfortable,
+                        Width = UiWidth.Fixed(MathF.Max(1f, width / scale)),
                     },
-                    string.IsNullOrEmpty(result.Caption)
-                        ? UiNode.None
-                        : new Element
-                        {
-                            Style = new()
-                            {
-                                Layout = new()
-                                {
-                                    Width = UiDim.Fill,
-                                    Height = UiDim.Fixed(PreviewCaptionHeight),
-                                    Justify = UiAlign.Center,
-                                    Align = UiAlign.Center,
-                                },
-                            },
-                            Children = new Label
-                            {
-                                Text = result.Caption!,
-                                Sheet = SheetFamily.Caption,
-                            },
-                        },
-                ],
-                Key = "preview",
+                    placeholder: "File name");
+                return;
+            }
+
+            if (!(width > 0f))
+                return;
+            string text = SelectedFile is { } chosen
+                ? Path.GetFileName(chosen)
+                : "No file selected";
+            var style = new TextStyle
+            {
+                Size = theme.Typography.CaptionSize,
+                Color = SelectedFile is null ? FormHintColor : FormValueColor,
             };
+            Fitted(
+                new Vector2(x, footer.Min.Y),
+                new Vector2(width, footer.Size.Y),
+                text,
+                style,
+                besideIcon: false);
+        }
+
+        // ── row primitives ───────────────────────────────────────────────────
+
+        /// <summary>The row's own box, which is the region's FULL width: the
+        /// gutter is padding, so the highlight paints under the bar while the
+        /// hit rect stops at the content edge.</summary>
+        private static float RowWidth(ScrollRegionScope region) =>
+            region.ContentWidth + Crystarium.ActiveTheme.Scrollbar.GutterWidth;
+
+        /// <summary>
+        /// One list row: the reserve at the CONTENT width, the highlight at the
+        /// full row width. Rows stack flush at the row height — the ambient
+        /// vertical spacing is the surrounding flow's, not the list's.
+        /// </summary>
+        private static InteractionResult Row(
+            string id, float width, float hitWidth, bool selected, float scale)
+        {
+            Theme theme = Crystarium.ActiveTheme;
+            float height = theme.Controls.ListRowHeight * scale;
+            var spacing = ImGui.GetStyle().ItemSpacing;
+            ImGui.PushStyleVar(
+                ImGuiStyleVar.ItemSpacing, new Vector2(spacing.X, 0f));
+            var hit = Interactive.Reserve(
+                id,
+                new Vector2(MathF.Max(1f, hitWidth), height),
+                disabled: false);
+            ImGui.PopStyleVar();
+
+            var fill = selected
+                ? theme.Chrome.SidebarSelected
+                : hit.Hovered
+                    ? theme.Chrome.SidebarHover
+                    : Vector4.Zero;
+            if (fill.W > 0f)
+                ImGui.GetWindowDrawList().AddRectFilled(
+                    hit.ScreenMin,
+                    new Vector2(hit.ScreenMin.X + width, hit.ScreenMax.Y),
+                    ImGui.ColorConvertFloat4ToU32(fill),
+                    RowPillRadius * scale);
+            return hit;
+        }
+
+        /// <summary>A row's name, seated against the mark beside it.</summary>
+        private static void RowLabel(
+            Vector2 min, Vector2 band, string text, Vector4 color) =>
+            Fitted(
+                min,
+                band,
+                text,
+                new TextStyle
+                {
+                    Size = Crystarium.ActiveTheme.Typography.BodySize,
+                    Color = color,
+                },
+                besideIcon: true);
+
+        /// <summary>Band-centered text, constrained ONLY on overflow: the
+        /// truncate clip's snapped edge shaves a fitting run's descender
+        /// otherwise.</summary>
+        private static void Fitted(
+            Vector2 min, Vector2 band, string text, in TextStyle style,
+            bool besideIcon)
+        {
+            if (!(band.X > 0f))
+                return;
+            if (MeasureText(text, style).X <= band.X)
+                TextInBand(min, band, text, style, TextAlign.Start, besideIcon);
+            else
+                TextInBand(
+                    min, band, text, style, TextConstraint.Truncate(band.X),
+                    TextAlign.Start, besideIcon);
+        }
+
+        /// <summary>The listing's stand-in line — an unreadable folder's
+        /// message or an empty one's — on a row-shaped band.</summary>
+        private static void Status(
+            ScrollRegionScope region, string text, Vector4 color, float scale)
+        {
+            Theme theme = Crystarium.ActiveTheme;
+            var band = new Vector2(
+                region.ContentWidth * scale,
+                theme.Controls.ListRowHeight * scale);
+            Fitted(
+                ImGui.GetCursorScreenPos(),
+                band,
+                text,
+                new TextStyle
+                {
+                    Size = theme.Typography.CaptionSize,
+                    Color = color,
+                },
+                besideIcon: false);
+            ImGui.Dummy(band);
         }
 
         private string? SelectedFile =>
@@ -677,25 +705,13 @@ public static partial class LegacyCrystarium
 
         // ── dispatch ─────────────────────────────────────────────────────────
 
-        private void PickQuick(int index)
-        {
-            if ((uint)index >= (uint)_quick.Count)
-                return;
-            Travel(_quick[index].Path);
-        }
+        private void Close() => _open = false;
 
-        private void PickEntry(int index)
+        private void PickEntry(int index, bool second)
         {
             if ((uint)index >= (uint)_entries.Count)
                 return;
             FileListingEntry entry = _entries[index];
-            double now = ImGui.GetTime();
-            bool second = string.Equals(
-                    _lastClickPath, entry.FullPath, StringComparison.Ordinal)
-                && now - _lastClickAt <= ImGui.GetIO().MouseDoubleClickTime;
-            _lastClickPath = entry.FullPath;
-            _lastClickAt = now;
-
             _selectedPath = entry.FullPath;
             _selectedIsDirectory = entry.IsDirectory;
             if (!entry.IsDirectory && _isSaveMode)
@@ -703,7 +719,6 @@ public static partial class LegacyCrystarium
             if (!second)
                 return;
 
-            _lastClickPath = null;
             if (entry.IsDirectory)
                 Travel(entry.FullPath);
             else if (!_isSaveMode)
@@ -801,7 +816,6 @@ public static partial class LegacyCrystarium
             _pathEdit = path;
             _selectedPath = null;
             _selectedIsDirectory = false;
-            _lastClickPath = null;
             RefreshEntries();
         }
 
@@ -841,117 +855,6 @@ public static partial class LegacyCrystarium
                         extension, _extensions[i], StringComparison.OrdinalIgnoreCase))
                     return true;
             return false;
-        }
-
-        // ── native islands ───────────────────────────────────────────────────
-
-        /// <summary>
-        /// The path editor. A NATIVE island because a text field's caret,
-        /// selection, clipboard and IME composition are ImGui's own retained
-        /// state — the same seam the picker's filter rides — and the non-search
-        /// variant of it, because a path is typed, not searched.
-        /// </summary>
-        private sealed class PathIsland : INativeElement
-        {
-            private readonly FileDialog _owner;
-            private readonly Action<string> _onChange;
-
-            internal PathIsland(FileDialog owner)
-            {
-                _owner = owner;
-                _onChange = next => _owner._pathEdit = next;
-            }
-
-            public void Draw(string id, Vector2 min, Vector2 max)
-            {
-                float scale = ImGuiHelpers.GlobalScale;
-                TextInput(
-                    id,
-                    _owner._pathEdit,
-                    _onChange,
-                    new ControlStyle
-                    {
-                        Height = UiHeight.Comfortable,
-                        Width = UiWidth.Fixed(MathF.Max(1f, (max.X - min.X) / scale)),
-                    },
-                    placeholder: "Path");
-                // Committing is leaving the field having edited it — Enter
-                // deactivates a native InputText, so one test covers both the
-                // keypress and the click away.
-                if (ImGui.IsItemDeactivatedAfterEdit())
-                    _owner.CommitPath();
-            }
-        }
-
-        /// <summary>The save-mode file name. Same seam, no commit edge: the
-        /// primary button is the commit.</summary>
-        private sealed class NameIsland : INativeElement
-        {
-            private readonly FileDialog _owner;
-            private readonly Action<string> _onChange;
-
-            internal NameIsland(FileDialog owner)
-            {
-                _owner = owner;
-                _onChange = next => _owner._fileName = next;
-            }
-
-            public void Draw(string id, Vector2 min, Vector2 max)
-            {
-                float scale = ImGuiHelpers.GlobalScale;
-                TextInput(
-                    id,
-                    _owner._fileName,
-                    _onChange,
-                    new ControlStyle
-                    {
-                        Height = UiHeight.Comfortable,
-                        Width = UiWidth.Fixed(MathF.Max(1f, (max.X - min.X) / scale)),
-                    },
-                    placeholder: "File name");
-            }
-        }
-
-        /// <summary>
-        /// The preview image, aspect-fitted into whatever box the column left.
-        /// One instance per dialog, rebound each frame: a hook allocated per
-        /// frame would put the panel's cost on every warm frame of a surface
-        /// that usually has no preview at all.
-        /// </summary>
-        private sealed class PreviewPainter : IPainter
-        {
-            private nint _texture;
-            private Vector2 _source;
-
-            public bool NeedsHit => false;
-
-            internal void Bind(nint texture, Vector2 source)
-            {
-                _texture = texture;
-                _source = source;
-            }
-
-            public PaintResult Paint(in PaintContext context)
-            {
-                Vector2 box = context.Size;
-                if (_texture == 0
-                    || box.X <= 0f || box.Y <= 0f
-                    || _source.X <= 0f || _source.Y <= 0f)
-                    return default;
-
-                float fit = MathF.Min(box.X / _source.X, box.Y / _source.Y);
-                Vector2 size = _source * fit;
-                Vector2 min = Crystarium.ActiveTheme.Optical.Snap(
-                    context.Min + (box - size) * 0.5f);
-                context.DrawList.AddImage(
-                    new ImTextureID(_texture),
-                    min,
-                    min + size,
-                    Vector2.Zero,
-                    Vector2.One,
-                    ImGui.ColorConvertFloat4ToU32(Vector4.One));
-                return default;
-            }
         }
     }
 

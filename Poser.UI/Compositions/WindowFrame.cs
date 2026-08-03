@@ -21,6 +21,10 @@ public readonly record struct WindowFrameRects
     /// <summary>The title band, rule included.</summary>
     public WindowFrameRect TitleBar { get; init; }
 
+    /// <summary>The band under the title bar, its bottom rule INCLUDED. Empty
+    /// when there is no band.</summary>
+    public WindowFrameRect Band { get; init; }
+
     /// <summary>The rail's raised band, its 1px rule EXCLUDED — the rule is
     /// the body's left edge, not the rail's content. Empty when there is no
     /// rail.</summary>
@@ -53,6 +57,18 @@ public readonly record struct WindowFrameProps
     /// </summary>
     public float RailWidth { get; init; }
 
+    /// <summary>Logical height of a band between the title bar and the body —
+    /// the file surface's navigation row; 0 is no band. The frame reserves it
+    /// and rules its bottom edge full width; the caller fills the rect.
+    /// </summary>
+    public float BandHeight { get; init; }
+
+    /// <summary>The host window already painted the glass — which
+    /// <see cref="LegacyCrystarium.FloatingSurface.Window"/> does for every
+    /// window it hosts — so the frame must not paint a second shadow over the
+    /// first. A surface on a bare host leaves this unstated.</summary>
+    public bool HostPaintsChrome { get; init; }
+
     /// <summary>The footer's left cluster. Stating either cluster is what
     /// makes the footer band exist.</summary>
     public Action<LegacyCrystarium.ActionBarScope>? FooterLeft { get; init; }
@@ -66,7 +82,8 @@ public static partial class LegacyCrystarium
     /// <summary>
     /// THE WINDOW FRAME, and there is one. Every floating Poser window is this
     /// frame told different slots: the glass chrome, the title bar with its
-    /// close affordance, an optional left rail, the body, and the footer band.
+    /// close affordance, an optional band under it, an optional left rail, the
+    /// body, and the footer band.
     ///
     /// <para>THE ROTATED-H IS THE GEOMETRY: full-width rules under the title
     /// bar and over the footer, bridged by the rail's 1px vertical rule. The
@@ -92,17 +109,30 @@ public static partial class LegacyCrystarium
         float inset = theme.Floating.HeaderInset * scale;
         float rule = MathF.Max(1f, scale);
         bool hasFooter = props.FooterLeft is not null || props.FooterRight is not null;
-        float bodyTop = min.Y + barHeight;
+        float bandHeight = props.BandHeight * scale;
+        float titleBottom = min.Y + barHeight;
+        float bodyTop = titleBottom + bandHeight;
         float bodyBottom = hasFooter ? max.Y - barHeight : max.Y;
 
-        FloatingSurface.DrawChrome(drawList, min, max, theme.Radii.Window);
+        if (!props.HostPaintsChrome)
+            FloatingSurface.DrawChrome(drawList, min, max, theme.Radii.Window);
 
         ControlPaint.Separator(
             drawList,
-            new Vector2(min.X, bodyTop - rule),
+            new Vector2(min.X, titleBottom - rule),
             max.X,
             scale,
             theme.FormSeparator);
+        // The band's own closing rule. Full width like every other rule the
+        // frame draws, so the chrome above and the browsing surface below read
+        // as two segments.
+        if (bandHeight > 0f)
+            ControlPaint.Separator(
+                drawList,
+                new Vector2(min.X, bodyTop - rule),
+                max.X,
+                scale,
+                theme.FormSeparator);
         // Locals: an `in` parameter cannot be captured by the bar's callbacks.
         string title = props.Title;
         var onClose = props.OnClose;
@@ -167,7 +197,12 @@ public static partial class LegacyCrystarium
         return new WindowFrameRects
         {
             TitleBar = new WindowFrameRect(
-                min, new Vector2(max.X, bodyTop)),
+                min, new Vector2(max.X, titleBottom)),
+            Band = bandHeight > 0f
+                ? new WindowFrameRect(
+                    new Vector2(min.X, titleBottom),
+                    new Vector2(max.X, bodyTop))
+                : default,
             Rail = railRect,
             Body = new WindowFrameRect(
                 new Vector2(bodyLeft, bodyTop),

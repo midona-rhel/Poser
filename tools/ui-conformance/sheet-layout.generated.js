@@ -2,7 +2,7 @@
 // Do not hand-edit.
 window.sheetLayout = {
  "pageWidth": 688,
- "pageHeight": 9944,
+ "pageHeight": 10744,
  "cells": [
   {
    "name": "text-label",
@@ -669,18 +669,10 @@ window.sheetLayout = {
    "h": 280
   },
   {
-   "name": "picker-open",
-   "component": "search-picker",
-   "x": 16,
-   "y": 4800,
-   "w": 320,
-   "h": 280
-  },
-  {
    "name": "rpicker-open",
    "component": "reactive-picker",
    "x": 16,
-   "y": 5112,
+   "y": 4800,
    "w": 320,
    "h": 280
   },
@@ -688,7 +680,7 @@ window.sheetLayout = {
    "name": "rpicker-multi",
    "component": "reactive-picker",
    "x": 352,
-   "y": 5112,
+   "y": 4800,
    "w": 320,
    "h": 280
   },
@@ -696,7 +688,7 @@ window.sheetLayout = {
    "name": "color-palette",
    "component": "color-palette",
    "x": 16,
-   "y": 5424,
+   "y": 5112,
    "w": 220,
    "h": 80
   },
@@ -704,7 +696,7 @@ window.sheetLayout = {
    "name": "sidebar-row",
    "component": "sidebar",
    "x": 16,
-   "y": 5536,
+   "y": 5224,
    "w": 320,
    "h": 80
   },
@@ -712,7 +704,7 @@ window.sheetLayout = {
    "name": "sidebar-row-hover",
    "component": "sidebar",
    "x": 352,
-   "y": 5536,
+   "y": 5224,
    "w": 320,
    "h": 80
   },
@@ -720,7 +712,7 @@ window.sheetLayout = {
    "name": "sidebar-row-selected",
    "component": "sidebar",
    "x": 16,
-   "y": 5632,
+   "y": 5320,
    "w": 320,
    "h": 80
   },
@@ -728,7 +720,7 @@ window.sheetLayout = {
    "name": "sidebar-row-selected-hover",
    "component": "sidebar",
    "x": 352,
-   "y": 5632,
+   "y": 5320,
    "w": 320,
    "h": 80
   },
@@ -736,7 +728,7 @@ window.sheetLayout = {
    "name": "sidebar-row-collapsed",
    "component": "sidebar",
    "x": 16,
-   "y": 5728,
+   "y": 5416,
    "w": 320,
    "h": 80
   },
@@ -744,7 +736,7 @@ window.sheetLayout = {
    "name": "sidebar-row-expanded",
    "component": "sidebar",
    "x": 352,
-   "y": 5728,
+   "y": 5416,
    "w": 320,
    "h": 80
   },
@@ -752,7 +744,7 @@ window.sheetLayout = {
    "name": "sidebar-row-expander-hover",
    "component": "sidebar",
    "x": 16,
-   "y": 5824,
+   "y": 5512,
    "w": 320,
    "h": 80
   },
@@ -760,7 +752,7 @@ window.sheetLayout = {
    "name": "sidebar-row-drop",
    "component": "sidebar",
    "x": 352,
-   "y": 5824,
+   "y": 5512,
    "w": 320,
    "h": 80
   },
@@ -768,7 +760,7 @@ window.sheetLayout = {
    "name": "property-row",
    "component": "property-row",
    "x": 16,
-   "y": 5936,
+   "y": 5624,
    "w": 320,
    "h": 68
   },
@@ -776,7 +768,7 @@ window.sheetLayout = {
    "name": "section",
    "component": "section",
    "x": 16,
-   "y": 6040,
+   "y": 5728,
    "w": 320,
    "h": 92
   },
@@ -784,7 +776,7 @@ window.sheetLayout = {
    "name": "section-expanded",
    "component": "section",
    "x": 352,
-   "y": 6040,
+   "y": 5728,
    "w": 320,
    "h": 92
   },
@@ -792,7 +784,7 @@ window.sheetLayout = {
    "name": "section-hover",
    "component": "section",
    "x": 16,
-   "y": 6152,
+   "y": 5840,
    "w": 320,
    "h": 92
   },
@@ -800,7 +792,7 @@ window.sheetLayout = {
    "name": "rsection",
    "component": "reactive-section",
    "x": 16,
-   "y": 6280,
+   "y": 5968,
    "w": 320,
    "h": 92
   },
@@ -808,7 +800,7 @@ window.sheetLayout = {
    "name": "rsection-expanded",
    "component": "reactive-section",
    "x": 352,
-   "y": 6280,
+   "y": 5968,
    "w": 320,
    "h": 92
   },
@@ -816,7 +808,7 @@ window.sheetLayout = {
    "name": "rsection-hover",
    "component": "reactive-section",
    "x": 16,
-   "y": 6392,
+   "y": 6080,
    "w": 320,
    "h": 92
   },
@@ -824,7 +816,7 @@ window.sheetLayout = {
    "name": "rsettings-frame",
    "component": "reactive-settings",
    "x": 16,
-   "y": 6520,
+   "y": 6208,
    "w": 770,
    "h": 570
   },
@@ -832,7 +824,7 @@ window.sheetLayout = {
    "name": "rsegmented",
    "component": "reactive-settings",
    "x": 16,
-   "y": 7112,
+   "y": 6800,
    "w": 420,
    "h": 150
   },
@@ -840,7 +832,7 @@ window.sheetLayout = {
    "name": "rswatches",
    "component": "reactive-settings",
    "x": 16,
-   "y": 7280,
+   "y": 6968,
    "w": 340,
    "h": 60
   },
@@ -848,7 +840,7 @@ window.sheetLayout = {
    "name": "ricon-actions",
    "component": "reactive-settings",
    "x": 376,
-   "y": 7280,
+   "y": 6968,
    "w": 240,
    "h": 60
   },
@@ -856,7 +848,7 @@ window.sheetLayout = {
    "name": "tooltip",
    "component": "tooltip",
    "x": 16,
-   "y": 7376,
+   "y": 7064,
    "w": 240,
    "h": 80
   },
@@ -864,7 +856,7 @@ window.sheetLayout = {
    "name": "tooltip-pop-mid",
    "component": "tooltip",
    "x": 272,
-   "y": 7376,
+   "y": 7064,
    "w": 240,
    "h": 80
   },
@@ -872,7 +864,7 @@ window.sheetLayout = {
    "name": "context-menu",
    "component": "context-menu",
    "x": 16,
-   "y": 7488,
+   "y": 7176,
    "w": 320,
    "h": 190
   },
@@ -880,7 +872,7 @@ window.sheetLayout = {
    "name": "modal",
    "component": "modal",
    "x": 16,
-   "y": 7712,
+   "y": 7400,
    "w": 560,
    "h": 360
   },
@@ -888,7 +880,7 @@ window.sheetLayout = {
    "name": "rscrollarea",
    "component": "reactive-scroll",
    "x": 16,
-   "y": 8104,
+   "y": 7792,
    "w": 320,
    "h": 200
   },
@@ -896,7 +888,7 @@ window.sheetLayout = {
    "name": "rtreerow",
    "component": "reactive-tree",
    "x": 16,
-   "y": 8336,
+   "y": 8024,
    "w": 300,
    "h": 190
   },
@@ -904,7 +896,7 @@ window.sheetLayout = {
    "name": "rfiledialog",
    "component": "reactive-file-dialog",
    "x": 16,
-   "y": 8560,
+   "y": 8248,
    "w": 760,
    "h": 500
   },
@@ -912,7 +904,7 @@ window.sheetLayout = {
    "name": "i-treerow",
    "component": "imperative-tree",
    "x": 16,
-   "y": 9096,
+   "y": 8784,
    "w": 300,
    "h": 190
   },
@@ -920,9 +912,57 @@ window.sheetLayout = {
    "name": "i-settings-frame",
    "component": "imperative-window-frame",
    "x": 16,
-   "y": 9320,
+   "y": 9008,
    "w": 770,
    "h": 570
+  },
+  {
+   "name": "i-picker-open",
+   "component": "imperative-picker",
+   "x": 16,
+   "y": 9616,
+   "w": 320,
+   "h": 280
+  },
+  {
+   "name": "i-picker-multi",
+   "component": "imperative-picker",
+   "x": 352,
+   "y": 9616,
+   "w": 320,
+   "h": 280
+  },
+  {
+   "name": "i-filedialog",
+   "component": "imperative-file-dialog",
+   "x": 16,
+   "y": 9928,
+   "w": 760,
+   "h": 500
+  },
+  {
+   "name": "i-segmented",
+   "component": "imperative-controls",
+   "x": 16,
+   "y": 10464,
+   "w": 420,
+   "h": 150
+  },
+  {
+   "name": "i-swatches",
+   "component": "imperative-controls",
+   "x": 16,
+   "y": 10632,
+   "w": 340,
+   "h": 60
+  },
+  {
+   "name": "i-icon-actions",
+   "component": "imperative-controls",
+   "x": 376,
+   "y": 10632,
+   "w": 240,
+   "h": 60
   }
  ]
 };

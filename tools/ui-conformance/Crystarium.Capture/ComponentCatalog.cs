@@ -204,6 +204,10 @@ internal static class ComponentCatalog
         // INJECTED listing, so the capture touches no filesystem and is the
         // same picture on every machine.
         new("rfiledialog", 760, 500),
+        // PBI-016 phase 4a: the same file surface through the IMPERATIVE
+        // dialog. The golden is the reactive capture above, so the two are
+        // compared byte-for-byte, not by eye.
+        new("i-filedialog", 760, 500),
         // PBI-016: the same Settings frame through the IMPERATIVE
         // WindowFrame. The golden is the reactive capture above, so the two
         // states are compared byte-for-byte, not by eye.
@@ -2143,17 +2147,36 @@ internal static class ComponentCatalog
                     fileDialog.Rehome(FileDialogListing.Folder);
                 }
 
-                {
-                    var size = new Vector2(
+                // PBI-016 phase 4a: the dialog behind this state is the
+                // IMPERATIVE one now — the retained tree it was named for is
+                // gone — so it paints its own glass and the fixture no longer
+                // draws a second. The state renders i-filedialog until phase 6
+                // retires it; the frozen golden PNG is what i-filedialog is
+                // judged against.
+                fileDialog!.RenderFrame(
+                    origin,
+                    new Vector2(
                         Ui.ActiveTheme.FileDialog.Width,
-                        Ui.ActiveTheme.FileDialog.Height) * scale;
-                    Ui.FloatingSurface.DrawChrome(
-                        ImGui.GetWindowDrawList(),
-                        origin,
-                        origin + size,
-                        Ui.ActiveTheme.Radii.Window);
-                    fileDialog!.RenderFrame(origin, size);
+                        Ui.ActiveTheme.FileDialog.Height) * scale);
+                break;
+            case "i-filedialog":
+                if (frame == 0)
+                {
+                    fileDialog = new Ui.FileDialog(
+                        "Import Pose", FileDialogExtensions)
+                    {
+                        Source = FileDialogListing.Instance,
+                    };
+                    fileDialog.Rehome(FileDialogListing.Folder);
                 }
+
+                // No DrawChrome here: the imperative frame paints its own
+                // glass, which the retained root left to its caller.
+                fileDialog!.RenderFrame(
+                    origin,
+                    new Vector2(
+                        Ui.ActiveTheme.FileDialog.Width,
+                        Ui.ActiveTheme.FileDialog.Height) * scale);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(name));

@@ -280,6 +280,13 @@
       ]
     },
     {
+      "name": "imperative-file-dialog",
+      "title": "Imperative file surface (PBI-016)",
+      "states": [
+        { "name": "i-filedialog", "label": "title bar, nav band, rail + explorer, footer", "width": 760, "height": 500 }
+      ]
+    },
+    {
       "name": "imperative-controls",
       "title": "Imperative segmented, swatches, icon actions (PBI-016)",
       "states": [
