@@ -50,7 +50,6 @@ public class MainWindow : Window
     // binding registry and the pointer never persists in UI state.
     private ActorId? _ctxActorId;
     private bool _ctxOpenRequested;
-    private bool _addOpenRequested;
     private BoneId? _ctxBoneId;
     private IReadOnlyList<BoneId>? _ctxBoneOverlayBones;
     private bool _boneCtxOpenRequested;
@@ -87,6 +86,10 @@ public class MainWindow : Window
 
     public event Action? OnSettingsRequested;
 
+    /// <summary>Raised by both creation affordances — the titlebar plus and the
+    /// ACTORS header plus.</summary>
+    public event Action? OnSpawnBrowserRequested;
+
     public MainWindow(
         IGPoseService gPoseService,
         IActorManager actorManager,
@@ -105,7 +108,6 @@ public class MainWindow : Window
         Game.Animation.AnimationCatalogLoader animationCatalog,
         PoseRailPane poseRail,
         GraphicalBonePane graphicalBonePane,
-        Game.PropSpawnService propService,
         SkeletonOverlayPresentation overlayPresentation)
         : base($"{PluginConstants.PluginName}###poser_main_window",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
@@ -127,7 +129,6 @@ public class MainWindow : Window
         _bonePosingService = bonePosingService;
 
         _spawnService = spawnService;
-        _propService = propService;
         _poseInspector = poseInspector;
         _animationPane = animationPane;
         _appearancePane = appearancePane;
@@ -183,8 +184,8 @@ public class MainWindow : Window
         // The sidebar's add affordance. Creation lives where the created
         // thing will appear, so the ACTORS
         // header owns it rather than a separate spawn menu.
-        _vm.OnSectionPlus = _ => _addOpenRequested = true;
-        _vm.OnSpawn = () => _addOpenRequested = true;
+        _vm.OnSectionPlus = _ => OnSpawnBrowserRequested?.Invoke();
+        _vm.OnSpawn = () => OnSpawnBrowserRequested?.Invoke();
         _vm.OnRowClicked = OnRowClicked;
         _vm.OnRowExpandToggled = row =>
         {
@@ -326,7 +327,6 @@ public class MainWindow : Window
         ReconcilePendingSpawn();
         BuildViewModel();
         AppShellView.Draw(_vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
-        DrawAddEntityMenu();
         DrawActorContextMenu();
         DrawBoneContextMenu();
         DrawOverlayContextMenu();
@@ -413,8 +413,10 @@ public class MainWindow : Window
         _vm.CanUndo = _cleanTransforms.CanUndo;
         _vm.CanRedo = _cleanTransforms.CanRedo;
         _vm.ShowPopOut = false;
-        // Entity creation has two entry points by design (approved shell):
-        // the titlebar action and the ACTORS header. Both open the same menu.
+        // Entity creation has two entry points by design (approved shell): the
+        // titlebar action and the ACTORS header. Both open the SAME surface,
+        // the spawn browser. Cameras, lights and references stay absent (not
+        // disabled) there until their runtime entity types exist.
         _vm.ShowSpawn = true;
         _vm.ShowProject = false;
 
@@ -909,48 +911,6 @@ public class MainWindow : Window
                 bone.Skeleton.Actor,
             _ => null,
         };
-
-    /// <summary>
-    /// The sidebar ACTORS "+" menu: entity creation in the shared floating
-    /// menu — New actor, New actor with companion slot, New prop. The
-    /// titlebar plus opens the identical menu. Cameras, lights and
-    /// references stay absent (not disabled) until their runtime entity
-    /// types exist.
-    /// </summary>
-    private void DrawAddEntityMenu()
-    {
-        if (_addOpenRequested)
-        {
-            _addOpenRequested = false;
-            // Entity CREATION, matching Brio's actor-container surface:
-            // spawn semantics, not clone semantics (cloning lives in the
-            // selected actor's right-click menu). Basic spawning and
-            // companion-slot spawning are split — the slot costs an extra
-            // object slot and only the explicit entry pays it.
-            var items = new[]
-            {
-                new ContextMenuItem("New actor", TablerIcon.UserPlus),
-                new ContextMenuItem("New actor with companion slot", TablerIcon.Paw),
-                ContextMenuItem.Separator,
-                new ContextMenuItem("New prop", TablerIcon.Diamond),
-            };
-            _addActions = new List<Action?>
-            {
-                () => SelectSpawned(_spawnService.SpawnNewActor(reserveCompanionSlot: false)),
-                () => SelectSpawned(_spawnService.SpawnNewActor(reserveCompanionSlot: true)),
-                null,
-                () => _propService.SpawnProp(),
-            };
-            Crystarium.FloatingMenu.Open("##sidebar-add", ImGui.GetMousePos(), items);
-        }
-
-        int clicked = Crystarium.FloatingMenu.Draw("##sidebar-add");
-        if (clicked >= 0 && clicked < _addActions.Count)
-            _addActions[clicked]?.Invoke();
-    }
-
-    private List<Action?> _addActions = new();
-    private readonly Game.PropSpawnService _propService;
 
     /// <summary>Selects a freshly spawned actor so the thing just created
     /// is the thing being edited. The scene has not rescanned yet, so the

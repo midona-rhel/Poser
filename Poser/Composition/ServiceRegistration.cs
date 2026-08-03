@@ -137,7 +137,12 @@ internal static class ServiceRegistration
     public static IServiceCollection AddPoserFeatures(this IServiceCollection services)
     {
         services.AddSingleton<ICameraService, CameraService>();
+        services.AddSingleton<IEnvironmentService, Game.Environment.EnvironmentService>();
+        services.AddSingleton<IWorldRenderingService, Game.Environment.WorldRenderingService>();
+        services.AddSingleton<IFestivalService, Game.Environment.FestivalService>();
         services.AddSingleton<IActorSpawnService, ActorSpawnService>();
+        services.AddSingleton<ISpawnCatalogService, SpawnCatalogService>();
+        services.AddSingleton<Library.IPoseLibraryService, Library.PoseLibraryService>();
         services.AddSingleton<Game.PropSpawnService>();
         services.AddSingleton<IGazeService, GazeService>();
         services.AddSingleton<ILiveTestService, LiveTestService>();
@@ -158,11 +163,14 @@ internal static class ServiceRegistration
         services.AddSingleton<AppearancePane>();
         services.AddSingleton<GraphicalBonePane>();
         services.AddSingleton<SkeletonOverlayPresentation>();
+        services.AddSingleton<PoseThumbnailCache>();
 
         services.AddSingleton<SkeletonOverlayWindow>();
         services.AddSingleton<GizmoOverlayWindow>();
         services.AddSingleton<MainWindow>();
         services.AddSingleton<SettingsWindow>();
+        services.AddSingleton<SpawnBrowserWindow>();
+        services.AddSingleton<PoseLibraryWindow>();
 
         services.AddSingleton<UiWindowSet>();
         services.AddSingleton<IUIManager, UIManager>();

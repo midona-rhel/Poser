@@ -28,6 +28,7 @@ public sealed class UIManager : IUIManager
     private readonly IEditorState _editorState;
     private readonly ConfigurationService _configService;
     private readonly UiWindowSet _windows;
+    private readonly PoseFileInspectorSection _poseFileSection;
     private readonly HashSet<string> _keybindsDown = new();
     private List<Dalamud.Interface.Windowing.IWindow>? _hiddenWindows;
 
@@ -39,7 +40,8 @@ public sealed class UIManager : IUIManager
         IKeyState keyState,
         IEditorState editorState,
         ConfigurationService configService,
-        UiWindowSet windows)
+        UiWindowSet windows,
+        PoseFileInspectorSection poseFileSection)
     {
         _pluginInterface = pluginInterface;
         _gPoseService = gPoseService;
@@ -49,8 +51,12 @@ public sealed class UIManager : IUIManager
         _editorState = editorState;
         _configService = configService;
         _windows = windows;
+        _poseFileSection = poseFileSection;
 
         _windows.Main.OnSettingsRequested += ToggleSettingsWindow;
+        _windows.Main.OnSpawnBrowserRequested += ToggleSpawnBrowserWindow;
+        _windows.PoseLibrary.OnSettingsRequested += ToggleSettingsWindow;
+        _poseFileSection.OnLibraryRequested += OpenPoseLibraryWindow;
         _configService.OnConfigurationChanged += ApplyConfiguredTheme;
 
         _pluginInterface.UiBuilder.Draw += DrawUI;
@@ -189,6 +195,14 @@ public sealed class UIManager : IUIManager
     private void ToggleSettingsWindow()
         => _windows.Settings.IsOpen = !_windows.Settings.IsOpen;
 
+    private void ToggleSpawnBrowserWindow()
+        => _windows.SpawnBrowser.IsOpen = !_windows.SpawnBrowser.IsOpen;
+
+    // Open, not toggle: "Library…" and a redirected "Import…" are openers, so
+    // a second press must not close a library the user is already looking at.
+    private void OpenPoseLibraryWindow()
+        => _windows.PoseLibrary.IsOpen = true;
+
     private void ApplyConfiguredTheme() =>
         ThemeSelection.Apply(
             _configService.Config.UI.Theme,
@@ -199,6 +213,9 @@ public sealed class UIManager : IUIManager
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
 
         _windows.Main.OnSettingsRequested -= ToggleSettingsWindow;
+        _windows.Main.OnSpawnBrowserRequested -= ToggleSpawnBrowserWindow;
+        _windows.PoseLibrary.OnSettingsRequested -= ToggleSettingsWindow;
+        _poseFileSection.OnLibraryRequested -= OpenPoseLibraryWindow;
         _configService.OnConfigurationChanged -= ApplyConfiguredTheme;
 
         _pluginInterface.UiBuilder.Draw -= DrawUI;

@@ -43,6 +43,11 @@ public sealed class SettingsViewModel
     public bool CloseWithGPose;
     public bool PreservePoseAcrossRedraws = true;
 
+    public bool AutoSaveEnabled = true;
+    public float AutoSaveIntervalSeconds = 60f;
+    public float AutoSaveMaxKept = 10f;
+    public bool AutoSaveCleanOnExit;
+
     public bool ShowSkeletonLines = true;
     public float BoneLineThickness = 1.0f;
     public float BoneLineOpacity = 0.23f;
@@ -329,6 +334,37 @@ public static class SettingsView
                 next => vm.PreservePoseAcrossRedraws = next,
                 "Restore the authored pose after an actor redraw (Penumbra collections, Glamourer, MCDF)");
         }, divider: false);
+        // Auto-save lives beside the other GPose-lifecycle switches: it starts
+        // and stops with GPose exactly as Open/Close with GPose do, and the
+        // Library category is about reading existing pose folders, not writing
+        // recovery ones.
+        page.Section("AUTO-SAVE", form =>
+        {
+            form.Switch(
+                "Auto-save poses",
+                vm.AutoSaveEnabled,
+                next => vm.AutoSaveEnabled = next,
+                "Back up actors with pose edits to timestamped folders while in GPose");
+            form.Slider(
+                "Save interval",
+                vm.AutoSaveIntervalSeconds,
+                10f,
+                600f,
+                next => vm.AutoSaveIntervalSeconds = next,
+                format: "0 s");
+            form.Slider(
+                "Kept auto-saves",
+                vm.AutoSaveMaxKept,
+                1f,
+                50f,
+                next => vm.AutoSaveMaxKept = next,
+                format: "0");
+            form.Switch(
+                "Clean up on GPose exit",
+                vm.AutoSaveCleanOnExit,
+                next => vm.AutoSaveCleanOnExit = next,
+                "Delete all auto-saves when leaving GPose normally; after a crash they remain for recovery");
+        });
     }
 
     private static void DrawDisplay(

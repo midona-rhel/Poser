@@ -1195,6 +1195,11 @@ public class PoseInspectorPane
     }
 
 
+    private static void StripLabel(Vector2 cursor, float h, float x, string text, float s)
+    {
+        Crystarium.TextAt(cursor + new Vector2(x, h / s + 9f) * s, text, new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.TextDim });
+    }
+
     // ── sections ─────────────────────────────────────────────────────────
 
     /// <summary>

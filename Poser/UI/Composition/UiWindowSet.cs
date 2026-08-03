@@ -5,8 +5,8 @@ using System;
 namespace Poser.UI.Composition;
 
 /// <summary>
-/// Owns draw order for the focused posing workspace, settings, and the two
-/// viewport interaction canvases.
+/// Owns draw order for the focused posing workspace, settings, the spawn
+/// browser, and the two viewport interaction canvases.
 /// </summary>
 public sealed class UiWindowSet : IDisposable
 {
@@ -15,6 +15,8 @@ public sealed class UiWindowSet : IDisposable
     public GizmoOverlayWindow GizmoOverlay { get; }
     public SkeletonOverlayWindow SkeletonOverlay { get; }
     public SettingsWindow Settings { get; }
+    public SpawnBrowserWindow SpawnBrowser { get; }
+    public PoseLibraryWindow PoseLibrary { get; }
     private readonly SkeletonOverlayPresentation _overlayPresentation;
 
     public UiWindowSet(
@@ -23,6 +25,8 @@ public sealed class UiWindowSet : IDisposable
         SkeletonOverlayWindow skeletonOverlay,
         GizmoOverlayWindow gizmoOverlay,
         SettingsWindow settings,
+        SpawnBrowserWindow spawnBrowser,
+        PoseLibraryWindow poseLibrary,
         SkeletonOverlayPresentation overlayPresentation)
     {
         _overlayPresentation = overlayPresentation;
@@ -38,6 +42,12 @@ public sealed class UiWindowSet : IDisposable
 
         Settings = settings;
         System.AddWindow(Settings);
+
+        SpawnBrowser = spawnBrowser;
+        System.AddWindow(SpawnBrowser);
+
+        PoseLibrary = poseLibrary;
+        System.AddWindow(PoseLibrary);
 
         Main.GetSkeletonOverlayOn = () => SkeletonOverlay.IsOpen;
         Main.OnSkeletonOverlayToggled += SetSkeletonOverlayOpen;

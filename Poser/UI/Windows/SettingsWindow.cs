@@ -1,9 +1,11 @@
+using System;
 using System.Diagnostics;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Config;
+using Poser.Library;
 using Poser.UI.Views;
 
 namespace Poser.UI;
@@ -79,6 +81,11 @@ public class SettingsWindow : Window
             CloseWithGPose = c.CloseWithGPose,
             PreservePoseAcrossRedraws = c.PreservePoseAcrossRedraws,
 
+            AutoSaveEnabled = c.AutoSave.Enabled,
+            AutoSaveIntervalSeconds = c.AutoSave.IntervalSeconds,
+            AutoSaveMaxKept = c.AutoSave.MaxAutoSaves,
+            AutoSaveCleanOnExit = c.AutoSave.CleanOnExit,
+
             BoneDotRadius = c.Skeleton.BoneDotRadius,
             OverlaySelected = ImGui.ColorConvertU32ToFloat4(c.Skeleton.SelectedBoneColor),
             OverlayHovered = ImGui.ColorConvertU32ToFloat4(c.Skeleton.HoveredBoneColor),
@@ -98,6 +105,8 @@ public class SettingsWindow : Window
             InspectorDock = (int)c.UI.InspectorDock,
             TreeGuides = c.UI.ShowTreeGuides,
 
+            UseLibraryWhenImporting = c.Library.UseLibraryWhenImporting,
+
             Version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "dev",
             OnSave = SaveToConfig,
             OnCancel = () => IsOpen = false,
@@ -106,6 +115,16 @@ public class SettingsWindow : Window
         };
         _vm.OnOpenRepository = () =>
             Process.Start(new ProcessStartInfo("https://github.com/midona-rhel/Poser") { UseShellExecute = true });
+
+        // Library sources: edited as copies, so Cancel leaves the configured
+        // roots untouched.
+        foreach (var source in c.Library.Sources)
+            _vm.LibrarySources.Add(new LibrarySourceVm
+            {
+                Name = source.Name,
+                Path = source.Path,
+                Enabled = source.Enabled,
+            });
 
         // Keybinds: stored overrides on top of the view defaults.
         for (int i = 0; i < _vm.Keybinds.Length; i++)
@@ -121,6 +140,12 @@ public class SettingsWindow : Window
         c.OpenOnGPoseEnter = _vm.OpenOnGPose;
         c.CloseWithGPose = _vm.CloseWithGPose;
         c.PreservePoseAcrossRedraws = _vm.PreservePoseAcrossRedraws;
+
+        // The two auto-save sliders are float rows over integer config.
+        c.AutoSave.Enabled = _vm.AutoSaveEnabled;
+        c.AutoSave.IntervalSeconds = (int)MathF.Round(_vm.AutoSaveIntervalSeconds);
+        c.AutoSave.MaxAutoSaves = (int)MathF.Round(_vm.AutoSaveMaxKept);
+        c.AutoSave.CleanOnExit = _vm.AutoSaveCleanOnExit;
 
         c.Skeleton.BoneDotRadius = _vm.BoneDotRadius;
         c.Skeleton.SelectedBoneColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlaySelected);
@@ -143,6 +168,22 @@ public class SettingsWindow : Window
 
         foreach (var (action, binding) in _vm.Keybinds)
             c.UI.Keybinds[action] = binding;
+
+        c.Library.UseLibraryWhenImporting = _vm.UseLibraryWhenImporting;
+        c.Library.Sources.Clear();
+        foreach (var source in _vm.LibrarySources)
+        {
+            string path = source.Path.Trim();
+            string name = source.Name.Trim();
+            if (path.Length == 0 && name.Length == 0)
+                continue;
+            c.Library.Sources.Add(new LibrarySourceConfig
+            {
+                Name = name,
+                Path = path,
+                Enabled = source.Enabled,
+            });
+        }
 
         _saving = true;
         ThemeSelection.Apply(c.UI.Theme, c.UI.AccentIndex);

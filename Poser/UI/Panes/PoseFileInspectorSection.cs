@@ -25,6 +25,7 @@ public sealed class PoseFileInspectorSection
     private readonly CleanPoseFacade _poseFacade;
     private readonly SelectionSession _selection;
     private readonly ISkeletonService _skeletons;
+    private readonly Config.ConfigurationService _config;
     private string _status = string.Empty;
     private readonly Crystarium.FileDialog _importBrowser =
         new("Import Pose", new[] { ".pose", ".cmp" }, isSaveMode: false);
@@ -36,16 +37,22 @@ public sealed class PoseFileInspectorSection
     private bool _rotation = true, _position = true, _scale;
     private bool _descendants = true, _reset;
 
+    /// <summary>Raised by the Library… action and by an Import… that the
+    /// library setting has taken over. The UI manager owns the window.</summary>
+    public event Action? OnLibraryRequested;
+
     public PoseFileInspectorSection(
         IPoseFileService poseFiles,
         CleanPoseFacade poseFacade,
         SelectionSession selection,
-        ISkeletonService skeletons)
+        ISkeletonService skeletons,
+        Config.ConfigurationService config)
     {
         _poseFiles = poseFiles;
         _poseFacade = poseFacade;
         _selection = selection;
         _skeletons = skeletons;
+        _config = config;
     }
 
     public void DrawBrowsers()
@@ -77,6 +84,7 @@ public sealed class PoseFileInspectorSection
         {
             actions.Button("Import…", () => OpenImport(skeleton));
             actions.Button("Export…", () => OpenExport(skeleton));
+            actions.Button("Library…", () => OnLibraryRequested?.Invoke());
         });
 
         if (_status.Length > 0)
@@ -85,20 +93,22 @@ public sealed class PoseFileInspectorSection
 
     public void OpenImport(ISkeleton skeleton)
     {
+        // The library is a full replacement for the file dialog when the user
+        // asked for it: this is the ONE import entry point, so the actor
+        // context menu is covered by the same redirect.
+        if (_config.Config.Library.UseLibraryWhenImporting)
+        {
+            OnLibraryRequested?.Invoke();
+            return;
+        }
+
         // The actor is frozen at dialog open; the Selected-scope selection
         // freezes as complete BoneIds at dialog confirmation.
         _importBrowser.Open(_lastPath, path =>
         {
             _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
-            List<BoneId>? frozenSelection = null;
-            if (_scope == 3)
-                frozenSelection = _selection.Selected
-                    .Where(id => id is
-                        { Kind: SceneEntityKind.Bone, Bone: not null })
-                    .Select(id => id.Bone!.Value)
-                    .ToList();
             var imported = _poseFacade.ImportPose(
-                skeleton.Actor, path, BuildOptions(), frozenSelection);
+                skeleton.Actor, path, BuildOptions(), FreezeSelectedScope());
             _status = imported.Success
                 ? string.Empty
                 : $"Import: {imported.Detail}";
@@ -116,6 +126,25 @@ public sealed class PoseFileInspectorSection
                 ? string.Empty
                 : "Export: the pose file could not be written.";
         });
+    }
+
+    /// <summary>The section's current import options, for surfaces that import
+    /// without opening this section's own dialog.</summary>
+    public PoseImportOptions BuildImportOptions() => BuildOptions();
+
+    /// <summary>
+    /// The Selected-scope bones frozen as complete BoneIds, or null in every
+    /// other scope. Taken at the moment the import is confirmed, never earlier:
+    /// the facade verifies the exact actor generation these belong to.
+    /// </summary>
+    public List<BoneId>? FreezeSelectedScope()
+    {
+        if (_scope != 3)
+            return null;
+        return _selection.Selected
+            .Where(id => id is { Kind: SceneEntityKind.Bone, Bone: not null })
+            .Select(id => id.Bone!.Value)
+            .ToList();
     }
 
     private PoseImportOptions BuildOptions()

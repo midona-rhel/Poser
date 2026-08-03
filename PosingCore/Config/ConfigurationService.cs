@@ -27,6 +27,9 @@ public class ConfigurationService : IDisposable
         _pluginInterface = pluginInterface;
         Config = _pluginInterface.GetPluginConfig() as PoserConfiguration ?? new PoserConfiguration();
         MigrateConfig();
+
+        // Seeded in memory only; it persists with the next save the user causes.
+        Config.Library.EnsureDefaults();
     }
 
     /// <summary>
