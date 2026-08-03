@@ -12,22 +12,22 @@ public static partial class Crystarium
     /// dropdown scrolls past seven rows. A CSS literal, not a token: the
     /// shared Picker.MaximumRows belongs to the search pickers.
     /// </summary>
-    internal const int DropVisibleRows = 7;
+    private const int DropVisibleRows = 7;
 
     /// <summary>CmSelect.tsx places the portal at
     /// <c>top: cssRect.bottom + 4</c>.</summary>
-    internal const float DropAnchorGap = 4f;
+    private const float DropAnchorGap = 4f;
 
     /// <summary><c>.btnChevron { width: 20px }</c> — the fixed slot the
     /// 14px IconSelector centers in.</summary>
-    internal const float ChevronSlot = 20f;
+    private const float ChevronSlot = 20f;
 
     /// <summary><c>.btnChevron { opacity: .5 }</c>.</summary>
-    internal const float ChevronOpacity = 0.5f;
+    private const float ChevronOpacity = 0.5f;
 
     /// <summary>Tabler <c>IconSelector</c>, the glyph CmSelect.tsx
     /// renders in <c>.btnChevron</c>.</summary>
-    internal const string ChevronIcon = "selector";
+    private const string ChevronIcon = "selector";
 
     /// <summary>
     /// The OPAQUE fill <c>.drop</c> wears — the color the trigger already
@@ -52,7 +52,7 @@ public static partial class Crystarium
     /// would compute the identical number a second time and hide where the
     /// match comes from.</para>
     /// </summary>
-    internal static Vector4 DropdownPopupFill(in Theme theme) =>
+    private static Vector4 DropdownPopupFill(in Theme theme) =>
         ColorEx.FlattenOver(theme.Chrome.ControlHover, theme.Surface);
 
     public static bool Dropdown(
@@ -285,7 +285,7 @@ public static partial class Crystarium
     /// <see cref="LogicalHeight"/> is the unscaled span
     /// <see cref="ControlSizing"/> resolved.
     /// </summary>
-    internal readonly struct DropdownMetrics
+    private readonly struct DropdownMetrics
     {
         public DropdownMetrics(
             float width, float height, float logicalHeight, float widestLabel,
@@ -330,7 +330,7 @@ public static partial class Crystarium
     /// only known after measuring the options, so the shared sizing preamble
     /// runs here rather than at the top of the control.
     /// </summary>
-    internal static DropdownMetrics MeasureDropdown(
+    private static DropdownMetrics MeasureDropdown(
         string[] items, string? previewText, ControlStyle style)
     {
         float scale = ImGuiHelpers.GlobalScale;
@@ -370,7 +370,7 @@ public static partial class Crystarium
     /// What the closed box hands its two pieces of content: the label's
     /// color and the chevron's effective <c>.btnChevron</c> opacity.
     /// </summary>
-    internal readonly struct DropdownTriggerPaint
+    private readonly struct DropdownTriggerPaint
     {
         public DropdownTriggerPaint(Vector4 labelColor, float chevronOpacity)
         {
@@ -386,7 +386,7 @@ public static partial class Crystarium
     /// The closed trigger's BOX alone — fill, border, and the disabled
     /// group, returning what the label and chevron must take from it.
     /// </summary>
-    internal static DropdownTriggerPaint PaintDropdownBox(
+    private static DropdownTriggerPaint PaintDropdownBox(
         in InteractionResult hit, bool disabled)
     {
         float scale = ImGuiHelpers.GlobalScale;
@@ -434,7 +434,7 @@ public static partial class Crystarium
     /// must escape the popup window's own clip, so the surface is drawn
     /// against the full display rect.
     /// </summary>
-    internal static void PaintDropdownSurface(
+    private static void PaintDropdownSurface(
         ImDrawListPtr drawList, Vector2 min, Vector2 max)
     {
         var theme = ActiveTheme;
@@ -466,7 +466,7 @@ public static partial class Crystarium
     /// outranks <c>.optActive</c> on specificity, so one fill covers both
     /// states. The caller decides WHEN a row is filled.
     /// </summary>
-    internal static void PaintDropdownRowFill(
+    private static void PaintDropdownRowFill(
         ImDrawListPtr drawList, Vector2 pos, Vector2 fillSize, float radius)
     {
         uint rowFill = ImGui.ColorConvertFloat4ToU32(
@@ -479,7 +479,7 @@ public static partial class Crystarium
     /// surrounds it, and the anchor nudge CmSelect's 4px gap needs on top of
     /// the shared anchored placement. All spans are pixels.
     /// </summary>
-    internal readonly struct DropdownPopupMetrics
+    private readonly struct DropdownPopupMetrics
     {
         public DropdownPopupMetrics(
             int visibleItems, float rowHeight, float rowGap, float dropInset,
@@ -515,7 +515,7 @@ public static partial class Crystarium
     /// resolved height — <c>.opt</c> rows are the trigger's 26px tall, and
     /// the list scrolls past <see cref="DropVisibleRows"/>.
     /// </summary>
-    internal static DropdownPopupMetrics MeasureDropdownPopup(
+    private static DropdownPopupMetrics MeasureDropdownPopup(
         int itemCount, float triggerLogicalHeight)
     {
         float scale = ImGuiHelpers.GlobalScale;

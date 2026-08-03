@@ -107,7 +107,7 @@ public static partial class Crystarium
     /// so measurement and drawing can never resolve tabs differently. All
     /// values are PHYSICAL pixels.
     /// </summary>
-    internal static SegmentLayout LabelSegmentLayout(
+    private static SegmentLayout LabelSegmentLayout(
         string[] items,
         ControlStyle style = default)
     {
@@ -147,7 +147,7 @@ public static partial class Crystarium
     /// The icon variant's full per-tab geometry — the ONE layout resolution.
     /// PHYSICAL pixels, like its label sibling.
     /// </summary>
-    internal static SegmentLayout IconSegmentLayout(
+    private static SegmentLayout IconSegmentLayout(
         int count,
         ControlStyle style = default) =>
         ResolveSegmentLayout(count, style, IconSegmentWidth);
@@ -242,9 +242,8 @@ public static partial class Crystarium
     }
 
     /// <summary>The selected tab's fill pair — the 1px SegmentShadow drop
-    /// under the SegmentSelected fill — shared by the imperative control and
-    /// the retained tab painter so the two stay one paint.</summary>
-    internal static void PaintSegmentActive(
+    /// under the SegmentSelected fill.</summary>
+    private static void PaintSegmentActive(
         ImDrawListPtr drawList, Vector2 tabMin, Vector2 tabMax)
     {
         float scale = ImGuiHelpers.GlobalScale;
@@ -264,7 +263,7 @@ public static partial class Crystarium
             ActiveTheme.Radii.Control * scale);
     }
 
-    internal readonly record struct SegmentLayout(
+    private readonly record struct SegmentLayout(
         float[] Widths,
         float Padding,
         float Gap,

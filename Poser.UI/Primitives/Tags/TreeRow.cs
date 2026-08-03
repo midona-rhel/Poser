@@ -535,34 +535,4 @@ public static partial class Crystarium
                 color);
     }
 
-    /// <summary>
-    /// Sidebar section header — picto SidebarRow.module.css
-    /// <c>.sectionTitleRow</c>/<c>.sectionTitle</c>: a 24px row inset by
-    /// its 1px margin plus 4px padding, carrying 12px/500 text-tertiary.
-    /// </summary>
-    public static void SidebarHeader(string text)
-    {
-        float scale = ImGuiHelpers.GlobalScale;
-        var theme = ActiveTheme;
-        float height = 24f * scale;
-        var origin = ImGui.GetCursorScreenPos();
-
-        var style = new TextStyle
-        {
-            Size = theme.Typography.LabelSize,
-            Weight = FontWeight.Medium,
-            Color = theme.TextMuted,
-        };
-        var textSize = MeasureText(text, style);
-        // margin-left 1 + padding-left 4.
-        TextAt(
-            origin + new Vector2(5f * scale, (height - textSize.Y) * 0.5f),
-            text,
-            style);
-
-        var spacing = ImGui.GetStyle().ItemSpacing;
-        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(spacing.X, 0f));
-        ImGui.Dummy(new Vector2(ImGui.GetContentRegionAvail().X, height));
-        ImGui.PopStyleVar();
-    }
 }

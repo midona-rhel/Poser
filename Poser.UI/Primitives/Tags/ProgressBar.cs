@@ -29,7 +29,7 @@ public static partial class Crystarium
     /// <paramref name="widthPx"/> is already scaled;
     /// <paramref name="origin"/> is the box's top-left, not the track's.
     /// </summary>
-    internal static void PaintProgress(
+    private static void PaintProgress(
         ImDrawListPtr dl, Vector2 origin, float widthPx, float fraction)
     {
         float scale = ImGuiHelpers.GlobalScale;

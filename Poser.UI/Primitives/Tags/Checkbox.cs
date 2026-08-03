@@ -47,7 +47,7 @@ public static partial class Crystarium
     /// layout. <paramref name="side"/> is the resolved PHYSICAL side, the
     /// leading square of whatever was reserved.
     /// </summary>
-    internal static void PaintCheckboxBox(
+    private static void PaintCheckboxBox(
         ImDrawListPtr draw, Vector2 boxMin, float side, bool value,
         bool disabled)
     {

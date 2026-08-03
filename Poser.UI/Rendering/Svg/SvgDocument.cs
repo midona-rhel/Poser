@@ -3,22 +3,20 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Numerics;
-using System.Reflection;
 using System.Xml;
 using Dalamud.Bindings.ImGui;
 
 namespace Poser.UI;
 
 /// <summary>
-/// A parsed SVG document. Use <see cref="Parse"/> / <see cref="Load"/> /
-/// <see cref="LoadEmbedded"/> to obtain one, then call <see cref="Render"/>
-/// through <see cref="Crystarium.SvgBox(SvgDocument, System.Numerics.Vector2, System.Numerics.Vector2)"/>.
+/// A parsed SVG document. Use <see cref="Parse"/> to obtain one, then call
+/// <see cref="Render"/>.
 ///
 /// <para>Cache the document — parsing isn't free. Re-render every frame.</para>
 /// </summary>
 public sealed class SvgDocument
 {
-    internal readonly List<SvgPath> Paths = new();
+    private readonly List<SvgPath> Paths = new();
     public Vector2 ViewBoxMin { get; private set; } = Vector2.Zero;
     public Vector2 ViewBoxSize { get; private set; } = new Vector2(100, 100);
 
@@ -129,17 +127,6 @@ public sealed class SvgDocument
         return doc;
     }
 
-
-    public static SvgDocument Load(string path) => Parse(File.ReadAllText(path));
-
-
-    public static SvgDocument LoadEmbedded(Assembly assembly, string resourceName)
-    {
-        using var s = assembly.GetManifestResourceStream(resourceName)
-            ?? throw new FileNotFoundException($"SVG resource not found: {resourceName}");
-        using var r = new StreamReader(s);
-        return Parse(r.ReadToEnd());
-    }
 
     /// <summary>Render the document inside the rect [<paramref name="min"/>..<paramref name="max"/>],
     /// fitting the viewBox uniformly. <paramref name="tint"/> multiplies fill colors.

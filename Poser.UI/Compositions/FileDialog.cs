@@ -863,7 +863,7 @@ public static partial class Crystarium
     /// the FILESYSTEM's notion of what exists; everything the dialog decides —
     /// order, extension filter, the error line — is above the seam.
     /// </summary>
-    internal sealed class LocalFileListing : IFileListingSource
+    private sealed class LocalFileListing : IFileListingSource
     {
         internal static readonly LocalFileListing Instance = new();
 

@@ -225,11 +225,6 @@ public static partial class Crystarium
             _y += height;
         }
 
-        internal void Advance(float logicalHeight)
-        {
-            _y += logicalHeight;
-        }
-
         internal float LogicalHeight => _y;
 
         internal void DrawStandaloneSection(
@@ -1102,7 +1097,7 @@ public static partial class Crystarium
     /// the paint rather than something each caller remembers.
     /// <paramref name="origin"/> is the rule's unrounded left end.
     /// </summary>
-    internal static void PaintSectionRule(
+    private static void PaintSectionRule(
         ImDrawListPtr drawList, Vector2 origin, float width, float scale) =>
         ControlPaint.Separator(
             drawList,
@@ -1123,7 +1118,7 @@ public static partial class Crystarium
     /// title. Zero is therefore "not interactive", which is exactly what a
     /// header that never called <c>GetID</c> has.</para>
     /// </summary>
-    internal static void PaintSectionHeader(
+    private static void PaintSectionHeader(
         in InteractionResult hit, uint identity, string title, bool open,
         Vector2 min, float width)
     {

@@ -77,7 +77,7 @@ public static partial class Crystarium
     /// empty — there is no value under the pointer, and the caller must
     /// leave the one it has alone rather than clamp to an end.</para>
     /// </summary>
-    internal static float SliderValueAt(
+    private static float SliderValueAt(
         float mouseX, Vector2 min, Vector2 max, float minimum, float maximum)
     {
         float half = (max.Y - min.Y) * 0.5f;
@@ -95,7 +95,7 @@ public static partial class Crystarium
     /// position; <paramref name="marks"/> stay in VALUE space, which is
     /// why the range comes along.
     /// </summary>
-    internal static void PaintSlider(
+    private static void PaintSlider(
         ImDrawListPtr dl, Vector2 min, Vector2 max, float normalized,
         IReadOnlyList<float>? marks, float minimum, float maximum,
         bool disabled)

@@ -66,10 +66,8 @@ public readonly record struct ControlStyle
     public UiWidth Width { get; init; }
     public UiHeight Height { get; init; }
     // Toggle-only presentation: momentary IconButton and typed text Button
-    // ignore these flags.
-    public bool Bare { get; init; }
+    // ignore this flag.
     public bool Selected { get; init; }
-    public bool Slashed { get; init; }
 
     public static ControlStyle Workspace => new() { Height = UiHeight.Workspace };
     public static ControlStyle Comfortable => new() { Height = UiHeight.Comfortable };

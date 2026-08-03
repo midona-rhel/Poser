@@ -101,18 +101,6 @@ public static partial class Crystarium
             compositeStroke, groupOpacity, groupBackground);
     }
 
-    /// <summary>Background-SVG entry for box styling: uniform-fits the
-    /// document's OWN aspect ratio into the FULL bounds (no icon
-    /// squaring), snapped to whole pixels, with the tint passed through
-    /// verbatim (null = the document's own colors, unlike icons where
-    /// null means theme text).</summary>
-    internal static void SvgBox(
-        SvgDocument doc, Vector2 min, Vector2 max, Vector4? tint = null)
-    {
-        var boxMin = ActiveTheme.Optical.Snap(min);
-        doc.Render(ImGui.GetWindowDrawList(), boxMin, boxMin + (max - min), tint);
-    }
-
     private static void SvgBoxCore(
         SvgDocument doc, Vector2 min, Vector2 max, Vector4? tint,
         float contentScale, bool flipX, float? strokeWidth,

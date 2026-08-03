@@ -24,12 +24,6 @@ public static partial class Crystarium
         set => SvgIconTextureCache.Uploader = value;
     }
 
-    /// <summary>Drops every baked icon texture. Setting a new uploader does
-    /// this already; call it directly only to reclaim the memory.</summary>
-    public static void ReleaseIconTextures() => SvgIconTextureCache.Clear();
-
-    /// <summary>Baked icon textures currently held (diagnostics).</summary>
-    public static int IconTextureCount => SvgIconTextureCache.Count;
 }
 
 /// <summary>
@@ -74,8 +68,6 @@ internal static class SvgIconTextureCache
             _uploader = value;
         }
     }
-
-    internal static int Count => Cache.Count;
 
     internal static void Clear()
     {

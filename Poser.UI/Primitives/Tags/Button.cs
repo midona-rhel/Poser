@@ -201,19 +201,19 @@ public static partial class Crystarium
 
     // .btnDanger literals from actionButton.module.css — CSS constants,
     // not theme tokens, identical across every Picto theme.
-    internal static readonly Vector4 DangerText =
+    private static readonly Vector4 DangerText =
         new(1f, 154f / 255f, 164f / 255f, 1f);            // #ff9aa4
-    internal static readonly Vector4 DangerBorder =
+    private static readonly Vector4 DangerBorder =
         new(1f, 71f / 255f, 87f / 255f, 0.35f);           // rgba(255,71,87,.35)
-    internal static readonly Vector4 DangerFill =
+    private static readonly Vector4 DangerFill =
         new(1f, 71f / 255f, 87f / 255f, 0.08f);           // rgba(255,71,87,.08)
-    internal static readonly Vector4 DangerFillHover =
+    private static readonly Vector4 DangerFillHover =
         new(1f, 71f / 255f, 87f / 255f, 0.15f);           // rgba(255,71,87,.15)
 
     /// <summary>.btn's <c>transition: background 150ms ease</c> — CSS
     /// `ease` is cubic-bezier(0.25, 0.1, 0.25, 1). Background only; the
     /// border and text switch instantly, exactly like the CSS.</summary>
-    internal static readonly Transition BackgroundTransition =
+    private static readonly Transition BackgroundTransition =
         Transition.CubicBezier(0.15f, 0.25f, 0.1f, 0.25f, 1f);
 
     // Motion channels this component owns. Both stores key by stable
@@ -252,7 +252,7 @@ public static partial class Crystarium
     /// The text button's complete paint. Everything visual lives here; the
     /// caller owns only reservation, help, and activation.
     /// </summary>
-    internal static void PaintTextButton(
+    private static void PaintTextButton(
         in InteractionResult hit,
         uint identity,
         string label,
@@ -271,7 +271,7 @@ public static partial class Crystarium
     /// returning the color its label must take, so the label is never painted
     /// from a colour the box did not resolve.
     /// </summary>
-    internal static Vector4 PaintTextButtonBox(
+    private static Vector4 PaintTextButtonBox(
         in InteractionResult hit,
         uint identity,
         ButtonVariant variant,
@@ -399,7 +399,7 @@ public static partial class Crystarium
     /// <summary>.iconBtn:disabled — a CSS literal of the shared icon button,
     /// not a theme token, and the ONE home for it: every disabled icon
     /// affordance fades from here.</summary>
-    internal const float IconButtonDisabledOpacity = 0.2f;
+    private const float IconButtonDisabledOpacity = 0.2f;
 
     private static bool RenderIconButton(
         string id,
@@ -560,7 +560,7 @@ public static partial class Crystarium
     /// the disabled fade, at the control radius. Separate from the glyph so
     /// both fade by the same <see cref="ToggleOpacity"/>.
     /// </summary>
-    internal static void PaintTemporaryToggleBox(
+    private static void PaintTemporaryToggleBox(
         ImDrawListPtr draw,
         Vector2 min,
         Vector2 max,
@@ -584,7 +584,7 @@ public static partial class Crystarium
 
     /// <summary>The toggle's SLASH — the inset diagonal that says "this state
     /// is off", drawn OVER the glyph it crosses.</summary>
-    internal static void PaintTemporaryToggleSlash(
+    private static void PaintTemporaryToggleSlash(
         ImDrawListPtr draw, Vector2 min, Vector2 max)
     {
         float scale = ImGuiHelpers.GlobalScale;
@@ -599,7 +599,7 @@ public static partial class Crystarium
 
     /// <summary>The toggle's group fade: ONE constant, so the box and the
     /// glyph can never disagree about it.</summary>
-    internal static float ToggleOpacity(bool disabled) =>
+    private static float ToggleOpacity(bool disabled) =>
         disabled ? ActiveTheme.Chrome.ControlDisabledOpacity : 1f;
 
     private static void DrawLegacyButtonIcon(

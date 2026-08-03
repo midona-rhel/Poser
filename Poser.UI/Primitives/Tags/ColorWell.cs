@@ -12,7 +12,7 @@ public static partial class Crystarium
     /// circular hit/hover target the 14px dot centers in. A CSS literal,
     /// not a token: <c>Controls.ColorWellSize</c> is the WELL's side and
     /// the two are different components.</summary>
-    internal const float SwatchWrapSize = 16f;
+    private const float SwatchWrapSize = 16f;
 
     /// <summary>The wrap is 16px around a 14px <c>.swatch</c>, i.e. 1px of
     /// wrap shows on every side. DEVIATION: the CSS pins the dot at an
@@ -65,28 +65,28 @@ public static partial class Crystarium
     internal const float PaletteMinHeight = 26f;
 
     /// <summary><c>.palette { padding: 0 6px }</c>.</summary>
-    internal const float PalettePaddingX = 6f;
+    private const float PalettePaddingX = 6f;
 
     /// <summary><c>.palette { gap: 2px }</c> — flex gap, so n wraps
     /// contribute n−1 gaps and a single wrap contributes none.</summary>
-    internal const float PaletteGap = 2f;
+    private const float PaletteGap = 2f;
 
     /// <summary><c>.palette { border: 1px solid
     /// var(--color-border-secondary) }</c> — the width; the colour is the
     /// one <c>var()</c> in the module and comes from the theme.</summary>
-    internal const float PaletteBorder = 1f;
+    private const float PaletteBorder = 1f;
 
     /// <summary><c>.palette { border-radius: 40px }</c>. NOT
     /// <c>Radii.Pill</c>: Picto writes <c>999px</c> where it means
     /// "always a pill" (AuthWorkspace) and <c>40px</c> here, which only
     /// reads as a pill while the box stays under 80px tall.</summary>
-    internal const float PaletteRadius = 40f;
+    private const float PaletteRadius = 40f;
 
     /// <summary><c>.palette { background: rgba(0, 0, 0, 0.15) }</c> — a
     /// raw rgba in the module, NOT a <c>var()</c>, so it is identical in
     /// every theme and belongs here rather than in ChromeTokens (no
     /// tokens.css entry carries black at .15 either).</summary>
-    internal static readonly Vector4 PaletteFill = new(0f, 0f, 0f, 0.15f);
+    private static readonly Vector4 PaletteFill = new(0f, 0f, 0f, 0.15f);
 
     /// <summary>
     /// Color well — picto m5 <c>.well</c>: 26×26 (<c>Controls.ColorWellSize</c>;
@@ -137,7 +137,7 @@ public static partial class Crystarium
     /// is the LEADING SQUARE of the reserved rect: a caller may widen the
     /// control, and the swatch stays as wide as it is tall.
     /// </summary>
-    internal static void PaintColorWellBox(
+    private static void PaintColorWellBox(
         in InteractionResult hit, Vector4 color, bool disabled)
     {
         var theme = ActiveTheme;
@@ -188,17 +188,16 @@ public static partial class Crystarium
     /// <summary>The popover handle the well opens, derived from the
     /// control id in ONE place so the opener and the surface cannot drift
     /// apart.</summary>
-    internal static string ColorWellPopupId(string id) => id + "_picker";
+    private static string ColorWellPopupId(string id) => id + "_picker";
 
     /// <summary>
     /// The picker popup's mechanics — the anchored glass surface and the
     /// raw <c>ColorPicker4</c> inside it. The picker interior is the named
-    /// NATIVE boundary and is deliberately not transcribed; this exists so
-    /// a twin can stage the identical popup instead of copying it. Returns
-    /// true on the frames the picker edits, having already reported the new
-    /// colour to <paramref name="onChange"/>.
+    /// NATIVE boundary and is deliberately not transcribed. Returns true on
+    /// the frames the picker edits, having already reported the new colour
+    /// to <paramref name="onChange"/>.
     /// </summary>
-    internal static bool DrawColorWellPopup(
+    private static bool DrawColorWellPopup(
         string id,
         Vector2 anchorMin,
         Vector2 anchorMax,
@@ -282,7 +281,7 @@ public static partial class Crystarium
     /// <paramref name="side"/> is the wrap's LOGICAL side; the dot follows it
     /// with the ring gap held constant, exactly as the control scales.
     /// </summary>
-    internal static void PaintSwatchDot(
+    private static void PaintSwatchDot(
         ImDrawListPtr dl,
         Vector2 boxMin,
         float side,
