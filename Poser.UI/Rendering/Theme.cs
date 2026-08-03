@@ -353,6 +353,31 @@ public readonly record struct Theme
 
     public static Theme Default => PictoDark;
 
+    /// <summary>
+    /// Re-derives the primary color family from a chosen accent. Every stop
+    /// mirrors how tokens.css derives it from <c>--color-primary</c>: the
+    /// N-suffixed tokens are <c>color-mix(… N%, transparent)</c> — the same
+    /// RGB at alpha N/100 — and AccentActive/DangerHover-style stops are the
+    /// declared fixed-alpha derivations above. Accent index 0 never routes
+    /// here: the theme's own baked primary IS the default accent, so the
+    /// accepted baseline stays byte-for-byte.
+    /// </summary>
+    public Theme WithAccent(Vector4 accent) => this with
+    {
+        Accent = accent,
+        AccentHover = accent with { W = 0.60f },
+        AccentActive = accent with { W = 0.80f },
+        Chrome = Chrome with
+        {
+            Primary = accent,
+            PrimaryHover = accent with { W = 0.60f },
+            PrimaryFocus = accent with { W = 0.50f },
+            AccentFill = accent with { W = 0.10f },
+            AccentFillBorder = accent with { W = 0.30f },
+        },
+        Palette = Palette with { Primary = accent },
+    };
+
     private static Theme DarkSurface(
         Theme theme,
         Vector4 surface,

@@ -190,7 +190,9 @@ public sealed class UIManager : IUIManager
         => _windows.Settings.IsOpen = !_windows.Settings.IsOpen;
 
     private void ApplyConfiguredTheme() =>
-        ThemeSelection.Apply(_configService.Config.UI.Theme);
+        ThemeSelection.Apply(
+            _configService.Config.UI.Theme,
+            _configService.Config.UI.AccentIndex);
 
     public void Dispose()
     {

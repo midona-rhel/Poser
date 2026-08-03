@@ -36,8 +36,10 @@ public class SettingsWindow : Window
     public override void OnClose()
     {
         if (!_saving)
-            ThemeSelection.Apply(
-                ConfigurationService.Instance.Config.UI.Theme);
+        {
+            var ui = ConfigurationService.Instance.Config.UI;
+            ThemeSelection.Apply(ui.Theme, ui.AccentIndex);
+        }
         _saving = false;
     }
 
@@ -141,7 +143,7 @@ public class SettingsWindow : Window
             c.UI.Keybinds[action] = binding;
 
         _saving = true;
-        ThemeSelection.Apply(c.UI.Theme);
+        ThemeSelection.Apply(c.UI.Theme, c.UI.AccentIndex);
         svc.ApplyChange();
         IsOpen = false;
     }

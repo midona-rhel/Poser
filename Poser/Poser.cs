@@ -64,7 +64,9 @@ public class Poser : IDalamudPlugin
         // Initialize configuration service (sets static Instance, must be before UI)
         var configuration =
             _serviceProvider.GetRequiredService<ConfigurationService>();
-        ThemeSelection.Apply(configuration.Config.UI.Theme);
+        ThemeSelection.Apply(
+            configuration.Config.UI.Theme,
+            configuration.Config.UI.AccentIndex);
 
         // Activate the clean scene owner before constructing presentation.
         // Singleton registration is lazy: without resolving this service its

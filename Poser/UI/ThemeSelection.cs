@@ -5,8 +5,9 @@ namespace Poser.UI;
 
 internal static class ThemeSelection
 {
-    public static Theme Resolve(UITheme selection) =>
-        selection switch
+    public static Theme Resolve(UITheme selection, int accentIndex)
+    {
+        var theme = selection switch
         {
             UITheme.Auto => WindowsUsesLightApps()
                 ? Theme.PictoLight
@@ -18,9 +19,16 @@ internal static class ThemeSelection
             UITheme.Purple => Theme.PictoPurple,
             _ => Theme.PictoDark,
         };
+        // Index 0 is "the theme's own primary": the baked value stays
+        // untouched so the accepted baseline is reproduced exactly.
+        var options = theme.Settings.AccentOptions;
+        return accentIndex > 0 && accentIndex < options.Length
+            ? theme.WithAccent(options[accentIndex])
+            : theme;
+    }
 
-    public static void Apply(UITheme selection) =>
-        Crystarium.UseTheme(Resolve(selection));
+    public static void Apply(UITheme selection, int accentIndex) =>
+        Crystarium.UseTheme(Resolve(selection, accentIndex));
 
     private static bool WindowsUsesLightApps()
     {

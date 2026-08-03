@@ -10,16 +10,20 @@ public sealed class SettingsViewModel
 {
     public int Category = 1;
     public float BoneDotRadius = 5f;
+    // Mirrors SkeletonConfiguration defaults: selected/hovered come from the
+    // accent (Palette.Primary until AccentIndex drives the theme), the rest
+    // are muted fixed tones — no theme token matches them (overlay colors
+    // must be opaque; TextMuted-style alpha tones vanish over scenery).
     public Vector4 OverlaySelected =
         Crystarium.ActiveTheme.Palette.Primary;
-    public Vector4 OverlayHovered =
-        Crystarium.ActiveTheme.Palette.White;
+    public Vector4 OverlayHovered = Vector4.Lerp(
+        Crystarium.ActiveTheme.Palette.Primary, Vector4.One, 0.35f);
     public Vector4 OverlayInactive =
-        Crystarium.ActiveTheme.TextMuted;
+        new(148f / 255f, 163f / 255f, 184f / 255f, 1f);
     public Vector4 OverlayIkChain =
-        Crystarium.ActiveTheme.Warning;
+        new(217f / 255f, 165f / 255f, 68f / 255f, 1f);
     public Vector4 OverlayMirrored =
-        Crystarium.ActiveTheme.Palette.AxisY;
+        new(194f / 255f, 123f / 255f, 160f / 255f, 1f);
     public bool NsfwBones;
     public bool AnonymousMode = true;
     public UITheme Theme = UITheme.Dark;
@@ -54,7 +58,7 @@ public sealed class SettingsViewModel
     public Action? OnCancel;
     public Action? OnClose;
     public Action? OnOpenRepository;
-    public Action<UITheme>? OnThemePreview;
+    public Action<UITheme, int>? OnThemePreview;
 }
 
 /// <summary>
@@ -361,14 +365,18 @@ public static class SettingsView
                 next =>
                 {
                     vm.Theme = (UITheme)next;
-                    vm.OnThemePreview?.Invoke(vm.Theme);
+                    vm.OnThemePreview?.Invoke(vm.Theme, vm.AccentIndex);
                 },
                 ThemeLabels);
             form.Swatches(
                 "Accent",
                 Crystarium.ActiveTheme.Settings.AccentOptions,
                 vm.AccentIndex,
-                next => vm.AccentIndex = next);
+                next =>
+                {
+                    vm.AccentIndex = next;
+                    vm.OnThemePreview?.Invoke(vm.Theme, vm.AccentIndex);
+                });
         });
     }
 
