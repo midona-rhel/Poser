@@ -1,10 +1,20 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Poser.Config;
 
 namespace Poser.UI.Views;
+
+/// <summary>One configured library root, edited free of the persisted
+/// <c>LibrarySourceConfig</c> until Save.</summary>
+public sealed class LibrarySourceVm
+{
+    public string Name = "";
+    public string Path = "";
+    public bool Enabled = true;
+}
 
 public sealed class SettingsViewModel
 {
@@ -31,6 +41,7 @@ public sealed class SettingsViewModel
 
     public bool OpenOnGPose = true;
     public bool CloseWithGPose;
+    public bool PreservePoseAcrossRedraws = true;
 
     public bool ShowSkeletonLines = true;
     public float BoneLineThickness = 1.0f;
@@ -39,6 +50,11 @@ public sealed class SettingsViewModel
     public int SidebarDock;
     public int InspectorDock = 1;
     public bool TreeGuides = true;
+
+    public List<LibrarySourceVm> LibrarySources = [];
+    public bool UseLibraryWhenImporting;
+    public string LibraryNewName = "";
+    public string LibraryNewPath = "";
 
     public (string Action, string Binding)[] Keybinds =
     {
@@ -91,6 +107,7 @@ public static class SettingsView
         (TablerIcon.Bone, "Skeleton"),
         (TablerIcon.LayoutPanel, "UI"),
         (TablerIcon.Keyboard, "Keybinds"),
+        (TablerIcon.Folder, "Library"),
         (TablerIcon.Info, "About"),
     };
 
@@ -135,7 +152,7 @@ public static class SettingsView
             {
                 Title = "Settings",
                 OnClose = () => vm.OnClose?.Invoke(),
-                CloseHelp = "Close settings",
+                CloseHelp = "Close settings without saving",
                 RailWidth = theme.Settings.NavigationWidth,
                 FooterRight = right =>
                 {
@@ -281,6 +298,9 @@ public static class SettingsView
             case 4:
                 DrawKeybinds(vm, page);
                 break;
+            case 5:
+                DrawLibrary(vm, page);
+                break;
             default:
                 DrawAbout(vm, page);
                 break;
@@ -303,6 +323,11 @@ public static class SettingsView
                 vm.CloseWithGPose,
                 next => vm.CloseWithGPose = next,
                 "Hide all Poser windows when leaving GPose");
+            form.Switch(
+                "Keep pose through redraws",
+                vm.PreservePoseAcrossRedraws,
+                next => vm.PreservePoseAcrossRedraws = next,
+                "Restore the authored pose after an actor redraw (Penumbra collections, Glamourer, MCDF)");
         }, divider: false);
     }
 
@@ -454,6 +479,91 @@ public static class SettingsView
                             rebinding ? -1 : index));
             }
         }, divider: false);
+    }
+
+    private static void DrawLibrary(
+        SettingsViewModel vm,
+        Crystarium.PageScope page)
+    {
+        page.Section("POSE LIBRARY", form =>
+            form.Switch(
+                "Use library for Import",
+                vm.UseLibraryWhenImporting,
+                next => vm.UseLibraryWhenImporting = next,
+                "Import… buttons open the pose library instead of the file dialog"),
+            divider: false);
+        page.Section("SOURCE FOLDERS", form =>
+        {
+            // The remove is deferred past the loop: the action fires DURING the
+            // row that owns it, and shortening the list under the iteration
+            // would drop the row after it for a frame.
+            int removing = -1;
+            for (int i = 0; i < vm.LibrarySources.Count; i++)
+            {
+                int index = i;
+                var source = vm.LibrarySources[index];
+                form.SwitchActions(
+                    string.IsNullOrWhiteSpace(source.Name)
+                        ? $"Source {index + 1}"
+                        : source.Name,
+                    source.Enabled,
+                    next => source.Enabled = next,
+                    actions => actions.Button(
+                        "Remove",
+                        () => removing = index,
+                        help: "Stop scanning this folder"),
+                    "Scan this folder for poses");
+                form.Status(source.Path);
+            }
+            if (removing >= 0)
+                vm.LibrarySources.RemoveAt(removing);
+
+            form.TextInput(
+                "Name",
+                vm.LibraryNewName,
+                next => vm.LibraryNewName = next,
+                placeholder: "Taken from the folder when left blank");
+            form.TextInput(
+                "Folder",
+                vm.LibraryNewPath,
+                next => vm.LibraryNewPath = next,
+                placeholder: "Full path to a folder of poses");
+            form.Actions(
+                string.Empty,
+                actions => actions.Button(
+                    "Add",
+                    () => AddLibrarySource(vm),
+                    disabled: string.IsNullOrWhiteSpace(vm.LibraryNewPath)));
+            string pending = vm.LibraryNewPath.Trim();
+            if (pending.Length > 0 && !System.IO.Directory.Exists(pending))
+                form.Status(
+                    "Folder does not exist yet — it is scanned once it does.");
+        });
+    }
+
+    /// <summary>Commits the add-source drafts, naming the source after its
+    /// last path segment when the name is left blank.</summary>
+    private static void AddLibrarySource(SettingsViewModel vm)
+    {
+        string path = vm.LibraryNewPath.Trim();
+        if (path.Length == 0)
+            return;
+
+        string name = vm.LibraryNewName.Trim();
+        if (name.Length == 0)
+            name = System.IO.Path.GetFileName(path.TrimEnd(
+                System.IO.Path.DirectorySeparatorChar,
+                System.IO.Path.AltDirectorySeparatorChar));
+        if (name.Length == 0)
+            name = path;
+
+        vm.LibrarySources.Add(new LibrarySourceVm
+        {
+            Name = name,
+            Path = path,
+        });
+        vm.LibraryNewName = string.Empty;
+        vm.LibraryNewPath = string.Empty;
     }
 
     private static void DrawAbout(
