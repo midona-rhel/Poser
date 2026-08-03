@@ -37,9 +37,20 @@ public class SkeletonOverlayWindow : Window
 
     private static uint BoneColor => Config.BoneColor;
     private static uint OutlineColor => Config.BoneOutlineColor;
-    private static uint SelectedBoneColor => Config.SelectedBoneColor;
+
+    // While the stored color still equals its fresh-install default, the
+    // selected/hovered family follows the live accent (theme + AccentIndex);
+    // an explicit ColorWell override pins the stored value instead.
+    private static uint SelectedBoneColor =>
+        Config.SelectedBoneColor == SkeletonConfiguration.DefaultSelectedBoneColor
+            ? ImGui.ColorConvertFloat4ToU32(Crystarium.ActiveTheme.Palette.Primary)
+            : Config.SelectedBoneColor;
     private static uint ModifiedBoneColor => Config.ModifiedBoneColor;
-    private static uint HoveredBoneColor => Config.HoveredBoneColor;
+    private static uint HoveredBoneColor =>
+        Config.HoveredBoneColor == SkeletonConfiguration.DefaultHoveredBoneColor
+            ? ImGui.ColorConvertFloat4ToU32(Vector4.Lerp(
+                Crystarium.ActiveTheme.Palette.Primary, Vector4.One, 0.35f))
+            : Config.HoveredBoneColor;
 
     // Bone display data
     private class BoneDisplayData
