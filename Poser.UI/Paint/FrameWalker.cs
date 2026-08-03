@@ -25,6 +25,7 @@ internal sealed class FrameWalker
         Drag,
         DragEnd,
         Pick,
+        Context,
     }
 
     /// <summary>
@@ -158,6 +159,9 @@ internal sealed class FrameWalker
             case Fired.Pick:
                 on.OnPick.Invoke(_root, record.Index);
                 break;
+            case Fired.Context:
+                on.OnContext.Invoke(_root);
+                break;
             default:
                 on.OnClick.Invoke(_root);
                 break;
@@ -272,6 +276,15 @@ internal sealed class FrameWalker
             if (context.HitWidthCap > 0f && context.HitWidthCap < reserve.X)
                 reserve.X = context.HitWidthCap;
             hit = InteractionAdapter.Reserve(id!, min, reserve, record.Disabled);
+            // The house overlapping-target pattern, stated by the ONE element
+            // that needs it. ImGui refuses hover to any later item while an
+            // earlier one owns the hovered id, so a control whose own child
+            // reserves — the tree row and its disclosure — would otherwise
+            // swallow the child's gesture. Yielding is opt-in because the
+            // opposite is what every other composed control wants: a picker
+            // row must NOT lose its press to the check box inside it.
+            if (record.AllowChildHits)
+                ImGui.SetItemAllowOverlap();
         }
 
         if (record.NativeSlot != 0)
@@ -661,6 +674,15 @@ internal sealed class FrameWalker
         int node, ref ElementRecord record, in Poser.UI.InteractionResult hit,
         float dragged)
     {
+        // The context edge, and the only signal read from ImGui here: the
+        // reservation reports the LEFT button's edges alone, and the shell's
+        // rows have always opened their menu on "hovered and right-clicked"
+        // rather than on a release-inside. It returns nothing, so a row can
+        // report a context gesture and still answer the same frame's click.
+        if (!record.On.OnContext.IsNone && hit.Hovered
+            && ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+            Activate(node, Fired.Context, 0f);
+
         if (!float.IsNaN(dragged))
         {
             Activate(node, Fired.Drag, dragged);

@@ -107,6 +107,12 @@ public readonly record struct Element
     /// <summary>The escape hatch, for geometry a sheet cannot express.</summary>
     internal IPainter? Painter { get; init; }
 
+    /// <inheritdoc cref="Reactive.ElementRecord.Guides"/>
+    internal TreeGuideSpec Guides { get; init; }
+
+    /// <inheritdoc cref="Reactive.ElementRecord.AllowChildHits"/>
+    internal bool AllowChildHits { get; init; }
+
     internal bool ClipChildren { get; init; }
 
     /// <summary>The portal this element opens, 0 for none.</summary>
@@ -160,6 +166,8 @@ public readonly record struct Element
         record.Marks = element.Marks;
         record.Index = element.Index;
         record.Painter = element.Painter;
+        record.Guides = element.Guides;
+        record.AllowChildHits = element.AllowChildHits;
         record.ClipChildren = element.ClipChildren;
         record.OpensPortalNode = element.OpensPortalNode;
         record.ClosesPortal = element.ClosesPortal;

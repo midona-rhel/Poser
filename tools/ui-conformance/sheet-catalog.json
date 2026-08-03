@@ -249,6 +249,13 @@
       "states": [
         { "name": "rscrollarea", "label": "20 rows in a 160px viewport", "width": 320, "height": 200 }
       ]
+    },
+    {
+      "name": "reactive-tree",
+      "title": "Reactive tree row (PBI-015)",
+      "states": [
+        { "name": "rtreerow", "label": "root, branch, terminal, collapsed", "width": 300, "height": 190 }
+      ]
     }
   ]
 }

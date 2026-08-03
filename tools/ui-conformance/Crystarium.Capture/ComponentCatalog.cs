@@ -185,6 +185,12 @@ internal static class ComponentCatalog
         // viewport is 520px of content — the overflow is the point, so the
         // capture must show a bar and a cut last row.
         new("rscrollarea", 320, 200),
+        // PBI-015: the shell's tree row as a component. Four rows carry every
+        // shape the sidebar draws — a root disclosure, a T branch with an
+        // action strip, a selected terminal L with a badge, and a collapsed
+        // root — so the guides, the chevron, the pill and the badge are all
+        // one capture.
+        new("rtreerow", 300, 190),
     ];
 
     private static readonly string[] DropdownItems =
@@ -611,6 +617,100 @@ internal static class ComponentCatalog
             Key = "scroll",
         };
     };
+
+    /// <summary>
+    /// The sidebar tree, in the four shapes the shell actually draws: a root
+    /// that discloses (chevron in its 16px slot, icon, no guides), a nested
+    /// leaf with siblings below it (full trunk + arm) carrying an action strip,
+    /// the LAST nested leaf (hard L) selected and badged, and a collapsed root.
+    /// The rows are keyed by name because a tree reorders under disclosure.
+    /// </summary>
+    private static readonly Func<UiNode> TreeRowTree = static () =>
+        new Column
+        {
+            Style = new()
+            {
+                Layout = new() { Width = UiDim.Fixed(250f) },
+            },
+            Children =
+            [
+                new TreeRow
+                {
+                    Label = "Midona Rhel",
+                    Icon = TablerIcon.User,
+                    Expander = SidebarExpander.Open,
+                    OnSelect = FormNoOp,
+                    OnToggleExpand = FormNoOp,
+                    Key = "actor",
+                },
+                new TreeRow
+                {
+                    Label = "Spine",
+                    Depth = 1,
+                    OnSelect = FormNoOp,
+                    Actions =
+                    [
+                        new IconAction
+                        {
+                            Icon = TablerIcon.Crosshair,
+                            OnClick = FormNoOp,
+                            Size = 20f,
+                            Key = "target",
+                        },
+                        new IconAction
+                        {
+                            Icon = TablerIcon.Eye,
+                            OnClick = FormNoOp,
+                            Selected = true,
+                            Size = 20f,
+                            Key = "visible",
+                        },
+                    ],
+                    Key = "spine",
+                },
+                // The FORK: a nested row that itself discloses — the split
+                // trunk with the cutout around its chevron — plus its child,
+                // whose trunk mask carries the continuing depth-1 line. The
+                // one branch shape the first four rows cannot reach.
+                new TreeRow
+                {
+                    Label = "Arms",
+                    Depth = 1,
+                    Expander = SidebarExpander.Open,
+                    OnSelect = FormNoOp,
+                    OnToggleExpand = FormNoOp,
+                    Key = "arms",
+                },
+                new TreeRow
+                {
+                    Label = "L Hand",
+                    Depth = 2,
+                    Trunks = 0b10,
+                    IsLastChild = true,
+                    OnSelect = FormNoOp,
+                    Key = "l-hand",
+                },
+                new TreeRow
+                {
+                    Label = "Head",
+                    Depth = 1,
+                    IsLastChild = true,
+                    Selected = true,
+                    Badge = "12",
+                    OnSelect = FormNoOp,
+                    Key = "head",
+                },
+                new TreeRow
+                {
+                    Label = "Chocobo",
+                    Icon = TablerIcon.Paw,
+                    Expander = SidebarExpander.Collapsed,
+                    OnSelect = FormNoOp,
+                    OnToggleExpand = FormNoOp,
+                    Key = "companion",
+                },
+            ],
+        };
 
     private static readonly ContextMenuItem[] MenuItems =
     [
@@ -1949,6 +2049,13 @@ internal static class ComponentCatalog
             case "rscrollarea":
                 ReactiveRoot(name).Render(
                     origin, new Vector2(280f, 160f) * scale, ScrollAreaTree);
+                break;
+            case "rtreerow":
+                // 250 wide, not the cell's 300: the strip and the badge are
+                // RIGHT-anchored, so a row that overran the cell would cut the
+                // very things this fixture exists to show.
+                ReactiveRoot(name).Render(
+                    origin, new Vector2(250f, 120f) * scale, TreeRowTree);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(name));

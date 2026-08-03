@@ -72,6 +72,17 @@ internal struct ElementRecord
     /// <summary>The escape hatch for geometry a sheet cannot express.</summary>
     internal IPainter? Painter;
 
+    /// <summary>Which tree-guide segments this element's column carries. A
+    /// default spec is depth 0 with no branch, which is what every element
+    /// outside a tree row states by saying nothing.</summary>
+    internal Poser.UI.TreeGuideSpec Guides;
+
+    /// <summary>Yield hover and press arbitration to the element's own
+    /// descendants — the overlapping-target pattern a disclosure inside a row
+    /// needs. Opt-in: a composed control that must keep its press (a picker
+    /// row holding a check box) states nothing.</summary>
+    internal bool AllowChildHits;
+
     /// <summary>The painter owns the box, so its subtree is clipped to it;
     /// the walk pushes the clip once around the whole child traversal.</summary>
     internal bool ClipChildren;

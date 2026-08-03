@@ -49,6 +49,12 @@ public readonly record struct Listeners
     /// the activation buffer.</summary>
     public UiHandler<Vector4> OnColor { get; init; }
 
+    /// <summary>The SECONDARY edge: the element is hovered and the right
+    /// button clicks. It is not an activation — it competes with nothing,
+    /// cancels nothing and is not release-inside — because a context gesture
+    /// opens a surface ABOUT the element rather than acting on it.</summary>
+    public UiHandler OnContext { get; init; }
+
     /// <summary>The range <see cref="OnDrag"/> maps the pointer into.</summary>
     public float Min { get; init; }
 
@@ -68,10 +74,11 @@ public readonly record struct Listeners
         OnDragEnd.Validate(arena);
         OnPick.Validate(arena);
         OnColor.Validate(arena);
+        OnContext.Validate(arena);
     }
 
     internal bool Any =>
         !OnClick.IsNone || !OnToggle.IsNone || !OnDrag.IsNone
         || !OnDragBegin.IsNone || !OnDragEnd.IsNone
-        || !OnPick.IsNone || !OnColor.IsNone;
+        || !OnPick.IsNone || !OnColor.IsNone || !OnContext.IsNone;
 }
