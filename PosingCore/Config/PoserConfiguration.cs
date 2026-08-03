@@ -8,7 +8,9 @@ namespace Poser.Config;
 /// </summary>
 public class PoserConfiguration : IPluginConfiguration
 {
-    public int Version { get; set; } = 1;
+    // 2: overlay color redesign — stored overlay colors reset once on load
+    // (ConfigurationService.MigrateConfig); sizes/opacity keep user values.
+    public int Version { get; set; } = 2;
 
     public SkeletonConfiguration Skeleton { get; set; } = new();
     public DisplayConfiguration Display { get; set; } = new();
