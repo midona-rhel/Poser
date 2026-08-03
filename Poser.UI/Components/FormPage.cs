@@ -91,7 +91,9 @@ public static partial class Crystarium
         Action? onBegin = null, Action? onCommit = null,
         string? help = null, bool disabled = false, UiKey key = default)
     {
-        well.Island.Bind(value, onChange, onCommit, perPixel, format, disabled);
+        well.Island.Bind(
+            value, onChange, onCommit, perPixel, format, disabled,
+            string.Empty, ActiveTheme.FormValue);
         return FormRow(
             label,
             new Row
@@ -163,6 +165,143 @@ public static partial class Crystarium
             new Switch { Value = value, OnToggle = onChange, Disabled = disabled },
             help,
             key);
+
+    /// <summary>A switch with a right-anchored action cluster. The spring is
+    /// what pins the actions to the band's trailing edge, exactly as the
+    /// imperative row measured them backwards from it.</summary>
+    public static UiNode FormSwitchActions(
+        string label, bool value, UiHandler<bool> onToggle, UiChildren actions,
+        string? help = null, bool disabled = false, UiKey key = default) =>
+        FormRow(
+            label,
+            new Row
+            {
+                Sheet = SheetFamily.ActionGroupFill,
+                Children =
+                [
+                    new Switch
+                    {
+                        Value = value,
+                        OnToggle = onToggle,
+                        Disabled = disabled,
+                    },
+                    new Element { Style = Element.Sized(UiDim.Fill, null) },
+                    actions.Count == 0
+                        ? UiNode.None
+                        : new Row
+                        {
+                            Sheet = SheetFamily.ActionGroup,
+                            Children = actions,
+                        },
+                ],
+            },
+            help,
+            key);
+
+    /// <summary>Dropdown row. The menu is sized INTRINSICALLY — by its widest
+    /// option — so a rail and a page offer the same box.</summary>
+    public static UiNode FormDropdown(
+        string label, string[] items, int selected, UiHandler<int> onChange,
+        string? help = null, bool disabled = false, UiKey key = default) =>
+        FormRow(
+            label,
+            new Dropdown
+            {
+                Items = items,
+                Selected = selected,
+                OnChange = onChange,
+                Disabled = disabled,
+            },
+            help,
+            key);
+
+    /// <summary>A band carrying its label and nothing else — the caption that
+    /// introduces the row below it.</summary>
+    public static UiNode FormLabelRow(
+        string label, string? help = null, UiKey key = default) =>
+        FormRow(label, UiChildren.Empty, help, key);
+
+    /// <summary>
+    /// The three-axis vector row, STACKED: a label band, then a band of three
+    /// equal wells across the full measure. The inline shape has no caller
+    /// left — the rail is narrower than the legacy inline minimum, and the
+    /// hinge-axis row was full-width by construction — so the stack is the
+    /// row. An EMPTY label declares no band at all, which is exactly what
+    /// full-width meant.
+    ///
+    /// <para>Composition is the WELL's: each one holds the row's handler and
+    /// the axis it edits, so a row declared every frame binds three delegates
+    /// that were allocated once.</para>
+    /// </summary>
+    public static UiNode FormAxisVector(
+        string label, Vector3 value, Action<Vector3> onChange, Action? onCommit,
+        NumericWellState xWell, NumericWellState yWell, NumericWellState zWell,
+        float perPixel, string format, bool disabled = false,
+        UiKey key = default)
+    {
+        bool bare = string.IsNullOrEmpty(label);
+        UiNode wells = new Element
+        {
+            Sheet = SheetFamily.FormRow,
+            Style = new() { Layout = new() { Gap = ActiveTheme.Form.AxisGap } },
+            Key = bare ? key : default,
+            Children =
+            [
+                AxisWellCell(
+                    xWell, value, 0, "X", ActiveTheme.Palette.AxisX,
+                    onChange, onCommit, perPixel, format, disabled),
+                AxisWellCell(
+                    yWell, value, 1, "Y", ActiveTheme.Palette.AxisY,
+                    onChange, onCommit, perPixel, format, disabled),
+                AxisWellCell(
+                    zWell, value, 2, "Z", ActiveTheme.Palette.AxisZ,
+                    onChange, onCommit, perPixel, format, disabled),
+            ],
+        };
+        return bare
+            ? wells
+            : new Column
+            {
+                Style = Element.Sized(UiDim.Fill, null),
+                Key = key,
+                Children =
+                [
+                    new Element
+                    {
+                        Sheet = SheetFamily.FormRow,
+                        Children = new Label
+                        {
+                            Text = label,
+                            Sheet = SheetFamily.FormLabel,
+                        },
+                    },
+                    wells,
+                ],
+            };
+    }
+
+    /// <summary>One track of <see cref="FormAxisVector"/>: the well takes an
+    /// equal share of the band and centres itself in it.</summary>
+    private static UiNode AxisWellCell(
+        NumericWellState well, Vector3 value, int axis, string caption,
+        Vector4 accent, Action<Vector3> onChange, Action? onCommit,
+        float perPixel, string format, bool disabled)
+    {
+        well.BindAxis(value, axis, onChange);
+        well.Island.Bind(
+            axis == 0 ? value.X : axis == 1 ? value.Y : value.Z,
+            well.AxisChanged,
+            onCommit,
+            perPixel,
+            format,
+            disabled,
+            caption,
+            accent);
+        return Native(
+            well.Island,
+            UiDim.Fill,
+            UiDim.Fixed(ActiveTheme.Controls.WorkspaceHeight));
+    }
 
     /// <summary>
     /// The paired-attribute band (USER 2026-08-03): two mirrored halves of

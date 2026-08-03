@@ -32,4 +32,21 @@ public static partial class Crystarium
             Key = key,
         };
     }
+
+    /// <summary>
+    /// As above, with the box stated in SOLVER terms. A vector row's three
+    /// wells split their band, so their width exists only after arrange —
+    /// which a fixed size cannot say.
+    /// </summary>
+    internal static UiNode Native(
+        INativeElement element, UiDim width, UiDim height, UiKey key = default)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        return new Element
+        {
+            Style = Element.Sized(width, height),
+            Native = element,
+            Key = key,
+        };
+    }
 }
