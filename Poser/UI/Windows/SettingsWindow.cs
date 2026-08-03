@@ -80,6 +80,8 @@ public class SettingsWindow : Window
             OpenOnGPose = c.OpenOnGPoseEnter,
             CloseWithGPose = c.CloseWithGPose,
             PreservePoseAcrossRedraws = c.PreservePoseAcrossRedraws,
+            FollowGameTarget = c.GPoseTargetChangesSelection,
+            TargetFollowsSelection = c.SelectionChangesGPoseTarget,
 
             AutoSaveEnabled = c.AutoSave.Enabled,
             AutoSaveIntervalSeconds = c.AutoSave.IntervalSeconds,
@@ -140,6 +142,8 @@ public class SettingsWindow : Window
         c.OpenOnGPoseEnter = _vm.OpenOnGPose;
         c.CloseWithGPose = _vm.CloseWithGPose;
         c.PreservePoseAcrossRedraws = _vm.PreservePoseAcrossRedraws;
+        c.GPoseTargetChangesSelection = _vm.FollowGameTarget;
+        c.SelectionChangesGPoseTarget = _vm.TargetFollowsSelection;
 
         // The two auto-save sliders are float rows over integer config.
         c.AutoSave.Enabled = _vm.AutoSaveEnabled;

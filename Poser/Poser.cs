@@ -73,6 +73,10 @@ public class Poser : IDalamudPlugin
         // actor/skeleton subscriptions never run and SceneSession stays empty.
         _ = _serviceProvider.GetRequiredService<CleanSceneLifecycle>();
 
+        // Target sync is another lazy singleton with framework subscriptions
+        // as its only activity; resolve it or it never ticks.
+        _ = _serviceProvider.GetRequiredService<TargetSyncService>();
+
         // Create the active theme's complete typography matrix before any
         // presentation surface can measure with a fallback face.
         FontRegistry.Register(pluginInterface.UiBuilder.FontAtlas);

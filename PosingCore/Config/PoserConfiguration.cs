@@ -23,9 +23,11 @@ public class PoserConfiguration : IPluginConfiguration
     public bool OpenOnGPoseEnter { get; set; } = true;
     public bool CloseWithGPose { get; set; } = false;
 
-    // Target sync (Brio parity): selection drives the GPose target and the
-    // GPose target drives selection; both on by default like Brio.
-    public bool SelectionChangesGPoseTarget { get; set; } = true;
+    // Target sync (Brio parity): the GPose target drives selection by default
+    // (Brio ships BrioTargetChangesWithGPose = true); the reverse defaults off
+    // exactly like Brio's GPoseTargetChangesWithBrio — the sidebar already has
+    // an explicit "Set game target" action.
+    public bool SelectionChangesGPoseTarget { get; set; } = false;
     public bool GPoseTargetChangesSelection { get; set; } = true;
 
     /// <summary>

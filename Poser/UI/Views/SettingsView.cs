@@ -42,6 +42,8 @@ public sealed class SettingsViewModel
     public bool OpenOnGPose = true;
     public bool CloseWithGPose;
     public bool PreservePoseAcrossRedraws = true;
+    public bool FollowGameTarget = true;
+    public bool TargetFollowsSelection;
 
     public bool AutoSaveEnabled = true;
     public float AutoSaveIntervalSeconds = 60f;
@@ -333,6 +335,16 @@ public static class SettingsView
                 vm.PreservePoseAcrossRedraws,
                 next => vm.PreservePoseAcrossRedraws = next,
                 "Restore the authored pose after an actor redraw (Penumbra collections, Glamourer, MCDF)");
+            form.Switch(
+                "Follow game target",
+                vm.FollowGameTarget,
+                next => vm.FollowGameTarget = next,
+                "Targeting an actor in GPose selects it in Poser");
+            form.Switch(
+                "Game target follows selection",
+                vm.TargetFollowsSelection,
+                next => vm.TargetFollowsSelection = next,
+                "Selecting an actor in Poser targets it in GPose");
         }, divider: false);
         // Auto-save lives beside the other GPose-lifecycle switches: it starts
         // and stops with GPose exactly as Open/Close with GPose do, and the

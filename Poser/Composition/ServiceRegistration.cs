@@ -130,6 +130,7 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Animation.AnimationCatalogLoader>();
         services.AddSingleton<Game.Animation.FacialPoseCapture>();
         services.AddSingleton<CleanSceneLifecycle>();
+        services.AddSingleton<TargetSyncService>();
         services.AddSingleton<IEditorState, EditorState>();
         return services;
     }
