@@ -42,6 +42,12 @@ internal sealed class IdentityCache
         internal string? Preview;
 
         internal PortalHost.PortalBody? Body;
+
+        /// <summary>An IN-WINDOW scroll container's retained body. Separate
+        /// from <see cref="Body"/> because the two hosts are different
+        /// elements' machinery, never the same path's.</summary>
+        internal ScrollHost.ScrollBody? Scroll;
+
         internal int LastSeenFrame;
     }
 

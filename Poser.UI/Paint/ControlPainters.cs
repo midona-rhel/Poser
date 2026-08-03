@@ -186,6 +186,103 @@ internal sealed class SegmentTabPainter : IPainter
     }
 }
 
+/// <summary>
+/// The persistent icon toggle's BOX — the legacy seam, so the retained twin
+/// and the imperative bridge are one paint. <c>Selected</c> IS the toggle's
+/// state; the disabled fade travels on to the glyph as the group opacity the
+/// seam already resolved.
+/// </summary>
+internal sealed class IconToggleBoxPainter : IPainter
+{
+    internal static readonly IconToggleBoxPainter Instance = new();
+
+    private IconToggleBoxPainter()
+    {
+    }
+
+    public PaintResult Paint(in PaintContext context)
+    {
+        Poser.UI.LegacyCrystarium.PaintTemporaryToggleBox(
+            context.DrawList,
+            context.Min,
+            context.Max,
+            context.Record.Selected,
+            context.Hit.Hovered && !context.Record.Disabled,
+            context.Record.Disabled);
+        // The glyph's own fade is the SHEET's disabled look, not a second
+        // opinion from the hook: the box states the fill, the sheet states the
+        // tone, and the two never fade the same pixel twice.
+        return default;
+    }
+}
+
+/// <summary>
+/// The toggle's slash. Its own element rather than a flag on the box painter,
+/// because the line crosses the glyph and the walk paints a box BEFORE its
+/// content: a later sibling is the only way the diagonal lands on top.
+/// </summary>
+internal sealed class ToggleSlashPainter : IPainter
+{
+    internal static readonly ToggleSlashPainter Instance = new();
+
+    private ToggleSlashPainter()
+    {
+    }
+
+    public bool NeedsHit => false;
+
+    public PaintResult Paint(in PaintContext context)
+    {
+        Poser.UI.LegacyCrystarium.PaintTemporaryToggleSlash(
+            context.DrawList, context.Min, context.Max);
+        return default;
+    }
+}
+
+/// <summary>
+/// A MIRRORED glyph. The base's glyph path has no flip — a redo arrow is the
+/// undo arrow reflected — so the mark moves to a hook, which means the element
+/// must NOT also state a glyph or the base would draw the unflipped one under
+/// it. The icon name rides the painter (one cached instance per name, since a
+/// hook carries no per-element state); everything else is the element's:
+/// currentColor from the resolved sheet, the stroke from the record.
+/// </summary>
+internal sealed class FlippedGlyphPainter : IPainter
+{
+    private static readonly System.Collections.Generic.Dictionary
+        <string, FlippedGlyphPainter> Cache = new(System.StringComparer.Ordinal);
+
+    private readonly string _name;
+
+    private FlippedGlyphPainter(string name) => _name = name;
+
+    /// <summary>The instance for one registry name. Names are compile-time
+    /// literals, so a warm frame allocates nothing.</summary>
+    internal static FlippedGlyphPainter For(string name)
+    {
+        if (!Cache.TryGetValue(name, out FlippedGlyphPainter? painter))
+            Cache[name] = painter = new FlippedGlyphPainter(name);
+        return painter;
+    }
+
+    public bool NeedsHit => false;
+
+    public PaintResult Paint(in PaintContext context)
+    {
+        Poser.UI.LegacyCrystarium.IconIn(
+            context.Min,
+            context.Max,
+            _name,
+            context.Style.Foreground,
+            opacity: context.Style.Opacity,
+            flipX: true,
+            strokeWidth: context.Record.GlyphStroke > 0f
+                ? context.Record.GlyphStroke
+                : null);
+        return default;
+    }
+}
+
 /// <summary>The accent swatch dot. The colour it shows is the sheet's
 /// resolved fill; selection is the element's, hover is the hit's.</summary>
 internal sealed class SwatchPainter : IPainter

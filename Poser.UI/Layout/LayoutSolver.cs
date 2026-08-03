@@ -77,6 +77,16 @@ internal static class LayoutSolver
 
         arena[node].LogicalPos = logicalOrigin;
         arena[node].LogicalSize = logicalSize;
+        // A SCROLLING element is its children's layout root for the cross of
+        // scrolling: its own box is the viewport, and the ordinary stack below
+        // runs past it because Arrange never clamps a child to its parent's
+        // main span. Nothing here has to overflow anything — the one thing the
+        // viewport cannot survive is being unknown, so the RESOLVED height (the
+        // Fill share included, which is why this is Arrange's job and not
+        // Measure's) is written back where the paint pass reads it.
+        if (arena[node].ScrollViewport != 0f)
+            arena[node].ScrollViewport = MathF.Max(
+                0f, logicalSize.Y - arena[node].Layout.Padding.Vertical);
         if (arena[node].ChildCount == 0)
             return;
 

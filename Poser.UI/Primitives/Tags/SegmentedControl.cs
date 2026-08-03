@@ -74,8 +74,7 @@ public static partial class LegacyCrystarium
             false,
             itemDisabled,
             itemHelp,
-            _ => ActiveTheme.Controls.ComfortableHeight
-                * ImGuiHelpers.GlobalScale,
+            IconSegmentWidth,
             (_, index, min, max, active, hovered, disabled) =>
             {
                 float scale = ImGuiHelpers.GlobalScale;
@@ -129,13 +128,25 @@ public static partial class LegacyCrystarium
         TablerIcon[] items,
         ControlStyle style = default)
     {
-        float scale = ImGuiHelpers.GlobalScale;
-        var layout = ResolveSegmentLayout(
-            items.Length,
-            style,
-            _ => ActiveTheme.Controls.ComfortableHeight * scale);
+        var layout = IconSegmentLayout(items.Length, style);
         return new(layout.TotalWidth, layout.TotalHeight);
     }
+
+    /// <summary>A tab of the icon variant is a SQUARE of the comfortable
+    /// height — the width function is the whole difference between the two
+    /// variants' geometry.</summary>
+    private static readonly Func<int, float> IconSegmentWidth =
+        _ => ActiveTheme.Controls.ComfortableHeight * ImGuiHelpers.GlobalScale;
+
+    /// <summary>
+    /// The icon variant's full per-tab geometry — the same resolution the
+    /// imperative control runs, exposed so the retained twin sizes its tabs
+    /// from the same implementation. PHYSICAL pixels, like its label sibling.
+    /// </summary>
+    internal static SegmentLayout IconSegmentLayout(
+        int count,
+        ControlStyle style = default) =>
+        ResolveSegmentLayout(count, style, IconSegmentWidth);
 
     private delegate void DrawSegment(
         ImDrawListPtr drawList,

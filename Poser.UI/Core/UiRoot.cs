@@ -21,16 +21,19 @@ public sealed class UiRoot
     private readonly IdentityCache _ids;
     private readonly FrameWalker _walker;
     private readonly PortalHost _portals;
+    private readonly ScrollHost _scrolls;
 
     public UiRoot()
     {
         _ids = new IdentityCache(_arena);
         _walker = new FrameWalker(_arena, _ids);
-        // The walker meets portals on the way down and the host walks a portal's
-        // subtree on the way out, so the pair is mutually referential by nature.
-        // Wired here, once, rather than resolved anywhere at paint time.
+        // The walker meets portals and scroll containers on the way down and
+        // each host walks its own subtree on the way out, so the trio is
+        // mutually referential by nature. Wired here, once, rather than
+        // resolved anywhere at paint time.
         _portals = new PortalHost(_arena, _ids, _walker);
-        _walker.Bind(_portals, this);
+        _scrolls = new ScrollHost(_arena, _ids, _walker);
+        _walker.Bind(_portals, _scrolls, this);
     }
 
     internal static UiRoot? Ambient { get; private set; }

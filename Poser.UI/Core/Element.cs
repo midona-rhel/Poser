@@ -119,6 +119,15 @@ public readonly record struct Element
 
     internal INativeElement? Native { get; init; }
 
+    /// <inheritdoc cref="Reactive.ElementRecord.ScrollViewport"/>
+    internal float ScrollViewport { get; init; }
+
+    /// <inheritdoc cref="Reactive.ElementRecord.ScrollGutter"/>
+    internal float ScrollGutter { get; init; }
+
+    /// <inheritdoc cref="Reactive.ElementRecord.ScrollCapsHitWidth"/>
+    internal bool ScrollCapsHitWidth { get; init; }
+
     /// <summary>A single child needs no collection: user-defined
     /// conversions do not chain, so the one-child form is stated.</summary>
     public static implicit operator UiChildren(Element element) => (UiNode)element;
@@ -156,6 +165,9 @@ public readonly record struct Element
         record.ClosesPortal = element.ClosesPortal;
         record.ActivateOn = element.ActivateOn;
         record.NativeSlot = element.Native is { } island ? arena.AddObject(island) : 0;
+        record.ScrollViewport = element.ScrollViewport;
+        record.ScrollGutter = element.ScrollGutter;
+        record.ScrollCapsHitWidth = element.ScrollCapsHitWidth;
         record.ChildStart = element.Children.Start;
         record.ChildCount = element.Children.Count;
         return arena.AddElement(in record);

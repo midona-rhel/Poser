@@ -525,6 +525,41 @@ internal static class ThemeStyles
                     Foreground = theme.Text,
                 },
             },
+            // :disabled is the whole element at .2 with no overlay left —
+            // the momentary button's own CSS literal, stated once.
+            Disabled = new()
+            {
+                Colors = new()
+                {
+                    Fill = new System.Numerics.Vector4(0f),
+                    Opacity = LegacyCrystarium.IconButtonDisabledOpacity,
+                },
+            },
+        };
+        // The PERSISTENT twin of the same square: a toggle carries a state, so
+        // its fill is the selection's and not a momentary overlay — the box and
+        // the slash are one legacy paint seam (PaintTemporaryToggleBox), which
+        // is why this sheet states no fill and no motion at all. Only the
+        // square, the control radius and the full-strength glyph tone are data;
+        // the resting .8 lift belongs to the momentary button alone.
+        sheets[(int)SheetFamily.IconActionToggle] = new()
+        {
+            Layout = new()
+            {
+                Flow = UiFlow.Stack,
+                Justify = UiAlign.Center,
+                Align = UiAlign.Center,
+                Width = UiDim.Fixed(controls.ShellIconAction),
+                Height = UiDim.Fixed(controls.ShellIconAction),
+            },
+            Shape = new() { Radius = theme.Radii.Control },
+            Colors = new() { Foreground = theme.Text },
+            // The toggle's fade is the CONTROL's, not the icon button's: the
+            // box seam fades its own fill by the same constant.
+            Disabled = new()
+            {
+                Colors = new() { Opacity = chrome.ControlDisabledOpacity },
+            },
         };
 
         // ---- settings navigation rail ---------------------------------------
@@ -620,6 +655,17 @@ internal static class ThemeStyles
             Colors = new() { Foreground = theme.Text with { W = 0.72f } },
             Hover = new() { Colors = new() { Foreground = theme.Text } },
             Selected = new() { Colors = new() { Foreground = theme.Text } },
+            // A refused tab is the resting tone through the control's own
+            // disabled fade — the imperative draw's `color.Fade(...)` as a
+            // value, because a look states colours rather than composing them.
+            Disabled = new()
+            {
+                Colors = new()
+                {
+                    Foreground = (theme.Text with { W = 0.72f })
+                        .Fade(chrome.DisabledOpacity),
+                },
+            },
         };
         // Picto's shared/ui/ColorPalette: the dark pill the 16px swatch wraps
         // sit in — the ONE swatch presentation (user 2026-08-02: the palette

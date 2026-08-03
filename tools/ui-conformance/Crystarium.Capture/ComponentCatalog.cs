@@ -171,12 +171,20 @@ internal static class ComponentCatalog
         // PBI-015 phase 3B: the Settings chassis and its two new controls,
         // renderable where pixels can be measured instead of reported.
         new("rsettings-frame", 770, 570),
-        new("rsegmented", 420, 90),
+        new("rsegmented", 420, 150),
         new("rswatches", 340, 60),
+        // PBI-015 titlebar widening: the icon-sized action in every shape the
+        // shell asks for — enum glyph, registry name, mirrored glyph, and the
+        // persistent toggle both plain and slashed.
+        new("ricon-actions", 240, 60),
         new("tooltip", 240, 80),
         new("tooltip-pop-mid", 240, 80),
         new("context-menu", 320, 190),
         new("modal", 560, 360),
+        // PBI-015: the in-window scroll container. Twenty 26px rows in a 160px
+        // viewport is 520px of content — the overflow is the point, so the
+        // capture must show a bar and a cut last row.
+        new("rscrollarea", 320, 200),
     ];
 
     private static readonly string[] DropdownItems =
@@ -451,9 +459,25 @@ internal static class ComponentCatalog
     private static readonly string[] SegmentedFixtureItems =
         ["Left", "Right", "Floating", "Hidden"];
 
-    /// <summary>TWO stacked segmented rows — the exact shape that proved the
-    /// 30px band left full-height controls no separation (user 2026-08-02),
-    /// so the row pitch stays inspectable where it regressed.</summary>
+    private static readonly TablerIcon[] SegmentedFixtureIcons =
+    [
+        TablerIcon.ArrowsMove,
+        TablerIcon.Rotate,
+        TablerIcon.ArrowsMaximize,
+        TablerIcon.ArrowsDiagonal,
+    ];
+
+    /// <summary>The third tab is refused, so the disabled tone has a place to
+    /// show. A static predicate keeps the fixture allocation-free.</summary>
+    private static readonly Func<int, bool> SegmentedFixtureDisabled =
+        static index => index == 2;
+
+    /// <summary>Two stacked LABEL rows — the exact shape that proved the 30px
+    /// band left full-height controls no separation (user 2026-08-02), so the
+    /// row pitch stays inspectable where it regressed — then the ICON variant
+    /// twice: once placed normally, once with AlignFirstTabToCursor, so the
+    /// negative chrome-padding margin either shifts the pill or it does not.
+    /// </summary>
     private static readonly Func<UiNode> SegmentedTree = static () =>
         new Column
         {
@@ -467,6 +491,74 @@ internal static class ComponentCatalog
                     "Entity sidebar", SegmentedFixtureItems, 0, FormNoOpInt, 270f),
                 Poser.UI.Crystarium.FormSegmented(
                     "Inspector", SegmentedFixtureItems, 1, FormNoOpInt, 270f),
+                new Segmented
+                {
+                    Icons = SegmentedFixtureIcons,
+                    Selected = 1,
+                    OnChange = FormNoOpInt,
+                    ItemDisabled = SegmentedFixtureDisabled,
+                    Key = "icons",
+                },
+                new Segmented
+                {
+                    Icons = SegmentedFixtureIcons,
+                    Selected = 1,
+                    OnChange = FormNoOpInt,
+                    ItemDisabled = SegmentedFixtureDisabled,
+                    AlignFirstTabToCursor = true,
+                    Key = "icons-aligned",
+                },
+            ],
+        };
+
+    /// <summary>The five icon-action shapes the shell titlebar asks for, on one
+    /// row: the enum glyph, a registry name the enum lacks, a mirrored glyph, a
+    /// selected toggle and a slashed one.</summary>
+    private static readonly Func<UiNode> IconActionsTree = static () =>
+        new Row
+        {
+            Style = new()
+            {
+                Layout = new() { Gap = 8f, Align = UiAlign.Center },
+            },
+            Children =
+            [
+                new IconAction
+                {
+                    Icon = TablerIcon.Settings,
+                    OnClick = FormNoOp,
+                    Size = 28f,
+                    Key = "enum",
+                },
+                IconAction.Named("x") with
+                {
+                    OnClick = FormNoOp,
+                    Size = 28f,
+                    Key = "named",
+                },
+                new IconAction
+                {
+                    Icon = TablerIcon.ArrowBackUp,
+                    OnClick = FormNoOp,
+                    FlipX = true,
+                    Size = 28f,
+                    Key = "flipped",
+                },
+                new IconAction
+                {
+                    Icon = TablerIcon.Eye,
+                    OnClick = FormNoOp,
+                    Selected = true,
+                    Key = "selected",
+                },
+                new IconAction
+                {
+                    Icon = TablerIcon.Eye,
+                    OnClick = FormNoOp,
+                    Selected = false,
+                    Slashed = true,
+                    Key = "slashed",
+                },
             ],
         };
 
@@ -486,6 +578,39 @@ internal static class ComponentCatalog
             Selected = 2,
             OnChange = FormNoOpInt,
         };
+
+    /// <summary>
+    /// The in-window scroll container, overflowing on purpose: twenty 26px
+    /// rows is 520px of content in a 160px viewport, so the capture shows the
+    /// gutter's bar, a cut last row, and — because every other row carries the
+    /// Selected overlay — exactly where each row's band starts. The rows are
+    /// stateful sheets with no listeners, which is what proves the identity
+    /// chain still reserves twenty distinct hit paths through the seam.
+    /// </summary>
+    private static readonly Func<UiNode> ScrollAreaTree = static () =>
+    {
+        UiNode[] rows = new UiNode[20];
+        for (int i = 0; i < rows.Length; i++)
+            rows[i] = new Poser.UI.Element
+            {
+                Sheet = SheetFamily.DropdownRow,
+                Style = new()
+                {
+                    Layout = new() { Height = UiDim.Fixed(26f) },
+                },
+                Text = $"Row {i + 1:00}",
+                Selected = i % 2 == 0,
+                Key = i,
+            };
+
+        return new ScrollArea
+        {
+            Height = UiDim.Fixed(160f),
+            CapChildHitWidth = true,
+            Children = UiChildren.Create(rows),
+            Key = "scroll",
+        };
+    };
 
     private static readonly ContextMenuItem[] MenuItems =
     [
@@ -1743,7 +1868,11 @@ internal static class ComponentCatalog
                 break;
             case "rsegmented":
                 ReactiveRoot(name).Render(
-                    origin, new Vector2(420f, 60f) * scale, SegmentedTree);
+                    origin, new Vector2(420f, 120f) * scale, SegmentedTree);
+                break;
+            case "ricon-actions":
+                ReactiveRoot(name).Render(
+                    origin, new Vector2(200f, 32f) * scale, IconActionsTree);
                 break;
             case "rswatches":
                 ReactiveRoot(name).Render(
@@ -1816,6 +1945,10 @@ internal static class ComponentCatalog
                     },
                     ModalSize.Small,
                     height: 220);
+                break;
+            case "rscrollarea":
+                ReactiveRoot(name).Render(
+                    origin, new Vector2(280f, 160f) * scale, ScrollAreaTree);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(name));

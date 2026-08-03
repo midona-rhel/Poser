@@ -72,6 +72,7 @@ public enum SheetFamily : short
     ActionBarTitle,
     BarRule,
     IconAction,
+    IconActionToggle,
 
     // Settings navigation rail.
     NavRail,

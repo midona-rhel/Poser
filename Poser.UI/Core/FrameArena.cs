@@ -86,6 +86,24 @@ internal struct ElementRecord
     /// <summary>The arena object slot holding an <see cref="INativeElement"/>.</summary>
     internal int NativeSlot;
 
+    /// <summary>
+    /// The IN-WINDOW scroll viewport, logical. Zero is the ordinary element:
+    /// nothing scrolls. A NEGATIVE value is the declaration's marker for "the
+    /// viewport is whatever the solver grants" — a Fill height cannot be known
+    /// until the Fill share is distributed — and <see cref="LayoutSolver"/>
+    /// replaces it with the resolved content height during Arrange. By the time
+    /// the paint pass reads it, a scrolling element's value is therefore always
+    /// POSITIVE, and that is the test the walk uses.
+    /// </summary>
+    internal float ScrollViewport;
+
+    /// <summary>The reserved bar width for the scroll wrap, logical; zero
+    /// takes the theme's shell gutter.</summary>
+    internal float ScrollGutter;
+
+    /// <inheritdoc cref="PortalRecord.CapChildHitWidth"/>
+    internal bool ScrollCapsHitWidth;
+
     // Filled by the layout pass. Typography is resolved there because a run's
     // intrinsic box is made of it, and no pseudo state can reach it.
     internal Poser.UI.ResolvedLayout Layout;

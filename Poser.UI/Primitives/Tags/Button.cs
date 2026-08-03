@@ -392,6 +392,11 @@ public static partial class LegacyCrystarium
     private static readonly Transition IconButtonTransition =
         Transition.CubicBezier(0.15f, 0.4f, 0f, 0.22f, 1f);
 
+    /// <summary>.iconBtn:disabled — a CSS literal of the shared icon button,
+    /// not a theme token, and the ONE home for it: the retained twin's sheet
+    /// states its disabled look from here.</summary>
+    internal const float IconButtonDisabledOpacity = 0.2f;
+
     private static bool RenderIconButton(
         string id,
         Vector2 logicalSize,
@@ -433,7 +438,7 @@ public static partial class LegacyCrystarium
         if (disabled)
         {
             background = Vector4.Zero;
-            opacity = 0.2f;
+            opacity = IconButtonDisabledOpacity;
         }
 
         var draw = ImGui.GetWindowDrawList();
@@ -528,32 +533,13 @@ public static partial class LegacyCrystarium
     {
         float scale = ImGuiHelpers.GlobalScale;
         var hit = Interactive.Reserve(id, logicalSize * scale, disabled);
-        float opacity = disabled
-            ? ActiveTheme.Chrome.ControlDisabledOpacity
-            : 1f;
-        var background = selected
-            ? ActiveTheme.Chrome.SegmentSelected
-            : hit.Hovered
-                ? ActiveTheme.Chrome.WeakOverlay
-                : Vector4.Zero;
-        background = background.Fade(opacity);
+        float opacity = ToggleOpacity(disabled);
         var draw = ImGui.GetWindowDrawList();
-        draw.AddRectFilled(
-            hit.ScreenMin,
-            hit.ScreenMax,
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(background)),
-            ActiveTheme.Radii.Control * scale);
+        PaintTemporaryToggleBox(
+            draw, hit.ScreenMin, hit.ScreenMax, selected, hit.Hovered, disabled);
         content(hit.ScreenMin, hit.ScreenMax, opacity);
         if (slashed)
-        {
-            float inset = ActiveTheme.Spacing.Two * scale;
-            draw.AddLine(
-                hit.ScreenMin + new Vector2(inset),
-                hit.ScreenMax - new Vector2(inset),
-                ImGui.ColorConvertFloat4ToU32(
-                    ColorEx.ApplyAlpha(ActiveTheme.TextDim)),
-                scale);
-        }
+            PaintTemporaryToggleSlash(draw, hit.ScreenMin, hit.ScreenMax);
 
         if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
                 hit, hit.Disabled, hit.ScreenMin, hit.ScreenMax))
@@ -562,6 +548,54 @@ public static partial class LegacyCrystarium
             onClick?.Invoke();
         return hit.Clicked;
     }
+
+    /// <summary>
+    /// The persistent toggle's BOX: the selection fill, the hover overlay and
+    /// the disabled fade, at the control radius. Split out for the same reason
+    /// the text button's box was — the retained twin drives these exact pixels
+    /// while composing its glyph as a real child element.
+    /// </summary>
+    internal static void PaintTemporaryToggleBox(
+        ImDrawListPtr draw,
+        Vector2 min,
+        Vector2 max,
+        bool selected,
+        bool hovered,
+        bool disabled)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        var background = selected
+            ? ActiveTheme.Chrome.SegmentSelected
+            : hovered
+                ? ActiveTheme.Chrome.WeakOverlay
+                : Vector4.Zero;
+        background = background.Fade(ToggleOpacity(disabled));
+        draw.AddRectFilled(
+            min,
+            max,
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(background)),
+            ActiveTheme.Radii.Control * scale);
+    }
+
+    /// <summary>The toggle's SLASH — the inset diagonal that says "this state
+    /// is off", drawn OVER the glyph it crosses.</summary>
+    internal static void PaintTemporaryToggleSlash(
+        ImDrawListPtr draw, Vector2 min, Vector2 max)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        float inset = ActiveTheme.Spacing.Two * scale;
+        draw.AddLine(
+            min + new Vector2(inset),
+            max - new Vector2(inset),
+            ImGui.ColorConvertFloat4ToU32(
+                ColorEx.ApplyAlpha(ActiveTheme.TextDim)),
+            scale);
+    }
+
+    /// <summary>The toggle's group fade: ONE constant, so the box, the glyph
+    /// and the retained twin's content can never disagree about it.</summary>
+    internal static float ToggleOpacity(bool disabled) =>
+        disabled ? ActiveTheme.Chrome.ControlDisabledOpacity : 1f;
 
     private static void DrawLegacyButtonIcon(
         Vector2 min,

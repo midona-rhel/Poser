@@ -216,8 +216,9 @@
       "title": "Reactive settings chassis (PBI-015 3B)",
       "states": [
         { "name": "rsettings-frame", "label": "frame", "width": 770, "height": 570 },
-        { "name": "rsegmented", "label": "stacked segmented rows", "width": 420, "height": 90 },
-        { "name": "rswatches", "label": "palette", "width": 340, "height": 60 }
+        { "name": "rsegmented", "label": "stacked segmented rows", "width": 420, "height": 150 },
+        { "name": "rswatches", "label": "palette", "width": 340, "height": 60 },
+        { "name": "ricon-actions", "label": "icon actions", "width": 240, "height": 60 }
       ]
     },
     {
@@ -240,6 +241,13 @@
       "title": "Modal",
       "states": [
         { "name": "modal", "label": "glass modal", "width": 560, "height": 360 }
+      ]
+    },
+    {
+      "name": "reactive-scroll",
+      "title": "Reactive scroll area (PBI-015)",
+      "states": [
+        { "name": "rscrollarea", "label": "20 rows in a 160px viewport", "width": 320, "height": 200 }
       ]
     }
   ]

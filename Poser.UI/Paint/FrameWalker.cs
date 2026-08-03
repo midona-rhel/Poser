@@ -38,7 +38,7 @@ internal sealed class FrameWalker
     /// is an ImGui CHILD window with its own list, so every paint site resolves
     /// the CURRENT window's list where it paints.</para>
     /// </summary>
-    private readonly struct WalkContext
+    internal readonly struct WalkContext
     {
         internal WalkContext(
             Vector4? foreground,
@@ -46,7 +46,8 @@ internal sealed class FrameWalker
             bool parentHovered,
             Vector2 parentMin,
             Vector2 parentMax,
-            float hitWidthCap)
+            float hitWidthCap,
+            bool inScroll)
         {
             Foreground = foreground;
             GlyphOpacity = glyphOpacity;
@@ -54,6 +55,7 @@ internal sealed class FrameWalker
             ParentMin = parentMin;
             ParentMax = parentMax;
             HitWidthCap = hitWidthCap;
+            InScroll = inScroll;
         }
 
         /// <summary>currentColor, resolved by the nearest ancestor that had an
@@ -66,8 +68,15 @@ internal sealed class FrameWalker
         internal readonly Vector2 ParentMax;
         internal readonly float HitWidthCap;
 
+        /// <summary>Whether the walk is already inside an in-window scroll
+        /// container. Nested scrolling is unsupported — two viewports would
+        /// each believe they owned the same cursor — so the flag exists to
+        /// FAIL, not to be handled. A portal clears it: a floating surface is
+        /// its own window and scrolls on its own terms.</summary>
+        internal readonly bool InScroll;
+
         internal static WalkContext Detached(float hitWidthCap) =>
-            new(null, 1f, false, default, default, hitWidthCap);
+            new(null, 1f, false, default, default, hitWidthCap, false);
     }
 
     /// <summary>
@@ -95,6 +104,7 @@ internal sealed class FrameWalker
     private readonly ColorSink _color = new();
     private Poser.UI.UiRoot _root = null!;
     private PortalHost _portals = null!;
+    private ScrollHost _scrolls = null!;
     private int[] _activated = new int[16];
     private float[] _activatedValue = new float[16];
     private Fired[] _activatedKind = new Fired[16];
@@ -107,11 +117,13 @@ internal sealed class FrameWalker
     }
 
     /// <summary>The one back-edge the constructor cannot close: a portal walks
-    /// its own detached subtree, so host and walker each need the other. Wired
-    /// ONCE, by the root that owns both.</summary>
-    internal void Bind(PortalHost portals, Poser.UI.UiRoot root)
+    /// its own detached subtree — and so does a scroll container — so host and
+    /// walker each need the other. Wired ONCE, by the root that owns all
+    /// three.</summary>
+    internal void Bind(PortalHost portals, ScrollHost scrolls, Poser.UI.UiRoot root)
     {
         _portals = portals;
+        _scrolls = scrolls;
         _root = root;
         _color.Root = root;
     }
@@ -178,6 +190,39 @@ internal sealed class FrameWalker
             Paint(
                 _arena.ChildAt(start + i).Index, origin, scale, parentHash, i,
                 in context);
+    }
+
+    /// <summary>
+    /// Walks an in-window scroll container's children onto the child window the
+    /// host opened. Unlike a portal's subtree this one is NOT detached in style:
+    /// a scroll container is in flow, so currentColor, the accumulated fade and
+    /// the nearest reserving ancestor all cross the seam unchanged — the host
+    /// carries the context it was handed and only the hit-width cap is new.
+    /// </summary>
+    /// <param name="origin">The physical anchor the children's ABSOLUTE
+    /// arranged positions are measured from: the region's scrolled cursor less
+    /// the container's own content origin, so an arranged box lands where the
+    /// scroll put it.</param>
+    internal void WalkScrollChildren(
+        int node, Vector2 origin, float scale, ulong parentHash, float hitWidthCap,
+        in WalkContext context)
+    {
+        int start = _arena[node].ChildStart;
+        int count = _arena[node].ChildCount;
+        WalkContext scoped = new(
+            context.Foreground,
+            context.GlyphOpacity,
+            context.ParentHovered,
+            context.ParentMin,
+            context.ParentMax,
+            hitWidthCap,
+            inScroll: true);
+        // The ordinal is the child's REAL position, so identity does not change
+        // when the region scrolls: the walk still meets every child.
+        for (int i = 0; i < count; i++)
+            Paint(
+                _arena.ChildAt(start + i).Index, origin, scale, parentHash, i,
+                in scoped);
     }
 
     private void Paint(
@@ -317,7 +362,34 @@ internal sealed class FrameWalker
             hoverMin, hoverMax);
         Glyph(in record, foreground, min, max, glyphOpacity, scale, draw);
 
-        if (record.ChildCount > 0)
+        if (record.ScrollViewport > 0f)
+        {
+            if (context.InScroll)
+                throw new InvalidOperationException(
+                    "A ScrollArea was declared inside another ScrollArea. Nested "
+                    + "in-window scrolling is unsupported: the two viewports would "
+                    + "each re-anchor the same walk, so the inner subtree would "
+                    + "paint at a scrolled-twice origin. Give the inner content a "
+                    + "fixed height, or hoist one of the two out.");
+            // The children live in an ImGui CHILD window, so this element never
+            // descends: it paints its own box here, in the parent's window, and
+            // the host re-anchors the subtree at the scrolled cursor. The cap it
+            // imposes is the region's, resolved only once the gutter is known.
+            _scrolls.Declare(
+                node,
+                hash,
+                origin,
+                scale,
+                new WalkContext(
+                    foreground ?? context.Foreground,
+                    glyphOpacity,
+                    ownHover,
+                    hoverMin,
+                    hoverMax,
+                    0f,
+                    inScroll: true));
+        }
+        else if (record.ChildCount > 0)
         {
             // The cap is CONSUMED by the first reserving layer — a scrolling
             // menu narrows its rows, not whatever a row contains — but a
@@ -329,7 +401,8 @@ internal sealed class FrameWalker
                 ownHover,
                 hoverMin,
                 hoverMax,
-                reserves ? 0f : context.HitWidthCap);
+                reserves ? 0f : context.HitWidthCap,
+                context.InScroll);
             bool clipped = record.ClipChildren;
             if (clipped)
                 draw.PushClipRect(min, max, true);
