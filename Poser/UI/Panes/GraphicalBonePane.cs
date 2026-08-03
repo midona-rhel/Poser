@@ -32,7 +32,7 @@ public sealed class GraphicalBonePane : IDisposable
     private readonly SceneSession _scene;
     private readonly StableBindingRegistry _bindings;
 
-    // M11 marquee (Anamnesis MouseCanvas): dot positions recorded per frame,
+    // Marquee (Anamnesis MouseCanvas): dot positions recorded per frame,
     // drag on empty canvas selects everything inside the rectangle.
     private readonly System.Collections.Generic.List<(SelectionId Id, Vector2 Pos)> _frameDots = new();
     private readonly List<(SelectionId Id, Vector2 Pos, string Name)> _dotCandidates = new();
@@ -80,7 +80,7 @@ public sealed class GraphicalBonePane : IDisposable
 
     /// <summary>
     /// Renders the Body (0) or Face (1) map inline inside the AppShell Pose
-    /// surface (M2: the seg swaps the pose surface — no window detour).
+    /// surface: the seg swaps the pose surface — no window detour.
     /// Returns false when there is nothing to draw (no actor/skeleton).
     /// </summary>
     public bool DrawInline(int page, Vector2 contentArea)
@@ -112,7 +112,7 @@ public sealed class GraphicalBonePane : IDisposable
 
         if (_hoveredBone is { } hoveredId && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && hovered)
         {
-            // Ctrl AND Shift both extend (user 2026-08-03): the map has no
+            // Ctrl AND Shift both extend: the map has no
             // row order, so there is no range gesture to reserve Shift for.
             var io = ImGui.GetIO();
             if (io.KeyCtrl || io.KeyShift)
@@ -379,8 +379,7 @@ public sealed class GraphicalBonePane : IDisposable
             var candidate = _dotCandidates[i];
             bool isSelected = _selection.IsSelected(candidate.Id);
             bool isHovered = i == _hoveredDotIndex;
-            // Selection is the THEME's primary, not ImGui's style checkmark
-            // (user 2026-08-03: the highlight was not the blue).
+            // Selection is the THEME's primary, not ImGui's style checkmark.
             uint circleColor = isSelected
                 ? ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
                     Crystarium.ActiveTheme.Chrome.Primary))

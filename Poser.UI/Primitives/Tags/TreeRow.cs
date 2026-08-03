@@ -129,8 +129,8 @@ public static partial class Crystarium
     /// </summary>
     private const float TreeActionGap = 2f;
 
-    /// <summary>USER 2026-08-03: a trunk's FREE ends — the ones meeting the
-    /// NEIGHBOURING row rather than this row's own arm — drop two PHYSICAL px.
+    /// <summary>A trunk's FREE ends — the ones meeting the NEIGHBOURING row
+    /// rather than this row's own arm — drop two PHYSICAL px.
     /// Both ends move together, so consecutive rows still edge-join exactly
     /// while an end that TERMINATES at the arm stays put.</summary>
     private const float TreeGuideDrop = 2f;
@@ -253,7 +253,7 @@ public static partial class Crystarium
             // A nested pill starts clear of its own branch arm; a root pill
             // carries the 1px CSS inset. The 1px bottom shave is the same
             // accepted look. The right edge is the CONTENT edge, not the
-            // window edge (user 2026-08-03).
+            // window edge.
             float inset = (depth == 0
                 ? TreeRootPillInset
                 : TreeTrunkX(depth) + TreePillClearance) * scale;
@@ -372,7 +372,7 @@ public static partial class Crystarium
         float badgeTrail = 0f;
         var badgeStyle = new TextStyle
         {
-            // The GOLDEN's badge: 11px mono on the label's own optical line.
+            // The badge: 11px mono on the label's own optical line.
             Size = theme.Typography.CaptionSize,
             Family = FontFamily.Mono,
             Color = theme.FormLabel,

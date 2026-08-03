@@ -19,9 +19,9 @@ namespace Poser.UI;
 /// contract. Runtime ownership remains in <see cref="AnimationSession"/>.
 ///
 /// <para>Every animation choice goes through the ONE shared
-/// <see cref="Crystarium.SearchPicker{T}"/>. What used to be a picker of
-/// its own is now this pane's CATALOG FEED — the query, the badge, the icon and
-/// the head strips a catalog row needs, handed to that picker as options.</para>
+/// <see cref="Crystarium.SearchPicker{T}"/>. This pane owns no picker; it owns
+/// a CATALOG FEED — the query, the badge, the icon and the head strips a
+/// catalog row needs, handed to that picker as options.</para>
 /// </summary>
 public sealed class AnimationPane
 {

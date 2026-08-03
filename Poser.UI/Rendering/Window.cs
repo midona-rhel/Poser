@@ -8,22 +8,10 @@ using Dalamud.Interface.Windowing;
 namespace Poser.UI;
 
 /// <summary>
-/// Dalamud Window subclass that hosts a Crystarium tree. Pushes the theme's
+/// Dalamud Window subclass that draws Crystarium content. Pushes the theme's
 /// surface/border/text colors via ImGui style stack so callers don't need
 /// to repeat the 14× PushStyleColor boilerplate. Override <see cref="Body"/>
-/// with your Crystarium tree.
-///
-/// <code>
-///   public class MyWindow : Crystarium.View
-///   {
-///       public MyWindow() : base("My Window") { Size = new Vector2(400, 300); }
-///       protected override void Body()
-///       {
-///           Crystarium.Text("Hello");
-///           Crystarium.Card(() => Crystarium.Text("Body"));
-///       }
-///   }
-/// </code>
+/// with the window's draw.
 /// </summary>
 public abstract class View : Window
 {

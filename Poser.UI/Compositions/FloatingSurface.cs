@@ -334,7 +334,7 @@ public static partial class Crystarium
         /// The ONE glass chassis recipe: blur behind, the glass fill, and the
         /// asymmetric 1px glass edge, with the panel's elevation shadows.
         /// </summary>
-        /// <param name="shadow">The elevation pass. USER 2026-08-03: the main
+        /// <param name="shadow">The elevation pass. The main
         /// window suppresses it — a shadow under a chassis that IS the window
         /// reads as a halo, not as elevation — while every floating surface
         /// keeps it.</param>

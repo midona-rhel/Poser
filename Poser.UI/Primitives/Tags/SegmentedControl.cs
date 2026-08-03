@@ -103,10 +103,9 @@ public static partial class Crystarium
     }
 
     /// <summary>
-    /// The label variant's full per-tab geometry — the ONE layout resolution
-    /// the imperative control uses, exposed so the retained twin sizes its
-    /// tabs from the same implementation. All values are PHYSICAL pixels,
-    /// exactly as the control resolves them.
+    /// The label variant's full per-tab geometry — the ONE layout resolution,
+    /// so measurement and drawing can never resolve tabs differently. All
+    /// values are PHYSICAL pixels.
     /// </summary>
     internal static SegmentLayout LabelSegmentLayout(
         string[] items,
@@ -145,9 +144,8 @@ public static partial class Crystarium
         _ => ActiveTheme.Controls.ComfortableHeight * ImGuiHelpers.GlobalScale;
 
     /// <summary>
-    /// The icon variant's full per-tab geometry — the same resolution the
-    /// imperative control runs, exposed so the retained twin sizes its tabs
-    /// from the same implementation. PHYSICAL pixels, like its label sibling.
+    /// The icon variant's full per-tab geometry — the ONE layout resolution.
+    /// PHYSICAL pixels, like its label sibling.
     /// </summary>
     internal static SegmentLayout IconSegmentLayout(
         int count,

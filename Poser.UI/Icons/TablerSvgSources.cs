@@ -1,8 +1,8 @@
 // Tabler outline icons (https://tabler.io/icons), MIT License — path data
 // verbatim from @tabler/icons. Originally emitted by a fetch script that is
-// NOT in this repo; additions are made by hand as verbatim Tabler data until
-// phase 5 replaces this runtime-SVG pipeline with baked atlases. Keep entries
-// alphabetical; PoserIconSources (hand-designed glyphs) takes precedence.
+// NOT in this repo; additions are made by hand as verbatim Tabler data. Keep
+// entries alphabetical; PoserIconSources (hand-designed glyphs) takes
+// precedence.
 namespace Poser.UI;
 
 internal static class TablerSvgSources

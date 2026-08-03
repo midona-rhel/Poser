@@ -81,11 +81,10 @@ public readonly record struct Theme
         Spacing = new() { One = 2f, Two = 4f, Three = 6f, Four = 8f, Six = 12f, Eight = 16f },
         Controls = new()
         {
-            // USER 2026-08-02: 30 → 34. Stacked full-height controls (the
-            // 30px segmented pill) proved the transcribed 30px band leaves
-            // property rows no separation; the pitch is a deliberate
-            // deviation from Picto's rhythm, kept HERE so every form row
-            // reads one number.
+            // 34, not the transcribed 30: stacked full-height controls (the
+            // 30px segmented pill) leave property rows no separation at 30.
+            // The pitch is a deliberate deviation from Picto's rhythm, kept
+            // HERE so every form row reads one number.
             FormRowHeight = 34f,
             WorkspaceHeight = 26f,
             ComfortableHeight = 32f,

@@ -11,8 +11,8 @@ namespace Poser.UI;
 /// Resolves <see cref="FontFamily"/> + weight + size requests from
 /// the presentation contract to a concrete Dalamud <see cref="IFontHandle"/>.
 /// Handles are cached per normalized
-/// (family, weight, size). Requested sizes are honored exactly (rounded to whole pixels) —
-/// the old ±4px bucket snap silently corrupted the picto scale (12→13, 14→13).
+/// (family, weight, size). Requested sizes are honored exactly (rounded to whole pixels);
+/// bucketing them (a ±4px snap) silently corrupts the picto scale (12→13, 14→13).
 ///
 /// <para><b>Font sources.</b> Real font files from <c>C:\Windows\Fonts</c>, matching the picto
 /// stack as rendered on Windows: Segoe UI (400), Segoe UI Italic,

@@ -43,9 +43,9 @@ public static partial class Crystarium
 
     /// <summary>
     /// The box's PAINT alone — the fill, the unchecked inset ring, the
-    /// Tabler check polyline, the disabled fade — so the retained twin
-    /// drives the same pixels. <paramref name="side"/> is the resolved
-    /// PHYSICAL side, the leading square of whatever was reserved.
+    /// Tabler check polyline, the disabled fade, and nothing that reserves
+    /// layout. <paramref name="side"/> is the resolved PHYSICAL side, the
+    /// leading square of whatever was reserved.
     /// </summary>
     internal static void PaintCheckboxBox(
         ImDrawListPtr draw, Vector2 boxMin, float side, bool value,

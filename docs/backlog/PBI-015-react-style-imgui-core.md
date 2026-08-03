@@ -1,8 +1,18 @@
 # PBI-015 — React-style component core over ImGui
 
+Superseded by [PBI-016](PBI-016-imperative-rebuild.md). The framework reached
+the accepted look and then could not carry it: a 260-bone sidebar drew at
+30 fps, UiBuilder hitched past 200 ms, and the migrated panes came out 40–100%
+*larger* than the imperative ancestors they replaced. The look is kept — frozen
+as PNG oracles at tag `reactive-final` — and re-expressed imperatively over the
+Crystarium helper layer. Everything below is the record of the framework's
+design, not of the shipped architecture; read `PBI-016-imperative-rebuild.md`
+for what exists.
+
 | Control | Value |
 |---|---|
-| Status | Definition ready for Claude/Codex review; implementation not started |
+| Status | **Superseded by PBI-016** (2026-08-03); framework deleted, accepted look retained |
+| Prior status | Definition ready for Claude/Codex review; implementation not started |
 | Size | Extra large, delivered through separately accepted vertical slices |
 | Accepted SVG base | `c71d6822c00e869001666246e589c197ee604395` |
 | Parked atlas experiment | `956d5824f7c65976786c12d32ddfd2b8f81806e7` |

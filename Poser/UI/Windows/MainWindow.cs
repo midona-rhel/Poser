@@ -64,7 +64,6 @@ public class MainWindow : Window
     private readonly CleanPoseFacade _cleanPose;
     private readonly IBonePosingService _bonePosingService;
 
-    // M2 panes on the verified grammar (Migrations #7-#11).
     private readonly PoseInspectorPane _poseInspector;
     private readonly AnimationPane _animationPane;
     private readonly AppearancePane _appearancePane;
@@ -177,7 +176,7 @@ public class MainWindow : Window
         _vm.OnSettings = () => OnSettingsRequested?.Invoke();
         _vm.OnHideUi = () => IsOpen = false;
         // The sidebar's add affordance. Creation lives where the created
-        // thing will appear (approved shell mockup M1 §4), so the ACTORS
+        // thing will appear, so the ACTORS
         // header owns it rather than a separate spawn menu.
         _vm.OnSectionPlus = _ => _addOpenRequested = true;
         _vm.OnSpawn = () => _addOpenRequested = true;
@@ -500,7 +499,7 @@ public class MainWindow : Window
                 ActorPaused = _animation.IsPaused(actor.Id),
             });
 
-            // M11: the actor folds DIRECTLY into bone categories (no skeleton
+            // The actor folds DIRECTLY into bone categories (no skeleton
             // node), categories into bones. Category set = curated grouping;
             // the Ktisis-definitions toggle swaps the set once its data lands.
             if (expanded && skeleton != null && (!filtering || hasMatchingBone))

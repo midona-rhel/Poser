@@ -133,10 +133,9 @@ public static partial class Crystarium
     }
 
     /// <summary>
-    /// The well's BOX alone — fill, border, and the disabled group — so
-    /// the retained twin drives the SAME pixels. The well is the LEADING
-    /// SQUARE of the reserved rect: a caller may widen the control, and
-    /// the swatch stays as wide as it is tall.
+    /// The well's BOX alone — fill, border, and the disabled group. The well
+    /// is the LEADING SQUARE of the reserved rect: a caller may widen the
+    /// control, and the swatch stays as wide as it is tall.
     /// </summary>
     internal static void PaintColorWellBox(
         in InteractionResult hit, Vector4 color, bool disabled)
@@ -279,7 +278,7 @@ public static partial class Crystarium
 
     /// <summary>
     /// The swatch's PAINT alone — the hover ring, the active ring pair, the
-    /// dot and its inset ring — so the retained twin drives the same pixels.
+    /// dot and its inset ring, and nothing that reserves layout.
     /// <paramref name="side"/> is the wrap's LOGICAL side; the dot follows it
     /// with the ring gap held constant, exactly as the control scales.
     /// </summary>
@@ -481,10 +480,10 @@ public static partial class Crystarium
     /// One <c>box-shadow: 0 0 0 Npx</c> band on a circle, stroked at the
     /// band's mid-radius. A spread shadow is an ANNULUS: it paints from
     /// the element's edge outward and leaves every pixel inside it alone.
-    /// The superseded emulation stacked filled discs back-to-front, which
-    /// only survives while every ring colour is opaque — the palette's
-    /// hover ring is <c>--color-text-tertiary</c> at 50% white and a disc
-    /// would tint the swatch's own gap through it.
+    /// Stacking filled discs back-to-front only reproduces that while every
+    /// ring colour is opaque — the palette's hover ring is
+    /// <c>--color-text-tertiary</c> at 50% white and a disc would tint the
+    /// swatch's own gap through it.
     /// <para>The band must land on exactly
     /// <c>[innerRadius, innerRadius + width]</c>, which is the radial span
     /// CSS gives a spread/inset shadow. The mid-radius alone does not get

@@ -102,15 +102,15 @@ public sealed class AppShellViewModel
     /// </summary>
     public bool ContentOwnsViewport;
 
-    /// <summary>Sidebar width (resizable, M11: 220–400px). Unscaled px.</summary>
+    /// <summary>Sidebar width, resizable within 220–400px. Unscaled px.</summary>
     public float SidebarWidthPx = 280f;
     public Action<float>? OnSidebarResize;
 
-    /// <summary>Inspector rail (approved M2): drawn when set — 280px right column,
+    /// <summary>Inspector rail: drawn when set — 280px right column,
     /// continuous surface from the titlebar's tb-right cell to the window bottom.</summary>
     public Action<Vector2, Vector2>? DrawRail;  // (origin, size)
 
-    /// <summary>Collapse-to-titlebar (user spec): only the 48px strip renders.</summary>
+    /// <summary>Collapse-to-titlebar: only the 48px strip renders.</summary>
     public bool Collapsed;
     public Action<bool>? OnCollapse;
 
@@ -135,7 +135,7 @@ public sealed class AppShellViewModel
 }
 
 /// <summary>
-/// The M1 "Studio" shell, drawn per frame: the window chassis, the titlebar and
+/// The "Studio" shell, drawn per frame: the window chassis, the titlebar and
 /// its control clusters, the sidebar chassis and status bar, the workspace
 /// toolbar, the content viewport and the inspector rail.
 ///
@@ -471,7 +471,7 @@ public static class AppShellView
             });
     }
 
-    /// <summary>Rightmost is the collapse chevron, then the close X (user spec).
+    /// <summary>Rightmost is the collapse chevron, then the close X.
     /// </summary>
     private static void DrawTitleActions(
         AppShellViewModel vm, float right, float top, float height, float s)
@@ -575,7 +575,7 @@ public static class AppShellView
             style);
     }
 
-    /// <summary>M11: the 6px col-resize strip on the sidebar's right edge. Raw
+    /// <summary>The 6px col-resize strip on the sidebar's right edge. Raw
     /// pointer input against a named boundary — no box, no state, no paint,
     /// only a drag delta.</summary>
     private static void DrawSidebarResize(

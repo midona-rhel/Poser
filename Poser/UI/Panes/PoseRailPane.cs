@@ -10,7 +10,7 @@ using Poser.UI.Views;
 namespace Poser.UI;
 
 /// <summary>
-/// The inspector RAIL (approved M2 pose stage): lives in the
+/// The inspector RAIL: lives in the
 /// shell's 280px right column. Crumb, the compact oriented rotation gizmo,
 /// compact TRANSLATION / ROTATION / SCALE axis rows, IK switch, then the
 /// relocated GAZE / POSE sections. The Pose tab's content column keeps
@@ -59,7 +59,7 @@ public class PoseRailPane
         var cursor = origin;
         float width = size.X;
 
-        // M11 rail head: selected-bones summary + Linked count pill
+        // Rail head: selected-bones summary + Linked count pill
         var (who, sub, linked) = _inspector.RailHeader();
         if (who.Length > 0)
         {

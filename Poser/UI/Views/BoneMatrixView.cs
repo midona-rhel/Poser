@@ -18,7 +18,7 @@ public sealed class BoneMatrixRow
     public string Label = "";
     public List<BoneMatrixPill> Pills = new();
 
-    /// <summary>5+ pill clusters span two grid tracks (M2 `.mxRow.-wide`).</summary>
+    /// <summary>5+ pill clusters span two grid tracks (`.mxRow.-wide`).</summary>
     public bool Wide => Pills.Count >= 5;
 }
 
@@ -219,8 +219,8 @@ public static class BoneMatrixView
                     Color = pill.Selected ? TextPrimary : hovered ? TextPrimary : TextSecondary,
                 };
                 float tw = Crystarium.MeasureText(pill.Label, pillLabelStyle).X;
-                // USER 2026-08-03: the pill caption sat one pixel low — the
-                // same line-box-vs-ink defect every raw centring inherits.
+                // Ink-centred, not line-box-centred: raw centring seats the
+                // caption one pixel low.
                 Crystarium.TextAt(new Vector2(center.X - tw / 2f, center.Y - 6f * s), pill.Label, pillLabelStyle);
             }
 

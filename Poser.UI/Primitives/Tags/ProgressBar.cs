@@ -25,8 +25,7 @@ public static partial class Crystarium
 
     /// <summary>
     /// The bar's pixels alone — track and fill, centred in the
-    /// <c>SliderHeight</c> box the flow reserves — so the retained twin
-    /// draws the SAME two rects without owning the cursor.
+    /// <c>SliderHeight</c> box the flow reserves, owning no cursor.
     /// <paramref name="widthPx"/> is already scaled;
     /// <paramref name="origin"/> is the box's top-left, not the track's.
     /// </summary>

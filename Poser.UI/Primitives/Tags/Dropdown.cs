@@ -134,10 +134,9 @@ public static partial class Crystarium
         {
             var measured = MeasureText(currentText, triggerLabelStyle);
             labelClipped = measured.X > labelWidth;
-            // `align-items: center` on the 24px content box. The
-            // canonical text path snaps the origin itself, so the old
-            // Optical.DropdownText nudge is gone — it pushed the run a
-            // pixel BELOW the reference baseline.
+            // `align-items: center` on the 24px content box. The canonical
+            // text path snaps the origin itself; no per-surface nudge may be
+            // added here — one pushes the run below the reference baseline.
             TextAt(
                 new Vector2(
                     contentLeft,
@@ -385,8 +384,7 @@ public static partial class Crystarium
 
     /// <summary>
     /// The closed trigger's BOX alone — fill, border, and the disabled
-    /// group. Split out so the retained declarative tree can drive the SAME
-    /// pixels while composing the label and chevron as real child elements.
+    /// group, returning what the label and chevron must take from it.
     /// </summary>
     internal static DropdownTriggerPaint PaintDropdownBox(
         in InteractionResult hit, bool disabled)

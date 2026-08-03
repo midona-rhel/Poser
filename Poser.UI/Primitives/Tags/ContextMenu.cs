@@ -62,11 +62,11 @@ public static partial class Crystarium
                 0.42f, 0f, 1f, 1f); // CSS ease-in
 
 
-        // USER DEVIATION (recorded like selection-dominance): Picto's menu
-        // rows sit their text visibly below true center even in the browser,
-        // because flex centers the LINE BOX. Poser centers the INK, and a
-        // menu row is icon-adjacent by construction — label and shortcut go
-        // through TextInBand's besideIcon mode, which owns that seat now.
+        // Deliberate deviation from Picto: its menu rows sit their text
+        // visibly below true center even in the browser, because flex centers
+        // the LINE BOX. Poser centers the INK, and a menu row is
+        // icon-adjacent by construction — label and shortcut go through
+        // TextInBand's besideIcon mode, which owns that seat.
 
         private static Phase _phase;
         private static string _id = string.Empty;

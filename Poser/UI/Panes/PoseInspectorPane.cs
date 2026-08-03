@@ -29,12 +29,11 @@ using DomainDeltaMode = Poser.Domain.Transforms.TransformDeltaMode;
 namespace Poser.UI;
 
 /// <summary>
-/// The Pose tab of the AppShell — M1 `.insp/.prow/.scrub` grammar (verified by
-/// the main content surface) bound to the live posing stack. Replaces the
-/// legacy TransformTabPane interior. Sections:
+/// The Pose tab of the AppShell — the `.insp/.prow/.scrub` grammar bound to
+/// the live posing stack. Sections:
 /// TRANSFORM (drag/wheel/type-in position/rotation/scale through stable-id
 /// application gestures for actors and bones; lights/cameras/world objects
-/// remain direct until their adapters migrate), GAZE
+/// have no stable-id adapter and remain direct), GAZE
 /// (eyes/head segs via
 /// IGazeService — one shared mode, the part flags gate what it drives),
 /// IK (session switch + bulk arm/disarm), POSE (flip/mirror/reset regions,
@@ -535,7 +534,7 @@ public class PoseInspectorPane
     public bool HasAuthoredEdits =>
         OwningSkeleton() is { } skeleton && _cleanPose.HasAuthoredEdits(skeleton.Actor);
 
-    // ── pose surface: Body/Face/Bones seg + strip + matrix (approved M2) ─
+    // ── pose surface: Body/Face/Bones seg + strip + matrix ─────────
 
     private float DrawPoseSurface(
         ImDrawListPtr dl,
@@ -1509,7 +1508,7 @@ public class PoseInspectorPane
         });
     }
 
-    // ── M11 rail helpers (header summary, children, flip, freeze state) ──
+    // ── rail helpers (header summary, children, flip, freeze state) ─────
 
     /// <summary>Selected-bones summary for the rail head (Anamnesis right
     /// column): who = display summary, sub = game bone names, linked = number

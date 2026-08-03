@@ -53,8 +53,8 @@ public static partial class Crystarium
     /// <summary>
     /// The file surface: the shared <see cref="WindowFrame"/> is the whole
     /// chassis — chrome, title bar, navigation band, quick rail and footer —
-    /// and this fills the rectangles it hands back. Navigation and callbacks
-    /// preserve the legacy close-before-invoke ordering.
+    /// and this fills the rectangles it hands back. A navigation callback is
+    /// invoked only after the dialog has closed.
     ///
     /// <para>THE PUBLIC SHAPE IS FROZEN: the constructor, <see cref="Open"/>
     /// and <see cref="Draw"/> are what four call sites already speak.</para>
@@ -411,9 +411,9 @@ public static partial class Crystarium
 
         /// <summary>
         /// The explorer. NO right padding on the region: the bar sits on the
-        /// window edge and IS the right inset (user 2026-08-03 — it floated
-        /// mid-panel); a row's own trailing padding is what keeps its content
-        /// clear of the bar while its highlight bleeds under it.
+        /// window edge and IS the right inset; a row's own trailing padding is
+        /// what keeps its content clear of the bar while its highlight bleeds
+        /// under it.
         /// </summary>
         private void DrawEntries(WindowFrameRect body, float scale)
         {

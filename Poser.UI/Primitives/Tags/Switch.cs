@@ -50,11 +50,10 @@ public static partial class Crystarium
     }
 
     /// <summary>
-    /// The toggle's pixels alone — pill, knob shadow rings, knob — so the
-    /// retained twin drives the SAME paint. The knob metrics are
-    /// PROPORTIONAL to the resolved box, so the seam recovers the caller's
-    /// control scale from the rect it is handed rather than taking it as a
-    /// parameter: the box is the single source both paths already agree on.
+    /// The toggle's pixels alone — pill, knob shadow rings, knob. The knob
+    /// metrics are PROPORTIONAL to the resolved box, so the seam recovers the
+    /// caller's control scale from the rect it is handed rather than taking it
+    /// as a parameter: the box is the single source of that scale.
     /// </summary>
     /// <summary>Picto's <c>transition: transform .2s ease, opacity .2s ease</c>
     /// and the track's <c>background-color .2s ease</c> — one ramp drives all

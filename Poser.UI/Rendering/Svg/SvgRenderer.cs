@@ -28,7 +28,7 @@ internal static class SvgRenderer
         // (the seam where Tabler's two circle arcs meet read ~35% heavier
         // than the ring — user-reported). The mask emits each pixel once
         // from a supersampled union, like the browser's analytic stroke.
-        // Filled/multicolor SVGs keep the legacy paint ordering.
+        // Filled/multicolor SVGs keep the direct paint ordering.
         bool useStrokeMask = true;
         Vector4? compositeColor = null;
         foreach (var path in paths)

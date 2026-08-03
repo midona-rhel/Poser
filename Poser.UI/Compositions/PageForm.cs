@@ -129,7 +129,7 @@ public static partial class Crystarium
             _y += ActiveTheme.Page.StatusLineHeight;
         }
 
-        /// <param name="divider">USER 2026-08-02: the rule is a divider BETWEEN
+        /// <param name="divider">The rule is a divider BETWEEN
         /// sections, so a page's FIRST section states false and draws neither
         /// the rule nor the margin above it.</param>
         public void Section(
@@ -1113,9 +1113,9 @@ public static partial class Crystarium
 
     /// <summary>
     /// The 26px <c>.header</c> row's content — the <c>.title</c> and the
-    /// <c>.chevron</c> — so the retained twin drives the SAME pixels while
-    /// owning its own hit rect. The chevron is drawn BEFORE the title, as
-    /// the flex row's own order.
+    /// <c>.chevron</c> — painted into a rect whose hit testing is the
+    /// caller's. The chevron is drawn BEFORE the title, as the flex row's own
+    /// order.
     /// <para><paramref name="identity"/> is the header's ImGui id and
     /// doubles as the interactive flag: a static header (no
     /// <c>onOpenChanged</c>) reserves nothing, so it has no id, no

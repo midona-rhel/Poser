@@ -9,9 +9,9 @@ namespace Poser.UI;
 public static partial class Crystarium
 {
     /// <summary>
-    /// Range slider. PBI-090 deliberately supersedes the original picto
-    /// transcription's coloring: the 14px circular thumb is solid white
-    /// and the track is FILLED with <c>--color-primary</c> #3297FF from
+    /// Range slider. The coloring deliberately deviates from the picto
+    /// transcription: the 14px circular thumb is solid white
+    /// and the track is FILLED from
     /// its minimum to the current value, the remainder staying the
     /// neutral white @ .14. Geometry, hit area, drag semantics, notches,
     /// readout, and disabled fade are unchanged. <paramref name=marks/> marks values with a bar crossing the track.
@@ -91,8 +91,7 @@ public static partial class Crystarium
 
     /// <summary>
     /// The slider's pixels alone — track, white fill, notches, thumb —
-    /// so the retained twin drives the SAME paint while owning its own
-    /// drag state. <paramref name="normalized"/> is the value's 0..1
+    /// owning no drag state. <paramref name="normalized"/> is the value's 0..1
     /// position; <paramref name="marks"/> stay in VALUE space, which is
     /// why the range comes along.
     /// </summary>
@@ -122,10 +121,9 @@ public static partial class Crystarium
         // remainder above stays neutral.
         if (thumbX - min.X > 1f * scale)
         {
-            // USER DECISION 2026-08-02 (supersedes PBI-090's primary fill):
-            // the filled span is WHITE like the thumb; the remaining
-            // deviation from Picto's .rangeInput is its primary THUMB,
-            // recorded in the form-controls diff.
+            // The filled span is WHITE like the thumb, not the primary blue;
+            // the remaining deviation from Picto's .rangeInput is its
+            // primary THUMB.
             var fill = Crystarium.ActiveTheme.Palette.White.Fade(alpha);
             dl.AddRectFilled(
                 new Vector2(min.X, cy - Crystarium.ActiveTheme.Controls.SliderTrackHeight * 0.5f * scale),

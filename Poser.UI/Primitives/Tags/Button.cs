@@ -268,9 +268,8 @@ public static partial class Crystarium
 
     /// <summary>
     /// The button BOX alone — background, border, and the disabled group —
-    /// returning the color its label must take. Split out so the retained
-    /// declarative tree can drive the SAME pixels while composing the label
-    /// as a real child element instead of a painter argument.
+    /// returning the color its label must take, so the label is never painted
+    /// from a colour the box did not resolve.
     /// </summary>
     internal static Vector4 PaintTextButtonBox(
         in InteractionResult hit,
@@ -398,8 +397,8 @@ public static partial class Crystarium
         Transition.CubicBezier(0.15f, 0.4f, 0f, 0.22f, 1f);
 
     /// <summary>.iconBtn:disabled — a CSS literal of the shared icon button,
-    /// not a theme token, and the ONE home for it: the retained twin's sheet
-    /// states its disabled look from here.</summary>
+    /// not a theme token, and the ONE home for it: every disabled icon
+    /// affordance fades from here.</summary>
     internal const float IconButtonDisabledOpacity = 0.2f;
 
     private static bool RenderIconButton(
@@ -526,7 +525,7 @@ public static partial class Crystarium
         return (iconMin, iconMin + new Vector2(side));
     }
 
-    // ---- Temporary persistent icon-toggle bridge (slice 5) ----------
+    // ---- Persistent icon toggle ------------------------------------
 
     private static bool RenderTemporaryIconToggle(
         string id,
@@ -558,9 +557,8 @@ public static partial class Crystarium
 
     /// <summary>
     /// The persistent toggle's BOX: the selection fill, the hover overlay and
-    /// the disabled fade, at the control radius. Split out for the same reason
-    /// the text button's box was — the retained twin drives these exact pixels
-    /// while composing its glyph as a real child element.
+    /// the disabled fade, at the control radius. Separate from the glyph so
+    /// both fade by the same <see cref="ToggleOpacity"/>.
     /// </summary>
     internal static void PaintTemporaryToggleBox(
         ImDrawListPtr draw,
@@ -599,8 +597,8 @@ public static partial class Crystarium
             scale);
     }
 
-    /// <summary>The toggle's group fade: ONE constant, so the box, the glyph
-    /// and the retained twin's content can never disagree about it.</summary>
+    /// <summary>The toggle's group fade: ONE constant, so the box and the
+    /// glyph can never disagree about it.</summary>
     internal static float ToggleOpacity(bool disabled) =>
         disabled ? ActiveTheme.Chrome.ControlDisabledOpacity : 1f;
 

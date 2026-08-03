@@ -178,9 +178,9 @@ public static partial class Crystarium
     /// <summary>
     /// Extra lift, in CSS px, for a run seated beside an icon: the eye
     /// judges that run against the ICON's ink centroid, not the band
-    /// centre. Calibrated (2026-08-03) so that with the metric ink rise
-    /// this lands BOTH accepted seats — the golden tree row and the
-    /// context menu row — on their measured pixel exactly.
+    /// centre. The value is constrained: with the metric ink rise it must
+    /// land BOTH accepted seats — the tree row and the context menu row —
+    /// on their measured pixel exactly, and it is the only such bias.
     /// </summary>
     public const float IconAdjacentInkBias = -1.5f;
 
