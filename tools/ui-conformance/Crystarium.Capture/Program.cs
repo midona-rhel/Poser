@@ -60,6 +60,9 @@ internal static class Program
         if (args.Length == 1 && args[0] == "--kernel-behavior")
             return BehaviorSuites.Kernel();
 
+        if (args.Length == 1 && args[0] == "--sidebar-perf")
+            return BehaviorSuites.SidebarPerf();
+
         if (args.Length == 3 && args[0] == "--generate-tokens")
             return TokenEquality.Generate(args[1], args[2]);
 
@@ -106,6 +109,7 @@ internal static class Program
                 "       Crystarium.Capture --reactive-picker-behavior\n" +
                 "       Crystarium.Capture --reactive-form-behavior\n" +
                 "       Crystarium.Capture --kernel-behavior\n" +
+                "       Crystarium.Capture --sidebar-perf\n" +
                 "       Crystarium.Capture --generate-tokens <tokens.css> <out.g.cs>\n" +
                 "       Crystarium.Capture --verify-tokens [<tokens.css> <committed.g.cs>]\n" +
                 "       Crystarium.Capture --list");

@@ -3397,4 +3397,358 @@ internal static class BehaviorSuites
         probe.Want("refocused", focused, gap == 0);
         return probe;
     }
+
+    // ---- Shell sidebar: the warm frame's cost --------------------------
+
+    private const int SidebarRows = 300;
+    private const int SidebarWarmup = 60;
+
+    /// <summary>The rows the 762px tree shows at the 26px pitch: the clipper's
+    /// 30-slot band reaches 780px, which is the section header (24px) plus its
+    /// first 30 rows.</summary>
+    private const int SidebarVisible = 30;
+    private const int SidebarFrames = 600;
+
+    /// <summary>The gate: the p95 warm frame, in milliseconds.</summary>
+    private const double SidebarBudgetMs = 1.5;
+
+    private static readonly Vector2 SidebarCanvas = new(320, 840);
+    private static readonly Vector2 SidebarBox = new(280, 800);
+
+    private static readonly
+        Func<IReadOnlyList<Poser.Domain.Identity.BoneId>, bool> OverlayVisible =
+            static _ => true;
+
+    /// <summary>
+    /// A 300-row tree at three depths with guides, badges, actor action strips
+    /// and overlay toggles, fully expanded and never structurally changed: what
+    /// the sidebar costs once its cache is warm. The scene revision is frozen,
+    /// so every measured frame is the steady state the shell actually runs in.
+    /// </summary>
+    internal static int SidebarPerf() =>
+        Suite("Poser shell sidebar perf", 320, 840, SidebarPerfCases);
+
+    private static int SidebarPerfCases(BehaviorHost host)
+    {
+        var vm = SyntheticShell(SidebarRows);
+        var sidebar = new Poser.UI.Views.ShellSidebar();
+        var baseline = new SidebarBaseline(vm, SidebarVisible);
+        var ticks = new long[SidebarFrames];
+        var bare = new long[SidebarFrames];
+        long cached = Drive(
+            host, () => sidebar.Draw(vm, Vector2.Zero, SidebarBox), ticks);
+        long painter = Drive(host, baseline.Draw, bare);
+
+        Array.Sort(ticks);
+        Array.Sort(bare);
+        double p50 = Milliseconds(ticks[SidebarFrames / 2]);
+        double p95 = Milliseconds(ticks[(int)(SidebarFrames * 0.95) - 1]);
+        double max = Milliseconds(ticks[SidebarFrames - 1]);
+        // The same band with no cache at all: what is left after this is what
+        // the sidebar's own bookkeeping costs.
+        double bareP50 = Milliseconds(bare[SidebarFrames / 2]);
+        var invariant = System.Globalization.CultureInfo.InvariantCulture;
+        Console.WriteLine(string.Create(
+            invariant,
+            $"sidebar-perf rows={SidebarRows} frames={SidebarFrames} " +
+            $"p50={p50:0.####} p95={p95:0.####} max={max:0.####} " +
+            $"alloc={cached - painter} painter={painter} total={cached} " +
+            $"painter-p50={bareP50:0.####}"));
+        host.Check(
+            "warm-frame-budget",
+            p95 < SidebarBudgetMs,
+            string.Create(
+                invariant,
+                $"p95 {p95:0.####}ms, budget {SidebarBudgetMs:0.##}ms"));
+        // What the SIDEBAR owns is the difference between its warm frame and
+        // the same band painted with no cache at all: the shared painter's own
+        // per-draw bytes (the SVG icon renderer above all) predate this view
+        // and are reported, not gated, here.
+        host.Check(
+            "warm-frame-allocation",
+            cached <= painter,
+            string.Create(
+                invariant,
+                $"{cached - painter} bytes over {SidebarFrames} warm frames "
+                + $"beyond the painter's {painter} (want <= 0)"));
+        // The comparison is worth something only while both cases paint the
+        // same band; a drifted visible count shows up as a gap here.
+        host.Check(
+            "baseline-band",
+            cached >= painter * 0.9,
+            string.Create(
+                invariant,
+                $"sidebar {cached} vs painter {painter} - the baseline is no "
+                + $"longer painting the sidebar's visible band"));
+        return host.Each();
+    }
+
+    /// <summary>Warmup, then <see cref="SidebarFrames"/> measured frames of one
+    /// draw, bracketed so the harness' own cost stays out of the numbers.
+    /// </summary>
+    private static long Drive(BehaviorHost host, Action draw, long[]? ticks)
+    {
+        long allocated = 0;
+        host.Case(SidebarCanvas, SidebarWarmup + SidebarFrames, frame =>
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            long started = System.Diagnostics.Stopwatch.GetTimestamp();
+            draw();
+            long elapsed =
+                System.Diagnostics.Stopwatch.GetTimestamp() - started;
+            long after = GC.GetAllocatedBytesForCurrentThread();
+            if (frame < SidebarWarmup)
+                return;
+            if (ticks != null)
+                ticks[frame - SidebarWarmup] = elapsed;
+            allocated += after - before;
+        }, _ => Offscreen);
+        return allocated;
+    }
+
+    /// <summary>
+    /// The sidebar's visible band, painted straight out of the view model with
+    /// no cache, no flattening and no clipper: the shared painter's own cost
+    /// for exactly the rows the sidebar shows. The sidebar's bookkeeping may
+    /// not add a byte to it.
+    /// </summary>
+    private sealed class SidebarBaseline
+    {
+        private readonly Poser.UI.Views.AppShellViewModel _vm;
+        private readonly int _rows;
+        private readonly Action<Ui.ScrollRegionScope> _tree;
+        private readonly Action<string> _search;
+
+        internal SidebarBaseline(
+            Poser.UI.Views.AppShellViewModel vm, int rows)
+        {
+            _vm = vm;
+            _rows = rows;
+            _tree = Tree;
+            _search = next => _vm.SidebarSearch = next;
+        }
+
+        internal void Draw()
+        {
+            var theme = Rx.ActiveTheme;
+            float inset = theme.Page.Inset;
+            float width = SidebarBox.X;
+            ImGui.SetCursorScreenPos(new Vector2(inset, 6f));
+            Ui.FilterPill(
+                "##baseline-search",
+                _vm.SidebarSearch,
+                _search,
+                "Filter scene...",
+                ControlStyle.Workspace with
+                {
+                    Width = UiWidth.Fixed(
+                        MathF.Max(1f, width - inset * 2f - 1f)),
+                });
+            ImGui.SetCursorScreenPos(new Vector2(0f, 38f));
+            Ui.ScrollRegion("##baseline-tree", width, SidebarBox.Y - 38f, _tree);
+        }
+
+        private void Tree(Ui.ScrollRegionScope region)
+        {
+            var theme = Rx.ActiveTheme;
+            float inset = theme.Page.Inset;
+            float gutter = theme.Scrollbar.GutterWidth;
+            float width = region.ContentWidth + gutter - inset;
+            var origin = ImGui.GetCursorScreenPos() + new Vector2(inset, 0f);
+            var section = _vm.Sections[0];
+
+            var style = new TextStyle
+            {
+                Size = theme.Typography.LabelSize,
+                Weight = FontWeight.Medium,
+                Color = theme.TextMuted,
+            };
+            Ui.TextInBand(
+                origin + new Vector2(theme.Spacing.Two, theme.Spacing.Two),
+                new Vector2(width, Ui.MeasureText(section.Title, style).Y),
+                section.Title,
+                style,
+                TextAlign.Start);
+            float side = theme.Controls.SwitchHeight;
+            ImGui.SetCursorScreenPos(
+                origin + new Vector2(width - gutter - side, 0f));
+            Ui.IconButton(
+                TablerIcon.Plus,
+                style: ControlStyle.Square(side),
+                id: "##baseline-plus");
+
+            float top = theme.Floating.CloseActionSize;
+            for (int i = 0; i < _rows; i++)
+            {
+                var row = section.Rows[i];
+                var props = new TreeRowProps
+                {
+                    Icon = row.Icon,
+                    HideIcon = row.Depth > 0,
+                    Badge = string.IsNullOrEmpty(row.Count) ? null : row.Count,
+                    Depth = row.Depth,
+                    Trunks = Trunks(row.TreeLines),
+                    IsLastChild = row.IsLastChild,
+                    Expander = row.HasChildren
+                        ? SidebarExpander.Open
+                        : SidebarExpander.None,
+                    Selected = row.Active,
+                    TrailingInset = gutter,
+                    ActionSlots = row.ActorActions
+                        ? 3
+                        : row.OverlayBones != null ? 1 : 0,
+                };
+                ImGui.SetCursorScreenPos(origin + new Vector2(
+                    0f, top + i * theme.Controls.ListRowHeight));
+                Ui.TreeRow(
+                    (string)row.Tag!,
+                    row.Label,
+                    in props,
+                    out var actions,
+                    new ControlStyle { Width = UiWidth.Fixed(width) });
+                if (props.ActionSlots == 0)
+                    continue;
+                ImGui.PushID((string)row.Tag!);
+                float step = side + 2f;
+                if (row.ActorActions)
+                {
+                    ImGui.SetCursorScreenPos(actions);
+                    Ui.IconButton(
+                        TablerIcon.Crosshair,
+                        style: ControlStyle.Square(side),
+                        help: "Set game target",
+                        id: "##target");
+                    ImGui.SetCursorScreenPos(actions + new Vector2(step, 0f));
+                    Ui.TemporaryIconToggle(
+                        TablerIcon.Eye,
+                        selected: false,
+                        style: ControlStyle.Square(side),
+                        help: row.ActorVisible ? "Hide actor" : "Show actor",
+                        id: "##visible",
+                        slashed: !row.ActorVisible);
+                    ImGui.SetCursorScreenPos(
+                        actions + new Vector2(step * 2f, 0f));
+                    Ui.TemporaryIconToggle(
+                        TablerIcon.PlayerPlay,
+                        selected: false,
+                        style: ControlStyle.Square(side),
+                        help: row.ActorPaused
+                            ? "Resume animation"
+                            : "Pause animation",
+                        id: "##pause",
+                        slashed: row.ActorPaused);
+                }
+                else
+                {
+                    ImGui.SetCursorScreenPos(actions);
+                    Ui.TemporaryIconToggle(
+                        TablerIcon.Eye,
+                        selected: false,
+                        style: ControlStyle.Square(side),
+                        help: "Hide from skeleton overlay",
+                        id: "##overlay");
+                }
+                ImGui.PopID();
+            }
+        }
+
+        private static uint Trunks(bool[]? lines)
+        {
+            if (lines == null)
+                return 0u;
+            uint mask = 0u;
+            for (int level = 1; level < lines.Length && level < 32; level++)
+                if (lines[level])
+                    mask |= 1u << level;
+            return mask;
+        }
+    }
+
+    private static double Milliseconds(long ticks) =>
+        ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+
+    /// <summary>The synthetic scene: actors carrying the three-slot action
+    /// strip, categories carrying the overlay toggle, and bones at depth 2 with
+    /// the guide mask their position implies.</summary>
+    private static Poser.UI.Views.AppShellViewModel SyntheticShell(int rows)
+    {
+        var vm = new Poser.UI.Views.AppShellViewModel
+        {
+            SceneRevision = 1,
+            IsOverlayVisible = OverlayVisible,
+        };
+        var actors = new Poser.UI.Views.ShellSidebarSection
+        {
+            Title = "ACTORS",
+            ShowPlus = true,
+        };
+        var scene = new Poser.UI.Views.ShellSidebarSection { Title = "SCENE" };
+        vm.Sections.Add(actors);
+        vm.Sections.Add(scene);
+
+        const int categories = 3;
+        const int bones = 5;
+        int made = 0;
+        for (int actor = 0; made < rows - 12; actor++)
+        {
+            actors.Rows.Add(new Poser.UI.Views.ShellSidebarRow
+            {
+                Label = "Actor " + actor.ToString(),
+                Count = "142",
+                Icon = TablerIcon.User,
+                Depth = 0,
+                HasChildren = true,
+                Expanded = true,
+                Active = actor == 0,
+                ActorActions = true,
+                ActorVisible = actor % 3 != 0,
+                ActorPaused = actor % 4 == 0,
+                Tag = "actor:" + actor.ToString(),
+            });
+            made++;
+            for (int category = 0; category < categories && made < rows - 12;
+                 category++)
+            {
+                bool lastCategory = category == categories - 1;
+                actors.Rows.Add(new Poser.UI.Views.ShellSidebarRow
+                {
+                    Label = "Category " + category.ToString(),
+                    Depth = 1,
+                    HasChildren = true,
+                    Expanded = true,
+                    IsLastChild = lastCategory,
+                    TreeLines = [false, !lastCategory],
+                    OverlayBones = [],
+                    Tag = string.Concat(
+                        "cat:", actor.ToString(), ":", category.ToString()),
+                });
+                made++;
+                for (int bone = 0; bone < bones && made < rows - 12; bone++)
+                {
+                    actors.Rows.Add(new Poser.UI.Views.ShellSidebarRow
+                    {
+                        Label = "Bone " + bone.ToString(),
+                        Count = bone % 2 == 0 ? "3" : "",
+                        Depth = 2,
+                        IsLastChild = bone == bones - 1,
+                        TreeLines = [false, !lastCategory, true],
+                        Tag = string.Concat(
+                            "bone:", actor.ToString(), ":",
+                            category.ToString(), ":", bone.ToString()),
+                    });
+                    made++;
+                }
+            }
+        }
+
+        for (int i = made; i < rows; i++)
+            scene.Rows.Add(new Poser.UI.Views.ShellSidebarRow
+            {
+                Label = "Prop " + i.ToString(),
+                Icon = TablerIcon.Square,
+                Depth = 0,
+                Tag = "prop:" + i.ToString(),
+            });
+        return vm;
+    }
 }
