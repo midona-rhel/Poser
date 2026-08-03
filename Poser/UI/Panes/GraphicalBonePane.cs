@@ -112,7 +112,10 @@ public sealed class GraphicalBonePane : IDisposable
 
         if (_hoveredBone is { } hoveredId && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && hovered)
         {
-            if (ImGui.GetIO().KeyCtrl)
+            // Ctrl AND Shift both extend (user 2026-08-03): the map has no
+            // row order, so there is no range gesture to reserve Shift for.
+            var io = ImGui.GetIO();
+            if (io.KeyCtrl || io.KeyShift)
                 _selection.Toggle(hoveredId);
             else
                 _selection.Select(hoveredId);
@@ -150,7 +153,8 @@ public sealed class GraphicalBonePane : IDisposable
             {
                 if (isDrag)
                 {
-                    if (!ImGui.GetIO().KeyCtrl)
+                    var io = ImGui.GetIO();
+                    if (!io.KeyCtrl && !io.KeyShift)
                         _selection.Clear();
                     foreach (var (dotId, pos) in _frameDots)
                     {
@@ -375,8 +379,11 @@ public sealed class GraphicalBonePane : IDisposable
             var candidate = _dotCandidates[i];
             bool isSelected = _selection.IsSelected(candidate.Id);
             bool isHovered = i == _hoveredDotIndex;
+            // Selection is the THEME's primary, not ImGui's style checkmark
+            // (user 2026-08-03: the highlight was not the blue).
             uint circleColor = isSelected
-                ? ImGui.GetColorU32(ImGuiCol.CheckMark)
+                ? ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                    Crystarium.ActiveTheme.Chrome.Primary))
                 : isHovered
                     ? ImGui.GetColorU32(ImGuiCol.Text)
                     : ImGui.GetColorU32(ImGuiCol.TextDisabled);
@@ -391,7 +398,8 @@ public sealed class GraphicalBonePane : IDisposable
                     candidate.Pos,
                     (CircleRadius - 3f) * s,
                     isSelected
-                        ? ImGui.GetColorU32(ImGuiCol.CheckMark)
+                        ? ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                            Crystarium.ActiveTheme.Chrome.Primary))
                         : ImGui.GetColorU32(ImGuiCol.TextDisabled));
             }
             if (isHovered)

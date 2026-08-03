@@ -681,8 +681,12 @@ public class PoseInspectorPane
             var resetStyle = ControlStyle.Workspace;
             var resetSize =
                 LegacyCrystarium.MeasureButton("Reset View", resetStyle);
+            // Right-aligned to the WORKSPACE bar's edge — where the Physics
+            // switch sits — not to the narrower 3D viewport below (user
+            // 2026-08-03); the mirror bar above states the same span.
             ImGui.SetCursorScreenPos(new Vector2(
-                cursor.X + width - resetSize.X,
+                cursor.X + width + AppShellView.ScrollbarWidth * s
+                    - resetSize.X,
                 cursor.Y + (tabsHeight - resetSize.Y) * 0.5f));
             LegacyCrystarium.Button(
                 "Reset View",
