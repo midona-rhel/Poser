@@ -43,8 +43,6 @@ public static partial class LegacyCrystarium
     public sealed class ScrollRegionScope
     {
         private readonly float _scale;
-        private Vector2 _lastRowMin;
-        private Vector2 _lastRowMax;
 
         internal ScrollRegionScope(float contentWidth, float scale)
         {
@@ -64,10 +62,6 @@ public static partial class LegacyCrystarium
             bool iconVisible = true,
             ControlStyle style = default)
         {
-            _lastRowMin = ImGui.GetCursorScreenPos();
-            _lastRowMax = _lastRowMin + new Vector2(
-                ContentWidth * _scale,
-                Crystarium.ActiveTheme.Controls.ListRowHeight * _scale);
             // A list row exposes no expander, so the row reserves no arrow
             // and selection is its only reachable outcome — the bool stays
             // the whole truth here.
@@ -85,12 +79,6 @@ public static partial class LegacyCrystarium
                 style with { Width = UiWidth.Fixed(ContentWidth) })
                 == SidebarRowAction.Selected;
         }
-
-        public bool LastRowDoubleClicked() =>
-            !Interactive.PointerOccluded()
-            && ImGui.IsWindowHovered()
-            && ImGui.IsMouseHoveringRect(_lastRowMin, _lastRowMax)
-            && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left);
 
         public void Empty(string text)
         {

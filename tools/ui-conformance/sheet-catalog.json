@@ -256,6 +256,13 @@
       "states": [
         { "name": "rtreerow", "label": "root, branch, terminal, collapsed", "width": 300, "height": 190 }
       ]
+    },
+    {
+      "name": "reactive-file-dialog",
+      "title": "Reactive file surface (PBI-015)",
+      "states": [
+        { "name": "rfiledialog", "label": "title bar, nav band, rail + explorer, footer", "width": 760, "height": 500 }
+      ]
     }
   ]
 }

@@ -293,6 +293,13 @@ public readonly record struct TreeRow
                     Margin = new EdgeInsets(
                         0f, 0f, Crystarium.ActiveTheme.Spacing.Two, 0f),
                 },
+                // The badge shares the LABEL's optical line (user 2026-08-03:
+                // the count sat a pixel low too) — the same corrected rise,
+                // stated once here beside the label's.
+                Type = new()
+                {
+                    InkRise = Crystarium.ActiveTheme.Optical.SidebarText - 1f,
+                },
             },
         };
 
@@ -320,7 +327,11 @@ public readonly record struct TreeRow
             On = new Listeners { OnClick = OnSelect, OnContext = OnContext },
             Painter = TreeRowPillPainter.Instance,
             Guides = guides,
-            AllowChildHits = discloses && !ExpanderDisabled,
+            // Yielded for EVERY reserving child, not just the disclosure: the
+            // action strip is the row's second overlapping target, and a strip
+            // on a leaf row (the overlay eye) would otherwise be unreachable —
+            // ImGui refuses hover to a later item while an earlier one owns it.
+            AllowChildHits = (discloses && !ExpanderDisabled) || Actions.Count > 0,
             Help = Help,
             Key = Key,
             Children =

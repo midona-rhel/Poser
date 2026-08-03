@@ -78,6 +78,14 @@ public sealed class AppShellViewModel
     public bool ShowPopOut;
 
     /// <summary>
+    /// The scene's structural revision. The sidebar's retained per-row state is
+    /// keyed by a row's stable tag and swept when this changes: a rescan that
+    /// publishes nothing new leaves every holder — and therefore every row's
+    /// interaction identity and hover — exactly where it was.
+    /// </summary>
+    public ulong SceneRevision;
+
+    /// <summary>
     /// Draws the active tab inside the main content viewport. The size is the
     /// stable content box after the shell's horizontal inset and scrollbar
     /// gutter have been removed.
@@ -124,38 +132,1222 @@ public sealed class AppShellViewModel
     public Func<IReadOnlyList<Domain.Identity.BoneId>, bool>?
         IsOverlayVisible;
     public Action<int>? OnSectionPlus;
+
+    /// <summary>The shell's ONE retained declarative surface, and everything
+    /// that must outlive a frame with it. It lives on the view model because
+    /// the view model is what the single shell instance already is: the static
+    /// entry point stays a chrome seam and reaches its state through here.
+    /// </summary>
+    internal readonly ShellFrame Frame;
+
+    public AppShellViewModel() => Frame = new ShellFrame(this);
 }
 
 /// <summary>
-/// M1 "Studio" shell — pixel transcription of the approved
-/// docs/mockups/m1-mainwindow-shell.html (stage A): 48px titlebar
-/// (280px surface-1 left cell + bg-app center), 280px sidebar with 26px rows,
-/// tree guides and 26px statusbar, main region with 44px toolbar
-/// (selection-typed tabs · divider · scene tabs, crumb, pop-out) and the
-/// scrollable inspector content.
+/// ONE sidebar row's retained UI: the handlers the declared row names, and the
+/// stable key its interaction identity hangs on. Every delegate is allocated
+/// once and dispatches against <see cref="Row"/>, which the build rewrites each
+/// frame — so a live tree costs no per-frame closure and the callbacks the
+/// binder wired keep taking the row they always took.
+/// </summary>
+internal sealed class ShellRowUi
+{
+    internal readonly UiKey Key;
+
+    /// <summary>Written by the build, read at dispatch.</summary>
+    internal ShellSidebarRow Row = new();
+
+    internal readonly Action Select;
+    internal readonly Action Context;
+    internal readonly Action ToggleExpand;
+    internal readonly Action Target;
+    internal readonly Action Visibility;
+    internal readonly Action Pause;
+    internal readonly Action OverlayVisibility;
+
+    internal ShellRowUi(AppShellViewModel vm, string key)
+    {
+        Key = key;
+        Select = () => vm.OnRowClicked?.Invoke(Row);
+        Context = () => vm.OnRowContextMenu?.Invoke(Row);
+        ToggleExpand = () => vm.OnRowExpandToggled?.Invoke(Row);
+        Target = () => vm.OnActorTarget?.Invoke(Row);
+        Visibility = () => vm.OnActorVisibility?.Invoke(Row);
+        Pause = () => vm.OnActorPause?.Invoke(Row);
+        OverlayVisibility = () => vm.OnOverlayVisibility?.Invoke(Row);
+    }
+}
+
+/// <summary>
+/// The shell's declared chrome: ONE retained root that states the titlebar, the
+/// sidebar, the workspace toolbar and the rail's chassis. Everything the tree
+/// names is a field — a build path allocates no delegate — and every control is
+/// KEYED, so the position-derived ids the imperative shell minted are gone.
+///
+/// <para>What it deliberately does NOT own: the content viewport, the page
+/// scroll and the rail's scroll are the legacy hosting seam (the accepted
+/// Settings pattern — a region owns the gutter, the pane's own root renders
+/// inside it), and the sidebar's resize strip is raw input. Both are named
+/// boundaries in <see cref="AppShellView.Draw"/>.</para>
+/// </summary>
+internal sealed class ShellFrame
+{
+    // ── the shell's own literals, kept where they are read ────────────────
+    private const float TitleInset = 14f;
+    private const float TitleActionInset = 8f;
+    private const float CenterInset = 12f;
+    private const float ClusterInset = 12f;
+    private const float PillHeight = 20f;
+    private const float DotSize = 7f;
+    private const float StatusInset = 10f;
+    private const float StatusTextGap = 8f;
+    private const float SearchTop = 6f;
+    private const float TreeTop = 38f;
+
+    private static readonly TablerIcon[] GizmoIcons =
+    [
+        TablerIcon.ArrowsMove,
+        TablerIcon.Rotate,
+        TablerIcon.ArrowsDiagonal,
+        TablerIcon.ArrowsMaximize,
+    ];
+
+    private static readonly string[] SpaceItems = ["Local", "World"];
+    private static readonly string[] PivotItems = ["Self", "Parent"];
+    private static readonly string[] SymmetryItems = ["Off", "Link", "Mirror"];
+
+    private static readonly Func<int, string?> GizmoHelp = static index => index switch
+    {
+        0 => "Move the selection",
+        1 => "Rotate the selection",
+        2 => "Scale the selection",
+        _ => "Move, rotate, or scale with the universal gizmo",
+    };
+
+    private static readonly Func<int, string?> SpaceHelp = static index =>
+        index == 0
+            ? "Use the selected target's local axes"
+            : "Use world-space axes";
+
+    private static readonly Func<int, string?> PivotHelp = static index =>
+        index == 0
+            ? "Rotate each selected target around itself"
+            : "Rotate around the selected bone's parent pivot";
+
+    private static readonly Func<int, string?> SymmetryHelp = static index => index switch
+    {
+        0 => "Edit only the current selection",
+        1 => "Apply the same edit to linked selections",
+        _ => "Apply mirrored edits across left and right bones",
+    };
+
+    private readonly AppShellViewModel _vm;
+    private readonly UiRoot _root = new();
+    private readonly FilterFieldState _search = new();
+
+    /// <summary>One holder per row, keyed by the row's STABLE tag. Swept when
+    /// the scene revision changes: a structural change is the only thing that
+    /// can retire a row identity, and an unchanged scene therefore keeps every
+    /// holder for the shell's life.</summary>
+    private readonly Dictionary<object, ShellRowUi> _rows = new();
+    private ulong _rowsRevision;
+
+    // ── hoisted handlers ─────────────────────────────────────────────────
+    private readonly Action<string> _setSearch;
+    private readonly Action<int> _setGizmo;
+    private readonly Action<int> _setSpace;
+    private readonly Action<int> _setPivot;
+    private readonly Action<int> _setSymmetry;
+    private readonly Action<int> _setTab;
+    private readonly Action<bool> _setPhysics;
+    private readonly Action _undo;
+    private readonly Action _redo;
+    private readonly Action _spawn;
+    private readonly Action _project;
+    private readonly Action _settings;
+    private readonly Action _hideUi;
+    private readonly Action _popOut;
+    private readonly Action _collapse;
+    private readonly Action _armature;
+    private readonly Func<int, bool> _pivotDisabled;
+
+    /// <summary>One "+" per section, minted on first sight and kept: the
+    /// header names a handler, and a lambda per frame is what a declared tree
+    /// may not cost.</summary>
+    private Action[] _sectionPlus = new Action[4];
+    private int _sectionPlusCount;
+
+    // ── per-frame scratch, grown once ────────────────────────────────────
+    private UiNode[] _nodes = new UiNode[64];
+    private int _nodeCount;
+    private string[] _tabLabels = new string[4];
+    private int _tabCount;
+    private int _tabActive;
+
+    // ── memoized help ────────────────────────────────────────────────────
+    // PoserKeybinds.Effective is a dictionary read, but composing the shortcut
+    // into a sentence is a string per frame — so the four sentences are minted
+    // only when the binding itself changes.
+    private string _undoShortcut = string.Empty;
+    private string _redoShortcut = string.Empty;
+    private string _undoHelp = string.Empty;
+    private string _undoEmptyHelp = string.Empty;
+    private string _redoHelp = string.Empty;
+    private string _redoEmptyHelp = string.Empty;
+
+    private float _width;
+    private float _height;
+
+    internal ShellFrame(AppShellViewModel vm)
+    {
+        _vm = vm;
+        _setSearch = next => _vm.SidebarSearch = next;
+        _setGizmo = index => _vm.OnGizmoOperation?.Invoke(index);
+        _setSpace = index => _vm.OnGizmoSpace?.Invoke(index);
+        _setPivot = index => _vm.OnRotationPivot?.Invoke(index);
+        _setSymmetry = index => _vm.OnSymmetry?.Invoke(index);
+        _setTab = index => _vm.OnTab?.Invoke(index);
+        _setPhysics = next => _vm.OnPhysics?.Invoke(next);
+        _undo = () => _vm.OnUndo?.Invoke();
+        _redo = () => _vm.OnRedo?.Invoke();
+        _spawn = () => _vm.OnSpawn?.Invoke();
+        _project = () => _vm.OnProject?.Invoke();
+        _settings = () => _vm.OnSettings?.Invoke();
+        _hideUi = () => _vm.OnHideUi?.Invoke();
+        _popOut = () => _vm.OnPopOut?.Invoke();
+        _collapse = () => _vm.OnCollapse?.Invoke(!_vm.Collapsed);
+        _armature = () => _vm.OnSkeletonOverlay?.Invoke(!_vm.SkeletonOverlayOn);
+        // Pivot keeps a permanent slot so tool/selection changes cannot move
+        // the rest of the toolbar. Both choices refuse when pivot is
+        // inapplicable; Parent additionally needs a live parent bone.
+        _pivotDisabled = index => !_vm.RotationPivotEnabled
+            || (index == 1 && !_vm.RotationPivotParentAvailable);
+    }
+
+    /// <summary>Everything one frame's build is TOLD; the frame reference is
+    /// what the static builder reaches its state through.</summary>
+    private readonly record struct Props(ShellFrame Frame);
+
+    internal void Render(Vector2 origin, Vector2 size, float scale)
+    {
+        _width = size.X / scale;
+        _height = size.Y / scale;
+        SyncKeybindHelp();
+        SyncTabs();
+        PruneRows(_vm.SceneRevision);
+        Props props = new(this);
+        _root.Render(
+            origin, size, in props, static (in Props p) => p.Frame.Build());
+    }
+
+    // ── the tree ─────────────────────────────────────────────────────────
+
+    private UiNode Build()
+    {
+        AppShellViewModel vm = _vm;
+        Theme theme = Crystarium.ActiveTheme;
+        if (vm.Collapsed)
+            return Titlebar(vm, theme);
+
+        float bodyHeight = _height - AppShellView.TitlebarHeight;
+        float railWidth = vm.DrawRail != null ? AppShellView.RailWidth : 0f;
+        float sidebarWidth = vm.SidebarWidthPx;
+        return new Column
+        {
+            Style = new()
+            {
+                Layout = new()
+                {
+                    Width = UiDim.Fixed(_width),
+                    Height = UiDim.Fixed(_height),
+                },
+            },
+            Key = "shell",
+            Children =
+            [
+                Titlebar(vm, theme),
+                new Row
+                {
+                    Style = new()
+                    {
+                        Layout = new()
+                        {
+                            Width = UiDim.Fixed(_width),
+                            Height = UiDim.Fixed(bodyHeight),
+                        },
+                    },
+                    Key = "body",
+                    Children =
+                    [
+                        Sidebar(vm, theme, sidebarWidth, bodyHeight),
+                        Workspace(
+                            vm,
+                            theme,
+                            _width - sidebarWidth - railWidth,
+                            bodyHeight),
+                        Rail(theme, railWidth, bodyHeight),
+                    ],
+                },
+            ],
+        };
+    }
+
+    // ── titlebar ─────────────────────────────────────────────────────────
+
+    private UiNode Titlebar(AppShellViewModel vm, Theme theme)
+    {
+        float height = AppShellView.TitlebarHeight;
+        float railWidth = vm.DrawRail != null ? AppShellView.RailWidth : 0f;
+        UiChildren cells =
+        [
+            TitleLeft(vm, theme, height),
+            TitleCenter(vm, theme, height),
+            TitleRight(vm, theme, height, railWidth),
+        ];
+
+        // Collapsed means ONE continuous titlebar, not an empty window with a
+        // surviving sidebar cell: one glass strip, no divider, no rail cell.
+        if (vm.Collapsed)
+            return new Chassis
+            {
+                Fill = AppShellView.Glass,
+                Radius = theme.Radii.Window,
+                Corners = UiCorners.All,
+                Style = new()
+                {
+                    Layout = new()
+                    {
+                        Flow = UiFlow.Row,
+                        Width = UiDim.Fixed(_width),
+                        Height = UiDim.Fixed(height),
+                    },
+                },
+                Key = "titlebar",
+                Children = cells,
+            };
+
+        return new Row
+        {
+            Style = new()
+            {
+                Layout = new()
+                {
+                    Width = UiDim.Fixed(_width),
+                    Height = UiDim.Fixed(height),
+                },
+            },
+            Key = "titlebar",
+            Children = cells,
+        };
+    }
+
+    private UiNode TitleLeft(AppShellViewModel vm, Theme theme, float height)
+    {
+        UiNode content = new Row
+        {
+            Style = new()
+            {
+                Layout = new()
+                {
+                    Align = UiAlign.Center,
+                    Width = UiDim.Fill,
+                    Height = UiDim.Fixed(height),
+                    Padding = new EdgeInsets(
+                        TitleInset, 0f, TitleActionInset, 0f),
+                },
+            },
+            Key = "title-content",
+            Children =
+            [
+                new Row
+                {
+                    Style = new()
+                    {
+                        Layout = new()
+                        {
+                            Align = UiAlign.Center,
+                            Gap = theme.Spacing.Four,
+                        },
+                    },
+                    Key = "brand",
+                    Children =
+                    [
+                        new Label
+                        {
+                            Text = "Poser",
+                            Style = new()
+                            {
+                                Type = new()
+                                {
+                                    FontSize = theme.Typography.BodySize,
+                                    Weight = FontWeight.SemiBold,
+                                },
+                                Colors = new()
+                                {
+                                    Foreground = theme.Chrome.Text,
+                                },
+                            },
+                        },
+                        GPosePill(vm, theme),
+                    ],
+                },
+                Spring(),
+                new Row
+                {
+                    Style = new()
+                    {
+                        Layout = new()
+                        {
+                            Align = UiAlign.Center,
+                            Gap = theme.Spacing.Two,
+                        },
+                    },
+                    Key = "history",
+                    Children =
+                    [
+                        new IconAction
+                        {
+                            Icon = TablerIcon.ArrowBackUp,
+                            OnClick = _undo,
+                            Disabled = !vm.CanUndo,
+                            Size = theme.Controls.ShellIconAction,
+                            Help = vm.CanUndo ? _undoHelp : _undoEmptyHelp,
+                            Key = "undo",
+                        },
+                        new IconAction
+                        {
+                            Icon = TablerIcon.ArrowBackUp,
+                            FlipX = true,
+                            OnClick = _redo,
+                            Disabled = !vm.CanRedo,
+                            Size = theme.Controls.ShellIconAction,
+                            Help = vm.CanRedo ? _redoHelp : _redoEmptyHelp,
+                            Key = "redo",
+                        },
+                        vm.ShowSpawn
+                            ? new IconAction
+                            {
+                                Icon = TablerIcon.Plus,
+                                OnClick = _spawn,
+                                Size = theme.Controls.ShellIconAction,
+                                Help = "Add an actor to the scene",
+                                Key = "spawn",
+                            }
+                            : UiNode.None,
+                    ],
+                },
+            ],
+        };
+
+        if (vm.Collapsed)
+            return new Row
+            {
+                Style = new()
+                {
+                    Layout = new()
+                    {
+                        Width = UiDim.Fixed(vm.SidebarWidthPx),
+                        Height = UiDim.Fixed(height),
+                    },
+                },
+                Key = "title-left",
+                Children = content,
+            };
+
+        return new Chassis
+        {
+            Fill = AppShellView.Glass,
+            Radius = theme.Radii.Window,
+            Corners = UiCorners.TopLeft,
+            Style = new()
+            {
+                Layout = new()
+                {
+                    Flow = UiFlow.Row,
+                    Width = UiDim.Fixed(vm.SidebarWidthPx),
+                    Height = UiDim.Fixed(height),
+                },
+            },
+            Key = "title-left",
+            Children = [content, Rule(AppShellView.BorderPrimary, height)],
+        };
+    }
+
+    private static UiNode GPosePill(AppShellViewModel vm, Theme theme)
+    {
+        if (!vm.GPoseActive)
+            return UiNode.None;
+        Vector4 success = theme.Success;
+        return new Row
+        {
+            Style = new()
+            {
+                Layout = new()
+                {
+                    Align = UiAlign.Center,
+                    Height = UiDim.Fixed(PillHeight),
+                    Padding = new EdgeInsets(
+                        TitleActionInset, 0f, TitleActionInset, 0f),
+                    Gap = theme.Spacing.Three,
+                },
+                Colors = new() { Fill = success with { W = 0.12f } },
+                Shape = new() { Radius = theme.Radii.Window },
+            },
+            Key = "gpose",
+            Children =
+            [
+                Dot(success),
+                new Label
+                {
+                    Text = "GPose",
+                    Style = new()
+                    {
+                        Type = new()
+                        {
+                            FontSize = theme.Typography.CaptionSize,
+                            Weight = FontWeight.Medium,
+                        },
+                        Colors = new() { Foreground = success },
+                    },
+                },
+            ],
+        };
+    }
+
+    private UiNode TitleCenter(AppShellViewModel vm, Theme theme, float height)
+        => new Row
+        {
+            Style = new()
+            {
+                Layout = new()
+                {
+                    Align = UiAlign.Center,
+                    Width = UiDim.Fill,
+                    Height = UiDim.Fixed(height),
+                    Padding = new EdgeInsets(CenterInset, 0f, 0f, 0f),
+                    Gap = theme.Page.ActionGap,
+                },
+            },
+            Key = "title-center",
+            Children =
+            [
+                vm.ShowProject
+                    ? new IconAction
+                    {
+                        Icon = TablerIcon.Folder,
+                        OnClick = _project,
+                        Size = theme.Controls.ShellIconAction,
+                        Help = "Open the scene project browser",
+                        Key = "project",
+                    }
+                    : UiNode.None,
+                new Segmented
+                {
+                    Icons = GizmoIcons,
+                    Selected = vm.GizmoOperation,
+                    OnChange = _setGizmo,
+                    ItemHelp = GizmoHelp,
+                    Key = "gizmo-operation",
+                },
+                new Segmented
+                {
+                    Items = SpaceItems,
+                    Selected = vm.GizmoSpace,
+                    OnChange = _setSpace,
+                    ItemHelp = SpaceHelp,
+                    Key = "gizmo-space",
+                },
+                new Segmented
+                {
+                    Items = PivotItems,
+                    Selected = vm.RotationPivot,
+                    OnChange = _setPivot,
+                    ItemDisabled = _pivotDisabled,
+                    ItemHelp = PivotHelp,
+                    Key = "rotation-pivot",
+                },
+                new Segmented
+                {
+                    Items = SymmetryItems,
+                    Selected = vm.SymmetryMode,
+                    OnChange = _setSymmetry,
+                    ItemHelp = SymmetryHelp,
+                    Key = "symmetry",
+                },
+            ],
+        };
+
+    private UiNode TitleRight(
+        AppShellViewModel vm, Theme theme, float height, float railWidth)
+    {
+        // Rightmost is the collapse chevron, then the close X (user spec).
+        UiNode cluster = new Row
+        {
+            Style = new()
+            {
+                Layout = new()
+                {
+                    Align = UiAlign.Center,
+                    Height = UiDim.Fixed(height),
+                    Gap = theme.Page.ActionGap,
+                },
+            },
+            Key = "title-actions",
+            Children =
+            [
+                new IconAction
+                {
+                    Icon = TablerIcon.Armature,
+                    Selected = vm.SkeletonOverlayOn,
+                    OnClick = _armature,
+                    Size = theme.Controls.ShellIconAction,
+                    Help = "Toggle the skeleton overlay in the viewport",
+                    Key = "armature",
+                },
+                new IconAction
+                {
+                    Icon = TablerIcon.Settings,
+                    OnClick = _settings,
+                    Size = theme.Controls.ShellIconAction,
+                    Help = "Open Poser settings",
+                    Key = "settings",
+                },
+                IconAction.Named("x") with
+                {
+                    OnClick = _hideUi,
+                    Size = theme.Controls.ShellIconAction,
+                    Help = "Hide the Poser window",
+                    Key = "close",
+                },
+                IconAction.Named(vm.Collapsed ? "chevron-down" : "chevron-up")
+                    with
+                    {
+                        OnClick = _collapse,
+                        Size = theme.Controls.ShellIconAction,
+                        Help = vm.Collapsed
+                            ? "Expand the window"
+                            : "Collapse to the title bar",
+                        Key = "collapse",
+                    },
+            ],
+        };
+
+        // With the rail present the right cluster stands on a surface-1 cell
+        // continuous with the rail below it (shell rule).
+        if (railWidth > 0f && !vm.Collapsed)
+            return new Chassis
+            {
+                Fill = theme.SurfaceRaised,
+                Radius = theme.Radii.Window,
+                Corners = UiCorners.TopRight,
+                Style = new()
+                {
+                    Layout = new()
+                    {
+                        Flow = UiFlow.Row,
+                        Align = UiAlign.Center,
+                        Width = UiDim.Fixed(railWidth),
+                        Height = UiDim.Fixed(height),
+                        Padding = new EdgeInsets(0f, 0f, ClusterInset, 0f),
+                    },
+                },
+                Key = "title-right",
+                Children =
+                [
+                    Rule(AppShellView.BorderPrimary, height),
+                    Spring(),
+                    cluster,
+                ],
+            };
+
+        return new Row
+        {
+            Style = new()
+            {
+                Layout = new()
+                {
+                    Align = UiAlign.Center,
+                    Height = UiDim.Fixed(height),
+                    Padding = new EdgeInsets(0f, 0f, ClusterInset, 0f),
+                },
+            },
+            Key = "title-right",
+            Children = cluster,
+        };
+    }
+
+    // ── sidebar ──────────────────────────────────────────────────────────
+
+    private UiNode Sidebar(
+        AppShellViewModel vm, Theme theme, float width, float height)
+    {
+        float inset = theme.Page.Inset;
+        // The pill spans the cell between the content inset and the 1px rule.
+        float pillWidth = MathF.Max(1f, width - inset * 2f - 1f);
+        float treeHeight = MathF.Max(
+            1f,
+            height - TreeTop - theme.Spacing.One
+                - AppShellView.StatusbarHeight);
+
+        return new Chassis
+        {
+            Fill = AppShellView.Glass,
+            Radius = theme.Radii.Window,
+            Corners = UiCorners.BottomLeft,
+            Style = new()
+            {
+                Layout = new()
+                {
+                    Flow = UiFlow.Row,
+                    Width = UiDim.Fixed(width),
+                    Height = UiDim.Fixed(height),
+                },
+            },
+            Key = "sidebar",
+            Children =
+            [
+                new Column
+                {
+                    Style = new()
+                    {
+                        Layout = new()
+                        {
+                            Width = UiDim.Fill,
+                            Height = UiDim.Fixed(height),
+                        },
+                    },
+                    Key = "sidebar-body",
+                    Children =
+                    [
+                        // Search stays OUTSIDE the scroll child so a large
+                        // skeleton cannot push the sidebar's primary
+                        // navigation affordance out of view.
+                        new Row
+                        {
+                            Style = new()
+                            {
+                                Layout = new()
+                                {
+                                    Width = UiDim.Fill,
+                                    Height = UiDim.Fixed(TreeTop),
+                                    Padding = new EdgeInsets(
+                                        inset, SearchTop, 0f, 0f),
+                                },
+                            },
+                            Key = "search-band",
+                            Children = Crystarium.FilterField(
+                                _search,
+                                vm.SidebarSearch,
+                                _setSearch,
+                                "Filter scene...",
+                                new Vector2(pillWidth, TreeTop - SearchTop),
+                                ControlStyle.Workspace with
+                                {
+                                    Width = UiWidth.Fixed(pillWidth),
+                                },
+                                key: "search"),
+                        },
+                        new ScrollArea
+                        {
+                            Height = UiDim.Fixed(treeHeight),
+                            CapChildHitWidth = true,
+                            Style = new()
+                            {
+                                Layout = new()
+                                {
+                                    Width = UiDim.Fill,
+                                    Padding = new EdgeInsets(inset, 0f, 0f, 0f),
+                                },
+                            },
+                            Key = "sidebar-tree",
+                            Children = Tree(vm, theme),
+                        },
+                        Gap(theme.Spacing.One),
+                        Rule(AppShellView.BorderSecondary, 1f, fill: true),
+                        Statusbar(vm, theme),
+                    ],
+                },
+                Rule(AppShellView.BorderPrimary, height),
+            ],
+        };
+    }
+
+    private UiNode Statusbar(AppShellViewModel vm, Theme theme) => new Row
+    {
+        Style = new()
+        {
+            Layout = new()
+            {
+                Align = UiAlign.Center,
+                Width = UiDim.Fill,
+                Height = UiDim.Fixed(AppShellView.StatusbarHeight - 1f),
+                Padding = new EdgeInsets(
+                    StatusInset, 0f, StatusInset, 0f),
+            },
+        },
+        Key = "statusbar",
+        Children =
+        [
+            Dot(theme.Success),
+            new Label
+            {
+                Text = vm.StatusLeft,
+                Style = StatusText(theme, StatusTextGap),
+            },
+            Spring(),
+            new Label
+            {
+                Text = vm.StatusRight,
+                Style = StatusText(theme, 0f),
+            },
+        ],
+    };
+
+    private static ElementSheet StatusText(Theme theme, float leadingGap) => new()
+    {
+        Type = new()
+        {
+            FontSize = theme.Typography.CaptionSize,
+            Font = FontFamily.Mono,
+        },
+        Colors = new() { Foreground = theme.TextMuted },
+        Layout = new()
+        {
+            Margin = new EdgeInsets(leadingGap, 0f, 0f, 0f),
+        },
+    };
+
+    private UiChildren Tree(AppShellViewModel vm, Theme theme)
+    {
+        _nodeCount = 0;
+        for (int s = 0; s < vm.Sections.Count; s++)
+        {
+            ShellSidebarSection section = vm.Sections[s];
+            Add(SectionHeader(section, s, theme));
+            for (int r = 0; r < section.Rows.Count; r++)
+                Add(RowNode(vm, section.Rows[r], theme));
+        }
+
+        return UiChildren.Create(_nodes.AsSpan(0, _nodeCount));
+    }
+
+    private UiNode SectionHeader(
+        ShellSidebarSection section, int index, Theme theme) => new Row
+    {
+        Style = new()
+        {
+            Layout = new()
+            {
+                Width = UiDim.Fill,
+                Height = UiDim.Fixed(theme.Floating.CloseActionSize),
+                Align = UiAlign.Start,
+                Padding = new EdgeInsets(theme.Spacing.Two, 0f, 0f, 0f),
+                Margin = index > 0
+                    ? new EdgeInsets(0f, theme.Spacing.Four, 0f, 0f)
+                    : null,
+            },
+        },
+        Key = index,
+        Children =
+        [
+            new Label
+            {
+                Text = section.Title,
+                Style = new()
+                {
+                    Type = new()
+                    {
+                        FontSize = theme.Typography.LabelSize,
+                        Weight = FontWeight.Medium,
+                    },
+                    Colors = new() { Foreground = theme.TextMuted },
+                    Layout = new()
+                    {
+                        Margin = new EdgeInsets(0f, theme.Spacing.Two, 0f, 0f),
+                    },
+                },
+            },
+            Spring(),
+            section.ShowPlus
+                ? new IconAction
+                {
+                    Icon = TablerIcon.Plus,
+                    OnClick = SectionPlus(index),
+                    Size = theme.Controls.SwitchHeight,
+                    Key = "plus",
+                }
+                : UiNode.None,
+        ],
+    };
+
+    private UiNode RowNode(
+        AppShellViewModel vm, ShellSidebarRow row, Theme theme)
+    {
+        ShellRowUi ui = RowUi(row.Tag ?? row.Label);
+        ui.Row = row;
+        return new TreeRow
+        {
+            Label = row.Label,
+            Icon = row.IconName == null ? row.Icon : null,
+            IconName = row.IconName,
+            // Nested rows draw no mark; their guide column already spans the
+            // same distance the root's icon cell does.
+            HideIcon = row.Depth > 0,
+            Badge = string.IsNullOrEmpty(row.Count) ? null : row.Count,
+            Depth = row.Depth,
+            Trunks = Trunks(row.TreeLines),
+            IsLastChild = row.IsLastChild,
+            Expander = row.HasChildren
+                ? row.Expanded
+                    ? SidebarExpander.Open
+                    : SidebarExpander.Collapsed
+                : SidebarExpander.None,
+            ExpanderDisabled = row.ExpanderDisabled,
+            Selected = row.Active,
+            OnSelect = ui.Select,
+            OnToggleExpand = ui.ToggleExpand,
+            OnContext = ui.Context,
+            Actions = RowActions(vm, row, ui, theme),
+            Key = ui.Key,
+        };
+    }
+
+    private static UiChildren RowActions(
+        AppShellViewModel vm, ShellSidebarRow row, ShellRowUi ui, Theme theme)
+    {
+        float side = theme.Controls.SwitchHeight;
+        if (row.ActorActions)
+            return
+            [
+                new IconAction
+                {
+                    Icon = TablerIcon.Crosshair,
+                    OnClick = ui.Target,
+                    Size = side,
+                    Help = "Set game target",
+                    Key = "target",
+                },
+                new IconAction
+                {
+                    Icon = TablerIcon.Eye,
+                    Selected = false,
+                    Slashed = !row.ActorVisible,
+                    OnClick = ui.Visibility,
+                    Size = side,
+                    Help = row.ActorVisible ? "Hide actor" : "Show actor",
+                    Key = "visible",
+                },
+                new IconAction
+                {
+                    Icon = TablerIcon.PlayerPlay,
+                    Selected = false,
+                    Slashed = row.ActorPaused,
+                    OnClick = ui.Pause,
+                    Size = side,
+                    Help = row.ActorPaused
+                        ? "Resume animation"
+                        : "Pause animation",
+                    Key = "pause",
+                },
+            ];
+
+        if (row.OverlayBones is not { } bones)
+            return UiChildren.Empty;
+
+        bool visible = vm.IsOverlayVisible?.Invoke(bones) ?? true;
+        return new IconAction
+        {
+            Icon = visible ? TablerIcon.Eye : TablerIcon.EyeOff,
+            Selected = false,
+            Slashed = !visible,
+            OnClick = ui.OverlayVisibility,
+            Size = side,
+            Help = visible
+                ? "Hide from skeleton overlay"
+                : "Show in skeleton overlay",
+            Key = "overlay",
+        };
+    }
+
+    /// <summary>The view model's per-ancestor sibling flags as the painter's
+    /// trunk mask, verbatim: bit <c>a</c> is <c>TreeLines[a]</c>, and bit 0 is
+    /// unused exactly as depth 0 has no trunk.</summary>
+    private static uint Trunks(bool[]? lines)
+    {
+        if (lines == null)
+            return 0u;
+        uint mask = 0u;
+        int levels = Math.Min(lines.Length, 32);
+        for (int level = 1; level < levels; level++)
+            if (lines[level])
+                mask |= 1u << level;
+        return mask;
+    }
+
+    // ── workspace ────────────────────────────────────────────────────────
+
+    private UiNode Workspace(
+        AppShellViewModel vm, Theme theme, float width, float height) =>
+        new Column
+        {
+            Style = new()
+            {
+                Layout = new()
+                {
+                    Width = UiDim.Fixed(MathF.Max(1f, width)),
+                    Height = UiDim.Fixed(height),
+                },
+            },
+            Key = "workspace",
+            Children = new ActionBar
+            {
+                // The tab strip is the SAME segmented pill every other mode
+                // selector uses, not hand-drawn buttons; AlignFirstTabToCursor
+                // lands the first tab's LABEL on the content inset, because the
+                // pill's dark chrome is decoration and not padding.
+                Left = _tabCount == 0
+                    ? UiChildren.Empty
+                    : new Segmented
+                    {
+                        Items = _tabLabels,
+                        Selected = _tabActive,
+                        OnChange = _setTab,
+                        AlignFirstTabToCursor = true,
+                        Key = "shell-tabs",
+                    },
+                // Actor physics occupies ONE stable right-aligned slot on every
+                // workspace tab: a tab change never replaces it with selection
+                // text and never moves it.
+                Right =
+                [
+                    new Element
+                    {
+                        Sheet = SheetFamily.Row,
+                        Style = new()
+                        {
+                            Layout = new()
+                            {
+                                Align = UiAlign.Center,
+                                Gap = theme.Spacing.Three,
+                            },
+                        },
+                        Help = vm.PhysicsAvailable
+                            ? "Enable or disable physics for the selected actor"
+                            : "Select an actor or bone to control physics",
+                        Key = "physics",
+                        Children =
+                        [
+                            new Label
+                            {
+                                Text = "Physics",
+                                Style = new()
+                                {
+                                    Type = new()
+                                    {
+                                        FontSize = theme.Typography.CaptionSize,
+                                        InkRise = theme.Optical.ActionBarText,
+                                    },
+                                    Colors = new()
+                                    {
+                                        Foreground = theme.FormLabel,
+                                    },
+                                },
+                            },
+                            new Switch
+                            {
+                                Value = vm.PhysicsOn,
+                                OnToggle = _setPhysics,
+                                Disabled = !vm.PhysicsAvailable,
+                            },
+                        ],
+                    },
+                    vm.ShowPopOut
+                        ? new IconAction
+                        {
+                            Icon = TablerIcon.ExternalLink,
+                            OnClick = _popOut,
+                            Size = theme.Controls.ShellIconAction,
+                            Key = "pop-out",
+                        }
+                        : UiNode.None,
+                ],
+                Separator = ActionBarSeparator.Bottom,
+                // The toolbar shares ONE horizontal inset with the content
+                // beneath it, not the modal chassis' header inset.
+                Inset = AppShellView.MainHorizontalPadding,
+                Key = "workspace-actions",
+            },
+        };
+
+    private static UiNode Rail(Theme theme, float width, float height) =>
+        width <= 0f
+            ? UiNode.None
+            : new Chassis
+            {
+                // The rail chassis is continuous with the titlebar's tb-right
+                // cell; its content is hosted by the legacy scroll seam.
+                Fill = theme.SurfaceRaised,
+                Radius = theme.Radii.Window,
+                Corners = UiCorners.BottomRight,
+                Style = new()
+                {
+                    Layout = new()
+                    {
+                        Flow = UiFlow.Row,
+                        Width = UiDim.Fixed(width),
+                        Height = UiDim.Fixed(height),
+                    },
+                },
+                Key = "rail",
+                Children = Rule(AppShellView.BorderPrimary, height),
+            };
+
+    // ── shared leaves ────────────────────────────────────────────────────
+
+    private static UiNode Spring() => new Element
+    {
+        Style = new() { Layout = new() { Width = UiDim.Fill } },
+    };
+
+    /// <summary>One full-width band of empty vertical flow.</summary>
+    private static UiNode Gap(float height) => new Element
+    {
+        Style = new()
+        {
+            Layout = new()
+            {
+                Width = UiDim.Fill,
+                Height = UiDim.Fixed(height),
+            },
+        },
+    };
+
+    private static UiNode Rule(Vector4 color, float height, bool fill = false)
+        => new Element
+        {
+            Style = new()
+            {
+                Layout = new()
+                {
+                    Width = fill ? UiDim.Fill : UiDim.Fixed(1f),
+                    Height = UiDim.Fixed(fill ? 1f : height),
+                },
+                Colors = new() { Fill = color },
+            },
+        };
+
+    /// <summary>A filled circle: a square whose radius is half its side, which
+    /// is what ImGui's own corner clamp makes of it.</summary>
+    private static UiNode Dot(Vector4 color) => new Element
+    {
+        Style = new()
+        {
+            Layout = new()
+            {
+                Width = UiDim.Fixed(DotSize),
+                Height = UiDim.Fixed(DotSize),
+            },
+            Colors = new() { Fill = color },
+            Shape = new() { Radius = DotSize * 0.5f },
+        },
+    };
+
+    // ── retained bookkeeping ─────────────────────────────────────────────
+
+    private ShellRowUi RowUi(object tag)
+    {
+        if (_rows.TryGetValue(tag, out ShellRowUi? existing))
+            return existing;
+        ShellRowUi created = new(
+            _vm, tag as string ?? tag.ToString() ?? string.Empty);
+        _rows[tag] = created;
+        return created;
+    }
+
+    private void PruneRows(ulong revision)
+    {
+        if (_rowsRevision == revision)
+            return;
+        _rowsRevision = revision;
+        _rows.Clear();
+    }
+
+    private Action SectionPlus(int index)
+    {
+        if (index >= _sectionPlus.Length)
+            Array.Resize(ref _sectionPlus, Math.Max(index + 1, _sectionPlus.Length * 2));
+        while (_sectionPlusCount <= index)
+        {
+            int captured = _sectionPlusCount;
+            _sectionPlus[captured] = () => _vm.OnSectionPlus?.Invoke(captured);
+            _sectionPlusCount++;
+        }
+
+        return _sectionPlus[index];
+    }
+
+    private void Add(UiNode node)
+    {
+        if (_nodeCount == _nodes.Length)
+            Array.Resize(ref _nodes, _nodeCount * 2);
+        _nodes[_nodeCount++] = node;
+    }
+
+    /// <summary>The tab strip reads a plain array, and Segmented reads ALL of
+    /// it — so the buffer is exactly the tab count and is reallocated only when
+    /// that count changes, which the workspace's fixed tab set never does.
+    /// </summary>
+    private void SyncTabs()
+    {
+        int count = _vm.Tabs.Count;
+        if (_tabLabels.Length != count)
+            _tabLabels = new string[count];
+        _tabActive = 0;
+        for (int i = 0; i < count; i++)
+        {
+            _tabLabels[i] = _vm.Tabs[i].Label;
+            if (_vm.Tabs[i].Active)
+                _tabActive = i;
+        }
+
+        _tabCount = count;
+    }
+
+    private void SyncKeybindHelp()
+    {
+        string undo = PoserKeybinds.Effective("Undo");
+        if (!string.Equals(undo, _undoShortcut, StringComparison.Ordinal))
+        {
+            _undoShortcut = undo;
+            _undoHelp = $"Take back the last pose edit · {undo}";
+            _undoEmptyHelp = $"Nothing to undo · {undo}";
+        }
+
+        string redo = PoserKeybinds.Effective("Redo");
+        if (!string.Equals(redo, _redoShortcut, StringComparison.Ordinal))
+        {
+            _redoShortcut = redo;
+            _redoHelp = $"Reapply the change you undid · {redo}";
+            _redoEmptyHelp = $"Nothing to redo · {redo}";
+        }
+    }
+}
+
+/// <summary>
+/// The M1 "Studio" shell. Its chrome — the exclusive-input owner, the one
+/// shell-level blur, the glass chassis, the collapsed early return, the content
+/// viewport, the rail's scroll and the sidebar's resize strip — is imperative by
+/// name; everything between those seams is ONE declared tree
+/// (<see cref="ShellFrame"/>).
 /// </summary>
 public static class AppShellView
 {
-    private static Vector4 BgApp =>
+    internal static Vector4 Glass =>
         LegacyCrystarium.FloatingSurface.FillColor;
-    private static Vector4 Surface1 =>
-        Crystarium.ActiveTheme.SurfaceRaised;
-    private static Vector4 TextPrimary =>
-        Crystarium.ActiveTheme.Chrome.Text;
-    private static Vector4 TextTertiary =>
-        Crystarium.ActiveTheme.TextMuted;
-    private static Vector4 BorderPrimary =>
+    internal static Vector4 BorderPrimary =>
         Crystarium.ActiveTheme.Chrome.ControlBorder;
-    private static Vector4 BorderSecondary =>
+    internal static Vector4 BorderSecondary =>
         Crystarium.ActiveTheme.FormSeparator;
-    private static Vector4 SurfaceHover =>
-        Crystarium.ActiveTheme.Chrome.ControlFill;
-    private static Vector4 SurfaceActive =>
-        Crystarium.ActiveTheme.Chrome.WeakOverlay;
-    private static Vector4 Success =>
-        Crystarium.ActiveTheme.Success;
-    // One inline axis editor may be active at a time. This belongs to the
-    // view because the edit surface is an AppShell primitive, not entity state.
 
     public static float TitlebarHeight => Crystarium.ActiveTheme.Shell.TitlebarHeight;
     public static float SidebarWidth => Crystarium.ActiveTheme.Shell.SidebarDefaultWidth;
@@ -164,8 +1356,8 @@ public static class AppShellView
     public static float StatusbarHeight => Crystarium.ActiveTheme.Shell.StatusbarHeight;
     public static float ScrollbarWidth => Crystarium.ActiveTheme.Scrollbar.GutterWidth;
     public static float ScrollbarRadius => Crystarium.ActiveTheme.Scrollbar.Radius;
-    private static float SidebarHorizontalPadding => Crystarium.ActiveTheme.Page.Inset;
     public static float MainHorizontalPadding => Crystarium.ActiveTheme.Page.Inset;
+    public static float RailWidth => Crystarium.ActiveTheme.Shell.RailWidth;
 
     public static void Draw(AppShellViewModel vm, Vector2 origin, Vector2 size)
     {
@@ -180,72 +1372,55 @@ public static class AppShellView
             max);
         try
         {
+            float radius = Crystarium.ActiveTheme.Radii.Window;
 
-        // One shell-level blur; child panels only add translucent fills.
-        LegacyCrystarium.FloatingSurface.PrependShellBlur(
-            dl, min, max, Crystarium.ActiveTheme.Radii.Window * s);
-        dl.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BgApp)), 10f * s);
-        DrawTitlebar(vm, min, max, s, dl);
+            // One shell-level blur; child panels only add translucent fills.
+            LegacyCrystarium.FloatingSurface.PrependShellBlur(
+                dl, min, max, radius * s);
+            // USER 2026-08-03: the main window wears the SETTINGS chassis —
+            // one glass fill inside one glass edge — with the elevation shadow
+            // suppressed (a shadow under a chassis that IS the window reads as
+            // a halo) and the blur left to the one call above.
+            LegacyCrystarium.FloatingSurface.DrawChrome(
+                dl, min, max, radius, shadow: false, blur: false);
 
-        if (vm.Collapsed)
-        {
-            DrawOuterGlassBorder(min, max, s);
-            return; // titlebar strip only
-        }
+            vm.Frame.Render(min, size, s);
 
-        float bodyTop = min.Y + TitlebarHeight * s;
-        float railW = vm.DrawRail != null ? RailWidth * s : 0f;
-        float sbw = vm.SidebarWidthPx * s;
-        DrawSidebar(vm, new Vector2(min.X, bodyTop), new Vector2(min.X + sbw, max.Y), s, dl);
-        DrawMain(vm, new Vector2(min.X + sbw, bodyTop), new Vector2(max.X - railW, max.Y), s, dl);
+            if (vm.Collapsed)
+            {
+                DrawOuterGlassBorder(min, max);
+                return; // titlebar strip only
+            }
 
-        // M11: resizable sidebar — 6px col-resize strip on its right edge
-        ImGui.SetCursorScreenPos(new Vector2(min.X + sbw - 3f * s, bodyTop));
-        ImGui.InvisibleButton("##sidebar-resize", new Vector2(6f * s, max.Y - bodyTop));
-        if (ImGui.IsItemHovered() || ImGui.IsItemActive())
-            ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEw);
-        if (ImGui.IsItemActive() && ImGui.GetIO().MouseDelta.X != 0f)
-            vm.OnSidebarResize?.Invoke(Math.Clamp(
-                vm.SidebarWidthPx + ImGui.GetIO().MouseDelta.X / s,
-                Crystarium.ActiveTheme.Shell.SidebarMinimumWidth,
-                Crystarium.ActiveTheme.Shell.SidebarMaximumWidth));
+            float bodyTop = min.Y + TitlebarHeight * s;
+            float railW = vm.DrawRail != null ? RailWidth * s : 0f;
+            float sbw = vm.SidebarWidthPx * s;
+            DrawContentViewport(
+                vm,
+                new Vector2(min.X + sbw, bodyTop),
+                new Vector2(max.X - railW, max.Y),
+                s);
 
-        if (vm.DrawRail != null)
-        {
-            // rail chassis: surface-1 + border-left, continuous with tb-right
-            var railMin = new Vector2(max.X - railW, min.Y + TitlebarHeight * s);
-            dl.AddRectFilled(railMin, max, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Surface1)), 10f * s, ImDrawFlags.RoundCornersBottomRight);
-            dl.AddRectFilled(railMin, new Vector2(railMin.X + 1f * s, max.Y), ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderPrimary)));
-            // The child reaches the outer-right glass edge; its content keeps
-            // 12px left padding and a fixed 12px right composite gutter:
-            // 0px content gap + 12px scrollbar.
-            var railChildOrigin = railMin + new Vector2(0f, 12f) * s;
-            ImGui.SetCursorScreenPos(railChildOrigin);
-            LegacyCrystarium.ScrollRegion(
-                "##shell-rail",
-                railW / s - 1f,
-                (max.Y - railMin.Y) / s - 24f,
-                region =>
-                {
-                    var railContentOrigin =
-                        ImGui.GetCursorScreenPos()
-                        + new Vector2(
-                            Crystarium.ActiveTheme.Page.Inset * s,
-                            0f);
-                    ImGui.SetCursorScreenPos(railContentOrigin);
-                    vm.DrawRail(
-                        railContentOrigin,
-                        new Vector2(
-                            region.ContentWidth * s
-                                - Crystarium.ActiveTheme.Page.Inset * s,
-                            max.Y - railMin.Y - 24f * s));
-                });
-        }
+            // M11: resizable sidebar — 6px col-resize strip on its right edge.
+            // Raw pointer input against a named boundary: the strip has no
+            // box, no state and no paint, only a drag delta.
+            ImGui.SetCursorScreenPos(new Vector2(min.X + sbw - 3f * s, bodyTop));
+            ImGui.InvisibleButton("##sidebar-resize", new Vector2(6f * s, max.Y - bodyTop));
+            if (ImGui.IsItemHovered() || ImGui.IsItemActive())
+                ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEw);
+            if (ImGui.IsItemActive() && ImGui.GetIO().MouseDelta.X != 0f)
+                vm.OnSidebarResize?.Invoke(Math.Clamp(
+                    vm.SidebarWidthPx + ImGui.GetIO().MouseDelta.X / s,
+                    Crystarium.ActiveTheme.Shell.SidebarMinimumWidth,
+                    Crystarium.ActiveTheme.Shell.SidebarMaximumWidth));
 
-        // Panel fills are intentionally drawn after the base chassis. Repaint
-        // its asymmetric glass edge last so sidebar/rail surfaces cannot hide
-        // the left, right, or bottom glass borders.
-        DrawOuterGlassBorder(min, max, s);
+            if (vm.DrawRail != null)
+                DrawRailScroll(vm, new Vector2(max.X - railW, bodyTop), max, railW, s);
+
+            // Panel fills are intentionally drawn after the base chassis.
+            // Repaint the asymmetric glass edge last so sidebar and rail
+            // surfaces cannot hide the left, right, or bottom glass borders.
+            DrawOuterGlassBorder(min, max);
         }
         finally
         {
@@ -253,602 +1428,27 @@ public static class AppShellView
         }
     }
 
-    public static float RailWidth => Crystarium.ActiveTheme.Shell.RailWidth;
-
-    // ── titlebar ─────────────────────────────────────────────────────────
-
-    private static void DrawTitlebar(AppShellViewModel vm, Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
-    {
-        float h = TitlebarHeight * s;
-        var leftMax = new Vector2(min.X + vm.SidebarWidthPx * s, min.Y + h);
-        float actionSize =
-            Crystarium.ActiveTheme.Controls.ShellIconAction;
-        float actionGap = Crystarium.ActiveTheme.Page.ActionGap;
-        float compactGap = Crystarium.ActiveTheme.Spacing.Two;
-        float segmentHeight =
-            Crystarium.ActiveTheme.Controls.NavigationHeight;
-
-        if (vm.Collapsed)
-        {
-            // Collapsed means one continuous titlebar, not an empty window with
-            // a surviving sidebar cell. Paint one glass strip with no divider.
-            var barMax = new Vector2(max.X, min.Y + h);
-            dl.AddRectFilled(min, barMax,
-                ImGui.ColorConvertFloat4ToU32(
-                    ColorEx.ApplyAlpha(LegacyCrystarium.FloatingSurface.FillColor)),
-                10f * s);
-        }
-        else
-        {
-            // left cell: translucent fill over the one shell-level blur.
-            dl.AddRectFilled(min, leftMax,
-                ImGui.ColorConvertFloat4ToU32(
-                    ColorEx.ApplyAlpha(LegacyCrystarium.FloatingSurface.FillColor)),
-                10f * s, ImDrawFlags.RoundCornersTopLeft);
-            dl.AddRectFilled(new Vector2(leftMax.X - 1f * s, min.Y), leftMax,
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderPrimary)));
-        }
-
-        // app name + GPose pill
-        var appNameStyle = new TextStyle
-        {
-            Size = Crystarium.ActiveTheme.Typography.BodySize,
-            Weight = FontWeight.SemiBold,
-            Color = TextPrimary,
-        };
-        LegacyCrystarium.TextAt(min + new Vector2(14f, (TitlebarHeight - 16f) / 2f) * s, "Poser", appNameStyle);
-        float appW = LegacyCrystarium.MeasureText("Poser", appNameStyle).X;
-        if (vm.GPoseActive)
-        {
-            var pillStyle = new TextStyle
-            {
-                Size = Crystarium.ActiveTheme.Typography.CaptionSize,
-                Weight = FontWeight.Medium,
-                Color = Success,
-            };
-            var pillMin = new Vector2(min.X + 14f * s + appW + 8f * s, min.Y + (h - 20f * s) / 2f);
-            float pillTextW = LegacyCrystarium.MeasureText("GPose", pillStyle).X;
-            var pillMax = pillMin + new Vector2(8f * s + 7f * s + 6f * s + pillTextW + 8f * s, 20f * s);
-            dl.AddRectFilled(pillMin, pillMax, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Success with { W = 0.12f })), 10f * s);
-            var dotC = new Vector2(pillMin.X + 8f * s + 3.5f * s, pillMin.Y + 10f * s);
-            dl.AddCircleFilled(dotC, 3.5f * s, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Success)));
-            LegacyCrystarium.TextAt(new Vector2(dotC.X + 3.5f * s + 6f * s, pillMin.Y + 4f * s), "GPose", pillStyle);
-        }
-
-        // undo/redo sit right-aligned in the sidebar's title cell, directly
-        // before the spawn button.
-        float undoY = min.Y + (h - actionSize * s) / 2f;
-        float titleRight = leftMax.X - 8f * s;
-        if (vm.ShowSpawn)
-        {
-            PlaceIconAction(
-                new Vector2(titleRight - actionSize * s, undoY),
-                TablerIcon.Plus,
-                s,
-                vm.OnSpawn,
-                help: "Add an actor to the scene");
-            titleRight -= (actionSize + compactGap) * s;
-        }
-        PlaceIconAction(new Vector2(titleRight - actionSize * s, undoY), TablerIcon.ArrowBackUp, s, vm.OnRedo,
-            dimmed: !vm.CanRedo, flipX: true,
-            help: vm.CanRedo ? "Reapply the change you undid" : "Nothing to redo",
-            helpShortcut: PoserKeybinds.Effective("Redo"));
-        PlaceIconAction(new Vector2(titleRight - (actionSize + compactGap + actionSize) * s, undoY), TablerIcon.ArrowBackUp, s,
-            vm.OnUndo, dimmed: !vm.CanUndo,
-            help: vm.CanUndo ? "Take back the last pose edit" : "Nothing to undo",
-            helpShortcut: PoserKeybinds.Effective("Undo"));
-
-        // center strip
-        float x = leftMax.X + 12f * s;
-        float cy = min.Y + (h - actionSize * s) / 2f;
-        if (vm.ShowProject)
-        {
-            PlaceIconAction(new Vector2(x, cy), TablerIcon.Folder, s, vm.OnProject,
-                help: "Open the scene project browser");
-            x += (actionSize + actionGap) * s;
-        }
-
-        // gizmo op seg (icon tabs) + space seg
-        x = PlaceIconSegments(new Vector2(x, min.Y + (h - segmentHeight * s) / 2f),
-            new[] { TablerIcon.ArrowsMove, TablerIcon.Rotate, TablerIcon.ArrowsDiagonal,
-                TablerIcon.ArrowsMaximize },
-            vm.GizmoOperation, s, i => vm.OnGizmoOperation?.Invoke(i),
-            itemHelp: i => i switch
-            {
-                0 => "Move the selection",
-                1 => "Rotate the selection",
-                2 => "Scale the selection",
-                _ => "Move, rotate, or scale with the universal gizmo",
-            });
-        x += actionGap * s;
-        x = PlaceTextSegments(new Vector2(x, min.Y + (h - segmentHeight * s) / 2f),
-            new[] { "Local", "World" }, vm.GizmoSpace, s,
-            i => vm.OnGizmoSpace?.Invoke(i),
-            itemHelp: i => i == 0
-                ? "Use the selected target's local axes"
-                : "Use world-space axes");
-        // Pivot keeps a permanent slot so tool/selection changes cannot move
-        // the rest of the toolbar. Both choices disable when pivot is
-        // inapplicable; Parent additionally needs a live parent bone.
-        x += actionGap * s;
-        x = PlaceTextSegments(new Vector2(x, min.Y + (h - segmentHeight * s) / 2f),
-            new[] { "Self", "Parent" }, vm.RotationPivot, s,
-            i => vm.OnRotationPivot?.Invoke(i),
-            itemDisabled: i => !vm.RotationPivotEnabled
-                || (i == 1 && !vm.RotationPivotParentAvailable),
-            itemHelp: i => i == 0
-                ? "Rotate each selected target around itself"
-                : "Rotate around the selected bone's parent pivot");
-        x += actionGap * s;
-        x = PlaceTextSegments(new Vector2(x, min.Y + (h - segmentHeight * s) / 2f),
-            new[] { "Off", "Link", "Mirror" }, vm.SymmetryMode, s,
-            i => vm.OnSymmetry?.Invoke(i),
-            itemHelp: i => i switch
-            {
-                0 => "Edit only the current selection",
-                1 => "Apply the same edit to linked selections",
-                _ => "Apply mirrored edits across left and right bones",
-            });
-
-        // tb-right cell: when the rail is present, the right cluster sits on a
-        // surface-1 cell continuous with the rail below (shell rule)
-        if (vm.DrawRail != null && !vm.Collapsed)
-        {
-            var cellMin = new Vector2(max.X - RailWidth * s, min.Y);
-            dl.AddRectFilled(cellMin, new Vector2(max.X, min.Y + h), ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Surface1)), 10f * s, ImDrawFlags.RoundCornersTopRight);
-            dl.AddRectFilled(cellMin, new Vector2(cellMin.X + 1f * s, min.Y + h), ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderPrimary)));
-        }
-
-        // right cluster (rightmost = collapse chevron, then close X — user spec)
-        float rx = max.X - 12f * s - actionSize * s;
-        PlaceNamedIconAction(new Vector2(rx, cy), vm.Collapsed ? "chevron-down" : "chevron-up", s,
-            () => vm.OnCollapse?.Invoke(!vm.Collapsed),
-            help: vm.Collapsed ? "Expand the window" : "Collapse to the title bar");
-        rx -= (actionSize + actionGap) * s;
-        PlaceNamedIconAction(new Vector2(rx, cy), "x", s, vm.OnHideUi,
-            help: "Hide the Poser window"); // close window
-        rx -= (actionSize + actionGap) * s;
-        PlaceIconAction(new Vector2(rx, cy), TablerIcon.Settings, s, vm.OnSettings,
-            help: "Open Poser settings");
-        rx -= (actionSize + actionGap) * s;
-        PlaceIconToggleTemporary(new Vector2(rx, cy), TablerIcon.Armature, vm.SkeletonOverlayOn, s,
-            () => vm.OnSkeletonOverlay?.Invoke(!vm.SkeletonOverlayOn),
-            help: "Toggle the skeleton overlay in the viewport");
-    }
-
-    // ── sidebar ──────────────────────────────────────────────────────────
-
-    private static void DrawSidebar(AppShellViewModel vm, Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
-    {
-        // Sidebar fill composes over the one shell-level blur.
-        dl.AddRectFilled(
-            min,
-            max,
-            ImGui.ColorConvertFloat4ToU32(
-                ColorEx.ApplyAlpha(LegacyCrystarium.FloatingSurface.FillColor)),
-            10f * s,
-            ImDrawFlags.RoundCornersBottomLeft);
-        dl.AddRectFilled(new Vector2(max.X - 1f * s, min.Y), max, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderPrimary)));
-
-        float statusTop = max.Y - StatusbarHeight * s;
-
-        // Search stays outside the scroll child so a large skeleton cannot
-        // push its primary navigation affordance out of view.
-        ImGui.SetCursorScreenPos(min + new Vector2(SidebarHorizontalPadding, 6f) * s);
-        LegacyCrystarium.FilterPill(
-            "##sidebar-search",
-            vm.SidebarSearch,
-            next => vm.SidebarSearch = next,
-            "Filter scene...",
-            ControlStyle.Workspace with
-            {
-                Width = UiWidth.Fixed(
-                    (max.X - min.X) / s
-                    - SidebarHorizontalPadding * 2f - 1f),
-            });
-
-
-        // Scroll child spans to the sidebar border so the scrollbar sits AT the
-        // right edge; rows take the avail width (a gutter, never an overlap).
-        float treeTop = min.Y + 38f * s;
-        ImGui.SetCursorScreenPos(new Vector2(min.X + SidebarHorizontalPadding * s, treeTop));
-        float childW = max.X - 1f * s - (min.X + SidebarHorizontalPadding * s);
-        LegacyCrystarium.ScrollRegion(
-            "##sidebar-tree",
-            childW / s,
-            (statusTop - treeTop) / s
-                - Crystarium.ActiveTheme.Spacing.One,
-            region =>
-            {
-                var cdl = ImGui.GetWindowDrawList();
-                float innerW = region.ContentWidth * s;
-                var cursor = ImGui.GetCursorScreenPos();
-                var treeStart = cursor;
-                int sectionIndex = 0;
-                foreach (var section in vm.Sections)
-                {
-                    if (sectionIndex > 0)
-                        cursor.Y +=
-                            Crystarium.ActiveTheme.Spacing.Four * s;
-                    LegacyCrystarium.TextAt(cursor + new Vector2( Crystarium.ActiveTheme.Spacing.Two, Crystarium.ActiveTheme.Spacing.Two) * s, section.Title, new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Weight = FontWeight.Medium, Color = TextTertiary });
-                    if (section.ShowPlus)
-                    {
-                        ImGui.SetCursorScreenPos(new Vector2(
-                            cursor.X + innerW
-                                - Crystarium.ActiveTheme.Floating
-                                    .CloseActionSize * s,
-                            cursor.Y
-                                + Crystarium.ActiveTheme.Spacing.Three * s));
-                        int capture = sectionIndex;
-                        LegacyCrystarium.IconButton(
-                            TablerIcon.Plus,
-                            () => vm.OnSectionPlus?.Invoke(capture),
-                            ControlStyle.Square(
-                                Crystarium.ActiveTheme.Controls.SwitchHeight),
-                            id: $"##sbp-{sectionIndex}");
-                    }
-                    cursor.Y +=
-                        Crystarium.ActiveTheme.Floating.CloseActionSize * s;
-
-                    int rowIndex = 0;
-                    foreach (var row in section.Rows)
-                    {
-                        DrawRow(
-                            vm,
-                            row,
-                            cursor,
-                            innerW,
-                            s,
-                            cdl,
-                            $"{sectionIndex}-{rowIndex++}");
-                        cursor.Y += RowHeight * s;
-                    }
-                    sectionIndex++;
-                }
-                ImGui.SetCursorScreenPos(treeStart);
-                ImGui.Dummy(
-                    new Vector2(innerW, cursor.Y - treeStart.Y));
-            });
-
-        // statusbar: status information only (actor count, FPS)
-        dl.AddRectFilled(new Vector2(min.X, statusTop), new Vector2(max.X - 1f * s, statusTop + 1f * s),
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderSecondary)));
-        var dotCenter = new Vector2(min.X + 10f * s + 3.5f * s, statusTop + StatusbarHeight * s / 2f);
-        dl.AddCircleFilled(dotCenter, 3.5f * s, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Success)));
-        var statusStyle = new TextStyle
-        {
-            Size = Crystarium.ActiveTheme.Typography.CaptionSize,
-            Color = TextTertiary,
-            Family = FontFamily.Mono,
-        };
-        LegacyCrystarium.TextAt(new Vector2(dotCenter.X + 3.5f * s + 8f * s, statusTop + 7f * s), vm.StatusLeft, statusStyle);
-        LegacyCrystarium.TextAt(new Vector2(max.X - 10f * s - LegacyCrystarium.MeasureText(vm.StatusRight, statusStyle).X, statusTop + 7f * s), vm.StatusRight, statusStyle);
-    }
-
-    private static void DrawRow(AppShellViewModel vm, ShellSidebarRow row, Vector2 cursor, float innerW, float s, ImDrawListPtr dl, string id)
-    {
-        const float Indent = 20f;
-        const float RootIconCenter = 24f; // 16px expander slot + half of the 16px actor icon
-        const float LabelOffsetFromGuide = 14f;
-        int d = row.Depth;
-
-        float GuideX(int depth) => cursor.X + (RootIconCenter + (depth - 1) * Indent) * s;
-
-        float actionReserve = row.ActorActions
-            ? 66f * s
-            : row.OverlayBones != null
-                ? 22f * s
-                : 0f;
-        float bodyWidth = MathF.Max(1f, innerW - actionReserve);
-        // The body and action strip are disjoint hit regions. A compact action
-        // can therefore never select or disclose its row.
-        ImGui.SetCursorScreenPos(cursor);
-        var hit = Interactive.Reserve(
-            $"##sbr-{id}", new Vector2(bodyWidth, RowHeight * s), disabled: false);
-
-        float arrowMinX, arrowMaxX;
-        if (d == 0) { arrowMinX = cursor.X; arrowMaxX = cursor.X + 18f * s; }
-        else
-        {
-            float gx = GuideX(d);
-            arrowMinX = gx - 8f * s;
-            arrowMaxX = gx + 10f * s;
-        }
-        bool overArrow = row.HasChildren && !row.ExpanderDisabled && hit.Hovered
-            && ImGui.GetMousePos().X >= arrowMinX && ImGui.GetMousePos().X <= arrowMaxX;
-
-        // Nested pills start after the shared 8.5px branch arm and retain 4px
-        // padding before the label. Connector ink never runs under selection.
-        float pillMinX = d > 0 ? GuideX(d) + 10f * s : cursor.X + 1f * s;
-        var pillMin = new Vector2(pillMinX, cursor.Y);
-        var pillMax = new Vector2(cursor.X + innerW, cursor.Y + (RowHeight - 1f) * s);
-        if (row.Active)
-            dl.AddRectFilled(pillMin, pillMax, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(SurfaceActive)), 5f * s);
-        else if (hit.Hovered)
-            dl.AddRectFilled(pillMin, pillMax, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(SurfaceHover)), 5f * s);
-
-        uint guide = ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(TextTertiary));
-
-        // Every guide column is derived from the actor icon's center. This keeps
-        // the first trunk directly beneath that icon and all descendant trunks,
-        // including terminal L branches, on the same 20px grid.
-        if (d > 0 && row.TreeLines != null)
-        {
-            for (int a = 1; a < d && a < row.TreeLines.Length; a++)
-            {
-                if (!row.TreeLines[a]) continue;
-                float gx = GuideX(a);
-                DrawGuideVertical(dl, gx, cursor.Y, cursor.Y + RowHeight * s, guide, s);
-            }
-        }
-
-        // Branch connector: T / hard-L / arrow-cutout.
-        if (d > 0)
-        {
-            float gx = GuideX(d);
-            float X(float v) => gx + v * s;
-            float Y(float v) => cursor.Y + v * s;
-
-            if (row.HasChildren)
-            {
-                // Cutout: line gap Y=9..17 under the triangle.
-                DrawGuideVertical(dl, X(0f), Y(0f), Y(9f), guide, s);
-                if (!row.IsLastChild)
-                    DrawGuideVertical(dl, X(0f), Y(17f), Y(26f), guide, s);
-                DrawGuideHorizontal(dl, X(4.5f), X(8.5f), Y(13f), guide, s);
-            }
-            else if (row.IsLastChild)
-            {
-                // Crisp hard L with edge-joined legs and no heavy stroked corner.
-                DrawGuideElbow(dl, X(0f), Y(0f), X(8.5f), Y(13f), guide, s);
-            }
-            else
-            {
-                DrawGuideVertical(dl, X(0f), Y(0f), Y(26f), guide, s);
-                DrawGuideHorizontal(dl, X(0.5f), X(8.5f), Y(13f), guide, s);
-            }
-
-            // shared disclosure affordance overlapping the cutout gap
-            if (row.HasChildren)
-                DrawDisclosureChevron(dl, new Vector2(X(0f), Y(13f)), row, overArrow, s);
-        }
-
-        float x;
-        if (d == 0)
-        {
-            // root rows keep the icon layout: 16px expander slot + 26px icon cell
-            x = cursor.X;
-            if (row.HasChildren)
-                DrawDisclosureChevron(dl, new Vector2(x + 8f * s, cursor.Y + 13f * s), row, overArrow, s);
-            x += 16f * s;
-            ImGui.SetCursorScreenPos(new Vector2(x, cursor.Y + 5f * s));
-            if (row.IconName != null)
-                LegacyCrystarium.Icon(row.IconName, 16f, TextPrimary with { W = 0.85f });
-            else
-                LegacyCrystarium.Icon(row.Icon, 16f, TextPrimary with { W = 0.85f });
-            x += 22f * s;
-        }
-        else
-        {
-            // Nested labels stay a fixed distance to the right of their guide.
-            x = GuideX(d) + LabelOffsetFromGuide * s;
-        }
-
-        // clip the label short of the badge so long names never run under it
-        float badgeReserve = actionReserve + 6f * s;
-        ImGui.PushClipRect(new Vector2(cursor.X, cursor.Y),
-            new Vector2(cursor.X + innerW - badgeReserve, cursor.Y + RowHeight * s), true);
-        LegacyCrystarium.TextAt(Crystarium.ActiveTheme.Optical.Snap(new Vector2( x, cursor.Y + 5f * s + Crystarium.ActiveTheme.Optical.SidebarText * s)), row.Label, new TextStyle { Size = Crystarium.ActiveTheme.Typography.BodySize, Color = TextPrimary });
-        ImGui.PopClipRect();
-
-        if (row.ActorActions)
-        {
-            float ax = cursor.X + innerW - actionReserve;
-            DrawRowAction(
-                $"##target-{id}", new Vector2(ax, cursor.Y + 3f * s),
-                TablerIcon.Crosshair, s,
-                () => vm.OnActorTarget?.Invoke(row),
-                "Set game target");
-            ax += 22f * s;
-            DrawRowToggleTemporary(
-                $"##visible-{id}", new Vector2(ax, cursor.Y + 3f * s),
-                TablerIcon.Eye,
-                !row.ActorVisible, s,
-                () => vm.OnActorVisibility?.Invoke(row),
-                row.ActorVisible ? "Hide actor" : "Show actor");
-            ax += 22f * s;
-            DrawRowToggleTemporary(
-                $"##pause-{id}", new Vector2(ax, cursor.Y + 3f * s),
-                TablerIcon.PlayerPlay,
-                row.ActorPaused, s,
-                () => vm.OnActorPause?.Invoke(row),
-                row.ActorPaused ? "Resume animation" : "Pause animation");
-        }
-        else if (row.OverlayBones != null)
-        {
-            bool visible = vm.IsOverlayVisible?.Invoke(row.OverlayBones)
-                ?? true;
-            DrawRowToggleTemporary(
-                $"##overlay-{id}",
-                new Vector2(cursor.X + innerW - 22f * s, cursor.Y + 3f * s),
-                visible ? TablerIcon.Eye : TablerIcon.EyeOff,
-                !visible, s,
-                () => vm.OnOverlayVisibility?.Invoke(row),
-                visible ? "Hide from skeleton overlay" : "Show in skeleton overlay");
-        }
-
-        if (hit.Clicked)
-        {
-            if (overArrow) vm.OnRowExpandToggled?.Invoke(row);
-            else vm.OnRowClicked?.Invoke(row);
-        }
-
-        if (hit.Hovered && ImGui.IsMouseClicked(ImGuiMouseButton.Right))
-            vm.OnRowContextMenu?.Invoke(row);
-    }
-
     /// <summary>
-    /// The one disclosure affordance for actor and category rows: the compact
-    /// filled triangle, visible in collapsed and expanded states,
-    /// hover-emphasized over its 18px hit zone, faded and inert while the
-    /// row's children are temporarily unavailable. NOTE: PBI-002 runtime
-    /// round 1 specified Tabler chevrons here; the user explicitly requested
-    /// the original triangle affordance back during the 2026-07-24 in-game
-    /// session — this supersedes that clarification line.
+    /// The legacy hosting seam, unchanged: the viewport child and the page
+    /// scroll own the gutter and the extent bookkeeping, and the active pane's
+    /// OWN root renders inside them — exactly as the Settings page is hosted.
     /// </summary>
-    private static void DrawDisclosureChevron(ImDrawListPtr dl, Vector2 center, ShellSidebarRow row, bool hovered, float s)
+    private static void DrawContentViewport(
+        AppShellViewModel vm, Vector2 min, Vector2 max, float s)
     {
-        float alpha = row.ExpanderDisabled ? 0.25f : hovered ? 1f : 0.7f;
-        uint color = ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(TextPrimary with { W = alpha }));
-        if (row.Expanded)
-            dl.AddTriangleFilled(
-                center + new Vector2(-3.5f, -2.5f) * s,
-                center + new Vector2(3.5f, -2.5f) * s,
-                center + new Vector2(0f, 2.5f) * s, color);
-        else
-            dl.AddTriangleFilled(
-                center + new Vector2(-2.5f, -3.5f) * s,
-                center + new Vector2(2.5f, 0f) * s,
-                center + new Vector2(-2.5f, 3.5f) * s, color);
-    }
-
-    /// <summary>
-    /// Filled guide segments meet edge-to-edge at row boundaries. Unlike separate
-    /// anti-aliased line caps, they do not stack alpha at a shared endpoint.
-    /// </summary>
-    private static void DrawGuideVertical(
-        ImDrawListPtr dl,
-        float x,
-        float y0,
-        float y1,
-        uint color,
-        float scale)
-    {
-        float half = Math.Max(1f, scale) * 0.5f;
-        dl.AddRectFilled(new Vector2(x - half, y0), new Vector2(x + half, y1), color);
-    }
-
-    private static void DrawGuideHorizontal(
-        ImDrawListPtr dl,
-        float x0,
-        float x1,
-        float y,
-        uint color,
-        float scale)
-    {
-        float half = Math.Max(1f, scale) * 0.5f;
-        dl.AddRectFilled(new Vector2(x0, y - half), new Vector2(x1, y + half), color);
-    }
-
-
-    private static void DrawGuideElbow(
-        ImDrawListPtr dl,
-        float x,
-        float y0,
-        float x1,
-        float y,
-        uint color,
-        float scale)
-    {
-        float half = Math.Max(1f, scale) * 0.5f;
-
-        // The vertical leg owns the square corner. The horizontal leg begins at
-        // its right edge, so the translucent geometry touches but never overlaps.
-        dl.AddRectFilled(
-            new Vector2(x - half, y0),
-            new Vector2(x + half, y + half),
-            color);
-        dl.AddRectFilled(
-            new Vector2(x + half, y - half),
-            new Vector2(x1, y + half),
-            color);
-    }
-    // ── main region ──────────────────────────────────────────────────────
-
-    private static void DrawMain(AppShellViewModel vm, Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
-    {
-        // toolbar 44px + bottom hairline
         float toolbarBottom = min.Y + ToolbarHeight * s;
-        dl.AddRectFilled(new Vector2(min.X, toolbarBottom - 1f * s), new Vector2(max.X, toolbarBottom),
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderSecondary)));
-
-        // The tab strip is the SAME segmented pill every other mode
-        // selector uses (Body/Face/Matrix/3D), not hand-drawn buttons.
-        // alignFirstTabToCursor puts the first tab's LABEL on the content
-        // inset — the pill's dark chrome is decoration, not padding, so it
-        // hangs left of the alignment line exactly as the inspector's does.
-        if (vm.Tabs.Count > 0)
-        {
-            var labels = new string[vm.Tabs.Count];
-            int active = 0;
-            for (int i = 0; i < vm.Tabs.Count; i++)
-            {
-                labels[i] = vm.Tabs[i].Label;
-                if (vm.Tabs[i].Active)
-                    active = i;
-            }
-            float segmentedHeightPx =
-                Crystarium.ActiveTheme.Controls.NavigationHeight;
-            ImGui.SetCursorScreenPos(new Vector2(
-                min.X + MainHorizontalPadding * s,
-                min.Y + (ToolbarHeight - segmentedHeightPx) / 2f * s));
-            LegacyCrystarium.SegmentedControl(
-                "##shell-tabs",
-                labels,
-                active,
-                chosen => vm.OnTab?.Invoke(chosen),
-                alignFirstTabToCursor: true);
-        }
-
-        // Actor physics occupies one stable right-aligned slot on every
-        // workspace tab. Tab changes never replace it with selection text or
-        // move the control.
-        float rx = max.X - MainHorizontalPadding * s;
-        if (vm.ShowPopOut)
-        {
-            float actionSize =
-                Crystarium.ActiveTheme.Controls.ShellIconAction;
-            rx -= actionSize * s;
-            PlaceIconAction(new Vector2(
-                    rx,
-                    min.Y + (ToolbarHeight - actionSize) / 2f * s),
-                TablerIcon.ExternalLink, s, vm.OnPopOut);
-            rx -= Crystarium.ActiveTheme.Page.ActionGap * s;
-        }
-        LegacyCrystarium.ActionBar(
-            "shell-workspace-actions",
-            min,
-            new Vector2(rx - min.X, ToolbarHeight * s),
-            _ => { },
-            right =>
-            {
-                right.Switch(
-                    "Physics",
-                    vm.PhysicsOn,
-                    next => vm.OnPhysics?.Invoke(next),
-                    vm.PhysicsAvailable
-                        ? "Enable or disable physics for the selected actor"
-                        : "Select an actor or bone to control physics",
-                    disabled: !vm.PhysicsAvailable);
-            },
-            ActionBarSeparator.None);
-
         // Toolbar and content share one 12px horizontal inset. The viewport
         // still reaches the outer-right glass edge, and content width always
         // excludes the 12px scrollbar gutter so overflow cannot cause reflow.
-        // ONE content origin for every tab. The old 4px gap applied only
-        // to tabs that scroll in this child, so the same empty-state line
-        // sat 4px lower on one tab than the other and jumped on switch.
-        // Panes own their breathing room; the shell owns the origin.
+        // ONE content origin for every tab: panes own their breathing room,
+        // the shell owns the origin.
         var childOrigin = new Vector2(min.X, toolbarBottom);
         var childSize = new Vector2(
             max.X - min.X - 1f * s,
             max.Y - toolbarBottom - 1f * s);
         // The inset is measured from the CHILD, not the panel: the child is
         // 1px narrower than the panel (the glass border pixel), and the
-        // scrollbar hugs the child's right edge. Deriving content width
-        // from the panel put the content's right edge 1px INTO the
-        // scrollbar band, so flush-right controls overlapped the thumb.
+        // scrollbar hugs the child's right edge.
         ImGui.SetCursorScreenPos(childOrigin);
         ImGui.PushStyleVar(
             ImGuiStyleVar.WindowPadding,
@@ -863,8 +1463,7 @@ public static class AppShellView
             var viewportCursor = ImGui.GetCursorScreenPos();
             if (vm.ContentOwnsViewport)
             {
-                float contentInset =
-                    MainHorizontalPadding * s;
+                float contentInset = MainHorizontalPadding * s;
                 var contentOrigin = viewportCursor
                     + new Vector2(contentInset, 0f);
                 vm.DrawContent?.Invoke(
@@ -918,168 +1517,42 @@ public static class AppShellView
         ImGui.PopStyleVar();
     }
 
-    private static void DrawOuterGlassBorder(Vector2 min, Vector2 max, float s)
+    /// <summary>
+    /// The rail's hosting seam. The child reaches the outer-right glass edge;
+    /// its content keeps 12px left padding and a fixed 12px right composite
+    /// gutter: 0px content gap + 12px scrollbar.
+    /// </summary>
+    private static void DrawRailScroll(
+        AppShellViewModel vm, Vector2 railMin, Vector2 max, float railW, float s)
     {
-        LegacyCrystarium.FloatingSurface.DrawBorder(min, max, 10f * s);
+        var railChildOrigin = railMin + new Vector2(0f, 12f) * s;
+        ImGui.SetCursorScreenPos(railChildOrigin);
+        LegacyCrystarium.ScrollRegion(
+            "##shell-rail",
+            railW / s - 1f,
+            (max.Y - railMin.Y) / s - 24f,
+            region =>
+            {
+                var railContentOrigin =
+                    ImGui.GetCursorScreenPos()
+                    + new Vector2(Crystarium.ActiveTheme.Page.Inset * s, 0f);
+                ImGui.SetCursorScreenPos(railContentOrigin);
+                vm.DrawRail!(
+                    railContentOrigin,
+                    new Vector2(
+                        region.ContentWidth * s
+                            - Crystarium.ActiveTheme.Page.Inset * s,
+                        max.Y - railMin.Y - 24f * s));
+            });
     }
+
+    private static void DrawOuterGlassBorder(Vector2 min, Vector2 max) =>
+        LegacyCrystarium.FloatingSurface.DrawBorder(
+            min, max, Crystarium.ActiveTheme.Radii.Window);
 
     /// <summary>Cancels an in-progress numeric axis edit, for example when selection changes.</summary>
     public static void CancelAxisEdit()
     {
         LegacyCrystarium.CancelAxisEdit();
     }
-
-    private static void DrawRowAction(
-        string id,
-        Vector2 pos,
-        TablerIcon icon,
-        float scale,
-        Action action,
-        string help)
-    {
-        ImGui.SetCursorScreenPos(pos);
-        LegacyCrystarium.IconButton(
-            icon,
-            action,
-            ControlStyle.Square(
-                Crystarium.ActiveTheme.Controls.SwitchHeight),
-            help: help,
-            id: id);
-    }
-
-    private static void DrawRowToggleTemporary(
-        string id,
-        Vector2 pos,
-        TablerIcon icon,
-        bool inactive,
-        float scale,
-        Action action,
-        string help)
-    {
-        ImGui.SetCursorScreenPos(pos);
-        LegacyCrystarium.TemporaryIconToggle(
-            icon,
-            false,
-            action,
-            ControlStyle.Square(
-                Crystarium.ActiveTheme.Controls.SwitchHeight),
-            help: help,
-            id: id,
-            slashed: inactive);
-    }
-
-    // ── shared small controls ────────────────────────────────────────────
-
-    private static void PlaceNamedIconAction(
-        Vector2 position,
-        string icon,
-        float scale,
-        Action? onClick,
-        bool dimmed = false,
-        string? help = null,
-        string? helpShortcut = null)
-    {
-        ImGui.SetCursorScreenPos(position);
-        LegacyCrystarium.IconButton(
-            icon,
-            onClick,
-            ControlStyle.Square(
-                Crystarium.ActiveTheme.Controls.ShellIconAction),
-            dimmed,
-            CombinedHelp(help, helpShortcut),
-            $"##shell-icon-{icon}-{position.X:0}-{position.Y:0}");
-    }
-
-    private static void PlaceIconAction(
-        Vector2 position,
-        TablerIcon icon,
-        float scale,
-        Action? onClick,
-        bool dimmed = false,
-        bool flipX = false,
-        string? help = null,
-        string? helpShortcut = null)
-    {
-        ImGui.SetCursorScreenPos(position);
-        LegacyCrystarium.IconButton(
-            icon,
-            onClick,
-            ControlStyle.Square(
-                Crystarium.ActiveTheme.Controls.ShellIconAction),
-            dimmed,
-            CombinedHelp(help, helpShortcut),
-            $"##shell-icon-{icon}-{position.X:0}-{position.Y:0}",
-            flipX);
-    }
-
-    private static void PlaceIconToggleTemporary(
-        Vector2 position,
-        TablerIcon icon,
-        bool selected,
-        float scale,
-        Action? onClick,
-        bool dimmed = false,
-        bool flipX = false,
-        string? help = null,
-        string? helpShortcut = null)
-    {
-        ImGui.SetCursorScreenPos(position);
-        LegacyCrystarium.TemporaryIconToggle(
-            icon,
-            selected,
-            onClick,
-            ControlStyle.Square(
-                Crystarium.ActiveTheme.Controls.ShellIconAction),
-            dimmed,
-            CombinedHelp(help, helpShortcut),
-            $"##shell-toggle-{icon}-{position.X:0}-{position.Y:0}",
-            flipX: flipX);
-    }
-
-    private static float PlaceIconSegments(
-        Vector2 position,
-        TablerIcon[] icons,
-        int selected,
-        float scale,
-        Action<int> onSelect,
-        Func<int, string?>? itemHelp = null)
-    {
-        ImGui.SetCursorScreenPos(position);
-        var size = LegacyCrystarium.MeasureSegmentedControl(icons);
-        LegacyCrystarium.SegmentedControl(
-            $"##shell-icon-segments-{position.X:0}",
-            icons,
-            selected,
-            onSelect,
-            itemHelp: itemHelp);
-        return position.X + size.X;
-    }
-
-    private static float PlaceTextSegments(
-        Vector2 position,
-        string[] labels,
-        int selected,
-        float scale,
-        Action<int> onSelect,
-        Func<int, bool>? itemDisabled = null,
-        Func<int, string?>? itemHelp = null)
-    {
-        ImGui.SetCursorScreenPos(position);
-        var size = LegacyCrystarium.MeasureSegmentedControl(labels);
-        LegacyCrystarium.SegmentedControl(
-            $"##shell-text-segments-{position.X:0}",
-            labels,
-            selected,
-            onSelect,
-            itemDisabled: itemDisabled,
-            itemHelp: itemHelp);
-        return position.X + size.X;
-    }
-
-    private static string? CombinedHelp(
-        string? help,
-        string? shortcut) =>
-        shortcut == null
-            ? help
-            : $"{help} · {shortcut}";
 }

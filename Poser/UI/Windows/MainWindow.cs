@@ -347,6 +347,10 @@ public class MainWindow : Window
         _vm.GPoseActive = _gPoseService.IsGPosing;
         _vm.SidebarWidthPx = _sidebarWidth;
         _vm.Collapsed = _collapsed;
+        // The shell's retained per-row state is swept on structural change
+        // only: an identical rescan publishes no new revision, so hover and
+        // interaction identity survive every refresh that changed nothing.
+        _vm.SceneRevision = _scene.Revision;
         // The inspector rail stays on BOTH tabs: bone selection and posing
         // remain available while animation plays, so the right column is
         // never reclaimed and the window width never depends on the tab.

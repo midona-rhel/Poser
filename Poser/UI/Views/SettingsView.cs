@@ -207,15 +207,12 @@ public sealed class SettingsView
         float barHeight = theme.Floating.ModalBarHeight * scale;
         float navigationWidth = theme.Settings.NavigationWidth * scale;
 
-        LegacyCrystarium.FloatingSurface.DrawChrome(
-            ImGui.GetWindowDrawList(),
-            min,
-            max,
-            theme.Radii.Window);
-
         var props = new Props(this);
-        _frame.Render(
-            min, size, in props, static (in Props p) => p.View.BuildFrame());
+        // The glass and the frame are the CHASSIS' one statement; Settings
+        // states the slots and nothing about the window.
+        WindowChassis.Render(
+            _frame, min, size, in props,
+            static (in Props p) => p.View.BuildFrame());
 
         // The page is hosted by the shared scroll seam, exactly as the shell
         // hosts a pane: the region owns the gutter and the viewport, the
@@ -281,80 +278,25 @@ public sealed class SettingsView
             };
         }
 
-        return new Column
+        // The frame is the SHARED chassis: the title bar, the rail and its
+        // bridging rule, and the footer band are its statement, not this
+        // view's. The BODY slot stays empty on purpose — the page is hosted
+        // below in the shared scroll seam, exactly as the shell hosts a pane.
+        return new WindowChassis
         {
-            Style = new()
-            {
-                Layout = new() { Width = UiDim.Fill, Height = UiDim.Fill },
-            },
-            Children =
+            Title = "Settings",
+            OnClose = _close,
+            CloseHelp = "Close settings",
+            Rail = UiChildren.Create(rows),
+            RailWidth = theme.Settings.NavigationWidth,
+            FooterRight =
             [
-                new ActionBar
+                new Button { Label = "Cancel", OnClick = _cancel },
+                new Button
                 {
-                    Left = ActionBar.Title("Settings"),
-                    Right = new IconAction
-                    {
-                        Icon = TablerIcon.X,
-                        OnClick = _close,
-                        Help = "Close settings",
-                    },
-                    Separator = ActionBarSeparator.Bottom,
-                    Key = "header",
-                },
-                new Row
-                {
-                    Style = new()
-                    {
-                        Layout = new() { Width = UiDim.Fill, Height = UiDim.Fill },
-                    },
-                    Children =
-                    [
-                        new Column
-                        {
-                            Sheet = SheetFamily.NavRail,
-                            Style = new()
-                            {
-                                Layout = new()
-                                {
-                                    Width = UiDim.Fixed(
-                                        theme.Settings.NavigationWidth - 1f),
-                                },
-                            },
-                            Children = UiChildren.Create(rows),
-                        },
-                        // The rail/page rule, flowed as the rail's last pixel
-                        // exactly where the imperative fill put it.
-                        new Element
-                        {
-                            Sheet = SheetFamily.BarRule,
-                            Style = new()
-                            {
-                                Layout = new()
-                                {
-                                    Width = UiDim.Fixed(1f),
-                                    Height = UiDim.Fill,
-                                },
-                            },
-                        },
-                    ],
-                },
-                new ActionBar
-                {
-                    Right =
-                    [
-                        new Button { Label = "Cancel", OnClick = _cancel },
-                        new Button
-                        {
-                            Label = "Save",
-                            Style = ButtonStyle.Primary,
-                            OnClick = _save,
-                        },
-                    ],
-                    // Rotated-H chassis (user 2026-08-02): full-width rules
-                    // above AND below the body, the nav rule bridging them.
-                    Separator = ActionBarSeparator.Top,
-                    FooterChrome = true,
-                    Key = "footer",
+                    Label = "Save",
+                    Style = ButtonStyle.Primary,
+                    OnClick = _save,
                 },
             ],
         };

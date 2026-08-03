@@ -191,6 +191,11 @@ internal static class ComponentCatalog
         // root — so the guides, the chevron, the pill and the badge are all
         // one capture.
         new("rtreerow", 300, 190),
+        // PBI-015: the file surface's whole chassis — title bar, navigation
+        // band, quick rail beside the explorer, footer — driven off an
+        // INJECTED listing, so the capture touches no filesystem and is the
+        // same picture on every machine.
+        new("rfiledialog", 760, 500),
     ];
 
     private static readonly string[] DropdownItems =
@@ -365,80 +370,31 @@ internal static class ComponentCatalog
     /// a selected row — everything the in-game window reports against,
     /// renderable where pixels can be inspected.
     /// </summary>
+    /// <summary>
+    /// Declared through the SHARED chassis, and byte-gated against the
+    /// hand-built frame it replaced: Settings is accepted pixel-for-pixel, so
+    /// this fixture is what proves the extraction reproduced its geometry
+    /// rather than approximated it.
+    /// </summary>
     private static readonly Func<UiNode> SettingsFrameTree = static () =>
-        new Column
+        new WindowChassis
         {
-            Style = new()
-            {
-                Layout = new() { Width = UiDim.Fill, Height = UiDim.Fill },
-            },
-            Children =
+            Title = "Settings",
+            OnClose = FormNoOp,
+            RailWidth = 200f,
+            Rail =
             [
-                new ActionBar
+                SettingsNavRow(0, "General", TablerIcon.Sliders, false),
+                SettingsNavRow(1, "Display", TablerIcon.Monitor, true),
+            ],
+            FooterRight =
+            [
+                new Button { Label = "Cancel", OnClick = FormNoOp },
+                new Button
                 {
-                    Left = ActionBar.Title("Settings"),
-                    Right = new IconAction
-                    {
-                        Icon = TablerIcon.X,
-                        OnClick = FormNoOp,
-                    },
-                    Separator = ActionBarSeparator.Bottom,
-                    Key = "header",
-                },
-                new Row
-                {
-                    Style = new()
-                    {
-                        Layout = new()
-                        {
-                            Width = UiDim.Fill,
-                            Height = UiDim.Fill,
-                        },
-                    },
-                    Children =
-                    [
-                        new Column
-                        {
-                            Sheet = SheetFamily.NavRail,
-                            Style = new()
-                            {
-                                Layout = new() { Width = UiDim.Fixed(199f) },
-                            },
-                            Children =
-                            [
-                                SettingsNavRow(0, "General", TablerIcon.Sliders, false),
-                                SettingsNavRow(1, "Display", TablerIcon.Monitor, true),
-                            ],
-                        },
-                        new Element
-                        {
-                            Sheet = SheetFamily.BarRule,
-                            Style = new()
-                            {
-                                Layout = new()
-                                {
-                                    Width = UiDim.Fixed(1f),
-                                    Height = UiDim.Fill,
-                                },
-                            },
-                        },
-                    ],
-                },
-                new ActionBar
-                {
-                    Right =
-                    [
-                        new Button { Label = "Cancel", OnClick = FormNoOp },
-                        new Button
-                        {
-                            Label = "Save",
-                            Style = ButtonStyle.Primary,
-                            OnClick = FormNoOp,
-                        },
-                    ],
-                    Separator = ActionBarSeparator.Top,
-                    FooterChrome = true,
-                    Key = "footer",
+                    Label = "Save",
+                    Style = ButtonStyle.Primary,
+                    OnClick = FormNoOp,
                 },
             ],
         };
@@ -711,6 +667,70 @@ internal static class ComponentCatalog
                 },
             ],
         };
+
+    /// <summary>
+    /// The file surface's INJECTED disk. Every timestamp is frozen and every
+    /// probe answers without touching the machine, so the fixture is the same
+    /// picture on a build agent as on a workstation — which is the whole point
+    /// of the dialog's listing seam.
+    /// </summary>
+    private sealed class FileDialogListing : IFileListingSource
+    {
+        internal const string Folder = @"C:\Users\Midona\Documents\Poses";
+
+        internal static readonly FileDialogListing Instance = new();
+
+        private static readonly DateTime Stamp =
+            new(2026, 7, 14, 21, 6, 0, DateTimeKind.Utc);
+
+        public string DefaultPath => Folder;
+
+        public bool DirectoryExists(string path) => true;
+
+        public string? Parent(string path) => @"C:\Users\Midona\Documents";
+
+        public void Enumerate(string path, List<FileListingEntry> into)
+        {
+            void Directory(string name, int days) => into.Add(
+                new FileListingEntry(
+                    name, path + "\\" + name, true, Stamp.AddDays(-days)));
+            void File(string name, int days) => into.Add(
+                new FileListingEntry(
+                    name, path + "\\" + name, false, Stamp.AddDays(-days)));
+
+            Directory("Archive", 41);
+            Directory("Combat", 12);
+            Directory("Portraits", 3);
+            File("heroic-stand.pose", 1);
+            File("kneeling-vow.pose", 6);
+            File("sitting-ledge.pose", 9);
+            File("wind-swept.pose", 22);
+        }
+
+        public void QuickAccess(List<FileQuickEntry> into)
+        {
+            into.Add(new FileQuickEntry(
+                "Desktop", @"C:\Users\Midona\Desktop", TablerIcon.DeviceDesktop));
+            into.Add(new FileQuickEntry(
+                "Documents", @"C:\Users\Midona\Documents", TablerIcon.FileText));
+            into.Add(new FileQuickEntry(
+                "Pictures", @"C:\Users\Midona\Pictures", TablerIcon.Photo));
+            into.Add(new FileQuickEntry(
+                "Downloads", @"C:\Users\Midona\Downloads", TablerIcon.Download));
+            // The folder the fixture is standing in, so the rail shows its
+            // selected pill and the explorer shows its listing at once.
+            into.Add(new FileQuickEntry("Poses", Folder, TablerIcon.Folder));
+            into.Add(new FileQuickEntry(@"C:\", @"C:\", TablerIcon.Stack2));
+        }
+    }
+
+    /// <summary>The file surface is RETAINED — it owns a UiRoot, a history
+    /// stack and two native islands — but its root's identity cache lives in
+    /// the per-state ImGui context, so the instance is rebuilt on frame 0 of
+    /// every run rather than shared with the next state.</summary>
+    private static Ui.FileDialog? fileDialog;
+
+    private static readonly string[] FileDialogExtensions = [".pose"];
 
     private static readonly ContextMenuItem[] MenuItems =
     [
@@ -2056,6 +2076,31 @@ internal static class ComponentCatalog
                 // very things this fixture exists to show.
                 ReactiveRoot(name).Render(
                     origin, new Vector2(250f, 120f) * scale, TreeRowTree);
+                break;
+            case "rfiledialog":
+                if (frame == 0)
+                {
+                    fileDialog = new Ui.FileDialog(
+                        "Import Pose", FileDialogExtensions)
+                    {
+                        Source = FileDialogListing.Instance,
+                    };
+                    // Rehome, not Open: Open claims the exclusive chain for a
+                    // window nobody draws here, which would occlude the cell.
+                    fileDialog.Rehome(FileDialogListing.Folder);
+                }
+
+                {
+                    var size = new Vector2(
+                        Ui.ActiveTheme.FileDialog.Width,
+                        Ui.ActiveTheme.FileDialog.Height) * scale;
+                    Ui.FloatingSurface.DrawChrome(
+                        ImGui.GetWindowDrawList(),
+                        origin,
+                        origin + size,
+                        Ui.ActiveTheme.Radii.Window);
+                    fileDialog!.RenderFrame(origin, size);
+                }
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(name));

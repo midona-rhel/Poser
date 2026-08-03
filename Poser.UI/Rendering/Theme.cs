@@ -207,7 +207,13 @@ public readonly record struct Theme
             MaximumRows = 10,
             ExtendedMaximumRows = 12,
         },
-        FileDialog = new() { Width = 680f, Height = 440f, FavoritesWidth = 128f, FileNameWidth = 220f },
+        FileDialog = new()
+        {
+            Width = 680f,
+            Height = 440f,
+            RailWidth = 188f,
+            PreviewWidth = 188f,
+        },
         Settings = new()
         {
             Width = 720f,
@@ -651,8 +657,14 @@ public readonly record struct Theme
     {
         public float Width { get; init; }
         public float Height { get; init; }
-        public float FavoritesWidth { get; init; }
-        public float FileNameWidth { get; init; }
+        /// <summary>The quick-menu rail, rule included — the Settings rail's
+        /// share of its own window (200 of 720), taken on this one.</summary>
+        public float RailWidth { get; init; }
+
+        /// <summary>The preview column, which mirrors the rail so the explorer
+        /// sits centred between two equal margins when a preview is up.
+        /// </summary>
+        public float PreviewWidth { get; init; }
     }
 
     public readonly record struct SettingsTokens

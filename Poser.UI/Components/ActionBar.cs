@@ -13,12 +13,24 @@ public readonly record struct ActionBar
 
     public UiChildren Right { get; init; }
 
+    /// <summary>The band's STRETCHING MIDDLE. Stated children replace the plain
+    /// spring — the file surface's path editor and its file-name field each
+    /// have to reach the actions beside them — and an unstated slot is the
+    /// spring every other bar has always had.</summary>
+    public UiChildren Fill { get; init; }
+
     public ActionBarSeparator Separator { get; init; }
 
     /// <summary>The modal footer's band: the ModalFooter fill rounded to the
     /// window's bottom corners under the bar. Chrome is the BAR's role, so a
     /// footer states it here rather than importing a painter.</summary>
     public bool FooterChrome { get; init; }
+
+    /// <summary>The bar's horizontal inset; unstated takes the floating
+    /// chassis' own header inset. The SHELL's workspace toolbar states it,
+    /// because its bar shares one horizontal inset with the content beneath
+    /// it rather than with the modal windows.</summary>
+    public float? Inset { get; init; }
 
     public UiKey Key { get; init; }
 
@@ -40,8 +52,15 @@ public readonly record struct ActionBar
             [
                 new Row { Sheet = SheetFamily.ActionGroup, Children = bar.Left },
                 // The spring between the clusters, so right-aligned actions
-                // derive from the same flow that placed the left ones.
-                new Element { Style = Element.Sized(UiDim.Fill, null) },
+                // derive from the same flow that placed the left ones. A bar
+                // that STATED a middle fills the same gap with content.
+                bar.Fill.Count == 0
+                    ? (UiNode)new Element { Style = Element.Sized(UiDim.Fill, null) }
+                    : (UiNode)new Row
+                    {
+                        Sheet = SheetFamily.ActionGroupFill,
+                        Children = bar.Fill,
+                    },
                 new Row { Sheet = SheetFamily.ActionGroup, Children = bar.Right },
             ],
         };
@@ -52,6 +71,15 @@ public readonly record struct ActionBar
         UiNode box = new Element
         {
             Sheet = SheetFamily.ActionBarBox,
+            Style = bar.Inset is { } inset
+                ? new ElementSheet
+                {
+                    Layout = new()
+                    {
+                        Padding = new EdgeInsets(inset, 0f, inset, 0f),
+                    },
+                }
+                : null,
             Painter = bar.Separator switch
             {
                 ActionBarSeparator.Top => Reactive.BarSeparatorPainter.Top,

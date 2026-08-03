@@ -330,14 +330,28 @@ public static partial class LegacyCrystarium
             return position;
         }
 
+        /// <summary>
+        /// The ONE glass chassis recipe: blur behind, the glass fill, and the
+        /// asymmetric 1px glass edge, with the panel's elevation shadows.
+        /// </summary>
+        /// <param name="shadow">The elevation pass. USER 2026-08-03: the main
+        /// window suppresses it — a shadow under a chassis that IS the window
+        /// reads as a halo, not as elevation — while every floating surface
+        /// keeps it.</param>
+        /// <param name="blur">The backdrop blur. A surface that already
+        /// prepended its own one shell-level blur states false; prepending a
+        /// second would blur the same backdrop twice.</param>
         public static void DrawChrome(
             ImDrawListPtr drawList,
             Vector2 min,
             Vector2 max,
-            float radius)
+            float radius,
+            bool shadow = true,
+            bool blur = true)
         {
             float scale = ImGuiHelpers.GlobalScale;
-            GlassChrome.PrependBlur(drawList, min, max, radius * scale);
+            if (blur)
+                GlassChrome.PrependBlur(drawList, min, max, radius * scale);
 
             // Popup draw lists clip to their window. Temporarily widen only
             // the chrome clip so the canonical panel shadow remains visible.
@@ -355,11 +369,13 @@ public static partial class LegacyCrystarium
                     BorderLeftColor = Crystarium.ActiveTheme.Glass.BorderSide,
                     BorderRightColor = Crystarium.ActiveTheme.Glass.BorderSide,
                     BorderBottomColor = Crystarium.ActiveTheme.Glass.BorderBottom,
-                    BoxShadows =
-                    [
-                        Crystarium.ActiveTheme.Shadows.Panel,
-                        Crystarium.ActiveTheme.Shadows.PanelRing,
-                    ],
+                    BoxShadows = shadow
+                        ?
+                        [
+                            Crystarium.ActiveTheme.Shadows.Panel,
+                            Crystarium.ActiveTheme.Shadows.PanelRing,
+                        ]
+                        : null,
                 });
             drawList.PopClipRect();
         }
