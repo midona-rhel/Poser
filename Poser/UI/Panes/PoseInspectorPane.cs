@@ -30,15 +30,17 @@ namespace Poser.UI;
 
 /// <summary>
 /// The Pose tab of the AppShell — the `.insp/.prow/.scrub` grammar bound to
-/// the live posing stack. Sections:
-/// TRANSFORM (drag/wheel/type-in position/rotation/scale through stable-id
-/// application gestures for actors and bones; lights/cameras/world objects
-/// have no stable-id adapter and remain direct), GAZE
-/// (eyes/head segs via
-/// IGazeService — one shared mode, the part flags gate what it drives),
-/// IK (session switch + bulk arm/disarm), POSE (flip/mirror/reset regions,
-/// stash, import/export .pose via the shared file dialog). The rotation pivot moved to
-/// the toolbar selector beside Local/World (orbit-rotation-design.md).
+/// the live posing stack.
+/// <para>The rail manipulates WHAT IS SELECTED and nothing else, so its
+/// sections are typed by the primary: nothing selected declares none; a bone
+/// declares TRANSLATION plus IK (only where the port supports that bone's
+/// chain); an actor declares TRANSLATION, GAZE, EXPRESSION and POSE; any other
+/// kind declares TRANSLATION alone. FILES is not a selection property and
+/// lives on the workspace Actor tab plus the actor context menu, never in the
+/// rail.</para>
+/// <para>The workspace surface carries Body, Face, Matrix, 3D, Expression and
+/// Actor. The rotation pivot moved to the toolbar selector beside Local/World
+/// (orbit-rotation-design.md).</para>
 /// </summary>
 public class PoseInspectorPane
 {
@@ -68,7 +70,8 @@ public class PoseInspectorPane
     /// <summary>Stable-id display name for snapshot actor descriptors (the
     /// scene tree's display API), used by the gaze target picker.</summary>
     public Func<Domain.Scene.ActorDescriptor, string>? DescriptorDisplayName;
-    private int _poseView = 2; // 0 body, 1 face, 2 bones
+    // 0 body map, 1 face map, 2 matrix, 3 3D, 4 expression, 5 actor
+    private int _poseView = 2;
 
     // Bones matrix cache (rebuilt when the snapshot revision or actor changes).
     private BoneMatrixViewModel? _matrixVm;
@@ -131,10 +134,17 @@ public class PoseInspectorPane
 
     private bool _openTranslation = true;
     private bool _openExpression = true;
-    private bool _openFiles = true;
     private bool _openGaze = true;
     private bool _openIk;
     private bool _openPose = true;
+
+    // The workspace tabs carry their OWN open state: collapsing a section on
+    // one surface must not collapse the rail's copy of it, or the other way
+    // round.
+    private bool _openSurfaceExpression = true;
+    private bool _openSurfaceGaze = true;
+    private bool _openSurfacePose = true;
+    private bool _openSurfaceFiles = true;
 
     /// <summary>The gaze picker's candidate scratch: retained and refilled, so
     /// a per-frame list never lands on the heap. The names array is
@@ -335,7 +345,6 @@ public class PoseInspectorPane
                 Crystarium.ActiveTheme.Controls.FormRowHeight * s;
         }
         ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
-        _poseFileSection.DrawBrowsers();
     }
 
     /// <summary>Crumb parts for the rail header.</summary>
@@ -475,8 +484,17 @@ public class PoseInspectorPane
                 content,
                 divider);
 
-        // The rule is a divider BETWEEN sections, and TRANSLATION is
-        // unconditional and therefore always the rail's first.
+        // Nothing selected declares NO sections: the rail head already says
+        // "Nothing selected", and a stack of headers over an empty selection
+        // would claim there is something to manipulate.
+        if (_primary == null)
+        {
+            ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
+            return;
+        }
+
+        // The rule is a divider BETWEEN sections, and TRANSLATION applies to
+        // every primary and is therefore always the rail's first.
         Section(
             "translation",
             "TRANSLATION",
@@ -485,45 +503,43 @@ public class PoseInspectorPane
             DrawTransform,
             divider: false);
 
-        var actor = OwningActor();
-        var skeleton = OwningSkeleton();
-        if (actor != null && _expressionSection.CanDraw)
-            Section(
-                "expression",
-                "EXPRESSION",
-                _openExpression,
-                next => _openExpression = next,
-                form => _expressionSection.Draw(form, actor));
-        if (skeleton != null)
-            Section(
-                "files",
-                "FILES",
-                _openFiles,
-                next => _openFiles = next,
-                form => _poseFileSection.Draw(form, skeleton));
-        if (actor != null)
-            Section(
-                "gaze",
-                "GAZE",
-                _openGaze,
-                next => _openGaze = next,
-                form => DrawGaze(form, actor));
-        if (skeleton != null)
+        if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } railBone })
         {
-            if (_primary is { Kind: SceneEntityKind.Bone })
+            // A bone without an IK chain gets no section at all rather than a
+            // disabled ghost — the rail states what this bone can do.
+            if (_ikPort.IsSupported(TransformTargetId.ForBone(railBone)))
                 Section(
                     "ik",
                     "IK",
                     _openIk,
                     next => _openIk = next,
                     DrawIk);
-
-            Section(
-                "pose",
-                "POSE",
-                _openPose,
-                next => _openPose = next,
-                form => DrawPoseActions(form, skeleton));
+        }
+        else if (_primary is { Kind: SceneEntityKind.Actor })
+        {
+            var actor = OwningActor();
+            var skeleton = OwningSkeleton();
+            if (actor != null)
+                Section(
+                    "gaze",
+                    "GAZE",
+                    _openGaze,
+                    next => _openGaze = next,
+                    form => DrawGaze(form, actor));
+            if (actor != null && _expressionSection.CanDraw)
+                Section(
+                    "expression",
+                    "EXPRESSION",
+                    _openExpression,
+                    next => _openExpression = next,
+                    form => _expressionSection.Draw(form, actor));
+            if (skeleton != null)
+                Section(
+                    "pose",
+                    "POSE",
+                    _openPose,
+                    next => _openPose = next,
+                    form => DrawPoseActions(form, skeleton));
         }
 
         ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
@@ -561,7 +577,7 @@ public class PoseInspectorPane
             (tabsHeightPx - segmentedHeightPx) * 0.5f * s));
         Crystarium.SegmentedControl(
             "##pose-surface",
-            new[] { "Body", "Face", "Matrix", "3D" },
+            new[] { "Body", "Face", "Matrix", "3D", "Expression", "Actor" },
             _poseView,
             selected => _poseView = selected,
             alignFirstTabToCursor: true);
@@ -690,7 +706,159 @@ public class PoseInspectorPane
                 : viewportHeight;
         }
 
+        if (_poseView == 4)
+            return DrawExpressionSurface(cursor, width, viewportHeight, s);
+
+        if (_poseView == 5)
+            return DrawActorSurface(cursor, width, viewportHeight, s);
+
         return DrawMatrixSurface(cursor, width, viewportHeight, s);
+    }
+
+    /// <summary>The workspace's Expression tab: the same section the rail
+    /// declares for an actor primary, given the width a face full of weight
+    /// sliders needs.</summary>
+    private float DrawExpressionSurface(
+        Vector2 cursor,
+        float width,
+        float viewportHeight,
+        float s)
+    {
+        var theme = Crystarium.ActiveTheme;
+        var min = cursor + new Vector2(0f, theme.Page.ActionGap * s);
+        var max = cursor + new Vector2(width, viewportHeight)
+            - new Vector2(0f, theme.Page.Inset * s);
+        if (max.X <= min.X || max.Y <= min.Y)
+            return viewportHeight;
+
+        var actor = OwningActor();
+        ImGui.SetCursorScreenPos(min);
+        Crystarium.ScrollRegion(
+            "##pose-expression-scroll",
+            (max.X - min.X) / s,
+            (max.Y - min.Y) / s,
+            region =>
+            {
+                var origin = ImGui.GetCursorScreenPos();
+                float contentWidth = MathF.Max(
+                    0f, region.ContentWidth - theme.Page.Inset) * s;
+                if (actor == null || !_expressionSection.CanDraw)
+                {
+                    Crystarium.TextAt(
+                        origin,
+                        "Select an actor to edit its expression.",
+                        new TextStyle
+                        {
+                            Size = theme.Typography.LabelSize,
+                            Color = theme.FormHint,
+                        });
+                    return;
+                }
+                float consumed = Crystarium.Section(
+                    "pose-surface-expression",
+                    "EXPRESSION",
+                    origin,
+                    contentWidth,
+                    _openSurfaceExpression,
+                    next => _openSurfaceExpression = next,
+                    form => _expressionSection.Draw(form, actor),
+                    divider: false);
+                ImGui.SetCursorScreenPos(
+                    new Vector2(origin.X, origin.Y + consumed));
+                ImGui.Dummy(new Vector2(contentWidth, MathF.Max(1f, s)));
+            });
+        return viewportHeight;
+    }
+
+    /// <summary>The workspace's Actor tab: the actor-wide sections — gaze,
+    /// pose actions, and the pose files that are a property of the actor
+    /// rather than of the selection.</summary>
+    private float DrawActorSurface(
+        Vector2 cursor,
+        float width,
+        float viewportHeight,
+        float s)
+    {
+        var theme = Crystarium.ActiveTheme;
+        var min = cursor + new Vector2(0f, theme.Page.ActionGap * s);
+        var max = cursor + new Vector2(width, viewportHeight)
+            - new Vector2(0f, theme.Page.Inset * s);
+        if (max.X <= min.X || max.Y <= min.Y)
+            return viewportHeight;
+
+        var actor = OwningActor();
+        var skeleton = OwningSkeleton();
+        ImGui.SetCursorScreenPos(min);
+        Crystarium.ScrollRegion(
+            "##pose-actor-scroll",
+            (max.X - min.X) / s,
+            (max.Y - min.Y) / s,
+            region =>
+            {
+                var origin = ImGui.GetCursorScreenPos();
+                float contentWidth = MathF.Max(
+                    0f, region.ContentWidth - theme.Page.Inset) * s;
+                if (actor == null && skeleton == null)
+                {
+                    Crystarium.TextAt(
+                        origin,
+                        "Select an actor to use these actions.",
+                        new TextStyle
+                        {
+                            Size = theme.Typography.LabelSize,
+                            Color = theme.FormHint,
+                        });
+                    return;
+                }
+
+                var stacked = origin;
+                bool first = true;
+                void Section(
+                    string id,
+                    string title,
+                    bool open,
+                    Action<bool> setOpen,
+                    Action<Crystarium.FormScope> content)
+                {
+                    stacked.Y += Crystarium.Section(
+                        $"pose-surface-{id}",
+                        title,
+                        stacked,
+                        contentWidth,
+                        open,
+                        setOpen,
+                        content,
+                        divider: !first);
+                    first = false;
+                }
+
+                if (actor != null)
+                    Section(
+                        "gaze",
+                        "GAZE",
+                        _openSurfaceGaze,
+                        next => _openSurfaceGaze = next,
+                        form => DrawGaze(form, actor));
+                if (skeleton != null)
+                {
+                    Section(
+                        "pose",
+                        "POSE",
+                        _openSurfacePose,
+                        next => _openSurfacePose = next,
+                        form => DrawPoseActions(form, skeleton));
+                    Section(
+                        "files",
+                        "FILES",
+                        _openSurfaceFiles,
+                        next => _openSurfaceFiles = next,
+                        form => _poseFileSection.Draw(form, skeleton));
+                }
+
+                ImGui.SetCursorScreenPos(new Vector2(origin.X, stacked.Y));
+                ImGui.Dummy(new Vector2(contentWidth, MathF.Max(1f, s)));
+            });
+        return viewportHeight;
     }
 
     private float DrawMatrixSurface(

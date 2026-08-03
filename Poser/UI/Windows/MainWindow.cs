@@ -67,6 +67,7 @@ public class MainWindow : Window
     private readonly PoseInspectorPane _poseInspector;
     private readonly AnimationPane _animationPane;
     private readonly AppearancePane _appearancePane;
+    private readonly PoseFileInspectorSection _poseFileSection;
     private readonly Game.Animation.AnimationCatalogLoader _animationCatalog;
     private readonly PoseRailPane _poseRail;
     private bool _collapsed;
@@ -99,6 +100,7 @@ public class MainWindow : Window
         PoseInspectorPane poseInspector,
         AnimationPane animationPane,
         AppearancePane appearancePane,
+        PoseFileInspectorSection poseFileSection,
         Application.Animation.AnimationSession animation,
         Game.Animation.AnimationCatalogLoader animationCatalog,
         PoseRailPane poseRail,
@@ -129,6 +131,7 @@ public class MainWindow : Window
         _poseInspector = poseInspector;
         _animationPane = animationPane;
         _appearancePane = appearancePane;
+        _poseFileSection = poseFileSection;
         _animation = animation;
         _overlayPresentation = overlayPresentation;
         _animationCatalog = animationCatalog;
@@ -328,8 +331,11 @@ public class MainWindow : Window
         DrawBoneContextMenu();
         DrawOverlayContextMenu();
         DrawRenameModal();
+        // Both file-dialog pumps live at the shell, so a dialog opened from a
+        // tab or a context menu survives whatever the user does to that
+        // surface next.
         _appearancePane.DrawBrowsers();
-
+        _poseFileSection.DrawBrowsers();
     }
 
     public override void PostDraw()
@@ -1026,6 +1032,26 @@ public class MainWindow : Window
             null, // separator
             () => _spawnService.DestroyCompanion(actor),
         };
+
+        // Pose files belong to the actor, not to whatever is selected, so the
+        // actor itself is where they are reachable.
+        items.Add(ContextMenuItem.Separator);
+        items.Add(new ContextMenuItem(
+            "Import pose…", TablerIcon.Download, disabled: !actor.HasSkeleton));
+        items.Add(new ContextMenuItem(
+            "Export pose…", TablerIcon.DeviceFloppy,
+            disabled: !actor.HasSkeleton));
+        actions.Add(null); // separator
+        actions.Add(() =>
+        {
+            if (actor.Skeleton is { } importSkeleton)
+                _poseFileSection.OpenImport(importSkeleton);
+        });
+        actions.Add(() =>
+        {
+            if (actor.Skeleton is { } exportSkeleton)
+                _poseFileSection.OpenExport(exportSkeleton);
+        });
 
         if (_spawnService.IsSpawnedActor(actor))
         {

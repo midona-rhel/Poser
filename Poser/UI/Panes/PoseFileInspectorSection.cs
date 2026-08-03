@@ -11,9 +11,10 @@ using Poser.Services;
 namespace Poser.UI;
 
 /// <summary>
-/// Selective pose import/export controls hosted by the Pose rail. The two file
-/// dialogs are pumped from the pane's content column rather than from here, so
-/// they survive a rail collapse.
+/// Selective pose import/export controls hosted by the Pose workspace's Actor
+/// tab; the actor right-click menu opens the same two dialogs directly. The
+/// dialogs are pumped by MainWindow rather than from here, so they survive any
+/// tab or rail state change.
 /// </summary>
 public sealed class PoseFileInspectorSection
 {
@@ -70,7 +71,8 @@ public sealed class PoseFileInspectorSection
             "Reset first",
             _reset,
             next => _reset = next,
-            help: "Reset affected bones before importing");
+            help: "Clear every bone in the chosen scope before importing, "
+                + "including ones the file does not contain");
         form.Actions("Pose file", actions =>
         {
             actions.Button("Import…", () => OpenImport(skeleton));
@@ -81,7 +83,7 @@ public sealed class PoseFileInspectorSection
             form.Status(_status);
     }
 
-    private void OpenImport(ISkeleton skeleton)
+    public void OpenImport(ISkeleton skeleton)
     {
         // The actor is frozen at dialog open; the Selected-scope selection
         // freezes as complete BoneIds at dialog confirmation.
@@ -103,7 +105,7 @@ public sealed class PoseFileInspectorSection
         });
     }
 
-    private void OpenExport(ISkeleton skeleton)
+    public void OpenExport(ISkeleton skeleton)
     {
         _exportBrowser.Open(_lastPath, path =>
         {
