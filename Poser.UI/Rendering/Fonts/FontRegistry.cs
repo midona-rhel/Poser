@@ -28,10 +28,19 @@ namespace Poser.UI;
 /// </summary>
 public static class FontRegistry
 {
-    // stb's grayscale coverage is lighter than Picto's DirectWrite output
-    // at these small sizes. Strengthen coverage without changing face,
-    // advances, wrapping, or the semantic 400/600 weight selection.
-    private const float RasterizerMultiply = 1.50f;
+    // Glyph alpha bakes as pow(clamp(coverage * multiply, 0, 1), 1 / gamma).
+    // BOTH values are stated on every config: SafeFontConfig's constructor
+    // defaults RasterizerGamma to 1.7, so an unset gamma silently stacks on
+    // top of any multiply and fattens every glyph.
+    private const float RasterizerMultiply = 1.00f;
+
+    // Dalamud's own tuned lift, restated rather than inherited.
+    private const float DarkRasterizerGamma = 1.70f;
+
+    // Neutral: raw stb coverage. Blending happens in sRGB space, which
+    // already over-darkens black-on-white antialiasing, so lifting light
+    // themes on top of that is what smears the text.
+    private const float LightRasterizerGamma = 1.00f;
 
     private static IFontAtlas? _atlas;
 
@@ -53,6 +62,14 @@ public static class FontRegistry
     private static readonly Dictionary<Key, float> _inkRise = new();
     private static readonly HashSet<Key> _required = new();
     private static readonly HashSet<Key> _failed = new();
+
+    // Theme polarity the LIVE handles were baked at, and the re-bake waiting
+    // to replace them after a polarity switch. Pending handles are warm-up
+    // only — they are never resolved to a caller, so nothing can be drawing
+    // with one when the swap (or a discard) disposes it.
+    private static bool _bakeLight;
+    private static bool _pendingLight;
+    private static Dictionary<Key, IFontHandle>? _pending;
 
     // Resolved lazily once; null entry = file not found → Dalamud default fallback.
     private static readonly Dictionary<(FontFamily, FontWeight), string?> _files = new();
@@ -79,11 +96,14 @@ public static class FontRegistry
     /// True once every font used by the active theme has either become
     /// available or failed definitively. Presentation waits for this so its
     /// first visible measurement cannot use a temporary fallback face.
+    /// Hosts call this once per frame BEFORE drawing, which is also the one
+    /// safe moment to retire superseded bakes — see <see cref="Promote"/>.
     /// </summary>
     public static bool Ready
     {
         get
         {
+            Promote();
             if (_atlas == null || _required.Count == 0)
                 return false;
 
@@ -111,12 +131,15 @@ public static class FontRegistry
     /// Creates the complete active typography matrix before presentation.
     /// Medium and semibold share Segoe UI Semibold, while mono has one face,
     /// so normalization keeps the atlas to fifteen distinct handles.
+    /// A theme of the opposite polarity also starts a re-bake of every cached
+    /// handle; the live ones keep drawing until that set is ready.
     /// </summary>
     public static void Warm(in Theme theme)
     {
         if (_atlas == null)
             return;
 
+        SetPolarity(theme.IsLight);
         _required.Clear();
         float[] sizes =
         [
@@ -178,7 +201,85 @@ public static class FontRegistry
         var key = new Key(family, NormalizeWeight(family, weight), sizePx);
         if (_cache.TryGetValue(key, out var handle)) return handle;
 
-        return CacheHandle(key);
+        return Build(key);
+    }
+
+    /// <summary>
+    /// Creates a live handle at the polarity currently on screen, plus its
+    /// counterpart in a pending re-bake so the swap misses nothing.
+    /// </summary>
+    private static IFontHandle? Build(Key key)
+    {
+        var handle = CacheHandle(_cache, key, _bakeLight);
+        if (handle != null && _pending is { } pending && !pending.ContainsKey(key))
+            CacheHandle(pending, key, _pendingLight);
+        return handle;
+    }
+
+    /// <summary>
+    /// Switches the bake polarity. Handles already on screen cannot be
+    /// re-baked in place, so the whole cache is re-created in the background;
+    /// switching back before that lands simply drops the pending set.
+    /// </summary>
+    private static void SetPolarity(bool light)
+    {
+        if (light == _bakeLight)
+        {
+            DiscardPending();
+            return;
+        }
+        if (_cache.Count == 0)
+        {
+            // Nothing baked yet — adopt the polarity directly.
+            DiscardPending();
+            _bakeLight = light;
+            return;
+        }
+        if (_pending != null)
+            return;
+
+        _pendingLight = light;
+        var pending = new Dictionary<Key, IFontHandle>();
+        _pending = pending;
+        foreach (var key in _cache.Keys)
+            CacheHandle(pending, key, light);
+        if (pending.Count == 0)
+            _pending = null; // nothing could be re-baked; keep the live set
+    }
+
+    /// <summary>
+    /// Retires the previous bake once its replacement is fully built. Called
+    /// from <see cref="Ready"/>, i.e. at a host's frame gate before anything
+    /// draws — the only point at which no handle can be pushed, so the
+    /// disposal here can never hit a font in use.
+    /// </summary>
+    private static void Promote()
+    {
+        if (_pending is not { } pending)
+            return;
+        foreach (var handle in pending.Values)
+        {
+            if (!handle.Available && handle.LoadException == null)
+                return;
+        }
+
+        foreach (var handle in _cache.Values)
+            handle.Dispose();
+        _cache.Clear();
+        foreach (var (key, handle) in pending)
+            _cache[key] = handle;
+        _pending = null;
+        _bakeLight = _pendingLight;
+    }
+
+    private static void DiscardPending()
+    {
+        if (_pending is not { } pending)
+            return;
+        // Pending handles are never handed out, so this is safe at any time.
+        foreach (var handle in pending.Values)
+            handle.Dispose();
+        _pending = null;
     }
 
     /// <summary>
@@ -223,7 +324,9 @@ public static class FontRegistry
         var key = new Key(family, NormalizeWeight(family, weight), sizePx);
         _required.Add(key);
         if (!_cache.ContainsKey(key) && !_failed.Contains(key))
-            CacheHandle(key);
+            Build(key);
+        else if (_pending is { } pending && !pending.ContainsKey(key))
+            CacheHandle(pending, key, _pendingLight);
     }
 
     private static FontWeight NormalizeWeight(FontFamily family, FontWeight weight) =>
@@ -231,12 +334,14 @@ public static class FontRegistry
             ? FontWeight.Regular
             : FontWeight.SemiBold;
 
-    private static IFontHandle? CacheHandle(Key key)
+    private static IFontHandle? CacheHandle(
+        Dictionary<Key, IFontHandle> into, Key key, bool light)
     {
         if (_atlas == null) return null;
         try
         {
             string? file = ResolveFile(key.Family, key.Weight);
+            float gamma = light ? LightRasterizerGamma : DarkRasterizerGamma;
             var handle = _atlas.NewDelegateFontHandle(e => e.OnPreBuild(tk =>
             {
                 try
@@ -252,6 +357,7 @@ public static class FontRegistry
                         {
                             SizePx = key.SizePx * TtfMetrics.CssScale(file),
                             RasterizerMultiply = RasterizerMultiply,
+                            RasterizerGamma = gamma,
                         };
                         var added = tk.AddFontFromFile(file, config);
                         // CJK coverage for the Default family only —
@@ -274,6 +380,7 @@ public static class FontRegistry
                                 MergeFont = added,
                                 GlyphRanges = CjkMergeRanges,
                                 RasterizerMultiply = RasterizerMultiply,
+                                RasterizerGamma = gamma,
                             };
                             tk.AddFontFromFile(cjkFace.Path, cjk);
                         }
@@ -290,7 +397,7 @@ public static class FontRegistry
                     try { tk.AddDalamudDefaultFont(key.SizePx); } catch { /* default font is best effort too */ }
                 }
             }));
-            _cache[key] = handle;
+            into[key] = handle;
             return handle;
         }
         catch (Exception ex)
@@ -346,8 +453,10 @@ public static class FontRegistry
 
     public static void Dispose()
     {
+        DiscardPending();
         foreach (var h in _cache.Values) h.Dispose();
         _cache.Clear();
+        _bakeLight = false;
         _inkRise.Clear(); // keyed like the handle cache and derived from _files
         _required.Clear();
         _failed.Clear();

@@ -157,6 +157,14 @@ internal sealed class StandaloneFontAtlas : IFontAtlas
             FontScaleMode.Default;
         public void RegisterPostBuild(Action action) => action();
 
+        /// <summary>The bake the 71 accepted hashes were captured with. The
+        /// plugin's live bake moved to per-polarity multiply/gamma
+        /// (FontRegistry, 2026-08-03); this stays pinned so the accepted
+        /// record keeps hashing until the user accepts the new in-game
+        /// weight — then one re-freeze aligns harness and plugin, and this
+        /// constant dies.</summary>
+        private const float PinnedGoldenRasterizerMultiply = 1.50f;
+
         public ImFontPtr AddFontFromFile(
             string path, in SafeFontConfig fontConfig)
         {
@@ -165,7 +173,7 @@ internal sealed class StandaloneFontAtlas : IFontAtlas
             {
                 GlyphOffset = fontConfig.GlyphOffset,
                 FontNo = fontConfig.FontNo,
-                RasterizerMultiply = fontConfig.RasterizerMultiply,
+                RasterizerMultiply = PinnedGoldenRasterizerMultiply,
             };
             var merge = fontConfig.MergeFont;
             if (!merge.IsNull)

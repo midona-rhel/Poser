@@ -96,12 +96,16 @@ internal static class TokenEquality
         string Field,
         string Css,
         Func<Theme, Vector4> Read,
-        Func<Vector4, Vector4>? Derive)[] Map =
+        Func<Vector4, Theme, Vector4>? Derive)[] Map =
     [
         ("Surface", "--color-bg-app", t => t.Surface, null),
         ("SurfaceRaised", "--color-surface-1", t => t.SurfaceRaised, null),
         ("SurfaceSunken", "--color-surface-2", t => t.SurfaceSunken, null),
-        ("Text", "--color-text-primary", t => t.Text, null),
+        // Light polarity seats primary text at 89% black (the Windows
+        // light-theme convention): pure black over sRGB-space blending
+        // reads a weight class heavier than designed.
+        ("Text", "--color-text-primary (@ 0.894 light)", t => t.Text,
+            (c, t) => t.IsLight ? c with { W = 0.894f } : c),
         ("TextDim", "--color-text-secondary", t => t.TextDim, null),
         ("TextMuted", "--color-text-tertiary", t => t.TextMuted, null),
         ("FormLabel", "--color-text-tertiary", t => t.FormLabel, null),
@@ -110,7 +114,7 @@ internal static class TokenEquality
         ("BorderStrong", "--color-border-primary", t => t.BorderStrong, null),
         ("Accent", "--color-primary", t => t.Accent, null),
         ("AccentHover", "--color-primary-60", t => t.AccentHover, null),
-        ("AccentActive", "--color-primary @ 0.80", t => t.AccentActive, c => c with { W = 0.80f }),
+        ("AccentActive", "--color-primary @ 0.80", t => t.AccentActive, (c, _) => c with { W = 0.80f }),
         ("Danger", "--color-negative", t => t.Danger, null),
         ("Chrome.Text", "--color-text-primary", t => t.Chrome.Text, null),
         ("Chrome.ControlBorder", "--color-border-primary", t => t.Chrome.ControlBorder, null),
@@ -125,7 +129,7 @@ internal static class TokenEquality
         ("Chrome.AccentFill", "--color-primary-10", t => t.Chrome.AccentFill, null),
         ("Chrome.AccentFillBorder", "--color-primary-30", t => t.Chrome.AccentFillBorder, null),
         ("Chrome.Danger", "--color-negative", t => t.Chrome.Danger, null),
-        ("Chrome.DangerHover", "--color-negative @ 0.12", t => t.Chrome.DangerHover, c => c with { W = 0.12f }),
+        ("Chrome.DangerHover", "--color-negative @ 0.12", t => t.Chrome.DangerHover, (c, _) => c with { W = 0.12f }),
         ("Chrome.ColorWellBorder", "--color-border-primary", t => t.Chrome.ColorWellBorder, null),
         ("Chrome.PickerWell", "--color-bg-app", t => t.Chrome.PickerWell, null),
         ("Chrome.ModalFooter", "--color-black-10", t => t.Chrome.ModalFooter, null),
@@ -314,7 +318,7 @@ internal static class TokenEquality
                 var varName = derive == null ? cssRef : cssRef.Split(' ')[0];
                 var expected = TokenCss.ColorOf(varName, raw);
                 if (derive != null)
-                    expected = derive(expected);
+                    expected = derive(expected, theme);
                 var got = read(theme);
                 if (!Approx(expected, got))
                 {

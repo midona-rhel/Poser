@@ -10,6 +10,11 @@ namespace Poser.UI;
 /// </summary>
 public readonly record struct Theme
 {
+    /// <summary>Dark ink on a light ground. Polarity is a rendering input,
+    /// not a color: glyph rasterization is baked per polarity
+    /// (<see cref="FontRegistry"/>), so every light theme must set it.</summary>
+    public bool IsLight { get; init; }
+
     public Vector4 Surface { get; init; }
     public Vector4 SurfaceRaised { get; init; }
     public Vector4 SurfaceSunken { get; init; }
@@ -54,6 +59,7 @@ public readonly record struct Theme
     /// <summary>The accepted Picto-derived dark foundation.</summary>
     public static Theme PictoDark => new()
     {
+        IsLight = false,
         // Color identity flows from the generated PictoTokens (projection of
         // the canonical tokens.css); --verify-tokens checks the complete
         // field mapping and regeneration drift. Fields NOT wired to a token
@@ -393,10 +399,15 @@ public readonly record struct Theme
         var primary = PictoTokens.Light.Primary;
         return theme with
         {
+            IsLight = true,
             Surface = surface,
             SurfaceRaised = raised,
             SurfaceSunken = sunken,
-            Text = PictoTokens.Light.TextPrimary,
+            // Deviation from --color-text-primary (pure black): body text on a
+            // light ground uses the Windows 11 89% black, which reads as ink
+            // instead of a hole. Secondary/tertiary already carry their own
+            // alphas and are unchanged.
+            Text = PictoTokens.Light.TextPrimary with { W = 0.894f },
             TextDim = PictoTokens.Light.TextSecondary,
             TextMuted = PictoTokens.Light.TextTertiary,
             FormLabel = PictoTokens.Light.TextTertiary,
