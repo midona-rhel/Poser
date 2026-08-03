@@ -33,6 +33,21 @@ public unsafe class BonePosingService : IBonePosingService
     private readonly IActorManager _actorManager;
     private readonly IEventBus _eventBus;
     private readonly IIKService _ikService;
+    private readonly Poser.Game.Bindings.StableBindingRegistry _bindings;
+    private readonly IPosingService _posingService;
+    private readonly Poser.Config.ConfigurationService _configuration;
+
+    /// <summary>Poses parked across a redraw, keyed by stable actor identity
+    /// rather than by any of the three things a rebuild invalidates (address,
+    /// skeleton instance, draw object).</summary>
+    private readonly PoseCarryoverStore _carryover = new();
+
+    /// <summary>Ktisis's "position root": the first REAL bone of partial 0, the
+    /// only bone whose position delta is restored after a rebuild. Poser's
+    /// <c>IsSkeletonRoot</c> is the parentless <c>n_root</c> instead, whose
+    /// position is the actor's world placement — carrying that would fight the
+    /// model transform override, so it is deliberately not used here.</summary>
+    private const string PositionRootBoneName = "n_hara";
 
     // Hook for intercepting bone physics updates
     private delegate nint UpdateBonePhysicsDelegate(nint a1);
@@ -97,6 +112,9 @@ public unsafe class BonePosingService : IBonePosingService
         IActorManager actorManager,
         IEventBus eventBus,
         IIKService ikService,
+        Poser.Game.Bindings.StableBindingRegistry bindings,
+        IPosingService posingService,
+        Poser.Config.ConfigurationService configuration,
         IGameInteropProvider hooking,
         ISigScanner scanner)
     {
@@ -107,6 +125,9 @@ public unsafe class BonePosingService : IBonePosingService
         _actorManager = actorManager;
         _eventBus = eventBus;
         _ikService = ikService;
+        _bindings = bindings;
+        _posingService = posingService;
+        _configuration = configuration;
 
         // Hook UpdateBonePhysics - this is called during skeleton updates
         try
@@ -137,6 +158,7 @@ public unsafe class BonePosingService : IBonePosingService
         _framework.Update += OnFrameworkUpdate;
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _eventBus.Subscribe<ActorListChangedEvent>(OnActorListChanged);
+        _eventBus.Subscribe<SkeletonChangedEvent>(OnSkeletonChanged);
 
         _log.Debug("BonePosingService initialized");
     }
@@ -241,8 +263,188 @@ public unsafe class BonePosingService : IBonePosingService
             _skeletonsToUpdate.Clear();
             _evaluationObservations.Clear();
             _ikChains.Clear();
+            _carryover.Clear();
         }
     }
+
+    /// <summary>
+    /// Parks the authored half of a REPLACED skeleton's pose under the actor's
+    /// stable identity. Called only where the actor itself is still live —
+    /// never from actor teardown, where nothing may be resurrected. Cheap when
+    /// there is nothing to carry: the config gate and the authored-stack scan
+    /// both run before anything is allocated.
+    /// </summary>
+    private void TryCaptureCarryover(IActor actor, SkeletonKey staleKey)
+    {
+        if (!_configuration.Config.PreservePoseAcrossRedraws)
+            return;
+
+        // Absent when the restore handler already migrated this store directly
+        // (the replacement skeleton was built before the detour noticed).
+        if (!_poseInfos.TryGetValue(staleKey, out var poseInfo) ||
+            !HasAuthoredStacks(poseInfo))
+            return;
+
+        if (_bindings.GetActorId(actor) is not { } actorId)
+            return;
+
+        if (BuildCarryoverPose(poseInfo) is not { } carried)
+            return;
+
+        _carryover.Park(
+            actorId.LogicalId,
+            staleKey.Slot,
+            new CarryoverEntry(
+                carried,
+                _posingService.GetTransformOverride(actor),
+                global::System.Environment.TickCount64));
+        _log.Debug(
+            $"BonePosingService: parked {staleKey.Slot} pose for {actor.Name} across rebuild");
+    }
+
+    /// <summary>
+    /// Seeds a settled replacement skeleton with the pose parked for the same
+    /// stable actor identity. Idempotent: <c>RefreshSkeleton</c> republishes for
+    /// skeletons that already own a store, and those return untouched. The
+    /// publish is SYNCHRONOUS from inside <c>ISkeletonService.GetSkeleton</c>,
+    /// so this handler must never call back into the skeleton service.
+    /// Undo history is deliberately not involved — a rebuild is not an edit.
+    /// </summary>
+    private void OnSkeletonChanged(SkeletonChangedEvent e)
+    {
+        if (!_configuration.Config.PreservePoseAcrossRedraws)
+            return;
+        if (e.Skeleton is not { IsValid: true } skeleton)
+            return;
+
+        var newKey = SkeletonKey.Of(skeleton);
+        if (_poseInfos.ContainsKey(newKey))
+            return;
+        if (_bindings.GetActorId(e.Actor) is not { } actorId)
+            return;
+
+        // Both orders occur. The per-frame detour usually parks the pose before
+        // the replacement exists; but the detour's own GetSkeleton call is what
+        // BUILDS the replacement, so this handler can also run while the stale
+        // store is still live and unparked. A parked entry always wins — it is
+        // the newer of the two — and otherwise the stale store migrates across.
+        var entry = _carryover.Take(actorId.LogicalId, skeleton.Slot);
+        var carried = entry?.Pose;
+        var modelOverride = entry?.ModelOverride;
+
+        foreach (var stale in _poseInfos.Keys
+                     .Where(key => key.Actor == newKey.Actor &&
+                                   key.Slot == newKey.Slot)
+                     .ToArray())
+        {
+            if (carried == null &&
+                _poseInfos.TryGetValue(stale, out var stalePose) &&
+                HasAuthoredStacks(stalePose))
+            {
+                carried = BuildCarryoverPose(stalePose);
+                modelOverride = _posingService.GetTransformOverride(e.Actor);
+            }
+
+            PurgeSkeletonState(stale);
+        }
+
+        if (carried == null)
+            return;
+
+        _poseInfos[newKey] = carried;
+        // OnFrameworkUpdate rebuilds _skeletonsToUpdate from _poseInfos, but the
+        // physics detour can run before the next framework tick; register the
+        // key the same way ApplyTransform's callers do so the restored pose is
+        // applied on the very next update.
+        _skeletonsToUpdate.Add(newKey);
+
+        // The replacement carries a NEW draw object: re-assert the model
+        // transform once so the write lands on it deterministically instead of
+        // racing the next framework tick. The live override wins when
+        // PosingService kept it; the parked one covers the case where the
+        // address left the live set and it was dropped.
+        if ((_posingService.GetTransformOverride(e.Actor) ?? modelOverride) is { } modelTransform)
+            _posingService.SetTransformOverride(e.Actor, modelTransform);
+
+        _log.Debug(
+            $"BonePosingService: restored {skeleton.Slot} pose for {e.Actor.Name} after rebuild");
+    }
+
+    /// <summary>Authored means interactive: a stack with no <c>Layer</c>. Named
+    /// service layers (expression blending and friends) are recomputed by their
+    /// owners and never count as something worth carrying.</summary>
+    private static bool HasAuthoredStacks(SkeletonPoseInfo poseInfo)
+    {
+        foreach (var bonePose in poseInfo.AllPoses)
+        {
+            var stacks = bonePose.Stacks;
+            for (var i = 0; i < stacks.Count; i++)
+            {
+                if (stacks[i].Layer == null)
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Reduces a pose to what may cross a rebuild, matching Ktisis's restore
+    /// flags (Rotation | PositionRoot): interactive stacks only, rotation on
+    /// every bone, position on the pose root alone, scale never. Named service
+    /// layers are dropped so their owners re-drive them, and IK chain state is
+    /// never carried — a replacement inherits no chain configuration or fixed
+    /// target. Returns null when nothing survives the filter.
+    /// </summary>
+    private static SkeletonPoseInfo? BuildCarryoverPose(SkeletonPoseInfo source)
+    {
+        SkeletonPoseInfo? carried = null;
+
+        foreach (var bonePose in source.AllPoses)
+        {
+            var isPositionRoot = bonePose.PartialId == 0 &&
+                string.Equals(bonePose.BoneName, PositionRootBoneName, StringComparison.Ordinal);
+
+            List<BonePoseTransformInfo>? kept = null;
+            var stacks = bonePose.Stacks;
+            for (var i = 0; i < stacks.Count; i++)
+            {
+                var stack = stacks[i];
+                if (stack.Layer != null)
+                    continue;
+
+                var delta = new Transform
+                {
+                    Position = isPositionRoot ? stack.Transform.Position : Vector3.Zero,
+                    Rotation = stack.Transform.Rotation,
+                    Scale = Vector3.Zero,
+                };
+                if (IsIdentityDelta(delta))
+                    continue;
+
+                (kept ??= new List<BonePoseTransformInfo>()).Add(
+                    stack with { Transform = delta });
+            }
+
+            if (kept == null)
+                continue;
+
+            // The skeleton-wide default is set first: assigning it rewrites
+            // every existing bone default, so per-bone values are applied after.
+            carried ??= new SkeletonPoseInfo { DefaultPropagation = source.DefaultPropagation };
+            var target = carried.GetPoseInfo(bonePose.BoneName, bonePose.PartialId);
+            target.DefaultPropagation = bonePose.DefaultPropagation;
+            target.ReplaceStacks(kept);
+        }
+
+        return carried;
+    }
+
+    /// <summary>Stack deltas are additive for position/scale and multiplicative
+    /// for rotation, so identity is (0, identity quaternion, 0).</summary>
+    private static bool IsIdentityDelta(Transform delta) =>
+        delta.Position == Vector3.Zero &&
+        delta.Scale == Vector3.Zero &&
+        MathF.Abs(MathF.Abs(delta.Rotation.W) - 1f) < 1e-6f;
 
     private void ApplyAllBoneTransforms()
     {
@@ -273,7 +475,9 @@ public unsafe class BonePosingService : IBonePosingService
             {
                 // The slot vanished or was REPLACED: the stored pose belongs
                 // to the old skeleton instance and must never be applied to
-                // its replacement.
+                // its replacement. The actor is still live, so the authored
+                // half is parked for the rebuild to pick up.
+                TryCaptureCarryover(actor, slotKey);
                 PurgeSkeletonState(slotKey);
                 continue;
             }
@@ -616,7 +820,10 @@ public unsafe class BonePosingService : IBonePosingService
                          .Where(key => key.Actor == slotKey.Actor &&
                                        key.Slot == slotKey.Slot)
                          .ToArray())
+            {
+                TryCaptureCarryover(skeleton.Actor, stale);
                 PurgeSkeletonState(stale);
+            }
             poseInfo = new SkeletonPoseInfo();
             _poseInfos[slotKey] = poseInfo;
         }
@@ -1100,8 +1307,10 @@ public unsafe class BonePosingService : IBonePosingService
         _framework.Update -= OnFrameworkUpdate;
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _eventBus.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
+        _eventBus.Unsubscribe<SkeletonChangedEvent>(OnSkeletonChanged);
         _poseInfos.Clear();
         _evaluationObservations.Clear();
+        _carryover.Clear();
         GC.SuppressFinalize(this);
     }
 }

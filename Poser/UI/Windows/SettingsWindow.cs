@@ -77,6 +77,7 @@ public class SettingsWindow : Window
             Category = 1,
             OpenOnGPose = c.OpenOnGPoseEnter,
             CloseWithGPose = c.CloseWithGPose,
+            PreservePoseAcrossRedraws = c.PreservePoseAcrossRedraws,
 
             BoneDotRadius = c.Skeleton.BoneDotRadius,
             OverlaySelected = ImGui.ColorConvertU32ToFloat4(c.Skeleton.SelectedBoneColor),
@@ -119,6 +120,7 @@ public class SettingsWindow : Window
 
         c.OpenOnGPoseEnter = _vm.OpenOnGPose;
         c.CloseWithGPose = _vm.CloseWithGPose;
+        c.PreservePoseAcrossRedraws = _vm.PreservePoseAcrossRedraws;
 
         c.Skeleton.BoneDotRadius = _vm.BoneDotRadius;
         c.Skeleton.SelectedBoneColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlaySelected);
