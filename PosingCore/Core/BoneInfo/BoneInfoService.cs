@@ -12,6 +12,7 @@ public static class BoneInfoService
     private static IPluginLog? _log;
     private static readonly HashSet<string> _loggedUntranslated = new();
     private static readonly Dictionary<string, BoneData> _boneData = new();
+    private static readonly HashSet<string> _nsfwBones = new();
 
     /// <summary>
     /// Initializes the bone info service with a logger.
@@ -21,6 +22,7 @@ public static class BoneInfoService
         _log = log;
         _loggedUntranslated.Clear();
         _boneData.Clear();
+        _nsfwBones.Clear();
 
         // Register all category data
         RootBones.Register(_boneData);
@@ -39,11 +41,24 @@ public static class BoneInfoService
         TailBones.Register(_boneData);
         ClothingBones.Register(_boneData);
         EquipmentBones.Register(_boneData);
-        IVCSBones.Register(_boneData);
-        PhysicsBones.Register(_boneData);
+        // IVCS and physics registrations double as the NSFW set: the
+        // Display.ShowNsfwBones switch ("Show IVCS and extended bone
+        // groups") controls exactly the bones these two files declare.
+        var extended = new Dictionary<string, BoneData>();
+        IVCSBones.Register(extended);
+        PhysicsBones.Register(extended);
+        foreach (var (name, boneData) in extended)
+        {
+            _boneData[name] = boneData;
+            _nsfwBones.Add(name);
+        }
 
         log.Info($"[BoneInfoService] Loaded {_boneData.Count} bone definitions");
     }
+
+    /// <summary>True for IVCS/extended-group bones — the set the
+    /// Display.ShowNsfwBones switch shows and hides.</summary>
+    public static bool IsNsfw(string boneName) => _nsfwBones.Contains(boneName);
 
     /// <summary>
     /// Gets the translated name for a bone, or null if no translation exists.

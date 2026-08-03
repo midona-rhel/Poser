@@ -40,6 +40,13 @@ public static class BoneMatrixBuilder
 
     private sealed record PillInfo(BoneDescriptor Bone, string Side, string Ordinal);
 
+    /// <summary>Extended/IVCS bones are DISPLAY-suppressed while
+    /// Display.ShowNsfwBones is off. Read live per build; the snapshot's own
+    /// IsHidden and every selection path are untouched.</summary>
+    private static bool IsSuppressed(BoneDescriptor bone)
+        => !Config.ConfigurationService.Instance.Config.Display.ShowNsfwBones
+            && BoneInfoService.IsNsfw(bone.Id.CanonicalName);
+
     public static BoneMatrixViewModel Build(
         SkeletonDescriptor skeleton,
         SelectionSession selection,
@@ -70,7 +77,7 @@ public static class BoneMatrixBuilder
             {
                 var gameName = AnamnesisBoneNameConverter.ToGame(name);
                 var matches = skeleton.Bones.Where(bone =>
-                    !bone.IsHidden &&
+                    !bone.IsHidden && !IsSuppressed(bone) &&
                     (bone.Id.CanonicalName == gameName || bone.Id.CanonicalName == name));
                 foreach (var bone in matches)
                 {
@@ -126,7 +133,8 @@ public static class BoneMatrixBuilder
 
         foreach (var bone in skeleton.Bones)
         {
-            if (bone.IsHidden || covered.Contains((bone.Id.CanonicalName, bone.Id.PartialId))) continue;
+            if (bone.IsHidden || IsSuppressed(bone) ||
+                covered.Contains((bone.Id.CanonicalName, bone.Id.PartialId))) continue;
 
             var data = BoneInfoService.GetBoneData(bone.Id.CanonicalName);
             var category = data?.Category ?? BoneCategory.Other;

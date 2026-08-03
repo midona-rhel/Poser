@@ -201,13 +201,11 @@ public static partial class Crystarium
         internal FormRowScope BeginRow(string label)
         {
             float top = _origin.Y + _y * _scale;
-            var row = new FormRowScope(new(_origin.X, top), _width, _scale);
+            float column = LabelColumn(label, _width, _scale);
+            var row = new FormRowScope(
+                new(_origin.X, top), _width, _scale, column);
             if (!string.IsNullOrEmpty(label))
-                FormLabel(
-                    row.Origin,
-                    ActiveTheme.Form.LabelColumnWidth * _scale,
-                    _scale,
-                    label);
+                FormLabel(row.Origin, column, _scale, label);
             return row;
         }
 
@@ -781,7 +779,7 @@ public static partial class Crystarium
             in FormRowScope row, float x, float span, string label,
             Action<FormPairCell> draw)
         {
-            float column = ActiveTheme.Form.LabelColumnWidth * row.Scale;
+            float column = LabelColumn(label, span, row.Scale);
             if (!string.IsNullOrEmpty(label))
                 FormLabel(new Vector2(x, row.Origin.Y), column, row.Scale, label);
             draw(new FormPairCell(
@@ -977,14 +975,14 @@ public static partial class Crystarium
         public float ControlWidth { get; }
         public float Scale { get; }
 
-        internal FormRowScope(Vector2 origin, float width, float scale)
+        internal FormRowScope(
+            Vector2 origin, float width, float scale, float labelColumn)
         {
             Origin = origin;
             Width = width;
             Scale = scale;
-            ControlOrigin = origin +
-                new Vector2(ActiveTheme.Form.LabelColumnWidth * scale, 0f);
-            ControlWidth = width - ActiveTheme.Form.LabelColumnWidth * scale;
+            ControlOrigin = origin + new Vector2(labelColumn, 0f);
+            ControlWidth = width - labelColumn;
         }
 
         public Vector2 CenterControl(float controlHeight) => new(
@@ -1223,6 +1221,24 @@ public static partial class Crystarium
         Crystarium.TextAt(position, text,
             new TextStyle { Size = size, Weight = weight, Family = family, Color = color },
             TextConstraint.Truncate(width));
+    }
+
+    /// <summary>The label slot's width, in pixels: the themed column,
+    /// widened to the measured run when the label would otherwise
+    /// truncate beside unclaimed row space (measure first, constrain
+    /// only on overflow), and capped at half the row so a degenerate
+    /// label cannot evict its control.</summary>
+    private static float LabelColumn(string label, float width, float scale)
+    {
+        float column = ActiveTheme.Form.LabelColumnWidth * scale;
+        if (string.IsNullOrEmpty(label))
+            return column;
+        float needed = MeasureText(
+            label, ActiveTheme.Typography.LabelSize, FontWeight.Regular).X;
+        if (needed <= column)
+            return column;
+        return MathF.Min(
+            needed + ActiveTheme.Page.ActionGap * scale, width * 0.5f);
     }
 
     /// <summary>The form's label slot: 12px regular in the label column,

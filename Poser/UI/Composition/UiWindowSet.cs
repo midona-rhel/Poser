@@ -1,4 +1,5 @@
 using Dalamud.Interface.Windowing;
+using Poser.Config;
 using Poser.Services;
 using System;
 
@@ -19,6 +20,7 @@ public sealed class UiWindowSet : IDisposable
 
     public UiWindowSet(
         IGPoseService gPoseService,
+        ConfigurationService configService,
         MainWindow main,
         SkeletonOverlayWindow skeletonOverlay,
         GizmoOverlayWindow gizmoOverlay,
@@ -42,7 +44,10 @@ public sealed class UiWindowSet : IDisposable
         Main.GetSkeletonOverlayOn = () => SkeletonOverlay.IsOpen;
         Main.OnSkeletonOverlayToggled += SetSkeletonOverlayOpen;
 
-        SetPrimaryOpen(gPoseService.IsGPosing);
+        // Loading mid-GPose obeys the same rule as entering it: the workspace
+        // only appears when the user asked for it to.
+        SetPrimaryOpen(
+            gPoseService.IsGPosing && configService.Config.OpenOnGPoseEnter);
     }
 
     public void SetPrimaryOpen(bool isOpen)
@@ -57,6 +62,14 @@ public sealed class UiWindowSet : IDisposable
             SkeletonOverlay.IsOpen = false;
             _overlayPresentation.Clear();
         }
+    }
+
+    /// <summary>Every surface down, settings included. Only the
+    /// Close-with-GPose path wants this; manual toggles do not.</summary>
+    public void CloseAll()
+    {
+        SetPrimaryOpen(false);
+        Settings.IsOpen = false;
     }
 
     private void SetSkeletonOverlayOpen(bool isOpen)

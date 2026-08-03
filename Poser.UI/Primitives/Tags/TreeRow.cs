@@ -56,6 +56,12 @@ public record struct TreeRowProps
     /// </summary>
     public bool IsLastChild;
 
+    /// <summary>Suppress the connector INK only. The trunk column, the pill's
+    /// inset and the label zone are unchanged, so a row keeps its exact
+    /// geometry with the guides off and nothing reflows. Stated as HIDE so the
+    /// record's default draws them.</summary>
+    public bool HideGuides;
+
     /// <summary><see cref="SidebarExpander.None"/> reserves no chevron at all,
     /// so the row's whole width selects.</summary>
     public SidebarExpander Expander;
@@ -276,7 +282,7 @@ public static partial class Crystarium
                 });
         }
 
-        if (branch != TreeBranch.None)
+        if (branch != TreeBranch.None && !props.HideGuides)
             DrawTreeGuides(
                 dl, hit.ScreenMin, hit.ScreenMax, props.Trunks, depth, branch,
                 scale, theme);

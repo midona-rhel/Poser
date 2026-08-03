@@ -353,6 +353,29 @@ public readonly record struct Theme
 
     public static Theme Default => PictoDark;
 
+    /// <summary>
+    /// Re-derives the whole accent family from one RGB. The alphas are the
+    /// --color-primary ladder (1.0 / 60 / 80 / 50 / 10 / 30) — no blends, so a
+    /// user accent lands on every surface that reads a primary token. Named
+    /// constructors are untouched: this is applied at resolve time.
+    /// </summary>
+    public Theme WithAccent(Vector4 accent) =>
+        this with
+        {
+            Accent = accent with { W = 1f },
+            AccentHover = accent with { W = 0.60f },
+            AccentActive = accent with { W = 0.80f },
+            Palette = Palette with { Primary = accent with { W = 1f } },
+            Chrome = Chrome with
+            {
+                Primary = accent with { W = 1f },
+                PrimaryHover = accent with { W = 0.60f },
+                PrimaryFocus = accent with { W = 0.50f },
+                AccentFill = accent with { W = 0.10f },
+                AccentFillBorder = accent with { W = 0.30f },
+            },
+        };
+
     private static Theme DarkSurface(
         Theme theme,
         Vector4 surface,

@@ -448,7 +448,7 @@ public class MainWindow : Window
             {
                 foreach (var bone in skeleton.Bones)
                 {
-                    if (bone.IsHidden) continue;
+                    if (bone.IsHidden || IsBoneSuppressed(bone)) continue;
                     var cat = Core.BoneInfo.BoneInfoService.GetCategory(bone.Id.CanonicalName);
                     var slot = groups.FindIndex(g => g.Cat == cat);
                     if (slot < 0) { groups.Add((cat, new List<BoneDescriptor>())); slot = groups.Count - 1; }
@@ -464,13 +464,18 @@ public class MainWindow : Window
                 .OrderBy(s => (int)s.Id.Slot)
                 .ToList();
 
-            bool actorMatches = MatchesSidebarFilter(filter, actorLabel, actor.Name);
+            // Under anonymous mode the RAW name is not a match candidate:
+            // typing the real name must not locate the masked actor.
+            bool actorMatches =
+                Config.ConfigurationService.Instance.Config.Display.AnonymousMode
+                    ? MatchesSidebarFilter(filter, actorLabel)
+                    : MatchesSidebarFilter(filter, actorLabel, actor.Name);
             bool hasMatchingBone = groups.Exists(group =>
                 MatchesSidebarFilter(filter, Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(group.Cat), group.Cat.ToString())
                 || group.Bones.Exists(bone => MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName)));
             bool hasMatchingAux = auxSkeletons.Exists(aux =>
                 MatchesSidebarFilter(filter, SlotLabel(aux.Id.Slot))
-                || aux.Bones.Any(bone => !bone.IsHidden &&
+                || aux.Bones.Any(bone => !bone.IsHidden && !IsBoneSuppressed(bone) &&
                     MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName)));
             if (filtering && !actorMatches && !hasMatchingBone && !hasMatchingAux)
                 continue;
@@ -622,7 +627,9 @@ public class MainWindow : Window
         var shown = new List<(SkeletonDescriptor Aux, List<BoneDescriptor> Visible, List<BoneDescriptor> Matching, bool GroupMatches)>();
         foreach (var aux in auxSkeletons)
         {
-            var visible = aux.Bones.Where(bone => !bone.IsHidden).ToList();
+            var visible = aux.Bones
+                .Where(bone => !bone.IsHidden && !IsBoneSuppressed(bone))
+                .ToList();
             if (visible.Count == 0)
                 continue;
             bool groupMatches = MatchesSidebarFilter(filter, SlotLabel(aux.Id.Slot));
@@ -746,6 +753,13 @@ public class MainWindow : Window
                 return true;
         return false;
     }
+
+    /// <summary>Extended/IVCS bones are DISPLAY-suppressed while
+    /// Display.ShowNsfwBones is off. Read live per build: the snapshot's own
+    /// IsHidden and every selection path are untouched.</summary>
+    private static bool IsBoneSuppressed(BoneDescriptor bone)
+        => !Config.ConfigurationService.Instance.Config.Display.ShowNsfwBones
+            && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName);
 
     /// <summary>Nickname, else the anonymous mask when enabled, else the
     /// cleaned snapshot name — one stable-id display API for every surface.</summary>
@@ -1013,8 +1027,10 @@ public class MainWindow : Window
             () =>
             {
                 _renameTarget = actorId;
-                _renameValue = Config.ConfigurationService.Instance.GetNickname(actorId.LogicalId)
-                    ?? DisplayName(actor.Name);
+                // Seeds what the UI SHOWS — nickname, else the mask while
+                // anonymous mode is on. Prefilling the raw name would leak it.
+                _renameValue = Config.ConfigurationService.Instance.GetDisplayName(
+                    actorId.LogicalId, DisplayName(actor.Name));
                 _renameOpen = true;
             },
             () =>

@@ -54,7 +54,11 @@ public sealed class SettingsViewModel
     public Action? OnCancel;
     public Action? OnClose;
     public Action? OnOpenRepository;
-    public Action<UITheme>? OnThemePreview;
+
+    /// <summary>Applies <see cref="Theme"/> AND <see cref="AccentIndex"/>
+    /// together — either swatch row moving must repaint with the other row's
+    /// current selection.</summary>
+    public Action? OnAppearancePreview;
 }
 
 /// <summary>
@@ -361,14 +365,18 @@ public static class SettingsView
                 next =>
                 {
                     vm.Theme = (UITheme)next;
-                    vm.OnThemePreview?.Invoke(vm.Theme);
+                    vm.OnAppearancePreview?.Invoke();
                 },
                 ThemeLabels);
             form.Swatches(
                 "Accent",
                 Crystarium.ActiveTheme.Settings.AccentOptions,
                 vm.AccentIndex,
-                next => vm.AccentIndex = next);
+                next =>
+                {
+                    vm.AccentIndex = next;
+                    vm.OnAppearancePreview?.Invoke();
+                });
         });
     }
 

@@ -220,7 +220,10 @@ public sealed class GraphicalBonePane : IDisposable
                 skeleton);
         }
 
-        if (skeleton.GetBone("iv_asi_oya_a_l") != null)
+        // Every dot in this section is an IVCS bone, so with the switch off it
+        // would draw as a bare image over an empty map.
+        if (skeleton.GetBone("iv_asi_oya_a_l") != null
+            && Config.ConfigurationService.Instance.Config.Display.ShowNsfwBones)
         {
             DrawBoneSectionAt(
                 "ivcs_toes",
@@ -463,9 +466,19 @@ public sealed class GraphicalBonePane : IDisposable
                 // never be highlighted or selected from a map.
                 if (descriptor.CharacterSkeleton is { } skeletonDescriptor)
                 {
+                    // Extended/IVCS bones get no dot id, and DrawBoneAt draws
+                    // nothing without one — the display suppression for the
+                    // maps, with the snapshot and selection untouched.
+                    bool showNsfw = Config.ConfigurationService.Instance
+                        .Config.Display.ShowNsfwBones;
                     foreach (var bone in skeletonDescriptor.Bones)
+                    {
+                        if (!showNsfw && Core.BoneInfo.BoneInfoService.IsNsfw(
+                                bone.Id.CanonicalName))
+                            continue;
                         _dotIds[(bone.Id.CanonicalName, bone.Id.PartialId)] =
                             SelectionId.ForBone(bone.Id);
+                    }
                 }
                 // Residual frame-scoped resolution: the maps still render from
                 // the live skeleton and read the face-map variant from actor

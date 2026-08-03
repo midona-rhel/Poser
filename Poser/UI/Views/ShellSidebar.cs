@@ -451,6 +451,10 @@ public sealed class ShellSidebar
             Depth = row.Depth,
             Trunks = entry.Trunks,
             IsLastChild = row.IsLastChild,
+            // Read live: the ink is the only thing the switch changes, so no
+            // cached entry (least of all Trunks) has to be invalidated.
+            HideGuides = !Config.ConfigurationService.Instance
+                .Config.UI.ShowTreeGuides,
             Expander = row.HasChildren
                 ? row.Expanded
                     ? SidebarExpander.Open
