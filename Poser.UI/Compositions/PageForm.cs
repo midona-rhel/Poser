@@ -80,7 +80,8 @@ public static partial class Crystarium
     internal readonly record struct ActionItem(
         string Label, Action OnClick, ControlStyle Style,
         string? Help, bool Disabled,
-        ButtonVariant Variant = ButtonVariant.Secondary);
+        ButtonVariant Variant = ButtonVariant.Secondary,
+        TablerIcon? Icon = null);
 
     public sealed class ActionScope
     {
@@ -91,6 +92,16 @@ public static partial class Crystarium
             string? help = null,
             ButtonVariant variant = ButtonVariant.Secondary) =>
             _items.Add(new(label, onClick, style, help, disabled, variant));
+
+        /// <summary>A square icon action seated in the row like a text
+        /// button — for a glyph-stated toggle (a lock) whose word would
+        /// outweigh the control it annotates.</summary>
+        public void IconButton(TablerIcon icon, Action onClick,
+            bool disabled = false, string? help = null,
+            string? id = null) =>
+            _items.Add(new(
+                id ?? Tabler.NameFor(icon), onClick, default, help,
+                disabled, Icon: icon));
 
         internal IReadOnlyList<ActionItem> Items => _items;
     }
@@ -362,6 +373,45 @@ public static partial class Crystarium
             Crystarium.Checkbox(
                 id, value, onChange, controlStyle, disabled, help);
             _page.EndRow(row, id, help);
+        }
+
+        /// <summary>Several checkbox+caption groups sharing ONE row — for
+        /// short component flags that would each waste a full row alone.
+        /// Help rides per box.</summary>
+        public void Checkboxes(
+            string label,
+            params (string Caption, bool Value, Action<bool> OnChange,
+                string? Help)[] items)
+        {
+            string id = Id(string.IsNullOrEmpty(label) ? "checkboxes" : label);
+            var row = _page.BeginRow(label);
+            float gap = ActiveTheme.Page.ActionGap * row.Scale;
+            float boxSide = ActiveTheme.Controls.CheckboxSize * row.Scale;
+            float rowHeight =
+                ActiveTheme.Controls.FormRowHeight * row.Scale;
+            var captionStyle = new TextStyle
+            {
+                Size = ActiveTheme.Typography.LabelSize,
+                Color = FormLabelColor,
+            };
+            float x = row.ControlOrigin.X;
+            foreach (var (caption, value, onChange, help) in items)
+            {
+                ImGui.SetCursorScreenPos(new(
+                    x, row.Origin.Y + (rowHeight - boxSide) * 0.5f));
+                Crystarium.Checkbox(
+                    $"{id}-{caption}", value, onChange, default, false, help);
+                x += boxSide + gap * 0.75f;
+                float captionWidth =
+                    Crystarium.MeasureText(caption, captionStyle).X;
+                LabelInBand(
+                    new(x, row.Origin.Y),
+                    new(captionWidth, rowHeight),
+                    caption,
+                    captionStyle);
+                x += captionWidth + gap * 2f;
+            }
+            _page.EndRow(row, id, null);
         }
 
         /// <summary>Segmented row: the pill fills the control cell at its own
@@ -1061,6 +1111,15 @@ public static partial class Crystarium
         {
             var action = actions[i];
             var style = Workspace(action.Style);
+            // An icon action is a square: its width IS the row's control
+            // height.
+            if (action.Icon != null)
+            {
+                committed += ControlSizing.Height(
+                    style.Height,
+                    ActiveTheme.Controls.WorkspaceHeight) * scale;
+                continue;
+            }
             switch (style.Width.Kind)
             {
                 case UiWidthKind.Fill:
@@ -1102,14 +1161,30 @@ public static partial class Crystarium
         {
             var action = actions[i];
             var style = Workspace(action.Style);
+            float height = ControlSizing.Height(
+                style.Height, ActiveTheme.Controls.WorkspaceHeight);
+            if (action.Icon is { } glyph)
+            {
+                ImGui.SetCursorScreenPos(new(
+                    x,
+                    top + (ActiveTheme.Controls.FormRowHeight - height)
+                        * 0.5f * scale));
+                Crystarium.IconButton(
+                    glyph,
+                    action.OnClick,
+                    style with { Height = UiHeight.Fixed(height) },
+                    action.Disabled,
+                    action.Help,
+                    id: $"{id}-{action.Label}");
+                x += height * scale + gap;
+                continue;
+            }
             float width = style.Width.Kind switch
             {
                 UiWidthKind.Fill => fillWidth,
                 UiWidthKind.Fixed => style.Width.Value * scale,
                 _ => IntrinsicButtonWidth(action.Label, style) * scale,
             };
-            float height = ControlSizing.Height(
-                style.Height, ActiveTheme.Controls.WorkspaceHeight);
             ImGui.SetCursorScreenPos(new(
                 x,
                     top + (ActiveTheme.Controls.FormRowHeight - height)

@@ -92,34 +92,17 @@ public sealed class PoseFileInspectorSection
                 next => _descendants = next,
                 disabled: _scope != 3,
                 help: "Include descendants of selected bones"));
-        form.Pair(
-            "Translation",
-            cell => PairCheckbox(
-                cell,
-                "##posefile-translation",
-                _position,
-                next => _position = next),
-            "Rotation",
-            cell => PairCheckbox(
-                cell,
-                "##posefile-rotation",
-                _rotation,
-                next => _rotation = next));
-        form.Pair(
-            "Scale",
-            cell => PairCheckbox(
-                cell,
-                "##posefile-scale",
-                _scale,
-                next => _scale = next),
+        form.Checkboxes(
+            "Apply",
+            ("Translation", _position, next => _position = next, null),
+            ("Rotation", _rotation, next => _rotation = next, null),
+            ("Scale", _scale, next => _scale = next, null));
+        form.Checkbox(
             "Reset first",
-            cell => PairCheckbox(
-                cell,
-                "##posefile-reset",
-                _reset,
-                next => _reset = next,
-                help: "Clear every bone in the chosen scope before importing, "
-                    + "including ones the file does not contain"));
+            _reset,
+            next => _reset = next,
+            help: "Clear every bone in the chosen scope before importing, "
+                + "including ones the file does not contain");
         form.Actions("Pose file", actions =>
         {
             actions.Button("Import…", () => OpenImport(skeleton));

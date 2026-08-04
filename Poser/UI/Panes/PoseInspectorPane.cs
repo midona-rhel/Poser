@@ -665,9 +665,12 @@ public class PoseInspectorPane
                 false, bodyFlags))
         {
             var scrolledOrigin = ImGui.GetCursorScreenPos();
+            // The scrolling surfaces (matrix, Expression, Actor) span the
+            // pane's scrollbar gutter too, so their scrollbar sits at the
+            // pane edge instead of floating a gutter early.
             float surfaceWidth = _poseView switch
             {
-                2 => width
+                2 or 4 or 5 => width
                     + (AppShellView.ScrollbarWidth
                         + AppShellView.MainHorizontalPadding) * s,
                 3 => width + AppShellView.ScrollbarWidth * s,
@@ -1423,7 +1426,7 @@ public class PoseInspectorPane
         else
             _gazeActorUnavailableNote = false;
 
-        DrawGazeParts(form, actor, state);
+        DrawGazeParts(form, actor, state, wide);
 
         if (!wide)
         {
@@ -1440,67 +1443,81 @@ public class PoseInspectorPane
     }
 
     /// <summary>
-    /// The parts as four chips on one full-width row. The lock chip drives
-    /// EVERY enabled part together: the service keeps per-part granularity,
-    /// the row has no width for three separate lock buttons.
+    /// The gaze parts and their locks, per part. Wide: ONE "Parts" row of
+    /// part chips, each followed by its own lock icon. Narrow: one switch
+    /// row per part with the lock icon as its action — three chips plus
+    /// three locks cannot fit the rail's control cell.
     /// </summary>
     private void DrawGazeParts(
         Crystarium.FormScope form,
         IActor actor,
-        GazeState state)
+        GazeState state,
+        bool wide)
     {
         bool off = state.Mode == GazeTargetMode.None;
-        bool anyEnabled = false;
-        bool allLocked = true;
-        foreach (var (_, part) in GazePartChips)
-        {
-            if (off || !state.TargetType.HasFlag(part))
-                continue;
-            anyEnabled = true;
-            allLocked &= _gazeService.IsPartLocked(actor, part);
-        }
-        allLocked &= anyEnabled;
 
-        form.Label(
-            "Parts",
-            off
-                ? "Choose a gaze mode to control these parts"
-                : "Let these parts follow the gaze target. Turning off every part switches gaze off.");
-        form.Actions(
-            string.Empty,
-            chips =>
+        void SetPart(GazeTargetType part, bool next) =>
+            _gazeService.SetGazeParts(
+                actor,
+                next
+                    ? state.TargetType | part
+                    : state.TargetType & ~part);
+
+        void LockIcon(
+            Crystarium.ActionScope actions,
+            string label,
+            GazeTargetType part,
+            bool enabled)
+        {
+            bool locked = _gazeService.IsPartLocked(actor, part);
+            actions.IconButton(
+                locked ? TablerIcon.Lock : TablerIcon.LockOpen,
+                () => _gazeService.SetPartLock(actor, part, !locked),
+                disabled: !enabled,
+                help: locked
+                    ? "Unfreeze this part so it follows the gaze target again"
+                    : "Freeze this part at its current target",
+                id: $"lock-{label}");
+        }
+
+        if (wide)
+        {
+            form.Actions("Parts", actions =>
             {
                 foreach (var (label, part) in GazePartChips)
                 {
                     var flag = part;
-                    chips.Button(
+                    bool enabled = !off && state.TargetType.HasFlag(flag);
+                    actions.Button(
                         label,
-                        () => _gazeService.SetGazeParts(
-                            actor,
-                            state.TargetType.HasFlag(flag)
-                                ? state.TargetType & ~flag
-                                : state.TargetType | flag),
+                        () => SetPart(flag, !enabled),
                         disabled: off,
-                        variant: !off && state.TargetType.HasFlag(flag)
+                        variant: enabled
                             ? ButtonVariant.Primary
-                            : ButtonVariant.Secondary);
+                            : ButtonVariant.Secondary,
+                        help: off
+                            ? "Choose a gaze mode to control this part"
+                            : "Let this part follow the gaze target");
+                    LockIcon(actions, label, flag, enabled);
                 }
-                chips.Button(
-                    "Lock",
-                    () =>
-                    {
-                        foreach (var (_, part) in GazePartChips)
-                            if (state.TargetType.HasFlag(part))
-                                _gazeService.SetPartLock(
-                                    actor, part, !allLocked);
-                    },
-                    disabled: off || !anyEnabled,
-                    help: "Freeze the enabled gaze parts at their current target",
-                    variant: allLocked
-                        ? ButtonVariant.Primary
-                        : ButtonVariant.Secondary);
-            },
-            fullWidth: true);
+            });
+            return;
+        }
+
+        foreach (var (label, part) in GazePartChips)
+        {
+            var flag = part;
+            bool enabled = !off && state.TargetType.HasFlag(flag);
+            form.SwitchActions(
+                label,
+                enabled,
+                next => SetPart(flag, next),
+                actions => LockIcon(actions, label, flag, enabled),
+                disabled: off,
+                help: off
+                    ? "Choose a gaze mode to control this part"
+                    : "Let this part follow the gaze target");
+        }
     }
 
     // Preserve the raw hinge-axis wells while dragging. Valid intermediate
@@ -1763,8 +1780,26 @@ public class PoseInspectorPane
                     ? "Swap your edits between left and right across this actor"
                     : "No edits to mirror");
         });
-        // All resets are ONE set. "All" reaches far past the regions beside it,
-        // so it carries the Danger variant to say so.
+        bool hasStash = _cleanPose.HasStash;
+        form.Actions("Transfer", actions =>
+        {
+            actions.Button(
+                "Stash",
+                () => _cleanPose.Stash(skeleton.Actor),
+                help: "Save this actor's pose so you can apply it to another actor. Replaces whatever was stashed before.");
+            actions.Button(
+                "Apply stash",
+                () => _cleanPose.ApplyStash(skeleton.Actor),
+                disabled: !hasStash,
+                // A live clock: this one string says something different
+                // every second.
+                help: hasStash
+                    ? $"Apply the stashed pose to this actor. Stashed {_cleanPose.StashedAt:HH:mm:ss} UTC."
+                    : "Nothing stashed yet");
+        });
+        // All resets are ONE set — LAST, under Edit and Transfer. "All"
+        // reaches far past the regions beside it, so it carries the Danger
+        // variant to say so.
         void Resets(Crystarium.ActionScope actions)
         {
             if (bone != null)
@@ -1796,23 +1831,6 @@ public class PoseInspectorPane
             form.Actions(string.Empty, Resets, fullWidth: true);
         }
 
-        bool hasStash = _cleanPose.HasStash;
-        form.Actions("Transfer", actions =>
-        {
-            actions.Button(
-                "Stash",
-                () => _cleanPose.Stash(skeleton.Actor),
-                help: "Save this actor's pose so you can apply it to another actor. Replaces whatever was stashed before.");
-            actions.Button(
-                "Apply stash",
-                () => _cleanPose.ApplyStash(skeleton.Actor),
-                disabled: !hasStash,
-                // A live clock: this one string says something different
-                // every second.
-                help: hasStash
-                    ? $"Apply the stashed pose to this actor. Stashed {_cleanPose.StashedAt:HH:mm:ss} UTC."
-                    : "Nothing stashed yet");
-        });
     }
 
     // ── rail helpers (header summary, children, flip, freeze state) ─────
