@@ -573,8 +573,10 @@ public class PoseInspectorPane
         float s)
     {
         float tabsHeightPx = AppShellView.ToolbarHeight;
+        // The one footer height every workspace bottom bar uses (the library's
+        // action row is the reference), so controls seat at normal size.
         float footerHeightPx =
-            Crystarium.ActiveTheme.Shell.PoseFooterHeight;
+            Crystarium.ActiveTheme.Floating.ModalBarHeight;
         float width = size.X;
         float height = Math.Max(size.Y, (tabsHeightPx + footerHeightPx + 1f) * s);
         float tabsHeight = tabsHeightPx * s;
@@ -1005,7 +1007,7 @@ public class PoseInspectorPane
             cursor,
             new Vector2(
                 width,
-                Crystarium.ActiveTheme.Shell.PoseFooterHeight * scale),
+                Crystarium.ActiveTheme.Floating.ModalBarHeight * scale),
             bar =>
             {
                 bar.Label(

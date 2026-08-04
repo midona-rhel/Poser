@@ -164,7 +164,6 @@ public readonly record struct Theme
             SidebarMaximumWidth = 400f,
             SidebarDefaultWidth = 280f,
             RailWidth = 280f,
-            PoseFooterHeight = 36f,
         },
         Scrollbar = new() { GutterWidth = 12f, Radius = 4f },
         Typography = new() { ShortcutSize = 10f, CaptionSize = 11f, LabelSize = 12f, BodySize = 13f, SurfaceTitleSize = 14f },
@@ -610,7 +609,6 @@ public readonly record struct Theme
         public float SidebarMaximumWidth { get; init; }
         public float SidebarDefaultWidth { get; init; }
         public float RailWidth { get; init; }
-        public float PoseFooterHeight { get; init; }
     }
 
     public readonly record struct ScrollbarTokens

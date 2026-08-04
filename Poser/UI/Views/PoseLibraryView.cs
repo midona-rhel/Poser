@@ -124,10 +124,6 @@ internal readonly struct GridBand
 
 public sealed class PoseLibraryViewModel
 {
-    /// <summary>The library type the band's tabs show, indexed into
-    /// <see cref="PoseLibraryView.TypeLabels"/>.</summary>
-    public int SelectedType;
-
     /// <summary>The rail. [0] is "All poses", [1] is "Favorites", and the
     /// sources and their subfolders follow; two entries alone therefore means
     /// no source yielded anything.</summary>
@@ -201,10 +197,6 @@ public sealed class PoseLibraryViewModel
     public Action<string>? OnQuery;
     public Action<int>? OnSelectFolder;
 
-    /// <summary>A band tab; told the index into
-    /// <see cref="PoseLibraryView.TypeLabels"/>.</summary>
-    public Action<int>? OnSelectType;
-
     /// <summary>A group header's disclosure; told the index into
     /// <see cref="Groups"/>.</summary>
     public Action<int>? OnToggleGroup;
@@ -237,7 +229,6 @@ public sealed class PoseLibraryViewModel
     internal Action? ApplyClick;
     internal Action? SettingsClick;
     internal Action<float>? IconSizeChange;
-    internal Action<int>? TypeChange;
 
     // The grid's band list and the clipper's slot map — the ShellSidebar cache,
     // held on the model because the view itself is static. Rebuilt only when
@@ -249,11 +240,6 @@ public sealed class PoseLibraryViewModel
     internal int BuiltRevision = -1;
     internal int BuiltColumns = -1;
     internal float BuiltPitch = -1f;
-
-    // The tab strip's natural width. Measuring resolves a per-tab width array,
-    // so it is taken once per scale rather than once per frame.
-    internal float TabsWidth;
-    internal float TabsScale = -1f;
 
     // The context menu's target and its frozen rows. The array is allocated
     // with the model and REWRITTEN at open, so even the cold right-click path
@@ -277,13 +263,7 @@ public sealed class PoseLibraryViewModel
 /// </summary>
 public static class PoseLibraryView
 {
-    /// <summary>The band's type tabs. Positional by contract: the binder's own
-    /// type enum is indexed by these.</summary>
-    public static readonly string[] TypeLabels =
-        ["Poses", "Auto-saves", "MCDF"];
-
     private const string SearchId = "##pose-library-search";
-    private const string TypeTabsId = "##pose-library-types";
     private const string RailId = "##pose-library-folders";
     private const string GridId = "##pose-library-grid";
     private const string RefreshId = "##pose-library-refresh";
@@ -394,7 +374,6 @@ public static class PoseLibraryView
                 vm.OnApplyTile?.Invoke(vm.Selected);
         };
         vm.SettingsClick ??= () => vm.OnOpenSettings?.Invoke();
-        vm.TypeChange ??= next => vm.OnSelectType?.Invoke(next);
         vm.IconSizeChange ??= next => vm.OnIconSize?.Invoke(
             Math.Clamp(next, MinimumIconSize, MaximumIconSize));
 
@@ -547,12 +526,10 @@ public static class PoseLibraryView
                 - gap;
 
         // The margin makes up FilterPill's own pad, so the search glyph sits
-        // where the rail's row marks do.
+        // where the rail's row marks do. The type tabs live in the SHELL's
+        // tab strip, not here — the band is the search field's.
         float left = band.Min.X
             + MathF.Max(0f, inset - SearchInnerPad * scale);
-        float tabs = DrawTypeTabs(vm, band, scale, theme);
-        if (tabs > 0f)
-            left = MathF.Max(left, tabs + gap - SearchInnerPad * scale);
         float width = (right - left) / scale;
         if (!(width > 0f))
             return;
@@ -563,37 +540,6 @@ public static class PoseLibraryView
             vm.OnQuery ?? IgnoreQuery,
             "Search poses…",
             new ControlStyle { Width = UiWidth.Fixed(width) });
-    }
-
-    /// <summary>
-    /// The library's type tabs, seated at the band's left inset. Returns their
-    /// right edge, or 0 when the band is too narrow to seat them — the search
-    /// field then keeps the whole band rather than being pushed off it.
-    /// </summary>
-    private static float DrawTypeTabs(
-        PoseLibraryViewModel vm, WindowFrameRect band, float scale, Theme theme)
-    {
-        if (vm.TabsScale != scale)
-        {
-            vm.TabsScale = scale;
-            vm.TabsWidth = Crystarium.MeasureSegmentedControl(TypeLabels).X;
-        }
-
-        float height = theme.Controls.NavigationHeight * scale;
-        var min = new Vector2(
-            band.Min.X + PaneInset * scale,
-            band.Min.Y + (band.Size.Y - height) * 0.5f);
-        // Half the band is the floor: below that the tabs would leave no field.
-        if (vm.TabsWidth > band.Size.X * 0.5f)
-            return 0f;
-
-        ImGui.SetCursorScreenPos(min);
-        Crystarium.SegmentedControl(
-            TypeTabsId,
-            TypeLabels,
-            vm.SelectedType,
-            vm.TypeChange!);
-        return min.X + vm.TabsWidth;
     }
 
     /// <summary>The removable tag chip: the whole pill is the clear target,

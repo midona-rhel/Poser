@@ -104,11 +104,15 @@ public class MainWindow : Window
         Selectable = true,
     };
 
-    private readonly ShellTab _libraryTab = new()
-    {
-        Label = "Library",
-        Active = true,
-    };
+    /// <summary>Library mode's tab strip: the library TYPES are the tabs —
+    /// a lone "Library" tab controlled nothing. Positional against the
+    /// pane's type indices.</summary>
+    private readonly ShellTab[] _libraryTabs =
+    [
+        new() { Label = "Poses" },
+        new() { Label = "Auto-saves" },
+        new() { Label = "MCDF" },
+    ];
 
     /// <summary>The library section is stated first, so its index is fixed.
     /// </summary>
@@ -855,9 +859,14 @@ public class MainWindow : Window
         _vm.Tabs.Clear();
         if (_libraryMode)
         {
-            // One tab, and it is the mode itself: _activeTab is left untouched,
+            // The library types are the tabs; _activeTab is left untouched,
             // so leaving the library returns the tab the user was on.
-            _vm.Tabs.Add(_libraryTab);
+            int type = _libraryPane.SelectedType;
+            for (int i = 0; i < _libraryTabs.Length; i++)
+            {
+                _libraryTabs[i].Active = i == type;
+                _vm.Tabs.Add(_libraryTabs[i]);
+            }
             return;
         }
         if (_activeTab is not ("Pose" or "Animation" or "Appearance"))
@@ -900,9 +909,13 @@ public class MainWindow : Window
 
     private void OnTabClicked(int index)
     {
-        // Library mode presents its own single tab; clicking it changes
-        // nothing, and the selection-typed tab set is untouched underneath.
-        if (_libraryMode) return;
+        // In library mode the tabs are the library types; the selection-typed
+        // tab set is untouched underneath.
+        if (_libraryMode)
+        {
+            _libraryPane.SelectType(index);
+            return;
+        }
         if (index < 0 || index >= _vm.Tabs.Count) return;
         var label = _vm.Tabs[index].Label;
 

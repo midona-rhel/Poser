@@ -203,7 +203,6 @@ public sealed class PoseLibraryPane
 
         _vm.OnQuery = next => _vm.Query = next;
         _vm.OnSelectFolder = SelectFolder;
-        _vm.OnSelectType = SelectType;
         _vm.OnToggleGroup = ToggleGroup;
         _vm.OnSelect = Select;
         _vm.OnApplyTile = Apply;
@@ -332,7 +331,6 @@ public sealed class PoseLibraryPane
         // The type is a browsing mode, not a preference: every entry starts on
         // the poses, which is also what the import redirect expects to land on.
         _type = LibraryType.Poses;
-        _vm.SelectedType = (int)LibraryType.Poses;
         _collapsed.Clear();
         _autoDirty = true;
 
@@ -364,15 +362,18 @@ public sealed class PoseLibraryPane
         _note = null;
     }
 
-    /// <summary>A band tab. The filters are drafts of the view being left, so
+    /// <summary>The active library type as an index (Poses/Auto-saves/MCDF).
+    /// The shell's tab strip states it while the mode is on.</summary>
+    public int SelectedType => (int)_type;
+
+    /// <summary>A shell tab. The filters are drafts of the view being left, so
     /// the new type starts on its whole library.</summary>
-    private void SelectType(int index)
+    public void SelectType(int index)
     {
         if (index < 0 || index > (int)LibraryType.Mcdf
             || index == (int)_type)
             return;
         _type = (LibraryType)index;
-        _vm.SelectedType = index;
         ResetFilters();
         _lastAppliedTile = -1;
         _vm.Selected = -1;
