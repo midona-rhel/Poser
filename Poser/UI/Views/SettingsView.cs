@@ -64,6 +64,7 @@ public sealed class SettingsViewModel
 
     public List<LibrarySourceVm> LibrarySources = [];
     public bool UseLibraryWhenImporting;
+    public bool LibraryShowExtensions;
     public string LibraryNewName = "";
     public string LibraryNewPath = "";
 
@@ -541,12 +542,18 @@ public static class SettingsView
         Crystarium.PageScope page)
     {
         page.Section("POSE LIBRARY", form =>
+        {
             form.Switch(
                 "Use library for Import",
                 vm.UseLibraryWhenImporting,
                 next => vm.UseLibraryWhenImporting = next,
-                "Import… buttons open the pose library instead of the file dialog"),
-            divider: false);
+                "Import… buttons open the pose library instead of the file dialog");
+            form.Switch(
+                "Show file extensions",
+                vm.LibraryShowExtensions,
+                next => vm.LibraryShowExtensions = next,
+                "Tile names carry .pose / .cmp");
+        }, divider: false);
         page.Section("SOURCE FOLDERS", form =>
         {
             // The remove is deferred past the loop: the action fires DURING the

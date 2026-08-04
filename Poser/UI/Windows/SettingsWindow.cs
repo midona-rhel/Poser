@@ -109,6 +109,7 @@ public class SettingsWindow : Window
             TreeGuides = c.UI.ShowTreeGuides,
 
             UseLibraryWhenImporting = c.Library.UseLibraryWhenImporting,
+            LibraryShowExtensions = c.Library.ShowFileExtensions,
 
             Version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "dev",
             OnSave = SaveToConfig,
@@ -186,6 +187,7 @@ public class SettingsWindow : Window
             c.UI.Keybinds[action] = binding;
 
         c.Library.UseLibraryWhenImporting = _vm.UseLibraryWhenImporting;
+        c.Library.ShowFileExtensions = _vm.LibraryShowExtensions;
         c.Library.Sources.Clear();
         foreach (var source in _vm.LibrarySources)
         {

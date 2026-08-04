@@ -38,6 +38,9 @@ public class LibraryConfiguration
 
     public bool UseLibraryWhenImporting { get; set; }
 
+    /// <summary>Tile labels carry the file extension when set.</summary>
+    public bool ShowFileExtensions { get; set; }
+
     /// <summary>
     /// Appends the shipped Brio and Anamnesis roots the first time only.
     /// </summary>

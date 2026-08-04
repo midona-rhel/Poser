@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility;
 using Poser.Application.Posing;
 using Poser.Application.Selection;
 using Poser.Config;
@@ -42,6 +43,14 @@ public sealed class PoseLibraryPane
     /// forever.</summary>
     private const int PendingSpawnFrames = 120;
 
+    /// <summary>Logical pixels between reflows while the workspace is being
+    /// resized.</summary>
+    private const float ResizeStep = 32f;
+
+    /// <summary>Frames the handed size must hold before the layout snaps to
+    /// it exactly.</summary>
+    private const int ResizeSettleFrames = 10;
+
     private const string AllKey = "##pose-library-all";
     private const string FavoritesKey = "##pose-library-favorites";
     private const string AllLabel = "All poses";
@@ -79,8 +88,17 @@ public sealed class PoseLibraryPane
     // the number it states or the mode it states it in changes.
     private string _caption = string.Empty;
     private int _captionCount = -1;
-    private bool _captionFiltered;
     private bool _captionScanning;
+
+    // Resize stepping state (StepResize).
+    private Vector2 _handedSize;
+    private Vector2 _steppedSize;
+    private Vector2 _layoutSize;
+    private int _settleFrames;
+
+    /// <summary>Whether the standing tiles were minted with extensions on
+    /// their labels; a Settings flip forces a remint.</summary>
+    private bool _builtExtensions;
 
     /// <summary>Why the last apply or spawn did nothing, or null. Cleared by
     /// the next one and by any filter change.</summary>
@@ -163,6 +181,9 @@ public sealed class PoseLibraryPane
             Enter();
         }
 
+        if (_config.Config.Library.ShowFileExtensions != _builtExtensions)
+            _seenRevision = -1;
+
         SyncSnapshot();
         SyncQuery();
         if (_refilter)
@@ -170,7 +191,48 @@ public sealed class PoseLibraryPane
         SyncTarget();
         SyncStatus();
 
-        PoseLibraryView.Draw(_vm, origin, size);
+        PoseLibraryView.Draw(_vm, origin, StepResize(size));
+    }
+
+    /// <summary>
+    /// Resize stepping: a drag on the window edge reflows the pane only at
+    /// <see cref="ResizeStep"/> boundaries, then snaps exact once the size
+    /// holds for <see cref="ResizeSettleFrames"/> frames — per-pixel reflow
+    /// of the grid while dragging cost whole frames.
+    /// </summary>
+    private Vector2 StepResize(Vector2 size)
+    {
+        if (size != _handedSize)
+        {
+            _handedSize = size;
+            _settleFrames = 0;
+        }
+        else if (_settleFrames <= ResizeSettleFrames)
+        {
+            _settleFrames++;
+        }
+
+        if (_settleFrames > ResizeSettleFrames || _layoutSize == Vector2.Zero)
+        {
+            _layoutSize = size;
+            return size;
+        }
+
+        float step = ResizeStep * ImGuiHelpers.GlobalScale;
+        var stepped = new Vector2(
+            MathF.Floor(size.X / step) * step,
+            MathF.Floor(size.Y / step) * step);
+        // Only cross a boundary; a sub-step wiggle keeps the standing layout
+        // as long as it still fits the handed rect.
+        if (stepped != _steppedSize || _layoutSize.X > size.X
+            || _layoutSize.Y > size.Y)
+        {
+            _steppedSize = stepped;
+            _layoutSize = new Vector2(
+                MathF.Min(MathF.Max(stepped.X, 1f), size.X),
+                MathF.Min(MathF.Max(stepped.Y, 1f), size.Y));
+        }
+        return _layoutSize;
     }
 
     /// <summary>The workspace moved on. The decoded thumbnails are a cache of
@@ -274,13 +336,18 @@ public sealed class PoseLibraryPane
 
         var tiles = _vm.Tiles;
         tiles.Clear();
+        // Labels are minted with or without the extension HERE; the search
+        // keeps matching the bare name either way.
+        _builtExtensions = _config.Config.Library.ShowFileExtensions;
         for (int i = 0; i < entries.Count; i++)
         {
             var entry = entries[i];
             tiles.Add(new PoseLibraryTileRow
             {
                 Id = entry.FilePath,
-                Label = entry.Name,
+                Label = _builtExtensions
+                    ? entry.Name + System.IO.Path.GetExtension(entry.FilePath)
+                    : entry.Name,
                 LabelLower = entry.NameLower,
                 Sub = entry.ModifiedText,
                 ThumbKey = entry.FilePath,
@@ -412,19 +479,17 @@ public sealed class PoseLibraryPane
             return;
         }
 
-        bool filtered = _queryLower.Length > 0
-            || _tagLower is { Length: > 0 }
-            || _vm.SelectedFolder != 0;
+        // One noun everywhere: the count switching words between views read
+        // as the count meaning different things.
         if (_captionCount != _vm.Visible.Count
-            || _captionFiltered != filtered
             || _captionScanning != scanning)
         {
             _captionCount = _vm.Visible.Count;
-            _captionFiltered = filtered;
             _captionScanning = scanning;
             _caption = scanning
                 ? "Scanning…"
-                : Count(_captionCount) + (filtered ? " matches" : " poses");
+                : Count(_captionCount)
+                    + (_captionCount == 1 ? " item" : " items");
         }
         _vm.Status = _caption;
     }
