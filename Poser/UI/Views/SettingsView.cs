@@ -281,7 +281,11 @@ public static class SettingsView
                 "settings-page",
                 ImGui.GetCursorScreenPos(),
                 new Vector2(region.ContentWidth * scale, height),
-                page => DrawCategory(vm, page)));
+                page => DrawCategory(vm, page),
+                // Settings rows carry sentence-length labels; the shared
+                // 94px column truncates them.
+                labelColumnWidth:
+                    Crystarium.ActiveTheme.Settings.LabelColumnWidth));
     }
 
     private static void DrawCategory(

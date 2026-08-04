@@ -36,7 +36,11 @@ public static partial class Crystarium
     private static Vector4 FormValueColor => ActiveTheme.FormValue;
     private static Vector4 FormSeparatorColor => ActiveTheme.FormSeparator;
 
-    public static void Page(string id, Vector2 origin, Vector2 size, Action<PageScope> content)
+    /// <param name="labelColumnWidth">Per-page override of the form's label
+    /// column (logical px); null keeps the shared
+    /// <see cref="Theme.FormTokens.LabelColumnWidth"/> token.</param>
+    public static void Page(string id, Vector2 origin, Vector2 size, Action<PageScope> content,
+        float? labelColumnWidth = null)
     {
         float scale = ImGuiHelpers.GlobalScale;
         float inset = ActiveTheme.Page.Inset * scale;
@@ -46,7 +50,8 @@ public static partial class Crystarium
             id,
             origin + new Vector2(inset, 0f),
             width,
-            scale);
+            scale,
+            labelColumnWidth);
         content(page);
         page.Complete(origin, size.X);
     }
@@ -96,14 +101,18 @@ public static partial class Crystarium
         private readonly Vector2 _origin;
         private readonly float _width;
         private readonly float _scale;
+        private readonly float _labelWidth;
         private float _y;
 
-        internal PageScope(string id, Vector2 origin, float width, float scale)
+        internal PageScope(string id, Vector2 origin, float width, float scale,
+            float? labelColumnWidth = null)
         {
             _id = id;
             _origin = origin;
             _width = width;
             _scale = scale;
+            _labelWidth = labelColumnWidth
+                ?? ActiveTheme.Form.LabelColumnWidth;
         }
 
         public void EmptyState(string text = "Select an actor or bone in the sidebar.")
@@ -201,11 +210,12 @@ public static partial class Crystarium
         internal FormRowScope BeginRow(string label)
         {
             float top = _origin.Y + _y * _scale;
-            var row = new FormRowScope(new(_origin.X, top), _width, _scale);
+            var row = new FormRowScope(
+                new(_origin.X, top), _width, _scale, _labelWidth);
             if (!string.IsNullOrEmpty(label))
                 FormLabel(
                     row.Origin,
-                    ActiveTheme.Form.LabelColumnWidth * _scale,
+                    row.LabelWidth,
                     _scale,
                     label);
             return row;
@@ -781,7 +791,7 @@ public static partial class Crystarium
             in FormRowScope row, float x, float span, string label,
             Action<FormPairCell> draw)
         {
-            float column = ActiveTheme.Form.LabelColumnWidth * row.Scale;
+            float column = row.LabelWidth;
             if (!string.IsNullOrEmpty(label))
                 FormLabel(new Vector2(x, row.Origin.Y), column, row.Scale, label);
             draw(new FormPairCell(
@@ -977,14 +987,20 @@ public static partial class Crystarium
         public float ControlWidth { get; }
         public float Scale { get; }
 
-        internal FormRowScope(Vector2 origin, float width, float scale)
+        /// <summary>The label column span in SCREEN px (already scaled),
+        /// like <see cref="ControlWidth"/> — the page's override or the
+        /// shared token.</summary>
+        public float LabelWidth { get; }
+
+        internal FormRowScope(
+            Vector2 origin, float width, float scale, float labelWidth)
         {
             Origin = origin;
             Width = width;
             Scale = scale;
-            ControlOrigin = origin +
-                new Vector2(ActiveTheme.Form.LabelColumnWidth * scale, 0f);
-            ControlWidth = width - ActiveTheme.Form.LabelColumnWidth * scale;
+            LabelWidth = labelWidth * scale;
+            ControlOrigin = origin + new Vector2(LabelWidth, 0f);
+            ControlWidth = width - LabelWidth;
         }
 
         public Vector2 CenterControl(float controlHeight) => new(

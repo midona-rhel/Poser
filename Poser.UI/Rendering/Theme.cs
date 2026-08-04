@@ -224,6 +224,7 @@ public readonly record struct Theme
             Width = 720f,
             Height = 520f,
             NavigationWidth = 200f,
+            LabelColumnWidth = 180f,
             AccentOptions =
             [
                 new(50f / 255f, 151f / 255f, 1f, 1f),
@@ -701,6 +702,13 @@ public readonly record struct Theme
         public float Width { get; init; }
         public float Height { get; init; }
         public float NavigationWidth { get; init; }
+
+        /// <summary>Settings pages override the form's default label column:
+        /// behavior rows carry sentence-length labels ("Game target follows
+        /// selection") that truncate at the shared 94px token, and the wide
+        /// settings body has the room to spend.</summary>
+        public float LabelColumnWidth { get; init; }
+
         public Vector4[] AccentOptions { get; init; }
     }
 
