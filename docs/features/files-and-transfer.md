@@ -56,8 +56,9 @@ interchange with Brio and (via name conversion) Anamnesis.
 - Retention prunes from DISK to the configured count (newest-first by
   folder name, floor 1), so it holds across restarts. Every IO failure
   logs an Error with the path and never aborts the remaining
-  actors/folders. Recovery: FILES → "Auto-saves…" (also actor context
-  menu) opens the import browser rooted at the auto-save directory; a
+  actors/folders. Recovery: the titlebar burger menu → "Auto-saves…"
+  (enabled when the selected actor has a skeleton; the ONE entry point)
+  opens the import browser rooted at the auto-save directory; a
   recovered file flows through the standard import pipeline. Settings
   (General → AUTO-SAVE): enabled, interval 10–600 s, kept count 1–50,
   clean-on-exit — read live each tick.

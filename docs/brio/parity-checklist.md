@@ -99,7 +99,7 @@ clean-on-exit, and a "View Auto-Saves" browser (`Game/Core/AutoSaveService.cs`,
 (`PosingCore/Files/AutoSaveService.cs`): interval + GPose-exit snapshots of
 authored-edit actors via `ExportPose` into `<configDir>/AutoSaves/<UTC>/`,
 disk-based retention, clean-on-exit, Settings rows (General → AUTO-SAVE),
-FILES "Auto-saves…" recovery entry. Normative:
+titlebar burger menu "Auto-saves…" recovery entry. Normative:
 `docs/features/files-and-transfer.md` § Auto-save.
 
 **Task:** Add an auto-save service: while in GPose, on a configurable interval, export every

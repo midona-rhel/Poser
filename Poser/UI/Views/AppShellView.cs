@@ -40,6 +40,14 @@ public sealed class ShellSidebarSection
 {
     public string Title = "";
     public bool ShowPlus;
+    /// <summary>The header row is itself a target: it selects the section
+    /// rather than only naming it. Off leaves the header inert, which is what
+    /// every ordinary section is.</summary>
+    public bool Selectable;
+    /// <summary>Only meaningful with <see cref="Selectable"/>: the header wears
+    /// the row selection language while its section owns the workspace.
+    /// </summary>
+    public bool Active;
     public List<ShellSidebarRow> Rows = new();
 }
 
@@ -121,6 +129,10 @@ public sealed class AppShellViewModel
     public Action<int>? OnSymmetry;
     public Action<bool>? OnPhysics;
     public Action? OnUndo, OnRedo, OnSpawn, OnSettings, OnHideUi, OnPopOut, OnProject;
+    /// <summary>The titlebar command menu, told the burger button's
+    /// bottom-left screen position so the menu anchors under the button
+    /// instead of at the mouse.</summary>
+    public Action<Vector2>? OnBurger;
     public Action<bool>? OnSkeletonOverlay;
     public Action<ShellSidebarRow>? OnRowClicked;
     public Action<ShellSidebarRow>? OnRowContextMenu;
@@ -132,6 +144,9 @@ public sealed class AppShellViewModel
     public Func<IReadOnlyList<Domain.Identity.BoneId>, bool>?
         IsOverlayVisible;
     public Action<int>? OnSectionPlus;
+    /// <summary>A click on a <see cref="ShellSidebarSection.Selectable"/>
+    /// header, told the section index.</summary>
+    public Action<int>? OnSectionSelected;
 }
 
 /// <summary>
@@ -374,17 +389,26 @@ public static class AppShellView
             pillStyle);
     }
 
-    /// <summary>Undo, redo and spawn, right-aligned in the title cell.</summary>
+    /// <summary>Menu, undo, redo and spawn, right-aligned in the title cell.</summary>
     private static void DrawHistory(
         AppShellViewModel vm, float right, float top, float height, float s)
     {
         var theme = Crystarium.ActiveTheme;
         float side = theme.Controls.ShellIconAction;
         float step = (side + theme.Spacing.Two) * s;
-        int count = vm.ShowSpawn ? 3 : 2;
+        int count = vm.ShowSpawn ? 4 : 3;
         float y = top + (height - side * s) * 0.5f;
         float x = right - count * side * s - (count - 1) * theme.Spacing.Two * s;
 
+        // The command menu hangs off its own button, not off the pointer, so
+        // the seat hands its bottom-left corner to the opener.
+        var burgerBottomLeft = new Vector2(x, y + side * s);
+        IconAt(
+            new Vector2(x, y), TablerIcon.Menu2, side,
+            () => vm.OnBurger?.Invoke(burgerBottomLeft),
+            "##shell-burger",
+            help: "Menu");
+        x += step;
         IconAt(
             new Vector2(x, y), TablerIcon.ArrowBackUp, side, vm.OnUndo,
             "##shell-undo",
@@ -402,7 +426,7 @@ public static class AppShellView
         IconAt(
             new Vector2(x + step, y), TablerIcon.Plus, side, vm.OnSpawn,
             "##shell-spawn",
-            help: "Add an actor to the scene");
+            help: "Add an actor or prop to the scene");
     }
 
     private static void DrawTitleCenter(
@@ -429,10 +453,10 @@ public static class AppShellView
             index => vm.OnGizmoOperation?.Invoke(index),
             itemHelp: static index => index switch
             {
-                0 => "Move the selection",
-                1 => "Rotate the selection",
-                2 => "Scale the selection",
-                _ => "Move, rotate, or scale with the universal gizmo",
+                0 => "Use the gizmo to move the selection",
+                1 => "Use the gizmo to rotate the selection",
+                2 => "Use the gizmo to scale the selection",
+                _ => "Use one gizmo to move, rotate and scale",
             }) + gap;
         x = Segments(
             x, top, height,
@@ -441,8 +465,8 @@ public static class AppShellView
             vm.GizmoSpace,
             index => vm.OnGizmoSpace?.Invoke(index),
             itemHelp: static index => index == 0
-                ? "Use the selected target's local axes"
-                : "Use world-space axes") + gap;
+                ? "Use the selection's own axes"
+                : "Use the world axes") + gap;
         // Pivot keeps a permanent slot so tool/selection changes cannot move the
         // rest of the toolbar. Both choices refuse when pivot is inapplicable;
         // Parent additionally needs a live parent bone.
@@ -455,8 +479,8 @@ public static class AppShellView
             itemDisabled: index => !vm.RotationPivotEnabled
                 || (index == 1 && !vm.RotationPivotParentAvailable),
             itemHelp: static index => index == 0
-                ? "Rotate each selected target around itself"
-                : "Rotate around the selected bone's parent pivot") + gap;
+                ? "Rotate each selected bone in place"
+                : "Rotate the selected bone around its parent bone") + gap;
         Segments(
             x, top, height,
             "##shell-symmetry",
@@ -466,8 +490,8 @@ public static class AppShellView
             itemHelp: static index => index switch
             {
                 0 => "Edit only the current selection",
-                1 => "Apply the same edit to linked selections",
-                _ => "Apply mirrored edits across left and right bones",
+                1 => "Also apply the same edit to the opposite-side bone",
+                _ => "Also apply a mirrored edit to the opposite-side bone",
             });
     }
 
@@ -504,7 +528,7 @@ public static class AppShellView
             vm.SkeletonOverlayOn,
             () => vm.OnSkeletonOverlay?.Invoke(!vm.SkeletonOverlayOn),
             ControlStyle.Square(side),
-            help: "Toggle the skeleton overlay in the viewport",
+            help: "Show or hide the skeleton overlay in the game world",
             id: "##shell-armature");
     }
 
@@ -640,10 +664,10 @@ public static class AppShellView
                     vm.PhysicsOn,
                     next => vm.OnPhysics?.Invoke(next),
                     !vm.PhysicsAvailable
-                        ? "Select an actor or bone to control physics"
+                        ? "Select an actor or bone to freeze physics for the whole scene"
                         : vm.PhysicsOn
-                            ? "Switch off to freeze physics for the selected actor"
-                            : "Switch on to resume physics for the selected actor",
+                            ? "Switch off to freeze physics for the whole scene"
+                            : "Switch on to resume physics for the whole scene",
                     disabled: !vm.PhysicsAvailable);
                 if (vm.ShowPopOut)
                     right.Icon(
@@ -884,7 +908,7 @@ public static class AppShellView
         if (!string.Equals(undo, _undoShortcut, StringComparison.Ordinal))
         {
             _undoShortcut = undo;
-            _undoHelp = $"Take back the last pose edit · {undo}";
+            _undoHelp = $"Undo the last move, rotation or scale · {undo}";
             _undoEmptyHelp = $"Nothing to undo · {undo}";
         }
 

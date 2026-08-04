@@ -31,6 +31,10 @@ internal static class PoserIconSources
         // <IconSelector />, which CmSelect.tsx puts in .btnChevron. Kept
         // here (not in the generated Tabler set) so the fetch script
         // cannot drop the dropdown's chevron.
+        // Tabler `menu-2` — the titlebar burger. Kept here rather than in the
+        // generated set because the fetch script's curated subset never
+        // included it; three full-width rules at y 6/12/18.
+        ["menu-2"] = @"<svg xmlns=""http://www.w3.org/2000/svg"" width=""24"" height=""24"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round"" > <path d=""M4 6l16 0"" /> <path d=""M4 12l16 0"" /> <path d=""M4 18l16 0"" /> </svg>",
         ["selector"] = @"<svg xmlns=""http://www.w3.org/2000/svg"" width=""24"" height=""24"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round"" > <path d=""M8 9l4 -4l4 4"" /> <path d=""M16 15l-4 4l-4 -4"" /> </svg>",
     };
 }

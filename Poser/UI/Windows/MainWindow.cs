@@ -49,6 +49,8 @@ public class MainWindow : Window
     // services still take legacy actors, so ids resolve per frame through the
     // binding registry and the pointer never persists in UI state.
     private ActorId? _ctxActorId;
+    private bool _shellMenuOpenRequested;
+    private Vector2 _shellMenuAnchor;
     private bool _ctxOpenRequested;
     private BoneId? _ctxBoneId;
     private IReadOnlyList<BoneId>? _ctxBoneOverlayBones;
@@ -66,6 +68,7 @@ public class MainWindow : Window
     private readonly PoseInspectorPane _poseInspector;
     private readonly AnimationPane _animationPane;
     private readonly AppearancePane _appearancePane;
+    private readonly PoseLibraryPane _libraryPane;
     private readonly PoseFileInspectorSection _poseFileSection;
     private readonly Game.Animation.AnimationCatalogLoader _animationCatalog;
     private readonly PoseRailPane _poseRail;
@@ -77,6 +80,30 @@ public class MainWindow : Window
     private float _sidebarWidth = 280f;
     private readonly AppShellViewModel _vm = new();
     private string _activeTab = "Pose";
+
+    /// <summary>The workspace is showing the pose library instead of the
+    /// selection's tabs. The SELECTION is untouched — the library applies to
+    /// whatever actor was selected before the mode was entered.</summary>
+    private bool _libraryMode;
+
+    /// <summary>The library's sidebar section and its one tab, both retained:
+    /// they carry no per-frame data, so a warm frame restates them rather than
+    /// minting them.</summary>
+    private readonly ShellSidebarSection _librarySection = new()
+    {
+        Title = "LIBRARY",
+        Selectable = true,
+    };
+
+    private readonly ShellTab _libraryTab = new()
+    {
+        Label = "Library",
+        Active = true,
+    };
+
+    /// <summary>The library section is stated first, so its index is fixed.
+    /// </summary>
+    private const int LibrarySectionIndex = 0;
 
     /// <summary>Reports whether the skeleton overlay window is open (titlebar toggle state).</summary>
     public Func<bool>? GetSkeletonOverlayOn { get; set; }
@@ -103,6 +130,7 @@ public class MainWindow : Window
         PoseInspectorPane poseInspector,
         AnimationPane animationPane,
         AppearancePane appearancePane,
+        PoseLibraryPane libraryPane,
         PoseFileInspectorSection poseFileSection,
         Application.Animation.AnimationSession animation,
         Game.Animation.AnimationCatalogLoader animationCatalog,
@@ -132,6 +160,10 @@ public class MainWindow : Window
         _poseInspector = poseInspector;
         _animationPane = animationPane;
         _appearancePane = appearancePane;
+        _libraryPane = libraryPane;
+        // The library's "Add source…" and its empty state both mean the same
+        // thing the titlebar gear does, so they travel the one settings route.
+        _libraryPane.OnSettingsRequested += () => OnSettingsRequested?.Invoke();
         _poseFileSection = poseFileSection;
         _animation = animation;
         _overlayPresentation = overlayPresentation;
@@ -180,11 +212,22 @@ public class MainWindow : Window
         _vm.OnRedo = Redo;
         _vm.OnSkeletonOverlay = on => OnSkeletonOverlayToggled?.Invoke(on);
         _vm.OnSettings = () => OnSettingsRequested?.Invoke();
+        _vm.OnBurger = anchor =>
+        {
+            _shellMenuAnchor = anchor;
+            _shellMenuOpenRequested = true;
+        };
         _vm.OnHideUi = () => IsOpen = false;
         // The sidebar's add affordance. Creation lives where the created
         // thing will appear, so the ACTORS
         // header owns it rather than a separate spawn menu.
         _vm.OnSectionPlus = _ => OnSpawnBrowserRequested?.Invoke();
+        // Only the LIBRARY header is selectable, so no other index can arrive.
+        _vm.OnSectionSelected = index =>
+        {
+            if (index == LibrarySectionIndex)
+                ShowLibrary();
+        };
         _vm.OnSpawn = () => OnSpawnBrowserRequested?.Invoke();
         _vm.OnRowClicked = OnRowClicked;
         _vm.OnRowExpandToggled = row =>
@@ -327,6 +370,7 @@ public class MainWindow : Window
         ReconcilePendingSpawn();
         BuildViewModel();
         AppShellView.Draw(_vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
+        DrawShellMenu();
         DrawActorContextMenu();
         DrawBoneContextMenu();
         DrawOverlayContextMenu();
@@ -336,6 +380,31 @@ public class MainWindow : Window
         // surface next.
         _appearancePane.DrawBrowsers();
         _poseFileSection.DrawBrowsers();
+        // Unconditional, exactly like the dialog pumps: a library spawn binds
+        // its actor frames later, and leaving library mode must not strand it.
+        _libraryPane.Tick();
+    }
+
+    /// <summary>Puts the workspace into library mode. Openers only — a second
+    /// request must not toggle a library the user is already looking at — and
+    /// the actor selection is deliberately left alone.</summary>
+    public void ShowLibrary()
+    {
+        _libraryMode = true;
+        // Both switches can happen from a sidebar click, which occurs while
+        // AppShellView is already drawing: the viewport contract moves in the
+        // same breath as the content selection, so the remainder of the frame
+        // cannot render one mode through the other mode's layout path.
+        ApplyTabLayout("Library");
+    }
+
+    private void ExitLibraryMode()
+    {
+        if (!_libraryMode)
+            return;
+        _libraryMode = false;
+        _libraryPane.OnHidden();
+        ApplyTabLayout(_activeTab);
     }
 
     public override void PostDraw()
@@ -422,7 +491,7 @@ public class MainWindow : Window
 
         BuildSidebar(primary);
         BuildTabs(primary);
-        ApplyTabLayout(_activeTab);
+        ApplyTabLayout(_libraryMode ? "Library" : _activeTab);
         BuildStatus(primary);
     }
 
@@ -441,6 +510,11 @@ public class MainWindow : Window
     private void BuildSidebar(SelectionId? primary)
     {
         _vm.Sections.Clear();
+        // The library is a place in the sidebar, not a window: its header IS
+        // the affordance, and it stands above the scene it poses.
+        _librarySection.Active = _libraryMode;
+        _vm.Sections.Add(_librarySection);
+
         string filter = _vm.SidebarSearch.Trim();
         bool filtering = filter.Length > 0;
 
@@ -770,6 +844,13 @@ public class MainWindow : Window
         // Tabs are rebuilt each frame; the active one is preserved so a
         // selection change cannot silently throw the user back to Pose.
         _vm.Tabs.Clear();
+        if (_libraryMode)
+        {
+            // One tab, and it is the mode itself: _activeTab is left untouched,
+            // so leaving the library returns the tab the user was on.
+            _vm.Tabs.Add(_libraryTab);
+            return;
+        }
         if (_activeTab is not ("Pose" or "Animation" or "Appearance"))
             _activeTab = "Pose";
         _vm.Tabs.Add(new ShellTab { Label = "Pose", Active = _activeTab == "Pose" });
@@ -810,6 +891,9 @@ public class MainWindow : Window
 
     private void OnTabClicked(int index)
     {
+        // Library mode presents its own single tab; clicking it changes
+        // nothing, and the selection-typed tab set is untouched underneath.
+        if (_libraryMode) return;
         if (index < 0 || index >= _vm.Tabs.Count) return;
         var label = _vm.Tabs[index].Label;
 
@@ -826,13 +910,18 @@ public class MainWindow : Window
 
     private void ApplyTabLayout(string tab)
     {
-        _vm.ContentOwnsViewport = tab == "Pose";
+        // The library scrolls its own grid, so it takes the fixed viewport the
+        // Pose tab takes.
+        _vm.ContentOwnsViewport = tab is "Pose" or "Library";
         _vm.ContentUsesPage =
             tab is "Animation" or "Appearance";
     }
 
     private void OnRowClicked(ShellSidebarRow row)
     {
+        // Selecting anything in the scene is leaving the library: the two are
+        // alternatives in one workspace.
+        ExitLibraryMode();
         if (row.Tag is string catKey2)
         {
             if (!_collapsedNodes.Add(catKey2)) _collapsedNodes.Remove(catKey2);
@@ -876,6 +965,14 @@ public class MainWindow : Window
 
     private void DrawTabContent(Vector2 origin, Vector2 size)
     {
+        // The library is browsable without a resolvable actor — the apply
+        // action is what needs one — so it precedes the GPose gate.
+        if (_libraryMode)
+        {
+            _libraryPane.Draw(origin, size);
+            return;
+        }
+
         if (!_gPoseService.IsGPosing)
         {
             Crystarium.TextAt(origin + new Vector2(0f, 8f) * ImGuiHelpers.GlobalScale, "Enter GPose to start posing.", new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.FormHint });
@@ -934,6 +1031,61 @@ public class MainWindow : Window
             return;
         _selection.Select(SelectionId.ForActor(id));
         _pendingSelectSpawned = null;
+    }
+
+    /// <summary>The titlebar burger menu, anchored under its own button.</summary>
+    private void DrawShellMenu()
+    {
+        var (items, actions) = BuildShellMenu();
+        if (_shellMenuOpenRequested)
+        {
+            _shellMenuOpenRequested = false;
+            Crystarium.FloatingMenu.Open(
+                "##shell-burger-menu", _shellMenuAnchor, items.ToArray());
+        }
+        int clicked = Crystarium.FloatingMenu.Draw("##shell-burger-menu");
+        if (clicked >= 0 && clicked < actions.Count)
+            actions[clicked]?.Invoke();
+    }
+
+    /// <summary>
+    /// The shell's GROWABLE COMMAND LIST. Almost every action Poser offers is
+    /// meant to land here eventually, so that a collapsed bottom-bar-only
+    /// layout can still reach everything the chrome stops showing. Adding a
+    /// command is therefore one Add pair and nothing else — never a hardcoded
+    /// switch over a fixed set. The two lists are index-aligned: every item
+    /// gets exactly one action, and a Separator item pairs with a null.
+    /// </summary>
+    private (List<ContextMenuItem> Items, List<Action?> Actions) BuildShellMenu()
+    {
+        var items = new List<ContextMenuItem>();
+        var actions = new List<Action?>();
+
+        // Recovery follows the SELECTED actor: a shell-wide menu has no
+        // right-clicked row to take a skeleton from.
+        var skeleton = SelectedSkeleton();
+        items.Add(new ContextMenuItem(
+            "Auto-saves…", TablerIcon.DeviceFloppy, disabled: skeleton == null));
+        actions.Add(() =>
+        {
+            if (skeleton != null)
+                _poseFileSection.OpenAutoSaves(skeleton);
+        });
+
+        items.Add(new ContextMenuItem("Settings", TablerIcon.Settings));
+        actions.Add(() => OnSettingsRequested?.Invoke());
+
+        return (items, actions);
+    }
+
+    /// <summary>The selected actor's skeleton, or null when nothing posable is
+    /// selected or its binding no longer resolves.</summary>
+    private ISkeleton? SelectedSkeleton()
+    {
+        if (SelectedActorId() is not { } actorId)
+            return null;
+        var resolved = _bindings.Resolve(actorId);
+        return resolved.Success ? resolved.Value?.Skeleton : null;
     }
 
     /// <summary>Right-click actor menu: the lifetime actions that were stranded
@@ -1001,9 +1153,6 @@ public class MainWindow : Window
         items.Add(new ContextMenuItem(
             "Export pose…", TablerIcon.DeviceFloppy,
             disabled: !actor.HasSkeleton));
-        items.Add(new ContextMenuItem(
-            "Auto-saves…", TablerIcon.ArrowBackUp,
-            disabled: !actor.HasSkeleton));
         actions.Add(null); // separator
         actions.Add(() =>
         {
@@ -1014,11 +1163,6 @@ public class MainWindow : Window
         {
             if (actor.Skeleton is { } exportSkeleton)
                 _poseFileSection.OpenExport(exportSkeleton);
-        });
-        actions.Add(() =>
-        {
-            if (actor.Skeleton is { } recoverSkeleton)
-                _poseFileSection.OpenAutoSaves(recoverSkeleton);
         });
 
         if (_spawnService.IsSpawnedActor(actor))

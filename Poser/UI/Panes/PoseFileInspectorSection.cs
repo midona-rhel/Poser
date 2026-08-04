@@ -87,7 +87,6 @@ public sealed class PoseFileInspectorSection
         {
             actions.Button("Import…", () => OpenImport(skeleton));
             actions.Button("Export…", () => OpenExport(skeleton));
-            actions.Button("Auto-saves…", () => OpenAutoSaves(skeleton));
             actions.Button("Library…", () => OnLibraryRequested?.Invoke());
         });
 

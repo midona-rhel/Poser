@@ -76,6 +76,7 @@ public enum TablerIcon
     Keyboard,
     Info,
     AlertTriangle,
+    Menu2,
 }
 
 /// <summary>
@@ -197,6 +198,7 @@ public static class Tabler
         TablerIcon.Keyboard        => "keyboard",
         TablerIcon.Info            => "info",
         TablerIcon.AlertTriangle   => "alert-triangle",
+        TablerIcon.Menu2           => "menu-2",
         _ => "circle",
     };
 }
