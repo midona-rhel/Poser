@@ -932,9 +932,13 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
     /// pose still holds the solved placement — the state Poser had no way to
     /// reach while IK was live-only.
     ///
-    /// The bake imports the WHOLE skeleton, so a bone outside the chain is
-    /// watched throughout: it must come out of the bake, and out of the undo,
-    /// exactly where it started.
+    /// The bake reimports the WHOLE skeleton inside the apply pass, as Brio's
+    /// ResetIK does, flattening every bone's authored stacks into one delta
+    /// measured against that pass's own basis. Two things are therefore
+    /// watched besides the limb: a chain interior bone must END UP with an
+    /// authored edit (the solver's contribution became pose), and an unrelated
+    /// bone must come out of the bake, and out of the undo, exactly where it
+    /// started, with its own edit intact.
     /// </summary>
     private async Task<(bool Passed, string Detail)> IkBake()
     {
@@ -1021,15 +1025,16 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
                 return (false, $"{witness.BoneName} carries no authored edit to watch.");
             var firstJoint = captured.Chain[0];
 
-            // The bake snapshots the solved skeleton and disarms now, but
-            // applies the snapshot two ticks later: an apply pass has to run
-            // with the chain disarmed before the import's per-bone basis is
-            // the animated baseline plus stacks again.
+            // Begin snapshots, clears, disarms and queues the per-bone import
+            // on THIS tick; the frame's own apply pass runs the import inside
+            // itself, and the tick after that lands the history entry. The
+            // bake stays pending until both have happened, so a handful of
+            // real frames is all this waits for.
             var begun = await _framework.RunOnFrameworkThread(
                 () => _ikBake.Begin(target));
             if (!begun.Success)
                 return (false, begun.Detail ?? "IK bake did not run.");
-            await WaitFrames(8);
+            await WaitFrames(4);
             if (await _framework.RunOnFrameworkThread(() => _ikBake.IsPending))
                 return (false, "The IK bake never applied.");
 
@@ -1040,6 +1045,13 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
                     problems.Add(note.Text);
                 if (_ikPort.Get(target)?.Enabled != false)
                     problems.Add("The chain is still armed.");
+                // The solver's contribution lived in no stack at all. A chain
+                // interior bone carrying an authored edit now is the proof
+                // that the in-pass import wrote it into the pose, rather than
+                // the limb merely happening to sit still.
+                if (_posing.GetModification(firstJoint) == null)
+                    problems.Add(
+                        $"The bake left no pose layer on {firstJoint.BoneName}.");
                 foreach (var (bone, solved) in captured.Solved)
                     if (!SameTransform(solved, bone.LastRawTransform))
                         problems.Add(

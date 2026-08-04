@@ -97,26 +97,7 @@ public sealed class CleanPoseFacade
         return ApplyImportPlan(plan, $"Import {System.IO.Path.GetFileName(path)}");
     }
 
-    /// <summary>
-    /// The SAME import, for a pose already held in memory rather than read
-    /// from disk. The IK bake is the caller: it snapshots the live skeleton
-    /// with <see cref="IPoseFileService.CreatePoseFile"/> and replays that
-    /// snapshot here, so a bake travels byte-for-byte the code path a user's
-    /// .pose apply travels — same plan builder, same conversion, same single
-    /// atomic <c>ImportEdit</c>.
-    /// </summary>
-    public PoseEditResult ImportPose(
-        IActor actor,
-        PoseFile poseFile,
-        PoseImportOptions options,
-        string description) =>
-        ApplyImportPlan(
-            _poseFiles.BuildImportPlan(_skeletons.GetSkeletons(actor), poseFile, options),
-            description);
-
-    /// <summary>The one plan → stable-id → atomic-edit conversion. Both
-    /// import entry points funnel through it; nothing else may reimplement
-    /// it.</summary>
+    /// <summary>The one plan → stable-id → atomic-edit conversion.</summary>
     private PoseEditResult ApplyImportPlan(PoseImportPlan plan, string description)
     {
         if (plan.IsEmpty)
