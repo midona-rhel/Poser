@@ -62,21 +62,5 @@ public interface ITransformRuntimePort
         PoseTransform desired,
         bool rawBaseline = false);
 
-    /// <summary>
-    /// Bakes a value produced OUTSIDE the pose stacks — a live IK solve —
-    /// into the stacks. The bone's interactive stacks are REPLACED by the
-    /// single delta that reproduces <paramref name="desired"/> from the
-    /// bone's animated baseline, the transform the runtime read this frame
-    /// before any stack or solver touched the bone.
-    ///
-    /// <see cref="ApplyAbsolute"/> cannot express this: its bases are the
-    /// bone's current value, against which a solved chain diffs to identity,
-    /// and it accumulates onto the existing stack, which for an IK endpoint
-    /// holds a solver target rather than an applied offset.
-    /// </summary>
-    TransformPortResult ApplyBakedAbsolute(
-        TransformTargetState baseline,
-        PoseTransform desired);
-
     TransformPortResult Restore(TransformTargetState state);
 }

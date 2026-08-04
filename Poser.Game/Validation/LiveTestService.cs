@@ -931,6 +931,10 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
     /// Arms a hand chain, drags its target, bakes, and proves the disarmed
     /// pose still holds the solved placement — the state Poser had no way to
     /// reach while IK was live-only.
+    ///
+    /// The bake imports the WHOLE skeleton, so a bone outside the chain is
+    /// watched throughout: it must come out of the bake, and out of the undo,
+    /// exactly where it started.
     /// </summary>
     private async Task<(bool Passed, string Detail)> IkBake()
     {
@@ -948,12 +952,30 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
             is not { } definition)
             return (false, $"{endpoint.BoneName} is not a supported endpoint.");
 
+        // A bone the solver never touches, carrying an authored edit of its
+        // own. The bake writes the whole skeleton, so this is the witness that
+        // an unrelated bone survives it — and survives the undo — untouched.
+        var witness = skeleton.GetBone("j_kosi") ?? skeleton.GetBone("j_sebo_a");
+        if (witness == null)
+            return (false, "No non-chain witness bone on the controlled skeleton.");
+
         var setup = await _framework.RunOnFrameworkThread(() =>
         {
             _posing.ClearIkConfigurations(skeleton);
             var reset = _cleanPose.Reset(skeleton.Actor, PoseRegion.All);
             if (!reset.Success)
                 return (false, reset.Detail ?? "Pose reset failed.");
+            var authored = ApplyCleanTransform(
+                witness,
+                DomainOperation.Rotate,
+                DomainSpace.Local,
+                TransformDelta.Identity with
+                {
+                    Rotation = Quaternion.CreateFromYawPitchRoll(0.09f, 0f, 0f),
+                },
+                "Rewrite gate bake witness");
+            if (!authored.Success)
+                return authored;
             var armed = _ikPort.Set(
                 target,
                 Poser.Domain.Posing.IkChainConfig.DefaultsFor(
@@ -987,27 +1009,35 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
                         .Select(bone => (Bone: bone, Transform: bone.LastRawTransform))
                         .ToArray(),
                     Pose: _poseFiles.CreatePoseFile(new[] { skeleton }),
+                    Witness: witness.LastRawTransform,
+                    WitnessEdit: _posing.GetModification(witness),
                     CanBake: _ikBake.CanBake(target));
             });
             if (captured.Solved.Length <= 1)
                 return (false, "The armed chain resolved no bones to bake.");
             if (!captured.CanBake)
                 return (false, "The armed chain reported nothing to bake.");
+            if (captured.WitnessEdit == null)
+                return (false, $"{witness.BoneName} carries no authored edit to watch.");
             var firstJoint = captured.Chain[0];
 
-            // The bake is ONE tick: it reads the solved chain and writes it
-            // against the same pass's animated baseline, so there is no
-            // pending phase to wait out. The frames below are only the
-            // runtime re-applying the written stacks.
+            // The bake snapshots the solved skeleton and disarms now, but
+            // applies the snapshot two ticks later: an apply pass has to run
+            // with the chain disarmed before the import's per-bone basis is
+            // the animated baseline plus stacks again.
             var begun = await _framework.RunOnFrameworkThread(
                 () => _ikBake.Begin(target));
             if (!begun.Success)
                 return (false, begun.Detail ?? "IK bake did not run.");
-            await WaitFrames(3);
+            await WaitFrames(8);
+            if (await _framework.RunOnFrameworkThread(() => _ikBake.IsPending))
+                return (false, "The IK bake never applied.");
 
             var failures = await _framework.RunOnFrameworkThread(() =>
             {
                 var problems = new List<string>();
+                if (_ikBake.Note is { } note)
+                    problems.Add(note.Text);
                 if (_ikPort.Get(target)?.Enabled != false)
                     problems.Add("The chain is still armed.");
                 foreach (var (bone, solved) in captured.Solved)
@@ -1023,6 +1053,15 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
                         !SameTransform(before, after))
                         problems.Add(
                             $"{bone.BoneName} exports differently after the bake.");
+                // Whole-skeleton import, unrelated bone: same place, same
+                // authored edit.
+                if (!SameTransform(captured.Witness, witness.LastRawTransform))
+                    problems.Add(
+                        $"{witness.BoneName} moved although the solver never touched it.");
+                if (_posing.GetModification(witness) is not { } witnessNow ||
+                    !SameTransform(captured.WitnessEdit.Value, witnessNow))
+                    problems.Add(
+                        $"{witness.BoneName} lost its own edit to the bake.");
                 return problems;
             });
 
@@ -1034,12 +1073,21 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
             var undone = await _framework.RunOnFrameworkThread(() => (
                 Cleared: _posing.GetModification(firstJoint) == null,
                 Held: captured.Solved.All(entry =>
-                    SameTransform(entry.Transform, entry.Bone.LastRawTransform))));
+                    SameTransform(entry.Transform, entry.Bone.LastRawTransform)),
+                WitnessPlace: witness.LastRawTransform,
+                WitnessEdit: _posing.GetModification(witness)));
             if (!undone.Cleared)
                 failures.Add(
                     $"One undo left a pose layer on {firstJoint.BoneName}.");
             if (undone.Held)
                 failures.Add("Undo did not release the baked placement.");
+            if (!SameTransform(captured.Witness, undone.WitnessPlace))
+                failures.Add(
+                    $"Undoing the bake moved {witness.BoneName}.");
+            if (undone.WitnessEdit is not { } undoneWitnessEdit ||
+                !SameTransform(captured.WitnessEdit.Value, undoneWitnessEdit))
+                failures.Add(
+                    $"Undoing the bake dropped {witness.BoneName}'s own edit.");
 
             var redo = await _framework.RunOnFrameworkThread(
                 () => _cleanTransforms.Redo());

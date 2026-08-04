@@ -83,6 +83,11 @@ public unsafe class BonePosingService : IBonePosingService
     // Track which slot skeletons need cache updates (visible overlays, active gizmo, etc.)
     private readonly HashSet<SkeletonKey> _skeletonsToUpdateCache = new();
 
+    /// <summary>Slot skeletons kept in the apply pass for a few more frames
+    /// even though they hold nothing that would normally qualify. See
+    /// <see cref="HoldSkeletonUpdates"/>.</summary>
+    private readonly Dictionary<SkeletonKey, int> _updateHolds = new();
+
     /// <summary>Session IK state per exact endpoint: validated chain
     /// configuration, resolved native chain, and the Fixed-mode capture.
     /// Keyed by the exact skeleton instance, so a replacement never
@@ -92,13 +97,6 @@ public unsafe class BonePosingService : IBonePosingService
         public required Poser.Domain.Posing.IkChainConfig Config;
         public Poser.Domain.Posing.IkResolvedChain Chain;
         public (Vector3 Target, Vector3 Translation)? FixedCapture;
-
-        /// <summary>Every (partial, bone) the solver writes for this chain.
-        /// The per-frame apply pass visits these bones even when they carry no
-        /// stack of their own, so each one records the animated baseline the
-        /// solve is layered on — the only basis a bake can turn into a delta.
-        /// Empty while the chain is disabled.</summary>
-        public HashSet<(int Partial, int Bone)> Members = new();
     }
 
     private readonly Dictionary<(SkeletonKey Skeleton, int Partial, int Bone), IkChainState>
@@ -194,9 +192,28 @@ public unsafe class BonePosingService : IBonePosingService
     private void OnFrameworkUpdate(IFramework framework)
     {
         _skeletonsToUpdate.Clear();
+
+        // Holds are spent once per framework tick whether or not the skeleton
+        // would have qualified anyway, so a hold always covers exactly the
+        // number of ticks it was taken out for.
+        HashSet<SkeletonKey>? held = null;
+        if (_updateHolds.Count > 0)
+        {
+            held = new HashSet<SkeletonKey>(_updateHolds.Keys);
+            foreach (var key in held)
+            {
+                var remaining = _updateHolds[key] - 1;
+                if (remaining <= 0)
+                    _updateHolds.Remove(key);
+                else
+                    _updateHolds[key] = remaining;
+            }
+        }
+
         foreach (var (slotKey, poseInfo) in _poseInfos)
         {
-            if (poseInfo.IsOverridden || HasEnabledChains(slotKey))
+            if (poseInfo.IsOverridden || HasEnabledChains(slotKey) ||
+                held?.Contains(slotKey) == true)
             {
                 _skeletonsToUpdate.Add(slotKey);
                 continue;
@@ -206,6 +223,36 @@ public unsafe class BonePosingService : IBonePosingService
         }
 
         _skeletonsToUpdateCache.Clear();
+    }
+
+    /// <summary>
+    /// Keeps an exact slot-skeleton instance in the per-frame apply pass for
+    /// the next <paramref name="frames"/> framework ticks even when it carries
+    /// no stack and no armed chain.
+    ///
+    /// The IK bake is the caller. It disarms a chain and then applies the
+    /// snapshot it took while the chain was solved through the pose-import
+    /// path, whose per-bone basis is <c>IBone.LastRawTransform</c> — a value
+    /// only this pass refreshes. Exactly one pass must therefore run between
+    /// the disarm and the apply. A Fixed chain that was holding its captured
+    /// target without any authored stack leaves the skeleton with nothing to
+    /// update the moment it is disarmed, so without this hold that pass never
+    /// runs, the basis stays at the solved value, and every baked delta comes
+    /// out identity — the limb drops back to the animation.
+    /// </summary>
+    public void HoldSkeletonUpdates(ISkeleton skeleton, int frames)
+    {
+        if (frames <= 0)
+            return;
+        var key = SkeletonKey.Of(skeleton);
+        _updateHolds[key] =
+            _updateHolds.TryGetValue(key, out var existing) && existing > frames
+                ? existing
+                : frames;
+        // Also effective immediately: the caller may already be past this
+        // tick's rebuild, in which case only a direct add reaches this
+        // frame's pass.
+        _skeletonsToUpdate.Add(key);
     }
 
     public void RegisterSkeletonForCacheUpdate(ISkeleton skeleton)
@@ -255,6 +302,7 @@ public unsafe class BonePosingService : IBonePosingService
         _poseInfos.Remove(key);
         _skeletonsToUpdate.Remove(key);
         _skeletonsToUpdateCache.Remove(key);
+        _updateHolds.Remove(key);
         RemoveEvaluationObservations(key);
         foreach (var chainKey in _ikChains.Keys
                      .Where(chainKey => chainKey.Skeleton == key)
@@ -268,6 +316,7 @@ public unsafe class BonePosingService : IBonePosingService
         {
             _poseInfos.Clear();
             _skeletonsToUpdate.Clear();
+            _updateHolds.Clear();
             _evaluationObservations.Clear();
             _ikChains.Clear();
             _carryover.Clear();
@@ -537,19 +586,6 @@ public unsafe class BonePosingService : IBonePosingService
     {
         var partialCount = gameSkeleton->PartialSkeletonCount;
 
-        // Every bone an ARMED chain solves, gathered once per skeleton. Those
-        // bones are visited below even without stacks: the solver moves them
-        // natively, and only the pass can observe the animated baseline that
-        // native movement sits on top of.
-        HashSet<(int Partial, int Bone)>? chainMembers = null;
-        foreach (var (chainKey, state) in _ikChains)
-        {
-            if (chainKey.Skeleton != slotKey || !state.Config.Enabled ||
-                state.Members.Count == 0)
-                continue;
-            (chainMembers ??= new HashSet<(int, int)>()).UnionWith(state.Members);
-        }
-
         for (int partialIdx = 0; partialIdx < partialCount; partialIdx++)
         {
             var partial = &gameSkeleton->PartialSkeletons[partialIdx];
@@ -576,9 +612,7 @@ public unsafe class BonePosingService : IBonePosingService
                     Config.TargetMode: Poser.Domain.Posing.IkTargetMode.Fixed,
                     FixedCapture: not null,
                 };
-                bool solvedMember =
-                    chainMembers?.Contains((partialIdx, boneIdx)) == true;
-                if (!bonePoseInfo.HasStacks && !fixedHold && !solvedMember)
+                if (!bonePoseInfo.HasStacks && !fixedHold)
                     continue;
 
                 var baselineSpace = pose->AccessBoneModelSpace(
@@ -602,9 +636,6 @@ public unsafe class BonePosingService : IBonePosingService
                     // its captured target against the running animation.
                     ApplyFixedHold(pose, boneIdx, bone, chainState!);
                 }
-                // A stackless solved member writes nothing itself: the solver
-                // moved it when the endpoint was applied. It is visited only
-                // so the observation below records its animated baseline.
 
                 // Brio captures both caches immediately after applying each bone.
                 var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
@@ -908,60 +939,6 @@ public unsafe class BonePosingService : IBonePosingService
         _eventBus.Publish(new BoneTransformChangedEvent(bone));
     }
 
-    /// <summary>
-    /// REPLACES the bone's interactive stacks with the single delta that
-    /// reproduces <paramref name="absolute"/> from the bone's ANIMATED
-    /// BASELINE — the model-space value the apply pass read for this bone
-    /// before any stack (or native IK solve) touched it, this frame.
-    ///
-    /// This is the only basis a live-solved chain can be baked against.
-    /// A solved chain bone's current transform is the sum of the animation
-    /// and the solver's native write, and the solver's contribution belongs
-    /// to no stack: diffing against the current value yields identity, and
-    /// diffing against a value cached on some earlier frame yields whatever
-    /// drift lies between the two frames. The baseline is the exact value
-    /// the pass will start from again next frame, so
-    /// <c>baseline + delta</c> reproduces the solved placement verbatim and
-    /// keeps doing so.
-    ///
-    /// Replacement, not accumulation: for the endpoint the existing stack's
-    /// translation was consumed as the solver's TARGET, never added to the
-    /// bone, so combining the two would apply it twice. Named service
-    /// layers (expression, gaze) are preserved untouched; they never target
-    /// arm or leg chains.
-    ///
-    /// Returns false when the runtime has not observed this bone since the
-    /// chain was armed — without an observation there is no baseline, and a
-    /// guessed one is exactly the bug this replaces.
-    /// </summary>
-    public bool ApplyAbsoluteFromBaseline(IBone bone, Transform absolute)
-    {
-        if (bone is VirtualBone)
-            return false;
-        if (!TryGetEvaluationObservation(bone, out var observation))
-            return false;
-
-        var poseInfo = GetPoseInfo(bone.Skeleton);
-        var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
-        var delta = BonePoseInfo.Diff(absolute, observation.AnimatedBaseline);
-
-        var replacement = new List<BonePoseTransformInfo>
-        {
-            new(bonePoseInfo.DefaultPropagation, delta),
-        };
-        foreach (var stack in bonePoseInfo.Stacks)
-        {
-            if (stack.Layer != null)
-                replacement.Add(stack);
-        }
-
-        if (!bonePoseInfo.ReplaceStacks(replacement))
-            return false;
-
-        _eventBus.Publish(new BoneTransformChangedEvent(bone));
-        return true;
-    }
-
     public Poser.Domain.Posing.IkChainConfig? GetIkConfiguration(IBone bone)
     {
         if (bone is VirtualBone)
@@ -994,9 +971,6 @@ public unsafe class BonePosingService : IBonePosingService
         var state = previous ?? new IkChainState { Config = config };
         state.Config = config.Normalized();
         state.Chain = chain;
-        state.Members = config.Enabled
-            ? ChainMembers(bone, state.Config, chain)
-            : new HashSet<(int, int)>();
 
         // Fixed-target lifecycle: capture on entering Fixed or enabling a
         // Fixed chain; disabling retains tuning but clears the capture.
@@ -1080,50 +1054,6 @@ public unsafe class BonePosingService : IBonePosingService
             Index(definition.SecondTwist),
             (short)endpoint.BoneIndex);
     }
-
-    /// <summary>
-    /// The bones an ENABLED chain's solver writes, in the endpoint's own
-    /// partial: the resolved definition for Two Joint, the depth-walked
-    /// hierarchy for CCD (mirroring <c>IKService.GetBonesToDepth</c>). These
-    /// bones are visited by the apply pass even without stacks so their
-    /// animated baseline is observed every frame.
-    /// </summary>
-    private static HashSet<(int Partial, int Bone)> ChainMembers(
-        IBone endpoint,
-        Poser.Domain.Posing.IkChainConfig config,
-        Poser.Domain.Posing.IkResolvedChain chain)
-    {
-        var members = new HashSet<(int, int)>();
-        var partial = endpoint.PartialId;
-
-        if (config.Solver == Poser.Domain.Posing.IkSolver.Ccd)
-        {
-            members.Add((partial, endpoint.BoneIndex));
-            var current = endpoint.ParentBone;
-            while (current != null && members.Count < config.CcdDepth + 1)
-            {
-                members.Add((current.PartialId, current.BoneIndex));
-                current = current.ParentBone;
-            }
-            return members;
-        }
-
-        foreach (var index in new[]
-                 {
-                     chain.FirstJoint,
-                     chain.FirstTwist,
-                     chain.SecondJoint,
-                     chain.SecondTwist,
-                     chain.EndBone,
-                 })
-        {
-            if (index >= 0)
-                members.Add((partial, index));
-        }
-        return members;
-    }
-
-
 
     public int ResetRegion(ISkeleton skeleton, string region)
     {

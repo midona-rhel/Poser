@@ -1527,7 +1527,9 @@ public class PoseInspectorPane
     // scrub; the runtime keeps the normalized configuration.
     private Vector3? _ikAxisScratch;
 
-    // Why a bake was refused. Carries its own target so the note cannot
+    // Why a bake was refused BEFORE it started. Once a bake is armed the
+    // capture owns the status line, because the outcome lands a couple of
+    // frames after the click. Carries its own target so the note cannot
     // survive onto another bone's IK section.
     private (TransformTargetId Target, string Text)? _ikBakeNote;
 
@@ -1558,7 +1560,7 @@ public class PoseInspectorPane
             actions =>
             {
                 actions.Button(
-                    "Reset defaults",
+                    "Reset",
                     () =>
                     {
                         _ikPort.ResetDefaults(ikTarget);
@@ -1566,29 +1568,29 @@ public class PoseInspectorPane
                     },
                     disabled: !eligible,
                     help: "Restore this chain's default IK settings. Live IK stays as it is.");
+                actions.Button(
+                    "Bake",
+                    () =>
+                    {
+                        _ikBakeNote = _ikBake.Begin(ikTarget)
+                            is { Success: false } failed
+                            ? (ikTarget, $"Bake: {failed.Detail}")
+                            : null;
+                        config = _ikPort.Get(ikTarget);
+                    },
+                    disabled: !canBake,
+                    help: "Write the solved limb into the pose as one undoable "
+                        + "edit, then turn Live IK off");
             },
             disabled: !eligible,
             help: eligible
                 ? "Bend the whole limb to follow this bone as you move it"
                 : "This bone has no IK chain — select a hand or foot");
-        // Bake owns a row of its own: three controls never fit the switch row.
-        form.Actions(
-            string.Empty,
-            actions => actions.Button(
-                "Bake",
-                () =>
-                {
-                    _ikBakeNote = _ikBake.Begin(ikTarget)
-                        is { Success: false } failed
-                        ? (ikTarget, $"Bake: {failed.Detail}")
-                        : null;
-                    config = _ikPort.Get(ikTarget);
-                },
-                disabled: !canBake,
-                help: "Write the solved limb into the pose as one undoable "
-                    + "edit, then turn Live IK off"),
-            fullWidth: true);
-        if (_ikBakeNote is { } note && note.Target.Equals(ikTarget))
+        // The armed bake's own progress/failure wins: it outlives the click
+        // that started it, while _ikBakeNote only ever holds an up-front
+        // refusal.
+        if ((_ikBake.Note ?? _ikBakeNote) is { } note &&
+            note.Target.Equals(ikTarget))
             form.Status(note.Text);
         if (config == null)
             return;

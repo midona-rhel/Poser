@@ -103,6 +103,15 @@ public interface IBonePosingService : IDisposable
     void RegisterSkeletonForCacheUpdate(ISkeleton skeleton);
 
     /// <summary>
+    /// Keeps a skeleton in the per-frame apply pass for the next
+    /// <paramref name="frames"/> framework ticks even when it carries no pose
+    /// stack and no armed IK chain — the only way to guarantee that the
+    /// per-bone transform caches an absolute write is diffed against are
+    /// refreshed on a tick where the skeleton would otherwise go idle.
+    /// </summary>
+    void HoldSkeletonUpdates(ISkeleton skeleton, int frames);
+
+    /// <summary>
     /// Gets the most recent pre-layer/post-layer observation for a modified
     /// concrete bone. Observations are produced only by the native skeleton
     /// update hook and therefore prove the runtime application path executed.
