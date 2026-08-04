@@ -286,6 +286,7 @@ public readonly record struct Theme
             PickerBorder = new(1f, 1f, 1f, 0.18f),
             ModalDim = new(0f, 0f, 0f, 0.55f),
             ModalFooter = PictoTokens.Dark.Black10,
+            RailFill = PictoTokens.Dark.Black10,
             SegmentShadow = new(0f, 0f, 0f, 0.25f),
             SegmentSelected = PictoTokens.Dark.Surface2,
             SidebarSelected = PictoTokens.Dark.SurfaceActive,
@@ -473,6 +474,7 @@ public readonly record struct Theme
                 PickerBorder = new(0f, 0f, 0f, 0.18f),
                 ModalDim = new(0f, 0f, 0f, 0.35f),
                 ModalFooter = PictoTokens.Light.Black10,
+                RailFill = PictoTokens.Light.Black10,
                 SegmentShadow = new(0f, 0f, 0f, 0.12f),
                 SegmentSelected = sunken,
                 SidebarSelected = PictoTokens.Light.SurfaceActive,
@@ -786,6 +788,11 @@ public readonly record struct Theme
         public Vector4 PickerBorder { get; init; }
         public Vector4 ModalDim { get; init; }
         public Vector4 ModalFooter { get; init; }
+        /// <summary>Window-frame rail (quick access, source lists) fill — a
+        /// translucent overlay like <see cref="ModalFooter"/>, never an opaque
+        /// surface: on a glass window an opaque rail blots out the backdrop
+        /// blur in that region while the rest of the window stays glass.</summary>
+        public Vector4 RailFill { get; init; }
         public Vector4 SegmentShadow { get; init; }
         public Vector4 SegmentSelected { get; init; }
         /// <summary>SidebarRow.module.css <c>.selected::before</c> /
