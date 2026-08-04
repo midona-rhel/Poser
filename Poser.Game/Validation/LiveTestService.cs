@@ -46,6 +46,9 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
     private readonly StableBindingRegistry _bindings;
     private readonly CleanTransformFacade _cleanTransforms;
     private readonly CleanPoseFacade _cleanPose;
+    private readonly IIkConfigurationPort _ikPort;
+    private readonly IkBakeCapture _ikBake;
+    private readonly IPoseFileService _poseFiles;
     private readonly LiveTestRunStore _runStore;
     private readonly CancellationTokenSource _lifetime = new();
     private CancellationTokenSource? _runCancellation;
@@ -76,7 +79,10 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
         SelectionSession selection,
         StableBindingRegistry bindings,
         CleanTransformFacade cleanTransforms,
-        CleanPoseFacade cleanPose)
+        CleanPoseFacade cleanPose,
+        IIkConfigurationPort ikPort,
+        IkBakeCapture ikBake,
+        IPoseFileService poseFiles)
     {
         _log = log;
         _framework = framework;
@@ -92,6 +98,9 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
         _bindings = bindings;
         _cleanTransforms = cleanTransforms;
         _cleanPose = cleanPose;
+        _ikPort = ikPort;
+        _ikBake = ikBake;
+        _poseFiles = poseFiles;
         _runStore = new LiveTestRunStore(
             pluginInterface.GetPluginConfigDirectory());
         LastRun = _runStore.RecoverLatestInterrupted();
@@ -553,6 +562,11 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
             "posing",
             "portable pose transfer",
             CopyPastePose),
+        new(
+            "posing.ik-bake",
+            "posing",
+            "solved chain baked into pose",
+            IkBake),
     ];
 
     private Task<(bool Passed, string Detail)> SelectionRoundTrip() =>
@@ -912,6 +926,151 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
                 : (false, pasted.Detail ??
                     "Portable pose did not restore the isolated rotation.");
         });
+
+    /// <summary>
+    /// Arms a hand chain, drags its target, bakes, and proves the disarmed
+    /// pose still holds the solved placement — the state Poser had no way to
+    /// reach while IK was live-only.
+    /// </summary>
+    private async Task<(bool Passed, string Detail)> IkBake()
+    {
+        if (_testSkeleton == null)
+            return (false, "Controlled skeleton is unavailable.");
+        var skeleton = _testSkeleton;
+        var endpoint =
+            skeleton.GetBone("j_te_r") ?? skeleton.GetBone("j_te_l");
+        if (endpoint == null)
+            return (false, "No IK endpoint on the controlled skeleton.");
+        if (_bindings.GetBoneId(endpoint) is not { } endpointId)
+            return (false, "IK endpoint has no stable binding.");
+        var target = TransformTargetId.ForBone(endpointId);
+        if (Poser.Domain.Posing.IkChains.ForEndpoint(endpoint.BoneName)
+            is not { } definition)
+            return (false, $"{endpoint.BoneName} is not a supported endpoint.");
+
+        var setup = await _framework.RunOnFrameworkThread(() =>
+        {
+            _posing.ClearIkConfigurations(skeleton);
+            var reset = _cleanPose.Reset(skeleton.Actor, PoseRegion.All);
+            if (!reset.Success)
+                return (false, reset.Detail ?? "Pose reset failed.");
+            var armed = _ikPort.Set(
+                target,
+                Poser.Domain.Posing.IkChainConfig.DefaultsFor(
+                    definition.IsArm, enabled: true));
+            if (!armed.Success)
+                return (false, armed.Detail ?? "Live IK did not arm.");
+            return ApplyCleanTransform(
+                endpoint,
+                DomainOperation.Translate,
+                DomainSpace.Local,
+                TransformDelta.Identity with
+                {
+                    Translation = new Vector3(0.06f, -0.05f, 0.04f),
+                },
+                "Rewrite gate IK target");
+        });
+        if (!setup.Item1)
+            return (false, setup.Item2);
+
+        try
+        {
+            // Real frames must elapse: the chain is solved inside the native
+            // skeleton update, never by the command that moved the target.
+            await WaitFrames(4);
+            var captured = await _framework.RunOnFrameworkThread(() =>
+            {
+                var chain = _ikBake.AffectedChain(target);
+                return (
+                    Chain: chain,
+                    Solved: chain
+                        .Select(bone => (Bone: bone, Transform: bone.LastRawTransform))
+                        .ToArray(),
+                    Pose: _poseFiles.CreatePoseFile(new[] { skeleton }),
+                    CanBake: _ikBake.CanBake(target));
+            });
+            if (captured.Solved.Length <= 1)
+                return (false, "The armed chain resolved no bones to bake.");
+            if (!captured.CanBake)
+                return (false, "The armed chain reported nothing to bake.");
+            var firstJoint = captured.Chain[0];
+
+            var begun = await _framework.RunOnFrameworkThread(
+                () => _ikBake.Begin(target));
+            if (!begun.Success)
+                return (false, begun.Detail ?? "IK bake did not start.");
+            if (!await WaitFor(() => !_ikBake.IsPending, 5000))
+                return (false, "IK bake never left its settle phase.");
+            await WaitFrames(3);
+
+            var failures = await _framework.RunOnFrameworkThread(() =>
+            {
+                var problems = new List<string>();
+                if (_ikPort.Get(target)?.Enabled != false)
+                    problems.Add("The chain is still armed.");
+                foreach (var (bone, solved) in captured.Solved)
+                    if (!SameTransform(solved, bone.LastRawTransform))
+                        problems.Add(
+                            $"{bone.BoneName} left its solved placement.");
+                var exported = _poseFiles.CreatePoseFile(new[] { skeleton });
+                foreach (var (bone, _) in captured.Solved)
+                    if (!captured.Pose.Bones.TryGetValue(
+                            bone.BoneName, out var before) ||
+                        !exported.Bones.TryGetValue(
+                            bone.BoneName, out var after) ||
+                        !SameTransform(before, after))
+                        problems.Add(
+                            $"{bone.BoneName} exports differently after the bake.");
+                return problems;
+            });
+
+            var undo = await _framework.RunOnFrameworkThread(
+                () => _cleanTransforms.Undo());
+            if (!undo.Success)
+                failures.Add(undo.Detail ?? "Undo failed.");
+            await WaitFrames(3);
+            var undone = await _framework.RunOnFrameworkThread(() => (
+                Cleared: _posing.GetModification(firstJoint) == null,
+                Held: captured.Solved.All(entry =>
+                    SameTransform(entry.Transform, entry.Bone.LastRawTransform))));
+            if (!undone.Cleared)
+                failures.Add(
+                    $"One undo left a pose layer on {firstJoint.BoneName}.");
+            if (undone.Held)
+                failures.Add("Undo did not release the baked placement.");
+
+            var redo = await _framework.RunOnFrameworkThread(
+                () => _cleanTransforms.Redo());
+            if (!redo.Success)
+                failures.Add(redo.Detail ?? "Redo failed.");
+            await WaitFrames(3);
+            var redone = await _framework.RunOnFrameworkThread(() =>
+                captured.Solved.All(entry =>
+                    SameTransform(entry.Transform, entry.Bone.LastRawTransform)));
+            if (!redone)
+                failures.Add("Redo did not reapply the baked placement.");
+
+            WriteEvent("ik-bake", new
+            {
+                iteration = _iteration,
+                bone = endpoint.BoneName,
+                chain = captured.Chain.Select(bone => bone.BoneName).ToArray(),
+                failures,
+            });
+            return failures.Count == 0
+                ? (true,
+                    $"{captured.Solved.Length} chain bones held the solved placement through one history entry.")
+                : (false, string.Join("; ", failures));
+        }
+        finally
+        {
+            await _framework.RunOnFrameworkThread(() =>
+            {
+                _posing.ClearIkConfigurations(skeleton);
+                _cleanPose.Reset(skeleton.Actor, PoseRegion.All);
+            });
+        }
+    }
 
     private (bool Success, string Detail) ResetAndApplyBone(
         IBone bone,
@@ -1330,7 +1489,7 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
             new TaskCompletionSource<bool>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
         var deadline =
-            Environment.TickCount64 + timeoutMilliseconds;
+            System.Environment.TickCount64 + timeoutMilliseconds;
         void Tick(IFramework framework)
         {
             try
@@ -1340,7 +1499,7 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
                     _framework.Update -= Tick;
                     completion.TrySetResult(true);
                 }
-                else if (Environment.TickCount64 > deadline)
+                else if (System.Environment.TickCount64 > deadline)
                 {
                     _framework.Update -= Tick;
                     completion.TrySetResult(false);

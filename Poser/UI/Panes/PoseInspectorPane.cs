@@ -46,6 +46,7 @@ public class PoseInspectorPane
 {
     private readonly IBonePosingService _bonePosingService;
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
+    private readonly Game.Posing.IkBakeCapture _ikBake;
     private readonly CleanTransformFacade _cleanTransforms;
     private readonly CleanPoseFacade _cleanPose;
     private readonly IGazeService _gazeService;
@@ -190,9 +191,11 @@ public class PoseInspectorPane
         Game.Viewport.ViewportProjection viewport,
         ExpressionInspectorSection expressionSection,
         PoseFileInspectorSection poseFileSection,
-        Application.Posing.IIkConfigurationPort ikPort)
+        Application.Posing.IIkConfigurationPort ikPort,
+        Game.Posing.IkBakeCapture ikBake)
     {
         _ikPort = ikPort;
+        _ikBake = ikBake;
         _selection = scene.Selection;
         _scene = scene;
         _bindings = bindings;
@@ -1413,6 +1416,10 @@ public class PoseInspectorPane
     // scrub; the runtime keeps the normalized configuration.
     private Vector3? _ikAxisScratch;
 
+    // Why a bake was refused. Carries its own target so the note cannot
+    // survive onto another bone's IK section.
+    private (TransformTargetId Target, string Text)? _ikBakeNote;
+
     private void DrawIk(Crystarium.FormScope form)
     {
         if (_primary is not { Kind: SceneEntityKind.Bone, Bone: { } boneId })
@@ -1428,6 +1435,8 @@ public class PoseInspectorPane
 
         bool eligible = config != null;
         bool armed = config?.Enabled == true;
+        bool bakePending = _ikBake.IsPending;
+        bool canBake = armed && !bakePending && _ikBake.CanBake(ikTarget);
         form.SwitchActions(
             "Live IK",
             armed,
@@ -1436,19 +1445,37 @@ public class PoseInspectorPane
                 if (config != null)
                     Apply(config with { Enabled = next });
             },
-            actions => actions.Button(
-                "Reset defaults",
-                () =>
-                {
-                    _ikPort.ResetDefaults(ikTarget);
-                    config = _ikPort.Get(ikTarget);
-                },
-                disabled: !eligible,
-                help: "Restore this chain's IK defaults"),
+            actions =>
+            {
+                actions.Button(
+                    "Reset defaults",
+                    () =>
+                    {
+                        _ikPort.ResetDefaults(ikTarget);
+                        config = _ikPort.Get(ikTarget);
+                    },
+                    disabled: !eligible,
+                    help: "Restore this chain's default IK settings. Live IK stays as it is.");
+                actions.Button(
+                    "Bake",
+                    () =>
+                    {
+                        _ikBakeNote = _ikBake.Begin(ikTarget)
+                            is { Success: false } failed
+                            ? (ikTarget, $"Bake: {failed.Detail}")
+                            : null;
+                        config = _ikPort.Get(ikTarget);
+                    },
+                    disabled: !canBake,
+                    help: "Write the solved limb into the pose as one undoable "
+                        + "edit, then turn Live IK off");
+            },
             disabled: !eligible,
             help: eligible
-                ? "Solve this chain toward the gizmo target while you pose"
+                ? "Bend the whole limb to follow this bone as you move it"
                 : "This bone has no IK chain — select a hand or foot");
+        if (_ikBakeNote is { } note && note.Target.Equals(ikTarget))
+            form.Status(note.Text);
         if (config == null)
             return;
 
