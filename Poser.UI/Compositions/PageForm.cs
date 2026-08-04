@@ -666,8 +666,9 @@ public static partial class Crystarium
             var row = _page.BeginRow(label);
             var wells = new ColorWellScope(row, id);
             content(wells);
-            wells.Draw();
-            _page.EndRow(row, id, help);
+            int wellRows = wells.Draw();
+            _page.EndRow(row, id, help,
+                wellRows * ActiveTheme.Controls.FormRowHeight);
         }
 
         /// <summary>The colour-choice row: the palette pill at its natural
@@ -909,18 +910,39 @@ public static partial class Crystarium
             string? unavailableHelp = null, ControlStyle style = default) =>
             _items.Add(new(label, value, onChange, unavailableHelp, style));
 
-        internal void Draw()
+        /// <returns>The number of form rows the wells occupied.</returns>
+        internal int Draw()
         {
             if (_items.Count == 0)
-                return;
-            float trackWidth = _row.ControlWidth / _items.Count;
+                return 1;
+            // Wells wrap: every group shares the WIDEST caption's label band,
+            // so labels start flush and the wells sit in straight columns;
+            // that uniform group (plus one gap of breathing) sets the minimum
+            // track, and the row splits into as many equal tracks as fit —
+            // later rows reuse the same tracks.
+            float gap = ActiveTheme.Page.ActionGap * _row.Scale;
+            float widestLabel = 0f;
+            foreach (var entry in _items)
+                widestLabel = MathF.Max(
+                    widestLabel,
+                    MeasureText(
+                        entry.Label,
+                        ActiveTheme.Typography.CaptionSize,
+                        FontWeight.Regular).X);
+            float widestGroup = widestLabel + gap
+                + ActiveTheme.Controls.ColorWellSize * _row.Scale;
+            int columns = Math.Clamp(
+                (int)MathF.Floor(_row.ControlWidth / (widestGroup + gap)),
+                1,
+                _items.Count);
+            int rowCount = (_items.Count + columns - 1) / columns;
+            float trackWidth = _row.ControlWidth / columns;
             for (int i = 0; i < _items.Count; i++)
             {
                 var item = _items[i];
-                float labelWidth = MeasureText(
-                    item.Label,
-                    ActiveTheme.Typography.CaptionSize,
-                    FontWeight.Regular).X;
+                float rowY = _row.Origin.Y
+                    + (i / columns)
+                    * ActiveTheme.Controls.FormRowHeight * _row.Scale;
                 var controlStyle = InRegion(
                     item.Style,
                     trackWidth / _row.Scale,
@@ -932,15 +954,15 @@ public static partial class Crystarium
                     controlStyle.Width,
                     side,
                     trackWidth / _row.Scale);
-                float gap = ActiveTheme.Page.ActionGap * _row.Scale;
-                float groupWidth = labelWidth + gap + width * _row.Scale;
-                float trackX = _row.ControlOrigin.X + i * trackWidth;
+                float groupWidth = widestLabel + gap + width * _row.Scale;
+                float trackX = _row.ControlOrigin.X
+                    + (i % columns) * trackWidth;
                 float groupX = trackX + MathF.Max(
                     0f, (trackWidth - groupWidth) * 0.5f);
                 LabelInBand(
-                    new(groupX, _row.Origin.Y),
+                    new(groupX, rowY),
                     new(
-                        labelWidth,
+                        widestLabel,
                         ActiveTheme.Controls.FormRowHeight * _row.Scale),
                     item.Label,
                     new TextStyle
@@ -949,8 +971,8 @@ public static partial class Crystarium
                         Color = FormHintColor,
                     });
                 ImGui.SetCursorScreenPos(new(
-                    groupX + labelWidth + gap,
-                    _row.Origin.Y
+                    groupX + widestLabel + gap,
+                    rowY
                         + (ActiveTheme.Controls.FormRowHeight - side)
                         * 0.5f * _row.Scale));
                 Crystarium.ColorWell(
@@ -962,6 +984,7 @@ public static partial class Crystarium
                     disabled: item.Value == null,
                     help: item.UnavailableHelp);
             }
+            return rowCount;
         }
     }
 
