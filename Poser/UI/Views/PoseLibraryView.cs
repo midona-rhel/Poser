@@ -597,7 +597,7 @@ public static class PoseLibraryView
         float labelX = slotMin.X + height;
         // The count breathes off the pill's right edge; the label in turn
         // breathes off the count.
-        float labelRight = contentRight - theme.Spacing.Two * scale;
+        float labelRight = contentRight - theme.Spacing.Four * scale;
         if (row.CountText is { Length: > 0 } count)
         {
             var countStyle = new TextStyle
