@@ -4,12 +4,28 @@ using System.Collections.Generic;
 namespace Poser.Library;
 
 /// <summary>
-/// One pose file the scan found. Every string the browser reads per frame is
+/// What a scanned file IS. The browser shows one kind at a time, so this is the
+/// dimension its type tabs filter on.
+/// </summary>
+public enum PoseLibraryEntryKind : byte
+{
+    /// <summary>A <c>.pose</c> or Anamnesis <c>.cmp</c>.</summary>
+    Pose,
+
+    /// <summary>A Mare character file. Carries no pose metadata at all — no
+    /// author, no tags, no preview — so the scan never opens one.</summary>
+    Mcdf,
+}
+
+/// <summary>
+/// One library file the scan found. Every string the browser reads per frame is
 /// minted here, at scan time, because the grid touches all of them on each
 /// keystroke and may allocate nothing while doing it.
 /// </summary>
 public sealed class PoseLibraryEntry
 {
+    public required PoseLibraryEntryKind Kind { get; init; }
+
     /// <summary>Absolute path of the file.</summary>
     public required string FilePath { get; init; }
 
@@ -61,8 +77,20 @@ public sealed class PoseLibraryFolder
     /// <summary>0 for a source root, +1 per nesting level.</summary>
     public required int Depth { get; init; }
 
-    /// <summary>Recursive pose count at and below this folder.</summary>
+    /// <summary>Recursive file count at and below this folder, both kinds.
+    /// </summary>
     public int Count { get; set; }
+
+    /// <summary>Recursive <see cref="PoseLibraryEntryKind.Pose"/> count at and
+    /// below this folder.</summary>
+    public int PoseCount { get; set; }
+
+    /// <summary>Recursive <see cref="PoseLibraryEntryKind.Mcdf"/> count at and
+    /// below this folder. Both per-kind counts are recursive, so a folder with
+    /// none of a kind has no descendant of that kind either — which is what
+    /// lets a browser tab drop the whole subtree and keep a valid tree.
+    /// </summary>
+    public int McdfCount { get; set; }
 }
 
 /// <summary>

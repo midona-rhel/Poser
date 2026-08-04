@@ -52,9 +52,10 @@ public sealed class PoseLibraryTileRow
     public required string ThumbKey;
     public bool HasThumbnail;
     public bool Favorite;
-    /// <summary>An Anamnesis <c>.cmp</c>, which takes its own fallback glyph.
-    /// </summary>
-    public bool Legacy;
+    /// <summary>The glyph the square shows when no thumbnail resolves: the
+    /// armature for a pose, the plain file mark for an Anamnesis <c>.cmp</c>,
+    /// a person for a character file.</summary>
+    public TablerIcon Fallback = TablerIcon.Armature;
     public string? Author;
     /// <summary>The info strip's chips. Never null; empty is the norm.
     /// </summary>
@@ -64,8 +65,69 @@ public sealed class PoseLibraryTileRow
     public int Folder;
 }
 
+/// <summary>
+/// One collapsible section of the grid — a folder, or an auto-save snapshot.
+/// The binder mints the label and the count readout at refilter time and states
+/// the contiguous span of <see cref="PoseLibraryViewModel.Visible"/> the group
+/// covers; the grid never groups anything itself.
+/// </summary>
+public sealed class PoseLibraryGroupRow
+{
+    /// <summary>Stable across refilters — it is both the collapse key and the
+    /// header's ImGui identity.</summary>
+    public string Key = string.Empty;
+    public string Label = string.Empty;
+    /// <summary>The pre-minted count readout.</summary>
+    public string CountText = string.Empty;
+    public bool Collapsed;
+    /// <summary>First index into <see cref="PoseLibraryViewModel.Visible"/>.
+    /// </summary>
+    public int Start;
+    /// <summary>Visible tiles in the group; never 0 — an empty group is not
+    /// stated at all.</summary>
+    public int Count;
+}
+
+/// <summary>
+/// One display band of the grid: a group header, or one row of tiles. The band
+/// list is what makes the grid MIXED-height, and it is rebuilt only when the
+/// visible set, the column count or the tile pitch moves — never per frame.
+/// </summary>
+internal readonly struct GridBand
+{
+    internal GridBand(int group, int start, int count, float top, float height)
+    {
+        Group = group;
+        Start = start;
+        Count = count;
+        Top = top;
+        Height = height;
+    }
+
+    /// <summary>Index into <see cref="PoseLibraryViewModel.Groups"/> for a
+    /// header band; -1 for a tile row.</summary>
+    internal readonly int Group;
+
+    /// <summary>First index into <see cref="PoseLibraryViewModel.Visible"/>;
+    /// unused by a header.</summary>
+    internal readonly int Start;
+
+    internal readonly int Count;
+
+    /// <summary>Logical offset from the grid's content top.</summary>
+    internal readonly float Top;
+
+    internal readonly float Height;
+
+    internal float Bottom => Top + Height;
+}
+
 public sealed class PoseLibraryViewModel
 {
+    /// <summary>The library type the band's tabs show, indexed into
+    /// <see cref="PoseLibraryView.TypeLabels"/>.</summary>
+    public int SelectedType;
+
     /// <summary>The rail. [0] is "All poses", [1] is "Favorites", and the
     /// sources and their subfolders follow; two entries alone therefore means
     /// no source yielded anything.</summary>
@@ -79,6 +141,31 @@ public sealed class PoseLibraryViewModel
     /// Refilled in place on a change and read unchanged on every other frame.
     /// </summary>
     public List<int> Visible = [];
+
+    /// <summary>The grid's sections, in <see cref="Visible"/> order and
+    /// contiguous over it. Read only while <see cref="Grouped"/>.</summary>
+    public List<PoseLibraryGroupRow> Groups = [];
+
+    /// <summary>Whether the grid draws group headers at all. A rail folder with
+    /// no subfolders is ONE group, and a lone header states nothing the rail
+    /// has not already said — so that case draws flat.</summary>
+    public bool Grouped;
+
+    /// <summary>Bumped by the binder whenever <see cref="Visible"/>,
+    /// <see cref="Groups"/> or a collapse state changes. The grid's band list
+    /// is rebuilt off THIS, never off a per-frame comparison.</summary>
+    public int LayoutRevision;
+
+    /// <summary>Whether the folder rail is seated at all; the auto-save tab
+    /// carries its structure in the grid's own headers instead.</summary>
+    public bool ShowRail = true;
+
+    /// <summary>Whether the body states the no-sources configuration answer
+    /// instead of the grid.</summary>
+    public bool ShowNoSources;
+
+    /// <summary>The grid's empty caption, minted by the binder.</summary>
+    public string EmptyText = "No matches.";
 
     /// <summary>Index into <see cref="Tiles"/>, not into
     /// <see cref="Visible"/>; -1 is no selection.</summary>
@@ -114,6 +201,14 @@ public sealed class PoseLibraryViewModel
     public Action<string>? OnQuery;
     public Action<int>? OnSelectFolder;
 
+    /// <summary>A band tab; told the index into
+    /// <see cref="PoseLibraryView.TypeLabels"/>.</summary>
+    public Action<int>? OnSelectType;
+
+    /// <summary>A group header's disclosure; told the index into
+    /// <see cref="Groups"/>.</summary>
+    public Action<int>? OnToggleGroup;
+
     /// <summary>Told an index into <see cref="Tiles"/>: a single click.
     /// </summary>
     public Action<int>? OnSelect;
@@ -142,6 +237,23 @@ public sealed class PoseLibraryViewModel
     internal Action? ApplyClick;
     internal Action? SettingsClick;
     internal Action<float>? IconSizeChange;
+    internal Action<int>? TypeChange;
+
+    // The grid's band list and the clipper's slot map — the ShellSidebar cache,
+    // held on the model because the view itself is static. Rebuilt only when
+    // one of the three built-* stamps stops matching.
+    internal readonly List<GridBand> Bands = [];
+    internal readonly List<int> Slots = [];
+    internal float BandsHeight;
+    internal int SlotCount;
+    internal int BuiltRevision = -1;
+    internal int BuiltColumns = -1;
+    internal float BuiltPitch = -1f;
+
+    // The tab strip's natural width. Measuring resolves a per-tab width array,
+    // so it is taken once per scale rather than once per frame.
+    internal float TabsWidth;
+    internal float TabsScale = -1f;
 
     // The context menu's target and its frozen rows. The array is allocated
     // with the model and REWRITTEN at open, so even the cold right-click path
@@ -165,7 +277,13 @@ public sealed class PoseLibraryViewModel
 /// </summary>
 public static class PoseLibraryView
 {
+    /// <summary>The band's type tabs. Positional by contract: the binder's own
+    /// type enum is indexed by these.</summary>
+    public static readonly string[] TypeLabels =
+        ["Poses", "Auto-saves", "MCDF"];
+
     private const string SearchId = "##pose-library-search";
+    private const string TypeTabsId = "##pose-library-types";
     private const string RailId = "##pose-library-folders";
     private const string GridId = "##pose-library-grid";
     private const string RefreshId = "##pose-library-refresh";
@@ -222,6 +340,12 @@ public static class PoseLibraryView
     /// <summary>One level of rail nesting.</summary>
     private const float FolderIndent = 12f;
 
+    /// <summary>The group header's disclosure slot: a chevron square ahead of
+    /// the title, the same proportion the rail's glyph slot uses.</summary>
+    private const float HeaderChevronMargin = 2f;
+
+    private const float HeaderPillRadius = 5f;
+
     /// <summary>FilterPill's own left pad; the band's margin tops it up.
     /// </summary>
     private const float SearchInnerPad = 10f;
@@ -263,10 +387,11 @@ public static class PoseLibraryView
                 vm.OnApplyTile?.Invoke(vm.Selected);
         };
         vm.SettingsClick ??= () => vm.OnOpenSettings?.Invoke();
+        vm.TypeChange ??= next => vm.OnSelectType?.Invoke(next);
         vm.IconSizeChange ??= next => vm.OnIconSize?.Invoke(
             Math.Clamp(next, MinimumIconSize, MaximumIconSize));
 
-        var rects = Bands(origin, size, scale, theme);
+        var rects = Bands(vm, origin, size, scale, theme);
         DrawBand(vm, rects.Band, scale, theme);
         DrawRail(vm, rects.Rail, scale, theme);
         DrawBody(vm, rects.Body, scale, theme);
@@ -285,7 +410,11 @@ public static class PoseLibraryView
     /// measured from the handed rectangle.
     /// </summary>
     private static WindowFrameRects Bands(
-        Vector2 origin, Vector2 size, float scale, Theme theme)
+        PoseLibraryViewModel vm,
+        Vector2 origin,
+        Vector2 size,
+        float scale,
+        Theme theme)
     {
         var max = origin + size;
         float rule = MathF.Max(1f, scale);
@@ -294,8 +423,9 @@ public static class PoseLibraryView
             bandBottom, max.Y - theme.Floating.ModalBarHeight * scale);
         // The rail never takes more than half the pane: a narrow workspace
         // keeps a grid rather than becoming a folder list.
-        float railWidth = MathF.Min(
-            theme.Settings.NavigationWidth * scale, size.X * 0.5f);
+        float railWidth = vm.ShowRail
+            ? MathF.Min(theme.Settings.NavigationWidth * scale, size.X * 0.5f)
+            : 0f;
 
         var draw = ImGui.GetWindowDrawList();
         uint separator = Packed(theme.FormSeparator);
@@ -415,6 +545,9 @@ public static class PoseLibraryView
         // where the rail's row marks do.
         float left = band.Min.X
             + MathF.Max(0f, inset - SearchInnerPad * scale);
+        float tabs = DrawTypeTabs(vm, band, scale, theme);
+        if (tabs > 0f)
+            left = MathF.Max(left, tabs + gap - SearchInnerPad * scale);
         float width = (right - left) / scale;
         if (!(width > 0f))
             return;
@@ -425,6 +558,37 @@ public static class PoseLibraryView
             vm.OnQuery ?? IgnoreQuery,
             "Search poses…",
             new ControlStyle { Width = UiWidth.Fixed(width) });
+    }
+
+    /// <summary>
+    /// The library's type tabs, seated at the band's left inset. Returns their
+    /// right edge, or 0 when the band is too narrow to seat them — the search
+    /// field then keeps the whole band rather than being pushed off it.
+    /// </summary>
+    private static float DrawTypeTabs(
+        PoseLibraryViewModel vm, WindowFrameRect band, float scale, Theme theme)
+    {
+        if (vm.TabsScale != scale)
+        {
+            vm.TabsScale = scale;
+            vm.TabsWidth = Crystarium.MeasureSegmentedControl(TypeLabels).X;
+        }
+
+        float height = theme.Controls.NavigationHeight * scale;
+        var min = new Vector2(
+            band.Min.X + theme.Page.Inset * scale,
+            band.Min.Y + (band.Size.Y - height) * 0.5f);
+        // Half the band is the floor: below that the tabs would leave no field.
+        if (vm.TabsWidth > band.Size.X * 0.5f)
+            return 0f;
+
+        ImGui.SetCursorScreenPos(min);
+        Crystarium.SegmentedControl(
+            TypeTabsId,
+            TypeLabels,
+            vm.SelectedType,
+            vm.TypeChange!);
+        return min.X + vm.TabsWidth;
     }
 
     /// <summary>The removable tag chip: the whole pill is the clear target,
@@ -638,10 +802,10 @@ public static class PoseLibraryView
         if (!(body.Size.X > 0f) || !(body.Size.Y > 0f))
             return;
 
-        // Two sources always exist ("All poses", "Favorites"): only those two
-        // means nothing was ever scanned, which is a CONFIGURATION answer, not
-        // an empty filter.
-        if (vm.Folders.Count <= 2)
+        // No source ever yielded a folder, which is a CONFIGURATION answer
+        // rather than an empty filter. The binder decides it: the auto-save tab
+        // browses no configured source at all.
+        if (vm.ShowNoSources)
         {
             DrawNoSources(vm, body, scale, theme);
             return;
@@ -701,6 +865,13 @@ public static class PoseLibraryView
             id: SettingsId);
     }
 
+    /// <summary>
+    /// The grid, drawn from the band list. Headers make the content MIXED
+    /// height, which the clipper cannot step through directly — so it steps a
+    /// uniform grid of tile-row slots and the slot map turns its reported band
+    /// into a band range, exactly as <see cref="ShellSidebar"/> does for its
+    /// tree.
+    /// </summary>
     private static void DrawGrid(
         PoseLibraryViewModel vm, Crystarium.ScrollRegionScope region)
     {
@@ -716,6 +887,7 @@ public static class PoseLibraryView
         // The last column carries no trailing gap, so it is added back before
         // the division rather than subtracted from every pitch.
         int columns = Math.Max(1, (int)MathF.Floor((usable + gap) / pitchX));
+        BuildBands(vm, columns, pitchY, theme);
 
         var spacing = ImGui.GetStyle().ItemSpacing;
         ImGui.PushStyleVar(
@@ -726,42 +898,40 @@ public static class PoseLibraryView
             ImGui.Dummy(new Vector2(0f, pad));
             if (vm.Visible.Count == 0)
             {
-                EmptyLine(region.ContentWidth, scale, theme);
+                EmptyLine(vm.EmptyText, region.ContentWidth, scale, theme);
             }
             else
             {
-                int rows = (vm.Visible.Count + columns - 1) / columns;
+                var origin = ImGui.GetCursorScreenPos();
+                // A header's box runs from the first tile column to under the
+                // scroll bar; its own content stops a gutter early.
+                float width = MathF.Max(1f, usable + inset) * scale;
                 var clipper = new ImGuiListClipper();
-                clipper.Begin(rows, pitchY * scale);
+                clipper.Begin(vm.SlotCount, pitchY * scale);
                 while (clipper.Step())
                 {
-                    for (int r = clipper.DisplayStart;
-                         r < clipper.DisplayEnd;
-                         r++)
+                    int first = vm.Slots[
+                        Math.Clamp(clipper.DisplayStart, 0, vm.SlotCount - 1)];
+                    float bottom = clipper.DisplayEnd >= vm.SlotCount
+                        ? vm.BandsHeight
+                        : clipper.DisplayEnd * pitchY;
+                    for (int i = first; i < vm.Bands.Count; i++)
                     {
-                        var rowMin = ImGui.GetCursorScreenPos();
-                        for (int c = 0; c < columns; c++)
-                        {
-                            int slot = r * columns + c;
-                            if (slot >= vm.Visible.Count)
-                                break;
-                            Tile(
-                                vm,
-                                vm.Visible[slot],
-                                new Vector2(
-                                    rowMin.X + (inset + c * pitchX) * scale,
-                                    rowMin.Y),
-                                icon,
-                                scale,
-                                theme);
-                        }
-                        // Every tile moved the cursor; the row's own pitch is
-                        // what the clipper measured, so it is restored here.
-                        ImGui.SetCursorScreenPos(new Vector2(
-                            rowMin.X, rowMin.Y + pitchY * scale));
+                        var band = vm.Bands[i];
+                        if (band.Top >= bottom)
+                            break;
+                        PaintBand(
+                            vm, in band, origin, width, inset, pitchX, icon,
+                            scale, theme);
                     }
                 }
                 clipper.End();
+
+                // The clipper's seek stops at the last whole slot; this is what
+                // makes the scroll extent the real content height.
+                ImGui.SetCursorScreenPos(
+                    origin + new Vector2(0f, vm.BandsHeight * scale));
+                ImGui.Dummy(Vector2.Zero);
             }
             // Trailing breathing is INVISIBLE to ImGui's scroll extent — no
             // item covers it — so max-scroll would pin the last row to the
@@ -772,6 +942,186 @@ public static class PoseLibraryView
         {
             ImGui.PopStyleVar();
         }
+    }
+
+    private static void PaintBand(
+        PoseLibraryViewModel vm,
+        in GridBand band,
+        Vector2 origin,
+        float width,
+        float inset,
+        float pitchX,
+        float icon,
+        float scale,
+        Theme theme)
+    {
+        var at = new Vector2(origin.X, origin.Y + band.Top * scale);
+        if (band.Group >= 0)
+        {
+            GroupHeader(
+                vm, band.Group,
+                new Vector2(at.X + inset * scale, at.Y),
+                width, inset, scale, theme);
+            return;
+        }
+
+        for (int c = 0; c < band.Count; c++)
+            Tile(
+                vm,
+                vm.Visible[band.Start + c],
+                new Vector2(at.X + (inset + c * pitchX) * scale, at.Y),
+                icon,
+                scale,
+                theme);
+    }
+
+    /// <summary>
+    /// One collapsible group header: the section language the shell sidebar
+    /// uses, scaled to the grid. The box bleeds under the scroll bar while the
+    /// pill and its content stop a gutter early, and the count breathes off
+    /// that edge — the rail's rule, applied here.
+    /// </summary>
+    private static void GroupHeader(
+        PoseLibraryViewModel vm,
+        int index,
+        Vector2 min,
+        float width,
+        float trailingInset,
+        float scale,
+        Theme theme)
+    {
+        var group = vm.Groups[index];
+        float height = theme.Floating.CloseActionSize * scale;
+        ImGui.SetCursorScreenPos(min);
+        var hit = Interactive.Reserve(
+            group.Key, new Vector2(width, height), disabled: false);
+        float contentRight = hit.ScreenMax.X - trailingInset * scale;
+
+        if (hit.Hovered)
+            ImGui.GetWindowDrawList().AddRectFilled(
+                hit.ScreenMin,
+                new Vector2(contentRight, hit.ScreenMax.Y),
+                Packed(theme.Chrome.SidebarHover),
+                HeaderPillRadius * scale);
+
+        float glyph = theme.Controls.SmallIconSize * scale;
+        var slotMin = new Vector2(
+            hit.ScreenMin.X + HeaderChevronMargin * scale, hit.ScreenMin.Y);
+        var glyphMin = slotMin + new Vector2((height - glyph) * 0.5f);
+        Crystarium.IconIn(
+            glyphMin,
+            glyphMin + new Vector2(glyph),
+            group.Collapsed ? TablerIcon.ChevronRight : TablerIcon.ChevronDown,
+            theme.TextMuted);
+
+        float labelX = slotMin.X + height;
+        float labelRight = contentRight - theme.Spacing.Four * scale;
+        var countStyle = new TextStyle
+        {
+            Size = theme.Typography.CaptionSize,
+            Family = FontFamily.Mono,
+            Color = theme.FormLabel,
+        };
+        float countWidth = Crystarium.MeasureText(group.CountText, countStyle).X;
+        labelRight -= countWidth;
+        Crystarium.TextInBand(
+            new Vector2(labelRight, hit.ScreenMin.Y),
+            new Vector2(countWidth, height),
+            group.CountText,
+            countStyle,
+            TextAlign.Start,
+            besideIcon: true);
+        labelRight -= theme.Spacing.Three * scale;
+
+        Fitted(
+            new Vector2(labelX, hit.ScreenMin.Y),
+            new Vector2(labelRight - labelX, height),
+            group.Label,
+            new TextStyle
+            {
+                Size = theme.Typography.LabelSize,
+                Weight = FontWeight.Medium,
+                Color = theme.TextMuted,
+            });
+
+        if (hit.Activated)
+            vm.OnToggleGroup?.Invoke(index);
+    }
+
+    /// <summary>
+    /// The band list and the clipper's slot map. Rebuilt ONLY when the binder
+    /// says the visible set moved, or when the grid's own geometry did — a warm
+    /// frame reads both lists unchanged.
+    /// </summary>
+    private static void BuildBands(
+        PoseLibraryViewModel vm, int columns, float pitchY, Theme theme)
+    {
+        if (vm.BuiltRevision == vm.LayoutRevision
+            && vm.BuiltColumns == columns
+            && vm.BuiltPitch == pitchY)
+            return;
+        vm.BuiltRevision = vm.LayoutRevision;
+        vm.BuiltColumns = columns;
+        vm.BuiltPitch = pitchY;
+
+        var bands = vm.Bands;
+        bands.Clear();
+        float y = 0f;
+        if (!vm.Grouped)
+        {
+            y = TileBands(bands, 0, vm.Visible.Count, columns, pitchY, y);
+        }
+        else
+        {
+            float header = theme.Floating.CloseActionSize;
+            float lead = theme.Spacing.Four;
+            for (int g = 0; g < vm.Groups.Count; g++)
+            {
+                var group = vm.Groups[g];
+                if (group.Count <= 0)
+                    continue;
+                if (bands.Count > 0)
+                    y += lead;
+                bands.Add(new GridBand(g, 0, 0, y, header));
+                y += header;
+                if (group.Collapsed)
+                    continue;
+                y = TileBands(
+                    bands, group.Start, group.Count, columns, pitchY, y);
+            }
+        }
+
+        vm.BandsHeight = y;
+        // The clipper's grid is the TILE row pitch, and the tail is folded into
+        // the last slot, so its seek can never overshoot the content height.
+        vm.SlotCount = Math.Max(1, (int)(y / pitchY));
+        var slots = vm.Slots;
+        slots.Clear();
+        int at = 0;
+        for (int slot = 0; slot < vm.SlotCount; slot++)
+        {
+            float top = slot * pitchY;
+            while (at + 1 < bands.Count && bands[at].Bottom <= top)
+                at++;
+            slots.Add(at);
+        }
+    }
+
+    private static float TileBands(
+        List<GridBand> bands,
+        int start,
+        int count,
+        int columns,
+        float pitchY,
+        float y)
+    {
+        for (int i = 0; i < count; i += columns)
+        {
+            bands.Add(new GridBand(
+                -1, start + i, Math.Min(columns, count - i), y, pitchY));
+            y += pitchY;
+        }
+        return y;
     }
 
     /// <summary>
@@ -948,10 +1298,7 @@ public static class PoseLibraryView
         var glyphMin = theme.Optical.Snap(
             boxMin + (box - new Vector2(side)) * 0.5f);
         Crystarium.IconIn(
-            glyphMin,
-            glyphMin + new Vector2(side),
-            tile.Legacy ? TablerIcon.File : TablerIcon.Armature,
-            theme.TextDim);
+            glyphMin, glyphMin + new Vector2(side), tile.Fallback, theme.TextDim);
     }
 
     /// <summary>The tile's two caption lines: the name, then the modified
@@ -1004,14 +1351,15 @@ public static class PoseLibraryView
 
     /// <summary>The grid's empty state: one caption on a row band, centred
     /// over the columns that would have been there.</summary>
-    private static void EmptyLine(float contentWidth, float scale, Theme theme)
+    private static void EmptyLine(
+        string text, float contentWidth, float scale, Theme theme)
     {
         var min = ImGui.GetCursorScreenPos();
         float height = theme.Controls.ListRowHeight * scale;
         Crystarium.TextInBand(
             min,
             new Vector2(contentWidth * scale, height),
-            "No matches.",
+            text,
             new TextStyle
             {
                 Size = theme.Typography.CaptionSize,

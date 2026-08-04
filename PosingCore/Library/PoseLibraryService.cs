@@ -15,6 +15,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
 {
     private const string PoseExtension = ".pose";
     private const string LegacyExtension = ".cmp";
+    private const string McdfExtension = ".mcdf";
 
     private static readonly PoseLibrarySnapshot EmptySnapshot = new()
     {
@@ -185,12 +186,14 @@ public sealed class PoseLibraryService : IPoseLibraryService
         public List<string> Files { get; } = [];
         public List<ScanNode> Children { get; } = [];
         public int Count { get; set; }
+        public int PoseCount { get; set; }
+        public int McdfCount { get; set; }
     }
 
     /// <summary>
     /// Builds one directory subtree. Returns null for a subfolder holding no
-    /// pose at or below it; a source root is always kept so a configured but
-    /// empty root still lists.
+    /// library file at or below it; a source root is always kept so a
+    /// configured but empty root still lists.
     /// </summary>
     private static ScanNode? BuildNode(
         int sourceIndex,
@@ -212,7 +215,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
         {
             foreach (var file in Directory.EnumerateFiles(directory))
             {
-                if (IsPoseFile(file))
+                if (IsLibraryFile(file))
                     node.Files.Add(file);
             }
         }
@@ -245,8 +248,20 @@ public sealed class PoseLibraryService : IPoseLibraryService
         }
 
         node.Count = node.Files.Count;
+        foreach (var file in node.Files)
+        {
+            if (KindOf(file) == PoseLibraryEntryKind.Mcdf)
+                node.McdfCount++;
+            else
+                node.PoseCount++;
+        }
+
         foreach (var child in node.Children)
+        {
             node.Count += child.Count;
+            node.PoseCount += child.PoseCount;
+            node.McdfCount += child.McdfCount;
+        }
 
         return !isRoot && node.Count == 0 ? null : node;
     }
@@ -263,7 +278,9 @@ public sealed class PoseLibraryService : IPoseLibraryService
             Label = node.Label,
             LabelLower = node.Label.ToLowerInvariant(),
             Depth = node.Depth,
-            Count = node.Count
+            Count = node.Count,
+            PoseCount = node.PoseCount,
+            McdfCount = node.McdfCount
         });
 
         foreach (var file in node.Files)
@@ -287,18 +304,23 @@ public sealed class PoseLibraryService : IPoseLibraryService
             modified = default;
         }
 
-        var isLegacy = Path.GetExtension(filePath).Equals(LegacyExtension, StringComparison.OrdinalIgnoreCase);
+        var kind = KindOf(filePath);
+        var isLegacy = kind == PoseLibraryEntryKind.Pose
+            && Path.GetExtension(filePath).Equals(LegacyExtension, StringComparison.OrdinalIgnoreCase);
 
         string? author = null;
         IReadOnlyList<string> tags = [];
         IReadOnlyList<string> tagsLower = [];
         var hasThumbnail = false;
 
-        if (!isLegacy)
+        // A .cmp has no header and an .mcdf is a compressed archive: opening
+        // either would cost a read that can never answer.
+        if (kind == PoseLibraryEntryKind.Pose && !isLegacy)
             ReadPoseMetadata(filePath, out author, out tags, out tagsLower, out hasThumbnail);
 
         return new PoseLibraryEntry
         {
+            Kind = kind,
             FilePath = filePath,
             Name = name,
             NameLower = name.ToLowerInvariant(),
@@ -379,12 +401,18 @@ public sealed class PoseLibraryService : IPoseLibraryService
         }
     }
 
-    private static bool IsPoseFile(string path)
+    private static bool IsLibraryFile(string path)
     {
         var extension = Path.GetExtension(path);
         return extension.Equals(PoseExtension, StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(LegacyExtension, StringComparison.OrdinalIgnoreCase);
+            || extension.Equals(LegacyExtension, StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(McdfExtension, StringComparison.OrdinalIgnoreCase);
     }
+
+    private static PoseLibraryEntryKind KindOf(string path) =>
+        Path.GetExtension(path).Equals(McdfExtension, StringComparison.OrdinalIgnoreCase)
+            ? PoseLibraryEntryKind.Mcdf
+            : PoseLibraryEntryKind.Pose;
 
     private static bool SafeDirectoryExists(string path)
     {
