@@ -205,6 +205,12 @@ public static class AppShellView
     private static string _redoHelp = string.Empty;
     private static string _redoEmptyHelp = string.Empty;
 
+    /// <summary>The burger's press, reported by a hoisted callback that closes
+    /// over nothing and is consumed inside the same seat.</summary>
+    private static bool _burgerPressed;
+    private static readonly Action BurgerPressed =
+        static () => _burgerPressed = true;
+
     private static Vector4 Glass =>
         Crystarium.FloatingSurface.FillColor;
     private static Vector4 BorderPrimary =>
@@ -401,13 +407,19 @@ public static class AppShellView
         float x = right - count * side * s - (count - 1) * theme.Spacing.Two * s;
 
         // The command menu hangs off its own button, not off the pointer, so
-        // the seat hands its bottom-left corner to the opener.
-        var burgerBottomLeft = new Vector2(x, y + side * s);
+        // the seat hands its bottom-left corner to the opener. The click
+        // callback captures NOTHING — a warm titlebar frame must not mint a
+        // closure — so the press is reported through a static flag the seat
+        // reads back one line later, while the anchor is still a local.
         IconAt(
-            new Vector2(x, y), TablerIcon.Menu2, side,
-            () => vm.OnBurger?.Invoke(burgerBottomLeft),
+            new Vector2(x, y), TablerIcon.Menu2, side, BurgerPressed,
             "##shell-burger",
-            help: "Menu");
+            help: "Actions");
+        if (_burgerPressed)
+        {
+            _burgerPressed = false;
+            vm.OnBurger?.Invoke(new Vector2(x, y + side * s));
+        }
         x += step;
         IconAt(
             new Vector2(x, y), TablerIcon.ArrowBackUp, side, vm.OnUndo,

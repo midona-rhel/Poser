@@ -55,8 +55,7 @@ public sealed class UIManager : IUIManager
 
         _windows.Main.OnSettingsRequested += ToggleSettingsWindow;
         _windows.Main.OnSpawnBrowserRequested += ToggleSpawnBrowserWindow;
-        _windows.PoseLibrary.OnSettingsRequested += ToggleSettingsWindow;
-        _poseFileSection.OnLibraryRequested += OpenPoseLibraryWindow;
+        _poseFileSection.OnLibraryRequested += OpenPoseLibrary;
         _configService.OnConfigurationChanged += ApplyConfiguredTheme;
 
         _pluginInterface.UiBuilder.Draw += DrawUI;
@@ -200,8 +199,13 @@ public sealed class UIManager : IUIManager
 
     // Open, not toggle: "Library…" and a redirected "Import…" are openers, so
     // a second press must not close a library the user is already looking at.
-    private void OpenPoseLibraryWindow()
-        => _windows.PoseLibrary.IsOpen = true;
+    // The library is workspace content, so the shell has to be showing for it
+    // to be reachable at all.
+    private void OpenPoseLibrary()
+    {
+        _windows.Main.IsOpen = true;
+        _windows.Main.ShowLibrary();
+    }
 
     private void ApplyConfiguredTheme() =>
         ThemeSelection.Apply(
@@ -214,8 +218,7 @@ public sealed class UIManager : IUIManager
 
         _windows.Main.OnSettingsRequested -= ToggleSettingsWindow;
         _windows.Main.OnSpawnBrowserRequested -= ToggleSpawnBrowserWindow;
-        _windows.PoseLibrary.OnSettingsRequested -= ToggleSettingsWindow;
-        _poseFileSection.OnLibraryRequested -= OpenPoseLibraryWindow;
+        _poseFileSection.OnLibraryRequested -= OpenPoseLibrary;
         _configService.OnConfigurationChanged -= ApplyConfiguredTheme;
 
         _pluginInterface.UiBuilder.Draw -= DrawUI;

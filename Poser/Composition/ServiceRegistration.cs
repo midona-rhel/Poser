@@ -179,6 +179,7 @@ internal static class ServiceRegistration
         services.AddSingleton<PoseRailPane>();
         services.AddSingleton<AnimationPane>();
         services.AddSingleton<AppearancePane>();
+        services.AddSingleton<PoseLibraryPane>();
         services.AddSingleton<GraphicalBonePane>();
         services.AddSingleton<SkeletonOverlayPresentation>();
         services.AddSingleton<PoseThumbnailCache>();
@@ -188,7 +189,6 @@ internal static class ServiceRegistration
         services.AddSingleton<MainWindow>();
         services.AddSingleton<SettingsWindow>();
         services.AddSingleton<SpawnBrowserWindow>();
-        services.AddSingleton<PoseLibraryWindow>();
 
         services.AddSingleton<UiWindowSet>();
         services.AddSingleton<IUIManager, UIManager>();

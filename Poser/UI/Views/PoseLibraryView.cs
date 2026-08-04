@@ -130,7 +130,6 @@ public sealed class PoseLibraryViewModel
 
     public Action<float>? OnIconSize;
     public Action? OnRefresh;
-    public Action? OnClose;
     public Action? OnOpenSettings;
 
     // Hoisted once per model: the frame's chrome must not mint a closure, and
@@ -141,6 +140,7 @@ public sealed class PoseLibraryViewModel
     internal Action<Crystarium.ScrollRegionScope>? Grid;
     internal Action? SpawnClick;
     internal Action? ApplyClick;
+    internal Action? SettingsClick;
     internal Action<float>? IconSizeChange;
 
     // The context menu's target and its frozen rows. The array is allocated
@@ -152,9 +152,10 @@ public sealed class PoseLibraryViewModel
 }
 
 /// <summary>
-/// The pose library: the shared <see cref="Crystarium.WindowFrame"/> is the
-/// whole chassis — chrome, title bar, the band under it, the rail's raised
-/// slab and the footer — and this view fills the band, the rail and the body.
+/// The pose library, drawn INSIDE the shell's content rect: there is no window
+/// and no chassis to inherit, so the view lays its own four bands out in the
+/// rectangle it is handed — the search band, the folder rail, the tile grid
+/// with its info strip, and the action row.
 ///
 /// <para>The rail is the SOURCE tree, which is small and never clipped; the
 /// body is the tile grid, which is a catalog and always is. The body's grid
@@ -164,9 +165,6 @@ public sealed class PoseLibraryViewModel
 /// </summary>
 public static class PoseLibraryView
 {
-    public const float DesignWidth = 760f;
-    public const float DesignHeight = 560f;
-
     private const string SearchId = "##pose-library-search";
     private const string RailId = "##pose-library-folders";
     private const string GridId = "##pose-library-grid";
@@ -175,6 +173,7 @@ public static class PoseLibraryView
     private const string SliderId = "##pose-library-icon-size";
     private const string SettingsId = "##pose-library-open-settings";
     private const string MenuId = "##pose-library-tile-menu";
+    private const string ActionRowId = "pose-library-actions";
 
     // Per-tile ids. They are constants because every tile pushes its own path
     // onto the ID stack first, so the two reserves are unique per tile without
@@ -229,12 +228,18 @@ public static class PoseLibraryView
 
     private static readonly Action<string> IgnoreQuery = static _ => { };
 
-    public static void Draw(PoseLibraryViewModel vm, Vector2 origin)
+    /// <summary>
+    /// Fills the rectangle the shell hands the pane. The geometry is DERIVED
+    /// from that rectangle and nothing else — no window size, no design size —
+    /// so the library reflows with the workspace like every other pane.
+    /// </summary>
+    public static void Draw(PoseLibraryViewModel vm, Vector2 origin, Vector2 size)
     {
         ArgumentNullException.ThrowIfNull(vm);
+        if (!(size.X > 0f) || !(size.Y > 0f))
+            return;
         var theme = Crystarium.ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
-        var size = new Vector2(DesignWidth, DesignHeight) * scale;
 
         // Enter is sampled BEFORE the body opens its scroll child, so the gate
         // is the host window's focus rather than whichever child owns the
@@ -257,27 +262,15 @@ public static class PoseLibraryView
             if (vm.Selected >= 0)
                 vm.OnApplyTile?.Invoke(vm.Selected);
         };
+        vm.SettingsClick ??= () => vm.OnOpenSettings?.Invoke();
         vm.IconSizeChange ??= next => vm.OnIconSize?.Invoke(
             Math.Clamp(next, MinimumIconSize, MaximumIconSize));
 
-        var rects = Crystarium.WindowFrame(
-            "pose-library",
-            origin,
-            size,
-            new WindowFrameProps
-            {
-                Title = "Pose library",
-                OnClose = vm.OnClose,
-                CloseHelp = "Close",
-                BandHeight = BandHeight,
-                RailWidth = theme.Settings.NavigationWidth,
-                FooterLeft = vm.Footer,
-                FooterRight = vm.FooterActions,
-            });
-
+        var rects = Bands(origin, size, scale, theme);
         DrawBand(vm, rects.Band, scale, theme);
         DrawRail(vm, rects.Rail, scale, theme);
         DrawBody(vm, rects.Body, scale, theme);
+        DrawActionRow(vm, rects.Footer, scale, theme);
         DrawSizeSlider(vm, rects.Footer, scale, theme);
         DrawMenu(vm);
 
@@ -286,10 +279,90 @@ public static class PoseLibraryView
             vm.OnApplyTile?.Invoke(vm.Selected);
     }
 
+    /// <summary>
+    /// The pane's four bands, and the ink that separates them. This is pane
+    /// STRUCTURE, not window chrome: two rules and the rail's raised slab, all
+    /// measured from the handed rectangle.
+    /// </summary>
+    private static WindowFrameRects Bands(
+        Vector2 origin, Vector2 size, float scale, Theme theme)
+    {
+        var max = origin + size;
+        float rule = MathF.Max(1f, scale);
+        float bandBottom = MathF.Min(max.Y, origin.Y + BandHeight * scale);
+        float rowTop = MathF.Max(
+            bandBottom, max.Y - theme.Floating.ModalBarHeight * scale);
+        // The rail never takes more than half the pane: a narrow workspace
+        // keeps a grid rather than becoming a folder list.
+        float railWidth = MathF.Min(
+            theme.Settings.NavigationWidth * scale, size.X * 0.5f);
+
+        var draw = ImGui.GetWindowDrawList();
+        uint separator = Packed(theme.FormSeparator);
+        draw.AddRectFilled(
+            new Vector2(origin.X, bandBottom - rule),
+            new Vector2(max.X, bandBottom),
+            separator);
+        draw.AddRectFilled(
+            new Vector2(origin.X, rowTop),
+            new Vector2(max.X, rowTop + rule),
+            separator);
+
+        var rail = new WindowFrameRect(
+            new Vector2(origin.X, bandBottom),
+            new Vector2(origin.X + railWidth - rule, rowTop));
+        if (railWidth > rule)
+        {
+            draw.AddRectFilled(
+                rail.Min, rail.Max, Packed(theme.SurfaceRaised));
+            draw.AddRectFilled(
+                new Vector2(rail.Max.X, bandBottom),
+                new Vector2(rail.Max.X + rule, rowTop),
+                separator);
+        }
+
+        return new WindowFrameRects
+        {
+            Band = new WindowFrameRect(
+                origin, new Vector2(max.X, bandBottom - rule)),
+            Rail = rail,
+            Body = new WindowFrameRect(
+                new Vector2(origin.X + railWidth, bandBottom),
+                new Vector2(max.X, rowTop)),
+            Footer = new WindowFrameRect(
+                new Vector2(origin.X, rowTop + rule), max),
+        };
+    }
+
+    /// <summary>The action row: the status caption on the left (the size
+    /// scrubber is seated beside it separately) and the three commands on the
+    /// right.</summary>
+    private static void DrawActionRow(
+        PoseLibraryViewModel vm, WindowFrameRect footer, float scale, Theme theme)
+    {
+        if (!(footer.Size.X > 0f) || !(footer.Size.Y > 0f))
+            return;
+        float inset = theme.Page.Inset * scale;
+        Crystarium.ActionBar(
+            ActionRowId,
+            new Vector2(footer.Min.X + inset, footer.Min.Y),
+            new Vector2(
+                MathF.Max(0f, footer.Size.X - inset * 2f), footer.Size.Y),
+            vm.Footer!,
+            vm.FooterActions,
+            ActionBarSeparator.None);
+    }
+
     private static void Actions(
         PoseLibraryViewModel vm, Crystarium.ActionBarScope scope)
     {
         bool none = vm.Selected < 0 || vm.Selected >= vm.Tiles.Count;
+        // Configuring sources belongs where the library is, not only in the
+        // empty state a user with sources never sees.
+        scope.Button(
+            "Add source…",
+            vm.SettingsClick!,
+            style: ControlStyle.Comfortable);
         scope.Button(
             "Spawn as new",
             vm.SpawnClick!,
@@ -305,8 +378,8 @@ public static class PoseLibraryView
 
     // ---- Band -------------------------------------------------------
 
-    /// <summary>The band's content: the frame owns the band and its rule, this
-    /// owns the field, the rescan affordance and the tag chip seated in it.
+    /// <summary>The band's content: <see cref="Bands"/> owns the band and its
+    /// rule, this owns the field, the rescan affordance and the tag chip.
     /// The right cluster is measured first, so the search takes exactly what
     /// is left.</summary>
     private static void DrawBand(
@@ -314,7 +387,9 @@ public static class PoseLibraryView
     {
         if (!(band.Size.X > 0f))
             return;
-        float inset = theme.Floating.HeaderInset * scale;
+        // The pane's own inset, which is also where the rail's row marks
+        // stand: the shell already spent its content inset outside this rect.
+        float inset = theme.Page.Inset * scale;
         float gap = theme.Page.ActionGap * scale;
         float action = theme.Floating.CloseActionSize;
         float actionPx = action * scale;
@@ -411,8 +486,8 @@ public static class PoseLibraryView
 
     // ---- Rail -------------------------------------------------------
 
-    /// <summary>The rail's content: the frame owns the slab and its rule, this
-    /// owns the inset and the rows. Sources are a handful of folders, never a
+    /// <summary>The rail's content: <see cref="Bands"/> owns the slab and its
+    /// rule, this owns the inset and the rows. Sources are a handful of folders, never a
     /// catalog, so the rows submit unclipped — the ONE place in this view that
     /// is true.</summary>
     private static void DrawRail(
@@ -1017,7 +1092,7 @@ public static class PoseLibraryView
             ? 0f
             : Crystarium.MeasureText(vm.Status, labelStyle).X + gap;
         float height = theme.Controls.SliderHeight * scale;
-        float x = footer.Min.X + theme.Floating.HeaderInset * scale + status;
+        float x = footer.Min.X + theme.Page.Inset * scale + status;
         if (x + SliderWidth * scale > footer.Max.X)
             return;
 

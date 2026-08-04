@@ -51,6 +51,15 @@ public class MainWindow : Window
     private ActorId? _ctxActorId;
     private bool _shellMenuOpenRequested;
     private Vector2 _shellMenuAnchor;
+    /// <summary>The shell command menu's rows, retained: a warm frame only
+    /// re-reads the gate below, and the rows are rewritten in place when — and
+    /// only when — that gate flips. ContextMenuItem is a struct, so the menu
+    /// costs one allocation for the lifetime of the window.</summary>
+    private readonly ContextMenuItem[] _shellMenuItems =
+        new ContextMenuItem[(int)ShellCommand.OpenSettings + 1];
+    /// <summary>Whether the rows were last built with a posable target.</summary>
+    private bool _shellMenuPoseTarget;
+    private bool _shellMenuRowsBuilt;
     private bool _ctxOpenRequested;
     private BoneId? _ctxBoneId;
     private IReadOnlyList<BoneId>? _ctxBoneOverlayBones;
@@ -1033,49 +1042,105 @@ public class MainWindow : Window
         _pendingSelectSpawned = null;
     }
 
+    /// <summary>
+    /// The shell's GROWABLE COMMAND LIST. Almost every action Poser offers is
+    /// meant to land here eventually, so that a collapsed bottom-bar-only
+    /// layout can still reach everything the chrome stops showing. One command
+    /// is therefore ONE member here, ONE row in <see cref="BuildShellMenu"/>
+    /// and ONE case in <see cref="InvokeShellCommand"/> — all three keyed by
+    /// this member, never by a loose index. A separator is a member with a row
+    /// and no case.
+    /// </summary>
+    private enum ShellCommand
+    {
+        ShowLibrary,
+        SpawnActor,
+        ImportPose,
+        ExportPose,
+        AutoSaves,
+        SettingsSeparator,
+        OpenSettings,
+    }
+
     /// <summary>The titlebar burger menu, anchored under its own button.</summary>
     private void DrawShellMenu()
     {
-        var (items, actions) = BuildShellMenu();
+        BuildShellMenu();
         if (_shellMenuOpenRequested)
         {
             _shellMenuOpenRequested = false;
             Crystarium.FloatingMenu.Open(
-                "##shell-burger-menu", _shellMenuAnchor, items.ToArray());
+                "##shell-burger-menu", _shellMenuAnchor, _shellMenuItems);
         }
         int clicked = Crystarium.FloatingMenu.Draw("##shell-burger-menu");
-        if (clicked >= 0 && clicked < actions.Count)
-            actions[clicked]?.Invoke();
+        if (clicked >= 0 && clicked < _shellMenuItems.Length)
+            InvokeShellCommand((ShellCommand)clicked);
     }
 
     /// <summary>
-    /// The shell's GROWABLE COMMAND LIST. Almost every action Poser offers is
-    /// meant to land here eventually, so that a collapsed bottom-bar-only
-    /// layout can still reach everything the chrome stops showing. Adding a
-    /// command is therefore one Add pair and nothing else — never a hardcoded
-    /// switch over a fixed set. The two lists are index-aligned: every item
-    /// gets exactly one action, and a Separator item pairs with a null.
+    /// Restates the command rows into the retained array. The only per-frame
+    /// work is the gate itself; the rows are rewritten when — and only when —
+    /// a gate actually flips, so a warm frame writes nothing.
     /// </summary>
-    private (List<ContextMenuItem> Items, List<Action?> Actions) BuildShellMenu()
+    private void BuildShellMenu()
     {
-        var items = new List<ContextMenuItem>();
-        var actions = new List<Action?>();
+        // The pose-file commands follow the SELECTED actor: a shell-wide menu
+        // has no right-clicked row to take a skeleton from. Same gate the actor
+        // context menu applies to the same three commands.
+        bool poseTarget = SelectedSkeleton() != null;
+        if (_shellMenuRowsBuilt && poseTarget == _shellMenuPoseTarget)
+            return;
+        _shellMenuRowsBuilt = true;
+        _shellMenuPoseTarget = poseTarget;
 
-        // Recovery follows the SELECTED actor: a shell-wide menu has no
-        // right-clicked row to take a skeleton from.
-        var skeleton = SelectedSkeleton();
-        items.Add(new ContextMenuItem(
-            "Auto-saves…", TablerIcon.DeviceFloppy, disabled: skeleton == null));
-        actions.Add(() =>
+        _shellMenuItems[(int)ShellCommand.ShowLibrary] =
+            new ContextMenuItem("Show library", TablerIcon.Photo);
+        _shellMenuItems[(int)ShellCommand.SpawnActor] =
+            new ContextMenuItem("Spawn actor…", TablerIcon.UserPlus);
+        _shellMenuItems[(int)ShellCommand.ImportPose] =
+            new ContextMenuItem(
+                "Import pose…", TablerIcon.Download, disabled: !poseTarget);
+        _shellMenuItems[(int)ShellCommand.ExportPose] =
+            new ContextMenuItem(
+                "Export pose…", TablerIcon.DeviceFloppy, disabled: !poseTarget);
+        _shellMenuItems[(int)ShellCommand.AutoSaves] =
+            new ContextMenuItem(
+                "Auto-saves…", TablerIcon.ArrowBackUp, disabled: !poseTarget);
+        _shellMenuItems[(int)ShellCommand.SettingsSeparator] =
+            ContextMenuItem.Separator;
+        _shellMenuItems[(int)ShellCommand.OpenSettings] =
+            new ContextMenuItem("Open settings", TablerIcon.Settings);
+    }
+
+    /// <summary>Runs one command. The skeleton is resolved at invocation, not
+    /// captured at build: the row array outlives every selection it was built
+    /// under.</summary>
+    private void InvokeShellCommand(ShellCommand command)
+    {
+        switch (command)
         {
-            if (skeleton != null)
-                _poseFileSection.OpenAutoSaves(skeleton);
-        });
-
-        items.Add(new ContextMenuItem("Settings", TablerIcon.Settings));
-        actions.Add(() => OnSettingsRequested?.Invoke());
-
-        return (items, actions);
+            case ShellCommand.ShowLibrary:
+                ShowLibrary();
+                break;
+            case ShellCommand.SpawnActor:
+                OnSpawnBrowserRequested?.Invoke();
+                break;
+            case ShellCommand.ImportPose:
+                if (SelectedSkeleton() is { } importSkeleton)
+                    _poseFileSection.OpenImport(importSkeleton);
+                break;
+            case ShellCommand.ExportPose:
+                if (SelectedSkeleton() is { } exportSkeleton)
+                    _poseFileSection.OpenExport(exportSkeleton);
+                break;
+            case ShellCommand.AutoSaves:
+                if (SelectedSkeleton() is { } recoverSkeleton)
+                    _poseFileSection.OpenAutoSaves(recoverSkeleton);
+                break;
+            case ShellCommand.OpenSettings:
+                OnSettingsRequested?.Invoke();
+                break;
+        }
     }
 
     /// <summary>The selected actor's skeleton, or null when nothing posable is

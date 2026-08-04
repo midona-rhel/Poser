@@ -16,7 +16,6 @@ public sealed class UiWindowSet : IDisposable
     public SkeletonOverlayWindow SkeletonOverlay { get; }
     public SettingsWindow Settings { get; }
     public SpawnBrowserWindow SpawnBrowser { get; }
-    public PoseLibraryWindow PoseLibrary { get; }
     private readonly SkeletonOverlayPresentation _overlayPresentation;
 
     public UiWindowSet(
@@ -26,7 +25,6 @@ public sealed class UiWindowSet : IDisposable
         GizmoOverlayWindow gizmoOverlay,
         SettingsWindow settings,
         SpawnBrowserWindow spawnBrowser,
-        PoseLibraryWindow poseLibrary,
         SkeletonOverlayPresentation overlayPresentation)
     {
         _overlayPresentation = overlayPresentation;
@@ -45,9 +43,6 @@ public sealed class UiWindowSet : IDisposable
 
         SpawnBrowser = spawnBrowser;
         System.AddWindow(SpawnBrowser);
-
-        PoseLibrary = poseLibrary;
-        System.AddWindow(PoseLibrary);
 
         Main.GetSkeletonOverlayOn = () => SkeletonOverlay.IsOpen;
         Main.OnSkeletonOverlayToggled += SetSkeletonOverlayOpen;

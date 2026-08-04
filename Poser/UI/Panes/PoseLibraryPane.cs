@@ -1,9 +1,7 @@
 using System;
-using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.Windowing;
 using Poser.Application.Posing;
 using Poser.Application.Selection;
 using Poser.Config;
@@ -26,12 +24,17 @@ namespace Poser.UI;
 /// <para>The scan lives in <see cref="IPoseLibraryService"/> and publishes one
 /// immutable snapshot; this rebuilds its rows only when the revision moves, so
 /// a warm frame reads rows it minted at scan time and allocates nothing.</para>
+///
+/// <para>The library is a MODE of the shell workspace rather than a window, so
+/// <see cref="Tick"/> runs every frame whether or not the mode is showing: a
+/// spawn started here has to complete even after the user has gone back to an
+/// actor.</para>
 /// </summary>
-public sealed class PoseLibraryWindow : Window
+public sealed class PoseLibraryPane
 {
-    /// <summary>Double-click applies, and the footer's primary applies the same
-    /// tile: a second apply of the SAME tile inside this window is swallowed
-    /// rather than importing twice.</summary>
+    /// <summary>Double-click applies, and the action row's primary applies the
+    /// same tile: a second apply of the SAME tile is swallowed rather than
+    /// importing twice.</summary>
     private const double ReactivationSwallow = 0.35;
 
     /// <summary>A spawned actor binds on a later scene refresh. Past this many
@@ -91,16 +94,20 @@ public sealed class PoseLibraryWindow : Window
 
     private bool _iconSizeDirty;
 
+    /// <summary>Whether the pane is the workspace's current content. The first
+    /// draw after it becomes true is the old window's OnOpen.</summary>
+    private bool _showing;
+
     private IActor? _pendingActor;
     private string? _pendingPath;
     private PoseImportOptions? _pendingOptions;
     private int _pendingFrames;
 
-    /// <summary>Raised by the no-sources empty state; the UI manager owns the
-    /// settings window.</summary>
+    /// <summary>Raised by the no-sources empty state and by the action row's
+    /// "Add source…"; the UI manager owns the settings window.</summary>
     public event Action? OnSettingsRequested;
 
-    public PoseLibraryWindow(
+    public PoseLibraryPane(
         ConfigurationService config,
         IPoseLibraryService library,
         PoseThumbnailCache thumbs,
@@ -109,10 +116,6 @@ public sealed class PoseLibraryWindow : Window
         SelectionSession selection,
         StableBindingRegistry bindings,
         PoseFileInspectorSection poseFileSection)
-        : base($"Pose library###{PluginConstants.PluginName}_pose_library",
-            ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
-            ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
-            ImGuiWindowFlags.NoResize)
     {
         _config = config;
         _library = library;
@@ -132,7 +135,6 @@ public sealed class PoseLibraryWindow : Window
         _vm.OnTagFilter = TagFilter;
         _vm.OnIconSize = SetIconSize;
         _vm.OnRefresh = () => _library.RequestScan();
-        _vm.OnClose = () => IsOpen = false;
         _vm.OnOpenSettings = () => OnSettingsRequested?.Invoke();
         _vm.ResolveThumbnail = ResolveThumbnail;
         // Spawning needs no selection and no scene state; the service answers
@@ -140,14 +142,61 @@ public sealed class PoseLibraryWindow : Window
         _vm.CanSpawn = true;
     }
 
-    public override void OnOpen()
+    /// <summary>
+    /// The frame work that outlives the mode: the thumbnail cache's decode
+    /// pump, and a spawn waiting for the scene to bind its actor. Leaving the
+    /// library must not strand a pose that was already asked for, so the shell
+    /// calls this unconditionally.
+    /// </summary>
+    public void Tick()
     {
-        // Nothing is scanned until a surface asks, so the first open is what
+        _thumbs.Tick();
+        ReconcilePendingSpawn();
+    }
+
+    /// <summary>Draws into the rect the shell hands the workspace.</summary>
+    public void Draw(Vector2 origin, Vector2 size)
+    {
+        if (!_showing)
+        {
+            _showing = true;
+            Enter();
+        }
+
+        SyncSnapshot();
+        SyncQuery();
+        if (_refilter)
+            Refilter();
+        SyncTarget();
+        SyncStatus();
+
+        PoseLibraryView.Draw(_vm, origin, size);
+    }
+
+    /// <summary>The workspace moved on. The decoded thumbnails are a cache of
+    /// what was on screen, and the icon size is persisted here rather than on
+    /// every drag tick.</summary>
+    public void OnHidden()
+    {
+        _showing = false;
+        _thumbs.Clear();
+        if (!_iconSizeDirty)
+            return;
+        // The slider writes the config live so the grid reflows with the drag;
+        // the disk write waits for the surface to close.
+        _iconSizeDirty = false;
+        _config.Save();
+    }
+
+    /// <summary>The first frame of a library session.</summary>
+    private void Enter()
+    {
+        // Nothing is scanned until a surface asks, so the first entry is what
         // pays for the file system.
         _library.RequestScan();
 
         // The query and the tag are DRAFTS: they mean nothing outside the open
-        // surface, so each open starts on the whole library.
+        // surface, so each entry starts on the whole library.
         _vm.Query = string.Empty;
         _query = string.Empty;
         _queryLower = string.Empty;
@@ -158,57 +207,10 @@ public sealed class PoseLibraryWindow : Window
         _vm.IconSize = _config.Config.Library.IconSize;
         _iconSizeDirty = false;
 
-        // Favourites and sources may have moved while the window was closed,
-        // and a completed scan keeps its revision: rebuild unconditionally.
+        // Favourites and sources may have moved while the mode was away, and a
+        // completed scan keeps its revision: rebuild unconditionally.
         _seenRevision = -1;
         _refilter = true;
-    }
-
-    public override void OnClose()
-    {
-        _thumbs.Clear();
-        if (!_iconSizeDirty)
-            return;
-        // The slider writes the config live so the grid reflows with the drag;
-        // the disk write waits for the surface to close.
-        _iconSizeDirty = false;
-        _config.Save();
-    }
-
-    public override void PreDraw()
-    {
-        Size = new Vector2(
-            PoseLibraryView.DesignWidth, PoseLibraryView.DesignHeight);
-        SizeCondition = ImGuiCond.Always;
-    }
-
-    public override void Draw()
-    {
-        _thumbs.Tick();
-        ReconcilePendingSpawn();
-        SyncSnapshot();
-        SyncQuery();
-        if (_refilter)
-            Refilter();
-        SyncTarget();
-        SyncStatus();
-
-        // The view paints its own chassis (frame + chrome); the host window is
-        // an undecorated, transparent shell that only supplies position + input.
-        var min = ImGui.GetWindowPos();
-        var owner = Interactive.BeginOwner(
-            "poser-pose-library",
-            InteractionLayer.Window,
-            min,
-            min + ImGui.GetWindowSize());
-        try
-        {
-            PoseLibraryView.Draw(_vm, min);
-        }
-        finally
-        {
-            Interactive.EndOwner(owner);
-        }
     }
 
     // ── the rows ─────────────────────────────────────────────────────────
@@ -385,7 +387,7 @@ public sealed class PoseLibraryWindow : Window
         }
 
         // A selection the filter dropped is no longer on screen, so it stops
-        // being what the footer's actions would act on.
+        // being what the action row would act on.
         if (!kept)
             _vm.Selected = -1;
     }
@@ -431,7 +433,8 @@ public sealed class PoseLibraryWindow : Window
 
     /// <summary>The apply target: the selection's actor — a bone selection
     /// resolves to the actor that owns it — as a live actor, or null when
-    /// nothing resolves.</summary>
+    /// nothing resolves. Entering the library does not clear the selection, so
+    /// the actor being posed is still the actor a pose lands on.</summary>
     private IActor? TargetActor()
     {
         var actorId = _selection.Primary switch
