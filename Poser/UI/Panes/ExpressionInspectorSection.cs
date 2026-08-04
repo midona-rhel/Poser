@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Poser.Entities;
 using Poser.Game;
@@ -8,9 +9,10 @@ namespace Poser.UI;
 
 /// <summary>
 /// Actor expression action-unit controls: one weight slider per resolvable
-/// unit, plus the reset that clears them all. Units the catalog names "(L)"
-/// and "(R)" share ONE row — the two halves of a face read as one control,
-/// not as two unrelated rows a screen apart.
+/// unit, plus the reset that clears them all. On a WIDE surface, units the
+/// catalog names "(L)" and "(R)" share ONE row — the two halves of a face
+/// read as one control, not as two unrelated rows a screen apart. The 280px
+/// rail has no width for two sliders and keeps one full-label row per unit.
 /// </summary>
 public sealed class ExpressionInspectorSection
 {
@@ -24,7 +26,7 @@ public sealed class ExpressionInspectorSection
     /// header rather than an empty one.</summary>
     public bool CanDraw => _expressions.IsAvailable;
 
-    public void Draw(Crystarium.FormScope form, IActor actor)
+    public void Draw(Crystarium.FormScope form, IActor actor, bool paired)
     {
         var units = _expressions.GetUnits(actor);
         int drawn = 0;
@@ -44,7 +46,8 @@ public sealed class ExpressionInspectorSection
 
             // The pair lands at the FIRST member's catalog position; a unit
             // whose partner is unavailable is an ordinary single row.
-            if (SplitSide(label) is { } side &&
+            if (paired &&
+                SplitSide(label) is { } side &&
                 FindPartner(units, consumed, i, side, bidirectional)
                     is { } partner)
             {
@@ -139,20 +142,42 @@ public sealed class ExpressionInspectorSection
         float minimum = bidirectional ? -1f : 0f;
         form.Pair(
             baseLabel,
-            cell => DrawPairCell(cell, actor, leftId, minimum),
+            cell => DrawPairCell(cell, actor, "L", leftId, minimum),
             "",
-            cell => DrawPairCell(cell, actor, rightId, minimum),
+            cell => DrawPairCell(cell, actor, "R", rightId, minimum),
             help: baseLabel + " — left / right");
     }
 
+    /// <summary>One half of a pair: the side caption, then the slider in the
+    /// remaining cell width — losing the caption loses which half is which.
+    /// </summary>
     private void DrawPairCell(
         Crystarium.FormPairCell cell,
         IActor actor,
+        string sideCaption,
         string id,
         float minimum)
     {
+        var theme = Crystarium.ActiveTheme;
+        var captionStyle = new TextStyle
+        {
+            Size = theme.Typography.CaptionSize,
+            Color = theme.FormLabel,
+        };
+        var captionSize = Crystarium.MeasureText(sideCaption, captionStyle);
+        Crystarium.TextAt(
+            new Vector2(
+                cell.Origin.X,
+                cell.Origin.Y
+                    + (theme.Controls.FormRowHeight * cell.Scale
+                        - captionSize.Y) * 0.5f),
+            sideCaption,
+            captionStyle);
+        float indent =
+            captionSize.X + theme.Page.ActionGap * cell.Scale;
+        var sliderTop = cell.Center(theme.Controls.SliderHeight);
         ImGui.SetCursorScreenPos(
-            cell.Center(Crystarium.ActiveTheme.Controls.SliderHeight));
+            new Vector2(sliderTop.X + indent, sliderTop.Y));
         Crystarium.Slider(
             $"##expr-{id}",
             _expressions.GetWeight(actor, id),
@@ -161,8 +186,8 @@ public sealed class ExpressionInspectorSection
             next => _expressions.SetWeight(actor, id, next),
             new ControlStyle
             {
-                Width = UiWidth.Fixed(
-                    MathF.Max(1f, cell.Width / cell.Scale)),
+                Width = UiWidth.Fixed(MathF.Max(
+                    1f, (cell.Width - indent) / cell.Scale)),
             });
     }
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Dalamud.Bindings.ImGui;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Application.Selection;
@@ -66,23 +67,59 @@ public sealed class PoseFileInspectorSection
 
     public void Draw(Crystarium.FormScope form, ISkeleton skeleton)
     {
-        form.Dropdown("Scope", ScopeOptions, _scope, next => _scope = next);
-
-        if (_scope == 3)
-            form.Checkbox(
-                "Descendants",
+        // The Actor tab has row width to spare, so the options pack two to
+        // a row instead of stacking six label rows. Descendants stays
+        // visible-but-disabled outside the Selected scope: a checkbox that
+        // appears and disappears moves every row under it.
+        form.Pair(
+            "Scope",
+            cell =>
+            {
+                ImGui.SetCursorScreenPos(cell.Center(
+                    Crystarium.ActiveTheme.Controls.WorkspaceHeight));
+                Crystarium.Dropdown(
+                    "##posefile-scope",
+                    ScopeOptions,
+                    _scope,
+                    next => _scope = next,
+                    cell.Constrain(ControlStyle.Workspace));
+            },
+            "Descendants",
+            cell => PairCheckbox(
+                cell,
+                "##posefile-descendants",
                 _descendants,
                 next => _descendants = next,
-                help: "Include descendants of selected bones");
-        form.Checkbox("Translation", _position, next => _position = next);
-        form.Checkbox("Rotation", _rotation, next => _rotation = next);
-        form.Checkbox("Scale", _scale, next => _scale = next);
-        form.Checkbox(
+                disabled: _scope != 3,
+                help: "Include descendants of selected bones"));
+        form.Pair(
+            "Translation",
+            cell => PairCheckbox(
+                cell,
+                "##posefile-translation",
+                _position,
+                next => _position = next),
+            "Rotation",
+            cell => PairCheckbox(
+                cell,
+                "##posefile-rotation",
+                _rotation,
+                next => _rotation = next));
+        form.Pair(
+            "Scale",
+            cell => PairCheckbox(
+                cell,
+                "##posefile-scale",
+                _scale,
+                next => _scale = next),
             "Reset first",
-            _reset,
-            next => _reset = next,
-            help: "Clear every bone in the chosen scope before importing, "
-                + "including ones the file does not contain");
+            cell => PairCheckbox(
+                cell,
+                "##posefile-reset",
+                _reset,
+                next => _reset = next,
+                help: "Clear every bone in the chosen scope before importing, "
+                    + "including ones the file does not contain"));
         form.Actions("Pose file", actions =>
         {
             actions.Button("Import…", () => OpenImport(skeleton));
@@ -92,6 +129,19 @@ public sealed class PoseFileInspectorSection
 
         if (_status.Length > 0)
             form.Status(_status);
+    }
+
+    private static void PairCheckbox(
+        Crystarium.FormPairCell cell,
+        string id,
+        bool value,
+        Action<bool> onChange,
+        bool disabled = false,
+        string? help = null)
+    {
+        ImGui.SetCursorScreenPos(cell.Center(
+            Crystarium.ActiveTheme.Controls.CheckboxSize));
+        Crystarium.Checkbox(id, value, onChange, default, disabled, help);
     }
 
     public void OpenImport(ISkeleton skeleton)

@@ -517,7 +517,7 @@ public static partial class Crystarium
                     row.CenterControl(controlHeight).Y));
                 Crystarium.Button(
                     "Reset", reset, style: resetStyle,
-                    help: $"Restore the incoming {label.ToLowerInvariant()} exactly",
+                    help: $"Restore the {label.ToLowerInvariant()} this actor had before Poser changed it",
                     id: $"{id}-reset");
             }
             _page.EndRow(row, id, help);
@@ -644,15 +644,23 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
+        /// <param name="fullWidth">The buttons span the WHOLE row, label column
+        /// included — for a set that cannot fit a control cell. Callers pass an
+        /// empty label with it and state the caption on a
+        /// <see cref="Label"/> row above.</param>
         public void Actions(string label, Action<ActionScope> content,
-            string? help = null, bool alignRight = false)
+            string? help = null, bool alignRight = false,
+            bool fullWidth = false)
         {
-            string id = Id(label);
+            // Id("") would be the same string for every unlabelled row of a
+            // section, so an unlabelled Actions row is identified by its kind.
+            string id = Id(string.IsNullOrEmpty(label) ? "actions" : label);
             var row = _page.BeginRow(label);
             var actions = new ActionScope();
             content(actions);
             DrawActions(actions.Items,
-                row.ControlOrigin.X, row.ControlWidth,
+                fullWidth ? row.Origin.X : row.ControlOrigin.X,
+                fullWidth ? row.Width : row.ControlWidth,
                 row.Origin.Y, alignRight, id);
             _page.EndRow(row, id, help);
         }
@@ -951,7 +959,7 @@ public static partial class Crystarium
                     controlStyle.Height,
                     ActiveTheme.Controls.ColorWellSize);
                 float width = ControlSizing.Width(
-                    controlStyle.Width,
+                    controlStyle,
                     side,
                     trackWidth / _row.Scale);
                 float groupWidth = widestLabel + gap + width * _row.Scale;
@@ -1000,6 +1008,14 @@ public static partial class Crystarium
             Origin.X,
             Origin.Y + (ActiveTheme.Controls.FormRowHeight - controlHeight)
                 * 0.5f * Scale);
+
+        /// <summary>The caller's style bound to this cell's track. The pair
+        /// contract is that a half's control never paints past its track, so
+        /// the cell's span becomes the style's <see
+        /// cref="ControlStyle.MaxWidth"/> — capping whatever the control
+        /// resolves for itself, its own usability floors included.</summary>
+        public ControlStyle Constrain(ControlStyle style = default) =>
+            style with { MaxWidth = MathF.Max(1f, Width / Scale) };
     }
 
     public readonly record struct FormRowScope
@@ -1285,10 +1301,8 @@ public static partial class Crystarium
         if (!(width > 0f))
             return;
         var style = new TextStyle { Size = size, Family = family, Color = color };
-        float lineHeight = Crystarium.MeasureText(text, style).Y;
-        Crystarium.TextAt(
-            new(position.X, position.Y + (height - lineHeight) * 0.5f),
-            text, style,
+        Crystarium.TextInBand(
+            position, new(width, height), text, style,
             TextConstraint.Truncate(width, TextAlign.End));
     }
 
