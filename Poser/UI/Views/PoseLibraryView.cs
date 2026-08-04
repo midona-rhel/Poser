@@ -496,10 +496,14 @@ public static class PoseLibraryView
         if (!(rail.Size.X > 0f))
             return;
         float inset = theme.Page.Inset;
-        ImGui.SetCursorScreenPos(rail.Min + new Vector2(inset * scale));
+        // The region spans the FULL rail width: the gutter is the rows'
+        // trailing inset (ShellSidebar.DrawTree contract), not a second
+        // horizontal margin, so only the vertical inset is applied here.
+        ImGui.SetCursorScreenPos(
+            new Vector2(rail.Min.X, rail.Min.Y + inset * scale));
         Crystarium.ScrollRegion(
             RailId,
-            rail.Size.X / scale - inset * 2f,
+            rail.Size.X / scale,
             rail.Size.Y / scale - inset * 2f,
             vm.Rail!);
     }
@@ -509,7 +513,15 @@ public static class PoseLibraryView
     {
         float scale = ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
-        float width = region.ContentWidth * scale;
+        float inset = theme.Page.Inset;
+        float gutter = theme.Scrollbar.GutterWidth;
+        // The gutter is the rows' TRAILING inset, not a narrower box: the row
+        // box bleeds under the scroll bar while the pill and its content stop
+        // a gutter early, so the visible right separation matches the left
+        // inset whether or not the bar is shown.
+        float width =
+            MathF.Max(1f, region.ContentWidth + gutter - inset) * scale;
+        var origin = ImGui.GetCursorScreenPos() + new Vector2(inset * scale, 0f);
 
         // The rows stack flush at the row height: the ambient vertical spacing
         // belongs to the surrounding flow, not to the rail.
@@ -519,6 +531,9 @@ public static class PoseLibraryView
         try
         {
             for (int i = 0; i < vm.Folders.Count; i++)
+            {
+                var pos = ImGui.GetCursorScreenPos();
+                ImGui.SetCursorScreenPos(new Vector2(origin.X, pos.Y));
                 if (FolderRow(
                         vm.Folders[i],
                         // The two synthetic heads are positional by contract,
@@ -527,9 +542,11 @@ public static class PoseLibraryView
                         i == 1 ? TablerIcon.Star : TablerIcon.Folder,
                         vm.SelectedFolder == i,
                         width,
+                        gutter * scale,
                         scale,
                         theme))
                     vm.OnSelectFolder?.Invoke(i);
+            }
         }
         finally
         {
@@ -545,12 +562,17 @@ public static class PoseLibraryView
         TablerIcon icon,
         bool selected,
         float width,
+        float trailingInset,
         float scale,
         Theme theme)
     {
         float height = theme.Controls.ListRowHeight * scale;
         var hit = Interactive.Reserve(
             row.Key, new Vector2(width, height), disabled: false);
+
+        // The row box bleeds under the scroll gutter; the pill and everything
+        // inside it stop here instead (TreeRow's TrailingInset contract).
+        float contentRight = hit.ScreenMax.X - trailingInset;
 
         var fill = selected
             ? theme.Chrome.SidebarSelected
@@ -560,7 +582,7 @@ public static class PoseLibraryView
         if (fill.W > 0f)
             ImGui.GetWindowDrawList().AddRectFilled(
                 hit.ScreenMin,
-                hit.ScreenMax,
+                new Vector2(contentRight, hit.ScreenMax.Y),
                 ImGui.ColorConvertFloat4ToU32(fill),
                 NavigationPillRadius * scale);
 
@@ -573,7 +595,9 @@ public static class PoseLibraryView
         Crystarium.IconIn(glyphMin, glyphMin + new Vector2(glyph), icon);
 
         float labelX = slotMin.X + height;
-        float labelRight = hit.ScreenMax.X;
+        // The count breathes off the pill's right edge; the label in turn
+        // breathes off the count.
+        float labelRight = contentRight - theme.Spacing.Two * scale;
         if (row.CountText is { Length: > 0 } count)
         {
             var countStyle = new TextStyle
