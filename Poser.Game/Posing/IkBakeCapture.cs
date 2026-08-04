@@ -7,7 +7,6 @@ using Poser.Domain.Posing;
 using Poser.Entities;
 using Poser.Game.Bindings;
 using Poser.Services;
-using LegacyTransform = Poser.Transform;
 
 namespace Poser.Game.Posing;
 
@@ -15,26 +14,35 @@ namespace Poser.Game.Posing;
 /// Turns a live-solved IK chain into ordinary pose edits (Brio's "Set IK
 /// Changes").
 ///
-/// Poser's IK is live: the chain is re-solved every frame from the endpoint's
-/// translation delta and the result exists only in the native pose. Disarming
+/// Poser's IK is live: the chain is re-solved every frame inside the native
+/// skeleton update and the result exists only in the native pose. Disarming
 /// therefore abandons the solved placement — the endpoint's delta degrades to
 /// a raw model-space add and the limb snaps back.
 ///
-/// The bake is two phases, for the same reason FacialPoseCapture is:
-///   1. capture every affected chain bone's LastRawTransform while the solve
-///      is still visible — the same basis PoseFileService exports — then
-///      disarm the chain;
-///   2. let the pose settle for two framework ticks, then write each captured
-///      value against the bone's now-unsolved LastRawTransform, exactly as
-///      loading a pose file does.
-/// Reading and writing on the same tick would produce identity deltas and
-/// change nothing.
+/// The bake is ONE tick, the same shape as Brio's <c>ResetIK</c>, which
+/// exports the solved chain and re-imports it in the same frame with no
+/// settle wait. What makes that correct is not the timing but the BASIS: a
+/// baked value has to be expressed against the bone's animated baseline —
+/// the model transform the apply pass read before any stack or the solver
+/// touched the bone — because that is the value the pass will start from
+/// again on every later frame. Brio reaches that basis by clearing the
+/// stacks, resetting the pose and letting its importer run inside the pass;
+/// Poser's apply pass records the same value per bone every frame
+/// (<c>BoneEvaluationObservation.AnimatedBaseline</c>), so the bake can read
+/// it directly and write on the spot.
+///
+/// Diffing against anything else is what makes a chain leave its solved
+/// placement: the bone's CURRENT transform gives an identity delta, and a
+/// transform cached on an earlier frame carries whatever happened in
+/// between — a settle pass that never ran (the runtime only re-evaluates
+/// skeletons that still hold stacks or an armed chain, and disarming can
+/// remove both), or the animation advancing underneath.
 ///
 /// The written stacks are plain deltas against the animated baseline, so
 /// export, undo/redo and history behave as they do for a hand-authored pose;
 /// the chain's tuning survives, only Enabled is turned off.
 /// </summary>
-public sealed class IkBakeCapture : IDisposable
+public sealed class IkBakeCapture
 {
     private readonly IFramework _framework;
     private readonly StableBindingRegistry _bindings;
@@ -42,20 +50,6 @@ public sealed class IkBakeCapture : IDisposable
     private readonly TransformCommandService _transforms;
     private readonly TransformGestureService _gestures;
     private readonly IPluginLog _log;
-
-    /// <summary>Ticks to let the disarmed chain settle back to its unsolved
-    /// shape before the captured absolutes are applied against it.</summary>
-    private const int SettleTicks = 2;
-
-    private sealed class PendingBake
-    {
-        public required ActorId Actor;
-        public required BoneId Endpoint;
-        public required List<(BoneId Bone, LegacyTransform Captured)> Captures;
-        public int TicksRemaining = SettleTicks;
-    }
-
-    private PendingBake? _pending;
 
     public IkBakeCapture(
         IFramework framework,
@@ -71,12 +65,7 @@ public sealed class IkBakeCapture : IDisposable
         _transforms = transforms;
         _gestures = gestures;
         _log = log;
-        _framework.Update += OnFrameworkUpdate;
     }
-
-    /// <summary>True between the two phases; the surface disables the control
-    /// so nothing can re-arm or re-target the chain under the capture.</summary>
-    public bool IsPending => _pending != null;
 
     /// <summary>
     /// Whether this endpoint has a solve worth baking: armed, its chain
@@ -86,7 +75,7 @@ public sealed class IkBakeCapture : IDisposable
     /// </summary>
     public bool CanBake(TransformTargetId target)
     {
-        if (_pending != null || target.Bone is not { } boneId)
+        if (target.Bone is not { } boneId)
             return false;
         if (_bindings.Resolve(boneId) is not { Success: true, Value: { } endpoint })
             return false;
@@ -109,16 +98,16 @@ public sealed class IkBakeCapture : IDisposable
     }
 
     /// <summary>
-    /// Phase one: capture the solved chain and disarm it.
+    /// Captures the solved chain, disarms it, and writes the solve into the
+    /// pose stacks — all on this tick, so no frame can pass between the
+    /// value that is read and the basis it is written against.
     /// </summary>
     public GestureResult Begin(TransformTargetId target)
     {
-        if (_pending != null)
-            return GestureResult.Fail("An IK bake is already in progress.");
         if (!_framework.IsInFrameworkUpdateThread)
-            return GestureResult.Fail("IK bake must start on the framework thread.");
-        // A live transform gesture owns these bones right now; baking under it
-        // would interleave two writers on the same chain.
+            return GestureResult.Fail("IK bake must run on the framework thread.");
+        // A live transform gesture owns these bones right now; baking under
+        // it would interleave two writers on the same chain.
         if (_gestures.ActiveGesture != null)
             return GestureResult.Fail("Finish the current transform gesture first.");
         if (target.Bone is not { } boneId)
@@ -126,7 +115,7 @@ public sealed class IkBakeCapture : IDisposable
         if (_bindings.Resolve(boneId) is not { Success: true, Value: { } endpoint })
             return GestureResult.Fail(
                 $"Bone {boneId.CanonicalName} did not resolve.");
-        if (_bindings.GetActorId(endpoint.Skeleton.Actor) is not { } actorId)
+        if (_bindings.GetActorId(endpoint.Skeleton.Actor) is null)
             return GestureResult.Fail("This bone's actor has no stable binding.");
 
         var config = _posing.GetIkConfiguration(endpoint);
@@ -139,89 +128,42 @@ public sealed class IkBakeCapture : IDisposable
         if (!HasSolveInput(endpoint, config))
             return GestureResult.Fail("This chain has not solved anything yet.");
 
-        var captures = new List<(BoneId, LegacyTransform)>(affected.Count);
+        var writes = new List<(TransformTargetId, Poser.Domain.Transforms.PoseTransform)>(
+            affected.Count);
         foreach (var bone in affected)
         {
             if (_bindings.GetBoneId(bone) is not { } id)
                 return GestureResult.Fail(
                     $"Chain bone {bone.BoneName} has no stable binding.");
             // LastRawTransform is the pre-reparent absolute the exporter
-            // stores, and the solver's output for every chain bone.
-            captures.Add((id, bone.LastRawTransform));
+            // stores, refreshed by the pass AFTER the solve — the solver's
+            // output for every chain bone.
+            var solved = bone.LastRawTransform;
+            writes.Add((
+                TransformTargetId.ForBone(id),
+                new Poser.Domain.Transforms.PoseTransform(
+                    solved.Position, solved.Rotation, solved.Scale)));
         }
 
+        // Disarm first: the write below replaces the endpoint's stack, and
+        // an armed chain would read that replacement as its next target.
+        // Nothing re-evaluates the skeleton between these two statements —
+        // both run inside one framework tick — so the observations the bake
+        // reads are still the ones the last solved pass produced.
         if (_posing.SetIkConfiguration(endpoint, config with { Enabled = false })
             is { } error)
             return GestureResult.Fail(error);
 
-        _pending = new PendingBake
-        {
-            Actor = actorId,
-            Endpoint = boneId,
-            Captures = captures,
-        };
-        return GestureResult.Ok();
-    }
+        var applied = _transforms.BakeAbsoluteMany(writes, "Bake IK");
+        if (applied.Success)
+            return GestureResult.Ok();
 
-    private void OnFrameworkUpdate(IFramework framework)
-    {
-        if (_pending is not { } pending)
-            return;
-        if (--pending.TicksRemaining > 0)
-            return;
-        _pending = null;
-        Complete(pending);
-    }
-
-    /// <summary>
-    /// Phase two: re-validate, then apply through the ONE atomic transform
-    /// authority. SetAbsoluteMany captures every target before writing, rolls
-    /// the whole chain back on any failure, refuses to run under a live
-    /// gesture, and records the single undoable history patch.
-    /// </summary>
-    private void Complete(PendingBake pending)
-    {
-        if (Revalidate(pending) is { } problem)
-        {
-            _log.Warning($"IK bake abandoned: {problem}");
-            return;
-        }
-
-        var writes = new List<(TransformTargetId, Poser.Domain.Transforms.PoseTransform)>(
-            pending.Captures.Count);
-        foreach (var (boneId, captured) in pending.Captures)
-            writes.Add((
-                TransformTargetId.ForBone(boneId),
-                new Poser.Domain.Transforms.PoseTransform(
-                    captured.Position, captured.Rotation, captured.Scale)));
-
-        // rawBaseline: the application basis is each bone's CURRENT
-        // LastRawTransform — the settled, unsolved chain — exactly as a pose
-        // file loads. The captured baseline (LastTransform) diverges on
-        // reparented partials.
-        var applied = _transforms.SetAbsoluteMany(writes, "Bake IK", rawBaseline: true);
-        if (!applied.Success)
-            _log.Warning($"IK bake abandoned: {applied.Detail}");
-    }
-
-    /// <summary>
-    /// Anything that could make the captured values belong to a different
-    /// body or a different solve: the actor generation, any bone binding, or
-    /// the chain being re-armed under the capture. Returns a reason, or null
-    /// when the capture is still valid.
-    /// </summary>
-    private string? Revalidate(PendingBake pending)
-    {
-        if (_bindings.Resolve(pending.Actor) is not { Success: true })
-            return "the actor is no longer available";
-        if (_bindings.Resolve(pending.Endpoint) is not { Success: true, Value: { } endpoint })
-            return $"bone {pending.Endpoint.CanonicalName} was rebound";
-        if (_posing.GetIkConfiguration(endpoint) is { Enabled: true })
-            return "the chain was armed again";
-        foreach (var (boneId, _) in pending.Captures)
-            if (_bindings.Resolve(boneId) is not { Success: true })
-                return $"bone {boneId.CanonicalName} was rebound";
-        return null;
+        // Nothing was written: put the chain back exactly as it was, including
+        // its Fixed capture, which re-arming recaptures from the still-solved
+        // transform this same tick.
+        if (_posing.SetIkConfiguration(endpoint, config) is { } rearm)
+            _log.Warning($"IK bake could not re-arm the chain: {rearm}");
+        return GestureResult.Fail(applied.Detail ?? "The IK bake failed.");
     }
 
     /// <summary>
@@ -277,10 +219,4 @@ public sealed class IkBakeCapture : IDisposable
         config.TargetMode == IkTargetMode.Fixed ||
         _posing.GetModification(endpoint) is { } modification &&
         modification.Position != System.Numerics.Vector3.Zero;
-
-    public void Dispose()
-    {
-        _framework.Update -= OnFrameworkUpdate;
-        GC.SuppressFinalize(this);
-    }
 }

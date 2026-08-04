@@ -1527,8 +1527,7 @@ public class PoseInspectorPane
 
         bool eligible = config != null;
         bool armed = config?.Enabled == true;
-        bool bakePending = _ikBake.IsPending;
-        bool canBake = armed && !bakePending && _ikBake.CanBake(ikTarget);
+        bool canBake = armed && _ikBake.CanBake(ikTarget);
         form.SwitchActions(
             "Live IK",
             armed,
@@ -1548,24 +1547,28 @@ public class PoseInspectorPane
                     },
                     disabled: !eligible,
                     help: "Restore this chain's default IK settings. Live IK stays as it is.");
-                actions.Button(
-                    "Bake",
-                    () =>
-                    {
-                        _ikBakeNote = _ikBake.Begin(ikTarget)
-                            is { Success: false } failed
-                            ? (ikTarget, $"Bake: {failed.Detail}")
-                            : null;
-                        config = _ikPort.Get(ikTarget);
-                    },
-                    disabled: !canBake,
-                    help: "Write the solved limb into the pose as one undoable "
-                        + "edit, then turn Live IK off");
             },
             disabled: !eligible,
             help: eligible
                 ? "Bend the whole limb to follow this bone as you move it"
                 : "This bone has no IK chain — select a hand or foot");
+        // Bake owns a row of its own: three controls never fit the switch row.
+        form.Actions(
+            string.Empty,
+            actions => actions.Button(
+                "Bake",
+                () =>
+                {
+                    _ikBakeNote = _ikBake.Begin(ikTarget)
+                        is { Success: false } failed
+                        ? (ikTarget, $"Bake: {failed.Detail}")
+                        : null;
+                    config = _ikPort.Get(ikTarget);
+                },
+                disabled: !canBake,
+                help: "Write the solved limb into the pose as one undoable "
+                    + "edit, then turn Live IK off"),
+            fullWidth: true);
         if (_ikBakeNote is { } note && note.Target.Equals(ikTarget))
             form.Status(note.Text);
         if (config == null)

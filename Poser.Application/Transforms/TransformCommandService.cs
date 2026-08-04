@@ -117,6 +117,63 @@ public sealed class TransformCommandService
     }
 
     /// <summary>
+    /// Bakes runtime-produced absolutes — a live IK solve — into the pose
+    /// stacks as ONE history entry, with the same all-or-nothing discipline
+    /// as <see cref="SetAbsoluteMany"/>: every target is captured before
+    /// anything is written and the whole set rolls back on any failure.
+    ///
+    /// The difference is the basis. These absolutes were produced by the
+    /// solver on top of the animation, not by a stack, so each one is
+    /// re-expressed against the bone's animated baseline and REPLACES the
+    /// bone's interactive stacks. Ordering between the writes cannot matter:
+    /// no bone's baseline is a function of another bone's stacks.
+    /// </summary>
+    public GestureResult BakeAbsoluteMany(
+        IReadOnlyList<(TransformTargetId Target, PoseTransform Desired)> writes,
+        string description)
+    {
+        if (_gestures.ActiveGesture != null)
+            return GestureResult.Fail("A transform gesture is active.");
+        if (writes.Count == 0)
+            return GestureResult.Fail("Nothing to bake.");
+
+        var before = new List<TransformTargetState>(writes.Count);
+        foreach (var (target, _) in writes)
+        {
+            var captured = Capture(target);
+            if (!captured.Success || captured.State == null)
+                return GestureResult.Fail(captured.Detail!);
+            before.Add(captured.State);
+        }
+
+        for (int i = 0; i < writes.Count; i++)
+        {
+            var applied = _runtime.ApplyBakedAbsolute(before[i], writes[i].Desired);
+            if (applied.Success)
+                continue;
+            RestoreAll(before);
+            return GestureResult.Fail(
+                applied.Detail ?? $"Could not bake {writes[i].Target}.");
+        }
+
+        var after = new List<TransformTargetState>(before.Count);
+        foreach (var state in before)
+        {
+            var captured = _runtime.Capture(state.Target);
+            if (!captured.Success || captured.State == null)
+            {
+                RestoreAll(before);
+                return GestureResult.Fail(
+                    captured.Detail ?? $"Could not capture {state.Target}.");
+            }
+            after.Add(captured.State);
+        }
+
+        _history.Append(new TransformPatch(description, before, after));
+        return GestureResult.Ok();
+    }
+
+    /// <summary>
     /// One atomic pose-file import: reset-before-import and application
     /// form a SINGLE edit. Every affected slot-qualified target is
     /// captured before anything changes; resets clear the captured pose

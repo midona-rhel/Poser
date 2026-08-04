@@ -995,12 +995,14 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
                 return (false, "The armed chain reported nothing to bake.");
             var firstJoint = captured.Chain[0];
 
+            // The bake is ONE tick: it reads the solved chain and writes it
+            // against the same pass's animated baseline, so there is no
+            // pending phase to wait out. The frames below are only the
+            // runtime re-applying the written stacks.
             var begun = await _framework.RunOnFrameworkThread(
                 () => _ikBake.Begin(target));
             if (!begun.Success)
-                return (false, begun.Detail ?? "IK bake did not start.");
-            if (!await WaitFor(() => !_ikBake.IsPending, 5000))
-                return (false, "IK bake never left its settle phase.");
+                return (false, begun.Detail ?? "IK bake did not run.");
             await WaitFrames(3);
 
             var failures = await _framework.RunOnFrameworkThread(() =>

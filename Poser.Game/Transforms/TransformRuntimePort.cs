@@ -118,6 +118,51 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             $"Malformed transform target {baseline.Target}.");
     }
 
+    public TransformPortResult ApplyBakedAbsolute(
+        TransformTargetState baseline,
+        DomainTransform desired)
+    {
+        if (!OnFrameworkThread())
+            return FrameworkThreadFailure();
+        if (!DomainTransform.TryCreate(
+                desired.Position,
+                desired.Rotation,
+                desired.Scale,
+                out desired,
+                out var error))
+            return TransformPortResult.Fail(
+                TransformPortStatus.InvalidTransform,
+                error ?? "Invalid transform.");
+        if (baseline.Target.Kind != TransformTargetKind.Bone ||
+            baseline.Target.Bone is not { } boneId)
+            return TransformPortResult.Fail(
+                TransformPortStatus.IdentityMismatch,
+                $"Only bones can be baked ({baseline.Target}).");
+
+        var resolved = _bindings.Resolve(boneId);
+        if (!resolved.Success)
+            return FromBinding(resolved.Status, resolved.Detail);
+
+        // Linked bones stay out: a bake reproduces exactly what the solver
+        // did, and the solver moved nothing outside its own chain.
+        var linked = _bones.LinkedBonesEnabled;
+        _bones.LinkedBonesEnabled = false;
+        try
+        {
+            if (!_bones.ApplyAbsoluteFromBaseline(
+                    resolved.Value!, ToLegacy(desired)))
+                return TransformPortResult.Fail(
+                    TransformPortStatus.Rejected,
+                    $"Bone {boneId.CanonicalName} has no observed animated " +
+                    "baseline to bake against.");
+        }
+        finally
+        {
+            _bones.LinkedBonesEnabled = linked;
+        }
+        return TransformPortResult.Ok();
+    }
+
     public TransformPortResult Restore(TransformTargetState state)
     {
         if (!OnFrameworkThread())

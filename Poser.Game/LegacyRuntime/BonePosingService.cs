@@ -92,6 +92,13 @@ public unsafe class BonePosingService : IBonePosingService
         public required Poser.Domain.Posing.IkChainConfig Config;
         public Poser.Domain.Posing.IkResolvedChain Chain;
         public (Vector3 Target, Vector3 Translation)? FixedCapture;
+
+        /// <summary>Every (partial, bone) the solver writes for this chain.
+        /// The per-frame apply pass visits these bones even when they carry no
+        /// stack of their own, so each one records the animated baseline the
+        /// solve is layered on — the only basis a bake can turn into a delta.
+        /// Empty while the chain is disabled.</summary>
+        public HashSet<(int Partial, int Bone)> Members = new();
     }
 
     private readonly Dictionary<(SkeletonKey Skeleton, int Partial, int Bone), IkChainState>
@@ -530,6 +537,19 @@ public unsafe class BonePosingService : IBonePosingService
     {
         var partialCount = gameSkeleton->PartialSkeletonCount;
 
+        // Every bone an ARMED chain solves, gathered once per skeleton. Those
+        // bones are visited below even without stacks: the solver moves them
+        // natively, and only the pass can observe the animated baseline that
+        // native movement sits on top of.
+        HashSet<(int Partial, int Bone)>? chainMembers = null;
+        foreach (var (chainKey, state) in _ikChains)
+        {
+            if (chainKey.Skeleton != slotKey || !state.Config.Enabled ||
+                state.Members.Count == 0)
+                continue;
+            (chainMembers ??= new HashSet<(int, int)>()).UnionWith(state.Members);
+        }
+
         for (int partialIdx = 0; partialIdx < partialCount; partialIdx++)
         {
             var partial = &gameSkeleton->PartialSkeletons[partialIdx];
@@ -556,7 +576,9 @@ public unsafe class BonePosingService : IBonePosingService
                     Config.TargetMode: Poser.Domain.Posing.IkTargetMode.Fixed,
                     FixedCapture: not null,
                 };
-                if (!bonePoseInfo.HasStacks && !fixedHold)
+                bool solvedMember =
+                    chainMembers?.Contains((partialIdx, boneIdx)) == true;
+                if (!bonePoseInfo.HasStacks && !fixedHold && !solvedMember)
                     continue;
 
                 var baselineSpace = pose->AccessBoneModelSpace(
@@ -574,12 +596,15 @@ public unsafe class BonePosingService : IBonePosingService
                         ApplyBoneTransform(pose, boneIdx, stack, bone, chainState);
                     }
                 }
-                else
+                else if (fixedHold)
                 {
                     // An armed Fixed chain with no authored stack still holds
                     // its captured target against the running animation.
                     ApplyFixedHold(pose, boneIdx, bone, chainState!);
                 }
+                // A stackless solved member writes nothing itself: the solver
+                // moved it when the endpoint was applied. It is visited only
+                // so the observation below records its animated baseline.
 
                 // Brio captures both caches immediately after applying each bone.
                 var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
@@ -883,6 +908,60 @@ public unsafe class BonePosingService : IBonePosingService
         _eventBus.Publish(new BoneTransformChangedEvent(bone));
     }
 
+    /// <summary>
+    /// REPLACES the bone's interactive stacks with the single delta that
+    /// reproduces <paramref name="absolute"/> from the bone's ANIMATED
+    /// BASELINE — the model-space value the apply pass read for this bone
+    /// before any stack (or native IK solve) touched it, this frame.
+    ///
+    /// This is the only basis a live-solved chain can be baked against.
+    /// A solved chain bone's current transform is the sum of the animation
+    /// and the solver's native write, and the solver's contribution belongs
+    /// to no stack: diffing against the current value yields identity, and
+    /// diffing against a value cached on some earlier frame yields whatever
+    /// drift lies between the two frames. The baseline is the exact value
+    /// the pass will start from again next frame, so
+    /// <c>baseline + delta</c> reproduces the solved placement verbatim and
+    /// keeps doing so.
+    ///
+    /// Replacement, not accumulation: for the endpoint the existing stack's
+    /// translation was consumed as the solver's TARGET, never added to the
+    /// bone, so combining the two would apply it twice. Named service
+    /// layers (expression, gaze) are preserved untouched; they never target
+    /// arm or leg chains.
+    ///
+    /// Returns false when the runtime has not observed this bone since the
+    /// chain was armed — without an observation there is no baseline, and a
+    /// guessed one is exactly the bug this replaces.
+    /// </summary>
+    public bool ApplyAbsoluteFromBaseline(IBone bone, Transform absolute)
+    {
+        if (bone is VirtualBone)
+            return false;
+        if (!TryGetEvaluationObservation(bone, out var observation))
+            return false;
+
+        var poseInfo = GetPoseInfo(bone.Skeleton);
+        var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
+        var delta = BonePoseInfo.Diff(absolute, observation.AnimatedBaseline);
+
+        var replacement = new List<BonePoseTransformInfo>
+        {
+            new(bonePoseInfo.DefaultPropagation, delta),
+        };
+        foreach (var stack in bonePoseInfo.Stacks)
+        {
+            if (stack.Layer != null)
+                replacement.Add(stack);
+        }
+
+        if (!bonePoseInfo.ReplaceStacks(replacement))
+            return false;
+
+        _eventBus.Publish(new BoneTransformChangedEvent(bone));
+        return true;
+    }
+
     public Poser.Domain.Posing.IkChainConfig? GetIkConfiguration(IBone bone)
     {
         if (bone is VirtualBone)
@@ -915,6 +994,9 @@ public unsafe class BonePosingService : IBonePosingService
         var state = previous ?? new IkChainState { Config = config };
         state.Config = config.Normalized();
         state.Chain = chain;
+        state.Members = config.Enabled
+            ? ChainMembers(bone, state.Config, chain)
+            : new HashSet<(int, int)>();
 
         // Fixed-target lifecycle: capture on entering Fixed or enabling a
         // Fixed chain; disabling retains tuning but clears the capture.
@@ -997,6 +1079,48 @@ public unsafe class BonePosingService : IBonePosingService
             Index(definition.SecondJoint),
             Index(definition.SecondTwist),
             (short)endpoint.BoneIndex);
+    }
+
+    /// <summary>
+    /// The bones an ENABLED chain's solver writes, in the endpoint's own
+    /// partial: the resolved definition for Two Joint, the depth-walked
+    /// hierarchy for CCD (mirroring <c>IKService.GetBonesToDepth</c>). These
+    /// bones are visited by the apply pass even without stacks so their
+    /// animated baseline is observed every frame.
+    /// </summary>
+    private static HashSet<(int Partial, int Bone)> ChainMembers(
+        IBone endpoint,
+        Poser.Domain.Posing.IkChainConfig config,
+        Poser.Domain.Posing.IkResolvedChain chain)
+    {
+        var members = new HashSet<(int, int)>();
+        var partial = endpoint.PartialId;
+
+        if (config.Solver == Poser.Domain.Posing.IkSolver.Ccd)
+        {
+            members.Add((partial, endpoint.BoneIndex));
+            var current = endpoint.ParentBone;
+            while (current != null && members.Count < config.CcdDepth + 1)
+            {
+                members.Add((current.PartialId, current.BoneIndex));
+                current = current.ParentBone;
+            }
+            return members;
+        }
+
+        foreach (var index in new[]
+                 {
+                     chain.FirstJoint,
+                     chain.FirstTwist,
+                     chain.SecondJoint,
+                     chain.SecondTwist,
+                     chain.EndBone,
+                 })
+        {
+            if (index >= 0)
+                members.Add((partial, index));
+        }
+        return members;
     }
 
 
