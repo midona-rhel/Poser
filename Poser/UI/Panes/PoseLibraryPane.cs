@@ -50,9 +50,9 @@ public sealed class PoseLibraryPane
     /// resized.</summary>
     private const float ResizeStep = 32f;
 
-    /// <summary>Frames the handed size must hold before the layout snaps to
-    /// it exactly.</summary>
-    private const int ResizeSettleFrames = 10;
+    /// <summary>Consecutive frames the size must MOVE before stepping engages;
+    /// the frame after it stops, the exact size is adopted.</summary>
+    private const int DragStreakFrames = 3;
 
     private const string AllKey = "##pose-library-all";
     private const string FavoritesKey = "##pose-library-favorites";
@@ -147,7 +147,7 @@ public sealed class PoseLibraryPane
     private Vector2 _handedSize;
     private Vector2 _steppedSize;
     private Vector2 _layoutSize;
-    private int _settleFrames;
+    private int _changedStreak;
 
     /// <summary>Whether the standing tiles were minted with extensions on
     /// their labels; a Settings flip forces a remint.</summary>
@@ -270,25 +270,23 @@ public sealed class PoseLibraryPane
 
     /// <summary>
     /// Resize stepping: a drag on the window edge reflows the pane only at
-    /// <see cref="ResizeStep"/> boundaries, then snaps exact once the size
-    /// holds for <see cref="ResizeSettleFrames"/> frames — per-pixel reflow
-    /// of the grid while dragging cost whole frames.
+    /// <see cref="ResizeStep"/> boundaries — per-pixel reflow of the grid
+    /// while dragging cost whole frames. Stepping engages only for an ACTIVE
+    /// drag, a size that moves across consecutive frames: a one-off change
+    /// (entering the mode, a snapped window, a released drag) adopts the
+    /// exact size immediately, because stepping it drew the pane floored for
+    /// a beat and read as a reflow on navigation.
     /// </summary>
     private Vector2 StepResize(Vector2 size)
     {
-        if (size != _handedSize)
-        {
-            _handedSize = size;
-            _settleFrames = 0;
-        }
-        else if (_settleFrames <= ResizeSettleFrames)
-        {
-            _settleFrames++;
-        }
+        bool moved = size != _handedSize;
+        _handedSize = size;
+        _changedStreak = moved ? _changedStreak + 1 : 0;
 
-        if (_settleFrames > ResizeSettleFrames || _layoutSize == Vector2.Zero)
+        if (_changedStreak < DragStreakFrames)
         {
             _layoutSize = size;
+            _steppedSize = Vector2.Zero;
             return size;
         }
 
