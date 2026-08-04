@@ -182,6 +182,7 @@ public readonly record struct Theme
             ViewportInset = 12f,
             HostMargin = 24f,
             MenuWidth = 260f,
+            MenuMinWidth = 160f,
             MenuPadding = 4f,
             MenuRowPadding = 6f,
             MenuRowGap = 2f,
@@ -653,6 +654,10 @@ public readonly record struct Theme
         public float ViewportInset { get; init; }
         public float HostMargin { get; init; }
         public float MenuWidth { get; init; }
+        /// <summary>Floor for a content-fit floating menu
+        /// (<c>FloatingMenu.MeasureWidth</c>); the fixed <see cref="MenuWidth"/>
+        /// surface ignores it.</summary>
+        public float MenuMinWidth { get; init; }
         public float MenuPadding { get; init; }
         public float MenuRowPadding { get; init; }
         public float MenuRowGap { get; init; }

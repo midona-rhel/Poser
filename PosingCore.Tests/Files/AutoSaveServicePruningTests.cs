@@ -9,7 +9,9 @@ namespace Poser.Tests.Files;
 /// <summary>
 /// Disk-based retention. The service reads the folder listing rather than an
 /// in-session queue, which is what makes retention survive a plugin restart —
-/// the Ktisis defect these tests pin down.
+/// the Ktisis defect these tests pin down. Order is by folder DATE, so every
+/// test that cares about which folder dies stamps its folders explicitly
+/// instead of leaning on the name.
 /// </summary>
 public class AutoSaveServicePruningTests
 {
@@ -18,6 +20,26 @@ public class AutoSaveServicePruningTests
     /// <summary>"2026-03-04 05-MM-00Z" — always older than <see cref="SaveTime"/>.</summary>
     private static string OldStamp(int minute) =>
         AutoSaveHarness.Stamp(new DateTime(2026, 3, 4, 5, minute, 0, DateTimeKind.Utc));
+
+    /// <summary>
+    /// Anchor for the write times these tests hand out. It tracks the REAL
+    /// clock, an hour back, because the snapshot the service writes mid-test
+    /// gets a real filesystem timestamp and has to come out newest — pinning
+    /// the anchor to the harness's fake <see cref="SaveTime"/> instead would
+    /// only hold while the machine clock happens to be past it.
+    /// </summary>
+    private static readonly DateTime WriteBase = DateTime.UtcNow.AddHours(-1);
+
+    /// <summary>
+    /// Backdates <paramref name="dir"/> to <c>WriteBase + minutes</c>. Call it
+    /// AFTER anything that writes into the folder, since that bumps the
+    /// folder's own timestamp.
+    /// </summary>
+    private static string Age(string dir, int minutes)
+    {
+        Directory.SetLastWriteTimeUtc(dir, WriteBase.AddMinutes(minutes));
+        return dir;
+    }
 
     [Fact]
     public void Prune_keeps_the_newest_MaxAutoSaves_folders_including_folders_from_a_previous_session()
@@ -28,8 +50,10 @@ public class AutoSaveServicePruningTests
 
         // Seeded before the service exists: they stand in for snapshots written
         // by an earlier plugin session. An in-memory queue would never see them.
+        // Written oldest-first, and stamped to match, so name order and date
+        // order agree here — the divergent case is its own test below.
         for (var minute = 0; minute < 12; minute++)
-            h.SeedSnapshot(OldStamp(minute), withFile: true);
+            Age(h.SeedSnapshot(OldStamp(minute), withFile: true), minute);
 
         h.AddActor("Alpha");
         var saved = h.Service.SaveNow("test");
@@ -49,6 +73,51 @@ public class AutoSaveServicePruningTests
         Assert.False(Directory.Exists(Path.Combine(h.Root, OldStamp(2))));
     }
 
+    /// <summary>
+    /// The whole point of ordering by date: the user is free to rename a
+    /// recovery folder, and retention must still treat it as exactly as old as
+    /// it is. A name-sorted prune would keep <c>zzz-…</c> forever and eat the
+    /// newer timestamped folders instead.
+    /// </summary>
+    [Fact]
+    public void Prune_orders_by_folder_date_not_by_folder_name()
+    {
+        using var h = new AutoSaveHarness();
+        h.NowUtc = SaveTime;
+        h.Settings.MaxAutoSaves = 3;
+
+        // Sorts LAST by name, oldest by date.
+        var renamedOld = Age(h.SeedSnapshot("zzz-renamed-by-user", withFile: true), 0);
+        var timestampedOld = Age(h.SeedSnapshot(OldStamp(10), withFile: true), 10);
+        var timestampedNew = Age(h.SeedSnapshot(OldStamp(20), withFile: true), 20);
+        // Sorts FIRST by name, newest of the seeded folders by date.
+        var renamedNew = Age(h.SeedSnapshot("aaa-renamed-by-user", withFile: true), 50);
+
+        h.AddActor("Alpha");
+        var saved = h.Service.SaveNow("test");
+
+        Assert.Equal(1, saved);
+
+        // Kept: the snapshot just written, plus the two newest by DATE.
+        Assert.True(
+            Directory.Exists(Path.Combine(h.Root, AutoSaveHarness.Stamp(SaveTime))),
+            "the snapshot just written always survives");
+        Assert.True(
+            Directory.Exists(renamedNew),
+            "an alphabetically-first name with a NEW write time must survive");
+        Assert.True(
+            Directory.Exists(timestampedNew),
+            "the newest timestamped folder must survive");
+
+        // Pruned: the two oldest by DATE, whatever they are called.
+        Assert.False(
+            Directory.Exists(renamedOld),
+            "an alphabetically-last name with an OLD write time must still be pruned");
+        Assert.False(
+            Directory.Exists(timestampedOld),
+            "the older timestamped folder must be pruned");
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-3)]
@@ -58,8 +127,8 @@ public class AutoSaveServicePruningTests
         h.NowUtc = SaveTime;
         h.Settings.MaxAutoSaves = configured;
 
-        h.SeedSnapshot(OldStamp(0));
-        h.SeedSnapshot(OldStamp(1));
+        Age(h.SeedSnapshot(OldStamp(0)), 0);
+        Age(h.SeedSnapshot(OldStamp(1)), 1);
 
         h.AddActor("Alpha");
         h.Service.SaveNow("test");
@@ -79,10 +148,12 @@ public class AutoSaveServicePruningTests
         var deletable = h.SeedSnapshot(OldStamp(0));
 
         // Prune walks the stale list newest-first, so the locked folder is
-        // attempted BEFORE the deletable one: if a failure aborted the loop,
-        // OldStamp(0) would survive.
+        // stamped NEWER and is therefore attempted BEFORE the deletable one: if
+        // a failure aborted the loop, OldStamp(0) would survive.
         var lockedFile = Path.Combine(locked, "held.pose");
         File.WriteAllText(lockedFile, "{}");
+        Age(locked, 1);
+        Age(deletable, 0);
 
         using (var _ = new FileStream(
                    lockedFile, FileMode.Open, FileAccess.Read, FileShare.None))

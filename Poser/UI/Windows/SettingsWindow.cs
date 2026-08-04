@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -85,7 +86,7 @@ public class SettingsWindow : Window
 
             AutoSaveEnabled = c.AutoSave.Enabled,
             AutoSaveIntervalSeconds = c.AutoSave.IntervalSeconds,
-            AutoSaveMaxKept = c.AutoSave.MaxAutoSaves,
+            AutoSaveMaxKept = c.AutoSave.MaxAutoSaves.ToString(CultureInfo.InvariantCulture),
             AutoSaveCleanOnExit = c.AutoSave.CleanOnExit,
 
             BoneDotRadius = c.Skeleton.BoneDotRadius,
@@ -145,10 +146,21 @@ public class SettingsWindow : Window
         c.GPoseTargetChangesSelection = _vm.FollowGameTarget;
         c.SelectionChangesGPoseTarget = _vm.TargetFollowsSelection;
 
-        // The two auto-save sliders are float rows over integer config.
+        // The interval slider is a float row over integer config; the kept count
+        // is free text, so it parses here and an unusable draft (empty, blank,
+        // non-numeric, zero, overflowing int) leaves the stored value alone
+        // rather than resetting the user's retention behind their back.
         c.AutoSave.Enabled = _vm.AutoSaveEnabled;
         c.AutoSave.IntervalSeconds = (int)MathF.Round(_vm.AutoSaveIntervalSeconds);
-        c.AutoSave.MaxAutoSaves = (int)MathF.Round(_vm.AutoSaveMaxKept);
+        if (int.TryParse(
+                _vm.AutoSaveMaxKept.Trim(),
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out int keptAutoSaves)
+            && keptAutoSaves >= 1)
+            c.AutoSave.MaxAutoSaves = keptAutoSaves;
+        _vm.AutoSaveMaxKept =
+            c.AutoSave.MaxAutoSaves.ToString(CultureInfo.InvariantCulture);
         c.AutoSave.CleanOnExit = _vm.AutoSaveCleanOnExit;
 
         c.Skeleton.BoneDotRadius = _vm.BoneDotRadius;

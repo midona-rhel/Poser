@@ -1069,8 +1069,13 @@ public class MainWindow : Window
         if (_shellMenuOpenRequested)
         {
             _shellMenuOpenRequested = false;
+            // A short command list, not a context menu: the shell menu takes the
+            // width its own rows need rather than the canonical 260px surface.
             Crystarium.FloatingMenu.Open(
-                "##shell-burger-menu", _shellMenuAnchor, _shellMenuItems);
+                "##shell-burger-menu",
+                _shellMenuAnchor,
+                _shellMenuItems,
+                Crystarium.FloatingMenu.MeasureWidth(_shellMenuItems));
         }
         int clicked = Crystarium.FloatingMenu.Draw("##shell-burger-menu");
         if (clicked >= 0 && clicked < _shellMenuItems.Length)

@@ -323,9 +323,15 @@ public class AutoSaveService : IAutoSaveService
     }
 
     /// <summary>
-    /// Disk-based retention: the newest <c>MaxAutoSaves</c> folders by name
-    /// (== by time) are kept, everything older is deleted. Reading the disk
-    /// rather than a session queue is what makes retention hold across restarts.
+    /// Disk-based retention: the newest <c>MaxAutoSaves</c> folders BY DATE are
+    /// kept, everything older is deleted. Reading the disk rather than a session
+    /// queue is what makes retention hold across restarts.
+    ///
+    /// <para>Date, not name (Brio's semantic): a snapshot folder is written once
+    /// and never touched again, so its last-write time IS the snapshot date, and
+    /// a folder the user renamed keeps its true age instead of being sorted by
+    /// whatever it is now called. Ties break on name, descending, so the order
+    /// is total even at one-second stamp granularity.</para>
     /// </summary>
     private void Prune()
     {
@@ -335,7 +341,8 @@ public class AutoSaveService : IAutoSaveService
         try
         {
             stale = Directory.EnumerateDirectories(RootDirectory)
-                .OrderByDescending(dir => Path.GetFileName(dir) ?? string.Empty, StringComparer.Ordinal)
+                .OrderByDescending(Directory.GetLastWriteTimeUtc)
+                .ThenByDescending(dir => Path.GetFileName(dir) ?? string.Empty, StringComparer.Ordinal)
                 .Skip(keep)
                 .ToList();
         }

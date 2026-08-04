@@ -54,14 +54,16 @@ interchange with Brio and (via name conversion) Anamnesis.
   exit instead deletes all snapshots — a crash never runs it, so
   snapshots survive for recovery.
 - Retention prunes from DISK to the configured count (newest-first by
-  folder name, floor 1), so it holds across restarts. Every IO failure
+  folder DATE — `Directory.GetLastWriteTimeUtc`, Brio's semantic, since a
+  snapshot folder is written once; name breaks ties, so a renamed folder
+  keeps its true age — floor 1), so it holds across restarts. Every IO failure
   logs an Error with the path and never aborts the remaining
   actors/folders. Recovery: the titlebar burger menu → "Auto-saves…"
   (enabled when the selected actor has a skeleton; the ONE entry point)
   opens the import browser rooted at the auto-save directory; a
   recovered file flows through the standard import pipeline. Settings
-  (General → AUTO-SAVE): enabled, interval 10–600 s, kept count 1–50,
-  clean-on-exit — read live each tick.
+  (General → AUTO-SAVE): enabled, interval 10–600 s, kept count (free
+  numeric input, floor 1, no cap), clean-on-exit — read live each tick.
 
 ## Character files (MCDF)
 

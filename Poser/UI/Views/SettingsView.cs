@@ -47,7 +47,11 @@ public sealed class SettingsViewModel
 
     public bool AutoSaveEnabled = true;
     public float AutoSaveIntervalSeconds = 60f;
-    public float AutoSaveMaxKept = 10f;
+    /// <summary>Free numeric text, not a bounded slider: a shoot with hundreds
+    /// of recovery points is a legitimate setup. Held as the raw string the
+    /// user is typing and parsed at the config boundary, so a half-typed value
+    /// never collapses to a number mid-keystroke.</summary>
+    public string AutoSaveMaxKept = "10";
     public bool AutoSaveCleanOnExit;
 
     public bool ShowSkeletonLines = true;
@@ -368,13 +372,12 @@ public static class SettingsView
                 600f,
                 next => vm.AutoSaveIntervalSeconds = next,
                 format: "0 s");
-            form.Slider(
+            form.TextInput(
                 "Kept auto-saves",
                 vm.AutoSaveMaxKept,
-                1f,
-                50f,
                 next => vm.AutoSaveMaxKept = next,
-                format: "0");
+                placeholder: "10",
+                help: "How many snapshot folders to keep; the oldest are deleted first");
             form.Switch(
                 "Clean up on GPose exit",
                 vm.AutoSaveCleanOnExit,
