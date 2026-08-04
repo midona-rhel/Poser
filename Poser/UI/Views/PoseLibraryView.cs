@@ -316,6 +316,13 @@ public static class PoseLibraryView
     /// grid's scroll region shrinks by exactly this.</summary>
     private const float InfoStripHeight = 28f;
 
+    /// <summary>The band's, tabs' and footer's horizontal inset from the pane
+    /// edge. HALF the page inset: the workspace already reads as a framed
+    /// surface, so a full page inset on top doubled into pointless padding
+    /// (user call, 2026-08-04). The grid's half-gutter and the rail's
+    /// sidebar-contract insets are separate on purpose.</summary>
+    private const float PaneInset = 6f;
+
     private const float MinimumIconSize = 80f;
 
     private const float MaximumIconSize = 200f;
@@ -472,7 +479,7 @@ public static class PoseLibraryView
     {
         if (!(footer.Size.X > 0f) || !(footer.Size.Y > 0f))
             return;
-        float inset = theme.Page.Inset * scale;
+        float inset = PaneInset * scale;
         Crystarium.ActionBar(
             ActionRowId,
             new Vector2(footer.Min.X + inset, footer.Min.Y),
@@ -517,9 +524,7 @@ public static class PoseLibraryView
     {
         if (!(band.Size.X > 0f))
             return;
-        // The pane's own inset, which is also where the rail's row marks
-        // stand: the shell already spent its content inset outside this rect.
-        float inset = theme.Page.Inset * scale;
+        float inset = PaneInset * scale;
         float gap = theme.Page.ActionGap * scale;
         float action = theme.Floating.CloseActionSize;
         float actionPx = action * scale;
@@ -576,7 +581,7 @@ public static class PoseLibraryView
 
         float height = theme.Controls.NavigationHeight * scale;
         var min = new Vector2(
-            band.Min.X + theme.Page.Inset * scale,
+            band.Min.X + PaneInset * scale,
             band.Min.Y + (band.Size.Y - height) * 0.5f);
         // Half the band is the floor: below that the tabs would leave no field.
         if (vm.TabsWidth > band.Size.X * 0.5f)
@@ -1499,7 +1504,7 @@ public static class PoseLibraryView
             ? 0f
             : Crystarium.MeasureText(vm.Status, labelStyle).X + gap;
         float height = theme.Controls.SliderHeight * scale;
-        float x = footer.Min.X + theme.Page.Inset * scale + status;
+        float x = footer.Min.X + PaneInset * scale + status;
         if (x + SliderWidth * scale > footer.Max.X)
             return;
 
