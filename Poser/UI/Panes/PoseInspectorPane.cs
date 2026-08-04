@@ -1473,7 +1473,7 @@ public class PoseInspectorPane
         {
             bool locked = _gazeService.IsPartLocked(actor, part);
             actions.IconButton(
-                locked ? TablerIcon.Lock : TablerIcon.LockOpen,
+                locked ? TablerIcon.Lock : TablerIcon.LockOff,
                 () => _gazeService.SetPartLock(actor, part, !locked),
                 disabled: !enabled,
                 help: locked
