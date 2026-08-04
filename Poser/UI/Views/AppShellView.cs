@@ -110,6 +110,15 @@ public sealed class AppShellViewModel
     /// </summary>
     public bool ContentOwnsViewport;
 
+    /// <summary>
+    /// The pane takes the viewport WALL TO WALL: no shell horizontal inset and
+    /// no reserved scrollbar column, because the pane paints its own bands,
+    /// rules and gutters against the workspace edges. The library uses this —
+    /// its footer rule has to meet the same edges every other shell rule does.
+    /// Wins over <see cref="ContentOwnsViewport"/>.
+    /// </summary>
+    public bool ContentFlush;
+
     /// <summary>Sidebar width, resizable within 220–400px. Unscaled px.</summary>
     public float SidebarWidthPx = 280f;
     public Action<float>? OnSidebarResize;
@@ -724,7 +733,15 @@ public static class AppShellView
                 | ImGuiWindowFlags.NoScrollWithMouse))
         {
             var viewportCursor = ImGui.GetCursorScreenPos();
-            if (vm.ContentOwnsViewport)
+            if (vm.ContentFlush)
+            {
+                vm.DrawContent?.Invoke(
+                    viewportCursor,
+                    new Vector2(
+                        childSize.X,
+                        MathF.Max(0f, ImGui.GetContentRegionAvail().Y)));
+            }
+            else if (vm.ContentOwnsViewport)
             {
                 float contentInset = MainHorizontalPadding * s;
                 var contentOrigin = viewportCursor

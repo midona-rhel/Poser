@@ -919,9 +919,10 @@ public class MainWindow : Window
 
     private void ApplyTabLayout(string tab)
     {
-        // The library scrolls its own grid, so it takes the fixed viewport the
-        // Pose tab takes.
-        _vm.ContentOwnsViewport = tab is "Pose" or "Library";
+        // The library paints its own bands and rules, so it takes the
+        // viewport wall to wall; Pose keeps the shell-inset fixed viewport.
+        _vm.ContentFlush = tab is "Library";
+        _vm.ContentOwnsViewport = tab is "Pose";
         _vm.ContentUsesPage =
             tab is "Animation" or "Appearance";
     }
