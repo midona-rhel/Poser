@@ -151,6 +151,17 @@ public sealed class SvgDocument
     {
         if (!Fits(min, max)) return;
 
+        // Icons draw on the WHOLE-PIXEL grid. The bake cache keys on the
+        // box's sub-pixel phase, and a dragged window slides that phase
+        // continuously — every visible icon became a first-seen key every
+        // frame (painted in software, then re-baked, then the full-cache
+        // nuke), which Dalamud logged as 150-400ms UiBuilder hitches. A
+        // floored box keeps the phase at zero, so movement re-uses the
+        // standing bake; the size is preserved exactly.
+        var snapped = new Vector2(MathF.Floor(min.X), MathF.Floor(min.Y));
+        max = snapped + (max - min);
+        min = snapped;
+
         // Warm path: one cached quad. No geometry, no closure, no
         // per-sub-path point buffers, no per-pixel rect.
         if (SvgIconTextureCache.TryDraw(
