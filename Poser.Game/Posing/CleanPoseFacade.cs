@@ -22,6 +22,7 @@ public sealed class CleanPoseFacade
         PoseEditService edits,
         PoseTransferService transfers,
         PoseImportCapture imports,
+        PoseExportCapture exports,
         Poser.Config.ConfigurationService configuration,
         IPoseFileService poseFiles,
         IBonePosingService bonePosing,
@@ -31,12 +32,15 @@ public sealed class CleanPoseFacade
         Poser.Application.Animation.AnimationSession animation,
         Poser.Application.Presentation.ActorPresentationSession presentation,
         Poser.Application.Integration.ActorIntegrationSession integration,
+        IFramework framework,
         IPluginLog log)
     {
+        _framework = framework;
         _bindings = bindings;
         _edits = edits;
         _transfers = transfers;
         _imports = imports;
+        _exports = exports;
         _configuration = configuration;
         _poseFiles = poseFiles;
         _bonePosing = bonePosing;
@@ -51,9 +55,44 @@ public sealed class CleanPoseFacade
 
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
 
+    private readonly IFramework _framework;
+    /// <summary>True from arming (the synchronous Ok) until the settle
+    /// tick hands the plan to <see cref="PoseImportCapture"/>, whose own
+    /// IsPending takes over. One import in flight at a time, across the
+    /// 4-tick window included.</summary>
+    private bool _importArming;
+
     private readonly PoseImportCapture _imports;
+    private readonly PoseExportCapture _exports;
     private readonly Poser.Config.ConfigurationService _configuration;
     private readonly IPoseFileService _poseFiles;
+
+    /// <summary>
+    /// File export dispatch through <see cref="PoseExportCapture"/> rather
+    /// than straight into <c>IPoseFileService.ExportPose</c>. Ok means the
+    /// export is ARMED, not written: the file lands after the next update-phase
+    /// apply pass has refreshed every bone's raw transform cache, because a
+    /// never-posed skeleton's cache otherwise still holds its build-time
+    /// snapshot and the file would record a pose the actor left long ago.
+    /// <paramref name="onFinished"/> carries the actual write result.
+    /// </summary>
+    public PoseEditResult ExportPose(
+        IActor actor,
+        string path,
+        Action<bool>? onFinished = null)
+    {
+        var description = $"Export {System.IO.Path.GetFileName(path)}";
+        var slots = _skeletons.GetSkeletons(actor);
+        if (slots.Count == 0)
+            return Report(description,
+                PoseEditResult.Fail("The actor has no skeleton."));
+
+        var begun = _exports.Begin(slots, path, onFinished);
+        if (!begun.Success)
+            return Report(description, PoseEditResult.Fail(
+                begun.Detail ?? "The pose export failed."));
+        return PoseEditResult.Ok(slots.Count);
+    }
 
     /// <summary>
     /// File import dispatch through the in-pass application engine: the plan
@@ -98,14 +137,120 @@ public sealed class CleanPoseFacade
         var plan = _poseFiles.BuildImportPlan(_skeletons.GetSkeletons(actor), path, options);
         if (plan == null)
             return PoseEditResult.Fail("The pose file could not be read.");
+        return BeginImport(actor, plan, options,
+            $"Import {System.IO.Path.GetFileName(path)}");
+    }
 
-        // The apply window runs paused (Brio: every ImportPose goes through
-        // StopSpeedAndResetTimeline) so playback cannot move the basis the
-        // pass diffs against, or fight the pose before it has even rendered.
-        // The pause is the Animation tab's own speed override — Pause there,
-        // resume there, one owner. Restoration waits for the import's actual
-        // completion (the pass has run, the pose has rendered against the
-        // held frame) instead of Brio's fixed post-apply tick guess.
+    /// <summary>In-memory variant of the file import — same plan builder,
+    /// same pause bracket, same in-pass application, one history entry named
+    /// <paramref name="description"/>. The rest-pose presets apply through
+    /// here without a disk path.</summary>
+    public PoseEditResult ImportPose(
+        IActor actor,
+        PoseFile poseFile,
+        PoseImportOptions options,
+        string description)
+    {
+        var plan = _poseFiles.BuildImportPlan(
+            _skeletons.GetSkeletons(actor), poseFile, options);
+        return BeginImport(actor, plan, options, description);
+    }
+
+    /// <summary>
+    /// Brio's "Import A-Pose"/"Import T-Pose" (FileUIHelpers.cs:611-621 →
+    /// PosingCapability.LoadResourcesPose, asBody: true): the embedded rest
+    /// pose, body scope, rotation-only, one undoable edit. Face, hair, ears,
+    /// head, and every auxiliary slot keep their current pose; the freeze
+    /// config default rides the bracket exactly as a file import's does.
+    /// </summary>
+    public PoseEditResult ApplyRestPose(IActor actor, RestPose pose)
+    {
+        var description = pose == RestPose.APose ? "A-pose" : "T-pose";
+        return Report(description, ImportPose(
+            actor, RestPoses.Get(pose), PoseImportOptions.RestPose, description));
+    }
+
+    /// <summary>
+    /// Ktisis' "Set to reference pose" (PosingManager.ApplyReferencePose:
+    /// hkaPose::SetToReferencePose on every partial, ONE memento covering
+    /// Position | Rotation): the skeleton's own rest pose, read from the
+    /// native reference locals and applied through the same in-pass import
+    /// engine as a single undoable edit. Scale stays untouched, exactly the
+    /// Ktisis memento's transform mask; auxiliary slots keep their animation,
+    /// matching Ktisis' per-skeleton scope.
+    /// </summary>
+    public PoseEditResult ApplyReferencePose(IActor actor)
+    {
+        const string description = "Reference pose";
+        if (_skeletons.GetSkeleton(actor) is not { } character)
+            return Report(description,
+                PoseEditResult.Fail("The actor has no skeleton."));
+        var reference = character.CaptureReferencePose();
+        if (reference.Count == 0)
+            return Report(description, PoseEditResult.Fail(
+                "The skeleton's reference pose could not be read."));
+
+        // The reference pose as a generated pose file: by-name absolute
+        // model-space targets, so the import's instance expansion writes
+        // every partial's copy of a bone (face and hair roots included)
+        // exactly as a file import would.
+        var poseFile = new PoseFile();
+        foreach (var (bone, transform) in reference)
+            poseFile.Bones.TryAdd(bone.BoneName, transform);
+        var options = new PoseImportOptions
+        {
+            ApplyRotation = true,
+            ApplyPosition = true,
+            ApplyScale = false,
+            ApplyBody = true,
+            ApplyFace = true,
+            ApplyMainHand = false,
+            ApplyOffHand = false,
+            ApplyProp = false,
+            ApplyOrnament = false,
+            ApplyModelTransform = false
+        };
+        return Report(description,
+            ImportPose(actor, poseFile, options, description));
+    }
+
+    /// <summary>The import tail shared by every source of a plan: the pause
+    /// bracket around the apply window, freeze-on-import, and the in-pass
+    /// application itself.</summary>
+    private PoseEditResult BeginImport(
+        IActor actor,
+        PoseImportPlan plan,
+        PoseImportOptions options,
+        string description)
+    {
+        // Synchronous validation BEFORE the pause side effect: both
+        // ImportPose overloads build the plan before calling here (a bad
+        // file already returned above), and the Begin preconditions the
+        // facade can see — an empty plan, an import already in flight —
+        // are checked now, so a rejected import never pauses the actor.
+        // Begin's remaining gates (IK bake pending, live gesture) only
+        // surface on the settle tick; that path restores the speed below.
+        if (plan.IsEmpty)
+            return PoseEditResult.Fail(
+                "Nothing in this file applies to the chosen scope.");
+        if (_importArming || _imports.IsPending)
+            return PoseEditResult.Fail("A pose import is already applying.");
+
+        // The apply window runs paused, in Brio's exact sequence (every
+        // Brio ImportPose goes through ActionTimelineCapability.
+        // StopSpeedAndResetTimeline, ATC:110-176, driven by
+        // PosingCapability.ImportPose:147-165): pause NOW, wait 4 ticks
+        // for the pause to land (ATC:165, delayTicks: 4), rewind every
+        // paused control to LocalTime 0 — the face partial's blink/lip
+        // timelines included (ATC:136-162) — and only THEN register the
+        // import. Registering on the click tick made the deltas diff
+        // against whatever mid-blink frame the pause caught, a permanent
+        // face offset relative to Brio applying the same file.
+        //
+        // Restoration stays completion-driven (the pass has run, the pose
+        // has rendered against the held frame) rather than Brio's fixed
+        // post-apply guess, but lands +2 ticks after completion — Brio's
+        // own settle delay before handing speed back (ATC:169-175).
         //
         // Freeze-on-import (the FILES checkbox riding the options, OR'd with
         // the config default exactly as Brio ORs freezeOnLoad with
@@ -143,19 +288,53 @@ public sealed class CleanPoseFacade
                 _animation.Resume(restoreId);
         }
 
-        var begun = _imports.Begin(
-            plan,
-            $"Import {System.IO.Path.GetFileName(path)}",
-            onFinished: success =>
-            {
-                if (!freeze || !success)
-                    RestorePriorSpeed();
-            });
-        if (!begun.Success)
+        // The settle tick (Brio ATC:120-165): the rewind and the
+        // registration both run on the framework thread 4 ticks after the
+        // pause, the same RunOnTick idiom the capture itself uses for its
+        // completion and timeout hops. Ok below therefore means ARMED —
+        // the plan is validated and scheduled; a failure on the settle
+        // tick (IK bake landed meanwhile, gesture started) logs through
+        // the same channel as Report and restores the speed.
+        _importArming = true;
+        _framework.RunOnTick(() =>
         {
-            RestorePriorSpeed();
-            return PoseEditResult.Fail(begun.Detail ?? "The pose import failed.");
-        }
+            _importArming = false;
+            try
+            {
+                // Unconditional, as Brio's is: every control at speed 0
+                // rewinds, whether this import paused it or the user had.
+                if (animationTarget is { } rewindId)
+                {
+                    var rewound = _animation.RewindPausedControls(rewindId);
+                    if (!rewound.Success)
+                        _log.Warning(
+                            $"Pose edit '{description}': settle rewind failed: {rewound.Detail}");
+                }
+
+                var begun = _imports.Begin(
+                    plan,
+                    description,
+                    onFinished: success =>
+                    {
+                        if (!freeze || !success)
+                            _framework.RunOnTick(RestorePriorSpeed, delayTicks: 2);
+                    });
+                if (!begun.Success)
+                {
+                    _log.Warning(
+                        $"Pose edit '{description}' failed: {begun.Detail ?? "The pose import failed."}");
+                    _framework.RunOnTick(RestorePriorSpeed, delayTicks: 2);
+                }
+            }
+            catch (Exception ex)
+            {
+                // The pause must not outlive a throwing arm; restore
+                // immediately rather than leaving the actor frozen.
+                _log.Error(
+                    $"Pose edit '{description}' failed while arming: {ex.Message}");
+                RestorePriorSpeed();
+            }
+        }, delayTicks: 4);
         return PoseEditResult.Ok(plan.FileBoneCount);
     }
 
