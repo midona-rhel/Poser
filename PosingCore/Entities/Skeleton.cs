@@ -225,6 +225,10 @@ public class Skeleton : EntityBase, ISkeleton
         // Built alongside the bones, from the names this pass already marshals.
         var nativePartials = new NativePartial[partialCount];
 
+        // Lazily built lowest-index-per-name map of partial 0, used to link
+        // multi-root partials by name (see the connect step below).
+        Dictionary<string, Bone>? partial0FirstByName = null;
+
         for (int partialIdx = 0; partialIdx < partialCount; partialIdx++)
         {
             var partial = &gameSkeleton->PartialSkeletons[partialIdx];
@@ -310,16 +314,59 @@ public class Skeleton : EntityBase, ISkeleton
                 break; // Only process the first valid pose
             }
 
-            // Connect non-root partials to partial 0
+            // Connect non-root partials to partial 0. Brio's rule is
+            // either/or on the partial's root count (Brio Skeleton.cs:99-125):
+            // exactly ONE root -> link via ConnectedParentBoneIndex/
+            // ConnectedBoneIndex (Brio Skeleton.cs:101-110); MULTIPLE roots
+            // -> map EVERY root to its partial-0 namesake by name (Brio
+            // Skeleton.cs:111-124). The connected-index link is NOT applied
+            // in the multi-root case, and a root with no partial-0 namesake
+            // simply stays unlinked (Brio Skeleton.cs:117 null check).
             if (partialIdx > 0 && partialBones[0].Count > 0)
             {
-                var connectedParentIndex = partial->ConnectedParentBoneIndex;
-                var connectedBoneIndex = partial->ConnectedBoneIndex;
+                var rootBones = partialBones[partialIdx]
+                    .OrderBy(kv => kv.Key)
+                    .Select(kv => kv.Value)
+                    .Where(b => b.IsPartialRoot)
+                    .ToList();
 
-                if (partialBones[0].TryGetValue(connectedParentIndex, out var parentBone) &&
-                    partialBones[partialIdx].TryGetValue(connectedBoneIndex, out var childBone))
+                if (rootBones.Count == 1)
                 {
-                    parentBone.AddChildBone(childBone);
+                    var connectedParentIndex = partial->ConnectedParentBoneIndex;
+                    var connectedBoneIndex = partial->ConnectedBoneIndex;
+
+                    if (partialBones[0].TryGetValue(connectedParentIndex, out var parentBone) &&
+                        partialBones[partialIdx].TryGetValue(connectedBoneIndex, out var childBone))
+                    {
+                        parentBone.AddChildBone(childBone);
+                    }
+                }
+                else
+                {
+                    // Brio resolves the namesake with
+                    // PartialSkeleton.GetBone(string)
+                    // (Brio PartialSkeleton.cs:40-47): first ordinal match in
+                    // insertion order, and partial-0 bones are inserted in
+                    // ascending index order — i.e. the LOWEST-indexed
+                    // partial-0 bone carrying the raw havok name.
+                    if (partial0FirstByName == null)
+                    {
+                        partial0FirstByName = new Dictionary<string, Bone>(
+                            partialBones[0].Count, StringComparer.Ordinal);
+                        foreach (var kv in partialBones[0].OrderBy(kv => kv.Key))
+                        {
+                            if (!partial0FirstByName.ContainsKey(kv.Value.BoneName))
+                                partial0FirstByName[kv.Value.BoneName] = kv.Value;
+                        }
+                    }
+
+                    foreach (var rootBone in rootBones)
+                    {
+                        if (partial0FirstByName.TryGetValue(rootBone.BoneName, out var namesake))
+                        {
+                            namesake.AddChildBone(rootBone);
+                        }
+                    }
                 }
             }
         }
@@ -404,6 +451,101 @@ public class Skeleton : EntityBase, ISkeleton
             }
         }
     }
+
+    /// <summary>
+    /// Ktisis' "Set to reference pose" source data (EntityPoseConverter.
+    /// LoadReferencePose: hkaPose::SetToReferencePose + SyncModelSpace per
+    /// partial) read WITHOUT mutating the live pose: each partial's
+    /// hkaSkeleton reference locals composed down the parent chain — havok
+    /// orders parents before children, so one forward pass suffices. A
+    /// non-zero partial has no place of its own: at runtime the game drives
+    /// its roots from partial 0 — a single-root partial through the
+    /// connected parent bone, a multi-root partial per-root through the
+    /// partial-0 NAMESAKE (the same either/or the entity linking above
+    /// mirrors from Brio) — so each root's anchor is that partial-0 bone's
+    /// composed reference and the root's own reference local is ignored.
+    /// Attach-driven partial roots are left out of the result
+    /// (CreatePoseFile's export rule); by name they are the partial-0 bone
+    /// the import's instance expansion already covers.
+    /// </summary>
+    public unsafe IReadOnlyList<(IBone Bone, Transform Reference)> CaptureReferencePose()
+    {
+        var result = new List<(IBone Bone, Transform Reference)>();
+        var gameSkeleton = GetGameSkeleton();
+        if (gameSkeleton == null)
+            return result;
+
+        var partialCount = gameSkeleton->PartialSkeletonCount;
+        Transform[]? partial0Model = null;
+        Dictionary<string, Transform>? partial0ByName = null;
+        for (int partialIdx = 0; partialIdx < partialCount; partialIdx++)
+        {
+            var partial = &gameSkeleton->PartialSkeletons[partialIdx];
+            var pose = partial->GetHavokPose(0);
+            if (pose == null || pose->Skeleton == null)
+                continue;
+
+            var havokSkeleton = pose->Skeleton;
+            var boneCount = havokSkeleton->Bones.Length;
+            if (havokSkeleton->ReferencePose.Length < boneCount)
+                continue;
+
+            var model = new Transform[boneCount];
+            for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
+            {
+                var local = havokSkeleton->ReferencePose[boneIdx];
+                var localTransform = new Transform
+                {
+                    Position = new Vector3(local.Translation.X, local.Translation.Y, local.Translation.Z),
+                    Rotation = new Quaternion(local.Rotation.X, local.Rotation.Y, local.Rotation.Z, local.Rotation.W),
+                    Scale = new Vector3(local.Scale.X, local.Scale.Y, local.Scale.Z)
+                };
+                var parentIndex = havokSkeleton->ParentIndices[boneIdx];
+                if (parentIndex >= 0 && parentIndex < boneIdx)
+                    model[boneIdx] = ComposeReference(model[parentIndex], localTransform);
+                else if (partialIdx > 0 && partial0ByName != null &&
+                         _bonesByIndex.TryGetValue((partialIdx, boneIdx), out var rootBone) &&
+                         partial0ByName.TryGetValue(rootBone.BoneName, out var namesake))
+                    model[boneIdx] = namesake;
+                else if (partialIdx > 0 && partial0Model != null &&
+                         boneIdx == partial->ConnectedBoneIndex &&
+                         partial->ConnectedParentBoneIndex >= 0 &&
+                         partial->ConnectedParentBoneIndex < partial0Model.Length)
+                    model[boneIdx] = partial0Model[partial->ConnectedParentBoneIndex];
+                else
+                    model[boneIdx] = localTransform;
+            }
+            if (partialIdx == 0)
+            {
+                partial0Model = model;
+                // Lowest index wins per name — the same rule the runtime's
+                // name lookups and the linking step above resolve with.
+                partial0ByName = new Dictionary<string, Transform>(
+                    boneCount, StringComparer.Ordinal);
+                for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
+                {
+                    if (_bonesByIndex.TryGetValue((0, boneIdx), out var named) &&
+                        !partial0ByName.ContainsKey(named.BoneName))
+                        partial0ByName[named.BoneName] = model[boneIdx];
+                }
+            }
+
+            for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
+            {
+                if (!_bonesByIndex.TryGetValue((partialIdx, boneIdx), out var bone))
+                    continue;
+                if (bone.IsPartialRoot && !bone.IsSkeletonRoot)
+                    continue;
+                result.Add((bone, model[boneIdx]));
+            }
+        }
+        return result;
+    }
+
+    /// <summary>Parent-then-local model-space composition, via the same
+    /// S·R·T matrices every other transform in this assembly composes with.</summary>
+    internal static Transform ComposeReference(in Transform parent, in Transform local) =>
+        Transform.FromMatrix(local.ToMatrix() * parent.ToMatrix());
 
     /// <summary>
     /// Gets the model matrix for transforming bone positions to world space.

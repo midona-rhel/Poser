@@ -836,11 +836,19 @@ public unsafe class BonePosingService : IBonePosingService
                 if (bone == null)
                     continue;
 
-                if (bone.IsPartialRoot && !bone.IsSkeletonRoot && bone.ParentBone != null)
+                if (bone.IsPartialRoot && !bone.IsSkeletonRoot)
                 {
+                    // Brio performs this access for EVERY partial root and
+                    // only afterwards checks whether a parent exists (Brio
+                    // SkeletonService.cs:152-153): AccessBoneModelSpace with
+                    // Propagate natively syncs the root's model-space entry
+                    // and invalidates its descendants, a side effect that
+                    // must happen even when no parent transform is written.
                     var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.Propagate);
 
                     var parentBone = bone.ParentBone;
+                    if (parentBone == null)
+                        continue;
                     var parentPartial = &gameSkeleton->PartialSkeletons[parentBone.PartialId];
                     var parentPose = parentPartial->GetHavokPose(0);
 
