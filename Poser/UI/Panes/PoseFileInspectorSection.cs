@@ -22,10 +22,8 @@ public sealed class PoseFileInspectorSection
     private static readonly string[] ScopeOptions =
         ["Full", "Body", "Expression", "Selected"];
 
-    private readonly IPoseFileService _poseFiles;
     private readonly CleanPoseFacade _poseFacade;
     private readonly SelectionSession _selection;
-    private readonly ISkeletonService _skeletons;
     private readonly Config.ConfigurationService _config;
     private readonly IAutoSaveService _autoSave;
     private string _status = string.Empty;
@@ -51,17 +49,13 @@ public sealed class PoseFileInspectorSection
     public event Action? OnLibraryRequested;
 
     public PoseFileInspectorSection(
-        IPoseFileService poseFiles,
         CleanPoseFacade poseFacade,
         SelectionSession selection,
-        ISkeletonService skeletons,
         Config.ConfigurationService config,
         IAutoSaveService autoSave)
     {
-        _poseFiles = poseFiles;
         _poseFacade = poseFacade;
         _selection = selection;
-        _skeletons = skeletons;
         _config = config;
         _autoSave = autoSave;
         _freeze = config.Config.FreezeActorOnPoseImport;
@@ -197,11 +191,18 @@ public sealed class PoseFileInspectorSection
         _exportBrowser.Open(_lastPath, path =>
         {
             _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
-            bool exported = _poseFiles.ExportPose(
-                _skeletons.GetSkeletons(skeleton.Actor), path);
-            _status = exported
-                ? string.Empty
-                : "Export: the pose file could not be written.";
+            // Armed, not written: the file lands once the update-phase pass
+            // has refreshed the raw transform caches it snapshots, so a
+            // never-posed actor exports its current pose instead of the
+            // build-time one. The status comes from the callback.
+            var armed = _poseFacade.ExportPose(
+                skeleton.Actor,
+                path,
+                exported => _status = exported
+                    ? string.Empty
+                    : "Export: the pose file could not be written.");
+            if (!armed.Success)
+                _status = $"Export: {armed.Detail}";
         });
     }
 

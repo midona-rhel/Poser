@@ -131,6 +131,7 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Animation.FacialPoseCapture>();
         services.AddSingleton<Game.Posing.IkBakeCapture>();
         services.AddSingleton<Game.Posing.PoseImportCapture>();
+        services.AddSingleton<Game.Posing.PoseExportCapture>();
         services.AddSingleton<CleanSceneLifecycle>();
         services.AddSingleton<TargetSyncService>();
         services.AddSingleton<IEditorState, EditorState>();
