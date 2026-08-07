@@ -1362,8 +1362,9 @@ public unsafe class BonePosingService : IBonePosingService
             Scale = bone.LastTransform.Scale
         };
 
-        // Clear existing stacks and apply fresh - flip is a replacement, not an accumulation
-        bonePoseInfo.ClearStacks();
+        // LastRawTransform is the posed value (anim ⊕ existing stacks), so the
+        // diff is only valid on top of those stacks — they must survive, like
+        // Brio's PosingCapability.FlipBone which accumulates and never clears.
         bonePoseInfo.Apply(newTransform, bone.LastRawTransform);
 
         _eventBus.Publish(new BoneTransformChangedEvent(bone));
