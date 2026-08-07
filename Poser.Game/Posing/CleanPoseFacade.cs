@@ -258,6 +258,12 @@ public sealed class CleanPoseFacade
             $"Reset {bone.Name}"));
     }
 
+    /// <summary>Stable-id reset of every given bone as ONE history entry.</summary>
+    public PoseEditResult ResetBones(
+        IReadOnlyList<TransformTargetId> targets,
+        string description) =>
+        Report(description, _edits.Reset(targets, PoseRegion.All, description));
+
     public PoseEditResult Reset(
         IActor actor,
         PoseRegion region)

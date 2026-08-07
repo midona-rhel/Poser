@@ -1807,8 +1807,23 @@ public class PoseInspectorPane
         void Resets(Crystarium.ActionScope actions)
         {
             if (bone != null)
+            {
+                var selectedCount = SelectedBoneIds().Count;
                 actions.Button(
-                    "Bone", () => _cleanPose.ResetBone(bone));
+                    "Bone",
+                    () =>
+                    {
+                        // A VirtualBone primary can carry no selection ids;
+                        // that path keeps the pivot-resolving facade overload.
+                        if (SelectedBoneIds().Count > 0)
+                            ResetSelectedBones();
+                        else
+                            _cleanPose.ResetBone(bone);
+                    },
+                    help: selectedCount > 1
+                        ? $"Reset the pose of all {selectedCount} selected bones"
+                        : "Reset this bone's pose");
+            }
             actions.Button(
                 "Body",
                 () => _cleanPose.Reset(skeleton.Actor, PoseRegion.Body));
@@ -1902,10 +1917,19 @@ public class PoseInspectorPane
             SelectedActorIds().Select(TransformTargetId.ForActor).ToList());
     }
 
-    /// <summary>Resets only the primary selected bone's pose (rail head).</summary>
-    public void ResetPrimaryBone()
+    /// <summary>Resets every selected bone's pose as ONE history entry;
+    /// falls back to the primary bone when the selection carries no bone ids.</summary>
+    public void ResetSelectedBones()
     {
-        if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } boneId })
+        var bones = SelectedBoneIds();
+        if (bones.Count > 1)
+            _cleanPose.ResetBones(
+                bones.Select(TransformTargetId.ForBone).ToList(),
+                $"Reset {bones.Count} bones");
+        else if (bones.Count == 1)
+            _cleanPose.ResetBone(
+                TransformTargetId.ForBone(bones[0]), bones[0].CanonicalName);
+        else if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } boneId })
             _cleanPose.ResetBone(TransformTargetId.ForBone(boneId), boneId.CanonicalName);
     }
 

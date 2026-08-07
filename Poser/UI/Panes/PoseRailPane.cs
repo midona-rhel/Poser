@@ -116,8 +116,8 @@ public class PoseRailPane
             else
             {
                 if (Crystarium.Button("Reset bone", id: "rail-bone-reset",
-                    help: "Reset the pose of the first bone you selected, leaving any others as they are", style: ControlStyle.Workspace))
-                    _inspector.ResetPrimaryBone();
+                    help: "Reset the pose of every selected bone", style: ControlStyle.Workspace))
+                    _inspector.ResetSelectedBones();
                 ImGui.SameLine(0f, 6f * s);
                 if (Crystarium.Button("Select children", id: "rail-children",
                     help: "Add descendant bones to the selection", style: ControlStyle.Workspace))
