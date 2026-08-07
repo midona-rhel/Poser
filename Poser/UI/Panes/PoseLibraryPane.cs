@@ -64,8 +64,11 @@ public sealed class PoseLibraryPane
     /// (<c>AutoSaveService.CreateSnapshotFolder</c>), which is UTC.</summary>
     private const string SnapshotFolderFormat = "yyyy-MM-dd HH-mm-ss'Z'";
 
-    /// <summary>The stamp every tile and every snapshot header shows.</summary>
+    /// <summary>The stamp every tile shows.</summary>
     private const string StampFormat = "yyyy-MM-dd HH:mm";
+
+    /// <summary>The auto-save tab's day headers.</summary>
+    private const string DayFormat = "yyyy-MM-dd";
 
     private const string PoseExtension = ".pose";
 
@@ -559,6 +562,10 @@ public sealed class PoseLibraryPane
                 : string.CompareOrdinal(b.Directory, a.Directory);
         });
 
+        // One header per DAY, not per snapshot (user call): the snapshots are
+        // already newest-first, so a day is a contiguous run and closes when
+        // the date string changes. Each tile keeps its own full stamp.
+        PoseLibraryFolderRow? dayRow = null;
         foreach (var (directory, _) in _snapshots)
         {
             _snapshotFiles.Clear();
@@ -577,17 +584,22 @@ public sealed class PoseLibraryPane
                 continue;
             _snapshotFiles.Sort(StringComparer.OrdinalIgnoreCase);
 
-            int group = folders.Count;
-            folders.Add(new PoseLibraryFolderRow
+            string day = SnapshotDay(directory);
+            if (dayRow is null
+                || !string.Equals(dayRow.Key, day, StringComparison.Ordinal))
             {
-                Key = directory,
-                Label = SnapshotLabel(directory),
-                LabelLower = string.Empty,
-                Depth = 0,
-                Count = _snapshotFiles.Count,
-                CountText = Count(_snapshotFiles.Count),
-            });
+                dayRow = new PoseLibraryFolderRow
+                {
+                    Key = day,
+                    Label = day,
+                    LabelLower = string.Empty,
+                    Depth = 0,
+                };
+                folders.Add(dayRow);
+            }
+            dayRow.Count += _snapshotFiles.Count;
 
+            int group = folders.Count - 1;
             foreach (var file in _snapshotFiles)
             {
                 var name = System.IO.Path.GetFileNameWithoutExtension(file);
@@ -610,6 +622,11 @@ public sealed class PoseLibraryPane
             }
         }
 
+        // The day totals are known only once every snapshot has landed in
+        // its run, so the readouts are minted here.
+        for (int i = 0; i < folders.Count; i++)
+            folders[i].CountText = Count(folders[i].Count);
+
         _vm.Selected = -1;
         _vm.SelectedFolder = 0;
         _vm.ShowRail = false;
@@ -620,21 +637,21 @@ public sealed class PoseLibraryPane
         _refilter = true;
     }
 
-    /// <summary>The snapshot folder's own UTC stamp, shown local and in the
-    /// same shape as a tile's. A folder the collision suffix renamed does not
-    /// parse and keeps its raw name, which is still a timestamp.</summary>
-    private static string SnapshotLabel(string directory)
+    /// <summary>The day header a snapshot groups under: the local date of the
+    /// folder's own UTC stamp. A folder the collision suffix renamed does not
+    /// parse and falls back to its write time.</summary>
+    private static string SnapshotDay(string directory)
     {
         var name = System.IO.Path.GetFileName(directory);
-        return DateTime.TryParseExact(
+        var time = DateTime.TryParseExact(
             name,
             SnapshotFolderFormat,
             CultureInfo.InvariantCulture,
             DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
             out var parsed)
-            ? parsed.ToLocalTime().ToString(
-                StampFormat, CultureInfo.InvariantCulture)
-            : name;
+            ? parsed.ToLocalTime()
+            : SafeFolderTime(directory).ToLocalTime();
+        return time.ToString(DayFormat, CultureInfo.InvariantCulture);
     }
 
     private static DateTime SafeFolderTime(string directory)

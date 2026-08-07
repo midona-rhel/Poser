@@ -382,7 +382,6 @@ public static class PoseLibraryView
         DrawRail(vm, rects.Rail, scale, theme);
         DrawBody(vm, rects.Body, scale, theme);
         DrawActionRow(vm, rects.Footer, scale, theme);
-        DrawSizeSlider(vm, rects.Footer, scale, theme);
         DrawMenu(vm);
 
         if (submit && vm.CanApply && vm.Selected >= 0
@@ -520,6 +519,26 @@ public static class PoseLibraryView
             help: "Rescan source folders",
             id: RefreshId);
         right -= actionPx + gap;
+
+        // The size scrubber rides the band, not the footer: the footer's
+        // buttons overflowed it at minimal width (user call).
+        if (right - SliderWidth * scale
+            > band.Min.X + band.Size.X * 0.5f)
+        {
+            float sliderHeight = theme.Controls.SliderHeight * scale;
+            ImGui.SetCursorScreenPos(new Vector2(
+                right - SliderWidth * scale,
+                band.Min.Y + (band.Size.Y - sliderHeight) * 0.5f));
+            Crystarium.Slider(
+                SliderId,
+                Math.Clamp(vm.IconSize, MinimumIconSize, MaximumIconSize),
+                MinimumIconSize,
+                MaximumIconSize,
+                vm.IconSizeChange!,
+                new ControlStyle { Width = UiWidth.Fixed(SliderWidth) },
+                help: "Thumbnail size");
+            right -= SliderWidth * scale + gap;
+        }
 
         if (vm.ActiveTag is { Length: > 0 } tag)
             right = DrawActiveTag(vm, tag, band, right, scale, theme)
@@ -1245,7 +1264,15 @@ public static class PoseLibraryView
             return;
         }
 
-        float side = MathF.Min(box.X, box.Y) * 0.4f;
+        // The glyph edge is BUCKETED to 8px steps: the icon cache bakes per
+        // exact pixel size and paints a first-seen size in software, so a
+        // size-slider drag that grew the glyph every frame re-rasterized it
+        // every frame and cost whole frames. Within a bucket the key repeats
+        // and the draw stays a cached texture.
+        float bucket = 8f * scale;
+        float side = MathF.Max(
+            bucket,
+            MathF.Floor(MathF.Min(box.X, box.Y) * 0.4f / bucket) * bucket);
         var glyphMin = theme.Optical.Snap(
             boxMin + (box - new Vector2(side)) * 0.5f);
         Crystarium.IconIn(
@@ -1424,47 +1451,6 @@ public static class PoseLibraryView
     }
 
     // ---- Footer -----------------------------------------------------
-
-    /// <summary>
-    /// The thumbnail-size scrubber. The footer's ActionBar carries labels and
-    /// buttons and nothing else, so the slider is seated directly in the
-    /// footer rect, one action gap past where the status caption ends — the
-    /// same measurement the bar itself made for that caption.
-    /// </summary>
-    private static void DrawSizeSlider(
-        PoseLibraryViewModel vm,
-        WindowFrameRect footer,
-        float scale,
-        Theme theme)
-    {
-        if (!(footer.Size.X > 0f))
-            return;
-        var labelStyle = new TextStyle
-        {
-            Size = theme.Typography.LabelSize,
-            Weight = FontWeight.Regular,
-            Color = theme.FormLabel,
-        };
-        float gap = theme.Page.ActionGap * scale;
-        float status = vm.Status.Length == 0
-            ? 0f
-            : Crystarium.MeasureText(vm.Status, labelStyle).X + gap;
-        float height = theme.Controls.SliderHeight * scale;
-        float x = footer.Min.X + PaneInset * scale + status;
-        if (x + SliderWidth * scale > footer.Max.X)
-            return;
-
-        ImGui.SetCursorScreenPos(new Vector2(
-            x, footer.Min.Y + (footer.Size.Y - height) * 0.5f));
-        Crystarium.Slider(
-            SliderId,
-            Math.Clamp(vm.IconSize, MinimumIconSize, MaximumIconSize),
-            MinimumIconSize,
-            MaximumIconSize,
-            vm.IconSizeChange!,
-            new ControlStyle { Width = UiWidth.Fixed(SliderWidth) },
-            help: "Thumbnail size");
-    }
 
     // ---- Context menu -----------------------------------------------
 
