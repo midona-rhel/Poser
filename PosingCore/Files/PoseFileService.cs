@@ -244,12 +244,11 @@ public class PoseFileService : IPoseFileService
             };
         }
 
-        // No face-reconcile pass: within one atomic same-frame edit the
-        // pre-import raw transforms it would re-apply are exactly the
-        // near-identity no-op the delta rejection filters, while the
-        // stack restore hidden inside a duplicate absolute write would
-        // erase the file's own facial edits. Every target gets exactly
-        // one deterministic final state.
+        // The face reconcile is NOT plan-time: file data for non-zero
+        // partials is post-reparent while the apply pass's basis is
+        // pre-reparent, and only the application engine can re-export the
+        // converged subtree between passes — PoseImportCapture's reconcile
+        // stage (Brio PosingCapability.cs:249-250, :316-317, :370-401).
 
         return plan;
     }
@@ -427,13 +426,19 @@ public class PoseFileService : IPoseFileService
     private static void PlanBoneTransform(
         PoseImportPlan plan, IBone bone, PoseFile.BoneData boneData, TransformComponents components)
     {
-        // The FILE transform verbatim: file bones are absolute raw
-        // (pre-reparent) snapshots whose only valid delta basis is the apply
-        // pass's own just-refreshed bone.LastRawTransform (Brio
-        // PoseImporter.cs:35) — a basis read here, outside the pass, would
-        // predate the parents' deltas the same pass propagates. Excluded
-        // components are masked on the DELTA (Brio PoseInfo.cs:108), so the
-        // bone's live values stay put without being re-asserted.
+        // The FILE transform verbatim: file bones are LastRawTransform
+        // snapshots taken AFTER the update phase's post-reparent refresh
+        // (CreatePoseFile above; Brio SkeletonService.cs:243). The delta
+        // basis is the apply pass's own just-refreshed bone.LastRawTransform
+        // (Brio PoseImporter.cs:35) — a basis read here, outside the pass,
+        // would predate the parents' deltas the same pass propagates. For
+        // partial-0 bones the two spaces coincide; for non-zero partials the
+        // file data is post-reparent while the pass basis is pre-reparent,
+        // and PoseImportCapture's reconcile stage is what converges the face
+        // after that wrong-space first diff (Brio PosingCapability.cs:
+        // 316-317, :370-401). Excluded components are masked on the DELTA
+        // (Brio PoseInfo.cs:108), so the bone's live values stay put without
+        // being re-asserted.
         plan.Writes.Add((bone, new Transform
         {
             Position = boneData.Position,

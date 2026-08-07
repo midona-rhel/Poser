@@ -27,6 +27,20 @@ namespace Poser.Game.Posing;
 /// imports mask the DELTA (Brio PoseImporter.cs:35 → PoseInfo.Apply's applyTo,
 /// PoseInfo.cs:108 calc.Filter), so an excluded component contributes nothing
 /// instead of pinning the bone to a stale absolute.
+///
+/// One pass is not the whole story for faces. File data is exported from
+/// <c>bone.LastRawTransform</c> AFTER the update phase's post-reparent
+/// refresh (PoseFileService.cs:74, BonePosingService STEP 4; Brio
+/// SkeletonService.cs:243), while the pass's mid-pass basis is PRE-reparent;
+/// for bones of a non-zero partial the two spaces differ by the head's
+/// posed-vs-animated delta, so the first diff lands the face wrong in both
+/// tools. Brio converges by scheduling Snapshot at +4 ticks after its import
+/// (PosingCapability.cs:249-250), which runs ReconcileHead (:316-317,
+/// :323-352) into ReconcileChildren("j_kao", false) (:370-401): re-export
+/// the j_kao subtree from the now POST-reparent LastRawTransform (:385) and
+/// re-import it in-pass with TransformComponents.All (:380). This engine
+/// ports that as a second one-shot transitive batch between the apply pass
+/// and completion; the single history entry covers the CONVERGED state.
 /// </summary>
 public sealed class PoseImportCapture : IDisposable
 {
@@ -35,6 +49,14 @@ public sealed class PoseImportCapture : IDisposable
     /// <see cref="IkBakeCapture"/>: a skeleton that stops updating must not
     /// leave the import pending forever.</summary>
     private const int CompletionTimeoutTicks = 60;
+
+    /// <summary>Brio schedules its post-import Snapshot — the reconcile's
+    /// driver — at +4 ticks (PosingCapability.cs:249-250). Poser counts from
+    /// the apply batch's outcome instead of from registration; same spirit:
+    /// the post-reparent refresh has settled before the subtree re-export.
+    /// The single <see cref="CompletionTimeoutTicks"/> armed at Begin spans
+    /// both phases.</summary>
+    private const int ReconcileDelayTicks = 4;
 
     private readonly IFramework _framework;
     private readonly StableBindingRegistry _bindings;
@@ -56,10 +78,20 @@ public sealed class PoseImportCapture : IDisposable
         public bool Executed;
     }
 
+    /// <summary>Which transitive batch the pending import is waiting on:
+    /// the plan's file writes, or the post-reparent face reconcile.</summary>
+    private enum ImportStage
+    {
+        Apply,
+        Reconcile,
+    }
+
     private sealed class Import
     {
         public required long Generation;
         public required string Description;
+        /// <summary>The CURRENT stage's batches. <see cref="BeginReconcile"/>
+        /// replaces the verified apply slots with the one reconcile slot.</summary>
         public required List<SlotImport> Slots;
         /// <summary>Ordered import targets and their pre-edit states —
         /// captured before anything was written, so a failure restores
@@ -79,6 +111,15 @@ public sealed class PoseImportCapture : IDisposable
         /// fires it; a pending import dropped by Dispose does not either
         /// (session teardown restores animation state wholesale).</summary>
         public Action<bool>? OnFinished;
+        public ImportStage Stage = ImportStage.Apply;
+        /// <summary>Whether the plan wrote any Character-slot bone of a
+        /// non-zero partial — the only writes whose export/basis spaces can
+        /// disagree, so the only imports a reconcile can converge.</summary>
+        public bool WroteFacePartial;
+        /// <summary>The Character slot skeleton among the apply batches —
+        /// where Brio's ReconcileHead looks up j_kao
+        /// (PosingCapability.cs:326, PoseInfoSlot.Character).</summary>
+        public ISkeleton? CharacterSkeleton;
         public string? Failure;
         public bool Completing;
     }
@@ -204,6 +245,12 @@ public sealed class PoseImportCapture : IDisposable
                 import.Slots.Add(slot);
             }
             slot.Writes[(bone.PartialId, bone.BoneIndex)] = (target, file, components);
+            if (bone.Skeleton.Slot == PoseSlot.Character)
+            {
+                import.CharacterSkeleton ??= bone.Skeleton;
+                if (bone.PartialId != 0)
+                    import.WroteFacePartial = true;
+            }
         }
 
         (TransformTargetId Target, PoseTransform Desired)? model = null;
@@ -367,15 +414,176 @@ public sealed class PoseImportCapture : IDisposable
         if (!known || !complete || import.Completing)
             return;
         import.Completing = true;
-        _framework.RunOnTick(() => Complete(import.Generation));
+        if (import.Stage == ImportStage.Apply)
+            // The apply batches have run; Brio's reconcile window opens 4
+            // ticks after its import (PosingCapability.cs:249-250) — see
+            // ReconcileDelayTicks. BeginReconcile decides whether a second
+            // batch is due or the import completes as-is.
+            _framework.RunOnTick(
+                () => BeginReconcile(import.Generation),
+                delayTicks: ReconcileDelayTicks);
+        else
+            _framework.RunOnTick(() => Complete(import.Generation));
     }
 
     private void OnTimeout(long generation)
     {
         if (_pending is not { } import || import.Generation != generation)
             return;
-        import.Failure ??= "The import never reached an apply pass.";
+        import.Failure ??= import.Stage == ImportStage.Apply
+            ? "The import never reached an apply pass."
+            : "The face reconcile never reached an apply pass.";
         Complete(generation);
+    }
+
+    /// <summary>
+    /// The reconcile decision point, on the framework thread after the apply
+    /// batches ran and reparenting settled. Skips (completing the import
+    /// as-is) when: the apply phase already failed or never executed; the
+    /// plan wrote no face-partial bones (a body/weapon-only import's spaces
+    /// agree — no second pass to burn); the actor has no j_kao (Brio
+    /// ReconcileHead's null check, PosingCapability.cs:326-327); IK is armed
+    /// (Brio Snapshot :316-317 runs ReconcileHead only when
+    /// <c>PoseInfo.HasIKStacks</c> is false — Brio stores IK per stack,
+    /// Poser per bone, so the mapped guard is
+    /// <see cref="IBonePosingService.HasEnabledIk"/>); or neither j_kao nor
+    /// any ancestor is overridden (:331-345 — without a posed head the
+    /// pre/post-reparent spaces coincide and there is nothing to converge).
+    /// Otherwise registers the subtree re-import as the second batch.
+    /// </summary>
+    private void BeginReconcile(long generation)
+    {
+        if (_pending is not { } import || import.Generation != generation)
+            return;
+
+        // A failed or unexecuted apply phase completes (and rolls back) via
+        // Complete's own verdict on the still-current apply slots.
+        var applied = import.Failure == null;
+        if (applied)
+        {
+            foreach (var slot in import.Slots)
+                applied &= slot.Executed;
+        }
+        if (!applied)
+        {
+            Complete(generation);
+            return;
+        }
+
+        var reconcile = BuildReconcile(import);
+        if (reconcile == null)
+        {
+            Complete(generation);
+            return;
+        }
+
+        import.Slots = new List<SlotImport> { reconcile };
+        import.Stage = ImportStage.Reconcile;
+        import.Completing = false;
+        _posing.RegisterTransitiveAction(
+            reconcile.Skeleton,
+            (bone, poseInfo) => ApplyBone(import, reconcile, bone, poseInfo));
+    }
+
+    /// <summary>
+    /// Brio's <c>ReconcileChildren(j_kao, clearFaceStacks: false)</c>
+    /// (PosingCapability.cs:370-401): the j_kao subtree's POST-reparent
+    /// <c>LastRawTransform</c> absolutes (:385, read on a framework tick like
+    /// this one) become a partial re-import applied with
+    /// <c>TransformComponents.All</c> (:380). Brio collapses the subtree
+    /// into a name-keyed file and re-resolves per name; Poser's plan
+    /// machinery is per instance, so each instance re-imports its OWN
+    /// absolute — identical where instances agree (reparenting just snapped
+    /// them together) and exact where they do not. Bones already consistent
+    /// diff to identity in-pass and gain no stack. Null when a guard in
+    /// <see cref="BeginReconcile"/>'s list says skip.
+    /// </summary>
+    private SlotImport? BuildReconcile(Import import)
+    {
+        if (!import.WroteFacePartial ||
+            import.CharacterSkeleton is not { } skeleton)
+            return null;
+        if (_posing.HasEnabledIk(skeleton))
+            return null;
+        // First-built instance = partial 0's body head (Skeleton.cs:256),
+        // matching Brio's Character-slot j_kao lookup; the face and hair
+        // partial roots hang off it through the connected-parent attach.
+        if (skeleton.GetBone("j_kao") is not { } head || head is VirtualBone)
+            return null;
+
+        var poseInfo = _posing.GetPoseInfo(skeleton);
+        // Brio checks HasStacks on j_kao and each ancestor (:331-345). The
+        // Poser analog of Brio's stacks is the interactive (unnamed) layers:
+        // named layers are service-owned recomputed state Brio has no
+        // equivalent of, and they re-drive themselves regardless.
+        var overridden = HasInteractiveStacks(poseInfo, head);
+        for (var ancestor = head.ParentBone;
+             !overridden && ancestor != null;
+             ancestor = ancestor.ParentBone)
+        {
+            overridden = ancestor is not VirtualBone &&
+                         HasInteractiveStacks(poseInfo, ancestor);
+        }
+        if (!overridden)
+            return null;
+
+        var subtree = new List<IBone>();
+        CollectSubtree(head, subtree, new HashSet<IBone>());
+
+        var writes = new Dictionary<(int, int),
+            (TransformTargetId, Transform, TransformComponents)>(subtree.Count);
+        foreach (var bone in subtree)
+        {
+            // A subtree bone without a binding cannot be captured for
+            // rollback, so it is not written either — Brio likewise only
+            // re-applies what its name lookup finds.
+            if (_bindings.GetBoneId(bone) is not { } id)
+                continue;
+            var target = TransformTargetId.ForBone(id);
+            if (!import.Before.ContainsKey(target))
+            {
+                // Captured BEFORE the reconcile writes it. A bone the apply
+                // phase never touched carries no stacks, so this mid-flight
+                // capture equals its pre-import state and the one rollback
+                // restores both phases.
+                var captured = _runtime.Capture(target);
+                if (!captured.Success || captured.State is not { } state)
+                    continue;
+                import.Before[target] = state;
+                import.Order.Add(target);
+            }
+            writes[(bone.PartialId, bone.BoneIndex)] =
+                (target, bone.LastRawTransform, TransformComponents.All);
+        }
+
+        if (writes.Count == 0)
+            return null;
+        return new SlotImport { Skeleton = skeleton, Writes = writes };
+    }
+
+    /// <summary>Brio's ExportFaceBone walk (PosingCapability.cs:383-390):
+    /// the bone and every descendant, which crosses into the face and hair
+    /// partials through the connected-parent attach.</summary>
+    private static void CollectSubtree(
+        IBone bone, List<IBone> into, HashSet<IBone> seen)
+    {
+        if (bone is VirtualBone || !seen.Add(bone))
+            return;
+        into.Add(bone);
+        foreach (var child in bone.ChildBones)
+            CollectSubtree(child, into, seen);
+    }
+
+    private static bool HasInteractiveStacks(
+        SkeletonPoseInfo poseInfo, IBone bone)
+    {
+        foreach (var stack in poseInfo
+                     .GetPoseInfo(bone.BoneName, bone.PartialId).Stacks)
+        {
+            if (stack.Layer == null)
+                return true;
+        }
+        return false;
     }
 
     /// <summary>
