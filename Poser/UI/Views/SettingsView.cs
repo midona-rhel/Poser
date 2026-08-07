@@ -53,6 +53,9 @@ public sealed class SettingsViewModel
     /// never collapses to a number mid-keystroke.</summary>
     public string AutoSaveMaxKept = "10";
     public bool AutoSaveCleanOnExit;
+    /// <summary>The auto-save root on disk, for the Open-in-Explorer row.
+    /// Empty when the binder has no auto-save service to ask.</summary>
+    public string AutoSaveFolder = "";
 
     public bool ShowSkeletonLines = true;
     public float BoneLineThickness = 1.0f;
@@ -86,6 +89,10 @@ public sealed class SettingsViewModel
     public Action? OnCancel;
     public Action? OnClose;
     public Action? OnOpenRepository;
+    /// <summary>Opens a folder in the OS file explorer, creating it first when
+    /// it does not exist yet (a seeded Brio/Anamnesis root may never have been
+    /// created by its own tool).</summary>
+    public Action<string>? OnOpenFolder;
     public Action<UITheme, int>? OnThemePreview;
 }
 
@@ -384,6 +391,11 @@ public static class SettingsView
                 vm.AutoSaveCleanOnExit,
                 next => vm.AutoSaveCleanOnExit = next,
                 "Delete all auto-saves when leaving GPose normally; after a crash they remain for recovery");
+            form.Actions("Folder", actions => actions.Button(
+                "Open in Explorer",
+                () => vm.OnOpenFolder?.Invoke(vm.AutoSaveFolder),
+                disabled: vm.AutoSaveFolder.Length == 0,
+                help: "Show the auto-save snapshot folders in Windows Explorer"));
         });
     }
 
@@ -570,10 +582,18 @@ public static class SettingsView
                         : source.Name,
                     source.Enabled,
                     next => source.Enabled = next,
-                    actions => actions.Button(
-                        "Remove",
-                        () => removing = index,
-                        help: "Stop scanning this folder"),
+                    actions =>
+                    {
+                        actions.Button(
+                            "Open",
+                            () => vm.OnOpenFolder?.Invoke(source.Path),
+                            disabled: string.IsNullOrWhiteSpace(source.Path),
+                            help: "Show this folder in Windows Explorer");
+                        actions.Button(
+                            "Remove",
+                            () => removing = index,
+                            help: "Stop scanning this folder");
+                    },
                     "Scan this folder for poses");
                 form.Status(source.Path);
             }

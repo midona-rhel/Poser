@@ -7,6 +7,7 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Config;
 using Poser.Library;
+using Poser.Services;
 using Poser.UI.Views;
 
 namespace Poser.UI;
@@ -21,13 +22,15 @@ public class SettingsWindow : Window
 {
     private SettingsViewModel _vm = new();
     private bool _saving;
+    private readonly IAutoSaveService _autoSave;
 
-    public SettingsWindow()
+    public SettingsWindow(IAutoSaveService autoSave)
         : base($"Settings###{PluginConstants.PluginName}_settings",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoResize)
     {
+        _autoSave = autoSave;
     }
 
     public override void OnOpen()
@@ -88,6 +91,7 @@ public class SettingsWindow : Window
             AutoSaveIntervalSeconds = c.AutoSave.IntervalSeconds,
             AutoSaveMaxKept = c.AutoSave.MaxAutoSaves.ToString(CultureInfo.InvariantCulture),
             AutoSaveCleanOnExit = c.AutoSave.CleanOnExit,
+            AutoSaveFolder = _autoSave.RootDirectory,
 
             BoneDotRadius = c.Skeleton.BoneDotRadius,
             OverlaySelected = ImGui.ColorConvertU32ToFloat4(c.Skeleton.SelectedBoneColor),
@@ -119,6 +123,26 @@ public class SettingsWindow : Window
         };
         _vm.OnOpenRepository = () =>
             Process.Start(new ProcessStartInfo("https://github.com/midona-rhel/Poser") { UseShellExecute = true });
+        _vm.OnOpenFolder = path =>
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return;
+            try
+            {
+                // A seeded source (Brio/Anamnesis defaults) may point at a
+                // folder its own tool never created; Explorer errors on a
+                // missing path, so create it — the library scans it from now
+                // on anyway ("scanned once it exists").
+                System.IO.Directory.CreateDirectory(path);
+                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            }
+            catch
+            {
+                // An unreachable path (bad drive letter, permissions) has no
+                // surface here beyond doing nothing; the row's Status line
+                // already shows the path itself.
+            }
+        };
 
         // Library sources: edited as copies, so Cancel leaves the configured
         // roots untouched.
