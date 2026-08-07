@@ -306,6 +306,8 @@ public sealed class SpawnBrowserWindow : Window
             { Kind: SceneEntityKind.Actor, Actor: { } actor } => actor,
             { Kind: SceneEntityKind.Bone, Bone: { } bone } =>
                 bone.Skeleton.Actor,
+            { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeActor } =>
+                gazeActor,
             _ => (ActorId?)null,
         };
         if (actorId is not { } id)

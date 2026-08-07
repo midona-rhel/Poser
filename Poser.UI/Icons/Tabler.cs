@@ -78,6 +78,8 @@ public enum TablerIcon
     Info,
     AlertTriangle,
     Menu2,
+    GazePoint,
+    CameraSnap,
 }
 
 /// <summary>
@@ -201,6 +203,8 @@ public static class Tabler
         TablerIcon.Info            => "info",
         TablerIcon.AlertTriangle   => "alert-triangle",
         TablerIcon.Menu2           => "menu-2",
+        TablerIcon.GazePoint       => "gaze-point",
+        TablerIcon.CameraSnap      => "camera-snap",
         _ => "circle",
     };
 }

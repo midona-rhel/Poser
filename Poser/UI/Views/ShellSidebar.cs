@@ -451,8 +451,9 @@ public sealed class ShellSidebar
             Icon = row.IconName == null ? row.Icon : null,
             IconName = row.IconName,
             // Nested rows draw no mark; their guide column already spans the
-            // same distance the root's icon cell does.
-            HideIcon = row.Depth > 0,
+            // same distance the root's icon cell does. ForceIcon opts one back
+            // in for a nested row that is a thing rather than a grouping.
+            HideIcon = row.Depth > 0 && !row.ForceIcon,
             Badge = string.IsNullOrEmpty(row.Count) ? null : row.Count,
             Depth = row.Depth,
             Trunks = entry.Trunks,

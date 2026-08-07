@@ -36,5 +36,21 @@ internal static class PoserIconSources
         // included it; three full-width rules at y 6/12/18.
         ["menu-2"] = @"<svg xmlns=""http://www.w3.org/2000/svg"" width=""24"" height=""24"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round"" > <path d=""M4 6l16 0"" /> <path d=""M4 12l16 0"" /> <path d=""M4 18l16 0"" /> </svg>",
         ["selector"] = @"<svg xmlns=""http://www.w3.org/2000/svg"" width=""24"" height=""24"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round"" > <path d=""M8 9l4 -4l4 4"" /> <path d=""M16 15l-4 4l-4 -4"" /> </svg>",
+        // Gaze-target icons. Deliberately NOT the stock `crosshair` (which the
+        // sidebar actor-target action owns) — these are new names.
+        // `gaze-point`: four ticks, empty middle. Arms run 3..8 / 16..21, so with
+        // round caps the painted gap is 6 units (y 9..15) — still visibly open at
+        // 14px, where the whole grid is 0.58px per unit.
+        ["gaze-point"] = @"<svg xmlns=""http://www.w3.org/2000/svg"" width=""24"" height=""24"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round"" > <path d=""M12 3v5"" /> <path d=""M12 16v5"" /> <path d=""M3 12h5"" /> <path d=""M16 12h5"" /> </svg>",
+        // `camera-snap`: the same four ticks, shortened to 2 units and pushed to
+        // the edges (round caps land exactly on 0 / 24), around the stock Tabler
+        // `camera` body hand-scaled about (12,12) by s = 0.55 — the stock body's
+        // bbox is x 3..21, y 4..20, already centred on (12,12), so every point is
+        // x' = 12 + (x-12)*.55 and each arc radius 2 -> 1.1, 1 -> .55. The inner
+        // lens circle is dropped. s = .55 (not .7) because the body is 18 units
+        // wide: at .7 its stroked edge lands at x 4.7 and the tick's cap ends at
+        // 4, a 0.4px gap at 14px that reads as a collision. At .55 the gaps are
+        // 2.05 units horizontally / 2.6 vertically.
+        ["camera-snap"] = @"<svg xmlns=""http://www.w3.org/2000/svg"" width=""24"" height=""24"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round"" > <path d=""M12 1v2"" /> <path d=""M12 21v2"" /> <path d=""M1 12h2"" /> <path d=""M21 12h2"" /> <path d=""M8.15 9.25h0.55a1.1 1.1 0 0 0 1.1 -1.1a0.55 0.55 0 0 1 0.55 -0.55h3.3a0.55 0.55 0 0 1 0.55 0.55a1.1 1.1 0 0 0 1.1 1.1h0.55a1.1 1.1 0 0 1 1.1 1.1v4.95a1.1 1.1 0 0 1 -1.1 1.1h-7.7a1.1 1.1 0 0 1 -1.1 -1.1v-4.95a1.1 1.1 0 0 1 1.1 -1.1"" /> </svg>",
     };
 }

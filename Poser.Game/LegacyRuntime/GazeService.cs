@@ -221,9 +221,11 @@ public unsafe class GazeService : IGazeService, IDisposable
     {
         if (Resolve(actor) is not { } gameObject)
             return;
+        bool modeChanged;
         lock (_sync)
         {
             var entry = GetOrCreateEntry(gameObject.GameObjectId);
+            var beforeMode = EffectiveMode(entry);
             var previousMode = entry.Mode;
             entry.Mode = mode;
             if (mode == GazeTargetMode.None)
@@ -242,16 +244,23 @@ public unsafe class GazeService : IGazeService, IDisposable
             if (mode == GazeTargetMode.Position && previousMode != GazeTargetMode.Position)
                 entry.Position = CameraLerpPoint(actor);
             ReseedUnlockedParts(entry);
+            modeChanged = EffectiveMode(entry) != beforeMode;
         }
+        // Published outside the lock — the detour contends on _sync from the
+        // native thread, so the bus is never invoked while holding it.
+        if (modeChanged)
+            _eventBus.Publish(new GazeStateChangedEvent());
     }
 
     public void SetGazeParts(IActor actor, GazeTargetType parts)
     {
         if (Resolve(actor) is not { } gameObject)
             return;
+        bool modeChanged;
         lock (_sync)
         {
             var entry = GetOrCreateEntry(gameObject.GameObjectId);
+            var beforeMode = EffectiveMode(entry);
             // Removing a part relinquishes it immediately — the detour just
             // stops writing it — and a locked part being disabled unlocks.
             ClearPartLock(entry, entry.Parts & ~parts);
@@ -261,7 +270,12 @@ public unsafe class GazeService : IGazeService, IDisposable
             if (parts == GazeTargetType.None)
                 entry.Mode = GazeTargetMode.None;
             ReseedUnlockedParts(entry);
+            modeChanged = EffectiveMode(entry) != beforeMode;
         }
+        // Only the last-part-off auto-Off is a mode transition; part edits that
+        // leave the mode alone stay silent. Published outside the lock.
+        if (modeChanged)
+            _eventBus.Publish(new GazeStateChangedEvent());
     }
 
     public void SetGazeTarget(IActor actor, IActor target)
@@ -273,18 +287,25 @@ public unsafe class GazeService : IGazeService, IDisposable
             _log.Warning("GazeService: an actor cannot gaze at itself.");
             return;
         }
+        bool modeChanged;
         lock (_sync)
         {
             var entry = GetOrCreateEntry(gameObject.GameObjectId);
+            var beforeMode = EffectiveMode(entry);
             entry.TargetId = targetObject.GameObjectId;
             entry.Mode = GazeTargetMode.Entity;
             if (entry.Parts == GazeTargetType.None)
                 entry.Parts = GazeTargetType.All;
             ReseedUnlockedParts(entry);
+            modeChanged = EffectiveMode(entry) != beforeMode;
         }
         // Brio parity (SetActorTarget): the character's own target id backs
         // the game's id-based look tracking.
         ((Character*)actor.Address)->SetTargetId(targetObject.GameObjectId);
+        // Retargeting within Entity mode is not a mode transition; only the
+        // move INTO Entity publishes. Published outside the lock.
+        if (modeChanged)
+            _eventBus.Publish(new GazeStateChangedEvent());
     }
 
     public nint GetGazeTargetAddress(IActor actor)
@@ -415,12 +436,19 @@ public unsafe class GazeService : IGazeService, IDisposable
     {
         if (Resolve(actor) is not { } gameObject)
             return;
+        bool modeChanged;
         lock (_sync)
         {
             // Release is cessation: dropping the entry stops every write in
             // the same transition.
+            modeChanged = _entries.TryGetValue(gameObject.GameObjectId, out var entry) &&
+                EffectiveMode(entry) != GazeTargetMode.None;
             _entries.Remove(gameObject.GameObjectId);
         }
+        // A dropped entry that was already effectively Off changed nothing.
+        // Published outside the lock.
+        if (modeChanged)
+            _eventBus.Publish(new GazeStateChangedEvent());
     }
 
     // ── entry maintenance (all callers hold _sync) ───────────────────────
@@ -546,31 +574,39 @@ public unsafe class GazeService : IGazeService, IDisposable
     /// </summary>
     private void OnActorListChanged(ActorListChangedEvent _)
     {
+        bool modeChanged = false;
         lock (_sync)
         {
-            if (_entries.Count == 0)
-                return;
-            List<ulong>? removed = null;
-            foreach (var (id, entry) in _entries)
+            if (_entries.Count > 0)
             {
-                if (_objectTable.SearchById(id) == null)
+                List<ulong>? removed = null;
+                foreach (var (id, entry) in _entries)
                 {
-                    (removed ??= new List<ulong>()).Add(id);
-                    continue;
+                    if (_objectTable.SearchById(id) == null)
+                    {
+                        (removed ??= new List<ulong>()).Add(id);
+                        continue;
+                    }
+                    if (entry.Mode == GazeTargetMode.Entity && entry.TargetId != 0 &&
+                        _objectTable.SearchById(entry.TargetId) == null)
+                    {
+                        entry.TargetId = 0;
+                        entry.Mode = GazeTargetMode.None;
+                        ClearPartLock(entry, GazeTargetType.All);
+                        // Entity with a live target was effectively Entity, so
+                        // this branch is always a transition to Off.
+                        modeChanged = true;
+                        _log.Debug($"GazeService: gaze target of {id} despawned — gaze off.");
+                    }
                 }
-                if (entry.Mode == GazeTargetMode.Entity && entry.TargetId != 0 &&
-                    _objectTable.SearchById(entry.TargetId) == null)
-                {
-                    entry.TargetId = 0;
-                    entry.Mode = GazeTargetMode.None;
-                    ClearPartLock(entry, GazeTargetType.All);
-                    _log.Debug($"GazeService: gaze target of {id} despawned — gaze off.");
-                }
+                if (removed != null)
+                    foreach (var id in removed)
+                        _entries.Remove(id);
             }
-            if (removed != null)
-                foreach (var id in removed)
-                    _entries.Remove(id);
         }
+        // Published outside the lock, once for the whole reconciliation pass.
+        if (modeChanged)
+            _eventBus.Publish(new GazeStateChangedEvent());
     }
 
     public void Dispose()

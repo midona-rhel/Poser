@@ -60,7 +60,14 @@ public enum SceneEntityKind
 {
     Actor,
     Bone,
+    Environment,
+    GazeTarget,
 }
+
+/// <summary>Which gaze point a gaze-target selection addresses. Anchor is the
+/// shared point every enabled unlocked part follows; the parts are the
+/// individually divergeable per-part points.</summary>
+public enum GazePart { Anchor, Eyes, Head, Body }
 
 /// <summary>Stable selection identity for application state.</summary>
 public readonly record struct SelectionId
@@ -70,13 +77,15 @@ public readonly record struct SelectionId
         ActorId? actor,
         BoneId? bone,
         string? externalId,
-        Guid? ownerActorLineage = null)
+        Guid? ownerActorLineage = null,
+        GazePart? gaze = null)
     {
         Kind = kind;
         Actor = actor;
         Bone = bone;
         ExternalId = externalId;
         OwnerActorLineage = ownerActorLineage;
+        Gaze = gaze;
     }
 
     public SceneEntityKind Kind { get; }
@@ -84,6 +93,7 @@ public readonly record struct SelectionId
     public BoneId? Bone { get; }
     public string? ExternalId { get; }
     public Guid? OwnerActorLineage { get; }
+    public GazePart? Gaze { get; }
 
     public Guid? ActorLineage =>
         Actor?.LogicalId ??
@@ -108,11 +118,22 @@ public readonly record struct SelectionId
             actor.LogicalId);
     }
 
+    /// <summary>The scene's one and only environment; it has no owning actor.</summary>
+    public static SelectionId ForEnvironment() =>
+        new(SceneEntityKind.Environment, null, null, null);
+
+    /// <summary>The actor's gaze point in Position mode; selectable so the
+    /// world gizmo can own it.</summary>
+    public static SelectionId ForGazeTarget(ActorId actor, GazePart part = GazePart.Anchor) =>
+        new(SceneEntityKind.GazeTarget, actor, null, null, null, part);
+
     public override string ToString() => Kind switch
     {
         SceneEntityKind.Actor => $"actor:{Actor}",
         SceneEntityKind.Bone when Bone is { } bone => $"bone:{bone}",
         SceneEntityKind.Bone => $"bone-group:{OwnerActorLineage:N}:{ExternalId}",
+        SceneEntityKind.Environment => "environment",
+        SceneEntityKind.GazeTarget => $"gaze:{Actor}:{Gaze}",
         _ => throw new InvalidOperationException($"Unknown selection kind {Kind}."),
     };
 }

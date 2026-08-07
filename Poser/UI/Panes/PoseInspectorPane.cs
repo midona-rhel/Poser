@@ -286,7 +286,16 @@ public class PoseInspectorPane
     {
         var result = new List<ActorId>();
         foreach (var id in _selection.Selected)
-            if (id is { Kind: SceneEntityKind.Actor, Actor: { } actorId })
+            // A gaze point is a property OF its actor, so every actor-wide
+            // action (reset transform, flip) addresses its owner exactly as a
+            // direct actor selection would. Distinct: an actor and its own gaze
+            // point in one selection name ONE actor, and a doubled Mirror would
+            // undo itself.
+            if (id is
+                {
+                    Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
+                    Actor: { } actorId
+                } && !result.Contains(actorId))
                 result.Add(actorId);
         return result;
     }
@@ -297,7 +306,11 @@ public class PoseInspectorPane
     {
         var (lineage, slot) = _primary switch
         {
-            { Kind: SceneEntityKind.Actor, Actor: { } actorId } =>
+            // The gaze point's owner IS the subject the surfaces describe, so
+            // Matrix/3D keep showing that actor's Character skeleton instead of
+            // emptying while a point is selected.
+            { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
+                Actor: { } actorId } =>
                 ((Guid?)actorId.LogicalId, PoseSlot.Character),
             { Kind: SceneEntityKind.Bone, Bone: { } boneId } =>
                 (boneId.Skeleton.Actor.LogicalId, boneId.Slot),
@@ -353,7 +366,11 @@ public class PoseInspectorPane
         // Frame-scoped legacy view for the retained section reads.
         _entity = primary switch
         {
-            { Kind: SceneEntityKind.Actor, Actor: { } actorId } =>
+            // A gaze point resolves to the actor that owns it: OwningActor and
+            // OwningSkeleton feed the gaze/expression/pose sections and the
+            // whole content column, and a point selection must not blank them.
+            { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
+                Actor: { } actorId } =>
                 _bindings.Resolve(actorId) is { Success: true } actor ? actor.Value : null,
             { Kind: SceneEntityKind.Bone, Bone: { } boneId } =>
                 _bindings.Resolve(boneId) is { Success: true } bone ? bone.Value : null,
@@ -566,7 +583,11 @@ public class PoseInspectorPane
                     next => _openIk = next,
                     DrawIk);
         }
-        else if (_primary is { Kind: SceneEntityKind.Actor })
+        // A gaze point declares the same sections as its actor: the point was
+        // selected FROM the GAZE section, so that section has to survive the
+        // click that selected it.
+        else if (_primary is
+                 { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget })
         {
             var actor = OwningActor();
             var skeleton = OwningSkeleton();
@@ -1371,6 +1392,7 @@ public class PoseInspectorPane
 
         void PickMode(int selected)
         {
+            var previousMode = state.Mode;
             if (selected == 4 && others.Count == 0)
             {
                 _gazeActorUnavailableNote = true;
@@ -1388,6 +1410,25 @@ public class PoseInspectorPane
                 });
             }
             state = _gazeService.GetGazeState(actor);
+            // The service's OWN answer decides, not the click: a refused mode
+            // change must not move the selection.
+            SyncPointSelection(previousMode, state.Mode);
+        }
+
+        // The point exists only while Position owns the gaze. Entering hands
+        // the world gizmo the anchor without a second click; leaving hands the
+        // actor back rather than stranding a selection nothing can move.
+        void SyncPointSelection(GazeTargetMode previous, GazeTargetMode current)
+        {
+            if (previous == current || _bindings.GetActorId(actor) is not { } actorId)
+                return;
+            if (current == GazeTargetMode.Position)
+                _selection.Select(SelectionId.ForGazeTarget(actorId));
+            else if (previous == GazeTargetMode.Position &&
+                     _selection.Primary is
+                         { Kind: SceneEntityKind.GazeTarget } stranded &&
+                     stranded.ActorLineage == actorId.LogicalId)
+                _selection.Select(SelectionId.ForActor(actorId));
         }
 
         // Resolved at DRAW time so the paired form's right cell reads the mode
@@ -1539,7 +1580,7 @@ public class PoseInspectorPane
             bool enabled)
         {
             actions.IconButton(
-                TablerIcon.Camera,
+                TablerIcon.CameraSnap,
                 () =>
                 {
                     _gazeService.SnapPartToCamera(actor, part);
@@ -1548,6 +1589,33 @@ public class PoseInspectorPane
                 disabled: !enabled,
                 help: "Move this part's point to the camera",
                 id: $"camera-{label}");
+        }
+
+        // Point mode only, beside the snap. The world gizmo grabs whatever is
+        // selected, so this is how a part's own point gets a handle out there —
+        // the numbers below are the same point, typed instead of dragged.
+        void PointIcon(
+            Crystarium.ActionScope actions,
+            string label,
+            GazeTargetType part,
+            bool enabled)
+        {
+            actions.IconButton(
+                TablerIcon.GazePoint,
+                () =>
+                {
+                    if (_bindings.GetActorId(actor) is not { } actorId)
+                        return;
+                    _selection.Select(SelectionId.ForGazeTarget(actorId, part switch
+                    {
+                        GazeTargetType.Eyes => GazePart.Eyes,
+                        GazeTargetType.Head => GazePart.Head,
+                        _ => GazePart.Body,
+                    }));
+                },
+                disabled: !enabled,
+                help: "Select this part's point (the world gizmo grabs it)",
+                id: $"point-{label}");
         }
 
         // The live per-part target, not the shared anchor: a locked or
@@ -1605,7 +1673,10 @@ public class PoseInspectorPane
                             : "Let this part follow the gaze target");
                     LockIcon(actions, label, flag, enabled);
                     if (point)
+                    {
                         CameraIcon(actions, label, flag, enabled);
+                        PointIcon(actions, label, flag, enabled);
+                    }
                 }
             });
             if (point)
@@ -1626,7 +1697,10 @@ public class PoseInspectorPane
                 {
                     LockIcon(actions, label, flag, enabled);
                     if (point)
+                    {
                         CameraIcon(actions, label, flag, enabled);
+                        PointIcon(actions, label, flag, enabled);
+                    }
                 },
                 disabled: off,
                 help: off
@@ -2010,6 +2084,18 @@ public class PoseInspectorPane
                 + (actors.Count > 3 ? " …" : "");
             return ($"{actors.Count} actors", names, 0);
         }
+        // The head names the OWNING actor for a gaze point too, because an
+        // empty head would take the rail's whole action row (Reset transform)
+        // with it; the sub still says which point, because the head must not
+        // claim the actor itself is selected.
+        if (_primary is { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeActor })
+            return (ActorLabel(gazeActor), _primary?.Gaze switch
+            {
+                GazePart.Eyes => "gaze \u00b7 eyes point",
+                GazePart.Head => "gaze \u00b7 head point",
+                GazePart.Body => "gaze \u00b7 body point",
+                _ => "gaze \u00b7 point",
+            }, 0);
         if (_primary is { Kind: SceneEntityKind.Actor, Actor: { } primaryActor })
             return (ActorLabel(primaryActor), HasActorTransformOverride
                 ? "actor \u00b7 transform override"
@@ -2017,8 +2103,11 @@ public class PoseInspectorPane
         return ("", "", 0);
     }
 
-    /// <summary>Whether the inspector is editing the actor itself rather than a bone.</summary>
-    public bool IsActorSelection => _primary is { Kind: SceneEntityKind.Actor };
+    /// <summary>Whether the inspector is editing the actor itself rather than a
+    /// bone. A gaze point counts: it belongs to the actor, so the rail keeps
+    /// the actor actions instead of offering bone resets that address nothing.</summary>
+    public bool IsActorSelection =>
+        _primary is { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget };
 
     /// <summary>Whether any selected actor currently has a model-transform override.</summary>
     public bool HasActorTransformOverride

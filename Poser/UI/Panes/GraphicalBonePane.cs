@@ -465,6 +465,7 @@ public sealed class GraphicalBonePane : IDisposable
         {
             { Kind: SceneEntityKind.Actor, Actor: { } actorId } => actorId.LogicalId,
             { Kind: SceneEntityKind.Bone, Bone: { } boneId } => boneId.Skeleton.Actor.LogicalId,
+            { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeActor } => gazeActor.LogicalId,
             _ => (Guid?)null,
         };
         if (lineage is { } target)
