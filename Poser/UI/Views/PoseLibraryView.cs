@@ -229,6 +229,17 @@ public sealed class PoseLibraryViewModel
     public bool CanApply;
     public bool CanSpawn;
 
+    /// <summary>Whether the toggle row above the action row shows. Character
+    /// files never travel the pose import pipeline, so the MCDF tab hides it
+    /// and the row's band collapses to nothing.</summary>
+    public bool ShowImportToggles;
+
+    /// <summary>The active tab's import components. Binder-owned, one set per
+    /// tab; the view only states and toggles them.</summary>
+    public bool ImportPosition;
+    public bool ImportRotation;
+    public bool ImportScale;
+
     /// <summary>Resolves a tile's thumbnail. Called per visible tile per
     /// frame: shared texture wraps must be re-resolved, so this can never
     /// answer with a stored handle. A default answer draws the fallback glyph.
@@ -259,6 +270,9 @@ public sealed class PoseLibraryViewModel
     public Action<float>? OnIconSize;
     public Action? OnRefresh;
     public Action? OnOpenSettings;
+    public Action<bool>? OnImportPosition;
+    public Action<bool>? OnImportRotation;
+    public Action<bool>? OnImportScale;
 
     // Hoisted once per model: the frame's chrome must not mint a closure, and
     // every one of these closes over nothing but this model.
@@ -270,6 +284,10 @@ public sealed class PoseLibraryViewModel
     internal Action? ApplyClick;
     internal Action? SettingsClick;
     internal Action<float>? IconSizeChange;
+    internal Action<Crystarium.ActionBarScope>? Toggles;
+    internal Action<bool>? PositionToggle;
+    internal Action<bool>? RotationToggle;
+    internal Action<bool>? ScaleToggle;
 
     // The grid's band list and the clipper's slot map — the ShellSidebar cache,
     // held on the model because the view itself is static. Rebuilt only when
@@ -292,9 +310,9 @@ public sealed class PoseLibraryViewModel
 
 /// <summary>
 /// The pose library, drawn INSIDE the shell's content rect: there is no window
-/// and no chassis to inherit, so the view lays its own four bands out in the
+/// and no chassis to inherit, so the view lays its own bands out in the
 /// rectangle it is handed — the search band, the folder rail, the tile grid
-/// with its info strip, and the action row.
+/// with its info strip, the import-toggle row, and the action row.
 ///
 /// <para>The rail is the SOURCE tree, which is small and never clipped; the
 /// body is the tile grid, which is a catalog and always is. The body's grid
@@ -313,6 +331,7 @@ public static class PoseLibraryView
     private const string SettingsId = "##pose-library-open-settings";
     private const string MenuId = "##pose-library-tile-menu";
     private const string ActionRowId = "pose-library-actions";
+    private const string ToggleRowId = "pose-library-import-toggles";
 
     // Per-tile ids. They are constants because every tile pushes its own path
     // onto the ID stack first, so the two reserves are unique per tile without
@@ -336,6 +355,12 @@ public static class PoseLibraryView
     /// <summary>The strip pinned under the grid while a tile is selected. The
     /// grid's scroll region shrinks by exactly this.</summary>
     private const float InfoStripHeight = 28f;
+
+    /// <summary>The import-toggle row seated above the action row, its top
+    /// rule included. FIXED: the row never grows a second line, so the footer
+    /// block's height moves only on a tab switch, never during a resize.
+    /// </summary>
+    private const float ToggleRowHeight = 28f;
 
     /// <summary>The band's, tabs' and footer's horizontal inset from the pane
     /// edge. HALF the page inset: the workspace already reads as a framed
@@ -380,6 +405,11 @@ public static class PoseLibraryView
 
     private static readonly Action<string> IgnoreQuery = static _ => { };
 
+    /// <summary>The toggle row's empty left cluster: its checkboxes are all
+    /// right-aligned, so the bar's content slot hosts nothing.</summary>
+    private static readonly Action<Crystarium.ActionBarScope> NoContent =
+        static _ => { };
+
     /// <summary>
     /// Fills the rectangle the shell hands the pane. The geometry is DERIVED
     /// from that rectangle and nothing else — no window size, no design size —
@@ -417,11 +447,16 @@ public static class PoseLibraryView
         vm.SettingsClick ??= () => vm.OnOpenSettings?.Invoke();
         vm.IconSizeChange ??= next => vm.OnIconSize?.Invoke(
             Math.Clamp(next, MinimumIconSize, MaximumIconSize));
+        vm.Toggles ??= scope => ToggleItems(vm, scope);
+        vm.PositionToggle ??= value => vm.OnImportPosition?.Invoke(value);
+        vm.RotationToggle ??= value => vm.OnImportRotation?.Invoke(value);
+        vm.ScaleToggle ??= value => vm.OnImportScale?.Invoke(value);
 
-        var rects = Bands(vm, origin, size, scale, theme);
+        var rects = Bands(vm, origin, size, scale, theme, out var toggles);
         DrawBand(vm, rects.Band, scale, theme);
         DrawRail(vm, rects.Rail, scale, theme);
         DrawBody(vm, rects.Body, scale, theme);
+        DrawToggleRow(vm, toggles, scale);
         DrawActionRow(vm, rects.Footer, scale, theme);
         DrawMenu(vm);
 
@@ -431,22 +466,30 @@ public static class PoseLibraryView
     }
 
     /// <summary>
-    /// The pane's four bands, and the ink that separates them. This is pane
+    /// The pane's bands, and the ink that separates them. This is pane
     /// STRUCTURE, not window chrome: two rules and the rail's raised slab, all
-    /// measured from the handed rectangle.
+    /// measured from the handed rectangle. The toggle row seats between the
+    /// body and the action row and shares the footer block's one separator:
+    /// the body's bottom rule sits above WHATEVER the block's top band is, and
+    /// no ink divides the toggle row from the action row. A hidden row
+    /// collapses to nothing and the rule returns to the action row's top.
     /// </summary>
     private static WindowFrameRects Bands(
         PoseLibraryViewModel vm,
         Vector2 origin,
         Vector2 size,
         float scale,
-        Theme theme)
+        Theme theme,
+        out WindowFrameRect toggles)
     {
         var max = origin + size;
         float rule = MathF.Max(1f, scale);
         float bandBottom = MathF.Min(max.Y, origin.Y + BandHeight * scale);
         float rowTop = MathF.Max(
             bandBottom, max.Y - theme.Floating.ModalBarHeight * scale);
+        float togglesTop = vm.ShowImportToggles
+            ? MathF.Max(bandBottom, rowTop - ToggleRowHeight * scale)
+            : rowTop;
         // The rail never takes more than half the pane: a narrow workspace
         // keeps a grid rather than becoming a folder list.
         float railWidth = vm.ShowRail
@@ -460,23 +503,26 @@ public static class PoseLibraryView
             new Vector2(max.X, bandBottom),
             separator);
         draw.AddRectFilled(
-            new Vector2(origin.X, rowTop),
-            new Vector2(max.X, rowTop + rule),
+            new Vector2(origin.X, togglesTop),
+            new Vector2(max.X, togglesTop + rule),
             separator);
 
         var rail = new WindowFrameRect(
             new Vector2(origin.X, bandBottom),
-            new Vector2(origin.X + railWidth - rule, rowTop));
+            new Vector2(origin.X + railWidth - rule, togglesTop));
         if (railWidth > rule)
         {
             draw.AddRectFilled(
                 rail.Min, rail.Max, Packed(theme.SurfaceRaised));
             draw.AddRectFilled(
                 new Vector2(rail.Max.X, bandBottom),
-                new Vector2(rail.Max.X + rule, rowTop),
+                new Vector2(rail.Max.X + rule, togglesTop),
                 separator);
         }
 
+        toggles = new WindowFrameRect(
+            new Vector2(origin.X, togglesTop + rule),
+            new Vector2(max.X, rowTop));
         return new WindowFrameRects
         {
             Band = new WindowFrameRect(
@@ -484,10 +530,41 @@ public static class PoseLibraryView
             Rail = rail,
             Body = new WindowFrameRect(
                 new Vector2(origin.X + railWidth, bandBottom),
-                new Vector2(max.X, rowTop)),
+                new Vector2(max.X, togglesTop)),
             Footer = new WindowFrameRect(
-                new Vector2(origin.X, rowTop + rule), max),
+                new Vector2(
+                    origin.X,
+                    togglesTop < rowTop ? rowTop : rowTop + rule),
+                max),
         };
+    }
+
+    /// <summary>The import-toggle row: Position / Rotation / Scale, right-
+    /// aligned against the same inset the action row's cluster ends at.
+    /// </summary>
+    private static void DrawToggleRow(
+        PoseLibraryViewModel vm, WindowFrameRect row, float scale)
+    {
+        if (!vm.ShowImportToggles
+            || !(row.Size.X > 0f) || !(row.Size.Y > 0f))
+            return;
+        float inset = PaneInset * scale;
+        Crystarium.ActionBar(
+            ToggleRowId,
+            new Vector2(row.Min.X + inset, row.Min.Y),
+            new Vector2(
+                MathF.Max(0f, row.Size.X - inset * 2f), row.Size.Y),
+            NoContent,
+            vm.Toggles,
+            ActionBarSeparator.None);
+    }
+
+    private static void ToggleItems(
+        PoseLibraryViewModel vm, Crystarium.ActionBarScope scope)
+    {
+        scope.Checkbox("Position", vm.ImportPosition, vm.PositionToggle!);
+        scope.Checkbox("Rotation", vm.ImportRotation, vm.RotationToggle!);
+        scope.Checkbox("Scale", vm.ImportScale, vm.ScaleToggle!);
     }
 
     /// <summary>The action row: the status caption on the left (the size

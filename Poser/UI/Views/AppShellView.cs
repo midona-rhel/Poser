@@ -80,8 +80,6 @@ public sealed class AppShellViewModel
     public bool RotationPivotEnabled;
     public bool RotationPivotParentAvailable;
     public int SymmetryMode;          // 0 off, 1 link, 2 mirror
-    public bool ShowImportToggles;
-    public bool ImportPosition, ImportRotation, ImportScale;
     public bool AnimationOn;
     public bool AnimationAvailable;
     public bool PhysicsOn;
@@ -145,7 +143,6 @@ public sealed class AppShellViewModel
     public Action<int>? OnGizmoSpace;
     public Action<int>? OnRotationPivot;
     public Action<int>? OnSymmetry;
-    public Action<bool>? OnImportPosition, OnImportRotation, OnImportScale;
     public Action<bool>? OnAnimation;
     public Action<bool>? OnPhysics;
     public Action? OnUndo, OnRedo, OnSpawn, OnSettings, OnHideUi, OnPopOut, OnProject;
@@ -691,24 +688,6 @@ public static class AppShellView
             static _ => { },
             right =>
             {
-                if (vm.ShowImportToggles)
-                {
-                    right.Switch(
-                        "Position",
-                        vm.ImportPosition,
-                        next => vm.OnImportPosition?.Invoke(next),
-                        "Import bone positions from applied poses");
-                    right.Switch(
-                        "Rotation",
-                        vm.ImportRotation,
-                        next => vm.OnImportRotation?.Invoke(next),
-                        "Import bone rotations from applied poses");
-                    right.Switch(
-                        "Scale",
-                        vm.ImportScale,
-                        next => vm.OnImportScale?.Invoke(next),
-                        "Import bone scaling from applied poses");
-                }
                 right.Switch(
                     "Animation",
                     vm.AnimationOn,

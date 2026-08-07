@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Numerics;
+using System.Threading;
+using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Poser.Application.Integration;
@@ -50,8 +52,11 @@ public sealed class PoseLibraryPane
     /// resized.</summary>
     private const float ResizeStep = 32f;
 
-    /// <summary>Consecutive frames the size must MOVE before stepping engages;
-    /// the frame after it stops, the exact size is adopted.</summary>
+    /// <summary>Hysteresis on BOTH edges of stepping: consecutive frames the
+    /// size must MOVE before stepping engages, and consecutive frames it must
+    /// HOLD before the exact size is adopted. Pointer deltas arrive in
+    /// bursts, so a single delta-free frame mid-drag is not a release.
+    /// </summary>
     private const int DragStreakFrames = 3;
 
     private const string AllKey = "##pose-library-all";
@@ -71,6 +76,15 @@ public sealed class PoseLibraryPane
     private const string DayFormat = "yyyy-MM-dd";
 
     private const string PoseExtension = ".pose";
+
+    /// <summary>The one word an outstanding enumeration is stated with —
+    /// the footer caption on either tab, and the auto-save grid's empty line
+    /// on a first entry that has no rows to leave standing.</summary>
+    private const string ScanningText = "Scanning…";
+
+    /// <summary>The auto-save grid's standing empty answer, once a pass has
+    /// actually landed and found nothing.</summary>
+    private const string NoAutoSavesText = "No auto-saves yet.";
 
     /// <summary>The band's type tabs, positional against
     /// <see cref="PoseLibraryView.TypeLabels"/>.</summary>
@@ -97,12 +111,12 @@ public sealed class PoseLibraryPane
     /// entry starts on the poses.</summary>
     private LibraryType _type;
 
-    /// <summary>The library's import components, one set per tab — shown in
-    /// the app shell's toolbar while the mode is on. SESSION state like the
-    /// FILES section's own toggles. The poses tab starts rotation-only — the
-    /// pose import default; the auto-save tab starts with all three, because
-    /// a restore reproduces what was saved. The MCDF tab has no set:
-    /// character files never travel the pose import pipeline.</summary>
+    /// <summary>The toggle row's import components, one set per tab. SESSION
+    /// state like the FILES section's own toggles. The poses tab starts
+    /// rotation-only — the pose import default; the auto-save tab starts with
+    /// all three, because a restore reproduces what was saved. The MCDF tab
+    /// has no set: character files never travel the pose import pipeline.
+    /// </summary>
     private bool _posesPosition;
     private bool _posesRotation = true;
     private bool _posesScale;
@@ -125,10 +139,31 @@ public sealed class PoseLibraryPane
     /// re-enumerate.</summary>
     private bool _autoDirty = true;
 
-    /// <summary>Scratch for the auto-save enumeration; reused so a rebuild
-    /// allocates only the rows it actually adds.</summary>
-    private readonly List<(string Directory, DateTime At)> _snapshots = [];
-    private readonly List<string> _snapshotFiles = [];
+    /// <summary>Whether the STANDING rows were minted by the auto-save path. A
+    /// kick that finds the other library's rows in place has to clear them —
+    /// its own answer is a frame or more away, and the poses' tiles under a
+    /// rail-less tab are not what the auto-save tab may draw meanwhile.
+    /// </summary>
+    private bool _autoRows;
+
+    /// <summary>Whether an auto-save enumeration is outstanding, as the DRAW
+    /// thread sees it: set when a kick starts one, cleared when its result is
+    /// minted. This is the tab's own <c>IsScanning</c> — the disabled rescan
+    /// and the footer caption read it, never the worker's flags.</summary>
+    private bool _autoPending;
+
+    /// <summary>Guards the worker's coalescing state, exactly as
+    /// <c>PoseLibraryService</c> guards a scan: a re-dirty raised while a pass
+    /// runs queues exactly ONE more rather than stacking workers.</summary>
+    private readonly object _autoSync = new();
+    private bool _autoScanning;
+    private bool _autoQueued;
+
+    /// <summary>The completed enumeration awaiting a mint, or null — the only
+    /// cross-thread channel. The worker publishes a DETACHED result: strings
+    /// and lists it owns alone, pointing at no view row, so one arriving after
+    /// the mode is left simply sits here until the next entry.</summary>
+    private List<AutoSaveFolder>? _autoResult;
 
     /// <summary>Lower-cased tags per TILE. Tiles are a filtered view of the
     /// snapshot's entries, so the tag test can no longer index the entries by
@@ -158,11 +193,14 @@ public sealed class PoseLibraryPane
     private int _captionCount = -1;
     private bool _captionScanning;
 
-    // Resize stepping state (StepResize).
+    // Resize stepping state (StepResize). Only the WIDTH is ever stepped, so
+    // the standing layout is a single X.
     private Vector2 _handedSize;
-    private Vector2 _steppedSize;
-    private Vector2 _layoutSize;
+    private float _steppedX;
+    private float _layoutX;
     private int _changedStreak;
+    private int _stillStreak;
+    private bool _stepping;
 
     /// <summary>Whether the standing tiles were minted with extensions on
     /// their labels; a Settings flip forces a remint.</summary>
@@ -224,6 +262,9 @@ public sealed class PoseLibraryPane
         _vm.OnTagFilter = TagFilter;
         _vm.OnIconSize = SetIconSize;
         _vm.OnRefresh = Refresh;
+        _vm.OnImportPosition = SetImportPosition;
+        _vm.OnImportRotation = SetImportRotation;
+        _vm.OnImportScale = SetImportScale;
         _vm.OnOpenSettings = () => OnSettingsRequested?.Invoke();
         _vm.ResolveThumbnail = ResolveThumbnail;
         // Spawning needs no selection and no scene state; the service answers
@@ -260,11 +301,13 @@ public sealed class PoseLibraryPane
 
         if (_type == LibraryType.AutoSaves)
         {
-            // The auto-save root is written by this plugin on its own schedule
-            // and holds a handful of folders: it is re-enumerated on entry and
-            // on an explicit rescan, never watched.
+            // The auto-save root is re-enumerated on entry and on an explicit
+            // rescan, never watched — and never on THIS thread: a cold root of
+            // snapshot folders is a whole frame's worth of disk, so the kick
+            // only starts a worker and the take mints whatever has landed.
             if (_autoDirty)
-                BuildAutoSaves();
+                KickAutoSaves();
+            TakeAutoSaves();
         }
         else
         {
@@ -275,6 +318,7 @@ public sealed class PoseLibraryPane
         if (_refilter)
             Refilter();
         SyncTarget();
+        SyncImportToggles();
         SyncStatus();
 
         PoseLibraryView.Draw(_vm, origin, StepResize(size));
@@ -283,40 +327,50 @@ public sealed class PoseLibraryPane
     /// <summary>
     /// Resize stepping: a drag on the window edge reflows the pane only at
     /// <see cref="ResizeStep"/> boundaries — per-pixel reflow of the grid
-    /// while dragging cost whole frames. Stepping engages only for an ACTIVE
-    /// drag, a size that moves across consecutive frames: a one-off change
-    /// (entering the mode, a snapped window, a released drag) adopts the
-    /// exact size immediately, because stepping it drew the pane floored for
-    /// a beat and read as a reflow on navigation.
+    /// while dragging cost whole frames. Two constraints shape it. Only the
+    /// WIDTH is stepped: the width is what lays the grid's columns out, while
+    /// the height only moves the clipper — and stepping the height bounced
+    /// the footer block off the true bottom edge by up to a step, which read
+    /// as the footer flipping between one and two rows. And stepping engages
+    /// AND releases on a <see cref="DragStreakFrames"/> streak: pointer
+    /// deltas arrive in bursts, so releasing on the first delta-free frame
+    /// flapped the layout between the exact and the floored size for the
+    /// whole drag. A one-off change (entering the mode, a snapped window)
+    /// never engages and adopts the exact size immediately.
     /// </summary>
     private Vector2 StepResize(Vector2 size)
     {
         bool moved = size != _handedSize;
         _handedSize = size;
-        _changedStreak = moved ? _changedStreak + 1 : 0;
-
-        if (_changedStreak < DragStreakFrames)
+        if (moved)
         {
-            _layoutSize = size;
-            _steppedSize = Vector2.Zero;
+            _stillStreak = 0;
+            if (++_changedStreak >= DragStreakFrames)
+                _stepping = true;
+        }
+        else if (++_stillStreak >= DragStreakFrames)
+        {
+            _stepping = false;
+            _changedStreak = 0;
+        }
+
+        if (!_stepping)
+        {
+            _layoutX = size.X;
+            _steppedX = 0f;
             return size;
         }
 
         float step = ResizeStep * ImGuiHelpers.GlobalScale;
-        var stepped = new Vector2(
-            MathF.Floor(size.X / step) * step,
-            MathF.Floor(size.Y / step) * step);
+        float stepped = MathF.Floor(size.X / step) * step;
         // Only cross a boundary; a sub-step wiggle keeps the standing layout
         // as long as it still fits the handed rect.
-        if (stepped != _steppedSize || _layoutSize.X > size.X
-            || _layoutSize.Y > size.Y)
+        if (stepped != _steppedX || _layoutX > size.X)
         {
-            _steppedSize = stepped;
-            _layoutSize = new Vector2(
-                MathF.Min(MathF.Max(stepped.X, 1f), size.X),
-                MathF.Min(MathF.Max(stepped.Y, 1f), size.Y));
+            _steppedX = stepped;
+            _layoutX = MathF.Min(MathF.Max(stepped, 1f), size.X);
         }
-        return _layoutSize;
+        return new Vector2(_layoutX, size.Y);
     }
 
     /// <summary>The workspace moved on. The decoded thumbnails are a cache of
@@ -527,35 +581,155 @@ public sealed class PoseLibraryPane
         _vm.ShowRail = true;
         _vm.ShowNoSources = folders.Count <= 2;
         _vm.EmptyText = "No matches.";
+        // The rows standing from here on are the SCANNED library's, so an
+        // auto-save kick has to clear them rather than leave them showing
+        // under a rail-less tab.
+        _autoRows = false;
         if (_vm.SelectedFolder >= folders.Count)
             _vm.SelectedFolder = 0;
         SyncFolderRange();
         _refilter = true;
     }
 
-    /// <summary>
-    /// The auto-save tab's rows, read straight off
-    /// <see cref="IAutoSaveService.RootDirectory"/>: one group per snapshot
-    /// folder, its <c>.pose</c> files as tiles. Retention, naming and the write
-    /// path all stay where they are — this only reads what the service left.
+    // ── the auto-save tab ────────────────────────────────────────────────
+    // Read straight off IAutoSaveService.RootDirectory — retention, naming and
+    // the write path all stay where they are; this only reads what the service
+    // left. The read is SPLIT from the mint: enumerating a cold root, stamping
+    // every file and formatting every string is disk work no frame may do, so
+    // a worker produces a detached result and the draw thread only writes rows.
+
+    /// <summary>One snapshot folder as the worker read it. Every string a mint
+    /// reads is already formatted here, so the pass on the draw thread writes
+    /// rows and looks favourites up and touches no file.</summary>
+    private sealed class AutoSaveFolder
+    {
+        /// <summary>The snapshot folder itself — the row's provenance, and
+        /// what the newest-first ordering broke its ties on.</summary>
+        public required string Directory { get; init; }
+
+        /// <summary>The day header this snapshot groups under.</summary>
+        public required string Day { get; init; }
+
+        /// <summary>Its <c>.pose</c> files, already ordered. Never empty: a
+        /// snapshot holding none is dropped by the worker, exactly as the
+        /// synchronous build skipped it.</summary>
+        public required List<AutoSaveEntry> Entries { get; init; }
+    }
+
+    /// <summary>One auto-saved pose, read and formatted off the draw thread.
     /// </summary>
-    private void BuildAutoSaves()
+    private sealed class AutoSaveEntry
+    {
+        public required string FilePath { get; init; }
+
+        /// <summary>The bare file name. The label takes the extension back on
+        /// only when the setting asks for it, and the search keeps matching
+        /// this either way.</summary>
+        public required string Name { get; init; }
+
+        public required string NameLower { get; init; }
+
+        /// <summary>The modified stamp, already formatted.</summary>
+        public required string Stamp { get; init; }
+    }
+
+    /// <summary>
+    /// Starts an enumeration and puts the tab in the shape its rows will land
+    /// in. The shape is not the worker's answer and cannot wait for one; the
+    /// ROWS are, so a refresh leaves the standing ones alone and only a first
+    /// entry — or an arrival from another type, whose rows are the wrong
+    /// library's — clears down to the scanning line.
+    /// </summary>
+    private void KickAutoSaves()
     {
         _autoDirty = false;
+        // Captured at the KICK, exactly where the synchronous build captured
+        // it: the mint below reads this rather than a flag that crossed a
+        // thread, and a setting flipped mid-flight re-dirties on its own.
         _builtExtensions = _config.Config.Library.ShowFileExtensions;
-        var favorites = _config.Config.Library.Favorites;
-        var folders = _vm.Folders;
-        var tiles = _vm.Tiles;
-        folders.Clear();
-        tiles.Clear();
-        _tileTags.Clear();
 
-        _snapshots.Clear();
+        _vm.ShowRail = false;
+        _vm.ShowNoSources = false;
+        _vm.SelectedFolder = 0;
+        _rangeStart = -1;
+        _rangeEnd = -1;
+
+        if (!_autoRows)
+        {
+            _vm.Folders.Clear();
+            _vm.Tiles.Clear();
+            _tileTags.Clear();
+            _vm.Selected = -1;
+            _vm.EmptyText = ScanningText;
+            _refilter = true;
+        }
+
+        _autoPending = true;
+
+        // Read once, here: the worker is handed the root rather than the
+        // service, so nothing off-thread reaches into a plugin service.
+        string root = _autoSave.RootDirectory;
+        lock (_autoSync)
+        {
+            if (_autoScanning)
+            {
+                _autoQueued = true;
+                return;
+            }
+            _autoScanning = true;
+        }
+
+        _ = Task.Run(() => ScanAutoSaves(root));
+    }
+
+    /// <summary>The worker, mirroring <c>PoseLibraryService.ScanLoop</c>: a
+    /// kick raised while a pass runs coalesces into exactly ONE more run
+    /// afterwards, which is what keeps a held rescan from stacking workers.
+    /// </summary>
+    private void ScanAutoSaves(string root)
+    {
+        while (true)
+        {
+            List<AutoSaveFolder> read;
+            try
+            {
+                read = ReadAutoSaves(root);
+            }
+            catch (Exception)
+            {
+                // A missing or unreadable root is an empty tab, not a failure —
+                // and a result has to land either way, or the tab would sit on
+                // its scanning caption with the rescan disabled forever.
+                read = [];
+            }
+
+            Volatile.Write(ref _autoResult, read);
+
+            lock (_autoSync)
+            {
+                if (!_autoQueued)
+                {
+                    _autoScanning = false;
+                    return;
+                }
+                _autoQueued = false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The enumeration itself: the snapshot folders under the auto-save root,
+    /// their <c>.pose</c> files, and every string a row will show. Nothing it
+    /// returns is shared with the pane, so a result outliving the mode owns
+    /// only its own strings.
+    /// </summary>
+    private static List<AutoSaveFolder> ReadAutoSaves(string root)
+    {
+        var snapshots = new List<(string Directory, DateTime At)>();
         try
         {
-            foreach (var directory in
-                     Directory.EnumerateDirectories(_autoSave.RootDirectory))
-                _snapshots.Add((directory, SafeFolderTime(directory)));
+            foreach (var directory in Directory.EnumerateDirectories(root))
+                snapshots.Add((directory, SafeFolderTime(directory)));
         }
         catch (Exception)
         {
@@ -564,7 +738,7 @@ public sealed class PoseLibraryPane
 
         // Newest first, ties on name descending: the order the service's own
         // retention uses, so what the browser lists last is what it prunes.
-        _snapshots.Sort(static (a, b) =>
+        snapshots.Sort(static (a, b) =>
         {
             int byDate = b.At.CompareTo(a.At);
             return byDate != 0
@@ -572,61 +746,122 @@ public sealed class PoseLibraryPane
                 : string.CompareOrdinal(b.Directory, a.Directory);
         });
 
-        // One header per DAY, not per snapshot (user call): the snapshots are
-        // already newest-first, so a day is a contiguous run and closes when
-        // the date string changes. Each tile keeps its own full stamp.
-        PoseLibraryFolderRow? dayRow = null;
-        foreach (var (directory, _) in _snapshots)
+        var read = new List<AutoSaveFolder>(snapshots.Count);
+        var files = new List<string>();
+        foreach (var (directory, _) in snapshots)
         {
-            _snapshotFiles.Clear();
+            files.Clear();
             try
             {
                 foreach (var file in Directory.EnumerateFiles(directory))
                     if (System.IO.Path.GetExtension(file).Equals(
                             PoseExtension, StringComparison.OrdinalIgnoreCase))
-                        _snapshotFiles.Add(file);
+                        files.Add(file);
             }
             catch (Exception)
             {
             }
 
-            if (_snapshotFiles.Count == 0)
+            if (files.Count == 0)
                 continue;
-            _snapshotFiles.Sort(StringComparer.OrdinalIgnoreCase);
+            files.Sort(StringComparer.OrdinalIgnoreCase);
 
-            string day = SnapshotDay(directory);
+            var entries = new List<AutoSaveEntry>(files.Count);
+            foreach (var file in files)
+            {
+                var name = System.IO.Path.GetFileNameWithoutExtension(file);
+                entries.Add(new AutoSaveEntry
+                {
+                    FilePath = file,
+                    Name = name,
+                    NameLower = name.ToLowerInvariant(),
+                    Stamp = SafeFileTime(file).ToString(
+                        StampFormat, CultureInfo.InvariantCulture),
+                });
+            }
+
+            read.Add(new AutoSaveFolder
+            {
+                Directory = directory,
+                Day = SnapshotDay(directory),
+                Entries = entries,
+            });
+        }
+
+        return read;
+    }
+
+    /// <summary>Polls the worker's completed slot. An idle frame costs one
+    /// volatile read: no lock, no allocation, nothing to drain.</summary>
+    private void TakeAutoSaves()
+    {
+        if (Volatile.Read(ref _autoResult) is null)
+            return;
+        // Interlocked rather than a plain null-out: a pass finishing between
+        // the read above and the clear is then picked up on the next frame
+        // instead of being overwritten.
+        if (Interlocked.Exchange(ref _autoResult, null) is not { } scan)
+            return;
+        MintAutoSaves(scan);
+    }
+
+    /// <summary>
+    /// The rows, from what the worker read. One header per DAY, not per
+    /// snapshot (user call): the snapshots arrive newest-first, so a day is a
+    /// contiguous run that closes when the date string changes, and each tile
+    /// keeps its own full stamp. List writes and a favourites lookup only.
+    /// </summary>
+    private void MintAutoSaves(List<AutoSaveFolder> scan)
+    {
+        _autoPending = false;
+        _autoRows = true;
+
+        var favorites = _config.Config.Library.Favorites;
+        var folders = _vm.Folders;
+        var tiles = _vm.Tiles;
+        folders.Clear();
+        tiles.Clear();
+        _tileTags.Clear();
+
+        PoseLibraryFolderRow? dayRow = null;
+        for (int s = 0; s < scan.Count; s++)
+        {
+            var snapshot = scan[s];
             if (dayRow is null
-                || !string.Equals(dayRow.Key, day, StringComparison.Ordinal))
+                || !string.Equals(dayRow.Key, snapshot.Day, StringComparison.Ordinal))
             {
                 dayRow = new PoseLibraryFolderRow
                 {
-                    Key = day,
-                    Label = day,
+                    Key = snapshot.Day,
+                    Label = snapshot.Day,
                     LabelLower = string.Empty,
                     Depth = 0,
                 };
                 folders.Add(dayRow);
             }
-            dayRow.Count += _snapshotFiles.Count;
+
+            var entries = snapshot.Entries;
+            dayRow.Count += entries.Count;
 
             int group = folders.Count - 1;
-            foreach (var file in _snapshotFiles)
+            for (int e = 0; e < entries.Count; e++)
             {
-                var name = System.IO.Path.GetFileNameWithoutExtension(file);
+                var entry = entries[e];
                 _tileTags.Add(Array.Empty<string>());
                 tiles.Add(new PoseLibraryTileRow
                 {
-                    Id = file,
-                    Label = _builtExtensions ? name + PoseExtension : name,
-                    LabelLower = name.ToLowerInvariant(),
-                    Sub = SafeFileTime(file).ToString(
-                        StampFormat, CultureInfo.InvariantCulture),
-                    ThumbKey = file,
+                    Id = entry.FilePath,
+                    Label = _builtExtensions
+                        ? entry.Name + PoseExtension
+                        : entry.Name,
+                    LabelLower = entry.NameLower,
+                    Sub = entry.Stamp,
+                    ThumbKey = entry.FilePath,
                     // An auto-save is a normal export, so it carries whatever
                     // preview the exporter wrote; the cache probes once and
                     // memoizes a file without one.
                     HasThumbnail = true,
-                    Favorite = favorites.Contains(file),
+                    Favorite = favorites.Contains(entry.FilePath),
                     Folder = group,
                 });
             }
@@ -641,7 +876,7 @@ public sealed class PoseLibraryPane
         _vm.SelectedFolder = 0;
         _vm.ShowRail = false;
         _vm.ShowNoSources = false;
-        _vm.EmptyText = "No auto-saves yet.";
+        _vm.EmptyText = NoAutoSavesText;
         _rangeStart = -1;
         _rangeEnd = -1;
         _refilter = true;
@@ -843,9 +1078,12 @@ public sealed class PoseLibraryPane
 
     private void SyncStatus()
     {
-        // The auto-save tab browses no scanned source, so a running scan is
-        // neither its state nor a reason to refuse its rescan.
-        bool scanning = _type != LibraryType.AutoSaves && _library.IsScanning;
+        // Each tab states its OWN enumeration. The auto-save tab browses no
+        // scanned source, so the library scan is neither its state nor a
+        // reason to refuse its rescan — its own worker is both.
+        bool scanning = _type == LibraryType.AutoSaves
+            ? _autoPending
+            : _library.IsScanning;
         _vm.IsScanning = scanning;
 
         if (_note is { } note)
@@ -862,7 +1100,7 @@ public sealed class PoseLibraryPane
             _captionCount = _vm.Visible.Count;
             _captionScanning = scanning;
             _caption = scanning
-                ? "Scanning…"
+                ? ScanningText
                 : Count(_captionCount)
                     + (_captionCount == 1 ? " item" : " items");
         }
@@ -935,58 +1173,50 @@ public sealed class PoseLibraryPane
     }
 
     // ── the import components ────────────────────────────────────────────
-    // The shell-toolbar surface for the library's import components: the
-    // toggles live in the app shell's toolbar, not in this pane's own rows,
-    // so MainWindow reads and writes the active tab's set through these.
 
-    /// <summary>Whether the toolbar shows the component toggles: true on the
-    /// pose tabs, false on MCDF — character files never travel the pose
-    /// import pipeline. The library-mode gate is the caller's.</summary>
-    public bool ImportTogglesVisible => _type != LibraryType.Mcdf;
-
-    /// <summary>The active tab's Position component.</summary>
-    public bool ImportPosition
+    /// <summary>The toggle row: the active tab's set, hidden on the MCDF
+    /// tab.</summary>
+    private void SyncImportToggles()
     {
-        get => _type == LibraryType.AutoSaves ? _autoPosition : _posesPosition;
-        set
-        {
-            if (_type == LibraryType.AutoSaves)
-                _autoPosition = value;
-            else
-                _posesPosition = value;
-        }
+        _vm.ShowImportToggles = _type != LibraryType.Mcdf;
+        bool auto = _type == LibraryType.AutoSaves;
+        _vm.ImportPosition = auto ? _autoPosition : _posesPosition;
+        _vm.ImportRotation = auto ? _autoRotation : _posesRotation;
+        _vm.ImportScale = auto ? _autoScale : _posesScale;
     }
 
-    /// <summary>The active tab's Rotation component.</summary>
-    public bool ImportRotation
+    private void SetImportPosition(bool value)
     {
-        get => _type == LibraryType.AutoSaves ? _autoRotation : _posesRotation;
-        set
-        {
-            if (_type == LibraryType.AutoSaves)
-                _autoRotation = value;
-            else
-                _posesRotation = value;
-        }
+        if (_type == LibraryType.AutoSaves)
+            _autoPosition = value;
+        else
+            _posesPosition = value;
     }
 
-    /// <summary>The active tab's Scale component.</summary>
-    public bool ImportScale
+    private void SetImportRotation(bool value)
     {
-        get => _type == LibraryType.AutoSaves ? _autoScale : _posesScale;
-        set
-        {
-            if (_type == LibraryType.AutoSaves)
-                _autoScale = value;
-            else
-                _posesScale = value;
-        }
+        if (_type == LibraryType.AutoSaves)
+            _autoRotation = value;
+        else
+            _posesRotation = value;
+    }
+
+    private void SetImportScale(bool value)
+    {
+        if (_type == LibraryType.AutoSaves)
+            _autoScale = value;
+        else
+            _posesScale = value;
     }
 
     /// <summary>The library's own import options: full scope with the active
     /// tab's component toggles, and never a bone filter — a catalog apply is
-    /// whole-file. The FILES section's scope/reset/expression drafts belong
-    /// to its dialog and do not reach a library apply.</summary>
+    /// whole-file. A library or auto-save apply has LOAD semantics: clean
+    /// slate in scope, then the file — prior in-scope edits (including the
+    /// position residue a rotation-only import can never repair) must not
+    /// survive a load. The FILES dialog keeps its own explicit "Reset first"
+    /// checkbox for opt-in layering; its scope/expression drafts likewise
+    /// never reach a library apply.</summary>
     private PoseImportOptions BuildImportOptions()
     {
         bool auto = _type == LibraryType.AutoSaves;
@@ -995,6 +1225,7 @@ public sealed class PoseLibraryPane
             ApplyPosition = auto ? _autoPosition : _posesPosition,
             ApplyRotation = auto ? _autoRotation : _posesRotation,
             ApplyScale = auto ? _autoScale : _posesScale,
+            ResetBeforeImport = true,
         };
     }
 

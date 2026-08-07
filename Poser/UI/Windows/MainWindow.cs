@@ -276,9 +276,6 @@ public class MainWindow : Window
         _vm.OnGizmoSpace = i => _editorState.TransformOrientation = (TransformOrientation)i;
         _vm.OnRotationPivot = i => _editorState.RotationPivot = (Core.RotationPivot)i;
         _vm.OnSymmetry = i => _editorState.SymmetryMode = (SymmetryMode)i;
-        _vm.OnImportPosition = on => _libraryPane.ImportPosition = on;
-        _vm.OnImportRotation = on => _libraryPane.ImportRotation = on;
-        _vm.OnImportScale = on => _libraryPane.ImportScale = on;
         // The switch's polarity is "animation playing"; off writes a zero
         // speed override, on drops the override back to game speed.
         _vm.OnAnimation = on =>
@@ -546,10 +543,6 @@ public class MainWindow : Window
             _pivotPrimaryIsBone;
         _vm.RotationPivotEnabled = boneRotate;
         _vm.RotationPivotParentAvailable = boneRotate && _pivotParentAvailable;
-        _vm.ShowImportToggles = _libraryMode && _libraryPane.ImportTogglesVisible;
-        _vm.ImportPosition = _libraryPane.ImportPosition;
-        _vm.ImportRotation = _libraryPane.ImportRotation;
-        _vm.ImportScale = _libraryPane.ImportScale;
         var toolbarActor = SelectedActorId();
         _vm.AnimationAvailable = toolbarActor is { } animActorId
             && _animation.IsSupported(animActorId);
@@ -698,6 +691,16 @@ public class MainWindow : Window
 
         RefreshSidebarFlags();
     }
+
+    /// <summary>The gaze node's three aim points, in the order the gaze pane
+    /// itself lists them. Static because the set is fixed: a gaze always has
+    /// exactly these three parts, so no actor mints its own copy.</summary>
+    private static readonly (string Label, GazePart Part)[] GazeParts =
+    {
+        ("Eyes", GazePart.Eyes),
+        ("Head", GazePart.Head),
+        ("Body", GazePart.Body),
+    };
 
     /// <summary>
     /// The cold path: the whole actor/bone tree. Everything here is discarded
@@ -850,6 +853,14 @@ public class MainWindow : Window
                     skeleton != null && (!filtering || hasMatchingBone);
                 bool auxFollowsGaze = auxSkeletons.Count > 0 &&
                     (!filtering || hasMatchingAux);
+                bool gazeLast = !categoriesFollowGaze && !auxFollowsGaze;
+                // Unlike actors and categories, this key is NOT seeded into
+                // _collapsedNodes when it is first seen: a key the set does not
+                // hold is an EXPANDED key, so the three aim points stand open
+                // the moment the gaze becomes a world point. Only an explicit
+                // chevron click puts the key in, and it survives from there.
+                var gazeKey = actorKey + "/gaze";
+                bool gazeExpanded = filtering || !_collapsedNodes.Contains(gazeKey);
                 actors.Rows.Add(new ShellSidebarRow
                 {
                     Label = "Gaze control",
@@ -857,10 +868,42 @@ public class MainWindow : Window
                     Depth = 1,
                     IconName = "gaze-point",
                     ForceIcon = true,
-                    HasChildren = false,
-                    IsLastChild = !categoriesFollowGaze && !auxFollowsGaze,
+                    // Like a merged category/bone row: the body still selects
+                    // the shared anchor (Tag) while the chevron toggles the
+                    // string key (ExpandKey).
+                    HasChildren = true,
+                    Expanded = gazeExpanded,
+                    IsLastChild = gazeLast,
                     Tag = SelectionId.ForGazeTarget(actor.Id),
+                    ExpandKey = gazeKey,
                 });
+                // The gaze is three points, not one: eyes, head and body each
+                // carry their own target, and each is separately selectable so
+                // the world gizmo can grab one part alone.
+                if (gazeExpanded)
+                {
+                    for (int p = 0; p < GazeParts.Length; p++)
+                    {
+                        var (partLabel, part) = GazeParts[p];
+                        var partId = SelectionId.ForGazeTarget(actor.Id, part);
+                        actors.Rows.Add(new ShellSidebarRow
+                        {
+                            Label = partLabel,
+                            Count = "",
+                            Depth = 2,
+                            IconName = "gaze-point",
+                            ForceIcon = true,
+                            HasChildren = false,
+                            IsLastChild = p == GazeParts.Length - 1,
+                            // Level 1 is the gaze row itself: its trunk
+                            // continues exactly while something follows it
+                            // under the actor, the same question gazeLast asks.
+                            TreeLines = new[] { false, !gazeLast },
+                            Active = _selection.IsSelected(partId),
+                            Tag = partId,
+                        });
+                    }
+                }
             }
 
             // The actor folds DIRECTLY into bone categories (no skeleton
