@@ -80,6 +80,8 @@ public enum TablerIcon
     Menu2,
     GazePoint,
     CameraSnap,
+    Head,
+    Body,
 }
 
 /// <summary>
@@ -205,6 +207,8 @@ public static class Tabler
         TablerIcon.Menu2           => "menu-2",
         TablerIcon.GazePoint       => "gaze-point",
         TablerIcon.CameraSnap      => "camera-snap",
+        TablerIcon.Head            => "head",
+        TablerIcon.Body            => "body",
         _ => "circle",
     };
 }

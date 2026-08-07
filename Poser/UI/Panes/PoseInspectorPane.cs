@@ -1532,8 +1532,10 @@ public class PoseInspectorPane
     /// row per part with the lock icon as its action — three chips plus
     /// three locks cannot fit the rail's control cell.
     ///
-    /// Point mode adds, per part, a camera snap beside that part's lock and a
-    /// world-point row of its own. The rail's point row is full-width and
+    /// Point mode adds, per part, a world-point row of its own, carrying the
+    /// select-point and camera-snap actions on that row rather than on the
+    /// part's switch or chip — they act on the point, so they sit with the
+    /// numbers that state it. The rail's point row is full-width and
     /// captionless — the switch row directly above it is its caption, the
     /// same pairing the IK hinge axis uses — while the workspace states the
     /// part in the label column, because its chips share one row.
@@ -1571,8 +1573,8 @@ public class PoseInspectorPane
                 id: $"lock-{label}");
         }
 
-        // Point mode only. The snap is a second action on the part's own row,
-        // so it sits with the lock it shares a subject with.
+        // Point mode only. The snap rides the part's own point row, beside the
+        // XYZ wells it overwrites.
         void CameraIcon(
             Crystarium.ActionScope actions,
             string label,
@@ -1591,9 +1593,10 @@ public class PoseInspectorPane
                 id: $"camera-{label}");
         }
 
-        // Point mode only, beside the snap. The world gizmo grabs whatever is
-        // selected, so this is how a part's own point gets a handle out there —
-        // the numbers below are the same point, typed instead of dragged.
+        // Point mode only, on the point row ahead of the snap. The world gizmo
+        // grabs whatever is selected, so this is how a part's own point gets a
+        // handle out there — the wells beside it are the same point, typed
+        // instead of dragged.
         void PointIcon(
             Crystarium.ActionScope actions,
             string label,
@@ -1635,7 +1638,7 @@ public class PoseInspectorPane
             _ => "Body point",
         };
 
-        void PointRow(GazeTargetType part, bool enabled) =>
+        void PointRow(string label, GazeTargetType part, bool enabled) =>
             form.AxisVector(
                 PointLabel(part),
                 PartPoint(part),
@@ -1651,7 +1654,12 @@ public class PoseInspectorPane
                 "0.000",
                 help: "The world point this part looks at",
                 disabled: !enabled,
-                fullWidth: !wide);
+                fullWidth: !wide,
+                actions: actions =>
+                {
+                    PointIcon(actions, label, part, enabled);
+                    CameraIcon(actions, label, part, enabled);
+                });
 
         if (wide)
         {
@@ -1672,16 +1680,11 @@ public class PoseInspectorPane
                             ? "Choose a gaze mode to control this part"
                             : "Let this part follow the gaze target");
                     LockIcon(actions, label, flag, enabled);
-                    if (point)
-                    {
-                        CameraIcon(actions, label, flag, enabled);
-                        PointIcon(actions, label, flag, enabled);
-                    }
                 }
             });
             if (point)
-                foreach (var (_, part) in GazePartChips)
-                    PointRow(part, state.TargetType.HasFlag(part));
+                foreach (var (label, part) in GazePartChips)
+                    PointRow(label, part, state.TargetType.HasFlag(part));
             return;
         }
 
@@ -1693,21 +1696,13 @@ public class PoseInspectorPane
                 label,
                 enabled,
                 next => SetPart(flag, next),
-                actions =>
-                {
-                    LockIcon(actions, label, flag, enabled);
-                    if (point)
-                    {
-                        CameraIcon(actions, label, flag, enabled);
-                        PointIcon(actions, label, flag, enabled);
-                    }
-                },
+                actions => LockIcon(actions, label, flag, enabled),
                 disabled: off,
                 help: off
                     ? "Choose a gaze mode to control this part"
                     : "Let this part follow the gaze target");
             if (point)
-                PointRow(flag, enabled);
+                PointRow(label, flag, enabled);
         }
     }
 

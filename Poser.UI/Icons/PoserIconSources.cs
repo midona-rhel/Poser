@@ -52,5 +52,27 @@ internal static class PoserIconSources
         // 4, a 0.4px gap at 14px that reads as a collision. At .55 the gaps are
         // 2.05 units horizontally / 2.6 vertically.
         ["camera-snap"] = @"<svg xmlns=""http://www.w3.org/2000/svg"" width=""24"" height=""24"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round"" > <path d=""M12 1v2"" /> <path d=""M12 21v2"" /> <path d=""M1 12h2"" /> <path d=""M21 12h2"" /> <path d=""M8.15 9.25h0.55a1.1 1.1 0 0 0 1.1 -1.1a0.55 0.55 0 0 1 0.55 -0.55h3.3a0.55 0.55 0 0 1 0.55 0.55a1.1 1.1 0 0 0 1.1 1.1h0.55a1.1 1.1 0 0 1 1.1 1.1v4.95a1.1 1.1 0 0 1 -1.1 1.1h-7.7a1.1 1.1 0 0 1 -1.1 -1.1v-4.95a1.1 1.1 0 0 1 1.1 -1.1"" /> </svg>",
+        // Gaze-part identity glyphs, drawn to sit next to `eye` at 14px. At that
+        // size the 24-grid is 0.58px per unit and the 2-unit stroke is 1.17px, so
+        // only features displaced 4+ units survive; both silhouettes are built
+        // from large shapes, not contour detail.
+        // `head`: right-facing profile bust, one closed outline. Cranium is a
+        // 210-degree arc on circle c(10.5, 9.6) r 5.6 running from the skull base
+        // at the back (theta 230) up over the crown to the forehead (theta 20).
+        // The face is four vertices only — brow 14.9,10.7 / nose tip 19.6,12.9 /
+        // chin 14.6,16.6 / jaw angle 10.6,16 — so the nose protrudes 4.7 units
+        // (2.7px at 14px) and reads as a point rather than mush. Below the jaw the
+        // outline drops into a neck 5 units wide (2.6-unit interior gap = 1.5px at
+        // 14px, still open) and closes across the bottom at y 20.6. The neck is
+        // what keeps this from reading as a bare circle next to `eye`.
+        ["head"] = @"<svg xmlns=""http://www.w3.org/2000/svg"" width=""24"" height=""24"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round"" > <path d=""M6.9 13.9A5.6 5.6 0 1 1 15.8 7.7L14.9 10.7L19.6 12.9L14.6 16.6L10.6 16L11.4 20.6L6.4 20.6Z"" /> </svg>",
+        // `body`: standing figure in the Tabler `walk`/`man` idiom but symmetric,
+        // so it never collides with `walk`'s dynamic pose. Head is a full circle
+        // c(12, 5.7) r 2.3 whose bottom point (12,8) is exactly where the spine
+        // starts, so the neck joins without a seam. Spine 8..14; arms are one
+        // chevron apexed on the spine at (12,10) with hands at y 13.5; legs are a
+        // wider chevron apexed at the hip (12,14) with feet at y 20.5. Open
+        // strokes with large negative space — the opposite silhouette to `head`.
+        ["body"] = @"<svg xmlns=""http://www.w3.org/2000/svg"" width=""24"" height=""24"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round"" > <path d=""M9.7 5.7a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0"" /> <path d=""M12 8v6"" /> <path d=""M7.5 13.5L12 10L16.5 13.5"" /> <path d=""M8.5 20.5L12 14L15.5 20.5"" /> </svg>",
     };
 }

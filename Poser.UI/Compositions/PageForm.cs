@@ -859,6 +859,10 @@ public static partial class Crystarium
                 row.Scale));
         }
 
+        /// <param name="actions">Optional actions right-aligned on the wells'
+        /// line. The strip is taken out of the band BEFORE the three-way
+        /// split, so the wells shrink to make room; in the stacked variant it
+        /// rides the wells line, not the label line.</param>
         public void AxisVector(
             string label,
             Vector3 value,
@@ -868,10 +872,13 @@ public static partial class Crystarium
             string format,
             string? help = null,
             bool disabled = false,
-            bool fullWidth = false)
+            bool fullWidth = false,
+            Action<ActionScope>? actions = null)
         {
             string id = Id(label);
             var row = _page.BeginRow(fullWidth ? string.Empty : label);
+            var actionScope = new ActionScope();
+            actions?.Invoke(actionScope);
             float gap = ActiveTheme.Form.AxisGap * row.Scale;
             float inlineMinimum =
                 (ActiveTheme.Form.AxisWellMinimumWidth * 3f
@@ -884,7 +891,17 @@ public static partial class Crystarium
             float available = fullWidth || stacked
                 ? row.Width
                 : row.ControlWidth;
-            float width = (available - gap * 2f) / 3f;
+            // The strip is measured against the whole band and taken out of
+            // it before the split, so the wells share only what is left. With
+            // no actions the band IS the wells' region, untouched.
+            float actionWidth = actionScope.Items.Count == 0
+                ? 0f
+                : MeasureActions(actionScope.Items, row.Scale, available);
+            float wells = actionScope.Items.Count == 0
+                ? available
+                : MathF.Max(0f, available - actionWidth
+                    - ActiveTheme.Page.ActionGap * row.Scale);
+            float width = (wells - gap * 2f) / 3f;
             float controlY = stacked
                 ? row.Origin.Y
                     + ActiveTheme.Controls.FormRowHeight * row.Scale
@@ -929,6 +946,20 @@ public static partial class Crystarium
                     },
                     disabled);
             }
+            if (actionScope.Items.Count > 0)
+                DrawActions(
+                    actionScope.Items,
+                    originX + available - actionWidth,
+                    actionWidth,
+                    // DrawActions band-centres on the row height from the top
+                    // it is handed, so the stacked variant hands it the wells'
+                    // line rather than the row's own top.
+                    stacked
+                        ? row.Origin.Y
+                            + ActiveTheme.Controls.FormRowHeight * row.Scale
+                        : row.Origin.Y,
+                    true,
+                    id);
             _page.EndRow(
                 row,
                 id,
