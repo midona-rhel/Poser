@@ -33,6 +33,7 @@ public sealed class LightPane
     private readonly SceneSession _scene;
     private readonly StableBindingRegistry _bindings;
     private readonly ILightingService _lighting;
+    private readonly ILightFileService _lightFiles;
     private readonly CleanTransformFacade _cleanTransforms;
     private readonly Game.Viewport.ViewportProjection _viewport;
     private readonly ICameraService _camera;
@@ -42,7 +43,19 @@ public sealed class LightPane
     private bool _openLight = true;
     private bool _openShadows = true;
     private bool _openTransform = true;
+    private bool _openFile = true;
     private bool _openActions = true;
+
+    private readonly Crystarium.FileDialog _saveBrowser =
+        new("Save Light", new[] { ".poserlight" }, isSaveMode: true);
+    private readonly Crystarium.FileDialog _loadBrowser =
+        new("Load Light", new[] { ".poserlight" });
+    private string _lastPath =
+        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+
+    // An imported light is only selectable once the scene refresh has bound
+    // it, exactly like a spawned one.
+    private ILight? _pendingSelect;
 
     // Euler cache while a rotation drag is active (avoids quat→euler snap).
     private Vector3? _dragEuler;
@@ -66,6 +79,7 @@ public sealed class LightPane
         SceneSession scene,
         StableBindingRegistry bindings,
         ILightingService lighting,
+        ILightFileService lightFiles,
         CleanTransformFacade cleanTransforms,
         Game.Viewport.ViewportProjection viewport,
         ICameraService camera)
@@ -73,9 +87,47 @@ public sealed class LightPane
         _scene = scene;
         _bindings = bindings;
         _lighting = lighting;
+        _lightFiles = lightFiles;
         _cleanTransforms = cleanTransforms;
         _viewport = viewport;
         _camera = camera;
+    }
+
+    /// <summary>
+    /// Pumped every frame by the window, not by <see cref="Draw"/>: the two
+    /// dialogs must survive a tab switch, and the pending import has to
+    /// resolve while no light is selected — the frame in which
+    /// <see cref="Draw"/> never runs.
+    /// </summary>
+    public void DrawBrowsers()
+    {
+        _saveBrowser.Draw();
+        _loadBrowser.Draw();
+
+        if (_pendingSelect is { } imported &&
+            _bindings.GetLightId(imported) is { } lightId)
+        {
+            _scene.Selection.Select(SelectionId.ForLight(lightId));
+            _pendingSelect = null;
+        }
+    }
+
+    /// <summary>Opens the load dialog from outside the pane — the add-entity
+    /// menu's "New light from file…".</summary>
+    public void OpenLoad()
+    {
+        _loadBrowser.Open(_lastPath, path =>
+        {
+            _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
+            var imported = _lightFiles.ImportLight(path);
+            if (imported == null)
+            {
+                _status = "Load: the light file could not be read.";
+                return;
+            }
+            _pendingSelect = imported;
+            _status = string.Empty;
+        });
     }
 
     public void Draw(Vector2 origin, Vector2 size)
@@ -107,6 +159,8 @@ public sealed class LightPane
                 form => ShadowRows(form, light));
             page.Section("TRANSFORM", _openTransform, next => _openTransform = next,
                 form => TransformRows(form, lightId));
+            page.Section("FILE", _openFile, next => _openFile = next,
+                form => FileRows(form, light));
             page.Section("ACTIONS", _openActions, next => _openActions = next,
                 form => ActionRows(form, lightId, light));
         });
@@ -116,6 +170,8 @@ public sealed class LightPane
 
     private void GeneralRows(Crystarium.FormScope form, ILight light)
     {
+        if (!_lighting.IsAvailable)
+            form.Status("Lighting is unavailable: game signatures not found.");
         form.Switch("Enabled", light.IsOn, value => light.IsOn = value,
             help: "Turn the light off without losing any of its settings");
         form.TextInput("Name", light.Name, value => light.Name = value,
@@ -271,6 +327,39 @@ public sealed class LightPane
             0.005f,
             "0.000",
             disabled: !canEdit);
+    }
+
+    /// <summary>Save writes the selected light; load always spawns a new one,
+    /// which the pending-select hook makes the selection once the scene has
+    /// bound it.</summary>
+    private void FileRows(Crystarium.FormScope form, ILight light)
+    {
+        form.Actions("Light file", actions =>
+        {
+            actions.Button("Save…", () => OpenSave(light),
+                help: "Write this light and all of its settings to a file");
+            actions.Button("Load…", OpenLoad,
+                help: "Add a light from a file to the scene");
+        });
+    }
+
+    private void OpenSave(ILight light)
+    {
+        _saveBrowser.Open(_lastPath, path =>
+        {
+            _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
+            // The light is frozen at dialog open and can be destroyed while
+            // the dialog is up; an invalid handle reads as spawn defaults.
+            if (!light.IsValid)
+            {
+                _status = "Export: the light no longer exists.";
+                return;
+            }
+            bool exported = _lightFiles.ExportLight(light, path);
+            _status = exported
+                ? string.Empty
+                : "Export: the light file could not be written.";
+        });
     }
 
     private void ActionRows(

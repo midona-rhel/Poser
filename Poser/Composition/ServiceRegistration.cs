@@ -146,6 +146,7 @@ internal static class ServiceRegistration
         services.AddSingleton<CommandRouter>();
 
         services.AddSingleton<IPoseFileService, PoseFileService>();
+        services.AddSingleton<ILightFileService, LightFileService>();
         return services;
     }
 

@@ -341,6 +341,7 @@ public class MainWindow : Window
         DrawOverlayContextMenu();
         DrawRenameModal();
         _appearancePane.DrawBrowsers();
+        _lightPane.DrawBrowsers();
 
     }
 
@@ -607,7 +608,11 @@ public class MainWindow : Window
 
         // Lights are flat: a spawned light owns nothing beneath it, so the
         // section is one row per light and the header's plus makes another.
-        var lights = new ShellSidebarSection { Title = "LIGHTS", ShowPlus = true };
+        var lights = new ShellSidebarSection
+        {
+            Title = "LIGHTS",
+            ShowPlus = _lightingService.IsAvailable,
+        };
         foreach (var light in _scene.Snapshot.Lights)
         {
             if (filtering && !MatchesSidebarFilter(filter, light.Name))
@@ -951,7 +956,8 @@ public class MainWindow : Window
 
     /// <summary>
     /// The sidebar ACTORS "+" menu: entity creation in the shared floating
-    /// menu — New actor, New actor with companion slot, New prop, New light.
+    /// menu — New actor, New actor with companion slot, New prop, New light,
+    /// New light from file.
     /// The titlebar plus opens the identical menu. Cameras and references
     /// stay absent (not disabled) until their runtime entity types exist.
     /// </summary>
@@ -971,7 +977,13 @@ public class MainWindow : Window
                 new ContextMenuItem("New actor with companion slot", TablerIcon.Paw),
                 ContextMenuItem.Separator,
                 new ContextMenuItem("New prop", TablerIcon.Diamond),
-                new ContextMenuItem("New light", TablerIcon.Bulb),
+                // Both light entries need the native lighting signatures;
+                // without them a spawn is a silent no-op, so they read as
+                // disabled rather than doing nothing.
+                new ContextMenuItem("New light", TablerIcon.Bulb,
+                    disabled: !_lightingService.IsAvailable),
+                new ContextMenuItem("New light from file…", TablerIcon.File,
+                    disabled: !_lightingService.IsAvailable),
             };
             _addActions = new List<Action?>
             {
@@ -980,6 +992,7 @@ public class MainWindow : Window
                 null,
                 () => _propService.SpawnProp(),
                 SpawnLight,
+                _lightPane.OpenLoad,
             };
             Crystarium.FloatingMenu.Open("##sidebar-add", ImGui.GetMousePos(), items);
         }
