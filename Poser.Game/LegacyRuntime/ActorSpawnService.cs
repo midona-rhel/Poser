@@ -388,7 +388,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
     /// <summary>Bounded per-frame poll on the framework thread; logs on timeout.</summary>
     private void PollUntil(Func<bool> condition, Action onSatisfied, int timeoutMs, string what)
     {
-        var deadline = Environment.TickCount64 + timeoutMs;
+        var deadline = System.Environment.TickCount64 + timeoutMs;
         void Tick(IFramework fw)
         {
             try
@@ -398,7 +398,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
                     onSatisfied();
                     _framework.Update -= Tick;
                 }
-                else if (Environment.TickCount64 > deadline)
+                else if (System.Environment.TickCount64 > deadline)
                 {
                     _log.Warning($"ActorSpawnService: timed out waiting for {what}");
                     _framework.Update -= Tick;

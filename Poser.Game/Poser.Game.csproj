@@ -15,6 +15,10 @@
     <PackageReference Include="K4os.Compression.LZ4.Legacy" Version="1.3.8" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Curated festival names, phases and area exclusions (Brio's data file). -->
+    <EmbeddedResource Include="Data\Festivals.json" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Poser.Domain\Poser.Domain.csproj" />
     <ProjectReference Include="..\Poser.Application\Poser.Application.csproj" />
     <ProjectReference Include="..\PosingCore\PosingCore.csproj" />

@@ -78,6 +78,7 @@ public class MainWindow : Window
     private readonly PoseInspectorPane _poseInspector;
     private readonly AnimationPane _animationPane;
     private readonly AppearancePane _appearancePane;
+    private readonly EnvironmentPane _environmentPane;
     private readonly PoseLibraryPane _libraryPane;
     private readonly PoseFileInspectorSection _poseFileSection;
     private readonly Game.Animation.AnimationCatalogLoader _animationCatalog;
@@ -104,6 +105,31 @@ public class MainWindow : Window
         Title = "LIBRARY",
         Selectable = true,
     };
+
+    /// <summary>The scene's environment, seated above the actors: one row that
+    /// is never created or destroyed, so the section shows no plus and the row
+    /// is retained whole.</summary>
+    private readonly ShellSidebarSection _environmentSection = new()
+    {
+        Title = "ENVIRONMENT",
+        ShowPlus = false,
+    };
+
+    private readonly ShellSidebarRow _environmentRow = new()
+    {
+        Label = "Environment",
+        Count = "",
+        Icon = TablerIcon.Sun,
+        Depth = 0,
+        HasChildren = false,
+        Tag = EnvironmentSelection,
+    };
+
+    /// <summary>The one environment selection, minted once: it carries no
+    /// per-scene data, so every frame's row and flag refresh restate it.
+    /// </summary>
+    private static readonly SelectionId EnvironmentSelection =
+        SelectionId.ForEnvironment();
 
     /// <summary>The scene's own sidebar section, retained with its rows: the
     /// tree is the most expensive thing a frame can assemble, so it is rebuilt
@@ -168,9 +194,22 @@ public class MainWindow : Window
         new() { Label = "Appearance" },
     ];
 
+    /// <summary>The environment's own tab strip: selecting the environment
+    /// swaps the whole strip, because none of the actor tabs mean anything for
+    /// it.</summary>
+    private readonly ShellTab[] _environmentTabs =
+    [
+        new() { Label = "Environment" },
+    ];
+
     /// <summary>The library section is stated first, so its index is fixed.
     /// </summary>
     private const int LibrarySectionIndex = 0;
+
+    /// <summary>The sections are stated in a fixed order — library,
+    /// environment, actors — so the actors section is index 2 and its header is
+    /// the only one whose plus creates anything.</summary>
+    private const int ActorsSectionIndex = 2;
 
     /// <summary>Reports whether the skeleton overlay window is open (titlebar toggle state).</summary>
     public Func<bool>? GetSkeletonOverlayOn { get; set; }
@@ -197,6 +236,7 @@ public class MainWindow : Window
         PoseInspectorPane poseInspector,
         AnimationPane animationPane,
         AppearancePane appearancePane,
+        EnvironmentPane environmentPane,
         PoseLibraryPane libraryPane,
         PoseFileInspectorSection poseFileSection,
         Application.Animation.AnimationSession animation,
@@ -229,6 +269,7 @@ public class MainWindow : Window
         _poseInspector = poseInspector;
         _animationPane = animationPane;
         _appearancePane = appearancePane;
+        _environmentPane = environmentPane;
         _libraryPane = libraryPane;
         // The library's "Add source…" and its empty state both mean the same
         // thing the titlebar gear does, so they travel the one settings route.
@@ -305,8 +346,13 @@ public class MainWindow : Window
         _vm.OnHideUi = () => IsOpen = false;
         // The sidebar's add affordance. Creation lives where the created
         // thing will appear, so the ACTORS
-        // header owns it rather than a separate spawn menu.
-        _vm.OnSectionPlus = _ => OnSpawnBrowserRequested?.Invoke();
+        // header owns it rather than a separate spawn menu — and only that
+        // header, which is no longer the first section.
+        _vm.OnSectionPlus = index =>
+        {
+            if (index == ActorsSectionIndex)
+                OnSpawnBrowserRequested?.Invoke();
+        };
         // Only the LIBRARY header is selectable, so no other index can arrive.
         _vm.OnSectionSelected = index =>
         {
@@ -713,6 +759,11 @@ public class MainWindow : Window
         // The library is a place in the sidebar, not a window: its header IS
         // the affordance, and it stands above the scene it poses.
         _vm.Sections.Add(_librarySection);
+        // The environment stands above the actors: it is the one scene entity
+        // that is always there, and its single row is retained whole.
+        _vm.Sections.Add(_environmentSection);
+        _environmentSection.Rows.Clear();
+        _environmentSection.Rows.Add(_environmentRow);
         _vm.Sections.Add(_actorsSection);
         _actorsSection.Rows.Clear();
         _actorRows.Clear();
@@ -1007,6 +1058,7 @@ public class MainWindow : Window
     private void RefreshSidebarFlags()
     {
         _librarySection.Active = _libraryMode;
+        _environmentRow.Active = _selection.IsSelected(EnvironmentSelection);
 
         var rows = _actorsSection.Rows;
         for (int i = 0; i < rows.Count; i++)
@@ -1217,12 +1269,23 @@ public class MainWindow : Window
             }
             return;
         }
-        if (_activeTab is not ("Pose" or "Animation" or "Appearance"))
-            _activeTab = "Pose";
-        for (int i = 0; i < _selectionTabs.Length; i++)
+        // The strip is a function of the SELECTION TYPE: the environment's
+        // tabs are its own, and nothing else shares them.
+        var tabs = primary is { Kind: SceneEntityKind.Environment }
+            ? _environmentTabs
+            : _selectionTabs;
+        // The active tab is preserved WITHIN a strip, so a selection change
+        // inside the actor set cannot silently throw the user back to Pose; a
+        // strip that does not carry it falls to that strip's first tab.
+        bool carried = false;
+        for (int i = 0; i < tabs.Length; i++)
+            carried |= tabs[i].Label == _activeTab;
+        if (!carried)
+            _activeTab = tabs[0].Label;
+        for (int i = 0; i < tabs.Length; i++)
         {
-            _selectionTabs[i].Active = _selectionTabs[i].Label == _activeTab;
-            _vm.Tabs.Add(_selectionTabs[i]);
+            tabs[i].Active = tabs[i].Label == _activeTab;
+            _vm.Tabs.Add(tabs[i]);
         }
     }
 
@@ -1319,7 +1382,7 @@ public class MainWindow : Window
         _vm.ContentFlush = tab is "Library";
         _vm.ContentOwnsViewport = tab is "Pose";
         _vm.ContentUsesPage =
-            tab is "Animation" or "Appearance";
+            tab is "Animation" or "Appearance" or "Environment";
     }
 
     private void OnRowClicked(ShellSidebarRow row)
@@ -1400,6 +1463,12 @@ public class MainWindow : Window
         if (_activeTab == "Appearance")
         {
             _appearancePane.Draw(origin, size);
+            return;
+        }
+
+        if (_activeTab == "Environment")
+        {
+            _environmentPane.Draw(origin, size);
             return;
         }
 
