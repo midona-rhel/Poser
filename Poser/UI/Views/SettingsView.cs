@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -6,20 +7,33 @@ using Poser.Config;
 
 namespace Poser.UI.Views;
 
+/// <summary>One configured library root, edited free of the persisted
+/// <c>LibrarySourceConfig</c> until Save.</summary>
+public sealed class LibrarySourceVm
+{
+    public string Name = "";
+    public string Path = "";
+    public bool Enabled = true;
+}
+
 public sealed class SettingsViewModel
 {
     public int Category = 1;
     public float BoneDotRadius = 5f;
+    // Mirrors SkeletonConfiguration defaults: selected/hovered come from the
+    // accent (Palette.Primary until AccentIndex drives the theme), the rest
+    // are muted fixed tones — no theme token matches them (overlay colors
+    // must be opaque; TextMuted-style alpha tones vanish over scenery).
     public Vector4 OverlaySelected =
         Crystarium.ActiveTheme.Palette.Primary;
-    public Vector4 OverlayHovered =
-        Crystarium.ActiveTheme.Palette.White;
+    public Vector4 OverlayHovered = Vector4.Lerp(
+        Crystarium.ActiveTheme.Palette.Primary, Vector4.One, 0.35f);
     public Vector4 OverlayInactive =
-        Crystarium.ActiveTheme.TextMuted;
+        new(148f / 255f, 163f / 255f, 184f / 255f, 1f);
     public Vector4 OverlayIkChain =
-        Crystarium.ActiveTheme.Warning;
+        new(217f / 255f, 165f / 255f, 68f / 255f, 1f);
     public Vector4 OverlayMirrored =
-        Crystarium.ActiveTheme.Palette.AxisY;
+        new(194f / 255f, 123f / 255f, 160f / 255f, 1f);
     public bool NsfwBones;
     public bool AnonymousMode = true;
     public UITheme Theme = UITheme.Dark;
@@ -27,6 +41,21 @@ public sealed class SettingsViewModel
 
     public bool OpenOnGPose = true;
     public bool CloseWithGPose;
+    public bool PreservePoseAcrossRedraws = true;
+    public bool FollowGameTarget = true;
+    public bool TargetFollowsSelection;
+
+    public bool AutoSaveEnabled = true;
+    public float AutoSaveIntervalSeconds = 60f;
+    /// <summary>Free numeric text, not a bounded slider: a shoot with hundreds
+    /// of recovery points is a legitimate setup. Held as the raw string the
+    /// user is typing and parsed at the config boundary, so a half-typed value
+    /// never collapses to a number mid-keystroke.</summary>
+    public string AutoSaveMaxKept = "10";
+    public bool AutoSaveCleanOnExit;
+    /// <summary>The auto-save root on disk, for the Open-in-Explorer row.
+    /// Empty when the binder has no auto-save service to ask.</summary>
+    public string AutoSaveFolder = "";
 
     public bool ShowSkeletonLines = true;
     public float BoneLineThickness = 1.0f;
@@ -35,6 +64,12 @@ public sealed class SettingsViewModel
     public int SidebarDock;
     public int InspectorDock = 1;
     public bool TreeGuides = true;
+
+    public List<LibrarySourceVm> LibrarySources = [];
+    public bool UseLibraryWhenImporting;
+    public bool LibraryShowExtensions;
+    public string LibraryNewName = "";
+    public string LibraryNewPath = "";
 
     public (string Action, string Binding)[] Keybinds =
     {
@@ -54,7 +89,11 @@ public sealed class SettingsViewModel
     public Action? OnCancel;
     public Action? OnClose;
     public Action? OnOpenRepository;
-    public Action<UITheme>? OnThemePreview;
+    /// <summary>Opens a folder in the OS file explorer, creating it first when
+    /// it does not exist yet (a seeded Brio/Anamnesis root may never have been
+    /// created by its own tool).</summary>
+    public Action<string>? OnOpenFolder;
+    public Action<UITheme, int>? OnThemePreview;
 }
 
 /// <summary>
@@ -87,6 +126,7 @@ public static class SettingsView
         (TablerIcon.Bone, "Skeleton"),
         (TablerIcon.LayoutPanel, "UI"),
         (TablerIcon.Keyboard, "Keybinds"),
+        (TablerIcon.Folder, "Library"),
         (TablerIcon.Info, "About"),
     };
 
@@ -131,7 +171,7 @@ public static class SettingsView
             {
                 Title = "Settings",
                 OnClose = () => vm.OnClose?.Invoke(),
-                CloseHelp = "Close settings",
+                CloseHelp = "Close settings without saving",
                 RailWidth = theme.Settings.NavigationWidth,
                 FooterRight = right =>
                 {
@@ -253,7 +293,11 @@ public static class SettingsView
                 "settings-page",
                 ImGui.GetCursorScreenPos(),
                 new Vector2(region.ContentWidth * scale, height),
-                page => DrawCategory(vm, page)));
+                page => DrawCategory(vm, page),
+                // Settings rows carry sentence-length labels; the shared
+                // 94px column truncates them.
+                labelColumnWidth:
+                    Crystarium.ActiveTheme.Settings.LabelColumnWidth));
     }
 
     private static void DrawCategory(
@@ -277,6 +321,9 @@ public static class SettingsView
             case 4:
                 DrawKeybinds(vm, page);
                 break;
+            case 5:
+                DrawLibrary(vm, page);
+                break;
             default:
                 DrawAbout(vm, page);
                 break;
@@ -299,7 +346,57 @@ public static class SettingsView
                 vm.CloseWithGPose,
                 next => vm.CloseWithGPose = next,
                 "Hide all Poser windows when leaving GPose");
+            form.Switch(
+                "Keep pose through redraws",
+                vm.PreservePoseAcrossRedraws,
+                next => vm.PreservePoseAcrossRedraws = next,
+                "Restore the authored pose after an actor redraw (Penumbra collections, Glamourer, MCDF)");
+            form.Switch(
+                "Follow game target",
+                vm.FollowGameTarget,
+                next => vm.FollowGameTarget = next,
+                "Targeting an actor in GPose selects it in Poser");
+            form.Switch(
+                "Game target follows selection",
+                vm.TargetFollowsSelection,
+                next => vm.TargetFollowsSelection = next,
+                "Selecting an actor in Poser targets it in GPose");
         }, divider: false);
+        // Auto-save lives beside the other GPose-lifecycle switches: it starts
+        // and stops with GPose exactly as Open/Close with GPose do, and the
+        // Library category is about reading existing pose folders, not writing
+        // recovery ones.
+        page.Section("AUTO-SAVE", form =>
+        {
+            form.Switch(
+                "Auto-save poses",
+                vm.AutoSaveEnabled,
+                next => vm.AutoSaveEnabled = next,
+                "Back up actors with pose edits to timestamped folders while in GPose");
+            form.Slider(
+                "Save interval",
+                vm.AutoSaveIntervalSeconds,
+                10f,
+                600f,
+                next => vm.AutoSaveIntervalSeconds = next,
+                format: "0 s");
+            form.TextInput(
+                "Kept auto-saves",
+                vm.AutoSaveMaxKept,
+                next => vm.AutoSaveMaxKept = next,
+                placeholder: "10",
+                help: "How many snapshot folders to keep; the oldest are deleted first");
+            form.Switch(
+                "Clean up on GPose exit",
+                vm.AutoSaveCleanOnExit,
+                next => vm.AutoSaveCleanOnExit = next,
+                "Delete all auto-saves when leaving GPose normally; after a crash they remain for recovery");
+            form.Actions("Folder", actions => actions.Button(
+                "Open in Explorer",
+                () => vm.OnOpenFolder?.Invoke(vm.AutoSaveFolder),
+                disabled: vm.AutoSaveFolder.Length == 0,
+                help: "Show the auto-save snapshot folders in Windows Explorer"));
+        });
     }
 
     private static void DrawDisplay(
@@ -361,14 +458,18 @@ public static class SettingsView
                 next =>
                 {
                     vm.Theme = (UITheme)next;
-                    vm.OnThemePreview?.Invoke(vm.Theme);
+                    vm.OnThemePreview?.Invoke(vm.Theme, vm.AccentIndex);
                 },
                 ThemeLabels);
             form.Swatches(
                 "Accent",
                 Crystarium.ActiveTheme.Settings.AccentOptions,
                 vm.AccentIndex,
-                next => vm.AccentIndex = next);
+                next =>
+                {
+                    vm.AccentIndex = next;
+                    vm.OnThemePreview?.Invoke(vm.Theme, vm.AccentIndex);
+                });
         });
     }
 
@@ -446,6 +547,105 @@ public static class SettingsView
                             rebinding ? -1 : index));
             }
         }, divider: false);
+    }
+
+    private static void DrawLibrary(
+        SettingsViewModel vm,
+        Crystarium.PageScope page)
+    {
+        page.Section("POSE LIBRARY", form =>
+        {
+            form.Switch(
+                "Use library for Import",
+                vm.UseLibraryWhenImporting,
+                next => vm.UseLibraryWhenImporting = next,
+                "Import… buttons open the pose library instead of the file dialog");
+            form.Switch(
+                "Show file extensions",
+                vm.LibraryShowExtensions,
+                next => vm.LibraryShowExtensions = next,
+                "Tile names carry .pose / .cmp");
+        }, divider: false);
+        page.Section("SOURCE FOLDERS", form =>
+        {
+            // The remove is deferred past the loop: the action fires DURING the
+            // row that owns it, and shortening the list under the iteration
+            // would drop the row after it for a frame.
+            int removing = -1;
+            for (int i = 0; i < vm.LibrarySources.Count; i++)
+            {
+                int index = i;
+                var source = vm.LibrarySources[index];
+                form.SwitchActions(
+                    string.IsNullOrWhiteSpace(source.Name)
+                        ? $"Source {index + 1}"
+                        : source.Name,
+                    source.Enabled,
+                    next => source.Enabled = next,
+                    actions =>
+                    {
+                        actions.Button(
+                            "Open",
+                            () => vm.OnOpenFolder?.Invoke(source.Path),
+                            disabled: string.IsNullOrWhiteSpace(source.Path),
+                            help: "Show this folder in Windows Explorer");
+                        actions.Button(
+                            "Remove",
+                            () => removing = index,
+                            help: "Stop scanning this folder");
+                    },
+                    "Scan this folder for poses");
+                form.Status(source.Path);
+            }
+            if (removing >= 0)
+                vm.LibrarySources.RemoveAt(removing);
+
+            form.TextInput(
+                "Name",
+                vm.LibraryNewName,
+                next => vm.LibraryNewName = next,
+                placeholder: "Taken from the folder when left blank");
+            form.TextInput(
+                "Folder",
+                vm.LibraryNewPath,
+                next => vm.LibraryNewPath = next,
+                placeholder: "Full path to a folder of poses");
+            form.Actions(
+                string.Empty,
+                actions => actions.Button(
+                    "Add",
+                    () => AddLibrarySource(vm),
+                    disabled: string.IsNullOrWhiteSpace(vm.LibraryNewPath)));
+            string pending = vm.LibraryNewPath.Trim();
+            if (pending.Length > 0 && !System.IO.Directory.Exists(pending))
+                form.Status(
+                    "Folder does not exist yet — it is scanned once it does.");
+        });
+    }
+
+    /// <summary>Commits the add-source drafts, naming the source after its
+    /// last path segment when the name is left blank.</summary>
+    private static void AddLibrarySource(SettingsViewModel vm)
+    {
+        string path = vm.LibraryNewPath.Trim();
+        if (path.Length == 0)
+            return;
+
+        string name = vm.LibraryNewName.Trim();
+        if (name.Length == 0)
+            name = System.IO.Path.GetFileName(path.TrimEnd(
+                System.IO.Path.DirectorySeparatorChar,
+                System.IO.Path.AltDirectorySeparatorChar));
+        if (name.Length == 0)
+            name = path;
+
+        vm.LibrarySources.Add(new LibrarySourceVm
+        {
+            Name = name,
+            Path = path,
+        });
+        vm.LibraryNewName = string.Empty;
+        vm.LibraryNewPath = string.Empty;
     }
 
     private static void DrawAbout(

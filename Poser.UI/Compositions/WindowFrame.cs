@@ -158,7 +158,7 @@ public static partial class Crystarium
             drawList.AddRectFilled(
                 railRect.Min,
                 railRect.Max,
-                ImGui.ColorConvertFloat4ToU32(theme.SurfaceRaised));
+                ImGui.ColorConvertFloat4ToU32(theme.Chrome.RailFill));
             // The H's bridge: it belongs to the rail, so a frame without a
             // rail has none.
             drawList.AddRectFilled(

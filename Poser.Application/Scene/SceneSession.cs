@@ -53,6 +53,11 @@ public sealed class SceneSession
                 ? SelectionId.ForActor(current.Id)
                 : null;
 
+        if (id.Kind == SceneEntityKind.GazeTarget && id.Actor is { } gazeActor)
+            return _actors.TryGetValue(gazeActor.LogicalId, out var gazeOwner)
+                ? SelectionId.ForGazeTarget(gazeOwner.Id, id.Gaze ?? GazePart.Anchor)
+                : null;
+
         if (id.Kind == SceneEntityKind.Bone && id.Bone is { } bone)
         {
             if (_bones.TryGetValue(BoneLineage.From(bone), out var current))

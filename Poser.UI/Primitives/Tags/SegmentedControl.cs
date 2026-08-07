@@ -38,18 +38,22 @@ public static partial class Crystarium
                 + padding * 2f,
             (drawList, index, min, max, active, hovered, disabled) =>
             {
-                var textSize = ImGui.CalcTextSize(items[index]);
                 var color = active || hovered
                     ? ActiveTheme.Text
                     : ActiveTheme.Text with { W = 0.72f };
                 if (disabled)
                     color = color.Fade(ActiveTheme.Chrome.DisabledOpacity);
                 drawList.PushClipRect(min, max, true);
-                drawList.AddText(
-                    min + (max - min - textSize) * 0.5f,
-                    ImGui.ColorConvertFloat4ToU32(
-                        ColorEx.ApplyAlpha(color)),
-                    items[index]);
+                TextInBand(
+                    min,
+                    max - min,
+                    items[index],
+                    new TextStyle
+                    {
+                        Size = ActiveTheme.Typography.LabelSize,
+                        Color = color,
+                    },
+                    TextAlign.Center);
                 drawList.PopClipRect();
             });
         if (fontPushed)
@@ -299,7 +303,7 @@ public static partial class Crystarium
             padding * 2f + gap * MathF.Max(0, count - 1);
         float naturalTotal = chromeWidth + naturalInner;
         float totalWidth = ControlSizing.Width(
-            style.Width,
+            style,
             naturalTotal / scale,
             ImGui.GetContentRegionAvail().X / scale) * scale;
         if ((style.Width.Kind is UiWidthKind.Fixed or UiWidthKind.Fill)

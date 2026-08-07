@@ -14,14 +14,17 @@ public class PoseImportOptions
     public bool ApplyRotation { get; set; } = true;
 
     /// <summary>
-    /// Import bone position data.
+    /// Import bone position data. Off by default: both references default
+    /// pose import to rotation-only (Brio PosingService.cs:36
+    /// DefaultImporterOptions, Ktisis FileConfig.cs:20 ImportPoseTransforms),
+    /// and baked positions/scales in a file silently fight IK and C+ scaling.
     /// </summary>
-    public bool ApplyPosition { get; set; } = true;
+    public bool ApplyPosition { get; set; }
 
     /// <summary>
-    /// Import bone scale data.
+    /// Import bone scale data. Off by default — see <see cref="ApplyPosition"/>.
     /// </summary>
-    public bool ApplyScale { get; set; } = true;
+    public bool ApplyScale { get; set; }
 
     /// <summary>
     /// Import body/main skeleton bones.
@@ -87,7 +90,18 @@ public class PoseImportOptions
     public bool FilterIncludesDescendants { get; set; }
 
     /// <summary>
-    /// Default options that import everything except model transform.
+    /// Keep the target actor's animation paused once the import has finished.
+    /// The import always pauses the actor for its apply window; this flag
+    /// skips the speed restore afterwards — Brio's "Freeze Actor" popup
+    /// checkbox (FileUIHelpers.cs:478), which its ImportPose ORs with the
+    /// Posing.FreezeActorOnPoseImport config; the facade applies the same OR
+    /// against Poser's config default. The file service itself ignores this:
+    /// animation is the facade's concern, never the plan builder's.
+    /// </summary>
+    public bool FreezeOnImport { get; set; }
+
+    /// <summary>
+    /// Default options: every slot, rotation-only, no model transform.
     /// </summary>
     public static PoseImportOptions Default => new();
 
@@ -115,10 +129,32 @@ public class PoseImportOptions
     };
 
     /// <summary>
+    /// Rest-pose preset — Brio's LoadResourcesPose(asBody: true): Character
+    /// slot only, rotation-only, face and model transform untouched. Brio's
+    /// category-level exclusions (head, ears, hair, ex, legacy) are baked
+    /// into the <see cref="RestPoses"/> files at load, not expressed here.
+    /// </summary>
+    public static PoseImportOptions RestPose => new()
+    {
+        ApplyRotation = true,
+        ApplyPosition = false,
+        ApplyScale = false,
+        ApplyBody = true,
+        ApplyFace = false,
+        ApplyMainHand = false,
+        ApplyOffHand = false,
+        ApplyProp = false,
+        ApplyOrnament = false,
+        ApplyModelTransform = false
+    };
+
+    /// <summary>
     /// Options that import everything including model transform.
     /// </summary>
     public static PoseImportOptions All => new()
     {
+        ApplyPosition = true,
+        ApplyScale = true,
         ApplyModelTransform = true
     };
 
@@ -145,6 +181,7 @@ public class PoseImportOptions
                 ? null
                 : new System.Collections.Generic.HashSet<(Poser.Domain.Identity.PoseSlot Slot, string Name)>(BoneFilter),
             FilterIncludesDescendants = FilterIncludesDescendants,
+            FreezeOnImport = FreezeOnImport,
         };
     }
 }

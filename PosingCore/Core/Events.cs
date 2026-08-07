@@ -56,4 +56,11 @@ public record LightListChangedEvent(IReadOnlyList<ILight> Lights) : IEvent;
 /// </summary>
 public record BoneTransformChangedEvent(IBone Bone) : IEvent;
 
+/// <summary>
+/// A gaze entry's mode changed (any actor). Consumers re-read state from
+/// IGazeService; the payload stays empty so the native-thread publisher never
+/// marshals actor references.
+/// </summary>
+public record GazeStateChangedEvent : IEvent;
+
 #endregion

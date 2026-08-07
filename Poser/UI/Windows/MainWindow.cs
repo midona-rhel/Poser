@@ -44,13 +44,24 @@ public class MainWindow : Window
     private readonly StableBindingRegistry _bindings;
     private readonly Application.Animation.AnimationSession _animation;
     private readonly SkeletonOverlayPresentation _overlayPresentation;
+    private readonly IGazeService _gazeService;
 
     // actor context menu + rename modal: stable ids only; the lifetime
     // services still take legacy actors, so ids resolve per frame through the
     // binding registry and the pointer never persists in UI state.
     private ActorId? _ctxActorId;
+    private bool _shellMenuOpenRequested;
+    private Vector2 _shellMenuAnchor;
+    /// <summary>The shell command menu's rows, retained: a warm frame only
+    /// re-reads the gate below, and the rows are rewritten in place when — and
+    /// only when — that gate flips. ContextMenuItem is a struct, so the menu
+    /// costs one allocation for the lifetime of the window.</summary>
+    private readonly ContextMenuItem[] _shellMenuItems =
+        new ContextMenuItem[(int)ShellCommand.OpenSettings + 1];
+    /// <summary>Whether the rows were last built with a posable target.</summary>
+    private bool _shellMenuPoseTarget;
+    private bool _shellMenuRowsBuilt;
     private bool _ctxOpenRequested;
-    private bool _addOpenRequested;
     private BoneId? _ctxBoneId;
     private IReadOnlyList<BoneId>? _ctxBoneOverlayBones;
     private bool _boneCtxOpenRequested;
@@ -69,6 +80,8 @@ public class MainWindow : Window
     private readonly AppearancePane _appearancePane;
     private readonly LightPane _lightPane;
     private readonly ILightingService _lightingService;
+    private readonly PoseLibraryPane _libraryPane;
+    private readonly PoseFileInspectorSection _poseFileSection;
     private readonly Game.Animation.AnimationCatalogLoader _animationCatalog;
     private readonly PoseRailPane _poseRail;
     private bool _collapsed;
@@ -80,6 +93,102 @@ public class MainWindow : Window
     private readonly AppShellViewModel _vm = new();
     private string _activeTab = "Pose";
 
+    /// <summary>The workspace is showing the pose library instead of the
+    /// selection's tabs. The SELECTION is untouched — the library applies to
+    /// whatever actor was selected before the mode was entered.</summary>
+    private bool _libraryMode;
+
+    /// <summary>The library's sidebar section and its one tab, both retained:
+    /// they carry no per-frame data, so a warm frame restates them rather than
+    /// minting them.</summary>
+    private readonly ShellSidebarSection _librarySection = new()
+    {
+        Title = "LIBRARY",
+        Selectable = true,
+    };
+
+    /// <summary>The scene's own sidebar section, retained with its rows: the
+    /// tree is the most expensive thing a frame can assemble, so it is rebuilt
+    /// only when <see cref="BuildSidebar"/>'s gate flips and refreshed in place
+    /// on every other frame.</summary>
+    private readonly ShellSidebarSection _actorsSection = new()
+    {
+        Title = "ACTORS",
+        ShowPlus = true,
+    };
+
+    /// <summary>The lights section, retained like ACTORS. Lights are flat — a
+    /// spawned light owns nothing beneath it — so its rows are one per light,
+    /// rebuilt behind the same gate (the scene revision carries a light's
+    /// spawn, rename, kind and on-state) and flag-refreshed on warm frames.
+    /// </summary>
+    private readonly ShellSidebarSection _lightsSection = new()
+    {
+        Title = "LIGHTS",
+    };
+
+    /// <summary>The actor rows, with the snapshot facts a warm frame needs to
+    /// restate their live flags without walking the scene again.</summary>
+    private readonly List<ActorRowState> _actorRows = new();
+
+    private readonly record struct ActorRowState(
+        ShellSidebarRow Row,
+        ActorId Id,
+        string RawName,
+        bool SnapshotHidden);
+
+    /// <summary>Bone category → index into the rebuild's group list. Indexed by
+    /// the enum itself, because the FindIndex predicate this replaces was one
+    /// closure allocation per bone per frame.</summary>
+    private readonly int[] _categorySlots =
+        new int[(int)Core.BoneInfo.BoneCategory.Other + 1];
+
+    // ── sidebar rebuild gate (see BuildSidebar) ─────────────────────────
+    private bool _sidebarBuilt;
+    private ulong _sidebarRevision;
+    private string _sidebarFilter = "";
+    private int _sidebarExpandVersion = -1;
+
+    /// <summary>A gaze mode transition landed since the last rebuild. Gaze mode
+    /// is not part of the scene revision and cannot be, so the one row it owns
+    /// needs its own arming bit. Written from the gaze service's publishing
+    /// thread — volatile, and nothing but the bit is touched there.</summary>
+    private volatile bool _gazeDirty;
+
+    /// <summary>Bumped by every disclosure toggle. The gate cannot observe
+    /// <see cref="_collapsedNodes"/> directly — a set carries no version — and
+    /// disclosure is the one non-scene input that changes the row COUNT.
+    /// </summary>
+    private int _expandVersion;
+
+    /// <summary>Library mode's tab strip: the library TYPES are the tabs —
+    /// a lone "Library" tab controlled nothing. Positional against the
+    /// pane's type indices.</summary>
+    private readonly ShellTab[] _libraryTabs =
+    [
+        new() { Label = "Poses" },
+        new() { Label = "Auto-saves" },
+        new() { Label = "MCDF" },
+    ];
+
+    /// <summary>The selection-typed tab strip, retained like the library's —
+    /// three fresh ShellTabs per frame were pure churn.</summary>
+    private readonly ShellTab[] _selectionTabs =
+    [
+        new() { Label = "Pose" },
+        new() { Label = "Animation" },
+        new() { Label = "Appearance" },
+    ];
+
+    /// <summary>A light's whole tab strip, retained: while a light is selected
+    /// the tab set IS the light editor, so this single tab is always the
+    /// active one.</summary>
+    private readonly ShellTab _lightTab = new() { Label = "Light", Active = true };
+
+    /// <summary>The library section is stated first, so its index is fixed.
+    /// </summary>
+    private const int LibrarySectionIndex = 0;
+
     /// <summary>Reports whether the skeleton overlay window is open (titlebar toggle state).</summary>
     public Func<bool>? GetSkeletonOverlayOn { get; set; }
 
@@ -87,6 +196,10 @@ public class MainWindow : Window
     public event Action<bool>? OnSkeletonOverlayToggled;
 
     public event Action? OnSettingsRequested;
+
+    /// <summary>Raised by both creation affordances — the titlebar plus and the
+    /// ACTORS header plus.</summary>
+    public event Action? OnSpawnBrowserRequested;
 
     public MainWindow(
         IGPoseService gPoseService,
@@ -103,12 +216,15 @@ public class MainWindow : Window
         AppearancePane appearancePane,
         LightPane lightPane,
         ILightingService lightingService,
+        PoseLibraryPane libraryPane,
+        PoseFileInspectorSection poseFileSection,
         Application.Animation.AnimationSession animation,
         Game.Animation.AnimationCatalogLoader animationCatalog,
         PoseRailPane poseRail,
         GraphicalBonePane graphicalBonePane,
-        Game.PropSpawnService propService,
-        SkeletonOverlayPresentation overlayPresentation)
+        SkeletonOverlayPresentation overlayPresentation,
+        IGazeService gazeService,
+        IEventBus eventBus)
         : base($"{PluginConstants.PluginName}###poser_main_window",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
@@ -129,14 +245,24 @@ public class MainWindow : Window
         _bonePosingService = bonePosingService;
 
         _spawnService = spawnService;
-        _propService = propService;
         _poseInspector = poseInspector;
         _animationPane = animationPane;
         _appearancePane = appearancePane;
         _lightPane = lightPane;
         _lightingService = lightingService;
+        _libraryPane = libraryPane;
+        // The library's "Add source…" and its empty state both mean the same
+        // thing the titlebar gear does, so they travel the one settings route.
+        _libraryPane.OnSettingsRequested += () => OnSettingsRequested?.Invoke();
+        _poseFileSection = poseFileSection;
         _animation = animation;
         _overlayPresentation = overlayPresentation;
+        _gazeService = gazeService;
+        // A gaze mode flip changes the sidebar's row SET (the gaze anchor row
+        // exists only in Position mode) while bumping neither the scene
+        // revision nor the disclosure version. The handler arms the cold path
+        // and does nothing else: the publisher is not the draw thread.
+        eventBus.Subscribe<GazeStateChangedEvent>(_ => _gazeDirty = true);
         _animationCatalog = animationCatalog;
         _poseInspector.DrawMapInline = graphicalBonePane.DrawInline;
         graphicalBonePane.SidesSwapped =
@@ -171,32 +297,58 @@ public class MainWindow : Window
         _vm.OnGizmoSpace = i => _editorState.TransformOrientation = (TransformOrientation)i;
         _vm.OnRotationPivot = i => _editorState.RotationPivot = (Core.RotationPivot)i;
         _vm.OnSymmetry = i => _editorState.SymmetryMode = (SymmetryMode)i;
+        // The switch's polarity is "animation playing"; off writes a zero
+        // speed override, on drops the override back to game speed.
+        _vm.OnAnimation = on =>
+        {
+            if (SelectedActorId() is { } actor)
+            {
+                if (on) _animation.ClearSpeed(actor);
+                else _animation.SetSpeed(actor, 0f);
+            }
+        };
+        // The switch's polarity is "physics simulating"; the service's is
+        // "freeze requested".
         _vm.OnPhysics = on =>
         {
             if (SelectedActorId() is { } actor)
-                _animation.SetPhysicsFrozen(actor, on);
+                _animation.SetPhysicsFrozen(actor, !on);
         };
         _vm.OnUndo = Undo;
         _vm.OnRedo = Redo;
         _vm.OnSkeletonOverlay = on => OnSkeletonOverlayToggled?.Invoke(on);
         _vm.OnSettings = () => OnSettingsRequested?.Invoke();
+        _vm.OnBurger = anchor =>
+        {
+            _shellMenuAnchor = anchor;
+            _shellMenuOpenRequested = true;
+        };
         _vm.OnHideUi = () => IsOpen = false;
         // The sidebar's add affordance. Creation lives where the created
         // thing will appear, so each section header owns its own plus: ACTORS
-        // opens the entity menu, LIGHTS spawns a light outright — there is
-        // only one kind of light to make.
+        // opens the spawn browser, LIGHTS spawns a light outright — there is
+        // only one kind of light to make, and the browser has nothing to ask.
         _vm.OnSectionPlus = index =>
         {
             if (index >= 0 && index < _vm.Sections.Count &&
-                _vm.Sections[index].Title == "LIGHTS")
+                ReferenceEquals(_vm.Sections[index], _lightsSection))
                 SpawnLight();
             else
-                _addOpenRequested = true;
+                OnSpawnBrowserRequested?.Invoke();
         };
-        _vm.OnSpawn = () => _addOpenRequested = true;
+        // Only the LIBRARY header is selectable, so no other index can arrive.
+        _vm.OnSectionSelected = index =>
+        {
+            if (index == LibrarySectionIndex)
+                ShowLibrary();
+        };
+        _vm.OnSpawn = () => OnSpawnBrowserRequested?.Invoke();
         _vm.OnRowClicked = OnRowClicked;
         _vm.OnRowExpandToggled = row =>
         {
+            // Disclosure is a structural change: the sidebar's row set is
+            // rebuilt on the next frame because of this bump.
+            _expandVersion++;
             // A merged category/bone row (e.g. the Root bone standing in for
             // the Root category) carries a selection Tag plus an ExpandKey.
             if (row.ExpandKey is { } expandKey && !_collapsedNodes.Add(expandKey))
@@ -335,14 +487,42 @@ public class MainWindow : Window
         ReconcilePendingSpawn();
         BuildViewModel();
         AppShellView.Draw(_vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
-        DrawAddEntityMenu();
+        DrawShellMenu();
         DrawActorContextMenu();
         DrawBoneContextMenu();
         DrawOverlayContextMenu();
         DrawRenameModal();
+        // Both file-dialog pumps live at the shell, so a dialog opened from a
+        // tab or a context menu survives whatever the user does to that
+        // surface next.
         _appearancePane.DrawBrowsers();
         _lightPane.DrawBrowsers();
+        _poseFileSection.DrawBrowsers();
+        // Unconditional, exactly like the dialog pumps: a library spawn binds
+        // its actor frames later, and leaving library mode must not strand it.
+        _libraryPane.Tick();
+    }
 
+    /// <summary>Puts the workspace into library mode. Openers only — a second
+    /// request must not toggle a library the user is already looking at — and
+    /// the actor selection is deliberately left alone.</summary>
+    public void ShowLibrary()
+    {
+        _libraryMode = true;
+        // Both switches can happen from a sidebar click, which occurs while
+        // AppShellView is already drawing: the viewport contract moves in the
+        // same breath as the content selection, so the remainder of the frame
+        // cannot render one mode through the other mode's layout path.
+        ApplyTabLayout("Library");
+    }
+
+    private void ExitLibraryMode()
+    {
+        if (!_libraryMode)
+            return;
+        _libraryMode = false;
+        _libraryPane.OnHidden();
+        ApplyTabLayout(_activeTab);
     }
 
     public override void PostDraw()
@@ -384,48 +564,114 @@ public class MainWindow : Window
         // The pivot selector appears only where pivot choice changes the
         // active transform meaning: Rotate tool with a resolvable bone
         // selection. Parent needs a valid parent on the effective primary.
-        var effective = Application.Transforms.TransformTargetResolver.Resolve(
-            _selection.Selected, _scene.Snapshot);
+        // Both facts come from the shared resolver, which builds a dictionary
+        // of the selected actor's WHOLE bone set — so they are re-derived only
+        // when the resolver's own two inputs move. The tool is not part of that
+        // key: it decides whether the facts are SHOWN, not what they are.
+        RefreshPivotFacts();
         bool boneRotate = _editorState.TransformTool == TransformTool.Rotate &&
-            effective is { Primary.Kind: Domain.Identity.TransformTargetKind.Bone };
+            _pivotPrimaryIsBone;
         _vm.RotationPivotEnabled = boneRotate;
-        _vm.RotationPivotParentAvailable = false;
-        if (boneRotate &&
-            effective!.Primary.Bone is { } effectiveBone)
-        {
-            foreach (var actor in _scene.Snapshot.Actors)
-            {
-                if (actor.Id.LogicalId != effectiveBone.Skeleton.Actor.LogicalId ||
-                    actor.GetSkeleton(effectiveBone.Slot) is not { } skeleton)
-                    continue;
-                foreach (var bone in skeleton.Bones)
-                {
-                    if (!bone.Id.Equals(effectiveBone))
-                        continue;
-                    _vm.RotationPivotParentAvailable = bone.Parent != null;
-                    break;
-                }
-                break;
-            }
-        }
+        _vm.RotationPivotParentAvailable = boneRotate && _pivotParentAvailable;
         var toolbarActor = SelectedActorId();
+        _vm.AnimationAvailable = toolbarActor is { } animActorId
+            && _animation.IsSupported(animActorId);
+        // The switch's polarity is "animation playing": ON unless Poser holds
+        // a zero speed override on the selected actor.
+        _vm.AnimationOn = toolbarActor is not { } animActor
+            || _animation.OverridesFor(animActor).OverallSpeed is not 0f;
         _vm.PhysicsAvailable = toolbarActor is { } actorId
             && _animation.IsSupported(actorId);
-        _vm.PhysicsOn = toolbarActor is { } physicsActor
-            && _animation.OwnsPhysics(physicsActor);
+        // OwnsPhysics means "this actor holds a freeze", so the switch is ON
+        // unless the selected actor froze; no actor shows the game default,
+        // physics simulating (disabled either way via PhysicsAvailable).
+        _vm.PhysicsOn = toolbarActor is not { } physicsActor
+            || !_animation.OwnsPhysics(physicsActor);
         _vm.SkeletonOverlayOn = GetSkeletonOverlayOn?.Invoke() ?? false;
         _vm.CanUndo = _cleanTransforms.CanUndo;
         _vm.CanRedo = _cleanTransforms.CanRedo;
         _vm.ShowPopOut = false;
-        // Entity creation has two entry points by design (approved shell):
-        // the titlebar action and the ACTORS header. Both open the same menu.
+        // Entity creation has two entry points by design (approved shell): the
+        // titlebar action and the ACTORS header. Both open the SAME surface,
+        // the spawn browser (the LIGHTS header's plus is the one exception:
+        // there is only one kind of light to make, so it makes it). Cameras
+        // and references stay absent (not disabled) in the browser until
+        // their runtime entity types exist.
         _vm.ShowSpawn = true;
         _vm.ShowProject = false;
 
         BuildSidebar(primary);
         BuildTabs(primary);
-        ApplyTabLayout(_activeTab);
+        ApplyTabLayout(_libraryMode ? "Library" : _activeTab);
         BuildStatus(primary);
+    }
+
+    // ── effective-selection pivot facts, re-derived only on change ───────
+    private readonly List<SelectionId> _pivotKey = new();
+    private ulong _pivotRevision;
+    private bool _pivotPrimed;
+    private bool _pivotPrimaryIsBone;
+    private bool _pivotParentAvailable;
+
+    /// <summary>
+    /// Restates the two facts the pivot selector needs from the effective
+    /// transform selection. The resolver reads exactly two things — the ordered
+    /// selection and the scene snapshot — so those two are the whole key, and a
+    /// frame that changes neither does no work. A redraw or a slot rebind moves
+    /// BOTH (the generations in the ids and the published revision), so the
+    /// facts are current on the first frame drawn after one.
+    /// </summary>
+    private void RefreshPivotFacts()
+    {
+        var selected = _selection.Selected;
+        if (_pivotPrimed &&
+            _pivotRevision == _scene.Revision &&
+            SameSelection(_pivotKey, selected))
+            return;
+
+        _pivotPrimed = true;
+        _pivotRevision = _scene.Revision;
+        _pivotKey.Clear();
+        _pivotKey.AddRange(selected);
+
+        var effective = Application.Transforms.TransformTargetResolver.Resolve(
+            selected, _scene.Snapshot);
+        _pivotPrimaryIsBone =
+            effective is { Primary.Kind: Domain.Identity.TransformTargetKind.Bone };
+        _pivotParentAvailable = false;
+        if (!_pivotPrimaryIsBone ||
+            effective!.Primary.Bone is not { } effectiveBone)
+            return;
+
+        foreach (var actor in _scene.Snapshot.Actors)
+        {
+            if (actor.Id.LogicalId != effectiveBone.Skeleton.Actor.LogicalId ||
+                actor.GetSkeleton(effectiveBone.Slot) is not { } skeleton)
+                continue;
+            foreach (var bone in skeleton.Bones)
+            {
+                if (!bone.Id.Equals(effectiveBone))
+                    continue;
+                _pivotParentAvailable = bone.Parent != null;
+                break;
+            }
+            break;
+        }
+    }
+
+    /// <summary>Ordered element-wise compare against the retained key. The
+    /// resolution depends on selection ORDER (the first entry is the primary),
+    /// so a count or set comparison would not be sound.</summary>
+    private static bool SameSelection(
+        List<SelectionId> cached,
+        IReadOnlyList<SelectionId> current)
+    {
+        if (cached.Count != current.Count)
+            return false;
+        for (int i = 0; i < cached.Count; i++)
+            if (cached[i] != current[i])
+                return false;
+        return true;
     }
 
     private void Undo()
@@ -440,28 +686,101 @@ public class MainWindow : Window
             _cleanTransforms.Redo();
     }
 
+    /// <summary>
+    /// Restates the sidebar. The row TREE is assembled only when the gate below
+    /// flips; every other frame walks the retained rows and refreshes the flags
+    /// that read live state, allocating nothing.
+    ///
+    /// <para>The gate is exactly the inputs that can change the row COUNT or
+    /// ORDER: the published scene revision (the structural signature — actor
+    /// set and generations, slot presence, bone counts), the search filter, and
+    /// the disclosure version. Selection, actor visibility, pause state and
+    /// library mode are per-row FLAGS: they are refreshed in place, so they
+    /// still land on the frame they change. A display name is a flag too,
+    /// except while filtering, where it can change what matches — that case
+    /// re-arms the gate.</para>
+    /// </summary>
     private void BuildSidebar(SelectionId? primary)
     {
-        _vm.Sections.Clear();
+        // Trim hands back the same instance when there is nothing to trim, so
+        // the common (unfiltered) frame builds no string here.
         string filter = _vm.SidebarSearch.Trim();
+        if (!_sidebarBuilt ||
+            _gazeDirty ||
+            _sidebarRevision != _scene.Revision ||
+            _sidebarExpandVersion != _expandVersion ||
+            !string.Equals(_sidebarFilter, filter, StringComparison.Ordinal))
+        {
+            _sidebarBuilt = true;
+            // Cleared BEFORE the walk, so a transition that lands mid-rebuild
+            // re-arms rather than being swallowed by the rebuild it raced.
+            _gazeDirty = false;
+            _sidebarRevision = _scene.Revision;
+            _sidebarExpandVersion = _expandVersion;
+            _sidebarFilter = filter;
+            RebuildSidebar(filter);
+        }
+
+        RefreshSidebarFlags();
+    }
+
+    /// <summary>The gaze node's three aim points, in the order the gaze pane
+    /// itself lists them. Static because the set is fixed: a gaze always has
+    /// exactly these three parts, so no actor mints its own copy.</summary>
+    private static readonly (string Label, GazePart Part)[] GazeParts =
+    {
+        ("Eyes", GazePart.Eyes),
+        ("Head", GazePart.Head),
+        ("Body", GazePart.Body),
+    };
+
+    /// <summary>
+    /// The cold path: the whole actor/bone tree. Everything here is discarded
+    /// and restated wholesale, so it runs only behind
+    /// <see cref="BuildSidebar"/>'s gate.
+    /// </summary>
+    private void RebuildSidebar(string filter)
+    {
+        _vm.Sections.Clear();
+        // The library is a place in the sidebar, not a window: its header IS
+        // the affordance, and it stands above the scene it poses.
+        _vm.Sections.Add(_librarySection);
+        _vm.Sections.Add(_actorsSection);
+        // Lights stand under the actors they light, above nothing else.
+        _vm.Sections.Add(_lightsSection);
+        _actorsSection.Rows.Clear();
+        _lightsSection.Rows.Clear();
+        _actorRows.Clear();
+
         bool filtering = filter.Length > 0;
 
-        var actors = new ShellSidebarSection { Title = "ACTORS", ShowPlus = true };
+        var actors = _actorsSection;
         foreach (var actor in _scene.Snapshot.Actors)
         {
             var actorKey = "actor:" + actor.Id.LogicalId;
-            string actorLabel = ActorDisplayName(actor);
+            // The snapshot's raw name is fixed until the next revision, so the
+            // object-index strip runs here and the warm-frame label refresh is
+            // a pair of dictionary lookups.
+            string rawName = DisplayName(actor.Name);
+            string actorLabel = Config.ConfigurationService.Instance.GetDisplayName(
+                actor.Id.LogicalId, rawName);
 
             var groups = new List<(Core.BoneInfo.BoneCategory Cat, List<BoneDescriptor> Bones)>();
             var skeleton = actor.CharacterSkeleton;
             if (skeleton != null)
             {
+                Array.Fill(_categorySlots, -1);
                 foreach (var bone in skeleton.Bones)
                 {
                     if (bone.IsHidden) continue;
                     var cat = Core.BoneInfo.BoneInfoService.GetCategory(bone.Id.CanonicalName);
-                    var slot = groups.FindIndex(g => g.Cat == cat);
-                    if (slot < 0) { groups.Add((cat, new List<BoneDescriptor>())); slot = groups.Count - 1; }
+                    var slot = _categorySlots[(int)cat];
+                    if (slot < 0)
+                    {
+                        groups.Add((cat, new List<BoneDescriptor>()));
+                        slot = groups.Count - 1;
+                        _categorySlots[(int)cat] = slot;
+                    }
                     groups[slot].Bones.Add(bone);
                 }
                 groups.Sort((a, b) => ((int)a.Cat).CompareTo((int)b.Cat));
@@ -474,16 +793,58 @@ public class MainWindow : Window
                 .OrderBy(s => (int)s.Id.Slot)
                 .ToList();
 
-            bool actorMatches = MatchesSidebarFilter(filter, actorLabel, actor.Name);
-            bool hasMatchingBone = groups.Exists(group =>
-                MatchesSidebarFilter(filter, Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(group.Cat), group.Cat.ToString())
-                || group.Bones.Exists(bone => MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName)));
-            bool hasMatchingAux = auxSkeletons.Exists(aux =>
-                MatchesSidebarFilter(filter, SlotLabel(aux.Id.Slot))
-                || aux.Bones.Any(bone => !bone.IsHidden &&
-                    MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName)));
-            if (filtering && !actorMatches && !hasMatchingBone && !hasMatchingAux)
-                continue;
+            // The match strings exist only when a filter does: unfiltered,
+            // every "matches" answer below is true by construction and none of
+            // these three is read.
+            bool actorMatches = false;
+            bool hasMatchingBone = false;
+            bool hasMatchingAux = false;
+            if (filtering)
+            {
+                actorMatches = MatchesSidebarFilter(filter, actorLabel, actor.Name);
+                foreach (var (cat, bones) in groups)
+                {
+                    if (MatchesSidebarFilter(
+                            filter,
+                            Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(cat),
+                            cat.ToString()))
+                    {
+                        hasMatchingBone = true;
+                        break;
+                    }
+                    foreach (var bone in bones)
+                    {
+                        if (!MatchesSidebarFilter(
+                                filter, bone.DisplayName, bone.Id.CanonicalName))
+                            continue;
+                        hasMatchingBone = true;
+                        break;
+                    }
+                    if (hasMatchingBone)
+                        break;
+                }
+                foreach (var aux in auxSkeletons)
+                {
+                    if (MatchesSidebarFilter(filter, SlotLabel(aux.Id.Slot)))
+                    {
+                        hasMatchingAux = true;
+                        break;
+                    }
+                    foreach (var bone in aux.Bones)
+                    {
+                        if (bone.IsHidden ||
+                            !MatchesSidebarFilter(
+                                filter, bone.DisplayName, bone.Id.CanonicalName))
+                            continue;
+                        hasMatchingAux = true;
+                        break;
+                    }
+                    if (hasMatchingAux)
+                        break;
+                }
+                if (!actorMatches && !hasMatchingBone && !hasMatchingAux)
+                    continue;
+            }
 
             // Actor roots first appear collapsed; lineage keys survive
             // refreshes, so a scene refresh cannot reset existing disclosure.
@@ -493,11 +854,7 @@ public class MainWindow : Window
                 _collapsedNodes.Add(actorKey);
             bool expanded = filtering || !_collapsedNodes.Contains(actorKey);
             var actorSelectionId = SelectionId.ForActor(actor.Id);
-            var resolvedActor = _bindings.Resolve(actor.Id);
-            bool actorVisible = resolvedActor.Success
-                ? _spawnService.IsVisible(resolvedActor.Value!)
-                : !actor.IsHidden;
-            actors.Rows.Add(new ShellSidebarRow
+            var actorRow = new ShellSidebarRow
             {
                 Label = actorLabel,
                 Count = "",
@@ -507,12 +864,82 @@ public class MainWindow : Window
                 HasChildren = true,
                 ExpanderDisabled = skeleton == null,
                 Expanded = expanded,
-                Active = _selection.IsSelected(actorSelectionId),
                 Tag = actorSelectionId,
                 ActorActions = true,
-                ActorVisible = actorVisible,
-                ActorPaused = _animation.IsPaused(actor.Id),
-            });
+            };
+            actors.Rows.Add(actorRow);
+            // Selection, visibility, pause and the display name are stated by
+            // the flag refresh — including for this frame.
+            _actorRows.Add(new ActorRowState(
+                actorRow, actor.Id, rawName, actor.IsHidden));
+
+            // The gaze anchor is a child of the ACTOR, not of any skeleton: it
+            // exists exactly while the gaze is a fixed world point, and it
+            // stands above the bone categories because it is the one child the
+            // world gizmo can grab. An actor that no longer resolves has no
+            // live gaze to read, so it contributes no row.
+            if (expanded &&
+                _bindings.Resolve(actor.Id) is { Success: true, Value: { } gazeActor } &&
+                _gazeService.GetGazeState(gazeActor).Mode == GazeTargetMode.Position)
+            {
+                // The same "is anything left under this actor" question the
+                // categories answer with catLast, asked one level earlier.
+                bool categoriesFollowGaze =
+                    skeleton != null && (!filtering || hasMatchingBone);
+                bool auxFollowsGaze = auxSkeletons.Count > 0 &&
+                    (!filtering || hasMatchingAux);
+                bool gazeLast = !categoriesFollowGaze && !auxFollowsGaze;
+                // Unlike actors and categories, this key is NOT seeded into
+                // _collapsedNodes when it is first seen: a key the set does not
+                // hold is an EXPANDED key, so the three aim points stand open
+                // the moment the gaze becomes a world point. Only an explicit
+                // chevron click puts the key in, and it survives from there.
+                var gazeKey = actorKey + "/gaze";
+                bool gazeExpanded = filtering || !_collapsedNodes.Contains(gazeKey);
+                actors.Rows.Add(new ShellSidebarRow
+                {
+                    Label = "Gaze control",
+                    Count = "",
+                    Depth = 1,
+                    IconName = "gaze-point",
+                    ForceIcon = true,
+                    // Like a merged category/bone row: the body still selects
+                    // the shared anchor (Tag) while the chevron toggles the
+                    // string key (ExpandKey).
+                    HasChildren = true,
+                    Expanded = gazeExpanded,
+                    IsLastChild = gazeLast,
+                    Tag = SelectionId.ForGazeTarget(actor.Id),
+                    ExpandKey = gazeKey,
+                });
+                // The gaze is three points, not one: eyes, head and body each
+                // carry their own target, and each is separately selectable so
+                // the world gizmo can grab one part alone.
+                if (gazeExpanded)
+                {
+                    for (int p = 0; p < GazeParts.Length; p++)
+                    {
+                        var (partLabel, part) = GazeParts[p];
+                        var partId = SelectionId.ForGazeTarget(actor.Id, part);
+                        actors.Rows.Add(new ShellSidebarRow
+                        {
+                            Label = partLabel,
+                            Count = "",
+                            Depth = 2,
+                            IconName = "gaze-point",
+                            ForceIcon = true,
+                            HasChildren = false,
+                            IsLastChild = p == GazeParts.Length - 1,
+                            // Level 1 is the gaze row itself: its trunk
+                            // continues exactly while something follows it
+                            // under the actor, the same question gazeLast asks.
+                            TreeLines = new[] { false, !gazeLast },
+                            Active = _selection.IsSelected(partId),
+                            Tag = partId,
+                        });
+                    }
+                }
+            }
 
             // The actor folds DIRECTLY into bone categories (no skeleton
             // node), categories into bones. Category set = curated grouping;
@@ -604,32 +1031,80 @@ public class MainWindow : Window
             if (expanded && (!filtering || hasMatchingAux))
                 AddAuxiliarySlotGroups(actors, actorKey, auxSkeletons, filter, filtering);
         }
-        _vm.Sections.Add(actors);
 
         // Lights are flat: a spawned light owns nothing beneath it, so the
         // section is one row per light and the header's plus makes another.
-        var lights = new ShellSidebarSection
-        {
-            Title = "LIGHTS",
-            ShowPlus = _lightingService.IsAvailable,
-        };
+        // A light's name, kind and on-state all participate in the scene
+        // signature, so this walk sits behind the same gate as the tree.
         foreach (var light in _scene.Snapshot.Lights)
         {
             if (filtering && !MatchesSidebarFilter(filter, light.Name))
                 continue;
             var lightSelectionId = SelectionId.ForLight(light.Id);
-            lights.Rows.Add(new ShellSidebarRow
+            _lightsSection.Rows.Add(new ShellSidebarRow
             {
                 Label = light.Name,
                 Count = "",
                 Icon = light.Kind == LightKind.Directional
                     ? TablerIcon.Sun
                     : TablerIcon.Bulb,
-                Active = _selection.IsSelected(lightSelectionId),
                 Tag = lightSelectionId,
             });
         }
-        _vm.Sections.Add(lights);
+    }
+
+    /// <summary>
+    /// The warm frame's entire sidebar cost: the retained rows' live flags.
+    /// Nothing is created and no string is built — a display name that really
+    /// changed re-arms the rebuild gate, and only while a filter is active,
+    /// where the name decides whether the row is listed at all.
+    /// </summary>
+    private void RefreshSidebarFlags()
+    {
+        _librarySection.Active = _libraryMode;
+        // Without the native lighting signatures a spawn is a silent no-op, so
+        // the header's plus is absent rather than inert. The answer is a field
+        // read, so it is restated here rather than gated.
+        _lightsSection.ShowPlus = _lightingService.IsAvailable;
+
+        var lightRows = _lightsSection.Rows;
+        for (int i = 0; i < lightRows.Count; i++)
+        {
+            var lightRow = lightRows[i];
+            if (lightRow.Tag is SelectionId lightId)
+                lightRow.Active = _selection.IsSelected(lightId);
+        }
+
+        var rows = _actorsSection.Rows;
+        for (int i = 0; i < rows.Count; i++)
+        {
+            var row = rows[i];
+            // Category rows carry a string tag and own no selection state.
+            if (row.Tag is SelectionId id)
+                row.Active = _selection.IsSelected(id);
+        }
+
+        for (int a = 0; a < _actorRows.Count; a++)
+        {
+            var state = _actorRows[a];
+            var row = state.Row;
+            var resolved = _bindings.Resolve(state.Id);
+            row.ActorVisible = resolved.Success
+                ? _spawnService.IsVisible(resolved.Value!)
+                : !state.SnapshotHidden;
+            row.ActorPaused = _animation.IsPaused(state.Id);
+
+            string label = Config.ConfigurationService.Instance.GetDisplayName(
+                state.Id.LogicalId, state.RawName);
+            if (string.Equals(label, row.Label, StringComparison.Ordinal))
+                continue;
+            row.Label = label;
+            // A rename can change what the filter matches, so the row SET has
+            // to be derived again; unfiltered, the new label IS the whole
+            // change and the row already carries it.
+            if (_sidebarFilter.Length > 0)
+                _sidebarBuilt = false;
+        }
     }
 
     private static string SlotLabel(Domain.Identity.PoseSlot slot) => slot switch
@@ -797,41 +1272,88 @@ public class MainWindow : Window
         // Tabs are rebuilt each frame; the active one is preserved so a
         // selection change cannot silently throw the user back to Pose.
         _vm.Tabs.Clear();
+        if (_libraryMode)
+        {
+            // The library types are the tabs; _activeTab is left untouched,
+            // so leaving the library returns the tab the user was on.
+            int type = _libraryPane.SelectedType;
+            for (int i = 0; i < _libraryTabs.Length; i++)
+            {
+                _libraryTabs[i].Active = i == type;
+                _vm.Tabs.Add(_libraryTabs[i]);
+            }
+            return;
+        }
         // A light has no pose, animation or appearance: while one is
         // selected the tab set IS the light editor, and leaving the light
-        // returns to Pose rather than to a tab that no longer exists.
+        // returns to Pose rather than to a tab that no longer exists (the
+        // guard below restores it, because "Light" is not one of the three).
         if (primary is { Kind: SceneEntityKind.Light })
         {
             _activeTab = "Light";
-            _vm.Tabs.Add(new ShellTab { Label = "Light", Active = true });
+            _vm.Tabs.Add(_lightTab);
             return;
         }
         if (_activeTab is not ("Pose" or "Animation" or "Appearance"))
             _activeTab = "Pose";
-        _vm.Tabs.Add(new ShellTab { Label = "Pose", Active = _activeTab == "Pose" });
-        _vm.Tabs.Add(new ShellTab { Label = "Animation", Active = _activeTab == "Animation" });
-        _vm.Tabs.Add(new ShellTab { Label = "Appearance", Active = _activeTab == "Appearance" });
+        for (int i = 0; i < _selectionTabs.Length; i++)
+        {
+            _selectionTabs[i].Active = _selectionTabs[i].Label == _activeTab;
+            _vm.Tabs.Add(_selectionTabs[i]);
+        }
     }
+
+    // ── status bar, restated only when its numbers move ─────────────────
+    private int _statusActorCount = -1;
+    private int _statusBones;
+    private int _statusFps = -1;
+    private ulong _statusRevision;
+    private bool _statusPrimed;
+    private ActorId? _statusBoneActor;
 
     private void BuildStatus(SelectionId? primary)
     {
-        ActorDescriptor? selectedActor = null;
-        if (primary is { Kind: SceneEntityKind.Bone, Bone: { } bone })
-        {
-            selectedActor = FindActor(bone.Skeleton.Actor.LogicalId);
-        }
-        else if (primary is { Kind: SceneEntityKind.Actor, Actor: { } actorId })
-        {
-            selectedActor = FindActor(actorId.LogicalId);
-        }
-
         int actorCount = _scene.Snapshot.Actors.Count;
-        _vm.StatusLeft = actorCount == 1 ? "1 actor" : $"{actorCount} actors";
+        if (actorCount != _statusActorCount)
+        {
+            _statusActorCount = actorCount;
+            _vm.StatusLeft = actorCount == 1 ? "1 actor" : $"{actorCount} actors";
+        }
 
-        int bones = selectedActor?.Skeletons.Sum(s => s.Bones.Count) ?? 0;
-        _vm.StatusRight = bones > 0
-            ? $"{bones} bones · {ImGui.GetIO().Framerate:0} fps"
-            : $"{ImGui.GetIO().Framerate:0} fps";
+        ActorId? statusActor = primary switch
+        {
+            { Kind: SceneEntityKind.Bone, Bone: { } bone } => bone.Skeleton.Actor,
+            { Kind: SceneEntityKind.Actor, Actor: { } actorId } => actorId,
+            // A gaze anchor counts as its owning actor, exactly like a bone.
+            { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeOwner } => gazeOwner,
+            _ => null,
+        };
+        // The bone total moves only with the scene's structure or with WHICH
+        // actor is selected — never with the frame.
+        if (!_statusPrimed ||
+            _statusRevision != _scene.Revision ||
+            _statusBoneActor != statusActor)
+        {
+            _statusPrimed = true;
+            _statusRevision = _scene.Revision;
+            _statusBoneActor = statusActor;
+            int bones = 0;
+            if (statusActor is { } owner && FindActor(owner.LogicalId) is { } descriptor)
+                foreach (var skeleton in descriptor.Skeletons)
+                    bones += skeleton.Bones.Count;
+            _statusBones = bones;
+            // Restate the right-hand string with the new count.
+            _statusFps = -1;
+        }
+
+        int fps = (int)MathF.Round(
+            ImGui.GetIO().Framerate, MidpointRounding.AwayFromZero);
+        if (fps == _statusFps)
+            return;
+        _statusFps = fps;
+        _vm.StatusRight = _statusBones > 0
+            ? $"{_statusBones} bones · {fps} fps"
+            : $"{fps} fps";
     }
 
     private ActorDescriptor? FindActor(Guid lineage)
@@ -846,6 +1368,13 @@ public class MainWindow : Window
 
     private void OnTabClicked(int index)
     {
+        // In library mode the tabs are the library types; the selection-typed
+        // tab set is untouched underneath.
+        if (_libraryMode)
+        {
+            _libraryPane.SelectType(index);
+            return;
+        }
         if (index < 0 || index >= _vm.Tabs.Count) return;
         var label = _vm.Tabs[index].Label;
 
@@ -862,16 +1391,23 @@ public class MainWindow : Window
 
     private void ApplyTabLayout(string tab)
     {
-        _vm.ContentOwnsViewport = tab == "Pose";
+        // The library paints its own bands and rules, so it takes the
+        // viewport wall to wall; Pose keeps the shell-inset fixed viewport.
+        _vm.ContentFlush = tab is "Library";
+        _vm.ContentOwnsViewport = tab is "Pose";
         _vm.ContentUsesPage =
             tab is "Animation" or "Appearance" or "Light";
     }
 
     private void OnRowClicked(ShellSidebarRow row)
     {
+        // Selecting anything in the scene is leaving the library: the two are
+        // alternatives in one workspace.
+        ExitLibraryMode();
         if (row.Tag is string catKey2)
         {
             if (!_collapsedNodes.Add(catKey2)) _collapsedNodes.Remove(catKey2);
+            _expandVersion++;
             return;
         }
 
@@ -912,6 +1448,14 @@ public class MainWindow : Window
 
     private void DrawTabContent(Vector2 origin, Vector2 size)
     {
+        // The library is browsable without a resolvable actor — the apply
+        // action is what needs one — so it precedes the GPose gate.
+        if (_libraryMode)
+        {
+            _libraryPane.Draw(origin, size);
+            return;
+        }
+
         if (!_gPoseService.IsGPosing)
         {
             Crystarium.TextAt(origin + new Vector2(0f, 8f) * ImGuiHelpers.GlobalScale, "Enter GPose to start posing.", new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.FormHint });
@@ -951,59 +1495,10 @@ public class MainWindow : Window
             { Kind: SceneEntityKind.Actor, Actor: { } actor } => actor,
             { Kind: SceneEntityKind.Bone, Bone: { } bone } =>
                 bone.Skeleton.Actor,
+            // A gaze anchor is still the actor's; the toolbar stays live on it.
+            { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeOwner } => gazeOwner,
             _ => null,
         };
-
-    /// <summary>
-    /// The sidebar ACTORS "+" menu: entity creation in the shared floating
-    /// menu — New actor, New actor with companion slot, New prop, New light,
-    /// New light from file.
-    /// The titlebar plus opens the identical menu. Cameras and references
-    /// stay absent (not disabled) until their runtime entity types exist.
-    /// </summary>
-    private void DrawAddEntityMenu()
-    {
-        if (_addOpenRequested)
-        {
-            _addOpenRequested = false;
-            // Entity CREATION, matching Brio's actor-container surface:
-            // spawn semantics, not clone semantics (cloning lives in the
-            // selected actor's right-click menu). Basic spawning and
-            // companion-slot spawning are split — the slot costs an extra
-            // object slot and only the explicit entry pays it.
-            var items = new[]
-            {
-                new ContextMenuItem("New actor", TablerIcon.UserPlus),
-                new ContextMenuItem("New actor with companion slot", TablerIcon.Paw),
-                ContextMenuItem.Separator,
-                new ContextMenuItem("New prop", TablerIcon.Diamond),
-                // Both light entries need the native lighting signatures;
-                // without them a spawn is a silent no-op, so they read as
-                // disabled rather than doing nothing.
-                new ContextMenuItem("New light", TablerIcon.Bulb,
-                    disabled: !_lightingService.IsAvailable),
-                new ContextMenuItem("New light from file…", TablerIcon.File,
-                    disabled: !_lightingService.IsAvailable),
-            };
-            _addActions = new List<Action?>
-            {
-                () => SelectSpawned(_spawnService.SpawnNewActor(reserveCompanionSlot: false)),
-                () => SelectSpawned(_spawnService.SpawnNewActor(reserveCompanionSlot: true)),
-                null,
-                () => _propService.SpawnProp(),
-                SpawnLight,
-                _lightPane.OpenLoad,
-            };
-            Crystarium.FloatingMenu.Open("##sidebar-add", ImGui.GetMousePos(), items);
-        }
-
-        int clicked = Crystarium.FloatingMenu.Draw("##sidebar-add");
-        if (clicked >= 0 && clicked < _addActions.Count)
-            _addActions[clicked]?.Invoke();
-    }
-
-    private List<Action?> _addActions = new();
-    private readonly Game.PropSpawnService _propService;
 
     /// <summary>Selects a freshly spawned actor so the thing just created
     /// is the thing being edited. The scene has not rescanned yet, so the
@@ -1044,6 +1539,122 @@ public class MainWindow : Window
             return;
         _selection.Select(SelectionId.ForActor(id));
         _pendingSelectSpawned = null;
+    }
+
+    /// <summary>
+    /// The shell's GROWABLE COMMAND LIST. Almost every action Poser offers is
+    /// meant to land here eventually, so that a collapsed bottom-bar-only
+    /// layout can still reach everything the chrome stops showing. One command
+    /// is therefore ONE member here, ONE row in <see cref="BuildShellMenu"/>
+    /// and ONE case in <see cref="InvokeShellCommand"/> — all three keyed by
+    /// this member, never by a loose index. A separator is a member with a row
+    /// and no case.
+    /// </summary>
+    private enum ShellCommand
+    {
+        ShowLibrary,
+        SpawnActor,
+        ImportPose,
+        ExportPose,
+        AutoSaves,
+        SettingsSeparator,
+        OpenSettings,
+    }
+
+    /// <summary>The titlebar burger menu, anchored under its own button.</summary>
+    private void DrawShellMenu()
+    {
+        BuildShellMenu();
+        if (_shellMenuOpenRequested)
+        {
+            _shellMenuOpenRequested = false;
+            // A short command list, not a context menu: the shell menu takes the
+            // width its own rows need rather than the canonical 260px surface.
+            Crystarium.FloatingMenu.Open(
+                "##shell-burger-menu",
+                _shellMenuAnchor,
+                _shellMenuItems,
+                Crystarium.FloatingMenu.MeasureWidth(_shellMenuItems));
+        }
+        int clicked = Crystarium.FloatingMenu.Draw("##shell-burger-menu");
+        if (clicked >= 0 && clicked < _shellMenuItems.Length)
+            InvokeShellCommand((ShellCommand)clicked);
+    }
+
+    /// <summary>
+    /// Restates the command rows into the retained array. The only per-frame
+    /// work is the gate itself; the rows are rewritten when — and only when —
+    /// a gate actually flips, so a warm frame writes nothing.
+    /// </summary>
+    private void BuildShellMenu()
+    {
+        // The pose-file commands follow the SELECTED actor: a shell-wide menu
+        // has no right-clicked row to take a skeleton from. Same gate the actor
+        // context menu applies to the same three commands.
+        bool poseTarget = SelectedSkeleton() != null;
+        if (_shellMenuRowsBuilt && poseTarget == _shellMenuPoseTarget)
+            return;
+        _shellMenuRowsBuilt = true;
+        _shellMenuPoseTarget = poseTarget;
+
+        _shellMenuItems[(int)ShellCommand.ShowLibrary] =
+            new ContextMenuItem("Show library", TablerIcon.Photo);
+        _shellMenuItems[(int)ShellCommand.SpawnActor] =
+            new ContextMenuItem("Spawn actor…", TablerIcon.UserPlus);
+        _shellMenuItems[(int)ShellCommand.ImportPose] =
+            new ContextMenuItem(
+                "Import pose…", TablerIcon.Download, disabled: !poseTarget);
+        _shellMenuItems[(int)ShellCommand.ExportPose] =
+            new ContextMenuItem(
+                "Export pose…", TablerIcon.DeviceFloppy, disabled: !poseTarget);
+        _shellMenuItems[(int)ShellCommand.AutoSaves] =
+            new ContextMenuItem(
+                "Auto-saves…", TablerIcon.ArrowBackUp, disabled: !poseTarget);
+        _shellMenuItems[(int)ShellCommand.SettingsSeparator] =
+            ContextMenuItem.Separator;
+        _shellMenuItems[(int)ShellCommand.OpenSettings] =
+            new ContextMenuItem("Open settings", TablerIcon.Settings);
+    }
+
+    /// <summary>Runs one command. The skeleton is resolved at invocation, not
+    /// captured at build: the row array outlives every selection it was built
+    /// under.</summary>
+    private void InvokeShellCommand(ShellCommand command)
+    {
+        switch (command)
+        {
+            case ShellCommand.ShowLibrary:
+                ShowLibrary();
+                break;
+            case ShellCommand.SpawnActor:
+                OnSpawnBrowserRequested?.Invoke();
+                break;
+            case ShellCommand.ImportPose:
+                if (SelectedSkeleton() is { } importSkeleton)
+                    _poseFileSection.OpenImport(importSkeleton);
+                break;
+            case ShellCommand.ExportPose:
+                if (SelectedSkeleton() is { } exportSkeleton)
+                    _poseFileSection.OpenExport(exportSkeleton);
+                break;
+            case ShellCommand.AutoSaves:
+                if (SelectedSkeleton() is { } recoverSkeleton)
+                    _poseFileSection.OpenAutoSaves(recoverSkeleton);
+                break;
+            case ShellCommand.OpenSettings:
+                OnSettingsRequested?.Invoke();
+                break;
+        }
+    }
+
+    /// <summary>The selected actor's skeleton, or null when nothing posable is
+    /// selected or its binding no longer resolves.</summary>
+    private ISkeleton? SelectedSkeleton()
+    {
+        if (SelectedActorId() is not { } actorId)
+            return null;
+        var resolved = _bindings.Resolve(actorId);
+        return resolved.Success ? resolved.Value?.Skeleton : null;
     }
 
     /// <summary>Right-click actor menu: the lifetime actions that were stranded
@@ -1102,6 +1713,36 @@ public class MainWindow : Window
             null, // separator
             () => _spawnService.DestroyCompanion(actor),
         };
+
+        // Pose files belong to the actor, not to whatever is selected, so the
+        // actor itself is where they are reachable.
+        items.Add(ContextMenuItem.Separator);
+        items.Add(new ContextMenuItem(
+            "Import pose…", TablerIcon.Download, disabled: !actor.HasSkeleton));
+        items.Add(new ContextMenuItem(
+            "Export pose…", TablerIcon.DeviceFloppy,
+            disabled: !actor.HasSkeleton));
+        actions.Add(null); // separator
+        actions.Add(() =>
+        {
+            if (actor.Skeleton is { } importSkeleton)
+                _poseFileSection.OpenImport(importSkeleton);
+        });
+        actions.Add(() =>
+        {
+            if (actor.Skeleton is { } exportSkeleton)
+                _poseFileSection.OpenExport(exportSkeleton);
+        });
+
+        // Rest poses ride the same actor menu as the pose-file commands
+        // (Brio keeps A/T in its import popup). Reference pose is UI-hidden
+        // until its capture path is proven in game.
+        items.Add(new ContextMenuItem(
+            "A-pose", TablerIcon.Body, disabled: !actor.HasSkeleton));
+        items.Add(new ContextMenuItem(
+            "T-pose", TablerIcon.Body, disabled: !actor.HasSkeleton));
+        actions.Add(() => _cleanPose.ApplyRestPose(actor, Files.RestPose.APose));
+        actions.Add(() => _cleanPose.ApplyRestPose(actor, Files.RestPose.TPose));
 
         if (_spawnService.IsSpawnedActor(actor))
         {

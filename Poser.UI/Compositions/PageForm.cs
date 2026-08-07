@@ -36,7 +36,11 @@ public static partial class Crystarium
     private static Vector4 FormValueColor => ActiveTheme.FormValue;
     private static Vector4 FormSeparatorColor => ActiveTheme.FormSeparator;
 
-    public static void Page(string id, Vector2 origin, Vector2 size, Action<PageScope> content)
+    /// <param name="labelColumnWidth">Per-page override of the form's label
+    /// column (logical px); null keeps the shared
+    /// <see cref="Theme.FormTokens.LabelColumnWidth"/> token.</param>
+    public static void Page(string id, Vector2 origin, Vector2 size, Action<PageScope> content,
+        float? labelColumnWidth = null)
     {
         float scale = ImGuiHelpers.GlobalScale;
         float inset = ActiveTheme.Page.Inset * scale;
@@ -46,7 +50,8 @@ public static partial class Crystarium
             id,
             origin + new Vector2(inset, 0f),
             width,
-            scale);
+            scale,
+            labelColumnWidth);
         content(page);
         page.Complete(origin, size.X);
     }
@@ -75,7 +80,8 @@ public static partial class Crystarium
     internal readonly record struct ActionItem(
         string Label, Action OnClick, ControlStyle Style,
         string? Help, bool Disabled,
-        ButtonVariant Variant = ButtonVariant.Secondary);
+        ButtonVariant Variant = ButtonVariant.Secondary,
+        TablerIcon? Icon = null);
 
     public sealed class ActionScope
     {
@@ -87,6 +93,16 @@ public static partial class Crystarium
             ButtonVariant variant = ButtonVariant.Secondary) =>
             _items.Add(new(label, onClick, style, help, disabled, variant));
 
+        /// <summary>A square icon action seated in the row like a text
+        /// button — for a glyph-stated toggle (a lock) whose word would
+        /// outweigh the control it annotates.</summary>
+        public void IconButton(TablerIcon icon, Action onClick,
+            bool disabled = false, string? help = null,
+            string? id = null) =>
+            _items.Add(new(
+                id ?? Tabler.NameFor(icon), onClick, default, help,
+                disabled, Icon: icon));
+
         internal IReadOnlyList<ActionItem> Items => _items;
     }
 
@@ -96,14 +112,18 @@ public static partial class Crystarium
         private readonly Vector2 _origin;
         private readonly float _width;
         private readonly float _scale;
+        private readonly float _labelWidth;
         private float _y;
 
-        internal PageScope(string id, Vector2 origin, float width, float scale)
+        internal PageScope(string id, Vector2 origin, float width, float scale,
+            float? labelColumnWidth = null)
         {
             _id = id;
             _origin = origin;
             _width = width;
             _scale = scale;
+            _labelWidth = labelColumnWidth
+                ?? ActiveTheme.Form.LabelColumnWidth;
         }
 
         public void EmptyState(string text = "Select an actor or bone in the sidebar.")
@@ -201,11 +221,12 @@ public static partial class Crystarium
         internal FormRowScope BeginRow(string label)
         {
             float top = _origin.Y + _y * _scale;
-            var row = new FormRowScope(new(_origin.X, top), _width, _scale);
+            var row = new FormRowScope(
+                new(_origin.X, top), _width, _scale, _labelWidth);
             if (!string.IsNullOrEmpty(label))
                 FormLabel(
                     row.Origin,
-                    ActiveTheme.Form.LabelColumnWidth * _scale,
+                    row.LabelWidth,
                     _scale,
                     label);
             return row;
@@ -352,6 +373,45 @@ public static partial class Crystarium
             Crystarium.Checkbox(
                 id, value, onChange, controlStyle, disabled, help);
             _page.EndRow(row, id, help);
+        }
+
+        /// <summary>Several checkbox+caption groups sharing ONE row — for
+        /// short component flags that would each waste a full row alone.
+        /// Help rides per box.</summary>
+        public void Checkboxes(
+            string label,
+            params (string Caption, bool Value, Action<bool> OnChange,
+                string? Help)[] items)
+        {
+            string id = Id(string.IsNullOrEmpty(label) ? "checkboxes" : label);
+            var row = _page.BeginRow(label);
+            float gap = ActiveTheme.Page.ActionGap * row.Scale;
+            float boxSide = ActiveTheme.Controls.CheckboxSize * row.Scale;
+            float rowHeight =
+                ActiveTheme.Controls.FormRowHeight * row.Scale;
+            var captionStyle = new TextStyle
+            {
+                Size = ActiveTheme.Typography.LabelSize,
+                Color = FormLabelColor,
+            };
+            float x = row.ControlOrigin.X;
+            foreach (var (caption, value, onChange, help) in items)
+            {
+                ImGui.SetCursorScreenPos(new(
+                    x, row.Origin.Y + (rowHeight - boxSide) * 0.5f));
+                Crystarium.Checkbox(
+                    $"{id}-{caption}", value, onChange, default, false, help);
+                x += boxSide + gap * 0.75f;
+                float captionWidth =
+                    Crystarium.MeasureText(caption, captionStyle).X;
+                LabelInBand(
+                    new(x, row.Origin.Y),
+                    new(captionWidth, rowHeight),
+                    caption,
+                    captionStyle);
+                x += captionWidth + gap * 2f;
+            }
+            _page.EndRow(row, id, null);
         }
 
         /// <summary>Segmented row: the pill fills the control cell at its own
@@ -507,7 +567,7 @@ public static partial class Crystarium
                     row.CenterControl(controlHeight).Y));
                 Crystarium.Button(
                     "Reset", reset, style: resetStyle,
-                    help: $"Restore the incoming {label.ToLowerInvariant()} exactly",
+                    help: $"Restore the {label.ToLowerInvariant()} this actor had before Poser changed it",
                     id: $"{id}-reset");
             }
             _page.EndRow(row, id, help);
@@ -634,15 +694,23 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
+        /// <param name="fullWidth">The buttons span the WHOLE row, label column
+        /// included — for a set that cannot fit a control cell. Callers pass an
+        /// empty label with it and state the caption on a
+        /// <see cref="Label"/> row above.</param>
         public void Actions(string label, Action<ActionScope> content,
-            string? help = null, bool alignRight = false)
+            string? help = null, bool alignRight = false,
+            bool fullWidth = false)
         {
-            string id = Id(label);
+            // Id("") would be the same string for every unlabelled row of a
+            // section, so an unlabelled Actions row is identified by its kind.
+            string id = Id(string.IsNullOrEmpty(label) ? "actions" : label);
             var row = _page.BeginRow(label);
             var actions = new ActionScope();
             content(actions);
             DrawActions(actions.Items,
-                row.ControlOrigin.X, row.ControlWidth,
+                fullWidth ? row.Origin.X : row.ControlOrigin.X,
+                fullWidth ? row.Width : row.ControlWidth,
                 row.Origin.Y, alignRight, id);
             _page.EndRow(row, id, help);
         }
@@ -656,8 +724,9 @@ public static partial class Crystarium
             var row = _page.BeginRow(label);
             var wells = new ColorWellScope(row, id);
             content(wells);
-            wells.Draw();
-            _page.EndRow(row, id, help);
+            int wellRows = wells.Draw();
+            _page.EndRow(row, id, help,
+                wellRows * ActiveTheme.Controls.FormRowHeight);
         }
 
         /// <summary>The colour-choice row: the palette pill at its natural
@@ -781,7 +850,7 @@ public static partial class Crystarium
             in FormRowScope row, float x, float span, string label,
             Action<FormPairCell> draw)
         {
-            float column = ActiveTheme.Form.LabelColumnWidth * row.Scale;
+            float column = row.LabelWidth;
             if (!string.IsNullOrEmpty(label))
                 FormLabel(new Vector2(x, row.Origin.Y), column, row.Scale, label);
             draw(new FormPairCell(
@@ -790,6 +859,10 @@ public static partial class Crystarium
                 row.Scale));
         }
 
+        /// <param name="actions">Optional actions right-aligned on the wells'
+        /// line. The strip is taken out of the band BEFORE the three-way
+        /// split, so the wells shrink to make room; in the stacked variant it
+        /// rides the wells line, not the label line.</param>
         public void AxisVector(
             string label,
             Vector3 value,
@@ -799,10 +872,13 @@ public static partial class Crystarium
             string format,
             string? help = null,
             bool disabled = false,
-            bool fullWidth = false)
+            bool fullWidth = false,
+            Action<ActionScope>? actions = null)
         {
             string id = Id(label);
             var row = _page.BeginRow(fullWidth ? string.Empty : label);
+            var actionScope = new ActionScope();
+            actions?.Invoke(actionScope);
             float gap = ActiveTheme.Form.AxisGap * row.Scale;
             float inlineMinimum =
                 (ActiveTheme.Form.AxisWellMinimumWidth * 3f
@@ -815,7 +891,17 @@ public static partial class Crystarium
             float available = fullWidth || stacked
                 ? row.Width
                 : row.ControlWidth;
-            float width = (available - gap * 2f) / 3f;
+            // The strip is measured against the whole band and taken out of
+            // it before the split, so the wells share only what is left. With
+            // no actions the band IS the wells' region, untouched.
+            float actionWidth = actionScope.Items.Count == 0
+                ? 0f
+                : MeasureActions(actionScope.Items, row.Scale, available);
+            float wells = actionScope.Items.Count == 0
+                ? available
+                : MathF.Max(0f, available - actionWidth
+                    - ActiveTheme.Page.ActionGap * row.Scale);
+            float width = (wells - gap * 2f) / 3f;
             float controlY = stacked
                 ? row.Origin.Y
                     + ActiveTheme.Controls.FormRowHeight * row.Scale
@@ -860,6 +946,20 @@ public static partial class Crystarium
                     },
                     disabled);
             }
+            if (actionScope.Items.Count > 0)
+                DrawActions(
+                    actionScope.Items,
+                    originX + available - actionWidth,
+                    actionWidth,
+                    // DrawActions band-centres on the row height from the top
+                    // it is handed, so the stacked variant hands it the wells'
+                    // line rather than the row's own top.
+                    stacked
+                        ? row.Origin.Y
+                            + ActiveTheme.Controls.FormRowHeight * row.Scale
+                        : row.Origin.Y,
+                    true,
+                    id);
             _page.EndRow(
                 row,
                 id,
@@ -899,18 +999,39 @@ public static partial class Crystarium
             string? unavailableHelp = null, ControlStyle style = default) =>
             _items.Add(new(label, value, onChange, unavailableHelp, style));
 
-        internal void Draw()
+        /// <returns>The number of form rows the wells occupied.</returns>
+        internal int Draw()
         {
             if (_items.Count == 0)
-                return;
-            float trackWidth = _row.ControlWidth / _items.Count;
+                return 1;
+            // Wells wrap: every group shares the WIDEST caption's label band,
+            // so labels start flush and the wells sit in straight columns;
+            // that uniform group (plus one gap of breathing) sets the minimum
+            // track, and the row splits into as many equal tracks as fit —
+            // later rows reuse the same tracks.
+            float gap = ActiveTheme.Page.ActionGap * _row.Scale;
+            float widestLabel = 0f;
+            foreach (var entry in _items)
+                widestLabel = MathF.Max(
+                    widestLabel,
+                    MeasureText(
+                        entry.Label,
+                        ActiveTheme.Typography.CaptionSize,
+                        FontWeight.Regular).X);
+            float widestGroup = widestLabel + gap
+                + ActiveTheme.Controls.ColorWellSize * _row.Scale;
+            int columns = Math.Clamp(
+                (int)MathF.Floor(_row.ControlWidth / (widestGroup + gap)),
+                1,
+                _items.Count);
+            int rowCount = (_items.Count + columns - 1) / columns;
+            float trackWidth = _row.ControlWidth / columns;
             for (int i = 0; i < _items.Count; i++)
             {
                 var item = _items[i];
-                float labelWidth = MeasureText(
-                    item.Label,
-                    ActiveTheme.Typography.CaptionSize,
-                    FontWeight.Regular).X;
+                float rowY = _row.Origin.Y
+                    + (i / columns)
+                    * ActiveTheme.Controls.FormRowHeight * _row.Scale;
                 var controlStyle = InRegion(
                     item.Style,
                     trackWidth / _row.Scale,
@@ -919,18 +1040,18 @@ public static partial class Crystarium
                     controlStyle.Height,
                     ActiveTheme.Controls.ColorWellSize);
                 float width = ControlSizing.Width(
-                    controlStyle.Width,
+                    controlStyle,
                     side,
                     trackWidth / _row.Scale);
-                float gap = ActiveTheme.Page.ActionGap * _row.Scale;
-                float groupWidth = labelWidth + gap + width * _row.Scale;
-                float trackX = _row.ControlOrigin.X + i * trackWidth;
+                float groupWidth = widestLabel + gap + width * _row.Scale;
+                float trackX = _row.ControlOrigin.X
+                    + (i % columns) * trackWidth;
                 float groupX = trackX + MathF.Max(
                     0f, (trackWidth - groupWidth) * 0.5f);
                 LabelInBand(
-                    new(groupX, _row.Origin.Y),
+                    new(groupX, rowY),
                     new(
-                        labelWidth,
+                        widestLabel,
                         ActiveTheme.Controls.FormRowHeight * _row.Scale),
                     item.Label,
                     new TextStyle
@@ -939,8 +1060,8 @@ public static partial class Crystarium
                         Color = FormHintColor,
                     });
                 ImGui.SetCursorScreenPos(new(
-                    groupX + labelWidth + gap,
-                    _row.Origin.Y
+                    groupX + widestLabel + gap,
+                    rowY
                         + (ActiveTheme.Controls.FormRowHeight - side)
                         * 0.5f * _row.Scale));
                 Crystarium.ColorWell(
@@ -952,6 +1073,7 @@ public static partial class Crystarium
                     disabled: item.Value == null,
                     help: item.UnavailableHelp);
             }
+            return rowCount;
         }
     }
 
@@ -967,6 +1089,14 @@ public static partial class Crystarium
             Origin.X,
             Origin.Y + (ActiveTheme.Controls.FormRowHeight - controlHeight)
                 * 0.5f * Scale);
+
+        /// <summary>The caller's style bound to this cell's track. The pair
+        /// contract is that a half's control never paints past its track, so
+        /// the cell's span becomes the style's <see
+        /// cref="ControlStyle.MaxWidth"/> — capping whatever the control
+        /// resolves for itself, its own usability floors included.</summary>
+        public ControlStyle Constrain(ControlStyle style = default) =>
+            style with { MaxWidth = MathF.Max(1f, Width / Scale) };
     }
 
     public readonly record struct FormRowScope
@@ -977,14 +1107,20 @@ public static partial class Crystarium
         public float ControlWidth { get; }
         public float Scale { get; }
 
-        internal FormRowScope(Vector2 origin, float width, float scale)
+        /// <summary>The label column span in SCREEN px (already scaled),
+        /// like <see cref="ControlWidth"/> — the page's override or the
+        /// shared token.</summary>
+        public float LabelWidth { get; }
+
+        internal FormRowScope(
+            Vector2 origin, float width, float scale, float labelWidth)
         {
             Origin = origin;
             Width = width;
             Scale = scale;
-            ControlOrigin = origin +
-                new Vector2(ActiveTheme.Form.LabelColumnWidth * scale, 0f);
-            ControlWidth = width - ActiveTheme.Form.LabelColumnWidth * scale;
+            LabelWidth = labelWidth * scale;
+            ControlOrigin = origin + new Vector2(LabelWidth, 0f);
+            ControlWidth = width - LabelWidth;
         }
 
         public Vector2 CenterControl(float controlHeight) => new(
@@ -1006,6 +1142,15 @@ public static partial class Crystarium
         {
             var action = actions[i];
             var style = Workspace(action.Style);
+            // An icon action is a square: its width IS the row's control
+            // height.
+            if (action.Icon != null)
+            {
+                committed += ControlSizing.Height(
+                    style.Height,
+                    ActiveTheme.Controls.WorkspaceHeight) * scale;
+                continue;
+            }
             switch (style.Width.Kind)
             {
                 case UiWidthKind.Fill:
@@ -1047,14 +1192,30 @@ public static partial class Crystarium
         {
             var action = actions[i];
             var style = Workspace(action.Style);
+            float height = ControlSizing.Height(
+                style.Height, ActiveTheme.Controls.WorkspaceHeight);
+            if (action.Icon is { } glyph)
+            {
+                ImGui.SetCursorScreenPos(new(
+                    x,
+                    top + (ActiveTheme.Controls.FormRowHeight - height)
+                        * 0.5f * scale));
+                Crystarium.IconButton(
+                    glyph,
+                    action.OnClick,
+                    style with { Height = UiHeight.Fixed(height) },
+                    action.Disabled,
+                    action.Help,
+                    id: $"{id}-{action.Label}");
+                x += height * scale + gap;
+                continue;
+            }
             float width = style.Width.Kind switch
             {
                 UiWidthKind.Fill => fillWidth,
                 UiWidthKind.Fixed => style.Width.Value * scale,
                 _ => IntrinsicButtonWidth(action.Label, style) * scale,
             };
-            float height = ControlSizing.Height(
-                style.Height, ActiveTheme.Controls.WorkspaceHeight);
             ImGui.SetCursorScreenPos(new(
                 x,
                     top + (ActiveTheme.Controls.FormRowHeight - height)
@@ -1246,10 +1407,8 @@ public static partial class Crystarium
         if (!(width > 0f))
             return;
         var style = new TextStyle { Size = size, Family = family, Color = color };
-        float lineHeight = Crystarium.MeasureText(text, style).Y;
-        Crystarium.TextAt(
-            new(position.X, position.Y + (height - lineHeight) * 0.5f),
-            text, style,
+        Crystarium.TextInBand(
+            position, new(width, height), text, style,
             TextConstraint.Truncate(width, TextAlign.End));
     }
 

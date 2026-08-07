@@ -19,6 +19,15 @@ public readonly record struct BoneEvaluationObservation(
     int StackCount);
 
 /// <summary>
+/// How a registered batch of transitive actions ended: <paramref name="Executed"/>
+/// is true when an apply pass ran it, false when the interval ended without one
+/// (the skeleton left the update set, gpose ended, the skeleton was replaced).
+/// </summary>
+public readonly record struct TransitiveActionOutcome(
+    ISkeleton Skeleton,
+    bool Executed);
+
+/// <summary>
 /// Service for manipulating bone transforms.
 /// Simple delta-based system like Brio - bones rotate around themselves.
 /// </summary>
@@ -101,6 +110,36 @@ public interface IBonePosingService : IDisposable
     /// Call this for skeletons with visible overlays or active gizmo manipulation.
     /// </summary>
     void RegisterSkeletonForCacheUpdate(ISkeleton skeleton);
+
+    /// <summary>
+    /// Registers an action to run INSIDE the next apply pass, once per bone of
+    /// this slot skeleton, at the point where that bone's existing stacks have
+    /// been applied and its transform caches refreshed — Brio's
+    /// <c>SkeletonPosingCapability.RegisterTransitiveAction</c>.
+    ///
+    /// This is the only way to write an absolute value onto a bone whose
+    /// correct basis is the pass's own running state: the action sees
+    /// <see cref="IBone.LastRawTransform"/> already updated for this bone AND
+    /// for every parent the same pass has already written, and any stack it
+    /// appends is applied immediately, in that bone's turn, before the pass
+    /// moves on to its children.
+    ///
+    /// Registering also guarantees the skeleton is in the pass that consumes
+    /// the batch, even when it holds no stack and no armed chain. The batch is
+    /// dropped when the posing interval ends, whether or not a pass ran it;
+    /// <see cref="TransitiveActionsEnded"/> reports which.
+    /// </summary>
+    void RegisterTransitiveAction(
+        ISkeleton skeleton,
+        Action<IBone, BonePoseInfo> action);
+
+    /// <summary>
+    /// Raised once for every batch registered through
+    /// <see cref="RegisterTransitiveAction"/> when the posing interval that
+    /// owned it ends. Raised from the native skeleton hooks, NOT from the
+    /// framework thread: a handler may record and defer, nothing more.
+    /// </summary>
+    event Action<TransitiveActionOutcome>? TransitiveActionsEnded;
 
     /// <summary>
     /// Gets the most recent pre-layer/post-layer observation for a modified

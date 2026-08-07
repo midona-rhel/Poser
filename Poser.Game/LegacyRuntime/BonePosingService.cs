@@ -33,6 +33,21 @@ public unsafe class BonePosingService : IBonePosingService
     private readonly IActorManager _actorManager;
     private readonly IEventBus _eventBus;
     private readonly IIKService _ikService;
+    private readonly Poser.Game.Bindings.StableBindingRegistry _bindings;
+    private readonly IPosingService _posingService;
+    private readonly Poser.Config.ConfigurationService _configuration;
+
+    /// <summary>Poses parked across a redraw, keyed by stable actor identity
+    /// rather than by any of the three things a rebuild invalidates (address,
+    /// skeleton instance, draw object).</summary>
+    private readonly PoseCarryoverStore _carryover = new();
+
+    /// <summary>Ktisis's "position root": the first REAL bone of partial 0, the
+    /// only bone whose position delta is restored after a rebuild. Poser's
+    /// <c>IsSkeletonRoot</c> is the parentless <c>n_root</c> instead, whose
+    /// position is the actor's world placement — carrying that would fight the
+    /// model transform override, so it is deliberately not used here.</summary>
+    private const string PositionRootBoneName = "n_hara";
 
     // Hook for intercepting bone physics updates
     private delegate nint UpdateBonePhysicsDelegate(nint a1);
@@ -68,6 +83,30 @@ public unsafe class BonePosingService : IBonePosingService
     // Track which slot skeletons need cache updates (visible overlays, active gizmo, etc.)
     private readonly HashSet<SkeletonKey> _skeletonsToUpdateCache = new();
 
+    /// <summary>
+    /// Actions registered from OUTSIDE the apply pass to run INSIDE it, once,
+    /// per bone — Brio's <c>SkeletonPosingCapability._transitiveActions</c>
+    /// (Capabilities/Posing/SkeletonPosingCapability.cs:35). Brio keeps the
+    /// list on the per-actor capability and clears it when the posing interval
+    /// ends (SkeletonPosingCapability.cs:238-241, raised from
+    /// SkeletonService.EndPosingInverval, SkeletonService.cs:375-379); Poser
+    /// keys it by the exact slot-skeleton instance the caller registered
+    /// against, so a replaced skeleton can never inherit another's batch.
+    /// </summary>
+    private sealed class TransitiveActionSet
+    {
+        public required ISkeleton Skeleton;
+        public readonly List<Action<IBone, BonePoseInfo>> Actions = new();
+
+        /// <summary>Set by the pass that ran the actions. False at interval
+        /// end means the batch was dropped without ever executing — Brio has
+        /// no counterpart because Brio's pass visits every registered
+        /// skeleton unconditionally.</summary>
+        public bool Executed;
+    }
+
+    private readonly Dictionary<SkeletonKey, TransitiveActionSet> _transitiveActions = new();
+
     /// <summary>Session IK state per exact endpoint: validated chain
     /// configuration, resolved native chain, and the Fixed-mode capture.
     /// Keyed by the exact skeleton instance, so a replacement never
@@ -87,6 +126,14 @@ public unsafe class BonePosingService : IBonePosingService
         _evaluationObservations = new();
     private long _evaluationSequence;
 
+    /// <summary>Reused snapshot buffers for the two per-frame passes that must
+    /// iterate a collection they may mutate. Both are single-threaded (physics
+    /// detour / framework update) and never nested, so one instance each keeps
+    /// the steady state free of per-frame arrays.</summary>
+    private readonly List<SkeletonKey> _updatePassBuffer = new();
+    private readonly List<(SkeletonKey Skeleton, int Partial, int Bone)>
+        _observationRemovalBuffer = new();
+
     private bool _isUpdating = false;
 
     public BonePosingService(
@@ -97,6 +144,9 @@ public unsafe class BonePosingService : IBonePosingService
         IActorManager actorManager,
         IEventBus eventBus,
         IIKService ikService,
+        Poser.Game.Bindings.StableBindingRegistry bindings,
+        IPosingService posingService,
+        Poser.Config.ConfigurationService configuration,
         IGameInteropProvider hooking,
         ISigScanner scanner)
     {
@@ -107,6 +157,9 @@ public unsafe class BonePosingService : IBonePosingService
         _actorManager = actorManager;
         _eventBus = eventBus;
         _ikService = ikService;
+        _bindings = bindings;
+        _posingService = posingService;
+        _configuration = configuration;
 
         // Hook UpdateBonePhysics - this is called during skeleton updates
         try
@@ -137,6 +190,7 @@ public unsafe class BonePosingService : IBonePosingService
         _framework.Update += OnFrameworkUpdate;
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _eventBus.Subscribe<ActorListChangedEvent>(OnActorListChanged);
+        _eventBus.Subscribe<SkeletonChangedEvent>(OnSkeletonChanged);
 
         _log.Debug("BonePosingService initialized");
     }
@@ -165,9 +219,16 @@ public unsafe class BonePosingService : IBonePosingService
     private void OnFrameworkUpdate(IFramework framework)
     {
         _skeletonsToUpdate.Clear();
+
         foreach (var (slotKey, poseInfo) in _poseInfos)
         {
-            if (poseInfo.IsOverridden || HasEnabledChains(slotKey))
+            // A registered batch qualifies the skeleton on its own. Brio gets
+            // this for free — its pass takes every skeleton that has a posing
+            // capability (SkeletonService.cs:227-231) — while Poser's pass is
+            // opt-in per stack/chain, and a bake registers its actions exactly
+            // when it has just cleared both.
+            if (poseInfo.IsOverridden || HasEnabledChains(slotKey) ||
+                _transitiveActions.ContainsKey(slotKey))
             {
                 _skeletonsToUpdate.Add(slotKey);
                 continue;
@@ -177,6 +238,78 @@ public unsafe class BonePosingService : IBonePosingService
         }
 
         _skeletonsToUpdateCache.Clear();
+    }
+
+    /// <summary>
+    /// Brio's <c>SkeletonPosingCapability.RegisterTransitiveAction</c>
+    /// (SkeletonPosingCapability.cs:52-55). The action runs once for every
+    /// bone of this slot skeleton, inside the physics-detour apply pass, at
+    /// the point where the bone's existing stacks have been applied and its
+    /// transform caches refreshed — see
+    /// <see cref="ApplyTransformsWithPerBoneUpdate"/>.
+    /// </summary>
+    public void RegisterTransitiveAction(
+        ISkeleton skeleton,
+        Action<IBone, BonePoseInfo> action)
+    {
+        var key = SkeletonKey.Of(skeleton);
+        if (!_transitiveActions.TryGetValue(key, out var set))
+            _transitiveActions[key] = set =
+                new TransitiveActionSet { Skeleton = skeleton };
+        set.Actions.Add(action);
+
+        // Materialize the pose store so the per-frame rebuild can see the
+        // skeleton at all, and register directly for the pass that is still
+        // ahead of us this frame (registration from a framework update
+        // precedes this frame's detour; registration from UI draw follows it
+        // and is picked up by the next rebuild).
+        GetPoseInfo(skeleton);
+        _skeletonsToUpdate.Add(key);
+    }
+
+    public event Action<TransitiveActionOutcome>? TransitiveActionsEnded;
+
+    /// <summary>Brio's <c>SkeletonPosingCapability.ExecuteTransitiveActions</c>
+    /// (SkeletonPosingCapability.cs:57-60).</summary>
+    private static void ExecuteTransitiveActions(
+        TransitiveActionSet set,
+        IBone bone,
+        BonePoseInfo poseInfo)
+    {
+        var actions = set.Actions;
+        for (var i = 0; i < actions.Count; i++)
+            actions[i](bone, poseInfo);
+    }
+
+    /// <summary>
+    /// Brio's <c>SkeletonService.EndPosingInverval</c> → <c>SkeletonUpdateEnd</c>
+    /// → <c>SkeletonPosingCapability.OnSkeletonUpdateEnd</c>: every registered
+    /// batch is dropped when the interval ends, whether or not a pass consumed
+    /// it. Poser reports the outcome so a caller that needs to know its actions
+    /// ran (the IK bake, which owes a history entry) is never left waiting.
+    /// </summary>
+    private void EndTransitiveActions()
+    {
+        if (_transitiveActions.Count == 0)
+            return;
+        var ended = _transitiveActions.Values.ToArray();
+        _transitiveActions.Clear();
+        foreach (var set in ended)
+            RaiseTransitiveActionsEnded(set);
+    }
+
+    private void RaiseTransitiveActionsEnded(TransitiveActionSet set)
+    {
+        try
+        {
+            TransitiveActionsEnded?.Invoke(
+                new TransitiveActionOutcome(set.Skeleton, set.Executed));
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(
+                $"BonePosingService: transitive action outcome handler threw: {ex.Message}");
+        }
     }
 
     public void RegisterSkeletonForCacheUpdate(ISkeleton skeleton)
@@ -226,6 +359,10 @@ public unsafe class BonePosingService : IBonePosingService
         _poseInfos.Remove(key);
         _skeletonsToUpdate.Remove(key);
         _skeletonsToUpdateCache.Remove(key);
+        // A batch registered against a skeleton that is going away can never
+        // execute; report it so its owner can roll back instead of waiting.
+        if (_transitiveActions.Remove(key, out var orphaned))
+            RaiseTransitiveActionsEnded(orphaned);
         RemoveEvaluationObservations(key);
         foreach (var chainKey in _ikChains.Keys
                      .Where(chainKey => chainKey.Skeleton == key)
@@ -237,29 +374,211 @@ public unsafe class BonePosingService : IBonePosingService
     {
         if (!e.IsGPosing)
         {
+            EndTransitiveActions();
             _poseInfos.Clear();
             _skeletonsToUpdate.Clear();
             _evaluationObservations.Clear();
             _ikChains.Clear();
+            _carryover.Clear();
         }
     }
 
+    /// <summary>
+    /// Parks the authored half of a REPLACED skeleton's pose under the actor's
+    /// stable identity. Called only where the actor itself is still live —
+    /// never from actor teardown, where nothing may be resurrected. Cheap when
+    /// there is nothing to carry: the config gate and the authored-stack scan
+    /// both run before anything is allocated.
+    /// </summary>
+    private void TryCaptureCarryover(IActor actor, SkeletonKey staleKey)
+    {
+        if (!_configuration.Config.PreservePoseAcrossRedraws)
+            return;
+
+        // Absent when the restore handler already migrated this store directly
+        // (the replacement skeleton was built before the detour noticed).
+        if (!_poseInfos.TryGetValue(staleKey, out var poseInfo) ||
+            !HasAuthoredStacks(poseInfo))
+            return;
+
+        if (_bindings.GetActorId(actor) is not { } actorId)
+            return;
+
+        if (BuildCarryoverPose(poseInfo) is not { } carried)
+            return;
+
+        _carryover.Park(
+            actorId.LogicalId,
+            staleKey.Slot,
+            new CarryoverEntry(
+                carried,
+                _posingService.GetTransformOverride(actor),
+                global::System.Environment.TickCount64));
+        _log.Debug(
+            $"BonePosingService: parked {staleKey.Slot} pose for {actor.Name} across rebuild");
+    }
+
+    /// <summary>
+    /// Seeds a settled replacement skeleton with the pose parked for the same
+    /// stable actor identity. Idempotent: <c>RefreshSkeleton</c> republishes for
+    /// skeletons that already own a store, and those return untouched. The
+    /// publish is SYNCHRONOUS from inside <c>ISkeletonService.GetSkeleton</c>,
+    /// so this handler must never call back into the skeleton service.
+    /// Undo history is deliberately not involved — a rebuild is not an edit.
+    /// </summary>
+    private void OnSkeletonChanged(SkeletonChangedEvent e)
+    {
+        if (!_configuration.Config.PreservePoseAcrossRedraws)
+            return;
+        if (e.Skeleton is not { IsValid: true } skeleton)
+            return;
+
+        var newKey = SkeletonKey.Of(skeleton);
+        if (_poseInfos.ContainsKey(newKey))
+            return;
+        if (_bindings.GetActorId(e.Actor) is not { } actorId)
+            return;
+
+        // Both orders occur. The per-frame detour usually parks the pose before
+        // the replacement exists; but the detour's own GetSkeleton call is what
+        // BUILDS the replacement, so this handler can also run while the stale
+        // store is still live and unparked. A parked entry always wins — it is
+        // the newer of the two — and otherwise the stale store migrates across.
+        var entry = _carryover.Take(actorId.LogicalId, skeleton.Slot);
+        var carried = entry?.Pose;
+        var modelOverride = entry?.ModelOverride;
+
+        foreach (var stale in _poseInfos.Keys
+                     .Where(key => key.Actor == newKey.Actor &&
+                                   key.Slot == newKey.Slot)
+                     .ToArray())
+        {
+            if (carried == null &&
+                _poseInfos.TryGetValue(stale, out var stalePose) &&
+                HasAuthoredStacks(stalePose))
+            {
+                carried = BuildCarryoverPose(stalePose);
+                modelOverride = _posingService.GetTransformOverride(e.Actor);
+            }
+
+            PurgeSkeletonState(stale);
+        }
+
+        if (carried == null)
+            return;
+
+        _poseInfos[newKey] = carried;
+        // OnFrameworkUpdate rebuilds _skeletonsToUpdate from _poseInfos, but the
+        // physics detour can run before the next framework tick; register the
+        // key the same way ApplyTransform's callers do so the restored pose is
+        // applied on the very next update.
+        _skeletonsToUpdate.Add(newKey);
+
+        // The replacement carries a NEW draw object: re-assert the model
+        // transform once so the write lands on it deterministically instead of
+        // racing the next framework tick. The live override wins when
+        // PosingService kept it; the parked one covers the case where the
+        // address left the live set and it was dropped.
+        if ((_posingService.GetTransformOverride(e.Actor) ?? modelOverride) is { } modelTransform)
+            _posingService.SetTransformOverride(e.Actor, modelTransform);
+
+        _log.Debug(
+            $"BonePosingService: restored {skeleton.Slot} pose for {e.Actor.Name} after rebuild");
+    }
+
+    /// <summary>Authored means interactive: a stack with no <c>Layer</c>. Named
+    /// service layers (expression blending and friends) are recomputed by their
+    /// owners and never count as something worth carrying.</summary>
+    private static bool HasAuthoredStacks(SkeletonPoseInfo poseInfo)
+    {
+        foreach (var bonePose in poseInfo.AllPoses)
+        {
+            var stacks = bonePose.Stacks;
+            for (var i = 0; i < stacks.Count; i++)
+            {
+                if (stacks[i].Layer == null)
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Reduces a pose to what may cross a rebuild, matching Ktisis's restore
+    /// flags (Rotation | PositionRoot): interactive stacks only, rotation on
+    /// every bone, position on the pose root alone, scale never. Named service
+    /// layers are dropped so their owners re-drive them, and IK chain state is
+    /// never carried — a replacement inherits no chain configuration or fixed
+    /// target. Returns null when nothing survives the filter.
+    /// </summary>
+    private static SkeletonPoseInfo? BuildCarryoverPose(SkeletonPoseInfo source)
+    {
+        SkeletonPoseInfo? carried = null;
+
+        foreach (var bonePose in source.AllPoses)
+        {
+            var isPositionRoot = bonePose.PartialId == 0 &&
+                string.Equals(bonePose.BoneName, PositionRootBoneName, StringComparison.Ordinal);
+
+            List<BonePoseTransformInfo>? kept = null;
+            var stacks = bonePose.Stacks;
+            for (var i = 0; i < stacks.Count; i++)
+            {
+                var stack = stacks[i];
+                if (stack.Layer != null)
+                    continue;
+
+                var delta = new Transform
+                {
+                    Position = isPositionRoot ? stack.Transform.Position : Vector3.Zero,
+                    Rotation = stack.Transform.Rotation,
+                    Scale = Vector3.Zero,
+                };
+                if (IsIdentityDelta(delta))
+                    continue;
+
+                (kept ??= new List<BonePoseTransformInfo>()).Add(
+                    stack with { Transform = delta });
+            }
+
+            if (kept == null)
+                continue;
+
+            // The skeleton-wide default is set first: assigning it rewrites
+            // every existing bone default, so per-bone values are applied after.
+            carried ??= new SkeletonPoseInfo { DefaultPropagation = source.DefaultPropagation };
+            var target = carried.GetPoseInfo(bonePose.BoneName, bonePose.PartialId);
+            target.DefaultPropagation = bonePose.DefaultPropagation;
+            target.ReplaceStacks(kept);
+        }
+
+        return carried;
+    }
+
+    /// <summary>Stack deltas are additive for position/scale and multiplicative
+    /// for rotation, so identity is (0, identity quaternion, 0).</summary>
+    private static bool IsIdentityDelta(Transform delta) =>
+        delta.Position == Vector3.Zero &&
+        delta.Scale == Vector3.Zero &&
+        MathF.Abs(MathF.Abs(delta.Rotation.W) - 1f) < 1e-6f;
+
     private void ApplyAllBoneTransforms()
     {
-        foreach (var slotKey in _skeletonsToUpdate.ToArray())
+        // The pass can purge (and therefore mutate _skeletonsToUpdate) while it
+        // runs, so it iterates a snapshot — a REUSED buffer, because this runs
+        // in the physics detour every frame and the old ToArray() charged the
+        // steady state one array per frame.
+        _updatePassBuffer.Clear();
+        foreach (var key in _skeletonsToUpdate)
+            _updatePassBuffer.Add(key);
+
+        for (var i = 0; i < _updatePassBuffer.Count; i++)
         {
+            var slotKey = _updatePassBuffer[i];
             if (!_poseInfos.TryGetValue(slotKey, out var poseInfo))
                 continue;
 
-            IActor? actor = null;
-            foreach (var a in _actorManager.Actors)
-            {
-                if (a.Address == slotKey.Actor)
-                {
-                    actor = a;
-                    break;
-                }
-            }
+            var actor = FindActor(slotKey.Actor);
 
             if (actor == null)
             {
@@ -273,7 +592,9 @@ public unsafe class BonePosingService : IBonePosingService
             {
                 // The slot vanished or was REPLACED: the stored pose belongs
                 // to the old skeleton instance and must never be applied to
-                // its replacement.
+                // its replacement. The actor is still live, so the authored
+                // half is parked for the rebuild to pick up.
+                TryCaptureCarryover(actor, slotKey);
                 PurgeSkeletonState(slotKey);
                 continue;
             }
@@ -298,11 +619,19 @@ public unsafe class BonePosingService : IBonePosingService
             return;
 
         // STEP 1: Apply transforms AND update LastTransform per-bone (like Brio ApplyBrioTransforms)
+        _transitiveActions.TryGetValue(slotKey, out var actions);
         ApplyTransformsWithPerBoneUpdate(
             slotKey,
             skeleton,
             gameSkeleton,
-            poseInfo);
+            poseInfo,
+            actions);
+        // Brio's pass has no such flag: every skeleton it registers is
+        // visited every frame, so a registered action always runs. Poser
+        // records the fact so a dropped batch is distinguishable from an
+        // executed one at interval end.
+        if (actions != null)
+            actions.Executed = true;
 
         // STEP 2: Full cache update after apply (like Brio line 242)
         UpdateAllLastTransforms(skeleton, gameSkeleton);
@@ -322,7 +651,8 @@ public unsafe class BonePosingService : IBonePosingService
         SkeletonKey slotKey,
         Skeleton skeleton,
         GameSkeleton* gameSkeleton,
-        SkeletonPoseInfo poseInfo)
+        SkeletonPoseInfo poseInfo,
+        TransitiveActionSet? actions)
     {
         var partialCount = gameSkeleton->PartialSkeletonCount;
 
@@ -333,17 +663,18 @@ public unsafe class BonePosingService : IBonePosingService
             if (pose == null)
                 continue;
 
+            var boneMap = skeleton.GetNativeBoneMap(partialIdx, pose);
             var boneCount = pose->Skeleton->Bones.Length;
             for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
             {
-                var rawBone = pose->Skeleton->Bones[boneIdx];
-                var boneName = rawBone.Name.String ?? $"bone_{partialIdx}_{boneIdx}";
-
-                var bone = skeleton.GetBoneByName(boneName, partialIdx);
+                var bone = ResolveNativeBone(skeleton, boneMap, pose, partialIdx, boneIdx);
                 if (bone == null)
                     continue;
 
-                var bonePoseInfo = poseInfo.GetPoseInfo(boneName, partialIdx);
+                // The resolved bone's name IS the native name this index would
+                // have marshaled (it was resolved BY that name on both paths),
+                // so the pose store is keyed identically without the marshal.
+                var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, partialIdx);
                 _ikChains.TryGetValue(
                     (slotKey, partialIdx, boneIdx), out var chainState);
                 bool fixedHold = chainState is
@@ -352,7 +683,11 @@ public unsafe class BonePosingService : IBonePosingService
                     Config.TargetMode: Poser.Domain.Posing.IkTargetMode.Fixed,
                     FixedCapture: not null,
                 };
-                if (!bonePoseInfo.HasStacks && !fixedHold)
+                // Brio visits every bone unconditionally (SkeletonService.cs:98-127)
+                // because a transitive action may append a stack to a bone
+                // that has none. With no batch registered the pass keeps
+                // Poser's cheap skip; with one, every bone is visited.
+                if (!bonePoseInfo.HasStacks && !fixedHold && actions == null)
                     continue;
 
                 var baselineSpace = pose->AccessBoneModelSpace(
@@ -362,6 +697,12 @@ public unsafe class BonePosingService : IBonePosingService
                     continue;
                 var animatedBaseline = ReadTransform(baselineSpace);
 
+                // Brio SkeletonService.cs:108 — the stack count taken BEFORE
+                // the existing stacks are applied. Everything past it is what
+                // the transitive actions appended, and only those are applied
+                // a second time below.
+                var snapshotCount = bonePoseInfo.Stacks.Count;
+
                 if (bonePoseInfo.HasStacks)
                 {
                     // Apply ALL stacks for this bone (like Brio lines 108-112)
@@ -370,7 +711,7 @@ public unsafe class BonePosingService : IBonePosingService
                         ApplyBoneTransform(pose, boneIdx, stack, bone, chainState);
                     }
                 }
-                else
+                else if (fixedHold)
                 {
                     // An armed Fixed chain with no authored stack still holds
                     // its captured target against the running animation.
@@ -384,17 +725,59 @@ public unsafe class BonePosingService : IBonePosingService
                     var transform = ReadTransform(modelSpace);
                     bone.LastRawTransform = transform;
                     bone.LastTransform = transform;
-                    _evaluationObservations[
-                        (slotKey, partialIdx, boneIdx)] =
-                        new BoneEvaluationObservation(
-                            _evaluationSequence,
-                            animatedBaseline,
-                            transform,
-                            Combine(bonePoseInfo.Stacks),
-                            bonePoseInfo.Stacks.Count);
+                    if (bonePoseInfo.HasStacks || fixedHold)
+                    {
+                        _evaluationObservations[
+                            (slotKey, partialIdx, boneIdx)] =
+                            new BoneEvaluationObservation(
+                                _evaluationSequence,
+                                animatedBaseline,
+                                transform,
+                                Combine(bonePoseInfo.Stacks),
+                                bonePoseInfo.Stacks.Count);
+                    }
+
+                    // Brio SkeletonService.cs:119-127: the actions run against
+                    // the caches this pass has just refreshed — the running,
+                    // post-parent basis an absolute write must be diffed
+                    // against — and whatever they appended is applied here,
+                    // in this bone's turn, before the loop moves to its
+                    // children.
+                    if (actions != null)
+                    {
+                        ExecuteTransitiveActions(actions, bone, bonePoseInfo);
+                        for (var i = snapshotCount; i < bonePoseInfo.Stacks.Count; i++)
+                            ApplyBoneTransform(
+                                pose, boneIdx, bonePoseInfo.Stacks[i], bone, chainState);
+                    }
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Resolves the SAME managed bone the name path resolves for a native bone,
+    /// without marshaling anything while the skeleton's prebuilt map still
+    /// describes this pose. <paramref name="map"/> is handed out by
+    /// <see cref="Skeleton.GetNativeBoneMap"/> only after the native
+    /// <c>hkaSkeleton</c> pointer and bone count have been matched against the
+    /// build, so an invalid handle — a rebound partial, a partial the build
+    /// never saw, a resized bone array — falls back to marshaling the native
+    /// name and asking <see cref="Skeleton.GetBoneByName"/>, exactly as before.
+    /// </summary>
+    private static Bone? ResolveNativeBone(
+        Skeleton skeleton,
+        Skeleton.NativeBoneMap map,
+        hkaPose* pose,
+        int partialIdx,
+        int boneIdx)
+    {
+        if (map.IsValid)
+            return map[boneIdx];
+
+        var rawBone = pose->Skeleton->Bones[boneIdx];
+        var boneName = rawBone.Name.String ?? $"bone_{partialIdx}_{boneIdx}";
+        return skeleton.GetBoneByName(boneName, partialIdx);
     }
 
     /// <summary>Refreshes both transform caches at the same two points as Brio:
@@ -410,13 +793,11 @@ public unsafe class BonePosingService : IBonePosingService
             if (pose == null)
                 continue;
 
+            var boneMap = skeleton.GetNativeBoneMap(partialIdx, pose);
             var boneCount = pose->Skeleton->Bones.Length;
             for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
             {
-                var rawBone = pose->Skeleton->Bones[boneIdx];
-                var boneName = rawBone.Name.String ?? $"bone_{partialIdx}_{boneIdx}";
-
-                var bone = skeleton.GetBoneByName(boneName, partialIdx);
+                var bone = ResolveNativeBone(skeleton, boneMap, pose, partialIdx, boneIdx);
                 if (bone == null)
                     continue;
 
@@ -447,21 +828,27 @@ public unsafe class BonePosingService : IBonePosingService
             if (pose == null)
                 continue;
 
+            var boneMap = skeleton.GetNativeBoneMap(partialIdx, pose);
             var boneCount = pose->Skeleton->Bones.Length;
             for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
             {
-                var rawBone = pose->Skeleton->Bones[boneIdx];
-                var boneName = rawBone.Name.String ?? $"bone_{partialIdx}_{boneIdx}";
-
-                var bone = skeleton.GetBoneByName(boneName, partialIdx);
+                var bone = ResolveNativeBone(skeleton, boneMap, pose, partialIdx, boneIdx);
                 if (bone == null)
                     continue;
 
-                if (bone.IsPartialRoot && !bone.IsSkeletonRoot && bone.ParentBone != null)
+                if (bone.IsPartialRoot && !bone.IsSkeletonRoot)
                 {
+                    // Brio performs this access for EVERY partial root and
+                    // only afterwards checks whether a parent exists (Brio
+                    // SkeletonService.cs:152-153): AccessBoneModelSpace with
+                    // Propagate natively syncs the root's model-space entry
+                    // and invalidates its descendants, a side effect that
+                    // must happen even when no parent transform is written.
                     var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.Propagate);
 
                     var parentBone = bone.ParentBone;
+                    if (parentBone == null)
+                        continue;
                     var parentPartial = &gameSkeleton->PartialSkeletons[parentBone.PartialId];
                     var parentPose = parentPartial->GetHavokPose(0);
 
@@ -616,7 +1003,10 @@ public unsafe class BonePosingService : IBonePosingService
                          .Where(key => key.Actor == slotKey.Actor &&
                                        key.Slot == slotKey.Slot)
                          .ToArray())
+            {
+                TryCaptureCarryover(skeleton.Actor, stale);
                 PurgeSkeletonState(stale);
+            }
             poseInfo = new SkeletonPoseInfo();
             _poseInfos[slotKey] = poseInfo;
         }
@@ -792,8 +1182,6 @@ public unsafe class BonePosingService : IBonePosingService
             (short)endpoint.BoneIndex);
     }
 
-
-
     public int ResetRegion(ISkeleton skeleton, string region)
     {
         bool IsFace(string n) => n.StartsWith("j_f_") || n == "j_kao" || n.StartsWith("j_ago");
@@ -898,7 +1286,13 @@ public unsafe class BonePosingService : IBonePosingService
         _finalizeSkeletonsHook!.Original(a1);
 
         if (!_gPoseService.IsGPosing)
+        {
+            // Brio's interval does not end outside gpose either, but a batch
+            // registered on the way out would then wait forever; end it as
+            // not executed.
+            EndTransitiveActions();
             return;
+        }
 
         // STEP 5: Final update for ALL modified skeletons (like Brio line 263)
         // This takes a final snapshot now the engine is done touching skeletons.
@@ -915,20 +1309,29 @@ public unsafe class BonePosingService : IBonePosingService
                 UpdateSkeletonCache(slotKey);
             }
         }
+
+        // Brio SkeletonService.cs:266 — the posing interval ends here, and
+        // with it every registered transitive action.
+        EndTransitiveActions();
+    }
+
+    /// <summary>Indexed scan, not foreach: <c>Actors</c> is an interface-typed
+    /// list, so foreach boxes an enumerator on every call and these callers run
+    /// per posed skeleton per frame inside the detours.</summary>
+    private IActor? FindActor(nint address)
+    {
+        var actors = _actorManager.Actors;
+        for (var i = 0; i < actors.Count; i++)
+        {
+            if (actors[i].Address == address)
+                return actors[i];
+        }
+        return null;
     }
 
     private void UpdateSkeletonCache(SkeletonKey slotKey)
     {
-        IActor? actor = null;
-        foreach (var a in _actorManager.Actors)
-        {
-            if (a.Address == slotKey.Actor)
-            {
-                actor = a;
-                break;
-            }
-        }
-
+        var actor = FindActor(slotKey.Actor);
         if (actor == null)
             return;
 
@@ -948,13 +1351,11 @@ public unsafe class BonePosingService : IBonePosingService
             if (pose == null)
                 continue;
 
+            var boneMap = skeleton.GetNativeBoneMap(partialIdx, pose);
             var boneCount = pose->Skeleton->Bones.Length;
             for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
             {
-                var rawBone = pose->Skeleton->Bones[boneIdx];
-                var boneName = rawBone.Name.String ?? $"bone_{partialIdx}_{boneIdx}";
-
-                var bone = skeleton.GetBoneByName(boneName, partialIdx);
+                var bone = ResolveNativeBone(skeleton, boneMap, pose, partialIdx, boneIdx);
                 if (bone == null)
                     continue;
 
@@ -1003,8 +1404,9 @@ public unsafe class BonePosingService : IBonePosingService
             Scale = bone.LastTransform.Scale
         };
 
-        // Clear existing stacks and apply fresh - flip is a replacement, not an accumulation
-        bonePoseInfo.ClearStacks();
+        // LastRawTransform is the posed value (anim ⊕ existing stacks), so the
+        // diff is only valid on top of those stacks — they must survive, like
+        // Brio's PosingCapability.FlipBone which accumulates and never clears.
         bonePoseInfo.Apply(newTransform, bone.LastRawTransform);
 
         _eventBus.Publish(new BoneTransformChangedEvent(bone));
@@ -1083,14 +1485,23 @@ public unsafe class BonePosingService : IBonePosingService
         return combined;
     }
 
+    /// <summary>Runs every frame for every registered-but-unposed skeleton
+    /// (OnFrameworkUpdate), so it collects into a reused buffer instead of the
+    /// LINQ chain + array it used to allocate per skeleton per frame.</summary>
     private void RemoveEvaluationObservations(SkeletonKey slotKey)
     {
-        foreach (var key in _evaluationObservations.Keys
-                     .Where(key => key.Skeleton == slotKey)
-                     .ToArray())
+        if (_evaluationObservations.Count == 0)
+            return;
+
+        _observationRemovalBuffer.Clear();
+        foreach (var key in _evaluationObservations.Keys)
         {
-            _evaluationObservations.Remove(key);
+            if (key.Skeleton == slotKey)
+                _observationRemovalBuffer.Add(key);
         }
+
+        for (var i = 0; i < _observationRemovalBuffer.Count; i++)
+            _evaluationObservations.Remove(_observationRemovalBuffer[i]);
     }
 
     public void Dispose()
@@ -1100,8 +1511,11 @@ public unsafe class BonePosingService : IBonePosingService
         _framework.Update -= OnFrameworkUpdate;
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _eventBus.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
+        _eventBus.Unsubscribe<SkeletonChangedEvent>(OnSkeletonChanged);
+        EndTransitiveActions();
         _poseInfos.Clear();
         _evaluationObservations.Clear();
+        _carryover.Clear();
         GC.SuppressFinalize(this);
     }
 }

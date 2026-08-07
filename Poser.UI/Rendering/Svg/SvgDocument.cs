@@ -151,6 +151,17 @@ public sealed class SvgDocument
     {
         if (!Fits(min, max)) return;
 
+        // Icons draw on the WHOLE-PIXEL grid. The bake cache keys on the
+        // box's sub-pixel phase, and a dragged window slides that phase
+        // continuously — every visible icon became a first-seen key every
+        // frame (painted in software, then re-baked, then the full-cache
+        // nuke), which Dalamud logged as 150-400ms UiBuilder hitches. A
+        // floored box keeps the phase at zero, so movement re-uses the
+        // standing bake; the size is preserved exactly.
+        var snapped = new Vector2(MathF.Floor(min.X), MathF.Floor(min.Y));
+        max = snapped + (max - min);
+        min = snapped;
+
         // Warm path: one cached quad. No geometry, no closure, no
         // per-sub-path point buffers, no per-pixel rect.
         if (SvgIconTextureCache.TryDraw(
@@ -164,26 +175,31 @@ public sealed class SvgDocument
             compositeStroke, groupOpacity, groupBackground);
     }
 
-    /// <summary>The painter's own coverage for this exact draw, as an RGBA8
-    /// bitmap. False means the document is not one the mask can express, so
-    /// the painter owns it; true with a zero size means it paints nothing.
+    /// <summary>
+    /// The painter's own coverage for this exact draw, rasterized but not yet
+    /// coloured — <c>SvgStrokeMask.Pack</c> finishes it on the main thread.
+    /// PURE CPU: no ImGui, no draw list, nothing thread affine anywhere in its
+    /// reach, so the icon cache runs it on a background worker. The style
+    /// alpha that the colour step folds in is a PARAMETER for exactly that
+    /// reason. <c>Paths</c> is immutable once <see cref="Parse"/> returns, so
+    /// the worker only ever reads.
+    ///
+    /// <para>False means the document is not one the mask can express, so the
+    /// painter owns it; true with a null <paramref name="baked"/> means it
+    /// paints nothing.</para>
     /// </summary>
-    internal bool TryBakeMask(
+    internal bool TryResolveMask(
         Vector2 min, Vector2 max, Vector4? tint, bool flipX,
         float? strokeWidth, float groupOpacity, Vector4 groupBackground,
-        out Vector2 origin, out int width, out int height, out byte[] rgba)
+        float styleAlpha, out SvgStrokeMask.Baked? baked)
     {
-        origin = default;
-        width = 0;
-        height = 0;
-        rgba = [];
+        baked = null;
         if (!Fits(min, max) || !SvgRenderer.UsesStrokeMask(Paths))
             return false;
         var (toScreen, scale) = Geometry(min, max, flipX);
-        SvgStrokeMask.Bake(
+        baked = SvgStrokeMask.Resolve(
             Paths, toScreen, scale, tint, strokeWidth,
-            groupOpacity, groupBackground,
-            out origin, out width, out height, out rgba);
+            groupOpacity, groupBackground, styleAlpha);
         return true;
     }
 

@@ -207,6 +207,16 @@ public class ActorManager : IActorManager
         _eventBus.Publish(new ActorListChangedEvent(Actors));
     }
 
+    /// <summary>
+    /// The actor's plain game name; the object-table index names only the
+    /// nameless (a fresh spawn before the game assigns one). The index used
+    /// to be appended to EVERY name — a debugging crutch that leaked into
+    /// auto-save file names ("Midona Rhel (201).pose", 201 being the first
+    /// GPose slot) and forced every display surface to strip it back off.
+    /// Identity never rode on it: actors are tracked by address and
+    /// EntityId, and same-named clones are disambiguated where it matters
+    /// (auto-save's per-snapshot " (2)" suffixes, the sidebar's ids).
+    /// </summary>
     private static string GetActorName(IGameObject gameObject)
     {
         var name = gameObject.Name.TextValue;
@@ -214,7 +224,7 @@ public class ActorManager : IActorManager
         {
             return $"Actor {gameObject.ObjectIndex}";
         }
-        return $"{name} ({gameObject.ObjectIndex})";
+        return name;
     }
 
     public void Dispose()

@@ -12,10 +12,10 @@ namespace Poser.UI;
 /// <summary>
 /// The inspector RAIL: lives in the
 /// shell's 280px right column. Crumb, the compact oriented rotation gizmo,
-/// compact TRANSLATION / ROTATION / SCALE axis rows, IK switch, then the
-/// relocated GAZE / POSE sections. The Pose tab's content column keeps
-/// ONLY the Anamnesis surface (seg + strip + matrix) — everything editable
-/// about the selection lives here.
+/// then the sections the PRIMARY SELECTION owns — TRANSLATION always, IK for a
+/// bone with a chain, GAZE / EXPRESSION / POSE for an actor. Pose FILES is a
+/// property of the actor rather than of the selection and lives on the
+/// workspace Actor tab instead.
 /// </summary>
 public class PoseRailPane
 {
@@ -91,10 +91,14 @@ public class PoseRailPane
                     "link",
                     11f,
                     Crystarium.ActiveTheme.AccentHover);
-                Crystarium.TextAt(pmin + new Vector2(19f, 2f) * s, count, countStyle);
+                Crystarium.TextInBand(
+                    pmin + new Vector2(19f, 0f) * s,
+                    new Vector2(pillW - 19f * s, 18f * s),
+                    count, countStyle,
+                    TextAlign.Start, besideIcon: true);
                 if (Crystarium.HoverHelp.HelpHovered(pmin, pmax))
                     Crystarium.HoverHelp.Explain("rail-linked-pill", pmin, pmax,
-                        "Linked editing — edits apply to these bones");
+                        "Edits apply to all the bones counted here");
             }
             cursor.Y += (sub.Length > 0 ? 36f : 22f) * s;
 
@@ -105,15 +109,15 @@ public class PoseRailPane
                 // none exist.
                 if (Crystarium.Button("Reset transform",
                         id: "rail-actor-reset",
-                        help: "Restore the actor's original transform",
+                        help: "Restore every selected actor's original position, rotation, and scale",
                         style: ControlStyle.Workspace))
                     _inspector.ResetActorTransform();
             }
             else
             {
                 if (Crystarium.Button("Reset bone", id: "rail-bone-reset",
-                    help: "Reset this bone's pose", style: ControlStyle.Workspace))
-                    _inspector.ResetPrimaryBone();
+                    help: "Reset the pose of every selected bone", style: ControlStyle.Workspace))
+                    _inspector.ResetSelectedBones();
                 ImGui.SameLine(0f, 6f * s);
                 if (Crystarium.Button("Select children", id: "rail-children",
                     help: "Add descendant bones to the selection", style: ControlStyle.Workspace))
@@ -240,7 +244,7 @@ public class PoseRailPane
             var ringMouse = ImGui.GetMousePos();
             Crystarium.HoverHelp.Explain("rail-gizmo-ring",
                 ringMouse - new Vector2(4f, 4f), ringMouse + new Vector2(4f, 4f),
-                $"{RotationGizmoRings.AxisName(hoverAxis)} · drag along the ring");
+                $"{RotationGizmoRings.AxisName(hoverAxis)} · drag along the ring to rotate · Shift faster, Ctrl finer");
         }
 
         return d + 8f * s;

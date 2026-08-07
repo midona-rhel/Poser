@@ -81,7 +81,16 @@ public static partial class Crystarium
         /// <summary>Opens the menu for <paramref name="id"/> at the given
         /// screen position (typically the mouse), replacing any open menu.
         /// Items freeze at open.</summary>
-        public static void Open(string id, Vector2 position, ContextMenuItem[] items)
+        /// <param name="width">Surface width in LOGICAL units, overriding the
+        /// canonical <c>Floating.MenuWidth</c> surface. Null — the default —
+        /// keeps the 260px context-menu width every action menu is drawn at;
+        /// pass <see cref="MeasureWidth"/> for a menu that fits its own rows.
+        /// </param>
+        public static void Open(
+            string id,
+            Vector2 position,
+            ContextMenuItem[] items,
+            float? width = null)
         {
             if (_phase != Phase.Hidden && _id == id)
             {
@@ -94,7 +103,7 @@ public static partial class Crystarium
             _id = id;
             _items = items;
             _size = new Vector2(
-                Crystarium.ActiveTheme.Floating.MenuWidth * s,
+                (width ?? Crystarium.ActiveTheme.Floating.MenuWidth) * s,
                 HeightFor(items, s));
             _min = FloatingSurface.PlaceAtPoint(
                 position,
@@ -139,6 +148,66 @@ public static partial class Crystarium
                 _phaseStart = ImGui.GetTime();
             }
         }
+
+        /// <summary>
+        /// The narrowest surface that still shows every row of
+        /// <paramref name="items"/> whole: the widest label measured through
+        /// the menu's own label font, plus the icon slot, the shortcut column
+        /// where one exists, and the row and surface insets. Floored at
+        /// <c>Floating.MenuMinWidth</c> so a two-command menu is a menu and not
+        /// a sliver. Returns LOGICAL units, ready to hand to
+        /// <see cref="Open"/>'s <c>width</c>; call it inside a frame, since it
+        /// measures through the live font stack.
+        /// </summary>
+        public static float MeasureWidth(ContextMenuItem[] items)
+        {
+            float s = ImGuiHelpers.GlobalScale;
+            var labelStyle = new TextStyle
+            {
+                Size = Crystarium.ActiveTheme.Typography.BodySize,
+            };
+            var shortcutStyle = new TextStyle
+            {
+                Size = Crystarium.ActiveTheme.Typography.CaptionSize,
+            };
+
+            // Everything DrawSurfaceAndRows spends before and after the label:
+            // the surface padding on both sides, the row padding on both sides,
+            // and the icon seat with its gap.
+            float chrome =
+                Crystarium.ActiveTheme.Floating.MenuPadding * 2f
+                + Crystarium.ActiveTheme.Floating.MenuRowPadding * 2f
+                + Crystarium.ActiveTheme.Controls.IconSize
+                + Crystarium.ActiveTheme.Floating.MenuIconGap;
+
+            float widest = 0f;
+            for (int i = 0; i < items.Length; i++)
+            {
+                var item = items[i];
+                if (item.IsSeparator)
+                    continue;
+                // Measured at the live scale and rounded UP before being taken
+                // back to logical units: text does not rasterize linearly in
+                // scale, and a half-pixel short would ellipsize the very label
+                // this width exists to show.
+                float content =
+                    MathF.Ceiling(Crystarium.MeasureText(item.Label, labelStyle).X) / s;
+                if (item.Shortcut is { Length: > 0 } shortcut)
+                    content +=
+                        MathF.Ceiling(Crystarium.MeasureText(shortcut, shortcutStyle).X) / s
+                        + ShortcutGap;
+                widest = MathF.Max(widest, content);
+            }
+
+            return MathF.Max(
+                Crystarium.ActiveTheme.Floating.MenuMinWidth,
+                chrome + widest);
+        }
+
+        /// <summary>CSS <c>.shortcut</c> padding-left: the minimum
+        /// label-to-shortcut gap, shared by the drawn row and
+        /// <see cref="MeasureWidth"/>.</summary>
+        private const float ShortcutGap = 28f;
 
         private static float HeightFor(ContextMenuItem[] items, float s)
         {
@@ -386,9 +455,7 @@ public static partial class Crystarium
                         shortcutStyle,
                         TextAlign.End,
                         besideIcon: true);
-                    // CSS .shortcut padding-left: 28px — the minimum
-                    // label-to-shortcut gap.
-                    labelRight -= shortcutSize.X + 28f * s;
+                    labelRight -= shortcutSize.X + ShortcutGap * s;
                 }
                 var labelStyle = new TextStyle
                 {

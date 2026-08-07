@@ -19,6 +19,7 @@ public enum TablerIcon
     EyeOff,
     Lock,
     LockOpen,
+    LockOff,
     Trash,
     Pin,
     ExternalLink,
@@ -76,6 +77,11 @@ public enum TablerIcon
     Keyboard,
     Info,
     AlertTriangle,
+    Menu2,
+    GazePoint,
+    CameraSnap,
+    Head,
+    Body,
 }
 
 /// <summary>
@@ -140,6 +146,7 @@ public static class Tabler
         TablerIcon.EyeOff          => "eye-off",
         TablerIcon.Lock            => "lock",
         TablerIcon.LockOpen        => "lock-open",
+        TablerIcon.LockOff         => "lock-off",
         TablerIcon.Trash           => "trash",
         TablerIcon.Pin             => "pin",
         TablerIcon.ExternalLink    => "external-link",
@@ -197,6 +204,11 @@ public static class Tabler
         TablerIcon.Keyboard        => "keyboard",
         TablerIcon.Info            => "info",
         TablerIcon.AlertTriangle   => "alert-triangle",
+        TablerIcon.Menu2           => "menu-2",
+        TablerIcon.GazePoint       => "gaze-point",
+        TablerIcon.CameraSnap      => "camera-snap",
+        TablerIcon.Head            => "head",
+        TablerIcon.Body            => "body",
         _ => "circle",
     };
 }

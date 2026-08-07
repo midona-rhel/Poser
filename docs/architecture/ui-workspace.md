@@ -2,8 +2,9 @@
 
 ## Surfaces
 
-Retained surfaces: main window, settings, skeleton overlay, gizmo overlay
-(`UiWindowSet`, exactly four). `GraphicalBonePane` is main-window content.
+Retained surfaces: main window, settings, spawn browser, skeleton overlay,
+gizmo overlay (`UiWindowSet`, exactly five). `GraphicalBonePane` is
+main-window content.
 
 - Main surface + gizmo canvas open/close with GPose; the skeleton overlay
   starts Off each session (titlebar toggle; Alt temporarily hides dots).

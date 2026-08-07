@@ -460,7 +460,8 @@ public static partial class Crystarium
             float x = pos.X + border + help.PaddingX * scale;
             float midY = pos.Y + cardH * 0.5f;
 
-            DrawRun(fg, new Vector2(x, midY - textSize.Y * 0.5f),
+            DrawRun(fg, new Vector2(x, Crystarium.InkSeatY(
+                    pos.Y, cardH, textSize.Y, contentStyle)),
                 c.Text, contentStyle);
             x += textSize.X;
 
@@ -480,7 +481,8 @@ public static partial class Crystarium
                 });
                 DrawRun(fg, new Vector2(
                         bMin.X + (badgeWidths[i] - keySizes[i].X) * 0.5f,
-                        midY - keySizes[i].Y * 0.5f),
+                        Crystarium.InkSeatY(
+                            bMin.Y, bh, keySizes[i].Y, badgeStyle)),
                     keys[i], badgeStyle);
                 x += badgeWidths[i];
             }
