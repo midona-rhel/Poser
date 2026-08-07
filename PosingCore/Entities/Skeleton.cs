@@ -47,6 +47,42 @@ public class Skeleton : EntityBase, ISkeleton
     private readonly Dictionary<string, Bone> _bonesByName = new();
     private readonly Dictionary<(int, int), Bone> _bonesByIndex = new();
 
+    /// <summary>
+    /// One partial's map from NATIVE bone index to the bone
+    /// <see cref="GetBoneByName"/> resolves for that native bone's name,
+    /// together with the identity of the native array it was built from.
+    /// </summary>
+    private readonly struct NativePartial(nint nativeSkeleton, Bone?[] bones)
+    {
+        public readonly nint NativeSkeleton = nativeSkeleton;
+        public readonly Bone?[] Bones = bones;
+    }
+
+    /// <summary>Indexed by partial index; rebuilt with the bone lists, so its
+    /// lifetime is exactly <c>_bonesByIndex</c>'s.</summary>
+    private NativePartial[] _nativePartials = Array.Empty<NativePartial>();
+
+    /// <summary>
+    /// A VERIFIED view of one partial's native-index→bone map: handed out only
+    /// when the map was built from the same native <c>hkaSkeleton</c>, with the
+    /// same bone count, that the caller is iterating. Per-frame native passes
+    /// use it to resolve bones without marshaling a managed string per bone;
+    /// <see cref="IsValid"/> false means they must fall back to the name path.
+    /// </summary>
+    public readonly struct NativeBoneMap
+    {
+        private readonly Bone?[]? _bones;
+
+        internal NativeBoneMap(Bone?[] bones) => _bones = bones;
+
+        public bool IsValid => _bones is not null;
+
+        public Bone? this[int boneIndex] =>
+            _bones is { } bones && (uint)boneIndex < (uint)bones.Length
+                ? bones[boneIndex]
+                : null;
+    }
+
     public IActor Actor { get; }
     public Poser.Domain.Identity.PoseSlot Slot { get; }
     public nint CharacterBaseAddress { get; private set; }
@@ -109,12 +145,39 @@ public class Skeleton : EntityBase, ISkeleton
         return null;
     }
 
+    /// <summary>
+    /// The native-index→bone map for one partial, or an invalid handle when it
+    /// cannot be proven to describe <paramref name="pose"/>. The proof is the
+    /// pair (native <c>hkaSkeleton</c> pointer, bone count) captured when the
+    /// map was built: a partial that rebound to a different native skeleton, a
+    /// partial that did not exist at build time, and a partial whose bone array
+    /// changed length all fail it, and the caller resolves by name instead.
+    /// A wrong-bone write is pose corruption, so the map is never assumed.
+    /// </summary>
+    internal unsafe NativeBoneMap GetNativeBoneMap(int partialId, hkaPose* pose)
+    {
+        if (pose == null || (uint)partialId >= (uint)_nativePartials.Length)
+            return default;
+
+        var entry = _nativePartials[partialId];
+        var native = pose->Skeleton;
+        if (entry.Bones == null || native == null ||
+            entry.NativeSkeleton != (nint)native ||
+            entry.Bones.Length != native->Bones.Length)
+        {
+            return default;
+        }
+
+        return new NativeBoneMap(entry.Bones);
+    }
+
     public void Refresh()
     {
         // Clear existing data
         _bones.Clear();
         _bonesByName.Clear();
         _bonesByIndex.Clear();
+        _nativePartials = Array.Empty<NativePartial>();
         RootBone = null;
         IsValid = false;
 
@@ -158,6 +221,9 @@ public class Skeleton : EntityBase, ISkeleton
 
         // Dictionary to track bones by partial and index for parenting
         var partialBones = new Dictionary<int, Dictionary<int, Bone>>();
+
+        // Built alongside the bones, from the names this pass already marshals.
+        var nativePartials = new NativePartial[partialCount];
 
         for (int partialIdx = 0; partialIdx < partialCount; partialIdx++)
         {
@@ -217,6 +283,30 @@ public class Skeleton : EntityBase, ISkeleton
                     }
                 }
 
+                // Third pass: freeze what GetBoneByName(name, partialIdx) will
+                // answer for every native index of THIS pose. That method
+                // resolves the LOWEST-indexed bone of the partial carrying the
+                // name (its dictionary fast path stores the first bone built
+                // with a name, its linear fallback scans build order, and build
+                // order inside a partial is ascending bone index) — so filling
+                // the map ascending and keeping the first bone per name
+                // reproduces it exactly, duplicate names within the partial
+                // included. Names never cross partials here: the map is per
+                // partial, exactly as the name lookup's partialId argument is.
+                var indexMap = new Bone?[boneCount];
+                var firstByName = new Dictionary<string, Bone>(
+                    boneCount, StringComparer.Ordinal);
+                for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
+                {
+                    if (!partialBones[partialIdx].TryGetValue(boneIdx, out var mapped))
+                        continue;
+                    if (!firstByName.TryGetValue(mapped.BoneName, out var first))
+                        firstByName[mapped.BoneName] = first = mapped;
+                    indexMap[boneIdx] = first;
+                }
+                nativePartials[partialIdx] =
+                    new NativePartial((nint)pose->Skeleton, indexMap);
+
                 break; // Only process the first valid pose
             }
 
@@ -254,6 +344,7 @@ public class Skeleton : EntityBase, ISkeleton
         }
 
         IsValid = _bones.Count > 0;
+        _nativePartials = nativePartials;
 
         // Initialize bone transforms immediately so they're ready for display
         if (IsValid)

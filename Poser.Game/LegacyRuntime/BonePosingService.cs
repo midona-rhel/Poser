@@ -126,6 +126,14 @@ public unsafe class BonePosingService : IBonePosingService
         _evaluationObservations = new();
     private long _evaluationSequence;
 
+    /// <summary>Reused snapshot buffers for the two per-frame passes that must
+    /// iterate a collection they may mutate. Both are single-threaded (physics
+    /// detour / framework update) and never nested, so one instance each keeps
+    /// the steady state free of per-frame arrays.</summary>
+    private readonly List<SkeletonKey> _updatePassBuffer = new();
+    private readonly List<(SkeletonKey Skeleton, int Partial, int Bone)>
+        _observationRemovalBuffer = new();
+
     private bool _isUpdating = false;
 
     public BonePosingService(
@@ -556,20 +564,21 @@ public unsafe class BonePosingService : IBonePosingService
 
     private void ApplyAllBoneTransforms()
     {
-        foreach (var slotKey in _skeletonsToUpdate.ToArray())
+        // The pass can purge (and therefore mutate _skeletonsToUpdate) while it
+        // runs, so it iterates a snapshot — a REUSED buffer, because this runs
+        // in the physics detour every frame and the old ToArray() charged the
+        // steady state one array per frame.
+        _updatePassBuffer.Clear();
+        foreach (var key in _skeletonsToUpdate)
+            _updatePassBuffer.Add(key);
+
+        for (var i = 0; i < _updatePassBuffer.Count; i++)
         {
+            var slotKey = _updatePassBuffer[i];
             if (!_poseInfos.TryGetValue(slotKey, out var poseInfo))
                 continue;
 
-            IActor? actor = null;
-            foreach (var a in _actorManager.Actors)
-            {
-                if (a.Address == slotKey.Actor)
-                {
-                    actor = a;
-                    break;
-                }
-            }
+            var actor = FindActor(slotKey.Actor);
 
             if (actor == null)
             {
@@ -654,17 +663,18 @@ public unsafe class BonePosingService : IBonePosingService
             if (pose == null)
                 continue;
 
+            var boneMap = skeleton.GetNativeBoneMap(partialIdx, pose);
             var boneCount = pose->Skeleton->Bones.Length;
             for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
             {
-                var rawBone = pose->Skeleton->Bones[boneIdx];
-                var boneName = rawBone.Name.String ?? $"bone_{partialIdx}_{boneIdx}";
-
-                var bone = skeleton.GetBoneByName(boneName, partialIdx);
+                var bone = ResolveNativeBone(skeleton, boneMap, pose, partialIdx, boneIdx);
                 if (bone == null)
                     continue;
 
-                var bonePoseInfo = poseInfo.GetPoseInfo(boneName, partialIdx);
+                // The resolved bone's name IS the native name this index would
+                // have marshaled (it was resolved BY that name on both paths),
+                // so the pose store is keyed identically without the marshal.
+                var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, partialIdx);
                 _ikChains.TryGetValue(
                     (slotKey, partialIdx, boneIdx), out var chainState);
                 bool fixedHold = chainState is
@@ -745,6 +755,31 @@ public unsafe class BonePosingService : IBonePosingService
         }
     }
 
+    /// <summary>
+    /// Resolves the SAME managed bone the name path resolves for a native bone,
+    /// without marshaling anything while the skeleton's prebuilt map still
+    /// describes this pose. <paramref name="map"/> is handed out by
+    /// <see cref="Skeleton.GetNativeBoneMap"/> only after the native
+    /// <c>hkaSkeleton</c> pointer and bone count have been matched against the
+    /// build, so an invalid handle — a rebound partial, a partial the build
+    /// never saw, a resized bone array — falls back to marshaling the native
+    /// name and asking <see cref="Skeleton.GetBoneByName"/>, exactly as before.
+    /// </summary>
+    private static Bone? ResolveNativeBone(
+        Skeleton skeleton,
+        Skeleton.NativeBoneMap map,
+        hkaPose* pose,
+        int partialIdx,
+        int boneIdx)
+    {
+        if (map.IsValid)
+            return map[boneIdx];
+
+        var rawBone = pose->Skeleton->Bones[boneIdx];
+        var boneName = rawBone.Name.String ?? $"bone_{partialIdx}_{boneIdx}";
+        return skeleton.GetBoneByName(boneName, partialIdx);
+    }
+
     /// <summary>Refreshes both transform caches at the same two points as Brio:
     /// after applying stacks and after partial reparenting.</summary>
     private void UpdateAllLastTransforms(Skeleton skeleton, GameSkeleton* gameSkeleton)
@@ -758,13 +793,11 @@ public unsafe class BonePosingService : IBonePosingService
             if (pose == null)
                 continue;
 
+            var boneMap = skeleton.GetNativeBoneMap(partialIdx, pose);
             var boneCount = pose->Skeleton->Bones.Length;
             for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
             {
-                var rawBone = pose->Skeleton->Bones[boneIdx];
-                var boneName = rawBone.Name.String ?? $"bone_{partialIdx}_{boneIdx}";
-
-                var bone = skeleton.GetBoneByName(boneName, partialIdx);
+                var bone = ResolveNativeBone(skeleton, boneMap, pose, partialIdx, boneIdx);
                 if (bone == null)
                     continue;
 
@@ -795,13 +828,11 @@ public unsafe class BonePosingService : IBonePosingService
             if (pose == null)
                 continue;
 
+            var boneMap = skeleton.GetNativeBoneMap(partialIdx, pose);
             var boneCount = pose->Skeleton->Bones.Length;
             for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
             {
-                var rawBone = pose->Skeleton->Bones[boneIdx];
-                var boneName = rawBone.Name.String ?? $"bone_{partialIdx}_{boneIdx}";
-
-                var bone = skeleton.GetBoneByName(boneName, partialIdx);
+                var bone = ResolveNativeBone(skeleton, boneMap, pose, partialIdx, boneIdx);
                 if (bone == null)
                     continue;
 
@@ -1276,18 +1307,23 @@ public unsafe class BonePosingService : IBonePosingService
         EndTransitiveActions();
     }
 
+    /// <summary>Indexed scan, not foreach: <c>Actors</c> is an interface-typed
+    /// list, so foreach boxes an enumerator on every call and these callers run
+    /// per posed skeleton per frame inside the detours.</summary>
+    private IActor? FindActor(nint address)
+    {
+        var actors = _actorManager.Actors;
+        for (var i = 0; i < actors.Count; i++)
+        {
+            if (actors[i].Address == address)
+                return actors[i];
+        }
+        return null;
+    }
+
     private void UpdateSkeletonCache(SkeletonKey slotKey)
     {
-        IActor? actor = null;
-        foreach (var a in _actorManager.Actors)
-        {
-            if (a.Address == slotKey.Actor)
-            {
-                actor = a;
-                break;
-            }
-        }
-
+        var actor = FindActor(slotKey.Actor);
         if (actor == null)
             return;
 
@@ -1307,13 +1343,11 @@ public unsafe class BonePosingService : IBonePosingService
             if (pose == null)
                 continue;
 
+            var boneMap = skeleton.GetNativeBoneMap(partialIdx, pose);
             var boneCount = pose->Skeleton->Bones.Length;
             for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
             {
-                var rawBone = pose->Skeleton->Bones[boneIdx];
-                var boneName = rawBone.Name.String ?? $"bone_{partialIdx}_{boneIdx}";
-
-                var bone = skeleton.GetBoneByName(boneName, partialIdx);
+                var bone = ResolveNativeBone(skeleton, boneMap, pose, partialIdx, boneIdx);
                 if (bone == null)
                     continue;
 
@@ -1443,14 +1477,23 @@ public unsafe class BonePosingService : IBonePosingService
         return combined;
     }
 
+    /// <summary>Runs every frame for every registered-but-unposed skeleton
+    /// (OnFrameworkUpdate), so it collects into a reused buffer instead of the
+    /// LINQ chain + array it used to allocate per skeleton per frame.</summary>
     private void RemoveEvaluationObservations(SkeletonKey slotKey)
     {
-        foreach (var key in _evaluationObservations.Keys
-                     .Where(key => key.Skeleton == slotKey)
-                     .ToArray())
+        if (_evaluationObservations.Count == 0)
+            return;
+
+        _observationRemovalBuffer.Clear();
+        foreach (var key in _evaluationObservations.Keys)
         {
-            _evaluationObservations.Remove(key);
+            if (key.Skeleton == slotKey)
+                _observationRemovalBuffer.Add(key);
         }
+
+        for (var i = 0; i < _observationRemovalBuffer.Count; i++)
+            _evaluationObservations.Remove(_observationRemovalBuffer[i]);
     }
 
     public void Dispose()
