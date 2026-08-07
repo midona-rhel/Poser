@@ -37,6 +37,13 @@ public class Skeleton : EntityBase, ISkeleton
     private const int CharacterBaseScaleFactor2Offset = 0x2A4;
 
     private readonly List<IBone> _bones = new();
+
+    /// <summary>Live view over <c>_bones</c>, allocated once. Refresh() clears
+    /// and refills the SAME list, so the wrapper survives a rebuild; building a
+    /// fresh one per access charged an allocation to every <c>skeleton.Bones</c>
+    /// read, including the per-bone loops of the scene refresh.</summary>
+    private readonly System.Collections.ObjectModel.ReadOnlyCollection<IBone> _bonesView;
+
     private readonly Dictionary<string, Bone> _bonesByName = new();
     private readonly Dictionary<(int, int), Bone> _bonesByIndex = new();
 
@@ -44,7 +51,7 @@ public class Skeleton : EntityBase, ISkeleton
     public Poser.Domain.Identity.PoseSlot Slot { get; }
     public nint CharacterBaseAddress { get; private set; }
     public IBone? RootBone { get; private set; }
-    public IReadOnlyList<IBone> Bones => _bones.AsReadOnly();
+    public IReadOnlyList<IBone> Bones => _bonesView;
     public bool IsValid { get; private set; }
 
     /// <summary>
@@ -70,6 +77,7 @@ public class Skeleton : EntityBase, ISkeleton
     {
         Actor = actor;
         Slot = slot;
+        _bonesView = _bones.AsReadOnly();
         _resolveCharacterBase = resolveCharacterBase;
         IsCollapsed = true; // Start collapsed by default
         IsVisible = false; // Start unchecked (not visible in overlay)

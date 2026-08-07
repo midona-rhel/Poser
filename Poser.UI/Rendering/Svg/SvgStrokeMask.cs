@@ -21,7 +21,9 @@ internal static class SvgStrokeMask
         bool RoundCaps,
         bool RoundJoins);
 
-    private readonly record struct Pixel(short X, short Y, byte Coverage);
+    // Internal rather than private only so <see cref="Baked"/> can surface an
+    // array of them across the worker/main-thread boundary.
+    internal readonly record struct Pixel(short X, short Y, byte Coverage);
 
     private sealed class Mask
     {
@@ -29,12 +31,13 @@ internal static class SvgStrokeMask
 
         public void Draw(
             ImDrawListPtr draw, Vector2 origin, Vector4 color,
-            float groupOpacity, Vector4 background)
+            float groupOpacity, Vector4 background, float styleAlpha)
         {
             foreach (var pixel in Pixels)
             {
                 uint packed = Packed(
-                    color, pixel.Coverage, background, groupOpacity);
+                    color, pixel.Coverage, background, groupOpacity,
+                    styleAlpha);
                 var min = origin + new Vector2(pixel.X, pixel.Y);
                 draw.AddRectFilled(min, min + Vector2.One, packed);
             }
@@ -45,12 +48,29 @@ internal static class SvgStrokeMask
     /// baked texture MUST agree byte for byte, so both come from here.
     /// </summary>
     private static uint Packed(
-        Vector4 color, byte coverage, Vector4 background, float groupOpacity)
-        => ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
-            GroupOverlay(
-                color, coverage / 255f, background, groupOpacity)));
+        Vector4 color, byte coverage, Vector4 background, float groupOpacity,
+        float styleAlpha)
+        => ImGui.ColorConvertFloat4ToU32(
+            ApplyStyleAlpha(
+                GroupOverlay(color, coverage / 255f, background, groupOpacity),
+                styleAlpha));
+
+    /// <summary>
+    /// <c>ColorEx.ApplyAlpha</c> with the style alpha PASSED IN rather than
+    /// read live. A backgrounded bake packs its pixels a frame or more after
+    /// the draw that asked for it, and the icon cache keys on the style alpha
+    /// at request time — reading the live value at pack time would file a
+    /// bitmap under an alpha it was not painted with.
+    /// </summary>
+    private static Vector4 ApplyStyleAlpha(Vector4 color, float alpha) =>
+        alpha >= 1f ? color : color with { W = color.W * alpha };
 
     private static readonly Dictionary<ulong, Mask> Cache = new();
+
+    /// <summary>Guards <see cref="Cache"/>: <see cref="Resolve"/> runs on the
+    /// icon cache's background rasterizer while the painter may be resolving
+    /// the same table on the main thread.</summary>
+    private static readonly object CacheGate = new();
 
     public static void Draw(
         ImDrawListPtr draw,
@@ -69,18 +89,44 @@ internal static class SvgStrokeMask
         var color = tint.HasValue
             ? Multiply(stroke, tint.Value)
             : stroke;
+        // Read once here instead of once per pixel inside ColorEx.ApplyAlpha:
+        // same value, same result, and it keeps the pixel loop free of any
+        // ImGui call so the packer is shared with the backgrounded bake.
         mask.Draw(
             draw, origin, color,
-            Math.Clamp(groupOpacity, 0f, 1f), groupBackground);
+            Math.Clamp(groupOpacity, 0f, 1f), groupBackground,
+            ImGui.GetStyle().Alpha);
     }
 
     /// <summary>
-    /// The same coverage the painter draws, as a straight-alpha RGBA8 bitmap
-    /// the host can upload once and blit as a single quad. Every pixel goes
-    /// through <see cref="Packed"/>, so the texture is the painter's own
-    /// output — the quad is a transport change, not a rendering change.
+    /// A rasterized icon that has not been coloured yet: the coverage mask
+    /// plus the resolved paint inputs <see cref="Pack"/> needs. This is the
+    /// split point between what may run on a worker thread and what may not.
     /// </summary>
-    internal static void Bake(
+    internal sealed class Baked
+    {
+        public required Pixel[] Pixels { get; init; }
+        public required Vector2 Origin { get; init; }
+        public required int Width { get; init; }
+        public required int Height { get; init; }
+        public required Vector4 Color { get; init; }
+        public required float Opacity { get; init; }
+        public required Vector4 Background { get; init; }
+
+        /// <summary>The style alpha at REQUEST time, not at pack time.</summary>
+        public required float StyleAlpha { get; init; }
+    }
+
+    /// <summary>
+    /// PURE CPU: rasterizes the coverage mask and resolves the paint inputs
+    /// with no ImGui, draw-list, or otherwise thread-affine call anywhere in
+    /// its reach. Safe to run off the main thread; <see cref="Cache"/> is the
+    /// only shared state and it is gated.
+    ///
+    /// <para>Null means the document contributes no strokes — the draw paints
+    /// nothing, which is a legitimate bake and not a painter fallback.</para>
+    /// </summary>
+    internal static Baked? Resolve(
         IReadOnlyList<SvgPath> paths,
         Func<Vector2, Vector2> svgToScreen,
         float scale,
@@ -88,36 +134,55 @@ internal static class SvgStrokeMask
         float? strokeWidthOverride,
         float groupOpacity,
         Vector4 groupBackground,
-        out Vector2 origin,
-        out int width,
-        out int height,
-        out byte[] rgba)
+        float styleAlpha)
     {
         if (!TryResolve(
                 paths, svgToScreen, scale, strokeWidthOverride,
-                out var mask, out origin, out width, out height,
+                out var mask, out var origin, out int width, out int height,
                 out var stroke))
+            return null;
+        return new Baked
         {
-            origin = default;
-            width = 0;
-            height = 0;
-            rgba = [];
-            return;
-        }
+            Pixels = mask.Pixels,
+            Origin = origin,
+            Width = width,
+            Height = height,
+            Color = tint.HasValue ? Multiply(stroke, tint.Value) : stroke,
+            Opacity = Math.Clamp(groupOpacity, 0f, 1f),
+            Background = groupBackground,
+            StyleAlpha = styleAlpha,
+        };
+    }
 
-        var color = tint.HasValue ? Multiply(stroke, tint.Value) : stroke;
-        float opacity = Math.Clamp(groupOpacity, 0f, 1f);
-        rgba = new byte[width * height * 4];
-        foreach (var pixel in mask.Pixels)
+    /// <summary>
+    /// MAIN THREAD ONLY. Turns a resolved mask into the straight-alpha RGBA8
+    /// bitmap the host uploads. Every pixel goes through <see cref="Packed"/>,
+    /// which calls <c>ImGui.ColorConvertFloat4ToU32</c> — a native cimgui
+    /// entry point whose thread affinity is not something this code can
+    /// verify, so it stays on the main thread. Routing the colour step
+    /// through the painter's own function is also what keeps the texture
+    /// byte-for-byte identical to the painter's output.
+    ///
+    /// <para>The cost is trivial next to the rasterization it follows: a few
+    /// hundred covered pixels here, against width x height x 16 coverage
+    /// samples in <see cref="Build"/> — which is the part that moved off the
+    /// main thread.</para>
+    /// </summary>
+    internal static byte[] Pack(Baked baked)
+    {
+        var rgba = new byte[baked.Width * baked.Height * 4];
+        foreach (var pixel in baked.Pixels)
         {
             uint packed = Packed(
-                color, pixel.Coverage, groupBackground, opacity);
-            int at = (pixel.Y * width + pixel.X) * 4;
+                baked.Color, pixel.Coverage, baked.Background, baked.Opacity,
+                baked.StyleAlpha);
+            int at = (pixel.Y * baked.Width + pixel.X) * 4;
             rgba[at] = (byte)packed;
             rgba[at + 1] = (byte)(packed >> 8);
             rgba[at + 2] = (byte)(packed >> 16);
             rgba[at + 3] = (byte)(packed >> 24);
         }
+        return rgba;
     }
 
     private static bool TryResolve(
@@ -190,11 +255,25 @@ internal static class SvgStrokeMask
         widthPixels = Math.Max(1, (int)MathF.Ceiling(maxX) - (int)origin.X);
         heightPixels = Math.Max(1, (int)MathF.Ceiling(maxY) - (int)origin.Y);
         ulong key = Hash(strokes, origin, widthPixels, heightPixels);
-        if (!Cache.TryGetValue(key, out mask!))
+        // The BUILD deliberately stays OUTSIDE the gate: it is the expensive
+        // part (width x height x 16 coverage samples), and holding the lock
+        // across it would let a background resolve stall the frame — the very
+        // hitch this machinery exists to remove. Two threads racing the same
+        // key just build the same deterministic mask twice and the last
+        // writer wins; a Mask is immutable once built, so sharing is safe.
+        lock (CacheGate)
+        {
+            if (Cache.TryGetValue(key, out var cached))
+            {
+                mask = cached;
+                return true;
+            }
+        }
+        mask = Build(strokes, origin, widthPixels, heightPixels);
+        lock (CacheGate)
         {
             if (Cache.Count >= MaxCachedMasks)
                 Cache.Clear();
-            mask = Build(strokes, origin, widthPixels, heightPixels);
             Cache[key] = mask;
         }
         return true;

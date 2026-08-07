@@ -162,6 +162,12 @@ public sealed class CleanSceneLifecycle : IDisposable
     private void RefreshCore()
     {
         var snapshot = _bindings.Refresh();
+        // The refresh is the only place that resolves a whole skeleton's bone
+        // names at once, so it owns the flush of whatever those lookups found
+        // untranslated. One line per refresh instead of one per bone: a modded
+        // 400-bone character used to pay hundreds of synchronous log writes on
+        // this exact tick. No-op when nothing new was seen.
+        Poser.Core.BoneInfo.BoneInfoService.FlushUntranslatedLog();
         // One structural signature coalesces every refresh source (events,
         // retries, session transitions): identical scenes publish nothing —
         // no snapshot churn, no revision increment, no gesture cancellation.
