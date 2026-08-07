@@ -162,12 +162,29 @@ public sealed class CleanPoseFacade
     /// pose, body scope, rotation-only, one undoable edit. Face, hair, ears,
     /// head, and every auxiliary slot keep their current pose; the freeze
     /// config default rides the bracket exactly as a file import's does.
+    ///
+    /// DELIBERATE DEVIATION from Brio: reset-before-apply, scoped by a
+    /// BoneFilter to EXACTLY the file's bones. A rest pose is "discard this
+    /// body's edits and stand neutral", so each press clears those bones'
+    /// authored stacks and lands fresh deltas against the animation basis —
+    /// A→T→A is idempotent by construction instead of stacking each press's
+    /// delta onto the previous one's (user 2026-08-08: sequential presses
+    /// left limbs deformed). The filter keeps the reset off everything the
+    /// file does not carry — j_kao, Viera ears, hair — which the bare
+    /// ResetBeforeImport body scope would wipe (IsFaceBone misses them).
     /// </summary>
     public PoseEditResult ApplyRestPose(IActor actor, RestPose pose)
     {
         var description = pose == RestPose.APose ? "A-pose" : "T-pose";
+        var poseFile = RestPoses.Get(pose);
+        var options = PoseImportOptions.RestPose;
+        options.ResetBeforeImport = true;
+        var filter = new HashSet<(PoseSlot Slot, string Name)>();
+        foreach (var name in poseFile.Bones.Keys)
+            filter.Add((PoseSlot.Character, name));
+        options.BoneFilter = filter;
         return Report(description, ImportPose(
-            actor, RestPoses.Get(pose), PoseImportOptions.RestPose, description));
+            actor, poseFile, options, description));
     }
 
     /// <summary>
