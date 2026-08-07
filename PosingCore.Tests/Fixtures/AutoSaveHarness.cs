@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Reflection;
+using System.Threading;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using NSubstitute;
@@ -20,7 +23,7 @@ namespace Poser.Tests.Fixtures;
 /// One actor wired into the harness together with the exact skeleton list
 /// instance <see cref="ISkeletonService.GetSkeletons"/> hands back for it, so a
 /// test can assert that the very same list reached
-/// <see cref="IPoseFileService.ExportPose"/>.
+/// <see cref="IPoseFileService.CreatePoseFile"/>.
 /// </summary>
 internal sealed record FakeActor(IActor Actor, IReadOnlyList<ISkeleton> Skeletons)
 {
@@ -35,10 +38,33 @@ internal sealed record FakeActor(IActor Actor, IReadOnlyList<ISkeleton> Skeleton
 /// <para>The framework is deliberately null: the service then never subscribes
 /// to the game tick and the test drives <c>Tick(nowUtc)</c> itself, which is the
 /// only way to make interval behaviour deterministic.</para>
+///
+/// <para>THE SERVICE IS SPLIT ACROSS TWO THREADS. <c>SaveNow</c> only captures
+/// (<see cref="IPoseFileService.CreatePoseFile"/>) and returns; the folder, the
+/// files and the prune all happen on a worker. Every assertion about the disk
+/// therefore has to be preceded by <see cref="WaitForWrite"/>, and so does every
+/// second save — a save that arrives while the previous write is in flight is
+/// DROPPED by the service, so an unsynchronised test would silently lose it.
+/// <see cref="TickAt"/> waits on its own for exactly that reason.</para>
 /// </summary>
 internal sealed class AutoSaveHarness : IDisposable
 {
     public const string StampFormat = "yyyy-MM-dd HH-mm-ss'Z'";
+
+    /// <summary>
+    /// The service's in-flight latch. It is set BEFORE <c>Task.Run</c> and
+    /// cleared in the worker's <c>finally</c>, i.e. after the prune, so polling
+    /// it is an exact "the worker is done" signal with no window at either end.
+    ///
+    /// <para>Reflection rather than a new seam on the service: nothing the
+    /// worker does last is observable from outside (a prune that finds nothing
+    /// stale writes nothing and logs nothing), so disk polling can only ever
+    /// approximate completion and still races the next save's drop check. This
+    /// keeps the production type untouched; if the field is ever renamed the
+    /// assert below names the fix.</para>
+    /// </summary>
+    private static readonly FieldInfo? WriteInFlightField = typeof(AutoSaveService)
+        .GetField("_writeInFlight", BindingFlags.Instance | BindingFlags.NonPublic);
 
     private readonly List<IActor> _actors = new();
     private AutoSaveService? _service;
@@ -60,6 +86,9 @@ internal sealed class AutoSaveHarness : IDisposable
 
     public AutoSaveHarness()
     {
+        // Deliberately the machine temp dir, never anything under the repo: the
+        // snapshots are real files and a synced folder would both slow the run
+        // down and hold handles the prune tests need released.
         Root = Path.Combine(
             Path.GetTempPath(), "poser-autosave-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Root);
@@ -77,9 +106,12 @@ internal sealed class AutoSaveHarness : IDisposable
         BonePosing = Substitute.For<IBonePosingService>();
 
         PoseFiles = Substitute.For<IPoseFileService>();
+        // A REAL PoseFile per capture, not a substitute: the worker calls
+        // PoseFile.Save on whatever it was handed, so a stub would leave the
+        // tests asserting against files that were never actually serialized.
         PoseFiles
-            .ExportPose(Arg.Any<IReadOnlyList<ISkeleton>>(), Arg.Any<string>())
-            .Returns(true);
+            .CreatePoseFile(Arg.Any<IReadOnlyList<ISkeleton>>())
+            .Returns(_ => NewPoseFile());
 
         Configuration = new ConfigurationService(Substitute.For<IDalamudPluginInterface>());
     }
@@ -99,6 +131,24 @@ internal sealed class AutoSaveHarness : IDisposable
         Configuration,
         Root,
         () => NowUtc);
+
+    /// <summary>
+    /// A minimal but genuine pose: two bones, so <c>PoseFile.Save</c> produces
+    /// real JSON that <c>PoseFile.Load</c> reads back.
+    /// </summary>
+    public static PoseFile NewPoseFile() => new()
+    {
+        Bones =
+        {
+            ["j_kosi"] = new PoseFile.BoneData
+            {
+                Position = new Vector3(0f, 0.25f, 0f),
+                Rotation = Quaternion.Identity,
+                Scale = Vector3.One
+            },
+            ["j_sebo_a"] = PoseFile.BoneData.Identity
+        }
+    };
 
     /// <summary>
     /// Adds an actor whose single Character skeleton either carries a
@@ -121,13 +171,16 @@ internal sealed class AutoSaveHarness : IDisposable
     }
 
     /// <summary>
-    /// Advances the injected clock and drives one tick with the same instant, so
-    /// the interval decision and the snapshot folder name never disagree.
+    /// Advances the injected clock, drives one tick with the same instant (so
+    /// the interval decision and the snapshot folder name never disagree), and
+    /// waits out any write the tick dispatched — otherwise the next tick's save
+    /// would be dropped as "previous snapshot still in flight".
     /// </summary>
     public void TickAt(DateTime nowUtc)
     {
         NowUtc = nowUtc;
         Service.Tick(nowUtc);
+        WaitForWrite();
     }
 
     /// <summary>Actor whose skeleton lookup blows up during the scan.</summary>
@@ -140,8 +193,101 @@ internal sealed class AutoSaveHarness : IDisposable
         return actor;
     }
 
-    public void FailExportFor(FakeActor actor) =>
-        PoseFiles.ExportPose(actor.Skeletons, Arg.Any<string>()).Returns(false);
+    /// <summary>
+    /// Makes the CAPTURE half fail for one actor. The service catches this
+    /// per-actor inside its scan loop, so the actor never becomes a candidate
+    /// and never counts towards <c>SaveNow</c>'s return.
+    /// </summary>
+    public void FailCaptureFor(FakeActor actor, Exception? failure = null)
+    {
+        var thrown = failure ?? new InvalidOperationException("capture failed");
+        PoseFiles.CreatePoseFile(actor.Skeletons).Returns(_ => throw thrown);
+    }
+
+    /// <summary>
+    /// Makes the WRITE half fail for one actor, by capturing a pose the worker
+    /// cannot serialize. The actor is still captured (so it still counts
+    /// towards <c>SaveNow</c>'s return), but its file never lands.
+    ///
+    /// <para>A null capture is the only failure a test can inject from outside
+    /// the service: <c>PoseFile.Save</c> swallows its own IO errors, and the
+    /// destination path lives inside a folder the worker creates itself, so
+    /// there is nothing to lock or pre-occupy. The service's contract for this
+    /// is what matters — one bad entry must not abort the snapshot.</para>
+    /// </summary>
+    public void FailWriteFor(FakeActor actor) =>
+        PoseFiles.CreatePoseFile(actor.Skeletons).Returns((PoseFile)null!);
+
+    /// <summary>
+    /// Parks the write worker part-way through, with the in-flight latch still
+    /// held, until the returned handle is released. The only deterministic way
+    /// to exercise the drop-not-queue path: without it a test would be betting
+    /// that the worker has not finished yet.
+    /// </summary>
+    public WorkerHold HoldWorker() => new(this);
+
+    /// <summary>
+    /// Holds the worker on the one collaborator it still touches after the
+    /// files are written: the substituted log.
+    /// </summary>
+    internal sealed class WorkerHold : IDisposable
+    {
+        private static readonly TimeSpan Limit = TimeSpan.FromSeconds(5);
+
+        private readonly ManualResetEventSlim _reached = new(false);
+        private readonly ManualResetEventSlim _release = new(false);
+
+        internal WorkerHold(AutoSaveHarness harness) =>
+            harness.Log
+                .When(log => log.Info(Arg.Any<string>(), Arg.Any<object[]>()))
+                .Do(_ =>
+                {
+                    _reached.Set();
+                    // Bounded, so a test that forgets to release still ends.
+                    _release.Wait(Limit);
+                });
+
+        /// <summary>Blocks until the worker is actually parked in the hold.</summary>
+        public void WaitUntilHeld() => Assert.True(
+            _reached.Wait(Limit),
+            "the auto-save write worker never reached the hold");
+
+        public void Release() => _release.Set();
+
+        public void Dispose() => Release();
+    }
+
+    /// <summary>
+    /// Blocks until the write worker has finished everything it does — folder,
+    /// files, prune — or fails the test. Returns immediately when nothing was
+    /// dispatched, so it is safe to call unconditionally.
+    /// </summary>
+    public void WaitForWrite(int timeoutMs = 5000)
+    {
+        Assert.True(
+            WriteInFlightField != null,
+            "AutoSaveService._writeInFlight is gone; AutoSaveHarness.WaitForWrite needs updating.");
+
+        if (!SpinUntilIdle(timeoutMs))
+            Assert.Fail($"the auto-save write worker was still running after {timeoutMs} ms");
+    }
+
+    private bool SpinUntilIdle(int timeoutMs)
+    {
+        if (_service is null || WriteInFlightField is null)
+            return true;
+
+        var clock = Stopwatch.StartNew();
+        var spin = new SpinWait();
+        while ((int)WriteInFlightField.GetValue(_service)! != 0)
+        {
+            if (clock.ElapsedMilliseconds >= timeoutMs)
+                return false;
+            spin.SpinOnce();
+        }
+
+        return true;
+    }
 
     private static SkeletonPoseInfo BuildPoseInfo(bool authored)
     {
@@ -187,6 +333,23 @@ internal sealed class AutoSaveHarness : IDisposable
             .ToList();
 
     /// <summary>
+    /// File names inside one snapshot folder, ordinal-ascending. Empty when the
+    /// folder was never created — call <see cref="WaitForWrite"/> first.
+    /// </summary>
+    public IReadOnlyList<string> SnapshotFiles(string folderName)
+    {
+        var dir = Path.Combine(Root, folderName);
+        if (!Directory.Exists(dir))
+            return Array.Empty<string>();
+
+        return Directory.EnumerateFiles(dir)
+            .Select(Path.GetFileName)
+            .Select(name => name!)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>
     /// Overload-agnostic error assertion: <c>IPluginLog.Error</c> has several
     /// signatures and the service picks whichever the interpolated string binds
     /// to, so match on the method name instead of pinning one overload.
@@ -194,21 +357,27 @@ internal sealed class AutoSaveHarness : IDisposable
     public int ErrorCount => Log.ReceivedCalls()
         .Count(call => call.GetMethodInfo().Name == nameof(IPluginLog.Error));
 
-    public int ExportCallCount => PoseFiles.ReceivedCalls()
-        .Count(call => call.GetMethodInfo().Name == nameof(IPoseFileService.ExportPose));
+    /// <summary>
+    /// How many actors the framework-thread half actually captured. This is the
+    /// number <c>SaveNow</c> returns; it says nothing about what reached disk.
+    /// </summary>
+    public int CaptureCallCount => CaptureCalls.Count;
 
-    /// <summary>Paths passed to every ExportPose call, in call order.</summary>
-    public IReadOnlyList<string> ExportedPaths => PoseFiles.ReceivedCalls()
-        .Where(call => call.GetMethodInfo().Name == nameof(IPoseFileService.ExportPose))
-        .Select(call => (string)call.GetArguments()[1]!)
+    /// <summary>Skeleton lists handed to CreatePoseFile, in call order.</summary>
+    public IReadOnlyList<IReadOnlyList<ISkeleton>> CapturedSkeletons => CaptureCalls
+        .Select(call => (IReadOnlyList<ISkeleton>)call.GetArguments()[0]!)
         .ToList();
 
-    /// <summary>File names (with extension) passed to every ExportPose call.</summary>
-    public IReadOnlyList<string> ExportedFileNames =>
-        ExportedPaths.Select(Path.GetFileName).Select(name => name!).ToList();
+    private IReadOnlyList<ICall> CaptureCalls => PoseFiles.ReceivedCalls()
+        .Where(call => call.GetMethodInfo().Name == nameof(IPoseFileService.CreatePoseFile))
+        .ToList();
 
     public void Dispose()
     {
+        // The worker only touches the temp root, but deleting it out from under
+        // a live write would spray unrelated IO errors through the log.
+        SpinUntilIdle(timeoutMs: 5000);
+
         try
         {
             _service?.Dispose();

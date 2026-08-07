@@ -1,10 +1,7 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using NSubstitute;
-using Poser.Entities;
-using Poser.Services;
+using Poser.Files;
 using Poser.Tests.Fixtures;
 
 namespace Poser.Tests.Files;
@@ -12,28 +9,52 @@ namespace Poser.Tests.Files;
 /// <summary>
 /// What a snapshot contains and where it lands: candidate selection, folder
 /// naming, file naming, and per-actor failure isolation.
+///
+/// <para>The service captures on the caller's thread and writes on a worker, so
+/// these tests split accordingly: <c>SaveNow</c>'s return and the
+/// <c>CreatePoseFile</c> calls are asserted immediately, and everything about
+/// folders and files only after <c>WaitForWrite</c>.</para>
 /// </summary>
 public class AutoSaveServiceSnapshotTests
 {
     [Fact]
-    public void SaveNow_exports_only_actors_with_authored_edits()
+    public void SaveNow_captures_only_actors_with_authored_edits()
     {
         using var h = new AutoSaveHarness();
         var alpha = h.AddActor("Alpha");
         var beta = h.AddActor("Beta");
         var gamma = h.AddActor("Gamma", authored: false);
 
-        var saved = h.Service.SaveNow("test");
+        var captured = h.Service.SaveNow("test");
 
-        Assert.Equal(2, saved);
-        Assert.Equal(2, h.ExportCallCount);
+        Assert.Equal(2, captured);
+        Assert.Equal(2, h.CaptureCallCount);
+        h.PoseFiles.Received(1).CreatePoseFile(alpha.Skeletons);
+        h.PoseFiles.Received(1).CreatePoseFile(beta.Skeletons);
+        h.PoseFiles.DidNotReceive().CreatePoseFile(gamma.Skeletons);
 
-        var folder = Path.Combine(h.Root, h.StampNow());
-        h.PoseFiles.Received(1).ExportPose(alpha.Skeletons, Path.Combine(folder, "Alpha.pose"));
-        h.PoseFiles.Received(1).ExportPose(beta.Skeletons, Path.Combine(folder, "Beta.pose"));
-        h.PoseFiles.DidNotReceive().ExportPose(gamma.Skeletons, Arg.Any<string>());
-
+        // LastSaveUtc is stamped by the capture half, before the write.
         Assert.Equal(h.NowUtc, h.Service.LastSaveUtc);
+
+        h.WaitForWrite();
+        Assert.Equal(new[] { "Alpha.pose", "Beta.pose" }, h.SnapshotFiles(h.StampNow()));
+    }
+
+    [Fact]
+    public void SaveNow_writes_a_readable_pose_file()
+    {
+        using var h = new AutoSaveHarness();
+        h.AddActor("Alpha");
+
+        h.Service.SaveNow("test");
+        h.WaitForWrite();
+
+        // The worker serializes whatever CreatePoseFile handed it, so the file
+        // has to round-trip — an empty or half-written file would still exist.
+        var path = Path.Combine(h.Root, h.StampNow(), "Alpha.pose");
+        var loaded = PoseFile.Load(path);
+        Assert.NotNull(loaded);
+        Assert.Contains("j_kosi", loaded!.Bones.Keys);
     }
 
     [Fact]
@@ -44,6 +65,7 @@ public class AutoSaveServiceSnapshotTests
         h.AddActor("Alpha");
 
         h.Service.SaveNow("test");
+        h.WaitForWrite();
 
         // 24-hour UTC, so folder-name order is time order (the deliberate
         // deviation from Ktisis/Brio's 12-hour "hh").
@@ -51,29 +73,33 @@ public class AutoSaveServiceSnapshotTests
     }
 
     [Fact]
-    public void SaveNow_with_no_authored_edits_writes_nothing()
+    public void SaveNow_with_no_authored_edits_captures_and_writes_nothing()
     {
         using var h = new AutoSaveHarness();
         h.AddActor("Alpha", authored: false);
         h.AddActor("Beta", authored: false);
 
-        var saved = h.Service.SaveNow("test");
+        var captured = h.Service.SaveNow("test");
 
-        Assert.Equal(0, saved);
-        Assert.Equal(0, h.ExportCallCount);
+        // No candidates means no worker is dispatched at all, so the disk state
+        // here is already final.
+        Assert.Equal(0, captured);
+        Assert.Equal(0, h.CaptureCallCount);
+        h.WaitForWrite();
         Assert.Empty(Directory.GetDirectories(h.Root));
         Assert.Null(h.Service.LastSaveUtc);
     }
 
     [Fact]
-    public void SaveNow_with_no_actors_at_all_writes_nothing()
+    public void SaveNow_with_no_actors_at_all_captures_and_writes_nothing()
     {
         using var h = new AutoSaveHarness();
 
-        var saved = h.Service.SaveNow("test");
+        var captured = h.Service.SaveNow("test");
 
-        Assert.Equal(0, saved);
-        Assert.Equal(0, h.ExportCallCount);
+        Assert.Equal(0, captured);
+        Assert.Equal(0, h.CaptureCallCount);
+        h.WaitForWrite();
         Assert.Empty(Directory.GetDirectories(h.Root));
     }
 
@@ -81,27 +107,29 @@ public class AutoSaveServiceSnapshotTests
     public void SaveNow_deduplicates_identical_actor_names_within_a_snapshot()
     {
         using var h = new AutoSaveHarness();
-        var first = h.AddActor("Zidane");
-        var second = h.AddActor("Zidane");
+        h.AddActor("Zidane");
+        h.AddActor("Zidane");
 
-        var saved = h.Service.SaveNow("test");
+        var captured = h.Service.SaveNow("test");
 
-        Assert.Equal(2, saved);
-        var folder = Path.Combine(h.Root, h.StampNow());
-        h.PoseFiles.Received(1).ExportPose(first.Skeletons, Path.Combine(folder, "Zidane.pose"));
-        h.PoseFiles.Received(1).ExportPose(second.Skeletons, Path.Combine(folder, "Zidane (2).pose"));
+        Assert.Equal(2, captured);
+
+        h.WaitForWrite();
+        Assert.Equal(
+            new[] { "Zidane (2).pose", "Zidane.pose" },
+            h.SnapshotFiles(h.StampNow()));
     }
 
     [Fact]
     public void SaveNow_sanitizes_invalid_filename_characters()
     {
         using var h = new AutoSaveHarness();
-        var messy = h.AddActor("A<b>:c");
+        h.AddActor("A<b>:c");
 
         h.Service.SaveNow("test");
+        h.WaitForWrite();
 
-        var folder = Path.Combine(h.Root, h.StampNow());
-        h.PoseFiles.Received(1).ExportPose(messy.Skeletons, Path.Combine(folder, "A_b__c.pose"));
+        Assert.Equal(new[] { "A_b__c.pose" }, h.SnapshotFiles(h.StampNow()));
     }
 
     [Theory]
@@ -110,46 +138,54 @@ public class AutoSaveServiceSnapshotTests
     public void SaveNow_falls_back_to_Actor_for_a_blank_name(string blank)
     {
         using var h = new AutoSaveHarness();
-        var nameless = h.AddActor(blank);
+        h.AddActor(blank);
 
         h.Service.SaveNow("test");
+        h.WaitForWrite();
 
-        var folder = Path.Combine(h.Root, h.StampNow());
-        h.PoseFiles.Received(1).ExportPose(nameless.Skeletons, Path.Combine(folder, "Actor.pose"));
+        Assert.Equal(new[] { "Actor.pose" }, h.SnapshotFiles(h.StampNow()));
     }
 
     [Fact]
-    public void SaveNow_continues_after_an_export_returns_false()
+    public void SaveNow_counts_captures_not_writes_and_continues_past_a_failed_write()
     {
         using var h = new AutoSaveHarness();
         var bad = h.AddActor("Bad");
-        var good = h.AddActor("Good");
-        h.FailExportFor(bad);
+        h.AddActor("Good");
+        h.FailWriteFor(bad);
 
-        var saved = h.Service.SaveNow("test");
+        var captured = h.Service.SaveNow("test");
+
+        // Both actors were captured, so both count — the return says nothing
+        // about what survives the worker.
+        Assert.Equal(2, captured);
+        Assert.Equal(2, h.CaptureCallCount);
+
+        h.WaitForWrite();
 
         // Brio aborts the whole snapshot on one bad actor; this must not.
-        Assert.Equal(1, saved);
-        Assert.Equal(2, h.ExportCallCount);
-        h.PoseFiles.Received(1).ExportPose(good.Skeletons, Arg.Any<string>());
-        Assert.True(h.ErrorCount >= 1, "the failed export must be logged as an error");
+        Assert.Equal(new[] { "Good.pose" }, h.SnapshotFiles(h.StampNow()));
+        Assert.True(h.ErrorCount >= 1, "the failed write must be logged as an error");
     }
 
     [Fact]
-    public void SaveNow_continues_after_an_export_throws()
+    public void SaveNow_continues_after_a_capture_throws()
     {
         using var h = new AutoSaveHarness();
         var boom = h.AddActor("Boom");
         var good = h.AddActor("Good");
-        h.PoseFiles
-            .ExportPose(boom.Skeletons, Arg.Any<string>())
-            .Returns(_ => throw new IOException("disk gone"));
+        h.FailCaptureFor(boom, new IOException("skeleton copy failed"));
 
-        var saved = h.Service.SaveNow("test");
+        var captured = h.Service.SaveNow("test");
 
-        Assert.Equal(1, saved);
-        h.PoseFiles.Received(1).ExportPose(good.Skeletons, Arg.Any<string>());
-        Assert.True(h.ErrorCount >= 1, "the throwing export must be logged as an error");
+        // The capture is attempted for both, but only one becomes a candidate.
+        Assert.Equal(1, captured);
+        Assert.Equal(2, h.CaptureCallCount);
+        h.PoseFiles.Received(1).CreatePoseFile(good.Skeletons);
+        Assert.True(h.ErrorCount >= 1, "the throwing capture must be logged as an error");
+
+        h.WaitForWrite();
+        Assert.Equal(new[] { "Good.pose" }, h.SnapshotFiles(h.StampNow()));
     }
 
     [Fact]
@@ -159,13 +195,16 @@ public class AutoSaveServiceSnapshotTests
         h.AddActorThatThrows("Broken", new InvalidOperationException("skeleton gone"));
         var good = h.AddActor("Good");
 
-        var saved = h.Service.SaveNow("test");
+        var captured = h.Service.SaveNow("test");
 
-        // The broken actor never becomes a candidate, so it is never exported.
-        Assert.Equal(1, saved);
-        Assert.Equal(1, h.ExportCallCount);
-        h.PoseFiles.Received(1).ExportPose(good.Skeletons, Arg.Any<string>());
+        // The broken actor never becomes a candidate, so it is never captured.
+        Assert.Equal(1, captured);
+        Assert.Equal(1, h.CaptureCallCount);
+        h.PoseFiles.Received(1).CreatePoseFile(good.Skeletons);
         Assert.True(h.ErrorCount >= 1, "the failed actor scan must be logged as an error");
+
+        h.WaitForWrite();
+        Assert.Equal(new[] { "Good.pose" }, h.SnapshotFiles(h.StampNow()));
     }
 
     [Fact]
@@ -173,16 +212,17 @@ public class AutoSaveServiceSnapshotTests
     {
         using var h = new AutoSaveHarness();
         var collided = h.SeedSnapshot(h.StampNow());
-        var actor = h.AddActor("Alpha");
+        h.AddActor("Alpha");
 
-        var saved = h.Service.SaveNow("test");
+        var captured = h.Service.SaveNow("test");
 
-        Assert.Equal(1, saved);
-        var expectedFolder = Path.Combine(h.Root, $"{h.StampNow()} (2)");
-        Assert.True(Directory.Exists(expectedFolder));
+        Assert.Equal(1, captured);
+
+        h.WaitForWrite();
+        var suffixed = $"{h.StampNow()} (2)";
+        Assert.True(Directory.Exists(Path.Combine(h.Root, suffixed)));
         Assert.True(Directory.Exists(collided));
-        h.PoseFiles.Received(1)
-            .ExportPose(actor.Skeletons, Path.Combine(expectedFolder, "Alpha.pose"));
+        Assert.Equal(new[] { "Alpha.pose" }, h.SnapshotFiles(suffixed));
     }
 
     [Fact]
@@ -193,13 +233,36 @@ public class AutoSaveServiceSnapshotTests
 
         h.Service.SaveNow("test");
 
-        var forwarded = h.PoseFiles.ReceivedCalls()
-            .Single(call => call.GetMethodInfo().Name == nameof(IPoseFileService.ExportPose))
-            .GetArguments()[0];
+        var forwarded = Assert.Single(h.CapturedSkeletons);
 
-        // Reference identity: the exporter gets exactly what ISkeletonService
+        // Reference identity: the capture gets exactly what ISkeletonService
         // returned, not a copy or a re-query.
         Assert.Same(actor.Skeletons, forwarded);
-        Assert.Equal(h.Skeletons.GetSkeletons(actor.Actor), (IReadOnlyList<ISkeleton>)forwarded!);
+        Assert.Equal(h.Skeletons.GetSkeletons(actor.Actor), forwarded);
+    }
+
+    [Fact]
+    public void SaveNow_drops_a_snapshot_that_arrives_while_the_previous_write_is_in_flight()
+    {
+        using var h = new AutoSaveHarness();
+        h.AddActor("Alpha");
+        using var hold = h.HoldWorker();
+
+        Assert.Equal(1, h.Service.SaveNow("first"));
+        hold.WaitUntilHeld();
+
+        // The worker still holds the latch, and the service drops rather than
+        // queues — the next interval is a fresher capture than any backlog
+        // entry would be.
+        Assert.Equal(0, h.Service.SaveNow("second"));
+        Assert.Equal(1, h.CaptureCallCount);
+
+        hold.Release();
+        h.WaitForWrite();
+        Assert.Single(h.SnapshotFolders());
+
+        // Once the worker is idle the very same call goes through.
+        Assert.Equal(1, h.Service.SaveNow("third"));
+        h.WaitForWrite();
     }
 }

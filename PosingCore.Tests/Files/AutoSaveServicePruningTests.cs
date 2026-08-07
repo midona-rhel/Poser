@@ -12,6 +12,9 @@ namespace Poser.Tests.Files;
 /// the Ktisis defect these tests pin down. Order is by folder DATE, so every
 /// test that cares about which folder dies stamps its folders explicitly
 /// instead of leaning on the name.
+///
+/// <para>The prune runs on the write worker, at the very end of it, so every
+/// retention assertion here comes after <c>WaitForWrite</c>.</para>
 /// </summary>
 public class AutoSaveServicePruningTests
 {
@@ -56,9 +59,10 @@ public class AutoSaveServicePruningTests
             Age(h.SeedSnapshot(OldStamp(minute), withFile: true), minute);
 
         h.AddActor("Alpha");
-        var saved = h.Service.SaveNow("test");
+        var captured = h.Service.SaveNow("test");
+        h.WaitForWrite();
 
-        Assert.Equal(1, saved);
+        Assert.Equal(1, captured);
 
         var expected = new List<string> { AutoSaveHarness.Stamp(SaveTime) };
         for (var minute = 11; minute >= 3; minute--)
@@ -94,9 +98,10 @@ public class AutoSaveServicePruningTests
         var renamedNew = Age(h.SeedSnapshot("aaa-renamed-by-user", withFile: true), 50);
 
         h.AddActor("Alpha");
-        var saved = h.Service.SaveNow("test");
+        var captured = h.Service.SaveNow("test");
+        h.WaitForWrite();
 
-        Assert.Equal(1, saved);
+        Assert.Equal(1, captured);
 
         // Kept: the snapshot just written, plus the two newest by DATE.
         Assert.True(
@@ -132,6 +137,7 @@ public class AutoSaveServicePruningTests
 
         h.AddActor("Alpha");
         h.Service.SaveNow("test");
+        h.WaitForWrite();
 
         // Never zero: the snapshot just written always survives its own prune.
         Assert.Equal(new[] { AutoSaveHarness.Stamp(SaveTime) }, h.SnapshotFolders());
@@ -159,9 +165,10 @@ public class AutoSaveServicePruningTests
                    lockedFile, FileMode.Open, FileAccess.Read, FileShare.None))
         {
             h.AddActor("Alpha");
-            var saved = h.Service.SaveNow("test");
+            var captured = h.Service.SaveNow("test");
+            h.WaitForWrite();
 
-            Assert.Equal(1, saved);
+            Assert.Equal(1, captured);
             Assert.True(Directory.Exists(locked), "the locked folder cannot be deleted");
             Assert.False(Directory.Exists(deletable), "pruning must not stop at the failure");
             Assert.True(h.ErrorCount >= 1, "the failed prune must be logged as an error");
@@ -176,13 +183,21 @@ public class AutoSaveServicePruningTests
         h.AddActor("Alpha");
 
         // The root can vanish under the service (user cleanup, sync client).
-        // SaveNow must never throw out onto the framework tick because of it.
+        // Neither half may throw because of it: SaveNow runs on the framework
+        // tick, and the worker has nowhere to report to at all.
         h.Service.SaveNow("first");
+        h.WaitForWrite();
         Directory.Delete(h.Root, recursive: true);
 
-        var saved = h.Service.SaveNow("second");
+        var captured = h.Service.SaveNow("second");
+        h.WaitForWrite();
 
-        Assert.Equal(1, saved);
+        Assert.Equal(1, captured);
         Assert.NotNull(h.Service.LastSaveUtc);
+
+        // The worker rebuilt the root it was handed rather than giving up.
+        Assert.Equal(
+            new[] { "Alpha.pose" },
+            h.SnapshotFiles(AutoSaveHarness.Stamp(SaveTime)));
     }
 }

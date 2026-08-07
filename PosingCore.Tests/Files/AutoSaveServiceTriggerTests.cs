@@ -9,6 +9,11 @@ namespace Poser.Tests.Files;
 /// <summary>
 /// When a snapshot happens: interval arming/disarming, gating on the config
 /// flag and on GPose, and the GPose-exit edge.
+///
+/// <para>Counted in CAPTURES, because that is the half <c>Tick</c> decides. The
+/// harness's <c>TickAt</c> waits out each tick's write worker, without which a
+/// tick landing on a still-running write would be dropped by the service and
+/// the count would silently lag.</para>
 /// </summary>
 public class AutoSaveServiceTriggerTests
 {
@@ -28,7 +33,7 @@ public class AutoSaveServiceTriggerTests
         h.TickAt(At(60));
         h.TickAt(At(6000));
 
-        Assert.Equal(0, h.ExportCallCount);
+        Assert.Equal(0, h.CaptureCallCount);
         Assert.Empty(Directory.GetDirectories(h.Root));
         Assert.Null(h.Service.LastSaveUtc);
     }
@@ -45,7 +50,7 @@ public class AutoSaveServiceTriggerTests
         h.TickAt(At(60));
         h.TickAt(At(6000));
 
-        Assert.Equal(0, h.ExportCallCount);
+        Assert.Equal(0, h.CaptureCallCount);
         Assert.Empty(Directory.GetDirectories(h.Root));
     }
 
@@ -57,13 +62,13 @@ public class AutoSaveServiceTriggerTests
         h.AddActor("Alpha");
 
         h.TickAt(At(0));
-        Assert.Equal(0, h.ExportCallCount);   // entering GPose never saves immediately
+        Assert.Equal(0, h.CaptureCallCount);   // entering GPose never saves immediately
 
         h.TickAt(At(59));
-        Assert.Equal(0, h.ExportCallCount);
+        Assert.Equal(0, h.CaptureCallCount);
 
         h.TickAt(At(60));
-        Assert.Equal(1, h.ExportCallCount);
+        Assert.Equal(1, h.CaptureCallCount);
         Assert.Equal(At(60), h.Service.LastSaveUtc);
     }
 
@@ -83,13 +88,13 @@ public class AutoSaveServiceTriggerTests
         h.TickAt(At(31));                     // re-armed, due at 91
 
         h.TickAt(At(60));
-        Assert.Equal(0, h.ExportCallCount);   // the pre-exit schedule is gone
+        Assert.Equal(0, h.CaptureCallCount);   // the pre-exit schedule is gone
 
         h.TickAt(At(90));
-        Assert.Equal(0, h.ExportCallCount);
+        Assert.Equal(0, h.CaptureCallCount);
 
         h.TickAt(At(91));
-        Assert.Equal(1, h.ExportCallCount);
+        Assert.Equal(1, h.CaptureCallCount);
     }
 
     [Fact]
@@ -106,10 +111,10 @@ public class AutoSaveServiceTriggerTests
         h.TickAt(At(40));                     // re-armed, due at 100
 
         h.TickAt(At(99));
-        Assert.Equal(0, h.ExportCallCount);
+        Assert.Equal(0, h.CaptureCallCount);
 
         h.TickAt(At(100));
-        Assert.Equal(1, h.ExportCallCount);
+        Assert.Equal(1, h.CaptureCallCount);
     }
 
     [Fact]
@@ -121,10 +126,10 @@ public class AutoSaveServiceTriggerTests
 
         h.TickAt(At(0));
         h.TickAt(At(9));
-        Assert.Equal(0, h.ExportCallCount);
+        Assert.Equal(0, h.CaptureCallCount);
 
         h.TickAt(At(10));
-        Assert.Equal(1, h.ExportCallCount);
+        Assert.Equal(1, h.CaptureCallCount);
     }
 
     /// <summary>
@@ -142,21 +147,21 @@ public class AutoSaveServiceTriggerTests
 
         h.TickAt(At(0));                      // armed, due at 60
         h.TickAt(At(60));                     // save 1, re-armed at 120
-        Assert.Equal(1, h.ExportCallCount);
+        Assert.Equal(1, h.CaptureCallCount);
 
         h.Settings.IntervalSeconds = 10;      // no restart, no re-configure call
 
         h.TickAt(At(119));
-        Assert.Equal(1, h.ExportCallCount);
+        Assert.Equal(1, h.CaptureCallCount);
 
         h.TickAt(At(120));                    // save 2, re-armed with 10 -> 130
-        Assert.Equal(2, h.ExportCallCount);
+        Assert.Equal(2, h.CaptureCallCount);
 
         h.TickAt(At(129));
-        Assert.Equal(2, h.ExportCallCount);
+        Assert.Equal(2, h.CaptureCallCount);
 
         h.TickAt(At(130));
-        Assert.Equal(3, h.ExportCallCount);
+        Assert.Equal(3, h.CaptureCallCount);
     }
 
     [Fact]
@@ -168,18 +173,18 @@ public class AutoSaveServiceTriggerTests
 
         h.TickAt(At(0));                      // armed, due at 60
         h.TickAt(At(60));                     // save 1, re-armed at 120
-        Assert.Equal(1, h.ExportCallCount);
+        Assert.Equal(1, h.CaptureCallCount);
 
         h.Settings.IntervalSeconds = 120;
 
         h.TickAt(At(120));                    // save 2, re-armed with 120 -> 240
-        Assert.Equal(2, h.ExportCallCount);
+        Assert.Equal(2, h.CaptureCallCount);
 
         h.TickAt(At(239));
-        Assert.Equal(2, h.ExportCallCount);
+        Assert.Equal(2, h.CaptureCallCount);
 
         h.TickAt(At(240));
-        Assert.Equal(3, h.ExportCallCount);
+        Assert.Equal(3, h.CaptureCallCount);
     }
 
     [Fact]
@@ -193,10 +198,12 @@ public class AutoSaveServiceTriggerTests
 
         h.Service.OnGPoseStateChanged(new GPoseStateChangedEvent(false));
 
-        Assert.Equal(1, h.ExportCallCount);
-        var folder = Path.Combine(h.Root, h.StampNow());
-        h.PoseFiles.Received(1).ExportPose(alpha.Skeletons, Path.Combine(folder, "Alpha.pose"));
+        Assert.Equal(1, h.CaptureCallCount);
+        h.PoseFiles.Received(1).CreatePoseFile(alpha.Skeletons);
+
+        h.WaitForWrite();
         Assert.Single(Directory.GetDirectories(h.Root));
+        Assert.Equal(new[] { "Alpha.pose" }, h.SnapshotFiles(h.StampNow()));
     }
 
     [Fact]
@@ -208,12 +215,12 @@ public class AutoSaveServiceTriggerTests
 
         h.Service.OnGPoseStateChanged(new GPoseStateChangedEvent(true));
 
-        Assert.Equal(0, h.ExportCallCount);
+        Assert.Equal(0, h.CaptureCallCount);
         Assert.Single(Directory.GetDirectories(h.Root));
     }
 
     [Fact]
-    public void Leaving_gpose_with_CleanOnExit_deletes_every_snapshot_and_exports_nothing()
+    public void Leaving_gpose_with_CleanOnExit_deletes_every_snapshot_and_captures_nothing()
     {
         using var h = new AutoSaveHarness();
         h.Settings.Enabled = true;
@@ -226,13 +233,13 @@ public class AutoSaveServiceTriggerTests
 
         h.Service.OnGPoseStateChanged(new GPoseStateChangedEvent(false));
 
-        Assert.Equal(0, h.ExportCallCount);
+        Assert.Equal(0, h.CaptureCallCount);
         Assert.Empty(Directory.GetDirectories(h.Root));
         Assert.True(Directory.Exists(h.Root), "only the snapshots go, not the root");
     }
 
     [Fact]
-    public void Leaving_gpose_while_disabled_neither_exports_nor_deletes()
+    public void Leaving_gpose_while_disabled_neither_captures_nor_deletes()
     {
         using var h = new AutoSaveHarness();
         h.Settings.Enabled = false;
@@ -244,7 +251,7 @@ public class AutoSaveServiceTriggerTests
 
         h.Service.OnGPoseStateChanged(new GPoseStateChangedEvent(false));
 
-        Assert.Equal(0, h.ExportCallCount);
+        Assert.Equal(0, h.CaptureCallCount);
         Assert.Equal(2, Directory.GetDirectories(h.Root).Length);
     }
 
@@ -261,10 +268,10 @@ public class AutoSaveServiceTriggerTests
         h.Settings.Enabled = true;
 
         h.TickAt(At(60));                                                 // re-arms, due at 120
-        Assert.Equal(0, h.ExportCallCount);
+        Assert.Equal(0, h.CaptureCallCount);
 
         h.TickAt(At(120));
-        Assert.Equal(1, h.ExportCallCount);
+        Assert.Equal(1, h.CaptureCallCount);
     }
 
     [Fact]
