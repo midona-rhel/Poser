@@ -14,14 +14,17 @@ public class PoseImportOptions
     public bool ApplyRotation { get; set; } = true;
 
     /// <summary>
-    /// Import bone position data.
+    /// Import bone position data. Off by default: both references default
+    /// pose import to rotation-only (Brio PosingService.cs:36
+    /// DefaultImporterOptions, Ktisis FileConfig.cs:20 ImportPoseTransforms),
+    /// and baked positions/scales in a file silently fight IK and C+ scaling.
     /// </summary>
-    public bool ApplyPosition { get; set; } = true;
+    public bool ApplyPosition { get; set; }
 
     /// <summary>
-    /// Import bone scale data.
+    /// Import bone scale data. Off by default — see <see cref="ApplyPosition"/>.
     /// </summary>
-    public bool ApplyScale { get; set; } = true;
+    public bool ApplyScale { get; set; }
 
     /// <summary>
     /// Import body/main skeleton bones.
@@ -87,7 +90,7 @@ public class PoseImportOptions
     public bool FilterIncludesDescendants { get; set; }
 
     /// <summary>
-    /// Default options that import everything except model transform.
+    /// Default options: every slot, rotation-only, no model transform.
     /// </summary>
     public static PoseImportOptions Default => new();
 
@@ -119,6 +122,8 @@ public class PoseImportOptions
     /// </summary>
     public static PoseImportOptions All => new()
     {
+        ApplyPosition = true,
+        ApplyScale = true,
         ApplyModelTransform = true
     };
 

@@ -36,7 +36,10 @@ public sealed class PoseFileInspectorSection
     private string _lastPath =
         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
     private int _scope;
-    private bool _rotation = true, _position = true, _scale;
+    // Rotation-only by default, matching Brio's DefaultImporterOptions and
+    // Ktisis's ImportPoseTransforms: Translation/Scale are opt-in because a
+    // file's baked positions/scales fight IK and Customize+ scaling.
+    private bool _rotation = true, _position, _scale;
     private bool _descendants = true, _reset;
 
     /// <summary>Raised by the Library… action and by an Import… that the
