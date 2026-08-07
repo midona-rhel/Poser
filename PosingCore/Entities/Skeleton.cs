@@ -12,6 +12,19 @@ using GameSkeleton = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Skeleton;
 
 namespace Poser.Entities;
 
+/// <summary>Which bone transform caches a refresh may write. Brio's
+/// CacheTypes: LastRawTransform belongs to the update-phase apply pass and
+/// must never be written from the draw phase, where render-phase plugins
+/// (Customize+) have already stamped the model pose.</summary>
+[Flags]
+public enum BoneCacheTypes
+{
+    None = 0,
+    LastTransform = 1 << 0,
+    LastRawTransform = 1 << 1,
+    All = LastTransform | LastRawTransform,
+}
+
 /// <summary>
 /// Represents a skeleton attached to an actor.
 /// </summary>
@@ -244,8 +257,16 @@ public class Skeleton : EntityBase, ISkeleton
     /// <summary>
     /// Updates the cached transforms for all bones by reading from game memory.
     /// Should be called each frame when the overlay is visible.
+    ///
+    /// Draw-phase callers must pass <see cref="BoneCacheTypes.LastTransform"/>
+    /// only: by draw time, render-phase plugins (Customize+) have already
+    /// multiplied their own changes into the model pose, and a raw cache
+    /// written here would smuggle those into every delta computed against it
+    /// (bake, export, rawBaseline writes). LastRawTransform is owned by the
+    /// update-phase apply pass alone — the same split Brio makes with its
+    /// CacheTypes flag.
     /// </summary>
-    public unsafe void UpdateBoneTransforms()
+    public unsafe void UpdateBoneTransforms(BoneCacheTypes caches = BoneCacheTypes.All)
     {
         var gameSkeleton = GetGameSkeleton();
         if (gameSkeleton == null)
@@ -277,8 +298,10 @@ public class Skeleton : EntityBase, ISkeleton
                     Rotation = new Quaternion(boneTransform.Rotation.X, boneTransform.Rotation.Y, boneTransform.Rotation.Z, boneTransform.Rotation.W),
                     Scale = new Vector3(boneTransform.Scale.X, boneTransform.Scale.Y, boneTransform.Scale.Z)
                 };
-                bone.LastRawTransform = transform;
-                bone.LastTransform = transform;
+                if ((caches & BoneCacheTypes.LastRawTransform) != 0)
+                    bone.LastRawTransform = transform;
+                if ((caches & BoneCacheTypes.LastTransform) != 0)
+                    bone.LastTransform = transform;
             }
         }
     }

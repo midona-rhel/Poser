@@ -115,7 +115,10 @@ public sealed class ViewportProjection
             return null;
         if (bone.Value!.Skeleton is not Skeleton skeleton || !skeleton.IsValid)
             return null;
-        skeleton.UpdateBoneTransforms();
+        // Draw-phase refresh: Customize+ has already stamped the model pose
+        // by now, so the raw cache must not be written here or its scale
+        // leaks into every delta diffed against LastRawTransform.
+        skeleton.UpdateBoneTransforms(BoneCacheTypes.LastTransform);
         _bonePosing.RegisterSkeletonForCacheUpdate(skeleton);
         return skeleton.GetModelMatrix();
     }
