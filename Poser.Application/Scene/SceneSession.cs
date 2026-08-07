@@ -10,6 +10,7 @@ public sealed class SceneSession
     private SceneSnapshot _snapshot = SceneSnapshot.Empty;
     private readonly Dictionary<Guid, ActorDescriptor> _actors = new();
     private readonly Dictionary<BoneLineage, BoneDescriptor> _bones = new();
+    private readonly Dictionary<Guid, LightDescriptor> _lights = new();
 
     public SceneSession(SelectionSession selection)
     {
@@ -28,6 +29,7 @@ public sealed class SceneSession
 
         _actors.Clear();
         _bones.Clear();
+        _lights.Clear();
         foreach (var actor in snapshot.Actors)
         {
             _actors[actor.Id.LogicalId] = actor;
@@ -35,6 +37,9 @@ public sealed class SceneSession
             foreach (var bone in skeleton.Bones)
                 _bones[BoneLineage.From(bone.Id)] = bone;
         }
+
+        foreach (var light in snapshot.Lights)
+            _lights[light.Id.LogicalId] = light;
 
         _snapshot = snapshot;
         Selection.Reconcile(Resolve);
@@ -59,6 +64,12 @@ public sealed class SceneSession
                 : null;
         }
 
+        // A destroyed light has no owner to fall back to; the selection drops.
+        if (id.Kind == SceneEntityKind.Light && id.Light is { } light)
+            return _lights.TryGetValue(light.LogicalId, out var currentLight)
+                ? SelectionId.ForLight(currentLight.Id)
+                : null;
+
         return id;
     }
 
@@ -73,6 +84,10 @@ public sealed class SceneSession
                 target.Bone is { } bone &&
                 _bones.TryGetValue(BoneLineage.From(bone), out var current) &&
                 current.Id == bone,
+            TransformTargetKind.Light =>
+                target.Light is { } light &&
+                _lights.TryGetValue(light.LogicalId, out var currentLight) &&
+                currentLight.Id == light,
             _ => false,
         };
 

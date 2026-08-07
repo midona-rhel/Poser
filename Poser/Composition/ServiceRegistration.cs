@@ -137,6 +137,7 @@ internal static class ServiceRegistration
     public static IServiceCollection AddPoserFeatures(this IServiceCollection services)
     {
         services.AddSingleton<ICameraService, CameraService>();
+        services.AddSingleton<ILightingService, Game.Lighting.LightingService>();
         services.AddSingleton<IActorSpawnService, ActorSpawnService>();
         services.AddSingleton<Game.PropSpawnService>();
         services.AddSingleton<IGazeService, GazeService>();
@@ -156,6 +157,7 @@ internal static class ServiceRegistration
         services.AddSingleton<PoseRailPane>();
         services.AddSingleton<AnimationPane>();
         services.AddSingleton<AppearancePane>();
+        services.AddSingleton<LightPane>();
         services.AddSingleton<GraphicalBonePane>();
         services.AddSingleton<SkeletonOverlayPresentation>();
 

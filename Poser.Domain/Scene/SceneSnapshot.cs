@@ -43,10 +43,27 @@ public sealed record ActorDescriptor(
     }
 }
 
+public enum LightKind
+{
+    Directional,
+    Point,
+    Spot,
+    Area,
+}
+
+/// <summary>One spawned scene light. Live light properties are read through
+/// the lighting service; the descriptor carries only sidebar-visible state.</summary>
+public sealed record LightDescriptor(
+    LightId Id,
+    string Name,
+    LightKind Kind,
+    bool IsOn = true);
+
 public sealed record SceneSnapshot(
     ulong Revision,
-    IReadOnlyList<ActorDescriptor> Actors)
+    IReadOnlyList<ActorDescriptor> Actors,
+    IReadOnlyList<LightDescriptor> Lights)
 {
     public static SceneSnapshot Empty { get; } =
-        new(0, Array.Empty<ActorDescriptor>());
+        new(0, Array.Empty<ActorDescriptor>(), Array.Empty<LightDescriptor>());
 }

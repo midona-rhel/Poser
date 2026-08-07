@@ -56,10 +56,19 @@ public readonly record struct BoneId(
         $"{Skeleton}/{PartialId}:{BoneIndex}:{CanonicalName}";
 }
 
+/// <summary>One spawned scene light at one exact native binding generation.</summary>
+public readonly record struct LightId(Guid LogicalId, uint Generation)
+{
+    public static LightId New() => new(Guid.NewGuid(), 0);
+    public LightId NextGeneration() => new(LogicalId, checked(Generation + 1));
+    public override string ToString() => $"{LogicalId:N}@{Generation}";
+}
+
 public enum SceneEntityKind
 {
     Actor,
     Bone,
+    Light,
 }
 
 /// <summary>Stable selection identity for application state.</summary>
@@ -70,13 +79,15 @@ public readonly record struct SelectionId
         ActorId? actor,
         BoneId? bone,
         string? externalId,
-        Guid? ownerActorLineage = null)
+        Guid? ownerActorLineage = null,
+        LightId? light = null)
     {
         Kind = kind;
         Actor = actor;
         Bone = bone;
         ExternalId = externalId;
         OwnerActorLineage = ownerActorLineage;
+        Light = light;
     }
 
     public SceneEntityKind Kind { get; }
@@ -84,6 +95,7 @@ public readonly record struct SelectionId
     public BoneId? Bone { get; }
     public string? ExternalId { get; }
     public Guid? OwnerActorLineage { get; }
+    public LightId? Light { get; }
 
     public Guid? ActorLineage =>
         Actor?.LogicalId ??
@@ -95,6 +107,9 @@ public readonly record struct SelectionId
 
     public static SelectionId ForBone(BoneId bone) =>
         new(SceneEntityKind.Bone, null, bone, null);
+
+    public static SelectionId ForLight(LightId light) =>
+        new(SceneEntityKind.Light, null, null, null, light: light);
 
     public static SelectionId ForBoneGroup(ActorId actor, string id)
     {
@@ -113,6 +128,7 @@ public readonly record struct SelectionId
         SceneEntityKind.Actor => $"actor:{Actor}",
         SceneEntityKind.Bone when Bone is { } bone => $"bone:{bone}",
         SceneEntityKind.Bone => $"bone-group:{OwnerActorLineage:N}:{ExternalId}",
+        SceneEntityKind.Light => $"light:{Light}",
         _ => throw new InvalidOperationException($"Unknown selection kind {Kind}."),
     };
 }
@@ -121,6 +137,7 @@ public enum TransformTargetKind
 {
     Actor,
     Bone,
+    Light,
 }
 
 /// <summary>The subset of selection identities that can enter a transform gesture.</summary>
@@ -129,16 +146,19 @@ public readonly record struct TransformTargetId
     private TransformTargetId(
         TransformTargetKind kind,
         ActorId? actor,
-        BoneId? bone)
+        BoneId? bone,
+        LightId? light = null)
     {
         Kind = kind;
         Actor = actor;
         Bone = bone;
+        Light = light;
     }
 
     public TransformTargetKind Kind { get; }
     public ActorId? Actor { get; }
     public BoneId? Bone { get; }
+    public LightId? Light { get; }
     public Guid ActorLineage =>
         Actor?.LogicalId ??
         Bone?.Skeleton.Actor.LogicalId ??
@@ -150,10 +170,14 @@ public readonly record struct TransformTargetId
     public static TransformTargetId ForBone(BoneId bone) =>
         new(TransformTargetKind.Bone, null, bone);
 
+    public static TransformTargetId ForLight(LightId light) =>
+        new(TransformTargetKind.Light, null, null, light);
+
     public SelectionId ToSelectionId() => Kind switch
     {
         TransformTargetKind.Actor => SelectionId.ForActor(Actor!.Value),
         TransformTargetKind.Bone => SelectionId.ForBone(Bone!.Value),
+        TransformTargetKind.Light => SelectionId.ForLight(Light!.Value),
         _ => throw new InvalidOperationException($"Unknown target kind {Kind}."),
     };
 

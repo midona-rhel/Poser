@@ -67,6 +67,8 @@ public class MainWindow : Window
     private readonly PoseInspectorPane _poseInspector;
     private readonly AnimationPane _animationPane;
     private readonly AppearancePane _appearancePane;
+    private readonly LightPane _lightPane;
+    private readonly ILightingService _lightingService;
     private readonly Game.Animation.AnimationCatalogLoader _animationCatalog;
     private readonly PoseRailPane _poseRail;
     private bool _collapsed;
@@ -99,6 +101,8 @@ public class MainWindow : Window
         PoseInspectorPane poseInspector,
         AnimationPane animationPane,
         AppearancePane appearancePane,
+        LightPane lightPane,
+        ILightingService lightingService,
         Application.Animation.AnimationSession animation,
         Game.Animation.AnimationCatalogLoader animationCatalog,
         PoseRailPane poseRail,
@@ -129,6 +133,8 @@ public class MainWindow : Window
         _poseInspector = poseInspector;
         _animationPane = animationPane;
         _appearancePane = appearancePane;
+        _lightPane = lightPane;
+        _lightingService = lightingService;
         _animation = animation;
         _overlayPresentation = overlayPresentation;
         _animationCatalog = animationCatalog;
@@ -176,9 +182,17 @@ public class MainWindow : Window
         _vm.OnSettings = () => OnSettingsRequested?.Invoke();
         _vm.OnHideUi = () => IsOpen = false;
         // The sidebar's add affordance. Creation lives where the created
-        // thing will appear, so the ACTORS
-        // header owns it rather than a separate spawn menu.
-        _vm.OnSectionPlus = _ => _addOpenRequested = true;
+        // thing will appear, so each section header owns its own plus: ACTORS
+        // opens the entity menu, LIGHTS spawns a light outright — there is
+        // only one kind of light to make.
+        _vm.OnSectionPlus = index =>
+        {
+            if (index >= 0 && index < _vm.Sections.Count &&
+                _vm.Sections[index].Title == "LIGHTS")
+                SpawnLight();
+            else
+                _addOpenRequested = true;
+        };
         _vm.OnSpawn = () => _addOpenRequested = true;
         _vm.OnRowClicked = OnRowClicked;
         _vm.OnRowExpandToggled = row =>
@@ -590,6 +604,27 @@ public class MainWindow : Window
                 AddAuxiliarySlotGroups(actors, actorKey, auxSkeletons, filter, filtering);
         }
         _vm.Sections.Add(actors);
+
+        // Lights are flat: a spawned light owns nothing beneath it, so the
+        // section is one row per light and the header's plus makes another.
+        var lights = new ShellSidebarSection { Title = "LIGHTS", ShowPlus = true };
+        foreach (var light in _scene.Snapshot.Lights)
+        {
+            if (filtering && !MatchesSidebarFilter(filter, light.Name))
+                continue;
+            var lightSelectionId = SelectionId.ForLight(light.Id);
+            lights.Rows.Add(new ShellSidebarRow
+            {
+                Label = light.Name,
+                Count = "",
+                Icon = light.Kind == LightKind.Directional
+                    ? TablerIcon.Sun
+                    : TablerIcon.Bulb,
+                Active = _selection.IsSelected(lightSelectionId),
+                Tag = lightSelectionId,
+            });
+        }
+        _vm.Sections.Add(lights);
     }
 
     private static string SlotLabel(Domain.Identity.PoseSlot slot) => slot switch
@@ -757,6 +792,15 @@ public class MainWindow : Window
         // Tabs are rebuilt each frame; the active one is preserved so a
         // selection change cannot silently throw the user back to Pose.
         _vm.Tabs.Clear();
+        // A light has no pose, animation or appearance: while one is
+        // selected the tab set IS the light editor, and leaving the light
+        // returns to Pose rather than to a tab that no longer exists.
+        if (primary is { Kind: SceneEntityKind.Light })
+        {
+            _activeTab = "Light";
+            _vm.Tabs.Add(new ShellTab { Label = "Light", Active = true });
+            return;
+        }
         if (_activeTab is not ("Pose" or "Animation" or "Appearance"))
             _activeTab = "Pose";
         _vm.Tabs.Add(new ShellTab { Label = "Pose", Active = _activeTab == "Pose" });
@@ -815,7 +859,7 @@ public class MainWindow : Window
     {
         _vm.ContentOwnsViewport = tab == "Pose";
         _vm.ContentUsesPage =
-            tab is "Animation" or "Appearance";
+            tab is "Animation" or "Appearance" or "Light";
     }
 
     private void OnRowClicked(ShellSidebarRow row)
@@ -887,6 +931,12 @@ public class MainWindow : Window
             return;
         }
 
+        if (_activeTab == "Light")
+        {
+            _lightPane.Draw(origin, size);
+            return;
+        }
+
         _poseInspector.Draw(origin, size);
     }
 
@@ -901,10 +951,9 @@ public class MainWindow : Window
 
     /// <summary>
     /// The sidebar ACTORS "+" menu: entity creation in the shared floating
-    /// menu — New actor, New actor with companion slot, New prop. The
-    /// titlebar plus opens the identical menu. Cameras, lights and
-    /// references stay absent (not disabled) until their runtime entity
-    /// types exist.
+    /// menu — New actor, New actor with companion slot, New prop, New light.
+    /// The titlebar plus opens the identical menu. Cameras and references
+    /// stay absent (not disabled) until their runtime entity types exist.
     /// </summary>
     private void DrawAddEntityMenu()
     {
@@ -922,6 +971,7 @@ public class MainWindow : Window
                 new ContextMenuItem("New actor with companion slot", TablerIcon.Paw),
                 ContextMenuItem.Separator,
                 new ContextMenuItem("New prop", TablerIcon.Diamond),
+                new ContextMenuItem("New light", TablerIcon.Bulb),
             };
             _addActions = new List<Action?>
             {
@@ -929,6 +979,7 @@ public class MainWindow : Window
                 () => SelectSpawned(_spawnService.SpawnNewActor(reserveCompanionSlot: true)),
                 null,
                 () => _propService.SpawnProp(),
+                SpawnLight,
             };
             Crystarium.FloatingMenu.Open("##sidebar-add", ImGui.GetMousePos(), items);
         }
@@ -952,11 +1003,28 @@ public class MainWindow : Window
     }
 
     private IActor? _pendingSelectSpawned;
+    private ILight? _pendingSelectSpawnedLight;
 
-    /// <summary>Second half of <see cref="SelectSpawned"/>: once the scene
-    /// refresh has bound the new actor, select it and forget it.</summary>
+    /// <summary>Spawns one light and arms it for selection. Spot is the only
+    /// starting kind — the Light tab's Type row switches it in place.</summary>
+    private void SpawnLight()
+    {
+        if (_lightingService.SpawnLight(LightKind.Spot) is { } spawned)
+            _pendingSelectSpawnedLight = spawned;
+    }
+
+    /// <summary>Second half of <see cref="SelectSpawned"/> and
+    /// <see cref="SpawnLight"/>: once the scene refresh has bound the new
+    /// entity, select it and forget it.</summary>
     private void ReconcilePendingSpawn()
     {
+        if (_pendingSelectSpawnedLight is { } spawnedLight &&
+            _bindings.GetLightId(spawnedLight) is { } lightId)
+        {
+            _selection.Select(SelectionId.ForLight(lightId));
+            _pendingSelectSpawnedLight = null;
+        }
+
         if (_pendingSelectSpawned is not { } spawned)
             return;
         if (_bindings.GetActorId(spawned) is not { } id)

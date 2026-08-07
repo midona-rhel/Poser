@@ -29,7 +29,8 @@ internal enum GizmoTargetType
 {
     None,
     Actor,
-    Bone
+    Bone,
+    Light
 }
 
 /// <summary>
@@ -222,6 +223,7 @@ public class GizmoOverlayWindow : Window
         {
             { Kind: SceneEntityKind.Bone } => GizmoTargetType.Bone,
             { Kind: SceneEntityKind.Actor } => GizmoTargetType.Actor,
+            { Kind: SceneEntityKind.Light } => GizmoTargetType.Light,
             _ => GizmoTargetType.None,
         };
     }
@@ -289,8 +291,8 @@ public class GizmoOverlayWindow : Window
     /// The one world-gizmo path for actors and bones: resolves the target
     /// and frames, builds the perspective layout for the active tool,
     /// hit-tests/draws the custom handles, and runs Begin/Update/Commit
-    /// through the clean gesture lifecycle. Actor targets use an identity
-    /// model matrix (their model space IS world space).
+    /// through the clean gesture lifecycle. Actor and light targets use an
+    /// identity model matrix (their model space IS world space).
     /// </summary>
     private void DrawWorldGizmo(GizmoTargetType targetType, bool occluded)
     {
@@ -300,6 +302,7 @@ public class GizmoOverlayWindow : Window
         var targets = selection.Targets;
         BoneId? primaryBone = null;
         ActorId? primaryActor = null;
+        LightId? primaryLight = null;
         var modelMatrix = Matrix4x4.Identity;
 
         if (isBone)
@@ -313,6 +316,13 @@ public class GizmoOverlayWindow : Window
             if (_viewport.GetSkeletonModelMatrix(primaryBoneId) is not { } skeletonMatrix)
                 return;
             modelMatrix = skeletonMatrix;
+        }
+        else if (targetType == GizmoTargetType.Light)
+        {
+            if (selection.Primary is not
+                { Kind: TransformTargetKind.Light, Light: { } primaryLightId })
+                return;
+            primaryLight = primaryLightId;
         }
         else
         {
@@ -341,10 +351,16 @@ public class GizmoOverlayWindow : Window
         {
             currentTransform = ToLegacy(boneRest);
         }
-        else if (!isBone &&
-            _viewport.GetActorTransform(primaryActor!.Value) is { } actorRest)
+        else if (primaryActor is { } actorTarget &&
+            _viewport.GetActorTransform(actorTarget) is { } actorRest)
         {
             currentTransform = ToLegacy(actorRest);
+        }
+        else if (primaryLight is { } lightTarget &&
+            _viewport.GetModelTransform(TransformTargetId.ForLight(lightTarget))
+                is { } lightRest)
+        {
+            currentTransform = ToLegacy(lightRest);
         }
         else
         {
@@ -598,9 +614,15 @@ public class GizmoOverlayWindow : Window
             space,
             cleanPivotMode,
             cleanCustomPivot,
-            description: isBone
-                ? $"Transform {targets.Count} bone{(targets.Count == 1 ? "" : "s")}"
-                : $"Transform {targets.Count} actor{(targets.Count == 1 ? "" : "s")}",
+            description: targetType switch
+            {
+                GizmoTargetType.Bone =>
+                    $"Transform {targets.Count} bone{(targets.Count == 1 ? "" : "s")}",
+                GizmoTargetType.Light =>
+                    $"Transform {targets.Count} light{(targets.Count == 1 ? "" : "s")}",
+                _ =>
+                    $"Transform {targets.Count} actor{(targets.Count == 1 ? "" : "s")}",
+            },
             includeLinkedBones: isBone && _bonePosingService.LinkedBonesEnabled,
             symmetry: isBone
                 ? _editorState.SymmetryMode switch
