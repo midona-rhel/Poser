@@ -22,7 +22,8 @@ namespace Poser.Game;
 /// there is no second wrapper-keyed map to desync, so an ordinary actor-list
 /// refresh cannot orphan state. The Entity target is a GameObjectId written
 /// natively (LookMode.Target through the Brio/Ktisis-verified id/position
-/// union); no captured address is ever dereferenced.
+/// union); no captured address is ever dereferenced. Position mode holds a
+/// shared world anchor plus per-part positions the detour writes unchanged.
 /// </summary>
 public unsafe class GazeService : IGazeService, IDisposable
 {
@@ -51,6 +52,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         public GazeTargetMode Mode;
         public GazeTargetType Parts = GazeTargetType.All;
         public ulong TargetId;              // Entity-mode target GameObjectId; 0 = unset
+        public Vector3 Position;            // Position-mode shared world anchor
         public LookAtSource Target;         // per-part native write source
         public bool EyesLocked;
         public bool HeadLocked;
@@ -149,7 +151,9 @@ public unsafe class GazeService : IGazeService, IDisposable
 
                     // Camera and Forward are position sources refreshed each
                     // loop for unlocked parts; Entity carries the target id in
-                    // the union and needs no per-loop position poll.
+                    // the union and needs no per-loop position poll; Position
+                    // carries stored fixed world points, likewise needing no
+                    // per-loop poll — they are written through as-is.
                     if (mode == GazeTargetMode.Camera)
                     {
                         var cameraPos = _cameraService.GetCameraPosition();
@@ -199,7 +203,16 @@ public unsafe class GazeService : IGazeService, IDisposable
         lock (_sync)
         {
             return _entries.TryGetValue(gameObject.GameObjectId, out var entry)
-                ? new GazeState { Mode = entry.Mode, TargetType = entry.Parts, TargetId = entry.TargetId }
+                ? new GazeState
+                {
+                    Mode = entry.Mode,
+                    TargetType = entry.Parts,
+                    TargetId = entry.TargetId,
+                    Position = entry.Position,
+                    EyesPosition = entry.Target.Eyes.LookAtTarget.Position,
+                    HeadPosition = entry.Target.Head.LookAtTarget.Position,
+                    BodyPosition = entry.Target.Body.LookAtTarget.Position,
+                }
                 : new GazeState();
         }
     }
@@ -211,6 +224,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         lock (_sync)
         {
             var entry = GetOrCreateEntry(gameObject.GameObjectId);
+            var previousMode = entry.Mode;
             entry.Mode = mode;
             if (mode == GazeTargetMode.None)
             {
@@ -222,6 +236,11 @@ public unsafe class GazeService : IGazeService, IDisposable
             {
                 entry.Parts = GazeTargetType.All;
             }
+            // Entering Position seeds the anchor halfway between actor and
+            // camera (Ktisis GetCameraLerpFor parity) so the gizmo appears in
+            // view; re-selecting the mode it is already in never moves it.
+            if (mode == GazeTargetMode.Position && previousMode != GazeTargetMode.Position)
+                entry.Position = CameraLerpPoint(actor);
             ReseedUnlockedParts(entry);
         }
     }
@@ -282,6 +301,55 @@ public unsafe class GazeService : IGazeService, IDisposable
         return _objectTable.SearchById(targetId)?.Address ?? 0;
     }
 
+    public void SetGazePosition(IActor actor, Vector3 position)
+    {
+        if (Resolve(actor) is not { } gameObject)
+            return;
+        lock (_sync)
+        {
+            if (!_entries.TryGetValue(gameObject.GameObjectId, out var entry) ||
+                EffectiveMode(entry) != GazeTargetMode.Position)
+                return; // the anchor exists only in Position mode
+            entry.Position = position;
+            // Locked parts keep their frozen positions — existing guarantee.
+            ReseedUnlockedParts(entry);
+        }
+    }
+
+    public void SetPartPosition(IActor actor, GazeTargetType part, Vector3 position)
+    {
+        if (Resolve(actor) is not { } gameObject)
+            return;
+        lock (_sync)
+        {
+            if (!_entries.TryGetValue(gameObject.GameObjectId, out var entry) ||
+                EffectiveMode(entry) != GazeTargetMode.Position)
+                return;
+            // An explicit user edit outranks a lock, so locked parts move too;
+            // the lock flag and the shared anchor are both left alone.
+            WritePart(entry, part, new LookAtTarget { LookMode = LookMode.Position, Position = position });
+        }
+    }
+
+    public void SnapPartToCamera(IActor actor, GazeTargetType part)
+    {
+        if (Resolve(actor) is not { } gameObject)
+            return;
+        lock (_sync)
+        {
+            if (!_entries.TryGetValue(gameObject.GameObjectId, out var entry) ||
+                EffectiveMode(entry) != GazeTargetMode.Position)
+                return;
+            // Brio's "set to camera value": a one-shot capture, not a follow.
+            var target = new LookAtTarget
+            {
+                LookMode = LookMode.Position,
+                Position = _cameraService.GetCameraPosition(),
+            };
+            WritePart(entry, part, target);
+        }
+    }
+
     public void SetPartLock(IActor actor, GazeTargetType part, bool locked)
     {
         if (Resolve(actor) is not { } gameObject)
@@ -301,6 +369,10 @@ public unsafe class GazeService : IGazeService, IDisposable
                 {
                     GazeTargetMode.Camera => _cameraService.GetCameraPosition(),
                     GazeTargetMode.Forward => ForwardPoint(actor),
+                    // Position mode is already position-identity: freeze where
+                    // the part already looks so a lock only stops it following
+                    // later anchor moves.
+                    GazeTargetMode.Position => PartPosition(entry, part) ?? entry.Position,
                     _ => _objectTable.SearchById(entry.TargetId)?.Position ?? _cameraService.GetCameraPosition(),
                 };
                 ApplyPartLock(entry, part, freezePos);
@@ -388,6 +460,11 @@ public unsafe class GazeService : IGazeService, IDisposable
                 target.LookMode = LookMode.Target;
                 target.ActorTargetId = entry.TargetId;
                 break;
+            case GazeTargetMode.Position:
+                // Fixed world point — the detour writes it unchanged each loop.
+                target.LookMode = LookMode.Position;
+                target.Position = entry.Position;
+                break;
             default:
                 target.LookMode = LookMode.None;
                 break;
@@ -416,6 +493,29 @@ public unsafe class GazeService : IGazeService, IDisposable
         if (part.HasFlag(GazeTargetType.Eyes)) entry.Target.Eyes.LookAtTarget = target;
         if (part.HasFlag(GazeTargetType.Head)) entry.Target.Head.LookAtTarget = target;
         if (part.HasFlag(GazeTargetType.Body)) entry.Target.Body.LookAtTarget = target;
+    }
+
+    /// <summary>
+    /// The single-flag part's stored target position; null when the flag is
+    /// not exactly one known part (so callers can fall back to the anchor).
+    /// </summary>
+    private static Vector3? PartPosition(GazeEntry entry, GazeTargetType part) => part switch
+    {
+        GazeTargetType.Eyes => entry.Target.Eyes.LookAtTarget.Position,
+        GazeTargetType.Head => entry.Target.Head.LookAtTarget.Position,
+        GazeTargetType.Body => entry.Target.Body.LookAtTarget.Position,
+        _ => null,
+    };
+
+    /// <summary>
+    /// Halfway between the actor and the camera — Ktisis GetCameraLerpFor,
+    /// the seed for a freshly entered Position mode.
+    /// </summary>
+    private Vector3 CameraLerpPoint(IActor actor)
+    {
+        var nativeObj = (GameObject*)actor.Address;
+        var actorPos = new Vector3(nativeObj->Position.X, nativeObj->Position.Y, nativeObj->Position.Z);
+        return Vector3.Lerp(actorPos, _cameraService.GetCameraPosition(), 0.5f);
     }
 
     private static Vector3 ForwardPoint(IActor actor)

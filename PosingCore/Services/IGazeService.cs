@@ -1,3 +1,4 @@
+using System.Numerics;
 using Poser.Entities;
 
 namespace Poser.Services;
@@ -14,7 +15,9 @@ public enum GazeTargetMode
     /// <summary>Look at the live camera position.</summary>
     Camera,
     /// <summary>Look at another actor, targeted by stable game-object id.</summary>
-    Entity
+    Entity,
+    /// <summary>Look at a fixed world point (Brio Position mode / Ktisis gizmo target).</summary>
+    Position
 }
 
 /// <summary>
@@ -43,6 +46,18 @@ public class GazeState
 
     /// <summary>The Entity-mode target's GameObjectId; 0 when unset.</summary>
     public ulong TargetId { get; set; }
+
+    /// <summary>The shared Position-mode anchor — what the world gizmo grabs.</summary>
+    public Vector3 Position { get; set; }
+
+    /// <summary>The eyes' live target position.</summary>
+    public Vector3 EyesPosition { get; set; }
+
+    /// <summary>The head's live target position.</summary>
+    public Vector3 HeadPosition { get; set; }
+
+    /// <summary>The body's live target position.</summary>
+    public Vector3 BodyPosition { get; set; }
 }
 
 /// <summary>
@@ -79,6 +94,26 @@ public interface IGazeService
     /// (for display matching); 0 when none or no longer present.
     /// </summary>
     nint GetGazeTargetAddress(IActor actor);
+
+    /// <summary>
+    /// Position mode only: moves the shared anchor and every enabled,
+    /// unlocked part to <paramref name="position"/>. No-op in any other mode
+    /// or when no entry exists.
+    /// </summary>
+    void SetGazePosition(IActor actor, Vector3 position);
+
+    /// <summary>
+    /// Position mode only: writes one part's target position explicitly.
+    /// Works on locked parts too — an explicit user edit outranks a lock, and
+    /// the lock flag itself is untouched. Does not move the anchor.
+    /// </summary>
+    void SetPartPosition(IActor actor, GazeTargetType part, Vector3 position);
+
+    /// <summary>
+    /// Brio's "set to camera value": <see cref="SetPartPosition"/> with the
+    /// current camera position.
+    /// </summary>
+    void SnapPartToCamera(IActor actor, GazeTargetType part);
 
     /// <summary>
     /// Freezes/unfreezes one participating part at its actual current

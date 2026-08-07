@@ -155,7 +155,7 @@ public class PoseInspectorPane
     private string[] _gazeNames = Array.Empty<string>();
 
     private static readonly string[] GazeModeOptions =
-        ["Off", "Forward", "Camera", "Actor"];
+        ["Off", "Forward", "Camera", "Point", "Actor"];
 
     /// <summary>The gaze parts, as the chips row states them.</summary>
     private static readonly (string Label, GazeTargetType Part)[] GazePartChips =
@@ -1365,12 +1365,13 @@ public class PoseInspectorPane
             GazeTargetMode.None => 0,
             GazeTargetMode.Forward => 1,
             GazeTargetMode.Camera => 2,
-            _ => 3,
+            GazeTargetMode.Position => 3,
+            _ => 4,
         };
 
         void PickMode(int selected)
         {
-            if (selected == 3 && others.Count == 0)
+            if (selected == 4 && others.Count == 0)
             {
                 _gazeActorUnavailableNote = true;
             }
@@ -1382,6 +1383,7 @@ public class PoseInspectorPane
                     0 => GazeTargetMode.None,
                     1 => GazeTargetMode.Forward,
                     2 => GazeTargetMode.Camera,
+                    3 => GazeTargetMode.Position,
                     _ => GazeTargetMode.Entity,
                 });
             }
@@ -1488,6 +1490,12 @@ public class PoseInspectorPane
     /// part chips, each followed by its own lock icon. Narrow: one switch
     /// row per part with the lock icon as its action — three chips plus
     /// three locks cannot fit the rail's control cell.
+    ///
+    /// Point mode adds, per part, a camera snap beside that part's lock and a
+    /// world-point row of its own. The rail's point row is full-width and
+    /// captionless — the switch row directly above it is its caption, the
+    /// same pairing the IK hinge axis uses — while the workspace states the
+    /// part in the label column, because its chips share one row.
     /// </summary>
     private void DrawGazeParts(
         Crystarium.FormScope form,
@@ -1496,6 +1504,7 @@ public class PoseInspectorPane
         bool wide)
     {
         bool off = state.Mode == GazeTargetMode.None;
+        bool point = state.Mode == GazeTargetMode.Position;
 
         void SetPart(GazeTargetType part, bool next) =>
             _gazeService.SetGazeParts(
@@ -1521,6 +1530,61 @@ public class PoseInspectorPane
                 id: $"lock-{label}");
         }
 
+        // Point mode only. The snap is a second action on the part's own row,
+        // so it sits with the lock it shares a subject with.
+        void CameraIcon(
+            Crystarium.ActionScope actions,
+            string label,
+            GazeTargetType part,
+            bool enabled)
+        {
+            actions.IconButton(
+                TablerIcon.Camera,
+                () =>
+                {
+                    _gazeService.SnapPartToCamera(actor, part);
+                    state = _gazeService.GetGazeState(actor);
+                },
+                disabled: !enabled,
+                help: "Move this part's point to the camera",
+                id: $"camera-{label}");
+        }
+
+        // The live per-part target, not the shared anchor: a locked or
+        // separately dragged part keeps its own point.
+        Vector3 PartPoint(GazeTargetType part) => part switch
+        {
+            GazeTargetType.Eyes => state.EyesPosition,
+            GazeTargetType.Head => state.HeadPosition,
+            _ => state.BodyPosition,
+        };
+
+        // Fixed text per part rather than one interpolated caption per frame.
+        static string PointLabel(GazeTargetType part) => part switch
+        {
+            GazeTargetType.Eyes => "Eyes point",
+            GazeTargetType.Head => "Head point",
+            _ => "Body point",
+        };
+
+        void PointRow(GazeTargetType part, bool enabled) =>
+            form.AxisVector(
+                PointLabel(part),
+                PartPoint(part),
+                next =>
+                {
+                    _gazeService.SetPartPosition(actor, part, next);
+                    state = _gazeService.GetGazeState(actor);
+                },
+                // Live all the way down: the write IS the edit, so there is
+                // no commit to close and no history entry to open.
+                null,
+                0.005f,
+                "0.000",
+                help: "The world point this part looks at",
+                disabled: !enabled,
+                fullWidth: !wide);
+
         if (wide)
         {
             form.Actions("Parts", actions =>
@@ -1540,8 +1604,13 @@ public class PoseInspectorPane
                             ? "Choose a gaze mode to control this part"
                             : "Let this part follow the gaze target");
                     LockIcon(actions, label, flag, enabled);
+                    if (point)
+                        CameraIcon(actions, label, flag, enabled);
                 }
             });
+            if (point)
+                foreach (var (_, part) in GazePartChips)
+                    PointRow(part, state.TargetType.HasFlag(part));
             return;
         }
 
@@ -1553,11 +1622,18 @@ public class PoseInspectorPane
                 label,
                 enabled,
                 next => SetPart(flag, next),
-                actions => LockIcon(actions, label, flag, enabled),
+                actions =>
+                {
+                    LockIcon(actions, label, flag, enabled);
+                    if (point)
+                        CameraIcon(actions, label, flag, enabled);
+                },
                 disabled: off,
                 help: off
                     ? "Choose a gaze mode to control this part"
                     : "Let this part follow the gaze target");
+            if (point)
+                PointRow(flag, enabled);
         }
     }
 
