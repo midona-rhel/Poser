@@ -90,6 +90,17 @@ public class PoseImportOptions
     public bool FilterIncludesDescendants { get; set; }
 
     /// <summary>
+    /// Keep the target actor's animation paused once the import has finished.
+    /// The import always pauses the actor for its apply window; this flag
+    /// skips the speed restore afterwards — Brio's "Freeze Actor" popup
+    /// checkbox (FileUIHelpers.cs:478), which its ImportPose ORs with the
+    /// Posing.FreezeActorOnPoseImport config; the facade applies the same OR
+    /// against Poser's config default. The file service itself ignores this:
+    /// animation is the facade's concern, never the plan builder's.
+    /// </summary>
+    public bool FreezeOnImport { get; set; }
+
+    /// <summary>
     /// Default options: every slot, rotation-only, no model transform.
     /// </summary>
     public static PoseImportOptions Default => new();
@@ -150,6 +161,7 @@ public class PoseImportOptions
                 ? null
                 : new System.Collections.Generic.HashSet<(Poser.Domain.Identity.PoseSlot Slot, string Name)>(BoneFilter),
             FilterIncludesDescendants = FilterIncludesDescendants,
+            FreezeOnImport = FreezeOnImport,
         };
     }
 }

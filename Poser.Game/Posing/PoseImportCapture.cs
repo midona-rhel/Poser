@@ -73,6 +73,12 @@ public sealed class PoseImportCapture : IDisposable
         public required HashSet<TransformTargetId> Resets;
         /// <summary>Targets an action (or the model edit) actually wrote.</summary>
         public readonly HashSet<TransformTargetId> Written = new();
+        /// <summary>Fires exactly once when an import <see cref="Begin"/>
+        /// returned Ok for finishes — with true after the history entry
+        /// landed, false after a rollback. A Begin that returned Fail never
+        /// fires it; a pending import dropped by Dispose does not either
+        /// (session teardown restores animation state wholesale).</summary>
+        public Action<bool>? OnFinished;
         public string? Failure;
         public bool Completing;
     }
@@ -113,7 +119,10 @@ public sealed class PoseImportCapture : IDisposable
     /// and its actions are queued — an in-pass failure rolls the whole edit
     /// back and logs, it does not reach this return value.
     /// </summary>
-    public GestureResult Begin(PoseImportPlan plan, string description)
+    public GestureResult Begin(
+        PoseImportPlan plan,
+        string description,
+        Action<bool>? onFinished = null)
     {
         if (!_framework.IsInFrameworkUpdateThread)
             return GestureResult.Fail("Pose import must run on the framework thread.");
@@ -136,6 +145,7 @@ public sealed class PoseImportCapture : IDisposable
             Order = new List<TransformTargetId>(),
             Before = new Dictionary<TransformTargetId, TransformTargetState>(),
             Resets = new HashSet<TransformTargetId>(),
+            OnFinished = onFinished,
         };
 
         // Resolve and capture EVERYTHING before mutating anything, so a
@@ -253,7 +263,12 @@ public sealed class PoseImportCapture : IDisposable
         {
             var failure = AppendHistory(import);
             if (failure == null)
+            {
+                Notify(import, true);
                 return GestureResult.Ok();
+            }
+            // Begin itself reports this failure, so the callback stays
+            // silent — it fires only for imports Begin returned Ok for.
             _log.Warning($"Pose import failed: {failure}");
             Rollback(import);
             return GestureResult.Fail(failure);
@@ -389,14 +404,29 @@ public sealed class PoseImportCapture : IDisposable
         }
 
         if (failure == null)
-        {
             failure = AppendHistory(import);
-            if (failure == null)
-                return;
-        }
 
-        _log.Warning($"Pose import failed: {failure}");
-        Rollback(import);
+        if (failure != null)
+        {
+            _log.Warning($"Pose import failed: {failure}");
+            Rollback(import);
+        }
+        Notify(import, failure == null);
+    }
+
+    /// <summary>The callback runs application code (the facade's speed
+    /// restore); a throw there must not escape into the framework tick or
+    /// the pass bookkeeping.</summary>
+    private void Notify(Import import, bool success)
+    {
+        try
+        {
+            import.OnFinished?.Invoke(success);
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"Pose import completion callback threw: {ex.Message}");
+        }
     }
 
     /// <summary>

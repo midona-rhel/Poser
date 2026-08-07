@@ -24,6 +24,12 @@ public class PoserConfiguration : IPluginConfiguration
     public bool OpenOnGPoseEnter { get; set; } = true;
     public bool CloseWithGPose { get; set; } = false;
 
+    // Import behavior. The FILES "Freeze actor" checkbox writes this back, so
+    // the persisted value IS the checkbox default — Brio's hidden
+    // Posing.FreezeActorOnPoseImport config and its popup checkbox collapse
+    // into the one visible surface. Default off, matching Brio's.
+    public bool FreezeActorOnPoseImport { get; set; } = false;
+
     // Target sync (Brio parity): the GPose target drives selection by default
     // (Brio ships BrioTargetChangesWithGPose = true); the reverse defaults off
     // exactly like Brio's GPoseTargetChangesWithBrio — the sidebar already has

@@ -41,6 +41,10 @@ public sealed class PoseFileInspectorSection
     // file's baked positions/scales fight IK and Customize+ scaling.
     private bool _rotation = true, _position, _scale;
     private bool _descendants = true, _reset;
+    // Seeded from config and written back on toggle: the checkbox IS the
+    // persisted FreezeActorOnPoseImport default (Brio's popup checkbox +
+    // hidden config flag as one surface).
+    private bool _freeze;
 
     /// <summary>Raised by the Library… action and by an Import… that the
     /// library setting has taken over. The UI manager owns the window.</summary>
@@ -60,6 +64,7 @@ public sealed class PoseFileInspectorSection
         _skeletons = skeletons;
         _config = config;
         _autoSave = autoSave;
+        _freeze = config.Config.FreezeActorOnPoseImport;
     }
 
     public void DrawBrowsers()
@@ -106,6 +111,17 @@ public sealed class PoseFileInspectorSection
             next => _reset = next,
             help: "Clear every bone in the chosen scope before importing, "
                 + "including ones the file does not contain");
+        form.Checkbox(
+            "Freeze actor",
+            _freeze,
+            next =>
+            {
+                _freeze = next;
+                _config.Config.FreezeActorOnPoseImport = next;
+                _config.Save();
+            },
+            help: "Keep the actor paused after the import instead of "
+                + "resuming its animation; resume from the Animation tab");
         form.Actions("Pose file", actions =>
         {
             actions.Button("Import…", () => OpenImport(skeleton));
@@ -228,6 +244,7 @@ public sealed class PoseFileInspectorSection
             ApplyOrnament = full || selected,
             ResetBeforeImport = _reset,
             FilterIncludesDescendants = _descendants,
+            FreezeOnImport = _freeze,
         };
         // The Selected-scope bone filter is NOT built here: the frozen
         // BoneIds travel to the facade, which verifies actor identity and

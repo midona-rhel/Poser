@@ -22,6 +22,7 @@ public sealed class CleanPoseFacade
         PoseEditService edits,
         PoseTransferService transfers,
         PoseImportCapture imports,
+        Poser.Config.ConfigurationService configuration,
         IPoseFileService poseFiles,
         IBonePosingService bonePosing,
         ISkeletonService skeletons,
@@ -36,6 +37,7 @@ public sealed class CleanPoseFacade
         _edits = edits;
         _transfers = transfers;
         _imports = imports;
+        _configuration = configuration;
         _poseFiles = poseFiles;
         _bonePosing = bonePosing;
         _skeletons = skeletons;
@@ -50,6 +52,7 @@ public sealed class CleanPoseFacade
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
 
     private readonly PoseImportCapture _imports;
+    private readonly Poser.Config.ConfigurationService _configuration;
     private readonly IPoseFileService _poseFiles;
 
     /// <summary>
@@ -95,10 +98,65 @@ public sealed class CleanPoseFacade
         var plan = _poseFiles.BuildImportPlan(_skeletons.GetSkeletons(actor), path, options);
         if (plan == null)
             return PoseEditResult.Fail("The pose file could not be read.");
-        var begun = _imports.Begin(plan, $"Import {System.IO.Path.GetFileName(path)}");
-        return begun.Success
-            ? PoseEditResult.Ok(plan.FileBoneCount)
-            : PoseEditResult.Fail(begun.Detail ?? "The pose import failed.");
+
+        // The apply window runs paused (Brio: every ImportPose goes through
+        // StopSpeedAndResetTimeline) so playback cannot move the basis the
+        // pass diffs against, or fight the pose before it has even rendered.
+        // The pause is the Animation tab's own speed override — Pause there,
+        // resume there, one owner. Restoration waits for the import's actual
+        // completion (the pass has run, the pose has rendered against the
+        // held frame) instead of Brio's fixed post-apply tick guess.
+        //
+        // Freeze-on-import (the FILES checkbox riding the options, OR'd with
+        // the config default exactly as Brio ORs freezeOnLoad with
+        // Posing.FreezeActorOnPoseImport) skips the restore and simply keeps
+        // the override — but never on a failed import: a rollback that left
+        // the actor frozen would look like a result when there is none.
+        // An actor the user already paused restores nothing and stays paused
+        // regardless of the option.
+        var animationTarget = _bindings.GetActorId(actor);
+        bool freeze = options.FreezeOnImport ||
+            _configuration.Config.FreezeActorOnPoseImport;
+        float? priorSpeed = null;
+        bool pausedForImport = false;
+        if (animationTarget is { } pauseId && _animation.IsSupported(pauseId))
+        {
+            priorSpeed = _animation.OverridesFor(pauseId).OverallSpeed;
+            // Best-effort: an actor whose speed hook is unavailable imports
+            // exactly as before this bracket existed.
+            if (priorSpeed is not 0f)
+                pausedForImport = _animation.Pause(pauseId).Success;
+        }
+
+        void RestorePriorSpeed()
+        {
+            if (!pausedForImport || animationTarget is not { } restoreId)
+                return;
+            // The pause is only Poser's to undo while it still holds: a
+            // user who resumed or re-paused inside the window owns the
+            // state now.
+            if (!_animation.IsPaused(restoreId))
+                return;
+            if (priorSpeed is { } speed)
+                _animation.SetSpeed(restoreId, speed);
+            else
+                _animation.Resume(restoreId);
+        }
+
+        var begun = _imports.Begin(
+            plan,
+            $"Import {System.IO.Path.GetFileName(path)}",
+            onFinished: success =>
+            {
+                if (!freeze || !success)
+                    RestorePriorSpeed();
+            });
+        if (!begun.Success)
+        {
+            RestorePriorSpeed();
+            return PoseEditResult.Fail(begun.Detail ?? "The pose import failed.");
+        }
+        return PoseEditResult.Ok(plan.FileBoneCount);
     }
 
     private readonly ISkeletonService _skeletons;
