@@ -203,13 +203,22 @@ public class PoseFileService : IPoseFileService
                     _log.Info($"Pose import: {slot} collection skipped — slot not present on this actor.");
                     continue;
                 }
+                var slotInstances = InstancesByName(slotSkeleton);
                 foreach (var (boneName, boneData) in collection)
                 {
-                    var bone = slotSkeleton.GetBone(boneName);
-                    if (bone == null || !PassesBoneFilter(bone, options))
+                    if (IsThrowBone(boneName) ||
+                        !slotInstances.TryGetValue(boneName, out var bones))
                         continue;
-                    PlanBoneTransform(plan, bone, boneData, components);
-                    plan.FileBoneCount++;
+                    bool applied = false;
+                    foreach (var bone in bones)
+                    {
+                        if (!PassesBoneFilter(bone, options))
+                            continue;
+                        PlanBoneTransform(plan, bone, boneData, components);
+                        applied = true;
+                    }
+                    if (applied)
+                        plan.FileBoneCount++;
                 }
             }
         }
@@ -309,22 +318,20 @@ public class PoseFileService : IPoseFileService
         if (preDtFace)
             _log.Warning("PoseFileService: pre-Dawntrail face detected (no tongue bone) — face positions skipped to protect the DT face");
 
+        var instances = InstancesByName(skeleton);
         foreach (var (rawBoneName, boneData) in poseFile.Bones)
         {
             // old Anamnesis files carry legacy bone names on plain .pose
             // too — run the conversion table whenever the raw name misses
             var boneName = rawBoneName;
-            var bone = skeleton.GetBone(boneName);
-            if (bone == null)
+            if (!instances.TryGetValue(boneName, out var bones))
             {
                 var modern = AnamnesisBoneNameConverter.ToGame(rawBoneName);
-                if (modern != null)
-                {
-                    boneName = modern;
-                    bone = skeleton.GetBone(boneName);
-                }
+                if (modern == null || !instances.TryGetValue(modern, out bones))
+                    continue;
+                boneName = modern;
             }
-            if (bone == null)
+            if (IsThrowBone(boneName))
                 continue;
 
             // Scope decides FIRST; the pre-Dawntrail protection can only
@@ -344,21 +351,55 @@ public class PoseFileService : IPoseFileService
             else if (!options.ApplyFace && IsFaceBone(boneName))
                 continue;
 
-            // Selective import (Ktisis/Anamnesis parity): only filtered
-            // bones (+ descendants when requested)
-            if (!PassesBoneFilter(bone, options))
-                continue;
-
             // Pre-DT protection folds into the delta mask: a protected face
             // bone's position component contributes nothing.
             var boneComponents = preDtFace && IsFaceBone(boneName)
                 ? components & ~TransformComponents.Position
                 : components;
 
-            PlanBoneTransform(plan, bone, boneData, boneComponents);
-            plan.FileBoneCount++;
+            bool applied = false;
+            foreach (var bone in bones)
+            {
+                // Selective import (Ktisis/Anamnesis parity): only filtered
+                // bones (+ descendants when requested)
+                if (!PassesBoneFilter(bone, options))
+                    continue;
+                PlanBoneTransform(plan, bone, boneData, boneComponents);
+                applied = true;
+            }
+            if (applied)
+                plan.FileBoneCount++;
         }
     }
+
+    /// <summary>
+    /// Every live instance of each bone name across the skeleton's partials.
+    /// Brio applies the file bone to EVERY partial's instance — its per-bone
+    /// transitive action re-runs the name lookup at each visited bone
+    /// (PoseImporter.cs:33) — so j_kao lands on the body head AND on the
+    /// face/hair partial roots. A single-instance lookup leaves the extra
+    /// partial roots at their animated rotation, and the reparented face
+    /// assembles against a root the import never turned.
+    /// </summary>
+    private static Dictionary<string, List<IBone>> InstancesByName(ISkeleton skeleton)
+    {
+        var byName = new Dictionary<string, List<IBone>>(StringComparer.Ordinal);
+        foreach (var bone in skeleton.Bones)
+        {
+            if (bone is VirtualBone)
+                continue;
+            if (!byName.TryGetValue(bone.BoneName, out var list))
+                byName[bone.BoneName] = list = new List<IBone>(1);
+            list.Add(bone);
+        }
+        return byName;
+    }
+
+    /// <summary>Brio hard-excludes n_throw from every import (BoneFilter.cs:37-38,
+    /// the constructor's default excluded prefix): the throw bone is animation
+    /// plumbing, and a file value on it drags the whole model.</summary>
+    private static bool IsThrowBone(string boneName) =>
+        boneName.StartsWith("n_throw", StringComparison.Ordinal);
 
     /// <summary>Selective-import filter: the slot-qualified bone itself, or
     /// any same-slot ancestor, is in the set.</summary>
