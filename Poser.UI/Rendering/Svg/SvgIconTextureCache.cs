@@ -164,9 +164,16 @@ internal static class SvgIconTextureCache
         {
             if (!Repeated(key))
                 return false;
+            // The bake is rasterized in LOCAL space: RenderCore floors the
+            // box to whole pixels, and an integer translation of stroke
+            // geometry has identical per-pixel coverage, so where the icon
+            // SITS can never matter to the bitmap. Screen coordinates used
+            // to leak in through their float exponent — dragging a window
+            // across a power-of-two x or y re-baked every visible icon in
+            // one frame (~320ms).
             entry = Bake(
-                doc, min, max, floor, tint, flipX, strokeWidth,
-                groupOpacity, groupBackground);
+                doc, Vector2.Zero, max - min, Vector2.Zero, tint, flipX,
+                strokeWidth, groupOpacity, groupBackground);
             entry.LastDraw = _drawTick;
             if (Cache.Count >= MaxEntries)
                 EvictStale();
@@ -240,12 +247,11 @@ internal static class SvgIconTextureCache
     private const ulong FnvPrime = 1099511628211UL;
 
     /// <summary>
-    /// Everything the baked pixels depend on. Position enters as (binade,
-    /// fraction) rather than as an absolute coordinate: the transform's
-    /// rounding is decided by the exponent of the coordinates it works in and
-    /// by the sub-pixel phase, so two boxes sharing both produce bit-identical
-    /// geometry — which is also what lets a list scrolling by whole pixels
-    /// keep hitting the same bake.
+    /// Everything the baked pixels depend on — and POSITION IS NOT IN IT.
+    /// The bake is rasterized in local space off a whole-pixel box, so the
+    /// bitmap depends only on the size and the paint inputs. Keying position
+    /// (its float exponent and sub-pixel phase, as this originally did) made
+    /// window drags re-bake every visible icon at each power-of-two crossing.
     /// </summary>
     private static ulong Key(
         SvgDocument doc,
@@ -258,12 +264,6 @@ internal static class SvgIconTextureCache
         Vector4 background)
     {
         ulong hash = Mix(FnvOffset, (uint)doc.CacheId);
-        hash = Mix(hash, Exponent(min.X));
-        hash = Mix(hash, Exponent(min.Y));
-        hash = Mix(hash, Exponent(max.X));
-        hash = Mix(hash, Exponent(max.Y));
-        hash = Mix(hash, Bits(min.X - MathF.Floor(min.X)));
-        hash = Mix(hash, Bits(min.Y - MathF.Floor(min.Y)));
         hash = Mix(hash, Bits(max.X - min.X));
         hash = Mix(hash, Bits(max.Y - min.Y));
         hash = Mix(hash, flipX ? 1u : 0u);
@@ -292,9 +292,6 @@ internal static class SvgIconTextureCache
 
     private static uint Bits(float value) =>
         BitConverter.SingleToUInt32Bits(value);
-
-    private static uint Exponent(float value) =>
-        BitConverter.SingleToUInt32Bits(value) >> 23;
 
 #if DEBUG
     private static bool _warned;
