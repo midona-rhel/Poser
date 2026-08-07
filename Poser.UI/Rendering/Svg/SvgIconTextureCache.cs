@@ -40,14 +40,32 @@ internal static class SvgIconTextureCache
     /// <summary><see cref="Handle"/> 0 with <see cref="Painter"/> false is a
     /// bakeable draw whose mask is empty — it draws nothing, correctly.
     /// </summary>
-    private readonly record struct Entry(
+    private struct Entry(
         nint Handle,
         Vector2 Offset,
         Vector2 Size,
         IDisposable? Keepalive,
-        bool Painter);
+        bool Painter)
+    {
+        public readonly nint Handle = Handle;
+        public readonly Vector2 Offset = Offset;
+        public readonly Vector2 Size = Size;
+        public readonly IDisposable? Keepalive = Keepalive;
+        public readonly bool Painter = Painter;
+
+        /// <summary>Recency ordinal for the overflow sweep, stamped per hit
+        /// through the dictionary ref so a hit stays one lookup.</summary>
+        public int LastDraw;
+    }
 
     private static readonly Dictionary<ulong, Entry> Cache = new();
+
+    /// <summary>Monotonic draw ordinal; recency, not time.</summary>
+    private static int _drawTick;
+
+    // Overflow sweep scratch (cold path, static so it never allocates).
+    private static readonly int[] SweepTicks = new int[MaxEntries];
+    private static readonly ulong[] SweepKeys = new ulong[MaxEntries];
 
     // A key is drawn by the painter the first time it is seen and only earns
     // a texture once it comes back. Hover/press transitions retint an icon
@@ -78,6 +96,38 @@ internal static class SvgIconTextureCache
         _seenAt = 0;
     }
 
+    /// <summary>
+    /// Overflow eviction: drop the least-recently-drawn HALF. The old policy
+    /// cleared the whole cache, which re-baked every visible icon on the next
+    /// frame — a one-off 100ms-class hitch whenever a long session finally
+    /// crossed <see cref="MaxEntries"/>. Cold path by construction; the
+    /// scratch arrays are static so it allocates nothing.
+    /// </summary>
+    private static void EvictStale()
+    {
+        int count = 0;
+        foreach (var pair in Cache)
+        {
+            SweepTicks[count] = pair.Value.LastDraw;
+            SweepKeys[count] = pair.Key;
+            count++;
+        }
+        // Median by sorting a COPY of the ticks; the keys keep dictionary
+        // order and are re-tested against the threshold instead.
+        Array.Sort(SweepTicks, 0, count);
+        int threshold = SweepTicks[count / 2];
+        for (int i = 0; i < count; i++)
+        {
+            ulong key = SweepKeys[i];
+            if (Cache.TryGetValue(key, out var entry)
+                && entry.LastDraw <= threshold)
+            {
+                entry.Keepalive?.Dispose();
+                Cache.Remove(key);
+            }
+        }
+    }
+
     /// <summary>Draws the icon from a baked texture, or reports that this
     /// draw belongs to the painter. Allocation-free on a cache hit.</summary>
     internal static bool TryDraw(
@@ -101,15 +151,25 @@ internal static class SvgIconTextureCache
             doc, min, max, tint, flipX, strokeWidth,
             groupOpacity, groupBackground);
         var floor = new Vector2(MathF.Floor(min.X), MathF.Floor(min.Y));
-        if (!Cache.TryGetValue(key, out var entry))
+        _drawTick++;
+        ref var slot = ref System.Runtime.InteropServices.CollectionsMarshal
+            .GetValueRefOrNullRef(Cache, key);
+        Entry entry;
+        if (!System.Runtime.CompilerServices.Unsafe.IsNullRef(ref slot))
+        {
+            slot.LastDraw = _drawTick;
+            entry = slot;
+        }
+        else
         {
             if (!Repeated(key))
                 return false;
             entry = Bake(
                 doc, min, max, floor, tint, flipX, strokeWidth,
                 groupOpacity, groupBackground);
+            entry.LastDraw = _drawTick;
             if (Cache.Count >= MaxEntries)
-                Clear();
+                EvictStale();
             Cache[key] = entry;
         }
 
