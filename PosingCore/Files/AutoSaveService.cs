@@ -17,7 +17,7 @@ namespace Poser.Files;
 /// <summary>
 /// Timed pose auto-save (GAP 4). Exports every actor with Poser-authored edits
 /// into
-/// <c>&lt;pluginConfigDir&gt;/AutoSaves/&lt;utc timestamp&gt;/&lt;actor&gt;.pose</c>
+/// <c>&lt;pluginConfigDir&gt;/AutoSaves/&lt;local day&gt;/&lt;HH-mm-ss&gt; &lt;actor&gt;.pose</c>
 /// while in GPose, and once on GPose exit.
 ///
 /// <para>SPLIT ACROSS TWO THREADS. <see cref="SaveNow"/> runs on the framework
@@ -30,10 +30,18 @@ namespace Poser.Files;
 ///
 /// Deliberate deviations from the references:
 /// <list type="bullet">
-/// <item>Folder names are UTC and 24-hour, so name order == time order. Ktisis
-/// and Brio both format with 12-hour <c>hh</c>, which collides across noon.</item>
+/// <item>ONE FOLDER PER DAY, files prefixed with the save time (user call,
+/// 2026-08-08: both references write a folder per save, which at a one-minute
+/// interval buries a session under dozens of sibling folders). Local time,
+/// because the layout exists to be browsed and "that evening's folder" is a
+/// local-calendar notion; the 24-hour prefix keeps name order == time order
+/// within a day, and the same-second suffix in
+/// <see cref="SnapshotFilePath"/> also covers the DST fold's replayed hour.</item>
 /// <item>Retention is computed from what is on disk, not from an in-memory
-/// queue, so it still holds after a plugin restart (Ktisis' does not).</item>
+/// queue, so it still holds after a plugin restart (Ktisis' does not). It
+/// counts SAVE EVENTS — a time-prefix group of files, or one whole folder of
+/// the old one-folder-per-save layout, which is how pre-existing snapshots
+/// age out with no migration.</item>
 /// <item>One actor failing to export never aborts the rest of the snapshot
 /// (Brio aborts the whole save on a single bad filename).</item>
 /// <item>Nothing is written when no actor has authored edits, so no empty
@@ -54,6 +62,10 @@ namespace Poser.Files;
 public class AutoSaveService : IAutoSaveService
 {
     private const string AutoSaveFolderName = "AutoSaves";
+    private const string DayFolderFormat = "yyyy-MM-dd";
+    private const string TimePrefixFormat = "HH-mm-ss";
+    /// <summary>Rendered length of <see cref="TimePrefixFormat"/>.</summary>
+    private const int TimePrefixLength = 8;
 
     private readonly IPluginLog _log;
     private readonly IFramework? _framework;
@@ -297,12 +309,17 @@ public class AutoSaveService : IAutoSaveService
     {
         try
         {
-            var folder = CreateSnapshotFolder(nowUtc);
+            var local = nowUtc.ToLocalTime();
+            var dayFolder = Path.Combine(
+                RootDirectory,
+                local.ToString(DayFolderFormat, CultureInfo.InvariantCulture));
+            Directory.CreateDirectory(dayFolder);
+            var prefix = local.ToString(TimePrefixFormat, CultureInfo.InvariantCulture);
             var saved = 0;
 
             foreach (var entry in captured)
             {
-                var path = Path.Combine(folder, entry.FileName);
+                var path = SnapshotFilePath(dayFolder, prefix, entry.FileName);
                 try
                 {
                     if (entry.Pose.Save(path))
@@ -324,7 +341,7 @@ public class AutoSaveService : IAutoSaveService
                 }
             }
 
-            _log.Info($"Auto-saved {saved}/{captured.Count} actor(s) to {folder} ({reason})");
+            _log.Info($"Auto-saved {saved}/{captured.Count} actor(s) to {dayFolder} ({reason})");
             Prune(keep);
         }
         catch (Exception ex)
@@ -350,18 +367,18 @@ public class AutoSaveService : IAutoSaveService
     }
 
     /// <summary>
-    /// UTC, 24-hour, name-sortable. A collision (an exit save landing in the
-    /// same second as an interval save) gets a " (2)" suffix, which still sorts
-    /// after the unsuffixed name, i.e. newest-first stays correct.
+    /// <c>"HH-mm-ss Actor.pose"</c> inside the day folder. A collision (an
+    /// exit save landing in the same second as an interval save, or the DST
+    /// fold replaying an hour) gets a " (2)" suffix before the extension, so
+    /// nothing is ever overwritten.
     /// </summary>
-    private string CreateSnapshotFolder(DateTime nowUtc)
+    private static string SnapshotFilePath(string dayFolder, string prefix, string fileName)
     {
-        var baseName = nowUtc.ToString("yyyy-MM-dd HH-mm-ss'Z'", CultureInfo.InvariantCulture);
-        var candidate = Path.Combine(RootDirectory, baseName);
-        for (var suffix = 2; Directory.Exists(candidate); suffix++)
-            candidate = Path.Combine(RootDirectory, $"{baseName} ({suffix})");
-
-        Directory.CreateDirectory(candidate);
+        var stem = Path.GetFileNameWithoutExtension(fileName);
+        var extension = Path.GetExtension(fileName);
+        var candidate = Path.Combine(dayFolder, $"{prefix} {stem}{extension}");
+        for (var suffix = 2; File.Exists(candidate); suffix++)
+            candidate = Path.Combine(dayFolder, $"{prefix} {stem} ({suffix}){extension}");
         return candidate;
     }
 
@@ -401,26 +418,52 @@ public class AutoSaveService : IAutoSaveService
     }
 
     /// <summary>
-    /// Disk-based retention: the newest <c>MaxAutoSaves</c> folders BY DATE are
-    /// kept, everything older is deleted. Reading the disk rather than a session
-    /// queue is what makes retention hold across restarts.
+    /// Disk-based retention: the newest <c>MaxAutoSaves</c> SAVE EVENTS by date
+    /// are kept, everything older is deleted. One event is what a single save
+    /// wrote — the files sharing one time prefix inside a day folder, or one
+    /// whole folder of the old one-folder-per-save layout, which is how
+    /// pre-existing snapshots join the same ordering and age out without a
+    /// migration. Reading the disk rather than a session queue is what makes
+    /// retention hold across restarts.
     ///
-    /// <para>Date, not name (Brio's semantic): a snapshot folder is written once
-    /// and never touched again, so its last-write time IS the snapshot date, and
-    /// a folder the user renamed keeps its true age instead of being sorted by
-    /// whatever it is now called. Ties break on name, descending, so the order
-    /// is total even at one-second stamp granularity.</para>
+    /// <para>Date, not name (Brio's semantic): a save is written once and never
+    /// touched again, so its last-write time IS the save date, and a folder or
+    /// file the user renamed keeps its true age instead of being sorted by
+    /// whatever it is now called. Ties break on key, descending, so the order
+    /// is total even at one-second stamp granularity. A day folder whose last
+    /// event was pruned goes with it.</para>
     /// </summary>
     private void Prune(int keep)
     {
-        List<string> stale;
+        var events = new List<(DateTime AtUtc, string Key, string? LegacyDir, List<string>? Files)>();
+        var dayFolders = new List<string>();
         try
         {
-            stale = Directory.EnumerateDirectories(RootDirectory)
-                .OrderByDescending(Directory.GetLastWriteTimeUtc)
-                .ThenByDescending(dir => Path.GetFileName(dir) ?? string.Empty, StringComparer.Ordinal)
-                .Skip(keep)
-                .ToList();
+            foreach (var dir in Directory.EnumerateDirectories(RootDirectory))
+            {
+                var name = Path.GetFileName(dir) ?? string.Empty;
+                if (!IsDayFolder(name))
+                {
+                    // Old layout: the folder is the save.
+                    events.Add((Directory.GetLastWriteTimeUtc(dir), name, dir, null));
+                    continue;
+                }
+
+                dayFolders.Add(dir);
+                foreach (var group in Directory.EnumerateFiles(dir)
+                             .GroupBy(file => EventKey(Path.GetFileName(file))))
+                {
+                    var files = group.ToList();
+                    var newest = DateTime.MinValue;
+                    foreach (var file in files)
+                    {
+                        var at = File.GetLastWriteTimeUtc(file);
+                        if (at > newest)
+                            newest = at;
+                    }
+                    events.Add((newest, $"{name}/{group.Key}", null, files));
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -428,22 +471,73 @@ public class AutoSaveService : IAutoSaveService
             return;
         }
 
+        var stale = events
+            .OrderByDescending(entry => entry.AtUtc)
+            .ThenByDescending(entry => entry.Key, StringComparer.Ordinal)
+            .Skip(keep)
+            .ToList();
+
         var pruned = 0;
-        foreach (var dir in stale)
+        foreach (var (_, _, legacyDir, files) in stale)
         {
             try
             {
-                Directory.Delete(dir, recursive: true);
+                if (legacyDir != null)
+                    Directory.Delete(legacyDir, recursive: true);
+                else
+                    foreach (var file in files!)
+                        File.Delete(file);
                 pruned++;
             }
             catch (Exception ex)
             {
-                _log.Error($"Auto-save: could not prune '{dir}': {ex.Message}");
+                _log.Error(
+                    $"Auto-save: could not prune '{legacyDir ?? files![0]}': {ex.Message}");
+            }
+        }
+
+        foreach (var dir in dayFolders)
+        {
+            try
+            {
+                if (!Directory.EnumerateFileSystemEntries(dir).Any())
+                    Directory.Delete(dir);
+            }
+            catch (Exception ex)
+            {
+                _log.Error(
+                    $"Auto-save: could not remove empty day folder '{dir}': {ex.Message}");
             }
         }
 
         if (pruned > 0)
-            _log.Debug($"Auto-save pruned {pruned} old snapshot folder(s).");
+            _log.Debug($"Auto-save pruned {pruned} old save(s).");
+    }
+
+    private static bool IsDayFolder(string name) =>
+        DateTime.TryParseExact(
+            name,
+            DayFolderFormat,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out _);
+
+    /// <summary>Files sharing one valid <c>"HH-mm-ss "</c> prefix are one save;
+    /// anything else (a user-renamed file) is its own event under its full
+    /// name.</summary>
+    private static string EventKey(string? fileName)
+    {
+        if (fileName != null &&
+            fileName.Length > TimePrefixLength &&
+            fileName[TimePrefixLength] == ' ' &&
+            DateTime.TryParseExact(
+                fileName[..TimePrefixLength],
+                TimePrefixFormat,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out _))
+            return fileName[..TimePrefixLength];
+        return fileName ?? string.Empty;
     }
 
     private void CleanAll()

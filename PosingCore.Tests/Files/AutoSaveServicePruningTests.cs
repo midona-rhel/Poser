@@ -64,9 +64,14 @@ public class AutoSaveServicePruningTests
 
         Assert.Equal(1, captured);
 
-        var expected = new List<string> { AutoSaveHarness.Stamp(SaveTime) };
+        // Retention counts SAVE EVENTS: each seeded legacy folder is one, the
+        // new save's time-prefix group is one. Top-level order stays ordinal
+        // descending, and the new layout's bare day name sorts after every
+        // legacy "<day> <time>Z" sibling.
+        var expected = new List<string>();
         for (var minute = 11; minute >= 3; minute--)
             expected.Add(OldStamp(minute));
+        expected.Add(h.DayNow());
 
         Assert.Equal(10, expected.Count);
         Assert.Equal(expected, h.SnapshotFolders());
@@ -103,10 +108,10 @@ public class AutoSaveServicePruningTests
 
         Assert.Equal(1, captured);
 
-        // Kept: the snapshot just written, plus the two newest by DATE.
+        // Kept: the save just written, plus the two newest by DATE.
         Assert.True(
-            Directory.Exists(Path.Combine(h.Root, AutoSaveHarness.Stamp(SaveTime))),
-            "the snapshot just written always survives");
+            Directory.Exists(Path.Combine(h.Root, h.DayNow())),
+            "the save just written always survives");
         Assert.True(
             Directory.Exists(renamedNew),
             "an alphabetically-first name with a NEW write time must survive");
@@ -139,8 +144,8 @@ public class AutoSaveServicePruningTests
         h.Service.SaveNow("test");
         h.WaitForWrite();
 
-        // Never zero: the snapshot just written always survives its own prune.
-        Assert.Equal(new[] { AutoSaveHarness.Stamp(SaveTime) }, h.SnapshotFolders());
+        // Never zero: the save just written always survives its own prune.
+        Assert.Equal(new[] { h.DayNow() }, h.SnapshotFolders());
     }
 
     [Fact]
@@ -197,7 +202,7 @@ public class AutoSaveServicePruningTests
 
         // The worker rebuilt the root it was handed rather than giving up.
         Assert.Equal(
-            new[] { "Alpha.pose" },
-            h.SnapshotFiles(AutoSaveHarness.Stamp(SaveTime)));
+            new[] { $"{h.PrefixNow()} Alpha.pose" },
+            h.SnapshotFiles(h.DayNow()));
     }
 }

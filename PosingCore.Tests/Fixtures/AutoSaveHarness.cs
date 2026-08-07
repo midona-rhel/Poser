@@ -314,6 +314,20 @@ internal sealed class AutoSaveHarness : IDisposable
 
     public string StampNow() => Stamp(NowUtc);
 
+    /// <summary>The per-day layout's folder name for a UTC instant — LOCAL
+    /// day, exactly the service's own conversion, so expectations follow the
+    /// machine's time zone the same way the code under test does.</summary>
+    public static string Day(DateTime utc) =>
+        utc.ToLocalTime().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    /// <summary>The per-day layout's file-name time prefix (local).</summary>
+    public static string Prefix(DateTime utc) =>
+        utc.ToLocalTime().ToString("HH-mm-ss", CultureInfo.InvariantCulture);
+
+    public string DayNow() => Day(NowUtc);
+
+    public string PrefixNow() => Prefix(NowUtc);
+
     public string SeedSnapshot(string folderName, bool withFile = false)
     {
         var dir = Path.Combine(Root, folderName);

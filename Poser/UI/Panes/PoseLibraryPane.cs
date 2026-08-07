@@ -888,6 +888,18 @@ public sealed class PoseLibraryPane
     private static string SnapshotDay(string directory)
     {
         var name = System.IO.Path.GetFileName(directory);
+
+        // The per-day layout: the folder name IS the (local) day. Taken
+        // verbatim rather than through the mtime fallback, which a later
+        // prune deleting siblings inside the folder would silently bump.
+        if (DateTime.TryParseExact(
+                name,
+                DayFormat,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out _))
+            return name!;
+
         var time = DateTime.TryParseExact(
             name,
             SnapshotFolderFormat,

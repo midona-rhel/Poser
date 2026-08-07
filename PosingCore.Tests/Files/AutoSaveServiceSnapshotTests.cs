@@ -37,7 +37,9 @@ public class AutoSaveServiceSnapshotTests
         Assert.Equal(h.NowUtc, h.Service.LastSaveUtc);
 
         h.WaitForWrite();
-        Assert.Equal(new[] { "Alpha.pose", "Beta.pose" }, h.SnapshotFiles(h.StampNow()));
+        Assert.Equal(
+            new[] { $"{h.PrefixNow()} Alpha.pose", $"{h.PrefixNow()} Beta.pose" },
+            h.SnapshotFiles(h.DayNow()));
     }
 
     [Fact]
@@ -51,14 +53,14 @@ public class AutoSaveServiceSnapshotTests
 
         // The worker serializes whatever CreatePoseFile handed it, so the file
         // has to round-trip — an empty or half-written file would still exist.
-        var path = Path.Combine(h.Root, h.StampNow(), "Alpha.pose");
+        var path = Path.Combine(h.Root, h.DayNow(), $"{h.PrefixNow()} Alpha.pose");
         var loaded = PoseFile.Load(path);
         Assert.NotNull(loaded);
         Assert.Contains("j_kosi", loaded!.Bones.Keys);
     }
 
     [Fact]
-    public void SaveNow_names_the_folder_from_the_injected_utc_clock()
+    public void SaveNow_names_the_day_folder_and_time_prefix_from_the_injected_clock()
     {
         using var h = new AutoSaveHarness();
         h.NowUtc = new DateTime(2026, 12, 31, 23, 45, 6, DateTimeKind.Utc);
@@ -67,9 +69,15 @@ public class AutoSaveServiceSnapshotTests
         h.Service.SaveNow("test");
         h.WaitForWrite();
 
-        // 24-hour UTC, so folder-name order is time order (the deliberate
-        // deviation from Ktisis/Brio's 12-hour "hh").
-        Assert.Equal(new[] { "2026-12-31 23-45-06Z" }, h.SnapshotFolders());
+        // One folder per LOCAL day, files prefixed with the local 24-hour
+        // time (the deliberate deviation from both references'
+        // folder-per-save layout). The expectation converts through the same
+        // ToLocalTime as the service, so it holds in any machine time zone —
+        // including one where this UTC instant is already January 1st.
+        Assert.Equal(new[] { h.DayNow() }, h.SnapshotFolders());
+        Assert.Equal(
+            new[] { $"{h.PrefixNow()} Alpha.pose" },
+            h.SnapshotFiles(h.DayNow()));
     }
 
     [Fact]
@@ -116,8 +124,8 @@ public class AutoSaveServiceSnapshotTests
 
         h.WaitForWrite();
         Assert.Equal(
-            new[] { "Zidane (2).pose", "Zidane.pose" },
-            h.SnapshotFiles(h.StampNow()));
+            new[] { $"{h.PrefixNow()} Zidane (2).pose", $"{h.PrefixNow()} Zidane.pose" },
+            h.SnapshotFiles(h.DayNow()));
     }
 
     [Fact]
@@ -129,7 +137,9 @@ public class AutoSaveServiceSnapshotTests
         h.Service.SaveNow("test");
         h.WaitForWrite();
 
-        Assert.Equal(new[] { "A_b__c.pose" }, h.SnapshotFiles(h.StampNow()));
+        Assert.Equal(
+            new[] { $"{h.PrefixNow()} A_b__c.pose" },
+            h.SnapshotFiles(h.DayNow()));
     }
 
     [Theory]
@@ -143,7 +153,9 @@ public class AutoSaveServiceSnapshotTests
         h.Service.SaveNow("test");
         h.WaitForWrite();
 
-        Assert.Equal(new[] { "Actor.pose" }, h.SnapshotFiles(h.StampNow()));
+        Assert.Equal(
+            new[] { $"{h.PrefixNow()} Actor.pose" },
+            h.SnapshotFiles(h.DayNow()));
     }
 
     [Fact]
@@ -164,7 +176,9 @@ public class AutoSaveServiceSnapshotTests
         h.WaitForWrite();
 
         // Brio aborts the whole snapshot on one bad actor; this must not.
-        Assert.Equal(new[] { "Good.pose" }, h.SnapshotFiles(h.StampNow()));
+        Assert.Equal(
+            new[] { $"{h.PrefixNow()} Good.pose" },
+            h.SnapshotFiles(h.DayNow()));
         Assert.True(h.ErrorCount >= 1, "the failed write must be logged as an error");
     }
 
@@ -185,7 +199,9 @@ public class AutoSaveServiceSnapshotTests
         Assert.True(h.ErrorCount >= 1, "the throwing capture must be logged as an error");
 
         h.WaitForWrite();
-        Assert.Equal(new[] { "Good.pose" }, h.SnapshotFiles(h.StampNow()));
+        Assert.Equal(
+            new[] { $"{h.PrefixNow()} Good.pose" },
+            h.SnapshotFiles(h.DayNow()));
     }
 
     [Fact]
@@ -204,14 +220,19 @@ public class AutoSaveServiceSnapshotTests
         Assert.True(h.ErrorCount >= 1, "the failed actor scan must be logged as an error");
 
         h.WaitForWrite();
-        Assert.Equal(new[] { "Good.pose" }, h.SnapshotFiles(h.StampNow()));
+        Assert.Equal(
+            new[] { $"{h.PrefixNow()} Good.pose" },
+            h.SnapshotFiles(h.DayNow()));
     }
 
     [Fact]
-    public void SaveNow_suffixes_the_folder_when_the_timestamp_already_exists()
+    public void SaveNow_suffixes_the_file_when_the_same_second_already_has_one()
     {
         using var h = new AutoSaveHarness();
-        var collided = h.SeedSnapshot(h.StampNow());
+        var day = Path.Combine(h.Root, h.DayNow());
+        Directory.CreateDirectory(day);
+        var collided = Path.Combine(day, $"{h.PrefixNow()} Alpha.pose");
+        File.WriteAllText(collided, "{}");
         h.AddActor("Alpha");
 
         var captured = h.Service.SaveNow("test");
@@ -219,10 +240,16 @@ public class AutoSaveServiceSnapshotTests
         Assert.Equal(1, captured);
 
         h.WaitForWrite();
-        var suffixed = $"{h.StampNow()} (2)";
-        Assert.True(Directory.Exists(Path.Combine(h.Root, suffixed)));
-        Assert.True(Directory.Exists(collided));
-        Assert.Equal(new[] { "Alpha.pose" }, h.SnapshotFiles(suffixed));
+        // An exit save in the second an interval save used (or a DST-fold
+        // replay) must never overwrite the file already there.
+        Assert.Equal("{}", File.ReadAllText(collided));
+        Assert.Equal(
+            new[]
+            {
+                $"{h.PrefixNow()} Alpha (2).pose",
+                $"{h.PrefixNow()} Alpha.pose",
+            },
+            h.SnapshotFiles(h.DayNow()));
     }
 
     [Fact]

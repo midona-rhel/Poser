@@ -42,10 +42,13 @@ interchange with Brio and (via name conversion) Anamnesis.
   bone stack with a null layer — `CleanPoseFacade.HasAuthoredEdits`
   semantics) exports through the normal `IPoseFileService.ExportPose`
   path — auto-saves are byte-model-identical to manual exports — into
-  `<pluginConfigDir>/AutoSaves/<yyyy-MM-dd HH-mm-ssZ>/<actor>.pose`
-  (UTC, 24-hour, name order == time order; names sanitized, duplicates
-  suffixed ` (2)`). No actor qualifies → no folder. First save lands one
-  full interval after entering GPose, then every interval.
+  `<pluginConfigDir>/AutoSaves/<yyyy-MM-dd>/<HH-mm-ss> <actor>.pose`
+  (one folder per LOCAL day — user call 2026-08-08, replacing the
+  references' folder-per-save clutter; 24-hour prefix keeps name order ==
+  time order within a day; names sanitized, same-snapshot duplicates and
+  same-second collisions suffixed ` (2)`). No actor qualifies → no
+  folder. First save lands one full interval after entering GPose, then
+  every interval.
 - GPose exit takes one final snapshot while the pose is still intact —
   the auto-save handler MUST stay first in `GPoseStateChangedEvent`
   subscription order (eager-resolve order in `Poser.cs`; the scene
@@ -53,10 +56,14 @@ interchange with Brio and (via name conversion) Anamnesis.
   posing-disable both surface as this same edge. With clean-on-exit the
   exit instead deletes all snapshots — a crash never runs it, so
   snapshots survive for recovery.
-- Retention prunes from DISK to the configured count (newest-first by
-  folder DATE — `Directory.GetLastWriteTimeUtc`, Brio's semantic, since a
-  snapshot folder is written once; name breaks ties, so a renamed folder
-  keeps its true age — floor 1), so it holds across restarts. Every IO failure
+- Retention prunes from DISK to the configured count of SAVE EVENTS —
+  the files sharing one time prefix in a day folder, or one whole folder
+  of the pre-2026-08-08 folder-per-save layout, which ages out through
+  the same ordering with no migration. Newest-first by write DATE
+  (Brio's semantic, since a save is written once; key breaks ties, so a
+  renamed folder or file keeps its true age — floor 1), so it holds
+  across restarts; a day folder whose last event is pruned goes with it.
+  Every IO failure
   logs an Error with the path and never aborts the remaining
   actors/folders. Recovery: the titlebar burger menu → "Auto-saves…"
   (enabled when the selected actor has a skeleton; the ONE entry point)

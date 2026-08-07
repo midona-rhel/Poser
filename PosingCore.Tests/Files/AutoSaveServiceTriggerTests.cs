@@ -203,7 +203,9 @@ public class AutoSaveServiceTriggerTests
 
         h.WaitForWrite();
         Assert.Single(Directory.GetDirectories(h.Root));
-        Assert.Equal(new[] { "Alpha.pose" }, h.SnapshotFiles(h.StampNow()));
+        Assert.Equal(
+            new[] { $"{h.PrefixNow()} Alpha.pose" },
+            h.SnapshotFiles(h.DayNow()));
     }
 
     [Fact]
