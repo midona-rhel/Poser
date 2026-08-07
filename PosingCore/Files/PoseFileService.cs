@@ -166,6 +166,15 @@ public class PoseFileService : IPoseFileService
         // 4th Apply argument), applied inside the apply pass — never an
         // absolute-write emulation against a stale basis.
         var components = ComponentMask(options) & maskLimit;
+        // Expression imports apply EVERY component regardless of the
+        // Translation/Rotation/Scale toggles — Brio's ExpressionOptions is
+        // TransformComponents.All (PosingService.cs:77) while its toggles
+        // feed only the body path. Dawntrail faces are posed through bone
+        // POSITIONS, so the rotation-only default landed face imports wrong
+        // (user 2026-08-08). The mask limit still governs: a .cmp carries no
+        // positions to force.
+        if (options.AsExpression)
+            components = TransformComponents.All & maskLimit;
         var plan = new PoseImportPlan();
 
         var bySlot = slots

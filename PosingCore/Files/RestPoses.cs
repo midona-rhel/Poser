@@ -35,6 +35,14 @@ public static class RestPoses
     /// face, eyes, lips, jaw, ex and the legacy j_f_* entries in one stroke;
     /// the rest are the non-j_f_ members of head (j_kao), legacy (j_ago),
     /// ears, hair and weapon, plus BoneFilter's built-in n_throw exclusion.
+    ///
+    /// DELIBERATE DEVIATION from Brio: "iv_" and "ya_" (IVCS) are excluded
+    /// too. Brio's BodyOptions leaves the ivcs categories enabled and its
+    /// shipped A/T files carry 62 iv_/ya_ entries — baked rotations for
+    /// PHYSICS-DRIVEN bones (breasts, butt, genitals), which the sim then
+    /// fights, shoving them sideways on the first press (user 2026-08-08,
+    /// reproduced in Brio too). A rest pose never has business driving
+    /// physics bones.
     /// </summary>
     private static readonly string[] ExcludedPrefixes =
     {
@@ -50,6 +58,8 @@ public static class RestPoses
         "n_buki_",
         "j_buki",
         "n_throw",
+        "iv_",
+        "ya_",
     };
 
     private static readonly Dictionary<RestPose, PoseFile> Cache = new();
