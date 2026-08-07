@@ -13,6 +13,11 @@ public sealed class ShellSidebarRow
     public TablerIcon Icon = TablerIcon.User;
     /// <summary>Named custom icon (PoserIconSources) — wins over Icon when set.</summary>
     public string? IconName;
+    /// <summary>Nested rows normally draw no mark, because their guide column
+    /// already spans the same distance the root's icon cell does. A nested row
+    /// that IS a thing rather than a grouping (the gaze anchor under an actor)
+    /// opts the mark back in.</summary>
+    public bool ForceIcon;
     public int Depth;              // 0 root, 1+ nested (20px indent per level)
     public bool HasChildren;
     /// <summary>Disclosure affordance shown but faded and inert — the row's
@@ -75,6 +80,10 @@ public sealed class AppShellViewModel
     public bool RotationPivotEnabled;
     public bool RotationPivotParentAvailable;
     public int SymmetryMode;          // 0 off, 1 link, 2 mirror
+    public bool ShowImportToggles;
+    public bool ImportPosition, ImportRotation, ImportScale;
+    public bool AnimationOn;
+    public bool AnimationAvailable;
     public bool PhysicsOn;
     public bool PhysicsAvailable;
     public bool SkeletonOverlayOn;
@@ -136,6 +145,8 @@ public sealed class AppShellViewModel
     public Action<int>? OnGizmoSpace;
     public Action<int>? OnRotationPivot;
     public Action<int>? OnSymmetry;
+    public Action<bool>? OnImportPosition, OnImportRotation, OnImportScale;
+    public Action<bool>? OnAnimation;
     public Action<bool>? OnPhysics;
     public Action? OnUndo, OnRedo, OnSpawn, OnSettings, OnHideUi, OnPopOut, OnProject;
     /// <summary>The titlebar command menu, told the burger button's
@@ -680,6 +691,34 @@ public static class AppShellView
             static _ => { },
             right =>
             {
+                if (vm.ShowImportToggles)
+                {
+                    right.Switch(
+                        "Position",
+                        vm.ImportPosition,
+                        next => vm.OnImportPosition?.Invoke(next),
+                        "Import bone positions from applied poses");
+                    right.Switch(
+                        "Rotation",
+                        vm.ImportRotation,
+                        next => vm.OnImportRotation?.Invoke(next),
+                        "Import bone rotations from applied poses");
+                    right.Switch(
+                        "Scale",
+                        vm.ImportScale,
+                        next => vm.OnImportScale?.Invoke(next),
+                        "Import bone scaling from applied poses");
+                }
+                right.Switch(
+                    "Animation",
+                    vm.AnimationOn,
+                    next => vm.OnAnimation?.Invoke(next),
+                    !vm.AnimationAvailable
+                        ? "Select an actor to pause its animation"
+                        : vm.AnimationOn
+                            ? "Switch off to pause this actor's animation"
+                            : "Switch on to resume this actor's animation",
+                    disabled: !vm.AnimationAvailable);
                 right.Switch(
                     "Physics",
                     vm.PhysicsOn,

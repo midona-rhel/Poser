@@ -44,6 +44,7 @@ public class MainWindow : Window
     private readonly StableBindingRegistry _bindings;
     private readonly Application.Animation.AnimationSession _animation;
     private readonly SkeletonOverlayPresentation _overlayPresentation;
+    private readonly IGazeService _gazeService;
 
     // actor context menu + rename modal: stable ids only; the lifetime
     // services still take legacy actors, so ids resolve per frame through the
@@ -136,6 +137,12 @@ public class MainWindow : Window
     private string _sidebarFilter = "";
     private int _sidebarExpandVersion = -1;
 
+    /// <summary>A gaze mode transition landed since the last rebuild. Gaze mode
+    /// is not part of the scene revision and cannot be, so the one row it owns
+    /// needs its own arming bit. Written from the gaze service's publishing
+    /// thread — volatile, and nothing but the bit is touched there.</summary>
+    private volatile bool _gazeDirty;
+
     /// <summary>Bumped by every disclosure toggle. The gate cannot observe
     /// <see cref="_collapsedNodes"/> directly — a set carries no version — and
     /// disclosure is the one non-scene input that changes the row COUNT.
@@ -196,7 +203,9 @@ public class MainWindow : Window
         Game.Animation.AnimationCatalogLoader animationCatalog,
         PoseRailPane poseRail,
         GraphicalBonePane graphicalBonePane,
-        SkeletonOverlayPresentation overlayPresentation)
+        SkeletonOverlayPresentation overlayPresentation,
+        IGazeService gazeService,
+        IEventBus eventBus)
         : base($"{PluginConstants.PluginName}###poser_main_window",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
@@ -227,6 +236,12 @@ public class MainWindow : Window
         _poseFileSection = poseFileSection;
         _animation = animation;
         _overlayPresentation = overlayPresentation;
+        _gazeService = gazeService;
+        // A gaze mode flip changes the sidebar's row SET (the gaze anchor row
+        // exists only in Position mode) while bumping neither the scene
+        // revision nor the disclosure version. The handler arms the cold path
+        // and does nothing else: the publisher is not the draw thread.
+        eventBus.Subscribe<GazeStateChangedEvent>(_ => _gazeDirty = true);
         _animationCatalog = animationCatalog;
         _poseInspector.DrawMapInline = graphicalBonePane.DrawInline;
         graphicalBonePane.SidesSwapped =
@@ -261,6 +276,19 @@ public class MainWindow : Window
         _vm.OnGizmoSpace = i => _editorState.TransformOrientation = (TransformOrientation)i;
         _vm.OnRotationPivot = i => _editorState.RotationPivot = (Core.RotationPivot)i;
         _vm.OnSymmetry = i => _editorState.SymmetryMode = (SymmetryMode)i;
+        _vm.OnImportPosition = on => _libraryPane.ImportPosition = on;
+        _vm.OnImportRotation = on => _libraryPane.ImportRotation = on;
+        _vm.OnImportScale = on => _libraryPane.ImportScale = on;
+        // The switch's polarity is "animation playing"; off writes a zero
+        // speed override, on drops the override back to game speed.
+        _vm.OnAnimation = on =>
+        {
+            if (SelectedActorId() is { } actor)
+            {
+                if (on) _animation.ClearSpeed(actor);
+                else _animation.SetSpeed(actor, 0f);
+            }
+        };
         // The switch's polarity is "physics simulating"; the service's is
         // "freeze requested".
         _vm.OnPhysics = on =>
@@ -518,7 +546,17 @@ public class MainWindow : Window
             _pivotPrimaryIsBone;
         _vm.RotationPivotEnabled = boneRotate;
         _vm.RotationPivotParentAvailable = boneRotate && _pivotParentAvailable;
+        _vm.ShowImportToggles = _libraryMode && _libraryPane.ImportTogglesVisible;
+        _vm.ImportPosition = _libraryPane.ImportPosition;
+        _vm.ImportRotation = _libraryPane.ImportRotation;
+        _vm.ImportScale = _libraryPane.ImportScale;
         var toolbarActor = SelectedActorId();
+        _vm.AnimationAvailable = toolbarActor is { } animActorId
+            && _animation.IsSupported(animActorId);
+        // The switch's polarity is "animation playing": ON unless Poser holds
+        // a zero speed override on the selected actor.
+        _vm.AnimationOn = toolbarActor is not { } animActor
+            || _animation.OverridesFor(animActor).OverallSpeed is not 0f;
         _vm.PhysicsAvailable = toolbarActor is { } actorId
             && _animation.IsSupported(actorId);
         // OwnsPhysics means "this actor holds a freeze", so the switch is ON
@@ -643,11 +681,15 @@ public class MainWindow : Window
         // the common (unfiltered) frame builds no string here.
         string filter = _vm.SidebarSearch.Trim();
         if (!_sidebarBuilt ||
+            _gazeDirty ||
             _sidebarRevision != _scene.Revision ||
             _sidebarExpandVersion != _expandVersion ||
             !string.Equals(_sidebarFilter, filter, StringComparison.Ordinal))
         {
             _sidebarBuilt = true;
+            // Cleared BEFORE the walk, so a transition that lands mid-rebuild
+            // re-arms rather than being swallowed by the rebuild it raced.
+            _gazeDirty = false;
             _sidebarRevision = _scene.Revision;
             _sidebarExpandVersion = _expandVersion;
             _sidebarFilter = filter;
@@ -792,6 +834,34 @@ public class MainWindow : Window
             // the flag refresh — including for this frame.
             _actorRows.Add(new ActorRowState(
                 actorRow, actor.Id, rawName, actor.IsHidden));
+
+            // The gaze anchor is a child of the ACTOR, not of any skeleton: it
+            // exists exactly while the gaze is a fixed world point, and it
+            // stands above the bone categories because it is the one child the
+            // world gizmo can grab. An actor that no longer resolves has no
+            // live gaze to read, so it contributes no row.
+            if (expanded &&
+                _bindings.Resolve(actor.Id) is { Success: true, Value: { } gazeActor } &&
+                _gazeService.GetGazeState(gazeActor).Mode == GazeTargetMode.Position)
+            {
+                // The same "is anything left under this actor" question the
+                // categories answer with catLast, asked one level earlier.
+                bool categoriesFollowGaze =
+                    skeleton != null && (!filtering || hasMatchingBone);
+                bool auxFollowsGaze = auxSkeletons.Count > 0 &&
+                    (!filtering || hasMatchingAux);
+                actors.Rows.Add(new ShellSidebarRow
+                {
+                    Label = "Gaze control",
+                    Count = "",
+                    Depth = 1,
+                    IconName = "gaze-point",
+                    ForceIcon = true,
+                    HasChildren = false,
+                    IsLastChild = !categoriesFollowGaze && !auxFollowsGaze,
+                    Tag = SelectionId.ForGazeTarget(actor.Id),
+                });
+            }
 
             // The actor folds DIRECTLY into bone categories (no skeleton
             // node), categories into bones. Category set = curated grouping;
@@ -1134,6 +1204,8 @@ public class MainWindow : Window
         {
             { Kind: SceneEntityKind.Bone, Bone: { } bone } => bone.Skeleton.Actor,
             { Kind: SceneEntityKind.Actor, Actor: { } actorId } => actorId,
+            // A gaze anchor counts as its owning actor, exactly like a bone.
+            { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeOwner } => gazeOwner,
             _ => null,
         };
         // The bone total moves only with the scene's structure or with WHICH
@@ -1297,6 +1369,8 @@ public class MainWindow : Window
             { Kind: SceneEntityKind.Actor, Actor: { } actor } => actor,
             { Kind: SceneEntityKind.Bone, Bone: { } bone } =>
                 bone.Skeleton.Actor,
+            // A gaze anchor is still the actor's; the toolbar stays live on it.
+            { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeOwner } => gazeOwner,
             _ => null,
         };
 

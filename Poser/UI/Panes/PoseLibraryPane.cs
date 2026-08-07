@@ -88,7 +88,6 @@ public sealed class PoseLibraryPane
     private readonly IActorSpawnService _spawnService;
     private readonly SelectionSession _selection;
     private readonly StableBindingRegistry _bindings;
-    private readonly PoseFileInspectorSection _poseFileSection;
     private readonly ActorIntegrationSession _integration;
     private readonly IAutoSaveService _autoSave;
     private readonly PoseLibraryViewModel _vm = new();
@@ -97,6 +96,19 @@ public sealed class PoseLibraryPane
     /// browsing mode, not a preference, so it is never persisted and every
     /// entry starts on the poses.</summary>
     private LibraryType _type;
+
+    /// <summary>The library's import components, one set per tab — shown in
+    /// the app shell's toolbar while the mode is on. SESSION state like the
+    /// FILES section's own toggles. The poses tab starts rotation-only — the
+    /// pose import default; the auto-save tab starts with all three, because
+    /// a restore reproduces what was saved. The MCDF tab has no set:
+    /// character files never travel the pose import pipeline.</summary>
+    private bool _posesPosition;
+    private bool _posesRotation = true;
+    private bool _posesScale;
+    private bool _autoPosition = true;
+    private bool _autoRotation = true;
+    private bool _autoScale = true;
 
     /// <summary>Collapsed group keys. Session state, cleared on entry; poses
     /// and character files share a folder's key deliberately — it is the same
@@ -189,7 +201,6 @@ public sealed class PoseLibraryPane
         IActorSpawnService spawnService,
         SelectionSession selection,
         StableBindingRegistry bindings,
-        PoseFileInspectorSection poseFileSection,
         ActorIntegrationSession integration,
         IAutoSaveService autoSave)
     {
@@ -200,7 +211,6 @@ public sealed class PoseLibraryPane
         _spawnService = spawnService;
         _selection = selection;
         _bindings = bindings;
-        _poseFileSection = poseFileSection;
         _integration = integration;
         _autoSave = autoSave;
 
@@ -872,6 +882,8 @@ public sealed class PoseLibraryPane
             { Kind: SceneEntityKind.Actor, Actor: { } actor } => actor,
             { Kind: SceneEntityKind.Bone, Bone: { } bone } =>
                 bone.Skeleton.Actor,
+            { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeActor } =>
+                gazeActor,
             _ => (ActorId?)null,
         };
         if (actorId is not { } id)
@@ -920,6 +932,70 @@ public sealed class PoseLibraryPane
             if (name[i] is < '0' or > '9')
                 return name;
         return name.AsSpan(0, open).TrimEnd().ToString();
+    }
+
+    // ── the import components ────────────────────────────────────────────
+    // The shell-toolbar surface for the library's import components: the
+    // toggles live in the app shell's toolbar, not in this pane's own rows,
+    // so MainWindow reads and writes the active tab's set through these.
+
+    /// <summary>Whether the toolbar shows the component toggles: true on the
+    /// pose tabs, false on MCDF — character files never travel the pose
+    /// import pipeline. The library-mode gate is the caller's.</summary>
+    public bool ImportTogglesVisible => _type != LibraryType.Mcdf;
+
+    /// <summary>The active tab's Position component.</summary>
+    public bool ImportPosition
+    {
+        get => _type == LibraryType.AutoSaves ? _autoPosition : _posesPosition;
+        set
+        {
+            if (_type == LibraryType.AutoSaves)
+                _autoPosition = value;
+            else
+                _posesPosition = value;
+        }
+    }
+
+    /// <summary>The active tab's Rotation component.</summary>
+    public bool ImportRotation
+    {
+        get => _type == LibraryType.AutoSaves ? _autoRotation : _posesRotation;
+        set
+        {
+            if (_type == LibraryType.AutoSaves)
+                _autoRotation = value;
+            else
+                _posesRotation = value;
+        }
+    }
+
+    /// <summary>The active tab's Scale component.</summary>
+    public bool ImportScale
+    {
+        get => _type == LibraryType.AutoSaves ? _autoScale : _posesScale;
+        set
+        {
+            if (_type == LibraryType.AutoSaves)
+                _autoScale = value;
+            else
+                _posesScale = value;
+        }
+    }
+
+    /// <summary>The library's own import options: full scope with the active
+    /// tab's component toggles, and never a bone filter — a catalog apply is
+    /// whole-file. The FILES section's scope/reset/expression drafts belong
+    /// to its dialog and do not reach a library apply.</summary>
+    private PoseImportOptions BuildImportOptions()
+    {
+        bool auto = _type == LibraryType.AutoSaves;
+        return new PoseImportOptions
+        {
+            ApplyPosition = auto ? _autoPosition : _posesPosition,
+            ApplyRotation = auto ? _autoRotation : _posesRotation,
+            ApplyScale = auto ? _autoScale : _posesScale,
+        };
     }
 
     // ── the grid's actions ───────────────────────────────────────────────
@@ -1018,8 +1094,7 @@ public sealed class PoseLibraryPane
         var result = _poseFacade.ImportPose(
             actor,
             _vm.Tiles[index].ThumbKey,
-            _poseFileSection.BuildImportOptions(),
-            _poseFileSection.FreezeSelectedScope());
+            BuildImportOptions());
         _note = result.Success ? null : Failure(result);
     }
 
@@ -1053,14 +1128,12 @@ public sealed class PoseLibraryPane
             return;
         }
 
-        // The options are frozen HERE, at the click, so a scope change made
-        // while the scene binds the new actor cannot retarget the import. The
-        // Selected-scope bone freeze is deliberately NOT taken: those BoneIds
-        // belong to the source actor and the facade would reject them on the
-        // spawn, so a spawn always applies the file without a bone filter.
+        // The options are frozen HERE, at the click, so a toggle or tab
+        // change made while the scene binds the new actor cannot retarget
+        // the import.
         _pendingActor = spawned;
         _pendingPath = _vm.Tiles[index].ThumbKey;
-        _pendingOptions = _poseFileSection.BuildImportOptions();
+        _pendingOptions = BuildImportOptions();
         _pendingFrames = 0;
         _note = null;
     }
