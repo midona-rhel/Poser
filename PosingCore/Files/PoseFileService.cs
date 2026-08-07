@@ -115,8 +115,8 @@ public class PoseFileService : IPoseFileService
         try
         {
             // Legacy CMTool .cmp: hex-encoded rotations/scales, NO positions —
-            // convert to a PoseFile and force ApplyPosition off so nothing
-            // zeroes. .cmp is Character-only by format.
+            // convert to a PoseFile and drop Position from the delta mask so
+            // nothing zeroes. .cmp is Character-only by format.
             if (path.EndsWith(".cmp", StringComparison.OrdinalIgnoreCase))
             {
                 var cmp = CMToolPoseFile.Load(path);
@@ -126,10 +126,11 @@ public class PoseFileService : IPoseFileService
                     return null;
                 }
 
-                var upgraded = cmp.Upgrade();
-                var cmpOptions = (options ?? DefaultImportOptions).Clone();
-                cmpOptions.ApplyPosition = false;
-                return BuildImportPlan(slots, upgraded, cmpOptions);
+                return BuildImportPlan(
+                    slots,
+                    cmp.Upgrade(),
+                    options,
+                    TransformComponents.Rotation | TransformComponents.Scale);
             }
 
             var poseFile = PoseFile.Load(path);
@@ -151,9 +152,20 @@ public class PoseFileService : IPoseFileService
         }
     }
 
-    public PoseImportPlan BuildImportPlan(IReadOnlyList<ISkeleton> slots, PoseFile poseFile, PoseImportOptions? options = null)
+    public PoseImportPlan BuildImportPlan(IReadOnlyList<ISkeleton> slots, PoseFile poseFile, PoseImportOptions? options = null) =>
+        BuildImportPlan(slots, poseFile, options, TransformComponents.All);
+
+    private PoseImportPlan BuildImportPlan(
+        IReadOnlyList<ISkeleton> slots,
+        PoseFile poseFile,
+        PoseImportOptions? options,
+        TransformComponents maskLimit)
     {
         options ??= DefaultImportOptions;
+        // Component selection is a DELTA mask (Brio PoseImporter.cs:35, the
+        // 4th Apply argument), applied inside the apply pass — never an
+        // absolute-write emulation against a stale basis.
+        var components = ComponentMask(options) & maskLimit;
         var plan = new PoseImportPlan();
 
         var bySlot = slots
@@ -169,7 +181,7 @@ public class PoseFileService : IPoseFileService
 
         // Character collection → Character slot only.
         if (options.ApplyBody && character != null)
-            PlanCharacterCollection(plan, character, poseFile, options);
+            PlanCharacterCollection(plan, character, poseFile, options, components);
 
         // Each auxiliary collection imports only into its matching live
         // slot; a missing slot is reported, never redirected by name.
@@ -196,7 +208,7 @@ public class PoseFileService : IPoseFileService
                     var bone = slotSkeleton.GetBone(boneName);
                     if (bone == null || !PassesBoneFilter(bone, options))
                         continue;
-                    PlanBoneTransform(plan, bone, boneData, options);
+                    PlanBoneTransform(plan, bone, boneData, components);
                     plan.FileBoneCount++;
                 }
             }
@@ -283,7 +295,8 @@ public class PoseFileService : IPoseFileService
         PoseImportPlan plan,
         ISkeleton skeleton,
         PoseFile poseFile,
-        PoseImportOptions options)
+        PoseImportOptions options,
+        TransformComponents components)
     {
 
         // Pre-Dawntrail face heuristic (Anamnesis): files with face bones
@@ -336,15 +349,13 @@ public class PoseFileService : IPoseFileService
             if (!PassesBoneFilter(bone, options))
                 continue;
 
-            var effective = options;
-            if (preDtFace && IsFaceBone(boneName) && options.ApplyPosition)
-            {
-                var stripped = options.Clone();
-                stripped.ApplyPosition = false;
-                effective = stripped;
-            }
+            // Pre-DT protection folds into the delta mask: a protected face
+            // bone's position component contributes nothing.
+            var boneComponents = preDtFace && IsFaceBone(boneName)
+                ? components & ~TransformComponents.Position
+                : components;
 
-            PlanBoneTransform(plan, bone, boneData, effective);
+            PlanBoneTransform(plan, bone, boneData, boneComponents);
             plan.FileBoneCount++;
         }
     }
@@ -373,21 +384,35 @@ public class PoseFileService : IPoseFileService
     }
 
     private static void PlanBoneTransform(
-        PoseImportPlan plan, IBone bone, PoseFile.BoneData boneData, PoseImportOptions options)
+        PoseImportPlan plan, IBone bone, PoseFile.BoneData boneData, TransformComponents components)
     {
-        // File bones are absolute raw (pre-reparent) snapshots, so the delta basis is
-        // LastRawTransform — Brio passes bone.LastRawTransform to BonePoseInfo.Apply.
-        // For partial-0 bones this equals LastTransform; for face partials it differs.
-        // The atomic edit applies the desired transform against the LIVE raw
-        // basis, so components the options exclude are read here and stay put.
-        var original = bone.LastRawTransform;
-
+        // The FILE transform verbatim: file bones are absolute raw
+        // (pre-reparent) snapshots whose only valid delta basis is the apply
+        // pass's own just-refreshed bone.LastRawTransform (Brio
+        // PoseImporter.cs:35) — a basis read here, outside the pass, would
+        // predate the parents' deltas the same pass propagates. Excluded
+        // components are masked on the DELTA (Brio PoseInfo.cs:108), so the
+        // bone's live values stay put without being re-asserted.
         plan.Writes.Add((bone, new Transform
         {
-            Position = options.ApplyPosition ? boneData.Position : original.Position,
-            Rotation = options.ApplyRotation ? boneData.Rotation : original.Rotation,
-            Scale = options.ApplyScale ? boneData.Scale : original.Scale
-        }));
+            Position = boneData.Position,
+            Rotation = boneData.Rotation,
+            Scale = boneData.Scale
+        }, components));
+    }
+
+    /// <summary>Brio PoseWindow's TransformComponents assembly from the three
+    /// toggles — the options' component switches as one delta mask.</summary>
+    private static TransformComponents ComponentMask(PoseImportOptions options)
+    {
+        var mask = TransformComponents.None;
+        if (options.ApplyPosition)
+            mask |= TransformComponents.Position;
+        if (options.ApplyRotation)
+            mask |= TransformComponents.Rotation;
+        if (options.ApplyScale)
+            mask |= TransformComponents.Scale;
+        return mask;
     }
 
     private static bool IsFaceBone(string boneName)

@@ -21,7 +21,7 @@ public sealed class CleanPoseFacade
         StableBindingRegistry bindings,
         PoseEditService edits,
         PoseTransferService transfers,
-        Poser.Application.Transforms.TransformCommandService commands,
+        PoseImportCapture imports,
         IPoseFileService poseFiles,
         IBonePosingService bonePosing,
         ISkeletonService skeletons,
@@ -35,7 +35,7 @@ public sealed class CleanPoseFacade
         _bindings = bindings;
         _edits = edits;
         _transfers = transfers;
-        _commands = commands;
+        _imports = imports;
         _poseFiles = poseFiles;
         _bonePosing = bonePosing;
         _skeletons = skeletons;
@@ -49,16 +49,17 @@ public sealed class CleanPoseFacade
 
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
 
-    private readonly Poser.Application.Transforms.TransformCommandService _commands;
+    private readonly PoseImportCapture _imports;
     private readonly IPoseFileService _poseFiles;
 
     /// <summary>
-    /// File import dispatch through the stable pose edit path: the plan is
-    /// computed without mutation, every affected exact slot-qualified
-    /// target is captured, reset-before-import and application form ONE
-    /// atomic edit, a failure restores all captured targets and creates no
-    /// history item, and success creates one undo/redo item including the
-    /// model transform when enabled.
+    /// File import dispatch through the in-pass application engine: the plan
+    /// is computed without mutation and handed to
+    /// <see cref="PoseImportCapture"/>, which diffs each file bone against
+    /// the apply pass's own running basis. Ok means the import is armed and
+    /// registered; an in-pass failure rolls the whole edit back and logs a
+    /// warning. Success lands as one undo/redo item including the model
+    /// transform when enabled.
     /// </summary>
     public PoseEditResult ImportPose(
         IActor actor,
@@ -94,46 +95,10 @@ public sealed class CleanPoseFacade
         var plan = _poseFiles.BuildImportPlan(_skeletons.GetSkeletons(actor), path, options);
         if (plan == null)
             return PoseEditResult.Fail("The pose file could not be read.");
-        return ApplyImportPlan(plan, $"Import {System.IO.Path.GetFileName(path)}");
-    }
-
-    /// <summary>The one plan → stable-id → atomic-edit conversion.</summary>
-    private PoseEditResult ApplyImportPlan(PoseImportPlan plan, string description)
-    {
-        if (plan.IsEmpty)
-            return PoseEditResult.Fail("Nothing in this file applies to the chosen scope.");
-
-        var resets = new List<TransformTargetId>(plan.Resets.Count);
-        foreach (var bone in plan.Resets)
-        {
-            if (_bindings.GetBoneId(bone) is not { } boneId)
-                return PoseEditResult.Fail(
-                    $"Import target {bone.BoneName} could not be resolved.");
-            resets.Add(TransformTargetId.ForBone(boneId));
-        }
-        var writes = new List<(TransformTargetId Target, PoseTransform Desired)>(plan.Writes.Count);
-        foreach (var (bone, desired) in plan.Writes)
-        {
-            if (_bindings.GetBoneId(bone) is not { } boneId)
-                return PoseEditResult.Fail(
-                    $"Import target {bone.BoneName} could not be resolved.");
-            writes.Add((TransformTargetId.ForBone(boneId),
-                new PoseTransform(desired.Position, desired.Rotation, desired.Scale)));
-        }
-        (TransformTargetId Target, PoseTransform? Absolute)? model = null;
-        if (plan.ModelActor is { } modelActor)
-        {
-            if (_bindings.GetActorId(modelActor) is not { } modelActorId)
-                return PoseEditResult.Fail("The actor could not be resolved.");
-            var transform = plan.ModelTransform;
-            model = (TransformTargetId.ForActor(modelActorId),
-                new PoseTransform(transform.Position, transform.Rotation, transform.Scale));
-        }
-
-        var applied = _commands.ImportEdit(resets, writes, model, description);
-        return applied.Success
+        var begun = _imports.Begin(plan, $"Import {System.IO.Path.GetFileName(path)}");
+        return begun.Success
             ? PoseEditResult.Ok(plan.FileBoneCount)
-            : PoseEditResult.Fail(applied.Detail ?? "The pose import failed.");
+            : PoseEditResult.Fail(begun.Detail ?? "The pose import failed.");
     }
 
     private readonly ISkeletonService _skeletons;
