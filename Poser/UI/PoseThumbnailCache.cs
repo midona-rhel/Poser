@@ -1,9 +1,11 @@
 using System;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
@@ -21,15 +23,31 @@ namespace Poser.UI;
 /// worker and the render thread only ever does a dictionary lookup.
 /// </para>
 /// <para>
-/// Threading contract: every field except <see cref="_completed"/> and
-/// <see cref="_disposed"/> is main-thread-only. Finished decodes cross back
-/// through the queue and are integrated in <see cref="Tick"/>.
+/// Threading contract: every field except <see cref="_completed"/>,
+/// <see cref="_decodeGate"/> and <see cref="_disposed"/> is main-thread-only.
+/// Finished decodes cross back through the queue and are integrated in
+/// <see cref="Tick"/>.
 /// </para>
 /// </summary>
 public sealed class PoseThumbnailCache : IDisposable
 {
-    // Bounded GPU memory: a large pose folder would otherwise hold one uploaded texture per file.
-    private const int MaxTextures = 128;
+    /// <summary>Floor for the eviction budget. The real budget tracks how many
+    /// tiles the grid asked for last frame, so a view showing more than this
+    /// can still keep everything it draws.</summary>
+    private const int MinTextureBudget = 128;
+
+    /// <summary>Concurrent decodes. A resize or a scroll can miss dozens of
+    /// tiles in one frame; unthrottled that is dozens of simultaneous large
+    /// reads, base64 decodes and uploads.</summary>
+    private const int MaxConcurrentDecodes = 3;
+
+    /// <summary>Textures selected per eviction pass. Bounds the reusable
+    /// selection buffer so eviction stays allocation-free.</summary>
+    private const int EvictionBatch = 32;
+
+    /// <summary>Guards the <c>int</c> cast for the pooled rental. A pose file
+    /// past this is not a thumbnail source; it is treated as image-less.</summary>
+    private const long MaxPoseFileBytes = 32L * 1024 * 1024;
 
     private const string Base64ImageProperty = "Base64Image";
 
@@ -66,7 +84,23 @@ public sealed class PoseThumbnailCache : IDisposable
     private readonly ConcurrentQueue<(string Path, int Generation, IDalamudTextureWrap? Wrap)>
         _completed = new();
 
+    /// <summary>Never disposed: workers may be parked on it long after
+    /// <see cref="Dispose"/>, and a <see cref="SemaphoreSlim"/> whose
+    /// <c>AvailableWaitHandle</c> is never touched owns nothing to release.</summary>
+    private readonly SemaphoreSlim _decodeGate = new(MaxConcurrentDecodes, MaxConcurrentDecodes);
+
+    /// <summary>Reused selection buffer for <see cref="Evict"/>, kept ascending
+    /// by <see cref="Slot.LastTouch"/> while a pass runs. Slots are cleared out
+    /// again at the end of the pass so eviction never pins one alive.</summary>
+    private readonly Slot?[] _evictionBuffer = new Slot?[EvictionBatch];
+
     private long _frame;
+
+    /// <summary>Distinct tiles asked for since the last <see cref="Tick"/>, and
+    /// the same count for the frame before it. The budget is derived from the
+    /// latter, so eviction can never drop a texture the grid is still drawing.</summary>
+    private int _touchedThisFrame;
+    private int _touchedLastFrame;
 
     /// <summary>Live uploaded textures, tracked incrementally so an
     /// under-budget <see cref="Tick"/> never has to count them.</summary>
@@ -103,11 +137,25 @@ public sealed class PoseThumbnailCache : IDisposable
     {
         if (_slots.TryGetValue(filePath, out var slot))
         {
-            if (slot.Wrap is not null)
+            if (slot.LastTouch != _frame)
             {
                 slot.LastTouch = _frame;
+                _touchedThisFrame++;
+            }
+
+            if (slot.Wrap is not null)
+            {
                 size = slot.Size;
                 return slot.Handle;
+            }
+
+            // Wrap-less and neither loading nor failed means the slot was
+            // evicted: the entry survives to keep its touch history, but the
+            // image has to be decoded again exactly like a fresh miss.
+            if (!slot.Loading && !slot.Failed)
+            {
+                slot.Loading = true;
+                StartLoad(filePath);
             }
 
             // Failed is memoized so a broken or image-less file is probed
@@ -117,9 +165,9 @@ public sealed class PoseThumbnailCache : IDisposable
         }
 
         _slots[filePath] = new Slot { Loading = true, LastTouch = _frame };
+        _touchedThisFrame++;
 
-        var generation = _generation;
-        _ = Task.Run(() => LoadAsync(filePath, generation));
+        StartLoad(filePath);
         size = Vector2.Zero;
         return 0;
     }
@@ -130,6 +178,11 @@ public sealed class PoseThumbnailCache : IDisposable
     /// </summary>
     public void Tick()
     {
+        // Tick leads the frame's Get calls, so the running counter still holds
+        // the previous frame's demand at this point.
+        _touchedLastFrame = _touchedThisFrame;
+        _touchedThisFrame = 0;
+
         _frame++;
 
         while (_completed.TryDequeue(out var done))
@@ -151,6 +204,8 @@ public sealed class PoseThumbnailCache : IDisposable
             slot.Wrap?.Dispose();
         _slots.Clear();
         _liveTextures = 0;
+        _touchedThisFrame = 0;
+        _touchedLastFrame = 0;
 
         DrainAndDiscard();
     }
@@ -164,6 +219,12 @@ public sealed class PoseThumbnailCache : IDisposable
         // Clear's drain then collects whatever was already in flight.
         _disposed = true;
         Clear();
+    }
+
+    private void StartLoad(string filePath)
+    {
+        var generation = _generation;
+        _ = Task.Run(() => LoadAsync(filePath, generation));
     }
 
     private void Integrate(string filePath, int generation, IDalamudTextureWrap? wrap)
@@ -191,41 +252,72 @@ public sealed class PoseThumbnailCache : IDisposable
 
     /// <summary>
     /// Drops the least recently touched textures until the cache is inside
-    /// budget. Failed and still-loading slots hold no texture, so they neither
-    /// count against the budget nor get evicted.
+    /// budget. Failed, evicted and still-loading slots hold no texture, so they
+    /// neither count against the budget nor get evicted.
     /// </summary>
+    /// <remarks>
+    /// The budget is twice the previous frame's distinct requests, floored at
+    /// <see cref="MinTextureBudget"/>: a fixed cap smaller than the visible
+    /// tile count would evict textures the grid re-requests on the very next
+    /// frame, paying the full decode again every frame.
+    /// </remarks>
     private void Evict()
     {
-        while (_liveTextures > MaxTextures)
-        {
-            string? oldestKey = null;
-            Slot? oldestSlot = null;
-            var oldestTouch = long.MaxValue;
+        var budget = Math.Max(MinTextureBudget, _touchedLastFrame * 2);
 
+        while (_liveTextures > budget)
+        {
+            var overflow = _liveTextures - budget;
+            var wanted = overflow < EvictionBatch ? overflow : EvictionBatch;
+
+            var count = 0;
+            var newest = long.MaxValue;
+
+            // One pass picks the whole batch: the buffer is held ascending by
+            // LastTouch, and once it is full anything not older than its last
+            // entry can be skipped outright.
             // Struct enumerator over the concrete dictionary: no allocation.
             foreach (var entry in _slots)
             {
                 var slot = entry.Value;
-                if (slot.Wrap is null || slot.LastTouch >= oldestTouch)
+                if (slot.Wrap is null)
+                    continue;
+                if (count == wanted && slot.LastTouch >= newest)
                     continue;
 
-                oldestTouch = slot.LastTouch;
-                oldestKey = entry.Key;
-                oldestSlot = slot;
+                var i = count < wanted ? count : wanted - 1;
+                while (i > 0 && _evictionBuffer[i - 1]!.LastTouch > slot.LastTouch)
+                {
+                    _evictionBuffer[i] = _evictionBuffer[i - 1];
+                    i--;
+                }
+
+                _evictionBuffer[i] = slot;
+                if (count < wanted)
+                    count++;
+                newest = _evictionBuffer[count - 1]!.LastTouch;
             }
 
-            if (oldestKey is null || oldestSlot is null)
+            if (count == 0)
             {
                 // Budget and reality disagree; trust reality rather than spin.
                 _liveTextures = 0;
                 return;
             }
 
-            oldestSlot.Wrap?.Dispose();
-            oldestSlot.Wrap = null;
-            oldestSlot.Handle = 0;
-            _slots.Remove(oldestKey);
-            _liveTextures--;
+            for (var i = 0; i < count; i++)
+            {
+                var slot = _evictionBuffer[i]!;
+                _evictionBuffer[i] = null;
+
+                slot.Wrap?.Dispose();
+                slot.Wrap = null;
+                slot.Handle = 0;
+                slot.Size = Vector2.Zero;
+                slot.Loading = false;
+                slot.Failed = false;
+                _liveTextures--;
+            }
         }
     }
 
@@ -247,26 +339,59 @@ public sealed class PoseThumbnailCache : IDisposable
     {
         IDalamudTextureWrap? wrap = null;
 
+        await _decodeGate.WaitAsync().ConfigureAwait(false);
         try
         {
-            var fileBytes = File.ReadAllBytes(filePath);
+            byte[]? imageBytes = null;
+            byte[]? rented = null;
 
-            string? encoded = null;
-            using (var document = JsonDocument.Parse(fileBytes, JsonReadOptions))
+            try
             {
-                var root = document.RootElement;
-                if (root.ValueKind == JsonValueKind.Object
-                    && root.TryGetProperty(Base64ImageProperty, out var property)
-                    && property.ValueKind == JsonValueKind.String)
+                using var handle = File.OpenHandle(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                var length = RandomAccess.GetLength(handle);
+                if (length is > 0 and <= MaxPoseFileBytes)
                 {
-                    encoded = property.GetString();
+                    var size = (int)length;
+                    rented = ArrayPool<byte>.Shared.Rent(size);
+
+                    var read = 0;
+                    while (read < size)
+                    {
+                        var got = RandomAccess.Read(handle, rented.AsSpan(read, size - read), read);
+                        if (got <= 0)
+                            break;
+                        read += got;
+                    }
+
+                    // JsonDocument.Parse over ReadOnlyMemory does not copy: the
+                    // document reads straight through to this buffer for its
+                    // whole lifetime, so the rental must outlive it. The inner
+                    // scope forces the document's dispose to run before the
+                    // finally below hands the array back to the pool.
+                    using var document = JsonDocument.Parse(
+                        new ReadOnlyMemory<byte>(rented, 0, read), JsonReadOptions);
+
+                    var root = document.RootElement;
+                    if (root.ValueKind == JsonValueKind.Object
+                        && root.TryGetProperty(Base64ImageProperty, out var property)
+                        && property.ValueKind == JsonValueKind.String
+                        // Decodes from the element's UTF-8 span: no intermediate
+                        // string, so only the image itself is ever allocated.
+                        && !property.TryGetBytesFromBase64(out imageBytes))
+                    {
+                        imageBytes = null;
+                    }
                 }
+            }
+            finally
+            {
+                if (rented is not null)
+                    ArrayPool<byte>.Shared.Return(rented);
             }
 
             // No image on this pose is an ordinary outcome, not an error.
-            if (!string.IsNullOrWhiteSpace(encoded))
+            if (imageBytes is { Length: > 0 })
             {
-                var imageBytes = Convert.FromBase64String(encoded);
                 wrap = await _textureProvider
                     .CreateFromImageAsync(imageBytes, "Poser pose thumbnail")
                     .ConfigureAwait(false);
@@ -276,6 +401,10 @@ public sealed class PoseThumbnailCache : IDisposable
         {
             wrap?.Dispose();
             wrap = null;
+        }
+        finally
+        {
+            _decodeGate.Release();
         }
 
         if (_disposed)

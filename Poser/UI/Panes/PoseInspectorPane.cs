@@ -219,11 +219,50 @@ public class PoseInspectorPane
         Reset3DCamera();
     }
 
+    // Retained resolution. The resolver reads exactly two things — the ordered
+    // selection and the scene snapshot — and building its answer costs a
+    // dictionary of the primary actor's WHOLE bone set, so those two are the
+    // key and a frame that changes neither resolves nothing. Every result is a
+    // fresh object; a Targets list already handed to a gesture is never
+    // mutated by a later resolution.
+    private readonly List<SelectionId> _effectiveKey = new();
+    private ulong _effectiveRevision;
+    private bool _effectivePrimed;
+    private EffectiveTransformSelection? _effective;
+
     /// <summary>The shared effective transform selection (resolver): first
     /// surviving root in original selection order is the primary; the
     /// inspector and gizmo consume the same resolution.</summary>
-    private EffectiveTransformSelection? EffectiveSelection() =>
-        TransformTargetResolver.Resolve(_selection.Selected, _scene.Snapshot);
+    private EffectiveTransformSelection? EffectiveSelection()
+    {
+        var selected = _selection.Selected;
+        if (_effectivePrimed &&
+            _effectiveRevision == _scene.Revision &&
+            SameSelection(_effectiveKey, selected))
+            return _effective;
+
+        _effectivePrimed = true;
+        _effectiveRevision = _scene.Revision;
+        _effectiveKey.Clear();
+        _effectiveKey.AddRange(selected);
+        _effective = TransformTargetResolver.Resolve(selected, _scene.Snapshot);
+        return _effective;
+    }
+
+    /// <summary>Ordered element-wise compare against the retained key. The
+    /// resolution depends on selection ORDER (the first entry is the primary),
+    /// so a count or set comparison would not be sound.</summary>
+    private static bool SameSelection(
+        List<SelectionId> cached,
+        IReadOnlyList<SelectionId> current)
+    {
+        if (cached.Count != current.Count)
+            return false;
+        for (int i = 0; i < cached.Count; i++)
+            if (cached[i] != current[i])
+                return false;
+        return true;
+    }
 
     private static Transform ToLegacy(Domain.Transforms.PoseTransform value) =>
         new() { Position = value.Position, Rotation = value.Rotation, Scale = value.Scale };

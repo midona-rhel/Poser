@@ -90,6 +90,17 @@ public static partial class Crystarium
     /// Bigger reads as a taller caret.</summary>
     internal const float CaretHeadroom = 2f;
 
+    /// <summary>UTF-8 byte cap handed to the native field. The binding turns
+    /// <c>InputText(label, ref string, maxLength)</c> into
+    /// <c>ImU8String.Reserve(maxLength + 1)</c>, which returns without
+    /// allocating only while that is under <c>ImU8String.AllocFreeBufferSize</c>
+    /// (512, the size of the struct's inline buffer); at or above it every
+    /// frame rents <c>MinimumRentSize</c> = 1024 bytes from the ArrayPool and
+    /// copies into them, per field. 510 is the largest value that stays inline,
+    /// and the binding's own default is 512, so this loses two bytes of maximum
+    /// input against what already shipped — no field here is near that.</summary>
+    private const int NativeInputMaxBytes = 510;
+
     private static bool TextInputCore(
         string id,
         string value,
@@ -224,7 +235,7 @@ public static partial class Crystarium
         }
 
         string next = value;
-        bool changed = ImGui.InputText(id, ref next);
+        bool changed = ImGui.InputText(id, ref next, NativeInputMaxBytes);
         if (caretClipped)
             draw.PopClipRect();
 

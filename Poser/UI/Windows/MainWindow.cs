@@ -104,6 +104,44 @@ public class MainWindow : Window
         Selectable = true,
     };
 
+    /// <summary>The scene's own sidebar section, retained with its rows: the
+    /// tree is the most expensive thing a frame can assemble, so it is rebuilt
+    /// only when <see cref="BuildSidebar"/>'s gate flips and refreshed in place
+    /// on every other frame.</summary>
+    private readonly ShellSidebarSection _actorsSection = new()
+    {
+        Title = "ACTORS",
+        ShowPlus = true,
+    };
+
+    /// <summary>The actor rows, with the snapshot facts a warm frame needs to
+    /// restate their live flags without walking the scene again.</summary>
+    private readonly List<ActorRowState> _actorRows = new();
+
+    private readonly record struct ActorRowState(
+        ShellSidebarRow Row,
+        ActorId Id,
+        string RawName,
+        bool SnapshotHidden);
+
+    /// <summary>Bone category → index into the rebuild's group list. Indexed by
+    /// the enum itself, because the FindIndex predicate this replaces was one
+    /// closure allocation per bone per frame.</summary>
+    private readonly int[] _categorySlots =
+        new int[(int)Core.BoneInfo.BoneCategory.Other + 1];
+
+    // ── sidebar rebuild gate (see BuildSidebar) ─────────────────────────
+    private bool _sidebarBuilt;
+    private ulong _sidebarRevision;
+    private string _sidebarFilter = "";
+    private int _sidebarExpandVersion = -1;
+
+    /// <summary>Bumped by every disclosure toggle. The gate cannot observe
+    /// <see cref="_collapsedNodes"/> directly — a set carries no version — and
+    /// disclosure is the one non-scene input that changes the row COUNT.
+    /// </summary>
+    private int _expandVersion;
+
     /// <summary>Library mode's tab strip: the library TYPES are the tabs —
     /// a lone "Library" tab controlled nothing. Positional against the
     /// pane's type indices.</summary>
@@ -112,6 +150,15 @@ public class MainWindow : Window
         new() { Label = "Poses" },
         new() { Label = "Auto-saves" },
         new() { Label = "MCDF" },
+    ];
+
+    /// <summary>The selection-typed tab strip, retained like the library's —
+    /// three fresh ShellTabs per frame were pure churn.</summary>
+    private readonly ShellTab[] _selectionTabs =
+    [
+        new() { Label = "Pose" },
+        new() { Label = "Animation" },
+        new() { Label = "Appearance" },
     ];
 
     /// <summary>The library section is stated first, so its index is fixed.
@@ -245,6 +292,9 @@ public class MainWindow : Window
         _vm.OnRowClicked = OnRowClicked;
         _vm.OnRowExpandToggled = row =>
         {
+            // Disclosure is a structural change: the sidebar's row set is
+            // rebuilt on the next frame because of this bump.
+            _expandVersion++;
             // A merged category/bone row (e.g. the Root bone standing in for
             // the Root category) carries a selection Tag plus an ExpandKey.
             if (row.ExpandKey is { } expandKey && !_collapsedNodes.Add(expandKey))
@@ -459,30 +509,15 @@ public class MainWindow : Window
         // The pivot selector appears only where pivot choice changes the
         // active transform meaning: Rotate tool with a resolvable bone
         // selection. Parent needs a valid parent on the effective primary.
-        var effective = Application.Transforms.TransformTargetResolver.Resolve(
-            _selection.Selected, _scene.Snapshot);
+        // Both facts come from the shared resolver, which builds a dictionary
+        // of the selected actor's WHOLE bone set — so they are re-derived only
+        // when the resolver's own two inputs move. The tool is not part of that
+        // key: it decides whether the facts are SHOWN, not what they are.
+        RefreshPivotFacts();
         bool boneRotate = _editorState.TransformTool == TransformTool.Rotate &&
-            effective is { Primary.Kind: Domain.Identity.TransformTargetKind.Bone };
+            _pivotPrimaryIsBone;
         _vm.RotationPivotEnabled = boneRotate;
-        _vm.RotationPivotParentAvailable = false;
-        if (boneRotate &&
-            effective!.Primary.Bone is { } effectiveBone)
-        {
-            foreach (var actor in _scene.Snapshot.Actors)
-            {
-                if (actor.Id.LogicalId != effectiveBone.Skeleton.Actor.LogicalId ||
-                    actor.GetSkeleton(effectiveBone.Slot) is not { } skeleton)
-                    continue;
-                foreach (var bone in skeleton.Bones)
-                {
-                    if (!bone.Id.Equals(effectiveBone))
-                        continue;
-                    _vm.RotationPivotParentAvailable = bone.Parent != null;
-                    break;
-                }
-                break;
-            }
-        }
+        _vm.RotationPivotParentAvailable = boneRotate && _pivotParentAvailable;
         var toolbarActor = SelectedActorId();
         _vm.PhysicsAvailable = toolbarActor is { } actorId
             && _animation.IsSupported(actorId);
@@ -508,6 +543,74 @@ public class MainWindow : Window
         BuildStatus(primary);
     }
 
+    // ── effective-selection pivot facts, re-derived only on change ───────
+    private readonly List<SelectionId> _pivotKey = new();
+    private ulong _pivotRevision;
+    private bool _pivotPrimed;
+    private bool _pivotPrimaryIsBone;
+    private bool _pivotParentAvailable;
+
+    /// <summary>
+    /// Restates the two facts the pivot selector needs from the effective
+    /// transform selection. The resolver reads exactly two things — the ordered
+    /// selection and the scene snapshot — so those two are the whole key, and a
+    /// frame that changes neither does no work. A redraw or a slot rebind moves
+    /// BOTH (the generations in the ids and the published revision), so the
+    /// facts are current on the first frame drawn after one.
+    /// </summary>
+    private void RefreshPivotFacts()
+    {
+        var selected = _selection.Selected;
+        if (_pivotPrimed &&
+            _pivotRevision == _scene.Revision &&
+            SameSelection(_pivotKey, selected))
+            return;
+
+        _pivotPrimed = true;
+        _pivotRevision = _scene.Revision;
+        _pivotKey.Clear();
+        _pivotKey.AddRange(selected);
+
+        var effective = Application.Transforms.TransformTargetResolver.Resolve(
+            selected, _scene.Snapshot);
+        _pivotPrimaryIsBone =
+            effective is { Primary.Kind: Domain.Identity.TransformTargetKind.Bone };
+        _pivotParentAvailable = false;
+        if (!_pivotPrimaryIsBone ||
+            effective!.Primary.Bone is not { } effectiveBone)
+            return;
+
+        foreach (var actor in _scene.Snapshot.Actors)
+        {
+            if (actor.Id.LogicalId != effectiveBone.Skeleton.Actor.LogicalId ||
+                actor.GetSkeleton(effectiveBone.Slot) is not { } skeleton)
+                continue;
+            foreach (var bone in skeleton.Bones)
+            {
+                if (!bone.Id.Equals(effectiveBone))
+                    continue;
+                _pivotParentAvailable = bone.Parent != null;
+                break;
+            }
+            break;
+        }
+    }
+
+    /// <summary>Ordered element-wise compare against the retained key. The
+    /// resolution depends on selection ORDER (the first entry is the primary),
+    /// so a count or set comparison would not be sound.</summary>
+    private static bool SameSelection(
+        List<SelectionId> cached,
+        IReadOnlyList<SelectionId> current)
+    {
+        if (cached.Count != current.Count)
+            return false;
+        for (int i = 0; i < cached.Count; i++)
+            if (cached[i] != current[i])
+                return false;
+        return true;
+    }
+
     private void Undo()
     {
         if (_cleanTransforms.CanUndo)
@@ -520,33 +623,84 @@ public class MainWindow : Window
             _cleanTransforms.Redo();
     }
 
+    /// <summary>
+    /// Restates the sidebar. The row TREE is assembled only when the gate below
+    /// flips; every other frame walks the retained rows and refreshes the flags
+    /// that read live state, allocating nothing.
+    ///
+    /// <para>The gate is exactly the inputs that can change the row COUNT or
+    /// ORDER: the published scene revision (the structural signature — actor
+    /// set and generations, slot presence, bone counts), the search filter, and
+    /// the disclosure version. Selection, actor visibility, pause state and
+    /// library mode are per-row FLAGS: they are refreshed in place, so they
+    /// still land on the frame they change. A display name is a flag too,
+    /// except while filtering, where it can change what matches — that case
+    /// re-arms the gate.</para>
+    /// </summary>
     private void BuildSidebar(SelectionId? primary)
+    {
+        // Trim hands back the same instance when there is nothing to trim, so
+        // the common (unfiltered) frame builds no string here.
+        string filter = _vm.SidebarSearch.Trim();
+        if (!_sidebarBuilt ||
+            _sidebarRevision != _scene.Revision ||
+            _sidebarExpandVersion != _expandVersion ||
+            !string.Equals(_sidebarFilter, filter, StringComparison.Ordinal))
+        {
+            _sidebarBuilt = true;
+            _sidebarRevision = _scene.Revision;
+            _sidebarExpandVersion = _expandVersion;
+            _sidebarFilter = filter;
+            RebuildSidebar(filter);
+        }
+
+        RefreshSidebarFlags();
+    }
+
+    /// <summary>
+    /// The cold path: the whole actor/bone tree. Everything here is discarded
+    /// and restated wholesale, so it runs only behind
+    /// <see cref="BuildSidebar"/>'s gate.
+    /// </summary>
+    private void RebuildSidebar(string filter)
     {
         _vm.Sections.Clear();
         // The library is a place in the sidebar, not a window: its header IS
         // the affordance, and it stands above the scene it poses.
-        _librarySection.Active = _libraryMode;
         _vm.Sections.Add(_librarySection);
+        _vm.Sections.Add(_actorsSection);
+        _actorsSection.Rows.Clear();
+        _actorRows.Clear();
 
-        string filter = _vm.SidebarSearch.Trim();
         bool filtering = filter.Length > 0;
 
-        var actors = new ShellSidebarSection { Title = "ACTORS", ShowPlus = true };
+        var actors = _actorsSection;
         foreach (var actor in _scene.Snapshot.Actors)
         {
             var actorKey = "actor:" + actor.Id.LogicalId;
-            string actorLabel = ActorDisplayName(actor);
+            // The snapshot's raw name is fixed until the next revision, so the
+            // object-index strip runs here and the warm-frame label refresh is
+            // a pair of dictionary lookups.
+            string rawName = DisplayName(actor.Name);
+            string actorLabel = Config.ConfigurationService.Instance.GetDisplayName(
+                actor.Id.LogicalId, rawName);
 
             var groups = new List<(Core.BoneInfo.BoneCategory Cat, List<BoneDescriptor> Bones)>();
             var skeleton = actor.CharacterSkeleton;
             if (skeleton != null)
             {
+                Array.Fill(_categorySlots, -1);
                 foreach (var bone in skeleton.Bones)
                 {
                     if (bone.IsHidden) continue;
                     var cat = Core.BoneInfo.BoneInfoService.GetCategory(bone.Id.CanonicalName);
-                    var slot = groups.FindIndex(g => g.Cat == cat);
-                    if (slot < 0) { groups.Add((cat, new List<BoneDescriptor>())); slot = groups.Count - 1; }
+                    var slot = _categorySlots[(int)cat];
+                    if (slot < 0)
+                    {
+                        groups.Add((cat, new List<BoneDescriptor>()));
+                        slot = groups.Count - 1;
+                        _categorySlots[(int)cat] = slot;
+                    }
                     groups[slot].Bones.Add(bone);
                 }
                 groups.Sort((a, b) => ((int)a.Cat).CompareTo((int)b.Cat));
@@ -559,16 +713,58 @@ public class MainWindow : Window
                 .OrderBy(s => (int)s.Id.Slot)
                 .ToList();
 
-            bool actorMatches = MatchesSidebarFilter(filter, actorLabel, actor.Name);
-            bool hasMatchingBone = groups.Exists(group =>
-                MatchesSidebarFilter(filter, Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(group.Cat), group.Cat.ToString())
-                || group.Bones.Exists(bone => MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName)));
-            bool hasMatchingAux = auxSkeletons.Exists(aux =>
-                MatchesSidebarFilter(filter, SlotLabel(aux.Id.Slot))
-                || aux.Bones.Any(bone => !bone.IsHidden &&
-                    MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName)));
-            if (filtering && !actorMatches && !hasMatchingBone && !hasMatchingAux)
-                continue;
+            // The match strings exist only when a filter does: unfiltered,
+            // every "matches" answer below is true by construction and none of
+            // these three is read.
+            bool actorMatches = false;
+            bool hasMatchingBone = false;
+            bool hasMatchingAux = false;
+            if (filtering)
+            {
+                actorMatches = MatchesSidebarFilter(filter, actorLabel, actor.Name);
+                foreach (var (cat, bones) in groups)
+                {
+                    if (MatchesSidebarFilter(
+                            filter,
+                            Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(cat),
+                            cat.ToString()))
+                    {
+                        hasMatchingBone = true;
+                        break;
+                    }
+                    foreach (var bone in bones)
+                    {
+                        if (!MatchesSidebarFilter(
+                                filter, bone.DisplayName, bone.Id.CanonicalName))
+                            continue;
+                        hasMatchingBone = true;
+                        break;
+                    }
+                    if (hasMatchingBone)
+                        break;
+                }
+                foreach (var aux in auxSkeletons)
+                {
+                    if (MatchesSidebarFilter(filter, SlotLabel(aux.Id.Slot)))
+                    {
+                        hasMatchingAux = true;
+                        break;
+                    }
+                    foreach (var bone in aux.Bones)
+                    {
+                        if (bone.IsHidden ||
+                            !MatchesSidebarFilter(
+                                filter, bone.DisplayName, bone.Id.CanonicalName))
+                            continue;
+                        hasMatchingAux = true;
+                        break;
+                    }
+                    if (hasMatchingAux)
+                        break;
+                }
+                if (!actorMatches && !hasMatchingBone && !hasMatchingAux)
+                    continue;
+            }
 
             // Actor roots first appear collapsed; lineage keys survive
             // refreshes, so a scene refresh cannot reset existing disclosure.
@@ -578,11 +774,7 @@ public class MainWindow : Window
                 _collapsedNodes.Add(actorKey);
             bool expanded = filtering || !_collapsedNodes.Contains(actorKey);
             var actorSelectionId = SelectionId.ForActor(actor.Id);
-            var resolvedActor = _bindings.Resolve(actor.Id);
-            bool actorVisible = resolvedActor.Success
-                ? _spawnService.IsVisible(resolvedActor.Value!)
-                : !actor.IsHidden;
-            actors.Rows.Add(new ShellSidebarRow
+            var actorRow = new ShellSidebarRow
             {
                 Label = actorLabel,
                 Count = "",
@@ -592,12 +784,14 @@ public class MainWindow : Window
                 HasChildren = true,
                 ExpanderDisabled = skeleton == null,
                 Expanded = expanded,
-                Active = _selection.IsSelected(actorSelectionId),
                 Tag = actorSelectionId,
                 ActorActions = true,
-                ActorVisible = actorVisible,
-                ActorPaused = _animation.IsPaused(actor.Id),
-            });
+            };
+            actors.Rows.Add(actorRow);
+            // Selection, visibility, pause and the display name are stated by
+            // the flag refresh — including for this frame.
+            _actorRows.Add(new ActorRowState(
+                actorRow, actor.Id, rawName, actor.IsHidden));
 
             // The actor folds DIRECTLY into bone categories (no skeleton
             // node), categories into bones. Category set = curated grouping;
@@ -689,7 +883,48 @@ public class MainWindow : Window
             if (expanded && (!filtering || hasMatchingAux))
                 AddAuxiliarySlotGroups(actors, actorKey, auxSkeletons, filter, filtering);
         }
-        _vm.Sections.Add(actors);
+    }
+
+    /// <summary>
+    /// The warm frame's entire sidebar cost: the retained rows' live flags.
+    /// Nothing is created and no string is built — a display name that really
+    /// changed re-arms the rebuild gate, and only while a filter is active,
+    /// where the name decides whether the row is listed at all.
+    /// </summary>
+    private void RefreshSidebarFlags()
+    {
+        _librarySection.Active = _libraryMode;
+
+        var rows = _actorsSection.Rows;
+        for (int i = 0; i < rows.Count; i++)
+        {
+            var row = rows[i];
+            // Category rows carry a string tag and own no selection state.
+            if (row.Tag is SelectionId id)
+                row.Active = _selection.IsSelected(id);
+        }
+
+        for (int a = 0; a < _actorRows.Count; a++)
+        {
+            var state = _actorRows[a];
+            var row = state.Row;
+            var resolved = _bindings.Resolve(state.Id);
+            row.ActorVisible = resolved.Success
+                ? _spawnService.IsVisible(resolved.Value!)
+                : !state.SnapshotHidden;
+            row.ActorPaused = _animation.IsPaused(state.Id);
+
+            string label = Config.ConfigurationService.Instance.GetDisplayName(
+                state.Id.LogicalId, state.RawName);
+            if (string.Equals(label, row.Label, StringComparison.Ordinal))
+                continue;
+            row.Label = label;
+            // A rename can change what the filter matches, so the row SET has
+            // to be derived again; unfiltered, the new label IS the whole
+            // change and the row already carries it.
+            if (_sidebarFilter.Length > 0)
+                _sidebarBuilt = false;
+        }
     }
 
     private static string SlotLabel(Domain.Identity.PoseSlot slot) => slot switch
@@ -871,30 +1106,62 @@ public class MainWindow : Window
         }
         if (_activeTab is not ("Pose" or "Animation" or "Appearance"))
             _activeTab = "Pose";
-        _vm.Tabs.Add(new ShellTab { Label = "Pose", Active = _activeTab == "Pose" });
-        _vm.Tabs.Add(new ShellTab { Label = "Animation", Active = _activeTab == "Animation" });
-        _vm.Tabs.Add(new ShellTab { Label = "Appearance", Active = _activeTab == "Appearance" });
+        for (int i = 0; i < _selectionTabs.Length; i++)
+        {
+            _selectionTabs[i].Active = _selectionTabs[i].Label == _activeTab;
+            _vm.Tabs.Add(_selectionTabs[i]);
+        }
     }
+
+    // ── status bar, restated only when its numbers move ─────────────────
+    private int _statusActorCount = -1;
+    private int _statusBones;
+    private int _statusFps = -1;
+    private ulong _statusRevision;
+    private bool _statusPrimed;
+    private ActorId? _statusBoneActor;
 
     private void BuildStatus(SelectionId? primary)
     {
-        ActorDescriptor? selectedActor = null;
-        if (primary is { Kind: SceneEntityKind.Bone, Bone: { } bone })
-        {
-            selectedActor = FindActor(bone.Skeleton.Actor.LogicalId);
-        }
-        else if (primary is { Kind: SceneEntityKind.Actor, Actor: { } actorId })
-        {
-            selectedActor = FindActor(actorId.LogicalId);
-        }
-
         int actorCount = _scene.Snapshot.Actors.Count;
-        _vm.StatusLeft = actorCount == 1 ? "1 actor" : $"{actorCount} actors";
+        if (actorCount != _statusActorCount)
+        {
+            _statusActorCount = actorCount;
+            _vm.StatusLeft = actorCount == 1 ? "1 actor" : $"{actorCount} actors";
+        }
 
-        int bones = selectedActor?.Skeletons.Sum(s => s.Bones.Count) ?? 0;
-        _vm.StatusRight = bones > 0
-            ? $"{bones} bones · {ImGui.GetIO().Framerate:0} fps"
-            : $"{ImGui.GetIO().Framerate:0} fps";
+        ActorId? statusActor = primary switch
+        {
+            { Kind: SceneEntityKind.Bone, Bone: { } bone } => bone.Skeleton.Actor,
+            { Kind: SceneEntityKind.Actor, Actor: { } actorId } => actorId,
+            _ => null,
+        };
+        // The bone total moves only with the scene's structure or with WHICH
+        // actor is selected — never with the frame.
+        if (!_statusPrimed ||
+            _statusRevision != _scene.Revision ||
+            _statusBoneActor != statusActor)
+        {
+            _statusPrimed = true;
+            _statusRevision = _scene.Revision;
+            _statusBoneActor = statusActor;
+            int bones = 0;
+            if (statusActor is { } owner && FindActor(owner.LogicalId) is { } descriptor)
+                foreach (var skeleton in descriptor.Skeletons)
+                    bones += skeleton.Bones.Count;
+            _statusBones = bones;
+            // Restate the right-hand string with the new count.
+            _statusFps = -1;
+        }
+
+        int fps = (int)MathF.Round(
+            ImGui.GetIO().Framerate, MidpointRounding.AwayFromZero);
+        if (fps == _statusFps)
+            return;
+        _statusFps = fps;
+        _vm.StatusRight = _statusBones > 0
+            ? $"{_statusBones} bones · {fps} fps"
+            : $"{fps} fps";
     }
 
     private ActorDescriptor? FindActor(Guid lineage)
@@ -948,6 +1215,7 @@ public class MainWindow : Window
         if (row.Tag is string catKey2)
         {
             if (!_collapsedNodes.Add(catKey2)) _collapsedNodes.Remove(catKey2);
+            _expandVersion++;
             return;
         }
 

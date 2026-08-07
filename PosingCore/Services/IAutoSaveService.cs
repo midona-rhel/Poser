@@ -32,9 +32,11 @@ public interface IAutoSaveService : IDisposable
 
     /// <summary>
     /// Takes a snapshot immediately, regardless of the interval, and returns the
-    /// number of actors successfully written (0 when nothing had authored edits,
-    /// in which case no folder is created). Never throws: every failure is
-    /// logged and the remaining actors are still attempted.
+    /// number of actors CAPTURED (0 when nothing had authored edits, in which
+    /// case no folder is created). The disk write runs on a worker after this
+    /// returns, so a captured actor can still fail to write; those failures are
+    /// logged. Never throws: every capture failure is logged and the remaining
+    /// actors are still attempted.
     /// </summary>
     /// <param name="reason">Short tag recorded in the log line, e.g. "interval".</param>
     int SaveNow(string reason);

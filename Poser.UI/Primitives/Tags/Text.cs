@@ -159,7 +159,7 @@ public static partial class Crystarium
     public static void Text(string text, in TextStyle style, TextConstraint constraint)
     {
         var origin = ImGui.GetCursorScreenPos();
-        var size = DrawTextRun(origin, text, style, constraint);
+        var size = DrawTextRun(origin, text, style, constraint, measure: true);
         ImGui.SetCursorScreenPos(origin);
         ImGui.Dummy(size);
     }
@@ -290,6 +290,44 @@ public static partial class Crystarium
         }
     }
 
+    /// <summary>
+    /// Resolves ONCE what a <see cref="TextConstraint.Truncate"/> run of
+    /// this width will draw, so a surface that restates the same run every
+    /// frame can memoize the answer instead of re-shaping and re-allocating
+    /// it. Null means the run already fits and the caller draws it
+    /// unconstrained, exactly as an on-the-spot fit would have. Otherwise
+    /// the fitted presentation string, which the caller MUST draw back
+    /// through <c>TextConstraint.Truncate</c> AT THE SAME WIDTH: the clip
+    /// is what makes the unfittable case correct, and re-stating an
+    /// already-fitted run costs the renderer no allocation and lands the
+    /// same pixels. The answer holds only while the text, the width and
+    /// the resolved face all hold — a caller that memoizes it owns that
+    /// invalidation.
+    /// </summary>
+    public static string? FitTruncated(string text, in TextStyle style, float width)
+    {
+        if (!(width > 0f))
+            throw new ArgumentOutOfRangeException(
+                nameof(width), width, "Truncation requires a positive pixel width.");
+        var (font, pushed, _, _) = ResolveStyle(style);
+        try
+        {
+            string presented = Presentation(text);
+            // The fit decision is the QUANTIZED one on purpose: it selects
+            // between two renderer paths whose horizontal placement differs
+            // inside the rounding slack, so it has to be the same
+            // comparison MeasureText makes.
+            return ImGui.CalcTextSize(presented).X <= width
+                ? null
+                : TruncateResolved(presented, width);
+        }
+        finally
+        {
+            if (pushed)
+                font!.Pop();
+        }
+    }
+
     /// <summary>Presentation normalization: newlines canonicalized (CRLF
     /// and lone CR become LF, as the HTML parser does before layout) and
     /// composed NFC form, so measurement, truncation, wrapping, and
@@ -327,9 +365,14 @@ public static partial class Crystarium
     /// <summary>The one text renderer: resolves the style, fits the run,
     /// snaps the origin to whole pixels, and draws through the window
     /// draw list. Returns the LAYOUT size — a constrained run occupies
-    /// its constraint width regardless of ink.</summary>
+    /// its constraint width regardless of ink. An INTRINSIC run has to be
+    /// shaped a second time to state its size, so that measure is taken
+    /// only when <paramref name="measure"/> says a caller consumes it;
+    /// the screen-positioned entry points submit no layout item and
+    /// discarded it every frame.</summary>
     private static Vector2 DrawTextRun(
-        Vector2 position, string text, in TextStyle style, TextConstraint constraint)
+        Vector2 position, string text, in TextStyle style, TextConstraint constraint,
+        bool measure = false)
     {
         var (font, pushed, size, color) = ResolveStyle(style);
         try
@@ -406,7 +449,7 @@ public static partial class Crystarium
                 }
                 default:
                     dl.AddText(origin, packed, text);
-                    return ImGui.CalcTextSize(text);
+                    return measure ? ImGui.CalcTextSize(text) : default;
             }
         }
         finally
@@ -432,7 +475,7 @@ public static partial class Crystarium
     /// a late line break at a wrap boundary. The browser compares
     /// FRACTIONAL advance sums, so every fit comparison here does too.
     /// </summary>
-    private static float FractionalTextWidth(string text)
+    private static float FractionalTextWidth(ReadOnlySpan<char> text)
     {
         var font = ImGui.GetFont();
         float scale = ImGui.GetFontSize() / font.FontSize;
@@ -453,6 +496,12 @@ public static partial class Crystarium
         return width;
     }
 
+    /// <summary>Text-element boundary scratch for <see cref="TruncateResolved"/>.
+    /// A run is only ever fitted while drawing, which is main-thread only,
+    /// and the buffer never escapes the call — so one instance serves every
+    /// resolve instead of a fresh list per fit.</summary>
+    private static readonly List<int> TruncationBoundaries = [];
+
     /// <summary>Grapheme-cluster ellipsis backoff in the CURRENTLY PUSHED
     /// face — truncation and rendering always agree on the same font, and
     /// the fit decision uses fractional advances like the browser's. When
@@ -471,16 +520,39 @@ public static partial class Crystarium
 
         // Prefix boundaries fall on whole text elements (grapheme
         // clusters): surrogate pairs and combining sequences never split.
-        var boundaries = new List<int>();
-        var elements = StringInfo.GetTextElementEnumerator(text);
-        while (elements.MoveNext())
-            boundaries.Add(elements.ElementIndex);
-        for (int element = boundaries.Count - 1; element >= 1; element--)
+        var boundaries = TruncationBoundaries;
+        boundaries.Clear();
+        for (int index = 0; index < text.Length;)
         {
-            if (FractionalTextWidth(text[..boundaries[element]]) + ellipsis <= width)
-                return text[..boundaries[element]] + "…";
+            boundaries.Add(index);
+            index += StringInfo.GetNextTextElementLength(text.AsSpan(index));
         }
-        return "…";
+
+        // Advances are non-negative, so prefix width rises monotonically
+        // with the boundary and the LAST fitting prefix is a binary search.
+        // Walking back from the end re-measured every rejected prefix, which
+        // is quadratic in exactly the common case: a run that only just
+        // overflows.
+        int low = 1;
+        int high = boundaries.Count - 1;
+        int fit = 0;
+        while (low <= high)
+        {
+            int middle = (int)(((uint)low + (uint)high) >> 1);
+            if (FractionalTextWidth(text.AsSpan(0, boundaries[middle])) + ellipsis
+                <= width)
+            {
+                fit = middle;
+                low = middle + 1;
+            }
+            else
+            {
+                high = middle - 1;
+            }
+        }
+        return fit == 0
+            ? "…"
+            : string.Concat(text.AsSpan(0, boundaries[fit]), "…");
     }
 
     private const float TabStopSpaces = 8f;

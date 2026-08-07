@@ -19,6 +19,43 @@ public readonly record struct PoseThumbnail(nint Texture, Vector2 Size)
 }
 
 /// <summary>
+/// One caption slot's fitted-run memo. Ellipsis fitting re-shapes the run and
+/// allocates a string, and a grid caption is the COMMON truncation case — so
+/// the answer is resolved once and read back on every frame that restates the
+/// same run at the same band. Rows are reused in place across refilters, so the
+/// source string itself is part of the key.
+/// </summary>
+internal struct TextFit
+{
+    private string? _source;
+    private float _band;
+    private float _size;
+    private string? _fitted;
+
+    /// <summary>Whether the last resolve had to cut the run.</summary>
+    internal readonly bool Truncated => _fitted is not null;
+
+    /// <summary>The run to draw through a Truncate constraint of
+    /// <paramref name="band"/>, or null when the text fits as it stands. The
+    /// key carries the EXPLICIT type size every caption slot states, so a
+    /// theme whose typography moved without moving the band still re-resolves;
+    /// a style that leaves its size to the theme must not be memoized here.
+    /// </summary>
+    internal string? Resolve(string text, in TextStyle style, float band)
+    {
+        float size = style.Size ?? 0f;
+        if (!ReferenceEquals(_source, text) || _band != band || _size != size)
+        {
+            _source = text;
+            _band = band;
+            _size = size;
+            _fitted = Crystarium.FitTruncated(text, style, band);
+        }
+        return _fitted;
+    }
+}
+
+/// <summary>
 /// One rail row: a source, a subfolder under it, or one of the two synthetic
 /// heads the binder always states first — "All poses" and "Favorites". Every
 /// string is minted when the rail is built, the count readout included, so no
@@ -33,6 +70,7 @@ public sealed class PoseLibraryFolderRow
     public int Count;
     /// <summary>The pre-minted count readout, or null to show none.</summary>
     public string? CountText;
+    internal TextFit LabelFit;
 }
 
 /// <summary>
@@ -63,6 +101,8 @@ public sealed class PoseLibraryTileRow
     /// <summary>Index into <see cref="PoseLibraryViewModel.Folders"/>.
     /// </summary>
     public int Folder;
+    internal TextFit LabelFit;
+    internal TextFit SubFit;
 }
 
 /// <summary>
@@ -86,6 +126,7 @@ public sealed class PoseLibraryGroupRow
     /// <summary>Visible tiles in the group; never 0 — an empty group is not
     /// stated at all.</summary>
     public int Count;
+    internal TextFit LabelFit;
 }
 
 /// <summary>
@@ -753,6 +794,7 @@ public static class PoseLibraryView
         }
 
         Fitted(
+            ref row.LabelFit,
             new Vector2(labelX, hit.ScreenMin.Y),
             new Vector2(labelRight - labelX, height),
             row.Label,
@@ -1004,6 +1046,7 @@ public static class PoseLibraryView
         labelRight -= theme.Spacing.Three * scale;
 
         Fitted(
+            ref group.LabelFit,
             new Vector2(labelX, hit.ScreenMin.Y),
             new Vector2(labelRight - labelX, height),
             group.Label,
@@ -1301,8 +1344,8 @@ public static class PoseLibraryView
             Size = theme.Typography.BodySize,
             Color = theme.Text,
         };
-        bool clipped = Crystarium.MeasureText(tile.Label, labelStyle).X > band;
         Fitted(
+            ref tile.LabelFit,
             new Vector2(min.X + pad, top),
             new Vector2(band, LabelLineHeight * scale),
             tile.Label,
@@ -1311,6 +1354,7 @@ public static class PoseLibraryView
             besideIcon: false);
 
         Fitted(
+            ref tile.SubFit,
             new Vector2(min.X + pad, top + LabelLineHeight * scale),
             new Vector2(band, SubLineHeight * scale),
             tile.Sub,
@@ -1322,7 +1366,9 @@ public static class PoseLibraryView
             TextAlign.Center,
             besideIcon: false);
 
-        if (clipped && hovered)
+        // The fit already knows whether the name was cut, so the card comes
+        // off that answer instead of a second measure.
+        if (hovered && tile.LabelFit.Truncated)
             Crystarium.HoverHelp.Preview(
                 TileLabelHelpId, min, min + size, tile.Label);
     }
@@ -1503,9 +1549,12 @@ public static class PoseLibraryView
     // ---- Shared -----------------------------------------------------
 
     /// <summary>Band-centred text, constrained ONLY on overflow: the truncate
-    /// clip's snapped edge shaves a fitting run's descender otherwise.
+    /// clip's snapped edge shaves a fitting run's descender otherwise. The fit
+    /// lives in the row's own slot, because resolving it re-shapes the run and
+    /// allocates while the grid restates every caption every frame.
     /// </summary>
     private static void Fitted(
+        ref TextFit fit,
         Vector2 min,
         Vector2 band,
         string text,
@@ -1515,13 +1564,17 @@ public static class PoseLibraryView
     {
         if (!(band.X > 0f))
             return;
-        if (Crystarium.MeasureText(text, style).X <= band.X)
+        if (fit.Resolve(text, style, band.X) is not { } fitted)
             Crystarium.TextInBand(min, band, text, style, align, besideIcon);
         else
             // The constraint box IS the band, so the run's own alignment
-            // inside it is what carries the caller's intent.
+            // inside it is what carries the caller's intent. The fitted run
+            // goes back through that same constraint rather than being drawn
+            // plainly: the CLIP is what makes an unfittable run correct, and
+            // it is what places the run to the pixel. Re-checking a run that
+            // already fits costs the renderer no allocation.
             Crystarium.TextInBand(
-                min, band, text, style,
+                min, band, fitted, style,
                 TextConstraint.Truncate(band.X, align),
                 TextAlign.Start, besideIcon);
     }
