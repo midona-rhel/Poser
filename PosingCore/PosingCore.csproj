@@ -25,6 +25,10 @@
 		<EmbeddedResource Include="Data\GraphicalBones\GraphicalBonePosePositions.json" />
 		<EmbeddedResource Include="Data\GraphicalBones\Images\*.png" />
 		<EmbeddedResource Include="Data\Expressions\*.json" />
+		<!-- Brio's embedded rest poses, byte-identical to its
+		     Resources/Embedded/Data files so the two plugins land the exact
+		     same A/T-pose. -->
+		<EmbeddedResource Include="Data\RestPoses\*.pose" />
 	</ItemGroup>
 
 </Project>
