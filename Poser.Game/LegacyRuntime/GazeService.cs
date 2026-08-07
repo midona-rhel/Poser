@@ -56,13 +56,10 @@ public unsafe class GazeService : IGazeService, IDisposable
         public bool HeadLocked;
         public bool BodyLocked;
 
-        // Release contract: CapturedParts marks every part Poser has taken
-        // authority over. Removing a part queues a one-shot release consumed
-        // by the detour on the native thread — an INACTIVE (LookMode.None)
-        // write that disengages the controller so the posed/animated
-        // transform shows through again.
-        public GazeTargetType CapturedParts;
-        public GazeTargetType PendingRestore;
+        // Release contract: NONE (Brio parity). Removing a part simply stops
+        // the per-frame writes for it; the game's own loop re-takes the slot.
+        // Both write-on-release variants were tried and pinned the part to a
+        // stale target instead (user 2026-08-04/07).
     }
 
     private readonly object _sync = new();
@@ -113,12 +110,15 @@ public unsafe class GazeService : IGazeService, IDisposable
             if (any)
             {
                 var targetActor = _objectTable.CreateObjectReference((nint)args->OwnerObject);
-                if (targetActor is not null && targetActor.IsValid())
+                // The GPose index gate is load-bearing (Brio ActorTableHelpers
+                // 201..439): a GPose clone SHARES its GameObjectId with the
+                // overworld original, and without the gate every write lands
+                // on both bodies.
+                if (targetActor is not null && targetActor.IsValid()
+                    && targetActor.ObjectIndex is >= 201 and <= 439)
                 {
                     GazeTargetMode mode = GazeTargetMode.None;
                     GazeTargetType parts = GazeTargetType.None;
-                    GazeTargetType pendingRestore = GazeTargetType.None;
-                    GazeTargetType toCapture = GazeTargetType.None;
                     LookAtSource lookAt = default;
                     bool known = false;
                     bool eyesLocked = false, headLocked = false, bodyLocked = false;
@@ -129,10 +129,6 @@ public unsafe class GazeService : IGazeService, IDisposable
                             known = true;
                             mode = EffectiveMode(entry);
                             parts = entry.Parts;
-                            pendingRestore = entry.PendingRestore & entry.CapturedParts;
-                            toCapture = mode == GazeTargetMode.None
-                                ? GazeTargetType.None
-                                : parts & ~entry.CapturedParts;
                             // Copy to locals (like Brio) — the native calls
                             // below run outside the lock.
                             lookAt = entry.Target;
@@ -142,56 +138,14 @@ public unsafe class GazeService : IGazeService, IDisposable
                         }
                     }
 
-                    var lookAtController = known
-                        ? &((Character*)targetActor.Address)->LookAt.Controller
-                        : null;
-
-                    // One-shot release: write an INACTIVE target for each
-                    // released part so the native controller disengages and
-                    // the posed/animated transform shows through again.
-                    // Writing back the captured pre-Poser struct instead
-                    // re-engaged tracking toward a stale point — a GPose
-                    // actor's baseline is an ACTIVE camera-track — and the
-                    // part never came home (user 2026-08-04).
-                    if (known && pendingRestore != GazeTargetType.None)
-                    {
-                        var release = new LookAtTarget { LookMode = LookMode.None };
-                        if (pendingRestore.HasFlag(GazeTargetType.Body))
-                            _updateLookAt(lookAtController, &release, LookAtIndex_Body, 0);
-                        if (pendingRestore.HasFlag(GazeTargetType.Head))
-                            _updateLookAt(lookAtController, &release, LookAtIndex_Head, 0);
-                        if (pendingRestore.HasFlag(GazeTargetType.Eyes))
-                            _updateLookAt(lookAtController, &release, LookAtIndex_Eyes, 0);
-                        lock (_sync)
-                        {
-                            if (_entries.TryGetValue(targetActor.GameObjectId, out var entry))
-                            {
-                                entry.PendingRestore &= ~pendingRestore;
-                                entry.CapturedParts &= ~pendingRestore;
-                                if (entry.Mode == GazeTargetMode.None &&
-                                    entry.Parts == GazeTargetType.None &&
-                                    entry.PendingRestore == GazeTargetType.None &&
-                                    entry.CapturedParts == GazeTargetType.None)
-                                    _entries.Remove(targetActor.GameObjectId);
-                            }
-                        }
-                    }
-
-                    // Participation bookkeeping: CapturedParts marks the parts
-                    // Poser has ever driven — release targets exactly those,
-                    // and the entry lives until every one is released.
-                    if (known && toCapture != GazeTargetType.None)
-                    {
-                        lock (_sync)
-                        {
-                            if (_entries.TryGetValue(targetActor.GameObjectId, out var entry))
-                                entry.CapturedParts |= toCapture;
-                        }
-                    }
-
-                    // Off performs no Poser write at all.
-                    if (mode == GazeTargetMode.None)
+                    // Off performs no Poser write at all — release is pure
+                    // cessation (Brio parity): the game's own update re-takes
+                    // any slot Poser stops writing.
+                    if (!known || mode == GazeTargetMode.None)
                         return _actorLookAtLoop.Original(args);
+
+                    var lookAtController =
+                        &((Character*)targetActor.Address)->LookAt.Controller;
 
                     // Camera and Forward are position sources refreshed each
                     // loop for unlocked parts; Entity carries the target id in
@@ -260,8 +214,8 @@ public unsafe class GazeService : IGazeService, IDisposable
             entry.Mode = mode;
             if (mode == GazeTargetMode.None)
             {
-                // Off restores every controlled part and clears locks.
-                entry.PendingRestore |= entry.CapturedParts;
+                // Off stops every write and clears locks; the game's own
+                // update re-takes the released slots.
                 ClearPartLock(entry, GazeTargetType.All);
             }
             else if (entry.Parts == GazeTargetType.None)
@@ -279,11 +233,8 @@ public unsafe class GazeService : IGazeService, IDisposable
         lock (_sync)
         {
             var entry = GetOrCreateEntry(gameObject.GameObjectId);
-            // Removing a part relinquishes it immediately: its captured
-            // pre-Poser target is queued for a one-shot native restore, and a
-            // locked part being disabled still restores its baseline.
-            var removed = entry.Parts & ~parts & entry.CapturedParts;
-            entry.PendingRestore |= removed;
+            // Removing a part relinquishes it immediately — the detour just
+            // stops writing it — and a locked part being disabled unlocks.
             ClearPartLock(entry, entry.Parts & ~parts);
             entry.Parts = parts;
             // Turning off the final active part returns the mode to Off in the
@@ -394,21 +345,9 @@ public unsafe class GazeService : IGazeService, IDisposable
             return;
         lock (_sync)
         {
-            if (!_entries.TryGetValue(gameObject.GameObjectId, out var entry))
-                return;
-            if (entry.CapturedParts == GazeTargetType.None)
-            {
-                _entries.Remove(gameObject.GameObjectId);
-                return;
-            }
-            // Restore every controlled part before the entry is dropped: the
-            // detour consumes the one-shot restores on the native thread and
-            // removes the fully idle entry itself.
-            entry.Mode = GazeTargetMode.None;
-            entry.Parts = GazeTargetType.None;
-            entry.TargetId = 0;
-            entry.PendingRestore |= entry.CapturedParts;
-            ClearPartLock(entry, GazeTargetType.All);
+            // Release is cessation: dropping the entry stops every write in
+            // the same transition.
+            _entries.Remove(gameObject.GameObjectId);
         }
     }
 
@@ -524,7 +463,6 @@ public unsafe class GazeService : IGazeService, IDisposable
                 {
                     entry.TargetId = 0;
                     entry.Mode = GazeTargetMode.None;
-                    entry.PendingRestore |= entry.CapturedParts;
                     ClearPartLock(entry, GazeTargetType.All);
                     _log.Debug($"GazeService: gaze target of {id} despawned — gaze off.");
                 }
