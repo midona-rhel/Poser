@@ -413,9 +413,10 @@ public sealed class PoseFileInspectorSection
         var origin = ImGui.GetCursorScreenPos();
         float width = ImGui.GetContentRegionAvail().X;
 
-        float y = origin.Y - MenuTitleOffset(scale) + Crystarium.Section(
+        float top = origin.Y - MenuTitleOffset(scale);
+        float y = top + Crystarium.Section(
             "##export-menu", "Export pose",
-            new Vector2(origin.X, origin.Y), width, true, null,
+            new Vector2(origin.X, top), width, true, null,
             form =>
             {
                 form.Actions("File", actions => actions.Button(
@@ -465,9 +466,10 @@ public sealed class PoseFileInspectorSection
         float width = ImGui.GetContentRegionAvail().X;
         var page = Crystarium.ActiveTheme.Page;
 
-        float y = origin.Y - MenuTitleOffset(scale) + Crystarium.Section(
+        float top = origin.Y - MenuTitleOffset(scale);
+        float y = top + Crystarium.Section(
             "##filter-head", "Bone filter",
-            new Vector2(origin.X, origin.Y), width, true, null,
+            new Vector2(origin.X, top), width, true, null,
             form => form.Actions(string.Empty, actions =>
             {
                 actions.Button("All", () => _disabledCategories.Clear());
