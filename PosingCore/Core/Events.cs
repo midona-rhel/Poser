@@ -28,6 +28,11 @@ public record ActorListChangedEvent(IReadOnlyList<IActor> Actors) : IEvent;
 /// </summary>
 public record SkeletonChangedEvent(IActor Actor, ISkeleton? Skeleton) : IEvent;
 
+/// <summary>
+/// Published when the spawned-light list changes (light spawned or destroyed).
+/// </summary>
+public record LightListChangedEvent(IReadOnlyList<ILight> Lights) : IEvent;
+
 #endregion
 
 #region Selection Events

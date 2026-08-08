@@ -78,6 +78,8 @@ public class MainWindow : Window
     private readonly PoseInspectorPane _poseInspector;
     private readonly AnimationPane _animationPane;
     private readonly AppearancePane _appearancePane;
+    private readonly LightPane _lightPane;
+    private readonly ILightingService _lightingService;
     private readonly EnvironmentPane _environmentPane;
     private readonly PoseLibraryPane _libraryPane;
     private readonly PoseFileInspectorSection _poseFileSection;
@@ -141,6 +143,16 @@ public class MainWindow : Window
         ShowPlus = true,
     };
 
+    /// <summary>The lights section, retained like ACTORS. Lights are flat — a
+    /// spawned light owns nothing beneath it — so its rows are one per light,
+    /// rebuilt behind the same gate (the scene revision carries a light's
+    /// spawn, rename, kind and on-state) and flag-refreshed on warm frames.
+    /// </summary>
+    private readonly ShellSidebarSection _lightsSection = new()
+    {
+        Title = "LIGHTS",
+    };
+
     /// <summary>The actor rows, with the snapshot facts a warm frame needs to
     /// restate their live flags without walking the scene again.</summary>
     private readonly List<ActorRowState> _actorRows = new();
@@ -202,14 +214,26 @@ public class MainWindow : Window
         new() { Label = "Environment" },
     ];
 
+    /// <summary>A light's whole tab strip, the environment strip's sibling:
+    /// a light has no pose, animation or appearance, so while one is selected
+    /// the tab set IS the light editor.</summary>
+    private readonly ShellTab[] _lightTabs =
+    [
+        new() { Label = "Light" },
+    ];
+
     /// <summary>The library section is stated first, so its index is fixed.
     /// </summary>
     private const int LibrarySectionIndex = 0;
 
     /// <summary>The sections are stated in a fixed order — library,
-    /// environment, actors — so the actors section is index 2 and its header is
-    /// the only one whose plus creates anything.</summary>
+    /// environment, actors, lights — so the actors section is index 2. Its
+    /// header and the lights header are the only two whose plus creates
+    /// anything; the environment is never created or destroyed.</summary>
     private const int ActorsSectionIndex = 2;
+
+    /// <summary>Lights stand last, under the actors they light.</summary>
+    private const int LightsSectionIndex = 3;
 
     /// <summary>Reports whether the skeleton overlay window is open (titlebar toggle state).</summary>
     public Func<bool>? GetSkeletonOverlayOn { get; set; }
@@ -236,6 +260,8 @@ public class MainWindow : Window
         PoseInspectorPane poseInspector,
         AnimationPane animationPane,
         AppearancePane appearancePane,
+        LightPane lightPane,
+        ILightingService lightingService,
         EnvironmentPane environmentPane,
         PoseLibraryPane libraryPane,
         PoseFileInspectorSection poseFileSection,
@@ -269,6 +295,8 @@ public class MainWindow : Window
         _poseInspector = poseInspector;
         _animationPane = animationPane;
         _appearancePane = appearancePane;
+        _lightPane = lightPane;
+        _lightingService = lightingService;
         _environmentPane = environmentPane;
         _libraryPane = libraryPane;
         // The library's "Add source…" and its empty state both mean the same
@@ -345,12 +373,15 @@ public class MainWindow : Window
         };
         _vm.OnHideUi = () => IsOpen = false;
         // The sidebar's add affordance. Creation lives where the created
-        // thing will appear, so the ACTORS
-        // header owns it rather than a separate spawn menu — and only that
-        // header, which is no longer the first section.
+        // thing will appear, so each section header owns its own plus rather
+        // than a separate spawn menu: ACTORS opens the spawn browser, LIGHTS
+        // spawns a light outright — there is only one kind of light to make,
+        // and the browser has nothing to ask. Neither is the first section.
         _vm.OnSectionPlus = index =>
         {
-            if (index == ActorsSectionIndex)
+            if (index == LightsSectionIndex)
+                SpawnLight();
+            else if (index == ActorsSectionIndex)
                 OnSpawnBrowserRequested?.Invoke();
         };
         // Only the LIBRARY header is selectable, so no other index can arrive.
@@ -513,6 +544,7 @@ public class MainWindow : Window
         // tab or a context menu survives whatever the user does to that
         // surface next.
         _appearancePane.DrawBrowsers();
+        _lightPane.DrawBrowsers();
         _poseFileSection.DrawBrowsers();
         // Unconditional, exactly like the dialog pumps: a library spawn binds
         // its actor frames later, and leaving library mode must not strand it.
@@ -609,8 +641,10 @@ public class MainWindow : Window
         _vm.ShowPopOut = false;
         // Entity creation has two entry points by design (approved shell): the
         // titlebar action and the ACTORS header. Both open the SAME surface,
-        // the spawn browser. Cameras, lights and references stay absent (not
-        // disabled) there until their runtime entity types exist.
+        // the spawn browser (the LIGHTS header's plus is the one exception:
+        // there is only one kind of light to make, so it makes it). Cameras
+        // and references stay absent (not disabled) in the browser until
+        // their runtime entity types exist.
         _vm.ShowSpawn = true;
         _vm.ShowProject = false;
 
@@ -765,7 +799,10 @@ public class MainWindow : Window
         _environmentSection.Rows.Clear();
         _environmentSection.Rows.Add(_environmentRow);
         _vm.Sections.Add(_actorsSection);
+        // Lights stand under the actors they light, above nothing else.
+        _vm.Sections.Add(_lightsSection);
         _actorsSection.Rows.Clear();
+        _lightsSection.Rows.Clear();
         _actorRows.Clear();
 
         bool filtering = filter.Length > 0;
@@ -1047,6 +1084,34 @@ public class MainWindow : Window
             if (expanded && (!filtering || hasMatchingAux))
                 AddAuxiliarySlotGroups(actors, actorKey, auxSkeletons, filter, filtering);
         }
+
+        // Lights are flat: a spawned light owns nothing beneath it, so the
+        // section is one row per light and the header's plus makes another.
+        // A light's name, kind and on-state all participate in the scene
+        // signature, so this walk sits behind the same gate as the tree.
+        foreach (var light in _scene.Snapshot.Lights)
+        {
+            if (filtering && !MatchesSidebarFilter(filter, light.Name))
+                continue;
+            var lightSelectionId = SelectionId.ForLight(light.Id);
+            _lightsSection.Rows.Add(new ShellSidebarRow
+            {
+                Label = light.Name,
+                Count = "",
+                // Ownership outranks kind in the mark: a borrowed light is
+                // released rather than destroyed, and the row has to say so
+                // before the light is ever selected.
+                Icon = light.Ownership switch
+                {
+                    LightOwnership.GPose => TablerIcon.Camera,
+                    LightOwnership.World => TablerIcon.BuildingStore,
+                    _ => light.Kind == LightKind.Directional
+                        ? TablerIcon.Sun
+                        : TablerIcon.Bulb,
+                },
+                Tag = lightSelectionId,
+            });
+        }
     }
 
     /// <summary>
@@ -1059,6 +1124,18 @@ public class MainWindow : Window
     {
         _librarySection.Active = _libraryMode;
         _environmentRow.Active = _selection.IsSelected(EnvironmentSelection);
+        // Without the native lighting signatures a spawn is a silent no-op, so
+        // the header's plus is absent rather than inert. The answer is a field
+        // read, so it is restated here rather than gated.
+        _lightsSection.ShowPlus = _lightingService.IsAvailable;
+
+        var lightRows = _lightsSection.Rows;
+        for (int i = 0; i < lightRows.Count; i++)
+        {
+            var lightRow = lightRows[i];
+            if (lightRow.Tag is SelectionId lightId)
+                lightRow.Active = _selection.IsSelected(lightId);
+        }
 
         var rows = _actorsSection.Rows;
         for (int i = 0; i < rows.Count; i++)
@@ -1270,10 +1347,14 @@ public class MainWindow : Window
             return;
         }
         // The strip is a function of the SELECTION TYPE: the environment's
-        // tabs are its own, and nothing else shares them.
-        var tabs = primary is { Kind: SceneEntityKind.Environment }
-            ? _environmentTabs
-            : _selectionTabs;
+        // tabs are its own, a light's are its own, and nothing else shares
+        // either — neither entity has a pose, an animation or an appearance.
+        var tabs = primary switch
+        {
+            { Kind: SceneEntityKind.Environment } => _environmentTabs,
+            { Kind: SceneEntityKind.Light } => _lightTabs,
+            _ => _selectionTabs,
+        };
         // The active tab is preserved WITHIN a strip, so a selection change
         // inside the actor set cannot silently throw the user back to Pose; a
         // strip that does not carry it falls to that strip's first tab.
@@ -1382,7 +1463,7 @@ public class MainWindow : Window
         _vm.ContentFlush = tab is "Library";
         _vm.ContentOwnsViewport = tab is "Pose";
         _vm.ContentUsesPage =
-            tab is "Animation" or "Appearance" or "Environment";
+            tab is "Animation" or "Appearance" or "Light" or "Environment";
     }
 
     private void OnRowClicked(ShellSidebarRow row)
@@ -1466,6 +1547,12 @@ public class MainWindow : Window
             return;
         }
 
+        if (_activeTab == "Light")
+        {
+            _lightPane.Draw(origin, size);
+            return;
+        }
+
         if (_activeTab == "Environment")
         {
             _environmentPane.Draw(origin, size);
@@ -1497,11 +1584,28 @@ public class MainWindow : Window
     }
 
     private IActor? _pendingSelectSpawned;
+    private ILight? _pendingSelectSpawnedLight;
 
-    /// <summary>Second half of <see cref="SelectSpawned"/>: once the scene
-    /// refresh has bound the new actor, select it and forget it.</summary>
+    /// <summary>Spawns one light and arms it for selection. Spot is the only
+    /// starting kind — the Light tab's Type row switches it in place.</summary>
+    private void SpawnLight()
+    {
+        if (_lightingService.SpawnLight(LightKind.Spot) is { } spawned)
+            _pendingSelectSpawnedLight = spawned;
+    }
+
+    /// <summary>Second half of <see cref="SelectSpawned"/> and
+    /// <see cref="SpawnLight"/>: once the scene refresh has bound the new
+    /// entity, select it and forget it.</summary>
     private void ReconcilePendingSpawn()
     {
+        if (_pendingSelectSpawnedLight is { } spawnedLight &&
+            _bindings.GetLightId(spawnedLight) is { } lightId)
+        {
+            _selection.Select(SelectionId.ForLight(lightId));
+            _pendingSelectSpawnedLight = null;
+        }
+
         if (_pendingSelectSpawned is not { } spawned)
             return;
         if (_bindings.GetActorId(spawned) is not { } id)

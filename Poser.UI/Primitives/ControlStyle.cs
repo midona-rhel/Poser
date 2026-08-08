@@ -65,6 +65,7 @@ public readonly record struct ControlStyle
 {
     public UiWidth Width { get; init; }
     public UiHeight Height { get; init; }
+
     /// <summary>CSS <c>max-width</c>, in logical units: caps whatever
     /// <see cref="Width"/> resolves to — intrinsic, Fixed, Fill, or a
     /// control's own usability floor. A layout track that must contain its

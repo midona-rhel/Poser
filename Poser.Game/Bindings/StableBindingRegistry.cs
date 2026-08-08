@@ -31,6 +31,7 @@ public sealed class StableBindingRegistry
     private readonly IActorManager _actors;
     private readonly ISkeletonService _skeletons;
     private readonly IActorSpawnService _spawn;
+    private readonly ILightingService _lighting;
     private readonly Dictionary<string, ActorLineage> _lineages =
         new(StringComparer.Ordinal);
     private Dictionary<ActorId, IActor> _actorBindings = new();
@@ -39,16 +40,24 @@ public sealed class StableBindingRegistry
         new(StringComparer.Ordinal);
     private Dictionary<(string Actor, PoseSlot Slot, int Partial, int Index), BoneId>
         _legacyBoneIds = new();
+    // Lights are plugin-owned objects with no native identity to re-derive, so
+    // their id is minted once per instance and kept by reference identity;
+    // generation never advances because the instance dies with the light.
+    private Dictionary<ILight, LightId> _lightIds =
+        new(LightReferenceComparer.Instance);
+    private Dictionary<LightId, ILight> _lightBindings = new();
     private ulong _revision;
 
     public StableBindingRegistry(
         IActorManager actors,
         ISkeletonService skeletons,
-        IActorSpawnService spawn)
+        IActorSpawnService spawn,
+        ILightingService lighting)
     {
         _actors = actors;
         _skeletons = skeletons;
         _spawn = spawn;
+        _lighting = lighting;
     }
 
     public SceneSnapshot CurrentSnapshot { get; private set; } =
@@ -176,13 +185,38 @@ public sealed class StableBindingRegistry
                 slot.PresentBeforeScan = slot.Present;
         }
 
+        // Lights present and still valid keep their id; anything else drops
+        // out of both maps with this rebuild.
+        var lightIds = new Dictionary<ILight, LightId>(
+            LightReferenceComparer.Instance);
+        var lightBindings = new Dictionary<LightId, ILight>();
+        var lightDescriptors = new List<LightDescriptor>();
+        foreach (var light in _lighting.Lights)
+        {
+            if (!light.IsValid)
+                continue;
+            if (!_lightIds.TryGetValue(light, out var lightId))
+                lightId = LightId.New();
+            lightIds[light] = lightId;
+            lightBindings[lightId] = light;
+            lightDescriptors.Add(new LightDescriptor(
+                lightId,
+                light.Name,
+                light.Kind,
+                light.IsOn,
+                light.Ownership));
+        }
+
         _actorBindings = actorBindings;
         _boneBindings = boneBindings;
         _legacyActorIds = legacyActorIds;
         _legacyBoneIds = legacyBoneIds;
+        _lightIds = lightIds;
+        _lightBindings = lightBindings;
         CurrentSnapshot = new SceneSnapshot(
             checked(++_revision),
-            actorDescriptors);
+            actorDescriptors,
+            lightDescriptors);
         return CurrentSnapshot;
     }
 
@@ -209,6 +243,35 @@ public sealed class StableBindingRegistry
                ReferenceEquals(bound, bone)
             ? id
             : null;
+    }
+
+    public LightId? GetLightId(ILight light) =>
+        _lightIds.TryGetValue(light, out var id) &&
+        _lightBindings.TryGetValue(id, out var bound) &&
+        ReferenceEquals(bound, light)
+            ? id
+            : null;
+
+    public BindingResult<ILight> Resolve(LightId id)
+    {
+        if (_lightBindings.TryGetValue(id, out var light) && light.IsValid)
+            return new BindingResult<ILight>(
+                BindingStatus.Success,
+                light);
+
+        foreach (var candidate in _lightBindings.Keys)
+        {
+            if (candidate.LogicalId != id.LogicalId)
+                continue;
+            return new BindingResult<ILight>(
+                BindingStatus.StaleTarget,
+                Detail:
+                $"Light generation {id.Generation} is stale; current is {candidate.Generation}.");
+        }
+
+        return new BindingResult<ILight>(
+            BindingStatus.Missing,
+            Detail: $"Light {id.LogicalId:N} is not present.");
     }
 
     public BindingResult<IActor> Resolve(ActorId id)
@@ -260,6 +323,18 @@ public sealed class StableBindingRegistry
         return new BindingResult<IBone>(
             BindingStatus.Missing,
             Detail: $"Bone {id} is not present.");
+    }
+
+    /// <summary>Light identity is instance identity: two distinct lights with
+    /// identical settings are never the same light.</summary>
+    private sealed class LightReferenceComparer : IEqualityComparer<ILight>
+    {
+        public static LightReferenceComparer Instance { get; } = new();
+
+        public bool Equals(ILight? x, ILight? y) => ReferenceEquals(x, y);
+
+        public int GetHashCode(ILight obj) =>
+            System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
     }
 
     private sealed class ActorLineage(Guid logicalId)

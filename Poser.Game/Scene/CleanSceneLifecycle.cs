@@ -68,6 +68,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         _events = events;
         _framework = framework;
         _events.Subscribe<ActorListChangedEvent>(OnActorListChanged);
+        _events.Subscribe<LightListChangedEvent>(OnLightListChanged);
         _events.Subscribe<SkeletonChangedEvent>(OnSkeletonChanged);
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseChanged);
         // Discovery, retries, and refreshes all run on the framework thread:
@@ -83,6 +84,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         // Unhooking the pump stops any pending missing-skeleton retries.
         _framework.Update -= OnFrameworkUpdate;
         _events.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
+        _events.Unsubscribe<LightListChangedEvent>(OnLightListChanged);
         _events.Unsubscribe<SkeletonChangedEvent>(OnSkeletonChanged);
         _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseChanged);
 
@@ -255,10 +257,28 @@ public sealed class CleanSceneLifecycle : IDisposable
             }
             builder.Append('|');
         }
+        // Lights participate structurally: without their name/kind/on state a
+        // spawn, rename, or toggle would coalesce away and never publish.
+        foreach (var light in snapshot.Lights)
+        {
+            builder.Append(light.Id.LogicalId);
+            builder.Append(':');
+            builder.Append(light.Id.Generation);
+            builder.Append(':');
+            builder.Append(light.Name);
+            builder.Append(':');
+            builder.Append((int)light.Kind);
+            builder.Append(':');
+            builder.Append(light.IsOn ? '1' : '0');
+            builder.Append('|');
+        }
         return builder.ToString();
     }
 
     private void OnActorListChanged(ActorListChangedEvent _) =>
+        Refresh();
+
+    private void OnLightListChanged(LightListChangedEvent _) =>
         Refresh();
 
     private void OnSkeletonChanged(SkeletonChangedEvent _) =>

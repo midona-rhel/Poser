@@ -19,7 +19,8 @@ public readonly record struct SpawnBrowserRow(
     TablerIcon Glyph,
     uint IconId,
     string? Badge,
-    bool Disabled);
+    bool Disabled,
+    string? Help = null);
 
 public sealed class SpawnBrowserViewModel
 {
@@ -320,6 +321,16 @@ public static class SpawnBrowserView
                     Size = theme.Typography.BodySize,
                     Color = row.Disabled ? theme.TextDim : theme.Text,
                 });
+
+        // A disabled row has no live item to hover, so its help falls back to
+        // the geometric test — which is the only state that usually needs one.
+        if (row.Help is { Length: > 0 } help &&
+            (hit.Hovered ||
+                (row.Disabled &&
+                    Crystarium.HoverHelp.HelpHovered(
+                        pillMin, pillMin + pillSize))))
+            Crystarium.HoverHelp.Explain(
+                row.Id, pillMin, pillMin + pillSize, help);
 
         if (hit.Clicked)
             vm.OnActivate?.Invoke(index);

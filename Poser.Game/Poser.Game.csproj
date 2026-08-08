@@ -15,6 +15,7 @@
     <PackageReference Include="K4os.Compression.LZ4.Legacy" Version="1.3.8" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Lighting\Data\gobos.csv" />
     <!-- Curated festival names, phases and area exclusions (Brio's data file). -->
     <EmbeddedResource Include="Data\Festivals.json" />
   </ItemGroup>

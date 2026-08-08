@@ -141,6 +141,7 @@ internal static class ServiceRegistration
     public static IServiceCollection AddPoserFeatures(this IServiceCollection services)
     {
         services.AddSingleton<ICameraService, CameraService>();
+        services.AddSingleton<ILightingService, Game.Lighting.LightingService>();
         services.AddSingleton<IEnvironmentService, Game.Environment.EnvironmentService>();
         services.AddSingleton<IWorldRenderingService, Game.Environment.WorldRenderingService>();
         services.AddSingleton<IFestivalService, Game.Environment.FestivalService>();
@@ -154,6 +155,7 @@ internal static class ServiceRegistration
         services.AddSingleton<CommandRouter>();
 
         services.AddSingleton<IPoseFileService, PoseFileService>();
+        services.AddSingleton<ILightFileService, LightFileService>();
         // Factory-registered on purpose: the scene services are handed over as
         // factories so constructing the auto-save does NOT construct them. They
         // wipe their state from their own GPose-exit handlers, and the EventBus
@@ -182,6 +184,7 @@ internal static class ServiceRegistration
         services.AddSingleton<PoseRailPane>();
         services.AddSingleton<AnimationPane>();
         services.AddSingleton<AppearancePane>();
+        services.AddSingleton<LightPane>();
         services.AddSingleton<EnvironmentPane>();
         services.AddSingleton<PoseLibraryPane>();
         services.AddSingleton<GraphicalBonePane>();
