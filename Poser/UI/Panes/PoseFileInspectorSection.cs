@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Poser.Entities;
 using Poser.Files;
@@ -95,11 +96,16 @@ public sealed class PoseFileInspectorSection
     public void RequestImportMenu(bool withPresets)
     {
         _importMenuWithPresets = withPresets;
+        _menuAnchor = ImGui.GetMousePos();
         _importMenuRequested = true;
     }
 
     /// <summary>Opens the bone-filter menu on the next pump.</summary>
-    public void RequestBoneFilterMenu() => _boneFilterRequested = true;
+    public void RequestBoneFilterMenu()
+    {
+        _menuAnchor = ImGui.GetMousePos();
+        _boneFilterRequested = true;
+    }
 
     /// <summary>The bone-filter menu's verdict folded into any surface's
     /// options: disabled prefix categories become exclusions, the slot rows
@@ -150,91 +156,128 @@ public sealed class PoseFileInspectorSection
     /// binding-free); null until wired.</summary>
     public Func<Domain.Identity.ActorId, IActor?>? _resolveActor;
 
+    private const string ImportMenuId = "##pose-import-menu";
+    private const string BoneFilterMenuId = "##pose-bone-filter-menu";
+    private Vector2 _menuAnchor;
+
     private void DrawMenus()
     {
         if (_importMenuRequested)
         {
             _importMenuRequested = false;
-            ImGui.OpenPopup("##pose-import-menu");
+            Crystarium.OpenPopover(ImportMenuId);
         }
         if (_boneFilterRequested)
         {
             _boneFilterRequested = false;
-            ImGui.OpenPopup("##pose-bone-filter-menu");
+            Crystarium.OpenPopover(BoneFilterMenuId);
         }
 
-        if (ImGui.BeginPopup("##pose-import-menu"))
-        {
-            DrawImportMenu();
-            ImGui.EndPopup();
-        }
-        if (ImGui.BeginPopup("##pose-bone-filter-menu"))
-        {
-            DrawBoneFilterMenu();
-            ImGui.EndPopup();
-        }
+        Crystarium.FloatingSurface.Popup(
+            ImportMenuId,
+            new FloatingSurfaceProps
+            {
+                Width = 236,
+                Height = _importMenuWithPresets ? 432f : 344f,
+                Padding = 12,
+                AnchorMin = _menuAnchor,
+                AnchorMax = _menuAnchor,
+                Treatment = FloatingSurfaceTreatment.Glass,
+            },
+            DrawImportMenuBody);
+
+        Crystarium.FloatingSurface.Popup(
+            BoneFilterMenuId,
+            new FloatingSurfaceProps
+            {
+                Width = 236,
+                Height = 520,
+                Padding = 12,
+                AnchorMin = _menuAnchor,
+                AnchorMax = _menuAnchor,
+                Treatment = FloatingSurfaceTreatment.Glass,
+            },
+            DrawBoneFilterBody);
     }
 
-    /// <summary>Brio's import popup, mapped onto the FILES scope model:
-    /// the Body/Expression strip IS the scope (both = Full, neither = the
-    /// rotation-only default over everything).</summary>
-    private void DrawImportMenu()
+    private static void MenuHeader(string text)
     {
-        ImGui.TextDisabled("Import Pose");
-        ImGui.Separator();
-
-        bool freeze = _freeze;
-        if (ImGui.Checkbox("Freeze actor", ref freeze))
+        ImGui.Spacing();
+        // Picto section-caption look: caption size, the form-label color.
+        Crystarium.Text(text, new TextStyle
         {
-            _freeze = freeze;
-            _config.Config.FreezeActorOnPoseImport = freeze;
-            _config.Save();
-        }
-        bool smart = _smartImport;
-        if (ImGui.Checkbox("Smart import", ref smart))
-            _smartImport = smart;
+            Size = 11f,
+            Color = Crystarium.ActiveTheme.FormLabel,
+        });
+        ImGui.Spacing();
+    }
 
-        ImGui.Separator();
-        ImGui.TextDisabled("Import type");
+    private void MenuCheckbox(
+        string id, string label, bool value, Action<bool> onChange,
+        bool disabled = false, string? help = null)
+    {
+        Crystarium.Checkbox(id, value, onChange, default, disabled, help);
+        ImGui.SameLine();
+        Crystarium.Text(label, new TextStyle { Disabled = disabled });
+        ImGui.Spacing();
+    }
+
+    /// <summary>Brio's import popup on the glass surface, mapped onto the
+    /// FILES scope model: the Body/Expression pair IS the scope (both =
+    /// Full; neither falls back to Full's everything).</summary>
+    private void DrawImportMenuBody()
+    {
+        Crystarium.Text("Import pose");
+        ImGui.Spacing();
+
+        MenuCheckbox("##menu-freeze", "Freeze actor", _freeze, next =>
+        {
+            _freeze = next;
+            _config.Config.FreezeActorOnPoseImport = next;
+            _config.Save();
+        }, help: "Keep the actor paused after the import");
+        MenuCheckbox("##menu-smart", "Smart import", _smartImport,
+            next => _smartImport = next,
+            help: "Route face-only files as expression imports automatically");
+
+        MenuHeader("Import type");
         bool body = _scope is 0 or 1;
         bool expression = _scope is 0 or 2;
-        if (ImGui.Checkbox("Body", ref body) ||
-            ImGui.Checkbox("Expression", ref expression))
-        {
-            _scope = body && expression ? 0 : body ? 1 : expression ? 2 : 0;
-            if (!body && !expression)
-                _scope = 0;
-        }
+        MenuCheckbox("##menu-type-body", "Body", body, next =>
+            _scope = next && expression ? 0 : next ? 1 : expression ? 2 : 0);
+        MenuCheckbox("##menu-type-expression", "Expression", expression, next =>
+            _scope = body && next ? 0 : body ? 1 : next ? 2 : 0);
 
-        ImGui.Separator();
-        ImGui.TextDisabled("Transform options");
-        using (Dalamud.Interface.Utility.Raii.ImRaii.Disabled(_smartImport || _scope == 2))
-        {
-            bool position = _position;
-            if (ImGui.Checkbox("Position", ref position)) _position = position;
-            bool rotation = _rotation;
-            if (ImGui.Checkbox("Rotation", ref rotation)) _rotation = rotation;
-            bool scaleOn = _scale;
-            if (ImGui.Checkbox("Scale", ref scaleOn)) _scale = scaleOn;
-        }
-        bool model = _modelTransform;
-        if (ImGui.Checkbox("Model transform", ref model)) _modelTransform = model;
+        MenuHeader("Transform options");
+        bool componentsLocked = _smartImport || _scope == 2;
+        MenuCheckbox("##menu-t", "Position", _position,
+            next => _position = next, disabled: componentsLocked,
+            help: componentsLocked
+                ? "Expression imports always apply every component"
+                : null);
+        MenuCheckbox("##menu-r", "Rotation", _rotation,
+            next => _rotation = next, disabled: componentsLocked);
+        MenuCheckbox("##menu-s", "Scale", _scale,
+            next => _scale = next, disabled: componentsLocked);
+        MenuCheckbox("##menu-m", "Model transform", _modelTransform,
+            next => _modelTransform = next,
+            help: "Also move the actor to the file's placement");
 
-        ImGui.Separator();
-        if (ImGui.MenuItem("Import from file…"))
+        MenuHeader("Import");
+        Crystarium.Button("From file…", () =>
         {
             if (SelectedSkeleton() is { } skeleton)
                 OpenImport(skeleton);
-        }
+        }, id: "##menu-from-file");
 
         if (_importMenuWithPresets)
         {
-            ImGui.Separator();
-            ImGui.TextDisabled("Presets");
-            if (ImGui.MenuItem("Import A-pose"))
-                ApplyRestPreset(RestPose.APose);
-            if (ImGui.MenuItem("Import T-pose"))
-                ApplyRestPreset(RestPose.TPose);
+            MenuHeader("Presets");
+            Crystarium.Button("Import A-pose",
+                () => ApplyRestPreset(RestPose.APose), id: "##menu-apose");
+            ImGui.Spacing();
+            Crystarium.Button("Import T-pose",
+                () => ApplyRestPreset(RestPose.TPose), id: "##menu-tpose");
         }
     }
 
@@ -250,54 +293,62 @@ public sealed class PoseFileInspectorSection
     }
 
     /// <summary>Brio's bone-filter editor (PosingEditorCommon.
-    /// DrawBoneFilterEditor): Select all / none, a toggle-all header per
-    /// group, a checkbox per category. Checked = the category applies.</summary>
-    private void DrawBoneFilterMenu()
+    /// DrawBoneFilterEditor) on the glass surface: Select all / none, a
+    /// toggle-all header per group, a checkbox per category, the whole list
+    /// scrolling inside the popover. Checked = the category applies.</summary>
+    private void DrawBoneFilterBody()
     {
-        if (ImGui.SmallButton("Select all"))
-            _disabledCategories.Clear();
+        Crystarium.Button("Select all", () => _disabledCategories.Clear(),
+            id: "##filter-all");
         ImGui.SameLine();
-        if (ImGui.SmallButton("Select none"))
+        Crystarium.Button("Select none", () =>
         {
             foreach (var group in Files.ImportBoneCategories.Groups)
                 foreach (var category in group.Categories)
                     _disabledCategories.Add(category.Id);
-        }
+        }, id: "##filter-none");
+        ImGui.Spacing();
 
-        foreach (var group in Files.ImportBoneCategories.Groups)
+        Crystarium.ScrollRegion("##filter-scroll", 212f, 452f, _ =>
         {
-            ImGui.Separator();
-            int enabled = 0;
-            foreach (var category in group.Categories)
+            foreach (var group in Files.ImportBoneCategories.Groups)
             {
-                if (!_disabledCategories.Contains(category.Id))
-                    enabled++;
-            }
-            bool all = enabled == group.Categories.Length;
-            if (ImGui.Checkbox($"{group.Name}##group", ref all))
-            {
+                int enabled = 0;
                 foreach (var category in group.Categories)
                 {
-                    if (all)
-                        _disabledCategories.Remove(category.Id);
-                    else
-                        _disabledCategories.Add(category.Id);
+                    if (!_disabledCategories.Contains(category.Id))
+                        enabled++;
                 }
-            }
-            ImGui.Indent();
-            foreach (var category in group.Categories)
-            {
-                bool on = !_disabledCategories.Contains(category.Id);
-                if (ImGui.Checkbox(category.Name, ref on))
+                bool all = enabled == group.Categories.Length;
+                ImGui.Spacing();
+                MenuCheckbox($"##filter-group-{group.Name}", group.Name, all,
+                    next =>
+                    {
+                        foreach (var category in group.Categories)
+                        {
+                            if (next)
+                                _disabledCategories.Remove(category.Id);
+                            else
+                                _disabledCategories.Add(category.Id);
+                        }
+                    });
+                ImGui.Indent();
+                foreach (var category in group.Categories)
                 {
-                    if (on)
-                        _disabledCategories.Remove(category.Id);
-                    else
-                        _disabledCategories.Add(category.Id);
+                    var id = category.Id;
+                    MenuCheckbox($"##filter-{id}", category.Name,
+                        !_disabledCategories.Contains(id),
+                        next =>
+                        {
+                            if (next)
+                                _disabledCategories.Remove(id);
+                            else
+                                _disabledCategories.Add(id);
+                        });
                 }
+                ImGui.Unindent();
             }
-            ImGui.Unindent();
-        }
+        });
     }
 
     public void Draw(Crystarium.FormScope form, ISkeleton skeleton)
