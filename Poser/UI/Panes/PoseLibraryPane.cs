@@ -1246,8 +1246,13 @@ public sealed class PoseLibraryPane
     /// tab.</summary>
     private void SyncImportToggles()
     {
-        _vm.ShowImportToggles = _type != LibraryType.Mcdf;
-        _vm.ShowImportMenus = _type == LibraryType.Poses;
+        // The poses tab's options live in the inspector rail now; the
+        // row keeps component toggles only where they still govern (the
+        // auto-save tab's restore). Favorites are the poses library's —
+        // an auto-save snapshot is not a curated entry.
+        _vm.ShowImportToggles = _type == LibraryType.AutoSaves;
+        _vm.ShowImportMenus = false;
+        _vm.CanFavorite = _type == LibraryType.Poses;
         bool auto = _type == LibraryType.AutoSaves;
         _vm.ImportPosition = auto ? _autoPosition : _posesPosition;
         _vm.ImportRotation = auto ? _autoRotation : _posesRotation;
@@ -1289,13 +1294,18 @@ public sealed class PoseLibraryPane
     private PoseImportOptions BuildImportOptions(string path)
     {
         bool auto = _type == LibraryType.AutoSaves;
-        var options = new PoseImportOptions
-        {
-            ApplyPosition = auto ? _autoPosition : _posesPosition,
-            ApplyRotation = auto ? _autoRotation : _posesRotation,
-            ApplyScale = auto ? _autoScale : _posesScale,
-            ResetBeforeImport = true,
-        };
+        // Poses apply with the SHARED menu options (the rail hosts them in
+        // library mode) plus the library's load semantics; an auto-save
+        // restore keeps its own full-fidelity toggles.
+        var options = auto
+            ? new PoseImportOptions
+            {
+                ApplyPosition = _autoPosition,
+                ApplyRotation = _autoRotation,
+                ApplyScale = _autoScale,
+            }
+            : _files.BuildImportOptions();
+        options.ResetBeforeImport = true;
         // Smart expression routing (Brio ResolveSmartImport): a face-only
         // .pose can NEVER land through the body path — Dawntrail faces are
         // posed through bone POSITIONS the body path masks — and the library
@@ -1360,6 +1370,8 @@ public sealed class PoseLibraryPane
 
     private void ToggleFavorite(int index)
     {
+        if (_type != LibraryType.Poses)
+            return;
         if (index < 0 || index >= _vm.Tiles.Count)
             return;
         var tile = _vm.Tiles[index];

@@ -650,7 +650,13 @@ public class MainWindow : Window
         // Animation is a document and uses the shell's scroll.
         // Appearance has no pose rail; its content takes the released
         // width. The outer window size is untouched by tab changes.
-        _vm.DrawRail = _collapsed ? null : _poseRail.Draw;
+        // Library mode's rail hosts the import options (user placement);
+        // every other mode keeps the selection-typed rail.
+        _vm.DrawRail = _collapsed
+            ? null
+            : _libraryMode
+                ? _poseFileSection.DrawOptionsRail
+                : _poseRail.Draw;
 
         _vm.GizmoOperation = (int)_editorState.TransformTool;
         _vm.GizmoSpace = (int)_editorState.TransformOrientation;

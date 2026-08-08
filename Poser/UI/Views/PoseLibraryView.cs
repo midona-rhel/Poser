@@ -273,6 +273,10 @@ public sealed class PoseLibraryViewModel
     /// <summary>The footer primary: opens the apply-target actor picker.</summary>
     public Action? OnApplyMenu;
 
+    /// <summary>Whether tiles carry the favorite star — the poses library
+    /// only; an auto-save snapshot is not a curated entry.</summary>
+    public bool CanFavorite = true;
+
     /// <summary>The LIVE pane width while the grid is resize-stepped; the
     /// bar rows and rules track this so right-aligned clusters do not jump
     /// between steps. Zero means "same as the handed size".</summary>
@@ -1317,7 +1321,7 @@ public static class PoseLibraryView
             DrawThumbnail(vm, tile, min, size, icon, pad, scale, theme);
             DrawCaption(tile, min, size, icon, pad, hovered, scale, theme);
 
-            if (tile.Favorite)
+            if (tile.Favorite && vm.CanFavorite)
             {
                 // A favorite is FILLED and warning-yellow; the stroked icon
                 // in the same color rides on top so the perimeter keeps the
@@ -1326,7 +1330,7 @@ public static class PoseLibraryView
                 Crystarium.IconIn(
                     starMin, starMax, TablerIcon.Star, theme.Warning);
             }
-            else if (hovered)
+            else if (hovered && vm.CanFavorite)
                 Crystarium.IconIn(
                     starMin,
                     starMax,
@@ -1334,7 +1338,7 @@ public static class PoseLibraryView
                     theme.TextMuted,
                     opacity: onStar ? 1f : 0.8f);
 
-            if (onStar)
+            if (onStar && vm.CanFavorite)
             {
                 if (hit.Clicked || starHit.Clicked)
                     vm.OnToggleFavorite?.Invoke(index);

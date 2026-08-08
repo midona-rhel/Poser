@@ -51,12 +51,10 @@ public sealed class PoseFileInspectorSection
     // — Freeze / Smart Import / Import Type / transform toggles / presets.
     // Bone-filter menu: Brio's category filter (PosingEditorCommon.
     // DrawBoneFilterEditor) — group tristates + per-category checkboxes.
-    // Unchecked by default, exactly Brio (its smartDefaults static,
-    // FileUIHelpers.cs:444) — the earlier default-ON kept the Apply/Model
-    // row permanently disabled through Brio's own Smart lock. The LIBRARY's
-    // face routing no longer rides this checkbox: its tile apply has no
-    // type control, so that routing is structural and unconditional.
-    private bool _smartImport;
+    // ON by default — the user's call (2026-08-09), deviating from
+    // Brio's unchecked static: smart routing is the wanted default and the
+    // Apply/Model toggles wear Brio's smart lock until it is unchecked.
+    private bool _smartImport = true;
     private bool _modelTransform;
     // Brio's DefaultImporterOptions filter starts with weapon and ex
     // disabled (PosingService.cs:45-47); the menu edits from there.
@@ -105,9 +103,16 @@ public sealed class PoseFileInspectorSection
         _importMenuRequested = true;
     }
 
-    /// <summary>Opens the bone-filter menu on the next pump, beside the
-    /// import menu it nests under.</summary>
-    public void RequestBoneFilterMenu() => _boneFilterRequested = true;
+    /// <summary>Opens the bone-filter menu on the next pump — nested
+    /// beside the import menu when that popup is open, at the click
+    /// otherwise (the library rail's button).</summary>
+    public void RequestBoneFilterMenu()
+    {
+        _filterAnchor = ImGui.GetMousePos();
+        _boneFilterRequested = true;
+    }
+
+    private Vector2 _filterAnchor;
 
     /// <summary>The bone-filter menu's verdict folded into any surface's
     /// options: disabled prefix categories become exclusions, the slot rows
@@ -219,6 +224,27 @@ public sealed class PoseFileInspectorSection
             },
             DrawImportMenuBody);
 
+        // The rail's filter requests have no import menu to nest under;
+        // they open here at the click. A request made while the import menu
+        // is open is consumed by its nested pump instead.
+        if (_boneFilterRequested && !ImGui.IsPopupOpen(ImportMenuId))
+        {
+            _boneFilterRequested = false;
+            Crystarium.OpenPopover(BoneFilterMenuId);
+        }
+        Crystarium.FloatingSurface.Popup(
+            BoneFilterMenuId,
+            new FloatingSurfaceProps
+            {
+                Width = FilterMenuWidth,
+                Height = _boneFilterHeight,
+                Padding = MenuPadding,
+                AnchorMin = _filterAnchor,
+                AnchorMax = _filterAnchor,
+                Treatment = FloatingSurfaceTreatment.Glass,
+            },
+            DrawBoneFilterBody);
+
         Crystarium.FloatingSurface.Popup(
             ExportMenuId,
             new FloatingSurfaceProps
@@ -255,7 +281,64 @@ public sealed class PoseFileInspectorSection
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
         var origin = ImGui.GetCursorScreenPos();
         float width = ImGui.GetContentRegionAvail().X;
-        float y = origin.Y - MenuTitleOffset(scale);
+        float top = origin.Y - MenuTitleOffset(scale);
+
+        float y = DrawOptionsSections(
+            new Vector2(origin.X, top), width, _importMenuWithPresets);
+
+        float measured = (y - origin.Y) / scale
+            + Crystarium.ActiveTheme.Page.Inset + MenuPadding * 2f;
+        if (_importMenuWithPresets)
+            _importMenuHeightPresets = measured;
+        else
+            _importMenuHeightPlain = measured;
+
+        // Nested INSIDE the parent body: the open registers on the parent
+        // popup's ID stack, so ImGui stacks the two and the import menu
+        // stays under the filter instead of vanishing (user round 11).
+        if (_boneFilterRequested)
+        {
+            _boneFilterRequested = false;
+            Crystarium.OpenPopover(BoneFilterMenuId);
+        }
+        // Beside the import menu, top-aligned: same-anchor stacking hid the
+        // parent under the filter and read as the menu closing.
+        var menuPos = ImGui.GetWindowPos();
+        float gap = Crystarium.ActiveTheme.Floating.AnchorGap * scale;
+        var beside = new Vector2(
+            menuPos.X + ImGui.GetWindowSize().X + gap,
+            menuPos.Y - gap);
+        Crystarium.FloatingSurface.Popup(
+            BoneFilterMenuId,
+            new FloatingSurfaceProps
+            {
+                Width = FilterMenuWidth,
+                Height = _boneFilterHeight,
+                Padding = MenuPadding,
+                AnchorMin = beside,
+                AnchorMax = beside,
+                Treatment = FloatingSurfaceTreatment.Glass,
+            },
+            DrawBoneFilterBody);
+    }
+
+    /// <summary>The library-mode inspector rail: the SAME option sections
+    /// the import menu shows, hosted where the rail's selection sections
+    /// would be — the user's placement. Presets stay actor-side; the bone
+    /// filter button opens through the root pump since no menu popup hosts
+    /// a nested one here.</summary>
+    public void DrawOptionsRail(Vector2 origin, Vector2 size)
+    {
+        DrawOptionsSections(origin, size.X, withPresets: false);
+    }
+
+    /// <summary>The import-option section stack, shared verbatim by the
+    /// popup body and the library rail. Returns the y past the last
+    /// section.</summary>
+    private float DrawOptionsSections(
+        Vector2 origin, float width, bool withPresets)
+    {
+        float y = origin.Y;
 
         y += Crystarium.Section(
             "##import-menu-head", "Import pose",
@@ -349,13 +432,17 @@ public sealed class PoseFileInspectorSection
             new Vector2(origin.X, y), width, true, null,
             form =>
             {
-                form.Actions("File", actions => actions.Button(
-                    "From file", () =>
+                form.Actions("File", actions =>
+                {
+                    actions.Button("From file", () =>
                     {
                         if (SelectedSkeleton() is { } skeleton)
                             OpenImport(skeleton);
-                    }));
-                if (_importMenuWithPresets)
+                    });
+                    actions.Button("From library",
+                        () => OnLibraryRequested?.Invoke());
+                });
+                if (withPresets)
                     form.Actions("Presets", actions =>
                     {
                         actions.Button("A-pose",
@@ -366,40 +453,7 @@ public sealed class PoseFileInspectorSection
             },
             labelColumnWidth: MenuLabelColumn);
 
-        float measured = (y - origin.Y) / scale
-            + Crystarium.ActiveTheme.Page.Inset + MenuPadding * 2f;
-        if (_importMenuWithPresets)
-            _importMenuHeightPresets = measured;
-        else
-            _importMenuHeightPlain = measured;
-
-        // Nested INSIDE the parent body: the open registers on the parent
-        // popup's ID stack, so ImGui stacks the two and the import menu
-        // stays under the filter instead of vanishing (user round 11).
-        if (_boneFilterRequested)
-        {
-            _boneFilterRequested = false;
-            Crystarium.OpenPopover(BoneFilterMenuId);
-        }
-        // Beside the import menu, top-aligned: same-anchor stacking hid the
-        // parent under the filter and read as the menu closing.
-        var menuPos = ImGui.GetWindowPos();
-        float gap = Crystarium.ActiveTheme.Floating.AnchorGap * scale;
-        var beside = new Vector2(
-            menuPos.X + ImGui.GetWindowSize().X + gap,
-            menuPos.Y - gap);
-        Crystarium.FloatingSurface.Popup(
-            BoneFilterMenuId,
-            new FloatingSurfaceProps
-            {
-                Width = FilterMenuWidth,
-                Height = _boneFilterHeight,
-                Padding = MenuPadding,
-                AnchorMin = beside,
-                AnchorMax = beside,
-                Treatment = FloatingSurfaceTreatment.Glass,
-            },
-            DrawBoneFilterBody);
+        return y;
     }
 
     /// <summary>Brio's export popup (DrawExportPoseMenuPopup): export to a
