@@ -33,6 +33,11 @@ public sealed class ShellSidebarRow
     public bool ActorActions;
     public bool ActorVisible = true;
     public bool ActorPaused;
+    /// <summary>A light row's action slot: one eye, the same affordance an
+    /// actor row wears, switching the light off without losing a setting.
+    /// </summary>
+    public bool LightActions;
+    public bool LightOn = true;
     public IReadOnlyList<Domain.Identity.BoneId>? OverlayBones;
 
     /// <summary>Last child of its parent → curved-L branch instead of T.</summary>
@@ -157,6 +162,7 @@ public sealed class AppShellViewModel
     public Action<ShellSidebarRow>? OnActorTarget;
     public Action<ShellSidebarRow>? OnActorVisibility;
     public Action<ShellSidebarRow>? OnActorPause;
+    public Action<ShellSidebarRow>? OnLightVisibility;
     public Action<ShellSidebarRow>? OnOverlayVisibility;
     public Func<IReadOnlyList<Domain.Identity.BoneId>, bool>?
         IsOverlayVisible;

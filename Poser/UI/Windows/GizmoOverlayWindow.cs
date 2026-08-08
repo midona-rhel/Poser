@@ -57,6 +57,11 @@ public class GizmoOverlayWindow : Window
     // IActor. The registry is the only sanctioned bridge, and a stale
     // binding means the overlay draws nothing rather than guessing.
     private readonly Game.Bindings.StableBindingRegistry _bindings;
+    // Begin and Update both carry a failure DETAIL that the overlay used to
+    // drop on the floor: a refused gesture is indistinguishable in game from
+    // a gizmo that simply does nothing. Verbose, so it costs nothing until
+    // someone is looking for it.
+    private readonly Dalamud.Plugin.Services.IPluginLog _log;
 
     /// <summary>
     /// Everything one gizmo gesture froze at Begin: the engaged handle,
@@ -206,7 +211,8 @@ public class GizmoOverlayWindow : Window
         CleanTransformFacade cleanTransforms,
         CleanPoseFacade cleanPose,
         IGazeService gazeService,
-        Game.Bindings.StableBindingRegistry bindings)
+        Game.Bindings.StableBindingRegistry bindings,
+        Dalamud.Plugin.Services.IPluginLog log)
         : base("##poser_gizmo_overlay",
             ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoDecoration |
@@ -227,6 +233,7 @@ public class GizmoOverlayWindow : Window
         _cleanPose = cleanPose;
         _gazeService = gazeService;
         _bindings = bindings;
+        _log = log;
 
         RespectCloseHotkey = false;
     }
@@ -1236,7 +1243,11 @@ public class GizmoOverlayWindow : Window
                 }
                 : null);
         if (!begin.Success || begin.GestureId is not { } gestureId)
+        {
+            _log.Verbose(
+                $"Gizmo: {targetType} gesture refused at Begin — {begin.Detail}");
             return;
+        }
 
         _gesture = new GizmoGesture
         {
@@ -1408,6 +1419,8 @@ public class GizmoOverlayWindow : Window
             ToDomainDelta(gesture.Start, newTransform, gesture.Space));
         if (update.Success)
             return true;
+        _log.Verbose(
+            $"Gizmo: {_gestureTargetType} gesture ended at Update — {update.Detail}");
         CancelIfOwned(gesture.Id);
         ClearGesture(suppress: true);
         return false;

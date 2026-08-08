@@ -258,7 +258,8 @@ public sealed class ShellSidebar
                     row.Label.ToLowerInvariant(),
                     row.Depth,
                     Trunks(row.TreeLines),
-                    row.ActorActions ? 3 : row.OverlayBones != null ? 1 : 0,
+                    row.ActorActions ? 3
+                        : row.LightActions || row.OverlayBones != null ? 1 : 0,
                     0f,
                     rowHeight));
             }
@@ -630,6 +631,25 @@ public sealed class ShellSidebar
                         id: "##pause",
                         slashed: row.ActorPaused))
                     _vm.OnActorPause?.Invoke(row);
+                return;
+            }
+
+            // One slot, the actor eye's twin: a light has nothing to target
+            // and no animation to pause, so switching it off is its whole
+            // inline vocabulary.
+            if (row.LightActions)
+            {
+                ImGui.SetCursorScreenPos(origin);
+                if (Crystarium.TemporaryIconToggle(
+                        TablerIcon.Eye,
+                        selected: false,
+                        style: square,
+                        help: row.LightOn
+                            ? "Switch this light off"
+                            : "Switch this light on",
+                        id: "##light-on",
+                        slashed: !row.LightOn))
+                    _vm.OnLightVisibility?.Invoke(row);
                 return;
             }
 

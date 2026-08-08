@@ -159,16 +159,16 @@ public class SkeletonOverlayWindow : Window
                 or SceneEntityKind.Actor
                 // A gaze point belongs to an actor: keep that actor's skeleton
                 // anchored so aiming the gaze never blanks the dots under it.
-                or SceneEntityKind.GazeTarget)
+                or SceneEntityKind.GazeTarget
+                // A selected light anchors the overlay for the same reason an
+                // actor does: its handle is the edit's on-screen anchor.
+                or SceneEntityKind.Light)
                 return true;
         return false;
     }
 
     public override void Draw()
     {
-        if (!UserVisible && !AnySelectionAnchor())
-            return;
-
         var drawList = ImGui.GetBackgroundDrawList();
         var viewportPos = ImGui.GetMainViewport().Pos;
         var io = ImGui.GetIO();
@@ -187,6 +187,13 @@ public class SkeletonOverlayWindow : Window
         // view; the window stays open and interaction resumes on release.
         if (io.KeyAlt)
             return;
+
+        // The ARMATURE pass answers to the titlebar toggle and the selection
+        // anchor. The LIGHT pass does not: a light is invisible in the world
+        // and its handle is the only route to it from the viewport, so it
+        // draws whenever the scene holds lights — Ktisis and Brio both draw
+        // their light handles unconditionally. Alt still hides everything.
+        bool drawArmature = UserVisible || AnySelectionAnchor();
 
         var selectedIds = _selection.Selected.ToHashSet();
         var bones = new List<BoneDisplayData>();
@@ -220,6 +227,7 @@ public class SkeletonOverlayWindow : Window
         // Collect all bones that project to screen successfully — snapshot
         // descriptors give identity/hierarchy, the viewport projection gives
         // model-space facts, and the camera service projects to screen.
+        if (drawArmature)
         foreach (var actor in _scene.Snapshot.Actors)
         {
             var actorSelectionId = SelectionId.ForActor(actor.Id);

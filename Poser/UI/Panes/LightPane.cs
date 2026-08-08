@@ -730,9 +730,14 @@ public sealed class LightPane
         }
 
         var (current, canEdit) = ReadTransform(lightId);
+        var rotation = Quaternion.Conjugate(viewRotation);
+        // Land ahead of the eye, never AT it: a pivot on the camera
+        // degenerates the gizmo projection and WorldToScreen, so the light
+        // would arrive handleless and ungrabbable.
         if (!Domain.Transforms.PoseTransform.TryCreate(
-                _camera.GetCameraPosition(),
-                Quaternion.Conjugate(viewRotation),
+                _camera.GetCameraPosition() +
+                    Vector3.Transform(-Vector3.UnitZ, rotation) * 3f,
+                rotation,
                 canEdit ? current.Scale : Vector3.One,
                 out var target,
                 out var invalid))
@@ -811,6 +816,20 @@ public sealed class LightPane
             ClearTransformSession(cancel: true);
             _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
         }
+        else if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
+        {
+            // A pane session exists ONLY for the duration of one well drag,
+            // and its commit rides that well's own drag-end callback. Any
+            // frame in which the TRANSFORM rows are not drawn — a tab change,
+            // a collapsed section, an attach that disables them — takes the
+            // callback away and strands the session: the service keeps
+            // holding the gesture, so the world gizmo can never Begin against
+            // the same light, and ReadTransform keeps serving the frozen
+            // _displayedCurrent instead of the live transform. The pointer
+            // being up IS the end of the drag, whoever failed to report it.
+            CommitTransformSession();
+            ClearTransformSession();
+        }
     }
 
     private (Transform, bool) ReadTransform(LightId lightId)
@@ -847,7 +866,10 @@ public sealed class LightPane
             description: "Transform light");
         if (!begin.Success || begin.GestureId is not { } gesture)
         {
+            // A refused Begin used to be silent, which reads in game as
+            // "the numbers do not move" with nothing to explain it.
             _dragStart ??= displayedStart;
+            _status = $"Transform: {begin.Detail}";
             return;
         }
 

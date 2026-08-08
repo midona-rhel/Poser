@@ -472,6 +472,21 @@ public class MainWindow : Window
             else
                 _animation.Pause(actor);
         };
+        // The light's own on/off, reachable without selecting it first —
+        // the same reach the actor eye has. IsOn participates in the scene
+        // signature, so the toggle republishes the scene on the next refresh;
+        // the warm-frame flag restate lands the eye's new state immediately.
+        _vm.OnLightVisibility = row =>
+        {
+            if (row.Tag is not SelectionId
+                { Kind: SceneEntityKind.Light, Light: { } lightId })
+                return;
+            var resolved = _bindings.Resolve(lightId);
+            if (!resolved.Success || resolved.Value is not { IsValid: true } light)
+                return;
+            light.IsOn = !light.IsOn;
+            row.LightOn = light.IsOn;
+        };
         _vm.OnOverlayVisibility = row =>
         {
             if (row.OverlayBones is not { } bones)
@@ -1130,6 +1145,8 @@ public class MainWindow : Window
                     _ => KindIcon(light.Kind),
                 },
                 Tag = lightSelectionId,
+                LightActions = true,
+                LightOn = light.IsOn,
             });
         }
     }
@@ -1166,8 +1183,15 @@ public class MainWindow : Window
         for (int i = 0; i < lightRows.Count; i++)
         {
             var lightRow = lightRows[i];
-            if (lightRow.Tag is SelectionId lightId)
-                lightRow.Active = _selection.IsSelected(lightId);
+            if (lightRow.Tag is not SelectionId lightSelection)
+                continue;
+            lightRow.Active = _selection.IsSelected(lightSelection);
+            // The eye reads the LIVE light, not the descriptor: IsOn moves the
+            // scene signature, and waiting for that republish would leave the
+            // glyph a frame or more behind the click that flipped it.
+            if (lightSelection.Light is { } lightId &&
+                _bindings.Resolve(lightId) is { Success: true, Value: { } light })
+                lightRow.LightOn = light.IsOn;
         }
 
         var rows = _actorsSection.Rows;

@@ -368,10 +368,17 @@ public sealed unsafe class LightingService : ILightingService
     {
         try
         {
+            // Spawn ahead of the eye, never AT it: a pivot coincident with
+            // the camera degenerates both the world gizmo projection and
+            // WorldToScreen, leaving the new light handleless and ungrabbable.
+            var rotation = CameraRotation();
             var transform = source != null
                 ? source.Transform
                 : new PoserTransform(
-                    _camera.GetCameraPosition(), CameraRotation(), Vector3.One);
+                    _camera.GetCameraPosition() +
+                        Vector3.Transform(-Vector3.UnitZ, rotation) * 3f,
+                    rotation,
+                    Vector3.One);
 
             var light = SpawnNative(
                 kind, transform, LightOwnership.Spawned, GenerateName(kind));
