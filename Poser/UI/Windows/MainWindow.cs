@@ -741,11 +741,11 @@ public class MainWindow : Window
     /// <summary>The gaze node's three aim points, in the order the gaze pane
     /// itself lists them. Static because the set is fixed: a gaze always has
     /// exactly these three parts, so no actor mints its own copy.</summary>
-    private static readonly (string Label, GazePart Part)[] GazeParts =
+    private static readonly (string Label, string Icon, GazePart Part)[] GazeParts =
     {
-        ("Eyes", GazePart.Eyes),
-        ("Head", GazePart.Head),
-        ("Body", GazePart.Body),
+        ("Eyes", "eye", GazePart.Eyes),
+        ("Head", "head", GazePart.Head),
+        ("Body", "body", GazePart.Body),
     };
 
     /// <summary>
@@ -917,7 +917,7 @@ public class MainWindow : Window
                     Label = "Gaze control",
                     Count = "",
                     Depth = 1,
-                    IconName = "gaze-point",
+                    IconName = "eye",
                     ForceIcon = true,
                     // Like a merged category/bone row: the body still selects
                     // the shared anchor (Tag) while the chevron toggles the
@@ -935,14 +935,14 @@ public class MainWindow : Window
                 {
                     for (int p = 0; p < GazeParts.Length; p++)
                     {
-                        var (partLabel, part) = GazeParts[p];
+                        var (partLabel, partIcon, part) = GazeParts[p];
                         var partId = SelectionId.ForGazeTarget(actor.Id, part);
                         actors.Rows.Add(new ShellSidebarRow
                         {
                             Label = partLabel,
                             Count = "",
                             Depth = 2,
-                            IconName = "gaze-point",
+                            IconName = partIcon,
                             ForceIcon = true,
                             HasChildren = false,
                             IsLastChild = p == GazeParts.Length - 1,

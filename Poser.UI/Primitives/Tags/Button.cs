@@ -172,7 +172,7 @@ public static partial class Crystarium
     internal static float ResolveButtonWidth(
         string label, ControlStyle style, float availableWidth) =>
         ControlSizing.Width(
-            style.Width,
+            style,
             IntrinsicButtonWidth(label, style),
             availableWidth);
 
@@ -641,7 +641,7 @@ public static partial class Crystarium
                 style.Height,
                 ActiveTheme.Controls.ShellIconAction);
         float width = ControlSizing.Width(
-            style.Width,
+            style,
             height,
             ImGui.GetContentRegionAvail().X / ImGuiHelpers.GlobalScale);
         return new(width, height);

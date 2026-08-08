@@ -123,8 +123,30 @@ public class SkeletonOverlayWindow : Window
         SizeCondition = ImGuiCond.Always;
     }
 
+    /// <summary>The titlebar Armature toggle. With the toggle Off the
+    /// overlay still anchors the current selection: selected bones and
+    /// selected actor origins stay visible on their own, so an edit made
+    /// from the workspace never loses its on-screen anchor. Everything
+    /// unselected stays hidden and non-interactive.</summary>
+    public bool UserVisible { get; set; }
+
+    private bool AnySelectionAnchor()
+    {
+        foreach (var id in _selection.Selected)
+            if (id.Kind is SceneEntityKind.Bone
+                or SceneEntityKind.Actor
+                // A gaze point belongs to an actor: keep that actor's skeleton
+                // anchored so aiming the gaze never blanks the dots under it.
+                or SceneEntityKind.GazeTarget)
+                return true;
+        return false;
+    }
+
     public override void Draw()
     {
+        if (!UserVisible && !AnySelectionAnchor())
+            return;
+
         var drawList = ImGui.GetBackgroundDrawList();
         var viewportPos = ImGui.GetMainViewport().Pos;
         var io = ImGui.GetIO();
@@ -222,6 +244,16 @@ public class SkeletonOverlayWindow : Window
                 });
             }
             }
+        }
+
+        // Armature toggle Off: only the selection's anchors survive — the
+        // selected bones' dots and selected actors' origin points. The
+        // filter runs BEFORE hover/press handling so hidden dots are not
+        // silently interactive.
+        if (!UserVisible)
+        {
+            bones = bones.Where(b => b.IsSelected).ToList();
+            actors = actors.Where(a => selectedIds.Contains(a.Id)).ToList();
         }
 
         var actorRadius = 8f * ImGuiHelpers.GlobalScale;

@@ -44,7 +44,7 @@ public sealed class UiWindowSet : IDisposable
         SpawnBrowser = spawnBrowser;
         System.AddWindow(SpawnBrowser);
 
-        Main.GetSkeletonOverlayOn = () => SkeletonOverlay.IsOpen;
+        Main.GetSkeletonOverlayOn = () => SkeletonOverlay.UserVisible;
         Main.OnSkeletonOverlayToggled += SetSkeletonOverlayOpen;
 
         SetPrimaryOpen(gPoseService.IsGPosing);
@@ -54,18 +54,20 @@ public sealed class UiWindowSet : IDisposable
     {
         Main.IsOpen = isOpen;
         GizmoOverlay.IsOpen = isOpen;
-        // The skeleton overlay starts Off each GPose/UI session: only the
-        // toolbar Armature action opens it, and a user toggle persists for the
-        // session. Session end still closes it so the next session starts Off.
+        // The window itself follows the session like the gizmo overlay; the
+        // Armature toggle starts Off each GPose/UI session and a bone
+        // selection forces the armature visible regardless of the toggle.
+        // Session end resets the toggle so the next session starts Off.
+        SkeletonOverlay.IsOpen = isOpen;
         if (!isOpen)
         {
-            SkeletonOverlay.IsOpen = false;
+            SkeletonOverlay.UserVisible = false;
             _overlayPresentation.Clear();
         }
     }
 
     private void SetSkeletonOverlayOpen(bool isOpen)
-        => SkeletonOverlay.IsOpen = isOpen;
+        => SkeletonOverlay.UserVisible = isOpen;
 
     public void Dispose()
     {

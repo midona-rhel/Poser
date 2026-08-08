@@ -289,19 +289,20 @@ public sealed class AnimationPane
                             : _animation.Pause(actor),
                         "Playback"),
                     help: paused
-                        ? "Resume from the current frame"
-                        : "Hold the current frame");
+                        ? "Resume this actor from the frame it stopped on"
+                        : "Freeze this actor on the current frame");
                 actions.Button(
                     "Replay",
                     () => Report(
                         _animation.Blend(actor, current), "Replay"),
                     disabled: current == 0,
-                    help: "Restart the current animation");
+                    help: "Play this actor's animation again from the start");
                 actions.Button(
                     "Restore",
                     () => Report(
                         _animation.ResetActor(actor), "Restore"),
-                    help: "Restore this actor's incoming animation state");
+                    help: "Undo every animation change Poser made to "
+                        + "this actor");
             },
             help: "Choose the animation this actor plays");
 
@@ -314,17 +315,19 @@ public sealed class AnimationPane
             next => Report(_animation.SetSpeed(actor, next), "Speed"),
             perPixel: 0.01f,
             marks: SpeedMarks,
-            help: "Actor playback speed");
+            help: "Set how fast every animation on this actor plays; "
+                + "0 freezes it");
         form.Actions("Playback", actions =>
         {
             actions.Button(
                 "Reset speed",
                 () => Report(_animation.ClearSpeed(actor), "Speed"),
-                help: "Hand playback speed back to the game");
+                help: "Give this actor's playback speed back to the game");
             actions.Button(
                 "All actors…",
                 () => _sceneMenuRequested = true,
-                help: "Freeze, resume, replay or restore every actor");
+                help: "Freeze, resume, replay or restore every actor in "
+                    + "the scene");
         });
     }
 
@@ -370,15 +373,13 @@ public sealed class AnimationPane
                                 actor, StanceValues[picked], pose),
                             "Stance");
                     },
-                    ControlStyle.Workspace with
-                    {
-                        Width = UiWidth.Fixed(
-                            MathF.Max(1f, cell.Width / cell.Scale)),
-                    },
+                    cell.Constrain(ControlStyle.Workspace),
                     disabled: !supported,
                     help: supported
-                        ? "Pose family — picking one returns the actor to it"
-                        : "Stance changes are unavailable");
+                        ? "Put the actor into this stance; this clears the "
+                            + "animation you chose"
+                        : "Stance control is unavailable; Poser could not "
+                            + "find the game function it needs");
             },
             $"Pose {reading.Pose}",
             cell => PoseStepper(
@@ -403,7 +404,8 @@ public sealed class AnimationPane
                     "##anim-weapon-drawn",
                     reading.WeaponDrawn,
                     next => Report(
-                        _animation.SetWeaponDrawn(actor, next), "Weapon"));
+                        _animation.SetWeaponDrawn(actor, next), "Weapon"),
+                    cell.Constrain());
             },
             "Lock position",
             cell =>
@@ -415,7 +417,8 @@ public sealed class AnimationPane
                     owned.PositionLock,
                     next => Report(
                         _animation.SetPositionLock(actor, next),
-                        "Position lock"));
+                        "Position lock"),
+                    cell.Constrain());
             });
     }
 
@@ -442,7 +445,7 @@ public sealed class AnimationPane
             onPrevious,
             style: style,
             disabled: disabled,
-            help: "Previous pose (wraps)",
+            help: "Step back one pose in this stance; the list wraps",
             id: "##anim-pose-previous");
         ImGui.SetCursorScreenPos(
             new Vector2(top.X + width * cell.Scale + gap, top.Y));
@@ -451,7 +454,7 @@ public sealed class AnimationPane
             onNext,
             style: style,
             disabled: disabled,
-            help: "Next pose (wraps)",
+            help: "Step forward one pose in this stance; the list wraps",
             id: "##anim-pose-next");
     }
 
@@ -494,7 +497,8 @@ public sealed class AnimationPane
                             () => Report(
                                 _animation.Blend(actor, timeline), label),
                             disabled: timeline == 0,
-                            help: "Play this animation again");
+                            help: "Play this layer's animation again from "
+                                + "the start");
                     }
                     else
                     {
@@ -507,7 +511,8 @@ public sealed class AnimationPane
                                     : _animation.SetSlotSpeed(
                                         actor, captured, 0f),
                                 "Layer playback"),
-                            help: "Hold or release only this layer");
+                            help: "Freeze just this layer, or let it play "
+                                + "again");
                     }
                     actions.Button(
                         "Reset",
@@ -515,7 +520,7 @@ public sealed class AnimationPane
                             _animation.ClearSlotSpeed(actor, captured),
                             "Layer speed"),
                         disabled: !hasOwnedSpeed,
-                        help: "Hand this layer's speed back to the game");
+                        help: "Give this layer's speed back to the game");
                 },
             help: $"Choose an animation for the {lower} layer");
 
@@ -535,7 +540,7 @@ public sealed class AnimationPane
                     "Layer speed"),
                 perPixel: 0.005f,
                 marks: UnitMarks,
-                help: $"Playback speed for the {lower} layer");
+                help: $"Set how fast the {lower} layer plays");
         }
 
         if (slot is AnimationSlot.Base or AnimationSlot.UpperBody)
@@ -625,8 +630,9 @@ public sealed class AnimationPane
             perPixel: 0.01f,
             disabled: !scrubbable,
             help: scrubbable
-                ? $"Animation time / {control.Duration:0.00}"
-                : "No active animation control",
+                ? "Drag to move through the animation, "
+                    + $"{control.Duration:0.00}s long; this pauses the actor"
+                : "No animation is playing here",
             onBegin: EnsureScrub,
             onCommit: Commit);
 
@@ -641,7 +647,8 @@ public sealed class AnimationPane
                     _animation.SetSlotLoop(
                         actor, slot, loopTimeline, next),
                     "Loop"),
-                help: "Play this layer's animation again when it ends");
+                help: "Keep repeating this layer's animation when it "
+                    + "reaches the end");
         }
     }
 
@@ -668,13 +675,14 @@ public sealed class AnimationPane
                             : _animation.Blend(actor, facial),
                         "Expression"),
                     disabled: facial == 0,
-                    help: "Replay the held expression from its start");
+                    help: "Play the chosen expression again from the start");
                 actions.Button(
                     "Release",
                     () => Report(
                         _animation.ReleaseExpression(actor), "Expression"),
                     disabled: held == 0,
-                    help: "Let the face return to the base animation");
+                    help: "Release the held expression so the face follows "
+                        + "the animation again");
                 actions.Button(
                     "Apply to face",
                     () =>
@@ -688,9 +696,10 @@ public sealed class AnimationPane
                                 : string.Empty;
                     },
                     disabled: _facialCapture.IsPending,
-                    help: "Keep this face as one undoable pose edit");
+                    help: "Bake the face you see now into the pose as one "
+                        + "undoable edit");
             },
-            help: "Hold an expression on this actor's face");
+            help: "Choose an expression to hold on this actor's face");
 
         form.Picker(
             "Lips",
@@ -700,7 +709,7 @@ public sealed class AnimationPane
                 "None",
                 () => Report(_animation.SetLips(actor, 0), "Lips"),
                 disabled: reading.LipsOverride == 0,
-                help: "Restore the incoming lip animation"),
+                help: "Put back the lip animation the actor had before"),
             help: "Choose the speech animation this actor's lips play");
     }
 
@@ -1081,6 +1090,8 @@ public sealed class AnimationPane
         { Kind: SceneEntityKind.Actor, Actor: { } actor } => actor,
         { Kind: SceneEntityKind.Bone, Bone: { } bone } =>
             bone.Skeleton.Actor,
+        { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeActor } =>
+            gazeActor,
         _ => null,
     };
 
