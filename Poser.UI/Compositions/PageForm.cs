@@ -196,6 +196,16 @@ public static partial class Crystarium
                     _scale);
                 _y += SectionRuleThickness;
             }
+
+            // An EMPTY title is a pure row container: no header row, no
+            // padding a header would justify — checklist hosts inside
+            // popovers state sections for the row machinery alone.
+            if (string.IsNullOrEmpty(title))
+            {
+                content(new FormScope(this, title));
+                return;
+            }
+
             _y += page.SectionPaddingTop;
 
             float headerTop = _origin.Y + _y * _scale;
@@ -220,6 +230,20 @@ public static partial class Crystarium
             _y += page.SectionHeaderHeight;
             if (open)
                 content(new FormScope(this, title));
+        }
+
+        /// <summary>The section rule as a LIST break, breathing one action
+        /// gap on either side — <see cref="FormScope.Divider"/>.</summary>
+        internal void DrawInlineRule()
+        {
+            var page = ActiveTheme.Page;
+            _y += page.ActionGap;
+            PaintSectionRule(
+                ImGui.GetWindowDrawList(),
+                new(_origin.X, _origin.Y + _y * _scale),
+                _width,
+                _scale);
+            _y += SectionRuleThickness + page.ActionGap;
         }
 
         internal FormRowScope BeginRow(string label)
@@ -398,6 +422,17 @@ public static partial class Crystarium
         public void Checkboxes(
             string label,
             params (string Caption, bool Value, Action<bool> OnChange,
+                string? Help)[] items) =>
+            Checkboxes(label, disabled: false, items);
+
+        /// <summary>Row-level disabled — Brio disables its whole transform
+        /// icon row at once, and a per-item flag would let the row half-die.
+        /// Disabled boxes fade through the control's own idiom; the captions
+        /// fade with them; the help still explains on hover.</summary>
+        public void Checkboxes(
+            string label,
+            bool disabled,
+            params (string Caption, bool Value, Action<bool> OnChange,
                 string? Help)[] items)
         {
             string id = Id(string.IsNullOrEmpty(label) ? "checkboxes" : label);
@@ -410,6 +445,7 @@ public static partial class Crystarium
             {
                 Size = ActiveTheme.Typography.LabelSize,
                 Color = FormLabelColor,
+                Disabled = disabled,
             };
             float x = row.ControlOrigin.X;
             foreach (var (caption, value, onChange, help) in items)
@@ -417,7 +453,7 @@ public static partial class Crystarium
                 ImGui.SetCursorScreenPos(new(
                     x, row.Origin.Y + (rowHeight - boxSide) * 0.5f));
                 Crystarium.Checkbox(
-                    $"{id}-{caption}", value, onChange, default, false, help);
+                    $"{id}-{caption}", value, onChange, default, disabled, help);
                 x += boxSide + gap * 0.75f;
                 float captionWidth =
                     Crystarium.MeasureText(caption, captionStyle).X;
@@ -430,6 +466,52 @@ public static partial class Crystarium
             }
             _page.EndRow(row, id, null);
         }
+
+        /// <summary>
+        /// One CHECKLIST row — the box at the row's left edge, the caption
+        /// beside it, no label column (Brio's bone-filter list shape).
+        /// <paramref name="partial"/> paints the tristate dot;
+        /// <paramref name="indent"/> steps a child row in under its group.
+        /// </summary>
+        public void CheckRow(
+            string caption,
+            bool value,
+            Action<bool> onChange,
+            string? help = null,
+            bool disabled = false,
+            bool partial = false,
+            bool indent = false)
+        {
+            string id = Id($"check-{caption}");
+            var row = _page.BeginRow(string.Empty);
+            float gap = ActiveTheme.Page.ActionGap * row.Scale;
+            float boxSide = ActiveTheme.Controls.CheckboxSize * row.Scale;
+            float rowHeight =
+                ActiveTheme.Controls.FormRowHeight * row.Scale;
+            float x = row.Origin.X + (indent ? gap * 2f : 0f);
+            ImGui.SetCursorScreenPos(new(
+                x, row.Origin.Y + (rowHeight - boxSide) * 0.5f));
+            Crystarium.Checkbox(
+                id, value, onChange, default, disabled, help, partial);
+            var captionStyle = new TextStyle
+            {
+                Size = ActiveTheme.Typography.LabelSize,
+                Color = indent ? FormLabelColor : ActiveTheme.Text,
+                Weight = indent ? null : FontWeight.SemiBold,
+                Disabled = disabled,
+            };
+            float captionX = x + boxSide + gap * 0.75f;
+            LabelInBand(
+                new(captionX, row.Origin.Y),
+                new(row.Origin.X + row.Width - captionX, rowHeight),
+                caption,
+                captionStyle);
+            _page.EndRow(row, id, help);
+        }
+
+        /// <summary>An inline rule BETWEEN row runs — the section rule's own
+        /// paint at list scale, for checklist group breaks.</summary>
+        public void Divider() => _page.DrawInlineRule();
 
         /// <summary>Segmented row: the pill fills the control cell at its own
         /// navigation height, not the workspace height a text control takes.

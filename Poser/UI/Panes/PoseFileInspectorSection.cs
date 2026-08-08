@@ -240,7 +240,10 @@ public sealed class PoseFileInspectorSection
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
         var origin = ImGui.GetCursorScreenPos();
         float width = ImGui.GetContentRegionAvail().X;
-        float y = origin.Y;
+        // The first section spends SectionPaddingTop before its header; a
+        // popover's title should hug the window padding instead.
+        float y = origin.Y
+            - Crystarium.ActiveTheme.Page.SectionPaddingTop * scale;
 
         y += Crystarium.Section(
             "##import-menu-head", "Import pose",
@@ -278,20 +281,25 @@ public sealed class PoseFileInspectorSection
             {
                 // Brio's icon row disables under Smart Import and whenever
                 // Expression is checked (FileUIHelpers.cs:514-516) — the
-                // engine forces every component on those paths.
-                string? locked = _typeExpression || _smartImport
+                // engine forces every component on those paths. The Model
+                // toggle sits only under the OUTER Smart disable, like
+                // Brio's model-transform icon.
+                bool locked = _typeExpression || _smartImport;
+                string? why = locked
                     ? "Expression imports always apply every component"
                     : null;
                 form.Checkboxes(
                     "Apply",
-                    ("Position", _position, next => _position = next, locked),
-                    ("Rotation", _rotation, next => _rotation = next, locked),
-                    ("Scale", _scale, next => _scale = next, locked));
+                    locked,
+                    ("Position", _position, next => _position = next, why),
+                    ("Rotation", _rotation, next => _rotation = next, why),
+                    ("Scale", _scale, next => _scale = next, why));
                 form.Checkbox(
                     "Model", _modelTransform,
                     next => _modelTransform = next,
                     help: "Also move the actor to the file's placement "
-                        + "(model transform)");
+                        + "(model transform)",
+                    disabled: _smartImport);
             },
             labelColumnWidth: MenuLabelColumn);
 
@@ -391,7 +399,9 @@ public sealed class PoseFileInspectorSection
         var origin = ImGui.GetCursorScreenPos();
         float width = ImGui.GetContentRegionAvail().X;
 
-        float y = origin.Y + Crystarium.Section(
+        float y = origin.Y
+            - Crystarium.ActiveTheme.Page.SectionPaddingTop * scale
+            + Crystarium.Section(
             "##export-menu", "Export pose",
             new Vector2(origin.X, origin.Y), width, true, null,
             form =>
@@ -443,7 +453,9 @@ public sealed class PoseFileInspectorSection
         float width = ImGui.GetContentRegionAvail().X;
         var page = Crystarium.ActiveTheme.Page;
 
-        float y = origin.Y + Crystarium.Section(
+        float y = origin.Y
+            - page.SectionPaddingTop * scale
+            + Crystarium.Section(
             "##filter-head", "Bone filter",
             new Vector2(origin.X, origin.Y), width, true, null,
             form => form.Actions("Select", actions =>
@@ -459,46 +471,59 @@ public sealed class PoseFileInspectorSection
             divider: false,
             labelColumnWidth: MenuLabelColumn);
 
+        ImGui.SetCursorScreenPos(new Vector2(origin.X, y));
         float scrollHeight =
             _boneFilterHeight - (y - origin.Y) / scale
             - page.Inset - MenuPadding * 2f;
-        ImGui.SetCursorScreenPos(new Vector2(origin.X, y));
         Crystarium.ScrollRegion(
             "##filter-scroll", width / scale, scrollHeight, _ =>
             {
                 var top = ImGui.GetCursorScreenPos();
                 float innerWidth = ImGui.GetContentRegionAvail().X;
-                float boxSide = Crystarium.ActiveTheme.Controls.CheckboxSize * scale;
                 float sy = top.Y;
-                bool first = true;
-                foreach (var group in Files.ImportBoneCategories.Groups)
-                {
-                    var categories = group.Categories;
-                    int enabled = 0;
-                    foreach (var category in categories)
+                sy += Crystarium.Section(
+                    "##filter-list", string.Empty,
+                    new Vector2(top.X, sy), innerWidth, true, null,
+                    form =>
                     {
-                        if (!_disabledCategories.Contains(category.Id))
-                            enabled++;
-                    }
-                    bool all = enabled == categories.Length;
-                    bool partial = enabled > 0 && !all;
-
-                    // The header row's top, from the same tokens DrawSection
-                    // spends before it: margin + rule when divided, then the
-                    // section's own top padding.
-                    float headerTop = sy
-                        + (first ? 0f : (page.SectionMarginTop + 1f) * scale)
-                        + page.SectionPaddingTop * scale;
-
-                    sy += Crystarium.Section(
-                        $"##filter-{group.Name}", group.Name,
-                        new Vector2(top.X, sy), innerWidth, true, null,
-                        form =>
+                        bool first = true;
+                        foreach (var group in Files.ImportBoneCategories.Groups)
                         {
+                            var categories = group.Categories;
+                            int enabled = 0;
+                            foreach (var category in categories)
+                            {
+                                if (!_disabledCategories.Contains(category.Id))
+                                    enabled++;
+                            }
+                            bool all = enabled == categories.Length;
+                            bool partial = enabled > 0 && !all;
+
+                            if (!first)
+                                form.Divider();
+                            first = false;
+
+                            form.CheckRow(
+                                group.Name, all,
+                                next =>
+                                {
+                                    foreach (var category in categories)
+                                    {
+                                        if (next)
+                                            _disabledCategories.Remove(category.Id);
+                                        else
+                                            _disabledCategories.Add(category.Id);
+                                    }
+                                },
+                                partial: partial,
+                                help: partial
+                                    ? "Some of this group is on; click for all"
+                                    : null);
                             foreach (var category in categories)
                             {
                                 var id = category.Id;
-                                form.Checkbox(category.Name,
+                                form.CheckRow(
+                                    category.Name,
                                     !_disabledCategories.Contains(id),
                                     next =>
                                     {
@@ -506,37 +531,12 @@ public sealed class PoseFileInspectorSection
                                             _disabledCategories.Remove(id);
                                         else
                                             _disabledCategories.Add(id);
-                                    });
+                                    },
+                                    indent: true);
                             }
-                        },
-                        divider: !first,
-                        labelColumnWidth: MenuLabelColumn);
-                    first = false;
-
-                    // The group's tristate checkbox, seated at the CONTROL
-                    // column — the same x every category row's box sits at —
-                    // so the header reads as the column's "all" row.
-                    ImGui.SetCursorScreenPos(new Vector2(
-                        top.X + MenuLabelColumn * scale,
-                        headerTop
-                        + (page.SectionHeaderHeight * scale - boxSide) * 0.5f));
-                    Crystarium.Checkbox(
-                        $"##filter-group-{group.Name}", all,
-                        next =>
-                        {
-                            foreach (var category in categories)
-                            {
-                                if (next)
-                                    _disabledCategories.Remove(category.Id);
-                                else
-                                    _disabledCategories.Add(category.Id);
-                            }
-                        },
-                        partial: partial,
-                        help: partial
-                            ? "Some of this group is on; click for all"
-                            : null);
-                }
+                        }
+                    },
+                    divider: false);
                 ImGui.SetCursorScreenPos(new Vector2(top.X, sy));
                 ImGui.Dummy(new Vector2(1f, 1f));
             });
