@@ -575,13 +575,10 @@ public static class PoseLibraryView
         scope.Checkbox("Position", vm.ImportPosition, vm.PositionToggle!);
         scope.Checkbox("Rotation", vm.ImportRotation, vm.RotationToggle!);
         scope.Checkbox("Scale", vm.ImportScale, vm.ScaleToggle!);
-        // The two Brio menus, opened from this row (the user's placement):
-        // the import-options menu and the bone-filter menu.
+        // The import menu, opened from this row (the user's placement); the
+        // bone filter opens from its button INSIDE that menu.
         if (vm.ShowImportMenus)
-        {
-            scope.Button("Options…", vm.ImportMenuClick!);
-            scope.Button("Bones…", vm.BoneFilterClick!);
-        }
+            scope.Button("Options", vm.ImportMenuClick!);
     }
 
     /// <summary>The action row: the status caption on the left (the size
@@ -610,7 +607,7 @@ public static class PoseLibraryView
         // Configuring sources belongs where the library is, not only in the
         // empty state a user with sources never sees.
         scope.Button(
-            "Add source…",
+            "Add source",
             vm.SettingsClick!,
             style: ControlStyle.Comfortable);
         scope.Button(
@@ -692,7 +689,7 @@ public static class PoseLibraryView
             SearchId,
             vm.Query,
             vm.OnQuery ?? IgnoreQuery,
-            "Search poses…",
+            "Search poses",
             new ControlStyle { Width = UiWidth.Fixed(width) });
     }
 

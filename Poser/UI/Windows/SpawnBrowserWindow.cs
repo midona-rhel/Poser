@@ -241,13 +241,13 @@ public sealed class SpawnBrowserWindow : Window
             "##spawn-light-directional", "New directional light",
             TablerIcon.Sun, noLights));
         rows.Add(ActionRow(
-            "##spawn-light-file", "New light from file…", TablerIcon.File,
+            "##spawn-light-file", "New light from file", TablerIcon.File,
             noLights));
         // Capture takes a copy of a light the world itself placed and
         // suppresses the original; availability moves with the player, so this
         // row is re-stated on every open.
         rows.Add(ActionRow(
-            "##spawn-world-light", "World light…", TablerIcon.BuildingStore,
+            "##spawn-world-light", "World light", TablerIcon.BuildingStore,
             noLights,
             help: "Copy a light the world places here and edit it"));
 

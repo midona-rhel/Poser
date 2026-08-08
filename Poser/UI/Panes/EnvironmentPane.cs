@@ -1063,7 +1063,7 @@ public sealed class EnvironmentPane
 
         form.Actions("Slots", actions =>
         {
-            actions.Button("Add festival…", OpenFestivalPicker,
+            actions.Button("Add festival", OpenFestivalPicker,
                 disabled: !canModify || !_festivals.HasFreeSlot,
                 help: !canModify
                     ? FestivalsUnavailable

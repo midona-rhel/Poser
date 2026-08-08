@@ -539,7 +539,7 @@ public static class SettingsView
                 form.ReadOnlyWithActions(
                     vm.Keybinds[index].Action,
                     rebinding
-                        ? "Press a key…"
+                        ? "Press a key"
                         : vm.Keybinds[index].Binding,
                     actions => actions.Button(
                         rebinding ? "Cancel" : "Rebind",
@@ -559,7 +559,7 @@ public static class SettingsView
                 "Use library for Import",
                 vm.UseLibraryWhenImporting,
                 next => vm.UseLibraryWhenImporting = next,
-                "Import… buttons open the pose library instead of the file dialog");
+                "Import buttons open the pose library instead of the file dialog");
             form.Switch(
                 "Show file extensions",
                 vm.LibraryShowExtensions,

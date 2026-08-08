@@ -80,7 +80,7 @@ public sealed class PoseLibraryPane
     /// <summary>The one word an outstanding enumeration is stated with —
     /// the footer caption on either tab, and the auto-save grid's empty line
     /// on a first entry that has no rows to leave standing.</summary>
-    private const string ScanningText = "Scanning…";
+    private const string ScanningText = "Scanning";
 
     /// <summary>The auto-save grid's standing empty answer, once a pass has
     /// actually landed and found nothing.</summary>

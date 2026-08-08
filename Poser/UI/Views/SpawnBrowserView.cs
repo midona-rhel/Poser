@@ -161,7 +161,7 @@ public static class SpawnBrowserView
             SearchId,
             vm.Query,
             vm.OnQuery ?? IgnoreQuery,
-            "Search minions, mounts, accessories…",
+            "Search minions, mounts, accessories",
             new ControlStyle
             {
                 Width = UiWidth.Fixed(

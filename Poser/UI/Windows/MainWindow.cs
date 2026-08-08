@@ -1813,16 +1813,16 @@ public class MainWindow : Window
         _shellMenuItems[(int)ShellCommand.ShowLibrary] =
             new ContextMenuItem("Show library", TablerIcon.Photo);
         _shellMenuItems[(int)ShellCommand.SpawnActor] =
-            new ContextMenuItem("Spawn actor…", TablerIcon.UserPlus);
+            new ContextMenuItem("Spawn actor", TablerIcon.UserPlus);
         _shellMenuItems[(int)ShellCommand.ImportPose] =
             new ContextMenuItem(
-                "Import pose…", TablerIcon.Download, disabled: !poseTarget);
+                "Import pose", TablerIcon.Download, disabled: !poseTarget);
         _shellMenuItems[(int)ShellCommand.ExportPose] =
             new ContextMenuItem(
-                "Export pose…", TablerIcon.DeviceFloppy, disabled: !poseTarget);
+                "Export pose", TablerIcon.DeviceFloppy, disabled: !poseTarget);
         _shellMenuItems[(int)ShellCommand.AutoSaves] =
             new ContextMenuItem(
-                "Auto-saves…", TablerIcon.ArrowBackUp, disabled: !poseTarget);
+                "Auto-saves", TablerIcon.ArrowBackUp, disabled: !poseTarget);
         _shellMenuItems[(int)ShellCommand.SettingsSeparator] =
             ContextMenuItem.Separator;
         _shellMenuItems[(int)ShellCommand.OpenSettings] =
@@ -1842,13 +1842,15 @@ public class MainWindow : Window
             case ShellCommand.SpawnActor:
                 OnSpawnBrowserRequested?.Invoke();
                 break;
+            // Import/Export open the Brio menus — the ONE import and export
+            // surface; the file dialogs live inside them.
             case ShellCommand.ImportPose:
-                if (SelectedSkeleton() is { } importSkeleton)
-                    _poseFileSection.OpenImport(importSkeleton);
+                if (SelectedSkeleton() != null)
+                    _poseFileSection.RequestImportMenu(withPresets: true);
                 break;
             case ShellCommand.ExportPose:
-                if (SelectedSkeleton() is { } exportSkeleton)
-                    _poseFileSection.OpenExport(exportSkeleton);
+                if (SelectedSkeleton() != null)
+                    _poseFileSection.RequestExportMenu();
                 break;
             case ShellCommand.AutoSaves:
                 if (SelectedSkeleton() is { } recoverSkeleton)
@@ -1894,7 +1896,7 @@ public class MainWindow : Window
             new(!_spawnService.IsVisible(actor) ? "Show" : "Hide", !_spawnService.IsVisible(actor) ? TablerIcon.Eye : TablerIcon.EyeOff),
             new(_animation.IsPaused(actorId) ? "Resume animation" : "Pause animation",
                 TablerIcon.PlayerPlay),
-            new("Rename…", TablerIcon.Edit),
+            new("Rename", TablerIcon.Edit),
             new("Clone", TablerIcon.Stack2),
             ContextMenuItem.Separator,
             new("Detach companion", TablerIcon.X),
@@ -1931,24 +1933,15 @@ public class MainWindow : Window
         // actor itself is where they are reachable.
         items.Add(ContextMenuItem.Separator);
         items.Add(new ContextMenuItem(
-            "Import pose…", TablerIcon.Download, disabled: !actor.HasSkeleton));
+            "Import pose", TablerIcon.Download, disabled: !actor.HasSkeleton));
         items.Add(new ContextMenuItem(
-            "Export pose…", TablerIcon.DeviceFloppy,
+            "Export pose", TablerIcon.DeviceFloppy,
             disabled: !actor.HasSkeleton));
         actions.Add(null); // separator
-        actions.Add(() =>
-        {
-            if (actor.Skeleton is { } importSkeleton)
-                _poseFileSection.OpenImport(importSkeleton);
-        });
-        actions.Add(() =>
-        {
-            if (actor.Skeleton is { } exportSkeleton)
-                _poseFileSection.OpenExport(exportSkeleton);
-        });
-
-        // Rest poses live on the library's toggle row (user placement) —
-        // never on the actor menu, never in the inspector.
+        // Both rows open the Brio menus — the ONE import/export surface;
+        // the file dialogs (and the actor-side presets) live inside them.
+        actions.Add(() => _poseFileSection.RequestImportMenu(withPresets: true));
+        actions.Add(() => _poseFileSection.RequestExportMenu());
 
         if (_spawnService.IsSpawnedActor(actor))
         {

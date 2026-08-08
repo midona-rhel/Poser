@@ -337,11 +337,11 @@ public sealed class AppearancePane
                     ?? (cleanupPending ? "Cleanup pending" : "None"),
                 actions =>
                 {
-                    actions.Button("Import…",
+                    actions.Button("Import",
                         () => OpenMcdfImport(actor),
                         help: "Apply a Mare character file's mods, appearance, "
                             + "and body scale to this actor only");
-                    actions.Button("Export…",
+                    actions.Button("Export",
                         () => OpenMcdfExport(actor),
                         disabled: !exportable,
                         help: !penumbra.Available

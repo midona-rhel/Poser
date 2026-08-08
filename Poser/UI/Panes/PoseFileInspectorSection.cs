@@ -20,8 +20,8 @@ namespace Poser.UI;
 /// </summary>
 public sealed class PoseFileInspectorSection
 {
-    private static readonly string[] ScopeOptions =
-        ["Full", "Body", "Expression", "Selected"];
+    // 0 Full (Body+Expression), 1 Body, 2 Expression — the import menu's
+    // type pair; Selected-bones is the separate _selectedOnly switch.
 
     private readonly CleanPoseFacade _poseFacade;
     private readonly SelectionSession _selection;
@@ -40,6 +40,7 @@ public sealed class PoseFileInspectorSection
     // file's baked positions/scales fight IK and Customize+ scaling.
     private bool _rotation = true, _position, _scale;
     private bool _descendants = true, _reset;
+    private bool _selectedOnly;
 
     // ── the two Brio menus (one shared state for FILES and the library) ──
     // Import menu: Brio's import popup (FileUIHelpers.DrawImportPoseMenuPopup)
@@ -157,8 +158,18 @@ public sealed class PoseFileInspectorSection
     public Func<Domain.Identity.ActorId, IActor?>? _resolveActor;
 
     private const string ImportMenuId = "##pose-import-menu";
+    private const string ExportMenuId = "##pose-export-menu";
     private const string BoneFilterMenuId = "##pose-bone-filter-menu";
     private Vector2 _menuAnchor;
+    private bool _exportMenuRequested;
+
+    /// <summary>Opens the export menu (Brio's DrawExportPoseMenuPopup) on
+    /// the next pump.</summary>
+    public void RequestExportMenu()
+    {
+        _menuAnchor = ImGui.GetMousePos();
+        _exportMenuRequested = true;
+    }
 
     private void DrawMenus()
     {
@@ -166,6 +177,11 @@ public sealed class PoseFileInspectorSection
         {
             _importMenuRequested = false;
             Crystarium.OpenPopover(ImportMenuId);
+        }
+        if (_exportMenuRequested)
+        {
+            _exportMenuRequested = false;
+            Crystarium.OpenPopover(ExportMenuId);
         }
         if (_boneFilterRequested)
         {
@@ -177,8 +193,8 @@ public sealed class PoseFileInspectorSection
             ImportMenuId,
             new FloatingSurfaceProps
             {
-                Width = 236,
-                Height = _importMenuWithPresets ? 432f : 344f,
+                Width = 300,
+                Height = _importMenuWithPresets ? 448f : 392f,
                 Padding = 12,
                 AnchorMin = _menuAnchor,
                 AnchorMax = _menuAnchor,
@@ -187,10 +203,23 @@ public sealed class PoseFileInspectorSection
             DrawImportMenuBody);
 
         Crystarium.FloatingSurface.Popup(
+            ExportMenuId,
+            new FloatingSurfaceProps
+            {
+                Width = 300,
+                Height = 196,
+                Padding = 12,
+                AnchorMin = _menuAnchor,
+                AnchorMax = _menuAnchor,
+                Treatment = FloatingSurfaceTreatment.Glass,
+            },
+            DrawExportMenuBody);
+
+        Crystarium.FloatingSurface.Popup(
             BoneFilterMenuId,
             new FloatingSurfaceProps
             {
-                Width = 236,
+                Width = 300,
                 Height = 520,
                 Padding = 12,
                 AnchorMin = _menuAnchor,
@@ -222,49 +251,106 @@ public sealed class PoseFileInspectorSection
         ImGui.Spacing();
     }
 
-    /// <summary>Brio's import popup on the glass surface, mapped onto the
-    /// FILES scope model: the Body/Expression pair IS the scope (both =
-    /// Full; neither falls back to Full's everything).</summary>
+    /// <summary>Two checkboxes on one row — the menus trade a little width
+    /// for half the rows (user direction). A null right cell leaves the
+    /// half empty.</summary>
+    private void MenuCheckboxPair(
+        (string Id, string Label, bool Value, Action<bool> OnChange,
+            bool Disabled, string? Help) left,
+        (string Id, string Label, bool Value, Action<bool> OnChange,
+            bool Disabled, string? Help)? right)
+    {
+        float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+        var origin = ImGui.GetCursorScreenPos();
+        float half = ImGui.GetContentRegionAvail().X * 0.5f;
+
+        Crystarium.Checkbox(
+            left.Id, left.Value, left.OnChange, default, left.Disabled, left.Help);
+        ImGui.SameLine();
+        Crystarium.Text(left.Label, new TextStyle { Disabled = left.Disabled });
+
+        if (right is { } cell)
+        {
+            ImGui.SetCursorScreenPos(new Vector2(origin.X + half, origin.Y));
+            Crystarium.Checkbox(
+                cell.Id, cell.Value, cell.OnChange, default, cell.Disabled, cell.Help);
+            ImGui.SameLine();
+            Crystarium.Text(cell.Label, new TextStyle { Disabled = cell.Disabled });
+        }
+
+        ImGui.SetCursorScreenPos(new Vector2(origin.X, origin.Y + 26f * scale));
+        ImGui.Dummy(Vector2.Zero);
+    }
+
+    /// <summary>Brio's import popup on the glass surface, two options per
+    /// row, mapped onto the FILES scope model: the Body/Expression pair IS
+    /// the scope (both = Full). The bone filter opens from its own button
+    /// here, Brio's Custom Import Options.</summary>
     private void DrawImportMenuBody()
     {
         Crystarium.Text("Import pose");
         ImGui.Spacing();
 
-        MenuCheckbox("##menu-freeze", "Freeze actor", _freeze, next =>
-        {
-            _freeze = next;
-            _config.Config.FreezeActorOnPoseImport = next;
-            _config.Save();
-        }, help: "Keep the actor paused after the import");
-        MenuCheckbox("##menu-smart", "Smart import", _smartImport,
-            next => _smartImport = next,
-            help: "Route face-only files as expression imports automatically");
+        MenuCheckboxPair(
+            ("##menu-freeze", "Freeze actor", _freeze, next =>
+            {
+                _freeze = next;
+                _config.Config.FreezeActorOnPoseImport = next;
+                _config.Save();
+            }, false, "Keep the actor paused after the import"),
+            ("##menu-smart", "Smart import", _smartImport,
+                next => _smartImport = next, false,
+                "Route face-only files as expression imports automatically"));
 
         MenuHeader("Import type");
         bool body = _scope is 0 or 1;
         bool expression = _scope is 0 or 2;
-        MenuCheckbox("##menu-type-body", "Body", body, next =>
-            _scope = next && expression ? 0 : next ? 1 : expression ? 2 : 0);
-        MenuCheckbox("##menu-type-expression", "Expression", expression, next =>
-            _scope = body && next ? 0 : body ? 1 : next ? 2 : 0);
+        MenuCheckboxPair(
+            ("##menu-type-body", "Body", body, next =>
+                _scope = next && expression ? 0 : next ? 1 : expression ? 2 : 0,
+                false, null),
+            ("##menu-type-expression", "Expression", expression, next =>
+                _scope = body && next ? 0 : body ? 1 : next ? 2 : 0,
+                false, null));
 
         MenuHeader("Transform options");
-        bool componentsLocked = _smartImport || _scope == 2;
-        MenuCheckbox("##menu-t", "Position", _position,
-            next => _position = next, disabled: componentsLocked,
-            help: componentsLocked
-                ? "Expression imports always apply every component"
-                : null);
-        MenuCheckbox("##menu-r", "Rotation", _rotation,
-            next => _rotation = next, disabled: componentsLocked);
-        MenuCheckbox("##menu-s", "Scale", _scale,
-            next => _scale = next, disabled: componentsLocked);
-        MenuCheckbox("##menu-m", "Model transform", _modelTransform,
-            next => _modelTransform = next,
-            help: "Also move the actor to the file's placement");
+        bool componentsLocked = _smartImport || (!_selectedOnly && _scope == 2);
+        MenuCheckboxPair(
+            ("##menu-t", "Position", _position, next => _position = next,
+                componentsLocked,
+                componentsLocked
+                    ? "Expression imports always apply every component"
+                    : null),
+            ("##menu-r", "Rotation", _rotation, next => _rotation = next,
+                componentsLocked, null));
+        MenuCheckboxPair(
+            ("##menu-s", "Scale", _scale, next => _scale = next,
+                componentsLocked, null),
+            ("##menu-m", "Model transform", _modelTransform,
+                next => _modelTransform = next, false,
+                "Also move the actor to the file's placement"));
+
+        MenuHeader("Scope");
+        MenuCheckboxPair(
+            ("##menu-selected", "Selected bones", _selectedOnly,
+                next => _selectedOnly = next, false,
+                "Import only the bones selected in the sidebar"),
+            ("##menu-descendants", "Descendants", _descendants,
+                next => _descendants = next, !_selectedOnly,
+                "Include descendants of the selected bones"));
+        MenuCheckboxPair(
+            ("##menu-reset", "Reset first", _reset, next => _reset = next,
+                false,
+                "Clear every bone in scope before importing, including ones "
+                + "the file does not contain"),
+            null);
+
+        Crystarium.Button("Bone filter", () => RequestBoneFilterMenu(),
+            id: "##menu-bone-filter",
+            help: "Choose which bone categories imports may touch");
 
         MenuHeader("Import");
-        Crystarium.Button("From file…", () =>
+        Crystarium.Button("From file", () =>
         {
             if (SelectedSkeleton() is { } skeleton)
                 OpenImport(skeleton);
@@ -273,12 +359,41 @@ public sealed class PoseFileInspectorSection
         if (_importMenuWithPresets)
         {
             MenuHeader("Presets");
-            Crystarium.Button("Import A-pose",
+            var origin = ImGui.GetCursorScreenPos();
+            float half = ImGui.GetContentRegionAvail().X * 0.5f;
+            Crystarium.Button("A-pose",
                 () => ApplyRestPreset(RestPose.APose), id: "##menu-apose");
-            ImGui.Spacing();
-            Crystarium.Button("Import T-pose",
+            ImGui.SetCursorScreenPos(new Vector2(origin.X + half, origin.Y));
+            Crystarium.Button("T-pose",
                 () => ApplyRestPreset(RestPose.TPose), id: "##menu-tpose");
         }
+    }
+
+    /// <summary>Brio's export popup (DrawExportPoseMenuPopup): export to a
+    /// file, and the stash copy. Clipboard export is a pending flow of its
+    /// own.</summary>
+    private void DrawExportMenuBody()
+    {
+        Crystarium.Text("Export pose");
+        ImGui.Spacing();
+
+        Crystarium.Button("To file", () =>
+        {
+            if (SelectedSkeleton() is { } skeleton)
+                OpenExport(skeleton);
+        }, id: "##menu-export-file");
+
+        MenuHeader("Copy");
+        Crystarium.Button("To stash", () =>
+        {
+            if (SelectedSkeleton() is { } skeleton)
+                _status = _poseFacade.Stash(skeleton.Actor) is
+                    { Success: false } failed
+                    ? $"Stash: {failed.Detail}"
+                    : string.Empty;
+        }, id: "##menu-export-stash",
+            help: "Hold this pose so it can be applied to another actor "
+                + "from the inspector's Transfer group");
     }
 
     private void ApplyRestPreset(RestPose pose)
@@ -353,82 +468,19 @@ public sealed class PoseFileInspectorSection
 
     public void Draw(Crystarium.FormScope form, ISkeleton skeleton)
     {
-        // The Actor tab has row width to spare, so the options pack two to
-        // a row instead of stacking six label rows. Descendants stays
-        // visible-but-disabled outside the Selected scope: a checkbox that
-        // appears and disappears moves every row under it.
-        form.Pair(
-            "Scope",
-            cell =>
-            {
-                ImGui.SetCursorScreenPos(cell.Center(
-                    Crystarium.ActiveTheme.Controls.WorkspaceHeight));
-                Crystarium.Dropdown(
-                    "##posefile-scope",
-                    ScopeOptions,
-                    _scope,
-                    next => _scope = next,
-                    cell.Constrain(ControlStyle.Workspace));
-            },
-            "Descendants",
-            cell => PairCheckbox(
-                cell,
-                "##posefile-descendants",
-                _descendants,
-                next => _descendants = next,
-                disabled: _scope != 3,
-                help: "Include descendants of selected bones"));
-        form.Checkboxes(
-            "Apply",
-            ("Translation", _position, next => _position = next, null),
-            ("Rotation", _rotation, next => _rotation = next, null),
-            ("Scale", _scale, next => _scale = next, null));
-        form.Checkbox(
-            "Reset first",
-            _reset,
-            next => _reset = next,
-            help: "Clear every bone in the chosen scope before importing, "
-                + "including ones the file does not contain");
-        form.Checkbox(
-            "Freeze actor",
-            _freeze,
-            next =>
-            {
-                _freeze = next;
-                _config.Config.FreezeActorOnPoseImport = next;
-                _config.Save();
-            },
-            help: "Keep the actor paused after the import instead of "
-                + "resuming its animation; resume from the Animation tab");
-        form.Actions("Pose file", actions =>
+        // Brio's shape: one row of three commands, everything else lives in
+        // the two menus Import and Export open (the inline option pile is
+        // gone — the import menu owns scope, components, freeze, and the
+        // bone filter).
+        form.Actions("Pose", actions =>
         {
-            actions.Button("Import…", () => OpenImport(skeleton));
-            actions.Button("Export…", () => OpenExport(skeleton));
-            actions.Button("Library…", () => OnLibraryRequested?.Invoke());
-        });
-        // The two Brio menus, actor-side mount: presets included here and
-        // ONLY here (the user's rule — rest poses belong to the actor part).
-        form.Actions("Menus", actions =>
-        {
-            actions.Button("Options…", () => RequestImportMenu(withPresets: true));
-            actions.Button("Bones…", () => RequestBoneFilterMenu());
+            actions.Button("Import", () => RequestImportMenu(withPresets: true));
+            actions.Button("Export", () => RequestExportMenu());
+            actions.Button("Library", () => OnLibraryRequested?.Invoke());
         });
 
         if (_status.Length > 0)
             form.Status(_status);
-    }
-
-    private static void PairCheckbox(
-        Crystarium.FormPairCell cell,
-        string id,
-        bool value,
-        Action<bool> onChange,
-        bool disabled = false,
-        string? help = null)
-    {
-        ImGui.SetCursorScreenPos(cell.Center(
-            Crystarium.ActiveTheme.Controls.CheckboxSize));
-        Crystarium.Checkbox(id, value, onChange, default, disabled, help);
     }
 
     public void OpenImport(ISkeleton skeleton)
@@ -508,7 +560,7 @@ public sealed class PoseFileInspectorSection
     /// </summary>
     public List<BoneId>? FreezeSelectedScope()
     {
-        if (_scope != 3)
+        if (!_selectedOnly)
             return null;
         return _selection.Selected
             .Where(id => id is { Kind: SceneEntityKind.Bone, Bone: not null })
@@ -518,22 +570,21 @@ public sealed class PoseFileInspectorSection
 
     private PoseImportOptions BuildOptions()
     {
-        // Scopes: 0 Full (every slot), 1 Body and 2 Expression
-        // (Character-only), 3 Selected (the selected bones' exact slots via
-        // the slot-qualified filter).
-        bool full = _scope == 0, expression = _scope == 2, selected = _scope == 3;
+        // Types: 0 Full (every slot), 1 Body and 2 Expression
+        // (Character-only); Selected-bones rides any type and reduces to
+        // the slot-qualified filter at the facade.
+        bool selected = _selectedOnly;
+        bool full = _scope == 0 || selected, expression = !selected && _scope == 2;
+        // Brio's dispatch table (FileUIHelpers.cs:697-718): both types =
+        // every component, toggles IGNORED; the toggles reach only the
+        // body path. A Selected-bones import keeps the toggles — the
+        // Ktisis-parity flow poses exactly what you picked, how you picked.
+        bool allComponents = _scope == 0 && !selected;
         var options = new PoseImportOptions
         {
-            // Brio's dispatch table (FileUIHelpers.cs:697-718): with BOTH
-            // import types selected — its popup's everyday state — the
-            // import runs DefaultIPCImporterOptions, TransformComponents.All
-            // on every bone, transform icons IGNORED (passed null). The
-            // icons only reach the body-only path. Full mirrors that
-            // exactly: every component, toggles ignored; Body honors the
-            // toggles; Expression forces All at the engine.
-            ApplyRotation = full || _rotation,
-            ApplyPosition = full || _position,
-            ApplyScale = full || _scale,
+            ApplyRotation = allComponents || _rotation,
+            ApplyPosition = allComponents || _position,
+            ApplyScale = allComponents || _scale,
             ApplyBody = true,
             AsExpression = expression,
             ApplyFace = full || selected,

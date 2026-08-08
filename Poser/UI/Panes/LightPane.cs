@@ -640,9 +640,9 @@ public sealed class LightPane
     {
         form.Actions("Light file", actions =>
         {
-            actions.Button("Save…", () => OpenSave(light),
+            actions.Button("Save", () => OpenSave(light),
                 help: "Write this light and all of its settings to a file");
-            actions.Button("Load…", OpenLoad,
+            actions.Button("Load", OpenLoad,
                 help: "Add a light from a file to the scene");
         });
     }

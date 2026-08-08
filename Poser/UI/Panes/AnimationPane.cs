@@ -277,7 +277,7 @@ public sealed class AnimationPane
         bool paused = _animation.IsPaused(actor);
         form.Picker(
             "Animation",
-            NameFor(current, "Choose…"),
+            NameFor(current, "Choose"),
             () => OpenPicker(_baseFeed, actor, current),
             actions =>
             {
@@ -324,7 +324,7 @@ public sealed class AnimationPane
                 () => Report(_animation.ClearSpeed(actor), "Speed"),
                 help: "Give this actor's playback speed back to the game");
             actions.Button(
-                "All actors…",
+                "All actors",
                 () => _sceneMenuRequested = true,
                 help: "Freeze, resume, replay or restore every actor in "
                     + "the scene");
@@ -484,7 +484,7 @@ public sealed class AnimationPane
 
         form.Picker(
             label,
-            active ? NameFor(timeline, "Choose…") : "Add layer…",
+            active ? NameFor(timeline, "Choose") : "Add layer",
             () => OpenPicker(SlotFeed(captured), actor, timeline),
             compactEmpty
                 ? null
@@ -663,7 +663,7 @@ public sealed class AnimationPane
             : reading.TimelineFor(AnimationSlot.Facial);
         form.Picker(
             "Expression",
-            NameFor(facial, "Choose expression…"),
+            NameFor(facial, "Choose expression"),
             () => OpenPicker(_expressionFeed, actor, facial),
             actions =>
             {
@@ -703,7 +703,7 @@ public sealed class AnimationPane
 
         form.Picker(
             "Lips",
-            NameFor(reading.LipsOverride, "Choose speech…"),
+            NameFor(reading.LipsOverride, "Choose speech"),
             () => OpenPicker(_lipsFeed, actor, reading.LipsOverride),
             actions => actions.Button(
                 "None",
@@ -920,7 +920,7 @@ public sealed class AnimationPane
 
         internal string? LoadError =>
             _entries == null && !_pane._catalog.IsLoaded
-                ? "Building animation catalog…"
+                ? "Building animation catalog"
                 : null;
 
         /// <summary>Per-open kind seeding: the most useful kind the row's slot
