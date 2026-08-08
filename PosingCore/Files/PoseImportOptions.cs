@@ -93,6 +93,18 @@ public class PoseImportOptions
     public bool FilterIncludesDescendants { get; set; }
 
     /// <summary>
+    /// Bone-name prefixes the bone-filter menu disabled — compiled from
+    /// <see cref="ImportBoneCategories"/> (Brio's category filter as an
+    /// exclusion): a Character bone starting with any of these neither
+    /// applies nor resets. Ordinal-ignore-case.
+    /// </summary>
+    public System.Collections.Generic.ISet<string>? ExcludedBonePrefixes { get; set; }
+
+    /// <summary>The bone-filter menu's "Other" row turned off: a Character
+    /// bone NO category claims is excluded (Brio BoneFilter._otherAllowed).</summary>
+    public bool ExcludeUncategorizedBones { get; set; }
+
+    /// <summary>
     /// Keep the target actor's animation paused once the import has finished.
     /// The import always pauses the actor for its apply window; this flag
     /// skips the speed restore afterwards — Brio's "Freeze Actor" popup
@@ -184,6 +196,11 @@ public class PoseImportOptions
                 ? null
                 : new System.Collections.Generic.HashSet<(Poser.Domain.Identity.PoseSlot Slot, string Name)>(BoneFilter),
             FilterIncludesDescendants = FilterIncludesDescendants,
+            ExcludedBonePrefixes = ExcludedBonePrefixes == null
+                ? null
+                : new System.Collections.Generic.HashSet<string>(
+                    ExcludedBonePrefixes, StringComparer.OrdinalIgnoreCase),
+            ExcludeUncategorizedBones = ExcludeUncategorizedBones,
             FreezeOnImport = FreezeOnImport,
         };
     }

@@ -280,6 +280,8 @@ public class PoseFileService : IPoseFileService
         {
             if (!PassesBoneFilter(bone, options))
                 return false;
+            if (IsExcludedByCategories(bone.BoneName, options))
+                return false;
             if (options.AsExpression)
                 // The reset matches the apply scope MINUS the head: the
                 // head's pre-import stacks must survive because the file's
@@ -362,6 +364,13 @@ public class PoseFileService : IPoseFileService
             // exporter-vs-target head offset into every face position delta
             // and flung imported faces (user 2026-08-08).
             if (options.AsExpression && !IsExpressionScopeBone(boneName))
+                continue;
+
+            // The bone-filter menu's exclusions (Brio's category filter,
+            // BoneFilter.IsBoneValidUncached): disabled category prefixes
+            // never apply; with "Other" off, neither does anything no
+            // category claims.
+            if (IsExcludedByCategories(boneName, options))
                 continue;
             // Filter by face bones if needed
             else if (!options.ApplyFace && IsFaceBone(boneName))
@@ -540,6 +549,27 @@ public class PoseFileService : IPoseFileService
         boneName.StartsWith("n_ear_", StringComparison.Ordinal) ||
         boneName.StartsWith("j_ex_h", StringComparison.Ordinal) ||
         boneName.StartsWith("j_ex_met_va", StringComparison.Ordinal);
+
+    /// <summary>The bone-filter menu's verdict (Brio
+    /// BoneFilter.IsBoneValidUncached, as an exclusion): a disabled
+    /// category's prefix bans the bone; with the "Other" row off, so is
+    /// anything no category claims.</summary>
+    private static bool IsExcludedByCategories(
+        string boneName, PoseImportOptions options)
+    {
+        if (options.ExcludedBonePrefixes is { Count: > 0 } excluded)
+        {
+            foreach (var prefix in excluded)
+            {
+                if (boneName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
+        if (options.ExcludeUncategorizedBones &&
+            !ImportBoneCategories.IsCategorized(boneName))
+            return true;
+        return false;
+    }
 
     /// <summary>Brio ResolveSmartImport's local IsFaceBone (:405-419):
     /// j_kao plus the j_f_/j_eye/j_may/j_ago/j_lip/j_bero prefixes.</summary>

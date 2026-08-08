@@ -240,12 +240,11 @@ public sealed class PoseLibraryViewModel
     public bool ImportRotation;
     public bool ImportScale;
 
-    /// <summary>Whether the toggle row carries the A-pose/T-pose preset
-    /// buttons — the Poses tab only; an auto-save snapshot has no business
-    /// beside rest presets.</summary>
-    public bool ShowRestPoses;
-    public Action? OnAPose;
-    public Action? OnTPose;
+    /// <summary>Whether the toggle row carries the two menu buttons —
+    /// import options and the bone filter — the Poses tab only.</summary>
+    public bool ShowImportMenus;
+    public Action? OnImportMenu;
+    public Action? OnBoneFilterMenu;
 
     /// <summary>Resolves a tile's thumbnail. Called per visible tile per
     /// frame: shared texture wraps must be re-resolved, so this can never
@@ -295,8 +294,8 @@ public sealed class PoseLibraryViewModel
     internal Action<bool>? PositionToggle;
     internal Action<bool>? RotationToggle;
     internal Action<bool>? ScaleToggle;
-    internal Action? APoseClick;
-    internal Action? TPoseClick;
+    internal Action? ImportMenuClick;
+    internal Action? BoneFilterClick;
 
     // The grid's band list and the clipper's slot map — the ShellSidebar cache,
     // held on the model because the view itself is static. Rebuilt only when
@@ -460,8 +459,8 @@ public static class PoseLibraryView
         vm.PositionToggle ??= value => vm.OnImportPosition?.Invoke(value);
         vm.RotationToggle ??= value => vm.OnImportRotation?.Invoke(value);
         vm.ScaleToggle ??= value => vm.OnImportScale?.Invoke(value);
-        vm.APoseClick ??= () => vm.OnAPose?.Invoke();
-        vm.TPoseClick ??= () => vm.OnTPose?.Invoke();
+        vm.ImportMenuClick ??= () => vm.OnImportMenu?.Invoke();
+        vm.BoneFilterClick ??= () => vm.OnBoneFilterMenu?.Invoke();
 
         var rects = Bands(vm, origin, size, scale, theme, out var toggles);
         DrawBand(vm, rects.Band, scale, theme);
@@ -576,13 +575,12 @@ public static class PoseLibraryView
         scope.Checkbox("Position", vm.ImportPosition, vm.PositionToggle!);
         scope.Checkbox("Rotation", vm.ImportRotation, vm.RotationToggle!);
         scope.Checkbox("Scale", vm.ImportScale, vm.ScaleToggle!);
-        // Rest presets ride the same row as the import components (the
-        // user's placement): Brio's "Import A-Pose"/"Import T-Pose",
-        // body-scope rotation-only regardless of the toggles beside them.
-        if (vm.ShowRestPoses)
+        // The two Brio menus, opened from this row (the user's placement):
+        // the import-options menu and the bone-filter menu.
+        if (vm.ShowImportMenus)
         {
-            scope.Button("A-pose", vm.APoseClick!);
-            scope.Button("T-pose", vm.TPoseClick!);
+            scope.Button("Options…", vm.ImportMenuClick!);
+            scope.Button("Bones…", vm.BoneFilterClick!);
         }
     }
 

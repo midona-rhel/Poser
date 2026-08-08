@@ -312,6 +312,12 @@ public class MainWindow : Window
         // thing the titlebar gear does, so they travel the one settings route.
         _libraryPane.OnSettingsRequested += () => OnSettingsRequested?.Invoke();
         _poseFileSection = poseFileSection;
+        // The import menus resolve their target actor through the same
+        // binding registry the context menus use.
+        _poseFileSection._resolveActor = id =>
+            _bindings.Resolve(id) is { Success: true } resolved
+                ? resolved.Value
+                : null;
         _animation = animation;
         _overlayPresentation = overlayPresentation;
         _gazeService = gazeService;
