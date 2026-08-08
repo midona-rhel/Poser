@@ -178,7 +178,7 @@ public sealed class PoseFileInspectorSection
             * 0.5f * scale;
     }
     private const float MenuWidth = 320f;
-    private const float FilterMenuWidth = 240f;
+    private const float FilterMenuWidth = 216f;
     private const float MenuLabelColumn = 96f;
     private const string ImportMenuId = "##pose-import-menu";
     private const string ExportMenuId = "##pose-export-menu";
