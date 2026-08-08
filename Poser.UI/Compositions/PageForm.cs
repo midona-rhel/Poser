@@ -486,8 +486,9 @@ public static partial class Crystarium
             var row = _page.BeginRow(string.Empty);
             float gap = ActiveTheme.Page.ActionGap * row.Scale;
             float boxSide = ActiveTheme.Controls.CheckboxSize * row.Scale;
+            // A checklist packs at the LIST pitch, not the form row's.
             float rowHeight =
-                ActiveTheme.Controls.FormRowHeight * row.Scale;
+                ActiveTheme.Controls.ListRowHeight * row.Scale;
             float x = row.Origin.X + (indent ? gap * 2f : 0f);
             ImGui.SetCursorScreenPos(new(
                 x, row.Origin.Y + (rowHeight - boxSide) * 0.5f));
@@ -506,7 +507,8 @@ public static partial class Crystarium
                 new(row.Origin.X + row.Width - captionX, rowHeight),
                 caption,
                 captionStyle);
-            _page.EndRow(row, id, help);
+            _page.EndRow(row, id, help,
+                ActiveTheme.Controls.ListRowHeight);
         }
 
         /// <summary>An inline rule BETWEEN row runs — the section rule's own

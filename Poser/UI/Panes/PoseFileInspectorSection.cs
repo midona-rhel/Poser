@@ -168,10 +168,14 @@ public sealed class PoseFileInspectorSection
     /// the window padding.</summary>
     private static float MenuTitleOffset(float scale)
     {
+        // Half the first section's pre-title spend: the full compensation
+        // glued the title to the window edge, none left it floating — the
+        // middle reads right (user round).
         var page = Crystarium.ActiveTheme.Page;
         return (page.SectionPaddingTop
             + (page.SectionHeaderHeight
-                - Crystarium.ActiveTheme.Typography.LabelSize) * 0.5f) * scale;
+                - Crystarium.ActiveTheme.Typography.LabelSize) * 0.5f)
+            * 0.5f * scale;
     }
     private const float MenuWidth = 320f;
     private const float FilterMenuWidth = 240f;
@@ -473,7 +477,7 @@ public sealed class PoseFileInspectorSection
                         foreach (var category in group.Categories)
                             _disabledCategories.Add(category.Id);
                 });
-            }),
+            }, fullWidth: true),
             divider: false,
             labelColumnWidth: MenuLabelColumn);
 
