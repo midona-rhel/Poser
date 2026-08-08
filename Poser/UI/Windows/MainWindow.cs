@@ -108,23 +108,16 @@ public class MainWindow : Window
         Selectable = true,
     };
 
-    /// <summary>The scene's environment, seated above the actors: one row that
-    /// is never created or destroyed, so the section shows no plus and the row
-    /// is retained whole.</summary>
+    /// <summary>The scene's environment, seated above the actors. It is the one
+    /// scene entity that is always there and there is only ever ONE of it, so
+    /// the header IS the affordance — exactly like the library's — rather than a
+    /// header naming a lone row beneath it. Nothing creates or destroys it, so
+    /// the section shows no plus and carries no rows.</summary>
     private readonly ShellSidebarSection _environmentSection = new()
     {
         Title = "ENVIRONMENT",
         ShowPlus = false,
-    };
-
-    private readonly ShellSidebarRow _environmentRow = new()
-    {
-        Label = "Environment",
-        Count = "",
-        Icon = TablerIcon.Sun,
-        Depth = 0,
-        HasChildren = false,
-        Tag = EnvironmentSelection,
+        Selectable = true,
     };
 
     /// <summary>The one environment selection, minted once: it carries no
@@ -208,15 +201,23 @@ public class MainWindow : Window
 
     /// <summary>The environment's own tab strip: selecting the environment
     /// swaps the whole strip, because none of the actor tabs mean anything for
-    /// it.</summary>
+    /// it. The environment carries eleven sections — one tab holding all of them
+    /// was a scroll, not a workspace — so the strip splits them five ways.
+    /// Positional against <see cref="EnvironmentTab"/>.</summary>
     private readonly ShellTab[] _environmentTabs =
     [
-        new() { Label = "Environment" },
+        new() { Label = "Weather" },
+        new() { Label = "Sky" },
+        new() { Label = "Light" },
+        new() { Label = "Atmosphere" },
+        new() { Label = "World" },
     ];
 
     /// <summary>A light's whole tab strip, the environment strip's sibling:
     /// a light has no pose, animation or appearance, so while one is selected
-    /// the tab set IS the light editor.</summary>
+    /// the tab set IS the light editor. Its label is SHARED with the
+    /// environment's lighting tab — two strips, never both live — so
+    /// DrawTabContent settles the two by selection, not by label.</summary>
     private readonly ShellTab[] _lightTabs =
     [
         new() { Label = "Light" },
@@ -225,6 +226,10 @@ public class MainWindow : Window
     /// <summary>The library section is stated first, so its index is fixed.
     /// </summary>
     private const int LibrarySectionIndex = 0;
+
+    /// <summary>The environment stands second, and its header is the second of
+    /// the two selectable ones.</summary>
+    private const int EnvironmentSectionIndex = 1;
 
     /// <summary>The sections are stated in a fixed order — library,
     /// environment, actors, lights — so the actors section is index 2. Its
@@ -384,11 +389,24 @@ public class MainWindow : Window
             else if (index == ActorsSectionIndex)
                 OnSpawnBrowserRequested?.Invoke();
         };
-        // Only the LIBRARY header is selectable, so no other index can arrive.
+        // The LIBRARY and ENVIRONMENT headers are the selectable ones, so no
+        // other index can arrive. The library is a MODE over an untouched
+        // selection; the environment is a scene entity, so its header selects
+        // exactly as a row does — leaving the library first, because the two are
+        // alternatives in one workspace and the environment's own tab strip
+        // cannot show through the library's.
         _vm.OnSectionSelected = index =>
         {
             if (index == LibrarySectionIndex)
                 ShowLibrary();
+            else if (index == EnvironmentSectionIndex)
+            {
+                ExitLibraryMode();
+                // There is exactly one environment, so range and toggle mean
+                // nothing here: the header is a plain Select, never a modified
+                // one.
+                _selection.Select(EnvironmentSelection);
+            }
         };
         _vm.OnSpawn = () => OnSpawnBrowserRequested?.Invoke();
         _vm.OnRowClicked = OnRowClicked;
@@ -794,10 +812,9 @@ public class MainWindow : Window
         // the affordance, and it stands above the scene it poses.
         _vm.Sections.Add(_librarySection);
         // The environment stands above the actors: it is the one scene entity
-        // that is always there, and its single row is retained whole.
+        // that is always there, and — being a singleton — its HEADER is the
+        // affordance, so the section carries no rows at all.
         _vm.Sections.Add(_environmentSection);
-        _environmentSection.Rows.Clear();
-        _environmentSection.Rows.Add(_environmentRow);
         _vm.Sections.Add(_actorsSection);
         // Lights stand under the actors they light, above nothing else.
         _vm.Sections.Add(_lightsSection);
@@ -1123,7 +1140,9 @@ public class MainWindow : Window
     private void RefreshSidebarFlags()
     {
         _librarySection.Active = _libraryMode;
-        _environmentRow.Active = _selection.IsSelected(EnvironmentSelection);
+        // The environment's header wears the selection, exactly as the row it
+        // replaced did: both selectable headers state their own flag here.
+        _environmentSection.Active = _selection.IsSelected(EnvironmentSelection);
         // Without the native lighting signatures a spawn is a silent no-op, so
         // the header's plus is absent rather than inert. The answer is a field
         // read, so it is restated here rather than gated.
@@ -1462,8 +1481,14 @@ public class MainWindow : Window
         // viewport wall to wall; Pose keeps the shell-inset fixed viewport.
         _vm.ContentFlush = tab is "Library";
         _vm.ContentOwnsViewport = tab is "Pose";
+        // Every environment tab is a PageForm, as the one it replaced was.
+        // "Light" is deliberately shared: it is a light's whole editor and the
+        // environment's lighting tab, and both are pages, so the layout answer
+        // is the same either way. WHICH pane draws it is decided by the
+        // selection in DrawTabContent, never by this label.
         _vm.ContentUsesPage =
-            tab is "Animation" or "Appearance" or "Light" or "Environment";
+            tab is "Animation" or "Appearance" or "Light"
+                or "Weather" or "Sky" or "Atmosphere" or "World";
     }
 
     private void OnRowClicked(ShellSidebarRow row)
@@ -1547,20 +1572,37 @@ public class MainWindow : Window
             return;
         }
 
+        // The environment is answered by the SELECTION, not by the label: it
+        // and a light both name a "Light" tab, and only the selected entity
+        // says which pane that tab belongs to. Its strip is its own five tabs,
+        // so every one of them lands here.
+        if (_selection.Primary is { Kind: SceneEntityKind.Environment })
+        {
+            _environmentPane.Draw(origin, size, EnvironmentTabFor(_activeTab));
+            return;
+        }
+
         if (_activeTab == "Light")
         {
             _lightPane.Draw(origin, size);
             return;
         }
 
-        if (_activeTab == "Environment")
-        {
-            _environmentPane.Draw(origin, size);
-            return;
-        }
-
         _poseInspector.Draw(origin, size);
     }
+
+    /// <summary>The environment strip's label as the pane's page identity.
+    /// Positional against <see cref="_environmentTabs"/>; an unrecognised label
+    /// falls to the strip's first tab, which is where BuildTabs would have put
+    /// the user anyway.</summary>
+    private static EnvironmentTab EnvironmentTabFor(string tab) => tab switch
+    {
+        "Sky" => EnvironmentTab.Sky,
+        "Light" => EnvironmentTab.Light,
+        "Atmosphere" => EnvironmentTab.Atmosphere,
+        "World" => EnvironmentTab.World,
+        _ => EnvironmentTab.Weather,
+    };
 
     private ActorId? SelectedActorId() =>
         _selection.Primary switch
