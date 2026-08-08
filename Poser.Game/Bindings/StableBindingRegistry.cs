@@ -81,6 +81,15 @@ public sealed class StableBindingRegistry
         var actorDescriptors = new List<ActorDescriptor>();
 
         foreach (var actor in _actors.Actors)
+            BindActor(actor, actorDescriptors);
+
+        // Auxiliary bodies (the CharaView preview) get ids and bone bindings
+        // so the import pipeline can reach them, but NO scene descriptor: the
+        // snapshot is what every pane, picker, and gizmo draws from.
+        foreach (var actor in _actors.AuxiliaryActors)
+            BindActor(actor, null);
+
+        void BindActor(IActor actor, List<ActorDescriptor>? descriptors)
         {
             var legacyKey = actor.Id.Unique;
             if (!_lineages.TryGetValue(legacyKey, out var lineage))
@@ -169,7 +178,7 @@ public sealed class StableBindingRegistry
             }
             actorBindings[actorId] = actor;
             legacyActorIds[legacyKey] = actorId;
-            actorDescriptors.Add(new ActorDescriptor(
+            descriptors?.Add(new ActorDescriptor(
                 actorId,
                 actor.Name,
                 skeletonDescriptors,

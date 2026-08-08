@@ -46,13 +46,23 @@ public class ActorManager : IActorManager
 
     private readonly List<IActor> _actors = new();
 
+    // Bodies outside the GPose range that Poser drives itself (the CharaView
+    // preview at slot 441). Registrations arrive from the draw thread; the
+    // list itself is only ever rebuilt on the framework tick, like _actors.
+    private readonly List<IActor> _auxiliaryActors = new();
+    private readonly Dictionary<ushort, ActorKind> _auxiliaryRegistrations = new();
+    private readonly object _auxiliaryGate = new();
+
     // Track actor addresses to detect actual changes
     private readonly HashSet<(nint Address, EntityId Id)> _lastActorIdentities = new();
 
-    // Debounce flag to prevent multiple refreshes per frame
-    private bool _pendingRefresh = false;
+    // Debounce flag to prevent multiple refreshes per frame. Written from the
+    // draw thread by the auxiliary registration calls, read on the tick.
+    private volatile bool _pendingRefresh = false;
 
     public IReadOnlyList<IActor> Actors => _actors.AsReadOnly();
+
+    public IReadOnlyList<IActor> AuxiliaryActors => _auxiliaryActors.AsReadOnly();
 
     public ActorManager(IObjectTable objectTable, IGPoseService gPoseService, IFramework framework, IEventBus eventBus, ITargetManager targetManager)
     {
@@ -108,7 +118,43 @@ public class ActorManager : IActorManager
         {
             identities.Add((obj.Address, new EntityId($"actor_{obj.GameObjectId}")));
         }
+        // Registered auxiliary slots participate in change detection too: the
+        // CharaView body appears at 441 several frames after registration and
+        // nothing else in the scene changes when it does.
+        foreach (var (index, _, obj) in GetAuxiliaryObjects())
+        {
+            identities.Add((obj.Address, AuxiliaryId(index)));
+        }
         return identities;
+    }
+
+    /// <summary>
+    /// Auxiliary identity rides the object-table INDEX, never the
+    /// GameObjectId: a GPose clone shares its source's GameObjectId, so an
+    /// id-derived key would collide with the real actor in every store keyed
+    /// by <see cref="EntityId"/> (skeleton cache, binding lineages).
+    /// </summary>
+    private static EntityId AuxiliaryId(ushort objectIndex) =>
+        new($"actor_aux_{objectIndex}");
+
+    private IEnumerable<(ushort Index, ActorKind Kind, IGameObject Object)> GetAuxiliaryObjects()
+    {
+        KeyValuePair<ushort, ActorKind>[] registrations;
+        lock (_auxiliaryGate)
+        {
+            if (_auxiliaryRegistrations.Count == 0)
+                yield break;
+            registrations = _auxiliaryRegistrations.ToArray();
+        }
+
+        foreach (var (index, kind) in registrations)
+        {
+            var obj = _objectTable[index];
+            // The CharaView body is a real Character in the object table; a
+            // registered index holding anything else is not ours to bind.
+            if (obj is ICharacter && obj.Address != nint.Zero)
+                yield return (index, kind, obj);
+        }
     }
 
     private IEnumerable<IGameObject> GetGPoseCharacters()
@@ -173,7 +219,98 @@ public class ActorManager : IActorManager
 
         _actors.Clear();
         _actors.AddRange(refreshed);
-        _eventBus.Publish(new ActorListChangedEvent(Actors));
+        RefreshAuxiliaryActors();
+        _eventBus.Publish(new ActorListChangedEvent(AllActors()));
+    }
+
+    /// <summary>
+    /// The same reconcile as the GPose scan, over the registered auxiliary
+    /// indices: an unchanged address keeps its <see cref="ActorBase"/> so
+    /// skeleton caches and bindings survive; a replaced body mints a new one.
+    /// </summary>
+    private void RefreshAuxiliaryActors()
+    {
+        var existingByAddress = _auxiliaryActors.ToDictionary(actor => actor.Address);
+        var refreshed = new List<IActor>();
+
+        foreach (var (index, kind, gameObject) in GetAuxiliaryObjects())
+        {
+            var id = AuxiliaryId(index);
+            IActor actor;
+
+            if (existingByAddress.Remove(gameObject.Address, out var existing) &&
+                existing.Id == id)
+            {
+                existing.Name = GetActorName(gameObject);
+                actor = existing;
+            }
+            else
+            {
+                if (existing is IDisposable replaced)
+                    replaced.Dispose();
+
+                actor = new ActorBase(
+                    id,
+                    GetActorName(gameObject),
+                    gameObject.Address,
+                    kind);
+            }
+
+            refreshed.Add(actor);
+            _lastActorIdentities.Add((gameObject.Address, id));
+        }
+
+        foreach (var removed in existingByAddress.Values)
+        {
+            if (removed is IDisposable disposable)
+                disposable.Dispose();
+        }
+
+        _auxiliaryActors.Clear();
+        _auxiliaryActors.AddRange(refreshed);
+    }
+
+    /// <summary>
+    /// The list <see cref="ActorListChangedEvent"/> carries. Every subscriber
+    /// is state maintenance keyed on presence (skeleton release, pose purge,
+    /// transform-override pruning, binding refresh); auxiliary bodies belong
+    /// there or the preview's own state is torn down every refresh. Nothing
+    /// user-facing reads the event payload — the panes read the scene
+    /// snapshot, which is built from <see cref="Actors"/> alone.
+    /// </summary>
+    private IReadOnlyList<IActor> AllActors()
+    {
+        if (_auxiliaryActors.Count == 0)
+            return Actors;
+        var all = new List<IActor>(_actors.Count + _auxiliaryActors.Count);
+        all.AddRange(_actors);
+        all.AddRange(_auxiliaryActors);
+        return all;
+    }
+
+    public void RegisterAuxiliary(ushort objectIndex, ActorKind kind)
+    {
+        lock (_auxiliaryGate)
+        {
+            if (_auxiliaryRegistrations.TryGetValue(objectIndex, out var existing) &&
+                existing == kind)
+                return;
+            _auxiliaryRegistrations[objectIndex] = kind;
+        }
+        // Registration is callable from the draw thread; the actual object
+        // table read and actor minting ride the existing pending-refresh
+        // debounce onto the framework tick.
+        _pendingRefresh = true;
+    }
+
+    public void UnregisterAuxiliary(ushort objectIndex)
+    {
+        lock (_auxiliaryGate)
+        {
+            if (!_auxiliaryRegistrations.Remove(objectIndex))
+                return;
+        }
+        _pendingRefresh = true;
     }
 
     public IActor? GetGPoseTarget()
@@ -203,6 +340,16 @@ public class ActorManager : IActorManager
                 disposable.Dispose();
         }
         _actors.Clear();
+
+        // Registrations are the caller's to drop; the bodies behind them are
+        // gone with the GPose session either way.
+        foreach (var actor in _auxiliaryActors)
+        {
+            if (actor is IDisposable disposable)
+                disposable.Dispose();
+        }
+        _auxiliaryActors.Clear();
+
         _lastActorIdentities.Clear();
         _eventBus.Publish(new ActorListChangedEvent(Actors));
     }

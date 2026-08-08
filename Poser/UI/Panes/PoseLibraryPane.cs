@@ -16,6 +16,7 @@ using Poser.Entities;
 using Poser.Files;
 using Poser.Game.Bindings;
 using Poser.Game.Posing;
+using Poser.Game.Preview;
 using Poser.Library;
 using Poser.Services;
 using Poser.UI.Views;
@@ -51,6 +52,10 @@ public sealed class PoseLibraryPane
     /// <summary>Logical pixels between reflows while the workspace is being
     /// resized.</summary>
     private const float ResizeStep = 32f;
+
+    /// <summary>Yaw per preview rotate click, in degrees — Ktisis' preview
+    /// step.</summary>
+    private const float PreviewYaw = 50f;
 
     /// <summary>Hysteresis on BOTH edges of stepping: consecutive frames the
     /// size must MOVE before stepping engages, and consecutive frames it must
@@ -106,6 +111,7 @@ public sealed class PoseLibraryPane
     private readonly IAutoSaveService _autoSave;
     private readonly PoseFileInspectorSection _files;
     private readonly IActorManager _actors;
+    private readonly PosePreviewService _preview;
     private readonly PoseLibraryViewModel _vm = new();
     private bool _applyMenuRequested;
     private readonly List<IActor> _applyTargets = new();
@@ -226,6 +232,15 @@ public sealed class PoseLibraryPane
 
     private bool _iconSizeDirty;
 
+    /// <summary>The actor the preview is borrowing an appearance from, and the
+    /// path it was last told to show. The pose is stated ONCE per selection
+    /// change — the service re-renders on its own, and re-importing every frame
+    /// would be an import per frame. The options ride along so restating the
+    /// pose while the service warms up never re-parses the file.</summary>
+    private IActor? _previewSource;
+    private string? _previewPath;
+    private PoseImportOptions? _previewOptions;
+
     /// <summary>Whether the pane is the workspace's current content. The first
     /// draw after it becomes true is the old window's OnOpen.</summary>
     private bool _showing;
@@ -250,7 +265,8 @@ public sealed class PoseLibraryPane
         ActorIntegrationSession integration,
         IAutoSaveService autoSave,
         PoseFileInspectorSection files,
-        IActorManager actors)
+        IActorManager actors,
+        PosePreviewService preview)
     {
         _config = config;
         _library = library;
@@ -263,6 +279,7 @@ public sealed class PoseLibraryPane
         _autoSave = autoSave;
         _files = files;
         _actors = actors;
+        _preview = preview;
 
         _vm.OnQuery = next => _vm.Query = next;
         _vm.OnSelectFolder = SelectFolder;
@@ -291,6 +308,10 @@ public sealed class PoseLibraryPane
         _vm.OnBoneFilterMenu = () => _files.RequestBoneFilterMenu();
         _vm.OnApplyMenu = () => _applyMenuRequested = true;
         _vm.OnOpenSettings = () => OnSettingsRequested?.Invoke();
+        _vm.OnPreviewToggle = TogglePreview;
+        // The band states a DIRECTION; the step is the preview's convention.
+        _vm.OnPreviewRotate = direction => _preview.Rotate(direction * PreviewYaw);
+        _vm.OnPreviewReset = () => _preview.ResetCamera();
         _vm.ResolveThumbnail = ResolveThumbnail;
         // Spawning needs no selection and no scene state; the service answers
         // null when the game refuses, which is a note rather than a gate.
@@ -345,6 +366,7 @@ public sealed class PoseLibraryPane
         SyncTarget();
         SyncImportToggles();
         SyncStatus();
+        SyncPreview();
 
         // The grid reflows at resize steps; the bar rows track the live
         // width through ChromeWidth so their clusters do not jump.
@@ -449,6 +471,9 @@ public sealed class PoseLibraryPane
     {
         _showing = false;
         _thumbs.Clear();
+        // The hidden actor and its render target are the library's own cost;
+        // leaving the mode gives them back.
+        ClosePreview();
         if (!_iconSizeDirty)
             return;
         // The slider writes the config live so the grid reflows with the drag;
@@ -476,6 +501,7 @@ public sealed class PoseLibraryPane
         _lastAppliedTile = -1;
         _vm.IconSize = _config.Config.Library.IconSize;
         _iconSizeDirty = false;
+        _vm.PreviewEnabled = _config.Config.Library.PreviewEnabled;
 
         // Favourites and sources may have moved while the mode was away, and a
         // completed scan keeps its revision: rebuild unconditionally.
@@ -1208,16 +1234,7 @@ public sealed class PoseLibraryPane
     /// true with nothing selected).</summary>
     private void SyncTarget()
     {
-        bool can = false;
-        foreach (var candidate in _actors.Actors)
-        {
-            if (_type == LibraryType.Mcdf || candidate.HasSkeleton)
-            {
-                can = true;
-                break;
-            }
-        }
-        _vm.CanApply = can;
+        _vm.CanApply = FirstApplyTarget() is not null;
 
         // A character file is applied to an actor that already exists; there is
         // no "spawn and dress" path in v1.
@@ -1225,6 +1242,116 @@ public sealed class PoseLibraryPane
 
         // The primary opens the actor picker; its caption is constant.
         _vm.ApplyLabel = "Apply to";
+    }
+
+    /// <summary>The first actor this tab's apply could land on, in scene order
+    /// — the candidate the picker leads with, and the same eligibility
+    /// <see cref="DrawApplyMenu"/> lists by.</summary>
+    private IActor? FirstApplyTarget()
+    {
+        foreach (var candidate in _actors.Actors)
+            if (_type == LibraryType.Mcdf || candidate.HasSkeleton)
+                return candidate;
+        return null;
+    }
+
+    // ── the preview ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The rail's live preview. The service owns the hidden actor, the camera
+    /// and the render; this only says WHEN it is wanted, WHICH pose it shows
+    /// and WHOSE appearance it borrows, and mirrors what it answers back into
+    /// the view model. Every gate the band needs is here rather than in the
+    /// view: the view has no idea what an MCDF entry is.
+    /// </summary>
+    private void SyncPreview()
+    {
+        // The poses tab only: character files never travel the import pipeline
+        // at all, and the auto-save tab has no rail to seat the band in.
+        bool wanted = _vm.PreviewEnabled
+            && _vm.ShowRail
+            && _type == LibraryType.Poses
+            && _vm.Selected >= 0
+            && _vm.Selected < _vm.Tiles.Count;
+        var source = wanted ? PreviewSource() : null;
+        if (source is null)
+        {
+            ClosePreview();
+            return;
+        }
+
+        if (!ReferenceEquals(source, _previewSource))
+        {
+            // A different appearance means a different hidden actor: the pose
+            // standing on the old one says nothing about the new one.
+            _previewSource = source;
+            _previewPath = null;
+        }
+        // Idempotent by contract, and restated every frame so a preview the
+        // service dropped (a scene reload, a gpose exit) re-arms itself.
+        _preview.Open(source);
+
+        var path = _vm.Tiles[_vm.Selected].ThumbKey;
+        if (!string.Equals(path, _previewPath, StringComparison.Ordinal))
+        {
+            _previewPath = path;
+            // The library's own load semantics, minus everything that would
+            // move the preview actor itself: a preview is a POSE, never a
+            // placement, and it must never leave the actor frozen.
+            var options = BuildImportOptions(path);
+            options.ResetBeforeImport = true;
+            options.ApplyModelTransform = false;
+            options.FreezeOnImport = false;
+            _previewOptions = options;
+            _preview.ShowPose(path, options);
+        }
+        else if (!_preview.IsActive && _previewOptions is { } cached)
+        {
+            // Close() (a gpose exit, a scene drop) forgets the pending pose;
+            // an Open() alone re-arms only the body. Restate the pose until
+            // the service renders again — the service dedupes actual imports.
+            _preview.ShowPose(path, cached);
+        }
+
+        _vm.PreviewVisible = true;
+        _vm.PreviewTexture = _preview.TextureHandle;
+        _vm.PreviewTextureSize = _preview.TextureSize;
+        _vm.PreviewStatus = _preview.StatusText;
+    }
+
+    /// <summary>The actor the preview borrows an appearance from: the
+    /// selection's actor when it can be posed, else the first actor an apply
+    /// would land on — the picker's own leading candidate.</summary>
+    private IActor? PreviewSource() =>
+        TargetActor() is { HasSkeleton: true } actor
+            ? actor
+            : FirstApplyTarget();
+
+    /// <summary>Tears the preview down and states the band as gone. Idempotent
+    /// — the frame after a close must not close again.</summary>
+    private void ClosePreview()
+    {
+        if (_previewSource is not null)
+        {
+            _previewSource = null;
+            _previewPath = null;
+            _preview.Close();
+        }
+        _vm.PreviewVisible = false;
+        _vm.PreviewTexture = 0;
+        _vm.PreviewTextureSize = Vector2.Zero;
+        _vm.PreviewStatus = null;
+    }
+
+    /// <summary>The band's eye. A deliberate act with no other write to ride
+    /// on, so it persists immediately — the icon-size drag's deferred save is
+    /// a drag's concern, not a toggle's.</summary>
+    private void TogglePreview()
+    {
+        bool next = !_vm.PreviewEnabled;
+        _vm.PreviewEnabled = next;
+        _config.Config.Library.PreviewEnabled = next;
+        _config.Save();
     }
 
     /// <summary>Strips the raw object-index suffix ("Name (201)") the scene

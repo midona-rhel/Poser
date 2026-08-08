@@ -1326,6 +1326,14 @@ public unsafe class BonePosingService : IBonePosingService
             if (actors[i].Address == address)
                 return actors[i];
         }
+        // The CharaView preview body poses through the same apply pass; a miss
+        // here purges its pose state on the very next frame.
+        var auxiliary = _actorManager.AuxiliaryActors;
+        for (var i = 0; i < auxiliary.Count; i++)
+        {
+            if (auxiliary[i].Address == address)
+                return auxiliary[i];
+        }
         return null;
     }
 

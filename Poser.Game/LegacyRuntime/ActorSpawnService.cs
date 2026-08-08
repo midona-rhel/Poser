@@ -263,7 +263,24 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
         // The hidden badge lives in the scene snapshot; visibility changes
         // must reconcile it the same way spawn/despawn do.
-        _eventBus.Publish(new ActorListChangedEvent(_actorManager.Actors));
+        _eventBus.Publish(new ActorListChangedEvent(PresentActors()));
+    }
+
+    /// <summary>
+    /// The event payload every subscriber prunes its state against: auxiliary
+    /// bodies (the CharaView preview) are present actors for that purpose and
+    /// omitting them would tear their state down on the next visibility toggle.
+    /// </summary>
+    private IReadOnlyList<IActor> PresentActors()
+    {
+        var auxiliary = _actorManager.AuxiliaryActors;
+        if (auxiliary.Count == 0)
+            return _actorManager.Actors;
+        var actors = _actorManager.Actors;
+        var all = new List<IActor>(actors.Count + auxiliary.Count);
+        all.AddRange(actors);
+        all.AddRange(auxiliary);
+        return all;
     }
 
     public bool IsVisible(IActor actor)

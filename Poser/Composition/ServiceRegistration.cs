@@ -132,6 +132,9 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Posing.IkBakeCapture>();
         services.AddSingleton<Game.Posing.PoseImportCapture>();
         services.AddSingleton<Game.Posing.PoseExportCapture>();
+        // The pose library's CharaView preview. No force-resolve: the pane
+        // holds it, and it only subscribes the framework tick while open.
+        services.AddSingleton<Game.Preview.PosePreviewService>();
         services.AddSingleton<CleanSceneLifecycle>();
         services.AddSingleton<TargetSyncService>();
         services.AddSingleton<IEditorState, EditorState>();

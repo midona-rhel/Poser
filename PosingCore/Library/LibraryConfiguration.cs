@@ -38,6 +38,11 @@ public class LibraryConfiguration
 
     public bool UseLibraryWhenImporting { get; set; }
 
+    /// <summary>The browser's live pose preview, off until asked for: it costs
+    /// a hidden actor and a render target for as long as the library is open.
+    /// </summary>
+    public bool PreviewEnabled { get; set; }
+
     /// <summary>Tile labels carry the file extension when set.</summary>
     public bool ShowFileExtensions { get; set; }
 

@@ -246,6 +246,37 @@ public sealed class PoseLibraryViewModel
     public Action? OnImportMenu;
     public Action? OnBoneFilterMenu;
 
+    /// <summary>The band's eye: whether the user asked for a live preview at
+    /// all. A PREFERENCE — the binder persists it — and never the same thing
+    /// as <see cref="PreviewVisible"/>.</summary>
+    public bool PreviewEnabled;
+
+    /// <summary>Whether the rail carries the preview band THIS frame: the eye
+    /// is on, the rail is seated and a pose is selected. Binder-owned.
+    /// </summary>
+    public bool PreviewVisible;
+
+    /// <summary>The render's handle, or 0 while nothing is renderable. Restated
+    /// every frame: a shared texture's handle is the frame's and nothing else.
+    /// </summary>
+    public nint PreviewTexture;
+
+    /// <summary>The render's natural pixel size — the aspect the band's box is
+    /// fitted to. Zero falls back to a portrait.</summary>
+    public Vector2 PreviewTextureSize;
+
+    /// <summary>Why the box shows no render, or null while it does. Short and
+    /// user-facing; the service mints it.</summary>
+    public string? PreviewStatus;
+
+    public Action? OnPreviewToggle;
+
+    /// <summary>Told a DIRECTION (-1 left, +1 right); the yaw per click is the
+    /// binder's, not the band's.</summary>
+    public Action<float>? OnPreviewRotate;
+
+    public Action? OnPreviewReset;
+
     /// <summary>Resolves a tile's thumbnail. Called per visible tile per
     /// frame: shared texture wraps must be re-resolved, so this can never
     /// answer with a stored handle. A default answer draws the fallback glyph.
@@ -309,6 +340,10 @@ public sealed class PoseLibraryViewModel
     internal Action? ImportMenuClick;
     internal Action? BoneFilterClick;
     internal Action? ApplyMenuClick;
+    internal Action? PreviewToggleClick;
+    internal Action? PreviewRotateLeft;
+    internal Action? PreviewRotateRight;
+    internal Action? PreviewResetClick;
 
     // The grid's band list and the clipper's slot map — the ShellSidebar cache,
     // held on the model because the view itself is static. Rebuilt only when
@@ -353,6 +388,10 @@ public static class PoseLibraryView
     private const string MenuId = "##pose-library-tile-menu";
     private const string ActionRowId = "pose-library-actions";
     private const string ToggleRowId = "pose-library-import-toggles";
+    private const string PreviewToggleId = "##pose-library-preview";
+    private const string PreviewLeftId = "##pose-library-preview-left";
+    private const string PreviewRightId = "##pose-library-preview-right";
+    private const string PreviewResetId = "##pose-library-preview-reset";
 
     // Per-tile ids. They are constants because every tile pushes its own path
     // onto the ID stack first, so the two reserves are unique per tile without
@@ -424,6 +463,20 @@ public static class PoseLibraryView
     /// </summary>
     private const float SearchInnerPad = 10f;
 
+    /// <summary>The preview band's assumed portrait until the service states
+    /// the render's own size — the box must not resize the rail on the frame
+    /// the first render lands.</summary>
+    private static readonly Vector2 PreviewFallbackSize = new(192f, 320f);
+
+    /// <summary>The most of the rail the preview band's IMAGE may take. The
+    /// folder list keeps the larger share whatever the render's aspect.
+    /// </summary>
+    private const float PreviewImageShare = 0.55f;
+
+    /// <summary>The band's caption while the service has stated no reason of
+    /// its own — the first frames of a render.</summary>
+    private const string PreviewWaitingText = "Preparing preview…";
+
     private static readonly Action<string> IgnoreQuery = static _ => { };
 
     /// <summary>The toggle row's empty left cluster: its checkboxes are all
@@ -475,6 +528,10 @@ public static class PoseLibraryView
         vm.ImportMenuClick ??= () => vm.OnImportMenu?.Invoke();
         vm.BoneFilterClick ??= () => vm.OnBoneFilterMenu?.Invoke();
         vm.ApplyMenuClick ??= () => vm.OnApplyMenu?.Invoke();
+        vm.PreviewToggleClick ??= () => vm.OnPreviewToggle?.Invoke();
+        vm.PreviewRotateLeft ??= () => vm.OnPreviewRotate?.Invoke(-1f);
+        vm.PreviewRotateRight ??= () => vm.OnPreviewRotate?.Invoke(1f);
+        vm.PreviewResetClick ??= () => vm.OnPreviewReset?.Invoke();
 
         float chromeMaxX = origin.X
             + (vm.ChromeWidth > 0f ? vm.ChromeWidth : size.X);
@@ -682,6 +739,25 @@ public static class PoseLibraryView
             id: RefreshId);
         right -= actionPx + gap;
 
+        // The preview's own switch, beside the rescan. It is DISABLED rather
+        // than hidden where its band cannot seat (the rail-less auto-save
+        // tab): the cluster's geometry must not move between tabs.
+        ImGui.SetCursorScreenPos(new Vector2(
+            right - actionPx,
+            band.Min.Y + (band.Size.Y - actionPx) * 0.5f));
+        Crystarium.TemporaryIconToggle(
+            TablerIcon.Eye,
+            vm.PreviewEnabled,
+            vm.PreviewToggleClick,
+            ControlStyle.Square(action),
+            disabled: !vm.ShowRail,
+            help: vm.PreviewEnabled
+                ? "Stop previewing the selected pose"
+                : "Preview the selected pose on a hidden actor",
+            id: PreviewToggleId,
+            slashed: !vm.PreviewEnabled);
+        right -= actionPx + gap;
+
         // The size scrubber rides the band, not the footer: the footer's
         // buttons overflowed it at minimal width (user call).
         if (right - SliderWidth * scale
@@ -792,6 +868,15 @@ public static class PoseLibraryView
         if (!(rail.Size.X > 0f))
             return;
         float inset = theme.Page.Inset;
+
+        // The preview is carved off the rail's BOTTOM, exactly as the grid
+        // gives up its last band to the info strip: the folder list keeps the
+        // remaining top and nothing else in the pane moves.
+        float image = 0f;
+        float band = vm.PreviewVisible
+            ? PreviewBand(vm, rail, scale, theme, out image)
+            : 0f;
+
         // The region spans the FULL rail width: the gutter is the rows'
         // trailing inset (ShellSidebar.DrawTree contract), not a second
         // horizontal margin, so only the vertical inset is applied here.
@@ -800,8 +885,141 @@ public static class PoseLibraryView
         Crystarium.ScrollRegion(
             RailId,
             rail.Size.X / scale,
-            rail.Size.Y / scale - inset * 2f,
+            rail.Size.Y / scale - inset * 2f - band / scale,
             vm.Rail!);
+
+        if (band > 0f)
+            DrawPreview(
+                vm,
+                new WindowFrameRect(
+                    new Vector2(rail.Min.X, rail.Max.Y - band), rail.Max),
+                image,
+                scale,
+                theme);
+    }
+
+    /// <summary>
+    /// The preview band's height in pixels, and its image box's through
+    /// <paramref name="image"/>. The box keeps the RENDER's aspect — a preview
+    /// is a portrait of an actor and cropping one to a fixed square is what the
+    /// tile grid already does — capped so the folder list keeps the rail's
+    /// larger share.
+    /// </summary>
+    private static float PreviewBand(
+        PoseLibraryViewModel vm,
+        WindowFrameRect rail,
+        float scale,
+        Theme theme,
+        out float image)
+    {
+        float inset = theme.Page.Inset * scale;
+        float width = rail.Size.X - inset * 2f;
+        var natural =
+            vm.PreviewTextureSize.X > 0f && vm.PreviewTextureSize.Y > 0f
+                ? vm.PreviewTextureSize
+                : PreviewFallbackSize;
+        image = MathF.Min(
+            width * (natural.Y / natural.X),
+            rail.Size.Y * PreviewImageShare);
+        float row = theme.Floating.CloseActionSize * scale;
+        float lead = theme.Spacing.Three * scale;
+        float height = image + lead + row + inset;
+        // The list keeps at least one row whatever the rail's height: a band
+        // that would leave none is not seated at all.
+        if (!(width > 0f) || !(image > 0f)
+            || rail.Size.Y - inset * 2f - height
+                < theme.Controls.ListRowHeight * scale)
+        {
+            image = 0f;
+            return 0f;
+        }
+        return height;
+    }
+
+    /// <summary>
+    /// The preview: the live render, aspect-fitted into a bordered well, and
+    /// the three camera commands under it. The band draws OUTSIDE the folder
+    /// list's scroll region — it is pinned chrome, not a row.
+    /// </summary>
+    private static void DrawPreview(
+        PoseLibraryViewModel vm,
+        WindowFrameRect band,
+        float image,
+        float scale,
+        Theme theme)
+    {
+        float inset = theme.Page.Inset * scale;
+        var boxMin = new Vector2(band.Min.X + inset, band.Min.Y);
+        var boxMax = new Vector2(band.Max.X - inset, band.Min.Y + image);
+        var box = boxMax - boxMin;
+        var draw = ImGui.GetWindowDrawList();
+        float radius = theme.Radii.Control * scale;
+        draw.AddRectFilled(
+            boxMin, boxMax, Packed(theme.Chrome.InputWell), radius);
+
+        if (vm.PreviewTexture != 0
+            && vm.PreviewTextureSize.X > 0f && vm.PreviewTextureSize.Y > 0f)
+        {
+            float fit = MathF.Min(
+                box.X / vm.PreviewTextureSize.X,
+                box.Y / vm.PreviewTextureSize.Y);
+            var fitted = vm.PreviewTextureSize * fit;
+            var imageMin = theme.Optical.Snap(boxMin + (box - fitted) * 0.5f);
+            draw.AddImage(
+                new ImTextureID(vm.PreviewTexture),
+                imageMin,
+                imageMin + fitted,
+                Vector2.Zero,
+                Vector2.One,
+                ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(Vector4.One)));
+        }
+        else
+        {
+            // The service's own reason wins; "preparing" is only what the
+            // frames before it has one say.
+            Crystarium.TextInBand(
+                boxMin,
+                box,
+                vm.PreviewStatus ?? PreviewWaitingText,
+                new TextStyle
+                {
+                    Size = theme.Typography.CaptionSize,
+                    Color = theme.FormHint,
+                },
+                TextAlign.Center);
+        }
+        Crystarium.FloatingSurface.DrawBorder(boxMin, boxMax, radius);
+
+        float action = theme.Floating.CloseActionSize;
+        float actionPx = action * scale;
+        float gap = theme.Page.ActionGap * scale;
+        var style = ControlStyle.Square(action);
+        float row = actionPx * 3f + gap * 2f;
+        float x = band.Min.X + (band.Size.X - row) * 0.5f;
+        float y = boxMax.Y + theme.Spacing.Three * scale;
+
+        ImGui.SetCursorScreenPos(new Vector2(x, y));
+        Crystarium.IconButton(
+            TablerIcon.ArrowLeft,
+            vm.PreviewRotateLeft,
+            style: style,
+            help: "Rotate the preview left",
+            id: PreviewLeftId);
+        ImGui.SetCursorScreenPos(new Vector2(x + actionPx + gap, y));
+        Crystarium.IconButton(
+            TablerIcon.ArrowRight,
+            vm.PreviewRotateRight,
+            style: style,
+            help: "Rotate the preview right",
+            id: PreviewRightId);
+        ImGui.SetCursorScreenPos(new Vector2(x + (actionPx + gap) * 2f, y));
+        Crystarium.IconButton(
+            TablerIcon.ArrowBackUp,
+            vm.PreviewResetClick,
+            style: style,
+            help: "Reset the preview camera",
+            id: PreviewResetId);
     }
 
     private static void DrawFolders(

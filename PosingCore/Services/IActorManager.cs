@@ -18,6 +18,25 @@ public interface IActorManager : IDisposable
     IReadOnlyList<IActor> Actors { get; }
 
     /// <summary>
+    /// Bodies Poser drives outside the GPose object-table range (201-439) —
+    /// currently only the CharaView preview at slot 441. They are minted the
+    /// same way as <see cref="Actors"/> so the pose pipeline can reach them,
+    /// but they are NEVER part of <see cref="Actors"/>: every picker, pane,
+    /// scene snapshot, and auto-save reads that list and must not see them.
+    /// </summary>
+    IReadOnlyList<IActor> AuxiliaryActors { get; }
+
+    /// <summary>
+    /// Opts one object-table index into <see cref="AuxiliaryActors"/>. Safe to
+    /// call from any thread; the actor appears on a later framework tick.
+    /// </summary>
+    void RegisterAuxiliary(ushort objectIndex, ActorKind kind);
+
+    /// <summary>Drops a registration made by
+    /// <see cref="RegisterAuxiliary"/>. Safe to call from any thread.</summary>
+    void UnregisterAuxiliary(ushort objectIndex);
+
+    /// <summary>
     /// Refreshes the actor list from the game.
     /// </summary>
     void RefreshActors();
