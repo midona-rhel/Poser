@@ -1917,15 +1917,8 @@ public class MainWindow : Window
                 _poseFileSection.OpenExport(exportSkeleton);
         });
 
-        // Rest poses ride the same actor menu as the pose-file commands
-        // (Brio keeps A/T in its import popup). Reference pose is UI-hidden
-        // until its capture path is proven in game.
-        items.Add(new ContextMenuItem(
-            "A-pose", TablerIcon.Body, disabled: !actor.HasSkeleton));
-        items.Add(new ContextMenuItem(
-            "T-pose", TablerIcon.Body, disabled: !actor.HasSkeleton));
-        actions.Add(() => _cleanPose.ApplyRestPose(actor, Files.RestPose.APose));
-        actions.Add(() => _cleanPose.ApplyRestPose(actor, Files.RestPose.TPose));
+        // Rest poses live on the library's toggle row (user placement) —
+        // never on the actor menu, never in the inspector.
 
         if (_spawnService.IsSpawnedActor(actor))
         {

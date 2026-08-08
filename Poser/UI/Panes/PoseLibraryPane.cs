@@ -271,6 +271,8 @@ public sealed class PoseLibraryPane
         _vm.OnImportPosition = SetImportPosition;
         _vm.OnImportRotation = SetImportRotation;
         _vm.OnImportScale = SetImportScale;
+        _vm.OnAPose = () => ApplyRestPose(RestPose.APose);
+        _vm.OnTPose = () => ApplyRestPose(RestPose.TPose);
         _vm.OnOpenSettings = () => OnSettingsRequested?.Invoke();
         _vm.ResolveThumbnail = ResolveThumbnail;
         // Spawning needs no selection and no scene state; the service answers
@@ -1197,6 +1199,7 @@ public sealed class PoseLibraryPane
     private void SyncImportToggles()
     {
         _vm.ShowImportToggles = _type != LibraryType.Mcdf;
+        _vm.ShowRestPoses = _type == LibraryType.Poses;
         bool auto = _type == LibraryType.AutoSaves;
         _vm.ImportPosition = auto ? _autoPosition : _posesPosition;
         _vm.ImportRotation = auto ? _autoRotation : _posesRotation;
@@ -1331,6 +1334,21 @@ public sealed class PoseLibraryPane
         }
         if (_vm.SelectedFolder == 1)
             _refilter = true;
+    }
+
+    /// <summary>The toggle row's A-pose/T-pose presets (user placement):
+    /// Brio's embedded rest files onto the target actor, body scope,
+    /// rotation-only — the toggles beside the buttons do not apply to
+    /// presets, exactly as Brio's popup icons do not reach its presets.</summary>
+    private void ApplyRestPose(RestPose pose)
+    {
+        if (TargetActor() is not { HasSkeleton: true } actor)
+        {
+            _note = "Select an actor to apply a pose to.";
+            return;
+        }
+        var result = _poseFacade.ApplyRestPose(actor, pose);
+        _note = result.Success ? null : Failure(result);
     }
 
     private void Apply(int index)
