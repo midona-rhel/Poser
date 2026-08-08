@@ -177,6 +177,21 @@ public sealed unsafe class PosePreviewService : IDisposable
             agent->CharaView.SetCameraYawAndPitch(yawDelta, 0f);
     });
 
+    /// <summary>
+    /// Dolly, in the CharaView's own distance units per click. Unlike every
+    /// other call here this member has NO reference call site — neither Ktisis
+    /// nor Brio touches it — so the delta is passed through untouched and both
+    /// its sign and its scale are the caller's to tune.
+    /// </summary>
+    public void Zoom(float distanceDelta) => RunOnFramework(() =>
+    {
+        if (!_initialized)
+            return;
+        var agent = AgentInspect.Instance();
+        if (agent != null)
+            agent->CharaView.SetCameraDistance(distanceDelta);
+    });
+
     public void ResetCamera() => RunOnFramework(() =>
     {
         if (!_initialized)

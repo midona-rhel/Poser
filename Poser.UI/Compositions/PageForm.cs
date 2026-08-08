@@ -935,6 +935,30 @@ public static partial class Crystarium
         }
 
         /// <summary>
+        /// A row of the caller's own height that the caller draws itself: the
+        /// band's screen origin and screen size are handed over, the form
+        /// keeps the seat, the flow advance and the help region. For content
+        /// no control row can state — a rendered image, a plot — never as a
+        /// way around the typed rows.
+        /// </summary>
+        /// <param name="height">The row's height in LOGICAL px, like every
+        /// other row's; the band handed to <paramref name="draw"/> is already
+        /// scaled.</param>
+        public void Canvas(
+            string id,
+            float height,
+            Action<Vector2, Vector2> draw,
+            string? help = null)
+        {
+            ArgumentNullException.ThrowIfNull(draw);
+            string rowId = Id(id);
+            var row = _page.BeginRow(string.Empty);
+            if (height > 0f)
+                draw(row.Origin, new Vector2(row.Width, height * row.Scale));
+            _page.EndRow(row, rowId, help, height);
+        }
+
+        /// <summary>
         /// Two controls on one form row. The band splits at the ROW MIDDLE and
         /// each half is a miniature form row — the same label slot, then the
         /// control — so the two read as a pair rather than as a control with a

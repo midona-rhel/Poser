@@ -53,10 +53,6 @@ public sealed class PoseLibraryPane
     /// resized.</summary>
     private const float ResizeStep = 32f;
 
-    /// <summary>Yaw per preview rotate click, in degrees — Ktisis' preview
-    /// step.</summary>
-    private const float PreviewYaw = 50f;
-
     /// <summary>Hysteresis on BOTH edges of stepping: consecutive frames the
     /// size must MOVE before stepping engages, and consecutive frames it must
     /// HOLD before the exact size is adopted. Pointer deltas arrive in
@@ -309,9 +305,6 @@ public sealed class PoseLibraryPane
         _vm.OnApplyMenu = () => _applyMenuRequested = true;
         _vm.OnOpenSettings = () => OnSettingsRequested?.Invoke();
         _vm.OnPreviewToggle = TogglePreview;
-        // The band states a DIRECTION; the step is the preview's convention.
-        _vm.OnPreviewRotate = direction => _preview.Rotate(direction * PreviewYaw);
-        _vm.OnPreviewReset = () => _preview.ResetCamera();
         _vm.ResolveThumbnail = ResolveThumbnail;
         // Spawning needs no selection and no scene state; the service answers
         // null when the game refuses, which is a note rather than a gate.
@@ -1258,19 +1251,21 @@ public sealed class PoseLibraryPane
     // ── the preview ──────────────────────────────────────────────────────
 
     /// <summary>
-    /// The rail's live preview. The service owns the hidden actor, the camera
-    /// and the render; this only says WHEN it is wanted, WHICH pose it shows
-    /// and WHOSE appearance it borrows, and mirrors what it answers back into
-    /// the view model. Every gate the band needs is here rather than in the
-    /// view: the view has no idea what an MCDF entry is.
+    /// The inspector rail's live preview. The service owns the hidden actor,
+    /// the camera and the render, and the inspector section draws it; this only
+    /// says WHEN it is wanted, WHICH pose it shows and WHOSE appearance it
+    /// borrows. Every gate is here rather than in either drawing surface:
+    /// neither has any idea what an MCDF entry is.
     /// </summary>
     private void SyncPreview()
     {
-        // The poses tab only: character files never travel the import pipeline
-        // at all, and the auto-save tab has no rail to seat the band in.
+        // Every tab whose entries are pose files — auto-saves included, whose
+        // tiles key on the .pose path exactly as the library's do. Character
+        // files never travel the import pipeline at all, so the MCDF tab has
+        // nothing to preview and its eye is disabled.
+        _vm.PreviewAvailable = _type != LibraryType.Mcdf;
         bool wanted = _vm.PreviewEnabled
-            && _vm.ShowRail
-            && _type == LibraryType.Poses
+            && _vm.PreviewAvailable
             && _vm.Selected >= 0
             && _vm.Selected < _vm.Tiles.Count;
         var source = wanted ? PreviewSource() : null;
@@ -1313,10 +1308,9 @@ public sealed class PoseLibraryPane
             _preview.ShowPose(path, cached);
         }
 
-        _vm.PreviewVisible = true;
-        _vm.PreviewTexture = _preview.TextureHandle;
-        _vm.PreviewTextureSize = _preview.TextureSize;
-        _vm.PreviewStatus = _preview.StatusText;
+        // The seat is the inspector rail's, so the section is told to show it;
+        // the render and its status are read there, straight off the service.
+        _files.SetPreviewVisible(true);
     }
 
     /// <summary>The actor the preview borrows an appearance from: the
@@ -1327,8 +1321,10 @@ public sealed class PoseLibraryPane
             ? actor
             : FirstApplyTarget();
 
-    /// <summary>Tears the preview down and states the band as gone. Idempotent
-    /// — the frame after a close must not close again.</summary>
+    /// <summary>Tears the preview down and takes its seat back off the
+    /// inspector rail. Idempotent — the frame after a close must not close
+    /// again, and the seat is withdrawn either way so the section never draws
+    /// a preview this pane has stopped feeding.</summary>
     private void ClosePreview()
     {
         if (_previewSource is not null)
@@ -1337,10 +1333,7 @@ public sealed class PoseLibraryPane
             _previewPath = null;
             _preview.Close();
         }
-        _vm.PreviewVisible = false;
-        _vm.PreviewTexture = 0;
-        _vm.PreviewTextureSize = Vector2.Zero;
-        _vm.PreviewStatus = null;
+        _files.SetPreviewVisible(false);
     }
 
     /// <summary>The band's eye. A deliberate act with no other write to ride

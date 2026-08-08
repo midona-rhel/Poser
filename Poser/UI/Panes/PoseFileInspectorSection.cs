@@ -32,6 +32,7 @@ public sealed class PoseFileInspectorSection
     private readonly SelectionSession _selection;
     private readonly Config.ConfigurationService _config;
     private readonly IAutoSaveService _autoSave;
+    private readonly Game.Preview.PosePreviewService _preview;
     private string _status = string.Empty;
     private readonly Crystarium.FileDialog _importBrowser =
         new("Import Pose", new[] { ".pose", ".cmp" }, isSaveMode: false);
@@ -77,12 +78,14 @@ public sealed class PoseFileInspectorSection
         CleanPoseFacade poseFacade,
         SelectionSession selection,
         Config.ConfigurationService config,
-        IAutoSaveService autoSave)
+        IAutoSaveService autoSave,
+        Game.Preview.PosePreviewService preview)
     {
         _poseFacade = poseFacade;
         _selection = selection;
         _config = config;
         _autoSave = autoSave;
+        _preview = preview;
         _freeze = config.Config.FreezeActorOnPoseImport;
     }
 
@@ -332,16 +335,62 @@ public sealed class PoseFileInspectorSection
     /// a nested one here.</summary>
     public void DrawOptionsRail(Vector2 origin, Vector2 size)
     {
-        DrawOptionsSections(origin, size.X, withPresets: false);
+        DrawOptionsSections(
+            origin, size.X, withPresets: false,
+            previewCap: size.Y * PreviewRailShare);
     }
+
+    /// <summary>The library pane's push: whether the rail leads with the live
+    /// pose preview. Restated every frame the pane draws, and false the moment
+    /// it stops — the section must never draw a preview the pane has closed.
+    /// </summary>
+    public void SetPreviewVisible(bool visible) => _previewVisible = visible;
+
+    private bool _previewVisible;
+
+    /// <summary>The most of the RAIL the preview's image may take, so the
+    /// import options under it stay usable at any window height.</summary>
+    private const float PreviewRailShare = 0.45f;
+
+    /// <summary>The preview's assumed portrait until the service states the
+    /// render's own size — the block must not resize on the frame the first
+    /// render lands.</summary>
+    private static readonly Vector2 PreviewFallbackSize = new(192f, 320f);
+
+    /// <summary>Shown while the service has stated no reason of its own — the
+    /// first frames of a render.</summary>
+    private const string PreviewWaitingText = "Preparing preview…";
+
+    /// <summary>Degrees of yaw per rotate click — Ktisis' preview step.
+    /// </summary>
+    private const float PreviewYaw = 50f;
+
+    /// <summary>Camera distance per zoom click. UNVERIFIED: CharaView's
+    /// <c>SetCameraDistance</c> has no reference call site in Ktisis or Brio,
+    /// so both this scale and the sign convention below (zoom in = NEGATIVE
+    /// delta, closer being a smaller distance) await in-game confirmation.
+    /// One const, one line to retune.</summary>
+    private const float PreviewZoomStep = 0.25f;
 
     /// <summary>The import-option section stack, shared verbatim by the
     /// popup body and the library rail. Returns the y past the last
     /// section.</summary>
+    /// <param name="previewCap">The tallest the preview image may be, in
+    /// screen px; zero keeps the preview out entirely — the popup mount has
+    /// no room for one and never asks.</param>
     private float DrawOptionsSections(
-        Vector2 origin, float width, bool withPresets)
+        Vector2 origin, float width, bool withPresets, float previewCap = 0f)
     {
         float y = origin.Y;
+
+        bool preview = _previewVisible && previewCap > 0f;
+        if (preview)
+            y += Crystarium.Section(
+                "##pose-preview", "Preview",
+                new Vector2(origin.X, y), width, true, null,
+                form => DrawPreviewBody(form, width, previewCap),
+                divider: false,
+                labelColumnWidth: MenuLabelColumn);
 
         y += Crystarium.Section(
             "##import-menu-head", "Import pose",
@@ -369,7 +418,9 @@ public sealed class PoseFileInspectorSection
                         "Import the face as an expression — always every "
                         + "component"));
             },
-            divider: false,
+            // The rule is a divider BETWEEN sections: this one leads the stack
+            // only when the preview does not.
+            divider: preview,
             labelColumnWidth: MenuLabelColumn);
 
         y += Crystarium.Section(
@@ -461,6 +512,131 @@ public sealed class PoseFileInspectorSection
             labelColumnWidth: MenuLabelColumn);
 
         return y;
+    }
+
+    /// <summary>
+    /// The live render and its five camera commands, seated as two canvas rows
+    /// so the section owns the flow and the block owns nothing but its band.
+    /// The image keeps the RENDER's aspect — a preview is a portrait of an
+    /// actor — capped so the option sections under it stay reachable.
+    /// </summary>
+    private void DrawPreviewBody(
+        Crystarium.FormScope form, float width, float cap)
+    {
+        float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+        var theme = Crystarium.ActiveTheme;
+        var natural = _preview.TextureSize;
+        if (!(natural.X > 0f) || !(natural.Y > 0f))
+            natural = PreviewFallbackSize;
+        float image = MathF.Min(width * (natural.Y / natural.X), cap) / scale;
+        if (!(image > 0f))
+            return;
+
+        form.Canvas("preview-image", image,
+            (min, size) => DrawPreviewImage(min, size, scale, theme));
+        form.Canvas(
+            "preview-camera",
+            theme.Spacing.Three + theme.Floating.CloseActionSize,
+            (min, size) => DrawPreviewCamera(
+                min + new Vector2(0f, theme.Spacing.Three * scale),
+                size.X, scale, theme));
+    }
+
+    private void DrawPreviewImage(
+        Vector2 min, Vector2 size, float scale, Theme theme)
+    {
+        var max = min + size;
+        var draw = ImGui.GetWindowDrawList();
+        float radius = theme.Radii.Control * scale;
+        draw.AddRectFilled(
+            min, max,
+            ImGui.ColorConvertFloat4ToU32(
+                ColorEx.ApplyAlpha(theme.Chrome.InputWell)),
+            radius);
+
+        var handle = _preview.TextureHandle;
+        var natural = _preview.TextureSize;
+        if (handle != 0 && natural.X > 0f && natural.Y > 0f)
+        {
+            float fit = MathF.Min(size.X / natural.X, size.Y / natural.Y);
+            var fitted = natural * fit;
+            var imageMin = theme.Optical.Snap(min + (size - fitted) * 0.5f);
+            draw.AddImage(
+                new ImTextureID(handle),
+                imageMin,
+                imageMin + fitted,
+                Vector2.Zero,
+                Vector2.One,
+                ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(Vector4.One)));
+        }
+        else
+        {
+            // The service's own reason wins; "preparing" is only what the
+            // frames before it has one say.
+            Crystarium.TextInBand(
+                min,
+                size,
+                _preview.StatusText ?? PreviewWaitingText,
+                new TextStyle
+                {
+                    Size = theme.Typography.CaptionSize,
+                    Color = theme.FormHint,
+                },
+                TextAlign.Center);
+        }
+        Crystarium.FloatingSurface.DrawBorder(min, max, radius);
+    }
+
+    /// <summary>The camera row, centred under the image: rotate and zoom
+    /// mirrored about the reset. The buttons speak to the service directly —
+    /// the camera is the preview's own state and no pane holds any of it.
+    /// </summary>
+    private void DrawPreviewCamera(
+        Vector2 origin, float width, float scale, Theme theme)
+    {
+        float action = theme.Floating.CloseActionSize;
+        float actionPx = action * scale;
+        float gap = theme.Page.ActionGap * scale;
+        var style = ControlStyle.Square(action);
+        float step = actionPx + gap;
+        float x = origin.X + (width - (actionPx * 5f + gap * 4f)) * 0.5f;
+
+        ImGui.SetCursorScreenPos(new Vector2(x, origin.Y));
+        Crystarium.IconButton(
+            TablerIcon.ArrowLeft,
+            () => _preview.Rotate(-PreviewYaw),
+            style: style,
+            help: "Rotate the preview left",
+            id: "##pose-preview-left");
+        ImGui.SetCursorScreenPos(new Vector2(x + step, origin.Y));
+        Crystarium.IconButton(
+            TablerIcon.ZoomOut,
+            () => _preview.Zoom(PreviewZoomStep),
+            style: style,
+            help: "Move the preview camera back",
+            id: "##pose-preview-zoom-out");
+        ImGui.SetCursorScreenPos(new Vector2(x + step * 2f, origin.Y));
+        Crystarium.IconButton(
+            TablerIcon.ArrowBackUp,
+            () => _preview.ResetCamera(),
+            style: style,
+            help: "Reset the preview camera",
+            id: "##pose-preview-reset");
+        ImGui.SetCursorScreenPos(new Vector2(x + step * 3f, origin.Y));
+        Crystarium.IconButton(
+            TablerIcon.ZoomIn,
+            () => _preview.Zoom(-PreviewZoomStep),
+            style: style,
+            help: "Move the preview camera closer",
+            id: "##pose-preview-zoom-in");
+        ImGui.SetCursorScreenPos(new Vector2(x + step * 4f, origin.Y));
+        Crystarium.IconButton(
+            TablerIcon.ArrowRight,
+            () => _preview.Rotate(PreviewYaw),
+            style: style,
+            help: "Rotate the preview right",
+            id: "##pose-preview-right");
     }
 
     /// <summary>Brio's export popup (DrawExportPoseMenuPopup): export to a

@@ -84,6 +84,8 @@ public enum TablerIcon
     Body,
     Spotlight,
     LightPanel,
+    ZoomIn,
+    ZoomOut,
 }
 
 /// <summary>
@@ -213,6 +215,8 @@ public static class Tabler
         TablerIcon.Body            => "body",
         TablerIcon.Spotlight       => "spotlight",
         TablerIcon.LightPanel      => "light-panel",
+        TablerIcon.ZoomIn          => "zoom-in",
+        TablerIcon.ZoomOut         => "zoom-out",
         _ => "circle",
     };
 }
