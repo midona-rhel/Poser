@@ -281,7 +281,12 @@ public class PoseFileService : IPoseFileService
             if (!PassesBoneFilter(bone, options))
                 return false;
             if (options.AsExpression)
-                return IsFaceBone(bone.BoneName) && bone.BoneName != "j_kao";
+                // The reset matches the apply scope MINUS the head: the
+                // head's pre-import stacks must survive because the file's
+                // head lands only transiently and the engine's head-restore
+                // stage reverts to exactly those.
+                return IsExpressionScopeBone(bone.BoneName) &&
+                       bone.BoneName != "j_kao";
             if (!options.ApplyFace && IsFaceBone(bone.BoneName))
                 return false;
             return true;
@@ -346,15 +351,18 @@ public class PoseFileService : IPoseFileService
             // modify how an accepted bone applies, never smuggle an
             // out-of-scope bone past AsExpression/ApplyFace/the filter.
 
-            // Expression import (rewritten, single-phase): only face bones,
-            // and NEVER the head — the file's face orientations land while
-            // the posed head stays put. Equivalent end state to Brio's
-            // apply-then-restore without its 4-tick resync hack.
-            if (options.AsExpression)
-            {
-                if (boneName == "j_kao" || !IsFaceBone(boneName))
-                    continue;
-            }
+            // Expression import: Brio's ExpressionOptions scope — head,
+            // ears, hair, face, eyes, lips, jaw (PosingService.cs:77-86) —
+            // INCLUDING j_kao. The file's face was authored around the
+            // file's OWN head, so the head must move to the file's space for
+            // the face deltas to be face-local; the import engine's head
+            // restore stage then reverts the head, Brio's expressionPhase2
+            // (PosingCapability.cs:238-247, PoseImporter.cs:11-26). The
+            // earlier "skip j_kao, single phase" shortcut silently baked the
+            // exporter-vs-target head offset into every face position delta
+            // and flung imported faces (user 2026-08-08).
+            if (options.AsExpression && !IsExpressionScopeBone(boneName))
+                continue;
             // Filter by face bones if needed
             else if (!options.ApplyFace && IsFaceBone(boneName))
                 continue;
@@ -519,6 +527,19 @@ public class PoseFileService : IPoseFileService
         }
         return true;
     }
+
+    /// <summary>Brio's ExpressionOptions bone scope (PosingService.cs:77-86:
+    /// the head, ears, hair, face, eyes, lips and jaw categories enabled):
+    /// the import-scope face test plus j_kao (head), j_zer/n_ear_ (Viera and
+    /// accessory ears) and j_ex_h/j_ex_met_va (ex-hair strands) —
+    /// BoneCategories.json members <see cref="IsFaceBone"/> does not cover.</summary>
+    internal static bool IsExpressionScopeBone(string boneName) =>
+        boneName == "j_kao" ||
+        IsFaceBone(boneName) ||
+        boneName.StartsWith("j_zer", StringComparison.Ordinal) ||
+        boneName.StartsWith("n_ear_", StringComparison.Ordinal) ||
+        boneName.StartsWith("j_ex_h", StringComparison.Ordinal) ||
+        boneName.StartsWith("j_ex_met_va", StringComparison.Ordinal);
 
     /// <summary>Brio ResolveSmartImport's local IsFaceBone (:405-419):
     /// j_kao plus the j_f_/j_eye/j_may/j_ago/j_lip/j_bero prefixes.</summary>

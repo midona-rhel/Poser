@@ -235,7 +235,7 @@ public static partial class Crystarium
                 {
                     Title = _title,
                     OnClose = Close,
-                    CloseHelp = "Close",
+                    CloseHelp = "Close without choosing a file",
                     RailWidth = theme.FileDialog.RailWidth,
                     BandHeight = theme.Floating.ModalBarHeight,
                     HostPaintsChrome = hostPaintsChrome,
@@ -294,10 +294,10 @@ public static partial class Crystarium
                 left =>
                 {
                     left.Icon(
-                        TablerIcon.ArrowLeft, Back, "Back",
+                        TablerIcon.ArrowLeft, Back, "Go back to the previous folder",
                         _back.Count == 0, square);
                     left.Icon(
-                        TablerIcon.ArrowRight, Forward, "Forward",
+                        TablerIcon.ArrowRight, Forward, "Go forward to the next folder",
                         _forward.Count == 0, square);
                     left.Icon(
                         TablerIcon.ArrowUp, Up, "Open the parent folder",

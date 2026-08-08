@@ -10,11 +10,42 @@ using Poser.Services;
 namespace Poser.UI;
 
 /// <summary>
+/// One page of <see cref="EnvironmentPane"/>. The environment's eleven sections
+/// do not fit one scroll, so the shell gives it a five-tab strip and hands the
+/// pane the tab it is drawing. Positional against the shell's environment strip.
+/// </summary>
+public enum EnvironmentTab
+{
+    /// <summary>TIME and WEATHER: what the sky is DOING.</summary>
+    Weather,
+
+    /// <summary>SKY (skybox and clouds) and STARS: what the sky IS.</summary>
+    Sky,
+
+    /// <summary>LIGHTING: the three lights the zone lights everything with.
+    /// </summary>
+    Light,
+
+    /// <summary>FOG, RAIN, PARTICLES and WIND: what fills the air between the
+    /// camera and the sky.</summary>
+    Atmosphere,
+
+    /// <summary>RENDERING and FESTIVALS: the ground the scene stands on rather
+    /// than the air above it.</summary>
+    World,
+}
+
+/// <summary>
 /// The scene's one environment: time, weather, the eight holdable environment
 /// sections, water rendering, and the festival slots. The pane owns its
 /// collapse state and its two picker surfaces; every value is read live from
 /// the services at DISPATCH time and written straight back, so a row never acts
 /// on the copy its section opened with.
+///
+/// <para>The eleven sections are hosted across FIVE pages, one per
+/// <see cref="EnvironmentTab"/>. Each page states its own id, so two sections on
+/// different tabs can never mint the same row identity, and the collapse state
+/// stays per SECTION — a tab is where a section is drawn, not what it is.</para>
 ///
 /// <para>INVERSION BOUNDARY. The services state every hold positively: a HELD
 /// thing is one Poser keeps stamping. Time and weather are presented the same
@@ -124,39 +155,99 @@ public sealed class EnvironmentPane
         _festivalBadge = entry => IdText(entry.Id);
     }
 
-    public void Draw(Vector2 origin, Vector2 size)
+    /// <summary>Draws the one page the shell's active tab names. The page id is
+    /// the tab's own, so the row ids on two tabs are distinct even where the row
+    /// LABELS repeat — "Colour alpha" appears on four of the eleven sections.
+    /// </summary>
+    public void Draw(Vector2 origin, Vector2 size, EnvironmentTab tab)
     {
         DrainPickers();
 
-        Crystarium.Page("environment", origin, size, page =>
+        switch (tab)
         {
-            page.Status(_status);
-
-            // The rule is a divider BETWEEN sections, so the page's first
-            // section draws neither the rule nor the margin above it.
-            page.Section("TIME", _openTime, next => _openTime = next,
-                TimeRows, divider: false);
-            page.Section("WEATHER", _openWeather, next => _openWeather = next,
-                WeatherRows);
-            page.Section("SKY", _openSky, next => _openSky = next, SkyRows);
-            page.Section("LIGHTING", _openLighting,
-                next => _openLighting = next, LightingRows);
-            page.Section("FOG", _openFog, next => _openFog = next, FogRows);
-            page.Section("RAIN", _openRain, next => _openRain = next, RainRows);
-            page.Section("PARTICLES", _openParticles,
-                next => _openParticles = next, ParticleRows);
-            page.Section("STARS", _openStars, next => _openStars = next,
-                StarRows);
-            page.Section("WIND", _openWind, next => _openWind = next, WindRows);
-            page.Section("RENDERING", _openRendering,
-                next => _openRendering = next, RenderingRows);
-            page.Section("FESTIVALS", _openFestivals,
-                next => _openFestivals = next, FestivalRows);
-        });
+            case EnvironmentTab.Sky:
+                Crystarium.Page("environment-sky", origin, size, SkyPage);
+                break;
+            case EnvironmentTab.Light:
+                Crystarium.Page("environment-light", origin, size, LightPage);
+                break;
+            case EnvironmentTab.Atmosphere:
+                Crystarium.Page(
+                    "environment-atmosphere", origin, size, AtmospherePage);
+                break;
+            case EnvironmentTab.World:
+                Crystarium.Page("environment-world", origin, size, WorldPage);
+                break;
+            default:
+                Crystarium.Page(
+                    "environment-weather", origin, size, WeatherPage);
+                break;
+        }
     }
 
-    /// <summary>Both surfaces are drained at the top of the frame, exactly
-    /// where the rows that opened them can still report the outcome.</summary>
+    // ── the five pages ───────────────────────────────────────────────────
+    //
+    // The rule is a divider BETWEEN sections, so EVERY page's first section
+    // states divider: false and draws neither the rule nor the margin above it.
+    // The status line is the PANE's, not a section's, so all five restate it —
+    // it costs a page that has none nothing, because Status returns on empty.
+
+    private void WeatherPage(Crystarium.PageScope page)
+    {
+        page.Status(_status);
+        page.Section("TIME", _openTime, next => _openTime = next,
+            TimeRows, divider: false);
+        page.Section("WEATHER", _openWeather, next => _openWeather = next,
+            WeatherRows);
+    }
+
+    private void SkyPage(Crystarium.PageScope page)
+    {
+        page.Status(_status);
+        page.Section("SKY", _openSky, next => _openSky = next, SkyRows,
+            divider: false);
+        page.Section("STARS", _openStars, next => _openStars = next, StarRows);
+    }
+
+    private void LightPage(Crystarium.PageScope page)
+    {
+        page.Status(_status);
+        page.Section("LIGHTING", _openLighting,
+            next => _openLighting = next, LightingRows, divider: false);
+    }
+
+    private void AtmospherePage(Crystarium.PageScope page)
+    {
+        page.Status(_status);
+        page.Section("FOG", _openFog, next => _openFog = next, FogRows,
+            divider: false);
+        page.Section("RAIN", _openRain, next => _openRain = next, RainRows);
+        page.Section("PARTICLES", _openParticles,
+            next => _openParticles = next, ParticleRows);
+        page.Section("WIND", _openWind, next => _openWind = next, WindRows);
+    }
+
+    private void WorldPage(Crystarium.PageScope page)
+    {
+        page.Status(_status);
+        page.Section("RENDERING", _openRendering,
+            next => _openRendering = next, RenderingRows, divider: false);
+        page.Section("FESTIVALS", _openFestivals,
+            next => _openFestivals = next, FestivalRows);
+    }
+
+    /// <summary>
+    /// Both surfaces are drained at the top of the frame, exactly where the rows
+    /// that opened them can still report the outcome.
+    ///
+    /// <para>UNCONDITIONAL, and it has to be: a picker is an ImGui popup, and a
+    /// popup that is not submitted on a frame is closed by ImGui at the end of
+    /// it. Draining only the page that hosts the picker's rows would therefore
+    /// make a tab change silently drop an open surface. Both are pumped on every
+    /// frame the pane draws, whichever tab that is — a closed picker's Draw
+    /// returns on its first line, so the tab that hosts neither pays nothing.
+    /// </para>
+    /// </summary>
     private void DrainPickers()
     {
         if (_weatherPicker.Draw() is { } weather)

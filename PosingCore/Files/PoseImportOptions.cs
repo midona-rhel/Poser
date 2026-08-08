@@ -70,12 +70,15 @@ public class PoseImportOptions
     public bool ResetBeforeImport { get; set; } = false;
 
     /// <summary>
-    /// Expression import: apply ONLY face bones and EXCLUDE the head bone (j_kao),
-    /// so a face pose lands without turning the posed head. Single-phase rewrite of
-    /// Brio's two-phase apply-then-restore (which needs a 4-tick resync hack and
-    /// "stil breaks IK" per its own comment): skipping j_kao up front reaches the
-    /// same end state — face bones take the file's absolute orientations, the head
-    /// keeps the current pose — with no tick delays.
+    /// Expression import — Brio's dance, ported LITERALLY after the
+    /// single-phase "skip j_kao" rewrite proved wrong for cross-character
+    /// files (the face is authored around the FILE's head; computing deltas
+    /// against the target's head baked the head offset into every face
+    /// position and flung the face). The plan applies Brio's ExpressionOptions
+    /// scope INCLUDING the head, every component forced; the import engine
+    /// then restores the head (+4 ticks, stack pop + position re-import) and
+    /// reconciles the face subtree (+4 more), exactly Brio's
+    /// PosingCapability phases.
     /// </summary>
     public bool AsExpression { get; set; } = false;
 
