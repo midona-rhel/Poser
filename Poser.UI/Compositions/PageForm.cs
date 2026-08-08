@@ -433,6 +433,17 @@ public static partial class Crystarium
             string label,
             bool disabled,
             params (string Caption, bool Value, Action<bool> OnChange,
+                string? Help)[] items) =>
+            Checkboxes(label, disabled, fullWidth: false, items);
+
+        /// <summary>Full-width variant: the boxes start at the row's LEFT
+        /// edge instead of the control column — for a caption row seated
+        /// under its own Label row when the pairs need the whole width.</summary>
+        public void Checkboxes(
+            string label,
+            bool disabled,
+            bool fullWidth,
+            params (string Caption, bool Value, Action<bool> OnChange,
                 string? Help)[] items)
         {
             string id = Id(string.IsNullOrEmpty(label) ? "checkboxes" : label);
@@ -447,7 +458,7 @@ public static partial class Crystarium
                 Color = FormLabelColor,
                 Disabled = disabled,
             };
-            float x = row.ControlOrigin.X;
+            float x = fullWidth ? row.Origin.X : row.ControlOrigin.X;
             foreach (var (caption, value, onChange, help) in items)
             {
                 ImGui.SetCursorScreenPos(new(

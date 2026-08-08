@@ -386,9 +386,13 @@ public sealed class PoseFileInspectorSection
                 string? why = locked
                     ? "Expression imports always apply every component"
                     : null;
+                // The component trio takes its OWN full-width row under
+                // the label (user placement).
+                form.Label("Apply");
                 form.Checkboxes(
-                    "Apply",
+                    string.Empty,
                     locked,
+                    fullWidth: true,
                     ("Position", _position, next => _position = next, why),
                     ("Rotation", _rotation, next => _rotation = next, why),
                     ("Scale", _scale, next => _scale = next, why));
