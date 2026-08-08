@@ -161,7 +161,20 @@ public sealed class PoseFileInspectorSection
     public Func<Domain.Identity.ActorId, IActor?>? _resolveActor;
 
     private const float MenuPadding = 8f;
+
+    /// <summary>What the first section spends above its title text: the
+    /// pre-header padding plus the header band's centering slack. Menus
+    /// start their stack this far ABOVE the origin so the title sits at
+    /// the window padding.</summary>
+    private static float MenuTitleOffset(float scale)
+    {
+        var page = Crystarium.ActiveTheme.Page;
+        return (page.SectionPaddingTop
+            + (page.SectionHeaderHeight
+                - Crystarium.ActiveTheme.Typography.LabelSize) * 0.5f) * scale;
+    }
     private const float MenuWidth = 320f;
+    private const float FilterMenuWidth = 240f;
     private const float MenuLabelColumn = 96f;
     private const string ImportMenuId = "##pose-import-menu";
     private const string ExportMenuId = "##pose-export-menu";
@@ -240,10 +253,7 @@ public sealed class PoseFileInspectorSection
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
         var origin = ImGui.GetCursorScreenPos();
         float width = ImGui.GetContentRegionAvail().X;
-        // The first section spends SectionPaddingTop before its header; a
-        // popover's title should hug the window padding instead.
-        float y = origin.Y
-            - Crystarium.ActiveTheme.Page.SectionPaddingTop * scale;
+        float y = origin.Y - MenuTitleOffset(scale);
 
         y += Crystarium.Section(
             "##import-menu-head", "Import pose",
@@ -380,7 +390,7 @@ public sealed class PoseFileInspectorSection
             BoneFilterMenuId,
             new FloatingSurfaceProps
             {
-                Width = MenuWidth,
+                Width = FilterMenuWidth,
                 Height = _boneFilterHeight,
                 Padding = MenuPadding,
                 AnchorMin = beside,
@@ -399,9 +409,7 @@ public sealed class PoseFileInspectorSection
         var origin = ImGui.GetCursorScreenPos();
         float width = ImGui.GetContentRegionAvail().X;
 
-        float y = origin.Y
-            - Crystarium.ActiveTheme.Page.SectionPaddingTop * scale
-            + Crystarium.Section(
+        float y = origin.Y - MenuTitleOffset(scale) + Crystarium.Section(
             "##export-menu", "Export pose",
             new Vector2(origin.X, origin.Y), width, true, null,
             form =>
@@ -453,12 +461,10 @@ public sealed class PoseFileInspectorSection
         float width = ImGui.GetContentRegionAvail().X;
         var page = Crystarium.ActiveTheme.Page;
 
-        float y = origin.Y
-            - page.SectionPaddingTop * scale
-            + Crystarium.Section(
+        float y = origin.Y - MenuTitleOffset(scale) + Crystarium.Section(
             "##filter-head", "Bone filter",
             new Vector2(origin.X, origin.Y), width, true, null,
-            form => form.Actions("Select", actions =>
+            form => form.Actions(string.Empty, actions =>
             {
                 actions.Button("All", () => _disabledCategories.Clear());
                 actions.Button("None", () =>
@@ -476,10 +482,13 @@ public sealed class PoseFileInspectorSection
             _boneFilterHeight - (y - origin.Y) / scale
             - page.Inset - MenuPadding * 2f;
         Crystarium.ScrollRegion(
-            "##filter-scroll", width / scale, scrollHeight, _ =>
+            "##filter-scroll", width / scale + MenuPadding, scrollHeight, _ =>
             {
                 var top = ImGui.GetCursorScreenPos();
-                float innerWidth = ImGui.GetContentRegionAvail().X;
+                // The region reaches the window edge so the scrollbar sits
+                // guttered there; the ROWS keep the menu's inset.
+                float innerWidth =
+                    ImGui.GetContentRegionAvail().X - MenuPadding * scale;
                 float sy = top.Y;
                 sy += Crystarium.Section(
                     "##filter-list", string.Empty,
