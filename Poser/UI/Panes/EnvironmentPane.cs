@@ -74,16 +74,19 @@ public sealed class EnvironmentPane
 
     private string _status = string.Empty;
 
+    // Every section opens EXPANDED. A page carries at most four of them and a
+    // collapsed header hides the only thing the page is for; the disclosure is
+    // there to put a section away, not to make the user open it first.
     private bool _openTime = true;
     private bool _openWeather = true;
-    private bool _openSky;
-    private bool _openLighting;
-    private bool _openFog;
-    private bool _openRain;
-    private bool _openParticles;
-    private bool _openStars;
-    private bool _openWind;
-    private bool _openRendering;
+    private bool _openSky = true;
+    private bool _openLighting = true;
+    private bool _openFog = true;
+    private bool _openRain = true;
+    private bool _openParticles = true;
+    private bool _openStars = true;
+    private bool _openWind = true;
+    private bool _openRendering = true;
     private bool _openFestivals = true;
 
     /// <summary>Widens the weather surface from this territory's own weathers
@@ -95,6 +98,23 @@ public sealed class EnvironmentPane
         new("environment-weather");
     private readonly Crystarium.SearchPicker<FestivalEntry> _festivalPicker =
         new("environment-festival");
+
+    /// <summary>The three skybox catalogs. One picker per control: each walks
+    /// its OWN texture path, and two of them stand on the same row.</summary>
+    private readonly Crystarium.TexturePicker _skyTexture;
+    private readonly Crystarium.TexturePicker _cloudTexture;
+    private readonly Crystarium.TexturePicker _cloudSideTexture;
+
+    /// <summary>The clock's own quarters, so the track reads as a day rather
+    /// than as a number between 0 and 1439.</summary>
+    private static readonly float[] DayQuarters = [360f, 720f, 1080f];
+
+    // Marks for the log-mapped ranges: the reference points a compressed
+    // track would otherwise hide.
+    private static readonly float[] KilometreMarks = [10f, 100f, 500f];
+    private static readonly float[] ThicknessMarks = [1f, 5f, 25f];
+    private static readonly float[] OpacityMarks = [1f, 5f];
+    private static readonly float[] DistanceMarks = [1f, 10f, 50f];
 
     /// <summary>One option object per weather id, for the pane's life: the
     /// picker keys its rows by identity string, and a fresh object per frame
@@ -153,6 +173,23 @@ public sealed class EnvironmentPane
         _weatherBadge = option => IdText(option.Id);
         _festivalKey = entry => IdText(entry.Id);
         _festivalBadge = entry => IdText(entry.Id);
+        // The paths are Ktisis's, which is also where the 0..999 walk comes
+        // from: the game exposes no list of these, only files that either
+        // exist or do not.
+        _skyTexture = new Crystarium.TexturePicker(
+            "environment-sky-texture",
+            (uint id, out nint handle) => Preview(
+                $"bgcommon/nature/sky/texture/sky_{id:D3}.tex", out handle));
+        _cloudTexture = new Crystarium.TexturePicker(
+            "environment-cloud-texture",
+            (uint id, out nint handle) => Preview(
+                $"bgcommon/nature/cloud/texture/cloud_{id:D3}.tex",
+                out handle));
+        _cloudSideTexture = new Crystarium.TexturePicker(
+            "environment-cloud-side-texture",
+            (uint id, out nint handle) => Preview(
+                $"bgcommon/nature/cloud/texture/cloudside_{id:D3}.tex",
+                out handle));
     }
 
     /// <summary>Draws the one page the shell's active tab names. The page id is
@@ -265,6 +302,42 @@ public sealed class EnvironmentPane
                 ? string.Empty
                 : $"{festival.Item.Name}: this festival cannot be set where you are standing.";
         }
+
+        // Same rule as above, and for the same reason: the three texture grids
+        // are pumped whichever tab is up, so a tab change cannot drop one.
+        if (_skyTexture.Draw() is { } skyId)
+            _environment.Sky = _environment.Sky with { SkyTextureId = skyId };
+        if (_cloudTexture.Draw() is { } cloudId)
+            _environment.Clouds =
+                _environment.Clouds with { CloudTexture = cloudId };
+        if (_cloudSideTexture.Draw() is { } cloudSideId)
+            _environment.Clouds =
+                _environment.Clouds with { CloudSideTexture = cloudSideId };
+    }
+
+    /// <summary>
+    /// One candidate texture, answered for the CURRENT frame. A game texture
+    /// loads asynchronously, so "not yet" and "never" are different answers:
+    /// the wrap is null with no exception while it is still loading and null
+    /// WITH one when the path is not in the game's files. Nothing is cached —
+    /// a shared texture's handle belongs to the frame that asked for it.
+    /// </summary>
+    private TextureProbe Preview(string path, out nint handle)
+    {
+        handle = 0;
+        ISharedImmediateTexture shared;
+        try
+        {
+            shared = _textures.GetFromGame(path);
+        }
+        catch (Exception)
+        {
+            return TextureProbe.Missing;
+        }
+        if (!shared.TryGetWrap(out var wrap, out var error))
+            return error is null ? TextureProbe.Pending : TextureProbe.Missing;
+        handle = wrap is null ? 0 : (nint)wrap.Handle.Handle;
+        return handle == 0 ? TextureProbe.Pending : TextureProbe.Ready;
     }
 
     // ── time ─────────────────────────────────────────────────────────────
@@ -274,30 +347,52 @@ public sealed class EnvironmentPane
         bool available = _environment.IsTimeFreezeAvailable;
         int minute = _environment.MinuteOfDay;
 
-        form.ReadOnly("Clock", ClockText(minute),
-            help: "The Eorzean time the game is showing",
-            unavailable: !available);
-        form.Slider("Time of day", minute, 0f, 1439f,
-            value => _environment.MinuteOfDay = (int)MathF.Round(value),
-            format: "0",
-            help: "Set the Eorzean minute of day. Moving it freezes the "
-                + "clock — an unfrozen clock discards the write within a frame.",
-            disabled: !available);
-        form.Slider("Day of month", _environment.DayOfMonth, 1f, 31f,
-            value => _environment.DayOfMonth = (int)MathF.Round(value),
-            format: "0",
-            help: "Set the Eorzean day of the month. Moving it freezes the "
-                + "clock, exactly as the time does.",
-            disabled: !available);
-        form.Switch("Freeze time", _environment.IsTimeFrozen,
-            value => _environment.IsTimeFrozen = value,
-            help: available
-                ? "Stop the Eorzean clock where it stands"
-                : TimeUnavailable,
-            disabled: !available);
-        form.Switch("Restore time on exit", _environment.ResetTimeOnGPoseExit,
-            value => _environment.ResetTimeOnGPoseExit = value,
-            help: "Hand the clock back to the game when GPose ends");
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Time of day",
+                cell => cell.Slider(
+                    "##env-time-of-day", minute, 0f, 1439f,
+                    value => _environment.MinuteOfDay =
+                        (int)MathF.Round(value),
+                    format: "0",
+                    disabled: !available,
+                    // The slider IS the clock. A raw minute-of-day readout
+                    // said 468 where the game says 07:48, and the read-only
+                    // Clock row that translated it is gone with it.
+                    readout: value => ClockText((int)MathF.Round(value)),
+                    marks: DayQuarters),
+                help: "Set the Eorzean minute of day. Moving it freezes the "
+                    + "clock — an unfrozen clock discards the write within a "
+                    + "frame.");
+            cells.Cell(
+                "Day of month",
+                cell => cell.Slider(
+                    "##env-day-of-month", _environment.DayOfMonth, 1f, 31f,
+                    value => _environment.DayOfMonth = (int)MathF.Round(value),
+                    format: "0",
+                    disabled: !available),
+                help: "Set the Eorzean day of the month. Moving it freezes "
+                    + "the clock, exactly as the time does.");
+        });
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Freeze time",
+                cell => cell.Switch(
+                    "##env-time-freeze", _environment.IsTimeFrozen,
+                    value => _environment.IsTimeFrozen = value,
+                    disabled: !available),
+                help: available
+                    ? "Stop the Eorzean clock where it stands"
+                    : TimeUnavailable);
+            cells.Cell(
+                "Restore on exit",
+                cell => cell.Switch(
+                    "##env-time-restore", _environment.ResetTimeOnGPoseExit,
+                    value => _environment.ResetTimeOnGPoseExit = value),
+                help: "Hand the clock back to the game when GPose ends");
+        });
     }
 
     // ── weather ──────────────────────────────────────────────────────────
@@ -310,27 +405,52 @@ public sealed class EnvironmentPane
             ? info.Name
             : IdText(current);
 
-        form.Picker("Weather", name, OpenWeatherPicker,
-            help: "Choose the weather this territory runs. Picking one holds "
-                + "it, or the game's next update takes it back.");
-        form.Switch("Show all weathers", _showAllWeathers,
-            value => _showAllWeathers = value,
-            help: "Widen the list from this territory's own weathers to every "
-                + "weather in the game");
-        form.Slider("Transition", _environment.TransitionTime, 0f, 10f,
-            value => _environment.TransitionTime = value,
-            help: "How long the game blends into a picked weather, in seconds");
-        form.Switch("Hold weather", _environment.IsWeatherOverrideEnabled,
-            value => _environment.IsWeatherOverrideEnabled = value,
-            help: available
-                ? "Keep the current weather by suppressing the game's own "
-                    + "territory weather update"
-                : WeatherUnavailable,
-            disabled: !available);
-        form.Switch("Restore weather on exit",
-            _environment.ResetWeatherOnGPoseExit,
-            value => _environment.ResetWeatherOnGPoseExit = value,
-            help: "Hand the weather back to the game when GPose ends");
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Weather",
+                cell => cell.Button("##env-weather", name, OpenWeatherPicker),
+                help: "Choose the weather this territory runs. Picking one "
+                    + "holds it, or the game's next update takes it back.");
+            // "Show all weathers" overran the label column; the section it
+            // stands in already says what is being shown.
+            cells.Cell(
+                "All weathers",
+                cell => cell.Switch(
+                    "##env-weather-all", _showAllWeathers,
+                    value => _showAllWeathers = value),
+                help: "Widen the list from this territory's own weathers to "
+                    + "every weather in the game");
+        });
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Transition",
+                cell => cell.Slider(
+                    "##env-weather-transition", _environment.TransitionTime,
+                    0f, 10f,
+                    value => _environment.TransitionTime = value),
+                help: "How long the game blends into a picked weather, in "
+                    + "seconds");
+            cells.Cell(
+                "Hold weather",
+                cell => cell.Switch(
+                    "##env-weather-hold",
+                    _environment.IsWeatherOverrideEnabled,
+                    value => _environment.IsWeatherOverrideEnabled = value,
+                    disabled: !available),
+                help: available
+                    ? "Keep the current weather by suppressing the game's own "
+                        + "territory weather update"
+                    : WeatherUnavailable);
+            cells.Cell(
+                "Restore on exit",
+                cell => cell.Switch(
+                    "##env-weather-restore",
+                    _environment.ResetWeatherOnGPoseExit,
+                    value => _environment.ResetWeatherOnGPoseExit = value),
+                help: "Hand the weather back to the game when GPose ends");
+        });
     }
 
     /// <summary>Arms the weather surface. The trigger button is the last
@@ -397,34 +517,54 @@ public sealed class EnvironmentPane
             "Let the game run the skybox. Changing any sky value below holds "
                 + "it for Poser.");
         var sky = _environment.Sky;
-        form.NumericSlider("Sky texture", sky.SkyTextureId, 0f, 450f,
-            value => _environment.Sky =
-                _environment.Sky with { SkyTextureId = ToId(value) },
-            perPixel: 0.25f,
-            format: "0",
-            help: "The skybox texture the zone draws");
-        form.Slider("Sun visibility", sky.SunVisibility, 0f, 1f,
-            value => _environment.Sky =
-                _environment.Sky with { SunVisibility = value },
-            help: "How much of the sun disc shows through the sky");
+        // A texture id is a CHOICE, not a magnitude: the slider that used to
+        // carry it had an invented ceiling and showed nothing of what was
+        // being chosen. The grid the tile opens is the catalog.
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Sky texture",
+                cell => _skyTexture.Field(
+                    cell,
+                    sky.SkyTextureId,
+                    id => _environment.Sky =
+                        _environment.Sky with { SkyTextureId = id }),
+                help: "The skybox texture the zone draws. Step the id, or "
+                    + "open the tile for the whole catalog.");
+            cells.Cell(
+                "Sun visibility",
+                cell => cell.Slider(
+                    "##env-sky-sun", sky.SunVisibility, 0f, 1f,
+                    value => _environment.Sky =
+                        _environment.Sky with { SunVisibility = value }),
+                help: "How much of the sun disc shows through the sky");
+        });
 
         SectionSwitch(form, "Natural clouds", EnvSection.Clouds,
             "Let the game run the clouds. Changing any cloud value below "
                 + "holds them for Poser.");
         var clouds = _environment.Clouds;
-        form.NumericSlider("Cloud texture", clouds.CloudTexture, 0f, 75f,
-            value => _environment.Clouds =
-                _environment.Clouds with { CloudTexture = ToId(value) },
-            perPixel: 0.25f,
-            format: "0",
-            help: "The texture the overhead cloud layer draws");
-        form.NumericSlider(
-            "Cloud side texture", clouds.CloudSideTexture, 0f, 75f,
-            value => _environment.Clouds =
-                _environment.Clouds with { CloudSideTexture = ToId(value) },
-            perPixel: 0.25f,
-            format: "0",
-            help: "The texture the horizon cloud band draws");
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Cloud texture",
+                cell => _cloudTexture.Field(
+                    cell,
+                    clouds.CloudTexture,
+                    id => _environment.Clouds =
+                        _environment.Clouds with { CloudTexture = id }),
+                help: "The texture the overhead cloud layer draws");
+            // "Cloud side texture" overran the label column; it stands beside
+            // the overhead one, which is what "side" is said against.
+            cells.Cell(
+                "Side texture",
+                cell => _cloudSideTexture.Field(
+                    cell,
+                    clouds.CloudSideTexture,
+                    id => _environment.Clouds =
+                        _environment.Clouds with { CloudSideTexture = id }),
+                help: "The texture the horizon cloud band draws");
+        });
         form.ColorWells("Cloud colours", wells =>
         {
             wells.Well("Top", Opaque(clouds.CloudColor1),
@@ -434,14 +574,23 @@ public sealed class EnvironmentPane
                 value => _environment.Clouds =
                     _environment.Clouds with { CloudColor2 = Rgb(value) });
         }, help: "Tint the overhead clouds and the horizon band");
-        form.Slider("Shadow stop", clouds.ShadowStop, 0f, 2f,
-            value => _environment.Clouds =
-                _environment.Clouds with { ShadowStop = value },
-            help: "Where the cloud shading gradient ends");
-        form.Slider("Cloud height", clouds.CloudHeight, 0f, 2f,
-            value => _environment.Clouds =
-                _environment.Clouds with { CloudHeight = value },
-            help: "How tall the horizon cloud band stands");
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Shadow stop",
+                cell => cell.Slider(
+                    "##env-cloud-shadow-stop", clouds.ShadowStop, 0f, 2f,
+                    value => _environment.Clouds =
+                        _environment.Clouds with { ShadowStop = value }),
+                help: "Where the cloud shading gradient ends");
+            cells.Cell(
+                "Cloud height",
+                cell => cell.Slider(
+                    "##env-cloud-height", clouds.CloudHeight, 0f, 2f,
+                    value => _environment.Clouds =
+                        _environment.Clouds with { CloudHeight = value }),
+                help: "How tall the horizon cloud band stands");
+        });
     }
 
     // ── lighting ─────────────────────────────────────────────────────────
@@ -464,28 +613,60 @@ public sealed class EnvironmentPane
                 value => _environment.Lighting =
                     _environment.Lighting with { AmbientColor = Rgb(value) });
         }, help: "The three lights the zone lights everything with");
-        form.Slider("Saturation", lighting.AmbientSaturation, 0f, 5f,
-            value => _environment.Lighting =
-                _environment.Lighting with { AmbientSaturation = value },
-            help: "How colourful the ambient light is");
-        form.Slider("Temperature", lighting.AmbientTemperature, -2.5f, 2.5f,
-            value => _environment.Lighting =
-                _environment.Lighting with { AmbientTemperature = value },
-            help: "How warm or cold the ambient light is");
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Saturation",
+                cell => cell.Slider(
+                    "##env-light-saturation", lighting.AmbientSaturation,
+                    0f, 5f,
+                    value => _environment.Lighting =
+                        _environment.Lighting with
+                        {
+                            AmbientSaturation = value,
+                        }),
+                help: "How colourful the ambient light is");
+            cells.Cell(
+                "Temperature",
+                cell => cell.Slider(
+                    "##env-light-temperature", lighting.AmbientTemperature,
+                    -2.5f, 2.5f,
+                    value => _environment.Lighting =
+                        _environment.Lighting with
+                        {
+                            AmbientTemperature = value,
+                        }),
+                help: "How warm or cold the ambient light is");
+        });
+        // A world vignette measured off the camera: two decades of range whose
+        // whole effect lives in the first one, so the travel is exponential.
         form.Slider("Light distance", lighting.LightDistance, 0f, 100f,
             value => _environment.Lighting =
                 _environment.Lighting with { LightDistance = value },
-            help: "How far the zone's lighting reaches");
+            help: "How far the zone's lighting reaches",
+            marks: DistanceMarks,
+            scale: SliderScale.Log);
         // The reference UIs draw these three unidentified members rather than
         // hide them; they keep their reference names until someone names them.
-        form.Slider("Unknown 1", lighting.Unknown1, 0f, 10f,
-            value => _environment.Lighting =
-                _environment.Lighting with { Unknown1 = value },
-            help: "An unidentified lighting value the references still expose");
-        form.Slider("Unknown 2", lighting.Unknown2, 0f, 100f,
-            value => _environment.Lighting =
-                _environment.Lighting with { Unknown2 = value },
-            help: "An unidentified lighting value the references still expose");
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Unknown 1",
+                cell => cell.Slider(
+                    "##env-light-unknown-1", lighting.Unknown1, 0f, 10f,
+                    value => _environment.Lighting =
+                        _environment.Lighting with { Unknown1 = value }),
+                help: "An unidentified lighting value the references still "
+                    + "expose");
+            cells.Cell(
+                "Unknown 2",
+                cell => cell.Slider(
+                    "##env-light-unknown-2", lighting.Unknown2, 0f, 100f,
+                    value => _environment.Lighting =
+                        _environment.Lighting with { Unknown2 = value }),
+                help: "An unidentified lighting value the references still "
+                    + "expose");
+        });
         form.Slider("Unknown 4", lighting.Unknown4, 0f, 1f,
             value => _environment.Lighting =
                 _environment.Lighting with { Unknown4 = value },
@@ -516,28 +697,47 @@ public sealed class EnvironmentPane
                 Color = _environment.Fog.Color with { W = value },
             },
             help: "How strongly the fog colour applies");
+        // Distance is the case the range audit was called on: the scene
+        // changes across the first tens of units and nothing above about a
+        // hundred reads at all, so the 0..1000 both references state stays and
+        // the TRAVEL is exponential instead.
         form.Slider("Distance", fog.Distance, 0f, 1000f,
             value => _environment.Fog =
                 _environment.Fog with { Distance = value },
             format: "0",
-            help: "How far away the fog starts");
+            help: "How far away the fog starts",
+            marks: KilometreMarks,
+            scale: SliderScale.Log);
+        // 0..50 is Brio's; Ktisis states 0..100 for the same field. Extinction
+        // is exponential in thickness, which is why the lower ceiling AND the
+        // log travel — the top of this range is one flat wall either way.
         form.Slider("Thickness", fog.Thickness, 0f, 50f,
             value => _environment.Fog =
                 _environment.Fog with { Thickness = value },
-            help: "How dense the fog is once it starts");
+            help: "How dense the fog is once it starts",
+            marks: ThicknessMarks,
+            scale: SliderScale.Log);
+        // Brio states 0..10 for this field and Ktisis states 0..1 for the same
+        // offset. The wider ceiling is kept because a held value above 1 must
+        // stay reachable; the log travel gives Ktisis's band half the track.
         form.Slider("Fog opacity", fog.FogOpacity, 0f, 10f,
             value => _environment.Fog =
                 _environment.Fog with { FogOpacity = value },
-            help: "How much the fog hides what is behind it");
+            help: "How much the fog hides what is behind it",
+            marks: OpacityMarks,
+            scale: SliderScale.Log);
         form.Slider("Sky opacity", fog.SkyOpacity, 0f, 10f,
             value => _environment.Fog =
                 _environment.Fog with { SkyOpacity = value },
             help: "How much of the fog reaches the sky");
+        // A sky depth like Distance, and mapped like it.
         form.Slider("Sky smoothness", fog.SkySmoothness, 0f, 1000f,
             value => _environment.Fog =
                 _environment.Fog with { SkySmoothness = value },
             format: "0",
-            help: "How gradually the fog blends into the sky");
+            help: "How gradually the fog blends into the sky",
+            marks: KilometreMarks,
+            scale: SliderScale.Log);
     }
 
     // ── rain ─────────────────────────────────────────────────────────────
@@ -650,45 +850,86 @@ public sealed class EnvironmentPane
             "Let the game run the night sky. Changing any value below holds "
                 + "it for Poser.");
         var stars = _environment.Stars;
-        form.Slider("Stars", stars.StarCount, 0f, 20f,
-            value => _environment.Stars =
-                _environment.Stars with { StarCount = value },
-            help: "How many stars the night sky carries");
-        form.Slider("Star intensity", stars.StarIntensity, 0f, 2.5f,
-            value => _environment.Stars =
-                _environment.Stars with { StarIntensity = value },
-            help: "How brightly the stars burn");
-        form.Slider("Constellations", stars.ConstellationCount, 0f, 10f,
-            value => _environment.Stars =
-                _environment.Stars with { ConstellationCount = value },
-            help: "How many constellations the night sky carries");
-        form.Slider(
-            "Constellation intensity", stars.ConstellationIntensity, 0f, 2.5f,
-            value => _environment.Stars =
-                _environment.Stars with { ConstellationIntensity = value },
-            help: "How brightly the constellations burn");
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Stars",
+                cell => cell.Slider(
+                    "##env-star-count", stars.StarCount, 0f, 20f,
+                    value => _environment.Stars =
+                        _environment.Stars with { StarCount = value }),
+                help: "How many stars the night sky carries");
+            cells.Cell(
+                "Star intensity",
+                cell => cell.Slider(
+                    "##env-star-intensity", stars.StarIntensity, 0f, 2.5f,
+                    value => _environment.Stars =
+                        _environment.Stars with { StarIntensity = value }),
+                help: "How brightly the stars burn");
+        });
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Constellations",
+                cell => cell.Slider(
+                    "##env-constellation-count", stars.ConstellationCount,
+                    0f, 10f,
+                    value => _environment.Stars =
+                        _environment.Stars with
+                        {
+                            ConstellationCount = value,
+                        }),
+                help: "How many constellations the night sky carries");
+            // "Constellation intensity" overran the label column; it stands
+            // beside its own count, which names what it is the intensity of.
+            cells.Cell(
+                "Intensity",
+                cell => cell.Slider(
+                    "##env-constellation-intensity",
+                    stars.ConstellationIntensity, 0f, 2.5f,
+                    value => _environment.Stars =
+                        _environment.Stars with
+                        {
+                            ConstellationIntensity = value,
+                        }),
+                help: "How brightly the constellations burn");
+        });
         form.Slider("Galaxy intensity", stars.GalaxyIntensity, 0f, 10f,
             value => _environment.Stars =
                 _environment.Stars with { GalaxyIntensity = value },
             help: "How brightly the galaxy band shows");
-        form.ColorWells("Moon colour", wells =>
+        form.Cells(cells =>
         {
-            wells.Well("Moon", stars.MoonColor with { W = 1f },
-                value => _environment.Stars = _environment.Stars with
-                {
-                    MoonColor = Rgb(value, _environment.Stars.MoonColor.W),
-                });
-        }, help: "The colour the moon draws in");
-        form.Slider("Moon alpha", stars.MoonColor.W, 0f, 1f,
-            value => _environment.Stars = _environment.Stars with
-            {
-                MoonColor = _environment.Stars.MoonColor with { W = value },
-            },
-            help: "How strongly the moon colour applies");
-        form.Slider("Moon brightness", stars.MoonBrightness, 0f, 1f,
-            value => _environment.Stars =
-                _environment.Stars with { MoonBrightness = value },
-            help: "How brightly the moon shines");
+            cells.Cell(
+                "Moon colour",
+                cell => cell.ColorWell(
+                    "##env-moon-colour", stars.MoonColor with { W = 1f },
+                    value => _environment.Stars = _environment.Stars with
+                    {
+                        MoonColor = Rgb(
+                            value, _environment.Stars.MoonColor.W),
+                    }),
+                help: "The colour the moon draws in");
+            // The well edits RGB only, so the moon colour's own alpha keeps
+            // the cell beside it.
+            cells.Cell(
+                "Moon alpha",
+                cell => cell.Slider(
+                    "##env-moon-alpha", stars.MoonColor.W, 0f, 1f,
+                    value => _environment.Stars = _environment.Stars with
+                    {
+                        MoonColor =
+                            _environment.Stars.MoonColor with { W = value },
+                    }),
+                help: "How strongly the moon colour applies");
+            cells.Cell(
+                "Brightness",
+                cell => cell.Slider(
+                    "##env-moon-brightness", stars.MoonBrightness, 0f, 1f,
+                    value => _environment.Stars =
+                        _environment.Stars with { MoonBrightness = value }),
+                help: "How brightly the moon shines");
+        });
     }
 
     // ── wind ─────────────────────────────────────────────────────────────
@@ -725,12 +966,14 @@ public sealed class EnvironmentPane
                     + "stands"
                 : WaterUnavailable,
             disabled: !water);
-        form.Switch("Restore water on exit", _rendering.ResetWaterOnGPoseExit,
+        // Both lifetime labels are cut to what the label column holds; the
+        // subject rides the noun rather than the sentence.
+        form.Switch("Restore water", _rendering.ResetWaterOnGPoseExit,
             value => _rendering.ResetWaterOnGPoseExit = value,
             help: "Hand the water back to the game when GPose ends");
         // The environment sections' own lifetime rows live here rather than in
         // eight copies, one per section.
-        form.Switch("Restore environment on exit",
+        form.Switch("Restore sections",
             _environment.ResetSectionsOnGPoseExit,
             value => _environment.ResetSectionsOnGPoseExit = value,
             help: "Release every held environment section when GPose ends");
