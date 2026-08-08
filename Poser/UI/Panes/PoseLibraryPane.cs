@@ -1270,9 +1270,10 @@ public sealed class PoseLibraryPane
         {
             options.AsExpression = true;
         }
-        // The bone-filter menu governs library applies too — one filter,
-        // both surfaces.
-        return _files.ApplyCategoryFilter(options);
+        // The bone-filter menu governs POSE applies (the Brio-library-like
+        // path) — an auto-save restore is full-fidelity by contract and
+        // must not lose weapons to the filter's default exclusions.
+        return auto ? options : _files.ApplyCategoryFilter(options);
     }
 
     // ── the grid's actions ───────────────────────────────────────────────
