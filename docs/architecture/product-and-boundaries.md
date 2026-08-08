@@ -15,9 +15,11 @@ in the active UI or dependency closure.
   profile selectors, MCDF import/export ([features/files-and-transfer.md](
   ../features/files-and-transfer.md)), and outbound Open-in-Glamourer —
   through ONE integration port, the only allowed IPC surface. Animation
-  may run while posing.
+  may run while posing. The environment is a selectable scene entity:
+  time, weather, the eight holdable environment sections, water
+  rendering, and the festival slots.
 - Deferred (no dormant UI or registrations): animation
-  authoring, cameras, lights, environment, world objects, references,
+  authoring, cameras, lights, world objects, references,
   libraries/projects (no file library, scene format, thumbnails, or
   recent-file database), autosave, status/VFX, Character Select+ actor
   application (its public IPC has neither arbitrary-actor targeting nor a

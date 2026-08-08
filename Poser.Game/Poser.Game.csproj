@@ -16,6 +16,8 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Lighting\Data\gobos.csv" />
+    <!-- Curated festival names, phases and area exclusions (Brio's data file). -->
+    <EmbeddedResource Include="Data\Festivals.json" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Poser.Domain\Poser.Domain.csproj" />

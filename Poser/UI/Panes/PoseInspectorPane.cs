@@ -1985,22 +1985,11 @@ public class PoseInspectorPane
                     ? $"Apply the stashed pose to this actor. Stashed {_cleanPose.StashedAt:HH:mm:ss} UTC."
                     : "Nothing stashed yet");
         });
-        // Rest poses are constructive applies, so they sit with Edit and
-        // Transfer, above the destructive resets. A/T are Brio's embedded
-        // rest files (body only, rotation only). Reference pose has no
-        // button: its capture path is unproven in game (user 2026-08-08 —
-        // "freaks all the bones out") and stays hidden until reworked.
-        form.Actions("Rest pose", actions =>
-        {
-            actions.Button(
-                "A-pose",
-                () => _cleanPose.ApplyRestPose(skeleton.Actor, Files.RestPose.APose),
-                help: "Stand the body in the relaxed A-pose. Face, hair, ears, head, and weapons keep their current pose.");
-            actions.Button(
-                "T-pose",
-                () => _cleanPose.ApplyRestPose(skeleton.Actor, Files.RestPose.TPose),
-                help: "Stand the body in the outstretched T-pose. Face, hair, ears, head, and weapons keep their current pose.");
-        });
+        // No import-flavored controls in the rail — the user's rule
+        // (2026-08-08): rest-pose presets live with the import surfaces
+        // (actor menu now; the Brio-style import popup once it lands),
+        // never in the inspector. Reference pose stays UI-hidden until its
+        // capture path is proven in game.
         // All resets are ONE set — LAST, under Edit and Transfer. "All"
         // reaches far past the regions beside it, so it carries the Danger
         // variant to say so.

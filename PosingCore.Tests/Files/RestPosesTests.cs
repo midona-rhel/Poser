@@ -91,12 +91,11 @@ public class RestPosesTests
     }
 
     [Theory]
-    // Allowed: body, hands, legs, tail, ivcs, clothing, unknown ("other").
+    // Allowed: body, hands, legs, tail, clothing, unknown ("other").
     [InlineData("j_sebo_a", true)]
     [InlineData("n_hara", true)]
     [InlineData("j_ude_b_r", true)]
     [InlineData("n_sippo_a", true)]
-    [InlineData("iv_ko_c_l", true)]
     [InlineData("j_sk_s_a_l", true)]
     [InlineData("some_unknown_bone", true)]
     // Excluded: Brio BodyOptions' disabled categories + n_throw.
@@ -115,8 +114,32 @@ public class RestPosesTests
     [InlineData("j_buki_sebo_l", false)]   // weapon
     [InlineData("n_throw", false)]         // BoneFilter's built-in exclusion
     [InlineData("J_f_eyeprm_01_l", false)] // ex — capitalised in the game data
+    // Excluded past Brio: IVCS physics bones (the shipped files carry baked
+    // rotations for them; the physics sim fights the write in BOTH tools).
+    [InlineData("iv_ko_c_l", false)]
+    [InlineData("iv_shiri_l", false)]
+    [InlineData("ya_shiri_phys_l", false)]
     public void IsBodyScopeBone_MirrorsBrioBodyOptions(string bone, bool allowed)
     {
         Assert.Equal(allowed, RestPoses.IsBodyScopeBone(bone));
+    }
+
+    [Theory]
+    [InlineData(RestPose.APose)]
+    [InlineData(RestPose.TPose)]
+    public void Get_ExcludesIvcsPhysicsBones(RestPose pose)
+    {
+        var raw = RestPoses.LoadRaw(pose);
+        var scoped = RestPoses.Get(pose);
+
+        // The shipped Brio files DO carry IVCS entries — the exclusion has
+        // real work to do (this is the deviation that fixes Brio's own
+        // sideways-physics-bones defect).
+        Assert.Contains(raw.Bones.Keys, name =>
+            name.StartsWith("iv_", StringComparison.OrdinalIgnoreCase) ||
+            name.StartsWith("ya_", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(scoped.Bones.Keys, name =>
+            name.StartsWith("iv_", StringComparison.OrdinalIgnoreCase) ||
+            name.StartsWith("ya_", StringComparison.OrdinalIgnoreCase));
     }
 }

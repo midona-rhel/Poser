@@ -185,6 +185,7 @@ internal static class ServiceRegistration
         services.AddSingleton<AnimationPane>();
         services.AddSingleton<AppearancePane>();
         services.AddSingleton<LightPane>();
+        services.AddSingleton<EnvironmentPane>();
         services.AddSingleton<PoseLibraryPane>();
         services.AddSingleton<GraphicalBonePane>();
         services.AddSingleton<SkeletonOverlayPresentation>();

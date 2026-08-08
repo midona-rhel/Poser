@@ -1229,16 +1229,30 @@ public sealed class PoseLibraryPane
     /// survive a load. The FILES dialog keeps its own explicit "Reset first"
     /// checkbox for opt-in layering; its scope/expression drafts likewise
     /// never reach a library apply.</summary>
-    private PoseImportOptions BuildImportOptions()
+    private PoseImportOptions BuildImportOptions(string path)
     {
         bool auto = _type == LibraryType.AutoSaves;
-        return new PoseImportOptions
+        var options = new PoseImportOptions
         {
             ApplyPosition = auto ? _autoPosition : _posesPosition,
             ApplyRotation = auto ? _autoRotation : _posesRotation,
             ApplyScale = auto ? _autoScale : _posesScale,
             ResetBeforeImport = true,
         };
+        // Smart expression routing (Brio ResolveSmartImport): a face-only
+        // .pose can NEVER land through the body path — Dawntrail faces are
+        // posed through bone POSITIONS the body path masks — and the library
+        // has no import-type control, so such a file applies as an
+        // expression; the engine then forces every component exactly as
+        // Brio's ExpressionOptions does. The reset keeps expression scope:
+        // face bones, never the head.
+        if (path.EndsWith(".pose", StringComparison.OrdinalIgnoreCase) &&
+            PoseFile.Load(path) is { } file &&
+            PoseFileService.IsExpressionOnlyPose(file))
+        {
+            options.AsExpression = true;
+        }
+        return options;
     }
 
     // ── the grid's actions ───────────────────────────────────────────────
@@ -1337,7 +1351,7 @@ public sealed class PoseLibraryPane
         var result = _poseFacade.ImportPose(
             actor,
             _vm.Tiles[index].ThumbKey,
-            BuildImportOptions());
+            BuildImportOptions(_vm.Tiles[index].ThumbKey));
         _note = result.Success ? null : Failure(result);
     }
 
@@ -1376,7 +1390,7 @@ public sealed class PoseLibraryPane
         // the import.
         _pendingActor = spawned;
         _pendingPath = _vm.Tiles[index].ThumbKey;
-        _pendingOptions = BuildImportOptions();
+        _pendingOptions = BuildImportOptions(_pendingPath);
         _pendingFrames = 0;
         _note = null;
     }
