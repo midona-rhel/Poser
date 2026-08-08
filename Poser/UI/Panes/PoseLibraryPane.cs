@@ -270,7 +270,13 @@ public sealed class PoseLibraryPane
         _vm.OnSelectFolder = SelectFolder;
         _vm.OnToggleGroup = ToggleGroup;
         _vm.OnSelect = Select;
-        _vm.OnApplyTile = Apply;
+        // Every apply goes through the actor picker — one workflow, the
+        // target always explicit (a lone eligible actor skips the menu).
+        _vm.OnApplyTile = index =>
+        {
+            Select(index);
+            _applyMenuRequested = true;
+        };
         _vm.OnSpawnTile = Spawn;
         _vm.OnToggleFavorite = ToggleFavorite;
         _vm.OnTagFilter = TagFilter;
@@ -373,6 +379,11 @@ public sealed class PoseLibraryPane
             if (items.Count == 0)
             {
                 _note = "No actor to apply to.";
+                return;
+            }
+            if (items.Count == 1)
+            {
+                ApplyTo(_vm.Selected, _applyTargets[0]);
                 return;
             }
             Crystarium.FloatingMenu.Open(
@@ -1164,19 +1175,9 @@ public sealed class PoseLibraryPane
             return;
         }
 
-        // One noun everywhere: the count switching words between views read
-        // as the count meaning different things.
-        if (_captionCount != _vm.Visible.Count
-            || _captionScanning != scanning)
-        {
-            _captionCount = _vm.Visible.Count;
-            _captionScanning = scanning;
-            _caption = scanning
-                ? ScanningText
-                : Count(_captionCount)
-                    + (_captionCount == 1 ? " item" : " items");
-        }
-        _vm.Status = _caption;
+        // No counter (user: pointless beside the single action row) — the
+        // caption carries only the scan state, and notes above win.
+        _vm.Status = scanning ? ScanningText : string.Empty;
     }
 
     // ── the target actor ─────────────────────────────────────────────────
@@ -1206,14 +1207,21 @@ public sealed class PoseLibraryPane
     /// names changes — the same discipline as the footer count.</summary>
     private void SyncTarget()
     {
-        var actor = TargetActor();
-        // A pose is applied to a skeleton; an actor without one is not a
-        // target, exactly as the actor menu's own import action states. A
-        // character file dresses the actor instead and needs no skeleton.
-        bool can = _type == LibraryType.Mcdf
-            ? actor is not null
-            : actor is { HasSkeleton: true };
+        // The picker chooses the target, so applying only needs an
+        // ELIGIBLE ACTOR TO EXIST — the sidebar selection is irrelevant
+        // (it used to gate the button dead whenever the library itself
+        // held focus).
+        bool can = false;
+        foreach (var candidate in _actors.Actors)
+        {
+            if (_type == LibraryType.Mcdf || candidate.HasSkeleton)
+            {
+                can = true;
+                break;
+            }
+        }
         _vm.CanApply = can;
+        var actor = TargetActor();
 
         // A character file is applied to an actor that already exists; there is
         // no "spawn and dress" path in v1.

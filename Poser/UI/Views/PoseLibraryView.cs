@@ -479,7 +479,6 @@ public static class PoseLibraryView
         DrawBand(vm, rects.Band, scale, theme);
         DrawRail(vm, rects.Rail, scale, theme);
         DrawBody(vm, rects.Body, scale, theme);
-        DrawToggleRow(vm, toggles, scale);
         DrawActionRow(vm, rects.Footer, scale, theme);
         DrawMenu(vm);
 
@@ -514,9 +513,9 @@ public static class PoseLibraryView
         float bandBottom = MathF.Min(max.Y, origin.Y + BandHeight * scale);
         float rowTop = MathF.Max(
             bandBottom, max.Y - theme.Floating.ModalBarHeight * scale);
-        float togglesTop = vm.ShowImportToggles
-            ? MathF.Max(bandBottom, rowTop - ToggleRowHeight * scale)
-            : rowTop;
+        // ONE bottom row: the import toggles share the action bar
+        // (user: everything on one row), so no second band exists.
+        float togglesTop = rowTop;
         // The rail never takes more than half the pane: a narrow workspace
         // keeps a grid rather than becoming a folder list.
         float railWidth = vm.ShowRail
@@ -620,6 +619,15 @@ public static class PoseLibraryView
     private static void Actions(
         PoseLibraryViewModel vm, Crystarium.ActionBarScope scope)
     {
+        // The import components and the two menus lead the ONE bottom row.
+        if (vm.ShowImportToggles)
+        {
+            scope.Checkbox("Position", vm.ImportPosition, vm.PositionToggle!);
+            scope.Checkbox("Rotation", vm.ImportRotation, vm.RotationToggle!);
+            scope.Checkbox("Scale", vm.ImportScale, vm.ScaleToggle!);
+        }
+        if (vm.ShowImportMenus)
+            scope.Button("Options", vm.ImportMenuClick!);
         bool none = vm.Selected < 0 || vm.Selected >= vm.Tiles.Count;
         // Default control scale, the same the toggle row's Options button
         // wears (user: Comfortable read oversized here). Configuring

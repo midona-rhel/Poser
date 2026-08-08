@@ -596,11 +596,14 @@ public class MainWindow : Window
     }
 
     /// <summary>Puts the workspace into library mode. Openers only — a second
-    /// request must not toggle a library the user is already looking at — and
-    /// the actor selection is deliberately left alone.</summary>
+    /// request must not toggle a library the user is already looking at. The
+    /// selection CLEARS: library and scene selection are exclusive (user
+    /// 2026-08-09) — row clicks already exit the library, and entering it now
+    /// releases the scene the same way.</summary>
     public void ShowLibrary()
     {
         _libraryMode = true;
+        _selection.Clear();
         // Both switches can happen from a sidebar click, which occurs while
         // AppShellView is already drawing: the viewport contract moves in the
         // same breath as the content selection, so the remainder of the frame
