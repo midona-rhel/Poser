@@ -79,10 +79,12 @@ public sealed class PoseImportCapture : IDisposable
     }
 
     /// <summary>Which transitive batch the pending import is waiting on:
-    /// the plan's file writes, or the post-reparent face reconcile.</summary>
+    /// the plan's file writes, the expression import's head restore, or the
+    /// post-reparent face reconcile.</summary>
     private enum ImportStage
     {
         Apply,
+        HeadRestore,
         Reconcile,
     }
 
@@ -112,6 +114,13 @@ public sealed class PoseImportCapture : IDisposable
         /// (session teardown restores animation state wholesale).</summary>
         public Action<bool>? OnFinished;
         public ImportStage Stage = ImportStage.Apply;
+        /// <summary>Expression imports only: every j_kao instance the plan
+        /// writes, with its PRE-import post-reparent absolute — Brio's
+        /// tempPose (PosingCapability.cs:194), reduced to the one bone its
+        /// expressionPhase2 actually uses (PoseImporter.cs:11-26). The head
+        /// lands transiently in the apply stage so the face computes its
+        /// deltas in the FILE's head space; this restores it.</summary>
+        public List<(IBone Bone, TransformTargetId Target, Transform PreImport)>? HeadRestores;
         /// <summary>Whether the plan wrote any Character-slot bone of a
         /// non-zero partial — the only writes whose export/basis spaces can
         /// disagree, so the only imports a reconcile can converge.</summary>
@@ -163,7 +172,8 @@ public sealed class PoseImportCapture : IDisposable
     public GestureResult Begin(
         PoseImportPlan plan,
         string description,
-        Action<bool>? onFinished = null)
+        Action<bool>? onFinished = null,
+        bool expression = false)
     {
         if (!_framework.IsInFrameworkUpdateThread)
             return GestureResult.Fail("Pose import must run on the framework thread.");
@@ -250,6 +260,15 @@ public sealed class PoseImportCapture : IDisposable
                 import.CharacterSkeleton ??= bone.Skeleton;
                 if (bone.PartialId != 0)
                     import.WroteFacePartial = true;
+                // The head's pre-import absolute, captured NOW — the cached
+                // post-reparent value of the last settled pass, Brio's
+                // tempPose moment. Only instances the plan writes restore:
+                // a file without j_kao never moved the head, so unlike
+                // Brio's blind RemoveLastStack (which would eat a USER head
+                // stack in that case) the restore stage simply skips.
+                if (expression && bone.BoneName == "j_kao")
+                    (import.HeadRestores ??= new()).Add(
+                        (bone, target, bone.LastRawTransform));
             }
         }
 
@@ -371,10 +390,15 @@ public sealed class PoseImportCapture : IDisposable
             // Propagation stays All (Brio PoseImporter.cs:35, 3rd argument):
             // an imported bone carries its children with it exactly as the
             // pose it replaced did. The mask applies to the delta only.
+            // forceNewStack matches Brio's PoseImporter (every call passes
+            // true): each import write is its OWN stack entry, which is what
+            // makes the expression head restore's RemoveLastStack pop
+            // exactly the phase-1 head write and nothing else.
             if (poseInfo.Apply(
                     desired, basis,
                     Poser.Core.TransformComponents.All,
-                    entry.Components) == null)
+                    entry.Components,
+                    forceNewStack: true) == null)
             {
                 import.Failure ??=
                     $"{bone.BoneName} produced a non-finite import delta.";
@@ -414,26 +438,110 @@ public sealed class PoseImportCapture : IDisposable
         if (!known || !complete || import.Completing)
             return;
         import.Completing = true;
-        if (import.Stage == ImportStage.Apply)
-            // The apply batches have run; Brio's reconcile window opens 4
-            // ticks after its import (PosingCapability.cs:249-250) — see
-            // ReconcileDelayTicks. BeginReconcile decides whether a second
-            // batch is due or the import completes as-is.
-            _framework.RunOnTick(
-                () => BeginReconcile(import.Generation),
-                delayTicks: ReconcileDelayTicks);
-        else
-            _framework.RunOnTick(() => Complete(import.Generation));
+        switch (import.Stage)
+        {
+            case ImportStage.Apply:
+                // The apply batches have run. An expression import restores
+                // the head first — Brio schedules its phase 2 at +4 ticks
+                // (PosingCapability.cs:249-250, the same delay its reconcile
+                // uses); everything else goes straight to the reconcile
+                // decision at the same delay.
+                _framework.RunOnTick(
+                    import.HeadRestores is { Count: > 0 }
+                        ? () => BeginHeadRestore(import.Generation)
+                        : () => BeginReconcile(import.Generation),
+                    delayTicks: ReconcileDelayTicks);
+                break;
+            case ImportStage.HeadRestore:
+                // Brio's phase 2 runs with generateSnapshot: true, so its
+                // Snapshot — the reconcile driver — fires another 4 ticks
+                // after the restore pass (PosingCapability.cs:308-309,
+                // :249-250).
+                _framework.RunOnTick(
+                    () => BeginReconcile(import.Generation),
+                    delayTicks: ReconcileDelayTicks);
+                break;
+            default:
+                _framework.RunOnTick(() => Complete(import.Generation));
+                break;
+        }
     }
 
     private void OnTimeout(long generation)
     {
         if (_pending is not { } import || import.Generation != generation)
             return;
-        import.Failure ??= import.Stage == ImportStage.Apply
-            ? "The import never reached an apply pass."
-            : "The face reconcile never reached an apply pass.";
+        import.Failure ??= import.Stage switch
+        {
+            ImportStage.Apply => "The import never reached an apply pass.",
+            ImportStage.HeadRestore =>
+                "The head restore never reached an apply pass.",
+            _ => "The face reconcile never reached an apply pass.",
+        };
         Complete(generation);
+    }
+
+    /// <summary>
+    /// Brio's expressionPhase2 (PosingCapability.cs:233-247 with
+    /// PoseImporter.cs:11-26), the middle stage of its expression dance: the
+    /// apply stage moved the head to the FILE's head so the face landed
+    /// face-local; now the head comes back. Per written j_kao instance, the
+    /// phase-1 head stack pops (RemoveLastStack — exact because import
+    /// writes are forceNewStack, like Brio's), and a POSITION-only restore
+    /// to the pre-import absolute registers as the next batch, diffed
+    /// in-pass against the post-removal basis exactly like any import
+    /// write. Head rotation reverts through the pop alone; the +4-tick
+    /// reconcile then re-expresses the face against the restored head.
+    /// </summary>
+    private void BeginHeadRestore(long generation)
+    {
+        if (_pending is not { } import || import.Generation != generation)
+            return;
+
+        var applied = import.Failure == null;
+        if (applied)
+        {
+            foreach (var slot in import.Slots)
+                applied &= slot.Executed;
+        }
+        if (!applied || import.HeadRestores is not { Count: > 0 } restores ||
+            import.CharacterSkeleton is not { } skeleton)
+        {
+            Complete(generation);
+            return;
+        }
+
+        var writes = new Dictionary<(int, int),
+            (TransformTargetId, Transform, TransformComponents)>(restores.Count);
+        foreach (var (bone, target, preImport) in restores)
+        {
+            // Only an instance the apply stage actually wrote carries a
+            // phase-1 stack to pop; the near-identity early-out means a
+            // head already at the file's pose gained none.
+            if (!import.Written.Contains(target))
+                continue;
+            _posing.GetPoseInfo(skeleton)
+                .GetPoseInfo(bone.BoneName, bone.PartialId)
+                .RemoveLastInteractiveStack();
+            writes[(bone.PartialId, bone.BoneIndex)] =
+                (target, preImport, TransformComponents.Position);
+        }
+
+        if (writes.Count == 0)
+        {
+            // No instance was moved — nothing to restore, straight to the
+            // reconcile decision.
+            BeginReconcile(generation);
+            return;
+        }
+
+        var restore = new SlotImport { Skeleton = skeleton, Writes = writes };
+        import.Slots = new List<SlotImport> { restore };
+        import.Stage = ImportStage.HeadRestore;
+        import.Completing = false;
+        _posing.RegisterTransitiveAction(
+            restore.Skeleton,
+            (bone, poseInfo) => ApplyBone(import, restore, bone, poseInfo));
     }
 
     /// <summary>

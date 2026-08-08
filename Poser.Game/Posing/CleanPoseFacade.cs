@@ -335,7 +335,11 @@ public sealed class CleanPoseFacade
                     {
                         if (!freeze || !success)
                             _framework.RunOnTick(RestorePriorSpeed, delayTicks: 2);
-                    });
+                    },
+                    // Expression imports run Brio's head dance: the engine
+                    // captures the pre-import head at arm time and restores
+                    // it after the apply stage.
+                    expression: options.AsExpression);
                 if (!begun.Success)
                 {
                     _log.Warning(
