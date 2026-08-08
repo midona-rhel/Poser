@@ -270,6 +270,14 @@ public sealed class PoseLibraryViewModel
     public Action<int>? OnSpawnTile;
     public Action<int>? OnToggleFavorite;
 
+    /// <summary>The footer primary: opens the apply-target actor picker.</summary>
+    public Action? OnApplyMenu;
+
+    /// <summary>The LIVE pane width while the grid is resize-stepped; the
+    /// bar rows and rules track this so right-aligned clusters do not jump
+    /// between steps. Zero means "same as the handed size".</summary>
+    public float ChromeWidth;
+
     /// <summary>A tag chip; null clears the filter.</summary>
     public Action<string?>? OnTagFilter;
 
@@ -296,6 +304,7 @@ public sealed class PoseLibraryViewModel
     internal Action<bool>? ScaleToggle;
     internal Action? ImportMenuClick;
     internal Action? BoneFilterClick;
+    internal Action? ApplyMenuClick;
 
     // The grid's band list and the clipper's slot map — the ShellSidebar cache,
     // held on the model because the view itself is static. Rebuilt only when
@@ -461,8 +470,12 @@ public static class PoseLibraryView
         vm.ScaleToggle ??= value => vm.OnImportScale?.Invoke(value);
         vm.ImportMenuClick ??= () => vm.OnImportMenu?.Invoke();
         vm.BoneFilterClick ??= () => vm.OnBoneFilterMenu?.Invoke();
+        vm.ApplyMenuClick ??= () => vm.OnApplyMenu?.Invoke();
 
-        var rects = Bands(vm, origin, size, scale, theme, out var toggles);
+        float chromeMaxX = origin.X
+            + (vm.ChromeWidth > 0f ? vm.ChromeWidth : size.X);
+        var rects = Bands(
+            vm, origin, size, scale, theme, chromeMaxX, out var toggles);
         DrawBand(vm, rects.Band, scale, theme);
         DrawRail(vm, rects.Rail, scale, theme);
         DrawBody(vm, rects.Body, scale, theme);
@@ -490,8 +503,12 @@ public static class PoseLibraryView
         Vector2 size,
         float scale,
         Theme theme,
+        float chromeMaxX,
         out WindowFrameRect toggles)
     {
+        // The GRID lives at the (possibly stepped) handed width; the bar
+        // rows and their rules track the LIVE pane edge, so the right-
+        // aligned clusters stop jumping between resize steps.
         var max = origin + size;
         float rule = MathF.Max(1f, scale);
         float bandBottom = MathF.Min(max.Y, origin.Y + BandHeight * scale);
@@ -510,11 +527,11 @@ public static class PoseLibraryView
         uint separator = Packed(theme.FormSeparator);
         draw.AddRectFilled(
             new Vector2(origin.X, bandBottom - rule),
-            new Vector2(max.X, bandBottom),
+            new Vector2(chromeMaxX, bandBottom),
             separator);
         draw.AddRectFilled(
             new Vector2(origin.X, togglesTop),
-            new Vector2(max.X, togglesTop + rule),
+            new Vector2(chromeMaxX, togglesTop + rule),
             separator);
 
         var rail = new WindowFrameRect(
@@ -532,11 +549,11 @@ public static class PoseLibraryView
 
         toggles = new WindowFrameRect(
             new Vector2(origin.X, togglesTop + rule),
-            new Vector2(max.X, rowTop));
+            new Vector2(chromeMaxX, rowTop));
         return new WindowFrameRects
         {
             Band = new WindowFrameRect(
-                origin, new Vector2(max.X, bandBottom - rule)),
+                origin, new Vector2(chromeMaxX, bandBottom - rule)),
             Rail = rail,
             Body = new WindowFrameRect(
                 new Vector2(origin.X + railWidth, bandBottom),
@@ -545,7 +562,7 @@ public static class PoseLibraryView
                 new Vector2(
                     origin.X,
                     togglesTop < rowTop ? rowTop : rowTop + rule),
-                max),
+                new Vector2(chromeMaxX, max.Y)),
         };
     }
 
@@ -604,22 +621,23 @@ public static class PoseLibraryView
         PoseLibraryViewModel vm, Crystarium.ActionBarScope scope)
     {
         bool none = vm.Selected < 0 || vm.Selected >= vm.Tiles.Count;
-        // Configuring sources belongs where the library is, not only in the
-        // empty state a user with sources never sees.
+        // Default control scale, the same the toggle row's Options button
+        // wears (user: Comfortable read oversized here). Configuring
+        // sources belongs where the library is, not only in the empty
+        // state a user with sources never sees.
         scope.Button(
             "Add source",
-            vm.SettingsClick!,
-            style: ControlStyle.Comfortable);
+            vm.SettingsClick!);
         scope.Button(
             "Spawn as new",
             vm.SpawnClick!,
-            disabled: none || !vm.CanSpawn,
-            style: ControlStyle.Comfortable);
+            disabled: none || !vm.CanSpawn);
+        // The primary opens the ACTOR PICKER — the pose applies to whoever
+        // is chosen there, not silently to the selection.
         scope.Button(
             vm.ApplyLabel,
-            vm.ApplyClick!,
+            vm.ApplyMenuClick!,
             disabled: none || !vm.CanApply,
-            style: ControlStyle.Comfortable,
             variant: ButtonVariant.Primary);
     }
 

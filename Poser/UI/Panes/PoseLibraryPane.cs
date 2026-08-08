@@ -105,7 +105,10 @@ public sealed class PoseLibraryPane
     private readonly ActorIntegrationSession _integration;
     private readonly IAutoSaveService _autoSave;
     private readonly PoseFileInspectorSection _files;
+    private readonly IActorManager _actors;
     private readonly PoseLibraryViewModel _vm = new();
+    private bool _applyMenuRequested;
+    private readonly List<IActor> _applyTargets = new();
 
     /// <summary>Which library the tabs are showing. SESSION state: it is a
     /// browsing mode, not a preference, so it is never persisted and every
@@ -248,7 +251,8 @@ public sealed class PoseLibraryPane
         StableBindingRegistry bindings,
         ActorIntegrationSession integration,
         IAutoSaveService autoSave,
-        PoseFileInspectorSection files)
+        PoseFileInspectorSection files,
+        IActorManager actors)
     {
         _config = config;
         _library = library;
@@ -260,6 +264,7 @@ public sealed class PoseLibraryPane
         _integration = integration;
         _autoSave = autoSave;
         _files = files;
+        _actors = actors;
 
         _vm.OnQuery = next => _vm.Query = next;
         _vm.OnSelectFolder = SelectFolder;
@@ -280,6 +285,7 @@ public sealed class PoseLibraryPane
         // belong to the actor part (user rule).
         _vm.OnImportMenu = () => _files.RequestImportMenu(withPresets: false);
         _vm.OnBoneFilterMenu = () => _files.RequestBoneFilterMenu();
+        _vm.OnApplyMenu = () => _applyMenuRequested = true;
         _vm.OnOpenSettings = () => OnSettingsRequested?.Invoke();
         _vm.ResolveThumbnail = ResolveThumbnail;
         // Spawning needs no selection and no scene state; the service answers
@@ -336,7 +342,46 @@ public sealed class PoseLibraryPane
         SyncImportToggles();
         SyncStatus();
 
+        // The grid reflows at resize steps; the bar rows track the live
+        // width through ChromeWidth so their clusters do not jump.
+        _vm.ChromeWidth = size.X;
         PoseLibraryView.Draw(_vm, origin, StepResize(size));
+        DrawApplyMenu();
+    }
+
+    /// <summary>The footer primary's actor picker: every scene actor
+    /// (skeleton-bearing for pose applies), applied-to on pick — the pose
+    /// goes to whoever is CHOSEN, never silently to the selection.</summary>
+    private void DrawApplyMenu()
+    {
+        if (_applyMenuRequested)
+        {
+            _applyMenuRequested = false;
+            _applyTargets.Clear();
+            var items = new List<ContextMenuItem>();
+            foreach (var actor in _actors.Actors)
+            {
+                bool eligible = _type == LibraryType.Mcdf || actor.HasSkeleton;
+                if (!eligible)
+                    continue;
+                _applyTargets.Add(actor);
+                string name = _bindings.GetActorId(actor) is { } id
+                    ? _config.GetDisplayName(id.LogicalId, Clean(actor.Name))
+                    : Clean(actor.Name);
+                items.Add(new ContextMenuItem(name, TablerIcon.UserPlus));
+            }
+            if (items.Count == 0)
+            {
+                _note = "No actor to apply to.";
+                return;
+            }
+            Crystarium.FloatingMenu.Open(
+                "##library-apply-target", ImGui.GetMousePos(), items.ToArray());
+        }
+
+        int clicked = Crystarium.FloatingMenu.Draw("##library-apply-target");
+        if (clicked >= 0 && clicked < _applyTargets.Count)
+            ApplyTo(_vm.Selected, _applyTargets[clicked]);
     }
 
     /// <summary>
@@ -1181,9 +1226,9 @@ public sealed class PoseLibraryPane
             return;
         _targetId = id;
         _targetName = name;
-        _vm.ApplyLabel = id is { } value
-            ? "Apply to " + _config.GetDisplayName(value.LogicalId, Clean(name))
-            : "Apply";
+        // The primary opens the actor picker, so it no longer names the
+        // selection.
+        _vm.ApplyLabel = "Apply to";
     }
 
     /// <summary>Strips the raw object-index suffix ("Name (201)") the scene
@@ -1367,6 +1412,25 @@ public sealed class PoseLibraryPane
         if (TargetActor() is not { HasSkeleton: true } actor)
         {
             _note = "Select an actor to apply a pose to.";
+            return;
+        }
+        ApplyTo(index, actor);
+    }
+
+    /// <summary>The one apply: a tile onto an EXPLICIT actor — the picker's
+    /// choice or the double-click path's selection target.</summary>
+    private void ApplyTo(int index, IActor actor)
+    {
+        if (index < 0 || index >= _vm.Tiles.Count)
+            return;
+        if (_type == LibraryType.Mcdf)
+        {
+            ApplyCharacterFile(index);
+            return;
+        }
+        if (!actor.HasSkeleton)
+        {
+            _note = "That actor has no skeleton to pose.";
             return;
         }
         var result = _poseFacade.ImportPose(
