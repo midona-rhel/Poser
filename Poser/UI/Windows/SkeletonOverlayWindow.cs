@@ -696,10 +696,6 @@ public class SkeletonOverlayWindow : Window
     // Brio's light overlay (itself after Stagehand): a handle dot for every
     // light, and the shape of what the SELECTED light actually illuminates.
 
-    /// <summary>The unit the small unselected marks are sized in — Brio's own
-    /// hit-test radius, in world metres.</summary>
-    private const float LightHandleWorld = 0.25f;
-
     private void DrawLights(
         ImDrawListPtr drawList,
         Vector2 viewportPos,
@@ -751,10 +747,16 @@ public class SkeletonOverlayWindow : Window
         ((color >> 16) & 0xFF) / 255f,
         ((color >> 24) & 0xFF) / 255f);
 
-    /// <summary>The per-kind outline. Unselected lights carry only the small
-    /// mark; the full extent — range rings, the cone, the panel's throw — is
-    /// the SELECTED light's, because every light drawing its range at once is
-    /// unreadable.</summary>
+    /// <summary>How far the always-on facing indicator reaches, in world
+    /// metres — the handle's own order of magnitude, so it never competes with
+    /// the selected light's extents.</summary>
+    private const float LightFacingWorld = 0.35f;
+
+    /// <summary>The per-kind outline. EVERY light carries a small mark saying
+    /// which way it faces — a light that points the wrong way is otherwise
+    /// invisible until it is selected — while the full extent (range rings,
+    /// the throw cone, the panel's spread) stays the SELECTED light's alone,
+    /// because every light drawing its range at once is unreadable.</summary>
     private void DrawLightShape(
         ImDrawListPtr drawList,
         Vector2 viewportPos,
@@ -763,46 +765,39 @@ public class SkeletonOverlayWindow : Window
         Vector4 color)
     {
         bool selected = light.IsSelected;
-        float thickness = selected ? 2f : 1f;
         var position = light.Transform.Position;
         var rotation = light.Transform.Rotation;
         var localX = Vector3.Transform(Vector3.UnitX, rotation);
         var localY = Vector3.Transform(Vector3.UnitY, rotation);
         var localZ = Vector3.Transform(Vector3.UnitZ, rotation);
         float range = live.Range;
+        // A light that is switched off still says which way it faces, quietly.
+        var facing = live.IsOn ? color : color with { W = color.W * 0.35f };
 
         switch (live.Kind)
         {
             case LightKind.Directional:
             {
                 // A directional light has no position that means anything, so
-                // it reads as three parallel strokes along its own direction.
-                var halfX = localX * LightHandleWorld;
-                var halfY = localY * LightHandleWorld;
-                var halfZ = localZ * LightHandleWorld;
-                Span<Vector3> points =
-                [
-                    new(0.3f, 0.5f, 0f),
-                    new(0.6f, -0.2f, 0f),
-                    new(-0.4f, 0.1f, 0f),
-                ];
-                for (int i = 0; i < points.Length; i++)
-                {
-                    var point = points[i];
-                    DrawWorldLine(
-                        drawList, viewportPos,
-                        position + point.X * halfX + point.Y * halfY - halfZ,
-                        position + point.X * halfX + point.Y * halfY + halfZ,
-                        thickness, color);
-                }
+                // it reads as a ray: one arrow along its direction, flanked by
+                // two parallel strokes.
+                DrawWorldArrow(
+                    drawList, viewportPos, position, localZ, localX, localY,
+                    LightFacingWorld, 1.5f, facing);
+                var side = Vector3.Normalize(localX) * (LightFacingWorld * 0.5f);
+                var reach = Vector3.Normalize(localZ) * (LightFacingWorld * 0.8f);
+                DrawWorldLine(
+                    drawList, viewportPos,
+                    position + side, position + side + reach, 1f, facing);
+                DrawWorldLine(
+                    drawList, viewportPos,
+                    position - side, position - side + reach, 1f, facing);
                 break;
             }
             case LightKind.Point:
             {
-                float radius = LightHandleWorld * 0.55f;
-                DrawWorldCircle(drawList, viewportPos, position, localX, localY, radius, thickness, color);
-                DrawWorldCircle(drawList, viewportPos, position, localY, localZ, radius, thickness, color);
-                DrawWorldCircle(drawList, viewportPos, position, localZ, localX, radius, thickness, color);
+                // Omnidirectional: there is no facing to indicate, so the
+                // handle dot is the whole unselected mark.
                 if (selected)
                 {
                     DrawWorldCircle(drawList, viewportPos, position, localX, localY, range, 2f, color);
@@ -814,6 +809,9 @@ public class SkeletonOverlayWindow : Window
             case LightKind.Spot:
             {
                 float cone = 0.5f * float.DegreesToRadians(live.SpotAngle);
+                DrawWorldCone(
+                    drawList, viewportPos, position, localX, localY, localZ,
+                    cone, LightFacingWorld, 1f, facing);
                 if (selected)
                 {
                     DrawWorldCone(
@@ -825,25 +823,26 @@ public class SkeletonOverlayWindow : Window
                             live.SpotAngle + live.FalloffAngle),
                         range, 1f, color with { W = color.W * 0.4f });
                 }
-                else
-                {
-                    DrawWorldCone(
-                        drawList, viewportPos, position, localX, localY, localZ,
-                        cone, LightHandleWorld * 0.85f, 1f, color);
-                }
                 break;
             }
             case LightKind.Area:
             {
-                var halfX = localX * 0.5f;
-                var halfY = localY * 0.5f;
-                DrawWorldQuad(drawList, viewportPos, position, halfX, halfY, thickness, color);
-                DrawWorldLine(
+                // The indicator is the panel in miniature plus its normal; the
+                // selected light's own panel is four times the size, so the two
+                // never read as one shape.
+                var facingHalfX = localX * (LightFacingWorld * 0.5f);
+                var facingHalfY = localY * (LightFacingWorld * 0.5f);
+                DrawWorldQuad(
                     drawList, viewportPos, position,
-                    position + Vector3.Normalize(localZ) * LightHandleWorld,
-                    thickness, color);
+                    facingHalfX, facingHalfY, 1f, facing);
+                DrawWorldArrow(
+                    drawList, viewportPos, position, localZ, localX, localY,
+                    LightFacingWorld, 1f, facing);
                 if (!selected)
                     break;
+                var halfX = localX * 0.5f;
+                var halfY = localY * 0.5f;
+                DrawWorldQuad(drawList, viewportPos, position, halfX, halfY, 2f, color);
                 var skew = live.AreaAngle;
                 var skewVector =
                     Vector3.Normalize(localX) * range *
@@ -872,6 +871,28 @@ public class SkeletonOverlayWindow : Window
                 viewportPos + endScreen,
                 ImGui.ColorConvertFloat4ToU32(color),
                 thickness);
+    }
+
+    /// <summary>A shaft with four barbs, two per side axis: an arrow drawn on
+    /// one axis alone collapses to a line from half the angles a free camera
+    /// can take, and the facing mark has to read from all of them.</summary>
+    private void DrawWorldArrow(
+        ImDrawListPtr drawList, Vector2 viewportPos, Vector3 origin,
+        Vector3 direction, Vector3 sideOne, Vector3 sideTwo, float length,
+        float thickness, Vector4 color)
+    {
+        var axis = Vector3.Normalize(direction);
+        var tip = origin + axis * length;
+        DrawWorldLine(drawList, viewportPos, origin, tip, thickness, color);
+
+        float barb = length * 0.3f;
+        var shoulder = tip - axis * barb;
+        var spreadOne = Vector3.Normalize(sideOne) * (barb * 0.6f);
+        var spreadTwo = Vector3.Normalize(sideTwo) * (barb * 0.6f);
+        DrawWorldLine(drawList, viewportPos, tip, shoulder + spreadOne, thickness, color);
+        DrawWorldLine(drawList, viewportPos, tip, shoulder - spreadOne, thickness, color);
+        DrawWorldLine(drawList, viewportPos, tip, shoulder + spreadTwo, thickness, color);
+        DrawWorldLine(drawList, viewportPos, tip, shoulder - spreadTwo, thickness, color);
     }
 
     private void DrawWorldQuad(

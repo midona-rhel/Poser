@@ -52,6 +52,7 @@ public sealed class LightPane
     private bool _openTransform = true;
     private bool _openFile = true;
     private bool _openActions = true;
+    private bool _openPlacement = true;
 
     /// <summary>The gobo library's visual surface: a row is the texture's own
     /// thumbnail beside its name.</summary>
@@ -135,15 +136,16 @@ public sealed class LightPane
     }
 
     /// <summary>
-    /// Pumped every frame by the window, not by <see cref="Draw"/>: the two
-    /// dialogs must survive a tab switch, and the pending import has to
-    /// resolve while no light is selected — the frame in which
-    /// <see cref="Draw"/> never runs.
+    /// Pumped every frame by the window, not by one of the three tab entry
+    /// points: the dialogs and the pickers must survive a tab switch, and the
+    /// pending import has to resolve while no light is selected — the frame in
+    /// which no tab of this pane runs at all.
     /// </summary>
     public void DrawBrowsers()
     {
         _saveBrowser.Draw();
         _loadBrowser.Draw();
+        DrawPickers();
 
         if (_pendingSelect is { } imported &&
             _bindings.GetLightId(imported) is { } lightId)
@@ -171,14 +173,67 @@ public sealed class LightPane
         });
     }
 
-    public void Draw(Vector2 origin, Vector2 size)
+    /// <summary>
+    /// The Light tab: what the light IS and what is done with it as a whole —
+    /// emission, the mask it projects through, its file, and the two
+    /// lifetime actions.
+    /// </summary>
+    public void DrawLight(Vector2 origin, Vector2 size) =>
+        DrawTab("light", origin, size, (page, _, light) =>
+        {
+            // The rule is a divider BETWEEN sections, so the page's first
+            // section draws neither the rule nor the margin above it.
+            page.Section("GENERAL", _openGeneral, next => _openGeneral = next,
+                form => GeneralRows(form, light),
+                divider: false);
+            page.Section("LIGHT", _openLight, next => _openLight = next,
+                form => LightRows(form, light));
+            page.Section("FILE", _openFile, next => _openFile = next,
+                form => FileRows(form, light));
+            page.Section("ACTIONS", _openActions, next => _openActions = next,
+                form => ActionRows(form, light));
+        });
+
+    /// <summary>The Shadows tab: everything the light casts, and nothing
+    /// else.</summary>
+    public void DrawShadows(Vector2 origin, Vector2 size) =>
+        DrawTab("light-shadows", origin, size, (page, _, light) =>
+        {
+            page.Section("SHADOWS", _openShadows, next => _openShadows = next,
+                form => ShadowRows(form, light),
+                divider: false);
+        });
+
+    /// <summary>The Transform tab: where the light is. The attach target
+    /// belongs here because attaching OWNS the transform, and "move to camera"
+    /// belongs here because it is one more way of writing it.</summary>
+    public void DrawTransform(Vector2 origin, Vector2 size) =>
+        DrawTab("light-transform", origin, size, (page, lightId, light) =>
+        {
+            page.Section("TRANSFORM", _openTransform, next => _openTransform = next,
+                form => TransformRows(form, lightId, light.AttachedBone != null),
+                divider: false);
+            page.Section("ATTACH", _openAttach, next => _openAttach = next,
+                form => AttachRows(form, light));
+            page.Section("ACTIONS", _openPlacement, next => _openPlacement = next,
+                form => PlacementRows(form, lightId));
+        });
+
+    /// <summary>The three tabs' shared frame: the per-frame gesture contract,
+    /// the target lookup, and the empty state. Only one tab runs per frame, so
+    /// the guards run exactly once.</summary>
+    private void DrawTab(
+        string id,
+        Vector2 origin,
+        Vector2 size,
+        Action<Crystarium.PageScope, LightId, ILight> sections)
     {
         // The gesture guards are a PER-FRAME contract of the transform
         // SESSION, not of the transform rows: running them from inside the
         // TRANSFORM section would skip them whenever it was collapsed.
         UpdateGestureGuards();
 
-        Crystarium.Page("light", origin, size, page =>
+        Crystarium.Page(id, origin, size, page =>
         {
             var (lightId, light) = TargetLight();
             if (light == null)
@@ -188,31 +243,13 @@ public sealed class LightPane
             }
 
             page.Status(_status);
-
-            // The rule is a divider BETWEEN sections, so the page's first
-            // section draws neither the rule nor the margin above it.
-            page.Section("GENERAL", _openGeneral, next => _openGeneral = next,
-                form => GeneralRows(form, light),
-                divider: false);
-            page.Section("LIGHT", _openLight, next => _openLight = next,
-                form => LightRows(form, light));
-            page.Section("SHADOWS", _openShadows, next => _openShadows = next,
-                form => ShadowRows(form, light));
-            page.Section("ATTACH", _openAttach, next => _openAttach = next,
-                form => AttachRows(form, light));
-            page.Section("TRANSFORM", _openTransform, next => _openTransform = next,
-                form => TransformRows(form, lightId, light.AttachedBone != null));
-            page.Section("FILE", _openFile, next => _openFile = next,
-                form => FileRows(form, light));
-            page.Section("ACTIONS", _openActions, next => _openActions = next,
-                form => ActionRows(form, lightId, light));
+            sections(page, lightId, light);
         });
-
-        DrawPickers();
     }
 
-    /// <summary>The two retained surfaces, pumped after the page: a popup
-    /// opened by a row has to outlive the row's own draw call.</summary>
+    /// <summary>The two retained surfaces, pumped at window level: a popup
+    /// opened by a row has to outlive the row's own draw call, and the tab it
+    /// was opened from.</summary>
     private void DrawPickers()
     {
         if (_goboPicker.Draw() is { } gobo)
@@ -629,8 +666,7 @@ public sealed class LightPane
         });
     }
 
-    private void ActionRows(
-        Crystarium.FormScope form, LightId lightId, ILight light)
+    private void ActionRows(Crystarium.FormScope form, ILight light)
     {
         form.Actions("Light", actions =>
         {
@@ -643,9 +679,6 @@ public sealed class LightPane
                         : string.Empty;
                 },
                 help: "Create a second light with every setting of this one");
-            actions.Button("Move to camera",
-                () => MoveToCamera(lightId),
-                help: "Put the light where the camera is, facing the same way");
             // A borrowed native is never destructed: a captured light is given
             // back to the game instead, which is a different promise and reads
             // as a different button.
@@ -668,6 +701,19 @@ public sealed class LightPane
                         _status = string.Empty;
                     },
                     help: "Give this light back to the game and stop editing it");
+        });
+    }
+
+    /// <summary>The one placement action that is not a drag: it writes the
+    /// same transform the rows above it do, so it stands with them rather than
+    /// with clone and destroy.</summary>
+    private void PlacementRows(Crystarium.FormScope form, LightId lightId)
+    {
+        form.Actions("Placement", actions =>
+        {
+            actions.Button("Move to camera",
+                () => MoveToCamera(lightId),
+                help: "Put the light where the camera is, facing the same way");
         });
     }
 

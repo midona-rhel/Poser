@@ -74,5 +74,21 @@ internal static class PoserIconSources
         // wider chevron apexed at the hip (12,14) with feet at y 20.5. Open
         // strokes with large negative space — the opposite silhouette to `head`.
         ["body"] = @"<svg xmlns=""http://www.w3.org/2000/svg"" width=""24"" height=""24"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round"" > <path d=""M9.7 5.7a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0"" /> <path d=""M12 8v6"" /> <path d=""M7.5 13.5L12 10L16.5 13.5"" /> <path d=""M8.5 20.5L12 14L15.5 20.5"" /> </svg>",
+        // Light-kind identity glyphs, drawn to stand apart from `sun` and
+        // `bulb` at 14px — the four kinds share one sidebar column, so each
+        // silhouette has to answer "which kind" on its own.
+        // `spotlight`: a truncated cone tilted 60 degrees below the horizontal,
+        // apex up-left. Built on axis a = (.5, .866) from A(7, 4.5): the
+        // aperture is A +/- 1.9 perpendicular, the throw ends 13.5 units along
+        // the axis at half-width 4.5. The fixture's back cap is deliberately
+        // absent — at 1.9 units behind the aperture its 2-unit stroke merged
+        // with the aperture's into one blob, so the narrow end IS the fixture.
+        ["spotlight"] = @"<svg xmlns=""http://www.w3.org/2000/svg"" width=""24"" height=""24"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round"" > <path d=""M5.4 5.5L8.7 3.6"" /> <path d=""M5.4 5.5L9.9 18.5"" /> <path d=""M8.7 3.6L17.7 13.9"" /> <path d=""M9.9 18.5L17.7 13.9"" /> </svg>",
+        // `light-panel`: an emitting rectangle over three splayed rays. The
+        // panel is the `monitor` rounded-rect idiom shortened to y 3..12 so the
+        // rays clear its stroked edge by 2 units (1.2px at 14px); the outer two
+        // rays splay 1.5 units so the trio reads as thrown light rather than as
+        // `monitor`'s stand.
+        ["light-panel"] = @"<svg xmlns=""http://www.w3.org/2000/svg"" width=""24"" height=""24"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round"" > <path d=""M6 3h12a2 2 0 0 1 2 2v5a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-5a2 2 0 0 1 2 -2"" /> <path d=""M8 16L6.5 20"" /> <path d=""M12 16v4"" /> <path d=""M16 16L17.5 20"" /> </svg>",
     };
 }

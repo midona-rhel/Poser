@@ -82,6 +82,8 @@ public enum TablerIcon
     CameraSnap,
     Head,
     Body,
+    Spotlight,
+    LightPanel,
 }
 
 /// <summary>
@@ -209,6 +211,8 @@ public static class Tabler
         TablerIcon.CameraSnap      => "camera-snap",
         TablerIcon.Head            => "head",
         TablerIcon.Body            => "body",
+        TablerIcon.Spotlight       => "spotlight",
+        TablerIcon.LightPanel      => "light-panel",
         _ => "circle",
     };
 }

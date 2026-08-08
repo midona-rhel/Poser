@@ -216,10 +216,13 @@ public class MainWindow : Window
 
     /// <summary>A light's whole tab strip, the environment strip's sibling:
     /// a light has no pose, animation or appearance, so while one is selected
-    /// the tab set IS the light editor.</summary>
+    /// the tab set IS the light editor, split the way the editor's own three
+    /// concerns split — what it emits, what it casts, and where it is.</summary>
     private readonly ShellTab[] _lightTabs =
     [
         new() { Label = "Light" },
+        new() { Label = "Shadows" },
+        new() { Label = "Transform" },
     ];
 
     /// <summary>The library section is stated first, so its index is fixed.
@@ -375,12 +378,12 @@ public class MainWindow : Window
         // The sidebar's add affordance. Creation lives where the created
         // thing will appear, so each section header owns its own plus rather
         // than a separate spawn menu: ACTORS opens the spawn browser, LIGHTS
-        // spawns a light outright — there is only one kind of light to make,
-        // and the browser has nothing to ask. Neither is the first section.
+        // opens the four-kind chooser at the pointer. Neither is the first
+        // section.
         _vm.OnSectionPlus = index =>
         {
             if (index == LightsSectionIndex)
-                SpawnLight();
+                _lightMenuOpenRequested = true;
             else if (index == ActorsSectionIndex)
                 OnSpawnBrowserRequested?.Invoke();
         };
@@ -536,6 +539,7 @@ public class MainWindow : Window
         BuildViewModel();
         AppShellView.Draw(_vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
         DrawShellMenu();
+        DrawLightMenu();
         DrawActorContextMenu();
         DrawBoneContextMenu();
         DrawOverlayContextMenu();
@@ -1105,14 +1109,23 @@ public class MainWindow : Window
                 {
                     LightOwnership.GPose => TablerIcon.Camera,
                     LightOwnership.World => TablerIcon.BuildingStore,
-                    _ => light.Kind == LightKind.Directional
-                        ? TablerIcon.Sun
-                        : TablerIcon.Bulb,
+                    _ => KindIcon(light.Kind),
                 },
                 Tag = lightSelectionId,
             });
         }
     }
+
+    /// <summary>The mark for one light KIND, shared by the sidebar rows and
+    /// the LIGHTS header's type chooser: a kind means the same thing wherever
+    /// it is shown, so it is drawn from one place.</summary>
+    private static TablerIcon KindIcon(LightKind kind) => kind switch
+    {
+        LightKind.Directional => TablerIcon.Sun,
+        LightKind.Point => TablerIcon.Bulb,
+        LightKind.Area => TablerIcon.LightPanel,
+        _ => TablerIcon.Spotlight,
+    };
 
     /// <summary>
     /// The warm frame's entire sidebar cost: the retained rows' live flags.
@@ -1463,7 +1476,8 @@ public class MainWindow : Window
         _vm.ContentFlush = tab is "Library";
         _vm.ContentOwnsViewport = tab is "Pose";
         _vm.ContentUsesPage =
-            tab is "Animation" or "Appearance" or "Light" or "Environment";
+            tab is "Animation" or "Appearance" or "Environment"
+                or "Light" or "Shadows" or "Transform";
     }
 
     private void OnRowClicked(ShellSidebarRow row)
@@ -1547,9 +1561,24 @@ public class MainWindow : Window
             return;
         }
 
+        // The three light tabs only ever stand while a light is selected: the
+        // strip that carries them is chosen by the selection kind, and a strip
+        // that does not carry the active label drops back to its own first tab.
         if (_activeTab == "Light")
         {
-            _lightPane.Draw(origin, size);
+            _lightPane.DrawLight(origin, size);
+            return;
+        }
+
+        if (_activeTab == "Shadows")
+        {
+            _lightPane.DrawShadows(origin, size);
+            return;
+        }
+
+        if (_activeTab == "Transform")
+        {
+            _lightPane.DrawTransform(origin, size);
             return;
         }
 
@@ -1586,12 +1615,50 @@ public class MainWindow : Window
     private IActor? _pendingSelectSpawned;
     private ILight? _pendingSelectSpawnedLight;
 
-    /// <summary>Spawns one light and arms it for selection. Spot is the only
-    /// starting kind — the Light tab's Type row switches it in place.</summary>
-    private void SpawnLight()
+    /// <summary>Spawns one light of the chosen kind and arms it for selection.
+    /// </summary>
+    private void SpawnLight(LightKind kind)
     {
-        if (_lightingService.SpawnLight(LightKind.Spot) is { } spawned)
+        if (_lightingService.SpawnLight(kind) is { } spawned)
             _pendingSelectSpawnedLight = spawned;
+    }
+
+    /// <summary>The LIGHTS header's chooser, positional against
+    /// <see cref="LightMenuKinds"/>. Retained: the rows carry no per-frame
+    /// data, so a warm frame restates nothing.</summary>
+    private static readonly ContextMenuItem[] LightMenuItems =
+    [
+        new("New spot light", TablerIcon.Spotlight),
+        new("New point light", TablerIcon.Bulb),
+        new("New area light", TablerIcon.LightPanel),
+        new("New directional light", TablerIcon.Sun),
+    ];
+
+    private static readonly LightKind[] LightMenuKinds =
+    [
+        LightKind.Spot,
+        LightKind.Point,
+        LightKind.Area,
+        LightKind.Directional,
+    ];
+
+    private bool _lightMenuOpenRequested;
+
+    /// <summary>The LIGHTS header's plus: a light has four kinds and the kind
+    /// decides which native is created, so the choice is asked for before the
+    /// light exists rather than corrected on the Light tab afterwards.
+    /// </summary>
+    private void DrawLightMenu()
+    {
+        if (_lightMenuOpenRequested)
+        {
+            _lightMenuOpenRequested = false;
+            Crystarium.FloatingMenu.Open(
+                "##lights-add", ImGui.GetMousePos(), LightMenuItems);
+        }
+        int clicked = Crystarium.FloatingMenu.Draw("##lights-add");
+        if (clicked >= 0 && clicked < LightMenuKinds.Length)
+            SpawnLight(LightMenuKinds[clicked]);
     }
 
     /// <summary>Second half of <see cref="SelectSpawned"/> and

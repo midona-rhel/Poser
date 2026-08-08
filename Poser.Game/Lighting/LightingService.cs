@@ -513,7 +513,10 @@ public sealed unsafe class LightingService : ILightingService
             if (light.Kind == kind)
                 sameKind++;
         }
-        return sameKind > 0 ? $"{baseName} {sameKind + 1}" : baseName;
+        // Every light carries its number, the first one included: an unnumbered
+        // "Spot Light" beside "Spot Light 2" reads as a different sort of thing
+        // rather than as the first of a series.
+        return $"{baseName} {sameKind + 1}";
     }
 
     private string UniqueName(string baseName)
@@ -524,7 +527,7 @@ public sealed unsafe class LightingService : ILightingService
             if (light.Name.StartsWith(baseName, StringComparison.Ordinal))
                 taken++;
         }
-        return taken > 0 ? $"{baseName} {taken + 1}" : baseName;
+        return $"{baseName} {taken + 1}";
     }
 
     #region Gobos

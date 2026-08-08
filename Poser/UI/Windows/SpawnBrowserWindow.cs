@@ -38,10 +38,13 @@ public sealed class SpawnBrowserWindow : Window
     private const int RowNewActorCompanion = 1;
     private const int RowCloneActor = 2;
     private const int RowProp = 3;
-    private const int RowLight = 4;
-    private const int RowLightFromFile = 5;
-    private const int RowWorldLight = 6;
-    private const int ActionRows = 7;
+    private const int RowLightSpot = 4;
+    private const int RowLightPoint = 5;
+    private const int RowLightArea = 6;
+    private const int RowLightDirectional = 7;
+    private const int RowLightFromFile = 8;
+    private const int RowWorldLight = 9;
+    private const int ActionRows = 10;
 
     /// <summary>Double-click is a supported gesture on a single-click list, so
     /// a second activation of the SAME row inside this window is swallowed
@@ -226,7 +229,17 @@ public sealed class SpawnBrowserWindow : Window
         // doing nothing. Availability is fixed for the session.
         bool noLights = !_lightingService.IsAvailable;
         rows.Add(ActionRow(
-            "##spawn-light", "New light", TablerIcon.Bulb, noLights));
+            "##spawn-light-spot", "New spot light", TablerIcon.Spotlight,
+            noLights));
+        rows.Add(ActionRow(
+            "##spawn-light-point", "New point light", TablerIcon.Bulb,
+            noLights));
+        rows.Add(ActionRow(
+            "##spawn-light-area", "New area light", TablerIcon.LightPanel,
+            noLights));
+        rows.Add(ActionRow(
+            "##spawn-light-directional", "New directional light",
+            TablerIcon.Sun, noLights));
         rows.Add(ActionRow(
             "##spawn-light-file", "New light from file…", TablerIcon.File,
             noLights));
@@ -389,10 +402,18 @@ public sealed class SpawnBrowserWindow : Window
             case RowProp:
                 _propService.SpawnProp();
                 return;
-            case RowLight:
-                // Spot is the only starting kind — the Light tab's Type row
-                // switches it in place.
-                if (_lightingService.SpawnLight(LightKind.Spot) is { } light)
+            case RowLightSpot:
+            case RowLightPoint:
+            case RowLightArea:
+            case RowLightDirectional:
+                var kind = index switch
+                {
+                    RowLightPoint => LightKind.Point,
+                    RowLightArea => LightKind.Area,
+                    RowLightDirectional => LightKind.Directional,
+                    _ => LightKind.Spot,
+                };
+                if (_lightingService.SpawnLight(kind) is { } light)
                     _pendingSelectSpawnedLight = light;
                 return;
             case RowLightFromFile:
