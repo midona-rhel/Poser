@@ -157,6 +157,7 @@ public sealed class PoseFileInspectorSection
     /// binding-free); null until wired.</summary>
     public Func<Domain.Identity.ActorId, IActor?>? _resolveActor;
 
+    private const float MenuPadding = 12f;
     private const string ImportMenuId = "##pose-import-menu";
     private const string ExportMenuId = "##pose-export-menu";
     private const string BoneFilterMenuId = "##pose-bone-filter-menu";
@@ -183,18 +184,14 @@ public sealed class PoseFileInspectorSection
             _exportMenuRequested = false;
             Crystarium.OpenPopover(ExportMenuId);
         }
-        if (_boneFilterRequested)
-        {
-            _boneFilterRequested = false;
-            Crystarium.OpenPopover(BoneFilterMenuId);
-        }
-
         Crystarium.FloatingSurface.Popup(
             ImportMenuId,
             new FloatingSurfaceProps
             {
                 Width = 300,
-                Height = _importMenuHeight,
+                Height = _importMenuWithPresets
+                    ? _importMenuHeightPresets
+                    : _importMenuHeightPlain,
                 Padding = 12,
                 AnchorMin = _menuAnchor,
                 AnchorMax = _menuAnchor,
@@ -215,29 +212,17 @@ public sealed class PoseFileInspectorSection
             },
             DrawExportMenuBody);
 
-        Crystarium.FloatingSurface.Popup(
-            BoneFilterMenuId,
-            new FloatingSurfaceProps
-            {
-                Width = 300,
-                Height = 520,
-                Padding = 12,
-                AnchorMin = _menuAnchor,
-                AnchorMax = _menuAnchor,
-                Treatment = FloatingSurfaceTreatment.Glass,
-            },
-            DrawBoneFilterBody);
-    }
-
-    private static void NoToggle(bool _)
-    {
     }
 
     /// <summary>Self-measured popup heights (unscaled): the section stack
-    /// reports its real height as it draws, so the next frame's popup fits
-    /// exactly — no hand-tuned row constants.</summary>
-    private float _importMenuHeight = 430f;
+    /// reports its real height as it draws — plus the page inset Complete()
+    /// extends the cursor extent by, so the window never scrolls — and the
+    /// next frame's popup fits exactly. Per variant: the presets section
+    /// changes the actor-side height.</summary>
+    private float _importMenuHeightPlain = 430f;
+    private float _importMenuHeightPresets = 480f;
     private float _exportMenuHeight = 190f;
+    private float _boneFilterHeight = 520f;
 
     /// <summary>
     /// Brio's import popup, composed from the SAME form idioms every pane
@@ -258,7 +243,7 @@ public sealed class PoseFileInspectorSection
 
         y += Crystarium.Section(
             "##import-menu-head", "Import pose",
-            new Vector2(origin.X, y), width, true, NoToggle,
+            new Vector2(origin.X, y), width, true, null,
             form =>
             {
                 form.Checkboxes(
@@ -284,7 +269,7 @@ public sealed class PoseFileInspectorSection
 
         y += Crystarium.Section(
             "##import-menu-transform", "Transform",
-            new Vector2(origin.X, y), width, true, NoToggle,
+            new Vector2(origin.X, y), width, true, null,
             form =>
             {
                 // Expression imports force every component at the engine
@@ -296,7 +281,9 @@ public sealed class PoseFileInspectorSection
                 form.Checkboxes(
                     "Apply",
                     ("Position", _position, next => _position = next, locked),
-                    ("Rotation", _rotation, next => _rotation = next, locked),
+                    ("Rotation", _rotation, next => _rotation = next, locked));
+                form.Checkboxes(
+                    " ",
                     ("Scale", _scale, next => _scale = next, locked));
                 form.Checkbox(
                     "Model transform", _modelTransform,
@@ -306,7 +293,7 @@ public sealed class PoseFileInspectorSection
 
         y += Crystarium.Section(
             "##import-menu-scope", "Scope",
-            new Vector2(origin.X, y), width, true, NoToggle,
+            new Vector2(origin.X, y), width, true, null,
             form =>
             {
                 form.Checkboxes(
@@ -326,7 +313,7 @@ public sealed class PoseFileInspectorSection
 
         y += Crystarium.Section(
             "##import-menu-import", "Import",
-            new Vector2(origin.X, y), width, true, NoToggle,
+            new Vector2(origin.X, y), width, true, null,
             form =>
             {
                 form.Actions("File", actions => actions.Button(
@@ -345,7 +332,33 @@ public sealed class PoseFileInspectorSection
                     });
             });
 
-        _importMenuHeight = (y - origin.Y) / scale + 26f;
+        float measured = (y - origin.Y) / scale
+            + Crystarium.ActiveTheme.Page.Inset + MenuPadding * 2f;
+        if (_importMenuWithPresets)
+            _importMenuHeightPresets = measured;
+        else
+            _importMenuHeightPlain = measured;
+
+        // Nested INSIDE the parent body: the open registers on the parent
+        // popup's ID stack, so ImGui stacks the two and the import menu
+        // stays under the filter instead of vanishing (user round 11).
+        if (_boneFilterRequested)
+        {
+            _boneFilterRequested = false;
+            Crystarium.OpenPopover(BoneFilterMenuId);
+        }
+        Crystarium.FloatingSurface.Popup(
+            BoneFilterMenuId,
+            new FloatingSurfaceProps
+            {
+                Width = 300,
+                Height = _boneFilterHeight,
+                Padding = MenuPadding,
+                AnchorMin = _menuAnchor,
+                AnchorMax = _menuAnchor,
+                Treatment = FloatingSurfaceTreatment.Glass,
+            },
+            DrawBoneFilterBody);
     }
 
     /// <summary>Brio's export popup (DrawExportPoseMenuPopup): export to a
@@ -359,7 +372,7 @@ public sealed class PoseFileInspectorSection
 
         float y = origin.Y + Crystarium.Section(
             "##export-menu", "Export pose",
-            new Vector2(origin.X, origin.Y), width, true, NoToggle,
+            new Vector2(origin.X, origin.Y), width, true, null,
             form =>
             {
                 form.Actions("File", actions => actions.Button(
@@ -382,7 +395,8 @@ public sealed class PoseFileInspectorSection
             },
             divider: false);
 
-        _exportMenuHeight = (y - origin.Y) / scale + 26f;
+        _exportMenuHeight = (y - origin.Y) / scale
+            + Crystarium.ActiveTheme.Page.Inset + MenuPadding * 2f;
     }
 
     private void ApplyRestPreset(RestPose pose)
@@ -396,19 +410,21 @@ public sealed class PoseFileInspectorSection
             _status = "Select an actor first.";
     }
 
-    /// <summary>Brio's bone-filter editor on the glass surface, composed
-    /// from the same standalone Sections: one per group, category rows as
-    /// form checkboxes, the list scrolling inside the popover. Checked =
-    /// the category applies.</summary>
+    /// <summary>Brio's bone-filter editor on the glass surface: per-group
+    /// non-collapsible sections whose HEADER ROW carries the group's own
+    /// tristate checkbox at the control edge — all / none / a dot for
+    /// partial — and a form checkbox row per category, the list scrolling
+    /// inside the popover. Checked = the category applies.</summary>
     private void DrawBoneFilterBody()
     {
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
         var origin = ImGui.GetCursorScreenPos();
         float width = ImGui.GetContentRegionAvail().X;
+        var page = Crystarium.ActiveTheme.Page;
 
         float y = origin.Y + Crystarium.Section(
             "##filter-head", "Bone filter",
-            new Vector2(origin.X, origin.Y), width, true, NoToggle,
+            new Vector2(origin.X, origin.Y), width, true, null,
             form => form.Actions("Select", actions =>
             {
                 actions.Button("All", () => _disabledCategories.Clear());
@@ -421,12 +437,16 @@ public sealed class PoseFileInspectorSection
             }),
             divider: false);
 
+        float scrollHeight =
+            _boneFilterHeight - (y - origin.Y) / scale
+            - page.Inset - MenuPadding * 2f;
         ImGui.SetCursorScreenPos(new Vector2(origin.X, y));
         Crystarium.ScrollRegion(
-            "##filter-scroll", width / scale, 428f, _ =>
+            "##filter-scroll", width / scale, scrollHeight, _ =>
             {
                 var top = ImGui.GetCursorScreenPos();
                 float innerWidth = ImGui.GetContentRegionAvail().X;
+                float boxSide = Crystarium.ActiveTheme.Controls.CheckboxSize * scale;
                 float sy = top.Y;
                 bool first = true;
                 foreach (var group in Files.ImportBoneCategories.Groups)
@@ -439,21 +459,20 @@ public sealed class PoseFileInspectorSection
                             enabled++;
                     }
                     bool all = enabled == categories.Length;
+                    bool partial = enabled > 0 && !all;
+
+                    // The header row's top, from the same tokens DrawSection
+                    // spends before it: margin + rule when divided, then the
+                    // section's own top padding.
+                    float headerTop = sy
+                        + (first ? 0f : (page.SectionMarginTop + 1f) * scale)
+                        + page.SectionPaddingTop * scale;
+
                     sy += Crystarium.Section(
                         $"##filter-{group.Name}", group.Name,
-                        new Vector2(top.X, sy), innerWidth, true, NoToggle,
+                        new Vector2(top.X, sy), innerWidth, true, null,
                         form =>
                         {
-                            form.Checkbox("Everything", all, next =>
-                            {
-                                foreach (var category in categories)
-                                {
-                                    if (next)
-                                        _disabledCategories.Remove(category.Id);
-                                    else
-                                        _disabledCategories.Add(category.Id);
-                                }
-                            }, help: "Toggle every category in this group");
                             foreach (var category in categories)
                             {
                                 var id = category.Id;
@@ -470,6 +489,29 @@ public sealed class PoseFileInspectorSection
                         },
                         divider: !first);
                     first = false;
+
+                    // The group's tristate checkbox, seated at the header's
+                    // control edge — the header IS the "everything" toggle.
+                    ImGui.SetCursorScreenPos(new Vector2(
+                        top.X + innerWidth - boxSide,
+                        headerTop
+                        + (page.SectionHeaderHeight * scale - boxSide) * 0.5f));
+                    Crystarium.Checkbox(
+                        $"##filter-group-{group.Name}", all,
+                        next =>
+                        {
+                            foreach (var category in categories)
+                            {
+                                if (next)
+                                    _disabledCategories.Remove(category.Id);
+                                else
+                                    _disabledCategories.Add(category.Id);
+                            }
+                        },
+                        partial: partial,
+                        help: partial
+                            ? "Some of this group is on; click for all"
+                            : null);
                 }
                 ImGui.SetCursorScreenPos(new Vector2(top.X, sy));
                 ImGui.Dummy(new Vector2(1f, 1f));

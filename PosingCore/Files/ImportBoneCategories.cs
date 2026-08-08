@@ -25,7 +25,7 @@ public static class ImportBoneCategories
 {
     public static readonly ImportBoneCategoryGroup[] Groups =
     {
-        new("Head Bones", new ImportBoneCategory[]
+        new("Head", new ImportBoneCategory[]
         {
             new("hair", "Hair", new[] { "j_ex_h", "j_kami_", "j_ex_met_va" }),
             new("head", "Head", new[] { "j_kao", "j_f_face" }),
@@ -53,7 +53,7 @@ public static class ImportBoneCategories
                 "n_ear_", "j_mimi", "j_zer",
             }),
         }),
-        new("Body Bones", new ImportBoneCategory[]
+        new("Body", new ImportBoneCategory[]
         {
             new("body", "Body", new[]
             {
@@ -75,7 +75,7 @@ public static class ImportBoneCategories
             new("legs", "Legs", new[] { "j_asi_" }),
             new("tail", "Tail", new[] { "n_sippo_" }),
         }),
-        new("IVCS Bones", new ImportBoneCategory[]
+        new("IVCS", new ImportBoneCategory[]
         {
             new("ivcsAbdomen", "IVCS Breast & Abdomen", new[]
             {
@@ -104,7 +104,7 @@ public static class ImportBoneCategories
                 "iv_omanko", "iv_kuritto", "iv_inshin_",
             }),
         }),
-        new("Other Bones", new ImportBoneCategory[]
+        new("Other", new ImportBoneCategory[]
         {
             new("clothing", "Clothes", new[]
             {

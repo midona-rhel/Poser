@@ -15,13 +15,18 @@ public static partial class Crystarium
         return ControlSizing.Resolve(style, side, side).Size;
     }
 
+    /// <param name="partial">Tristate paint: an UNCHECKED box showing a
+    /// filled dot — "some, not all" for a checkbox that aggregates children
+    /// (the bone-filter group headers). Clicking still toggles through
+    /// <paramref name="onChange"/> with the plain boolean flip.</param>
     public static bool Checkbox(
         string id,
         bool value,
         Action<bool> onChange,
         ControlStyle style = default,
         bool disabled = false,
-        string? help = null)
+        string? help = null,
+        bool partial = false)
     {
         var measured = MeasureCheckbox(style);
         var hit = Interactive.Reserve(id, measured, disabled);
@@ -33,7 +38,7 @@ public static partial class Crystarium
 
         PaintCheckboxBox(
             ImGui.GetWindowDrawList(), hit.ScreenMin, measured.Y, value,
-            disabled);
+            disabled, partial);
 
         if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
                 hit, hit.Disabled, hit.ScreenMin, hit.ScreenMax))
@@ -49,7 +54,7 @@ public static partial class Crystarium
     /// </summary>
     private static void PaintCheckboxBox(
         ImDrawListPtr draw, Vector2 boxMin, float side, bool value,
-        bool disabled)
+        bool disabled, bool partial = false)
     {
         float scale = ImGuiHelpers.GlobalScale;
         var boxMax = boxMin + new Vector2(side);
@@ -75,6 +80,16 @@ public static partial class Crystarium
                 MathF.Max(0f, radius - inset),
                 ImDrawFlags.None,
                 scale);
+            if (partial)
+            {
+                // Tristate dot: the primary fill as a centred disc — "some
+                // of this box's children are on".
+                var dot = ActiveTheme.Chrome.Primary.Fade(opacity);
+                draw.AddCircleFilled(
+                    boxMin + new Vector2(side * 0.5f),
+                    side * 0.22f,
+                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(dot)));
+            }
         }
         else
         {

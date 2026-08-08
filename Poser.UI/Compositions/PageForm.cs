@@ -59,13 +59,16 @@ public static partial class Crystarium
     /// <param name="divider">The rule is a divider BETWEEN sections, so the
     /// first section of a rail states false and draws neither the rule nor the
     /// margin above it.</param>
+    /// <param name="onOpenChanged">Null makes the section NON-collapsible —
+    /// no header hit-test, no chevron — for hosts like popovers where a
+    /// section is structure, not disclosure.</param>
     public static float Section(
         string id,
         string title,
         Vector2 origin,
         float width,
         bool open,
-        Action<bool> onOpenChanged,
+        Action<bool>? onOpenChanged,
         Action<FormScope> content,
         bool divider = true)
     {
@@ -251,7 +254,7 @@ public static partial class Crystarium
         internal void DrawStandaloneSection(
             string title,
             bool open,
-            Action<bool> onOpenChanged,
+            Action<bool>? onOpenChanged,
             Action<FormScope> content,
             bool divider = true) =>
             DrawSection(title, open, onOpenChanged, content, divider);
