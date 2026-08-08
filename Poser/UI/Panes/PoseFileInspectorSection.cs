@@ -20,8 +20,13 @@ namespace Poser.UI;
 /// </summary>
 public sealed class PoseFileInspectorSection
 {
-    // 0 Full (Body+Expression), 1 Body, 2 Expression — the import menu's
-    // type pair; Selected-bones is the separate _selectedOnly switch.
+    // The import menu's type pair, Brio's exact popup state: both OFF is
+    // the DEFAULT path (rotation-only toggles over everything, weapons and
+    // ex excluded, the custom bone filter live); Body-only excludes the
+    // face and honors the toggles; Expression runs the dance with every
+    // component; both = everything, all components, toggles ignored.
+    private bool _typeBody;
+    private bool _typeExpression;
 
     private readonly CleanPoseFacade _poseFacade;
     private readonly SelectionSession _selection;
@@ -34,7 +39,6 @@ public sealed class PoseFileInspectorSection
         new("Export Pose", new[] { ".pose" }, isSaveMode: true);
     private string _lastPath =
         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-    private int _scope;
     // Rotation-only by default, matching Brio's DefaultImporterOptions and
     // Ktisis's ImportPoseTransforms: Translation/Scale are opt-in because a
     // file's baked positions/scales fight IK and Customize+ scaling.
@@ -53,8 +57,10 @@ public sealed class PoseFileInspectorSection
     // path; off would resurrect the broken body-path face import.
     private bool _smartImport = true;
     private bool _modelTransform;
+    // Brio's DefaultImporterOptions filter starts with weapon and ex
+    // disabled (PosingService.cs:45-47); the menu edits from there.
     private readonly HashSet<string> _disabledCategories =
-        new(StringComparer.Ordinal);
+        new(StringComparer.Ordinal) { "weapon", "ex" };
     private bool _importMenuRequested;
     private bool _importMenuWithPresets;
     private bool _boneFilterRequested;
@@ -101,12 +107,9 @@ public sealed class PoseFileInspectorSection
         _importMenuRequested = true;
     }
 
-    /// <summary>Opens the bone-filter menu on the next pump.</summary>
-    public void RequestBoneFilterMenu()
-    {
-        _menuAnchor = ImGui.GetMousePos();
-        _boneFilterRequested = true;
-    }
+    /// <summary>Opens the bone-filter menu on the next pump, beside the
+    /// import menu it nests under.</summary>
+    public void RequestBoneFilterMenu() => _boneFilterRequested = true;
 
     /// <summary>The bone-filter menu's verdict folded into any surface's
     /// options: disabled prefix categories become exclusions, the slot rows
@@ -157,7 +160,9 @@ public sealed class PoseFileInspectorSection
     /// binding-free); null until wired.</summary>
     public Func<Domain.Identity.ActorId, IActor?>? _resolveActor;
 
-    private const float MenuPadding = 12f;
+    private const float MenuPadding = 8f;
+    private const float MenuWidth = 320f;
+    private const float MenuLabelColumn = 96f;
     private const string ImportMenuId = "##pose-import-menu";
     private const string ExportMenuId = "##pose-export-menu";
     private const string BoneFilterMenuId = "##pose-bone-filter-menu";
@@ -188,11 +193,11 @@ public sealed class PoseFileInspectorSection
             ImportMenuId,
             new FloatingSurfaceProps
             {
-                Width = 300,
+                Width = MenuWidth,
                 Height = _importMenuWithPresets
                     ? _importMenuHeightPresets
                     : _importMenuHeightPlain,
-                Padding = 12,
+                Padding = MenuPadding,
                 AnchorMin = _menuAnchor,
                 AnchorMax = _menuAnchor,
                 Treatment = FloatingSurfaceTreatment.Glass,
@@ -203,9 +208,9 @@ public sealed class PoseFileInspectorSection
             ExportMenuId,
             new FloatingSurfaceProps
             {
-                Width = 300,
+                Width = MenuWidth,
                 Height = _exportMenuHeight,
-                Padding = 12,
+                Padding = MenuPadding,
                 AnchorMin = _menuAnchor,
                 AnchorMax = _menuAnchor,
                 Treatment = FloatingSurfaceTreatment.Glass,
@@ -237,10 +242,6 @@ public sealed class PoseFileInspectorSection
         float width = ImGui.GetContentRegionAvail().X;
         float y = origin.Y;
 
-        bool body = _scope is 0 or 1;
-        bool expression = _scope is 0 or 2;
-        bool expressionOnly = !_selectedOnly && _scope == 2;
-
         y += Crystarium.Section(
             "##import-menu-head", "Import pose",
             new Vector2(origin.X, y), width, true, null,
@@ -258,38 +259,41 @@ public sealed class PoseFileInspectorSection
                         "Route face-only files as expression imports automatically"));
                 form.Checkboxes(
                     "Type",
-                    ("Body", body, next => _scope =
-                        next && expression ? 0 : next ? 1 : expression ? 2 : 0,
-                        null),
-                    ("Expression", expression, next => _scope =
-                        body && next ? 0 : body ? 1 : next ? 2 : 0,
-                        null));
+                    ("Body", _typeBody,
+                        next => _typeBody = next,
+                        "Import the body. With Expression too, everything "
+                        + "imports with every component"),
+                    ("Expression", _typeExpression,
+                        next => _typeExpression = next,
+                        "Import the face as an expression — always every "
+                        + "component"));
             },
-            divider: false);
+            divider: false,
+            labelColumnWidth: MenuLabelColumn);
 
         y += Crystarium.Section(
             "##import-menu-transform", "Transform",
             new Vector2(origin.X, y), width, true, null,
             form =>
             {
-                // Expression imports force every component at the engine
-                // (Brio ExpressionOptions); the toggles stay stated but
-                // inert for that type, and the help says so.
-                string? locked = expressionOnly || _smartImport
+                // Brio's icon row disables under Smart Import and whenever
+                // Expression is checked (FileUIHelpers.cs:514-516) — the
+                // engine forces every component on those paths.
+                string? locked = _typeExpression || _smartImport
                     ? "Expression imports always apply every component"
                     : null;
                 form.Checkboxes(
                     "Apply",
                     ("Position", _position, next => _position = next, locked),
-                    ("Rotation", _rotation, next => _rotation = next, locked));
-                form.Checkboxes(
-                    " ",
+                    ("Rotation", _rotation, next => _rotation = next, locked),
                     ("Scale", _scale, next => _scale = next, locked));
                 form.Checkbox(
-                    "Model transform", _modelTransform,
+                    "Model", _modelTransform,
                     next => _modelTransform = next,
-                    help: "Also move the actor to the file's placement");
-            });
+                    help: "Also move the actor to the file's placement "
+                        + "(model transform)");
+            },
+            labelColumnWidth: MenuLabelColumn);
 
         y += Crystarium.Section(
             "##import-menu-scope", "Scope",
@@ -306,10 +310,19 @@ public sealed class PoseFileInspectorSection
                     "Reset first", _reset, next => _reset = next,
                     help: "Clear every bone in scope before importing, "
                         + "including ones the file does not contain");
+                // Brio: Custom Import Options is live ONLY when neither
+                // type is checked (FileUIHelpers.cs:504) — the filter
+                // shapes the DEFAULT import path alone.
+                bool typed = _typeBody || _typeExpression;
                 form.Actions("Filter", actions => actions.Button(
                     "Bone filter", () => RequestBoneFilterMenu(),
-                    help: "Choose which bone categories imports may touch"));
-            });
+                    disabled: typed,
+                    help: typed
+                        ? "The bone filter shapes the default import; "
+                            + "uncheck Body and Expression to edit it"
+                        : "Choose which bone categories imports may touch"));
+            },
+            labelColumnWidth: MenuLabelColumn);
 
         y += Crystarium.Section(
             "##import-menu-import", "Import",
@@ -330,7 +343,8 @@ public sealed class PoseFileInspectorSection
                         actions.Button("T-pose",
                             () => ApplyRestPreset(RestPose.TPose));
                     });
-            });
+            },
+            labelColumnWidth: MenuLabelColumn);
 
         float measured = (y - origin.Y) / scale
             + Crystarium.ActiveTheme.Page.Inset + MenuPadding * 2f;
@@ -347,15 +361,22 @@ public sealed class PoseFileInspectorSection
             _boneFilterRequested = false;
             Crystarium.OpenPopover(BoneFilterMenuId);
         }
+        // Beside the import menu, top-aligned: same-anchor stacking hid the
+        // parent under the filter and read as the menu closing.
+        var menuPos = ImGui.GetWindowPos();
+        float gap = Crystarium.ActiveTheme.Floating.AnchorGap * scale;
+        var beside = new Vector2(
+            menuPos.X + ImGui.GetWindowSize().X + gap,
+            menuPos.Y - gap);
         Crystarium.FloatingSurface.Popup(
             BoneFilterMenuId,
             new FloatingSurfaceProps
             {
-                Width = 300,
+                Width = MenuWidth,
                 Height = _boneFilterHeight,
                 Padding = MenuPadding,
-                AnchorMin = _menuAnchor,
-                AnchorMax = _menuAnchor,
+                AnchorMin = beside,
+                AnchorMax = beside,
                 Treatment = FloatingSurfaceTreatment.Glass,
             },
             DrawBoneFilterBody);
@@ -435,7 +456,8 @@ public sealed class PoseFileInspectorSection
                             _disabledCategories.Add(category.Id);
                 });
             }),
-            divider: false);
+            divider: false,
+            labelColumnWidth: MenuLabelColumn);
 
         float scrollHeight =
             _boneFilterHeight - (y - origin.Y) / scale
@@ -487,13 +509,15 @@ public sealed class PoseFileInspectorSection
                                     });
                             }
                         },
-                        divider: !first);
+                        divider: !first,
+                        labelColumnWidth: MenuLabelColumn);
                     first = false;
 
-                    // The group's tristate checkbox, seated at the header's
-                    // control edge — the header IS the "everything" toggle.
+                    // The group's tristate checkbox, seated at the CONTROL
+                    // column — the same x every category row's box sits at —
+                    // so the header reads as the column's "all" row.
                     ImGui.SetCursorScreenPos(new Vector2(
-                        top.X + innerWidth - boxSide,
+                        top.X + MenuLabelColumn * scale,
                         headerTop
                         + (page.SectionHeaderHeight * scale - boxSide) * 0.5f));
                     Crystarium.Checkbox(
@@ -622,16 +646,21 @@ public sealed class PoseFileInspectorSection
 
     private PoseImportOptions BuildOptions()
     {
-        // Types: 0 Full (every slot), 1 Body and 2 Expression
-        // (Character-only); Selected-bones rides any type and reduces to
-        // the slot-qualified filter at the facade.
+        // Brio's dispatch table (FileUIHelpers.cs:697-718), all four rows:
+        // both types = everything with every component, toggles ignored;
+        // Body-only = face excluded, toggles honored; Expression-only = the
+        // expression dance (engine forces components); NEITHER — Brio's
+        // default state — = rotation-only toggles over everything except
+        // what the bone filter excludes (its gear edits exactly this path;
+        // DefaultImporterOptions ships weapon+ex disabled). Selected-bones
+        // rides any type, keeps the toggles, and reduces to the frozen
+        // BoneId filter at the facade.
         bool selected = _selectedOnly;
-        bool full = _scope == 0 || selected, expression = !selected && _scope == 2;
-        // Brio's dispatch table (FileUIHelpers.cs:697-718): both types =
-        // every component, toggles IGNORED; the toggles reach only the
-        // body path. A Selected-bones import keeps the toggles — the
-        // Ktisis-parity flow poses exactly what you picked, how you picked.
-        bool allComponents = _scope == 0 && !selected;
+        bool both = _typeBody && _typeExpression;
+        bool neither = !_typeBody && !_typeExpression;
+        bool expression = _typeExpression && !_typeBody && !selected;
+        bool full = both || selected;
+        bool allComponents = both && !selected;
         var options = new PoseImportOptions
         {
             ApplyRotation = allComponents || _rotation,
@@ -639,20 +668,16 @@ public sealed class PoseFileInspectorSection
             ApplyScale = allComponents || _scale,
             ApplyBody = true,
             AsExpression = expression,
-            ApplyFace = full || selected,
-            ApplyMainHand = full || selected,
-            ApplyOffHand = full || selected,
-            ApplyProp = full || selected,
-            ApplyOrnament = full || selected,
+            ApplyFace = full || neither,
+            ApplyMainHand = full,
+            ApplyOffHand = full,
+            ApplyProp = full || neither,
+            ApplyOrnament = full || neither,
             ResetBeforeImport = _reset,
             FilterIncludesDescendants = _descendants,
             FreezeOnImport = _freeze,
             ApplyModelTransform = _modelTransform,
         };
-        // The Selected-scope bone filter is NOT built here: the frozen
-        // BoneIds travel to the facade, which verifies actor identity and
-        // exact generations before reducing them to a slot-qualified
-        // filter.
-        return ApplyCategoryFilter(options);
+        return neither && !selected ? ApplyCategoryFilter(options) : options;
     }
 }

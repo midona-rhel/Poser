@@ -70,10 +70,11 @@ public static partial class Crystarium
         bool open,
         Action<bool>? onOpenChanged,
         Action<FormScope> content,
-        bool divider = true)
+        bool divider = true,
+        float? labelColumnWidth = null)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        var page = new PageScope(id, origin, width, scale);
+        var page = new PageScope(id, origin, width, scale, labelColumnWidth);
         page.DrawStandaloneSection(
             title, open, onOpenChanged, content, divider);
         page.Complete(origin, width);
