@@ -278,12 +278,22 @@ public static partial class Crystarium
             _section = section;
         }
 
+        /// <param name="scale">The travel mapping. <see cref="SliderScale.Log"/>
+        /// gives the bottom of the range most of the track — for a value whose
+        /// perceptual response is front-loaded, which a wide linear range
+        /// squanders.</param>
+        /// <param name="readout">Replaces <paramref name="format"/> for the
+        /// mono readout alone, so a slider can BE its own clock (or any other
+        /// derived unit) instead of shipping a second read-only row beside
+        /// it.</param>
         public void Slider(string label, float value, float minimum, float maximum,
             Action<float> onChange, string format = "0.00", string? help = null,
             bool disabled = false, ControlStyle style = default,
             IReadOnlyList<float>? marks = null,
             Action? onBegin = null,
-            Action? onCommit = null)
+            Action? onCommit = null,
+            SliderScale scale = SliderScale.Linear,
+            Func<float, string>? readout = null)
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
@@ -302,8 +312,11 @@ public static partial class Crystarium
                 marks,
                 disabled,
                 onBegin: onBegin,
-                onCommit: onCommit);
-            string readout = displayedValue.ToString(format, CultureInfo.InvariantCulture);
+                onCommit: onCommit,
+                scale: scale);
+            string text = readout is { } state
+                ? state(displayedValue)
+                : displayedValue.ToString(format, CultureInfo.InvariantCulture);
             DrawTextRight(
                 new(row.ControlOrigin.X + row.ControlWidth -
                     ActiveTheme.Form.ValueColumnWidth * row.Scale, row.Origin.Y),
@@ -312,7 +325,7 @@ public static partial class Crystarium
                 ActiveTheme.Typography.CaptionSize,
                 FontFamily.Mono,
                 FormLabelColor,
-                readout);
+                text);
             _page.EndRow(row, id, help);
         }
 
@@ -846,6 +859,58 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
+        /// <summary>
+        /// N controls on one form row — <see cref="Pair"/>'s rule generalised.
+        /// The band splits into EQUAL tracks and each track is a miniature form
+        /// row: the label slot, then the control cell. The label slot is the
+        /// page's own column so a cell's control starts on the same x a full
+        /// row's does, except where the track is too narrow to spare it — a
+        /// track never gives its label more than half of itself, which is what
+        /// keeps a three-cell row's controls usable.
+        ///
+        /// <para>Help rides per CELL where a cell states one, because three
+        /// controls on a band do not share a meaning; the row's own
+        /// <paramref name="help"/> is the fallback for a row whose cells state
+        /// none, and the two never both register.</para>
+        /// </summary>
+        public void Cells(Action<FormCellScope> content, string? help = null)
+        {
+            ArgumentNullException.ThrowIfNull(content);
+            var scope = new FormCellScope();
+            content(scope);
+            var items = scope.Items;
+            if (items.Count == 0)
+                return;
+            string id = Id(scope.Key());
+            var row = _page.BeginRow(string.Empty);
+            float track = row.Width / items.Count;
+            float column = MathF.Min(row.LabelWidth, track * FormCellLabelShare);
+            float bandHeight = ActiveTheme.Controls.FormRowHeight * row.Scale;
+            bool perCellHelp = false;
+            for (int i = 0; i < items.Count; i++)
+            {
+                var item = items[i];
+                float x = row.Origin.X + i * track;
+                if (!string.IsNullOrEmpty(item.Label))
+                    FormLabel(
+                        new Vector2(x, row.Origin.Y), column, row.Scale,
+                        item.Label);
+                item.Draw(new FormPairCell(
+                    new Vector2(x + column, row.Origin.Y),
+                    MathF.Max(0f, track - column),
+                    row.Scale));
+                if (string.IsNullOrEmpty(item.Help))
+                    continue;
+                perCellHelp = true;
+                RegisterHelp(
+                    $"{id}-{item.Label}",
+                    new Vector2(x, row.Origin.Y),
+                    new Vector2(x + track, row.Origin.Y + bandHeight),
+                    item.Help);
+            }
+            _page.EndRow(row, id, perCellHelp ? null : help);
+        }
+
         private static void DrawHalf(
             in FormRowScope row, float x, float span, string label,
             Action<FormPairCell> draw)
@@ -1077,10 +1142,52 @@ public static partial class Crystarium
         }
     }
 
+    /// <summary>A track of a <see cref="Crystarium.FormScope.Cells"/> row,
+    /// stated in call order. A cell names its label, seats its own control in
+    /// the cell it is handed, and may carry its own help.</summary>
+    public sealed class FormCellScope
+    {
+        private readonly List<FormCellItem> _items = new();
+
+        internal readonly record struct FormCellItem(
+            string Label, Action<FormPairCell> Draw, string? Help);
+
+        public void Cell(
+            string label, Action<FormPairCell> draw, string? help = null)
+        {
+            ArgumentNullException.ThrowIfNull(draw);
+            _items.Add(new(label, draw, help));
+        }
+
+        internal IReadOnlyList<FormCellItem> Items => _items;
+
+        /// <summary>The row's identity: its cells' labels, exactly as
+        /// <see cref="Crystarium.FormScope.Pair"/> mints its own from the two
+        /// halves it was handed.</summary>
+        internal string Key()
+        {
+            var labels = new string[_items.Count];
+            for (int i = 0; i < _items.Count; i++)
+                labels[i] = _items[i].Label;
+            return string.Join('-', labels);
+        }
+    }
+
+    /// <summary>A track never gives its label more than this share of itself:
+    /// past two cells the page's label column would leave the control
+    /// nothing.</summary>
+    private const float FormCellLabelShare = 0.5f;
+
     /// <summary>One half of a <see cref="Crystarium.FormScope.Pair"/>
-    /// row: the control's screen origin at the row's TOP, its pixel width, and
+    /// row — or one track of a <see cref="Crystarium.FormScope.Cells"/> row:
+    /// the control's screen origin at the row's TOP, its pixel width, and
     /// the frame scale. <see cref="Center"/> seats a control of a known logical
     /// height exactly as <see cref="FormRowScope.CenterControl"/> does.
+    ///
+    /// <para>The four control helpers below are the same controls the full-row
+    /// <see cref="Crystarium.FormScope"/> rows draw, seated in the cell instead
+    /// of in the row band — a cell that wants anything else still seats it by
+    /// hand off <see cref="Center"/> and <see cref="Constrain"/>.</para>
     /// </summary>
     public readonly record struct FormPairCell(
         Vector2 Origin, float Width, float Scale)
@@ -1089,6 +1196,93 @@ public static partial class Crystarium
             Origin.X,
             Origin.Y + (ActiveTheme.Controls.FormRowHeight - controlHeight)
                 * 0.5f * Scale);
+
+        /// <summary>The cell's slider, carrying the SAME mono readout a full
+        /// row's does, taken out of the cell's right edge.</summary>
+        public void Slider(
+            string id, float value, float minimum, float maximum,
+            Action<float> onChange, string format = "0.00",
+            bool disabled = false,
+            SliderScale scale = SliderScale.Linear,
+            Func<float, string>? readout = null,
+            IReadOnlyList<float>? marks = null,
+            string? help = null)
+        {
+            float readoutWidth = ActiveTheme.Form.ValueColumnWidth * Scale;
+            float track = MathF.Max(1f, Width - readoutWidth);
+            float displayed = value;
+            ImGui.SetCursorScreenPos(
+                Center(ActiveTheme.Controls.SliderHeight));
+            Crystarium.Slider(
+                id, value, minimum, maximum,
+                next =>
+                {
+                    displayed = next;
+                    onChange(next);
+                },
+                new ControlStyle { Width = UiWidth.Fixed(track / Scale) },
+                marks,
+                disabled,
+                help,
+                scale: scale);
+            DrawTextRight(
+                new Vector2(Origin.X + Width - readoutWidth, Origin.Y),
+                readoutWidth,
+                ActiveTheme.Controls.FormRowHeight * Scale,
+                ActiveTheme.Typography.CaptionSize,
+                FontFamily.Mono,
+                FormLabelColor,
+                readout is { } state
+                    ? state(displayed)
+                    : displayed.ToString(
+                        format, CultureInfo.InvariantCulture));
+        }
+
+        public void Switch(
+            string id, bool value, Action<bool> onChange,
+            bool disabled = false, string? help = null)
+        {
+            ImGui.SetCursorScreenPos(
+                Center(ActiveTheme.Controls.SwitchHeight));
+            Crystarium.Switch(id, value, onChange, Constrain(), disabled, help);
+        }
+
+        public void ColorWell(
+            string id, Vector4 value, Action<Vector4> onChange,
+            bool rgbOnly = true, bool disabled = false, string? help = null)
+        {
+            ImGui.SetCursorScreenPos(
+                Center(ActiveTheme.Controls.ColorWellSize));
+            Crystarium.ColorWell(
+                id, value, onChange, Constrain(), rgbOnly, disabled, help);
+        }
+
+        /// <summary>The cell's trigger button, its caption cut to the cell
+        /// exactly as a <see cref="Crystarium.FormScope.Picker"/> row cuts
+        /// its own.</summary>
+        public void Button(
+            string id, string label, Action onClick,
+            bool disabled = false, string? help = null)
+        {
+            var style = Constrain(ControlStyle.Workspace with
+            {
+                Width = UiWidth.Fixed(MathF.Max(1f, Width / Scale)),
+            });
+            ImGui.SetCursorScreenPos(
+                Center(ActiveTheme.Controls.WorkspaceHeight));
+            Crystarium.Button(
+                Crystarium.TruncateText(
+                    label,
+                    new TextStyle { Size = ActiveTheme.Typography.LabelSize },
+                    MathF.Max(
+                        1f,
+                        Width - ActiveTheme.Spacing.Six * 2f * Scale)),
+                onClick,
+                style: style,
+                disabled: disabled,
+                help: help,
+                id: id);
+        }
 
         /// <summary>The caller's style bound to this cell's track. The pair
         /// contract is that a half's control never paints past its track, so

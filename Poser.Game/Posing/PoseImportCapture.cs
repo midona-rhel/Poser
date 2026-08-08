@@ -58,6 +58,10 @@ public sealed class PoseImportCapture : IDisposable
     /// both phases.</summary>
     private const int ReconcileDelayTicks = 4;
 
+    /// <summary>Brio's Reconcile() runs its export-reset-reimport at +2
+    /// ticks (PosingCapability.cs:419,428).</summary>
+    private const int FlattenDelayTicks = 2;
+
     private readonly IFramework _framework;
     private readonly StableBindingRegistry _bindings;
     private readonly IBonePosingService _posing;
@@ -65,6 +69,8 @@ public sealed class PoseImportCapture : IDisposable
     private readonly TransformHistory _history;
     private readonly TransformGestureService _gestures;
     private readonly IkBakeCapture _ikBake;
+    private readonly IPoseFileService _poseFiles;
+    private readonly ISkeletonService _skeletons;
     private readonly IPluginLog _log;
 
     /// <summary>One slot skeleton's share of an import: the plan's writes
@@ -79,13 +85,15 @@ public sealed class PoseImportCapture : IDisposable
     }
 
     /// <summary>Which transitive batch the pending import is waiting on:
-    /// the plan's file writes, the expression import's head restore, or the
-    /// post-reparent face reconcile.</summary>
+    /// the plan's file writes, the expression import's head restore, the
+    /// post-reparent face reconcile, or the expression import's final
+    /// whole-pose flatten.</summary>
     private enum ImportStage
     {
         Apply,
         HeadRestore,
         Reconcile,
+        Flatten,
     }
 
     private sealed class Import
@@ -114,6 +122,14 @@ public sealed class PoseImportCapture : IDisposable
         /// (session teardown restores animation state wholesale).</summary>
         public Action<bool>? OnFinished;
         public ImportStage Stage = ImportStage.Apply;
+        /// <summary>Whether this is an expression import — it runs the head
+        /// restore and, at the very end, Brio's whole-pose flatten
+        /// (Reconcile(reset: true), PosingCapability.cs:417-429): the phase-2
+        /// call leaves ImportPose_Internal's reset/reconcile at their TRUE
+        /// defaults, so unlike a body import (reconcile: false, :156) the
+        /// expression chain finishes by exporting the entire visual pose,
+        /// clearing every stack, and re-importing it whole.</summary>
+        public bool Expression;
         /// <summary>Expression imports only: every j_kao instance the plan
         /// writes, with its PRE-import post-reparent absolute — Brio's
         /// tempPose (PosingCapability.cs:194), reduced to the one bone its
@@ -144,6 +160,8 @@ public sealed class PoseImportCapture : IDisposable
         TransformHistory history,
         TransformGestureService gestures,
         IkBakeCapture ikBake,
+        IPoseFileService poseFiles,
+        ISkeletonService skeletons,
         IPluginLog log)
     {
         _framework = framework;
@@ -153,6 +171,8 @@ public sealed class PoseImportCapture : IDisposable
         _history = history;
         _gestures = gestures;
         _ikBake = ikBake;
+        _poseFiles = poseFiles;
+        _skeletons = skeletons;
         _log = log;
         _posing.TransitiveActionsEnded += OnTransitiveActionsEnded;
     }
@@ -197,6 +217,7 @@ public sealed class PoseImportCapture : IDisposable
             Before = new Dictionary<TransformTargetId, TransformTargetState>(),
             Resets = new HashSet<TransformTargetId>(),
             OnFinished = onFinished,
+            Expression = expression,
         };
 
         // Resolve and capture EVERYTHING before mutating anything, so a
@@ -461,10 +482,29 @@ public sealed class PoseImportCapture : IDisposable
                     () => BeginReconcile(import.Generation),
                     delayTicks: ReconcileDelayTicks);
                 break;
+            case ImportStage.Reconcile:
+                FinishAfterReconcile(import);
+                break;
             default:
                 _framework.RunOnTick(() => Complete(import.Generation));
                 break;
         }
+    }
+
+    /// <summary>Where the reconcile outcome goes next: a body import is
+    /// done, an expression import continues into Brio's whole-pose flatten
+    /// (its phase-2 Snapshot runs Reconcile(reset: true) — the phase-2
+    /// ImportPose_Internal call leaves reset/reconcile at their TRUE
+    /// defaults, PosingCapability.cs:308-309 vs the body path's
+    /// reconcile: false at :156).</summary>
+    private void FinishAfterReconcile(Import import)
+    {
+        if (import.Expression && import.Failure == null)
+            _framework.RunOnTick(
+                () => BeginFlatten(import.Generation),
+                delayTicks: FlattenDelayTicks);
+        else
+            _framework.RunOnTick(() => Complete(import.Generation));
     }
 
     private void OnTimeout(long generation)
@@ -476,9 +516,145 @@ public sealed class PoseImportCapture : IDisposable
             ImportStage.Apply => "The import never reached an apply pass.",
             ImportStage.HeadRestore =>
                 "The head restore never reached an apply pass.",
+            ImportStage.Flatten =>
+                "The pose flatten never reached an apply pass.",
             _ => "The face reconcile never reached an apply pass.",
         };
         Complete(generation);
+    }
+
+    /// <summary>
+    /// Brio's <c>Reconcile(reset: true)</c> (PosingCapability.cs:417-429),
+    /// the expression chain's final stage: export the ENTIRE current pose
+    /// (GeneratePoseData — per-slot post-reparent absolutes), clear every
+    /// interactive stack (Reset), and re-import the export whole with every
+    /// component. Whatever the head dance left behind is erased; the final
+    /// state is one clean absolute re-expression of what is on screen.
+    /// Brio's nested second round (Reset's own Snapshot → Reconcile(false))
+    /// re-imports the same absolutes WITHOUT a reset, so every delta
+    /// rejects as near-identity — one round is the entire effect. The model
+    /// transform is skipped: Brio resets it and re-applies the exported
+    /// difference onto the reset original, a net no-op an expression never
+    /// disturbs.
+    /// </summary>
+    private void BeginFlatten(long generation)
+    {
+        if (_pending is not { } import || import.Generation != generation)
+            return;
+
+        var applied = import.Failure == null;
+        if (applied)
+        {
+            foreach (var slot in import.Slots)
+                applied &= slot.Executed;
+        }
+        if (!applied || import.CharacterSkeleton is not { } character)
+        {
+            Complete(generation);
+            return;
+        }
+
+        var slots = _skeletons.GetSkeletons(character.Actor);
+        if (slots.Count == 0)
+        {
+            Complete(generation);
+            return;
+        }
+        var exported = _poseFiles.CreatePoseFile(slots);
+        var options = new PoseImportOptions
+        {
+            ApplyRotation = true,
+            ApplyPosition = true,
+            ApplyScale = true,
+            ApplyBody = true,
+            ApplyFace = true,
+            ApplyMainHand = true,
+            ApplyOffHand = true,
+            ApplyProp = true,
+            ApplyOrnament = true,
+            ApplyModelTransform = false,
+            ResetBeforeImport = true,
+        };
+        var plan = _poseFiles.BuildImportPlan(slots, exported, options);
+
+        // Mid-flight capture, the reconcile's pattern: any target the
+        // flatten can touch that the earlier stages did not is captured
+        // before it changes, so the one rollback covers every stage.
+        var resetBones = new List<(IBone Bone, TransformTargetId Target)>(plan.Resets.Count);
+        foreach (var bone in plan.Resets)
+        {
+            if (bone is VirtualBone)
+                continue;
+            if (_bindings.GetBoneId(bone) is not { } id)
+                continue;
+            var target = TransformTargetId.ForBone(id);
+            if (!import.Before.ContainsKey(target))
+            {
+                var captured = _runtime.Capture(target);
+                if (!captured.Success || captured.State is not { } state)
+                    continue;
+                import.Before[target] = state;
+                import.Order.Add(target);
+            }
+            resetBones.Add((bone, target));
+            import.Resets.Add(target);
+        }
+
+        var slotMap = new Dictionary<ISkeleton, SlotImport>();
+        var flattenSlots = new List<SlotImport>();
+        foreach (var (bone, file, components) in plan.Writes)
+        {
+            if (bone is VirtualBone)
+                continue;
+            if (_bindings.GetBoneId(bone) is not { } id)
+                continue;
+            var target = TransformTargetId.ForBone(id);
+            if (!import.Before.ContainsKey(target))
+            {
+                var captured = _runtime.Capture(target);
+                if (!captured.Success || captured.State is not { } state)
+                    continue;
+                import.Before[target] = state;
+                import.Order.Add(target);
+            }
+            if (!slotMap.TryGetValue(bone.Skeleton, out var slot))
+            {
+                slotMap[bone.Skeleton] = slot = new SlotImport
+                {
+                    Skeleton = bone.Skeleton,
+                    Writes = new Dictionary<(int, int),
+                        (TransformTargetId, Transform, TransformComponents)>(),
+                };
+                flattenSlots.Add(slot);
+            }
+            slot.Writes[(bone.PartialId, bone.BoneIndex)] = (target, file, components);
+        }
+
+        if (flattenSlots.Count == 0)
+        {
+            Complete(generation);
+            return;
+        }
+
+        // Brio's Reset before the re-import: every interactive stack goes;
+        // named service layers stay and re-drive themselves.
+        foreach (var (bone, _) in resetBones)
+        {
+            _posing.GetPoseInfo(bone.Skeleton)
+                .GetPoseInfo(bone.BoneName, bone.PartialId)
+                .RestoreInteractiveStacks(Array.Empty<BonePoseTransformInfo>());
+        }
+
+        import.Slots = flattenSlots;
+        import.Stage = ImportStage.Flatten;
+        import.Completing = false;
+        foreach (var slot in flattenSlots)
+        {
+            var scope = slot;
+            _posing.RegisterTransitiveAction(
+                scope.Skeleton,
+                (bone, poseInfo) => ApplyBone(import, scope, bone, poseInfo));
+        }
     }
 
     /// <summary>
@@ -581,7 +757,10 @@ public sealed class PoseImportCapture : IDisposable
         var reconcile = BuildReconcile(import);
         if (reconcile == null)
         {
-            Complete(generation);
+            // Nothing to converge — an expression import still owes the
+            // flatten (Brio's Snapshot runs Reconcile(reset) whether or not
+            // ReconcileHead had work).
+            FinishAfterReconcile(import);
             return;
         }
 

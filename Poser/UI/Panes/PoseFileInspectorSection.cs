@@ -233,9 +233,16 @@ public sealed class PoseFileInspectorSection
         bool full = _scope == 0, expression = _scope == 2, selected = _scope == 3;
         var options = new PoseImportOptions
         {
-            ApplyRotation = _rotation,
-            ApplyPosition = _position,
-            ApplyScale = _scale,
+            // Brio's dispatch table (FileUIHelpers.cs:697-718): with BOTH
+            // import types selected — its popup's everyday state — the
+            // import runs DefaultIPCImporterOptions, TransformComponents.All
+            // on every bone, transform icons IGNORED (passed null). The
+            // icons only reach the body-only path. Full mirrors that
+            // exactly: every component, toggles ignored; Body honors the
+            // toggles; Expression forces All at the engine.
+            ApplyRotation = full || _rotation,
+            ApplyPosition = full || _position,
+            ApplyScale = full || _scale,
             ApplyBody = true,
             AsExpression = expression,
             ApplyFace = full || selected,
