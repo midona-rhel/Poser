@@ -182,7 +182,10 @@ public sealed class PoseFileInspectorSection
     }
     private const float MenuWidth = 320f;
     private const float FilterMenuWidth = 216f;
-    private const float MenuLabelColumn = 96f;
+    // 78: the longest label ("Reset first") plus breath — the slack the
+    // old 96 left at the label side was exactly what the caption pairs
+    // were missing at the right edge (user: almost overflowing).
+    private const float MenuLabelColumn = 78f;
     private const string ImportMenuId = "##pose-import-menu";
     private const string ExportMenuId = "##pose-export-menu";
     private const string BoneFilterMenuId = "##pose-bone-filter-menu";
