@@ -220,8 +220,6 @@ public sealed class PoseLibraryPane
     /// the next one and by any filter change.</summary>
     private string? _note;
 
-    private ActorId? _targetId;
-    private string _targetName = string.Empty;
 
     private int _lastAppliedTile = -1;
     private double _lastAppliedAt;
@@ -1203,14 +1201,13 @@ public sealed class PoseLibraryPane
         return resolved.Success ? resolved.Value : null;
     }
 
-    /// <summary>The primary action's caption, minted only when the actor it
-    /// names changes — the same discipline as the footer count.</summary>
+    /// <summary>The apply gates. The picker chooses the target, so applying
+    /// only needs an ELIGIBLE ACTOR TO EXIST — the sidebar selection is
+    /// irrelevant, and nothing here touches it (the old label-minting tail
+    /// resolved the SELECTED actor and crashed the frame when the gate was
+    /// true with nothing selected).</summary>
     private void SyncTarget()
     {
-        // The picker chooses the target, so applying only needs an
-        // ELIGIBLE ACTOR TO EXIST — the sidebar selection is irrelevant
-        // (it used to gate the button dead whenever the library itself
-        // held focus).
         bool can = false;
         foreach (var candidate in _actors.Actors)
         {
@@ -1221,21 +1218,12 @@ public sealed class PoseLibraryPane
             }
         }
         _vm.CanApply = can;
-        var actor = TargetActor();
 
         // A character file is applied to an actor that already exists; there is
         // no "spawn and dress" path in v1.
         _vm.CanSpawn = _type != LibraryType.Mcdf;
 
-        var id = can ? _bindings.GetActorId(actor!) : null;
-        string name = can ? actor!.Name : string.Empty;
-        if (Nullable.Equals(id, _targetId)
-            && string.Equals(name, _targetName, StringComparison.Ordinal))
-            return;
-        _targetId = id;
-        _targetName = name;
-        // The primary opens the actor picker, so it no longer names the
-        // selection.
+        // The primary opens the actor picker; its caption is constant.
         _vm.ApplyLabel = "Apply to";
     }
 
