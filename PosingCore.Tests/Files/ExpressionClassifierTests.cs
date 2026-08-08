@@ -67,6 +67,21 @@ public class ExpressionClassifierTests
     }
 
     [Fact]
+    public void BodyFile_IsBodyOnly()
+    {
+        Assert.True(PoseFileService.IsBodyOnlyPose(
+            FileWith("n_root", "j_sebo_a", "j_ude_a_l")));
+    }
+
+    [Fact]
+    public void FileWithAnyFaceBone_IsNotBodyOnly()
+    {
+        Assert.False(PoseFileService.IsBodyOnlyPose(
+            FileWith("j_sebo_a", "j_kao")));
+        Assert.False(PoseFileService.IsBodyOnlyPose(new PoseFile()));
+    }
+
+    [Fact]
     public void ShippedRestPoses_AreNotExpressions()
     {
         // The A/T presets must never smart-route to the expression path.

@@ -1261,10 +1261,10 @@ public sealed class PoseLibraryPane
         // has no import-type control, so such a file applies as an
         // expression; the engine then forces every component exactly as
         // Brio's ExpressionOptions does. The reset keeps expression scope:
-        // face bones, never the head. Gated by the import menu's Smart
-        // import checkbox (default on).
-        if (_files.SmartImportEnabled &&
-            path.EndsWith(".pose", StringComparison.OrdinalIgnoreCase) &&
+        // face bones, never the head. Unconditional — the tile apply has no
+        // type control, so this routing is structural, not the import
+        // menu's Smart checkbox.
+        if (path.EndsWith(".pose", StringComparison.OrdinalIgnoreCase) &&
             PoseFile.Load(path) is { } file &&
             PoseFileService.IsExpressionOnlyPose(file))
         {

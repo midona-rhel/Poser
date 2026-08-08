@@ -571,6 +571,21 @@ public class PoseFileService : IPoseFileService
         return false;
     }
 
+    /// <summary>The other half of Brio's Smart Import classifier
+    /// (:382-386): a file whose Character bones include NO face bone is a
+    /// body pose — smart routing keeps the face untouched for it.</summary>
+    public static bool IsBodyOnlyPose(PoseFile poseFile)
+    {
+        if (poseFile.Bones.Count == 0)
+            return false;
+        foreach (var boneName in poseFile.Bones.Keys)
+        {
+            if (IsSmartImportFaceBone(boneName))
+                return false;
+        }
+        return true;
+    }
+
     /// <summary>Brio ResolveSmartImport's local IsFaceBone (:405-419):
     /// j_kao plus the j_f_/j_eye/j_may/j_ago/j_lip/j_bero prefixes.</summary>
     private static bool IsSmartImportFaceBone(string boneName) =>

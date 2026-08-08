@@ -51,11 +51,12 @@ public sealed class PoseFileInspectorSection
     // — Freeze / Smart Import / Import Type / transform toggles / presets.
     // Bone-filter menu: Brio's category filter (PosingEditorCommon.
     // DrawBoneFilterEditor) — group tristates + per-category checkboxes.
-    // Default ON — deviation from Brio's unchecked default, deliberate: the
-    // library's tile apply has no import-type control, so smart routing is
-    // the only thing that can send a face-only file down the expression
-    // path; off would resurrect the broken body-path face import.
-    private bool _smartImport = true;
+    // Unchecked by default, exactly Brio (its smartDefaults static,
+    // FileUIHelpers.cs:444) — the earlier default-ON kept the Apply/Model
+    // row permanently disabled through Brio's own Smart lock. The LIBRARY's
+    // face routing no longer rides this checkbox: its tile apply has no
+    // type control, so that routing is structural and unconditional.
+    private bool _smartImport;
     private bool _modelTransform;
     // Brio's DefaultImporterOptions filter starts with weapon and ex
     // disabled (PosingService.cs:45-47); the menu edits from there.
@@ -65,9 +66,6 @@ public sealed class PoseFileInspectorSection
     private bool _importMenuWithPresets;
     private bool _boneFilterRequested;
 
-    /// <summary>Whether library applies run the face-only→expression smart
-    /// routing — the import menu's Smart Import checkbox, default on.</summary>
-    public bool SmartImportEnabled => _smartImport;
     // Seeded from config and written back on toggle: the checkbox IS the
     // persisted FreezeActorOnPoseImport default (Brio's popup checkbox +
     // hidden config flag as one surface).
@@ -612,8 +610,23 @@ public sealed class PoseFileInspectorSection
         {
             if (rememberPath)
                 _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
+            var options = BuildOptions();
+            // Brio's Smart Import (ResolveSmartImport): the FILE decides the
+            // type — face-only routes as an expression, body-only keeps the
+            // face untouched; a mixed file imports as configured. (The
+            // Model-ID auto-appearance branch has no Poser equivalent —
+            // appearance is delegated to Glamourer.)
+            if (_smartImport &&
+                path.EndsWith(".pose", StringComparison.OrdinalIgnoreCase) &&
+                PoseFile.Load(path) is { } smartFile)
+            {
+                if (PoseFileService.IsExpressionOnlyPose(smartFile))
+                    options.AsExpression = true;
+                else if (PoseFileService.IsBodyOnlyPose(smartFile))
+                    options.ApplyFace = false;
+            }
             var imported = _poseFacade.ImportPose(
-                skeleton.Actor, path, BuildOptions(), FreezeSelectedScope());
+                skeleton.Actor, path, options, FreezeSelectedScope());
             _status = imported.Success
                 ? string.Empty
                 : $"Import: {imported.Detail}";
