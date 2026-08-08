@@ -117,9 +117,15 @@ public sealed class PoseLibraryPane
     /// all three, because a restore reproduces what was saved. The MCDF tab
     /// has no set: character files never travel the pose import pipeline.
     /// </summary>
-    private bool _posesPosition;
+    // All components by default — Brio's REAL import path: with both
+    // import types selected (the popup's normal state) it uses
+    // DefaultIPCImporterOptions, TransformComponents.All on every bone with
+    // the transform icons ignored (FileUIHelpers.cs:697-701). The
+    // rotation-only default this replaced matched DefaultImporterOptions, a
+    // fallback Brio's own popup path never takes; DT faces NEED positions.
+    private bool _posesPosition = true;
     private bool _posesRotation = true;
-    private bool _posesScale;
+    private bool _posesScale = true;
     private bool _autoPosition = true;
     private bool _autoRotation = true;
     private bool _autoScale = true;
