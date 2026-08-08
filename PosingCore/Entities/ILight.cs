@@ -48,6 +48,17 @@ public interface ILight
     float CharacterShadowRange { get; set; }
     float ShadowPlaneNear { get; set; }
     float ShadowPlaneFar { get; set; }
+
+    /// <summary>Who owns the native light; see <see cref="LightOwnership"/>.</summary>
+    LightOwnership Ownership { get; }
+
+    /// <summary>Game path of the applied gobo texture; null when none.
+    /// Written only through the lighting service's gobo methods.</summary>
+    string? GoboPath { get; }
+
+    /// <summary>Bone this light follows, one transform copy per frame; null
+    /// when free-standing. Cleared automatically when the bone dies.</summary>
+    IBone? AttachedBone { get; set; }
 }
 
 public enum LightFalloffType

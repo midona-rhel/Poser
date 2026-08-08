@@ -52,6 +52,7 @@ public class GizmoOverlayWindow : Window
     private readonly IBonePosingService _bonePosingService;
     private readonly CleanTransformFacade _cleanTransforms;
     private readonly CleanPoseFacade _cleanPose;
+    private readonly Game.Bindings.StableBindingRegistry _bindings;
 
     /// <summary>
     /// Everything one gizmo gesture froze at Begin: the engaged handle,
@@ -161,7 +162,8 @@ public class GizmoOverlayWindow : Window
         ICameraService cameraService,
         IBonePosingService bonePosingService,
         CleanTransformFacade cleanTransforms,
-        CleanPoseFacade cleanPose)
+        CleanPoseFacade cleanPose,
+        Game.Bindings.StableBindingRegistry bindings)
         : base("##poser_gizmo_overlay",
             ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoDecoration |
@@ -180,6 +182,7 @@ public class GizmoOverlayWindow : Window
         _bonePosingService = bonePosingService;
         _cleanTransforms = cleanTransforms;
         _cleanPose = cleanPose;
+        _bindings = bindings;
 
         RespectCloseHotkey = false;
     }
@@ -223,9 +226,19 @@ public class GizmoOverlayWindow : Window
         {
             { Kind: SceneEntityKind.Bone } => GizmoTargetType.Bone,
             { Kind: SceneEntityKind.Actor } => GizmoTargetType.Actor,
-            { Kind: SceneEntityKind.Light } => GizmoTargetType.Light,
+            { Kind: SceneEntityKind.Light, Light: { } light } =>
+                IsAttached(light) ? GizmoTargetType.None : GizmoTargetType.Light,
             _ => GizmoTargetType.None,
         };
+    }
+
+    /// <summary>An attached light's transform is re-derived from its bone every
+    /// tick, so it is not manipulable: the drag would be overwritten before it
+    /// was ever seen. Same answer as no target at all.</summary>
+    private bool IsAttached(LightId light)
+    {
+        var resolved = _bindings.Resolve(light);
+        return resolved.Success && resolved.Value is { AttachedBone: not null };
     }
 
     /// <summary>The shared effective transform selection: same resolver the

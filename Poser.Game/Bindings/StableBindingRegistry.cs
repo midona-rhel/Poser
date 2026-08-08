@@ -203,7 +203,8 @@ public sealed class StableBindingRegistry
                 lightId,
                 light.Name,
                 light.Kind,
-                light.IsOn));
+                light.IsOn,
+                light.Ownership));
         }
 
         _actorBindings = actorBindings;

@@ -1045,9 +1045,17 @@ public class MainWindow : Window
             {
                 Label = light.Name,
                 Count = "",
-                Icon = light.Kind == LightKind.Directional
-                    ? TablerIcon.Sun
-                    : TablerIcon.Bulb,
+                // Ownership outranks kind in the mark: a borrowed light is
+                // released rather than destroyed, and the row has to say so
+                // before the light is ever selected.
+                Icon = light.Ownership switch
+                {
+                    LightOwnership.GPose => TablerIcon.Camera,
+                    LightOwnership.World => TablerIcon.BuildingStore,
+                    _ => light.Kind == LightKind.Directional
+                        ? TablerIcon.Sun
+                        : TablerIcon.Bulb,
+                },
                 Tag = lightSelectionId,
             });
         }

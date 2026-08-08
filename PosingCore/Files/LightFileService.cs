@@ -63,6 +63,7 @@ public class LightFileService : ILightFileService
             }
 
             Apply(lightFile, light);
+            ApplyGobo(lightFile, light);
             return light;
         }
         catch (Exception ex)
@@ -93,7 +94,28 @@ public class LightFileService : ILightFileService
         CharacterShadowRange = light.CharacterShadowRange,
         ShadowPlaneNear = light.ShadowPlaneNear,
         ShadowPlaneFar = light.ShadowPlaneFar,
+        Gobo = light.GoboPath,
     };
+
+    /// <summary>Resolves the saved path against the live gobo library — a
+    /// path the running client no longer ships is dropped rather than pushed
+    /// at the game.</summary>
+    private void ApplyGobo(LightFile lightFile, ILight light)
+    {
+        if (string.IsNullOrEmpty(lightFile.Gobo))
+            return;
+
+        foreach (var gobo in _lighting.Gobos)
+        {
+            if (!string.Equals(gobo.Path, lightFile.Gobo, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (!_lighting.ApplyGobo(light, gobo))
+                _log.Warning($"Could not apply gobo '{gobo.Name}' to '{light.Name}'");
+            return;
+        }
+
+        _log.Warning($"Light file references an unknown gobo: {lightFile.Gobo}");
+    }
 
     private static void Apply(LightFile lightFile, ILight light)
     {

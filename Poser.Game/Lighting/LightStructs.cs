@@ -39,9 +39,15 @@ public unsafe struct GameLight
 
     [FieldOffset(0x90)] public LightRenderObject* LightRenderObject;
 
-    // Present in the layout for completeness; no reference implementation
-    // writes this; inert.
+    /// <summary>Gobo texture handle. Written by the game's set-light-texture
+    /// call; released with <c>DecRef</c> when the gobo is cleared.</summary>
     [FieldOffset(0x98)] public TextureResourceHandle* ProjectedCubemapTexture;
+
+    public bool IsVisible
+    {
+        get => DrawObject.IsVisible;
+        set => DrawObject.IsVisible = value;
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Update()
@@ -76,6 +82,28 @@ public unsafe struct GameLight
     {
         DrawObject.VirtualTable->UpdateTransforms((DrawObject*)Unsafe.AsPointer(in this), unk);
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void UpdateRender()
+    {
+        DrawObject.VirtualTable->UpdateRender((DrawObject*)Unsafe.AsPointer(in this));
+    }
+}
+
+/// <summary>
+/// The GPose camera-light controller (<c>EventGPoseController</c>). Only the
+/// three camera-light slots are mapped; the same struct backs both the
+/// event-framework instance and the toggle function's first argument.
+/// </summary>
+[StructLayout(LayoutKind.Explicit)]
+public unsafe struct GPoseLightController
+{
+    public const int LightCount = 3;
+
+    [FieldOffset(0x0E0)] public fixed ulong Lights[LightCount];
+
+    public GameLight* GetLight(uint index) =>
+        index < LightCount ? (GameLight*)Lights[index] : null;
 }
 
 /// <summary>Render-side properties of a <see cref="GameLight"/>.</summary>
@@ -99,6 +127,10 @@ public unsafe struct LightRenderObject
 
     [FieldOffset(0xA0)] public NativeAABounds CullingBounds;
     [FieldOffset(0xC0)] public NativeAABounds RangeBounds;
+
+    /// <summary>Render-side copy of the gobo texture handle. Cleared to null
+    /// alongside the scene light's own handle.</summary>
+    [FieldOffset(0x120)] public void* Texture;
 
     public Vector3 Color
     {

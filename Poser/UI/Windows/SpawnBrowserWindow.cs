@@ -40,7 +40,8 @@ public sealed class SpawnBrowserWindow : Window
     private const int RowProp = 3;
     private const int RowLight = 4;
     private const int RowLightFromFile = 5;
-    private const int ActionRows = 6;
+    private const int RowWorldLight = 6;
+    private const int ActionRows = 7;
 
     /// <summary>Double-click is a supported gesture on a single-click list, so
     /// a second activation of the SAME row inside this window is swallowed
@@ -55,6 +56,10 @@ public sealed class SpawnBrowserWindow : Window
         "The selected actor has no companion slot — use "
         + "'New actor with companion slot'.";
 
+    private const string NoWorldLightsNote =
+        "No overworld light is close enough to capture — capture works in "
+        + "GPose, near a light the world itself places.";
+
     private static readonly string[] KindBadges = ["Minion", "Mount", "Accessory"];
 
     private readonly IActorSpawnService _spawnService;
@@ -67,6 +72,20 @@ public sealed class SpawnBrowserWindow : Window
     private readonly ITextureProvider _textures;
     private readonly HashSet<uint> _missingIcons = new();
     private readonly SpawnBrowserViewModel _vm = new();
+
+    /// <summary>The capture surface. Candidates are a snapshot of the moment
+    /// the window opened — a handle is only valid until the light list next
+    /// changes — so the list is refreshed on open, not per frame.</summary>
+    private readonly Crystarium.SearchPicker<WorldLightChoice> _worldPicker =
+        new("spawn-world-light");
+
+    private readonly List<WorldLightChoice> _worldLights = new();
+
+    /// <summary>One capturable overworld light, as a row. The picker takes
+    /// reference types, and the candidate is a struct; the label and the ImGui
+    /// key are minted here rather than per frame.</summary>
+    private sealed record WorldLightChoice(
+        WorldLightCandidate Candidate, string Label, string Key);
 
     private bool _built;
     private string _query = string.Empty;
@@ -120,6 +139,7 @@ public sealed class SpawnBrowserWindow : Window
     public override void OnOpen()
     {
         BuildRows();
+        RefreshWorldLights();
         // The query is a DRAFT: it means nothing outside the open surface, so
         // each open starts on the whole list.
         _vm.Query = string.Empty;
@@ -159,6 +179,26 @@ public sealed class SpawnBrowserWindow : Window
         {
             Interactive.EndOwner(owner);
         }
+
+        // Pumped after the list: the surface a row opened has to outlive that
+        // row's own draw call.
+        if (_worldPicker.Draw() is { } chosen)
+            CaptureWorldLight(chosen.Item);
+    }
+
+    /// <summary>Capture spawns an owned copy and suppresses the original. The
+    /// scene has not rescanned yet, so the copy is selected on the next refresh
+    /// through the same reconcile a spawned light uses.</summary>
+    private void CaptureWorldLight(WorldLightChoice choice)
+    {
+        var captured = _lightingService.CaptureWorldLight(choice.Candidate);
+        if (captured == null)
+        {
+            _note = "The world light could not be captured.";
+            return;
+        }
+        _pendingSelectSpawnedLight = captured;
+        _note = null;
     }
 
     // ── the list ─────────────────────────────────────────────────────────
@@ -190,6 +230,13 @@ public sealed class SpawnBrowserWindow : Window
         rows.Add(ActionRow(
             "##spawn-light-file", "New light from file…", TablerIcon.File,
             noLights));
+        // Capture takes a copy of a light the world itself placed and
+        // suppresses the original; availability moves with the player, so this
+        // row is re-stated on every open.
+        rows.Add(ActionRow(
+            "##spawn-world-light", "World light…", TablerIcon.BuildingStore,
+            noLights,
+            help: "Copy a light the world places here and edit it"));
 
         var entries = _catalog.Entries;
         for (int i = 0; i < entries.Count; i++)
@@ -208,8 +255,47 @@ public sealed class SpawnBrowserWindow : Window
     }
 
     private static SpawnBrowserRow ActionRow(
-        string id, string label, TablerIcon glyph, bool disabled = false) =>
-        new(id, label, label.ToLowerInvariant(), glyph, 0u, null, disabled);
+        string id, string label, TablerIcon glyph, bool disabled = false,
+        string? help = null) =>
+        new(id, label, label.ToLowerInvariant(), glyph, 0u, null, disabled,
+            help);
+
+    /// <summary>Re-reads the capturable overworld lights and re-states the row
+    /// they feed. A candidate's handle dies with the next light-list change, so
+    /// nothing here is kept across an open.</summary>
+    private void RefreshWorldLights()
+    {
+        _worldLights.Clear();
+        if (_lightingService.IsAvailable)
+        {
+            var candidates = _lightingService.GetWorldLightCandidates();
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                var candidate = candidates[i];
+                _worldLights.Add(new WorldLightChoice(
+                    candidate,
+                    string.Format(
+                        CultureInfo.CurrentCulture,
+                        "World light — {0:0.0}m",
+                        candidate.DistanceFromPlayer),
+                    i.ToString(CultureInfo.InvariantCulture)));
+            }
+        }
+
+        if (!_built)
+            return;
+        bool disabled = _worldLights.Count == 0;
+        var row = _vm.Rows[RowWorldLight];
+        if (row.Disabled == disabled)
+            return;
+        _vm.Rows[RowWorldLight] = row with
+        {
+            Disabled = disabled,
+            Help = disabled
+                ? NoWorldLightsNote
+                : "Copy a light the world places here and edit it",
+        };
+    }
 
     private static string? Badge(CompanionKind kind) => kind switch
     {
@@ -314,6 +400,19 @@ public sealed class SpawnBrowserWindow : Window
                 // is pumped by the main window every frame, so the dialog
                 // outlives this window.
                 _lightPane.OpenLoad();
+                return;
+            case RowWorldLight:
+                // The row just reserved is the anchor the surface opens off.
+                RefreshWorldLights();
+                _worldPicker.Open(
+                    "world-light",
+                    _worldLights,
+                    static choice => choice.Label,
+                    static choice => choice.Key,
+                    options: new PickerOptions<WorldLightChoice>
+                    {
+                        Glyph = static _ => TablerIcon.Bulb,
+                    });
                 return;
         }
 

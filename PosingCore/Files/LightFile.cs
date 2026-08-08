@@ -43,6 +43,11 @@ public class LightFile
     public float ShadowPlaneNear { get; set; }
     public float ShadowPlaneFar { get; set; }
 
+    /// <summary>Game path of the projected gobo texture, null when the light
+    /// has none. Ktisis' .ktlight v2 field, stored by path so a library that
+    /// renames an entry still resolves it.</summary>
+    public string? Gobo { get; set; }
+
     /// <summary>
     /// The light's world transform. Absolute, unlike a pose file's bone
     /// data — a light has no rest pose to take a difference against.

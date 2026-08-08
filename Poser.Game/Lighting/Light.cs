@@ -14,13 +14,35 @@ internal sealed unsafe class Light : ILight
 {
     private GameLight* _native;
 
-    public Light(GameLight* native, string name)
+    public Light(
+        GameLight* native,
+        string name,
+        LightOwnership ownership = LightOwnership.Spawned)
     {
         _native = native;
         Name = name;
+        Ownership = ownership;
     }
 
     internal GameLight* NativePtr => _native;
+
+    public LightOwnership Ownership { get; }
+
+    public string? GoboPath { get; private set; }
+
+    public IBone? AttachedBone { get; set; }
+
+    /// <summary>The suppressed overworld original this light was copied from;
+    /// zero for every other ownership.</summary>
+    internal nint WorldOriginal { get; set; }
+
+    /// <summary>GPose camera-light slot; -1 when not a GPose light.</summary>
+    internal int GPoseSlot { get; set; } = -1;
+
+    /// <summary>Gobo bookkeeping is the lighting service's alone — the entity
+    /// exposes the path read-only so no caller can desync it from the native
+    /// texture handle.</summary>
+    internal void SetGoboPath(string? path) => GoboPath = path;
 
     public bool IsValid => _native != null;
 

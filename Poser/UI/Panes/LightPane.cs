@@ -1,7 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Textures;
+using Dalamud.Interface.Textures.TextureWraps;
+using Dalamud.Plugin.Services;
 using Poser.Application.Scene;
+using Poser.Config;
 using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
@@ -37,14 +42,47 @@ public sealed class LightPane
     private readonly CleanTransformFacade _cleanTransforms;
     private readonly Game.Viewport.ViewportProjection _viewport;
     private readonly ICameraService _camera;
+    private readonly ITextureProvider _textures;
 
     private string _status = string.Empty;
     private bool _openGeneral = true;
     private bool _openLight = true;
     private bool _openShadows = true;
+    private bool _openAttach = true;
     private bool _openTransform = true;
     private bool _openFile = true;
     private bool _openActions = true;
+
+    /// <summary>The gobo library's visual surface: a row is the texture's own
+    /// thumbnail beside its name.</summary>
+    private readonly Crystarium.SearchPicker<GoboEntry> _goboPicker =
+        new("light-gobo");
+
+    /// <summary>Every bone of every actor, flat and searchable — the attach
+    /// target is one bone anywhere in the scene, not one bone of one actor.
+    /// </summary>
+    private readonly Crystarium.SearchPicker<BoneChoice> _attachPicker =
+        new("light-attach");
+
+    /// <summary>One picker row per bone, rebuilt at open: the surface's list is
+    /// a snapshot of the scene at the moment it was asked for.</summary>
+    private readonly List<BoneChoice> _boneChoices = new();
+
+    /// <summary>A gobo path the texture provider threw on. An exception per row
+    /// per frame is a frame-rate cliff, so a failure is remembered.</summary>
+    private readonly HashSet<string> _missingGobos = new(StringComparer.Ordinal);
+
+    private readonly Func<GoboEntry, nint> _goboTexture;
+
+    /// <summary>The attached bone's row label and the snapshot it was derived
+    /// from. Re-deriving walks every bone of every actor, so it is done once per
+    /// scene revision rather than once per frame.</summary>
+    private (BoneId Bone, ulong Revision, string Label)? _attachLabel;
+
+    /// <summary>One bone offered as an attach target: the identity the pick
+    /// resolves through, plus the two strings its row shows.</summary>
+    private sealed record BoneChoice(
+        BoneId Id, string BoneName, string ActorName);
 
     private readonly Crystarium.FileDialog _saveBrowser =
         new("Save Light", new[] { ".poserlight" }, isSaveMode: true);
@@ -82,7 +120,8 @@ public sealed class LightPane
         ILightFileService lightFiles,
         CleanTransformFacade cleanTransforms,
         Game.Viewport.ViewportProjection viewport,
-        ICameraService camera)
+        ICameraService camera,
+        ITextureProvider textures)
     {
         _scene = scene;
         _bindings = bindings;
@@ -91,6 +130,8 @@ public sealed class LightPane
         _cleanTransforms = cleanTransforms;
         _viewport = viewport;
         _camera = camera;
+        _textures = textures;
+        _goboTexture = ResolveGobo;
     }
 
     /// <summary>
@@ -157,13 +198,27 @@ public sealed class LightPane
                 form => LightRows(form, light));
             page.Section("SHADOWS", _openShadows, next => _openShadows = next,
                 form => ShadowRows(form, light));
+            page.Section("ATTACH", _openAttach, next => _openAttach = next,
+                form => AttachRows(form, light));
             page.Section("TRANSFORM", _openTransform, next => _openTransform = next,
-                form => TransformRows(form, lightId));
+                form => TransformRows(form, lightId, light.AttachedBone != null));
             page.Section("FILE", _openFile, next => _openFile = next,
                 form => FileRows(form, light));
             page.Section("ACTIONS", _openActions, next => _openActions = next,
                 form => ActionRows(form, lightId, light));
         });
+
+        DrawPickers();
+    }
+
+    /// <summary>The two retained surfaces, pumped after the page: a popup
+    /// opened by a row has to outlive the row's own draw call.</summary>
+    private void DrawPickers()
+    {
+        if (_goboPicker.Draw() is { } gobo)
+            ApplyGobo(gobo.Item);
+        if (_attachPicker.Draw() is { } bone)
+            AttachTo(bone.Item);
     }
 
     // ── sections ─────────────────────────────────────────────────────────
@@ -230,6 +285,93 @@ public sealed class LightPane
                     help: "How soft the panel's edge is, in degrees");
                 break;
         }
+
+        // The gobo is a mask the light projects through, and only the two kinds
+        // that project anything can carry one. The service clears it by itself
+        // when the kind leaves Spot/Area, so this row only reads that state.
+        bool goboSupported = light.Kind is LightKind.Spot or LightKind.Area;
+        form.Picker(
+            "Gobo",
+            GoboLabel(light),
+            () => OpenGoboPicker(light),
+            actions =>
+            {
+                actions.Button(
+                    "Clear",
+                    () =>
+                    {
+                        _lighting.ClearGobo(light);
+                        _status = string.Empty;
+                    },
+                    disabled: light.GoboPath is null,
+                    help: "Project no mask at all");
+            },
+            help: goboSupported
+                ? "Project a texture through the light, like a window's shadow"
+                : "Spot and area lights only.",
+            disabled: !goboSupported);
+    }
+
+    /// <summary>The applied gobo's library name, its file name when the path is
+    /// not one the library declares, or "None".</summary>
+    private string GoboLabel(ILight light)
+    {
+        if (light.GoboPath is not { } path)
+            return "None";
+        var gobos = _lighting.Gobos;
+        for (int i = 0; i < gobos.Count; i++)
+        {
+            if (string.Equals(gobos[i].Path, path, StringComparison.OrdinalIgnoreCase))
+                return gobos[i].Name;
+        }
+        return System.IO.Path.GetFileNameWithoutExtension(path);
+    }
+
+    private void OpenGoboPicker(ILight light) =>
+        _goboPicker.Open(
+            "gobo",
+            _lighting.Gobos,
+            static gobo => gobo.Name,
+            static gobo => gobo.Path,
+            light.GoboPath,
+            options: new PickerOptions<GoboEntry>
+            {
+                Texture = _goboTexture,
+                // A row carries a thumbnail and a name; the narrow picker cuts
+                // both.
+                Width = Crystarium.ActiveTheme.Picker.WideWidth,
+            });
+
+    private void ApplyGobo(GoboEntry gobo)
+    {
+        var (_, light) = TargetLight();
+        if (light == null)
+            return;
+        _status = _lighting.ApplyGobo(light, gobo)
+            ? string.Empty
+            : "Gobo: the texture could not be applied.";
+    }
+
+    /// <summary>
+    /// Resolves a gobo's game texture to an ImGui handle, or 0 when it is not
+    /// loaded yet. The provider THROWS for a path the game does not have, so a
+    /// failure is remembered; a null wrap is merely "still loading" and is not.
+    /// The WRAP is never cached: shared textures must be re-resolved each frame.
+    /// </summary>
+    private nint ResolveGobo(GoboEntry gobo)
+    {
+        if (_missingGobos.Contains(gobo.Path))
+            return 0;
+        IDalamudTextureWrap? wrap = null;
+        try
+        {
+            wrap = _textures.GetFromGame(gobo.Path).GetWrapOrDefault();
+        }
+        catch (Exception)
+        {
+            _missingGobos.Add(gobo.Path);
+        }
+        return wrap is null ? 0 : (nint)wrap.Handle.Handle;
     }
 
     private void ShadowRows(Crystarium.FormScope form, ILight light)
@@ -254,15 +396,137 @@ public sealed class LightPane
             help: "The furthest distance shadows reach");
     }
 
+    /// <summary>The follow target. Attaching is a per-frame copy of the bone's
+    /// position and rotation, so it OWNS the light's transform — the TRANSFORM
+    /// section and the in-world gizmo both stand down while it is set.</summary>
+    private void AttachRows(Crystarium.FormScope form, ILight light)
+    {
+        var attached = light.AttachedBone;
+        form.Picker(
+            "Attach to",
+            AttachLabel(attached),
+            () => OpenAttachPicker(light),
+            actions =>
+            {
+                actions.Button(
+                    "Detach",
+                    () =>
+                    {
+                        light.AttachedBone = null;
+                        _attachLabel = null;
+                        _status = string.Empty;
+                    },
+                    disabled: attached is null,
+                    help: "Leave the light where it is and stop following");
+            },
+            help: "Make the light follow a bone, one transform copy per frame");
+    }
+
+    /// <summary>"Actor · bone" for the attached bone, memoized on the scene
+    /// revision. A bone the snapshot no longer lists still reads as attached —
+    /// the service, not this pane, decides when a stale bone detaches.</summary>
+    private string AttachLabel(IBone? bone)
+    {
+        if (bone is null)
+            return "None";
+        if (_bindings.GetBoneId(bone) is not { } boneId)
+            return "Attached";
+
+        ulong revision = _scene.Snapshot.Revision;
+        if (_attachLabel is { } cached &&
+            cached.Revision == revision &&
+            cached.Bone.Equals(boneId))
+            return cached.Label;
+
+        foreach (var actor in _scene.Snapshot.Actors)
+        {
+            foreach (var skeleton in actor.Skeletons)
+            {
+                foreach (var descriptor in skeleton.Bones)
+                {
+                    if (!descriptor.Id.Equals(boneId))
+                        continue;
+                    string label =
+                        $"{ActorName(actor)} · {descriptor.DisplayName}";
+                    _attachLabel = (boneId, revision, label);
+                    return label;
+                }
+            }
+        }
+        return "Attached";
+    }
+
+    private void OpenAttachPicker(ILight light)
+    {
+        _boneChoices.Clear();
+        foreach (var actor in _scene.Snapshot.Actors)
+        {
+            string actorName = ActorName(actor);
+            foreach (var skeleton in actor.Skeletons)
+            {
+                foreach (var descriptor in skeleton.Bones)
+                    _boneChoices.Add(new BoneChoice(
+                        descriptor.Id, descriptor.DisplayName, actorName));
+            }
+        }
+
+        string? selected = light.AttachedBone is { } attached &&
+            _bindings.GetBoneId(attached) is { } attachedId
+            ? attachedId.ToString()
+            : null;
+        _attachPicker.Open(
+            "attach",
+            _boneChoices,
+            static choice => choice.BoneName,
+            static choice => choice.Id.ToString(),
+            selected,
+            options: new PickerOptions<BoneChoice>
+            {
+                Badge = static choice => choice.ActorName,
+                // A row carries a bone name and the actor it belongs to; the
+                // narrow picker cuts the badge.
+                Width = Crystarium.ActiveTheme.Picker.WideWidth,
+            });
+    }
+
+    private void AttachTo(BoneChoice choice)
+    {
+        var (_, light) = TargetLight();
+        if (light == null)
+            return;
+        var resolved = _bindings.Resolve(choice.Id);
+        if (!resolved.Success || resolved.Value is not { } bone)
+        {
+            _status = $"Attach: {resolved.Detail}";
+            return;
+        }
+        // The gesture edits a transform the follow is about to overwrite.
+        ClearTransformSession(cancel: true);
+        light.AttachedBone = bone;
+        _attachLabel = null;
+        _status = string.Empty;
+    }
+
+    /// <summary>Nickname / anonymous-mask aware, like every other surface.
+    /// </summary>
+    private static string ActorName(ActorDescriptor actor) =>
+        ConfigurationService.Instance.GetDisplayName(
+            actor.Id.LogicalId, actor.Name);
+
     /// <summary>
     /// The three axis rows and the ONE gesture they share: the local functions
     /// close over the frame's running position/euler/scale, so the composed
     /// transform is assembled from all three rather than from three
     /// independent rows.
     /// </summary>
-    private void TransformRows(Crystarium.FormScope form, LightId lightId)
+    private void TransformRows(
+        Crystarium.FormScope form, LightId lightId, bool attached)
     {
-        var (transform, canEdit) = ReadTransform(lightId);
+        var (transform, editable) = ReadTransform(lightId);
+        // An attached light's transform is re-derived from the bone every tick,
+        // so an edit here would be overwritten before it was ever seen.
+        bool canEdit = editable && !attached;
+        string? help = attached ? "Detach to move freely." : null;
         var pos = transform.Position;
         var euler = _dragEuler ?? PoseMath.QuaternionToEuler(transform.Rotation);
         var scale = transform.Scale;
@@ -305,6 +569,7 @@ public sealed class LightPane
             Commit,
             0.005f,
             "0.000",
+            help: help,
             disabled: !canEdit);
         form.AxisVector(
             "Rotation",
@@ -318,6 +583,7 @@ public sealed class LightPane
             },
             0.5f,
             "0.000",
+            help: help,
             disabled: !canEdit);
         form.AxisVector(
             "Scale",
@@ -326,6 +592,7 @@ public sealed class LightPane
             Commit,
             0.005f,
             "0.000",
+            help: help,
             disabled: !canEdit);
     }
 
@@ -379,15 +646,28 @@ public sealed class LightPane
             actions.Button("Move to camera",
                 () => MoveToCamera(lightId),
                 help: "Put the light where the camera is, facing the same way");
-            actions.Button("Destroy",
-                () =>
-                {
-                    ClearTransformSession(cancel: true);
-                    _lighting.DestroyLight(light);
-                    _status = string.Empty;
-                },
-                help: "Remove this light from the scene",
-                variant: ButtonVariant.Danger);
+            // A borrowed native is never destructed: a captured light is given
+            // back to the game instead, which is a different promise and reads
+            // as a different button.
+            if (light.Ownership == LightOwnership.Spawned)
+                actions.Button("Destroy",
+                    () =>
+                    {
+                        ClearTransformSession(cancel: true);
+                        _lighting.DestroyLight(light);
+                        _status = string.Empty;
+                    },
+                    help: "Remove this light from the scene",
+                    variant: ButtonVariant.Danger);
+            else
+                actions.Button("Release",
+                    () =>
+                    {
+                        ClearTransformSession(cancel: true);
+                        _lighting.ReleaseLight(light);
+                        _status = string.Empty;
+                    },
+                    help: "Give this light back to the game and stop editing it");
         });
     }
 
