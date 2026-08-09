@@ -380,22 +380,24 @@ public sealed class PoseFileInspectorSection
     /// buttons.</summary>
     private const float PreviewZoomWheelStep = 0.5f;
 
-    /// <summary>Camera offset per up/down click, in the same scaled units the
-    /// banner editor pans in (×1000 against the native target) — ~0.075 native
-    /// a click. The first pass shipped 20 here, which moved the camera by two
-    /// hundredths of a unit and read as a dead button in game.</summary>
-    private const float PreviewPanStep = 75f;
+    /// <summary>View travel per up/down click, in NATIVE world units: the
+    /// camera's own pan is a dead vtable slot on the inspect view, so the
+    /// service offsets the preview BODY instead and the units are the world's
+    /// — a body is about 1.8 tall, so this is roughly a twelfth of it a
+    /// click.</summary>
+    private const float PreviewPanStep = 0.15f;
 
     /// <summary>Degrees of yaw per pixel dragged sideways across the render.
     /// </summary>
     private const float PreviewDragYawScale = 0.5f;
 
-    /// <summary>Camera offset per pixel dragged vertically across the render —
-    /// the banner editor's own drag, where the frame follows the cursor. The
-    /// sign convention (a drag DOWN carries the view down the body, so the up
+    /// <summary>View travel per pixel dragged vertically across the render, in
+    /// native world units — the ~430px tall image shows about 2.5 units, so a
+    /// drag carries the frame with the cursor at roughly one to one. The sign
+    /// convention (a drag DOWN carries the view down the body, so the up
     /// BUTTON passes a negative step) awaits in-game confirmation; flipping it
     /// is one sign in each of two places.</summary>
-    private const float PreviewDragPanScale = 3f;
+    private const float PreviewDragPanScale = 0.006f;
 
     /// <summary>The camera band's groups in order — yaw, pitch, zoom, reset —
     /// as button counts. A pair stands together and the groups stand apart;
@@ -678,7 +680,7 @@ public sealed class PoseFileInspectorSection
                 if (drag.X != 0f)
                     _preview.Rotate(drag.X * PreviewDragYawScale);
                 if (drag.Y != 0f)
-                    _preview.Pan(0f, drag.Y * PreviewDragPanScale);
+                    _preview.Pan(drag.Y * PreviewDragPanScale);
             }
         }
 
@@ -774,7 +776,7 @@ public sealed class PoseFileInspectorSection
             case 2:
                 Crystarium.IconButton(
                     TablerIcon.ArrowUp,
-                    () => _preview.Pan(0f, -PreviewPanStep),
+                    () => _preview.Pan(-PreviewPanStep),
                     style: style,
                     help: "Move the preview camera up",
                     id: "##pose-preview-up");
@@ -782,7 +784,7 @@ public sealed class PoseFileInspectorSection
             case 3:
                 Crystarium.IconButton(
                     TablerIcon.ArrowDown,
-                    () => _preview.Pan(0f, PreviewPanStep),
+                    () => _preview.Pan(PreviewPanStep),
                     style: style,
                     help: "Move the preview camera down",
                     id: "##pose-preview-down");

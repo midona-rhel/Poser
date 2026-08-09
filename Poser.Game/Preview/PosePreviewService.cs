@@ -36,6 +36,12 @@ public sealed unsafe class PosePreviewService : IDisposable
     /// its own dimensions.</summary>
     private static readonly Vector2 FallbackSize = new(192f, 320f);
 
+    /// <summary>How far the body may be offset from its staged position, in
+    /// native units either way. A whole body is about 1.8 tall, so this is
+    /// already past both ends of it — the ceiling exists so a held button
+    /// cannot walk the body out of the render entirely.</summary>
+    private const float MaxViewPan = 2.0f;
+
     private readonly IFramework _framework;
     private readonly IObjectTable _objectTable;
     private readonly IActorManager _actors;
@@ -61,6 +67,9 @@ public sealed unsafe class PosePreviewService : IDisposable
     private uint _counter = 1;
     private string? _appliedPath;
     private PoseImportOptions? _appliedOptions;
+    private float _viewPanY;
+    private Vector3? _panBasePosition;
+    private nint _panBaseObject;
 
     public PosePreviewService(
         IFramework framework,
@@ -204,26 +213,35 @@ public sealed unsafe class PosePreviewService : IDisposable
     });
 
     /// <summary>
-    /// Framing — a DELTA on the camera target's X and Y. HaselTweaks'
-    /// PortraitHelper drags the banner editor's CharaView with
-    /// <c>SetCameraXAndY(1000 * dX, 1000 * dY)</c>, so the native units are
-    /// tiny and a visible step is worth tens: the first attempt here moved the
-    /// camera by ~0.02 native and read as "pan does nothing" in game. Which way
-    /// each axis travels stays the caller's assumption.
+    /// Framing — a DELTA in NATIVE world units, positive carrying the view DOWN
+    /// the body.
+    ///
+    /// The camera does not move: <c>CharaView.SetCameraXAndY</c> is a
+    /// <c>[VirtualFunction]</c> (slot 6) and the INSPECT view's vtable leaves it
+    /// a no-op — tested in game at 20 and at 75 with identical results, while
+    /// slots 4 and 5 (distance, yaw/pitch) on the same object work. That matches
+    /// the game itself: try-on and inspect rotate and zoom but never pan; only
+    /// CharaViewPortrait pans. So the preview BODY moves instead, opposite the
+    /// requested view travel — camera fixed, body offset, frame effectively
+    /// panned. This is Poser's own mechanism; no reference implements it.
     /// </summary>
-    public void Pan(float xDelta, float yDelta) => RunOnFramework(() =>
+    public void Pan(float viewDelta) => RunOnFramework(() =>
     {
         if (!_initialized)
             return;
-        var agent = AgentInspect.Instance();
-        if (agent != null)
-            agent->CharaView.SetCameraXAndY(xDelta, yDelta);
+        _viewPanY = Math.Clamp(
+            _viewPanY + viewDelta,
+            -MaxViewPan,
+            MaxViewPan);
+        ApplyViewPan();
     });
 
     public void ResetCamera() => RunOnFramework(() =>
     {
         if (!_initialized)
             return;
+        _viewPanY = 0f;
+        ApplyViewPan();
         var agent = AgentInspect.Instance();
         if (agent != null)
             agent->CharaView.ResetPositions();
@@ -271,6 +289,7 @@ public sealed unsafe class PosePreviewService : IDisposable
         _copiedSource = nint.Zero;
         _appliedPath = null;
         _appliedOptions = null;
+        ClearPanBase();
         CopyAppearance(agent);
         agent->CharaView.Update(_counter, agent->CharaView.GetCharacter());
     }
@@ -284,6 +303,10 @@ public sealed unsafe class PosePreviewService : IDisposable
         _appliedPath = null;
         _appliedOptions = null;
         _counter = 1;
+        // The body goes back where the game put it, and the next preview opens
+        // centred — a released CharaView loses its yaw and zoom the same way.
+        ClearPanBase();
+        _viewPanY = 0f;
         var agent = AgentInspect.Instance();
         if (agent != null)
             agent->CharaView.Release();
@@ -301,9 +324,11 @@ public sealed unsafe class PosePreviewService : IDisposable
 
         agent->CharaView.ModelData.CopyFromCharacter((Character*)source);
         _copiedSource = source;
-        // A new body carries none of the previous pose.
+        // A new body carries none of the previous pose, and stands wherever the
+        // game stages it — the pan base is re-read against it.
         _appliedPath = null;
         _appliedOptions = null;
+        ClearPanBase();
     }
 
     private void OnFrameworkUpdate(IFramework framework)
@@ -343,6 +368,7 @@ public sealed unsafe class PosePreviewService : IDisposable
             : agent->CharaView.GetCharacter();
         agent->CharaView.Update(_counter, character);
         agent->CharaView.Render(_counter++);
+        ApplyViewPan();
 
         _rendering = previewAddress != nint.Zero;
         _statusText = _rendering ? null : "Preparing preview…";
@@ -396,6 +422,70 @@ public sealed unsafe class PosePreviewService : IDisposable
             return;
         _appliedPath = path;
         _appliedOptions = options;
+    }
+
+    /// <summary>
+    /// Stands the preview body at its staged position plus the pan offset —
+    /// ABSOLUTE, never live-plus-delta: a write that reads back its own output
+    /// accumulates drift every frame, the same trap the orbit rotation fell
+    /// into. Re-asserted every tick after Update/Render, which is also the
+    /// answer to the CharaView restaging the body: whatever it staged this
+    /// frame is either the captured base or a fresh one.
+    ///
+    /// The body travels OPPOSITE the view — carrying the view DOWN the body
+    /// means lifting the body in front of a camera that cannot move.
+    ///
+    /// The write path is PosingService.ApplyTransformToActor's, verbatim:
+    /// the game object's draw object, <c>Object.Position</c>.
+    /// </summary>
+    private void ApplyViewPan()
+    {
+        var drawObject = ResolvePreviewDrawObject();
+        if (drawObject == null)
+        {
+            _panBasePosition = null;
+            _panBaseObject = nint.Zero;
+            return;
+        }
+
+        if (_panBasePosition == null || _panBaseObject != (nint)drawObject)
+        {
+            _panBasePosition = drawObject->Object.Position;
+            _panBaseObject = (nint)drawObject;
+        }
+
+        var basePosition = _panBasePosition.Value;
+        drawObject->Object.Position = new Vector3(
+            basePosition.X,
+            basePosition.Y + _viewPanY,
+            basePosition.Z);
+    }
+
+    /// <summary>
+    /// Drops the captured base so the next tick reads whatever the game staged.
+    /// If the body captured against is still the one standing there its
+    /// position goes back first: re-capturing a position this service had
+    /// already offset would fold the offset in twice.
+    /// </summary>
+    private void ClearPanBase()
+    {
+        if (_panBasePosition is { } basePosition && _panBaseObject != nint.Zero)
+        {
+            var drawObject = ResolvePreviewDrawObject();
+            if (drawObject != null && (nint)drawObject == _panBaseObject)
+                drawObject->Object.Position = basePosition;
+        }
+        _panBasePosition = null;
+        _panBaseObject = nint.Zero;
+    }
+
+    private FFXIVClientStructs.FFXIV.Client.Graphics.Scene.DrawObject*
+        ResolvePreviewDrawObject()
+    {
+        var address = _objectTable[PreviewObjectIndex]?.Address ?? nint.Zero;
+        return address == nint.Zero
+            ? null
+            : ((Character*)address)->GameObject.DrawObject;
     }
 
     private void RunOnFramework(Action action)
