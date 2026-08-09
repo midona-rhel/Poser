@@ -42,6 +42,16 @@ public sealed unsafe class PosePreviewService : IDisposable
     /// cannot walk the body out of the render entirely.</summary>
     private const float MaxViewPan = 2.0f;
 
+    /// <summary>Zoom-in accumulated on <see cref="Zoom"/> that HALVES the pan
+    /// speed — zoomed in, the frame shows less body, so the same pan travel
+    /// reads that much stronger (user-reported: great at default zoom, too
+    /// strong zoomed in). In the argument units of SetCameraDistance: every
+    /// this-many units closer halves pan; the factor is clamped so extreme
+    /// dollies never freeze or launch the pan.</summary>
+    private const float ZoomPanHalving = 10f;
+    private const float MinPanScale = 0.15f;
+    private const float MaxPanScale = 2.0f;
+
     private readonly IFramework _framework;
     private readonly IObjectTable _objectTable;
     private readonly IActorManager _actors;
@@ -68,6 +78,7 @@ public sealed unsafe class PosePreviewService : IDisposable
     private string? _appliedPath;
     private PoseImportOptions? _appliedOptions;
     private float _viewPanY;
+    private float _zoomAccum;
     private Vector3? _panBasePosition;
     private nint _panBaseObject;
 
@@ -208,8 +219,11 @@ public sealed unsafe class PosePreviewService : IDisposable
         if (!_initialized)
             return;
         var agent = AgentInspect.Instance();
-        if (agent != null)
-            agent->CharaView.SetCameraDistance(distanceDelta);
+        if (agent == null)
+            return;
+        agent->CharaView.SetCameraDistance(distanceDelta);
+        // Remembered so the pan can slow down as the frame tightens.
+        _zoomAccum += distanceDelta;
     });
 
     /// <summary>
@@ -229,8 +243,15 @@ public sealed unsafe class PosePreviewService : IDisposable
     {
         if (!_initialized)
             return;
+        // Zoomed in, the frame shows less body: scale the travel down so a
+        // drag reads the same at every zoom. Zoom-in deltas are negative, so
+        // the power is < 1 when close and > 1 when backed off.
+        float scale = Math.Clamp(
+            MathF.Pow(2f, _zoomAccum / ZoomPanHalving),
+            MinPanScale,
+            MaxPanScale);
         _viewPanY = Math.Clamp(
-            _viewPanY + viewDelta,
+            _viewPanY + viewDelta * scale,
             -MaxViewPan,
             MaxViewPan);
         ApplyViewPan();
@@ -241,6 +262,7 @@ public sealed unsafe class PosePreviewService : IDisposable
         if (!_initialized)
             return;
         _viewPanY = 0f;
+        _zoomAccum = 0f;
         ApplyViewPan();
         var agent = AgentInspect.Instance();
         if (agent != null)
@@ -307,6 +329,7 @@ public sealed unsafe class PosePreviewService : IDisposable
         // centred — a released CharaView loses its yaw and zoom the same way.
         ClearPanBase();
         _viewPanY = 0f;
+        _zoomAccum = 0f;
         var agent = AgentInspect.Instance();
         if (agent != null)
             agent->CharaView.Release();

@@ -353,8 +353,11 @@ public sealed class PoseFileInspectorSection
     private bool _previewDragging;
 
     /// <summary>The most of the RAIL the preview's image may take, so the
-    /// import options under it stay usable at any window height.</summary>
-    private const float PreviewRailShare = 0.45f;
+    /// import options under it stay usable at any window height. Raised from
+    /// 0.45 on user request (2026-08-09, "a tiny bit bigger"): at 0.45 the cap
+    /// bit on typical rail heights and narrowed the box off its full width.
+    /// </summary>
+    private const float PreviewRailShare = 0.58f;
 
     /// <summary>Ktisis' preview node, and so the image box's ASPECT: the whole
     /// render is stretched into a 192x320 portrait there, which is why the box
