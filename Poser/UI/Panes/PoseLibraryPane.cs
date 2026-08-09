@@ -237,6 +237,12 @@ public sealed class PoseLibraryPane
     private string? _previewPath;
     private PoseImportOptions? _previewOptions;
 
+    /// <summary>The UI-derived build the last sent options were made from —
+    /// what a fresh candidate is compared against so an import-option change
+    /// re-poses the preview. Never the sent instance itself: see
+    /// <see cref="SameUiOptions"/>.</summary>
+    private PoseImportOptions? _previewCandidate;
+
     /// <summary>Whether the pane is the workspace's current content. The first
     /// draw after it becomes true is the old window's OnOpen.</summary>
     private bool _showing;
@@ -1281,22 +1287,27 @@ public sealed class PoseLibraryPane
             // standing on the old one says nothing about the new one.
             _previewSource = source;
             _previewPath = null;
+            _previewCandidate = null;
         }
         // Idempotent by contract, and restated every frame so a preview the
         // service dropped (a scene reload, a gpose exit) re-arms itself.
         _preview.Open(source);
 
         var path = _vm.Tiles[_vm.Selected].ThumbKey;
-        if (!string.Equals(path, _previewPath, StringComparison.Ordinal))
+        // Ktisis PreviewNode.NeedsUpdate(): the preview re-poses when the
+        // import options move under it, not only when the selection does. The
+        // candidate is the FILE-FREE half of the real build, so this poll costs
+        // no read per frame.
+        var candidate = PreviewOptions(BuildImportOptionsCore());
+        if (!string.Equals(path, _previewPath, StringComparison.Ordinal)
+            || _previewCandidate is null
+            || !SameUiOptions(candidate, _previewCandidate))
         {
             _previewPath = path;
-            // The library's own load semantics, minus everything that would
-            // move the preview actor itself: a preview is a POSE, never a
-            // placement, and it must never leave the actor frozen.
-            var options = BuildImportOptions(path);
-            options.ResetBeforeImport = true;
-            options.ApplyModelTransform = false;
-            options.FreezeOnImport = false;
+            _previewCandidate = candidate;
+            // The real build once — the file load, the expression routing and
+            // the filter governance all stay in the one place.
+            var options = PreviewOptions(BuildImportOptions(path));
             _previewOptions = options;
             _preview.ShowPose(path, options);
         }
@@ -1331,6 +1342,7 @@ public sealed class PoseLibraryPane
         {
             _previewSource = null;
             _previewPath = null;
+            _previewCandidate = null;
             _preview.Close();
         }
         _files.SetPreviewVisible(false);
@@ -1413,19 +1425,7 @@ public sealed class PoseLibraryPane
     /// never reach a library apply.</summary>
     private PoseImportOptions BuildImportOptions(string path)
     {
-        bool auto = _type == LibraryType.AutoSaves;
-        // Poses apply with the SHARED menu options (the rail hosts them in
-        // library mode) plus the library's load semantics; an auto-save
-        // restore keeps its own full-fidelity toggles.
-        var options = auto
-            ? new PoseImportOptions
-            {
-                ApplyPosition = _autoPosition,
-                ApplyRotation = _autoRotation,
-                ApplyScale = _autoScale,
-            }
-            : _files.BuildImportOptions();
-        options.ResetBeforeImport = true;
+        var options = BuildImportOptionsCore();
         // Smart expression routing (Brio ResolveSmartImport): a face-only
         // .pose can NEVER land through the body path — Dawntrail faces are
         // posed through bone POSITIONS the body path masks — and the library
@@ -1441,10 +1441,88 @@ public sealed class PoseLibraryPane
         {
             options.AsExpression = true;
         }
+        return options;
+    }
+
+    /// <summary>The UI-derived half of <see cref="BuildImportOptions"/>: the
+    /// active tab's toggles, the load semantics and the bone-filter
+    /// governance. Free of file I/O by contract — the preview polls it every
+    /// frame to notice an option change — and free of side effects: the files
+    /// section's own build only reads its checkbox state.</summary>
+    private PoseImportOptions BuildImportOptionsCore()
+    {
+        bool auto = _type == LibraryType.AutoSaves;
+        // Poses apply with the SHARED menu options (the rail hosts them in
+        // library mode) plus the library's load semantics; an auto-save
+        // restore keeps its own full-fidelity toggles.
+        var options = auto
+            ? new PoseImportOptions
+            {
+                ApplyPosition = _autoPosition,
+                ApplyRotation = _autoRotation,
+                ApplyScale = _autoScale,
+            }
+            : _files.BuildImportOptions();
+        options.ResetBeforeImport = true;
         // The bone-filter menu governs POSE applies (the Brio-library-like
         // path) — an auto-save restore is full-fidelity by contract and
         // must not lose weapons to the filter's default exclusions.
         return auto ? options : _files.ApplyCategoryFilter(options);
+    }
+
+    /// <summary>The preview's own trim of a library build: everything that
+    /// would move the preview actor itself is taken back out — a preview is a
+    /// POSE, never a placement, and it must never leave the actor frozen.
+    /// </summary>
+    private static PoseImportOptions PreviewOptions(PoseImportOptions options)
+    {
+        options.ResetBeforeImport = true;
+        options.ApplyModelTransform = false;
+        options.FreezeOnImport = false;
+        return options;
+    }
+
+    /// <summary>
+    /// Whether two UI-derived option builds say the same thing — the preview's
+    /// NeedsUpdate. BOTH sides come from <see cref="BuildImportOptionsCore"/>,
+    /// never from <see cref="BuildImportOptions"/>: the routing there forces
+    /// AsExpression from the FILE, and AsExpression is the ONLY field the
+    /// Body/Expression checkbox pair moves on a body-only file — so comparing a
+    /// candidate against a file-forced instance would either mask that toggle
+    /// (excluding the field) or re-import every frame (keeping it). Comparing
+    /// like with like needs no exclusions, so every field is compared, the two
+    /// sets by content since each build makes new ones.
+    /// </summary>
+    private static bool SameUiOptions(
+        PoseImportOptions a, PoseImportOptions b) =>
+        a.ApplyRotation == b.ApplyRotation
+        && a.ApplyPosition == b.ApplyPosition
+        && a.ApplyScale == b.ApplyScale
+        && a.ApplyBody == b.ApplyBody
+        && a.ApplyFace == b.ApplyFace
+        && a.ApplyMainHand == b.ApplyMainHand
+        && a.ApplyOffHand == b.ApplyOffHand
+        && a.ApplyProp == b.ApplyProp
+        && a.ApplyOrnament == b.ApplyOrnament
+        && a.ApplyModelTransform == b.ApplyModelTransform
+        && a.ResetBeforeImport == b.ResetBeforeImport
+        && a.AsExpression == b.AsExpression
+        && a.FilterIncludesDescendants == b.FilterIncludesDescendants
+        && a.ExcludeUncategorizedBones == b.ExcludeUncategorizedBones
+        && a.FreezeOnImport == b.FreezeOnImport
+        && SameSet(a.ExcludedBonePrefixes, b.ExcludedBonePrefixes)
+        && SameSet(a.BoneFilter, b.BoneFilter);
+
+    private static bool SameSet<T>(ISet<T>? a, ISet<T>? b)
+    {
+        if (ReferenceEquals(a, b))
+            return true;
+        if (a is null || b is null || a.Count != b.Count)
+            return false;
+        foreach (var item in a)
+            if (!b.Contains(item))
+                return false;
+        return true;
     }
 
     // ── the grid's actions ───────────────────────────────────────────────

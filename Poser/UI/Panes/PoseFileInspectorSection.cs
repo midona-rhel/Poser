@@ -348,14 +348,18 @@ public sealed class PoseFileInspectorSection
 
     private bool _previewVisible;
 
+    /// <summary>An orbit drag holds the pointer — see
+    /// <see cref="DrawPreviewInput"/>.</summary>
+    private bool _previewDragging;
+
     /// <summary>The most of the RAIL the preview's image may take, so the
     /// import options under it stay usable at any window height.</summary>
     private const float PreviewRailShare = 0.45f;
 
-    /// <summary>The preview's assumed portrait until the service states the
-    /// render's own size — the block must not resize on the frame the first
-    /// render lands.</summary>
-    private static readonly Vector2 PreviewFallbackSize = new(192f, 320f);
+    /// <summary>Ktisis' preview node, and so the image box's ASPECT: the whole
+    /// render is stretched into a 192x320 portrait there, which is why the box
+    /// never letterboxes and never consults the render's own size.</summary>
+    private static readonly Vector2 PreviewAspect = new(192f, 320f);
 
     /// <summary>Shown while the service has stated no reason of its own — the
     /// first frames of a render.</summary>
@@ -365,12 +369,35 @@ public sealed class PoseFileInspectorSection
     /// </summary>
     private const float PreviewYaw = 50f;
 
-    /// <summary>Camera distance per zoom click. UNVERIFIED: CharaView's
-    /// <c>SetCameraDistance</c> has no reference call site in Ktisis or Brio,
-    /// so both this scale and the sign convention below (zoom in = NEGATIVE
-    /// delta, closer being a smaller distance) await in-game confirmation.
-    /// One const, one line to retune.</summary>
-    private const float PreviewZoomStep = 0.25f;
+    /// <summary>Camera distance per zoom click or wheel notch. The service
+    /// call takes a DELTA scaled the way HaselTweaks' PortraitHelper scales it
+    /// (×100 against a native 0.5–2.0 range), so this is ~0.1 native a click,
+    /// about fifteen steps end to end. Zoom in = NEGATIVE delta remains an
+    /// assumption. One const, one line to retune.</summary>
+    private const float PreviewZoomStep = 10f;
+
+    /// <summary>Camera offset per up/down click, in the same scaled units the
+    /// banner editor pans in (×1000 against the native target) — ~0.075 native
+    /// a click. The first pass shipped 20 here, which moved the camera by two
+    /// hundredths of a unit and read as a dead button in game.</summary>
+    private const float PreviewPanStep = 75f;
+
+    /// <summary>Degrees of yaw per pixel dragged sideways across the render.
+    /// </summary>
+    private const float PreviewDragYawScale = 0.5f;
+
+    /// <summary>Camera offset per pixel dragged vertically across the render —
+    /// the banner editor's own drag, where the frame follows the cursor. The
+    /// sign convention (a drag DOWN carries the view down the body, so the up
+    /// BUTTON passes a negative step) awaits in-game confirmation; flipping it
+    /// is one sign in each of two places.</summary>
+    private const float PreviewDragPanScale = 3f;
+
+    /// <summary>The camera band's groups in order — yaw, pitch, zoom, reset —
+    /// as button counts. A pair stands together and the groups stand apart;
+    /// the band wraps at the group boundary when the rail is too narrow.
+    /// </summary>
+    private static readonly int[] PreviewCameraGroups = [2, 2, 2, 1];
 
     /// <summary>The import-option section stack, shared verbatim by the
     /// popup body and the library rail. Returns the y past the last
@@ -515,68 +542,83 @@ public sealed class PoseFileInspectorSection
     }
 
     /// <summary>
-    /// The live render and its five camera commands, seated as two canvas rows
+    /// The live render and its seven camera commands, seated as two canvas rows
     /// so the section owns the flow and the block owns nothing but its band.
-    /// The image keeps the RENDER's aspect — a preview is a portrait of an
-    /// actor — capped so the option sections under it stay reachable.
+    /// The image box keeps KTISIS' node aspect and the render fills it wall to
+    /// wall — no letterbox bars beside a portrait — capped so the option
+    /// sections under it stay reachable.
     /// </summary>
     private void DrawPreviewBody(
         Crystarium.FormScope form, float width, float cap)
     {
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
-        var natural = _preview.TextureSize;
-        if (!(natural.X > 0f) || !(natural.Y > 0f))
-            natural = PreviewFallbackSize;
-        float image = MathF.Min(width * (natural.Y / natural.X), cap) / scale;
-        if (!(image > 0f))
+        float boxWidth = width;
+        float boxHeight = width * (PreviewAspect.Y / PreviewAspect.X);
+        if (boxHeight > cap)
+        {
+            // Capped: the box narrows to hold the aspect and centres in the
+            // band rather than stretching the render.
+            boxHeight = cap;
+            boxWidth = cap * (PreviewAspect.X / PreviewAspect.Y);
+        }
+        if (!(boxWidth > 0f) || !(boxHeight > 0f))
             return;
 
-        form.Canvas("preview-image", image,
-            (min, size) => DrawPreviewImage(min, size, scale, theme));
+        form.Canvas("preview-image", boxHeight / scale,
+            (min, size) => DrawPreviewImage(min, size, boxWidth, scale, theme));
+        int rows = PreviewCameraRows(width, scale, theme);
         form.Canvas(
             "preview-camera",
-            theme.Spacing.Three + theme.Floating.CloseActionSize,
+            theme.Spacing.Three
+                + theme.Floating.CloseActionSize * rows
+                + theme.Page.ActionGap * (rows - 1),
             (min, size) => DrawPreviewCamera(
                 min + new Vector2(0f, theme.Spacing.Three * scale),
-                size.X, scale, theme));
+                size.X, scale, theme, rows));
     }
 
+    /// <param name="boxWidth">The image box's own width in screen px, which is
+    /// the band's except where the height cap narrowed it; the box then
+    /// centres in the band.</param>
     private void DrawPreviewImage(
-        Vector2 min, Vector2 size, float scale, Theme theme)
+        Vector2 min, Vector2 size, float boxWidth, float scale, Theme theme)
     {
-        var max = min + size;
+        var boxMin = theme.Optical.Snap(
+            min + new Vector2((size.X - boxWidth) * 0.5f, 0f));
+        var boxSize = new Vector2(boxWidth, size.Y);
+        var boxMax = boxMin + boxSize;
         var draw = ImGui.GetWindowDrawList();
         float radius = theme.Radii.Control * scale;
-        draw.AddRectFilled(
-            min, max,
-            ImGui.ColorConvertFloat4ToU32(
-                ColorEx.ApplyAlpha(theme.Chrome.InputWell)),
-            radius);
 
         var handle = _preview.TextureHandle;
-        var natural = _preview.TextureSize;
-        if (handle != 0 && natural.X > 0f && natural.Y > 0f)
+        if (handle != 0)
         {
-            float fit = MathF.Min(size.X / natural.X, size.Y / natural.Y);
-            var fitted = natural * fit;
-            var imageMin = theme.Optical.Snap(min + (size - fitted) * 0.5f);
+            // Ktisis PreviewNode: the WHOLE render, uv 0..1, into the node —
+            // no aspect fit, so no well shows beside it.
             draw.AddImage(
                 new ImTextureID(handle),
-                imageMin,
-                imageMin + fitted,
+                boxMin,
+                boxMax,
                 Vector2.Zero,
                 Vector2.One,
                 ImGui.ColorConvertFloat4ToU32(
                     ColorEx.ApplyAlpha(Vector4.One)));
+            DrawPreviewInput(boxMin, boxSize);
         }
         else
         {
-            // The service's own reason wins; "preparing" is only what the
-            // frames before it has one say.
+            // Nothing to show: the box is a plain well carrying the reason.
+            // The service's own wins; "preparing" is only what the frames
+            // before it has one say.
+            draw.AddRectFilled(
+                boxMin, boxMax,
+                ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(theme.Chrome.InputWell)),
+                radius);
             Crystarium.TextInBand(
-                min,
-                size,
+                boxMin,
+                boxSize,
                 _preview.StatusText ?? PreviewWaitingText,
                 new TextStyle
                 {
@@ -585,58 +627,187 @@ public sealed class PoseFileInspectorSection
                 },
                 TextAlign.Center);
         }
-        Crystarium.FloatingSurface.DrawBorder(min, max, radius);
+        Crystarium.FloatingSurface.DrawBorder(boxMin, boxMax, radius);
     }
 
-    /// <summary>The camera row, centred under the image: rotate and zoom
-    /// mirrored about the reset. The buttons speak to the service directly —
-    /// the camera is the preview's own state and no pane holds any of it.
+    /// <summary>
+    /// The render is the camera's own control surface: left-drag orbits it
+    /// sideways and pans it vertically (the banner editor's split), and the
+    /// wheel dollies it on the ZoomIn button's convention — wheel up = closer =
+    /// negative delta.
+    ///
+    /// One invisible button carries both, which is also what makes them safe.
+    /// The DRAG capture is ImGui's active id, the same handshake
+    /// <see cref="Interactive.Reserve"/> runs: the press has to land on the
+    /// image to take it, it holds until release however far the pointer
+    /// strays, and while it holds nothing underneath — the rail, the tile grid
+    /// — sees the button at all. Ownership is taken on the activation EDGE
+    /// alone, so a press that landed under a floating surface never drags and
+    /// a surface opening mid-drag never cancels one.
+    ///
+    /// The WHEEL has to be claimed rather than merely read: this band sits
+    /// inside the shell rail's scrolling child, and an unclaimed notch scrolls
+    /// the rail out from under the pointer. <c>SetItemUsingMouseWheel</c> is
+    /// ImGui's own claim — it marks the hovered item as the wheel's owner and
+    /// the next frame's scroll pass skips the window entirely.
     /// </summary>
-    private void DrawPreviewCamera(
-        Vector2 origin, float width, float scale, Theme theme)
+    private void DrawPreviewInput(Vector2 min, Vector2 size)
     {
-        float action = theme.Floating.CloseActionSize;
-        float actionPx = action * scale;
-        float gap = theme.Page.ActionGap * scale;
-        var style = ControlStyle.Square(action);
-        float step = actionPx + gap;
-        float x = origin.X + (width - (actionPx * 5f + gap * 4f)) * 0.5f;
+        ImGui.SetCursorScreenPos(min);
+        ImGui.InvisibleButton("##pose-preview-canvas", size);
+        ImGuiP.SetItemUsingMouseWheel();
+        bool occluded = Interactive.PointerOccluded();
 
-        ImGui.SetCursorScreenPos(new Vector2(x, origin.Y));
-        Crystarium.IconButton(
-            TablerIcon.ArrowLeft,
-            () => _preview.Rotate(-PreviewYaw),
-            style: style,
-            help: "Rotate the preview left",
-            id: "##pose-preview-left");
-        ImGui.SetCursorScreenPos(new Vector2(x + step, origin.Y));
-        Crystarium.IconButton(
-            TablerIcon.ZoomOut,
-            () => _preview.Zoom(PreviewZoomStep),
-            style: style,
-            help: "Move the preview camera back",
-            id: "##pose-preview-zoom-out");
-        ImGui.SetCursorScreenPos(new Vector2(x + step * 2f, origin.Y));
-        Crystarium.IconButton(
-            TablerIcon.ArrowBackUp,
-            () => _preview.ResetCamera(),
-            style: style,
-            help: "Reset the preview camera",
-            id: "##pose-preview-reset");
-        ImGui.SetCursorScreenPos(new Vector2(x + step * 3f, origin.Y));
-        Crystarium.IconButton(
-            TablerIcon.ZoomIn,
-            () => _preview.Zoom(-PreviewZoomStep),
-            style: style,
-            help: "Move the preview camera closer",
-            id: "##pose-preview-zoom-in");
-        ImGui.SetCursorScreenPos(new Vector2(x + step * 4f, origin.Y));
-        Crystarium.IconButton(
-            TablerIcon.ArrowRight,
-            () => _preview.Rotate(PreviewYaw),
-            style: style,
-            help: "Rotate the preview right",
-            id: "##pose-preview-right");
+        if (ImGui.IsItemActivated() && !occluded)
+            _previewDragging = true;
+        if (_previewDragging)
+        {
+            if (!ImGui.IsItemActive())
+            {
+                _previewDragging = false;
+            }
+            else
+            {
+                // The banner editor's own split: sideways ORBITS, vertically
+                // PANS, and the frame follows the cursor on the pan axis.
+                var drag = ImGui.GetIO().MouseDelta;
+                if (drag.X != 0f)
+                    _preview.Rotate(drag.X * PreviewDragYawScale);
+                if (drag.Y != 0f)
+                    _preview.Pan(0f, drag.Y * PreviewDragPanScale);
+            }
+        }
+
+        float wheel = ImGui.GetIO().MouseWheel;
+        if (wheel != 0f && ImGui.IsItemHovered() && !occluded)
+            _preview.Zoom(-wheel * PreviewZoomStep);
+    }
+
+    /// <summary>One band when the seven buttons fit the rail's content width,
+    /// two when they do not — the compact theme's rail is too narrow for the
+    /// whole set at once.</summary>
+    private static int PreviewCameraRows(float width, float scale, Theme theme)
+        => PreviewCameraBandWidth(
+            PreviewCameraGroups, 0, PreviewCameraGroups.Length, scale, theme)
+            <= width ? 1 : 2;
+
+    /// <summary>The width a run of camera groups occupies: buttons, the tight
+    /// gap inside each group, and the wider gap between them.</summary>
+    private static float PreviewCameraBandWidth(
+        int[] groups, int first, int last, float scale, Theme theme)
+    {
+        float action = theme.Floating.CloseActionSize * scale;
+        float within = theme.Spacing.Two * scale;
+        float between = theme.Page.ActionGap * scale;
+        float total = -between;
+        for (int g = first; g < last; g++)
+            total += between + groups[g] * action + (groups[g] - 1) * within;
+        return total;
+    }
+
+    /// <summary>The camera band, centred under the image: rotate, pan, zoom,
+    /// then the reset. Each pair stands together (a rotate arrow beside its
+    /// opposite) and the groups stand apart. The buttons speak to the service
+    /// directly — the camera is the preview's own state and no pane holds any
+    /// of it.</summary>
+    /// <param name="rows">1 or 2, from <see cref="PreviewCameraRows"/>; two
+    /// bands split at the pan/zoom boundary.</param>
+    private void DrawPreviewCamera(
+        Vector2 origin, float width, float scale, Theme theme, int rows)
+    {
+        var groups = PreviewCameraGroups;
+        float actionPx = theme.Floating.CloseActionSize * scale;
+        float within = theme.Spacing.Two * scale;
+        float between = theme.Page.ActionGap * scale;
+        var style = ControlStyle.Square(theme.Floating.CloseActionSize);
+        int split = rows == 1 ? groups.Length : 2;
+        float y = origin.Y;
+        int button = 0;
+
+        for (int row = 0; row < rows; row++)
+        {
+            int first = row == 0 ? 0 : split;
+            int last = row == 0 ? split : groups.Length;
+            float x = origin.X
+                + (width - PreviewCameraBandWidth(
+                    groups, first, last, scale, theme)) * 0.5f;
+            for (int g = first; g < last; g++)
+            {
+                for (int i = 0; i < groups[g]; i++)
+                {
+                    DrawPreviewCameraButton(
+                        button++, new Vector2(x, y), style);
+                    x += actionPx + (i + 1 < groups[g] ? within : 0f);
+                }
+                x += between;
+            }
+            y += actionPx + between;
+        }
+    }
+
+    private void DrawPreviewCameraButton(
+        int index, Vector2 position, ControlStyle style)
+    {
+        ImGui.SetCursorScreenPos(position);
+        switch (index)
+        {
+            case 0:
+                Crystarium.IconButton(
+                    TablerIcon.ArrowLeft,
+                    () => _preview.Rotate(-PreviewYaw),
+                    style: style,
+                    help: "Rotate the preview left",
+                    id: "##pose-preview-left");
+                break;
+            case 1:
+                Crystarium.IconButton(
+                    TablerIcon.ArrowRight,
+                    () => _preview.Rotate(PreviewYaw),
+                    style: style,
+                    help: "Rotate the preview right",
+                    id: "##pose-preview-right");
+                break;
+            case 2:
+                Crystarium.IconButton(
+                    TablerIcon.ArrowUp,
+                    () => _preview.Pan(0f, -PreviewPanStep),
+                    style: style,
+                    help: "Move the preview camera up",
+                    id: "##pose-preview-up");
+                break;
+            case 3:
+                Crystarium.IconButton(
+                    TablerIcon.ArrowDown,
+                    () => _preview.Pan(0f, PreviewPanStep),
+                    style: style,
+                    help: "Move the preview camera down",
+                    id: "##pose-preview-down");
+                break;
+            case 4:
+                Crystarium.IconButton(
+                    TablerIcon.ZoomOut,
+                    () => _preview.Zoom(PreviewZoomStep),
+                    style: style,
+                    help: "Move the preview camera back",
+                    id: "##pose-preview-zoom-out");
+                break;
+            case 5:
+                Crystarium.IconButton(
+                    TablerIcon.ZoomIn,
+                    () => _preview.Zoom(-PreviewZoomStep),
+                    style: style,
+                    help: "Move the preview camera closer",
+                    id: "##pose-preview-zoom-in");
+                break;
+            default:
+                Crystarium.IconButton(
+                    TablerIcon.ArrowBackUp,
+                    () => _preview.ResetCamera(),
+                    style: style,
+                    help: "Reset the preview camera",
+                    id: "##pose-preview-reset");
+                break;
+        }
     }
 
     /// <summary>Brio's export popup (DrawExportPoseMenuPopup): export to a

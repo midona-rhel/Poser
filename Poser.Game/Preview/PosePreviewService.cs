@@ -60,6 +60,7 @@ public sealed unsafe class PosePreviewService : IDisposable
     private nint _copiedSource;
     private uint _counter = 1;
     private string? _appliedPath;
+    private PoseImportOptions? _appliedOptions;
 
     public PosePreviewService(
         IFramework framework,
@@ -156,7 +157,10 @@ public sealed unsafe class PosePreviewService : IDisposable
 
     /// <summary>
     /// The pose to show. Remembered until the preview body is bound, then
-    /// applied; the latest call wins.
+    /// applied; the latest call wins. The OPTIONS INSTANCE is part of the
+    /// request: restating the same path with the same instance is free, while
+    /// a new instance re-imports — that is how an import-option change reaches
+    /// a preview whose path never moved.
     /// </summary>
     public void ShowPose(string path, PoseImportOptions options)
     {
@@ -167,21 +171,28 @@ public sealed unsafe class PosePreviewService : IDisposable
         }
     }
 
-    /// <summary>Ktisis' preview arrows: yaw only, in degrees per click.</summary>
-    public void Rotate(float yawDelta) => RunOnFramework(() =>
-    {
-        if (!_initialized)
-            return;
-        var agent = AgentInspect.Instance();
-        if (agent != null)
-            agent->CharaView.SetCameraYawAndPitch(yawDelta, 0f);
-    });
+    /// <summary>
+    /// Ktisis' preview arrows, in degrees per call — both axes of the member,
+    /// each a DELTA (Ktisis' 50/click, and HaselTweaks' PortraitHelper drags
+    /// the banner editor's CharaView through the same call the same way).
+    /// </summary>
+    public void Rotate(float yawDelta, float pitchDelta = 0f) =>
+        RunOnFramework(() =>
+        {
+            if (!_initialized)
+                return;
+            var agent = AgentInspect.Instance();
+            if (agent != null)
+                agent->CharaView.SetCameraYawAndPitch(yawDelta, pitchDelta);
+        });
 
     /// <summary>
-    /// Dolly, in the CharaView's own distance units per click. Unlike every
-    /// other call here this member has NO reference call site — neither Ktisis
-    /// nor Brio touches it — so the delta is passed through untouched and both
-    /// its sign and its scale are the caller's to tune.
+    /// Dolly — a DELTA, like every other camera call here. HaselTweaks'
+    /// PortraitHelper drives the banner editor's CharaView with
+    /// <c>SetCameraDistance(100 * dDistance)</c> against a native distance that
+    /// spans about 0.5 to 2.0, so a visible click is worth whole units, not
+    /// fractions. The sign is still the caller's assumption: closer is taken to
+    /// be the smaller distance, hence negative.
     /// </summary>
     public void Zoom(float distanceDelta) => RunOnFramework(() =>
     {
@@ -190,6 +201,23 @@ public sealed unsafe class PosePreviewService : IDisposable
         var agent = AgentInspect.Instance();
         if (agent != null)
             agent->CharaView.SetCameraDistance(distanceDelta);
+    });
+
+    /// <summary>
+    /// Framing — a DELTA on the camera target's X and Y. HaselTweaks'
+    /// PortraitHelper drags the banner editor's CharaView with
+    /// <c>SetCameraXAndY(1000 * dX, 1000 * dY)</c>, so the native units are
+    /// tiny and a visible step is worth tens: the first attempt here moved the
+    /// camera by ~0.02 native and read as "pan does nothing" in game. Which way
+    /// each axis travels stays the caller's assumption.
+    /// </summary>
+    public void Pan(float xDelta, float yDelta) => RunOnFramework(() =>
+    {
+        if (!_initialized)
+            return;
+        var agent = AgentInspect.Instance();
+        if (agent != null)
+            agent->CharaView.SetCameraXAndY(xDelta, yDelta);
     });
 
     public void ResetCamera() => RunOnFramework(() =>
@@ -242,6 +270,7 @@ public sealed unsafe class PosePreviewService : IDisposable
         _counter = 1;
         _copiedSource = nint.Zero;
         _appliedPath = null;
+        _appliedOptions = null;
         CopyAppearance(agent);
         agent->CharaView.Update(_counter, agent->CharaView.GetCharacter());
     }
@@ -253,6 +282,7 @@ public sealed unsafe class PosePreviewService : IDisposable
         _initialized = false;
         _copiedSource = nint.Zero;
         _appliedPath = null;
+        _appliedOptions = null;
         _counter = 1;
         var agent = AgentInspect.Instance();
         if (agent != null)
@@ -273,6 +303,7 @@ public sealed unsafe class PosePreviewService : IDisposable
         _copiedSource = source;
         // A new body carries none of the previous pose.
         _appliedPath = null;
+        _appliedOptions = null;
     }
 
     private void OnFrameworkUpdate(IFramework framework)
@@ -326,6 +357,11 @@ public sealed unsafe class PosePreviewService : IDisposable
     /// through the binding registry, whose refresh runs on its own cadence.
     /// Until then, and after any failure, the LATEST requested path is retried
     /// next tick.
+    ///
+    /// A request is already applied only when BOTH the path and the options
+    /// INSTANCE are the ones that landed: the binder restates the cached
+    /// instance every frame (so that costs nothing), and hands over a fresh
+    /// instance exactly when the import options changed under it.
     /// </summary>
     private void TryApplyPendingPose(nint previewAddress)
     {
@@ -338,7 +374,8 @@ public sealed unsafe class PosePreviewService : IDisposable
         }
         if (path == null || options == null)
             return;
-        if (string.Equals(path, _appliedPath, StringComparison.Ordinal))
+        if (string.Equals(path, _appliedPath, StringComparison.Ordinal)
+            && ReferenceEquals(options, _appliedOptions))
             return;
 
         IActor? actor = null;
@@ -358,6 +395,7 @@ public sealed unsafe class PosePreviewService : IDisposable
         if (!result.Success)
             return;
         _appliedPath = path;
+        _appliedOptions = options;
     }
 
     private void RunOnFramework(Action action)
