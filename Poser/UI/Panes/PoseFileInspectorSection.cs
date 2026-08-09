@@ -369,12 +369,16 @@ public sealed class PoseFileInspectorSection
     /// </summary>
     private const float PreviewYaw = 50f;
 
-    /// <summary>Camera distance per zoom click or wheel notch. The service
-    /// call takes a DELTA scaled the way HaselTweaks' PortraitHelper scales it
-    /// (×100 against a native 0.5–2.0 range), so this is ~0.1 native a click,
-    /// about fifteen steps end to end. Zoom in = NEGATIVE delta remains an
-    /// assumption. One const, one line to retune.</summary>
-    private const float PreviewZoomStep = 10f;
+    /// <summary>Camera distance per zoom BUTTON click. User-tuned in game
+    /// (2026-08-09): 10 was far too coarse, halved on request. Zoom in =
+    /// negative delta.</summary>
+    private const float PreviewZoomButtonStep = 5f;
+
+    /// <summary>Camera distance per wheel notch. User-tuned in game: the
+    /// original fine 0.25 felt right and this is exactly twice it, per
+    /// request — the wheel accumulates, so it stays much finer than the
+    /// buttons.</summary>
+    private const float PreviewZoomWheelStep = 0.5f;
 
     /// <summary>Camera offset per up/down click, in the same scaled units the
     /// banner editor pans in (×1000 against the native target) — ~0.075 native
@@ -680,7 +684,7 @@ public sealed class PoseFileInspectorSection
 
         float wheel = ImGui.GetIO().MouseWheel;
         if (wheel != 0f && ImGui.IsItemHovered() && !occluded)
-            _preview.Zoom(-wheel * PreviewZoomStep);
+            _preview.Zoom(-wheel * PreviewZoomWheelStep);
     }
 
     /// <summary>One band when the seven buttons fit the rail's content width,
@@ -786,7 +790,7 @@ public sealed class PoseFileInspectorSection
             case 4:
                 Crystarium.IconButton(
                     TablerIcon.ZoomOut,
-                    () => _preview.Zoom(PreviewZoomStep),
+                    () => _preview.Zoom(PreviewZoomButtonStep),
                     style: style,
                     help: "Move the preview camera back",
                     id: "##pose-preview-zoom-out");
@@ -794,7 +798,7 @@ public sealed class PoseFileInspectorSection
             case 5:
                 Crystarium.IconButton(
                     TablerIcon.ZoomIn,
-                    () => _preview.Zoom(-PreviewZoomStep),
+                    () => _preview.Zoom(-PreviewZoomButtonStep),
                     style: style,
                     help: "Move the preview camera closer",
                     id: "##pose-preview-zoom-in");
