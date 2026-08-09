@@ -95,6 +95,39 @@ public sealed class CleanPoseFacade
     }
 
     /// <summary>
+    /// The same armed export with no file at the end of it: the pose file is
+    /// handed to <paramref name="onCaptured"/> once the refresh pass has made
+    /// the raw caches current, which is what the clipboard copy needs for the
+    /// same reason a file export does (see <see cref="PoseExportCapture"/>).
+    /// Ok means ARMED; the capture arrives a few ticks later, and a null there
+    /// means the pose could not be built.
+    /// </summary>
+    public PoseEditResult CapturePoseFile(
+        IActor actor,
+        Action<PoseFile?> onCaptured)
+    {
+        const string description = "Copy pose";
+        var slots = _skeletons.GetSkeletons(actor);
+        if (slots.Count == 0)
+            return Report(description,
+                PoseEditResult.Fail("The actor has no skeleton."));
+
+        PoseFile? captured = null;
+        var begun = _exports.Begin(
+            slots,
+            skeletons =>
+            {
+                captured = _poseFiles.CreatePoseFile(skeletons);
+                return captured != null;
+            },
+            ok => onCaptured(ok ? captured : null));
+        if (!begun.Success)
+            return Report(description, PoseEditResult.Fail(
+                begun.Detail ?? "The pose could not be captured."));
+        return PoseEditResult.Ok(slots.Count);
+    }
+
+    /// <summary>
     /// File import dispatch through the in-pass application engine: the plan
     /// is computed without mutation and handed to
     /// <see cref="PoseImportCapture"/>, which diffs each file bone against

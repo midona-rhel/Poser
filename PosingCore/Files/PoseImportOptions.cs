@@ -163,6 +163,74 @@ public class PoseImportOptions
         ApplyModelTransform = false
     };
 
+    /// <summary>Brio's BodyOptions category run (PosingService.cs:65-75):
+    /// weapons and the whole head group off, plus legacy and ex.</summary>
+    private static readonly string[] BodyOnlyExclusions =
+    {
+        "weapon", "ears", "hair", "face", "eyes",
+        "lips", "jaw", "head", "legacy", "ex",
+    };
+
+    /// <summary>
+    /// Brio's import-popup dispatch table, all four states of the
+    /// Body/Expression pair (FileUIHelpers.ImportPose:696-717 choosing the
+    /// preset, PosingCapability.ImportPose_Internal:189-213 substituting it):
+    ///
+    /// <list type="bullet">
+    /// <item>BOTH — DefaultIPCImporterOptions: a filter with nothing disabled
+    /// and TransformComponents.All, so everything imports with every
+    /// component and the toggles are ignored.</item>
+    /// <item>BODY — BodyOptions: weapons, the head group (head, face, eyes,
+    /// lips, jaw, ears, hair), legacy and ex excluded; props and ornaments
+    /// stay ON (Brio disables no such category there) and the toggles are
+    /// honored.</item>
+    /// <item>EXPRESSION — ExpressionOptions: DisableAll then head, ears, hair,
+    /// face, eyes, lips and jaw back on, TransformComponents.All. The face
+    /// applies and the body is left alone by the engine's own two-phase
+    /// restore, which is why checking Expression against a FULL pose file
+    /// changes the character's expression and nothing else.</item>
+    /// <item>NEITHER — DefaultImporterOptions: everything, the toggles honored,
+    /// and the bone-filter menu live over it. The caller folds its filter in;
+    /// this build leaves every slot on so a re-enabled category can turn one
+    /// back ON, which a base of false could never do.</item>
+    /// </list>
+    ///
+    /// Only the type pair and the component toggles are expressed here — the
+    /// freeze, reset and model-transform switches ride any state and stay the
+    /// caller's.
+    /// </summary>
+    public static PoseImportOptions ForImportType(
+        bool body,
+        bool expression,
+        bool rotation = true,
+        bool position = false,
+        bool scale = false)
+    {
+        bool both = body && expression;
+        bool expressionOnly = expression && !body;
+        bool bodyOnly = body && !expression;
+        // Both and Expression force every component: Brio's IPC and
+        // Expression presets are TransformComponents.All and neither path
+        // forwards the popup's toggles.
+        bool allComponents = both || expressionOnly;
+        return new PoseImportOptions
+        {
+            ApplyRotation = allComponents || rotation,
+            ApplyPosition = allComponents || position,
+            ApplyScale = allComponents || scale,
+            ApplyBody = true,
+            ApplyFace = !bodyOnly,
+            ApplyMainHand = !bodyOnly && !expressionOnly,
+            ApplyOffHand = !bodyOnly && !expressionOnly,
+            ApplyProp = !expressionOnly,
+            ApplyOrnament = !expressionOnly,
+            AsExpression = expressionOnly,
+            ExcludedBonePrefixes = bodyOnly
+                ? ImportBoneCategories.PrefixesFor(BodyOnlyExclusions)
+                : null,
+        };
+    }
+
     /// <summary>
     /// Options that import everything including model transform.
     /// </summary>

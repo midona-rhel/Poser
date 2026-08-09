@@ -134,6 +134,24 @@ public static class ImportBoneCategories
     public static IEnumerable<ImportBoneCategory> All =>
         Groups.SelectMany(group => group.Categories);
 
+    /// <summary>The prefixes the named categories carry, as one exclusion set
+    /// — how a fixed Brio option preset (BodyOptions' DisableCategory run)
+    /// becomes a <see cref="PoseImportOptions.ExcludedBonePrefixes"/>. Ids the
+    /// catalog does not know, and the slot rows that carry no prefixes,
+    /// contribute nothing.</summary>
+    public static HashSet<string> PrefixesFor(params string[] categoryIds)
+    {
+        var prefixes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var category in All)
+        {
+            if (Array.IndexOf(categoryIds, category.Id) < 0)
+                continue;
+            foreach (var prefix in category.Prefixes)
+                prefixes.Add(prefix);
+        }
+        return prefixes;
+    }
+
     /// <summary>Whether any category's prefix claims this bone — a bone no
     /// category claims falls to the "Other" row (Brio's _otherAllowed).</summary>
     public static bool IsCategorized(string boneName)

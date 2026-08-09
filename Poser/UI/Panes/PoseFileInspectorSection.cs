@@ -44,8 +44,7 @@ public sealed class PoseFileInspectorSection
     // Ktisis's ImportPoseTransforms: Translation/Scale are opt-in because a
     // file's baked positions/scales fight IK and Customize+ scaling.
     private bool _rotation = true, _position, _scale;
-    private bool _descendants = true, _reset;
-    private bool _selectedOnly;
+    private bool _reset;
 
     // ── the two Brio menus (one shared state for FILES and the library) ──
     // Import menu: Brio's import popup (FileUIHelpers.DrawImportPoseMenuPopup)
@@ -485,12 +484,8 @@ public sealed class PoseFileInspectorSection
             new Vector2(origin.X, y), width, true, null,
             form =>
             {
-                form.Checkboxes(
-                    "Bones",
-                    ("Selected", _selectedOnly, next => _selectedOnly = next,
-                        "Import only the bones selected in the sidebar"),
-                    ("Descendants", _descendants, next => _descendants = next,
-                        "Include descendants of the selected bones"));
+                // Brio's popup has no selected-bones or descendants row —
+                // both were Ktisis imports and are gone (user 2026-08-10).
                 form.Checkbox(
                     "Reset first", _reset, next => _reset = next,
                     help: "Clear every bone in scope before importing, "
@@ -514,6 +509,9 @@ public sealed class PoseFileInspectorSection
             new Vector2(origin.X, y), width, true, null,
             form =>
             {
+                // Brio's order (FileUIHelpers.cs:568-575): From File, then
+                // From Clipboard. From library is Poser's stand-in for Brio's
+                // library-when-importing redirect.
                 form.Actions("File", actions =>
                 {
                     actions.Button("From file", () =>
@@ -524,6 +522,10 @@ public sealed class PoseFileInspectorSection
                     actions.Button("From library",
                         () => OnLibraryRequested?.Invoke());
                 });
+                form.Actions("Clipboard", actions => actions.Button(
+                    "From clipboard", ImportFromClipboard,
+                    help: "Import the pose held on the clipboard — Brio's "
+                        + "copy is read as-is"));
                 if (withPresets)
                     form.Actions("Presets", actions =>
                     {
@@ -532,6 +534,11 @@ public sealed class PoseFileInspectorSection
                         actions.Button("T-pose",
                             () => ApplyRestPreset(RestPose.TPose));
                     });
+                // The popup is where a clipboard paste fails, so it is where
+                // the reason has to appear — the FILES area's own status row
+                // is behind it, and the library rail has none at all.
+                if (_status.Length > 0)
+                    form.Status(_status);
             },
             labelColumnWidth: MenuLabelColumn);
 
@@ -777,8 +784,7 @@ public sealed class PoseFileInspectorSection
     }
 
     /// <summary>Brio's export popup (DrawExportPoseMenuPopup): export to a
-    /// file, and the stash copy. Clipboard export is a pending flow of its
-    /// own.</summary>
+    /// file, the clipboard copy, and the stash copy.</summary>
     private void DrawExportMenuBody()
     {
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
@@ -797,17 +803,26 @@ public sealed class PoseFileInspectorSection
                         if (SelectedSkeleton() is { } skeleton)
                             OpenExport(skeleton);
                     }));
-                form.Actions("Copy", actions => actions.Button(
-                    "To stash", () =>
-                    {
-                        if (SelectedSkeleton() is { } skeleton)
-                            _status = _poseFacade.Stash(skeleton.Actor) is
-                                { Success: false } failed
-                                ? $"Stash: {failed.Detail}"
-                                : string.Empty;
-                    },
-                    help: "Hold this pose so it can be applied to another "
-                        + "actor from the inspector's Transfer group"));
+                form.Actions("Copy", actions =>
+                {
+                    // Brio's Copy group (FileUIHelpers.cs:781-806): To
+                    // Clipboard, then To Stash.
+                    actions.Button(
+                        "To clipboard", CopyToClipboard,
+                        help: "Copy the pose in Brio's clipboard format, so "
+                            + "it pastes into Brio as well as Poser");
+                    actions.Button(
+                        "To stash", () =>
+                        {
+                            if (SelectedSkeleton() is { } skeleton)
+                                _status = _poseFacade.Stash(skeleton.Actor) is
+                                    { Success: false } failed
+                                    ? $"Stash: {failed.Detail}"
+                                    : string.Empty;
+                        },
+                        help: "Hold this pose so it can be applied to another "
+                            + "actor from the inspector's Transfer group");
+                });
             },
             divider: false);
 
@@ -985,22 +1000,12 @@ public sealed class PoseFileInspectorSection
             if (rememberPath)
                 _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
             var options = BuildOptions();
-            // Brio's Smart Import (ResolveSmartImport): the FILE decides the
-            // type — face-only routes as an expression, body-only keeps the
-            // face untouched; a mixed file imports as configured. (The
-            // Model-ID auto-appearance branch has no Poser equivalent —
-            // appearance is delegated to Glamourer.)
             if (_smartImport &&
                 path.EndsWith(".pose", StringComparison.OrdinalIgnoreCase) &&
                 PoseFile.Load(path) is { } smartFile)
-            {
-                if (PoseFileService.IsExpressionOnlyPose(smartFile))
-                    options.AsExpression = true;
-                else if (PoseFileService.IsBodyOnlyPose(smartFile))
-                    options.ApplyFace = false;
-            }
+                options = SmartRoute(options, smartFile);
             var imported = _poseFacade.ImportPose(
-                skeleton.Actor, path, options, FreezeSelectedScope());
+                skeleton.Actor, path, options);
             _status = imported.Success
                 ? string.Empty
                 : $"Import: {imported.Detail}";
@@ -1032,54 +1037,130 @@ public sealed class PoseFileInspectorSection
     public PoseImportOptions BuildImportOptions() => BuildOptions();
 
     /// <summary>
-    /// The Selected-scope bones frozen as complete BoneIds, or null in every
-    /// other scope. Taken at the moment the import is confirmed, never earlier:
-    /// the facade verifies the exact actor generation these belong to.
+    /// Brio's four-state dispatch table lives in PosingCore
+    /// (<see cref="PoseImportOptions.ForImportType"/>, pinned by
+    /// PoseImportTypeMatrixTests); this adds the switches that ride EVERY
+    /// state, and hands the bone filter to the one state Brio lets it govern —
+    /// its Custom Import Options button is dead the moment a type is checked
+    /// (FileUIHelpers.cs:504).
     /// </summary>
-    public List<BoneId>? FreezeSelectedScope()
-    {
-        if (!_selectedOnly)
-            return null;
-        return _selection.Selected
-            .Where(id => id is { Kind: SceneEntityKind.Bone, Bone: not null })
-            .Select(id => id.Bone!.Value)
-            .ToList();
-    }
-
     private PoseImportOptions BuildOptions()
     {
-        // Brio's dispatch table (FileUIHelpers.cs:697-718), all four rows:
-        // both types = everything with every component, toggles ignored;
-        // Body-only = face excluded, toggles honored; Expression-only = the
-        // expression dance (engine forces components); NEITHER — Brio's
-        // default state — = rotation-only toggles over everything except
-        // what the bone filter excludes (its gear edits exactly this path;
-        // DefaultImporterOptions ships weapon+ex disabled). Selected-bones
-        // rides any type, keeps the toggles, and reduces to the frozen
-        // BoneId filter at the facade.
-        bool selected = _selectedOnly;
-        bool both = _typeBody && _typeExpression;
-        bool neither = !_typeBody && !_typeExpression;
-        bool expression = _typeExpression && !_typeBody && !selected;
-        bool full = both || selected;
-        bool allComponents = both && !selected;
-        var options = new PoseImportOptions
+        var options = PoseImportOptions.ForImportType(
+            _typeBody, _typeExpression, _rotation, _position, _scale);
+        options.ResetBeforeImport = _reset;
+        options.FreezeOnImport = _freeze;
+        // An expression import never moves the actor: Brio passes
+        // applyModelTransformOverride null on that path and skips
+        // ImportModelPose outright (FileUIHelpers.cs:710,
+        // PosingCapability.cs:235).
+        options.ApplyModelTransform = _modelTransform && !options.AsExpression;
+        return _typeBody || _typeExpression
+            ? options
+            : ApplyCategoryFilter(options);
+    }
+
+    /// <summary>
+    /// Re-derive a build as a different type pair, keeping the switches that
+    /// ride every state. Brio's Smart Import works exactly this way: it flips
+    /// doBody/doExpression (FileUIHelpers.cs:377-386) and the preset is then
+    /// chosen from the pair (:696-717) — it never patches one scope field.
+    /// Patching is what a caller must not do here either: setting AsExpression
+    /// onto a Body-only build leaves the face already excluded, so the
+    /// expression import has nothing left to apply.
+    /// </summary>
+    public PoseImportOptions RouteAsType(
+        PoseImportOptions built, bool body, bool expression)
+    {
+        var routed = PoseImportOptions.ForImportType(
+            body, expression, _rotation, _position, _scale);
+        routed.ResetBeforeImport = built.ResetBeforeImport;
+        routed.FreezeOnImport = built.FreezeOnImport;
+        routed.ApplyModelTransform =
+            built.ApplyModelTransform && !routed.AsExpression;
+        return routed;
+    }
+
+    /// <summary>Brio's ResolveSmartImport verdict on a loaded file: a
+    /// face-only or expression-tagged file routes to Expression, a file with
+    /// no face bone to Body, anything mixed imports as configured. (The
+    /// Model-ID auto-appearance branch has no Poser equivalent — appearance is
+    /// delegated to Glamourer.)</summary>
+    private PoseImportOptions SmartRoute(
+        PoseImportOptions options, PoseFile file)
+    {
+        if (PoseFileService.IsExpressionOnlyPose(file))
+            return RouteAsType(options, body: false, expression: true);
+        if (PoseFileService.IsBodyOnlyPose(file))
+            return RouteAsType(options, body: true, expression: false);
+        return options;
+    }
+
+    /// <summary>Brio's "From Clipboard" (FileUIHelpers.cs:574-595): the
+    /// clipboard's pose through the SAME options the popup built, so the
+    /// import type applies to it exactly as it does to a file.</summary>
+    private void ImportFromClipboard()
+    {
+        if (SelectedSkeleton() is not { } skeleton)
         {
-            ApplyRotation = allComponents || _rotation,
-            ApplyPosition = allComponents || _position,
-            ApplyScale = allComponents || _scale,
-            ApplyBody = true,
-            AsExpression = expression,
-            ApplyFace = full || neither,
-            ApplyMainHand = full,
-            ApplyOffHand = full,
-            ApplyProp = full || neither,
-            ApplyOrnament = full || neither,
-            ResetBeforeImport = _reset,
-            FilterIncludesDescendants = _descendants,
-            FreezeOnImport = _freeze,
-            ApplyModelTransform = _modelTransform,
-        };
-        return neither && !selected ? ApplyCategoryFilter(options) : options;
+            _status = "Select an actor first.";
+            return;
+        }
+        string text;
+        try
+        {
+            text = ImGui.GetClipboardText();
+        }
+        catch (Exception ex)
+        {
+            _status = $"Clipboard: {ex.Message}";
+            return;
+        }
+        if (PoseClipboard.Decode(text, out var reason) is not { } pose)
+        {
+            _status = $"Clipboard: {reason}";
+            return;
+        }
+        var options = BuildOptions();
+        // Smart Import's file classifier, same as the browse path — the
+        // clipboard is just another source of a PoseFile.
+        if (_smartImport)
+            options = SmartRoute(options, pose);
+        var imported = _poseFacade.ImportPose(
+            skeleton.Actor, pose, options, "Import pose from clipboard");
+        _status = imported.Success
+            ? string.Empty
+            : $"Clipboard: {imported.Detail}";
+    }
+
+    /// <summary>Brio's "To Clipboard" (FileUIHelpers.cs:784-801). Armed like
+    /// the file export — the capture waits for the pass that refreshes the raw
+    /// caches it reads — and emits Brio's own compressed payload.</summary>
+    private void CopyToClipboard()
+    {
+        if (SelectedSkeleton() is not { } skeleton)
+        {
+            _status = "Select an actor first.";
+            return;
+        }
+        var armed = _poseFacade.CapturePoseFile(skeleton.Actor, pose =>
+        {
+            if (pose == null || PoseClipboard.Encode(pose) is not { } payload)
+            {
+                _status = "Clipboard: the pose could not be copied.";
+                return;
+            }
+            try
+            {
+                ImGui.SetClipboardText(payload);
+                _status = string.Empty;
+            }
+            catch (Exception ex)
+            {
+                _status = $"Clipboard: {ex.Message}";
+            }
+        });
+        if (!armed.Success)
+            _status = $"Clipboard: {armed.Detail}";
     }
 }

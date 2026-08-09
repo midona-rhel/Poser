@@ -1439,7 +1439,12 @@ public sealed class PoseLibraryPane
             PoseFile.Load(path) is { } file &&
             PoseFileService.IsExpressionOnlyPose(file))
         {
-            options.AsExpression = true;
+            // Re-derived as the Expression type pair, never patched onto this
+            // build: a rail with Body checked has the face already excluded,
+            // and setting AsExpression over that applies nothing (see
+            // PoseFileInspectorSection.RouteAsType).
+            options = _files.RouteAsType(
+                options, body: false, expression: true);
         }
         return options;
     }
@@ -1464,10 +1469,13 @@ public sealed class PoseLibraryPane
             }
             : _files.BuildImportOptions();
         options.ResetBeforeImport = true;
-        // The bone-filter menu governs POSE applies (the Brio-library-like
-        // path) — an auto-save restore is full-fidelity by contract and
-        // must not lose weapons to the filter's default exclusions.
-        return auto ? options : _files.ApplyCategoryFilter(options);
+        // The bone filter is NOT re-applied here: the files section's own
+        // build already folds it in for the one state Brio lets it govern
+        // (neither type checked), and folding it in again would have shrunk
+        // a Body/Expression import the same way Brio's disabled Custom Import
+        // Options button forbids. An auto-save restore is full-fidelity by
+        // contract and never sees the filter at all.
+        return options;
     }
 
     /// <summary>The preview's own trim of a library build: everything that

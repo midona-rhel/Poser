@@ -68,7 +68,11 @@ public sealed class PoseExportCapture : IDisposable
     private sealed class Export
     {
         public required long Generation;
-        public required string Path;
+        /// <summary>What the refreshed skeletons are turned into once the pass
+        /// has run — the file write, or a caller's own sink (the clipboard
+        /// copy). Returns whether it succeeded, which is what
+        /// <see cref="OnFinished"/> carries.</summary>
+        public required Func<IReadOnlyList<ISkeleton>, bool> Write;
         /// <summary>The slots handed to <c>ExportPose</c> verbatim — the
         /// export's scope is whatever the caller resolved, the refresh just
         /// covers all of it.</summary>
@@ -111,6 +115,19 @@ public sealed class PoseExportCapture : IDisposable
     public GestureResult Begin(
         IReadOnlyList<ISkeleton> slots,
         string path,
+        Action<bool>? onFinished = null) =>
+        Begin(slots, skeletons => _poseFiles.ExportPose(skeletons, path), onFinished);
+
+    /// <summary>
+    /// The same arming for a destination that is not a file: the refresh runs
+    /// exactly as it does for a file export — a never-posed actor's raw caches
+    /// are stale until the update pass visits them, and a clipboard copy reads
+    /// the very same caches — and <paramref name="write"/> runs once the pass
+    /// has ended.
+    /// </summary>
+    public GestureResult Begin(
+        IReadOnlyList<ISkeleton> slots,
+        Func<IReadOnlyList<ISkeleton>, bool> write,
         Action<bool>? onFinished = null)
     {
         if (!_framework.IsInFrameworkUpdateThread)
@@ -123,7 +140,7 @@ public sealed class PoseExportCapture : IDisposable
         var export = new Export
         {
             Generation = ++_generation,
-            Path = path,
+            Write = write,
             Skeletons = slots,
             Slots = new List<SlotExport>(slots.Count),
             OnFinished = onFinished,
@@ -203,7 +220,16 @@ public sealed class PoseExportCapture : IDisposable
             break;
         }
 
-        var ok = _poseFiles.ExportPose(export.Skeletons, export.Path);
+        bool ok;
+        try
+        {
+            ok = export.Write(export.Skeletons);
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"Pose export write threw: {ex.Message}");
+            ok = false;
+        }
         try
         {
             export.OnFinished?.Invoke(ok);
