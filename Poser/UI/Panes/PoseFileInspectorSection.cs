@@ -365,10 +365,6 @@ public sealed class PoseFileInspectorSection
     /// first frames of a render.</summary>
     private const string PreviewWaitingText = "Preparing preview…";
 
-    /// <summary>Degrees of yaw per rotate click — Ktisis' preview step.
-    /// </summary>
-    private const float PreviewYaw = 50f;
-
     /// <summary>Camera distance per zoom BUTTON click. User-tuned in game
     /// (2026-08-09): 10 was far too coarse, halved on request. Zoom in =
     /// negative delta.</summary>
@@ -380,30 +376,22 @@ public sealed class PoseFileInspectorSection
     /// buttons.</summary>
     private const float PreviewZoomWheelStep = 0.5f;
 
-    /// <summary>View travel per up/down click, in NATIVE world units: the
-    /// camera's own pan is a dead vtable slot on the inspect view, so the
-    /// service offsets the preview BODY instead and the units are the world's
-    /// — a body is about 1.8 tall, so this is roughly a twelfth of it a
-    /// click.</summary>
-    private const float PreviewPanStep = 0.15f;
-
     /// <summary>Degrees of yaw per pixel dragged sideways across the render.
     /// </summary>
     private const float PreviewDragYawScale = 0.5f;
 
     /// <summary>View travel per pixel dragged vertically across the render, in
     /// native world units — the ~430px tall image shows about 2.5 units, so a
-    /// drag carries the frame with the cursor at roughly one to one. The sign
-    /// convention (a drag DOWN carries the view down the body, so the up
-    /// BUTTON passes a negative step) awaits in-game confirmation; flipping it
-    /// is one sign in each of two places.</summary>
+    /// drag carries the render with the cursor at roughly one to one. Sign
+    /// user-tuned in game (2026-08-09): drag GRABS the render (down pulls the
+    /// body down, the view climbs).</summary>
     private const float PreviewDragPanScale = 0.006f;
 
-    /// <summary>The camera band's groups in order — yaw, pitch, zoom, reset —
-    /// as button counts. A pair stands together and the groups stand apart;
-    /// the band wraps at the group boundary when the rail is too narrow.
+    /// <summary>The camera band's groups in order — the zoom pair (for wheels
+    /// the user doesn't have) and the reset. Rotate and pan buttons are gone
+    /// by user call (2026-08-09): the drag IS the rotate/pan surface.
     /// </summary>
-    private static readonly int[] PreviewCameraGroups = [2, 2, 2, 1];
+    private static readonly int[] PreviewCameraGroups = [2, 1];
 
     /// <summary>The import-option section stack, shared verbatim by the
     /// popup body and the library rail. Returns the y past the last
@@ -674,13 +662,15 @@ public sealed class PoseFileInspectorSection
             }
             else
             {
-                // The banner editor's own split: sideways ORBITS, vertically
-                // PANS, and the frame follows the cursor on the pan axis.
+                // Sideways ORBITS, vertically PANS — and the pan axis GRABS
+                // the render: dragging down pulls the body down and the view
+                // climbs (the user's expectation, inverse of the banner
+                // editor's frame-follows-cursor).
                 var drag = ImGui.GetIO().MouseDelta;
                 if (drag.X != 0f)
                     _preview.Rotate(drag.X * PreviewDragYawScale);
                 if (drag.Y != 0f)
-                    _preview.Pan(drag.Y * PreviewDragPanScale);
+                    _preview.Pan(-drag.Y * PreviewDragPanScale);
             }
         }
 
@@ -689,9 +679,10 @@ public sealed class PoseFileInspectorSection
             _preview.Zoom(-wheel * PreviewZoomWheelStep);
     }
 
-    /// <summary>One band when the seven buttons fit the rail's content width,
-    /// two when they do not — the compact theme's rail is too narrow for the
-    /// whole set at once.</summary>
+    /// <summary>One band when the buttons fit the rail's content width, two
+    /// when they do not. The trimmed set (zoom pair + reset) fits every
+    /// theme's rail in one band; the wrap stays for whatever the band grows
+    /// next.</summary>
     private static int PreviewCameraRows(float width, float scale, Theme theme)
         => PreviewCameraBandWidth(
             PreviewCameraGroups, 0, PreviewCameraGroups.Length, scale, theme)
@@ -711,13 +702,11 @@ public sealed class PoseFileInspectorSection
         return total;
     }
 
-    /// <summary>The camera band, centred under the image: rotate, pan, zoom,
-    /// then the reset. Each pair stands together (a rotate arrow beside its
-    /// opposite) and the groups stand apart. The buttons speak to the service
-    /// directly — the camera is the preview's own state and no pane holds any
-    /// of it.</summary>
-    /// <param name="rows">1 or 2, from <see cref="PreviewCameraRows"/>; two
-    /// bands split at the pan/zoom boundary.</param>
+    /// <summary>The camera band, centred under the image: the zoom pair and
+    /// the reset — rotate and pan live on the drag. The buttons speak to the
+    /// service directly — the camera is the preview's own state and no pane
+    /// holds any of it.</summary>
+    /// <param name="rows">1 or 2, from <see cref="PreviewCameraRows"/>.</param>
     private void DrawPreviewCamera(
         Vector2 origin, float width, float scale, Theme theme, int rows)
     {
@@ -759,45 +748,13 @@ public sealed class PoseFileInspectorSection
         {
             case 0:
                 Crystarium.IconButton(
-                    TablerIcon.ArrowLeft,
-                    () => _preview.Rotate(-PreviewYaw),
-                    style: style,
-                    help: "Rotate the preview left",
-                    id: "##pose-preview-left");
-                break;
-            case 1:
-                Crystarium.IconButton(
-                    TablerIcon.ArrowRight,
-                    () => _preview.Rotate(PreviewYaw),
-                    style: style,
-                    help: "Rotate the preview right",
-                    id: "##pose-preview-right");
-                break;
-            case 2:
-                Crystarium.IconButton(
-                    TablerIcon.ArrowUp,
-                    () => _preview.Pan(-PreviewPanStep),
-                    style: style,
-                    help: "Move the preview camera up",
-                    id: "##pose-preview-up");
-                break;
-            case 3:
-                Crystarium.IconButton(
-                    TablerIcon.ArrowDown,
-                    () => _preview.Pan(PreviewPanStep),
-                    style: style,
-                    help: "Move the preview camera down",
-                    id: "##pose-preview-down");
-                break;
-            case 4:
-                Crystarium.IconButton(
                     TablerIcon.ZoomOut,
                     () => _preview.Zoom(PreviewZoomButtonStep),
                     style: style,
                     help: "Move the preview camera back",
                     id: "##pose-preview-zoom-out");
                 break;
-            case 5:
+            case 1:
                 Crystarium.IconButton(
                     TablerIcon.ZoomIn,
                     () => _preview.Zoom(-PreviewZoomButtonStep),
