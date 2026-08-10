@@ -1377,7 +1377,8 @@ public static partial class Crystarium
             SliderScale scale = SliderScale.Linear,
             Func<float, string>? readout = null,
             IReadOnlyList<float>? marks = null,
-            string? help = null)
+            string? help = null,
+            float logCurvature = 99f)
         {
             float readoutWidth = ActiveTheme.Form.ValueColumnWidth * Scale;
             float track = MathF.Max(1f, Width - readoutWidth);
@@ -1395,7 +1396,8 @@ public static partial class Crystarium
                 marks,
                 disabled,
                 help,
-                scale: scale);
+                scale: scale,
+                logCurvature: logCurvature);
             DrawTextRight(
                 new Vector2(Origin.X + Width - readoutWidth, Origin.Y),
                 readoutWidth,

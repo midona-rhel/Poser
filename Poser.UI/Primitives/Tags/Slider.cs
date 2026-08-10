@@ -36,15 +36,16 @@ public static partial class Crystarium
 
     /// <summary>The 0..1 TRAVEL a value sits at under a scale.</summary>
     private static float SliderPositionOf(
-        float value, float minimum, float maximum, SliderScale scale)
+        float value, float minimum, float maximum, SliderScale scale,
+        float curvature = SliderLogCurvature)
     {
         if (!(maximum > minimum))
             return 0f;
         float fraction = Math.Clamp(
             (value - minimum) / (maximum - minimum), 0f, 1f);
         return scale == SliderScale.Log
-            ? MathF.Log(1f + SliderLogCurvature * fraction)
-                / MathF.Log(1f + SliderLogCurvature)
+            ? MathF.Log(1f + curvature * fraction)
+                / MathF.Log(1f + curvature)
             : fraction;
     }
 
@@ -52,12 +53,13 @@ public static partial class Crystarium
     /// inverse of <see cref="SliderPositionOf"/>, so a drag that lands on a
     /// pixel reads back to that same pixel.</summary>
     private static float SliderValueOf(
-        float position, float minimum, float maximum, SliderScale scale)
+        float position, float minimum, float maximum, SliderScale scale,
+        float curvature = SliderLogCurvature)
     {
         float travel = Math.Clamp(position, 0f, 1f);
         float fraction = scale == SliderScale.Log
-            ? (MathF.Pow(1f + SliderLogCurvature, travel) - 1f)
-                / SliderLogCurvature
+            ? (MathF.Pow(1f + curvature, travel) - 1f)
+                / curvature
             : travel;
         return minimum + fraction * (maximum - minimum);
     }
@@ -84,7 +86,8 @@ public static partial class Crystarium
         string? help = null,
         Action? onBegin = null,
         Action? onCommit = null,
-        SliderScale scale = SliderScale.Linear)
+        SliderScale scale = SliderScale.Linear,
+        float logCurvature = SliderLogCurvature)
     {
         float frameScale = ImGuiHelpers.GlobalScale;
         var metrics = ControlSizing.Resolve(
@@ -108,14 +111,14 @@ public static partial class Crystarium
         {
             float next = SliderValueAt(
                 ImGui.GetIO().MousePos.X, hit.ScreenMin, hit.ScreenMax,
-                min, max, scale);
+                min, max, scale, logCurvature);
             if (!float.IsNaN(next) && next != value) { value = next; changed = true; }
         }
 
         PaintSlider(
             ImGui.GetWindowDrawList(), hit.ScreenMin, hit.ScreenMax,
-            SliderPositionOf(value, min, max, scale),
-            marks, min, max, disabled, scale);
+            SliderPositionOf(value, min, max, scale, logCurvature),
+            marks, min, max, disabled, scale, logCurvature);
 
         if (changed) onChange(value);
         if (hit.DragEnded)
@@ -137,7 +140,7 @@ public static partial class Crystarium
     /// </summary>
     private static float SliderValueAt(
         float mouseX, Vector2 min, Vector2 max, float minimum, float maximum,
-        SliderScale scale)
+        SliderScale scale, float curvature = SliderLogCurvature)
     {
         float half = (max.Y - min.Y) * 0.5f;
         float x0 = min.X + half;
@@ -145,7 +148,7 @@ public static partial class Crystarium
         if (!(x1 > x0) || !(maximum > minimum))
             return float.NaN;
         return SliderValueOf(
-            (mouseX - x0) / (x1 - x0), minimum, maximum, scale);
+            (mouseX - x0) / (x1 - x0), minimum, maximum, scale, curvature);
     }
 
     /// <summary>
@@ -157,7 +160,8 @@ public static partial class Crystarium
     private static void PaintSlider(
         ImDrawListPtr dl, Vector2 min, Vector2 max, float normalized,
         IReadOnlyList<float>? marks, float minimum, float maximum,
-        bool disabled, SliderScale valueScale = SliderScale.Linear)
+        bool disabled, SliderScale valueScale = SliderScale.Linear,
+        float curvature = SliderLogCurvature)
     {
         float scale = ImGuiHelpers.GlobalScale;
         float half = (max.Y - min.Y) * 0.5f;
@@ -204,7 +208,7 @@ public static partial class Crystarium
                 // mapping the thumb does — a log slider's notches bunch up at
                 // the top exactly as its values do.
                 float nx = x0 + SliderPositionOf(
-                    notch, minimum, maximum, valueScale) * (x1 - x0);
+                    notch, minimum, maximum, valueScale, curvature) * (x1 - x0);
                 dl.AddRectFilled(
                     new Vector2(nx - 0.5f * scale, cy - 4f * scale),
                     new Vector2(nx + 0.5f * scale, cy + 4f * scale), notchU32);

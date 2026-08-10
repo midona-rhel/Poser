@@ -91,6 +91,10 @@ public sealed class LightPane
     // it, exactly like a spawned one.
     private ILight? _pendingSelect;
 
+    /// <summary>The intensity slider's decade notches: where 1 and 10 sit on
+    /// the log track, so the tiers read before dragging.</summary>
+    private static readonly float[] IntensityMarks = [1f, 10f];
+
     private static readonly string[] KindOptions =
         ["Directional", "Point", "Spot", "Area"];
     private static readonly string[] FalloffOptions =
@@ -272,15 +276,19 @@ public sealed class LightPane
                 value => light.Color = ToRawColor(value));
         }, help: "The light's color; the native value is HDR and reaches past white");
 
-        // The native intensity reaches far past one, but past one the scene
-        // just blows out — the slider stops where the usable values live,
-        // exactly as the environment pane's intensity sliders do.
+        // Intensity carries Ktisis/Brio's full 0–100 native range on log
+        // tiers like the environment's light-distance slider — but three
+        // decades of curvature instead of the shared two, so the usable 0–1
+        // band owns half the travel and the blowout values keep the top.
         form.Cells(cells =>
         {
             cells.Cell(
                 "Intensity",
                 cell => cell.Slider("##light-intensity", light.Intensity,
-                    0f, 1f, value => light.Intensity = value),
+                    0f, 100f, value => light.Intensity = value,
+                    scale: SliderScale.Log,
+                    marks: IntensityMarks,
+                    logCurvature: 9999f),
                 help: "How much light is emitted");
             cells.Cell(
                 "Range",

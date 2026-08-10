@@ -79,8 +79,8 @@ public class SkeletonOverlayWindow : Window
     }
 
     /// <summary>One light's handle in the world. Lights carry no skeleton and
-    /// no hierarchy, so a light is exactly one dot plus — while selected — the
-    /// outline of what it actually illuminates.</summary>
+    /// no hierarchy, so a light is exactly one dot plus a small mark saying
+    /// which way it faces.</summary>
     private sealed class LightDisplayData
     {
         public string Name { get; init; } = "";
@@ -732,9 +732,10 @@ public class SkeletonOverlayWindow : Window
         }
     }
 
-    // ── light handles and shapes ─────────────────────────────────────────
-    // Brio's light overlay (itself after Stagehand): a handle dot for every
-    // light, and the shape of what the SELECTED light actually illuminates.
+    // ── light handles and facing marks ───────────────────────────────────
+    // A handle dot for every light plus one small directional mark. The mark
+    // states FACING only: range, falloff and panel extents are the Light
+    // tab's numbers, and drawing them in the world buried the handles.
 
     private void DrawLights(
         ImDrawListPtr drawList,
@@ -746,7 +747,7 @@ public class SkeletonOverlayWindow : Window
         {
             var color = LightColor(light);
             if (light.Live is { } live)
-                DrawLightShape(drawList, viewportPos, light, live, color);
+                DrawLightShape(drawList, viewportPos, light, live, color, dotRadius);
 
             float radius = light.IsSelected || light.IsHovered
                 ? dotRadius + 2f
@@ -787,22 +788,49 @@ public class SkeletonOverlayWindow : Window
         ((color >> 16) & 0xFF) / 255f,
         ((color >> 24) & 0xFF) / 255f);
 
-    /// <summary>How far the always-on facing indicator reaches, in world
-    /// metres — the handle's own order of magnitude, so it never competes with
-    /// the selected light's extents.</summary>
-    private const float LightFacingWorld = 0.35f;
+    /// <summary>The screen size of a light's facing mark, before UI scale —
+    /// the world gizmo's handles span 80px, so a mark at this size sits under
+    /// them rather than competing with them.</summary>
+    private const float LightMarkPixels = 34f;
 
-    /// <summary>The per-kind outline. EVERY light carries a small mark saying
-    /// which way it faces — a light that points the wrong way is otherwise
-    /// invisible until it is selected — while the full extent (range rings,
-    /// the throw cone, the panel's spread) stays the SELECTED light's alone,
-    /// because every light drawing its range at once is unreadable.</summary>
+    /// <summary>The world length that projects to <paramref name="pixels"/> at
+    /// this position's depth. Measured rather than derived from matrix cells:
+    /// project a unit offset perpendicular to the view direction, read off
+    /// pixels-per-world-unit, and divide — the same derivation as
+    /// <see cref="Controls.WorldGizmoProjection.WorldScale"/>. Marks built as
+    /// multiples of this keep a constant perceived size at any distance, so a
+    /// light's mark neither balloons up close nor vanishes far away. Zero when
+    /// the position or its offset will not project.</summary>
+    private float MarkWorldLength(Vector3 position, float pixels)
+    {
+        var fromCamera = position - _cameraService.GetCameraPosition();
+        if (fromCamera.LengthSquared() < 1e-8f)
+            return 0f;
+        var view = Vector3.Normalize(fromCamera);
+        var reference = MathF.Abs(Vector3.Dot(view, Vector3.UnitY)) > 0.99f
+            ? Vector3.UnitX
+            : Vector3.UnitY;
+        var lateral = Vector3.Normalize(Vector3.Cross(view, reference));
+        if (!_cameraService.WorldToScreen(position, out var origin) ||
+            !_cameraService.WorldToScreen(position + lateral, out var offset))
+            return 0f;
+        float pixelsPerWorldUnit = Vector2.Distance(origin, offset);
+        return pixelsPerWorldUnit < 1e-3f ? 0f : pixels / pixelsPerWorldUnit;
+    }
+
+    /// <summary>The per-kind facing mark: one simple stroke figure along the
+    /// beam (+Z of the light's rotation), sized in screen pixels. It says which
+    /// way the light points and — for a spot — how wide the throw opens, and
+    /// deliberately says nothing about range: extents are the Light tab's
+    /// numbers. Selection is emphasis on the same figure, never extra
+    /// geometry.</summary>
     private void DrawLightShape(
         ImDrawListPtr drawList,
         Vector2 viewportPos,
         LightDisplayData light,
         ILight live,
-        Vector4 color)
+        Vector4 color,
+        float dotRadius)
     {
         bool selected = light.IsSelected;
         var position = light.Transform.Position;
@@ -810,91 +838,53 @@ public class SkeletonOverlayWindow : Window
         var localX = Vector3.Transform(Vector3.UnitX, rotation);
         var localY = Vector3.Transform(Vector3.UnitY, rotation);
         var localZ = Vector3.Transform(Vector3.UnitZ, rotation);
-        float range = live.Range;
+        float uiScale = ImGuiHelpers.GlobalScale;
+        float length = MarkWorldLength(position, LightMarkPixels * uiScale);
+        if (length <= 0f)
+            return;
         // A light that is switched off still says which way it faces, quietly.
-        var facing = live.IsOn ? color : color with { W = color.W * 0.35f };
+        var stroke = live.IsOn ? color : color with { W = color.W * 0.35f };
+        float thickness = (selected ? 2.5f : 1.5f) * uiScale;
 
         switch (live.Kind)
         {
             case LightKind.Directional:
-            {
-                // A directional light has no position that means anything, so
-                // it reads as a ray: one arrow along its direction, flanked by
-                // two parallel strokes.
                 DrawWorldArrow(
                     drawList, viewportPos, position, localZ, localX, localY,
-                    LightFacingWorld, 1.5f, facing);
-                var side = Vector3.Normalize(localX) * (LightFacingWorld * 0.5f);
-                var reach = Vector3.Normalize(localZ) * (LightFacingWorld * 0.8f);
-                DrawWorldLine(
-                    drawList, viewportPos,
-                    position + side, position + side + reach, 1f, facing);
-                DrawWorldLine(
-                    drawList, viewportPos,
-                    position - side, position - side + reach, 1f, facing);
+                    length, thickness, stroke);
                 break;
-            }
             case LightKind.Point:
-            {
                 // Omnidirectional: there is no facing to indicate, so the
-                // handle dot is the whole unselected mark.
+                // handle dot is the whole mark. Selection adds one ring around
+                // it, in screen space with the dot it belongs to.
                 if (selected)
-                {
-                    DrawWorldCircle(drawList, viewportPos, position, localX, localY, range, 2f, color);
-                    DrawWorldCircle(drawList, viewportPos, position, localY, localZ, range, 2f, color);
-                    DrawWorldCircle(drawList, viewportPos, position, localZ, localX, range, 2f, color);
-                }
+                    drawList.AddCircle(
+                        light.ScreenPos, dotRadius + 5f * uiScale,
+                        ImGui.ColorConvertFloat4ToU32(stroke), 24, thickness);
                 break;
-            }
             case LightKind.Spot:
-            {
-                float cone = 0.5f * float.DegreesToRadians(live.SpotAngle);
+                // Real cone ANGLE at a fixed perceived length: the width of the
+                // throw belongs to the mark, the distance it carries does not.
                 DrawWorldCone(
                     drawList, viewportPos, position, localX, localY, localZ,
-                    cone, LightFacingWorld, 1f, facing);
-                if (selected)
-                {
-                    DrawWorldCone(
-                        drawList, viewportPos, position, localX, localY, localZ,
-                        cone, range, 2f, color);
-                    DrawWorldCone(
-                        drawList, viewportPos, position, localX, localY, localZ,
-                        0.5f * float.DegreesToRadians(
-                            live.SpotAngle + live.FalloffAngle),
-                        range, 1f, color with { W = color.W * 0.4f });
-                }
+                    0.5f * float.DegreesToRadians(live.SpotAngle),
+                    length, thickness, stroke);
                 break;
-            }
             case LightKind.Area:
             {
-                // The indicator is the panel in miniature plus its normal; the
-                // selected light's own panel is four times the size, so the two
-                // never read as one shape.
-                var facingHalfX = localX * (LightFacingWorld * 0.5f);
-                var facingHalfY = localY * (LightFacingWorld * 0.5f);
-                DrawWorldQuad(
-                    drawList, viewportPos, position,
-                    facingHalfX, facingHalfY, 1f, facing);
+                // An arrow with a crossbar for the panel it leaves. The bar is
+                // struck on both side axes so it never collapses edge-on.
                 DrawWorldArrow(
                     drawList, viewportPos, position, localZ, localX, localY,
-                    LightFacingWorld, 1f, facing);
-                if (!selected)
-                    break;
-                var halfX = localX * 0.5f;
-                var halfY = localY * 0.5f;
-                DrawWorldQuad(drawList, viewportPos, position, halfX, halfY, 2f, color);
-                var skew = live.AreaAngle;
-                var skewVector =
-                    Vector3.Normalize(localX) * range *
-                        MathF.Tan(float.DegreesToRadians(skew.Y)) -
-                    Vector3.Normalize(localY) * range *
-                        MathF.Tan(float.DegreesToRadians(skew.X));
-                var far = position + localZ * range + skewVector;
-                DrawWorldQuad(drawList, viewportPos, far, halfX, halfY, 2f, color);
-                DrawWorldLine(drawList, viewportPos, position + halfX + halfY, far + halfX + halfY, 2f, color);
-                DrawWorldLine(drawList, viewportPos, position + halfX - halfY, far + halfX - halfY, 2f, color);
-                DrawWorldLine(drawList, viewportPos, position - halfX - halfY, far - halfX - halfY, 2f, color);
-                DrawWorldLine(drawList, viewportPos, position - halfX + halfY, far - halfX + halfY, 2f, color);
+                    length, thickness, stroke);
+                var barX = Vector3.Normalize(localX) * (length * 0.35f);
+                var barY = Vector3.Normalize(localY) * (length * 0.35f);
+                DrawWorldLine(
+                    drawList, viewportPos,
+                    position - barX, position + barX, thickness, stroke);
+                DrawWorldLine(
+                    drawList, viewportPos,
+                    position - barY, position + barY, thickness, stroke);
                 break;
             }
         }
@@ -935,22 +925,12 @@ public class SkeletonOverlayWindow : Window
         DrawWorldLine(drawList, viewportPos, tip, shoulder - spreadTwo, thickness, color);
     }
 
-    private void DrawWorldQuad(
-        ImDrawListPtr drawList, Vector2 viewportPos, Vector3 center,
-        Vector3 halfX, Vector3 halfY, float thickness, Vector4 color)
-    {
-        DrawWorldLine(drawList, viewportPos, center + halfX + halfY, center + halfX - halfY, thickness, color);
-        DrawWorldLine(drawList, viewportPos, center + halfX - halfY, center - halfX - halfY, thickness, color);
-        DrawWorldLine(drawList, viewportPos, center - halfX - halfY, center - halfX + halfY, thickness, color);
-        DrawWorldLine(drawList, viewportPos, center - halfX + halfY, center + halfX + halfY, thickness, color);
-    }
-
     private void DrawWorldCircle(
         ImDrawListPtr drawList, Vector2 viewportPos, Vector3 center,
         Vector3 axisOne, Vector3 axisTwo, float radius, float thickness,
         Vector4 color)
     {
-        const int segments = 64;
+        const int segments = 32;
         for (int i = 0; i <= segments; i++)
         {
             float angle = (float)i / segments * MathF.Tau;
@@ -965,42 +945,27 @@ public class SkeletonOverlayWindow : Window
         drawList.PathClear();
     }
 
+    /// <summary>An open wire cone: the rim circle at <paramref name="height"/>
+    /// and four spokes back to the apex. Four spokes, because two would
+    /// collapse to a single stroke from the angles a free camera takes.</summary>
     private void DrawWorldCone(
-        ImDrawListPtr drawList, Vector2 viewportPos, Vector3 origin,
+        ImDrawListPtr drawList, Vector2 viewportPos, Vector3 apex,
         Vector3 localX, Vector3 localY, Vector3 localZ, float angleRadians,
         float height, float thickness, Vector4 color)
     {
-        const int slices = 4;
         const int spokes = 4;
-        var heightDirection = localZ * height;
-        float tangent = MathF.Tan(angleRadians);
-
-        // The slices bunch toward the tip, where a cone's shape actually reads.
-        static float SliceRatio(int slice, int count) =>
-            MathF.Pow(200f, (float)(slice + 1) / count - 1f);
-
-        for (int slice = 0; slice < slices; slice++)
-        {
-            float ratio = SliceRatio(slice, slices);
-            DrawWorldCircle(
-                drawList, viewportPos, origin + heightDirection * ratio,
-                localX, localY, height * ratio * tangent, thickness, color);
-        }
+        var rimCenter = apex + localZ * height;
+        float radius = height * MathF.Tan(angleRadians);
+        DrawWorldCircle(
+            drawList, viewportPos, rimCenter, localX, localY, radius,
+            thickness, color);
 
         for (int spoke = 0; spoke < spokes; spoke++)
         {
             float angle = (float)spoke / spokes * MathF.Tau;
-            var lastEnd = origin;
-            for (int slice = 0; slice < slices; slice++)
-            {
-                float ratio = SliceRatio(slice, slices);
-                var sliceCenter = origin + heightDirection * ratio;
-                var endPoint = sliceCenter +
-                    (MathF.Cos(angle) * localX + MathF.Sin(angle) * localY) *
-                    height * ratio * tangent;
-                DrawWorldLine(drawList, viewportPos, lastEnd, endPoint, thickness, color);
-                lastEnd = endPoint;
-            }
+            var rim = rimCenter +
+                (MathF.Cos(angle) * localX + MathF.Sin(angle) * localY) * radius;
+            DrawWorldLine(drawList, viewportPos, apex, rim, thickness, color);
         }
     }
 
