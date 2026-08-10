@@ -165,11 +165,22 @@ internal sealed unsafe class Light : ILight
 
     public Vector2 AreaAngle
     {
-        get => HasRender ? _native->LightRenderObject->AreaAngle : Vector2.Zero;
+        // The native field is RADIANS — both references drive it with
+        // ImGui.SliderAngle and Ktisis multiplies by Rad2Deg before display.
+        // The contract speaks degrees, so this boundary converts.
+        get => HasRender
+            ? new Vector2(
+                float.RadiansToDegrees(
+                    _native->LightRenderObject->AreaAngle.X),
+                float.RadiansToDegrees(
+                    _native->LightRenderObject->AreaAngle.Y))
+            : Vector2.Zero;
         set
         {
             if (HasRender)
-                _native->LightRenderObject->AreaAngle = value;
+                _native->LightRenderObject->AreaAngle = new Vector2(
+                    float.DegreesToRadians(value.X),
+                    float.DegreesToRadians(value.Y));
         }
     }
 

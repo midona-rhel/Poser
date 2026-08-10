@@ -273,7 +273,8 @@ public sealed class LightPane
         form.ColorWells("Color", wells =>
         {
             wells.Well("Color", ToDisplayColor(light.Color),
-                value => light.Color = ToRawColor(value));
+                value => light.Color = ToRawColor(value),
+                hdr: true);
         }, help: "The light's color; the native value is HDR and reaches past white");
 
         // Intensity carries Ktisis/Brio's full 0–100 native range on log
@@ -292,8 +293,8 @@ public sealed class LightPane
                 help: "How much light is emitted");
             cells.Cell(
                 "Range",
-                cell => cell.Slider("##light-range", light.Range, 0f, 100f,
-                    value => light.Range = value, format: "0.0",
+                cell => cell.Slider("##light-range", light.Range, 0f, 999f,
+                    value => light.Range = value, format: "0",
                     scale: SliderScale.Log),
                 help: "How far the light reaches");
         });
@@ -307,9 +308,9 @@ public sealed class LightPane
                 help: "The curve the light dims along over its range");
             cells.Cell(
                 "Falloff",
-                cell => cell.Slider("##light-falloff", light.Falloff, 0f, 10f,
-                    value => light.Falloff = value,
-                    scale: SliderScale.Log),
+                cell => cell.Slider("##light-falloff", light.Falloff,
+                    0f, 1000f, value => light.Falloff = value,
+                    scale: SliderScale.Log, logCurvature: 9999f),
                 help: "How sharply the light dims toward the edge of its "
                     + "range");
         });
@@ -505,9 +506,9 @@ public sealed class LightPane
             cells.Cell(
                 "Shadow far",
                 cell => cell.Slider("##light-shadow-far",
-                    light.ShadowPlaneFar, 0f, 100f,
+                    light.ShadowPlaneFar, 0f, 1000f,
                     value => light.ShadowPlaneFar = value, format: "0.0",
-                    scale: SliderScale.Log),
+                    scale: SliderScale.Log, logCurvature: 9999f),
                 help: "The furthest distance shadows reach");
         });
     }

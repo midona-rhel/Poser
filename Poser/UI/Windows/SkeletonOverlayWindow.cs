@@ -872,10 +872,20 @@ public class SkeletonOverlayWindow : Window
                 break;
             case LightKind.Area:
             {
+                // The panel's throw leans with its skew angles — Ktisis
+                // composes AreaAngle into the facing before drawing, and a
+                // skewed panel whose arrow ignored the skew would lie.
+                var area = live.AreaAngle;
+                var skewed = Quaternion.Normalize(
+                    rotation * Quaternion.CreateFromYawPitchRoll(
+                        float.DegreesToRadians(area.X),
+                        float.DegreesToRadians(area.Y),
+                        0f));
+                var throwZ = Vector3.Transform(Vector3.UnitZ, skewed);
                 // An arrow with a crossbar for the panel it leaves. The bar is
                 // struck on both side axes so it never collapses edge-on.
                 DrawWorldArrow(
-                    drawList, viewportPos, position, localZ, localX, localY,
+                    drawList, viewportPos, position, throwZ, localX, localY,
                     length, thickness, stroke);
                 var barX = Vector3.Normalize(localX) * (length * 0.35f);
                 var barY = Vector3.Normalize(localY) * (length * 0.35f);

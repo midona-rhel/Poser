@@ -18,7 +18,14 @@ namespace Poser.Files;
 [Serializable]
 public class LightFile
 {
+    /// <summary>Bumped on any breaking meaning change of a persisted field.
+    /// Version 1 fixed AreaAngle to degrees end-to-end; version 0 files
+    /// (no field) predate the unit fix and carry the same numbers with
+    /// undefined skew semantics — they load as-is.</summary>
+    public const int CurrentVersion = 1;
+
     public string TypeName { get; set; } = "Poser Light";
+    public int FileVersion { get; set; } = CurrentVersion;
 
     public string Name { get; set; } = "Light";
     public LightKind Kind { get; set; }

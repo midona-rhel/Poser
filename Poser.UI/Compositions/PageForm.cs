@@ -1223,7 +1223,8 @@ public static partial class Crystarium
             Vector4? Value,
             Action<Vector4> OnChange,
             string? UnavailableHelp,
-            ControlStyle Style);
+            ControlStyle Style,
+            bool Hdr);
 
         internal ColorWellScope(in FormRowScope row, string id)
         {
@@ -1232,8 +1233,9 @@ public static partial class Crystarium
         }
 
         public void Well(string label, Vector4? value, Action<Vector4> onChange,
-            string? unavailableHelp = null, ControlStyle style = default) =>
-            _items.Add(new(label, value, onChange, unavailableHelp, style));
+            string? unavailableHelp = null, ControlStyle style = default,
+            bool hdr = false) =>
+            _items.Add(new(label, value, onChange, unavailableHelp, style, hdr));
 
         /// <returns>The number of form rows the wells occupied.</returns>
         internal int Draw()
@@ -1307,7 +1309,8 @@ public static partial class Crystarium
                     controlStyle,
                     rgbOnly: true,
                     disabled: item.Value == null,
-                    help: item.UnavailableHelp);
+                    help: item.UnavailableHelp,
+                    hdr: item.Hdr);
             }
             return rowCount;
         }

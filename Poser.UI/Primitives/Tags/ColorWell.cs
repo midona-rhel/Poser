@@ -106,7 +106,8 @@ public static partial class Crystarium
         ControlStyle style = default,
         bool rgbOnly = false,
         bool disabled = false,
-        string? help = null)
+        string? help = null,
+        bool hdr = false)
     {
         var theme = ActiveTheme;
         // The well is square by default: its content width IS the resolved
@@ -125,7 +126,7 @@ public static partial class Crystarium
             OpenPopover(ColorWellPopupId(id));
 
         bool changed = DrawColorWellPopup(
-            id, wellMin, wellMax, color, rgbOnly, onChange);
+            id, wellMin, wellMax, color, rgbOnly, onChange, hdr);
         if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
                 hit, disabled, wellMin, wellMax))
             HoverHelp.Explain(id, wellMin, wellMax, help!);
@@ -203,7 +204,8 @@ public static partial class Crystarium
         Vector2 anchorMax,
         Vector4 color,
         bool rgbOnly,
-        Action<Vector4> onChange)
+        Action<Vector4> onChange,
+        bool hdr = false)
     {
         var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
@@ -229,6 +231,12 @@ public static partial class Crystarium
                     | ImGuiColorEditFlags.NoSmallPreview;
                 if (rgbOnly)
                     flags |= ImGuiColorEditFlags.NoAlpha;
+                // Without Hdr the picker clamps display to 1.0 on first
+                // touch — an HDR light colour (default display 1.83) would
+                // silently dim 3.3x the moment the picker opens.
+                if (hdr)
+                    flags |= ImGuiColorEditFlags.Hdr
+                        | ImGuiColorEditFlags.Float;
                 float keepAlpha = popupColor.W;
                 changed = ImGui.ColorPicker4(id + "_pk", ref popupColor, flags);
                 if (rgbOnly)
