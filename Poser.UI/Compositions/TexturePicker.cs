@@ -59,7 +59,9 @@ public static partial class Crystarium
 
         private const float TextureTileSize = 120f;
 
-        private const float TextureTileGap = 8f;
+        /// <summary>Inter-tile breathing is the shared spacing token, not a
+        /// metric of this component's own.</summary>
+        private static float TextureTileGap => ActiveTheme.Spacing.Four;
 
         /// <summary>The tile's art breathes off its own hover fill, so the
         /// selected ring never crops the preview.</summary>
@@ -141,7 +143,10 @@ public static partial class Crystarium
             var theme = ActiveTheme;
             float pad = TextureSurfacePadding;
             float pitch = TextureTileSize + TextureTileCaption + TextureTileGap;
-            float width = pad * 2f
+            // The gutter-as-padding contract: the reserved scrollbar gutter
+            // sits ON the surface's right edge and IS the trailing inset —
+            // the stated padding covers the other three sides only.
+            float width = pad
                 + TextureGridColumns * (TextureTileSize + TextureTileGap)
                 - TextureTileGap
                 + theme.Scrollbar.GutterWidth;
@@ -155,7 +160,9 @@ public static partial class Crystarium
                 {
                     Width = width,
                     Height = height,
-                    Padding = pad,
+                    // Zero window padding: the body seats itself so the
+                    // gutter can reach the edge the padding would cover.
+                    Padding = 0f,
                     AnchorMin = _anchorMin,
                     AnchorMax = _anchorMax,
                     // OPAQUE, for the reason SearchPicker's panel is: glass
@@ -295,10 +302,15 @@ public static partial class Crystarium
         private void DrawBody()
         {
             var min = ImGui.GetWindowPos();
+            float scale = ImGuiHelpers.GlobalScale;
             PaintPanel(
                 ImGui.GetWindowDrawList(), min, min + ImGui.GetWindowSize(),
                 ActiveTheme);
             float pitch = TextureTileSize + TextureTileCaption + TextureTileGap;
+            // Left and top insets by hand (the window's own padding is zero);
+            // the right inset is the ScrollRegion's reserved gutter itself.
+            ImGui.SetCursorScreenPos(
+                min + new Vector2(TextureSurfacePadding * scale));
             ScrollRegion(
                 _gridId,
                 TextureGridColumns * (TextureTileSize + TextureTileGap)
