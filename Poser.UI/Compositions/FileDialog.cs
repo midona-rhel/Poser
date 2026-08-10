@@ -17,6 +17,20 @@ namespace Poser.UI;
 public readonly record struct FilePreviewResult(
     nint Texture, Vector2 Size, string? Caption);
 
+/// <summary>
+/// One caller-drawn column right of the file list. The dialog owns the
+/// geometry and nothing else: the panel is handed its box in screen space and
+/// the full path the list is HIGHLIGHTING — null for a folder row, and for no
+/// selection at all — and whatever it draws there is its own business,
+/// scrolling included.
+/// </summary>
+/// <param name="Width">Logical column width. Unlike
+/// <see cref="Crystarium.FileDialog.FilePreview"/>, which steals width from the
+/// listing, this is ADDED to the dialog: the browser keeps its own width
+/// whatever a consumer bolts on beside it.</param>
+public readonly record struct FileSidePanel(
+    float Width, Action<Vector2, Vector2, string?> Draw);
+
 /// <summary>One listing row, as the dialog sees it.</summary>
 internal readonly record struct FileListingEntry(
     string Name, string FullPath, bool IsDirectory, DateTime Modified);
@@ -151,7 +165,26 @@ public static partial class Crystarium
         /// </summary>
         public Func<string, FilePreviewResult?>? FilePreview;
 
+        /// <summary>
+        /// The caller's own columns, left to right, right of the file list.
+        /// They are part of the dialog's SIZE — the window opens wider by
+        /// exactly what they ask for — and part of its chrome: each stands
+        /// behind the same rule the frame bridges its rail with. Stated once
+        /// by the consumer; the dialog never mutates the list.
+        /// </summary>
+        public readonly List<FileSidePanel> SidePanels = new();
+
         public bool IsOpen => _open;
+
+        /// <summary>What the panels add to the dialog's width: the columns and
+        /// the rule each one stands behind, logical.</summary>
+        private float PanelWidth()
+        {
+            float total = 0f;
+            for (int i = 0; i < SidePanels.Count; i++)
+                total += SidePanels[i].Width + 1f;
+            return total;
+        }
 
         private string SurfaceId => $"{_title}{_id}";
 
@@ -169,7 +202,7 @@ public static partial class Crystarium
                 FloatingSurface.Window(
                     SurfaceId,
                     ref _open,
-                    Crystarium.ActiveTheme.FileDialog.Width,
+                    Crystarium.ActiveTheme.FileDialog.Width + PanelWidth(),
                     Crystarium.ActiveTheme.FileDialog.Height,
                     DrawFrame);
 
@@ -381,21 +414,19 @@ public static partial class Crystarium
                 Travel(_quick[picked].Path);
         }
 
-        /// <summary>The body slot: the explorer, and the preview column that
-        /// exists only while the provider answered.</summary>
+        /// <summary>The body slot: the explorer, the caller's own columns, and
+        /// the preview column that exists only while the provider answered.
+        /// </summary>
         private void DrawBody(WindowFrameRect body, float scale)
         {
+            Theme theme = Crystarium.ActiveTheme;
+            float rule = MathF.Max(1f, scale);
             float right = body.Max.X;
+
             if (_preview is { } preview)
             {
-                Theme previewTheme = Crystarium.ActiveTheme;
-                float rule = MathF.Max(1f, scale);
-                float column = previewTheme.FileDialog.PreviewWidth * scale;
-                right = body.Max.X - column - rule;
-                ImGui.GetWindowDrawList().AddRectFilled(
-                    new Vector2(right, body.Min.Y),
-                    new Vector2(right + rule, body.Max.Y),
-                    ImGui.ColorConvertFloat4ToU32(FormSeparatorColor));
+                right -= theme.FileDialog.PreviewWidth * scale + rule;
+                ColumnRule(right, body, rule);
                 DrawPreview(
                     new WindowFrameRect(
                         new Vector2(right + rule, body.Min.Y), body.Max),
@@ -403,11 +434,34 @@ public static partial class Crystarium
                     scale);
             }
 
+            // Carved right to left, so the FIRST panel lands nearest the
+            // listing: a consumer's declaration order reads left to right.
+            for (int i = SidePanels.Count - 1; i >= 0; i--)
+            {
+                FileSidePanel panel = SidePanels[i];
+                float column = panel.Width * scale;
+                right -= column + rule;
+                ColumnRule(right, body, rule);
+                panel.Draw(
+                    new Vector2(right + rule, body.Min.Y),
+                    new Vector2(column, body.Size.Y),
+                    SelectedFile);
+            }
+
             DrawEntries(
                 new WindowFrameRect(
                     body.Min, new Vector2(right, body.Max.Y)),
                 scale);
         }
+
+        /// <summary>A column's left edge — the same rule the frame bridges its
+        /// rail with, run the body's full height.</summary>
+        private static void ColumnRule(
+            float x, WindowFrameRect body, float rule) =>
+            ImGui.GetWindowDrawList().AddRectFilled(
+                new Vector2(x, body.Min.Y),
+                new Vector2(x + rule, body.Max.Y),
+                ImGui.ColorConvertFloat4ToU32(FormSeparatorColor));
 
         /// <summary>
         /// The explorer. NO right padding on the region: the bar sits on the

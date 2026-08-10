@@ -107,7 +107,6 @@ public sealed class PoseLibraryPane
     private readonly IAutoSaveService _autoSave;
     private readonly PoseFileInspectorSection _files;
     private readonly IActorManager _actors;
-    private readonly PosePreviewService _preview;
     private readonly PoseLibraryViewModel _vm = new();
     private bool _applyMenuRequested;
     private readonly List<IActor> _applyTargets = new();
@@ -228,20 +227,10 @@ public sealed class PoseLibraryPane
 
     private bool _iconSizeDirty;
 
-    /// <summary>The actor the preview is borrowing an appearance from, and the
-    /// path it was last told to show. The pose is stated ONCE per selection
-    /// change — the service re-renders on its own, and re-importing every frame
-    /// would be an import per frame. The options ride along so restating the
-    /// pose while the service warms up never re-parses the file.</summary>
-    private IActor? _previewSource;
-    private string? _previewPath;
-    private PoseImportOptions? _previewOptions;
-
-    /// <summary>The UI-derived build the last sent options were made from —
-    /// what a fresh candidate is compared against so an import-option change
-    /// re-poses the preview. Never the sent instance itself: see
-    /// <see cref="SameUiOptions"/>.</summary>
-    private PoseImportOptions? _previewCandidate;
+    /// <summary>This pane's drive of the ONE shared preview: whose appearance,
+    /// which file, which options, and the compare that re-poses it when any of
+    /// the three moves.</summary>
+    private readonly PosePreviewBinder _previewBinder;
 
     /// <summary>Whether the pane is the workspace's current content. The first
     /// draw after it becomes true is the old window's OnOpen.</summary>
@@ -281,7 +270,7 @@ public sealed class PoseLibraryPane
         _autoSave = autoSave;
         _files = files;
         _actors = actors;
-        _preview = preview;
+        _previewBinder = new PosePreviewBinder(preview);
 
         _vm.OnQuery = next => _vm.Query = next;
         _vm.OnSelectFolder = SelectFolder;
@@ -1288,49 +1277,37 @@ public sealed class PoseLibraryPane
             && _vm.Selected >= 0
             && _vm.Selected < _vm.Tiles.Count;
         var source = wanted ? PreviewSource() : null;
+
+        // The claim is stated whether or not this pane gets to act on it: the
+        // import dialog drives the SAME service while it is open, and what it
+        // does with the seat when it closes depends on whether anyone else
+        // still wants it.
+        _files.SetPreviewClaim(source is not null);
+        if (_files.IsImportPreviewActive)
+        {
+            // Stood down, NOT closed — the dialog is driving. The pose it put
+            // there is not this pane's to remember, so the binder forgets it
+            // and re-states the frame the seat comes back.
+            _previewBinder.StandDown();
+            _files.SetPreviewVisible(false);
+            return;
+        }
+
         if (source is null)
         {
             ClosePreview();
             return;
         }
 
-        if (!ReferenceEquals(source, _previewSource))
-        {
-            // A different appearance means a different hidden actor: the pose
-            // standing on the old one says nothing about the new one.
-            _previewSource = source;
-            _previewPath = null;
-            _previewCandidate = null;
-        }
-        // Idempotent by contract, and restated every frame so a preview the
-        // service dropped (a scene reload, a gpose exit) re-arms itself.
-        _preview.Open(source);
-
         var path = _vm.Tiles[_vm.Selected].ThumbKey;
-        // Ktisis PreviewNode.NeedsUpdate(): the preview re-poses when the
-        // import options move under it, not only when the selection does. The
-        // candidate is the FILE-FREE half of the real build, so this poll costs
-        // no read per frame.
-        var candidate = PreviewOptions(BuildImportOptionsCore());
-        if (!string.Equals(path, _previewPath, StringComparison.Ordinal)
-            || _previewCandidate is null
-            || !SameUiOptions(candidate, _previewCandidate))
-        {
-            _previewPath = path;
-            _previewCandidate = candidate;
-            // The real build once — the file load, the expression routing and
-            // the filter governance all stay in the one place.
-            var options = PreviewOptions(BuildImportOptions(path));
-            _previewOptions = options;
-            _preview.ShowPose(path, options);
-        }
-        else if (!_preview.IsActive && _previewOptions is { } cached)
-        {
-            // Close() (a gpose exit, a scene drop) forgets the pending pose;
-            // an Open() alone re-arms only the body. Restate the pose until
-            // the service renders again — the service dedupes actual imports.
-            _preview.ShowPose(path, cached);
-        }
+        // The candidate is the FILE-FREE half of the real build, so the poll
+        // costs no read per frame; the real build happens only when the binder
+        // says something moved — the file load, the expression routing and the
+        // filter governance all stay in the one place.
+        if (_previewBinder.Begin(
+                source, path, PosePreviewBinder.Trim(BuildImportOptionsCore())))
+            _previewBinder.Pose(
+                path, PosePreviewBinder.Trim(BuildImportOptions(path)));
 
         // The seat is the inspector rail's, so the section is told to show it;
         // the render and its status are read there, straight off the service.
@@ -1351,13 +1328,7 @@ public sealed class PoseLibraryPane
     /// a preview this pane has stopped feeding.</summary>
     private void ClosePreview()
     {
-        if (_previewSource is not null)
-        {
-            _previewSource = null;
-            _previewPath = null;
-            _previewCandidate = null;
-            _preview.Close();
-        }
+        _previewBinder.Close();
         _files.SetPreviewVisible(false);
     }
 
@@ -1499,61 +1470,6 @@ public sealed class PoseLibraryPane
         // Options button forbids. An auto-save restore is full-fidelity by
         // contract and never sees the filter at all.
         return options;
-    }
-
-    /// <summary>The preview's own trim of a library build: everything that
-    /// would move the preview actor itself is taken back out — a preview is a
-    /// POSE, never a placement, and it must never leave the actor frozen.
-    /// </summary>
-    private static PoseImportOptions PreviewOptions(PoseImportOptions options)
-    {
-        options.ResetBeforeImport = true;
-        options.ApplyModelTransform = false;
-        options.FreezeOnImport = false;
-        return options;
-    }
-
-    /// <summary>
-    /// Whether two UI-derived option builds say the same thing — the preview's
-    /// NeedsUpdate. BOTH sides come from <see cref="BuildImportOptionsCore"/>,
-    /// never from <see cref="BuildImportOptions"/>: the routing there forces
-    /// AsExpression from the FILE, and AsExpression is the ONLY field the
-    /// Body/Expression checkbox pair moves on a body-only file — so comparing a
-    /// candidate against a file-forced instance would either mask that toggle
-    /// (excluding the field) or re-import every frame (keeping it). Comparing
-    /// like with like needs no exclusions, so every field is compared, the two
-    /// sets by content since each build makes new ones.
-    /// </summary>
-    private static bool SameUiOptions(
-        PoseImportOptions a, PoseImportOptions b) =>
-        a.ApplyRotation == b.ApplyRotation
-        && a.ApplyPosition == b.ApplyPosition
-        && a.ApplyScale == b.ApplyScale
-        && a.ApplyBody == b.ApplyBody
-        && a.ApplyFace == b.ApplyFace
-        && a.ApplyMainHand == b.ApplyMainHand
-        && a.ApplyOffHand == b.ApplyOffHand
-        && a.ApplyProp == b.ApplyProp
-        && a.ApplyOrnament == b.ApplyOrnament
-        && a.ApplyModelTransform == b.ApplyModelTransform
-        && a.ResetBeforeImport == b.ResetBeforeImport
-        && a.AsExpression == b.AsExpression
-        && a.FilterIncludesDescendants == b.FilterIncludesDescendants
-        && a.ExcludeUncategorizedBones == b.ExcludeUncategorizedBones
-        && a.FreezeOnImport == b.FreezeOnImport
-        && SameSet(a.ExcludedBonePrefixes, b.ExcludedBonePrefixes)
-        && SameSet(a.BoneFilter, b.BoneFilter);
-
-    private static bool SameSet<T>(ISet<T>? a, ISet<T>? b)
-    {
-        if (ReferenceEquals(a, b))
-            return true;
-        if (a is null || b is null || a.Count != b.Count)
-            return false;
-        foreach (var item in a)
-            if (!b.Contains(item))
-                return false;
-        return true;
     }
 
     // ── the grid's actions ───────────────────────────────────────────────
