@@ -458,20 +458,27 @@ public static partial class Crystarium
                 // The caption stands UNDER the art on the tile's own fill —
                 // the art stays whole and the text never fights a bright
                 // preview for contrast. A named catalog prints its name; a
-                // walked one prints the id.
+                // walked one prints the id. A name wider than the tile is
+                // cut to it with the shared ellipsis shaping, never drawn
+                // past the cell.
+                var captionStyle = new TextStyle
+                {
+                    Size = theme.Typography.CaptionSize,
+                    Family = _caption is null
+                        ? FontFamily.Mono
+                        : FontFamily.Default,
+                    Color = theme.TextDim,
+                };
                 TextInBand(
                     new Vector2(artMin.X, artOuterMax.Y),
                     new Vector2(artMax.X - artMin.X, captionBand),
-                    _caption?.Invoke(value)
-                        ?? value.ToString("D3", CultureInfo.InvariantCulture),
-                    new TextStyle
-                    {
-                        Size = theme.Typography.CaptionSize,
-                        Family = _caption is null
-                            ? FontFamily.Mono
-                            : FontFamily.Default,
-                        Color = theme.TextDim,
-                    },
+                    TruncateText(
+                        _caption?.Invoke(value)
+                            ?? value.ToString(
+                                "D3", CultureInfo.InvariantCulture),
+                        captionStyle,
+                        artMax.X - artMin.X),
+                    captionStyle,
                     TextAlign.Center);
             }
 

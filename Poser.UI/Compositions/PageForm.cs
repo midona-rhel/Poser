@@ -1050,14 +1050,18 @@ public static partial class Crystarium
                 return;
             string id = Id(scope.Key());
             var row = _page.BeginRow(string.Empty);
-            float track = row.Width / items.Count;
+            // Tracks breathe off one another: a slider's right-aligned
+            // readout must never touch the next track's label.
+            float gap = ActiveTheme.Spacing.Six * row.Scale;
+            float track =
+                (row.Width - gap * (items.Count - 1)) / items.Count;
             float column = MathF.Min(row.LabelWidth, track * FormCellLabelShare);
             float bandHeight = ActiveTheme.Controls.FormRowHeight * row.Scale;
             bool perCellHelp = false;
             for (int i = 0; i < items.Count; i++)
             {
                 var item = items[i];
-                float x = row.Origin.X + i * track;
+                float x = row.Origin.X + i * (track + gap);
                 if (!string.IsNullOrEmpty(item.Label))
                     FormLabel(
                         new Vector2(x, row.Origin.Y), column, row.Scale,
