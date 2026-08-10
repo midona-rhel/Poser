@@ -1451,6 +1451,36 @@ public static partial class Crystarium
                 id: id);
         }
 
+        /// <summary>The cell's text field, filling its track.</summary>
+        public void TextInput(
+            string id, string value, Action<string> onChange,
+            string? placeholder = null, bool disabled = false)
+        {
+            var style = Constrain(ControlStyle.Workspace with
+            {
+                Width = UiWidth.Fixed(MathF.Max(1f, Width / Scale)),
+            });
+            ImGui.SetCursorScreenPos(
+                Center(ActiveTheme.Controls.WorkspaceHeight));
+            Crystarium.TextInput(
+                id, value, onChange, style, placeholder, disabled);
+        }
+
+        /// <summary>The cell's enum picker, filling its track.</summary>
+        public void Dropdown(
+            string id, string[] items, int selected, Action<int> onChange,
+            bool disabled = false, string? help = null)
+        {
+            var style = Constrain(ControlStyle.Workspace with
+            {
+                Width = UiWidth.Fixed(MathF.Max(1f, Width / Scale)),
+            });
+            ImGui.SetCursorScreenPos(
+                Center(ActiveTheme.Controls.WorkspaceHeight));
+            Crystarium.Dropdown(
+                id, items, selected, onChange, style, disabled, help);
+        }
+
         /// <summary>The caller's style bound to this cell's track. The pair
         /// contract is that a half's control never paints past its track, so
         /// the cell's span becomes the style's <see

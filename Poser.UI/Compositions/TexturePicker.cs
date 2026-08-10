@@ -50,28 +50,29 @@ public static partial class Crystarium
     /// </summary>
     public sealed class TexturePicker
     {
-        /// <summary>Ktisis' grid: six 64px tiles across, four rows tall.
+        /// <summary>Three large tiles across, three rows in the viewport —
+        /// big enough that a housing window's leadwork actually reads.
         /// </summary>
-        private const int TextureGridColumns = 6;
+        private const int TextureGridColumns = 3;
 
-        private const int TextureGridRows = 4;
+        private const int TextureGridRows = 3;
 
-        private const float TextureTileSize = 64f;
+        private const float TextureTileSize = 120f;
 
-        private const float TextureTileGap = 4f;
+        private const float TextureTileGap = 8f;
 
         /// <summary>The tile's art breathes off its own hover fill, so the
         /// selected ring never crops the preview.</summary>
         private const float TextureTileInset = 3f;
 
-        /// <summary>The id band at the tile's foot, over a scrim: a preview
-        /// nobody can name is not a choice.</summary>
-        private const float TextureTileCaption = 14f;
+        /// <summary>The caption band UNDER the art — its own strip of panel,
+        /// never a scrim over the preview: a name printed on the art both
+        /// hides it and fights it for contrast.</summary>
+        private const float TextureTileCaption = 16f;
 
-        /// <summary>A scrim dark enough to hold an 11px caption over a white
-        /// cloud. No token states it — nothing else in the system paints text
-        /// over arbitrary art.</summary>
-        private const float TextureCaptionScrim = 0.55f;
+        /// <summary>The surface's own inset. The shared PopupPadding is
+        /// menu-tier (4) and reads as none on a surface this large.</summary>
+        private const float TextureSurfacePadding = 12f;
 
         /// <summary>Ids probed per frame. A whole catalog resolves inside a
         /// second at this rate and no frame carries more than a handful of
@@ -82,6 +83,7 @@ public static partial class Crystarium
         private readonly string _gridId;
         private readonly TexturePreview _preview;
         private readonly uint _count;
+        private readonly Func<uint, string>? _caption;
         private readonly Action _body;
         private readonly Action<ScrollRegionScope> _grid;
 
@@ -101,14 +103,19 @@ public static partial class Crystarium
         /// <param name="count">How many ids to walk. Ktisis walks 0..999 for
         /// every one of these catalogs and drops what the game does not
         /// have.</param>
+        /// <param name="caption">The tile's caption for an id — a catalog
+        /// whose entries have NAMES states them here; unset, the id itself
+        /// is the caption.</param>
         public TexturePicker(
-            string id, TexturePreview preview, uint count = 1000)
+            string id, TexturePreview preview, uint count = 1000,
+            Func<uint, string>? caption = null)
         {
             ArgumentNullException.ThrowIfNull(preview);
             _popupId = $"##texture-picker-{id}";
             _gridId = $"{_popupId}-grid";
             _preview = preview;
             _count = count;
+            _caption = caption;
             _body = DrawBody;
             _grid = DrawGrid;
         }
@@ -132,10 +139,11 @@ public static partial class Crystarium
             Probe();
 
             var theme = ActiveTheme;
-            float pad = theme.Floating.PopupPadding;
-            float pitch = TextureTileSize + TextureTileGap;
+            float pad = TextureSurfacePadding;
+            float pitch = TextureTileSize + TextureTileCaption + TextureTileGap;
             float width = pad * 2f
-                + TextureGridColumns * pitch - TextureTileGap
+                + TextureGridColumns * (TextureTileSize + TextureTileGap)
+                - TextureTileGap
                 + theme.Scrollbar.GutterWidth;
             float height = pad * 2f
                 + TextureGridRows * pitch - TextureTileGap;
@@ -290,10 +298,11 @@ public static partial class Crystarium
             PaintPanel(
                 ImGui.GetWindowDrawList(), min, min + ImGui.GetWindowSize(),
                 ActiveTheme);
-            float pitch = TextureTileSize + TextureTileGap;
+            float pitch = TextureTileSize + TextureTileCaption + TextureTileGap;
             ScrollRegion(
                 _gridId,
-                TextureGridColumns * pitch - TextureTileGap
+                TextureGridColumns * (TextureTileSize + TextureTileGap)
+                    - TextureTileGap
                     + ActiveTheme.Scrollbar.GutterWidth,
                 TextureGridRows * pitch - TextureTileGap,
                 _grid);
@@ -307,7 +316,9 @@ public static partial class Crystarium
         {
             float scale = ImGuiHelpers.GlobalScale;
             float side = TextureTileSize * scale;
-            float pitch = (TextureTileSize + TextureTileGap) * scale;
+            float acrossPitch = (TextureTileSize + TextureTileGap) * scale;
+            float pitch =
+                (TextureTileSize + TextureTileCaption + TextureTileGap) * scale;
             if (_ids.Count == 0)
             {
                 region.Empty(
@@ -341,7 +352,7 @@ public static partial class Crystarium
                             DrawTile(
                                 $"{_popupId}-tile-{_ids[index]}",
                                 _ids[index],
-                                new Vector2(band.X + c * pitch, band.Y),
+                                new Vector2(band.X + c * acrossPitch, band.Y),
                                 new Vector2(side),
                                 disabled: false,
                                 help: null,
@@ -376,11 +387,16 @@ public static partial class Crystarium
             var theme = ActiveTheme;
             float scale = ImGuiHelpers.GlobalScale;
             var draw = ImGui.GetWindowDrawList();
-            var max = min + size;
+            // A grid cell is the art square PLUS its caption band; the whole
+            // cell is one hit target so the name is as clickable as the art.
+            float captionBand = grid ? TextureTileCaption * scale : 0f;
+            var cell = size + new Vector2(0f, captionBand);
+            var max = min + cell;
+            var artOuterMax = min + size;
             bool active = grid && value == _selected;
 
             ImGui.SetCursorScreenPos(min);
-            var hit = Interactive.Reserve(id, size, disabled);
+            var hit = Interactive.Reserve(id, cell, disabled);
 
             var fill = hit.Hovered || hit.Active
                 ? theme.Chrome.WeakOverlay
@@ -400,7 +416,7 @@ public static partial class Crystarium
 
             float inset = TextureTileInset * scale;
             var artMin = min + new Vector2(inset);
-            var artMax = max - new Vector2(inset);
+            var artMax = artOuterMax - new Vector2(inset);
             bool drawn = _preview(value, out nint handle)
                 == TextureProbe.Ready && handle != 0;
             if (drawn)
@@ -418,34 +434,31 @@ public static partial class Crystarium
                                 : Vector4.One)));
             else
                 IconIn(
-                    (min + max) * 0.5f - new Vector2(
+                    (min + artOuterMax) * 0.5f - new Vector2(
                         theme.Controls.IconSize * 0.5f * scale),
-                    (min + max) * 0.5f + new Vector2(
+                    (min + artOuterMax) * 0.5f + new Vector2(
                         theme.Controls.IconSize * 0.5f * scale),
                     TablerIcon.Photo,
                     theme.TextDim);
 
             if (grid)
             {
-                float caption = TextureTileCaption * scale;
-                var captionMin = new Vector2(artMin.X, artMax.Y - caption);
-                if (drawn)
-                    draw.AddRectFilled(
-                        captionMin,
-                        artMax,
-                        ImGui.ColorConvertFloat4ToU32(
-                            ColorEx.ApplyAlpha(
-                                new Vector4(0f, 0f, 0f, TextureCaptionScrim))),
-                        theme.Radii.Small * scale);
+                // The caption stands UNDER the art on the tile's own fill —
+                // the art stays whole and the text never fights a bright
+                // preview for contrast. A named catalog prints its name; a
+                // walked one prints the id.
                 TextInBand(
-                    captionMin,
-                    new Vector2(artMax.X - artMin.X, caption),
-                    value.ToString("D3", CultureInfo.InvariantCulture),
+                    new Vector2(artMin.X, artOuterMax.Y),
+                    new Vector2(artMax.X - artMin.X, captionBand),
+                    _caption?.Invoke(value)
+                        ?? value.ToString("D3", CultureInfo.InvariantCulture),
                     new TextStyle
                     {
                         Size = theme.Typography.CaptionSize,
-                        Family = FontFamily.Mono,
-                        Color = theme.Text,
+                        Family = _caption is null
+                            ? FontFamily.Mono
+                            : FontFamily.Default,
+                        Color = theme.TextDim,
                     },
                     TextAlign.Center);
             }

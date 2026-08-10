@@ -54,10 +54,9 @@ public sealed class LightPane
     private bool _openActions = true;
     private bool _openPlacement = true;
 
-    /// <summary>The gobo library's visual surface: a row is the texture's own
-    /// thumbnail beside its name.</summary>
-    private readonly Crystarium.SearchPicker<GoboEntry> _goboPicker =
-        new("light-gobo");
+    /// <summary>The gobo library's visual surface: the shared texture grid,
+    /// walking the library by index with each tile captioned by NAME.</summary>
+    private readonly Crystarium.TexturePicker _goboGrid;
 
     /// <summary>Every bone of every actor, flat and searchable — the attach
     /// target is one bone anywhere in the scene, not one bone of one actor.
@@ -72,8 +71,6 @@ public sealed class LightPane
     /// <summary>A gobo path the texture provider threw on. An exception per row
     /// per frame is a frame-rate cliff, so a failure is remembered.</summary>
     private readonly HashSet<string> _missingGobos = new(StringComparer.Ordinal);
-
-    private readonly Func<GoboEntry, nint> _goboTexture;
 
     /// <summary>The attached bone's row label and the snapshot it was derived
     /// from. Re-deriving walks every bone of every actor, so it is done once per
@@ -132,7 +129,13 @@ public sealed class LightPane
         _viewport = viewport;
         _camera = camera;
         _textures = textures;
-        _goboTexture = ResolveGobo;
+        // The library is embedded and fixed by the time the pane composes,
+        // so its count is the walk and its names are the captions.
+        _goboGrid = new Crystarium.TexturePicker(
+            "light-gobo",
+            GoboPreview,
+            (uint)lighting.Gobos.Count,
+            caption: GoboCaption);
     }
 
     /// <summary>
@@ -252,8 +255,8 @@ public sealed class LightPane
     /// was opened from.</summary>
     private void DrawPickers()
     {
-        if (_goboPicker.Draw() is { } gobo)
-            ApplyGobo(gobo.Item);
+        if (_goboGrid.Draw() is { } picked)
+            ApplyGoboIndex(picked);
         if (_attachPicker.Draw() is { } bone)
             AttachTo(bone.Item);
     }
@@ -264,16 +267,33 @@ public sealed class LightPane
     {
         if (!_lighting.IsAvailable)
             form.Status("Lighting is unavailable: game signatures not found.");
-        form.Switch("Enabled", light.IsOn, value => light.IsOn = value,
-            help: "Turn the light off without losing any of its settings");
-        form.TextInput("Name", light.Name, value => light.Name = value,
-            help: "The name this light carries in the sidebar");
-        form.Dropdown("Type", KindOptions, (int)light.Kind,
-            selected => light.Kind = (LightKind)selected,
-            help: "How the light emits: a sun, a bulb, a cone, or a panel");
-        form.Switch("Reflections", light.HasReflection,
-            value => light.HasReflection = value,
-            help: "Let this light appear in reflective surfaces");
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Enabled",
+                cell => cell.Switch("##light-enabled", light.IsOn,
+                    value => light.IsOn = value),
+                help: "Turn the light off without losing any of its settings");
+            cells.Cell(
+                "Reflections",
+                cell => cell.Switch("##light-reflections", light.HasReflection,
+                    value => light.HasReflection = value),
+                help: "Let this light appear in reflective surfaces");
+        });
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Name",
+                cell => cell.TextInput("##light-name", light.Name,
+                    value => light.Name = value),
+                help: "The name this light carries in the sidebar");
+            cells.Cell(
+                "Type",
+                cell => cell.Dropdown("##light-type", KindOptions,
+                    (int)light.Kind,
+                    selected => light.Kind = (LightKind)selected),
+                help: "How the light emits: a sun, a bulb, a cone, or a panel");
+        });
     }
 
     private void LightRows(Crystarium.FormScope form, ILight light)
@@ -284,41 +304,84 @@ public sealed class LightPane
                 value => light.Color = ToRawColor(value));
         }, help: "The light's color; the native value is HDR and reaches past white");
 
-        form.NumericSlider("Intensity", light.Intensity, 0f, 100f,
-            value => light.Intensity = value, 0.01f,
-            help: "How much light is emitted");
-        form.NumericSlider("Range", light.Range, 0f, 999f,
-            value => light.Range = value, 0.1f,
-            help: "How far the light reaches");
-        form.Dropdown("Falloff type", FalloffOptions, (int)light.FalloffType,
-            selected => light.FalloffType = (LightFalloffType)selected,
-            help: "The curve the light dims along over its range");
-        form.NumericSlider("Falloff", light.Falloff, 0f, 1000f,
-            value => light.Falloff = value, 0.01f,
-            help: "How sharply the light dims toward the edge of its range");
+        // The native intensity reaches far past one, but past one the scene
+        // just blows out — the slider stops where the usable values live,
+        // exactly as the environment pane's intensity sliders do.
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Intensity",
+                cell => cell.Slider("##light-intensity", light.Intensity,
+                    0f, 1f, value => light.Intensity = value),
+                help: "How much light is emitted");
+            cells.Cell(
+                "Range",
+                cell => cell.Slider("##light-range", light.Range, 0f, 100f,
+                    value => light.Range = value, format: "0.0",
+                    scale: SliderScale.Log),
+                help: "How far the light reaches");
+        });
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Falloff type",
+                cell => cell.Dropdown("##light-falloff-type", FalloffOptions,
+                    (int)light.FalloffType,
+                    selected => light.FalloffType = (LightFalloffType)selected),
+                help: "The curve the light dims along over its range");
+            cells.Cell(
+                "Falloff",
+                cell => cell.Slider("##light-falloff", light.Falloff, 0f, 10f,
+                    value => light.Falloff = value,
+                    scale: SliderScale.Log),
+                help: "How sharply the light dims toward the edge of its "
+                    + "range");
+        });
 
         switch (light.Kind)
         {
             case LightKind.Spot:
-                form.Slider("Cone angle", light.SpotAngle, 0f, 180f,
-                    value => light.SpotAngle = value, "0.0",
-                    help: "How wide the cone opens, in degrees");
-                form.Slider("Falloff angle", light.FalloffAngle, 0f, 180f,
-                    value => light.FalloffAngle = value, "0.0",
-                    help: "How soft the cone's edge is, in degrees");
+                form.Cells(cells =>
+                {
+                    cells.Cell(
+                        "Cone angle",
+                        cell => cell.Slider("##light-cone", light.SpotAngle,
+                            0f, 180f, value => light.SpotAngle = value,
+                            format: "0"),
+                        help: "How wide the cone opens, in degrees");
+                    cells.Cell(
+                        "Falloff angle",
+                        cell => cell.Slider("##light-cone-falloff",
+                            light.FalloffAngle, 0f, 180f,
+                            value => light.FalloffAngle = value, format: "0"),
+                        help: "How soft the cone's edge is, in degrees");
+                });
                 break;
             case LightKind.Area:
                 var area = light.AreaAngle;
-                form.Slider("Angle X", area.X, -90f, 90f,
-                    value => light.AreaAngle = light.AreaAngle with { X = value },
-                    "0.0",
-                    help: "How far the panel skews horizontally, in degrees");
-                form.Slider("Angle Y", area.Y, -90f, 90f,
-                    value => light.AreaAngle = light.AreaAngle with { Y = value },
-                    "0.0",
-                    help: "How far the panel skews vertically, in degrees");
+                form.Cells(cells =>
+                {
+                    cells.Cell(
+                        "Angle X",
+                        cell => cell.Slider("##light-area-x", area.X,
+                            -90f, 90f,
+                            value => light.AreaAngle =
+                                light.AreaAngle with { X = value },
+                            format: "0"),
+                        help: "How far the panel skews horizontally, in "
+                            + "degrees");
+                    cells.Cell(
+                        "Angle Y",
+                        cell => cell.Slider("##light-area-y", area.Y,
+                            -90f, 90f,
+                            value => light.AreaAngle =
+                                light.AreaAngle with { Y = value },
+                            format: "0"),
+                        help: "How far the panel skews vertically, in "
+                            + "degrees");
+                });
                 form.Slider("Falloff angle", light.FalloffAngle, 0f, 180f,
-                    value => light.FalloffAngle = value, "0.0",
+                    value => light.FalloffAngle = value, "0",
                     help: "How soft the panel's edge is, in degrees");
                 break;
         }
@@ -327,110 +390,150 @@ public sealed class LightPane
         // that project anything can carry one. The service clears it by itself
         // when the kind leaves Spot/Area, so this row only reads that state.
         bool goboSupported = light.Kind is LightKind.Spot or LightKind.Area;
-        form.Picker(
-            "Gobo",
-            GoboLabel(light),
-            () => OpenGoboPicker(light),
-            actions =>
-            {
-                actions.Button(
-                    "Clear",
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Gobo",
+                cell => _goboGrid.Field(
+                    in cell,
+                    GoboIndex(light),
+                    next => ApplyGoboIndex(next),
+                    disabled: !goboSupported),
+                help: goboSupported
+                    ? "Project a texture through the light, like a window's "
+                        + "shadow"
+                    : "Spot and area lights only.");
+            cells.Cell(
+                string.Empty,
+                cell => cell.Button("##light-gobo-clear", "Clear",
                     () =>
                     {
                         _lighting.ClearGobo(light);
                         _status = string.Empty;
                     },
-                    disabled: light.GoboPath is null,
-                    help: "Project no mask at all");
-            },
-            help: goboSupported
-                ? "Project a texture through the light, like a window's shadow"
-                : "Spot and area lights only.",
-            disabled: !goboSupported);
+                    disabled: light.GoboPath is null),
+                help: "Project no mask at all");
+        });
     }
 
-    /// <summary>The applied gobo's library name, its file name when the path is
-    /// not one the library declares, or "None".</summary>
-    private string GoboLabel(ILight light)
+    /// <summary>The library index of the applied gobo — or one PAST the
+    /// library when none is applied, so the field's tile previews nothing
+    /// and stepping lands back inside the catalog.</summary>
+    private uint GoboIndex(ILight light)
     {
-        if (light.GoboPath is not { } path)
-            return "None";
-        var gobos = _lighting.Gobos;
-        for (int i = 0; i < gobos.Count; i++)
+        if (light.GoboPath is { } path)
         {
-            if (string.Equals(gobos[i].Path, path, StringComparison.OrdinalIgnoreCase))
-                return gobos[i].Name;
+            var gobos = _lighting.Gobos;
+            for (int i = 0; i < gobos.Count; i++)
+            {
+                if (string.Equals(
+                        gobos[i].Path, path, StringComparison.OrdinalIgnoreCase))
+                    return (uint)i;
+            }
         }
-        return System.IO.Path.GetFileNameWithoutExtension(path);
+        return (uint)_lighting.Gobos.Count;
     }
 
-    private void OpenGoboPicker(ILight light) =>
-        _goboPicker.Open(
-            "gobo",
-            _lighting.Gobos,
-            static gobo => gobo.Name,
-            static gobo => gobo.Path,
-            light.GoboPath,
-            options: new PickerOptions<GoboEntry>
-            {
-                Texture = _goboTexture,
-                // A row carries a thumbnail and a name; the narrow picker cuts
-                // both.
-                Width = Crystarium.ActiveTheme.Picker.WideWidth,
-            });
+    private string GoboCaption(uint index)
+    {
+        var gobos = _lighting.Gobos;
+        return index < gobos.Count ? gobos[(int)index].Name : "None";
+    }
 
-    private void ApplyGobo(GoboEntry gobo)
+    private void ApplyGoboIndex(uint index)
     {
         var (_, light) = TargetLight();
-        if (light == null)
+        var gobos = _lighting.Gobos;
+        if (light == null || gobos.Count == 0)
             return;
-        _status = _lighting.ApplyGobo(light, gobo)
+        int clamped = (int)Math.Min(index, (uint)(gobos.Count - 1));
+        _status = _lighting.ApplyGobo(light, gobos[clamped])
             ? string.Empty
             : "Gobo: the texture could not be applied.";
     }
 
     /// <summary>
-    /// Resolves a gobo's game texture to an ImGui handle, or 0 when it is not
-    /// loaded yet. The provider THROWS for a path the game does not have, so a
-    /// failure is remembered; a null wrap is merely "still loading" and is not.
-    /// The WRAP is never cached: shared textures must be re-resolved each frame.
+    /// One gobo texture, answered for the current frame. The provider THROWS
+    /// for a path the game does not have, so a failure is remembered; a null
+    /// wrap with no error is merely "still loading". The WRAP is never
+    /// cached: shared textures must be re-resolved each frame.
     /// </summary>
-    private nint ResolveGobo(GoboEntry gobo)
+    private TextureProbe GoboPreview(uint index, out nint handle)
     {
-        if (_missingGobos.Contains(gobo.Path))
-            return 0;
-        IDalamudTextureWrap? wrap = null;
+        handle = 0;
+        var gobos = _lighting.Gobos;
+        if (index >= gobos.Count)
+            return TextureProbe.Missing;
+        string path = gobos[(int)index].Path;
+        if (_missingGobos.Contains(path))
+            return TextureProbe.Missing;
+        Dalamud.Interface.Textures.ISharedImmediateTexture shared;
         try
         {
-            wrap = _textures.GetFromGame(gobo.Path).GetWrapOrDefault();
+            shared = _textures.GetFromGame(path);
         }
         catch (Exception)
         {
-            _missingGobos.Add(gobo.Path);
+            _missingGobos.Add(path);
+            return TextureProbe.Missing;
         }
-        return wrap is null ? 0 : (nint)wrap.Handle.Handle;
+        if (!shared.TryGetWrap(out var wrap, out var error))
+        {
+            if (error is null)
+                return TextureProbe.Pending;
+            _missingGobos.Add(path);
+            return TextureProbe.Missing;
+        }
+        handle = wrap is null ? 0 : (nint)wrap.Handle.Handle;
+        return handle == 0
+            ? TextureProbe.Pending
+            : TextureProbe.Ready;
     }
 
     private void ShadowRows(Crystarium.FormScope form, ILight light)
     {
-        form.Switch("Dynamic shadows", light.CastsDynamicShadows,
-            value => light.CastsDynamicShadows = value,
-            help: "Cast shadows that update as the scene moves");
-        form.Switch("Character shadows", light.CastsCharacterShadow,
-            value => light.CastsCharacterShadow = value,
-            help: "Let characters cast shadows from this light");
-        form.Switch("Object shadows", light.CastsObjectShadow,
-            value => light.CastsObjectShadow = value,
-            help: "Let scenery cast shadows from this light");
-        form.NumericSlider("Character range", light.CharacterShadowRange,
-            0f, 1000f, value => light.CharacterShadowRange = value, 0.1f,
-            help: "How far character shadows are still drawn");
-        form.NumericSlider("Shadow near", light.ShadowPlaneNear, 0f, 100f,
-            value => light.ShadowPlaneNear = value, 0.01f,
-            help: "The closest distance shadows begin at");
-        form.NumericSlider("Shadow far", light.ShadowPlaneFar, 0f, 100f,
-            value => light.ShadowPlaneFar = value, 0.01f,
-            help: "The furthest distance shadows reach");
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Dynamic",
+                cell => cell.Switch("##light-shadow-dynamic",
+                    light.CastsDynamicShadows,
+                    value => light.CastsDynamicShadows = value),
+                help: "Cast shadows that update as the scene moves");
+            cells.Cell(
+                "Characters",
+                cell => cell.Switch("##light-shadow-chara",
+                    light.CastsCharacterShadow,
+                    value => light.CastsCharacterShadow = value),
+                help: "Let characters cast shadows from this light");
+            cells.Cell(
+                "Objects",
+                cell => cell.Switch("##light-shadow-object",
+                    light.CastsObjectShadow,
+                    value => light.CastsObjectShadow = value),
+                help: "Let scenery cast shadows from this light");
+        });
+        form.Slider("Character range", light.CharacterShadowRange,
+            0f, 1000f, value => light.CharacterShadowRange = value, "0",
+            help: "How far character shadows are still drawn",
+            scale: SliderScale.Log);
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Shadow near",
+                cell => cell.Slider("##light-shadow-near",
+                    light.ShadowPlaneNear, 0f, 10f,
+                    value => light.ShadowPlaneNear = value,
+                    scale: SliderScale.Log),
+                help: "The closest distance shadows begin at");
+            cells.Cell(
+                "Shadow far",
+                cell => cell.Slider("##light-shadow-far",
+                    light.ShadowPlaneFar, 0f, 100f,
+                    value => light.ShadowPlaneFar = value, format: "0.0",
+                    scale: SliderScale.Log),
+                help: "The furthest distance shadows reach");
+        });
     }
 
     /// <summary>The follow target. Attaching is a per-frame copy of the bone's
