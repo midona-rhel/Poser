@@ -926,6 +926,14 @@ public sealed class PoseFileInspectorSection
                 divider: false,
                 labelColumnWidth: MenuLabelColumn);
 
+        // While the import dialog is up, the RAIL is a preview mirror and
+        // nothing more: the dialog's own band is the one place the options
+        // live during an import — cloning the controls into both surfaces
+        // read as duplication (user 2026-08-11: "just make it simple").
+        // The popup mount (previewCap 0) is untouched.
+        if (IsImportPreviewActive && previewCap > 0f)
+            return y;
+
         // The rule is a divider BETWEEN sections: the first one leads the
         // stack only when the preview does not.
         y += DrawImportTypeSection(
@@ -1024,10 +1032,12 @@ public sealed class PoseFileInspectorSection
             origin, width, true, null,
             form =>
             {
+                // The row label stays in BOTH mounts (user 2026-08-11:
+                // headers go, labels stay).
                 form.Checkboxes(
-                    dense ? string.Empty : "Options",
+                    "Options",
                     disabled: false,
-                    fullWidth: dense,
+                    fullWidth: false,
                     ("Freeze", _freeze, next =>
                     {
                         _freeze = next;
@@ -1072,14 +1082,15 @@ public sealed class PoseFileInspectorSection
                 string? why = locked
                     ? "Expression imports always apply every component"
                     : null;
-                // The component trio takes its OWN full-width row under
-                // the label (user placement); the band drops the label.
+                // The POPUP keeps the trio on its own full-width row under
+                // a label row (user placement, e05915c); the BAND labels
+                // the row inline (user 2026-08-11: labels stay).
                 if (!dense)
                     form.Label("Apply");
                 form.Checkboxes(
-                    string.Empty,
+                    dense ? "Apply" : string.Empty,
                     locked,
-                    fullWidth: true,
+                    fullWidth: !dense,
                     ("Position", _position, next => _position = next, why),
                     ("Rotation", _rotation, next => _rotation = next, why),
                     ("Scale", _scale, next => _scale = next, why));
@@ -1154,17 +1165,17 @@ public sealed class PoseFileInspectorSection
         // and the DIALOG's states — its idle/rebase texts and its fresh-open
         // backing hold — so the rail never shows the stale render the dialog
         // itself is hiding.
+        // While the import dialog drives, the rail box shows the STATIC
+        // backing and nothing else — not a live mirror (user 2026-08-11:
+        // "it shouldn't be a live preview, feels very overcomplicated").
+        // Same box, no reflow; the live render lives in the dialog alone.
         bool mirror = IsImportPreviewActive;
         form.Canvas("preview-image", box.Y / scale,
             (min, size) => DrawPreviewImage(
                 min, size, box.X, scale, theme,
                 ref _previewFadeRamp,
-                emptyText: mirror
-                    ? (_importPreview.IsWaitingForBaseline
-                        ? ImportPreviewRebaseText
-                        : ImportPreviewIdleText)
-                    : null,
-                showRender: !mirror || _importPreviewPosed));
+                emptyText: null,
+                showRender: !mirror));
         int rows = PreviewCameraRows(width, scale, theme);
         form.Canvas(
             "preview-camera",
@@ -1978,7 +1989,12 @@ public sealed class PoseFileInspectorSection
             _libraryExportOpen,
             next => _libraryExportOpen = next,
             "Export to library",
-            () =>
+            // Fitted, not the Small preset's default: the preset left the
+            // body ~half empty below the buttons (user 2026-08-11). Title
+            // bar + padded body + the four rows incl. the always-reserved
+            // problem line.
+            height: 260f,
+            body: () =>
         {
             float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
             var theme = Crystarium.ActiveTheme;
