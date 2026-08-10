@@ -15,18 +15,26 @@ public record struct ContextMenuItem
     public bool Disabled;
     public bool IsSeparator;
 
+    /// <summary>Explanatory hover help for the row — the same card every
+    /// control's <c>help</c> shows. The one row shape that NEEDS it is a
+    /// disabled row explaining why it is unavailable, which has no live
+    /// item to hover, so the menu registers it geometrically.</summary>
+    public string? Help;
+
     public ContextMenuItem(
         string label,
         TablerIcon icon = TablerIcon.Circle,
         string? shortcut = null,
         bool danger = false,
-        bool disabled = false)
+        bool disabled = false,
+        string? help = null)
     {
         Label = label;
         Icon = icon;
         Shortcut = shortcut;
         Danger = danger;
         Disabled = disabled;
+        Help = help;
         IsSeparator = false;
     }
 
@@ -410,6 +418,14 @@ public static partial class Crystarium
                         clicked = i;
                     hovered = hit.Hovered;
                 }
+
+                // Row help through the ONE hover-help renderer. Geometric
+                // rather than hit-driven: a disabled row — the shape that
+                // needs an explanation most — reserves no item at all.
+                if (interactive
+                    && item.Help is { Length: > 0 } rowHelp
+                    && ImGui.IsMouseHoveringRect(rowMin, rowMax))
+                    HoverHelp.Explain($"##fm-help{i}", rowMin, rowMax, rowHelp);
 
                 if (hovered)
                     dl.AddRectFilled(rowMin, rowMax,

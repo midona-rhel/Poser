@@ -10,6 +10,7 @@ using Poser.Entities;
 using Poser.Files;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
+using Poser.Library;
 using Poser.Game.Posing;
 using Poser.Services;
 
@@ -37,6 +38,7 @@ public sealed class PoseFileInspectorSection
     private readonly IAutoSaveService _autoSave;
     private readonly Game.Preview.PosePreviewService _preview;
     private readonly ITextureProvider _textures;
+    private readonly IPoseLibraryService _library;
 
     /// <summary>This section's drive of the ONE shared preview, used only while
     /// the import dialog is open — the same binder the library rail runs, so
@@ -105,7 +107,8 @@ public sealed class PoseFileInspectorSection
         Config.ConfigurationService config,
         IAutoSaveService autoSave,
         Game.Preview.PosePreviewService preview,
-        ITextureProvider textures)
+        ITextureProvider textures,
+        IPoseLibraryService library)
     {
         _poseFacade = poseFacade;
         _selection = selection;
@@ -113,6 +116,7 @@ public sealed class PoseFileInspectorSection
         _autoSave = autoSave;
         _preview = preview;
         _textures = textures;
+        _library = library;
         _importPreview = new PosePreviewBinder(preview, poseFacade);
         _freeze = config.Config.FreezeActorOnPoseImport;
 
@@ -137,6 +141,16 @@ public sealed class PoseFileInspectorSection
             _pendingBrowserOpen = null;
             pendingOpen();
         }
+        // The library-export modal pumps at the root for the same reason the
+        // dialogs defer (see OpenBrowser): its claim is made INSIDE
+        // Crystarium.Modal on the first pump with the flag set — the menu
+        // row only sets the flag — so the claim lands here, root-owned, one
+        // frame after the dying menu's, and a root claim re-roots the whole
+        // exclusive chain. Verified against ClaimExclusive: a claim with no
+        // current owner truncates from index 0, so the closing menu's link
+        // is gone before it could ever truncate the modal's. No separate
+        // deferral slot needed.
+        DrawExportLibraryModal();
         _importBrowser.Draw();
         _exportBrowser.Draw();
         DrawMenus();
@@ -202,23 +216,33 @@ public sealed class PoseFileInspectorSection
     /// through the selection alone silently ate the click there ("From
     /// file" did nothing, user 2026-08-10).</para>
     /// </summary>
-    private ISkeleton? SelectedSkeleton()
+    private ISkeleton? SelectedSkeleton() => SelectedSkeleton(out _);
+
+    /// <summary>The overload that also names WHO, for the one caller that
+    /// needs the identity and not just the skeleton (the library-export
+    /// modal's nickname prefill). Null id on the host-fallback path — the
+    /// push carries an actor, not a selection identity.</summary>
+    private ISkeleton? SelectedSkeleton(out Domain.Identity.ActorId? actorId)
     {
         foreach (var id in _selection.Selected)
         {
             // A BONE selection names its owning actor just as well — the
             // actor-only lookup made every command dead while a bone was
             // selected, which is most of the time in the pose workspace.
-            var actorId = id switch
+            var candidate = id switch
             {
                 { Kind: SceneEntityKind.Actor, Actor: { } selected } => selected,
                 { Kind: SceneEntityKind.Bone, Bone: { } bone } => bone.Skeleton.Actor,
                 _ => (Domain.Identity.ActorId?)null,
             };
-            if (actorId is { } resolvedId &&
+            if (candidate is { } resolvedId &&
                 _resolveActor?.Invoke(resolvedId) is { HasSkeleton: true } actor)
+            {
+                actorId = resolvedId;
                 return actor.Skeleton;
+            }
         }
+        actorId = null;
         if (HostPushLive && _hostTarget is { HasSkeleton: true } fallback)
             return fallback.Skeleton;
         return null;
@@ -309,17 +333,46 @@ public sealed class PoseFileInspectorSection
     /// Brio's export popup made literal (FileUIHelpers.cs:753-808): a NARROW
     /// action menu, one group of rows, no options and no preview. Brio's
     /// rows are Export / With Metadata… / separator / To Clipboard / To
-    /// Stash; ours are the three-row equivalent. "With Metadata" is NOT
-    /// ported — our PoseFile carries no appearance ids (ModelId/RaceSexId/
-    /// FaceID); appearance is Glamourer's business.
+    /// Stash; ours are the equivalent plus "To library" — a named export
+    /// straight into a configured library source folder (user-requested).
+    /// "With Metadata" is NOT ported — our PoseFile carries no appearance
+    /// ids (ModelId/RaceSexId/FaceID); appearance is Glamourer's business.
+    ///
+    /// <para>Built at open rather than held static: the To library row's
+    /// disabled state reads the CURRENT source list, and FloatingMenu
+    /// freezes items at open anyway.</para>
     /// </summary>
-    private static readonly ContextMenuItem[] ExportMenuItems =
-    [
-        new("Export to file", TablerIcon.DeviceFloppy),
-        ContextMenuItem.Separator,
-        new("To clipboard", TablerIcon.FileText),
-        new("To stash", TablerIcon.Stack2),
-    ];
+    private ContextMenuItem[] BuildExportMenuItems()
+    {
+        bool noSources = ExportableSources().Count == 0;
+        return
+        [
+            new("Export to file", TablerIcon.DeviceFloppy),
+            new("To library", TablerIcon.Folder,
+                disabled: noSources,
+                help: noSources
+                    ? "No library folders configured — add one in Settings"
+                    : null),
+            ContextMenuItem.Separator,
+            new("To clipboard", TablerIcon.FileText),
+            new("To stash", TablerIcon.Stack2),
+        ];
+    }
+
+    /// <summary>The source folders a library export may land in: exactly the
+    /// roots the library scans (enabled, with a path), in their configured
+    /// order — the dropdown labels them the way the folder rail labels its
+    /// roots (the source's own name).</summary>
+    private List<LibrarySourceConfig> ExportableSources()
+    {
+        var sources = new List<LibrarySourceConfig>();
+        foreach (var source in _config.Config.Library.Sources)
+        {
+            if (source.Enabled && !string.IsNullOrWhiteSpace(source.Path))
+                sources.Add(source);
+        }
+        return sources;
+    }
 
     private void DrawMenus()
     {
@@ -332,7 +385,8 @@ public sealed class PoseFileInspectorSection
         {
             _exportMenuRequested = false;
             Crystarium.FloatingMenu.Open(
-                ExportMenuId, _menuAnchor, ExportMenuItems, ExportMenuWidth);
+                ExportMenuId, _menuAnchor, BuildExportMenuItems(),
+                ExportMenuWidth);
         }
         Crystarium.FloatingSurface.Popup(
             ImportMenuId,
@@ -379,10 +433,13 @@ public sealed class PoseFileInspectorSection
                 else
                     _status = "Select an actor first.";
                 break;
-            case 2:
-                CopyToClipboard();
+            case 1:
+                OpenExportToLibrary();
                 break;
             case 3:
+                CopyToClipboard();
+                break;
+            case 4:
                 StashPose();
                 break;
         }
@@ -495,11 +552,11 @@ public sealed class PoseFileInspectorSection
 
     /// <summary>The band's logical height: the tallest option column as last
     /// measured, plus the band's two vertical insets, capped. Seeded with the
-    /// DENSE column arithmetic (header 26 + two checklist rows at 26 + the
-    /// two insets) and corrected by the first draw — the popup stack's own
-    /// self-measure idiom, so every open after the first fits exactly.
-    /// </summary>
-    private float _importBandHeight = 104f;
+    /// DENSE column arithmetic (two checklist rows at 26 + the two insets —
+    /// the columns are headerless, user 2026-08-10) and corrected by the
+    /// first draw — the popup stack's own self-measure idiom, so every open
+    /// after the first fits exactly.</summary>
+    private float _importBandHeight = 78f;
 
     /// <summary>Shown in the empty well before any file is highlighted.
     /// </summary>
@@ -781,9 +838,17 @@ public sealed class PoseFileInspectorSection
     /// <summary>The render's fade ramp, raw 0..1 progress toward "a render
     /// exists", eased through the Picto default curve at draw time.
     /// Constant-rate, so a swap that reverses mid-flight retraces exactly the
-    /// distance it covered — the Motion store's own ramp model, held locally
-    /// because there is ONE preview box per section.</summary>
+    /// distance it covered — the Motion store's own ramp model. ONE ramp per
+    /// MOUNT: the rail and the import dialog can now draw the same frame
+    /// (the rail mirrors the dialog's preview), and a shared ramp would
+    /// double-advance — or, with the mounts' targets split across the
+    /// fresh-open backing state, fight to a half-faded standstill.</summary>
     private float _previewFadeRamp;
+
+    /// <summary>The import dialog panel's own ramp — reset at dialog open so
+    /// the fresh session starts from the backing (see
+    /// <see cref="_importPreviewPosed"/>).</summary>
+    private float _dialogFadeRamp;
 
     /// <summary>The backing's ImGui handle for this frame, or 0 — missing
     /// texture keeps the current well-fill behavior.</summary>
@@ -946,13 +1011,16 @@ public sealed class PoseFileInspectorSection
     /// <summary>The Options/Type group. Returns the section's height, px.
     /// </summary>
     /// <param name="dense">The import dialog's BAND form: checklist row
-    /// pitch, no pre-header padding, and the "Options" label dropped —
-    /// "Freeze / Smart" speak for themselves and the column title carries
-    /// the rest. The popup and rail mounts keep the ordinary form.</param>
+    /// pitch, no pre-header padding, the "Options" label dropped — "Freeze /
+    /// Smart" speak for themselves — and NO column header at all (user
+    /// 2026-08-10: the label rows alone carry it). An empty Section title is
+    /// the pure-row-container mount, so the three headerless columns keep
+    /// their top edges aligned. The popup and rail mounts keep the ordinary
+    /// form.</param>
     private float DrawImportTypeSection(
         Vector2 origin, float width, bool divider, bool dense = false) =>
         Crystarium.Section(
-            "##import-menu-head", "Import pose",
+            "##import-menu-head", dense ? string.Empty : "Import pose",
             origin, width, true, null,
             form =>
             {
@@ -985,13 +1053,13 @@ public sealed class PoseFileInspectorSection
 
     /// <summary>The Transform group. Returns the section's height, px.
     /// </summary>
-    /// <param name="dense">The band form: the "Apply" label row is dropped —
-    /// the column title says Transform and the trio says the rest — so the
-    /// column is two tight rows, the trio and Model.</param>
+    /// <param name="dense">The band form: headerless (the trio says it all)
+    /// and the "Apply" label row dropped — the column is two tight rows, the
+    /// trio and Model.</param>
     private float DrawTransformSection(
         Vector2 origin, float width, bool divider, bool dense = false) =>
         Crystarium.Section(
-            "##import-menu-transform", "Transform",
+            "##import-menu-transform", dense ? string.Empty : "Transform",
             origin, width, true, null,
             form =>
             {
@@ -1028,12 +1096,14 @@ public sealed class PoseFileInspectorSection
 
     /// <summary>The Scope group — Reset first, then the bone filter. Returns
     /// the section's height, px.</summary>
-    /// <param name="dense">The band form: checklist pitch, and the "Filter"
-    /// label dropped — the button already says Bone filter.</param>
+    /// <param name="dense">The band form: headerless, checklist pitch, the
+    /// "Filter" label dropped — the button already says Bone filter — and
+    /// the button flush to the column's content right edge (user
+    /// 2026-08-10), which IS the gutter contract's trailing inset.</param>
     private float DrawScopeSection(
         Vector2 origin, float width, bool divider, bool dense = false) =>
         Crystarium.Section(
-            "##import-menu-scope", "Scope",
+            "##import-menu-scope", dense ? string.Empty : "Scope",
             origin, width, true, null,
             form =>
             {
@@ -1055,6 +1125,7 @@ public sealed class PoseFileInspectorSection
                             ? "The bone filter shapes the default import; "
                                 + "uncheck Body and Expression to edit it"
                             : "Choose which bone categories imports may touch"),
+                    alignRight: dense,
                     fullWidth: dense);
             },
             divider: divider,
@@ -1077,8 +1148,23 @@ public sealed class PoseFileInspectorSection
         if (!(box.X > 0f) || !(box.Y > 0f))
             return;
 
+        // While the import dialog drives the shared service, this rail block
+        // is a read-only MIRROR of it (user 2026-08-10: the rail preview
+        // vanished for the whole dialog session): same texture, same camera,
+        // and the DIALOG's states — its idle/rebase texts and its fresh-open
+        // backing hold — so the rail never shows the stale render the dialog
+        // itself is hiding.
+        bool mirror = IsImportPreviewActive;
         form.Canvas("preview-image", box.Y / scale,
-            (min, size) => DrawPreviewImage(min, size, box.X, scale, theme));
+            (min, size) => DrawPreviewImage(
+                min, size, box.X, scale, theme,
+                ref _previewFadeRamp,
+                emptyText: mirror
+                    ? (_importPreview.IsWaitingForBaseline
+                        ? ImportPreviewRebaseText
+                        : ImportPreviewIdleText)
+                    : null,
+                showRender: !mirror || _importPreviewPosed));
         int rows = PreviewCameraRows(width, scale, theme);
         form.Canvas(
             "preview-camera",
@@ -1107,8 +1193,8 @@ public sealed class PoseFileInspectorSection
             return;
 
         DrawPreviewImage(
-            origin, new Vector2(size.X, box.Y), box.X, scale, theme, emptyText,
-            showRender);
+            origin, new Vector2(size.X, box.Y), box.X, scale, theme,
+            ref _dialogFadeRamp, emptyText, showRender);
         DrawPreviewCamera(
             origin + new Vector2(0f, box.Y + theme.Spacing.Three * scale),
             size.X, scale, theme, rows);
@@ -1145,6 +1231,7 @@ public sealed class PoseFileInspectorSection
     /// backing may show. The rail always passes true.</param>
     private void DrawPreviewImage(
         Vector2 min, Vector2 size, float boxWidth, float scale, Theme theme,
+        ref float fadeRamp,
         string? emptyText = null, bool showRender = true)
     {
         var boxMin = theme.Optical.Snap(
@@ -1162,12 +1249,12 @@ public sealed class PoseFileInspectorSection
         var handle = _preview.TextureHandle;
         if (!showRender)
             handle = 0;
-        _previewFadeRamp = Math.Clamp(
-            _previewFadeRamp
+        fadeRamp = Math.Clamp(
+            fadeRamp
                 + (handle != 0 ? 1f : -1f) * ImGui.GetIO().DeltaTime
                     / Transition.PictoDefault.DurationSeconds,
             0f, 1f);
-        float fade = Transition.PictoDefault.Evaluate(_previewFadeRamp);
+        float fade = Transition.PictoDefault.Evaluate(fadeRamp);
 
         nint backing = ResolvePreviewBacking();
         if (backing != 0)
@@ -1567,10 +1654,12 @@ public sealed class PoseFileInspectorSection
         // shows stands on the body the confirm will pose.
         _importTarget = skeleton.Actor;
         // A fresh session: nothing has been stated yet, so the preview box
-        // shows the backing until a highlight poses something — and the fade
-        // ramp starts from zero rather than fading the stale render OUT.
+        // shows the backing until a highlight poses something — and the
+        // DIALOG's fade ramp starts from zero rather than fading the stale
+        // render OUT. The rail's own ramp is left alone: its mirror target
+        // flips to the backing too and it fades there from wherever it was.
         _importPreviewPosed = false;
-        _previewFadeRamp = 0f;
+        _dialogFadeRamp = 0f;
         OpenBrowser(() => _importBrowser.Open(initialPath, path =>
         {
             if (rememberPath)
@@ -1788,6 +1877,240 @@ public sealed class PoseFileInspectorSection
             if (!armed.Success)
                 _status = $"Export: {armed.Detail}";
         }));
+    }
+
+    // ── Export to library ────────────────────────────────────────────────
+    // The export menu's "To library" row: a small GlassModal (the rename
+    // modal's idiom) asking for a NAME and a LOCATION among the configured
+    // library sources, then the ordinary armed export into
+    // <source>\<name>.pose and a library rescan so the tile appears.
+
+    private bool _libraryExportOpen;
+    private ISkeleton? _libraryExportSkeleton;
+    private string _libraryExportName = string.Empty;
+    private int _libraryExportSource;
+    private List<LibrarySourceConfig> _libraryExportSources = [];
+    private string[] _libraryExportLabels = [];
+
+    /// <summary>The last existence-checked candidate path and its verdict —
+    /// one File.Exists per name/location CHANGE, not per frame.</summary>
+    private string _libraryExportCandidate = string.Empty;
+    private bool _libraryExportTaken;
+
+    /// <summary>The rename modal's own name-cleaning: the raw scene name
+    /// carries an object-index suffix ("Name (203)") that no file should.
+    /// </summary>
+    private static string DisplayName(string name)
+        => System.Text.RegularExpressions.Regex.Replace(
+            name, @"\s*\(\d+\)$", "");
+
+    /// <summary>Strips every character Windows refuses in a file NAME —
+    /// typed or pasted, the input simply never holds one.</summary>
+    private static string SanitizeFileName(string name)
+    {
+        var invalid = System.IO.Path.GetInvalidFileNameChars();
+        return name.IndexOfAny(invalid) < 0
+            ? name
+            : new string(name.Where(c => Array.IndexOf(invalid, c) < 0)
+                .ToArray());
+    }
+
+    /// <summary>The menu row's dispatch: freeze the target and the source
+    /// list, prefill the name the way the rename modal does (nickname first,
+    /// cleaned scene name otherwise), preselect the remembered location, and
+    /// raise the flag — the modal itself opens at the root pump.</summary>
+    private void OpenExportToLibrary()
+    {
+        if (SelectedSkeleton(out var actorId) is not { } skeleton)
+        {
+            _status = "Select an actor first.";
+            return;
+        }
+        var sources = ExportableSources();
+        if (sources.Count == 0)
+            return; // The row draws disabled; this is belt and braces.
+
+        _libraryExportSkeleton = skeleton;
+        _libraryExportSources = sources;
+        _libraryExportLabels = new string[sources.Count];
+        for (int i = 0; i < sources.Count; i++)
+        {
+            // The folder rail's root labeling: the source's own name, with
+            // the settings surface's fallback for a blank one.
+            _libraryExportLabels[i] = string.IsNullOrWhiteSpace(sources[i].Name)
+                ? $"Source {i + 1}"
+                : sources[i].Name;
+        }
+
+        // Last-used location by PATH — stable across source-list edits.
+        _libraryExportSource = 0;
+        string last = _config.Config.Library.LastExportSourcePath;
+        for (int i = 0; i < sources.Count; i++)
+        {
+            if (string.Equals(
+                    sources[i].Path, last, StringComparison.OrdinalIgnoreCase))
+            {
+                _libraryExportSource = i;
+                break;
+            }
+        }
+
+        _libraryExportName = SanitizeFileName(
+            (actorId is { } id ? _config.GetNickname(id.LogicalId) : null)
+                ?? DisplayName(skeleton.Actor.Name)).Trim();
+        _libraryExportCandidate = string.Empty;
+        _libraryExportTaken = false;
+        _libraryExportOpen = true;
+    }
+
+    /// <summary>The modal, pumped from <see cref="DrawBrowsers"/> every
+    /// frame: name input, location dropdown (a static row when only one
+    /// source exists), inline validation, and the equal-width Export/Cancel
+    /// pair. Export disables — never silently overwrites, never
+    /// auto-suffixes — while the name is empty or already taken there.
+    /// </summary>
+    private void DrawExportLibraryModal()
+    {
+        if (!_libraryExportOpen || _libraryExportSkeleton is not { } skeleton)
+            return;
+        Crystarium.Modal(
+            "##export-to-library",
+            _libraryExportOpen,
+            next => _libraryExportOpen = next,
+            "Export to library",
+            () =>
+        {
+            float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+            var theme = Crystarium.ActiveTheme;
+            var captionStyle = new TextStyle
+            {
+                Size = theme.Typography.CaptionSize,
+                Color = theme.FormHint,
+            };
+            float captionAdvance =
+                (theme.Typography.CaptionSize + 4f) * scale;
+            float rowGap = 8f * scale;
+
+            Crystarium.TextAt(
+                ImGui.GetCursorScreenPos(), "Name", captionStyle);
+            ImGui.Dummy(new Vector2(1f, captionAdvance));
+            Crystarium.TextInput(
+                "##library-export-name", _libraryExportName,
+                next => _libraryExportName = SanitizeFileName(next),
+                placeholder: "Pose name");
+            ImGui.Dummy(new Vector2(0f, rowGap));
+
+            Crystarium.TextAt(
+                ImGui.GetCursorScreenPos(), "Location", captionStyle);
+            ImGui.Dummy(new Vector2(1f, captionAdvance));
+            var sources = _libraryExportSources;
+            int selected = Math.Clamp(
+                _libraryExportSource, 0, sources.Count - 1);
+            if (sources.Count > 1)
+            {
+                Crystarium.Dropdown(
+                    "##library-export-location", _libraryExportLabels,
+                    selected, next => _libraryExportSource = next);
+                ImGui.Dummy(new Vector2(0f, rowGap));
+            }
+            else
+            {
+                // One source: a static row, not a one-item dropdown.
+                Crystarium.TextAt(
+                    ImGui.GetCursorScreenPos(),
+                    _libraryExportLabels[selected],
+                    new TextStyle
+                    {
+                        Size = theme.Typography.BodySize,
+                        Color = theme.Text,
+                    });
+                ImGui.Dummy(new Vector2(
+                    1f, (theme.Typography.BodySize + 6f) * scale + rowGap));
+            }
+
+            // Inline, honest validation: required name, and no silent
+            // overwrite — an existing <folder>\<name>.pose disables Export
+            // with the reason on the row, not in a tooltip alone.
+            string trimmed = _libraryExportName.Trim();
+            string candidate = trimmed.Length == 0
+                ? string.Empty
+                : System.IO.Path.Combine(
+                    sources[selected].Path, trimmed + ".pose");
+            if (!string.Equals(
+                    candidate, _libraryExportCandidate,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                _libraryExportCandidate = candidate;
+                _libraryExportTaken = candidate.Length > 0
+                    && System.IO.File.Exists(candidate);
+            }
+            string? problem = trimmed.Length == 0
+                ? "A name is required."
+                : _libraryExportTaken
+                    ? "That name already exists here."
+                    : null;
+            if (problem is not null)
+            {
+                Crystarium.TextAt(
+                    ImGui.GetCursorScreenPos(), problem, captionStyle);
+                ImGui.Dummy(new Vector2(1f, captionAdvance));
+            }
+            ImGui.Dummy(new Vector2(0f, rowGap));
+
+            // The equal-width action pair (the shell rule): two buttons
+            // splitting the row, gap between, primary leading.
+            float gap = theme.Page.ActionGap * scale;
+            float half =
+                (ImGui.GetContentRegionAvail().X - gap) * 0.5f / scale;
+            var pairStyle = new ControlStyle
+            {
+                Width = UiWidth.Fixed(MathF.Max(1f, half)),
+            };
+            if (Crystarium.Button(
+                    "Export",
+                    variant: ButtonVariant.Primary,
+                    style: pairStyle,
+                    disabled: problem is not null,
+                    help: problem,
+                    id: "library-export-confirm"))
+            {
+                ConfirmExportToLibrary(skeleton, sources[selected], trimmed);
+                _libraryExportOpen = false;
+            }
+            ImGui.SameLine(0f, gap);
+            if (Crystarium.Button(
+                    "Cancel", style: pairStyle, id: "library-export-cancel"))
+                _libraryExportOpen = false;
+        });
+    }
+
+    /// <summary>The confirm: remember the location, arm the SAME export the
+    /// file row runs (<see cref="CleanPoseFacade.ExportPose"/> self-marshals
+    /// and waits for the cache-refresh pass), and on the write landing, kick
+    /// a library rescan so the tile appears without a manual refresh. The
+    /// modal is already closed; the result lands in <see cref="_status"/> —
+    /// success clears, failure explains.</summary>
+    private void ConfirmExportToLibrary(
+        ISkeleton skeleton,
+        LibrarySourceConfig source,
+        string name)
+    {
+        _config.Config.Library.LastExportSourcePath = source.Path;
+        _config.Save();
+
+        string path = System.IO.Path.Combine(source.Path, name + ".pose");
+        var armed = _poseFacade.ExportPose(skeleton.Actor, path, exported =>
+        {
+            if (exported)
+            {
+                _status = string.Empty;
+                _library.RequestScan();
+            }
+            else
+                _status = "Library: the pose file could not be written.";
+        });
+        if (!armed.Success)
+            _status = $"Library: {armed.Detail}";
     }
 
     /// <summary>The section's current import options, for surfaces that import

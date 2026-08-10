@@ -1292,9 +1292,17 @@ public sealed class PoseLibraryPane
         {
             // Stood down, NOT closed — the dialog is driving. The pose it put
             // there is not this pane's to remember, so the binder forgets it
-            // and re-states the frame the seat comes back.
+            // and re-states the frame the seat comes back. The rail's preview
+            // block STAYS UP as a read-only mirror of what the dialog shows
+            // (user 2026-08-10: it vanished for the whole dialog session) —
+            // same service, same texture, camera commands included — gated on
+            // the user's own preview eye so a switched-off preview does not
+            // reappear just because the dialog previews for itself. A tile
+            // selection is deliberately NOT required: the dialog's highlight
+            // is the subject, not this pane's.
             _previewBinder.StandDown();
-            _files.SetPreviewVisible(false);
+            _files.SetPreviewVisible(
+                _vm.PreviewEnabled && _vm.PreviewAvailable);
             return;
         }
 

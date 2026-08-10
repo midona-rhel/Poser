@@ -43,6 +43,12 @@ public class LibraryConfiguration
     /// </summary>
     public bool PreviewEnabled { get; set; }
 
+    /// <summary>The source folder the last "To library" export landed in, by
+    /// PATH — a path survives source-list edits where an index cannot. The
+    /// export modal preselects it next time; empty until a first export.
+    /// </summary>
+    public string LastExportSourcePath { get; set; } = "";
+
     /// <summary>Tile labels carry the file extension when set.</summary>
     public bool ShowFileExtensions { get; set; }
 
