@@ -718,26 +718,25 @@ public sealed class LightPane
     }
 
     /// <summary>Brio's "move to camera": the light takes the camera's world
-    /// position and orientation, written as one absolute command so it joins
-    /// undo history like any other transform.</summary>
+    /// position and look direction, written as one absolute command so it
+    /// joins undo history like any other transform.</summary>
     private void MoveToCamera(LightId lightId)
     {
-        if (!Matrix4x4.Decompose(
-                _camera.GetViewMatrix(), out _, out var viewRotation, out _))
+        var forward = _camera.GetLookDirection();
+        if (forward == Vector3.Zero)
         {
             _status = "Move to camera: the camera could not be read.";
             return;
         }
 
         var (current, canEdit) = ReadTransform(lightId);
-        var rotation = Quaternion.Conjugate(viewRotation);
         // Land ahead of the eye, never AT it: a pivot on the camera
         // degenerates the gizmo projection and WorldToScreen, so the light
-        // would arrive handleless and ungrabbable.
+        // would arrive handleless and ungrabbable. The rotation aligns the
+        // beam axis (+Z) onto the look ray, matching what the overlay draws.
         if (!Domain.Transforms.PoseTransform.TryCreate(
-                _camera.GetCameraPosition() +
-                    Vector3.Transform(-Vector3.UnitZ, rotation) * 3f,
-                rotation,
+                _camera.GetCameraPosition() + forward * 3f,
+                PoseMath.AlignZTo(forward),
                 canEdit ? current.Scale : Vector3.One,
                 out var target,
                 out var invalid))

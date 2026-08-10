@@ -12,6 +12,27 @@ public static class PoseMath
     private const float RadiansToDegrees = 180f / MathF.PI;
     private const float DegreesToRadians = MathF.PI / 180f;
 
+    /// <summary>The rotation that maps local +Z onto the given world
+    /// direction — the axis game lights beam along, so "face that way" is
+    /// this and not a view-matrix rotation whose sign convention can flip.
+    /// Returns identity for a degenerate direction.</summary>
+    public static Quaternion AlignZTo(Vector3 direction)
+    {
+        float length = direction.Length();
+        if (length < 0.0001f || !float.IsFinite(length))
+            return Quaternion.Identity;
+        var z = direction / length;
+        var reference = MathF.Abs(z.Y) > 0.99f ? Vector3.UnitX : Vector3.UnitY;
+        var x = Vector3.Normalize(Vector3.Cross(reference, z));
+        var y = Vector3.Cross(z, x);
+        var m = new Matrix4x4(
+            x.X, x.Y, x.Z, 0f,
+            y.X, y.Y, y.Z, 0f,
+            z.X, z.Y, z.Z, 0f,
+            0f, 0f, 0f, 1f);
+        return Quaternion.Normalize(Quaternion.CreateFromRotationMatrix(m));
+    }
+
     /// <summary>model = parent COMPOSED WITH local (scale-then-rotate-then-translate).</summary>
     public static Transform Compose(in Transform parent, in Transform local) => new()
     {
