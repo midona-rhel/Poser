@@ -508,6 +508,14 @@ public sealed unsafe class PosePreviewService : IDisposable
             _appliedSerial = serial;
             _appliedStage = 0;
         }
+        // The sequence is one stage (a plain ShowPose) or two (rebase then
+        // file). Once every stage has been dispatched the body stands for the
+        // whole request and NOTHING more is armed — the bug this guards was a
+        // second stage re-arming every idle tick, which held the shared import
+        // pipeline busy forever and jittered the body between the two stages.
+        int stageCount = second is null ? 1 : 2;
+        if (_appliedStage >= stageCount)
+            return;
         if ((_appliedStage == 0 ? first : second) is not { } request)
             return;
         // The engine arms one import at a time; a stage refused for that alone
