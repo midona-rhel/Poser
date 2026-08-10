@@ -49,10 +49,8 @@ public sealed class LightPane
     private bool _openLight = true;
     private bool _openShadows = true;
     private bool _openAttach = true;
-    private bool _openTransform = true;
     private bool _openFile = true;
     private bool _openActions = true;
-    private bool _openPlacement = true;
 
     /// <summary>The gobo library's visual surface: the shared texture grid,
     /// walking the library by index with each tile captioned by NAME.</summary>
@@ -92,19 +90,6 @@ public sealed class LightPane
     // An imported light is only selectable once the scene refresh has bound
     // it, exactly like a spawned one.
     private ILight? _pendingSelect;
-
-    // Euler cache while a rotation drag is active (avoids quat→euler snap).
-    private Vector3? _dragEuler;
-    // Display and model baselines for one application-owned transform gesture.
-    private Transform? _dragStart;
-    private Transform? _modelStart;
-    private Transform? _displayedCurrent;
-    private GestureId? _gesture;
-    private LightId? _gestureLight;
-
-    // A cancelled gesture (Escape, selection change, scene invalidation) must
-    // not re-Begin while the same pointer interaction is still active.
-    private bool _gestureRestartSuppressed;
 
     private static readonly string[] KindOptions =
         ["Directional", "Point", "Spot", "Area"];
@@ -182,7 +167,7 @@ public sealed class LightPane
     /// lifetime actions.
     /// </summary>
     public void DrawLight(Vector2 origin, Vector2 size) =>
-        DrawTab("light", origin, size, (page, _, light) =>
+        DrawTab("light", origin, size, (page, lightId, light) =>
         {
             // The rule is a divider BETWEEN sections, so the page's first
             // section draws neither the rule nor the margin above it.
@@ -191,10 +176,12 @@ public sealed class LightPane
                 divider: false);
             page.Section("LIGHT", _openLight, next => _openLight = next,
                 form => LightRows(form, light));
+            page.Section("ATTACH", _openAttach, next => _openAttach = next,
+                form => AttachRows(form, light));
             page.Section("FILE", _openFile, next => _openFile = next,
                 form => FileRows(form, light));
             page.Section("ACTIONS", _openActions, next => _openActions = next,
-                form => ActionRows(form, light));
+                form => ActionRows(form, lightId, light));
         });
 
     /// <summary>The Shadows tab: everything the light casts, and nothing
@@ -207,35 +194,16 @@ public sealed class LightPane
                 divider: false);
         });
 
-    /// <summary>The Transform tab: where the light is. The attach target
-    /// belongs here because attaching OWNS the transform, and "move to camera"
-    /// belongs here because it is one more way of writing it.</summary>
-    public void DrawTransform(Vector2 origin, Vector2 size) =>
-        DrawTab("light-transform", origin, size, (page, lightId, light) =>
-        {
-            page.Section("TRANSFORM", _openTransform, next => _openTransform = next,
-                form => TransformRows(form, lightId, light.AttachedBone != null),
-                divider: false);
-            page.Section("ATTACH", _openAttach, next => _openAttach = next,
-                form => AttachRows(form, light));
-            page.Section("ACTIONS", _openPlacement, next => _openPlacement = next,
-                form => PlacementRows(form, lightId));
-        });
-
-    /// <summary>The three tabs' shared frame: the per-frame gesture contract,
-    /// the target lookup, and the empty state. Only one tab runs per frame, so
-    /// the guards run exactly once.</summary>
+    /// <summary>The two tabs' shared frame: the target lookup and the empty
+    /// state. The light's transform is the INSPECTOR RAIL's to edit — the
+    /// same TRANSLATION section and rotation gizmo every selection gets.
+    /// </summary>
     private void DrawTab(
         string id,
         Vector2 origin,
         Vector2 size,
         Action<Crystarium.PageScope, LightId, ILight> sections)
     {
-        // The gesture guards are a PER-FRAME contract of the transform
-        // SESSION, not of the transform rows: running them from inside the
-        // TRANSFORM section would skip them whenever it was collapsed.
-        UpdateGestureGuards();
-
         Crystarium.Page(id, origin, size, page =>
         {
             var (lightId, light) = TargetLight();
@@ -640,8 +608,6 @@ public sealed class LightPane
             _status = $"Attach: {resolved.Detail}";
             return;
         }
-        // The gesture edits a transform the follow is about to overwrite.
-        ClearTransformSession(cancel: true);
         light.AttachedBone = bone;
         _attachLabel = null;
         _status = string.Empty;
@@ -652,89 +618,6 @@ public sealed class LightPane
     private static string ActorName(ActorDescriptor actor) =>
         ConfigurationService.Instance.GetDisplayName(
             actor.Id.LogicalId, actor.Name);
-
-    /// <summary>
-    /// The three axis rows and the ONE gesture they share: the local functions
-    /// close over the frame's running position/euler/scale, so the composed
-    /// transform is assembled from all three rather than from three
-    /// independent rows.
-    /// </summary>
-    private void TransformRows(
-        Crystarium.FormScope form, LightId lightId, bool attached)
-    {
-        var (transform, editable) = ReadTransform(lightId);
-        // An attached light's transform is re-derived from the bone every tick,
-        // so an edit here would be overwritten before it was ever seen.
-        bool canEdit = editable && !attached;
-        string? help = attached ? "Detach to move freely." : null;
-        var pos = transform.Position;
-        var euler = _dragEuler ?? PoseMath.QuaternionToEuler(transform.Rotation);
-        var scale = transform.Scale;
-
-        void Apply(Vector3 next, DomainOperation operation)
-        {
-            if (!canEdit || _gestureRestartSuppressed)
-                return;
-            BeginTransformSession(lightId, transform, operation);
-            if (operation == DomainOperation.Translate)
-                pos = next;
-            else if (operation == DomainOperation.Rotate)
-            {
-                euler = next;
-                _dragEuler = next;
-            }
-            else
-                scale = next;
-            ApplyTransformSession(new Transform
-            {
-                Position = pos,
-                Rotation = _dragEuler.HasValue
-                    ? PoseMath.EulerToQuaternion(euler)
-                    : transform.Rotation,
-                Scale = scale,
-            });
-        }
-
-        void Commit()
-        {
-            if (canEdit)
-                CommitTransformSession();
-            ClearTransformSession();
-        }
-
-        form.AxisVector(
-            "Translation",
-            pos,
-            next => Apply(next, DomainOperation.Translate),
-            Commit,
-            0.005f,
-            "0.000",
-            help: help,
-            disabled: !canEdit);
-        form.AxisVector(
-            "Rotation",
-            euler,
-            next => Apply(next, DomainOperation.Rotate),
-            () =>
-            {
-                Commit();
-                // The numeric wells re-derive from the quaternion again.
-                _dragEuler = null;
-            },
-            0.5f,
-            "0.000",
-            help: help,
-            disabled: !canEdit);
-        form.AxisVector(
-            "Scale",
-            scale,
-            next => Apply(next, DomainOperation.Scale),
-            Commit,
-            0.005f,
-            "0.000",
-            help: help,
-            disabled: !canEdit);
-    }
 
     /// <summary>Save writes the selected light; load always spawns a new one,
     /// which the pending-select hook makes the selection once the scene has
@@ -769,8 +652,15 @@ public sealed class LightPane
         });
     }
 
-    private void ActionRows(Crystarium.FormScope form, ILight light)
+    private void ActionRows(
+        Crystarium.FormScope form, LightId lightId, ILight light)
     {
+        form.Actions("Placement", actions =>
+        {
+            actions.Button("Move to camera",
+                () => MoveToCamera(lightId),
+                help: "Put the light where the camera is, facing the same way");
+        });
         form.Actions("Light", actions =>
         {
             actions.Button("Clone",
@@ -789,7 +679,6 @@ public sealed class LightPane
                 actions.Button("Destroy",
                     () =>
                     {
-                        ClearTransformSession(cancel: true);
                         _lighting.DestroyLight(light);
                         _status = string.Empty;
                     },
@@ -799,24 +688,10 @@ public sealed class LightPane
                 actions.Button("Release",
                     () =>
                     {
-                        ClearTransformSession(cancel: true);
                         _lighting.ReleaseLight(light);
                         _status = string.Empty;
                     },
                     help: "Give this light back to the game and stop editing it");
-        });
-    }
-
-    /// <summary>The one placement action that is not a drag: it writes the
-    /// same transform the rows above it do, so it stands with them rather than
-    /// with clone and destroy.</summary>
-    private void PlacementRows(Crystarium.FormScope form, LightId lightId)
-    {
-        form.Actions("Placement", actions =>
-        {
-            actions.Button("Move to camera",
-                () => MoveToCamera(lightId),
-                help: "Put the light where the camera is, facing the same way");
         });
     }
 
@@ -832,7 +707,11 @@ public sealed class LightPane
             return;
         }
 
-        var (current, canEdit) = ReadTransform(lightId);
+        var scale =
+            _viewport.GetModelTransform(TransformTargetId.ForLight(lightId))
+                is { } current
+                ? current.Scale
+                : Vector3.One;
         // Land ahead of the eye, never AT it: a pivot on the camera
         // degenerates the gizmo projection and WorldToScreen, so the light
         // would arrive handleless and ungrabbable. The rotation aligns the
@@ -840,7 +719,7 @@ public sealed class LightPane
         if (!Domain.Transforms.PoseTransform.TryCreate(
                 _camera.GetCameraPosition() + forward * 3f,
                 PoseMath.AlignZTo(forward),
-                canEdit ? current.Scale : Vector3.One,
+                scale,
                 out var target,
                 out var invalid))
         {
@@ -888,62 +767,6 @@ public sealed class LightPane
 
     // ── transform presentation adapter ──────────────────────────────────
 
-    /// <summary>
-    /// Per-frame gesture guard for the drag wells: clears suppression when the
-    /// pointer released, drops local state when the service cancelled the
-    /// gesture externally or the selection moved to another light, and cancels
-    /// exactly once on Escape.
-    /// </summary>
-    private void UpdateGestureGuards()
-    {
-        if (_gestureRestartSuppressed &&
-            !ImGui.IsMouseDown(ImGuiMouseButton.Left))
-            _gestureRestartSuppressed = false;
-
-        if (_gesture is not { } gesture)
-            return;
-
-        if (_cleanTransforms.ActiveGesture != gesture)
-        {
-            // Externally cancelled — the service already restored.
-            ClearTransformSession();
-            _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
-        }
-        else if (ImGui.IsKeyPressed(ImGuiKey.Escape) ||
-            _scene.Selection.Primary is not
-                { Kind: SceneEntityKind.Light, Light: { } current } ||
-            _gestureLight is not { } owner ||
-            !current.Equals(owner))
-        {
-            ClearTransformSession(cancel: true);
-            _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
-        }
-        else if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
-        {
-            // A pane session exists ONLY for the duration of one well drag,
-            // and its commit rides that well's own drag-end callback. Any
-            // frame in which the TRANSFORM rows are not drawn — a tab change,
-            // a collapsed section, an attach that disables them — takes the
-            // callback away and strands the session: the service keeps
-            // holding the gesture, so the world gizmo can never Begin against
-            // the same light, and ReadTransform keeps serving the frozen
-            // _displayedCurrent instead of the live transform. The pointer
-            // being up IS the end of the drag, whoever failed to report it.
-            CommitTransformSession();
-            ClearTransformSession();
-        }
-    }
-
-    private (Transform, bool) ReadTransform(LightId lightId)
-    {
-        if (_gesture != null && _displayedCurrent is { } current)
-            return (current, true);
-        return _viewport.GetModelTransform(TransformTargetId.ForLight(lightId))
-            is { } value
-            ? (ToLegacy(value), true)
-            : (Transform.Identity, false);
-    }
-
     private static Transform ToLegacy(Domain.Transforms.PoseTransform value) =>
         new()
         {
@@ -951,93 +774,4 @@ public sealed class LightPane
             Rotation = value.Rotation,
             Scale = value.Scale,
         };
-
-    private void BeginTransformSession(
-        LightId lightId,
-        Transform displayedStart,
-        DomainOperation operation)
-    {
-        if (_gesture != null || _gestureRestartSuppressed)
-            return;
-
-        var begin = _cleanTransforms.Begin(
-            new[] { TransformTargetId.ForLight(lightId) },
-            operation,
-            DomainSpace.World,
-            DomainPivot.PerTarget,
-            description: "Transform light");
-        if (!begin.Success || begin.GestureId is not { } gesture)
-        {
-            // A refused Begin used to be silent, which reads in game as
-            // "the numbers do not move" with nothing to explain it.
-            _dragStart ??= displayedStart;
-            _status = $"Transform: {begin.Detail}";
-            return;
-        }
-
-        _dragStart = displayedStart;
-        _modelStart = displayedStart;
-        _displayedCurrent = displayedStart;
-        _gesture = gesture;
-        _gestureLight = lightId;
-    }
-
-    private void ApplyTransformSession(Transform displayedAfter)
-    {
-        if (_gesture is not { } gesture || _modelStart is not { } modelStart)
-            return;
-
-        var delta = new DomainDelta(
-            displayedAfter.Position - modelStart.Position,
-            Quaternion.Normalize(
-                displayedAfter.Rotation *
-                Quaternion.Conjugate(modelStart.Rotation)),
-            DivideComponents(displayedAfter.Scale, modelStart.Scale));
-        var update = _cleanTransforms.Update(gesture, delta);
-        if (!update.Success)
-        {
-            // Covers scene-revision self-cancellation, invalid deltas, and
-            // runtime apply failure: Cancel only while the service still owns
-            // this gesture id, always clear local presentation state, and
-            // suppress restart until the pointer interaction deactivates.
-            ClearTransformSession(cancel:
-                _cleanTransforms.ActiveGesture == gesture);
-            _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
-            return;
-        }
-
-        _displayedCurrent = displayedAfter;
-    }
-
-    private void CommitTransformSession()
-    {
-        if (_gesture is { } gesture)
-            _cleanTransforms.Commit(gesture);
-    }
-
-    private void ClearTransformSession(bool cancel = false)
-    {
-        if (cancel && _gesture is { } gesture)
-            _cleanTransforms.Cancel(gesture);
-        _dragStart = null;
-        _dragEuler = null;
-        _gesture = null;
-        _gestureLight = null;
-        _modelStart = null;
-        _displayedCurrent = null;
-    }
-
-    private static Vector3 DivideComponents(
-        Vector3 numerator,
-        Vector3 denominator)
-    {
-        static float Divide(float left, float right) =>
-            MathF.Abs(right) < 0.00001f
-                ? 1f
-                : left / right;
-        return new Vector3(
-            Divide(numerator.X, denominator.X),
-            Divide(numerator.Y, denominator.Y),
-            Divide(numerator.Z, denominator.Z));
-    }
 }

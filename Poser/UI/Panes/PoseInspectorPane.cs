@@ -2100,8 +2100,29 @@ public class PoseInspectorPane
             return (ActorLabel(primaryActor), HasActorTransformOverride
                 ? "actor \u00b7 transform override"
                 : "actor", 0);
+        if (_primary is { Kind: SceneEntityKind.Light, Light: { } primaryLight })
+        {
+            foreach (var light in _scene.Snapshot.Lights)
+            {
+                if (light.Id.Equals(primaryLight))
+                    return (light.Name, light.Kind switch
+                    {
+                        LightKind.Directional => "directional light",
+                        LightKind.Point => "point light",
+                        LightKind.Spot => "spot light",
+                        _ => "area light",
+                    }, 0);
+            }
+            return ("Light", "light", 0);
+        }
         return ("", "", 0);
     }
+
+    /// <summary>Whether the inspector is editing a light: the rail keeps its
+    /// TRANSLATION section and rotation gizmo, but neither the actor nor the
+    /// bone action row addresses anything a light has.</summary>
+    public bool IsLightSelection =>
+        _primary is { Kind: SceneEntityKind.Light };
 
     /// <summary>Whether the inspector is editing the actor itself rather than a
     /// bone. A gaze point counts: it belongs to the actor, so the rail keeps
@@ -2206,6 +2227,14 @@ public class PoseInspectorPane
                 return ViewportBoneModel(boneId) is { } model
                     ? (model, true)
                     : (Transform.Identity, false);
+            case { Kind: TransformTargetKind.Light, Light: { } lightId }:
+                // A light's transform IS world space. An attached light is
+                // read-only here: the per-frame bone follow would overwrite
+                // any edit before it was ever seen.
+                return _viewport.GetLightTransform(lightId) is { } lightValue
+                    ? (ToLegacy(lightValue),
+                        _bindings.Resolve(lightId).Value?.AttachedBone == null)
+                    : (Transform.Identity, false);
             default:
                 return (Transform.Identity, false);
         }
@@ -2232,6 +2261,7 @@ public class PoseInspectorPane
         switch (effective.Primary)
         {
             case { Kind: TransformTargetKind.Actor }:
+            case { Kind: TransformTargetKind.Light }:
             {
                 targets = effective.Targets;
                 modelStart = displayedStart;
@@ -2271,7 +2301,12 @@ public class PoseInspectorPane
             pivotMode,
             customPivot,
             description:
-                $"Transform {targets.Count} {(IsActorSelection ? "actor" : "bone")}{(targets.Count == 1 ? "" : "s")}",
+                $"Transform {targets.Count} {targets[0].Kind switch
+                {
+                    TransformTargetKind.Actor => "actor",
+                    TransformTargetKind.Light => "light",
+                    _ => "bone",
+                }}{(targets.Count == 1 ? "" : "s")}",
             includeLinkedBones:
                 targets[0].Kind == TransformTargetKind.Bone &&
                 _bonePosingService.LinkedBonesEnabled,
@@ -2296,7 +2331,10 @@ public class PoseInspectorPane
 
     private void ApplyTransformSession(Transform displayedAfter)
     {
-        if (_entity is not (IActor or IBone))
+        // Lights have no legacy entity view; their selection kind is the
+        // authorization the entity check gives actors and bones.
+        if (_entity is not (IActor or IBone) &&
+            _primary is not { Kind: SceneEntityKind.Light })
             return;
 
         if (_cleanGesture is not { } gesture ||

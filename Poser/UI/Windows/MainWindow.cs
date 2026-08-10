@@ -224,7 +224,6 @@ public class MainWindow : Window
     [
         new() { Label = "Light" },
         new() { Label = "Shadows" },
-        new() { Label = "Transform" },
     ];
 
     /// <summary>The library section is stated first, so its index is fixed.
@@ -1541,7 +1540,7 @@ public class MainWindow : Window
         // selection in DrawTabContent, never by this label.
         _vm.ContentUsesPage =
             tab is "Animation" or "Appearance" or "Light"
-                or "Shadows" or "Transform"
+                or "Shadows"
                 or "Weather" or "Sky" or "Atmosphere" or "World";
     }
 
@@ -1648,12 +1647,6 @@ public class MainWindow : Window
         if (_activeTab == "Shadows")
         {
             _lightPane.DrawShadows(origin, size);
-            return;
-        }
-
-        if (_activeTab == "Transform")
-        {
-            _lightPane.DrawTransform(origin, size);
             return;
         }
 
