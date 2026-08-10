@@ -304,7 +304,6 @@ public sealed class PoseLibraryPane
         _vm.OnBoneFilterMenu = () => _files.RequestBoneFilterMenu();
         _vm.OnApplyMenu = () => _applyMenuRequested = true;
         _vm.OnOpenSettings = () => OnSettingsRequested?.Invoke();
-        _vm.OnPreviewToggle = TogglePreview;
         _vm.ResolveThumbnail = ResolveThumbnail;
         // Spawning needs no selection and no scene state; the service answers
         // null when the game refuses, which is a note rather than a gate.
@@ -494,7 +493,6 @@ public sealed class PoseLibraryPane
         _lastAppliedTile = -1;
         _vm.IconSize = _config.Config.Library.IconSize;
         _iconSizeDirty = false;
-        _vm.PreviewEnabled = _config.Config.Library.PreviewEnabled;
 
         // Favourites and sources may have moved while the mode was away, and a
         // completed scan keeps its revision: rebuild unconditionally.
@@ -1277,8 +1275,9 @@ public sealed class PoseLibraryPane
         // files never travel the import pipeline at all, so the MCDF tab has
         // nothing to preview and its eye is disabled.
         _vm.PreviewAvailable = _type != LibraryType.Mcdf;
-        bool wanted = _vm.PreviewEnabled
-            && _vm.PreviewAvailable
+        // No eye anymore (user 2026-08-11): the preview is always live on a
+        // tab that can preview, so availability alone gates it.
+        bool wanted = _vm.PreviewAvailable
             && _vm.Selected >= 0
             && _vm.Selected < _vm.Tiles.Count;
         var source = wanted ? PreviewSource() : null;
@@ -1301,8 +1300,7 @@ public sealed class PoseLibraryPane
             // selection is deliberately NOT required: the dialog's highlight
             // is the subject, not this pane's.
             _previewBinder.StandDown();
-            _files.SetPreviewVisible(
-                _vm.PreviewEnabled && _vm.PreviewAvailable);
+            _files.SetPreviewVisible(_vm.PreviewAvailable);
             return;
         }
 
@@ -1353,17 +1351,6 @@ public sealed class PoseLibraryPane
     {
         _previewBinder.Close();
         _files.SetPreviewVisible(false);
-    }
-
-    /// <summary>The band's eye. A deliberate act with no other write to ride
-    /// on, so it persists immediately — the icon-size drag's deferred save is
-    /// a drag's concern, not a toggle's.</summary>
-    private void TogglePreview()
-    {
-        bool next = !_vm.PreviewEnabled;
-        _vm.PreviewEnabled = next;
-        _config.Config.Library.PreviewEnabled = next;
-        _config.Save();
     }
 
     /// <summary>Strips the raw object-index suffix ("Name (201)") the scene

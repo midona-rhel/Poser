@@ -315,6 +315,11 @@ public sealed class PoseFileInspectorSection
     /// band's whole complaint was empty width (user 2026-08-10), so the
     /// column shrinks to just past the longest of them.</summary>
     private const float DenseLabelColumn = 64f;
+
+    /// <summary>The Options/Type rows' shared checkbox column pitch: wide
+    /// enough for "Expression" (box + caption + gap), so Freeze tiles exactly
+    /// over Body and Smart over Expression (user 2026-08-11).</summary>
+    private const float CheckColumnPitch = 96f;
     private const string ImportMenuId = "##pose-import-menu";
     private const string ExportMenuId = "##pose-export-menu";
     private const string BoneFilterMenuId = "##pose-bone-filter-menu";
@@ -926,14 +931,6 @@ public sealed class PoseFileInspectorSection
                 divider: false,
                 labelColumnWidth: MenuLabelColumn);
 
-        // While the import dialog is up, the RAIL is a preview mirror and
-        // nothing more: the dialog's own band is the one place the options
-        // live during an import — cloning the controls into both surfaces
-        // read as duplication (user 2026-08-11: "just make it simple").
-        // The popup mount (previewCap 0) is untouched.
-        if (IsImportPreviewActive && previewCap > 0f)
-            return y;
-
         // The rule is a divider BETWEEN sections: the first one leads the
         // stack only when the preview does not.
         y += DrawImportTypeSection(
@@ -1033,11 +1030,14 @@ public sealed class PoseFileInspectorSection
             form =>
             {
                 // The row label stays in BOTH mounts (user 2026-08-11:
-                // headers go, labels stay).
+                // headers go, labels stay), and the two rows share one
+                // column pitch so Freeze sits exactly over Body and Smart
+                // over Expression (same user round).
                 form.Checkboxes(
                     "Options",
                     disabled: false,
                     fullWidth: false,
+                    CheckColumnPitch,
                     ("Freeze", _freeze, next =>
                     {
                         _freeze = next;
@@ -1048,6 +1048,9 @@ public sealed class PoseFileInspectorSection
                         "Route face-only files as expression imports automatically"));
                 form.Checkboxes(
                     "Type",
+                    disabled: false,
+                    fullWidth: false,
+                    CheckColumnPitch,
                     ("Body", _typeBody,
                         next => _typeBody = next,
                         "Import the body. With Expression too, everything "

@@ -246,17 +246,10 @@ public sealed class PoseLibraryViewModel
     public Action? OnImportMenu;
     public Action? OnBoneFilterMenu;
 
-    /// <summary>The band's eye: whether the user asked for a live preview at
-    /// all. A PREFERENCE — the binder persists it. The preview itself is drawn
-    /// by the inspector rail, not by this pane.</summary>
-    public bool PreviewEnabled;
-
-    /// <summary>Whether this tab can preview at all — binder-owned. The eye is
-    /// disabled where it cannot, rather than hidden: the action cluster's
-    /// geometry must not move between tabs.</summary>
+    /// <summary>Whether this tab can preview at all — binder-owned. The
+    /// preview is always live on tabs that can (the eye was removed 2026-08-11);
+    /// MCDF tiles never travel the import pipeline, so they cannot.</summary>
     public bool PreviewAvailable;
-
-    public Action? OnPreviewToggle;
 
     /// <summary>Resolves a tile's thumbnail. Called per visible tile per
     /// frame: shared texture wraps must be re-resolved, so this can never
@@ -321,7 +314,6 @@ public sealed class PoseLibraryViewModel
     internal Action? ImportMenuClick;
     internal Action? BoneFilterClick;
     internal Action? ApplyMenuClick;
-    internal Action? PreviewToggleClick;
 
     // The grid's band list and the clipper's slot map — the ShellSidebar cache,
     // held on the model because the view itself is static. Rebuilt only when
@@ -366,7 +358,6 @@ public static class PoseLibraryView
     private const string MenuId = "##pose-library-tile-menu";
     private const string ActionRowId = "pose-library-actions";
     private const string ToggleRowId = "pose-library-import-toggles";
-    private const string PreviewToggleId = "##pose-library-preview";
 
     // Per-tile ids. They are constants because every tile pushes its own path
     // onto the ID stack first, so the two reserves are unique per tile without
@@ -489,7 +480,6 @@ public static class PoseLibraryView
         vm.ImportMenuClick ??= () => vm.OnImportMenu?.Invoke();
         vm.BoneFilterClick ??= () => vm.OnBoneFilterMenu?.Invoke();
         vm.ApplyMenuClick ??= () => vm.OnApplyMenu?.Invoke();
-        vm.PreviewToggleClick ??= () => vm.OnPreviewToggle?.Invoke();
 
         float chromeMaxX = origin.X
             + (vm.ChromeWidth > 0f ? vm.ChromeWidth : size.X);
@@ -697,27 +687,8 @@ public static class PoseLibraryView
             id: RefreshId);
         right -= actionPx + gap;
 
-        // The preview's own switch, beside the rescan. The preview itself
-        // seats in the INSPECTOR rail; this is only its switch, DISABLED
-        // rather than hidden on the tab that cannot preview (character files
-        // never travel the import pipeline) so the cluster's geometry does not
-        // move between tabs.
-        ImGui.SetCursorScreenPos(new Vector2(
-            right - actionPx,
-            band.Min.Y + (band.Size.Y - actionPx) * 0.5f));
-        Crystarium.TemporaryIconToggle(
-            TablerIcon.Eye,
-            vm.PreviewEnabled,
-            vm.PreviewToggleClick,
-            ControlStyle.Square(action),
-            disabled: !vm.PreviewAvailable,
-            help: vm.PreviewEnabled
-                ? "Stop previewing the selected pose"
-                : "Preview the selected pose on a hidden actor",
-            id: PreviewToggleId,
-            slashed: !vm.PreviewEnabled);
-        right -= actionPx + gap;
-
+        // No preview switch: the preview is always live in the inspector
+        // rail on tabs that can preview (user 2026-08-11 removed the eye).
         // The size scrubber rides the band, not the footer: the footer's
         // buttons overflowed it at minimal width (user call).
         if (right - SliderWidth * scale

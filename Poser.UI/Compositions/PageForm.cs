@@ -468,6 +468,20 @@ public static partial class Crystarium
             bool disabled,
             bool fullWidth,
             params (string Caption, bool Value, Action<bool> OnChange,
+                string? Help)[] items) =>
+            Checkboxes(label, disabled, fullWidth, 0f, items);
+
+        /// <summary><paramref name="columnWidth"/> (logical, &gt; 0) tiles the
+        /// items on a FIXED grid instead of packing by caption width, so item
+        /// N of one row sits exactly under item N of the next — stacked pairs
+        /// (Freeze/Smart over Body/Expression) read as a grid, not a ragged
+        /// flow.</summary>
+        public void Checkboxes(
+            string label,
+            bool disabled,
+            bool fullWidth,
+            float columnWidth,
+            params (string Caption, bool Value, Action<bool> OnChange,
                 string? Help)[] items)
         {
             string id = Id(string.IsNullOrEmpty(label) ? "checkboxes" : label);
@@ -481,22 +495,27 @@ public static partial class Crystarium
                 Color = FormLabelColor,
                 Disabled = disabled,
             };
-            float x = fullWidth ? row.Origin.X : row.ControlOrigin.X;
+            float originX = fullWidth ? row.Origin.X : row.ControlOrigin.X;
+            float pitch = columnWidth * row.Scale;
+            float x = originX;
+            int column = 0;
             foreach (var (caption, value, onChange, help) in items)
             {
+                float itemX = pitch > 0f ? originX + column * pitch : x;
                 ImGui.SetCursorScreenPos(new(
-                    x, row.Origin.Y + (rowHeight - boxSide) * 0.5f));
+                    itemX, row.Origin.Y + (rowHeight - boxSide) * 0.5f));
                 Crystarium.Checkbox(
                     $"{id}-{caption}", value, onChange, default, disabled, help);
-                x += boxSide + gap * 0.75f;
+                float captionX = itemX + boxSide + gap * 0.75f;
                 float captionWidth =
                     Crystarium.MeasureText(caption, captionStyle).X;
                 LabelInBand(
-                    new(x, row.Origin.Y),
+                    new(captionX, row.Origin.Y),
                     new(captionWidth, rowHeight),
                     caption,
                     captionStyle);
-                x += captionWidth + gap * 2f;
+                x = captionX + captionWidth + gap * 2f;
+                column++;
             }
             _page.EndRow(row, id, null);
         }
