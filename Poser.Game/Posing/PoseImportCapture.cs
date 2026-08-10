@@ -135,12 +135,15 @@ public sealed class PoseImportCapture : IDisposable
         /// clearing every stack, and re-importing it whole.</summary>
         public bool Expression;
         /// <summary>Expression imports only: every j_kao instance the plan
-        /// writes, with its PRE-import post-reparent absolute — Brio's
-        /// tempPose (PosingCapability.cs:194), reduced to the one bone its
-        /// expressionPhase2 actually uses (PoseImporter.cs:11-26). The head
-        /// lands transiently in the apply stage so the face computes its
-        /// deltas in the FILE's head space; this restores it.</summary>
-        public List<(IBone Bone, TransformTargetId Target, Transform PreImport)>? HeadRestores;
+        /// writes, with the pre-import absolute the head-restore stage puts
+        /// back — Brio's tempPose reduced to the one bone its
+        /// expressionPhase2 actually uses (PosingCapability.cs:194,
+        /// PoseImporter.cs:11-26). The head lands transiently in the apply
+        /// stage so the face computes its deltas in the FILE's head space;
+        /// this restores it. Seeded at Begin, RE-EXPRESSED by the apply
+        /// pass in its own basis — see <see cref="HeadRestore.PreImport"/>
+        /// for why the space is the whole point.</summary>
+        public List<HeadRestore>? HeadRestores;
         /// <summary>Whether the plan wrote any Character-slot bone of a
         /// non-zero partial — the only writes whose export/basis spaces can
         /// disagree, so the only imports a reconcile can converge.</summary>
@@ -151,6 +154,44 @@ public sealed class PoseImportCapture : IDisposable
         public ISkeleton? CharacterSkeleton;
         public string? Failure;
         public bool Completing;
+    }
+
+    /// <summary>One j_kao instance's target for the expression head
+    /// restore.</summary>
+    private sealed class HeadRestore
+    {
+        public required IBone Bone;
+        public required TransformTargetId Target;
+
+        /// <summary>The pre-import head absolute the restore stage writes
+        /// back (position-only; rotation reverts through the stack pop).
+        ///
+        /// THE SPACE IS THE FIX (repeated-apply head drift, user
+        /// 2026-08-10). Begin seeds the cached <c>LastRawTransform</c>,
+        /// which is the last settled frame BEFORE the rewind: the facade's
+        /// bracket pauses the actor and the settle tick rewinds every
+        /// paused control to LocalTime 0 on the very tick it calls Begin
+        /// (CleanPoseFacade.BeginImport), so no pass has evaluated the
+        /// rewound animation yet. Every other write in this chain diffs
+        /// against the REWOUND in-pass basis, and the final flatten bakes
+        /// its stacks against that same rewound basis — so restoring the
+        /// head to a pre-rewind absolute baked
+        /// (anim(pause frame) − anim(LocalTime 0)) into the head position
+        /// ON TOP of the previous apply's settled state, once per apply:
+        /// progressive head drift whenever the animation ran between
+        /// applies. <see cref="ApplyBone"/> therefore overwrites the seed
+        /// with the bone's own apply-pass basis — anim(rewound) ⊕ the
+        /// pre-import stacks the expression reset deliberately leaves on
+        /// the head — which IS the pre-import head expressed in the
+        /// chain's one basis. Apply N+1 then restores exactly apply N's
+        /// settled head and the restore delta rejects as near-identity.
+        /// Brio's pre-rewind capture (tempPose) matches its own brief
+        /// bracket — it hands speed back +2 ticks after the import call
+        /// (ActionTimelineCapability.cs:169-175), before its reconcile
+        /// ever reads the pose; Poser holds the pause through reconcile
+        /// and flatten, so the in-pass basis is the only consistent
+        /// space.</summary>
+        public required Transform PreImport;
     }
 
     private Import? _pending;
@@ -292,15 +333,21 @@ public sealed class PoseImportCapture : IDisposable
                 import.CharacterSkeleton ??= bone.Skeleton;
                 if (bone.PartialId != 0)
                     import.WroteFacePartial = true;
-                // The head's pre-import absolute, captured NOW — the cached
-                // post-reparent value of the last settled pass, Brio's
-                // tempPose moment. Only instances the plan writes restore:
-                // a file without j_kao never moved the head, so unlike
-                // Brio's blind RemoveLastStack (which would eat a USER head
-                // stack in that case) the restore stage simply skips.
+                // The head's pre-import absolute — a SEED only: this cached
+                // value predates the settle tick's LocalTime rewind, and
+                // the apply pass replaces it with the bone's own in-pass
+                // basis (HeadRestore.PreImport has the space math). Only
+                // instances the plan writes restore: a file without j_kao
+                // never moved the head, so unlike Brio's blind
+                // RemoveLastStack (which would eat a USER head stack in
+                // that case) the restore stage simply skips.
                 if (expression && bone.BoneName == "j_kao")
-                    (import.HeadRestores ??= new()).Add(
-                        (bone, target, bone.LastRawTransform));
+                    (import.HeadRestores ??= new()).Add(new HeadRestore
+                    {
+                        Bone = bone,
+                        Target = target,
+                        PreImport = bone.LastRawTransform,
+                    });
             }
         }
 
@@ -414,6 +461,26 @@ public sealed class PoseImportCapture : IDisposable
 
             var desired = entry.File;
             var basis = bone.LastRawTransform;
+
+            // Expression imports: re-express this head instance's restore
+            // target in the pass's own basis — anim(rewound) ⊕ the
+            // pre-import stacks the reset left on the head — BEFORE the
+            // file's head lands. The Begin-time seed is pre-rewind;
+            // restoring it re-baked the pause-frame-vs-LocalTime-0 offset
+            // into the head on every apply (HeadRestore.PreImport).
+            if (import.Stage == ImportStage.Apply &&
+                import.HeadRestores is { } restores)
+            {
+                foreach (var restore in restores)
+                {
+                    if (ReferenceEquals(restore.Bone, bone))
+                    {
+                        restore.PreImport = basis;
+                        break;
+                    }
+                }
+            }
+
             var delta = BonePoseInfo.FilterDelta(
                 BonePoseInfo.Diff(desired, basis), entry.Components);
             if (IsApproximatelyIdentity(delta))
@@ -700,18 +767,22 @@ public sealed class PoseImportCapture : IDisposable
 
         var writes = new Dictionary<(int, int),
             (TransformTargetId, Transform, TransformComponents)>(restores.Count);
-        foreach (var (bone, target, preImport) in restores)
+        foreach (var headRestore in restores)
         {
             // Only an instance the apply stage actually wrote carries a
             // phase-1 stack to pop; the near-identity early-out means a
-            // head already at the file's pose gained none.
-            if (!import.Written.Contains(target))
+            // head already at the file's pose gained none. A written
+            // instance's PreImport was re-expressed by that same pass in
+            // its own basis (HeadRestore.PreImport), so the write below
+            // diffs two values of the SAME space and lands the head back
+            // on the pre-import authored state exactly.
+            if (!import.Written.Contains(headRestore.Target))
                 continue;
             _posing.GetPoseInfo(skeleton)
-                .GetPoseInfo(bone.BoneName, bone.PartialId)
+                .GetPoseInfo(headRestore.Bone.BoneName, headRestore.Bone.PartialId)
                 .RemoveLastInteractiveStack();
-            writes[(bone.PartialId, bone.BoneIndex)] =
-                (target, preImport, TransformComponents.Position);
+            writes[(headRestore.Bone.PartialId, headRestore.Bone.BoneIndex)] =
+                (headRestore.Target, headRestore.PreImport, TransformComponents.Position);
         }
 
         if (writes.Count == 0)
