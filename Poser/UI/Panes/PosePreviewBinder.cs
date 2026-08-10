@@ -223,8 +223,16 @@ internal sealed class PosePreviewBinder
             return;
         _baselineArmedAt = frame;
         int generation = ++_baselineGeneration;
+        // Authored bones only: a full snapshot bakes whatever frame the
+        // target's ANIMATION happened to be on — eyes caught mid-blink,
+        // enforced forever on the preview body (user 2026-08-10: "eyes
+        // unreliable"). The stance is the AUTHORED pose; everything else
+        // rides the preview body's own live animation, exactly as it rides
+        // the target's.
         var armed = _poses.CapturePoseFile(
-            target, pose => _captured = new Capture(generation, pose));
+            target,
+            pose => _captured = new Capture(generation, pose),
+            authoredOnly: true);
         if (!armed.Success)
             _captured = new Capture(generation, null);
     }

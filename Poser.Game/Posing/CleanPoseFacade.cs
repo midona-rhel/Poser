@@ -110,7 +110,8 @@ public sealed class CleanPoseFacade
     /// </summary>
     public PoseEditResult CapturePoseFile(
         IActor actor,
-        Action<PoseFile?> onCaptured)
+        Action<PoseFile?> onCaptured,
+        bool authoredOnly = false)
     {
         const string description = "Copy pose";
         // The export capture insists on the framework thread; the callers
@@ -121,7 +122,7 @@ public sealed class CleanPoseFacade
         {
             _ = _framework.RunOnFrameworkThread(() =>
             {
-                if (!CapturePoseFile(actor, onCaptured).Success)
+                if (!CapturePoseFile(actor, onCaptured, authoredOnly).Success)
                     onCaptured(null);
             });
             return PoseEditResult.Ok(0);
@@ -139,12 +140,22 @@ public sealed class CleanPoseFacade
             return Report(description,
                 PoseEditResult.Fail("The actor has no skeleton."));
 
+        // Authored-only: the bones the user actually posed, nothing the
+        // ANIMATION owns — a live snapshot catches blinks mid-frame and eye
+        // state is transient, not stance. The skeleton root always rides
+        // along: a file with no character bones fires no reset, and the
+        // rebase baseline NEEDS its full-scope reset even for an unposed
+        // target. Root is never animation-driven, so it contaminates nothing.
+        Func<Entities.IBone, bool>? include = authoredOnly
+            ? bone => bone.IsSkeletonRoot || _bonePosing.HasModifications(bone)
+            : null;
+
         PoseFile? captured = null;
         var begun = _exports.Begin(
             slots,
             skeletons =>
             {
-                captured = _poseFiles.CreatePoseFile(skeletons);
+                captured = _poseFiles.CreatePoseFile(skeletons, include);
                 return captured != null;
             },
             ok => onCaptured(ok ? captured : null));

@@ -51,7 +51,8 @@ public class PoseFileService : IPoseFileService
         _ => false,
     };
 
-    public PoseFile CreatePoseFile(IReadOnlyList<ISkeleton> slots)
+    public PoseFile CreatePoseFile(
+        IReadOnlyList<ISkeleton> slots, Func<IBone, bool>? include = null)
     {
         var poseFile = new PoseFile();
         IActor? actor = null;
@@ -69,6 +70,8 @@ public class PoseFileService : IPoseFileService
             foreach (var bone in skeleton.Bones)
             {
                 if (bone.IsPartialRoot && !bone.IsSkeletonRoot)
+                    continue;
+                if (include != null && !include(bone))
                     continue;
 
                 collection[bone.BoneName] = bone.LastRawTransform;
