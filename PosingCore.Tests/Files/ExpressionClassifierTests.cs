@@ -81,6 +81,56 @@ public class ExpressionClassifierTests
         Assert.False(PoseFileService.IsBodyOnlyPose(new PoseFile()));
     }
 
+    /// <summary>Brio's <c>bodyOnlyTag</c> list (FileUIHelpers.cs:374),
+    /// Contains-matched exactly as its expression list is — the half the
+    /// classifier used to ignore entirely, so a tagged body pose full of face
+    /// bones smart-routed to Expression.</summary>
+    [Theory]
+    [InlineData("body-only")]
+    [InlineData("Body_Only")]
+    [InlineData("bodyonly")]
+    [InlineData("body only")]
+    [InlineData("Standing (body only) v2")]
+    public void BodyOnlyTag_WinsOverFaceBones(string tag)
+    {
+        var file = FileWith("j_kao", "j_f_eye_l", "j_f_ulip_01_l");
+        file.Tags = new List<string> { tag };
+        Assert.True(PoseFileService.IsBodyOnlyPose(file));
+    }
+
+    /// <summary>Brio checks <c>expressionOnlyTag</c> FIRST (:377), so a file
+    /// wearing both tags routes to Expression — the order the smart router
+    /// relies on.</summary>
+    [Fact]
+    public void ExpressionTag_OutranksBodyTag()
+    {
+        var file = FileWith("j_sebo_a");
+        file.Tags = new List<string> { "body-only", "expression" };
+        Assert.True(PoseFileService.IsExpressionOnlyPose(file));
+    }
+
+    [Fact]
+    public void UnrelatedTag_DoesNotRouteToBody()
+    {
+        var file = FileWith("j_kao", "j_f_eye_l");
+        file.Tags = new List<string> { "somebody", "sitting" };
+        Assert.False(PoseFileService.IsBodyOnlyPose(file));
+    }
+
+    /// <summary>Brio's Dawntrail gate, FILE half (FileUIHelpers.cs:361, 392):
+    /// the tongue bone, or a dawntrail/dt tag.</summary>
+    [Fact]
+    public void DawntrailMarker_ComesFromTheTongueBoneOrATag()
+    {
+        Assert.True(PoseFileService.IsLikelyDawntrailPose(
+            FileWith("j_kao", "j_f_bero_01")));
+
+        var tagged = FileWith("j_kao", "j_f_eye_l");
+        Assert.False(PoseFileService.IsLikelyDawntrailPose(tagged));
+        tagged.Tags = new List<string> { "Dawntrail expression" };
+        Assert.True(PoseFileService.IsLikelyDawntrailPose(tagged));
+    }
+
     [Fact]
     public void ShippedRestPoses_AreNotExpressions()
     {

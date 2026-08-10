@@ -1235,6 +1235,19 @@ public sealed class PoseLibraryPane
     {
         _vm.CanApply = FirstApplyTarget() is not null;
 
+        // The options rail this pane hosts resolves its commands through the
+        // SCENE selection, which in library mode is routinely empty — the
+        // library picks its own target. Push that target (and the fact that
+        // the library is the host) every frame, the same way the preview seat
+        // is pushed, so "From file", the presets and the export commands act
+        // on the actor the tiles would apply to instead of silently eating
+        // the click.
+        _files.SetHostImportTarget(
+            TargetActor() is { HasSkeleton: true } selected
+                ? selected
+                : FirstApplyTarget(),
+            inLibrary: true);
+
         // A character file is applied to an actor that already exists; there is
         // no "spawn and dress" path in v1.
         _vm.CanSpawn = _type != LibraryType.Mcdf;
@@ -1425,6 +1438,16 @@ public sealed class PoseLibraryPane
     /// never reach a library apply.</summary>
     private PoseImportOptions BuildImportOptions(string path)
     {
+        // Brio's .cmp preset substitution (FileUIHelpers.cs:690) reaches the
+        // library too — its file list carries .cmp entries, and Brio's own
+        // library apply goes through the same popup dispatch. The library's
+        // load semantics still ride on top.
+        if (_files.CmpImportOverride(path, out _, out _) is { } cmp)
+        {
+            cmp.ResetBeforeImport = true;
+            return cmp;
+        }
+
         var options = BuildImportOptionsCore();
         // Smart expression routing (Brio ResolveSmartImport): a face-only
         // .pose can NEVER land through the body path — Dawntrail faces are
@@ -1647,11 +1670,16 @@ public sealed class PoseLibraryPane
             _note = "That actor has no skeleton to pose.";
             return;
         }
-        var result = _poseFacade.ImportPose(
-            actor,
-            _vm.Tiles[index].ThumbKey,
-            BuildImportOptions(_vm.Tiles[index].ThumbKey));
-        _note = result.Success ? null : Failure(result);
+        var path = _vm.Tiles[index].ThumbKey;
+        // Brio's expression-only .cmp gate: reported, and NOT imported.
+        _files.CmpImportOverride(path, out bool blocked, out var cmpNote);
+        if (blocked)
+        {
+            _note = cmpNote;
+            return;
+        }
+        var result = _poseFacade.ImportPose(actor, path, BuildImportOptions(path));
+        _note = result.Success ? cmpNote : Failure(result);
     }
 
     /// <summary>
@@ -1677,6 +1705,17 @@ public sealed class PoseLibraryPane
     {
         if (index < 0 || index >= _vm.Tiles.Count || _type == LibraryType.Mcdf)
             return;
+
+        // The .cmp verdict is taken BEFORE the spawn: an import Brio would
+        // refuse must not leave a spare actor standing in the scene.
+        var path = _vm.Tiles[index].ThumbKey;
+        _files.CmpImportOverride(path, out bool blocked, out var cmpNote);
+        if (blocked)
+        {
+            _note = cmpNote;
+            return;
+        }
+
         var spawned = _spawnService.SpawnNewActor(reserveCompanionSlot: false);
         if (spawned is null)
         {
@@ -1688,10 +1727,10 @@ public sealed class PoseLibraryPane
         // change made while the scene binds the new actor cannot retarget
         // the import.
         _pendingActor = spawned;
-        _pendingPath = _vm.Tiles[index].ThumbKey;
-        _pendingOptions = BuildImportOptions(_pendingPath);
+        _pendingPath = path;
+        _pendingOptions = BuildImportOptions(path);
         _pendingFrames = 0;
-        _note = null;
+        _note = cmpNote;
     }
 
     /// <summary>Second half of <see cref="Spawn"/>: the scene has not rescanned

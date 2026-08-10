@@ -163,12 +163,35 @@ public class PoseImportOptions
         ApplyModelTransform = false
     };
 
-    /// <summary>Brio's BodyOptions category run (PosingService.cs:65-75):
-    /// weapons and the whole head group off, plus legacy and ex.</summary>
-    private static readonly string[] BodyOnlyExclusions =
+    /// <summary>
+    /// Brio's DefaultCMPImporterOptions (PosingService.cs:50-59), the preset
+    /// its popup substitutes for ANY typed .cmp import (FileUIHelpers.cs:
+    /// 680-694): rotation only, with weapon, ears, hair, face, eyes, lips,
+    /// jaw, head and ex disabled — legacy stays ON, which is the one row that
+    /// separates this from <see cref="ForImportType"/>'s Body preset. The
+    /// weapon row also gates the MainHand/OffHand slots (BoneFilter.cs:118),
+    /// and a .cmp carries no auxiliary collections anyway.
+    ///
+    /// <para>The face is left to the prefix exclusions rather than
+    /// <see cref="ApplyFace"/>: Brio has no such switch, and the broader
+    /// name test would additionally drop j_ago, which its "legacy" row keeps.
+    /// </para>
+    /// </summary>
+    public static PoseImportOptions Cmp => new()
     {
-        "weapon", "ears", "hair", "face", "eyes",
-        "lips", "jaw", "head", "legacy", "ex",
+        ApplyRotation = true,
+        ApplyPosition = false,
+        ApplyScale = false,
+        ApplyBody = true,
+        ApplyFace = true,
+        ApplyMainHand = false,
+        ApplyOffHand = false,
+        ApplyProp = true,
+        ApplyOrnament = true,
+        AsExpression = false,
+        ApplyModelTransform = false,
+        ExcludedBonePrefixes =
+            ImportBoneCategories.PrefixesFor(ImportBoneCategories.CmpExclusions),
     };
 
     /// <summary>
@@ -199,16 +222,36 @@ public class PoseImportOptions
     /// freeze, reset and model-transform switches ride any state and stay the
     /// caller's.
     /// </summary>
+    /// <param name="presetComponents">
+    /// Smart Import's component lock (Brio FileUIHelpers.cs:549-552 nulls
+    /// <c>transformComponents</c> on every frame the checkbox is on, so
+    /// PosingCapability never overrides the preset's own
+    /// <c>TransformComponents</c>, :219-222). The three toggles are then
+    /// IGNORED and each state uses its preset's components:
+    /// neither = Rotation (DefaultImporterOptions), Body =
+    /// Rotation | Position (BodyOptions), Expression and Both = All
+    /// (ExpressionOptions / DefaultIPCImporterOptions).
+    /// </param>
     public static PoseImportOptions ForImportType(
         bool body,
         bool expression,
         bool rotation = true,
         bool position = false,
-        bool scale = false)
+        bool scale = false,
+        bool presetComponents = false)
     {
         bool both = body && expression;
         bool expressionOnly = expression && !body;
         bool bodyOnly = body && !expression;
+        if (presetComponents)
+        {
+            // The toggles never reach the engine under Smart Import; the
+            // preset's own components do. Expression and Both are covered by
+            // allComponents below, so only the neither/Body rows matter here.
+            rotation = true;
+            position = bodyOnly;
+            scale = false;
+        }
         // Both and Expression force every component: Brio's IPC and
         // Expression presets are TransformComponents.All and neither path
         // forwards the popup's toggles.
@@ -226,7 +269,8 @@ public class PoseImportOptions
             ApplyOrnament = !expressionOnly,
             AsExpression = expressionOnly,
             ExcludedBonePrefixes = bodyOnly
-                ? ImportBoneCategories.PrefixesFor(BodyOnlyExclusions)
+                ? ImportBoneCategories.PrefixesFor(
+                    ImportBoneCategories.BodyOnlyExclusions)
                 : null,
         };
     }

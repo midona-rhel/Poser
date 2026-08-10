@@ -69,6 +69,23 @@ public sealed class PoseFileInspectorSection
     // hidden config flag as one surface).
     private bool _freeze;
 
+    // ── Brio's two popup recall slots (FileUIHelpers.cs:440-441) ──
+    // _lastused: whatever the last import came from, recorded by the dispatch
+    // itself (:678) so "Reapply Last Pose" repeats it through the CURRENT
+    // options rather than the ones it originally landed with. Exactly one of
+    // the two is set.
+    private string? _lastImportPath;
+    private PoseFile? _lastImportPose;
+
+    // _stash: a FULL absolute pose capture the export menu fills and the
+    // import menu applies. Distinct from _poseFacade.Stash — that one holds a
+    // PortablePose for the inspector's Transfer group and carries authored
+    // layers, not a pose file.
+    private PoseFile? _poseStash;
+    private DateTimeOffset? _poseStashedAt;
+
+    private bool HasLastImport => _lastImportPath != null || _lastImportPose != null;
+
     /// <summary>Raised by the Library… action and by an Import… that the
     /// library setting has taken over. The UI manager owns the window.</summary>
     public event Action? OnLibraryRequested;
@@ -119,47 +136,72 @@ public sealed class PoseFileInspectorSection
     /// <summary>The bone-filter menu's verdict folded into any surface's
     /// options: disabled prefix categories become exclusions, the slot rows
     /// (Weapons / Emote Props / Fashion Accessories) gate their slots, and
-    /// a disabled Other row bans uncategorized bones.</summary>
-    public PoseImportOptions ApplyCategoryFilter(PoseImportOptions options)
-    {
-        if (_disabledCategories.Count == 0)
-            return options;
-        var prefixes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var group in Files.ImportBoneCategories.Groups)
-        {
-            foreach (var category in group.Categories)
-            {
-                if (!_disabledCategories.Contains(category.Id))
-                    continue;
-                foreach (var prefix in category.Prefixes)
-                    prefixes.Add(prefix);
-            }
-        }
-        if (prefixes.Count > 0)
-            options.ExcludedBonePrefixes = prefixes;
-        options.ExcludeUncategorizedBones = _disabledCategories.Contains("other");
-        if (_disabledCategories.Contains("weapon"))
-        {
-            options.ApplyMainHand = false;
-            options.ApplyOffHand = false;
-        }
-        if (_disabledCategories.Contains("prop"))
-            options.ApplyProp = false;
-        if (_disabledCategories.Contains("ornament"))
-            options.ApplyOrnament = false;
-        return options;
-    }
+    /// a disabled Other row bans uncategorized bones. The fold itself lives
+    /// in PosingCore beside the catalog, so the tests pin the same code the
+    /// popup runs.</summary>
+    public PoseImportOptions ApplyCategoryFilter(PoseImportOptions options) =>
+        Files.ImportBoneCategories.ApplyDisabledCategories(
+            options, _disabledCategories);
 
+    /// <summary>
+    /// The actor every command in these menus acts on: the scene selection
+    /// first, then the host surface's own apply target.
+    ///
+    /// <para>The fallback exists because these menus are MOUNTED IN TWO
+    /// PLACES. In library mode the scene selection is routinely empty — the
+    /// library picks its target itself — so every command that resolved
+    /// through the selection alone silently ate the click there ("From
+    /// file" did nothing, user 2026-08-10).</para>
+    /// </summary>
     private ISkeleton? SelectedSkeleton()
     {
         foreach (var id in _selection.Selected)
         {
-            if (id is { Kind: SceneEntityKind.Actor, Actor: { } actorId } &&
-                _resolveActor?.Invoke(actorId) is { HasSkeleton: true } actor)
+            // A BONE selection names its owning actor just as well — the
+            // actor-only lookup made every command dead while a bone was
+            // selected, which is most of the time in the pose workspace.
+            var actorId = id switch
+            {
+                { Kind: SceneEntityKind.Actor, Actor: { } selected } => selected,
+                { Kind: SceneEntityKind.Bone, Bone: { } bone } => bone.Skeleton.Actor,
+                _ => (Domain.Identity.ActorId?)null,
+            };
+            if (actorId is { } resolvedId &&
+                _resolveActor?.Invoke(resolvedId) is { HasSkeleton: true } actor)
                 return actor.Skeleton;
         }
+        if (HostPushLive && _hostTarget is { HasSkeleton: true } fallback)
+            return fallback.Skeleton;
         return null;
     }
+
+    /// <summary>
+    /// The hosting pane's per-frame push — the same idiom as
+    /// <see cref="SetPreviewVisible"/>: WHO an apply would land on when the
+    /// scene selection names nobody, and whether the library is the surface
+    /// hosting these options.
+    ///
+    /// <para>Stamped with the frame it arrived on rather than cleared by a
+    /// teardown hook: the pane and the menu pump draw in an order neither
+    /// owns, so a push is trusted for the frame it was made and the next one,
+    /// and a pane that stops drawing stops being consulted on its own.</para>
+    /// </summary>
+    public void SetHostImportTarget(IActor? target, bool inLibrary)
+    {
+        _hostTarget = target;
+        _hostIsLibrary = inLibrary;
+        _hostPushFrame = ImGui.GetFrameCount();
+    }
+
+    private IActor? _hostTarget;
+    private bool _hostIsLibrary;
+    private int _hostPushFrame = int.MinValue;
+
+    private bool HostPushLive => ImGui.GetFrameCount() - _hostPushFrame <= 1;
+
+    /// <summary>Whether these options are being drawn by the library pane —
+    /// its "From library" row has nowhere to go.</summary>
+    private bool InLibrary => HostPushLive && _hostIsLibrary;
 
     /// <summary>MainWindow supplies actor resolution (the section itself is
     /// binding-free); null until wired.</summary>
@@ -518,14 +560,38 @@ public sealed class PoseFileInspectorSection
                     {
                         if (SelectedSkeleton() is { } skeleton)
                             OpenImport(skeleton);
+                        else
+                            _status = "Select an actor first.";
                     });
+                    // Disabled rather than hidden in library mode: the row
+                    // geometry stays put and the reason is readable.
                     actions.Button("From library",
-                        () => OnLibraryRequested?.Invoke());
+                        () => OnLibraryRequested?.Invoke(),
+                        disabled: InLibrary,
+                        help: InLibrary ? "The library is already open" : null);
                 });
                 form.Actions("Clipboard", actions => actions.Button(
                     "From clipboard", ImportFromClipboard,
                     help: "Import the pose held on the clipboard — Brio's "
                         + "copy is read as-is"));
+                // Brio's next two rows (FileUIHelpers.cs:597-607), both
+                // disabled until their slot holds something.
+                form.Actions("Recall", actions =>
+                {
+                    actions.Button(
+                        "Reapply last", ReapplyLastPose,
+                        disabled: !HasLastImport,
+                        help: HasLastImport
+                            ? "Import the last pose again, through the "
+                                + "options set here now"
+                            : "Nothing has been imported yet");
+                    actions.Button(
+                        "From stash", ImportFromStash,
+                        disabled: _poseStash == null,
+                        help: _poseStash == null
+                            ? "Nothing is stashed — use Export ▸ To stash first"
+                            : $"Apply the stashed pose (stashed {_poseStashedAt:HH:mm:ss} UTC)");
+                });
                 if (withPresets)
                     form.Actions("Presets", actions =>
                     {
@@ -802,6 +868,8 @@ public sealed class PoseFileInspectorSection
                     {
                         if (SelectedSkeleton() is { } skeleton)
                             OpenExport(skeleton);
+                        else
+                            _status = "Select an actor first.";
                     }));
                 form.Actions("Copy", actions =>
                 {
@@ -812,16 +880,9 @@ public sealed class PoseFileInspectorSection
                         help: "Copy the pose in Brio's clipboard format, so "
                             + "it pastes into Brio as well as Poser");
                     actions.Button(
-                        "To stash", () =>
-                        {
-                            if (SelectedSkeleton() is { } skeleton)
-                                _status = _poseFacade.Stash(skeleton.Actor) is
-                                    { Success: false } failed
-                                    ? $"Stash: {failed.Detail}"
-                                    : string.Empty;
-                        },
-                        help: "Hold this pose so it can be applied to another "
-                            + "actor from the inspector's Transfer group");
+                        "To stash", StashPose,
+                        help: "Hold this pose so the import menu's From "
+                            + "stash can apply it to any actor");
                 });
             },
             divider: false);
@@ -946,6 +1007,12 @@ public sealed class PoseFileInspectorSection
 
     public void Draw(Crystarium.FormScope form, ISkeleton skeleton)
     {
+        // The inspector's own mount knows exactly whose FILES section this
+        // is; push it as the host target so a BONE selection (or any
+        // selection shape the actor lookup does not recognise) still resolves
+        // a target for the two menus this row opens.
+        SetHostImportTarget(skeleton.Actor, inLibrary: false);
+
         // Brio's shape: one row of three commands, everything else lives in
         // the two menus Import and Export open (the inline option pile is
         // gone — the import menu owns scope, components, freeze, and the
@@ -999,17 +1066,197 @@ public sealed class PoseFileInspectorSection
         {
             if (rememberPath)
                 _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
-            var options = BuildOptions();
-            if (_smartImport &&
-                path.EndsWith(".pose", StringComparison.OrdinalIgnoreCase) &&
-                PoseFile.Load(path) is { } smartFile)
-                options = SmartRoute(options, smartFile);
-            var imported = _poseFacade.ImportPose(
-                skeleton.Actor, path, options);
-            _status = imported.Success
-                ? string.Empty
-                : $"Import: {imported.Detail}";
+            ImportFromPath(skeleton, path);
         });
+    }
+
+    /// <summary>
+    /// Brio's ImportPose dispatch for a file on disk (FileUIHelpers.cs:
+    /// 671-718) in its exact order: resolve Smart Import first — it MUTATES
+    /// the type pair, so everything after it reads the new state — record the
+    /// source for "Reapply Last Pose", then the .cmp gates, then the ordinary
+    /// build.
+    /// </summary>
+    private void ImportFromPath(ISkeleton skeleton, string path)
+    {
+        bool isCmp = path.EndsWith(".cmp", StringComparison.OrdinalIgnoreCase);
+        string notice = string.Empty;
+        if (_smartImport && LoadForSmartRouting(path, isCmp) is { } smartFile)
+            notice = SmartRoute(skeleton, smartFile);
+
+        // Brio records _lastused before the dispatch (:678), so even a
+        // blocked expression-only .cmp is what "Reapply last" repeats.
+        _lastImportPath = path;
+        _lastImportPose = null;
+
+        var cmp = CmpImportOverride(path, out bool blocked, out var cmpNotice);
+        if (cmpNotice != null)
+            notice = cmpNotice;
+        if (blocked)
+        {
+            _status = notice;
+            return;
+        }
+
+        var imported = _poseFacade.ImportPose(
+            skeleton.Actor, path, cmp ?? BuildOptions());
+        _status = imported.Success ? notice : $"Import: {imported.Detail}";
+    }
+
+    /// <summary>
+    /// Brio's .cmp gates (FileUIHelpers.cs:680-694), for every surface that
+    /// dispatches its own import — this popup and the library tiles, which
+    /// list .cmp files too (PoseLibraryService's LegacyExtension).
+    ///
+    /// <para>A .cmp with NO type checked falls through to the ordinary path,
+    /// exactly as Brio's <c>isCMP &amp; (doBody || doExpression)</c> guard
+    /// does. Expression is impossible for the format: with Body checked too
+    /// it reports and CONTINUES as a body import, alone it reports and
+    /// imports nothing.</para>
+    /// </summary>
+    /// <returns>The preset to substitute, or null when this is not a typed
+    /// .cmp (or the import is blocked outright).</returns>
+    public PoseImportOptions? CmpImportOverride(
+        string path, out bool blocked, out string? notice)
+    {
+        blocked = false;
+        notice = null;
+        if (!path.EndsWith(".cmp", StringComparison.OrdinalIgnoreCase) ||
+            !(_typeBody || _typeExpression))
+            return null;
+
+        if (_typeExpression)
+        {
+            notice = "CMP poses do not support expression import.";
+            if (!_typeBody)
+            {
+                blocked = true;
+                return null;
+            }
+        }
+        return CmpImportOptions();
+    }
+
+    /// <summary>The in-memory twin of <see cref="ImportFromPath"/> — the
+    /// clipboard, the stash and a reapply of either. No .cmp can arrive this
+    /// way: the format only exists on disk, and its loader upgrades to a
+    /// PoseFile before anything else sees it.</summary>
+    private void ImportLoadedPose(
+        ISkeleton skeleton, PoseFile pose, string description, string statusPrefix)
+    {
+        string notice = string.Empty;
+        if (_smartImport)
+            notice = SmartRoute(skeleton, pose);
+
+        _lastImportPose = pose;
+        _lastImportPath = null;
+
+        var imported = _poseFacade.ImportPose(
+            skeleton.Actor, pose, BuildOptions(), description);
+        _status = imported.Success ? notice : $"{statusPrefix}: {imported.Detail}";
+    }
+
+    /// <summary>The file Smart Import classifies. A .cmp is upgraded first,
+    /// exactly as Brio's OneOf match does (FileUIHelpers.cs:337-339), and a
+    /// .pose has its bone names sanitized before classification (:353) so
+    /// legacy Anamnesis names are judged by their game names.</summary>
+    private static PoseFile? LoadForSmartRouting(string path, bool isCmp)
+    {
+        if (isCmp)
+        {
+            try
+            {
+                // Upgrade throws on a .cmp with no race; classification is
+                // advisory, so an unreadable file just routes nothing and the
+                // import itself reports the real failure.
+                return CMToolPoseFile.Load(path)?.Upgrade();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+        if (!path.EndsWith(".pose", StringComparison.OrdinalIgnoreCase))
+            return null;
+        if (PoseFile.Load(path) is not { } file)
+            return null;
+        file.SanitizeBoneNames();
+        return file;
+    }
+
+    /// <summary>Brio's DefaultCMPImporterOptions with the switches that ride
+    /// every state (FileUIHelpers.cs:690-691 forwards freezeOnLoad and the
+    /// model-transform override, and passes transformComponents null so the
+    /// preset's rotation-only mask stands).</summary>
+    private PoseImportOptions CmpImportOptions()
+    {
+        var options = PoseImportOptions.Cmp;
+        options.ResetBeforeImport = _reset;
+        options.FreezeOnImport = _freeze;
+        options.ApplyModelTransform = _modelTransform;
+        return options;
+    }
+
+    /// <summary>Brio's "Reapply Last Pose" (FileUIHelpers.cs:597-601): the
+    /// last imported source again, through the options as they stand NOW —
+    /// which is why it re-enters the same dispatch instead of replaying a
+    /// stored build.</summary>
+    private void ReapplyLastPose()
+    {
+        if (SelectedSkeleton() is not { } skeleton)
+        {
+            _status = "Select an actor first.";
+            return;
+        }
+        if (_lastImportPath is { } path)
+            ImportFromPath(skeleton, path);
+        else if (_lastImportPose is { } pose)
+            ImportLoadedPose(skeleton, pose, "Reapply last pose", "Reapply");
+        else
+            _status = "Nothing has been imported yet.";
+    }
+
+    /// <summary>Brio's "Load From Stash" (FileUIHelpers.cs:603-607): the
+    /// stashed pose file through the ordinary import flow.</summary>
+    private void ImportFromStash()
+    {
+        if (SelectedSkeleton() is not { } skeleton)
+        {
+            _status = "Select an actor first.";
+            return;
+        }
+        if (_poseStash is not { } pose)
+        {
+            _status = "Nothing is stashed.";
+            return;
+        }
+        ImportLoadedPose(skeleton, pose, "Import stashed pose", "Stash");
+    }
+
+    /// <summary>Brio's export-menu "To Stash": a FULL absolute pose capture
+    /// held for the import menu, armed like the file export because the
+    /// capture reads the same raw transform caches
+    /// (<see cref="CleanPoseFacade.CapturePoseFile"/>).</summary>
+    private void StashPose()
+    {
+        if (SelectedSkeleton() is not { } skeleton)
+        {
+            _status = "Select an actor first.";
+            return;
+        }
+        var armed = _poseFacade.CapturePoseFile(skeleton.Actor, pose =>
+        {
+            if (pose == null)
+            {
+                _status = "Stash: the pose could not be captured.";
+                return;
+            }
+            _poseStash = pose;
+            _poseStashedAt = DateTimeOffset.UtcNow;
+            _status = string.Empty;
+        });
+        if (!armed.Success)
+            _status = $"Stash: {armed.Detail}";
     }
 
     public void OpenExport(ISkeleton skeleton)
@@ -1047,7 +1294,12 @@ public sealed class PoseFileInspectorSection
     private PoseImportOptions BuildOptions()
     {
         var options = PoseImportOptions.ForImportType(
-            _typeBody, _typeExpression, _rotation, _position, _scale);
+            _typeBody, _typeExpression, _rotation, _position, _scale,
+            // Smart Import locks the component trio to each preset's own
+            // (Brio nulls transformComponents every frame it is on,
+            // FileUIHelpers.cs:549-552) — which is exactly why the icon row
+            // draws disabled under it.
+            presetComponents: _smartImport);
         options.ResetBeforeImport = _reset;
         options.FreezeOnImport = _freeze;
         // An expression import never moves the actor: Brio passes
@@ -1073,7 +1325,8 @@ public sealed class PoseFileInspectorSection
         PoseImportOptions built, bool body, bool expression)
     {
         var routed = PoseImportOptions.ForImportType(
-            body, expression, _rotation, _position, _scale);
+            body, expression, _rotation, _position, _scale,
+            presetComponents: _smartImport);
         routed.ResetBeforeImport = built.ResetBeforeImport;
         routed.FreezeOnImport = built.FreezeOnImport;
         routed.ApplyModelTransform =
@@ -1081,19 +1334,50 @@ public sealed class PoseFileInspectorSection
         return routed;
     }
 
-    /// <summary>Brio's ResolveSmartImport verdict on a loaded file: a
-    /// face-only or expression-tagged file routes to Expression, a file with
-    /// no face bone to Body, anything mixed imports as configured. (The
-    /// Model-ID auto-appearance branch has no Poser equivalent — appearance is
-    /// delegated to Glamourer.)</summary>
-    private PoseImportOptions SmartRoute(
-        PoseImportOptions options, PoseFile file)
+    /// <summary>
+    /// Brio's ResolveSmartImport (FileUIHelpers.cs:332-438) on a loaded file.
+    /// A face-only or expression-tagged file routes to Expression, a
+    /// body-tagged or face-less file to Body, and a MIXED file is left alone —
+    /// Brio's classification has no else branch.
+    ///
+    /// <para>The verdict SETS the type pair, exactly as Brio mutates its
+    /// popup statics (:377-386): the checkboxes visibly flip, and every later
+    /// read — the CMP gates, the options build, the next frame's draw — sees
+    /// the routed state rather than a build that silently disagrees with what
+    /// the menu shows.</para>
+    ///
+    /// <para>Then Brio's Dawntrail gate (:388-403): an Expression route needs
+    /// BOTH a Dawntrail-capable actor and a pose that looks Dawntrail (the
+    /// tongue bone, or a dawntrail/dt tag). Failing it clears only the
+    /// Expression route — the import CONTINUES with whatever state remains,
+    /// which is Brio's behaviour, not an abort.</para>
+    ///
+    /// <para>The Model-ID auto-appearance branch (:341-351) has no Poser
+    /// equivalent — appearance is delegated to Glamourer.</para>
+    /// </summary>
+    /// <returns>A status line to show, or empty when nothing was blocked.</returns>
+    private string SmartRoute(ISkeleton skeleton, PoseFile file)
     {
         if (PoseFileService.IsExpressionOnlyPose(file))
-            return RouteAsType(options, body: false, expression: true);
-        if (PoseFileService.IsBodyOnlyPose(file))
-            return RouteAsType(options, body: true, expression: false);
-        return options;
+        {
+            _typeExpression = true;
+            _typeBody = false;
+        }
+        else if (PoseFileService.IsBodyOnlyPose(file))
+        {
+            _typeBody = true;
+            _typeExpression = false;
+        }
+
+        if (!_typeExpression)
+            return string.Empty;
+        if (PoseFileService.IsDawntrailSkeleton(skeleton) &&
+            PoseFileService.IsLikelyDawntrailPose(file))
+            return string.Empty;
+
+        _typeExpression = false;
+        return "Smart import: expression skipped — this pose or this actor "
+            + "is not Dawntrail-compatible.";
     }
 
     /// <summary>Brio's "From Clipboard" (FileUIHelpers.cs:574-595): the
@@ -1121,16 +1405,10 @@ public sealed class PoseFileInspectorSection
             _status = $"Clipboard: {reason}";
             return;
         }
-        var options = BuildOptions();
         // Smart Import's file classifier, same as the browse path — the
         // clipboard is just another source of a PoseFile.
-        if (_smartImport)
-            options = SmartRoute(options, pose);
-        var imported = _poseFacade.ImportPose(
-            skeleton.Actor, pose, options, "Import pose from clipboard");
-        _status = imported.Success
-            ? string.Empty
-            : $"Clipboard: {imported.Detail}";
+        ImportLoadedPose(
+            skeleton, pose, "Import pose from clipboard", "Clipboard");
     }
 
     /// <summary>Brio's "To Clipboard" (FileUIHelpers.cs:784-801). Armed like

@@ -328,8 +328,8 @@ public class PoseFileService : IPoseFileService
         // face POSITIONS onto a DT face deforms it. Strip positions for
         // face bones and log once.
         bool preDtFace = poseFile.Bones.Keys.Any(IsFaceBone)
-            && !poseFile.Bones.ContainsKey("j_f_bero_01")
-            && skeleton.GetBone("j_f_bero_01") != null;
+            && !poseFile.Bones.ContainsKey(DawntrailFaceMarkerBone)
+            && IsDawntrailSkeleton(skeleton);
         if (preDtFace)
             _log.Warning("PoseFileService: pre-Dawntrail face detected (no tongue bone) — face positions skipped to protect the DT face");
 
@@ -537,18 +537,23 @@ public class PoseFileService : IPoseFileService
         return true;
     }
 
-    /// <summary>Brio's ExpressionOptions bone scope (PosingService.cs:77-86:
-    /// the head, ears, hair, face, eyes, lips and jaw categories enabled):
-    /// the import-scope face test plus j_kao (head), j_zer/n_ear_ (Viera and
-    /// accessory ears) and j_ex_h/j_ex_met_va (ex-hair strands) —
-    /// BoneCategories.json members <see cref="IsFaceBone"/> does not cover.</summary>
+    /// <summary>
+    /// Brio's ExpressionOptions bone scope, read straight off the shipped
+    /// catalog: the union of the head, ears, hair, face, eyes, lips and jaw
+    /// category prefixes, which is precisely the set its DisableAll +
+    /// EnableCategory run leaves allowed (PosingService.cs:77-86) evaluated
+    /// through BoneFilter's prefix test (BoneFilter.cs:127).
+    ///
+    /// <para>Replaces a hand-rolled predicate that approximated the same set
+    /// from <see cref="IsFaceBone"/>: it was too WIDE (every j_f_* name, so
+    /// the legacy and ex rows Brio leaves disabled rode along, as did bare
+    /// j_ago and j_hana) and too NARROW (j_kao matched only exactly, where
+    /// Brio's entry is a prefix). The catalog is now the only statement of
+    /// this scope.</para>
+    /// </summary>
     internal static bool IsExpressionScopeBone(string boneName) =>
-        boneName == "j_kao" ||
-        IsFaceBone(boneName) ||
-        boneName.StartsWith("j_zer", StringComparison.Ordinal) ||
-        boneName.StartsWith("n_ear_", StringComparison.Ordinal) ||
-        boneName.StartsWith("j_ex_h", StringComparison.Ordinal) ||
-        boneName.StartsWith("j_ex_met_va", StringComparison.Ordinal);
+        ImportBoneCategories.IsInCategories(
+            boneName, ImportBoneCategories.ExpressionCategories);
 
     /// <summary>The bone-filter menu's verdict (Brio
     /// BoneFilter.IsBoneValidUncached, as an exclusion): a disabled
@@ -572,10 +577,28 @@ public class PoseFileService : IPoseFileService
     }
 
     /// <summary>The other half of Brio's Smart Import classifier
-    /// (:382-386): a file whose Character bones include NO face bone is a
-    /// body pose — smart routing keeps the face untouched for it.</summary>
+    /// (:382-386): a file carrying one of the body-only TAGS (Brio's :374
+    /// token list, Contains-matched exactly as the expression list is), or
+    /// one whose Character bones include NO face bone, is a body pose —
+    /// smart routing keeps the face untouched for it. The tag decides on its
+    /// own, before the bones are looked at, because Brio's <c>bodyOnlyTag</c>
+    /// is the first half of an <c>||</c>.</summary>
     public static bool IsBodyOnlyPose(PoseFile poseFile)
     {
+        if (poseFile.Tags is { Count: > 0 } tags)
+        {
+            foreach (var tag in tags)
+            {
+                if (tag == null)
+                    continue;
+                if (tag.Contains("body-only", StringComparison.OrdinalIgnoreCase) ||
+                    tag.Contains("body_only", StringComparison.OrdinalIgnoreCase) ||
+                    tag.Contains("bodyonly", StringComparison.OrdinalIgnoreCase) ||
+                    tag.Contains("body only", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
+
         if (poseFile.Bones.Count == 0)
             return false;
         foreach (var boneName in poseFile.Bones.Keys)
@@ -585,6 +608,43 @@ public class PoseFileService : IPoseFileService
         }
         return true;
     }
+
+    /// <summary>The tongue bone Dawntrail's face rework added — Brio's own
+    /// Dawntrail marker on both sides of its expression gate: the file half
+    /// (FileUIHelpers.cs:361) and the actor half
+    /// (SkeletonPosingCapability.cs:229 <c>CharacterIsDawntrail</c>).</summary>
+    public const string DawntrailFaceMarkerBone = "j_f_bero_01";
+
+    /// <summary>Brio's expression gate, FILE half (FileUIHelpers.cs:392):
+    /// the pose either names the Dawntrail tongue bone or carries a
+    /// "dawntrail"/"dt" tag.</summary>
+    public static bool IsLikelyDawntrailPose(PoseFile poseFile)
+    {
+        foreach (var boneName in poseFile.Bones.Keys)
+        {
+            if (boneName.Equals(
+                    DawntrailFaceMarkerBone, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        if (poseFile.Tags is { Count: > 0 } tags)
+        {
+            foreach (var tag in tags)
+            {
+                if (tag == null)
+                    continue;
+                if (tag.Contains("dawntrail", StringComparison.OrdinalIgnoreCase) ||
+                    tag.Contains("dt", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>Brio's expression gate, ACTOR half
+    /// (SkeletonPosingCapability.cs:229): the live skeleton has the
+    /// Dawntrail tongue bone.</summary>
+    public static bool IsDawntrailSkeleton(ISkeleton skeleton) =>
+        skeleton.GetBone(DawntrailFaceMarkerBone) != null;
 
     /// <summary>Brio ResolveSmartImport's local IsFaceBone (:405-419):
     /// j_kao plus the j_f_/j_eye/j_may/j_ago/j_lip/j_bero prefixes.</summary>

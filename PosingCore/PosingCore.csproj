@@ -29,6 +29,10 @@
 		     Resources/Embedded/Data files so the two plugins land the exact
 		     same A/T-pose. -->
 		<EmbeddedResource Include="Data\RestPoses\*.pose" />
+		<!-- Brio's bone-filter catalog, byte-identical to its
+		     Resources/Embedded/Data/BoneCategories.json so the two plugins
+		     agree bone-for-bone on what every category claims. -->
+		<EmbeddedResource Include="Data\BoneCategories\*.json" />
 	</ItemGroup>
 
 </Project>

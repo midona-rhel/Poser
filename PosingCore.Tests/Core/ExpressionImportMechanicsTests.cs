@@ -87,11 +87,20 @@ public class ExpressionImportMechanicsTests
 
     [Theory]
     // Brio ExpressionOptions categories: head, ears, hair, face, eyes,
-    // lips, jaw (PosingService.cs:77-86).
+    // lips, jaw (PosingService.cs:77-86), evaluated through the shipped
+    // BoneCategories.json prefixes exactly as its BoneFilter does.
     [InlineData("j_kao", true)]            // head — the dance depends on it
     [InlineData("j_f_eye_l", true)]        // eyes
     [InlineData("j_f_ulip_01_r", true)]    // lips
-    [InlineData("j_ago", true)]            // jaw (legacy prefix)
+    [InlineData("j_f_ago", true)]          // jaw
+    [InlineData("j_f_bero_01", true)]      // jaw (Dawntrail tongue)
+    // "j_ago" is the LEGACY row, which ExpressionOptions leaves disabled — it
+    // only looked in-scope while the scope was approximated from a j_f_/j_ago
+    // name test instead of read off the catalog. Same for the "ex" row and
+    // the legacy j_f_ names: Brio enables neither for an expression.
+    [InlineData("j_ago", false)]
+    [InlineData("j_f_noanim_ago", false)]
+    [InlineData("j_f_memoto", false)]
     [InlineData("j_mimi_l", true)]         // ears
     [InlineData("j_zera_a_l", true)]       // ears (Viera)
     [InlineData("n_ear_b_r", true)]        // ears (accessory)
