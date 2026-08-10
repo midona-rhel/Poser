@@ -98,6 +98,16 @@ public static partial class Crystarium
         /// <summary>The preview panel's caption band.</summary>
         private const float PreviewCaptionHeight = 20f;
 
+        /// <summary>
+        /// What a <see cref="RailPanel"/> may take of the rail, at least and at
+        /// most. The panel is handed everything the quick list does not need,
+        /// held between these: below the floor a real options stack is unusable,
+        /// and above the ceiling the destinations it sits under are crushed —
+        /// both ends scroll inside their own region rather than growing.
+        /// </summary>
+        private const float RailFooterMinShare = 0.4f;
+        private const float RailFooterMaxShare = 0.6f;
+
         private static readonly Comparison<FileListingEntry> ByKind =
             static (left, right) =>
             {
@@ -174,6 +184,16 @@ public static partial class Crystarium
         /// </summary>
         public readonly List<FileSidePanel> SidePanels = new();
 
+        /// <summary>
+        /// The caller's own panel UNDER the quick-access list, filling the rest
+        /// of the navigation rail. Its <see cref="FileSidePanel.Width"/> is a
+        /// MINIMUM rail width rather than a column of its own — the rail widens
+        /// to it, and the dialog widens by the difference — and its draw is
+        /// handed the box in screen space exactly as a side panel's is, content
+        /// inset and scrolling included.
+        /// </summary>
+        public FileSidePanel? RailPanel;
+
         public bool IsOpen => _open;
 
         /// <summary>What the panels add to the dialog's width: the columns and
@@ -185,6 +205,18 @@ public static partial class Crystarium
                 total += SidePanels[i].Width + 1f;
             return total;
         }
+
+        /// <summary>The rail's logical width, rule included: its own, or the
+        /// footer panel's when that asks for more.</summary>
+        private float RailWidth() => MathF.Max(
+            Crystarium.ActiveTheme.FileDialog.RailWidth,
+            RailPanel?.Width ?? 0f);
+
+        /// <summary>What the widened rail adds to the dialog — the browser
+        /// keeps its own width whatever the rail carries, exactly as a side
+        /// panel's column does.</summary>
+        private float RailExtra() =>
+            RailWidth() - Crystarium.ActiveTheme.FileDialog.RailWidth;
 
         private string SurfaceId => $"{_title}{_id}";
 
@@ -202,7 +234,8 @@ public static partial class Crystarium
                 FloatingSurface.Window(
                     SurfaceId,
                     ref _open,
-                    Crystarium.ActiveTheme.FileDialog.Width + PanelWidth(),
+                    Crystarium.ActiveTheme.FileDialog.Width
+                        + PanelWidth() + RailExtra(),
                     Crystarium.ActiveTheme.FileDialog.Height,
                     DrawFrame);
 
@@ -269,7 +302,7 @@ public static partial class Crystarium
                     Title = _title,
                     OnClose = Close,
                     CloseHelp = "Close without choosing a file",
-                    RailWidth = theme.FileDialog.RailWidth,
+                    RailWidth = RailWidth(),
                     BandHeight = theme.Floating.ModalBarHeight,
                     HostPaintsChrome = hostPaintsChrome,
                     FooterRight = right =>
@@ -365,17 +398,19 @@ public static partial class Crystarium
         }
 
         /// <summary>The rail's content: the frame owns the band and its rule,
-        /// this owns the inset and the rows.</summary>
+        /// this owns the inset, the rows, and the split when a footer panel
+        /// stands under them.</summary>
         private void DrawQuick(WindowFrameRect rail, float scale)
         {
             Theme theme = Crystarium.ActiveTheme;
             float inset = theme.Page.Inset;
+            WindowFrameRect list = DrawRailFooter(rail, scale);
             int picked = -1;
-            ImGui.SetCursorScreenPos(rail.Min + new Vector2(inset * scale));
+            ImGui.SetCursorScreenPos(list.Min + new Vector2(inset * scale));
             ScrollRegion(
                 $"{_id}-quick",
-                rail.Size.X / scale - inset * 2f,
-                rail.Size.Y / scale - inset * 2f,
+                list.Size.X / scale - inset * 2f,
+                list.Size.Y / scale - inset * 2f,
                 region =>
                 {
                     float width = RowWidth(region) * scale;
@@ -412,6 +447,41 @@ public static partial class Crystarium
             // the loop is walking.
             if (picked >= 0)
                 Travel(_quick[picked].Path);
+        }
+
+        /// <summary>
+        /// Seats <see cref="RailPanel"/> at the BOTTOM of the rail and returns
+        /// what is left for the quick list. The panel takes everything the
+        /// destinations do not need — they are a known count of rows, so the
+        /// split is measured, not guessed — held between the two shares so
+        /// neither side can crush the other; both scroll inside their own box.
+        /// The seam is the frame's own rule, run the rail's full width.
+        /// </summary>
+        private WindowFrameRect DrawRailFooter(WindowFrameRect rail, float scale)
+        {
+            if (RailPanel is not { } panel || !(rail.Size.Y > 0f))
+                return rail;
+
+            Theme theme = Crystarium.ActiveTheme;
+            float rule = MathF.Max(1f, scale);
+            float rows = (_quick.Count * theme.Controls.ListRowHeight
+                + theme.Page.Inset * 2f) * scale;
+            float height = Math.Clamp(
+                rail.Size.Y - rows - rule,
+                rail.Size.Y * RailFooterMinShare,
+                rail.Size.Y * RailFooterMaxShare);
+            float top = rail.Max.Y - height;
+
+            ImGui.GetWindowDrawList().AddRectFilled(
+                new Vector2(rail.Min.X, top - rule),
+                new Vector2(rail.Max.X, top),
+                ImGui.ColorConvertFloat4ToU32(FormSeparatorColor));
+            panel.Draw(
+                new Vector2(rail.Min.X, top),
+                new Vector2(rail.Size.X, height),
+                SelectedFile);
+            return new WindowFrameRect(
+                rail.Min, new Vector2(rail.Max.X, top - rule));
         }
 
         /// <summary>The body slot: the explorer, the caller's own columns, and

@@ -62,6 +62,12 @@ public sealed class CleanPoseFacade
     /// 4-tick window included.</summary>
     private bool _importArming;
 
+    /// <summary>Whether an import is armed or still applying. The engine takes
+    /// ONE at a time (see <see cref="BeginImport"/>), so a caller that would
+    /// only be refused — the pose preview's staged sequence — waits on this
+    /// instead of spending its stage against a failure.</summary>
+    public bool IsImportBusy => _importArming || _imports.IsPending;
+
     private readonly PoseImportCapture _imports;
     private readonly PoseExportCapture _exports;
     private readonly Poser.Config.ConfigurationService _configuration;

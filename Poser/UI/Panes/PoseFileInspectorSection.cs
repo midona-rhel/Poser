@@ -107,17 +107,17 @@ public sealed class PoseFileInspectorSection
         _config = config;
         _autoSave = autoSave;
         _preview = preview;
-        _importPreview = new PosePreviewBinder(preview);
+        _importPreview = new PosePreviewBinder(preview, poseFacade);
         _freeze = config.Config.FreezeActorOnPoseImport;
 
-        // The import dialog is a THREE-column surface (user design): the file
-        // list, the live preview of what the highlighted file does under the
-        // options as they stand, and the options themselves. Declared once —
-        // the dialog sizes itself around them.
+        // The import dialog's shape (user 2026-08-10): the options belong UNDER
+        // the quick-access rail, on the left, with the file list and the live
+        // preview taking the rest. Declared once — the dialog sizes itself
+        // around both, the rail widening to the options' own width.
+        _importBrowser.RailPanel =
+            new FileSidePanel(ImportOptionsColumnWidth, DrawImportOptionsPanel);
         _importBrowser.SidePanels.Add(
             new FileSidePanel(ImportPreviewColumnWidth, DrawImportPreviewPanel));
-        _importBrowser.SidePanels.Add(
-            new FileSidePanel(ImportOptionsColumnWidth, DrawImportOptionsPanel));
     }
 
     public void DrawBrowsers()
@@ -397,10 +397,12 @@ public sealed class PoseFileInspectorSection
             previewCap: size.Y * PreviewRailShare);
     }
 
-    // ── the import dialog's two columns ──────────────────────────────────
+    // ── the import dialog's two panels ───────────────────────────────────
     // The user's design: pick a file, see exactly what the options standing
-    // right now would make of it, confirm. The dialog's own Load button is the
-    // import, so neither column carries an action that leaves it.
+    // right now would make of it, confirm. The options sit UNDER the dialog's
+    // quick-access rail and the preview stands right of the listing; the
+    // dialog's own Load button is the import, so neither panel carries an
+    // action that leaves it.
 
     /// <summary>The preview column, logical px: the width at which Ktisis'
     /// portrait aspect fills the dialog's body height exactly — 176 less two
@@ -409,13 +411,20 @@ public sealed class PoseFileInspectorSection
     /// narrows the render to hold the aspect rather than stretch it.</summary>
     private const float ImportPreviewColumnWidth = 176f;
 
-    /// <summary>The options column, logical px — the import menu's own width,
-    /// which is what the section stack was tuned against.</summary>
+    /// <summary>What the options ask the dialog's RAIL to be, logical px — the
+    /// import menu's own width, which is what the section stack was tuned
+    /// against. The rail widens to it and the window widens by the
+    /// difference.</summary>
     private const float ImportOptionsColumnWidth = MenuWidth;
 
     /// <summary>Shown in the empty well before any file is highlighted.
     /// </summary>
     private const string ImportPreviewIdleText = "Pick a pose file to preview.";
+
+    /// <summary>Shown while the binder is capturing the target's own pose —
+    /// the stance every previewed file is shown landing ON. Nothing is stated
+    /// until it lands, so the well says why.</summary>
+    private const string ImportPreviewRebaseText = "Reading the actor's pose…";
 
     private const string ImportOptionsScrollId = "##import-dialog-options";
 
@@ -443,15 +452,18 @@ public sealed class PoseFileInspectorSection
         DrawPreviewBlock(
             origin + new Vector2(inset),
             size - new Vector2(inset * 2f),
-            ImportPreviewIdleText);
+            _importPreview.IsWaitingForBaseline
+                ? ImportPreviewRebaseText
+                : ImportPreviewIdleText);
     }
 
     /// <summary>
-    /// The dialog's OPTIONS column: the same section stack the import menu
-    /// shows, minus every action and minus the preview block — this dialog has
-    /// a preview column of its own — scrolling inside its own column. NO right
-    /// padding on the region: the scrollbar sits on the column's edge and IS
-    /// the trailing inset, the same rule the file list follows.
+    /// The dialog's OPTIONS panel, under the quick-access rail: the same
+    /// section stack the import menu shows, minus every action and minus the
+    /// preview block — this dialog has a preview column of its own — scrolling
+    /// inside the box the rail leaves it. NO right padding on the region: the
+    /// scrollbar sits on the panel's edge and IS the trailing inset, the same
+    /// rule the file list follows.
     /// </summary>
     private void DrawImportOptionsPanel(
         Vector2 origin, Vector2 size, string? highlighted)
@@ -499,6 +511,11 @@ public sealed class PoseFileInspectorSection
     /// the actor the confirm would land on, through the options as they stand
     /// right now, trimmed to a pose. Re-poses on a highlight change AND on an
     /// option change — the binder's compare is the library rail's.
+    ///
+    /// <para>The options travel VERBATIM apart from the two the preview may
+    /// never honor (see <see cref="PosePreviewBinder.Trim"/>): "Reset first"
+    /// included, because the binder stands the preview body in the target's own
+    /// pose first and a layering import must be seen layering.</para>
     ///
     /// <para>A highlight that is not a pose file — a folder row, and the empty
     /// selection every folder change leaves — holds whatever stands rather than
@@ -1135,13 +1152,35 @@ public sealed class PoseFileInspectorSection
     private void ApplyRestPreset(RestPose pose)
     {
         if (SelectedSkeleton() is { } skeleton)
+        {
+            NotePoseApplied();
             _status = _poseFacade.ApplyRestPose(skeleton.Actor, pose) is
                 { Success: false } failed
                 ? $"Preset: {failed.Detail}"
                 : string.Empty;
+        }
         else
             _status = "Select an actor first.";
     }
+
+    /// <summary>
+    /// Every import THIS section dispatches passes through here first: the
+    /// actor it lands on is the one a live preview rebases onto, so the
+    /// captured stance is now stale. The dialog's own binder is invalidated
+    /// directly; the library rail runs a binder of its own and watches
+    /// <see cref="TargetPoseRevision"/> for the same edge — a pull, so neither
+    /// surface has to know the other is up.
+    /// </summary>
+    private void NotePoseApplied()
+    {
+        TargetPoseRevision++;
+        _importPreview.InvalidateBaseline();
+    }
+
+    /// <summary>Bumped whenever these menus have posed an actor. A preview
+    /// drive compares it against what it last saw and re-captures its
+    /// baseline when it moved.</summary>
+    public int TargetPoseRevision { get; private set; }
 
     /// <summary>Brio's bone-filter editor on the glass surface: per-group
     /// non-collapsible sections whose HEADER ROW carries the group's own
@@ -1342,6 +1381,7 @@ public sealed class PoseFileInspectorSection
             return;
         }
 
+        NotePoseApplied();
         var imported = _poseFacade.ImportPose(
             skeleton.Actor, path, cmp ?? BuildOptions());
         _status = imported.Success ? notice : $"Import: {imported.Detail}";
@@ -1395,6 +1435,7 @@ public sealed class PoseFileInspectorSection
         _lastImportPose = pose;
         _lastImportPath = null;
 
+        NotePoseApplied();
         var imported = _poseFacade.ImportPose(
             skeleton.Actor, pose, BuildOptions(), description);
         _status = imported.Success ? notice : $"{statusPrefix}: {imported.Detail}";

@@ -14,6 +14,25 @@ using Poser.Services;
 namespace Poser.Game.Preview;
 
 /// <summary>
+/// ONE pose the preview body should stand in: a file on disk, or a pose held
+/// in memory (the rebase baseline, which no path names).
+/// </summary>
+/// <param name="Key">What the request is DEDUPED on in place of a path — the
+/// path itself for a file, a caller-chosen stand-in for an in-memory pose.
+/// Restating the same key with the same options INSTANCE is free.</param>
+public readonly record struct PosePreviewRequest(
+    string Key, string? Path, PoseFile? Pose, PoseImportOptions Options)
+{
+    public static PosePreviewRequest File(
+        string path, PoseImportOptions options) =>
+        new(path, path, null, options);
+
+    public static PosePreviewRequest Memory(
+        PoseFile pose, string key, PoseImportOptions options) =>
+        new(key, null, pose, options);
+}
+
+/// <summary>
 /// The pose library's live preview: the game's own inspect CharaView (index 1)
 /// renders a hidden body into <c>RenderTargetManager.CharaViewTextures[1]</c>,
 /// and selected pose files are applied to that body through the ordinary
@@ -63,8 +82,15 @@ public sealed unsafe class PosePreviewService : IDisposable
     // Draw-thread requests, framework-thread consumption.
     private readonly object _gate = new();
     private nint _requestedSource;
-    private string? _requestedPath;
-    private PoseImportOptions? _requestedOptions;
+
+    /// <summary>The standing request, in the order it must land: the first
+    /// stage alone for a plain <see cref="ShowPose(string, PoseImportOptions)"/>,
+    /// both for a <see cref="ShowSequence"/>. The SERIAL is what the framework
+    /// side watches — a new statement supersedes whatever the sequence had
+    /// reached, wholesale.</summary>
+    private PosePreviewRequest? _requestedFirst;
+    private PosePreviewRequest? _requestedSecond;
+    private long _requestSerial;
 
     private volatile bool _open;
     private volatile bool _rendering;
@@ -75,8 +101,13 @@ public sealed unsafe class PosePreviewService : IDisposable
     private bool _initialized;
     private nint _copiedSource;
     private uint _counter = 1;
-    private string? _appliedPath;
-    private PoseImportOptions? _appliedOptions;
+
+    /// <summary>The serial the body currently stands for, and how many of its
+    /// stages have been dispatched. -1 is "this body stands for nothing" — a
+    /// fresh CharaView, a re-copied appearance — which re-runs the whole
+    /// sequence rather than only its tail.</summary>
+    private long _appliedSerial = -1;
+    private int _appliedStage;
     private float _viewPanY;
     private float _zoomAccum;
     private Vector3? _panBasePosition;
@@ -182,12 +213,48 @@ public sealed unsafe class PosePreviewService : IDisposable
     /// a new instance re-imports — that is how an import-option change reaches
     /// a preview whose path never moved.
     /// </summary>
-    public void ShowPose(string path, PoseImportOptions options)
+    public void ShowPose(string path, PoseImportOptions options) =>
+        Request(PosePreviewRequest.File(path, options), null);
+
+    /// <summary>The same statement for a pose held in memory — the rebase
+    /// baseline, which is a capture and not a file. <paramref name="key"/>
+    /// stands in for the path in the dedupe.</summary>
+    public void ShowPose(PoseFile pose, string key, PoseImportOptions options) =>
+        Request(PosePreviewRequest.Memory(pose, key, options), null);
+
+    /// <summary>
+    /// TWO poses in order, which is how a preview shows what an import will
+    /// actually do: the body is first stood in the target's own pose
+    /// (<paramref name="first"/>) and the file then lands on top of it
+    /// (<paramref name="second"/>) with the user's real options — a layering
+    /// import layers over the same stance the confirm will.
+    ///
+    /// <para>The pair is ONE request: a later statement replaces both stages
+    /// wherever the sequence had got to, and the sequence itself survives every
+    /// retry the pending path makes (the body has no binding yet, an import is
+    /// already in flight) because the stage counter, not the caller, is what
+    /// advances it.</para>
+    /// </summary>
+    public void ShowSequence(PosePreviewRequest first, PosePreviewRequest second) =>
+        Request(first, second);
+
+    /// <summary>
+    /// The one door every statement goes through. A restatement of what already
+    /// stands is FREE — the binder restates every frame while the service warms
+    /// up — and identity is the same rule as before the sequence existed: the
+    /// key, and the options INSTANCE.
+    /// </summary>
+    private void Request(PosePreviewRequest first, PosePreviewRequest? second)
     {
         lock (_gate)
         {
-            _requestedPath = path;
-            _requestedOptions = options;
+            if (_requestedFirst is { } standing
+                && standing == first
+                && Nullable.Equals(_requestedSecond, second))
+                return;
+            _requestedFirst = first;
+            _requestedSecond = second;
+            _requestSerial++;
         }
     }
 
@@ -279,8 +346,9 @@ public sealed unsafe class PosePreviewService : IDisposable
         lock (_gate)
         {
             _requestedSource = nint.Zero;
-            _requestedPath = null;
-            _requestedOptions = null;
+            _requestedFirst = null;
+            _requestedSecond = null;
+            _requestSerial++;
         }
 
         // Unsubscribe eagerly rather than inside the framework hop: a hop that
@@ -309,8 +377,7 @@ public sealed unsafe class PosePreviewService : IDisposable
         _initialized = true;
         _counter = 1;
         _copiedSource = nint.Zero;
-        _appliedPath = null;
-        _appliedOptions = null;
+        ForgetAppliedPose();
         ClearPanBase();
         CopyAppearance(agent);
         agent->CharaView.Update(_counter, agent->CharaView.GetCharacter());
@@ -322,8 +389,7 @@ public sealed unsafe class PosePreviewService : IDisposable
             return;
         _initialized = false;
         _copiedSource = nint.Zero;
-        _appliedPath = null;
-        _appliedOptions = null;
+        ForgetAppliedPose();
         _counter = 1;
         // The body goes back where the game put it, and the next preview opens
         // centred — a released CharaView loses its yaw and zoom the same way.
@@ -349,9 +415,16 @@ public sealed unsafe class PosePreviewService : IDisposable
         _copiedSource = source;
         // A new body carries none of the previous pose, and stands wherever the
         // game stages it — the pan base is re-read against it.
-        _appliedPath = null;
-        _appliedOptions = null;
+        ForgetAppliedPose();
         ClearPanBase();
+    }
+
+    /// <summary>The body stands for nothing: the standing request runs again
+    /// from its FIRST stage.</summary>
+    private void ForgetAppliedPose()
+    {
+        _appliedSerial = -1;
+        _appliedStage = 0;
     }
 
     private void OnFrameworkUpdate(IFramework framework)
@@ -401,30 +474,45 @@ public sealed unsafe class PosePreviewService : IDisposable
     }
 
     /// <summary>
-    /// The pending pose lands as soon as the preview body has an auxiliary
+    /// The pending sequence lands as soon as the preview body has an auxiliary
     /// actor AND a stable binding — the import engine resolves every target
     /// through the binding registry, whose refresh runs on its own cadence.
-    /// Until then, and after any failure, the LATEST requested path is retried
-    /// next tick.
+    /// Until then the standing request is retried next tick, from whichever
+    /// stage it had reached.
     ///
-    /// A request is already applied only when BOTH the path and the options
-    /// INSTANCE are the ones that landed: the binder restates the cached
-    /// instance every frame (so that costs nothing), and hands over a fresh
-    /// instance exactly when the import options changed under it.
+    /// <para>ONE STAGE PER ARM: the engine takes a single import at a time, so
+    /// the second stage waits on the first through <see cref="CleanPoseFacade.
+    /// IsImportBusy"/> rather than failing against it. A stage that is REFUSED
+    /// (an unreadable file, nothing in scope) is spent all the same — retrying
+    /// it would re-read the file every tick forever — and the sequence moves
+    /// on, so a baseline that cannot be stood in still lets the file show.</para>
+    ///
+    /// <para>The serial is the supersession: a statement made mid-sequence
+    /// replaces both stages, and the counter restarts at the first.</para>
     /// </summary>
     private void TryApplyPendingPose(nint previewAddress)
     {
-        string? path;
-        PoseImportOptions? options;
+        PosePreviewRequest? first;
+        PosePreviewRequest? second;
+        long serial;
         lock (_gate)
         {
-            path = _requestedPath;
-            options = _requestedOptions;
+            first = _requestedFirst;
+            second = _requestedSecond;
+            serial = _requestSerial;
         }
-        if (path == null || options == null)
+        if (first is null)
             return;
-        if (string.Equals(path, _appliedPath, StringComparison.Ordinal)
-            && ReferenceEquals(options, _appliedOptions))
+        if (serial != _appliedSerial)
+        {
+            _appliedSerial = serial;
+            _appliedStage = 0;
+        }
+        if ((_appliedStage == 0 ? first : second) is not { } request)
+            return;
+        // The engine arms one import at a time; a stage refused for that alone
+        // would be spent below, so the wait happens before it is attempted.
+        if (_poses.IsImportBusy)
             return;
 
         IActor? actor = null;
@@ -440,11 +528,13 @@ public sealed unsafe class PosePreviewService : IDisposable
         if (actor == null || _bindings.GetActorId(actor) == null)
             return;
 
-        var result = _poses.ImportPose(actor, path, options);
+        var result = request.Pose is { } pose
+            ? _poses.ImportPose(actor, pose, request.Options, "Preview pose")
+            : _poses.ImportPose(actor, request.Path!, request.Options);
         if (!result.Success)
-            return;
-        _appliedPath = path;
-        _appliedOptions = options;
+            _log.Debug(
+                $"Pose preview could not show '{request.Key}': {result.Detail}");
+        _appliedStage++;
     }
 
     /// <summary>

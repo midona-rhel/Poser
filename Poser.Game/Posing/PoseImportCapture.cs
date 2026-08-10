@@ -121,6 +121,10 @@ public sealed class PoseImportCapture : IDisposable
         /// fires it; a pending import dropped by Dispose does not either
         /// (session teardown restores animation state wholesale).</summary>
         public Action<bool>? OnFinished;
+        /// <summary>The import targets the pose library's hidden preview
+        /// body. Its changes are scenery, never user edits — they must not
+        /// spend the user's undo stack.</summary>
+        public required bool PreviewTarget;
         public ImportStage Stage = ImportStage.Apply;
         /// <summary>Whether this is an expression import — it runs the head
         /// restore and, at the very end, Brio's whole-pose flatten
@@ -208,6 +212,12 @@ public sealed class PoseImportCapture : IDisposable
         if (plan.IsEmpty)
             return GestureResult.Fail("Nothing in this file applies to the chosen scope.");
 
+        // A plan's bones all belong to one actor; any of them names it.
+        var planActor = plan.ModelActor
+            ?? (plan.Writes.Count > 0 ? plan.Writes[0].Bone.Skeleton.Actor
+                : plan.Resets.Count > 0 ? plan.Resets[0].Skeleton.Actor
+                : null);
+
         var import = new Import
         {
             Generation = ++_generation,
@@ -218,6 +228,7 @@ public sealed class PoseImportCapture : IDisposable
             Resets = new HashSet<TransformTargetId>(),
             OnFinished = onFinished,
             Expression = expression,
+            PreviewTarget = planActor?.ActorKind == ActorKind.Preview,
         };
 
         // Resolve and capture EVERYTHING before mutating anything, so a
@@ -933,6 +944,11 @@ public sealed class PoseImportCapture : IDisposable
     /// </summary>
     private string? AppendHistory(Import import)
     {
+        // Preview-body imports happen once per browsed file: recording them
+        // would bury the user's real edits under scenery entries.
+        if (import.PreviewTarget)
+            return null;
+
         var before = new List<TransformTargetState>();
         var after = new List<TransformTargetState>();
         foreach (var target in import.Order)

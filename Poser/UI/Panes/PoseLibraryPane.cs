@@ -232,6 +232,11 @@ public sealed class PoseLibraryPane
     /// the three moves.</summary>
     private readonly PosePreviewBinder _previewBinder;
 
+    /// <summary>The last value of <see cref="PoseFileInspectorSection.
+    /// TargetPoseRevision"/> this pane acted on — the edge on which the
+    /// preview's rebase baseline is captured again.</summary>
+    private int _seenPoseRevision;
+
     /// <summary>Whether the pane is the workspace's current content. The first
     /// draw after it becomes true is the old window's OnOpen.</summary>
     private bool _showing;
@@ -270,7 +275,7 @@ public sealed class PoseLibraryPane
         _autoSave = autoSave;
         _files = files;
         _actors = actors;
-        _previewBinder = new PosePreviewBinder(preview);
+        _previewBinder = new PosePreviewBinder(preview, poseFacade);
 
         _vm.OnQuery = next => _vm.Query = next;
         _vm.OnSelectFolder = SelectFolder;
@@ -1299,6 +1304,16 @@ public sealed class PoseLibraryPane
             return;
         }
 
+        // The rail's own option menus can pose the target under the preview
+        // (a rest preset, "From clipboard"), and so can this pane's applies:
+        // either way the stance the binder rebases onto has moved and has to
+        // be read again. One pull per frame, no wiring between the surfaces.
+        if (_files.TargetPoseRevision != _seenPoseRevision)
+        {
+            _seenPoseRevision = _files.TargetPoseRevision;
+            _previewBinder.InvalidateBaseline();
+        }
+
         var path = _vm.Tiles[_vm.Selected].ThumbKey;
         // The candidate is the FILE-FREE half of the real build, so the poll
         // costs no read per frame; the real build happens only when the binder
@@ -1594,6 +1609,10 @@ public sealed class PoseLibraryPane
             _note = cmpNote;
             return;
         }
+        // The target's stance is about to change, so the preview's rebase
+        // baseline is stale from this call on — the NEXT tile has to be shown
+        // landing on this one, not on what stood before it.
+        _previewBinder.InvalidateBaseline();
         var result = _poseFacade.ImportPose(actor, path, BuildImportOptions(path));
         _note = result.Success ? cmpNote : Failure(result);
     }
