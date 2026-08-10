@@ -62,6 +62,13 @@ public static partial class Crystarium
     /// <param name="onOpenChanged">Null makes the section NON-collapsible —
     /// no header hit-test, no chevron — for hosts like popovers where a
     /// section is structure, not disclosure.</param>
+    /// <param name="dense">The COMPACT form: rows pack at the checklist's
+    /// <see cref="Theme.ControlTokens.ListRowHeight"/> pitch instead of the
+    /// form row's, and the header drops its pre-title padding — for hosts
+    /// like the import dialog's options band, where a section is a tight
+    /// column and the ordinary form's breathing room reads as emptiness.
+    /// Every metric stays a theme token; only which token is consulted
+    /// changes.</param>
     public static float Section(
         string id,
         string title,
@@ -71,10 +78,11 @@ public static partial class Crystarium
         Action<bool>? onOpenChanged,
         Action<FormScope> content,
         bool divider = true,
-        float? labelColumnWidth = null)
+        float? labelColumnWidth = null,
+        bool dense = false)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        var page = new PageScope(id, origin, width, scale, labelColumnWidth);
+        var page = new PageScope(id, origin, width, scale, labelColumnWidth, dense);
         page.DrawStandaloneSection(
             title, open, onOpenChanged, content, divider);
         page.Complete(origin, width);
@@ -117,10 +125,11 @@ public static partial class Crystarium
         private readonly float _width;
         private readonly float _scale;
         private readonly float _labelWidth;
+        private readonly bool _dense;
         private float _y;
 
         internal PageScope(string id, Vector2 origin, float width, float scale,
-            float? labelColumnWidth = null)
+            float? labelColumnWidth = null, bool dense = false)
         {
             _id = id;
             _origin = origin;
@@ -128,7 +137,17 @@ public static partial class Crystarium
             _scale = scale;
             _labelWidth = labelColumnWidth
                 ?? ActiveTheme.Form.LabelColumnWidth;
+            _dense = dense;
         }
+
+        /// <summary>The pitch this page's rows pack at, logical px: the
+        /// checklist token when dense, the form token otherwise. Every row
+        /// primitive centres and advances against THIS rather than reading
+        /// the form token directly, which is the whole of the dense
+        /// mechanism.</summary>
+        internal float RowHeight => _dense
+            ? ActiveTheme.Controls.ListRowHeight
+            : ActiveTheme.Controls.FormRowHeight;
 
         public void EmptyState(string text = "Select an actor or bone in the sidebar.")
         {
@@ -206,7 +225,11 @@ public static partial class Crystarium
                 return;
             }
 
-            _y += page.SectionPaddingTop;
+            // Dense sections spend nothing above the title: the header row's
+            // own centering is the whole gap, which is what lets a band
+            // column fit two tight rows under it.
+            if (!_dense)
+                _y += page.SectionPaddingTop;
 
             float headerTop = _origin.Y + _y * _scale;
             float headerHeight = page.SectionHeaderHeight * _scale;
@@ -250,13 +273,14 @@ public static partial class Crystarium
         {
             float top = _origin.Y + _y * _scale;
             var row = new FormRowScope(
-                new(_origin.X, top), _width, _scale, _labelWidth);
+                new(_origin.X, top), _width, _scale, _labelWidth, RowHeight);
             if (!string.IsNullOrEmpty(label))
                 FormLabel(
                     row.Origin,
                     row.LabelWidth,
                     _scale,
-                    label);
+                    label,
+                    RowHeight);
             return row;
         }
 
@@ -266,8 +290,7 @@ public static partial class Crystarium
             string? help,
             float? logicalHeight = null)
         {
-            float height =
-                logicalHeight ?? ActiveTheme.Controls.FormRowHeight;
+            float height = logicalHeight ?? RowHeight;
             RegisterHelp($"{id}-row", row.Origin,
                 row.Origin + new Vector2(row.Width,
                     height * row.Scale), help);
@@ -397,7 +420,8 @@ public static partial class Crystarium
                 actionWidth,
                 row.Origin.Y,
                 true,
-                id);
+                id,
+                row.RowHeight);
             _page.EndRow(row, id, help);
         }
 
@@ -450,8 +474,7 @@ public static partial class Crystarium
             var row = _page.BeginRow(label);
             float gap = ActiveTheme.Page.ActionGap * row.Scale;
             float boxSide = ActiveTheme.Controls.CheckboxSize * row.Scale;
-            float rowHeight =
-                ActiveTheme.Controls.FormRowHeight * row.Scale;
+            float rowHeight = row.RowHeight * row.Scale;
             var captionStyle = new TextStyle
             {
                 Size = ActiveTheme.Typography.LabelSize,
@@ -634,7 +657,8 @@ public static partial class Crystarium
                     actionWidth,
                     row.Origin.Y,
                     true,
-                    id);
+                    id,
+                    row.RowHeight);
             _page.EndRow(row, id, help);
         }
 
@@ -724,7 +748,8 @@ public static partial class Crystarium
             if (cancel != null)
                 DrawActions(actions.Items,
                     row.ControlOrigin.X + row.ControlWidth - (actionWidth - gap),
-                    actionWidth - gap, row.Origin.Y, true, id);
+                    actionWidth - gap, row.Origin.Y, true, id,
+                    row.RowHeight);
             _page.EndRow(row, id, help);
         }
 
@@ -823,7 +848,7 @@ public static partial class Crystarium
             DrawActions(actions.Items,
                 fullWidth ? row.Origin.X : row.ControlOrigin.X,
                 fullWidth ? row.Width : row.ControlWidth,
-                row.Origin.Y, alignRight, id);
+                row.Origin.Y, alignRight, id, row.RowHeight);
             _page.EndRow(row, id, help);
         }
 
@@ -907,7 +932,7 @@ public static partial class Crystarium
                 });
             DrawActions(actions.Items,
                 row.ControlOrigin.X + row.ControlWidth - actionWidth,
-                actionWidth, row.Origin.Y, true, id);
+                actionWidth, row.Origin.Y, true, id, row.RowHeight);
             _page.EndRow(row, id, help);
         }
 
@@ -1429,8 +1454,14 @@ public static partial class Crystarium
         /// shared token.</summary>
         public float LabelWidth { get; }
 
+        /// <summary>The row's pitch in LOGICAL px — the page's dense or
+        /// ordinary token, stated once so centering and advancing agree.
+        /// </summary>
+        public float RowHeight { get; }
+
         internal FormRowScope(
-            Vector2 origin, float width, float scale, float labelWidth)
+            Vector2 origin, float width, float scale, float labelWidth,
+            float rowHeight)
         {
             Origin = origin;
             Width = width;
@@ -1438,12 +1469,12 @@ public static partial class Crystarium
             LabelWidth = labelWidth * scale;
             ControlOrigin = origin + new Vector2(LabelWidth, 0f);
             ControlWidth = width - LabelWidth;
+            RowHeight = rowHeight;
         }
 
         public Vector2 CenterControl(float controlHeight) => new(
             ControlOrigin.X,
-            Origin.Y + (ActiveTheme.Controls.FormRowHeight - controlHeight) *
-                0.5f * Scale);
+            Origin.Y + (RowHeight - controlHeight) * 0.5f * Scale);
     }
 
     private static float MeasureActions(
@@ -1496,9 +1527,11 @@ public static partial class Crystarium
         MeasureActions(actions, scale, availableWidth, out _);
 
     private static void DrawActions(IReadOnlyList<ActionItem> actions,
-        float regionX, float regionWidth, float top, bool alignRight, string id)
+        float regionX, float regionWidth, float top, bool alignRight, string id,
+        float? rowHeight = null)
     {
         float scale = ImGuiHelpers.GlobalScale;
+        float band = rowHeight ?? ActiveTheme.Controls.FormRowHeight;
         float gap = ActiveTheme.Page.ActionGap * scale;
         float total = MeasureActions(
             actions, scale, regionWidth, out float fillWidth);
@@ -1515,8 +1548,7 @@ public static partial class Crystarium
             {
                 ImGui.SetCursorScreenPos(new(
                     x,
-                    top + (ActiveTheme.Controls.FormRowHeight - height)
-                        * 0.5f * scale));
+                    top + (band - height) * 0.5f * scale));
                 Crystarium.IconButton(
                     glyph,
                     action.OnClick,
@@ -1535,8 +1567,7 @@ public static partial class Crystarium
             };
             ImGui.SetCursorScreenPos(new(
                 x,
-                    top + (ActiveTheme.Controls.FormRowHeight - height)
-                    * 0.5f * scale));
+                top + (band - height) * 0.5f * scale));
             ButtonAtWidth(
                 action.Label,
                 action.OnClick,
@@ -1706,10 +1737,12 @@ public static partial class Crystarium
     /// <summary>The form's label slot: 12px regular in the label column,
     /// band-centred at the row height.</summary>
     private static void FormLabel(
-        Vector2 origin, float columnWidth, float scale, string label) =>
+        Vector2 origin, float columnWidth, float scale, string label,
+        float? rowHeight = null) =>
         LabelInBand(
             origin,
-            new(columnWidth, ActiveTheme.Controls.FormRowHeight * scale),
+            new(columnWidth,
+                (rowHeight ?? ActiveTheme.Controls.FormRowHeight) * scale),
             label,
             new TextStyle
             {

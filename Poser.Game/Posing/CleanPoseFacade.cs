@@ -88,6 +88,22 @@ public sealed class CleanPoseFacade
         Action<bool>? onFinished = null)
     {
         var description = $"Export {System.IO.Path.GetFileName(path)}";
+        // The export capture insists on the framework thread
+        // (PoseExportCapture.Begin), and the ONE caller — the save dialog's
+        // confirm — arms from the draw thread. Self-marshal exactly like
+        // CapturePoseFile below: Ok means armed, and a refusal on the far
+        // side still answers through the callback. Without this the arm
+        // failed with "must run on the framework thread" and no file ever
+        // landed (user 2026-08-10: "exporting just dies").
+        if (!_framework.IsInFrameworkUpdateThread)
+        {
+            _ = _framework.RunOnFrameworkThread(() =>
+            {
+                if (!ExportPose(actor, path, onFinished).Success)
+                    onFinished?.Invoke(false);
+            });
+            return PoseEditResult.Ok(0);
+        }
         var slots = _skeletons.GetSkeletons(actor);
         if (slots.Count == 0)
             return Report(description,

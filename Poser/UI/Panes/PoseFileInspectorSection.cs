@@ -130,11 +130,36 @@ public sealed class PoseFileInspectorSection
 
     public void DrawBrowsers()
     {
+        // Deferred dialog opens run HERE, at the root pump, before anything
+        // else claims the frame — see <see cref="OpenBrowser"/>.
+        if (_pendingBrowserOpen is { } pendingOpen)
+        {
+            _pendingBrowserOpen = null;
+            pendingOpen();
+        }
         _importBrowser.Draw();
         _exportBrowser.Draw();
         DrawMenus();
         ReleaseImportPreview();
     }
+
+    /// <summary>
+    /// Every file-dialog open goes through this ONE-frame deferral. The
+    /// import and export commands are invoked from inside popup bodies (the
+    /// import menu's "From file", the export menu's rows), and
+    /// <c>Interactive.ClaimExclusive</c> chains by the CURRENT owner: a
+    /// window claimed from inside a popup nests UNDER the popup's link, and
+    /// the popup's release on close — it closes the moment the new window
+    /// takes focus — truncates the chain from its own link down, window
+    /// included. The dialog then fails its ownership sync one frame after
+    /// opening and closes itself ("exporting just dies", user 2026-08-10).
+    /// Deferring the open to the top of <see cref="DrawBrowsers"/> claims at
+    /// the shell root instead, so the dialog roots the chain and the dying
+    /// popup's release no longer reaches it.
+    /// </summary>
+    private Action? _pendingBrowserOpen;
+
+    private void OpenBrowser(Action open) => _pendingBrowserOpen = open;
 
     /// <summary>Opens the import-options menu on the next pump. Presets show
     /// only for the actor-side mount (the user's rule: rest poses belong to
@@ -249,11 +274,23 @@ public sealed class PoseFileInspectorSection
             * 0.5f * scale;
     }
     private const float MenuWidth = 320f;
+
+    /// <summary>The export menu's surface, logical px — Brio's export popup
+    /// is a NARROW action menu (FileUIHelpers MenuWidth ≈ 245), nothing like
+    /// the 320 option popup, so it gets its own constant rather than
+    /// reusing <see cref="MenuWidth"/>.</summary>
+    private const float ExportMenuWidth = 240f;
     private const float FilterMenuWidth = 216f;
     // 78: the longest label ("Reset first") plus breath — the slack the
     // old 96 left at the label side was exactly what the caption pairs
     // were missing at the right edge (user: almost overflowing).
     private const float MenuLabelColumn = 78f;
+
+    /// <summary>The DENSE label column, for the import dialog's band alone:
+    /// its labels are the short ones ("Type", "Model", "Reset first") and the
+    /// band's whole complaint was empty width (user 2026-08-10), so the
+    /// column shrinks to just past the longest of them.</summary>
+    private const float DenseLabelColumn = 64f;
     private const string ImportMenuId = "##pose-import-menu";
     private const string ExportMenuId = "##pose-export-menu";
     private const string BoneFilterMenuId = "##pose-bone-filter-menu";
@@ -268,6 +305,22 @@ public sealed class PoseFileInspectorSection
         _exportMenuRequested = true;
     }
 
+    /// <summary>
+    /// Brio's export popup made literal (FileUIHelpers.cs:753-808): a NARROW
+    /// action menu, one group of rows, no options and no preview. Brio's
+    /// rows are Export / With Metadata… / separator / To Clipboard / To
+    /// Stash; ours are the three-row equivalent. "With Metadata" is NOT
+    /// ported — our PoseFile carries no appearance ids (ModelId/RaceSexId/
+    /// FaceID); appearance is Glamourer's business.
+    /// </summary>
+    private static readonly ContextMenuItem[] ExportMenuItems =
+    [
+        new("Export to file", TablerIcon.DeviceFloppy),
+        ContextMenuItem.Separator,
+        new("To clipboard", TablerIcon.FileText),
+        new("To stash", TablerIcon.Stack2),
+    ];
+
     private void DrawMenus()
     {
         if (_importMenuRequested)
@@ -278,7 +331,8 @@ public sealed class PoseFileInspectorSection
         if (_exportMenuRequested)
         {
             _exportMenuRequested = false;
-            Crystarium.OpenPopover(ExportMenuId);
+            Crystarium.FloatingMenu.Open(
+                ExportMenuId, _menuAnchor, ExportMenuItems, ExportMenuWidth);
         }
         Crystarium.FloatingSurface.Popup(
             ImportMenuId,
@@ -311,19 +365,27 @@ public sealed class PoseFileInspectorSection
             DrawBoneFilterMenu(_filterAnchor);
         }
 
-        Crystarium.FloatingSurface.Popup(
-            ExportMenuId,
-            new FloatingSurfaceProps
-            {
-                Width = MenuWidth,
-                Height = _exportMenuHeight,
-                Padding = MenuPadding,
-                AnchorMin = _menuAnchor,
-                AnchorMax = _menuAnchor,
-                Treatment = FloatingSurfaceTreatment.Glass,
-            },
-            DrawExportMenuBody);
-
+        // The export menu's pump and dispatch. The click lands AFTER the
+        // menu's own draw has ended its owner, so a command that opens the
+        // save dialog claims from the ROOT — which, with the deferred
+        // browser open, is what keeps the dialog out of the dying menu's
+        // exclusive-chain release.
+        int exportClicked = Crystarium.FloatingMenu.Draw(ExportMenuId);
+        switch (exportClicked)
+        {
+            case 0:
+                if (SelectedSkeleton() is { } exportSkeleton)
+                    OpenExport(exportSkeleton);
+                else
+                    _status = "Select an actor first.";
+                break;
+            case 2:
+                CopyToClipboard();
+                break;
+            case 3:
+                StashPose();
+                break;
+        }
     }
 
     /// <summary>Self-measured popup heights (unscaled): the section stack
@@ -333,7 +395,6 @@ public sealed class PoseFileInspectorSection
     /// changes the actor-side height.</summary>
     private float _importMenuHeightPlain = 430f;
     private float _importMenuHeightPresets = 480f;
-    private float _exportMenuHeight = 190f;
     private float _boneFilterHeight = 520f;
 
     /// <summary>
@@ -434,10 +495,11 @@ public sealed class PoseFileInspectorSection
 
     /// <summary>The band's logical height: the tallest option column as last
     /// measured, plus the band's two vertical insets, capped. Seeded with the
-    /// Transform column's arithmetic (header 36 + three form rows + insets)
-    /// and corrected by the first draw — the popup stack's own self-measure
-    /// idiom, so every open after the first fits exactly.</summary>
-    private float _importBandHeight = 164f;
+    /// DENSE column arithmetic (header 26 + two checklist rows at 26 + the
+    /// two insets) and corrected by the first draw — the popup stack's own
+    /// self-measure idiom, so every open after the first fits exactly.
+    /// </summary>
+    private float _importBandHeight = 104f;
 
     /// <summary>Shown in the empty well before any file is highlighted.
     /// </summary>
@@ -461,6 +523,16 @@ public sealed class PoseFileInspectorSection
     /// </summary>
     private bool _importPreviewOwned;
 
+    /// <summary>Whether a pose has been stated for THIS dialog session.
+    /// The service is deliberately not closed between sessions (the seat
+    /// handoff), so on a fresh open its texture still shows the LAST
+    /// session's body — until this is set, the dialog's preview box shows
+    /// the characterbg backing alone and the render is held at alpha 0
+    /// regardless of the texture handle (user 2026-08-10: "still wearing
+    /// the last pose"). Reset when the dialog opens; set by the first
+    /// <see cref="SyncImportPreview"/> that states a pose.</summary>
+    private bool _importPreviewPosed;
+
     /// <summary>The dialog's PREVIEW column: the highlighted file on a hidden
     /// body, with the inspector rail's own interactions — one block, two
     /// mounts.</summary>
@@ -476,7 +548,11 @@ public sealed class PoseFileInspectorSection
             size - new Vector2(inset * 2f),
             _importPreview.IsWaitingForBaseline
                 ? ImportPreviewRebaseText
-                : ImportPreviewIdleText);
+                : ImportPreviewIdleText,
+            // Until THIS session has stated a pose, the box is backing and
+            // status alone: the service still holds the last session's
+            // render and showing it would dress the preview in a stale body.
+            showRender: _importPreviewPosed);
     }
 
     /// <summary>
@@ -515,9 +591,12 @@ public sealed class PoseFileInspectorSection
                     float width = region.ContentWidth * scale;
                     float height = mount switch
                     {
-                        0 => DrawImportTypeSection(top, width, divider: false),
-                        1 => DrawTransformSection(top, width, divider: false),
-                        _ => DrawScopeSection(top, width, divider: false),
+                        0 => DrawImportTypeSection(
+                            top, width, divider: false, dense: true),
+                        1 => DrawTransformSection(
+                            top, width, divider: false, dense: true),
+                        _ => DrawScopeSection(
+                            top, width, divider: false, dense: true),
                     };
                     ImGui.SetCursorScreenPos(new Vector2(top.X, top.Y + height));
                     ImGui.Dummy(new Vector2(1f, 1f));
@@ -536,6 +615,13 @@ public sealed class PoseFileInspectorSection
                 new FileSidePanel(fitted, DrawImportOptionsBand);
         }
         DrawNestedBoneFilter();
+
+        // The band draws AFTER the preview column, so without this a toggle
+        // would reach the binder only on the NEXT frame's sync — and the
+        // contract is that an option change re-poses within the frame it was
+        // made. Restating here costs one compare per frame; the binder's own
+        // dedupe keeps an unchanged frame free.
+        SyncImportPreview(highlighted);
     }
 
     /// <summary>
@@ -586,9 +672,22 @@ public sealed class PoseFileInspectorSection
         var built = CmpImportOverride(highlighted, out bool blocked, out _);
         if (blocked)
             return;
-        var options = PosePreviewBinder.Trim(built ?? BuildOptions());
-        if (_importPreview.Begin(source, highlighted, options))
-            _importPreview.Pose(highlighted, options);
+        var candidate = PosePreviewBinder.Trim(built ?? BuildOptions());
+        if (_importPreview.Begin(source, highlighted, candidate))
+        {
+            // The SENT build is its own instance, per the binder's contract:
+            // the compare candidate must never alias what the import engine
+            // holds across ticks (the library rail's exact shape).
+            _importPreview.Pose(
+                highlighted,
+                PosePreviewBinder.Trim(
+                    CmpImportOverride(highlighted, out _, out _)
+                        ?? BuildOptions()));
+            // A pose has been stated THIS dialog session: the render may
+            // fade in over the backing from here on (see
+            // DrawImportPreviewPanel).
+            _importPreviewPosed = true;
+        }
     }
 
     private static bool IsPoseFile(string path) =>
@@ -846,15 +945,21 @@ public sealed class PoseFileInspectorSection
 
     /// <summary>The Options/Type group. Returns the section's height, px.
     /// </summary>
+    /// <param name="dense">The import dialog's BAND form: checklist row
+    /// pitch, no pre-header padding, and the "Options" label dropped —
+    /// "Freeze / Smart" speak for themselves and the column title carries
+    /// the rest. The popup and rail mounts keep the ordinary form.</param>
     private float DrawImportTypeSection(
-        Vector2 origin, float width, bool divider) =>
+        Vector2 origin, float width, bool divider, bool dense = false) =>
         Crystarium.Section(
             "##import-menu-head", "Import pose",
             origin, width, true, null,
             form =>
             {
                 form.Checkboxes(
-                    "Options",
+                    dense ? string.Empty : "Options",
+                    disabled: false,
+                    fullWidth: dense,
                     ("Freeze", _freeze, next =>
                     {
                         _freeze = next;
@@ -875,12 +980,16 @@ public sealed class PoseFileInspectorSection
                         + "component"));
             },
             divider: divider,
-            labelColumnWidth: MenuLabelColumn);
+            labelColumnWidth: dense ? DenseLabelColumn : MenuLabelColumn,
+            dense: dense);
 
     /// <summary>The Transform group. Returns the section's height, px.
     /// </summary>
+    /// <param name="dense">The band form: the "Apply" label row is dropped —
+    /// the column title says Transform and the trio says the rest — so the
+    /// column is two tight rows, the trio and Model.</param>
     private float DrawTransformSection(
-        Vector2 origin, float width, bool divider) =>
+        Vector2 origin, float width, bool divider, bool dense = false) =>
         Crystarium.Section(
             "##import-menu-transform", "Transform",
             origin, width, true, null,
@@ -896,8 +1005,9 @@ public sealed class PoseFileInspectorSection
                     ? "Expression imports always apply every component"
                     : null;
                 // The component trio takes its OWN full-width row under
-                // the label (user placement).
-                form.Label("Apply");
+                // the label (user placement); the band drops the label.
+                if (!dense)
+                    form.Label("Apply");
                 form.Checkboxes(
                     string.Empty,
                     locked,
@@ -913,12 +1023,15 @@ public sealed class PoseFileInspectorSection
                     disabled: _smartImport);
             },
             divider: divider,
-            labelColumnWidth: MenuLabelColumn);
+            labelColumnWidth: dense ? DenseLabelColumn : MenuLabelColumn,
+            dense: dense);
 
     /// <summary>The Scope group — Reset first, then the bone filter. Returns
     /// the section's height, px.</summary>
+    /// <param name="dense">The band form: checklist pitch, and the "Filter"
+    /// label dropped — the button already says Bone filter.</param>
     private float DrawScopeSection(
-        Vector2 origin, float width, bool divider) =>
+        Vector2 origin, float width, bool divider, bool dense = false) =>
         Crystarium.Section(
             "##import-menu-scope", "Scope",
             origin, width, true, null,
@@ -934,16 +1047,19 @@ public sealed class PoseFileInspectorSection
                 // type is checked (FileUIHelpers.cs:504) — the filter
                 // shapes the DEFAULT import path alone.
                 bool typed = _typeBody || _typeExpression;
-                form.Actions("Filter", actions => actions.Button(
-                    "Bone filter", () => RequestBoneFilterMenu(),
-                    disabled: typed,
-                    help: typed
-                        ? "The bone filter shapes the default import; "
-                            + "uncheck Body and Expression to edit it"
-                        : "Choose which bone categories imports may touch"));
+                form.Actions(dense ? string.Empty : "Filter",
+                    actions => actions.Button(
+                        "Bone filter", () => RequestBoneFilterMenu(),
+                        disabled: typed,
+                        help: typed
+                            ? "The bone filter shapes the default import; "
+                                + "uncheck Body and Expression to edit it"
+                            : "Choose which bone categories imports may touch"),
+                    fullWidth: dense);
             },
             divider: divider,
-            labelColumnWidth: MenuLabelColumn);
+            labelColumnWidth: dense ? DenseLabelColumn : MenuLabelColumn,
+            dense: dense);
 
     /// <summary>
     /// The live render and its seven camera commands, seated as two canvas rows
@@ -979,7 +1095,8 @@ public sealed class PoseFileInspectorSection
     /// two mounts share every rule that shapes them.
     /// </summary>
     private void DrawPreviewBlock(
-        Vector2 origin, Vector2 size, string? emptyText)
+        Vector2 origin, Vector2 size, string? emptyText,
+        bool showRender = true)
     {
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
@@ -990,7 +1107,8 @@ public sealed class PoseFileInspectorSection
             return;
 
         DrawPreviewImage(
-            origin, new Vector2(size.X, box.Y), box.X, scale, theme, emptyText);
+            origin, new Vector2(size.X, box.Y), box.X, scale, theme, emptyText,
+            showRender);
         DrawPreviewCamera(
             origin + new Vector2(0f, box.Y + theme.Spacing.Three * scale),
             size.X, scale, theme, rows);
@@ -1021,9 +1139,13 @@ public sealed class PoseFileInspectorSection
     /// <param name="emptyText">What the empty well says when the service has
     /// stated no reason of its own — the dialog's column has one before any
     /// file is highlighted, the rail never does.</param>
+    /// <param name="showRender">False forces the render's fade target to 0
+    /// whatever the texture handle says — the dialog's fresh-open state,
+    /// where the service still renders the LAST session's pose and only the
+    /// backing may show. The rail always passes true.</param>
     private void DrawPreviewImage(
         Vector2 min, Vector2 size, float boxWidth, float scale, Theme theme,
-        string? emptyText = null)
+        string? emptyText = null, bool showRender = true)
     {
         var boxMin = theme.Optical.Snap(
             min + new Vector2((size.X - boxWidth) * 0.5f, 0f));
@@ -1038,6 +1160,8 @@ public sealed class PoseFileInspectorSection
         // live character is a fade, never a pop. The box is the same size in
         // every state, so nothing reflows across the swap.
         var handle = _preview.TextureHandle;
+        if (!showRender)
+            handle = 0;
         _previewFadeRamp = Math.Clamp(
             _previewFadeRamp
                 + (handle != 0 ? 1f : -1f) * ImGui.GetIO().DeltaTime
@@ -1246,48 +1370,6 @@ public sealed class PoseFileInspectorSection
         }
     }
 
-    /// <summary>Brio's export popup (DrawExportPoseMenuPopup): export to a
-    /// file, the clipboard copy, and the stash copy.</summary>
-    private void DrawExportMenuBody()
-    {
-        float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
-        var origin = ImGui.GetCursorScreenPos();
-        float width = ImGui.GetContentRegionAvail().X;
-
-        float top = origin.Y - MenuTitleOffset(scale);
-        float y = top + Crystarium.Section(
-            "##export-menu", "Export pose",
-            new Vector2(origin.X, top), width, true, null,
-            form =>
-            {
-                form.Actions("File", actions => actions.Button(
-                    "To file", () =>
-                    {
-                        if (SelectedSkeleton() is { } skeleton)
-                            OpenExport(skeleton);
-                        else
-                            _status = "Select an actor first.";
-                    }));
-                form.Actions("Copy", actions =>
-                {
-                    // Brio's Copy group (FileUIHelpers.cs:781-806): To
-                    // Clipboard, then To Stash.
-                    actions.Button(
-                        "To clipboard", CopyToClipboard,
-                        help: "Copy the pose in Brio's clipboard format, so "
-                            + "it pastes into Brio as well as Poser");
-                    actions.Button(
-                        "To stash", StashPose,
-                        help: "Hold this pose so the import menu's From "
-                            + "stash can apply it to any actor");
-                });
-            },
-            divider: false);
-
-        _exportMenuHeight = (y - origin.Y) / scale
-            + Crystarium.ActiveTheme.Page.Inset + MenuPadding * 2f;
-    }
-
     private void ApplyRestPreset(RestPose pose)
     {
         if (SelectedSkeleton() is { } skeleton)
@@ -1484,12 +1566,17 @@ public sealed class PoseFileInspectorSection
         // column borrows this same actor's appearance, so what the highlight
         // shows stands on the body the confirm will pose.
         _importTarget = skeleton.Actor;
-        _importBrowser.Open(initialPath, path =>
+        // A fresh session: nothing has been stated yet, so the preview box
+        // shows the backing until a highlight poses something — and the fade
+        // ramp starts from zero rather than fading the stale render OUT.
+        _importPreviewPosed = false;
+        _previewFadeRamp = 0f;
+        OpenBrowser(() => _importBrowser.Open(initialPath, path =>
         {
             if (rememberPath)
                 _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
             ImportFromPath(skeleton, path);
-        });
+        }));
     }
 
     /// <summary>
@@ -1685,7 +1772,7 @@ public sealed class PoseFileInspectorSection
 
     public void OpenExport(ISkeleton skeleton)
     {
-        _exportBrowser.Open(_lastPath, path =>
+        OpenBrowser(() => _exportBrowser.Open(_lastPath, path =>
         {
             _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
             // Armed, not written: the file lands once the update-phase pass
@@ -1700,7 +1787,7 @@ public sealed class PoseFileInspectorSection
                     : "Export: the pose file could not be written.");
             if (!armed.Success)
                 _status = $"Export: {armed.Detail}";
-        });
+        }));
     }
 
     /// <summary>The section's current import options, for surfaces that import
