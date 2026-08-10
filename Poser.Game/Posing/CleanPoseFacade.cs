@@ -126,6 +126,14 @@ public sealed class CleanPoseFacade
             });
             return PoseEditResult.Ok(0);
         }
+        // Never read the caches while an import owns them: the apply window
+        // pauses and REWINDS the animation before writing, so a capture that
+        // lands inside it snapshots a half-transitioned pose — the deformed
+        // baseline the preview then rebases onto. The caller's retry window
+        // re-arms once the import is done.
+        if (IsImportBusy)
+            return Report(description, PoseEditResult.Fail(
+                "A pose import is applying."));
         var slots = _skeletons.GetSkeletons(actor);
         if (slots.Count == 0)
             return Report(description,
