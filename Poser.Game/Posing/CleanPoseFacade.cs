@@ -113,6 +113,19 @@ public sealed class CleanPoseFacade
         Action<PoseFile?> onCaptured)
     {
         const string description = "Copy pose";
+        // The export capture insists on the framework thread; the callers
+        // (preview baseline, stash, clipboard copy) arm from the draw
+        // thread. Self-marshal like CaptureScene: Ok means armed, and a
+        // failure on the far side still answers through the callback.
+        if (!_framework.IsInFrameworkUpdateThread)
+        {
+            _ = _framework.RunOnFrameworkThread(() =>
+            {
+                if (!CapturePoseFile(actor, onCaptured).Success)
+                    onCaptured(null);
+            });
+            return PoseEditResult.Ok(0);
+        }
         var slots = _skeletons.GetSkeletons(actor);
         if (slots.Count == 0)
             return Report(description,
