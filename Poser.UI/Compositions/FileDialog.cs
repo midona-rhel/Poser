@@ -194,6 +194,24 @@ public static partial class Crystarium
         /// </summary>
         public FileSidePanel? RailPanel;
 
+        /// <summary>
+        /// The caller's own full-width band UNDER the columns region and above
+        /// the footer. <see cref="FileSidePanel.Width"/> is reinterpreted as
+        /// the band's logical HEIGHT — the dialog opens taller by exactly that
+        /// plus the band's own top rule, the columns keep their height, and
+        /// the draw is handed the band's box in screen space exactly as a side
+        /// panel's is.
+        /// </summary>
+        public FileSidePanel? BottomPanel;
+
+        /// <summary>
+        /// Logical height ADDED to the dialog's window, all of it going to the
+        /// columns region — a consumer whose preview column wants more body
+        /// than the theme's default states it here. Zero for every plain
+        /// dialog.
+        /// </summary>
+        public float ExtraHeight;
+
         public bool IsOpen => _open;
 
         /// <summary>What the panels add to the dialog's width: the columns and
@@ -218,6 +236,12 @@ public static partial class Crystarium
         private float RailExtra() =>
             RailWidth() - Crystarium.ActiveTheme.FileDialog.RailWidth;
 
+        /// <summary>What the bottom band adds to the dialog's height: the
+        /// band's own height plus its opening rule, logical. The columns keep
+        /// their height whatever the consumer bolts on under them.</summary>
+        private float BottomExtra() =>
+            BottomPanel is { } panel ? panel.Width + 1f : 0f;
+
         private string SurfaceId => $"{_title}{_id}";
 
         public void Open(string initialPath, Action<string> onSelect)
@@ -236,7 +260,8 @@ public static partial class Crystarium
                     ref _open,
                     Crystarium.ActiveTheme.FileDialog.Width
                         + PanelWidth() + RailExtra(),
-                    Crystarium.ActiveTheme.FileDialog.Height,
+                    Crystarium.ActiveTheme.FileDialog.Height
+                        + ExtraHeight + BottomExtra(),
                     DrawFrame);
 
             if (!_open && _pendingSelect is { } chosen)
@@ -304,6 +329,7 @@ public static partial class Crystarium
                     CloseHelp = "Close without choosing a file",
                     RailWidth = RailWidth(),
                     BandHeight = theme.Floating.ModalBarHeight,
+                    BottomBandHeight = BottomExtra(),
                     HostPaintsChrome = hostPaintsChrome,
                     FooterRight = right =>
                     {
@@ -323,6 +349,7 @@ public static partial class Crystarium
             DrawNavigation(rects.Band, scale);
             DrawQuick(rects.Rail, scale);
             DrawBody(rects.Body, scale);
+            DrawBottomBand(rects.BottomBand, scale);
             DrawFooterFill(rects.Footer, confirmLabel, scale);
         }
 
@@ -373,11 +400,13 @@ public static partial class Crystarium
                 ActionBarSeparator.None);
 
             // The editor takes the band's whole middle: past the three actions,
-            // stopping one gap short of the trailing inset — where the bar's
-            // (empty) right cluster stands.
+            // ending at the PAGE inset — the same trailing inset the preview
+            // box and every column's content stand behind, so the field's
+            // right edge lines up with the panels below it (user round:
+            // the header inset left it hanging short).
             float control = theme.Controls.ComfortableHeight * scale;
             float pathX = band.Min.X + inset + (NavActionSize * scale + gap) * 3f;
-            float pathWidth = band.Max.X - inset - gap - pathX;
+            float pathWidth = band.Max.X - theme.Page.Inset * scale - pathX;
             ImGui.SetCursorScreenPos(new Vector2(
                 pathX, band.Min.Y + (band.Size.Y - control) * 0.5f));
             TextInput(
@@ -406,21 +435,25 @@ public static partial class Crystarium
             float inset = theme.Page.Inset;
             WindowFrameRect list = DrawRailFooter(rail, scale);
             int picked = -1;
+            // The region reaches the rail's right edge so the bar sits
+            // guttered there — the gutter is the rows' trailing inset, not a
+            // second right margin (the library rail's contract).
             ImGui.SetCursorScreenPos(list.Min + new Vector2(inset * scale));
             ScrollRegion(
                 $"{_id}-quick",
-                list.Size.X / scale - inset * 2f,
+                list.Size.X / scale - inset,
                 list.Size.Y / scale - inset * 2f,
                 region =>
                 {
                     float width = RowWidth(region) * scale;
+                    float gutter = theme.Scrollbar.GutterWidth * scale;
                     for (int i = 0; i < _quick.Count; i++)
                     {
                         FileQuickEntry entry = _quick[i];
                         var hit = Row(
                             $"{_id}-quick-{entry.Path}",
                             width,
-                            region.ContentWidth * scale,
+                            gutter,
                             string.Equals(
                                 entry.Path,
                                 _currentPath,
@@ -436,7 +469,8 @@ public static partial class Crystarium
                         float labelX = slot.X + height;
                         RowLabel(
                             new Vector2(labelX, hit.ScreenMin.Y),
-                            new Vector2(hit.ScreenMax.X - labelX, height),
+                            new Vector2(
+                                hit.ScreenMax.X - gutter - labelX, height),
                             entry.Name,
                             theme.Text);
                         if (hit.Activated)
@@ -524,6 +558,20 @@ public static partial class Crystarium
                 scale);
         }
 
+        /// <summary>The bottom band's content: the frame owns the band and its
+        /// opening rule, the consumer's panel owns everything inside it.
+        /// </summary>
+        private void DrawBottomBand(WindowFrameRect band, float scale)
+        {
+            if (BottomPanel is not { } panel || !(band.Size.Y > 0f))
+                return;
+            float rule = MathF.Max(1f, scale);
+            panel.Draw(
+                new Vector2(band.Min.X, band.Min.Y + rule),
+                new Vector2(band.Size.X, band.Size.Y - rule),
+                SelectedFile);
+        }
+
         /// <summary>A column's left edge — the same rule the frame bridges its
         /// rail with, run the body's full height.</summary>
         private static void ColumnRule(
@@ -535,9 +583,8 @@ public static partial class Crystarium
 
         /// <summary>
         /// The explorer. NO right padding on the region: the bar sits on the
-        /// window edge and IS the right inset; a row's own trailing padding is
-        /// what keeps its content clear of the bar while its highlight bleeds
-        /// under it.
+        /// window edge and IS the right inset; the row box bleeds under it
+        /// while the pill and its content stop a gutter early.
         /// </summary>
         private void DrawEntries(WindowFrameRect body, float scale)
         {
@@ -567,13 +614,14 @@ public static partial class Crystarium
                     }
 
                     float width = RowWidth(region) * scale;
+                    float gutter = theme.Scrollbar.GutterWidth * scale;
                     for (int i = 0; i < _entries.Count; i++)
                     {
                         FileListingEntry entry = _entries[i];
                         var hit = Row(
                             $"{_id}-entry-{entry.FullPath}",
                             width,
-                            region.ContentWidth * scale,
+                            gutter,
                             string.Equals(
                                 entry.FullPath,
                                 _selectedPath,
@@ -591,8 +639,12 @@ public static partial class Crystarium
                                 ? TablerIcon.Folder
                                 : TablerIcon.FileText);
 
+                        // The date breathes off the pill's right edge, which
+                        // itself stops a gutter early — the library rail's
+                        // badge math, so the readout never rides the bar.
                         float readoutWidth = ModifiedColumnWidth * scale;
-                        float readoutX = hit.ScreenMax.X - readoutWidth;
+                        float readoutX = hit.ScreenMax.X - gutter
+                            - theme.Spacing.Four * scale - readoutWidth;
                         float labelX = hit.ScreenMin.X + EntryIconSlot * scale;
                         RowLabel(
                             new Vector2(labelX, hit.ScreenMin.Y),
@@ -730,18 +782,21 @@ public static partial class Crystarium
         // ── row primitives ───────────────────────────────────────────────────
 
         /// <summary>The row's own box, which is the region's FULL width: the
-        /// gutter is padding, so the highlight paints under the bar while the
-        /// hit rect stops at the content edge.</summary>
+        /// gutter is the row's TRAILING inset, so the box bleeds under the bar
+        /// while the pill and its content stop a gutter early — the
+        /// ShellSidebar/library-rail contract.</summary>
         private static float RowWidth(ScrollRegionScope region) =>
             region.ContentWidth + Crystarium.ActiveTheme.Scrollbar.GutterWidth;
 
         /// <summary>
-        /// One list row: the reserve at the CONTENT width, the highlight at the
-        /// full row width. Rows stack flush at the row height — the ambient
-        /// vertical spacing is the surrounding flow's, not the list's.
+        /// One list row: the reserve at the FULL row width, the highlight
+        /// stopping <paramref name="gutter"/> early so the pill's right edge
+        /// stays visible beside the scroll bar. Rows stack flush at the row
+        /// height — the ambient vertical spacing is the surrounding flow's,
+        /// not the list's.
         /// </summary>
         private static InteractionResult Row(
-            string id, float width, float hitWidth, bool selected, float scale)
+            string id, float width, float gutter, bool selected, float scale)
         {
             Theme theme = Crystarium.ActiveTheme;
             float height = theme.Controls.ListRowHeight * scale;
@@ -750,7 +805,7 @@ public static partial class Crystarium
                 ImGuiStyleVar.ItemSpacing, new Vector2(spacing.X, 0f));
             var hit = Interactive.Reserve(
                 id,
-                new Vector2(MathF.Max(1f, hitWidth), height),
+                new Vector2(MathF.Max(1f, width), height),
                 disabled: false);
             ImGui.PopStyleVar();
 
@@ -762,7 +817,7 @@ public static partial class Crystarium
             if (fill.W > 0f)
                 ImGui.GetWindowDrawList().AddRectFilled(
                     hit.ScreenMin,
-                    new Vector2(hit.ScreenMin.X + width, hit.ScreenMax.Y),
+                    new Vector2(hit.ScreenMax.X - gutter, hit.ScreenMax.Y),
                     ImGui.ColorConvertFloat4ToU32(fill),
                     RowPillRadius * scale);
             return hit;

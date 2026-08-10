@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Textures;
+using Dalamud.Interface.Textures.TextureWraps;
+using Dalamud.Plugin.Services;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Application.Selection;
@@ -33,6 +36,7 @@ public sealed class PoseFileInspectorSection
     private readonly Config.ConfigurationService _config;
     private readonly IAutoSaveService _autoSave;
     private readonly Game.Preview.PosePreviewService _preview;
+    private readonly ITextureProvider _textures;
 
     /// <summary>This section's drive of the ONE shared preview, used only while
     /// the import dialog is open — the same binder the library rail runs, so
@@ -100,22 +104,26 @@ public sealed class PoseFileInspectorSection
         SelectionSession selection,
         Config.ConfigurationService config,
         IAutoSaveService autoSave,
-        Game.Preview.PosePreviewService preview)
+        Game.Preview.PosePreviewService preview,
+        ITextureProvider textures)
     {
         _poseFacade = poseFacade;
         _selection = selection;
         _config = config;
         _autoSave = autoSave;
         _preview = preview;
+        _textures = textures;
         _importPreview = new PosePreviewBinder(preview, poseFacade);
         _freeze = config.Config.FreezeActorOnPoseImport;
 
-        // The import dialog's shape (user 2026-08-10): the options belong UNDER
-        // the quick-access rail, on the left, with the file list and the live
-        // preview taking the rest. Declared once — the dialog sizes itself
-        // around both, the rail widening to the options' own width.
-        _importBrowser.RailPanel =
-            new FileSidePanel(ImportOptionsColumnWidth, DrawImportOptionsPanel);
+        // The import dialog's shape (user 2026-08-10): the three columns —
+        // quick access, file list, live preview — on top, and the options in
+        // one full-width three-column band UNDER them, above the footer.
+        // Declared once — the dialog sizes itself around both, growing taller
+        // by the band and by the extra body the preview column asks for.
+        _importBrowser.ExtraHeight = ImportDialogExtraHeight;
+        _importBrowser.BottomPanel =
+            new FileSidePanel(_importBandHeight, DrawImportOptionsBand);
         _importBrowser.SidePanels.Add(
             new FileSidePanel(ImportPreviewColumnWidth, DrawImportPreviewPanel));
     }
@@ -399,23 +407,37 @@ public sealed class PoseFileInspectorSection
 
     // ── the import dialog's two panels ───────────────────────────────────
     // The user's design: pick a file, see exactly what the options standing
-    // right now would make of it, confirm. The options sit UNDER the dialog's
-    // quick-access rail and the preview stands right of the listing; the
-    // dialog's own Load button is the import, so neither panel carries an
-    // action that leaves it.
+    // right now would make of it, confirm. The options run in a full-width
+    // three-column band UNDER the columns region and the preview stands right
+    // of the listing; the dialog's own Load button is the import, so neither
+    // panel carries an action that leaves it.
+
+    /// <summary>Extra body the import dialog asks for over the theme's
+    /// default, logical px — the preview column wants a taller render and the
+    /// file list gains the same rows (user round: "it should be taller as
+    /// well"). The export dialog states nothing and keeps the theme height.
+    /// </summary>
+    private const float ImportDialogExtraHeight = 100f;
 
     /// <summary>The preview column, logical px: the width at which Ktisis'
-    /// portrait aspect fills the dialog's body height exactly — 176 less two
-    /// page insets is 152, and 152 by that aspect is the 253 the body leaves
-    /// once the camera band is off it. Wider only pads the column: the block
-    /// narrows the render to hold the aspect rather than stretch it.</summary>
-    private const float ImportPreviewColumnWidth = 176f;
+    /// portrait aspect fills the dialog's body height exactly. The grown body
+    /// is 308 + 100; less two page insets and the camera band that leaves 354
+    /// for the image, and 354 by the 192:320 aspect is 212 — plus the two
+    /// insets, 236. Wider only pads the column: the block narrows the render
+    /// to hold the aspect rather than stretch it.</summary>
+    private const float ImportPreviewColumnWidth = 236f;
 
-    /// <summary>What the options ask the dialog's RAIL to be, logical px — the
-    /// import menu's own width, which is what the section stack was tuned
-    /// against. The rail widens to it and the window widens by the
-    /// difference.</summary>
-    private const float ImportOptionsColumnWidth = MenuWidth;
+    /// <summary>The options band may not grow past this, logical px — the
+    /// columns region above it keeps its floor; past the cap each column
+    /// scrolls inside its own box.</summary>
+    private const float ImportBandMaxHeight = 200f;
+
+    /// <summary>The band's logical height: the tallest option column as last
+    /// measured, plus the band's two vertical insets, capped. Seeded with the
+    /// Transform column's arithmetic (header 36 + three form rows + insets)
+    /// and corrected by the first draw — the popup stack's own self-measure
+    /// idiom, so every open after the first fits exactly.</summary>
+    private float _importBandHeight = 164f;
 
     /// <summary>Shown in the empty well before any file is highlighted.
     /// </summary>
@@ -426,7 +448,7 @@ public sealed class PoseFileInspectorSection
     /// until it lands, so the well says why.</summary>
     private const string ImportPreviewRebaseText = "Reading the actor's pose…";
 
-    private const string ImportOptionsScrollId = "##import-dialog-options";
+    private const string ImportOptionsBandId = "##import-dialog-options";
 
     /// <summary>The actor the OPEN dialog's import will land on, captured with
     /// the dialog exactly as the confirm callback captures its skeleton: the
@@ -458,34 +480,61 @@ public sealed class PoseFileInspectorSection
     }
 
     /// <summary>
-    /// The dialog's OPTIONS panel, under the quick-access rail: the same
-    /// section stack the import menu shows, minus every action and minus the
-    /// preview block — this dialog has a preview column of its own — scrolling
-    /// inside the box the rail leaves it. NO right padding on the region: the
-    /// scrollbar sits on the panel's edge and IS the trailing inset, the same
-    /// rule the file list follows.
+    /// The dialog's OPTIONS band, full width between the columns region and
+    /// the footer: the same option sections the import menu stacks, laid out
+    /// in THREE COLUMNS — options/type, transform, scope — one group per
+    /// column, minus every action: the dialog's own Load button is its import.
+    /// Three equal column regions tile the band past the left inset; each
+    /// region's scroll gutter is its own trailing inset (the shell contract),
+    /// so the rhythm reads inset, content, gutter, content, gutter, content,
+    /// gutter — no second margin anywhere. The columns normally fit whole;
+    /// each scrolls inside its own box only when the cap bites.
     /// </summary>
-    private void DrawImportOptionsPanel(
+    private void DrawImportOptionsBand(
         Vector2 origin, Vector2 size, string? highlighted)
     {
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
-        float inset = Crystarium.ActiveTheme.Page.Inset * scale;
-        ImGui.SetCursorScreenPos(origin + new Vector2(inset));
-        Crystarium.ScrollRegion(
-            ImportOptionsScrollId,
-            (size.X - inset) / scale,
-            (size.Y - inset * 2f) / scale,
-            region =>
-            {
-                var top = ImGui.GetCursorScreenPos();
-                float y = DrawOptionsSections(
-                    top,
-                    region.ContentWidth * scale,
-                    withPresets: false,
-                    withActions: false);
-                ImGui.SetCursorScreenPos(new Vector2(top.X, y));
-                ImGui.Dummy(new Vector2(1f, 1f));
-            });
+        var theme = Crystarium.ActiveTheme;
+        float inset = theme.Page.Inset;
+        float regionWidth = (size.X / scale - inset) / 3f;
+        float regionHeight = size.Y / scale - inset;
+        float tallest = 0f;
+        for (int column = 0; column < 3; column++)
+        {
+            int mount = column;
+            ImGui.SetCursorScreenPos(new Vector2(
+                origin.X + (inset + regionWidth * column) * scale,
+                origin.Y + inset * scale));
+            Crystarium.ScrollRegion(
+                $"{ImportOptionsBandId}-{column}",
+                regionWidth,
+                regionHeight,
+                region =>
+                {
+                    var top = ImGui.GetCursorScreenPos();
+                    float width = region.ContentWidth * scale;
+                    float height = mount switch
+                    {
+                        0 => DrawImportTypeSection(top, width, divider: false),
+                        1 => DrawTransformSection(top, width, divider: false),
+                        _ => DrawScopeSection(top, width, divider: false),
+                    };
+                    ImGui.SetCursorScreenPos(new Vector2(top.X, top.Y + height));
+                    ImGui.Dummy(new Vector2(1f, 1f));
+                    tallest = MathF.Max(tallest, height / scale);
+                });
+        }
+
+        // The popup stack's self-measure idiom: the band as REGISTERED fits
+        // the tallest column exactly from the next frame on, and the next
+        // open sizes the window around it.
+        float fitted = MathF.Min(ImportBandMaxHeight, tallest + inset * 2f);
+        if (MathF.Abs(fitted - _importBandHeight) > 0.5f)
+        {
+            _importBandHeight = fitted;
+            _importBrowser.BottomPanel =
+                new FileSidePanel(fitted, DrawImportOptionsBand);
+        }
         DrawNestedBoneFilter();
     }
 
@@ -618,6 +667,44 @@ public sealed class PoseFileInspectorSection
     /// never letterboxes and never consults the render's own size.</summary>
     private static readonly Vector2 PreviewAspect = new(192f, 320f);
 
+    /// <summary>Ktisis PreviewNode's backing layer (ImageBacking →
+    /// bgpart->LoadTexture("ui/common/characterbg_hr1.tex")): the
+    /// character-card backdrop that stands UNDER the render, always.</summary>
+    private const string PreviewBackingPath = "ui/common/characterbg_hr1.tex";
+
+    /// <summary>The backing's SHARED texture, resolved once — the WRAP is
+    /// re-resolved every frame, exactly as the gobo and icon resolvers do:
+    /// shared textures must never have their wraps cached. A throwing load is
+    /// remembered and the box falls back to the plain well fill.</summary>
+    private ISharedImmediateTexture? _previewBacking;
+    private bool _previewBackingFailed;
+
+    /// <summary>The render's fade ramp, raw 0..1 progress toward "a render
+    /// exists", eased through the Picto default curve at draw time.
+    /// Constant-rate, so a swap that reverses mid-flight retraces exactly the
+    /// distance it covered — the Motion store's own ramp model, held locally
+    /// because there is ONE preview box per section.</summary>
+    private float _previewFadeRamp;
+
+    /// <summary>The backing's ImGui handle for this frame, or 0 — missing
+    /// texture keeps the current well-fill behavior.</summary>
+    private nint ResolvePreviewBacking()
+    {
+        if (_previewBackingFailed)
+            return 0;
+        IDalamudTextureWrap? wrap = null;
+        try
+        {
+            _previewBacking ??= _textures.GetFromGame(PreviewBackingPath);
+            wrap = _previewBacking.GetWrapOrDefault();
+        }
+        catch (Exception)
+        {
+            _previewBackingFailed = true;
+        }
+        return wrap is null ? 0 : (nint)wrap.Handle.Handle;
+    }
+
     /// <summary>Shown while the service has stated no reason of its own — the
     /// first frames of a render.</summary>
     private const string PreviewWaitingText = "Preparing preview…";
@@ -675,94 +762,14 @@ public sealed class PoseFileInspectorSection
                 divider: false,
                 labelColumnWidth: MenuLabelColumn);
 
-        y += Crystarium.Section(
-            "##import-menu-head", "Import pose",
-            new Vector2(origin.X, y), width, true, null,
-            form =>
-            {
-                form.Checkboxes(
-                    "Options",
-                    ("Freeze", _freeze, next =>
-                    {
-                        _freeze = next;
-                        _config.Config.FreezeActorOnPoseImport = next;
-                        _config.Save();
-                    }, "Keep the actor paused after the import"),
-                    ("Smart", _smartImport, next => _smartImport = next,
-                        "Route face-only files as expression imports automatically"));
-                form.Checkboxes(
-                    "Type",
-                    ("Body", _typeBody,
-                        next => _typeBody = next,
-                        "Import the body. With Expression too, everything "
-                        + "imports with every component"),
-                    ("Expression", _typeExpression,
-                        next => _typeExpression = next,
-                        "Import the face as an expression — always every "
-                        + "component"));
-            },
-            // The rule is a divider BETWEEN sections: this one leads the stack
-            // only when the preview does not.
-            divider: preview,
-            labelColumnWidth: MenuLabelColumn);
-
-        y += Crystarium.Section(
-            "##import-menu-transform", "Transform",
-            new Vector2(origin.X, y), width, true, null,
-            form =>
-            {
-                // Brio's icon row disables under Smart Import and whenever
-                // Expression is checked (FileUIHelpers.cs:514-516) — the
-                // engine forces every component on those paths. The Model
-                // toggle sits only under the OUTER Smart disable, like
-                // Brio's model-transform icon.
-                bool locked = _typeExpression || _smartImport;
-                string? why = locked
-                    ? "Expression imports always apply every component"
-                    : null;
-                // The component trio takes its OWN full-width row under
-                // the label (user placement).
-                form.Label("Apply");
-                form.Checkboxes(
-                    string.Empty,
-                    locked,
-                    fullWidth: true,
-                    ("Position", _position, next => _position = next, why),
-                    ("Rotation", _rotation, next => _rotation = next, why),
-                    ("Scale", _scale, next => _scale = next, why));
-                form.Checkbox(
-                    "Model", _modelTransform,
-                    next => _modelTransform = next,
-                    help: "Also move the actor to the file's placement "
-                        + "(model transform)",
-                    disabled: _smartImport);
-            },
-            labelColumnWidth: MenuLabelColumn);
-
-        y += Crystarium.Section(
-            "##import-menu-scope", "Scope",
-            new Vector2(origin.X, y), width, true, null,
-            form =>
-            {
-                // Brio's popup has no selected-bones or descendants row —
-                // both were Ktisis imports and are gone (user 2026-08-10).
-                form.Checkbox(
-                    "Reset first", _reset, next => _reset = next,
-                    help: "Clear every bone in scope before importing, "
-                        + "including ones the file does not contain");
-                // Brio: Custom Import Options is live ONLY when neither
-                // type is checked (FileUIHelpers.cs:504) — the filter
-                // shapes the DEFAULT import path alone.
-                bool typed = _typeBody || _typeExpression;
-                form.Actions("Filter", actions => actions.Button(
-                    "Bone filter", () => RequestBoneFilterMenu(),
-                    disabled: typed,
-                    help: typed
-                        ? "The bone filter shapes the default import; "
-                            + "uncheck Body and Expression to edit it"
-                        : "Choose which bone categories imports may touch"));
-            },
-            labelColumnWidth: MenuLabelColumn);
+        // The rule is a divider BETWEEN sections: the first one leads the
+        // stack only when the preview does not.
+        y += DrawImportTypeSection(
+            new Vector2(origin.X, y), width, divider: preview);
+        y += DrawTransformSection(
+            new Vector2(origin.X, y), width, divider: true);
+        y += DrawScopeSection(
+            new Vector2(origin.X, y), width, divider: true);
 
         if (!withActions)
             return y;
@@ -831,6 +838,112 @@ public sealed class PoseFileInspectorSection
 
         return y;
     }
+
+    // ── the three option groups, one Section each ────────────────────────
+    // Shared verbatim by every mount: the popup and the library rail stack
+    // them; the import dialog's band seats one per column. Splitting at the
+    // section boundary is what lets the same content stand in either shape.
+
+    /// <summary>The Options/Type group. Returns the section's height, px.
+    /// </summary>
+    private float DrawImportTypeSection(
+        Vector2 origin, float width, bool divider) =>
+        Crystarium.Section(
+            "##import-menu-head", "Import pose",
+            origin, width, true, null,
+            form =>
+            {
+                form.Checkboxes(
+                    "Options",
+                    ("Freeze", _freeze, next =>
+                    {
+                        _freeze = next;
+                        _config.Config.FreezeActorOnPoseImport = next;
+                        _config.Save();
+                    }, "Keep the actor paused after the import"),
+                    ("Smart", _smartImport, next => _smartImport = next,
+                        "Route face-only files as expression imports automatically"));
+                form.Checkboxes(
+                    "Type",
+                    ("Body", _typeBody,
+                        next => _typeBody = next,
+                        "Import the body. With Expression too, everything "
+                        + "imports with every component"),
+                    ("Expression", _typeExpression,
+                        next => _typeExpression = next,
+                        "Import the face as an expression — always every "
+                        + "component"));
+            },
+            divider: divider,
+            labelColumnWidth: MenuLabelColumn);
+
+    /// <summary>The Transform group. Returns the section's height, px.
+    /// </summary>
+    private float DrawTransformSection(
+        Vector2 origin, float width, bool divider) =>
+        Crystarium.Section(
+            "##import-menu-transform", "Transform",
+            origin, width, true, null,
+            form =>
+            {
+                // Brio's icon row disables under Smart Import and whenever
+                // Expression is checked (FileUIHelpers.cs:514-516) — the
+                // engine forces every component on those paths. The Model
+                // toggle sits only under the OUTER Smart disable, like
+                // Brio's model-transform icon.
+                bool locked = _typeExpression || _smartImport;
+                string? why = locked
+                    ? "Expression imports always apply every component"
+                    : null;
+                // The component trio takes its OWN full-width row under
+                // the label (user placement).
+                form.Label("Apply");
+                form.Checkboxes(
+                    string.Empty,
+                    locked,
+                    fullWidth: true,
+                    ("Position", _position, next => _position = next, why),
+                    ("Rotation", _rotation, next => _rotation = next, why),
+                    ("Scale", _scale, next => _scale = next, why));
+                form.Checkbox(
+                    "Model", _modelTransform,
+                    next => _modelTransform = next,
+                    help: "Also move the actor to the file's placement "
+                        + "(model transform)",
+                    disabled: _smartImport);
+            },
+            divider: divider,
+            labelColumnWidth: MenuLabelColumn);
+
+    /// <summary>The Scope group — Reset first, then the bone filter. Returns
+    /// the section's height, px.</summary>
+    private float DrawScopeSection(
+        Vector2 origin, float width, bool divider) =>
+        Crystarium.Section(
+            "##import-menu-scope", "Scope",
+            origin, width, true, null,
+            form =>
+            {
+                // Brio's popup has no selected-bones or descendants row —
+                // both were Ktisis imports and are gone (user 2026-08-10).
+                form.Checkbox(
+                    "Reset first", _reset, next => _reset = next,
+                    help: "Clear every bone in scope before importing, "
+                        + "including ones the file does not contain");
+                // Brio: Custom Import Options is live ONLY when neither
+                // type is checked (FileUIHelpers.cs:504) — the filter
+                // shapes the DEFAULT import path alone.
+                bool typed = _typeBody || _typeExpression;
+                form.Actions("Filter", actions => actions.Button(
+                    "Bone filter", () => RequestBoneFilterMenu(),
+                    disabled: typed,
+                    help: typed
+                        ? "The bone filter shapes the default import; "
+                            + "uncheck Body and Expression to edit it"
+                        : "Choose which bone categories imports may touch"));
+            },
+            divider: divider,
+            labelColumnWidth: MenuLabelColumn);
 
     /// <summary>
     /// The live render and its seven camera commands, seated as two canvas rows
@@ -919,31 +1032,57 @@ public sealed class PoseFileInspectorSection
         var draw = ImGui.GetWindowDrawList();
         float radius = theme.Radii.Control * scale;
 
+        // Ktisis PreviewNode's layering: the character-card backdrop ALWAYS
+        // paints the box, full-uv into the same rect the render takes, and
+        // the render fades in over it — the swap between the empty box and a
+        // live character is a fade, never a pop. The box is the same size in
+        // every state, so nothing reflows across the swap.
         var handle = _preview.TextureHandle;
-        if (handle != 0)
-        {
-            // Ktisis PreviewNode: the WHOLE render, uv 0..1, into the node —
-            // no aspect fit, so no well shows beside it.
-            draw.AddImage(
-                new ImTextureID(handle),
+        _previewFadeRamp = Math.Clamp(
+            _previewFadeRamp
+                + (handle != 0 ? 1f : -1f) * ImGui.GetIO().DeltaTime
+                    / Transition.PictoDefault.DurationSeconds,
+            0f, 1f);
+        float fade = Transition.PictoDefault.Evaluate(_previewFadeRamp);
+
+        nint backing = ResolvePreviewBacking();
+        if (backing != 0)
+            draw.AddImageRounded(
+                new ImTextureID(backing),
                 boxMin,
                 boxMax,
                 Vector2.Zero,
                 Vector2.One,
                 ImGui.ColorConvertFloat4ToU32(
-                    ColorEx.ApplyAlpha(Vector4.One)));
-            DrawPreviewInput(boxMin, boxSize);
-        }
+                    ColorEx.ApplyAlpha(Vector4.One)),
+                radius);
         else
-        {
-            // Nothing to show: the box is a plain well carrying the reason.
-            // The service's own wins; "preparing" is only what the frames
-            // before it has one say.
             draw.AddRectFilled(
                 boxMin, boxMax,
                 ImGui.ColorConvertFloat4ToU32(
                     ColorEx.ApplyAlpha(theme.Chrome.InputWell)),
                 radius);
+
+        if (handle != 0)
+        {
+            // Ktisis PreviewNode: the WHOLE render, uv 0..1, into the node —
+            // no aspect fit, so no well shows beside it.
+            if (fade > 0f)
+                draw.AddImage(
+                    new ImTextureID(handle),
+                    boxMin,
+                    boxMax,
+                    Vector2.Zero,
+                    Vector2.One,
+                    ImGui.ColorConvertFloat4ToU32(
+                        ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, fade))));
+            DrawPreviewInput(boxMin, boxSize);
+        }
+        else
+        {
+            // No render: the backing carries the reason, centred over it.
+            // The service's own wins; "preparing" is only what the frames
+            // before it has one say.
             Crystarium.TextInBand(
                 boxMin,
                 boxSize,
