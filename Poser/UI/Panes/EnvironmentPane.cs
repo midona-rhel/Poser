@@ -355,7 +355,6 @@ public sealed class EnvironmentPane
                     "##env-time-of-day", minute, 0f, 1439f,
                     value => _environment.MinuteOfDay =
                         (int)MathF.Round(value),
-                    format: "0",
                     disabled: !available,
                     // The slider IS the clock. A raw minute-of-day readout
                     // said 468 where the game says 07:48, and the read-only
@@ -704,7 +703,6 @@ public sealed class EnvironmentPane
         form.Slider("Distance", fog.Distance, 0f, 1000f,
             value => _environment.Fog =
                 _environment.Fog with { Distance = value },
-            format: "0",
             help: "How far away the fog starts",
             marks: KilometreMarks,
             scale: SliderScale.Log);
@@ -734,7 +732,6 @@ public sealed class EnvironmentPane
         form.Slider("Sky smoothness", fog.SkySmoothness, 0f, 1000f,
             value => _environment.Fog =
                 _environment.Fog with { SkySmoothness = value },
-            format: "0",
             help: "How gradually the fog blends into the sky",
             marks: KilometreMarks,
             scale: SliderScale.Log);
@@ -943,11 +940,9 @@ public sealed class EnvironmentPane
         form.Slider("Direction", wind.Direction, 0f, 360f,
             value => _environment.Wind =
                 _environment.Wind with { Direction = value },
-            format: "0",
             help: "Which way the wind blows, in degrees");
         form.Slider("Angle", wind.Angle, 0f, 180f,
             value => _environment.Wind = _environment.Wind with { Angle = value },
-            format: "0",
             help: "How far the wind tilts from level, in degrees");
         form.Slider("Speed", wind.Speed, 0f, 1.5f,
             value => _environment.Wind = _environment.Wind with { Speed = value },
