@@ -22,7 +22,8 @@ public static partial class Crystarium
         float perPixel,
         string format,
         ControlStyle style = default,
-        bool disabled = false)
+        bool disabled = false,
+        bool adaptiveDisplay = false)
     {
         float scale = ImGuiHelpers.GlobalScale;
         var metrics = ControlSizing.Resolve(
@@ -34,7 +35,8 @@ public static partial class Crystarium
 
         if (_axisEditId == id && !disabled)
             return EditAxisWell(
-                id, axis, value, onChange, onCommit, accent, format,
+                id, axis, value, onChange, onCommit, accent,
+                adaptiveDisplay ? "0.######" : format,
                 pos, size, scale);
 
         var hit = Interactive.Reserve(id, size, disabled);
@@ -62,8 +64,13 @@ public static partial class Crystarium
         if (hit.DragEnded)
             onCommit?.Invoke();
 
-        DrawAxisWell(pos, size, axis, value, accent, format, hit.Active,
-            disabled, scale);
+        // The label follows the adaptive three-digit rule when asked; the
+        // EDIT above always carries the full value — precision belongs to
+        // typing, not to the resting label.
+        DrawAxisWell(
+            pos, size, axis, value, accent,
+            adaptiveDisplay ? null : format,
+            hit.Active, disabled, scale);
         if (hit.Hovered && _axisEditId == null)
         {
             ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEw);
@@ -221,7 +228,7 @@ public static partial class Crystarium
         string axis,
         float value,
         Vector4 accent,
-        string format,
+        string? format,
         bool focused,
         bool disabled,
         float scale,
@@ -288,8 +295,9 @@ public static partial class Crystarium
         }
         if (drawValue)
         {
-            string text =
-                value.ToString(format, CultureInfo.InvariantCulture);
+            string text = format is { } fixedFormat
+                ? value.ToString(fixedFormat, CultureInfo.InvariantCulture)
+                : AdaptiveValueText(value);
             draw.PushClipRect(
                 new Vector2(pos.X + axisSlot, pos.Y + inset),
                 max - new Vector2(inset),

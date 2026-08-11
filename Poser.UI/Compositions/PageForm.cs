@@ -367,27 +367,48 @@ public static partial class Crystarium
                 onCommit: onCommit,
                 scale: scale,
                 logCurvature: logCurvature);
-            // Unstated format means the shared adaptive rule; the band is a
-            // click-to-type edit either way, and the edit shows full
-            // precision the label never carries.
-            Crystarium.SliderReadout(
-                $"{id}-readout",
-                new(row.ControlOrigin.X + row.ControlWidth -
-                    ActiveTheme.Form.ValueColumnWidth * row.Scale, row.Origin.Y),
-                ActiveTheme.Form.ValueColumnWidth * row.Scale,
-                ActiveTheme.Controls.FormRowHeight * row.Scale,
-                displayedValue,
-                minimum,
-                maximum,
-                typed =>
-                {
-                    onChange(typed);
-                    onCommit?.Invoke();
-                },
-                readout ?? (format is { } fixedFormat
-                    ? v => v.ToString(fixedFormat, CultureInfo.InvariantCulture)
-                    : null),
-                disabled);
+            // A custom readout is presentation only (a clock, not a number)
+            // and stays plain text; every plain number takes the STANDARD
+            // numeric well — drag to adjust, double-click to type — with the
+            // adaptive three-digit label unless a format is stated.
+            var bandOrigin = new Vector2(
+                row.ControlOrigin.X + row.ControlWidth -
+                    ActiveTheme.Form.ValueColumnWidth * row.Scale,
+                row.Origin.Y);
+            if (readout is { } custom)
+                DrawTextRight(
+                    bandOrigin,
+                    ActiveTheme.Form.ValueColumnWidth * row.Scale,
+                    ActiveTheme.Controls.FormRowHeight * row.Scale,
+                    ActiveTheme.Typography.CaptionSize,
+                    FontFamily.Mono,
+                    FormLabelColor,
+                    custom(displayedValue));
+            else
+            {
+                ImGui.SetCursorScreenPos(new Vector2(
+                    bandOrigin.X,
+                    row.CenterControl(ActiveTheme.Controls.WorkspaceHeight).Y));
+                Crystarium.AxisWell(
+                    $"{id}-value",
+                    "",
+                    displayedValue,
+                    next =>
+                    {
+                        displayedValue = Math.Clamp(next, minimum, maximum);
+                        onChange(displayedValue);
+                    },
+                    onCommit,
+                    ActiveTheme.FormValue,
+                    (maximum - minimum) / 300f,
+                    format ?? "0.00",
+                    ControlStyle.Workspace with
+                    {
+                        Width = UiWidth.Fixed(ActiveTheme.Form.ValueColumnWidth),
+                    },
+                    disabled,
+                    adaptiveDisplay: format is null);
+            }
             _page.EndRow(row, id, help);
         }
 
@@ -1412,21 +1433,43 @@ public static partial class Crystarium
                 help,
                 scale: scale,
                 logCurvature: logCurvature);
-            // Unstated format means the shared adaptive rule; the band is a
-            // click-to-type edit either way.
-            Crystarium.SliderReadout(
-                $"{id}-readout",
-                new Vector2(Origin.X + Width - readoutWidth, Origin.Y),
-                readoutWidth,
-                ActiveTheme.Controls.FormRowHeight * Scale,
-                displayed,
-                minimum,
-                maximum,
-                typed => onChange(typed),
-                readout ?? (format is { } fixedFormat
-                    ? v => v.ToString(fixedFormat, CultureInfo.InvariantCulture)
-                    : null),
-                disabled);
+            // Same band contract as the full-row slider: plain text for a
+            // custom readout, the standard numeric well for every number.
+            var bandOrigin = new Vector2(Origin.X + Width - readoutWidth, Origin.Y);
+            if (readout is { } custom)
+                DrawTextRight(
+                    bandOrigin,
+                    readoutWidth,
+                    ActiveTheme.Controls.FormRowHeight * Scale,
+                    ActiveTheme.Typography.CaptionSize,
+                    FontFamily.Mono,
+                    FormLabelColor,
+                    custom(displayed));
+            else
+            {
+                ImGui.SetCursorScreenPos(new Vector2(
+                    bandOrigin.X,
+                    Center(ActiveTheme.Controls.WorkspaceHeight).Y));
+                Crystarium.AxisWell(
+                    $"{id}-value",
+                    "",
+                    displayed,
+                    next =>
+                    {
+                        displayed = Math.Clamp(next, minimum, maximum);
+                        onChange(displayed);
+                    },
+                    null,
+                    ActiveTheme.FormValue,
+                    (maximum - minimum) / 300f,
+                    format ?? "0.00",
+                    ControlStyle.Workspace with
+                    {
+                        Width = UiWidth.Fixed(readoutWidth / Scale),
+                    },
+                    disabled,
+                    adaptiveDisplay: format is null);
+            }
         }
 
         public void Switch(
