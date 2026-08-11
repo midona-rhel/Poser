@@ -12,6 +12,16 @@ using CSWorld = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.World;
 
 namespace Poser.Game;
 
+/// <summary>One spawnable prop model: a display name over the weapon model
+/// triple the native spawn takes (Ktisis's props library row, minus the
+/// unsupported wield/sheathe columns).</summary>
+public readonly record struct PropModel(
+    string Name,
+    ushort Model,
+    ushort Submodel,
+    byte Variant,
+    string Description);
+
 /// <summary>
 /// One spawned prop: a stable id and display name over the live native
 /// weapon. The handle owns no copy of the transform — every read goes
@@ -142,7 +152,70 @@ public sealed unsafe class PropSpawnService : IDisposable
     /// Spawns one prop at the local player's position, using Brio's prop
     /// base model (weapon model 9001 / type 249 / variant 1).
     /// </summary>
-    public PropHandle? SpawnProp()
+    private const string PropDataResource = "Poser.Game.Data.props.json";
+
+    private IReadOnlyList<PropModel>? _catalog;
+
+    /// <summary>The spawnable prop library, parsed once from the embedded
+    /// Ktisis props file. Rows whose model id is 0 are placeholders and are
+    /// dropped.</summary>
+    public IReadOnlyList<PropModel> Catalog => _catalog ??= LoadCatalog();
+
+    private IReadOnlyList<PropModel> LoadCatalog()
+    {
+        try
+        {
+            using var stream = typeof(PropSpawnService).Assembly
+                .GetManifestResourceStream(PropDataResource);
+            if (stream == null)
+            {
+                _log.Warning("PropSpawnService: props.json resource missing.");
+                return Array.Empty<PropModel>();
+            }
+            var rows = System.Text.Json.JsonSerializer.Deserialize<List<PropRow>>(stream);
+            if (rows == null)
+                return Array.Empty<PropModel>();
+            var catalog = new List<PropModel>(rows.Count);
+            foreach (var row in rows)
+            {
+                if (row.Model <= 0 || row.Model > ushort.MaxValue
+                    || string.IsNullOrWhiteSpace(row.Item))
+                    continue;
+                catalog.Add(new PropModel(
+                    row.Item,
+                    (ushort)row.Model,
+                    (ushort)Math.Clamp(row.Submodel, 0, ushort.MaxValue),
+                    (byte)Math.Clamp(row.Variant, 0, byte.MaxValue),
+                    row.Description ?? string.Empty));
+            }
+            catalog.Sort(static (a, b) => string.Compare(
+                a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+            return catalog;
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"PropSpawnService: props.json parse failed: {ex.Message}");
+            return Array.Empty<PropModel>();
+        }
+    }
+
+    /// <summary>Shape of Data/props.json, transcribed from the reference
+    /// file; the wield/sheathe columns are ignored.</summary>
+    private sealed class PropRow
+    {
+        public string Item { get; set; } = string.Empty;
+        public int Model { get; set; }
+        public int Submodel { get; set; }
+        public int Variant { get; set; }
+        public string? Description { get; set; }
+    }
+
+    /// <summary>The default prop — Brio's apple — for callers with no model
+    /// in hand.</summary>
+    public PropHandle? SpawnProp() =>
+        SpawnProp(new PropModel("Prop", 9001, 249, 1, string.Empty));
+
+    public PropHandle? SpawnProp(PropModel model)
     {
         try
         {
@@ -157,11 +230,11 @@ public sealed unsafe class PropSpawnService : IDisposable
             {
                 WeaponModelId =
                 {
-                    Id = 9001,
-                    Type = 249,
-                    Variant = 1,
-                    Stain0 = 1,
-                    Stain1 = 1,
+                    Id = model.Model,
+                    Type = model.Submodel,
+                    Variant = model.Variant,
+                    Stain0 = 0,
+                    Stain1 = 0,
                 },
                 AnimationVariant = 0,
             };
@@ -182,7 +255,9 @@ public sealed unsafe class PropSpawnService : IDisposable
             var handle = new PropHandle(
                 this,
                 id,
-                "Prop " + id.ToString(CultureInfo.InvariantCulture),
+                model.Name == "Prop"
+                    ? "Prop " + id.ToString(CultureInfo.InvariantCulture)
+                    : model.Name,
                 (nint)weapon);
             _props.Add(handle);
             _events.Publish(new PropListChangedEvent());

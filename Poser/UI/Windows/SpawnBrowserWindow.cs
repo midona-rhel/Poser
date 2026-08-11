@@ -364,6 +364,7 @@ public sealed class SpawnBrowserWindow : Window
                         : SpawnBrowserTab.Cameras);
 
         var entries = _catalog.Entries;
+        _actorEntryCount = entries.Count;
         for (int i = 0; i < entries.Count; i++)
         {
             var entry = entries[i];
@@ -377,8 +378,28 @@ public sealed class SpawnBrowserWindow : Window
                 false));
             _rowTabs.Add(SpawnBrowserTab.Actors);
         }
+
+        // The prop library follows: every spawnable weapon-model prop, filed
+        // under Props beside the plain test prop above.
+        var models = _propService.Catalog;
+        for (int i = 0; i < models.Count; i++)
+        {
+            rows.Add(new SpawnBrowserRow(
+                "##spawn-prop-" + i.ToString(CultureInfo.InvariantCulture),
+                models[i].Name,
+                models[i].Name.ToLowerInvariant(),
+                TablerIcon.Diamond,
+                0u,
+                "Prop",
+                false));
+            _rowTabs.Add(SpawnBrowserTab.Props);
+        }
         _refilter = true;
     }
+
+    /// <summary>How many creature-catalog rows precede the prop library in
+    /// the row list; activation splits the shared range on it.</summary>
+    private int _actorEntryCount;
 
     private static SpawnBrowserRow ActionRow(
         string id, string label, TablerIcon glyph, bool disabled = false,
@@ -575,6 +596,18 @@ public sealed class SpawnBrowserWindow : Window
                 // exactly like the light file row above.
                 _cameraPane.OpenLoad();
                 return;
+        }
+
+        // Prop library rows follow the creature catalog: each spawns its
+        // weapon model as a scene prop, listed under the PROPS section.
+        if (index - ActionRows >= _actorEntryCount)
+        {
+            var models = _propService.Catalog;
+            int modelIndex = index - ActionRows - _actorEntryCount;
+            if (modelIndex >= 0 && modelIndex < models.Count &&
+                _propService.SpawnProp(models[modelIndex]) == null)
+                _note = SpawnFailedNote;
+            return;
         }
 
         // Catalog rows spawn the entry as its OWN actor, classified by kind
