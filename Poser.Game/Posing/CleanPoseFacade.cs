@@ -528,6 +528,7 @@ public sealed class CleanPoseFacade
 
     public bool HasStash => _transfers.HasStash;
     public DateTimeOffset? StashedAt => _transfers.StashedAt;
+    public string? StashedFrom => _transfers.StashedFrom;
 
     /// <summary>
     /// Every UI-facing pose edit reports through here: a failed edit is never
@@ -620,8 +621,8 @@ public sealed class CleanPoseFacade
         PortablePose pose) =>
         Report("Paste pose", _transfers.Apply(Targets(actor), pose));
 
-    public PoseEditResult Stash(IActor actor) =>
-        Report("Stash pose", _transfers.Stash(Targets(actor)));
+    public PoseEditResult Stash(IActor actor, string sourceLabel) =>
+        Report("Stash pose", _transfers.Stash(Targets(actor), sourceLabel));
 
     public PoseEditResult ApplyStash(IActor actor) =>
         Report("Apply stash", _transfers.ApplyStash(Targets(actor)));

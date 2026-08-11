@@ -2189,16 +2189,23 @@ public class MainWindow : Window
             "Export pose", TablerIcon.DeviceFloppy,
             disabled: !actor.HasSkeleton));
         items.Add(new ContextMenuItem(
-            "Stash pose", TablerIcon.ArrowDown, disabled: !actor.HasSkeleton));
+            "Stash pose", TablerIcon.ArrowDown, disabled: !actor.HasSkeleton,
+            help: "Save this actor's pose so you can apply it to another actor. Replaces whatever was stashed before."));
         items.Add(new ContextMenuItem(
             "Apply stashed pose", TablerIcon.ArrowBackUp,
-            disabled: !actor.HasSkeleton || !_cleanPose.HasStash));
+            disabled: !actor.HasSkeleton || !_cleanPose.HasStash,
+            help: _cleanPose.HasStash
+                ? $"Apply the stashed pose to this actor. Stashed from {_cleanPose.StashedFrom} at {_cleanPose.StashedAt:HH:mm:ss} UTC."
+                : "Nothing stashed yet"));
         actions.Add(null); // separator
         // Both rows open the Brio menus — the ONE import/export surface;
         // the file dialogs (and the actor-side presets) live inside them.
         actions.Add(() => _poseFileSection.RequestImportMenu(withPresets: true));
         actions.Add(() => _poseFileSection.RequestExportMenu());
-        actions.Add(() => _cleanPose.Stash(actor));
+        actions.Add(() => _cleanPose.Stash(
+            actor,
+            Config.ConfigurationService.Instance.GetDisplayName(
+                actorId.LogicalId, DisplayName(actor.Name))));
         actions.Add(() => _cleanPose.ApplyStash(actor));
 
         if (_spawnService.IsSpawnedActor(actor))

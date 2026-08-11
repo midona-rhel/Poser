@@ -2026,7 +2026,9 @@ public class PoseInspectorPane
         {
             actions.Button(
                 "Stash",
-                () => _cleanPose.Stash(skeleton.Actor),
+                () => _cleanPose.Stash(
+                    skeleton.Actor,
+                    ActorDisplayName(skeleton.Actor)),
                 help: "Save this actor's pose so you can apply it to another actor. Replaces whatever was stashed before.");
             actions.Button(
                 "Apply stash",
@@ -2035,7 +2037,7 @@ public class PoseInspectorPane
                 // A live clock: this one string says something different
                 // every second.
                 help: hasStash
-                    ? $"Apply the stashed pose to this actor. Stashed {_cleanPose.StashedAt:HH:mm:ss} UTC."
+                    ? $"Apply the stashed pose to this actor. Stashed from {_cleanPose.StashedFrom} at {_cleanPose.StashedAt:HH:mm:ss} UTC."
                     : "Nothing stashed yet");
         });
         // No import-flavored controls in the rail — the user's rule
