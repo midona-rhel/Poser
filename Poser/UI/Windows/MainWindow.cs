@@ -453,9 +453,6 @@ public class MainWindow : Window
             else
                 IsOpen = false;
         };
-        _vm.OnToggleInspectorWindow = () => ContentHidden = !ContentHidden;
-        _vm.OnToggleSceneWindow =
-            () => OnSceneWindowToggleRequested?.Invoke();
         _vm.OnPopOut = () =>
         {
             if (SelectedActorId() is { } popOut)
@@ -943,8 +940,6 @@ public class MainWindow : Window
         _vm.Detached =
             Config.ConfigurationService.Instance.Config.UI.DetachedShell;
         _vm.TitleEntity = TitleEntity(primary);
-        _vm.SceneWindowOpen = GetSceneWindowOpen?.Invoke() ?? true;
-        _vm.InspectorWindowOpen = !_contentHidden;
         // The shell's retained per-row state is swept on structural change
         // only: an identical rescan publishes no new revision, so hover and
         // interaction identity survive every refresh that changed nothing.
@@ -2311,6 +2306,8 @@ public class MainWindow : Window
         LayoutSeparator,
         PopOutContent,
         ToggleDetached,
+        SceneWindow,
+        InspectorWindow,
         SettingsSeparator,
         OpenSettings,
     }
@@ -2347,7 +2344,10 @@ public class MainWindow : Window
         // context menu applies to the same three commands.
         bool poseTarget = SelectedSkeleton() != null;
         var uiConfig = Config.ConfigurationService.Instance.Config.UI;
-        int layoutState = uiConfig.DetachedShell ? 1 : 0;
+        bool sceneOpen = GetSceneWindowOpen?.Invoke() ?? true;
+        int layoutState = (uiConfig.DetachedShell ? 1 : 0)
+            | (sceneOpen ? 2 : 0)
+            | (_contentHidden ? 4 : 0);
         if (_shellMenuRowsBuilt
             && poseTarget == _shellMenuPoseTarget
             && layoutState == _shellMenuLayoutState)
@@ -2379,6 +2379,20 @@ public class MainWindow : Window
             new ContextMenuItem(
                 uiConfig.DetachedShell ? "Merge the UI" : "Detach the UI",
                 TablerIcon.LayoutPanel);
+        // Detached mode's window roster: windows close and reopen from this
+        // menu — the strip is the always-there surface carrying it.
+        _shellMenuItems[(int)ShellCommand.SceneWindow] =
+            new ContextMenuItem(
+                sceneOpen ? "Close Scene window" : "Open Scene window",
+                TablerIcon.LayoutPanel,
+                disabled: !uiConfig.DetachedShell);
+        _shellMenuItems[(int)ShellCommand.InspectorWindow] =
+            new ContextMenuItem(
+                _contentHidden
+                    ? "Open Inspector window"
+                    : "Close Inspector window",
+                TablerIcon.Monitor,
+                disabled: !uiConfig.DetachedShell);
         _shellMenuItems[(int)ShellCommand.SettingsSeparator] =
             ContextMenuItem.Separator;
         _shellMenuItems[(int)ShellCommand.OpenSettings] =
@@ -2426,6 +2440,12 @@ public class MainWindow : Window
                 break;
             case ShellCommand.ToggleDetached:
                 RequestDetachToggle();
+                break;
+            case ShellCommand.SceneWindow:
+                OnSceneWindowToggleRequested?.Invoke();
+                break;
+            case ShellCommand.InspectorWindow:
+                ContentHidden = !ContentHidden;
                 break;
             case ShellCommand.OpenSettings:
                 OnSettingsRequested?.Invoke();

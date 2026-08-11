@@ -154,13 +154,6 @@ public sealed class AppShellViewModel
     /// inspector. Off is the compact single-window UI.</summary>
     public bool Detached;
 
-    /// <summary>Detached mode's window roster, driven FROM THE TOOLBAR: the
-    /// strip is where windows close and reopen, because it is the cheapest
-    /// thing to keep around (user 2026-08-11).</summary>
-    public bool SceneWindowOpen = true;
-    public bool InspectorWindowOpen = true;
-    public Action? OnToggleSceneWindow;
-    public Action? OnToggleInspectorWindow;
 
     /// <summary>What the content's title names: the selected entity
     /// ("Sterling Vane", "Environment", "Library"), never the brand — the
@@ -1184,32 +1177,7 @@ public static class AppShellView
             x += step;
         }
         x += CenterInset * s - theme.Spacing.Two * s;
-        x = DrawGizmoCluster(vm, x, origin.Y, height, s)
-            + CenterInset * s;
-
-        // The strip is detached mode's window roster: Scene and Inspector
-        // close here and reopen here.
-        ImGui.SetCursorScreenPos(new Vector2(x, y));
-        Crystarium.TemporaryIconToggle(
-            TablerIcon.LayoutPanel,
-            vm.SceneWindowOpen,
-            () => vm.OnToggleSceneWindow?.Invoke(),
-            ControlStyle.Square(side),
-            help: vm.SceneWindowOpen
-                ? "Close the Scene window"
-                : "Open the Scene window",
-            id: "##strip-scene");
-        x += step;
-        ImGui.SetCursorScreenPos(new Vector2(x, y));
-        Crystarium.TemporaryIconToggle(
-            TablerIcon.Monitor,
-            vm.InspectorWindowOpen,
-            () => vm.OnToggleInspectorWindow?.Invoke(),
-            ControlStyle.Square(side),
-            help: vm.InspectorWindowOpen
-                ? "Close the Inspector window"
-                : "Open the Inspector window",
-            id: "##strip-inspector");
+        DrawGizmoCluster(vm, x, origin.Y, height, s);
     }
 
     /// <summary>What <see cref="DrawToolbarContent"/> will span, screen px,
@@ -1230,9 +1198,6 @@ public static class AppShellView
             + Crystarium.MeasureSegmentedControl(GizmoIcons).X + gap
             + Crystarium.MeasureSegmentedControl(SpaceItems).X + gap
             + Crystarium.MeasureSegmentedControl(PivotItems).X + gap
-            + Crystarium.MeasureSegmentedControl(SymmetryItems).X
-            + CenterInset * s
-            + step
-            + side * s;
+            + Crystarium.MeasureSegmentedControl(SymmetryItems).X;
     }
 }
