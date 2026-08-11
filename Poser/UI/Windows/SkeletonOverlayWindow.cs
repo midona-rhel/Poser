@@ -454,14 +454,17 @@ public class SkeletonOverlayWindow : Window
             var overlayMouse = ImGui.GetMousePos();
             Crystarium.HoverHelp.Preview("sow-light",
                 overlayMouse - new Vector2(4f, 4f), overlayMouse + new Vector2(4f, 4f),
-                $"{hoveredLight.Name} — light");
+                $"{hoveredLight.Name} — light", animated: false);
         }
         else if (hoveredActor != null && !pointerBlocked)
         {
             var overlayMouse = ImGui.GetMousePos();
             Crystarium.HoverHelp.Preview("sow-actor",
                 overlayMouse - new Vector2(4f, 4f), overlayMouse + new Vector2(4f, 4f),
-                $"{hoveredActor.Name} — actor transform");
+                hoveredActor.Id.Kind == SceneEntityKind.Prop
+                    ? $"{hoveredActor.Name} — prop"
+                    : $"{hoveredActor.Name} — actor transform",
+                animated: false);
         }
 
         // Freeze the overlapping candidates and their anchor while the

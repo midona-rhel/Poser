@@ -416,13 +416,19 @@ public static partial class Crystarium
             var animMin = center + (pos - center) * k + translate;
             var animMax = center + (pos + new Vector2(cardW, cardH) - center) * k + translate;
             float radius = Crystarium.ActiveTheme.Radii.Medium * scale;
-            Interactive.RegisterOccluder(
-                new InteractionOwner(
-                    "hover-help",
-                    InteractionLayer.HoverSurface,
-                    int.MaxValue),
-                animMin,
-                animMax);
+            // Anchored help cards occlude what they cover, so a control under
+            // the card cannot hover-flicker through it. INSTANT previews do
+            // not: they follow the pointer, so their card sits AT the click —
+            // registering it swallowed every world-handle click under its own
+            // tooltip (2026-08-12).
+            if (!c.Instant)
+                Interactive.RegisterOccluder(
+                    new InteractionOwner(
+                        "hover-help",
+                        InteractionLayer.HoverSurface,
+                        int.MaxValue),
+                    animMin,
+                    animMax);
 
             var fg = ImGui.GetForegroundDrawList();
             // The blur runs at CONSTANT strength (picto keeps blur(16px)
