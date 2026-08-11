@@ -259,7 +259,8 @@ public sealed class ShellSidebar
                     row.Depth,
                     Trunks(row.TreeLines),
                     row.ActorActions ? 3
-                        : row.LightActions || row.CameraActions ||
+                        : row.CameraActions ? 2
+                        : row.LightActions ||
                             row.OverlayBones != null ? 1 : 0,
                     0f,
                     rowHeight));
@@ -654,12 +655,28 @@ public sealed class ShellSidebar
                 return;
             }
 
-            // One slot again: the camera's inline verb is "look through me".
-            // A parked camera fades rather than wearing a slash — the camera
-            // still works, it is just not the one being looked through.
+            // Two slots: the lock protecting the shot, then the camera's
+            // inline verb — "look through me". Both fade when off rather
+            // than wearing a slash: an unlocked camera and a parked camera
+            // both still work, they are just not in that state.
             if (row.CameraActions)
             {
                 ImGui.SetCursorScreenPos(origin);
+                if (Crystarium.TemporaryIconToggle(
+                        row.CameraLocked
+                            ? TablerIcon.Lock
+                            : TablerIcon.LockOpen,
+                        selected: false,
+                        style: square,
+                        help: row.CameraLocked
+                            ? "Unlock this camera"
+                            : "Lock this camera: keep its shot exactly as "
+                                + "framed",
+                        id: "##camera-lock",
+                        dimmed: !row.CameraLocked))
+                    _vm.OnCameraLock?.Invoke(row);
+
+                ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
                 if (Crystarium.TemporaryIconToggle(
                         TablerIcon.Video,
                         selected: false,

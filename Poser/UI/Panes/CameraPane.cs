@@ -225,10 +225,6 @@ public sealed class CameraPane
                     help: "Clear the offset",
                     id: "##camera-offset-reset");
             });
-        var position = camera.WorldPosition;
-        form.ReadOnly("Position",
-            $"{position.X:0.00}  {position.Y:0.00}  {position.Z:0.00}",
-            help: "Where the camera really is this frame");
     }
 
     /// <summary>The rail's TRACKING section, whole: Ktisis's bone tracking —
@@ -282,6 +278,9 @@ public sealed class CameraPane
         if (!_cameras.IsAvailable)
             form.Status("Cameras are unavailable: game signatures not found.");
         bool locked = camera.IsLocked;
+        if (locked)
+            form.Status(
+                "Locked — unlock from the sidebar row to edit this camera.");
         form.Cells(cells =>
         {
             cells.Cell(
@@ -290,11 +289,10 @@ public sealed class CameraPane
                     value => SetLive(camera, value)),
                 help: "Look through this camera; exactly one camera is live");
             cells.Cell(
-                "Locked",
-                cell => cell.Switch("##camera-locked", camera.IsLocked,
-                    value => camera.IsLocked = value),
-                help: "Protect the shot: every edit is disabled and a free "
-                    + "camera stops responding to movement");
+                "Portrait",
+                cell => cell.Switch("##camera-portrait", camera.IsPortraitMode,
+                    _ => camera.TogglePortraitMode(), disabled: locked),
+                help: "Roll the view a quarter turn for portrait framing");
         });
         form.Cells(cells =>
         {
@@ -320,10 +318,6 @@ public sealed class CameraPane
     private void OrbitRows(Crystarium.FormScope form, IVirtualCamera camera)
     {
         bool locked = camera.IsLocked;
-        form.Switch("Portrait", camera.IsPortraitMode,
-            _ => camera.TogglePortraitMode(),
-            disabled: locked,
-            help: "Roll the view a quarter turn for portrait framing");
         // Zoom's response is front-loaded — most framing lives in the first
         // few meters — so the log track gives that band the travel, exactly
         // like the environment's distance sliders.
@@ -333,17 +327,7 @@ public sealed class CameraPane
             disabled: locked,
             scale: SliderScale.Log,
             help: "How far the camera orbits from its pivot");
-        form.Slider("FoV", camera.FoV * Rad2Deg, -44f, 120f,
-            value => camera.FoV = value * Deg2Rad,
-            format: "0.0",
-            disabled: locked,
-            help: "Field-of-view offset around the game's own lens, in "
-                + "degrees");
-        form.Slider("Roll", camera.Roll * Rad2Deg, -180f, 180f,
-            value => camera.Roll = value * Deg2Rad,
-            format: "0.0",
-            disabled: locked,
-            help: "Tilt around the view axis, in degrees");
+        FovRollRow(form, camera, locked);
 
         // Angle and pan are wrap-around headings, not bounded travels — a
         // track would lie about their range, so they take the bare numeric
@@ -451,21 +435,36 @@ public sealed class CameraPane
             help: "Let the view pitch wrap past straight up and down");
     }
 
+    /// <summary>FoV and roll share one row for both camera kinds: the two
+    /// lens facts, side by side.</summary>
+    private static void FovRollRow(
+        Crystarium.FormScope form, IVirtualCamera camera, bool locked)
+    {
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "FoV",
+                cell => cell.Slider("##camera-fov", camera.FoV * Rad2Deg,
+                    -44f, 120f,
+                    value => camera.FoV = value * Deg2Rad,
+                    format: "0.0", disabled: locked),
+                help: "Field-of-view offset around the game's own lens, in "
+                    + "degrees");
+            cells.Cell(
+                "Roll",
+                cell => cell.Slider("##camera-roll", camera.Roll * Rad2Deg,
+                    -180f, 180f,
+                    value => camera.Roll = value * Deg2Rad,
+                    format: "0.0", disabled: locked),
+                help: "Tilt around the view axis, in degrees");
+        });
+    }
+
     private void FreeCameraRows(
         Crystarium.FormScope form, IVirtualCamera camera)
     {
         bool locked = camera.IsLocked;
-        form.Slider("FoV", camera.FoV * Rad2Deg, -44f, 120f,
-            value => camera.FoV = value * Deg2Rad,
-            format: "0.0",
-            disabled: locked,
-            help: "Field-of-view offset around the game's own lens, in "
-                + "degrees");
-        form.Slider("Roll", camera.Roll * Rad2Deg, -180f, 180f,
-            value => camera.Roll = value * Deg2Rad,
-            format: "0.0",
-            disabled: locked,
-            help: "Tilt around the view axis, in degrees");
+        FovRollRow(form, camera, locked);
         // Headings, like the orbit camera's angle rows: bare numeric wells.
         var rotation = camera.Rotation;
         form.Cells(cells =>

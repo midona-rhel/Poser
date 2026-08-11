@@ -38,11 +38,12 @@ public sealed class ShellSidebarRow
     /// </summary>
     public bool LightActions;
     public bool LightOn = true;
-    /// <summary>A camera row's action slot: one video mark making this the
-    /// LIVE camera — the light eye's twin, except exactly one camera wears it
-    /// at a time.</summary>
+    /// <summary>A camera row's action slots: a lock protecting the shot,
+    /// then the video mark making this the LIVE camera — the light eye's
+    /// twin, except exactly one camera wears it at a time.</summary>
     public bool CameraActions;
     public bool CameraLive;
+    public bool CameraLocked;
     public IReadOnlyList<Domain.Identity.BoneId>? OverlayBones;
 
     /// <summary>Last child of its parent → curved-L branch instead of T.</summary>
@@ -169,6 +170,7 @@ public sealed class AppShellViewModel
     public Action<ShellSidebarRow>? OnActorPause;
     public Action<ShellSidebarRow>? OnLightVisibility;
     public Action<ShellSidebarRow>? OnCameraLive;
+    public Action<ShellSidebarRow>? OnCameraLock;
     public Action<ShellSidebarRow>? OnOverlayVisibility;
     public Func<IReadOnlyList<Domain.Identity.BoneId>, bool>?
         IsOverlayVisible;

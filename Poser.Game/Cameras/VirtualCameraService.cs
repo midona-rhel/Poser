@@ -407,6 +407,37 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             if (!_gPose.IsGPosing || _live is not { } live)
                 return result;
 
+            // UI-written orbit values, re-asserted AFTER the game's update:
+            // a draw-time write lands after this frame's update already ran,
+            // where the update's own normalization can eat it before it ever
+            // renders (the horizontal angle especially). Each write applies
+            // once — the mouse orbit is never fought.
+            if (live.PendingAngle is { } pendingAngle)
+            {
+                camera->Angle = pendingAngle;
+                live.PendingAngle = null;
+            }
+            if (live.PendingPan is { } pendingPan)
+            {
+                camera->Pan = pendingPan;
+                live.PendingPan = null;
+            }
+            if (live.PendingRoll is { } pendingRoll)
+            {
+                camera->Roll = pendingRoll;
+                live.PendingRoll = null;
+            }
+            if (live.PendingZoom is { } pendingZoom)
+            {
+                camera->Distance = pendingZoom;
+                live.PendingZoom = null;
+            }
+            if (live.PendingFoV is { } pendingFoV)
+            {
+                camera->Zoom = pendingFoV;
+                live.PendingFoV = null;
+            }
+
             if (live.Kind != CameraKind.Free)
             {
                 var offset = live.PositionOffset + live.TargetOffset;

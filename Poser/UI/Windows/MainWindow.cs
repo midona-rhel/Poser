@@ -575,6 +575,20 @@ public class MainWindow : Window
             }
             row.CameraLive = camera.IsLive;
         };
+        // The lock's inline seat, the live toggle's neighbour: protect or
+        // release the shot without selecting the camera first.
+        _vm.OnCameraLock = row =>
+        {
+            if (row.Tag is not SelectionId
+                { Kind: SceneEntityKind.Camera, Camera: { } lockCameraId })
+                return;
+            var resolved = _bindings.Resolve(lockCameraId);
+            if (!resolved.Success ||
+                resolved.Value is not { IsValid: true } camera)
+                return;
+            camera.IsLocked = !camera.IsLocked;
+            row.CameraLocked = camera.IsLocked;
+        };
         _vm.OnOverlayVisibility = row =>
         {
             if (row.OverlayBones is not { } bones)
@@ -1317,13 +1331,16 @@ public class MainWindow : Window
             if (cameraRow.Tag is not SelectionId cameraSelection)
                 continue;
             cameraRow.Active = _selection.IsSelected(cameraSelection);
-            // The live mark reads the LIVE camera, not the descriptor: the
-            // switch moves the scene signature, and waiting for the republish
-            // would leave the glyph a frame or more behind the click.
+            // The live and lock marks read the LIVE camera, not the
+            // descriptor: the switch moves the scene signature, and waiting
+            // for the republish would leave the glyphs behind the click.
             if (cameraSelection.Camera is { } rowCameraId &&
                 _bindings.Resolve(rowCameraId) is
                     { Success: true, Value: { } liveCamera })
+            {
                 cameraRow.CameraLive = liveCamera.IsLive;
+                cameraRow.CameraLocked = liveCamera.IsLocked;
+            }
         }
 
         var lightRows = _lightsSection.Rows;
