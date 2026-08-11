@@ -63,8 +63,22 @@ public sealed class ViewportProjection
                 GetBoneModelTransform(boneId),
             TransformTargetKind.Light when target.Light is { } lightId =>
                 GetLightTransform(lightId),
+            TransformTargetKind.Prop when target.Prop is { } propId =>
+                GetPropTransform(propId),
             _ => null,
         };
+
+    /// <summary>World transform of a spawned prop. Null off the framework
+    /// thread or when the id no longer binds.</summary>
+    public PoseTransform? GetPropTransform(PropId id)
+    {
+        if (!_framework.IsInFrameworkUpdateThread)
+            return null;
+        var prop = _bindings.Resolve(id);
+        return prop.Success
+            ? ToPoseTransform(prop.Value!.Transform)
+            : null;
+    }
 
     /// <summary>World transform of a spawned light. Null off the framework
     /// thread or when the id no longer binds.</summary>

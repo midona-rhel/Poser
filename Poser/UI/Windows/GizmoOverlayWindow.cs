@@ -30,7 +30,8 @@ internal enum GizmoTargetType
     None,
     Actor,
     Bone,
-    Light
+    Light,
+    Prop
 }
 
 /// <summary>
@@ -643,6 +644,7 @@ public class GizmoOverlayWindow : Window
             { Kind: SceneEntityKind.Actor } => GizmoTargetType.Actor,
             { Kind: SceneEntityKind.Light, Light: { } light } =>
                 IsAttached(light) ? GizmoTargetType.None : GizmoTargetType.Light,
+            { Kind: SceneEntityKind.Prop } => GizmoTargetType.Prop,
             _ => GizmoTargetType.None,
         };
     }
@@ -731,6 +733,7 @@ public class GizmoOverlayWindow : Window
         BoneId? primaryBone = null;
         ActorId? primaryActor = null;
         LightId? primaryLight = null;
+        PropId? primaryProp = null;
         var modelMatrix = Matrix4x4.Identity;
 
         if (isBone)
@@ -751,6 +754,13 @@ public class GizmoOverlayWindow : Window
                 { Kind: TransformTargetKind.Light, Light: { } primaryLightId })
                 return;
             primaryLight = primaryLightId;
+        }
+        else if (targetType == GizmoTargetType.Prop)
+        {
+            if (selection.Primary is not
+                { Kind: TransformTargetKind.Prop, Prop: { } primaryPropId })
+                return;
+            primaryProp = primaryPropId;
         }
         else
         {
@@ -789,6 +799,12 @@ public class GizmoOverlayWindow : Window
                 is { } lightRest)
         {
             currentTransform = ToLegacy(lightRest);
+        }
+        else if (primaryProp is { } propTarget &&
+            _viewport.GetModelTransform(TransformTargetId.ForProp(propTarget))
+                is { } propRest)
+        {
+            currentTransform = ToLegacy(propRest);
         }
         else
         {
@@ -1230,6 +1246,8 @@ public class GizmoOverlayWindow : Window
                     $"Transform {targets.Count} bone{(targets.Count == 1 ? "" : "s")}",
                 GizmoTargetType.Light =>
                     $"Transform {targets.Count} light{(targets.Count == 1 ? "" : "s")}",
+                GizmoTargetType.Prop =>
+                    $"Transform {targets.Count} prop{(targets.Count == 1 ? "" : "s")}",
                 _ =>
                     $"Transform {targets.Count} actor{(targets.Count == 1 ? "" : "s")}",
             },

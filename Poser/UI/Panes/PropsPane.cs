@@ -24,11 +24,6 @@ public sealed class PropsPane
     private readonly StableBindingRegistry _bindings;
 
     private bool _openProp = true;
-    private bool _openTransform = true;
-
-    /// <summary>The euler the wells are dragging. A quaternion re-derived every
-    /// frame walks, so the drag owns the angles until it commits.</summary>
-    private Vector3? _dragEuler;
 
     /// <summary>Anything that changes the list, run after the page has drawn.
     /// </summary>
@@ -54,17 +49,14 @@ public sealed class PropsPane
                 return;
             }
 
+            // Transform lives on the inspector rail, exactly as a light's
+            // does; this pane owns only what the rail cannot say.
             page.Section(
                 "PROP",
                 _openProp,
                 next => _openProp = next,
                 form => PropRows(form, prop),
                 divider: false);
-            page.Section(
-                "TRANSFORM",
-                _openTransform,
-                next => _openTransform = next,
-                form => TransformRows(form, prop));
         });
 
         var pending = _pending;
@@ -97,7 +89,6 @@ public sealed class PropsPane
                 () => _pending = () =>
                 {
                     _props.DestroyAll();
-                    _dragEuler = null;
                     _scene.Selection.Clear();
                 },
                 variant: ButtonVariant.Danger,
@@ -105,39 +96,6 @@ public sealed class PropsPane
         });
         form.Status(
             "Props last for this GPose session and are destroyed when it ends.");
-    }
-
-    private void TransformRows(Crystarium.FormScope form, PropHandle prop)
-    {
-        form.AxisVector(
-            "Translation",
-            prop.Position,
-            next => prop.Position = next,
-            null,
-            0.005f,
-            "0.000",
-            help: "Move this prop in world space");
-        form.AxisVector(
-            "Rotation",
-            _dragEuler ?? PoseMath.QuaternionToEuler(prop.Rotation),
-            next =>
-            {
-                _dragEuler = next;
-                prop.Rotation = PoseMath.EulerToQuaternion(next);
-            },
-            // The wells re-derive from the quaternion again once the drag ends.
-            () => _dragEuler = null,
-            0.5f,
-            "0.000",
-            help: "Turn this prop, in degrees");
-        form.AxisVector(
-            "Scale",
-            prop.Scale,
-            next => prop.Scale = next,
-            null,
-            0.005f,
-            "0.000",
-            help: "Resize this prop");
     }
 
     // ── state ────────────────────────────────────────────────────────────

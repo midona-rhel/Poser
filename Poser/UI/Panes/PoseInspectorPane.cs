@@ -2323,6 +2323,11 @@ public class PoseInspectorPane
                     ? (ToLegacy(lightValue),
                         _bindings.Resolve(lightId).Value?.AttachedBone == null)
                     : (Transform.Identity, false);
+            case { Kind: TransformTargetKind.Prop, Prop: { } propId }:
+                // A prop's transform IS world space, exactly like a light's.
+                return _viewport.GetPropTransform(propId) is { } propValue
+                    ? (ToLegacy(propValue), true)
+                    : (Transform.Identity, false);
             default:
                 return (Transform.Identity, false);
         }
@@ -2350,6 +2355,7 @@ public class PoseInspectorPane
         {
             case { Kind: TransformTargetKind.Actor }:
             case { Kind: TransformTargetKind.Light }:
+            case { Kind: TransformTargetKind.Prop }:
             {
                 targets = effective.Targets;
                 modelStart = displayedStart;
@@ -2393,6 +2399,7 @@ public class PoseInspectorPane
                 {
                     TransformTargetKind.Actor => "actor",
                     TransformTargetKind.Light => "light",
+                    TransformTargetKind.Prop => "prop",
                     _ => "bone",
                 }}{(targets.Count == 1 ? "" : "s")}",
             includeLinkedBones:

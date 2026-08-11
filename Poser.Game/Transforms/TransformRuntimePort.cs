@@ -49,6 +49,8 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
                 CaptureBone(target, bone),
             TransformTargetKind.Light when target.Light is { } light =>
                 CaptureLight(target, light),
+            TransformTargetKind.Prop when target.Prop is { } prop =>
+                CaptureProp(target, prop),
             _ => TransformPortResult.Fail(
                 TransformPortStatus.IdentityMismatch,
                 $"Malformed transform target {target}."),
@@ -125,6 +127,16 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             return TransformPortResult.Ok();
         }
 
+        if (baseline.Target.Kind == TransformTargetKind.Prop &&
+            baseline.Target.Prop is { } applyPropId)
+        {
+            var resolved = _bindings.Resolve(applyPropId);
+            if (!resolved.Success)
+                return FromBinding(resolved.Status, resolved.Detail);
+            resolved.Value!.Transform = ToLegacy(desired);
+            return TransformPortResult.Ok();
+        }
+
         return TransformPortResult.Fail(
             TransformPortStatus.IdentityMismatch,
             $"Malformed transform target {baseline.Target}.");
@@ -172,6 +184,16 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             return TransformPortResult.Ok();
         }
 
+        if (state.Target.Kind == TransformTargetKind.Prop &&
+            state.Target.Prop is { } restorePropId)
+        {
+            var resolved = _bindings.Resolve(restorePropId);
+            if (!resolved.Success)
+                return FromBinding(resolved.Status, resolved.Detail);
+            resolved.Value!.Transform = ToLegacy(state.Transform);
+            return TransformPortResult.Ok();
+        }
+
         return TransformPortResult.Fail(
             TransformPortStatus.IdentityMismatch,
             $"Malformed transform target {state.Target}.");
@@ -194,6 +216,25 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             return TransformPortResult.Fail(
                 TransformPortStatus.InvalidTransform,
                 $"Light {lightId} returned an invalid transform.");
+        return TransformPortResult.Ok(new TransformTargetState(
+            target,
+            converted.Value,
+            new BonePose(),
+            true));
+    }
+
+    private TransformPortResult CaptureProp(
+        TransformTargetId target,
+        PropId propId)
+    {
+        var resolved = _bindings.Resolve(propId);
+        if (!resolved.Success)
+            return FromBinding(resolved.Status, resolved.Detail);
+        var converted = FromLegacy(resolved.Value!.Transform);
+        if (converted == null)
+            return TransformPortResult.Fail(
+                TransformPortStatus.InvalidTransform,
+                $"Prop {propId} returned an invalid transform.");
         return TransformPortResult.Ok(new TransformTargetState(
             target,
             converted.Value,

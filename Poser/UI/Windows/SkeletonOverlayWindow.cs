@@ -237,6 +237,26 @@ public class SkeletonOverlayWindow : Window
             });
         }
 
+        // A prop's handle is the one viewport route to SELECTING it — the
+        // model itself takes no clicks — so props draw whenever the scene
+        // holds them, the light rule. The actor-dot pipeline serves the
+        // handle unchanged: a named dot that selects its SelectionId.
+        foreach (var prop in _scene.Snapshot.Props)
+        {
+            if (_viewport.GetPropTransform(prop.Id) is not { } propTransform ||
+                !_cameraService.WorldToScreen(
+                    propTransform.Position, out var propScreen))
+                continue;
+            actors.Add(new ActorDisplayData
+            {
+                Name = prop.Name,
+                Id = SelectionId.ForProp(prop.Id),
+                ScreenPos = viewportPos + propScreen,
+                CameraDistance = Vector3.Distance(
+                    cameraPosition, propTransform.Position),
+            });
+        }
+
         // Collect all bones that project to screen successfully — snapshot
         // descriptors give identity/hierarchy, the viewport projection gives
         // model-space facts, and the camera service projects to screen.

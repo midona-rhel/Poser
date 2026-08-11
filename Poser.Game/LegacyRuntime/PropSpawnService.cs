@@ -99,6 +99,28 @@ public sealed unsafe class PropHandle
         }
     }
 
+    /// <summary>The three components as one legacy transform, the shape the
+    /// transform port speaks — one scene notify per write instead of three.
+    /// </summary>
+    public Transform Transform
+    {
+        get => new()
+        {
+            Position = Position,
+            Rotation = Rotation,
+            Scale = Scale,
+        };
+        set
+        {
+            if (!IsValid)
+                return;
+            Weapon->Position = value.Position;
+            Weapon->Rotation = value.Rotation;
+            Weapon->Scale = value.Scale;
+            Commit();
+        }
+    }
+
     public void Destroy() => _owner.Destroy(this);
 
     internal void Invalidate() => _address = nint.Zero;

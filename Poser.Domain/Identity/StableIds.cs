@@ -191,6 +191,7 @@ public enum TransformTargetKind
     Actor,
     Bone,
     Light,
+    Prop,
 }
 
 /// <summary>The subset of selection identities that can enter a transform gesture.</summary>
@@ -200,18 +201,21 @@ public readonly record struct TransformTargetId
         TransformTargetKind kind,
         ActorId? actor,
         BoneId? bone,
-        LightId? light = null)
+        LightId? light = null,
+        PropId? prop = null)
     {
         Kind = kind;
         Actor = actor;
         Bone = bone;
         Light = light;
+        Prop = prop;
     }
 
     public TransformTargetKind Kind { get; }
     public ActorId? Actor { get; }
     public BoneId? Bone { get; }
     public LightId? Light { get; }
+    public PropId? Prop { get; }
     public Guid ActorLineage =>
         Actor?.LogicalId ??
         Bone?.Skeleton.Actor.LogicalId ??
@@ -226,11 +230,15 @@ public readonly record struct TransformTargetId
     public static TransformTargetId ForLight(LightId light) =>
         new(TransformTargetKind.Light, null, null, light);
 
+    public static TransformTargetId ForProp(PropId prop) =>
+        new(TransformTargetKind.Prop, null, null, null, prop);
+
     public SelectionId ToSelectionId() => Kind switch
     {
         TransformTargetKind.Actor => SelectionId.ForActor(Actor!.Value),
         TransformTargetKind.Bone => SelectionId.ForBone(Bone!.Value),
         TransformTargetKind.Light => SelectionId.ForLight(Light!.Value),
+        TransformTargetKind.Prop => SelectionId.ForProp(Prop!.Value),
         _ => throw new InvalidOperationException($"Unknown target kind {Kind}."),
     };
 

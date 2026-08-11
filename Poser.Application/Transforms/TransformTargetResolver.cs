@@ -83,6 +83,32 @@ public static class TransformTargetResolver
                 : new EffectiveTransformSelection(lightTargets[0], lightTargets);
         }
 
+        if (selected[0].Kind == SceneEntityKind.Prop)
+        {
+            var propTargets = new List<TransformTargetId>();
+            foreach (var id in selected)
+            {
+                if (id is not { Kind: SceneEntityKind.Prop, Prop: { } propId })
+                    continue;
+                // Same all-or-nothing rule as lights: one stale prop makes the
+                // whole selection unresolvable rather than silently shrinking.
+                var exists = false;
+                foreach (var prop in snapshot.Props)
+                {
+                    if (!prop.Id.Equals(propId))
+                        continue;
+                    exists = true;
+                    break;
+                }
+                if (!exists)
+                    return null;
+                propTargets.Add(TransformTargetId.ForProp(propId));
+            }
+            return propTargets.Count == 0
+                ? null
+                : new EffectiveTransformSelection(propTargets[0], propTargets);
+        }
+
         var bones = new List<BoneId>();
         foreach (var id in selected)
             if (id is { Kind: SceneEntityKind.Bone, Bone: { } boneId })

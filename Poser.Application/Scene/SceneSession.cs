@@ -12,6 +12,7 @@ public sealed class SceneSession
     private readonly Dictionary<BoneLineage, BoneDescriptor> _bones = new();
     private readonly Dictionary<Guid, LightDescriptor> _lights = new();
     private readonly Dictionary<Guid, CameraDescriptor> _cameras = new();
+    private readonly Dictionary<Guid, PropDescriptor> _props = new();
 
     public SceneSession(SelectionSession selection)
     {
@@ -32,6 +33,7 @@ public sealed class SceneSession
         _bones.Clear();
         _lights.Clear();
         _cameras.Clear();
+        _props.Clear();
         foreach (var actor in snapshot.Actors)
         {
             _actors[actor.Id.LogicalId] = actor;
@@ -45,6 +47,9 @@ public sealed class SceneSession
 
         foreach (var camera in snapshot.Cameras)
             _cameras[camera.Id.LogicalId] = camera;
+
+        foreach (var prop in snapshot.Props)
+            _props[prop.Id.LogicalId] = prop;
 
         _snapshot = snapshot;
         Selection.Reconcile(Resolve);
@@ -86,6 +91,12 @@ public sealed class SceneSession
                 ? SelectionId.ForCamera(currentCamera.Id)
                 : null;
 
+        // A destroyed prop drops the same way.
+        if (id.Kind == SceneEntityKind.Prop && id.Prop is { } prop)
+            return _props.TryGetValue(prop.LogicalId, out var currentProp)
+                ? SelectionId.ForProp(currentProp.Id)
+                : null;
+
         return id;
     }
 
@@ -104,6 +115,10 @@ public sealed class SceneSession
                 target.Light is { } light &&
                 _lights.TryGetValue(light.LogicalId, out var currentLight) &&
                 currentLight.Id == light,
+            TransformTargetKind.Prop =>
+                target.Prop is { } prop &&
+                _props.TryGetValue(prop.LogicalId, out var currentProp) &&
+                currentProp.Id == prop,
             _ => false,
         };
 
