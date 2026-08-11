@@ -44,6 +44,11 @@ public sealed class GraphicalBonePane : IDisposable
     private readonly GraphicalBoneConfig _config;
     private readonly Dictionary<string, IDalamudTextureWrap?> _textures = new();
 
+    /// <summary>Decodes in flight, polled by <see cref="GetTexture"/>. A map
+    /// frame simply skips the image until its decode lands.</summary>
+    private readonly Dictionary<string, System.Threading.Tasks.Task<IDalamudTextureWrap>>
+        _pendingTextures = new();
+
     /// <summary>
     /// Mirror selection (Brio GraphicalSidesSwapped): swaps which side each
     /// map dot addresses, so the pose can be edited as seen from the front.
@@ -220,7 +225,10 @@ public sealed class GraphicalBonePane : IDisposable
                 skeleton);
         }
 
-        if (skeleton.GetBone("iv_asi_oya_a_l") != null)
+        // Every dot in this section is an IVCS bone, so with the switch off it
+        // would draw as a bare image over an empty map.
+        if (skeleton.GetBone("iv_asi_oya_a_l") != null
+            && Config.ConfigurationService.Instance.Config.Display.ShowNsfwBones)
         {
             DrawBoneSectionAt(
                 "ivcs_toes",
@@ -420,6 +428,27 @@ public sealed class GraphicalBonePane : IDisposable
         if (_textures.TryGetValue(imageName, out var cached))
             return cached;
 
+        // The decode is ASYNC and the map draws nothing until it lands: the
+        // old task.Wait() here blocked the render thread for the whole PNG
+        // decode, which Dalamud logged as a 300ms-class UiBuilder hitch on
+        // every first draw of an uncached variant (fresh load, redraws that
+        // switch race/gender maps).
+        if (_pendingTextures.TryGetValue(imageName, out var pending))
+        {
+            if (!pending.IsCompleted)
+                return null;
+            _pendingTextures.Remove(imageName);
+            try
+            {
+                _textures[imageName] = pending.Result;
+            }
+            catch
+            {
+                _textures[imageName] = null;
+            }
+            return _textures[imageName];
+        }
+
         var bytes = GraphicalBoneReader.GetImageBytes(imageName);
         if (bytes == null)
         {
@@ -427,19 +456,8 @@ public sealed class GraphicalBonePane : IDisposable
             return null;
         }
 
-        try
-        {
-            var task = _textureProvider.CreateFromImageAsync(bytes);
-            task.Wait();
-            var texture = task.Result;
-            _textures[imageName] = texture;
-            return texture;
-        }
-        catch
-        {
-            _textures[imageName] = null;
-            return null;
-        }
+        _pendingTextures[imageName] = _textureProvider.CreateFromImageAsync(bytes);
+        return null;
     }
 
     private IActor? GetSelectedActor()
@@ -450,6 +468,7 @@ public sealed class GraphicalBonePane : IDisposable
         {
             { Kind: SceneEntityKind.Actor, Actor: { } actorId } => actorId.LogicalId,
             { Kind: SceneEntityKind.Bone, Bone: { } boneId } => boneId.Skeleton.Actor.LogicalId,
+            { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeActor } => gazeActor.LogicalId,
             _ => (Guid?)null,
         };
         if (lineage is { } target)
@@ -463,9 +482,19 @@ public sealed class GraphicalBonePane : IDisposable
                 // never be highlighted or selected from a map.
                 if (descriptor.CharacterSkeleton is { } skeletonDescriptor)
                 {
+                    // Extended/IVCS bones get no dot id, and DrawBoneAt draws
+                    // nothing without one — the display suppression for the
+                    // maps, with the snapshot and selection untouched.
+                    bool showNsfw = Config.ConfigurationService.Instance
+                        .Config.Display.ShowNsfwBones;
                     foreach (var bone in skeletonDescriptor.Bones)
+                    {
+                        if (!showNsfw && Core.BoneInfo.BoneInfoService.IsNsfw(
+                                bone.Id.CanonicalName))
+                            continue;
                         _dotIds[(bone.Id.CanonicalName, bone.Id.PartialId)] =
                             SelectionId.ForBone(bone.Id);
+                    }
                 }
                 // Residual frame-scoped resolution: the maps still render from
                 // the live skeleton and read the face-map variant from actor
@@ -495,5 +524,15 @@ public sealed class GraphicalBonePane : IDisposable
             texture?.Dispose();
         }
         _textures.Clear();
+        // In-flight decodes dispose their wrap on arrival instead of leaking.
+        foreach (var pending in _pendingTextures.Values)
+            pending.ContinueWith(
+                static task =>
+                {
+                    if (task.IsCompletedSuccessfully)
+                        task.Result.Dispose();
+                },
+                System.Threading.Tasks.TaskScheduler.Default);
+        _pendingTextures.Clear();
     }
 }

@@ -26,7 +26,7 @@ public static partial class Crystarium
         float controlScale =
             logicalHeight / Crystarium.ActiveTheme.Controls.SwitchHeight;
         float logicalWidth = ControlSizing.Width(
-            style.Width,
+            style,
             Crystarium.ActiveTheme.Controls.SwitchWidth * controlScale,
             ImGui.GetContentRegionAvail().X / scale);
         var size = new Vector2(

@@ -34,6 +34,11 @@ public readonly record struct WindowFrameRects
     /// </summary>
     public WindowFrameRect Body { get; init; }
 
+    /// <summary>The full-width band between the columns region and the
+    /// footer, its top rule INCLUDED — the mirror of <see cref="Band"/>.
+    /// Empty when there is no bottom band.</summary>
+    public WindowFrameRect BottomBand { get; init; }
+
     /// <summary>The footer band, rule included. Empty when there is no footer.
     /// </summary>
     public WindowFrameRect Footer { get; init; }
@@ -53,6 +58,18 @@ public readonly record struct WindowFrameProps
 
     public string? CloseHelp { get; init; }
 
+    /// <summary>Extra title-bar icons, seated in the right cluster BEFORE
+    /// the close affordance (a pin, a mode toggle). Unstated adds nothing.
+    /// </summary>
+    public Action<Crystarium.ActionBarScope>? HeaderRight { get; init; }
+
+    /// <summary>Custom title-bar content instead of the <see cref="Title"/>
+    /// label — a search field, a breadcrumb. Told the WHOLE title-bar rect;
+    /// the right icon cluster still draws, so the content must size itself
+    /// to leave that cluster room. The label is skipped while stated.
+    /// </summary>
+    public Action<WindowFrameRect>? TitleContent { get; init; }
+
     /// <summary>Logical rail width, the 1px rule INCLUDED; 0 is no rail.
     /// </summary>
     public float RailWidth { get; init; }
@@ -62,6 +79,13 @@ public readonly record struct WindowFrameProps
     /// and rules its bottom edge full width; the caller fills the rect.
     /// </summary>
     public float BandHeight { get; init; }
+
+    /// <summary>Logical height of a band between the columns region and the
+    /// footer — the file surface's option band; 0 is no band. The mirror of
+    /// <see cref="BandHeight"/>: the frame reserves it FULL WIDTH — the rail
+    /// and the body both stop above it — and rules its top edge; the caller
+    /// fills the rect.</summary>
+    public float BottomBandHeight { get; init; }
 
     /// <summary>The host window already painted the glass — which
     /// <see cref="Crystarium.FloatingSurface.Window"/> does for every
@@ -112,7 +136,9 @@ public static partial class Crystarium
         float bandHeight = props.BandHeight * scale;
         float titleBottom = min.Y + barHeight;
         float bodyTop = titleBottom + bandHeight;
-        float bodyBottom = hasFooter ? max.Y - barHeight : max.Y;
+        float footerTop = hasFooter ? max.Y - barHeight : max.Y;
+        float bottomBand = props.BottomBandHeight * scale;
+        float bodyBottom = footerTop - bottomBand;
 
         if (!props.HostPaintsChrome)
             FloatingSurface.DrawChrome(drawList, min, max, theme.Radii.Window);
@@ -137,15 +163,24 @@ public static partial class Crystarium
         string title = props.Title;
         var onClose = props.OnClose;
         string? closeHelp = props.CloseHelp;
+        var headerRight = props.HeaderRight;
+        bool customTitle = props.TitleContent is not null;
         ActionBar(
             $"{id}-header",
             new Vector2(min.X + inset, min.Y),
             new Vector2(size.X - inset * 2f, barHeight),
-            left => left.Label(title),
-            onClose is null
+            customTitle ? static _ => { } : left => left.Label(title),
+            onClose is null && headerRight is null
                 ? null
-                : right => right.Icon(TablerIcon.X, onClose, closeHelp),
+                : right =>
+                {
+                    headerRight?.Invoke(right);
+                    if (onClose is not null)
+                        right.Icon(TablerIcon.X, onClose, closeHelp);
+                },
             ActionBarSeparator.None);
+        props.TitleContent?.Invoke(new WindowFrameRect(
+            min, new Vector2(max.X, titleBottom)));
 
         var railRect = default(WindowFrameRect);
         float bodyLeft = min.X;
@@ -158,7 +193,7 @@ public static partial class Crystarium
             drawList.AddRectFilled(
                 railRect.Min,
                 railRect.Max,
-                ImGui.ColorConvertFloat4ToU32(theme.SurfaceRaised));
+                ImGui.ColorConvertFloat4ToU32(theme.Chrome.RailFill));
             // The H's bridge: it belongs to the rail, so a frame without a
             // rail has none.
             drawList.AddRectFilled(
@@ -168,11 +203,21 @@ public static partial class Crystarium
             bodyLeft = min.X + railWidth;
         }
 
+        // The bottom band's own opening rule — the mirror of the top band's
+        // closing one, full width like every rule the frame draws.
+        if (bottomBand > 0f)
+            ControlPaint.Separator(
+                drawList,
+                new Vector2(min.X, bodyBottom),
+                max.X,
+                scale,
+                theme.FormSeparator);
+
         var footerRect = default(WindowFrameRect);
         if (hasFooter)
         {
             footerRect = new WindowFrameRect(
-                new Vector2(min.X, bodyBottom), max);
+                new Vector2(min.X, footerTop), max);
             drawList.AddRectFilled(
                 footerRect.Min,
                 footerRect.Max,
@@ -181,13 +226,13 @@ public static partial class Crystarium
                 ImDrawFlags.RoundCornersBottom);
             ControlPaint.Separator(
                 drawList,
-                new Vector2(min.X, bodyBottom),
+                new Vector2(min.X, footerTop),
                 max.X,
                 scale,
                 theme.FormSeparator);
             ActionBar(
                 $"{id}-footer",
-                new Vector2(min.X + inset, bodyBottom),
+                new Vector2(min.X + inset, footerTop),
                 new Vector2(size.X - inset * 2f, barHeight),
                 props.FooterLeft ?? (static _ => { }),
                 props.FooterRight,
@@ -207,6 +252,11 @@ public static partial class Crystarium
             Body = new WindowFrameRect(
                 new Vector2(bodyLeft, bodyTop),
                 new Vector2(max.X, bodyBottom)),
+            BottomBand = bottomBand > 0f
+                ? new WindowFrameRect(
+                    new Vector2(min.X, bodyBottom),
+                    new Vector2(max.X, footerTop))
+                : default,
             Footer = footerRect,
         };
     }

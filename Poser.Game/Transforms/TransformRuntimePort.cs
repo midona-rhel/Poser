@@ -47,6 +47,8 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
                 CaptureActor(target, actor),
             TransformTargetKind.Bone when target.Bone is { } bone =>
                 CaptureBone(target, bone),
+            TransformTargetKind.Light when target.Light is { } light =>
+                CaptureLight(target, light),
             _ => TransformPortResult.Fail(
                 TransformPortStatus.IdentityMismatch,
                 $"Malformed transform target {target}."),
@@ -113,6 +115,16 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             return TransformPortResult.Ok();
         }
 
+        if (baseline.Target.Kind == TransformTargetKind.Light &&
+            baseline.Target.Light is { } lightId)
+        {
+            var resolved = _bindings.Resolve(lightId);
+            if (!resolved.Success)
+                return FromBinding(resolved.Status, resolved.Detail);
+            resolved.Value!.Transform = ToLegacy(desired);
+            return TransformPortResult.Ok();
+        }
+
         return TransformPortResult.Fail(
             TransformPortStatus.IdentityMismatch,
             $"Malformed transform target {baseline.Target}.");
@@ -150,9 +162,43 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             return TransformPortResult.Ok();
         }
 
+        if (state.Target.Kind == TransformTargetKind.Light &&
+            state.Target.Light is { } lightId)
+        {
+            var resolved = _bindings.Resolve(lightId);
+            if (!resolved.Success)
+                return FromBinding(resolved.Status, resolved.Detail);
+            resolved.Value!.Transform = ToLegacy(state.Transform);
+            return TransformPortResult.Ok();
+        }
+
         return TransformPortResult.Fail(
             TransformPortStatus.IdentityMismatch,
             $"Malformed transform target {state.Target}.");
+    }
+
+    /// <summary>
+    /// A light's transform is its whole state: there is no override to clear
+    /// and no pose stack to rebuild, so the capture always reports
+    /// HasOverride = true and carries an empty pose.
+    /// </summary>
+    private TransformPortResult CaptureLight(
+        TransformTargetId target,
+        LightId lightId)
+    {
+        var resolved = _bindings.Resolve(lightId);
+        if (!resolved.Success)
+            return FromBinding(resolved.Status, resolved.Detail);
+        var converted = FromLegacy(resolved.Value!.Transform);
+        if (converted == null)
+            return TransformPortResult.Fail(
+                TransformPortStatus.InvalidTransform,
+                $"Light {lightId} returned an invalid transform.");
+        return TransformPortResult.Ok(new TransformTargetState(
+            target,
+            converted.Value,
+            new BonePose(),
+            true));
     }
 
     private TransformPortResult CaptureActor(

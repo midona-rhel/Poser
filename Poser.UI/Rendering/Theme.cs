@@ -164,7 +164,6 @@ public readonly record struct Theme
             SidebarMaximumWidth = 400f,
             SidebarDefaultWidth = 280f,
             RailWidth = 280f,
-            PoseFooterHeight = 36f,
         },
         Scrollbar = new() { GutterWidth = 12f, Radius = 4f },
         Typography = new() { ShortcutSize = 10f, CaptionSize = 11f, LabelSize = 12f, BodySize = 13f, SurfaceTitleSize = 14f },
@@ -182,6 +181,7 @@ public readonly record struct Theme
             ViewportInset = 12f,
             HostMargin = 24f,
             MenuWidth = 260f,
+            MenuMinWidth = 160f,
             MenuPadding = 4f,
             MenuRowPadding = 6f,
             MenuRowGap = 2f,
@@ -224,6 +224,7 @@ public readonly record struct Theme
             Width = 720f,
             Height = 520f,
             NavigationWidth = 200f,
+            LabelColumnWidth = 180f,
             AccentOptions =
             [
                 new(50f / 255f, 151f / 255f, 1f, 1f),
@@ -285,6 +286,7 @@ public readonly record struct Theme
             PickerBorder = new(1f, 1f, 1f, 0.18f),
             ModalDim = new(0f, 0f, 0f, 0.55f),
             ModalFooter = PictoTokens.Dark.Black10,
+            RailFill = PictoTokens.Dark.Black10,
             SegmentShadow = new(0f, 0f, 0f, 0.25f),
             SegmentSelected = PictoTokens.Dark.Surface2,
             SidebarSelected = PictoTokens.Dark.SurfaceActive,
@@ -472,6 +474,7 @@ public readonly record struct Theme
                 PickerBorder = new(0f, 0f, 0f, 0.18f),
                 ModalDim = new(0f, 0f, 0f, 0.35f),
                 ModalFooter = PictoTokens.Light.Black10,
+                RailFill = PictoTokens.Light.Black10,
                 SegmentShadow = new(0f, 0f, 0f, 0.12f),
                 SegmentSelected = sunken,
                 SidebarSelected = PictoTokens.Light.SurfaceActive,
@@ -606,7 +609,6 @@ public readonly record struct Theme
         public float SidebarMaximumWidth { get; init; }
         public float SidebarDefaultWidth { get; init; }
         public float RailWidth { get; init; }
-        public float PoseFooterHeight { get; init; }
     }
 
     public readonly record struct ScrollbarTokens
@@ -650,6 +652,10 @@ public readonly record struct Theme
         public float ViewportInset { get; init; }
         public float HostMargin { get; init; }
         public float MenuWidth { get; init; }
+        /// <summary>Floor for a content-fit floating menu
+        /// (<c>FloatingMenu.MeasureWidth</c>); the fixed <see cref="MenuWidth"/>
+        /// surface ignores it.</summary>
+        public float MenuMinWidth { get; init; }
         public float MenuPadding { get; init; }
         public float MenuRowPadding { get; init; }
         public float MenuRowGap { get; init; }
@@ -701,6 +707,13 @@ public readonly record struct Theme
         public float Width { get; init; }
         public float Height { get; init; }
         public float NavigationWidth { get; init; }
+
+        /// <summary>Settings pages override the form's default label column:
+        /// behavior rows carry sentence-length labels ("Game target follows
+        /// selection") that truncate at the shared 94px token, and the wide
+        /// settings body has the room to spend.</summary>
+        public float LabelColumnWidth { get; init; }
+
         public Vector4[] AccentOptions { get; init; }
     }
 
@@ -778,6 +791,11 @@ public readonly record struct Theme
         public Vector4 PickerBorder { get; init; }
         public Vector4 ModalDim { get; init; }
         public Vector4 ModalFooter { get; init; }
+        /// <summary>Window-frame rail (quick access, source lists) fill — a
+        /// translucent overlay like <see cref="ModalFooter"/>, never an opaque
+        /// surface: on a glass window an opaque rail blots out the backdrop
+        /// blur in that region while the rest of the window stays glass.</summary>
+        public Vector4 RailFill { get; init; }
         public Vector4 SegmentShadow { get; init; }
         public Vector4 SegmentSelected { get; init; }
         /// <summary>SidebarRow.module.css <c>.selected::before</c> /

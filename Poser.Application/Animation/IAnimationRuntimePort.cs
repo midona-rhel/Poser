@@ -106,6 +106,20 @@ public interface IAnimationRuntimePort
     /// <summary>Stops enforcing overall speed; the game's own value wins
     /// again from its next recalculation.</summary>
     AnimationPortResult ClearOverallSpeed(ActorId actor);
+
+    /// <summary>
+    /// Rewinds every PAUSED Havok animation control of the actor to
+    /// LocalTime 0, across all partials — the face partial's blink/lip/
+    /// expression timeline controls included. Brio's settle rewind
+    /// (ActionTimelineCapability.StopSpeedAndResetTimeline,
+    /// Brio\Brio\Capabilities\Actor\ActionTimelineCapability.cs:120-165):
+    /// run a few ticks AFTER pausing, it snaps every held timeline to its
+    /// frame-0 neutral so a pose import diffs against that frame instead
+    /// of whatever mid-blink frame the pause happened to catch. Controls
+    /// still playing (PlaybackSpeed != 0) are untouched, exactly Brio's
+    /// condition. Owns no state; there is nothing to restore.
+    /// </summary>
+    AnimationPortResult RewindPausedControls(ActorId actor);
     AnimationPortResult SetSlotSpeed(ActorId actor, AnimationSlot slot, float speed);
     AnimationPortResult ClearSlotSpeed(ActorId actor, AnimationSlot slot);
 

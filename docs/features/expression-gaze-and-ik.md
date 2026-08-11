@@ -25,8 +25,8 @@ target transitions to Off. Reset restores every part and clears gaze state.
 
 Calls the game's own Havok solvers (Brio) — engine-identical results, applied
 live during pose application: an armed chain's translation delta becomes the
-solver target; rotation/scale never start a solve. The solved chain is never
-baked — undo and export stay pure deltas — while per-chain configuration
+solver target; rotation/scale never start a solve. The solve itself is never
+stored — undo and export stay pure deltas — while per-chain configuration
 persists for the session, keyed by the exact skeleton instance (a replacement
 never inherits it). The four endpoints (`j_te_l/r`, `j_asi_d_l/r`) resolve
 their Ktisis chains inside their own slot; no actor-wide arming exists.
@@ -42,6 +42,16 @@ their Ktisis chains inside their own slot; no actor-wide arming exists.
   gains, cosine-converted hinge limits, normalized axis, twist bones, and
   optional end-rotation enforcement (never applied a second time). CCD:
   depth clamped to the chain, iterations, configured gain.
+- Bake (Brio's "Set IK Changes") turns one solve into ordinary pose edits:
+  it captures the affected chain bones' `LastRawTransform` while the solve is
+  visible, disarms the chain, lets the pose settle two framework ticks, then
+  writes the captured absolutes against the settled raw basis as ONE history
+  entry ("Bake IK") — the same delta-against-`LastRawTransform` write a pose
+  file import performs, so the result stays delta-pure and exports unchanged.
+  The affected set is the solver's own: the resolved Two Joint definition
+  (joints, twists, endpoint), or for CCD the endpoint plus parents to the
+  configured depth. The two phases cannot collapse into one — reading and
+  writing on the same tick yields identity deltas.
 - Disabling keeps tuning but clears the fixed capture; Reset Defaults
   restores chain defaults preserving Enabled; Reset Bone keeps IK; Reset
   All disables and clears every chain. Defaults reproduce the pre-advanced

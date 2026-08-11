@@ -13,6 +13,11 @@ public sealed class ShellSidebarRow
     public TablerIcon Icon = TablerIcon.User;
     /// <summary>Named custom icon (PoserIconSources) — wins over Icon when set.</summary>
     public string? IconName;
+    /// <summary>Nested rows normally draw no mark, because their guide column
+    /// already spans the same distance the root's icon cell does. A nested row
+    /// that IS a thing rather than a grouping (the gaze anchor under an actor)
+    /// opts the mark back in.</summary>
+    public bool ForceIcon;
     public int Depth;              // 0 root, 1+ nested (20px indent per level)
     public bool HasChildren;
     /// <summary>Disclosure affordance shown but faded and inert — the row's
@@ -28,6 +33,17 @@ public sealed class ShellSidebarRow
     public bool ActorActions;
     public bool ActorVisible = true;
     public bool ActorPaused;
+    /// <summary>A light row's action slot: one eye, the same affordance an
+    /// actor row wears, switching the light off without losing a setting.
+    /// </summary>
+    public bool LightActions;
+    public bool LightOn = true;
+    /// <summary>A camera row's action slots: a lock protecting the shot,
+    /// then the video mark making this the LIVE camera — the light eye's
+    /// twin, except exactly one camera wears it at a time.</summary>
+    public bool CameraActions;
+    public bool CameraLive;
+    public bool CameraLocked;
     public IReadOnlyList<Domain.Identity.BoneId>? OverlayBones;
 
     /// <summary>Last child of its parent → curved-L branch instead of T.</summary>
@@ -40,6 +56,14 @@ public sealed class ShellSidebarSection
 {
     public string Title = "";
     public bool ShowPlus;
+    /// <summary>The header row is itself a target: it selects the section
+    /// rather than only naming it. Off leaves the header inert, which is what
+    /// every ordinary section is.</summary>
+    public bool Selectable;
+    /// <summary>Only meaningful with <see cref="Selectable"/>: the header wears
+    /// the row selection language while its section owns the workspace.
+    /// </summary>
+    public bool Active;
     public List<ShellSidebarRow> Rows = new();
 }
 
@@ -67,6 +91,8 @@ public sealed class AppShellViewModel
     public bool RotationPivotEnabled;
     public bool RotationPivotParentAvailable;
     public int SymmetryMode;          // 0 off, 1 link, 2 mirror
+    public bool AnimationOn;
+    public bool AnimationAvailable;
     public bool PhysicsOn;
     public bool PhysicsAvailable;
     public bool SkeletonOverlayOn;
@@ -102,6 +128,15 @@ public sealed class AppShellViewModel
     /// </summary>
     public bool ContentOwnsViewport;
 
+    /// <summary>
+    /// The pane takes the viewport WALL TO WALL: no shell horizontal inset and
+    /// no reserved scrollbar column, because the pane paints its own bands,
+    /// rules and gutters against the workspace edges. The library uses this —
+    /// its footer rule has to meet the same edges every other shell rule does.
+    /// Wins over <see cref="ContentOwnsViewport"/>.
+    /// </summary>
+    public bool ContentFlush;
+
     /// <summary>Sidebar width, resizable within 220–400px. Unscaled px.</summary>
     public float SidebarWidthPx = 280f;
     public Action<float>? OnSidebarResize;
@@ -114,13 +149,26 @@ public sealed class AppShellViewModel
     public bool Collapsed;
     public Action<bool>? OnCollapse;
 
+    /// <summary>The split shell: a true flag means that part has left the
+    /// main window for its own floating window, and the shell neither draws
+    /// it nor reserves its cell. All false is the compact single-window UI.
+    /// </summary>
+    public bool SidebarSplit;
+    public bool ToolbarSplit;
+    public bool InspectorSplit;
+
     public Action<int>? OnTab;
     public Action<int>? OnGizmoOperation;
     public Action<int>? OnGizmoSpace;
     public Action<int>? OnRotationPivot;
     public Action<int>? OnSymmetry;
+    public Action<bool>? OnAnimation;
     public Action<bool>? OnPhysics;
     public Action? OnUndo, OnRedo, OnSpawn, OnSettings, OnHideUi, OnPopOut, OnProject;
+    /// <summary>The titlebar command menu, told the burger button's
+    /// bottom-left screen position so the menu anchors under the button
+    /// instead of at the mouse.</summary>
+    public Action<Vector2>? OnBurger;
     public Action<bool>? OnSkeletonOverlay;
     public Action<ShellSidebarRow>? OnRowClicked;
     public Action<ShellSidebarRow>? OnRowContextMenu;
@@ -128,10 +176,16 @@ public sealed class AppShellViewModel
     public Action<ShellSidebarRow>? OnActorTarget;
     public Action<ShellSidebarRow>? OnActorVisibility;
     public Action<ShellSidebarRow>? OnActorPause;
+    public Action<ShellSidebarRow>? OnLightVisibility;
+    public Action<ShellSidebarRow>? OnCameraLive;
+    public Action<ShellSidebarRow>? OnCameraLock;
     public Action<ShellSidebarRow>? OnOverlayVisibility;
     public Func<IReadOnlyList<Domain.Identity.BoneId>, bool>?
         IsOverlayVisible;
     public Action<int>? OnSectionPlus;
+    /// <summary>A click on a <see cref="ShellSidebarSection.Selectable"/>
+    /// header, told the section index.</summary>
+    public Action<int>? OnSectionSelected;
 }
 
 /// <summary>
@@ -159,6 +213,10 @@ public static class AppShellView
     private const float DotSize = 7f;
     private const float StatusInset = 10f;
     private const float StatusTextGap = 8f;
+
+    /// <summary>The title cell with the sidebar split off: brand, GPose pill
+    /// and the four-icon action cluster, nothing else to hold.</summary>
+    private const float CompactTitleCellWidth = 280f;
 
     private static readonly TablerIcon[] GizmoIcons =
     [
@@ -189,6 +247,12 @@ public static class AppShellView
     private static string _undoEmptyHelp = string.Empty;
     private static string _redoHelp = string.Empty;
     private static string _redoEmptyHelp = string.Empty;
+
+    /// <summary>The burger's press, reported by a hoisted callback that closes
+    /// over nothing and is consumed inside the same seat.</summary>
+    private static bool _burgerPressed;
+    private static readonly Action BurgerPressed =
+        static () => _burgerPressed = true;
 
     private static Vector4 Glass =>
         Crystarium.FloatingSurface.FillColor;
@@ -239,12 +303,15 @@ public static class AppShellView
             }
 
             float bodyTop = min.Y + TitlebarHeight * s;
-            float railW = vm.DrawRail != null ? RailWidth * s : 0f;
-            float sbw = vm.SidebarWidthPx * s;
+            float railW = vm.DrawRail != null && !vm.InspectorSplit
+                ? RailWidth * s
+                : 0f;
+            float sbw = vm.SidebarSplit ? 0f : vm.SidebarWidthPx * s;
 
-            DrawSidebar(
-                vm, new Vector2(min.X, bodyTop), new Vector2(min.X + sbw, max.Y),
-                s, dl);
+            if (!vm.SidebarSplit)
+                DrawSidebar(
+                    vm, new Vector2(min.X, bodyTop),
+                    new Vector2(min.X + sbw, max.Y), s, dl);
             DrawWorkspace(
                 vm,
                 new Vector2(min.X + sbw, bodyTop),
@@ -254,7 +321,8 @@ public static class AppShellView
             if (railW > 0f)
                 DrawRail(vm, new Vector2(max.X - railW, bodyTop), max, railW, s, dl);
 
-            DrawSidebarResize(vm, min.X + sbw, bodyTop, max.Y, s);
+            if (!vm.SidebarSplit)
+                DrawSidebarResize(vm, min.X + sbw, bodyTop, max.Y, s);
 
             // Panel fills are intentionally drawn after the base chassis.
             // Repaint the asymmetric glass edge last so sidebar and rail
@@ -276,9 +344,14 @@ public static class AppShellView
         float height = TitlebarHeight * s;
         float radius = theme.Radii.Window * s;
         float rule = 1f * s;
-        float cellWidth = vm.SidebarWidthPx * s;
+        // With the sidebar split off, the title cell shrinks to the brand and
+        // its action cluster instead of holding a phantom sidebar's width.
+        float cellWidth =
+            (vm.SidebarSplit ? CompactTitleCellWidth : vm.SidebarWidthPx) * s;
         float railWidth =
-            vm.DrawRail != null && !vm.Collapsed ? RailWidth * s : 0f;
+            vm.DrawRail != null && !vm.Collapsed && !vm.InspectorSplit
+                ? RailWidth * s
+                : 0f;
 
         if (vm.Collapsed)
         {
@@ -320,7 +393,8 @@ public static class AppShellView
             min.Y,
             height,
             s);
-        DrawTitleCenter(vm, min.X + cellWidth, min.Y, height, s);
+        if (!vm.ToolbarSplit)
+            DrawTitleCenter(vm, min.X + cellWidth, min.Y, height, s);
         DrawTitleActions(vm, max.X, min.Y, height, s);
     }
 
@@ -374,17 +448,36 @@ public static class AppShellView
             pillStyle);
     }
 
-    /// <summary>Undo, redo and spawn, right-aligned in the title cell.</summary>
+    /// <summary>Menu, undo, redo and spawn, right-aligned in the title cell.</summary>
     private static void DrawHistory(
         AppShellViewModel vm, float right, float top, float height, float s)
     {
         var theme = Crystarium.ActiveTheme;
         float side = theme.Controls.ShellIconAction;
         float step = (side + theme.Spacing.Two) * s;
-        int count = vm.ShowSpawn ? 3 : 2;
+        // With the toolbar split off, undo/redo/spawn live in the floating
+        // toolbar and only the command menu stays on the title cell.
+        int count = vm.ToolbarSplit ? 1 : vm.ShowSpawn ? 4 : 3;
         float y = top + (height - side * s) * 0.5f;
         float x = right - count * side * s - (count - 1) * theme.Spacing.Two * s;
 
+        // The command menu hangs off its own button, not off the pointer, so
+        // the seat hands its bottom-left corner to the opener. The click
+        // callback captures NOTHING — a warm titlebar frame must not mint a
+        // closure — so the press is reported through a static flag the seat
+        // reads back one line later, while the anchor is still a local.
+        IconAt(
+            new Vector2(x, y), TablerIcon.Menu2, side, BurgerPressed,
+            "##shell-burger",
+            help: "Actions");
+        if (_burgerPressed)
+        {
+            _burgerPressed = false;
+            vm.OnBurger?.Invoke(new Vector2(x, y + side * s));
+        }
+        if (vm.ToolbarSplit)
+            return;
+        x += step;
         IconAt(
             new Vector2(x, y), TablerIcon.ArrowBackUp, side, vm.OnUndo,
             "##shell-undo",
@@ -402,7 +495,7 @@ public static class AppShellView
         IconAt(
             new Vector2(x + step, y), TablerIcon.Plus, side, vm.OnSpawn,
             "##shell-spawn",
-            help: "Add an actor to the scene");
+            help: "Add an actor or prop to the scene");
     }
 
     private static void DrawTitleCenter(
@@ -421,6 +514,17 @@ public static class AppShellView
             x += side * s + gap;
         }
 
+        DrawGizmoCluster(vm, x, top, height, s);
+    }
+
+    /// <summary>The four segment groups — gizmo operation, space, pivot,
+    /// symmetry — drawn once per frame from exactly one host: the titlebar
+    /// centre, or the floating toolbar when the toolbar is split. One set of
+    /// ids, so hover and motion state survive the move between hosts.</summary>
+    private static float DrawGizmoCluster(
+        AppShellViewModel vm, float x, float top, float height, float s)
+    {
+        float gap = Crystarium.ActiveTheme.Page.ActionGap * s;
         x = Segments(
             x, top, height,
             "##shell-gizmo-operation",
@@ -429,10 +533,10 @@ public static class AppShellView
             index => vm.OnGizmoOperation?.Invoke(index),
             itemHelp: static index => index switch
             {
-                0 => "Move the selection",
-                1 => "Rotate the selection",
-                2 => "Scale the selection",
-                _ => "Move, rotate, or scale with the universal gizmo",
+                0 => "Use the gizmo to move the selection",
+                1 => "Use the gizmo to rotate the selection",
+                2 => "Use the gizmo to scale the selection",
+                _ => "Use one gizmo to move, rotate and scale",
             }) + gap;
         x = Segments(
             x, top, height,
@@ -441,8 +545,8 @@ public static class AppShellView
             vm.GizmoSpace,
             index => vm.OnGizmoSpace?.Invoke(index),
             itemHelp: static index => index == 0
-                ? "Use the selected target's local axes"
-                : "Use world-space axes") + gap;
+                ? "Use the selection's own axes"
+                : "Use the world axes") + gap;
         // Pivot keeps a permanent slot so tool/selection changes cannot move the
         // rest of the toolbar. Both choices refuse when pivot is inapplicable;
         // Parent additionally needs a live parent bone.
@@ -455,9 +559,9 @@ public static class AppShellView
             itemDisabled: index => !vm.RotationPivotEnabled
                 || (index == 1 && !vm.RotationPivotParentAvailable),
             itemHelp: static index => index == 0
-                ? "Rotate each selected target around itself"
-                : "Rotate around the selected bone's parent pivot") + gap;
-        Segments(
+                ? "Rotate each selected bone in place"
+                : "Rotate the selected bone around its parent bone") + gap;
+        return Segments(
             x, top, height,
             "##shell-symmetry",
             SymmetryItems,
@@ -466,8 +570,8 @@ public static class AppShellView
             itemHelp: static index => index switch
             {
                 0 => "Edit only the current selection",
-                1 => "Apply the same edit to linked selections",
-                _ => "Apply mirrored edits across left and right bones",
+                1 => "Also apply the same edit to the opposite-side bone",
+                _ => "Also apply a mirrored edit to the opposite-side bone",
             });
     }
 
@@ -497,15 +601,10 @@ public static class AppShellView
         IconAt(
             new Vector2(x, y), TablerIcon.Settings, side, vm.OnSettings,
             "##shell-settings", help: "Open Poser settings");
-        x -= step;
-        ImGui.SetCursorScreenPos(new Vector2(x, y));
-        Crystarium.TemporaryIconToggle(
-            TablerIcon.Armature,
-            vm.SkeletonOverlayOn,
-            () => vm.OnSkeletonOverlay?.Invoke(!vm.SkeletonOverlayOn),
-            ControlStyle.Square(side),
-            help: "Toggle the skeleton overlay in the viewport",
-            id: "##shell-armature");
+        // The armature toggle left this bar (user 2026-08-11): its
+        // replacement is a design decision that has not landed, so the
+        // SkeletonOverlayOn/OnSkeletonOverlay seams stay wired for it and
+        // the overlay's own UserVisible semantics are untouched.
     }
 
     // ── sidebar ──────────────────────────────────────────────────────────
@@ -636,14 +735,24 @@ public static class AppShellView
             right =>
             {
                 right.Switch(
+                    "Animation",
+                    vm.AnimationOn,
+                    next => vm.OnAnimation?.Invoke(next),
+                    !vm.AnimationAvailable
+                        ? "Select an actor to pause its animation"
+                        : vm.AnimationOn
+                            ? "Switch off to pause this actor's animation"
+                            : "Switch on to resume this actor's animation",
+                    disabled: !vm.AnimationAvailable);
+                right.Switch(
                     "Physics",
                     vm.PhysicsOn,
                     next => vm.OnPhysics?.Invoke(next),
                     !vm.PhysicsAvailable
-                        ? "Select an actor or bone to control physics"
+                        ? "Select an actor or bone to freeze physics for the whole scene"
                         : vm.PhysicsOn
-                            ? "Switch off to freeze physics for the selected actor"
-                            : "Switch on to resume physics for the selected actor",
+                            ? "Switch off to freeze physics for the whole scene"
+                            : "Switch on to resume physics for the whole scene",
                     disabled: !vm.PhysicsAvailable);
                 if (vm.ShowPopOut)
                     right.Icon(
@@ -688,7 +797,15 @@ public static class AppShellView
                 | ImGuiWindowFlags.NoScrollWithMouse))
         {
             var viewportCursor = ImGui.GetCursorScreenPos();
-            if (vm.ContentOwnsViewport)
+            if (vm.ContentFlush)
+            {
+                vm.DrawContent?.Invoke(
+                    viewportCursor,
+                    new Vector2(
+                        childSize.X,
+                        MathF.Max(0f, ImGui.GetContentRegionAvail().Y)));
+            }
+            else if (vm.ContentOwnsViewport)
             {
                 float contentInset = MainHorizontalPadding * s;
                 var contentOrigin = viewportCursor
@@ -765,6 +882,17 @@ public static class AppShellView
         dl.AddRectFilled(
             railMin, new Vector2(railMin.X + 1f * s, max.Y), U32(BorderPrimary));
 
+        RailScrollSeam(vm, railMin, max, railWidth, s);
+    }
+
+    /// <summary>The rail's scroll seam and content invocation, shared by the
+    /// attached rail and the floating inspector window. The chassis around it
+    /// is each host's own.</summary>
+    private static void RailScrollSeam(
+        AppShellViewModel vm, Vector2 railMin, Vector2 max,
+        float railWidth, float s)
+    {
+        var theme = Crystarium.ActiveTheme;
         ImGui.SetCursorScreenPos(railMin + new Vector2(0f, 12f) * s);
         Crystarium.ScrollRegion(
             "##shell-rail",
@@ -781,6 +909,23 @@ public static class AppShellView
                         region.ContentWidth * s - theme.Page.Inset * s,
                         max.Y - railMin.Y - 24f * s));
             });
+    }
+
+    /// <summary>The floating inspector's content: the rail's surface-1 fill
+    /// and the same scroll seam, inside the hosting window's content box.
+    /// Draws nothing when the frame has no rail delegate (collapsed main).
+    /// </summary>
+    public static void DrawRailContent(
+        AppShellViewModel vm, Vector2 min, Vector2 max)
+    {
+        if (vm.DrawRail == null)
+            return;
+        float s = ImGuiHelpers.GlobalScale;
+        var theme = Crystarium.ActiveTheme;
+        ImGui.GetWindowDrawList().AddRectFilled(
+            min, max, U32(theme.SurfaceRaised), theme.Radii.Window * s,
+            ImDrawFlags.RoundCornersBottom);
+        RailScrollSeam(vm, min, max, max.X - min.X, s);
     }
 
     // ── shared seats ─────────────────────────────────────────────────────
@@ -884,7 +1029,7 @@ public static class AppShellView
         if (!string.Equals(undo, _undoShortcut, StringComparison.Ordinal))
         {
             _undoShortcut = undo;
-            _undoHelp = $"Take back the last pose edit · {undo}";
+            _undoHelp = $"Undo the last move, rotation or scale · {undo}";
             _undoEmptyHelp = $"Nothing to undo · {undo}";
         }
 
@@ -901,5 +1046,92 @@ public static class AppShellView
     public static void CancelAxisEdit()
     {
         Crystarium.CancelAxisEdit();
+    }
+
+    // ── the split shell's standalone parts ───────────────────────────────
+    // Each part draws with the SAME retained state and ids it has inside the
+    // shell — the sidebar cache, the segment motion channels, the keybind
+    // help — so splitting a part moves it without resetting it. Exactly one
+    // host draws a part per frame; the split flags are that gate.
+
+    /// <summary>The floating sidebar's content: the search band, the tree and
+    /// the status bar, drawn into the hosting window's content box. The glass
+    /// chassis is the caller's.</summary>
+    public static void DrawSidebarContent(
+        AppShellViewModel vm, Vector2 min, Vector2 max)
+    {
+        float s = ImGuiHelpers.GlobalScale;
+        var theme = Crystarium.ActiveTheme;
+        var dl = ImGui.GetWindowDrawList();
+        float rule = 1f * s;
+        float statusTop = max.Y - StatusbarHeight * s;
+        Sidebar.Draw(
+            vm,
+            min,
+            new Vector2(
+                max.X - min.X,
+                statusTop - theme.Spacing.One * s - min.Y));
+        dl.AddRectFilled(
+            new Vector2(min.X, statusTop),
+            new Vector2(max.X, statusTop + rule),
+            U32(BorderSecondary));
+        DrawStatusbar(
+            vm, new Vector2(min.X, statusTop + rule), max, s, dl);
+    }
+
+    /// <summary>The floating toolbar's content: undo/redo and spawn, then the
+    /// same four segment groups the titlebar centre hosts when attached.
+    /// </summary>
+    public static void DrawToolbarContent(
+        AppShellViewModel vm, Vector2 origin, float height)
+    {
+        float s = ImGuiHelpers.GlobalScale;
+        var theme = Crystarium.ActiveTheme;
+        float side = theme.Controls.ShellIconAction;
+        float step = (side + theme.Spacing.Two) * s;
+        float x = origin.X;
+        float y = origin.Y + (height - side * s) * 0.5f;
+        SyncKeybindHelp();
+        IconAt(
+            new Vector2(x, y), TablerIcon.ArrowBackUp, side, vm.OnUndo,
+            "##shell-undo",
+            disabled: !vm.CanUndo,
+            help: vm.CanUndo ? _undoHelp : _undoEmptyHelp);
+        x += step;
+        IconAt(
+            new Vector2(x, y), TablerIcon.ArrowBackUp, side, vm.OnRedo,
+            "##shell-redo",
+            disabled: !vm.CanRedo,
+            flipX: true,
+            help: vm.CanRedo ? _redoHelp : _redoEmptyHelp);
+        x += step;
+        if (vm.ShowSpawn)
+        {
+            IconAt(
+                new Vector2(x, y), TablerIcon.Plus, side, vm.OnSpawn,
+                "##shell-spawn",
+                help: "Add an actor or prop to the scene");
+            x += step;
+        }
+        x += theme.Page.ActionGap * s;
+        DrawGizmoCluster(vm, x, origin.Y, height, s);
+    }
+
+    /// <summary>What <see cref="DrawToolbarContent"/> will span, screen px,
+    /// so the hosting window sizes itself before drawing.</summary>
+    public static float MeasureToolbar(AppShellViewModel vm)
+    {
+        float s = ImGuiHelpers.GlobalScale;
+        var theme = Crystarium.ActiveTheme;
+        float side = theme.Controls.ShellIconAction;
+        float step = (side + theme.Spacing.Two) * s;
+        float gap = theme.Page.ActionGap * s;
+        float icons = step * (vm.ShowSpawn ? 3 : 2);
+        return icons
+            + gap
+            + Crystarium.MeasureSegmentedControl(GizmoIcons).X + gap
+            + Crystarium.MeasureSegmentedControl(SpaceItems).X + gap
+            + Crystarium.MeasureSegmentedControl(PivotItems).X + gap
+            + Crystarium.MeasureSegmentedControl(SymmetryItems).X;
     }
 }

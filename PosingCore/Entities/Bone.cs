@@ -12,11 +12,15 @@ public class Bone : EntityBase, IBone
 {
     private readonly List<IBone> _childBones = new();
 
+    /// <summary>Live view over <c>_childBones</c>, allocated once — see the
+    /// same pattern on EntityBase.Children.</summary>
+    private readonly System.Collections.ObjectModel.ReadOnlyCollection<IBone> _childBonesView;
+
     public int BoneIndex { get; }
     public string BoneName { get; }
     public int PartialId { get; }
     public IBone? ParentBone { get; internal set; }
-    public IReadOnlyList<IBone> ChildBones => _childBones.AsReadOnly();
+    public IReadOnlyList<IBone> ChildBones => _childBonesView;
     public ISkeleton Skeleton { get; }
     public bool IsPartialRoot { get; internal set; }
     public bool IsSkeletonRoot { get; internal set; }
@@ -64,13 +68,21 @@ public class Bone : EntityBase, IBone
 
     /// <summary>
     /// Gets the display name with translation: "Translation (internal_name)" or just "internal_name".
+    /// Resolved ONCE at construction: the bone tables are immutable after
+    /// BoneInfoService.Initialize (which runs before the plugin's DI container
+    /// exists, so no bone can be built ahead of them), while these two
+    /// properties are read per bone per frame by every tree, overlay and
+    /// descriptor rebuild.
     /// </summary>
-    public override string Name => BoneInfoService.GetDisplayName(BoneName);
+    public override string Name => _displayName;
 
     /// <summary>
     /// Gets the category for this bone.
     /// </summary>
-    public BoneCategory Category => BoneInfoService.GetCategory(BoneName);
+    public BoneCategory Category => _category;
+
+    private readonly string _displayName;
+    private readonly BoneCategory _category;
 
     /// <summary>
     /// Whether this bone should be hidden in the UI.
@@ -95,6 +107,9 @@ public class Bone : EntityBase, IBone
         PartialId = partialId;
         BoneIndex = boneIndex;
         BoneName = boneName;
+        _childBonesView = _childBones.AsReadOnly();
+        _displayName = BoneInfoService.GetDisplayName(boneName);
+        _category = BoneInfoService.GetCategory(boneName);
 
         // Collapsed by default (tree semantics). VISIBLE by default — the
         // overlay must show the skeleton out of the box (Ktisis/Brio parity);

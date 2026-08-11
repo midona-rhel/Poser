@@ -6,8 +6,6 @@ namespace Poser.Config;
 /// Configuration for Poser UI colors.
 /// Each color can either use a custom value or reference an ImGuiCol from the Dalamud theme.
 /// </summary>
-public enum PanelDock { Left, Right, Floating, Hidden }
-
 public enum UITheme
 {
     Auto,
@@ -24,8 +22,11 @@ public class UIConfiguration
     // Settings -> Display/UI (Crystarium shell; the ImGuiCol entries below are legacy-window theming)
     public UITheme Theme { get; set; } = UITheme.Dark;
     public int AccentIndex { get; set; } = 0;
-    public PanelDock SidebarDock { get; set; } = PanelDock.Left;
-    public PanelDock InspectorDock { get; set; } = PanelDock.Right;
+    // The split shell: each part can leave the main window and live as its
+    // own floating window. All false is the compact single-window UI.
+    public bool SplitSidebar { get; set; }
+    public bool SplitToolbar { get; set; }
+    public bool SplitInspector { get; set; }
     public bool ShowTreeGuides { get; set; } = true;
     public bool MapMirrorSelection { get; set; }
     public System.Collections.Generic.Dictionary<string, string> Keybinds { get; set; } = new();

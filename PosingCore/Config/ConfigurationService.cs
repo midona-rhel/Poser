@@ -26,6 +26,33 @@ public class ConfigurationService : IDisposable
         Instance = this;
         _pluginInterface = pluginInterface;
         Config = _pluginInterface.GetPluginConfig() as PoserConfiguration ?? new PoserConfiguration();
+        MigrateConfig();
+
+        // Seeded in memory only; it persists with the next save the user causes.
+        Config.Library.EnsureDefaults();
+    }
+
+    /// <summary>
+    /// Version 2: the overlay color redesign replaces the old defaults, so
+    /// stored overlay colors reset once to the new palette (this also
+    /// re-enables accent-following for selected/hovered). Sizes, opacity,
+    /// and every non-color setting keep their stored values.
+    /// </summary>
+    private void MigrateConfig()
+    {
+        if (Config.Version >= 2)
+            return;
+        var defaults = new SkeletonConfiguration();
+        var skeleton = Config.Skeleton;
+        skeleton.BoneColor = defaults.BoneColor;
+        skeleton.BoneOutlineColor = defaults.BoneOutlineColor;
+        skeleton.SelectedBoneColor = defaults.SelectedBoneColor;
+        skeleton.ModifiedBoneColor = defaults.ModifiedBoneColor;
+        skeleton.HoveredBoneColor = defaults.HoveredBoneColor;
+        skeleton.IkChainColor = defaults.IkChainColor;
+        skeleton.MirroredBoneColor = defaults.MirroredBoneColor;
+        Config.Version = 2;
+        Save();
     }
 
     public void Save()

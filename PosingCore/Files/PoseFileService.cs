@@ -51,7 +51,8 @@ public class PoseFileService : IPoseFileService
         _ => false,
     };
 
-    public PoseFile CreatePoseFile(IReadOnlyList<ISkeleton> slots)
+    public PoseFile CreatePoseFile(
+        IReadOnlyList<ISkeleton> slots, Func<IBone, bool>? include = null)
     {
         var poseFile = new PoseFile();
         IActor? actor = null;
@@ -69,6 +70,8 @@ public class PoseFileService : IPoseFileService
             foreach (var bone in skeleton.Bones)
             {
                 if (bone.IsPartialRoot && !bone.IsSkeletonRoot)
+                    continue;
+                if (include != null && !include(bone))
                     continue;
 
                 collection[bone.BoneName] = bone.LastRawTransform;
@@ -115,8 +118,8 @@ public class PoseFileService : IPoseFileService
         try
         {
             // Legacy CMTool .cmp: hex-encoded rotations/scales, NO positions —
-            // convert to a PoseFile and force ApplyPosition off so nothing
-            // zeroes. .cmp is Character-only by format.
+            // convert to a PoseFile and drop Position from the delta mask so
+            // nothing zeroes. .cmp is Character-only by format.
             if (path.EndsWith(".cmp", StringComparison.OrdinalIgnoreCase))
             {
                 var cmp = CMToolPoseFile.Load(path);
@@ -126,10 +129,11 @@ public class PoseFileService : IPoseFileService
                     return null;
                 }
 
-                var upgraded = cmp.Upgrade();
-                var cmpOptions = (options ?? DefaultImportOptions).Clone();
-                cmpOptions.ApplyPosition = false;
-                return BuildImportPlan(slots, upgraded, cmpOptions);
+                return BuildImportPlan(
+                    slots,
+                    cmp.Upgrade(),
+                    options,
+                    TransformComponents.Rotation | TransformComponents.Scale);
             }
 
             var poseFile = PoseFile.Load(path);
@@ -151,9 +155,29 @@ public class PoseFileService : IPoseFileService
         }
     }
 
-    public PoseImportPlan BuildImportPlan(IReadOnlyList<ISkeleton> slots, PoseFile poseFile, PoseImportOptions? options = null)
+    public PoseImportPlan BuildImportPlan(IReadOnlyList<ISkeleton> slots, PoseFile poseFile, PoseImportOptions? options = null) =>
+        BuildImportPlan(slots, poseFile, options, TransformComponents.All);
+
+    private PoseImportPlan BuildImportPlan(
+        IReadOnlyList<ISkeleton> slots,
+        PoseFile poseFile,
+        PoseImportOptions? options,
+        TransformComponents maskLimit)
     {
         options ??= DefaultImportOptions;
+        // Component selection is a DELTA mask (Brio PoseImporter.cs:35, the
+        // 4th Apply argument), applied inside the apply pass — never an
+        // absolute-write emulation against a stale basis.
+        var components = ComponentMask(options) & maskLimit;
+        // Expression imports apply EVERY component regardless of the
+        // Translation/Rotation/Scale toggles — Brio's ExpressionOptions is
+        // TransformComponents.All (PosingService.cs:77) while its toggles
+        // feed only the body path. Dawntrail faces are posed through bone
+        // POSITIONS, so the rotation-only default landed face imports wrong
+        // (user 2026-08-08). The mask limit still governs: a .cmp carries no
+        // positions to force.
+        if (options.AsExpression)
+            components = TransformComponents.All & maskLimit;
         var plan = new PoseImportPlan();
 
         var bySlot = slots
@@ -169,7 +193,7 @@ public class PoseFileService : IPoseFileService
 
         // Character collection → Character slot only.
         if (options.ApplyBody && character != null)
-            PlanCharacterCollection(plan, character, poseFile, options);
+            PlanCharacterCollection(plan, character, poseFile, options, components);
 
         // Each auxiliary collection imports only into its matching live
         // slot; a missing slot is reported, never redirected by name.
@@ -191,13 +215,22 @@ public class PoseFileService : IPoseFileService
                     _log.Info($"Pose import: {slot} collection skipped — slot not present on this actor.");
                     continue;
                 }
+                var slotInstances = InstancesByName(slotSkeleton);
                 foreach (var (boneName, boneData) in collection)
                 {
-                    var bone = slotSkeleton.GetBone(boneName);
-                    if (bone == null || !PassesBoneFilter(bone, options))
+                    if (IsThrowBone(boneName) ||
+                        !slotInstances.TryGetValue(boneName, out var bones))
                         continue;
-                    PlanBoneTransform(plan, bone, boneData, options);
-                    plan.FileBoneCount++;
+                    bool applied = false;
+                    foreach (var bone in bones)
+                    {
+                        if (!PassesBoneFilter(bone, options))
+                            continue;
+                        PlanBoneTransform(plan, bone, boneData, components);
+                        applied = true;
+                    }
+                    if (applied)
+                        plan.FileBoneCount++;
                 }
             }
         }
@@ -223,12 +256,11 @@ public class PoseFileService : IPoseFileService
             };
         }
 
-        // No face-reconcile pass: within one atomic same-frame edit the
-        // pre-import raw transforms it would re-apply are exactly the
-        // near-identity no-op the delta rejection filters, while the
-        // stack restore hidden inside a duplicate absolute write would
-        // erase the file's own facial edits. Every target gets exactly
-        // one deterministic final state.
+        // The face reconcile is NOT plan-time: file data for non-zero
+        // partials is post-reparent while the apply pass's basis is
+        // pre-reparent, and only the application engine can re-export the
+        // converged subtree between passes — PoseImportCapture's reconcile
+        // stage (Brio PosingCapability.cs:249-250, :316-317, :370-401).
 
         return plan;
     }
@@ -251,8 +283,15 @@ public class PoseFileService : IPoseFileService
         {
             if (!PassesBoneFilter(bone, options))
                 return false;
+            if (IsExcludedByCategories(bone.BoneName, options))
+                return false;
             if (options.AsExpression)
-                return IsFaceBone(bone.BoneName) && bone.BoneName != "j_kao";
+                // The reset matches the apply scope MINUS the head: the
+                // head's pre-import stacks must survive because the file's
+                // head lands only transiently and the engine's head-restore
+                // stage reverts to exactly those.
+                return IsExpressionScopeBone(bone.BoneName) &&
+                       bone.BoneName != "j_kao";
             if (!options.ApplyFace && IsFaceBone(bone.BoneName))
                 return false;
             return true;
@@ -283,7 +322,8 @@ public class PoseFileService : IPoseFileService
         PoseImportPlan plan,
         ISkeleton skeleton,
         PoseFile poseFile,
-        PoseImportOptions options)
+        PoseImportOptions options,
+        TransformComponents components)
     {
 
         // Pre-Dawntrail face heuristic (Anamnesis): files with face bones
@@ -291,63 +331,103 @@ public class PoseFileService : IPoseFileService
         // face POSITIONS onto a DT face deforms it. Strip positions for
         // face bones and log once.
         bool preDtFace = poseFile.Bones.Keys.Any(IsFaceBone)
-            && !poseFile.Bones.ContainsKey("j_f_bero_01")
-            && skeleton.GetBone("j_f_bero_01") != null;
+            && !poseFile.Bones.ContainsKey(DawntrailFaceMarkerBone)
+            && IsDawntrailSkeleton(skeleton);
         if (preDtFace)
             _log.Warning("PoseFileService: pre-Dawntrail face detected (no tongue bone) — face positions skipped to protect the DT face");
 
+        var instances = InstancesByName(skeleton);
         foreach (var (rawBoneName, boneData) in poseFile.Bones)
         {
             // old Anamnesis files carry legacy bone names on plain .pose
             // too — run the conversion table whenever the raw name misses
             var boneName = rawBoneName;
-            var bone = skeleton.GetBone(boneName);
-            if (bone == null)
+            if (!instances.TryGetValue(boneName, out var bones))
             {
                 var modern = AnamnesisBoneNameConverter.ToGame(rawBoneName);
-                if (modern != null)
-                {
-                    boneName = modern;
-                    bone = skeleton.GetBone(boneName);
-                }
+                if (modern == null || !instances.TryGetValue(modern, out bones))
+                    continue;
+                boneName = modern;
             }
-            if (bone == null)
+            if (IsThrowBone(boneName))
                 continue;
 
             // Scope decides FIRST; the pre-Dawntrail protection can only
             // modify how an accepted bone applies, never smuggle an
             // out-of-scope bone past AsExpression/ApplyFace/the filter.
 
-            // Expression import (rewritten, single-phase): only face bones,
-            // and NEVER the head — the file's face orientations land while
-            // the posed head stays put. Equivalent end state to Brio's
-            // apply-then-restore without its 4-tick resync hack.
-            if (options.AsExpression)
-            {
-                if (boneName == "j_kao" || !IsFaceBone(boneName))
-                    continue;
-            }
+            // Expression import: Brio's ExpressionOptions scope — head,
+            // ears, hair, face, eyes, lips, jaw (PosingService.cs:77-86) —
+            // INCLUDING j_kao. The file's face was authored around the
+            // file's OWN head, so the head must move to the file's space for
+            // the face deltas to be face-local; the import engine's head
+            // restore stage then reverts the head, Brio's expressionPhase2
+            // (PosingCapability.cs:238-247, PoseImporter.cs:11-26). The
+            // earlier "skip j_kao, single phase" shortcut silently baked the
+            // exporter-vs-target head offset into every face position delta
+            // and flung imported faces (user 2026-08-08).
+            if (options.AsExpression && !IsExpressionScopeBone(boneName))
+                continue;
+
+            // The bone-filter menu's exclusions (Brio's category filter,
+            // BoneFilter.IsBoneValidUncached): disabled category prefixes
+            // never apply; with "Other" off, neither does anything no
+            // category claims.
+            if (IsExcludedByCategories(boneName, options))
+                continue;
             // Filter by face bones if needed
             else if (!options.ApplyFace && IsFaceBone(boneName))
                 continue;
 
-            // Selective import (Ktisis/Anamnesis parity): only filtered
-            // bones (+ descendants when requested)
-            if (!PassesBoneFilter(bone, options))
-                continue;
+            // Pre-DT protection folds into the delta mask: a protected face
+            // bone's position component contributes nothing.
+            var boneComponents = preDtFace && IsFaceBone(boneName)
+                ? components & ~TransformComponents.Position
+                : components;
 
-            var effective = options;
-            if (preDtFace && IsFaceBone(boneName) && options.ApplyPosition)
+            bool applied = false;
+            foreach (var bone in bones)
             {
-                var stripped = options.Clone();
-                stripped.ApplyPosition = false;
-                effective = stripped;
+                // Selective import (Ktisis/Anamnesis parity): only filtered
+                // bones (+ descendants when requested)
+                if (!PassesBoneFilter(bone, options))
+                    continue;
+                PlanBoneTransform(plan, bone, boneData, boneComponents);
+                applied = true;
             }
-
-            PlanBoneTransform(plan, bone, boneData, effective);
-            plan.FileBoneCount++;
+            if (applied)
+                plan.FileBoneCount++;
         }
     }
+
+    /// <summary>
+    /// Every live instance of each bone name across the skeleton's partials.
+    /// Brio applies the file bone to EVERY partial's instance — its per-bone
+    /// transitive action re-runs the name lookup at each visited bone
+    /// (PoseImporter.cs:33) — so j_kao lands on the body head AND on the
+    /// face/hair partial roots. A single-instance lookup leaves the extra
+    /// partial roots at their animated rotation, and the reparented face
+    /// assembles against a root the import never turned.
+    /// </summary>
+    private static Dictionary<string, List<IBone>> InstancesByName(ISkeleton skeleton)
+    {
+        var byName = new Dictionary<string, List<IBone>>(StringComparer.Ordinal);
+        foreach (var bone in skeleton.Bones)
+        {
+            if (bone is VirtualBone)
+                continue;
+            if (!byName.TryGetValue(bone.BoneName, out var list))
+                byName[bone.BoneName] = list = new List<IBone>(1);
+            list.Add(bone);
+        }
+        return byName;
+    }
+
+    /// <summary>Brio hard-excludes n_throw from every import (BoneFilter.cs:37-38,
+    /// the constructor's default excluded prefix): the throw bone is animation
+    /// plumbing, and a file value on it drags the whole model.</summary>
+    private static bool IsThrowBone(string boneName) =>
+        boneName.StartsWith("n_throw", StringComparison.Ordinal);
 
     /// <summary>Selective-import filter: the slot-qualified bone itself, or
     /// any same-slot ancestor, is in the set.</summary>
@@ -373,21 +453,41 @@ public class PoseFileService : IPoseFileService
     }
 
     private static void PlanBoneTransform(
-        PoseImportPlan plan, IBone bone, PoseFile.BoneData boneData, PoseImportOptions options)
+        PoseImportPlan plan, IBone bone, PoseFile.BoneData boneData, TransformComponents components)
     {
-        // File bones are absolute raw (pre-reparent) snapshots, so the delta basis is
-        // LastRawTransform — Brio passes bone.LastRawTransform to BonePoseInfo.Apply.
-        // For partial-0 bones this equals LastTransform; for face partials it differs.
-        // The atomic edit applies the desired transform against the LIVE raw
-        // basis, so components the options exclude are read here and stay put.
-        var original = bone.LastRawTransform;
-
+        // The FILE transform verbatim: file bones are LastRawTransform
+        // snapshots taken AFTER the update phase's post-reparent refresh
+        // (CreatePoseFile above; Brio SkeletonService.cs:243). The delta
+        // basis is the apply pass's own just-refreshed bone.LastRawTransform
+        // (Brio PoseImporter.cs:35) — a basis read here, outside the pass,
+        // would predate the parents' deltas the same pass propagates. For
+        // partial-0 bones the two spaces coincide; for non-zero partials the
+        // file data is post-reparent while the pass basis is pre-reparent,
+        // and PoseImportCapture's reconcile stage is what converges the face
+        // after that wrong-space first diff (Brio PosingCapability.cs:
+        // 316-317, :370-401). Excluded components are masked on the DELTA
+        // (Brio PoseInfo.cs:108), so the bone's live values stay put without
+        // being re-asserted.
         plan.Writes.Add((bone, new Transform
         {
-            Position = options.ApplyPosition ? boneData.Position : original.Position,
-            Rotation = options.ApplyRotation ? boneData.Rotation : original.Rotation,
-            Scale = options.ApplyScale ? boneData.Scale : original.Scale
-        }));
+            Position = boneData.Position,
+            Rotation = boneData.Rotation,
+            Scale = boneData.Scale
+        }, components));
+    }
+
+    /// <summary>Brio PoseWindow's TransformComponents assembly from the three
+    /// toggles — the options' component switches as one delta mask.</summary>
+    private static TransformComponents ComponentMask(PoseImportOptions options)
+    {
+        var mask = TransformComponents.None;
+        if (options.ApplyPosition)
+            mask |= TransformComponents.Position;
+        if (options.ApplyRotation)
+            mask |= TransformComponents.Rotation;
+        if (options.ApplyScale)
+            mask |= TransformComponents.Scale;
+        return mask;
     }
 
     private static bool IsFaceBone(string boneName)
@@ -403,6 +503,162 @@ public class PoseFileService : IPoseFileService
                boneName.Contains("_hoho") ||     // Cheeks
                boneName.Contains("_kuti");       // Mouth
     }
+
+    /// <summary>
+    /// Brio's Smart Import file classifier (FileUIHelpers.ResolveSmartImport:
+    /// 355-386): a file is an expression when it carries one of the
+    /// expression tags, or when every Character bone it names is a face bone
+    /// — the head included, per Brio's own smart-import predicate (:405-419),
+    /// which is WIDER than the import scope's <see cref="IsFaceBone"/>. Such
+    /// a file can never land through the body path (Dawntrail faces are
+    /// posed through bone POSITIONS the body path masks), so surfaces
+    /// without an import-type control route it as an expression.
+    /// </summary>
+    public static bool IsExpressionOnlyPose(PoseFile poseFile)
+    {
+        if (poseFile.Tags is { Count: > 0 } tags)
+        {
+            foreach (var tag in tags)
+            {
+                if (tag == null)
+                    continue;
+                // Brio :373 token list, Contains-matched.
+                if (tag.Contains("expression", StringComparison.OrdinalIgnoreCase) ||
+                    tag.Contains("facial expression", StringComparison.OrdinalIgnoreCase) ||
+                    tag.Contains("facial-expression", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
+
+        if (poseFile.Bones.Count == 0)
+            return false;
+        foreach (var boneName in poseFile.Bones.Keys)
+        {
+            if (!IsSmartImportFaceBone(boneName))
+                return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Brio's ExpressionOptions bone scope, read straight off the shipped
+    /// catalog: the union of the head, ears, hair, face, eyes, lips and jaw
+    /// category prefixes, which is precisely the set its DisableAll +
+    /// EnableCategory run leaves allowed (PosingService.cs:77-86) evaluated
+    /// through BoneFilter's prefix test (BoneFilter.cs:127).
+    ///
+    /// <para>Replaces a hand-rolled predicate that approximated the same set
+    /// from <see cref="IsFaceBone"/>: it was too WIDE (every j_f_* name, so
+    /// the legacy and ex rows Brio leaves disabled rode along, as did bare
+    /// j_ago and j_hana) and too NARROW (j_kao matched only exactly, where
+    /// Brio's entry is a prefix). The catalog is now the only statement of
+    /// this scope.</para>
+    /// </summary>
+    internal static bool IsExpressionScopeBone(string boneName) =>
+        ImportBoneCategories.IsInCategories(
+            boneName, ImportBoneCategories.ExpressionCategories);
+
+    /// <summary>The bone-filter menu's verdict (Brio
+    /// BoneFilter.IsBoneValidUncached, as an exclusion): a disabled
+    /// category's prefix bans the bone; with the "Other" row off, so is
+    /// anything no category claims.</summary>
+    private static bool IsExcludedByCategories(
+        string boneName, PoseImportOptions options)
+    {
+        if (options.ExcludedBonePrefixes is { Count: > 0 } excluded)
+        {
+            foreach (var prefix in excluded)
+            {
+                if (boneName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
+        if (options.ExcludeUncategorizedBones &&
+            !ImportBoneCategories.IsCategorized(boneName))
+            return true;
+        return false;
+    }
+
+    /// <summary>The other half of Brio's Smart Import classifier
+    /// (:382-386): a file carrying one of the body-only TAGS (Brio's :374
+    /// token list, Contains-matched exactly as the expression list is), or
+    /// one whose Character bones include NO face bone, is a body pose —
+    /// smart routing keeps the face untouched for it. The tag decides on its
+    /// own, before the bones are looked at, because Brio's <c>bodyOnlyTag</c>
+    /// is the first half of an <c>||</c>.</summary>
+    public static bool IsBodyOnlyPose(PoseFile poseFile)
+    {
+        if (poseFile.Tags is { Count: > 0 } tags)
+        {
+            foreach (var tag in tags)
+            {
+                if (tag == null)
+                    continue;
+                if (tag.Contains("body-only", StringComparison.OrdinalIgnoreCase) ||
+                    tag.Contains("body_only", StringComparison.OrdinalIgnoreCase) ||
+                    tag.Contains("bodyonly", StringComparison.OrdinalIgnoreCase) ||
+                    tag.Contains("body only", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
+
+        if (poseFile.Bones.Count == 0)
+            return false;
+        foreach (var boneName in poseFile.Bones.Keys)
+        {
+            if (IsSmartImportFaceBone(boneName))
+                return false;
+        }
+        return true;
+    }
+
+    /// <summary>The tongue bone Dawntrail's face rework added — Brio's own
+    /// Dawntrail marker on both sides of its expression gate: the file half
+    /// (FileUIHelpers.cs:361) and the actor half
+    /// (SkeletonPosingCapability.cs:229 <c>CharacterIsDawntrail</c>).</summary>
+    public const string DawntrailFaceMarkerBone = "j_f_bero_01";
+
+    /// <summary>Brio's expression gate, FILE half (FileUIHelpers.cs:392):
+    /// the pose either names the Dawntrail tongue bone or carries a
+    /// "dawntrail"/"dt" tag.</summary>
+    public static bool IsLikelyDawntrailPose(PoseFile poseFile)
+    {
+        foreach (var boneName in poseFile.Bones.Keys)
+        {
+            if (boneName.Equals(
+                    DawntrailFaceMarkerBone, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        if (poseFile.Tags is { Count: > 0 } tags)
+        {
+            foreach (var tag in tags)
+            {
+                if (tag == null)
+                    continue;
+                if (tag.Contains("dawntrail", StringComparison.OrdinalIgnoreCase) ||
+                    tag.Contains("dt", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>Brio's expression gate, ACTOR half
+    /// (SkeletonPosingCapability.cs:229): the live skeleton has the
+    /// Dawntrail tongue bone.</summary>
+    public static bool IsDawntrailSkeleton(ISkeleton skeleton) =>
+        skeleton.GetBone(DawntrailFaceMarkerBone) != null;
+
+    /// <summary>Brio ResolveSmartImport's local IsFaceBone (:405-419):
+    /// j_kao plus the j_f_/j_eye/j_may/j_ago/j_lip/j_bero prefixes.</summary>
+    private static bool IsSmartImportFaceBone(string boneName) =>
+        boneName.Equals("j_kao", StringComparison.OrdinalIgnoreCase) ||
+        boneName.StartsWith("j_f_", StringComparison.OrdinalIgnoreCase) ||
+        boneName.StartsWith("j_eye", StringComparison.OrdinalIgnoreCase) ||
+        boneName.StartsWith("j_may", StringComparison.OrdinalIgnoreCase) ||
+        boneName.StartsWith("j_ago", StringComparison.OrdinalIgnoreCase) ||
+        boneName.StartsWith("j_lip", StringComparison.OrdinalIgnoreCase) ||
+        boneName.StartsWith("j_bero", StringComparison.OrdinalIgnoreCase);
 
     public void Dispose()
     {

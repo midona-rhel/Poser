@@ -320,6 +320,23 @@ public sealed class AnimationSession
     /// actor the game is driving at its own speed keeps it.</summary>
     public AnimationResult Resume(ActorId actor) => ClearSpeed(actor);
 
+    /// <summary>
+    /// Rewinds every paused Havok control of the actor to its frame 0 —
+    /// Brio's settle rewind between pausing and importing a pose
+    /// (ActionTimelineCapability.StopSpeedAndResetTimeline, ATC:120-165).
+    /// Owns no state: a rewind is not an override and has nothing to
+    /// restore. Suspended like the other face-moving commands, because it
+    /// snaps the very blink/lip frames a face capture is measuring.
+    /// </summary>
+    public AnimationResult RewindPausedControls(ActorId actor)
+    {
+        if (Suspended() is { } blocked) return blocked;
+        var result = _port.RewindPausedControls(actor);
+        return result.Success
+            ? AnimationResult.Ok()
+            : AnimationResult.Fail(result.Detail ?? "Rewind failed.");
+    }
+
     public AnimationResult SetSlotSpeed(ActorId actor, AnimationSlot slot, float speed)
     {
         if (Suspended() is { } blocked) return blocked;

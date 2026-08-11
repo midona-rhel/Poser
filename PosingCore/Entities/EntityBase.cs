@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using Poser.Core;
 
 namespace Poser.Entities;
@@ -13,7 +14,15 @@ public abstract class EntityBase : IEntity, IDisposable
     public IEntity? Parent { get; private set; }
 
     private readonly List<IEntity> _children = new();
-    public IReadOnlyCollection<IEntity> Children => _children.AsReadOnly();
+
+    /// <summary>Live read-only view over <c>_children</c>, allocated once.
+    /// <c>List.AsReadOnly()</c> wraps the SAME list, so one wrapper stays
+    /// correct for the entity's whole life — building a fresh one per access
+    /// only added garbage to paths that read Children (and IsCollapsible) per
+    /// entity per frame.</summary>
+    private readonly ReadOnlyCollection<IEntity> _childrenView;
+
+    public IReadOnlyCollection<IEntity> Children => _childrenView;
 
     public bool IsVisible { get; set; } = true;
     public bool IsSelected { get; set; }
@@ -39,6 +48,7 @@ public abstract class EntityBase : IEntity, IDisposable
         Id = id;
         Name = name;
         Transform = Transform.Identity;
+        _childrenView = _children.AsReadOnly();
     }
 
     public void AttachChild(IEntity child)

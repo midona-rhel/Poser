@@ -27,6 +27,20 @@ public interface IActorSpawnService : IDisposable
     IActor? CloneActor(IActor source);
 
     /// <summary>
+    /// Spawn a catalog entry (minion/mount/accessory) as its OWN actor: a
+    /// fresh battle character that first draws as the entry's ModelChara.
+    /// The model id is a spawn parameter only — Poser exposes no post-spawn
+    /// model editing — and the spawn is classified by the entry's kind
+    /// (<see cref="GetSpawnedKind"/>).
+    /// </summary>
+    IActor? SpawnCatalogActor(SpawnCatalogEntry entry);
+
+    /// <summary>The kind a spawned actor was classified as at spawn; None
+    /// for plain spawns, clones, and actors not spawned by this service.
+    /// </summary>
+    CompanionKind GetSpawnedKind(IActor actor);
+
+    /// <summary>
     /// Destroy a spawned actor.
     /// </summary>
     bool DestroyActor(IActor actor);

@@ -52,7 +52,7 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
-Brio/
+/Brio/
 /.claude
 /claude
 .claude/settings.local.json

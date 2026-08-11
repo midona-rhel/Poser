@@ -61,8 +61,22 @@ public sealed class ViewportProjection
                 GetActorTransform(actorId),
             TransformTargetKind.Bone when target.Bone is { } boneId =>
                 GetBoneModelTransform(boneId),
+            TransformTargetKind.Light when target.Light is { } lightId =>
+                GetLightTransform(lightId),
             _ => null,
         };
+
+    /// <summary>World transform of a spawned light. Null off the framework
+    /// thread or when the id no longer binds.</summary>
+    public PoseTransform? GetLightTransform(LightId id)
+    {
+        if (!_framework.IsInFrameworkUpdateThread)
+            return null;
+        var light = _bindings.Resolve(id);
+        return light.Success
+            ? ToPoseTransform(light.Value!.Transform)
+            : null;
+    }
 
     public PoseTransform? GetActorTransform(ActorId id)
     {
@@ -115,7 +129,10 @@ public sealed class ViewportProjection
             return null;
         if (bone.Value!.Skeleton is not Skeleton skeleton || !skeleton.IsValid)
             return null;
-        skeleton.UpdateBoneTransforms();
+        // Draw-phase refresh: Customize+ has already stamped the model pose
+        // by now, so the raw cache must not be written here or its scale
+        // leaks into every delta diffed against LastRawTransform.
+        skeleton.UpdateBoneTransforms(BoneCacheTypes.LastTransform);
         _bonePosing.RegisterSkeletonForCacheUpdate(skeleton);
         return skeleton.GetModelMatrix();
     }

@@ -771,6 +771,58 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         }
     }
 
+    /// <summary>
+    /// Brio's settle rewind, traversal-literal (ActionTimelineCapability.
+    /// StopSpeedAndResetTimeline's tick body, Brio\Brio\Capabilities\Actor\
+    /// ActionTimelineCapability.cs:120-165): DrawObject (ATC:124) →
+    /// ObjectType.CharacterBase gate (ATC:128) → CharacterBase.Skeleton
+    /// null gate (ATC:131-133) → every PartialSkeleton (ATC:136-138) →
+    /// GetHavokAnimatedSkeleton(0) (ATC:140) → every AnimationControls
+    /// entry (ATC:144-148) → hkaAnimationControl.Binding null gate
+    /// (ATC:150-152) → Binding.Animation null gate (ATC:154-156) → and
+    /// only where PlaybackSpeed == 0 (ATC:158), hkaAnimationControl.
+    /// LocalTime = 0 (ATC:160). A missing draw object or skeleton is
+    /// Brio's silent early return, not an error: there is simply nothing
+    /// to rewind.
+    /// </summary>
+    public AnimationPortResult RewindPausedControls(ActorId actor)
+    {
+        var character = Resolve(actor, out var detail);
+        if (character == null)
+            return AnimationPortResult.Fail(detail!);
+
+        var drawObject = character->GameObject.DrawObject;                       // ATC:124
+        if (drawObject == null ||
+            drawObject->Object.GetObjectType() != ObjectType.CharacterBase)      // ATC:125-129
+            return AnimationPortResult.Ok();
+        var charaBase = (CharacterBase*)drawObject;                              // ATC:131
+        if (charaBase->Skeleton == null)                                         // ATC:132-133
+            return AnimationPortResult.Ok();
+        var skeleton = charaBase->Skeleton;                                      // ATC:135
+
+        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)                 // ATC:136
+        {
+            var partial = &skeleton->PartialSkeletons[p];                        // ATC:138
+            var animated = partial->GetHavokAnimatedSkeleton(0);                 // ATC:140
+            if (animated == null)
+                continue;
+            for (int c = 0; c < animated->AnimationControls.Length; c++)         // ATC:144
+            {
+                var control = animated->AnimationControls[c].Value;              // ATC:146
+                if (control == null)
+                    continue;
+                var binding = control->hkaAnimationControl.Binding;              // ATC:150
+                if (binding.ptr == null)                                         // ATC:151-152
+                    continue;
+                if (binding.ptr->Animation.ptr == null)                          // ATC:154-156
+                    continue;
+                if (control->PlaybackSpeed == 0)                                 // ATC:158
+                    control->hkaAnimationControl.LocalTime = 0;                  // ATC:160
+            }
+        }
+        return AnimationPortResult.Ok();
+    }
+
     public AnimationPortResult SetSlotSpeed(ActorId actor, AnimationSlot slot, float speed)
     {
         var character = Resolve(actor, out var detail);

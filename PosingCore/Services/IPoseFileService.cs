@@ -25,8 +25,11 @@ public interface IPoseFileService : IDisposable
 
     /// <summary>
     /// Creates a PoseFile from the slot set's current pose (in-memory).
+    /// <paramref name="include"/> narrows which bones the file carries —
+    /// null takes them all. Skipped bones are simply absent, never zeroed.
     /// </summary>
-    PoseFile CreatePoseFile(IReadOnlyList<ISkeleton> slots);
+    PoseFile CreatePoseFile(
+        IReadOnlyList<ISkeleton> slots, Func<IBone, bool>? include = null);
 
     /// <summary>
     /// Loads a pose file and computes the complete import plan for the

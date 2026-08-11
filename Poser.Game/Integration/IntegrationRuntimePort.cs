@@ -417,7 +417,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
         if (!requested.Success)
             return requested;
 
-        long deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
+        long deadline = System.Environment.TickCount64 + (long)timeout.TotalMilliseconds;
         // Give the redraw a moment to actually tear the draw object down,
         // or the first poll can see the old body still "drawable".
         await Task.Delay(150, CancellationToken.None);
@@ -448,7 +448,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
                 });
                 return IntegrationPortResult.Ok();
             }
-            if (Environment.TickCount64 > deadline)
+            if (System.Environment.TickCount64 > deadline)
                 return IntegrationPortResult.Fail(
                     $"The actor did not finish redrawing within {timeout.TotalSeconds:0} seconds.");
             await Task.Delay(100, CancellationToken.None);

@@ -185,16 +185,18 @@ public sealed class AppearancePane
                 },
                 disabled: !glamourer.Available,
                 help: glamourer.Available
-                    ? "Open this actor in Glamourer."
+                    ? "Open this actor in the Glamourer window"
                     : glamourer.Detail);
             actions.Button("Reset appearance",
                 () => Report(_presentation.ResetActor(actor), "Reset appearance"),
-                help: "Restore this actor's incoming opacity, tints, and wetness");
+                help: "Undo this actor's opacity, tint, and wetness changes. "
+                    + "Penumbra, Glamourer, and Customize+ are not touched.");
         });
 
         form.Slider("Opacity", owned.Opacity ?? reading.Opacity, 0f, 1f,
             value => Report(_presentation.SetOpacity(actor, value), "Opacity"),
-            help: "Fade the whole actor; 0 is fully invisible and never touches the visibility action");
+            help: "Fade the whole actor, 0 invisible to 1 solid. "
+                + "This is separate from hiding it in the actor list.");
 
         form.ColorWells("Tint", wells =>
         {
@@ -206,13 +208,14 @@ public sealed class AppearancePane
                 TintFor(owned, reading, PresentationModel.MainHand),
                 value => Report(_presentation.SetTint(
                     actor, PresentationModel.MainHand, value), "Main"),
-                "This weapon model is not present on the actor");
+                "No main hand weapon is equipped");
             wells.Well("Off",
                 TintFor(owned, reading, PresentationModel.OffHand),
                 value => Report(_presentation.SetTint(
                     actor, PresentationModel.OffHand, value), "Off"),
-                "This weapon model is not present on the actor");
-        }, help: "Multiply each model's colors; an absent weapon shows an empty well");
+                "No off hand weapon is equipped");
+        }, help: "Tint the character and weapon models. "
+            + "White leaves a model unchanged.");
     }
 
     private void WetSurfaceRows(
@@ -224,7 +227,8 @@ public sealed class AppearancePane
         form.Switch("Override", owned.Wetness != null,
             value => Report(
                 _presentation.SetWetnessEnabled(actor, value), "Wetness override"),
-            help: "Hold the wet-surface values below against the game's own weather and water updates; turning it off restores the incoming values exactly");
+            help: "Take over this actor's wetness so weather and water stop "
+                + "changing it. Turning it off restores the game's values.");
 
         // Fresh re-read: the sliders answer to what the session holds NOW, not
         // to the copy the section opened with — the switch above may have just
@@ -236,17 +240,17 @@ public sealed class AppearancePane
         form.Slider("Weather", wet.Weather, 0f, 1f,
             value => Report(_presentation.SetWetness(
                 actor, CurrentWetness(actor) with { Weather = value }), "Weather"),
-            help: "How rain-wet the surface looks, 0 dry to 1 soaked",
+            help: "Set how rain-wet the character looks, 0 dry to 1 soaked",
             disabled: !wetOn);
         form.Slider("Swimming", wet.Swimming, 0f, 1f,
             value => Report(_presentation.SetWetness(
                 actor, CurrentWetness(actor) with { Swimming = value }), "Swimming"),
-            help: "How water-wet the surface looks, 0 dry to 1 soaked",
+            help: "Set how water-soaked the character looks, 0 dry to 1 soaked",
             disabled: !wetOn);
         form.Slider("Depth", wet.Depth, 0f, 3f,
             value => Report(_presentation.SetWetness(
                 actor, CurrentWetness(actor) with { Depth = value }), "Depth"),
-            help: "How high up the body the wetness reaches, in about character heights",
+            help: "Set how far up the body the wetness reaches",
             disabled: !wetOn);
     }
 
@@ -257,7 +261,7 @@ public sealed class AppearancePane
     {
         bool mcdfOwned = external.Mcdf != null;
         const string mcdfReason =
-            "An imported character file owns this actor's external appearance. Reset MCDF first.";
+            "An imported character file is controlling this actor's appearance. Reset MCDF first.";
         var penumbra = _integration.Penumbra;
         var glamourer = _integration.Glamourer;
         var customize = _integration.CustomizePlus;
@@ -270,7 +274,8 @@ public sealed class AppearancePane
             () => ReportExternal(_integration.ResetCollection(actor), "Reset Collection"),
             available: penumbra.Available && !mcdfOwned,
             owned: external.CollectionOwned,
-            help: "Assigns a Penumbra collection to only this actor and redraws it; Reset restores whether it was assigned or inherited",
+            help: "Use a Penumbra collection on this actor only and redraw it. "
+                + "Reset puts the actor's original collection back.",
             disabledHelp: !penumbra.Available
                 ? penumbra.Detail
                 : mcdfOwned
@@ -284,12 +289,13 @@ public sealed class AppearancePane
             () => ReportExternal(_integration.ResetDesign(actor), "Reset Design"),
             available: glamourer.Available && !mcdfOwned,
             owned: external.DesignOwned,
-            help: "Applies a saved Glamourer design to this actor after capturing its complete incoming state; Reset reapplies that captured state exactly",
+            help: "Apply a saved Glamourer design to this actor only. "
+                + "Reset puts back the look it had before Poser changed it.",
             disabledHelp: !glamourer.Available
                 ? glamourer.Detail
                 : mcdfOwned
                     ? mcdfReason
-                    : "Apply a Glamourer design to only this actor");
+                    : "Apply a Glamourer design to this actor only");
 
         form.Selector(
             "Body profile",
@@ -301,14 +307,15 @@ public sealed class AppearancePane
                 _integration.ResetBodyProfile(actor), "Reset Body profile"),
             available: customize.Available && !mcdfOwned && !_bodyBlocked,
             owned: external.TemporaryBodyProfile != null,
-            help: "Holds a saved Customize+ profile on this actor as a temporary profile; Reset removes it so the normal assignment resumes",
+            help: "Apply a saved Customize+ profile to this actor only. "
+                + "Reset removes it and the actor's usual profile returns.",
             disabledHelp: !customize.Available
                 ? customize.Detail
                 : mcdfOwned
                     ? mcdfReason
                     : _bodyBlocked
                         ? _bodyBlockedDetail
-                        : "Apply a saved Customize+ profile to only this actor");
+                        : "Apply a saved Customize+ profile to this actor only");
     }
 
     private void CharacterFileRows(
@@ -331,9 +338,10 @@ public sealed class AppearancePane
                 _integration.CancelMcdf,
                 cancelDisabled: !running.Cancellable,
                 cancelHelp: running.Cancellable
-                    ? "Cancel this operation; an import rolls back everything already applied"
+                    ? "Stop this operation. An import undoes everything it has "
+                        + "already applied."
                     : "This phase cannot be cancelled",
-                help: "The running character-file operation for this actor");
+                help: "Import or export progress for this actor's character file");
         }
         else
         {
@@ -350,10 +358,11 @@ public sealed class AppearancePane
                     ?? (cleanupPending ? "Cleanup pending" : "None"),
                 actions =>
                 {
-                    actions.Button("Import…",
+                    actions.Button("Import",
                         () => OpenMcdfImport(actor),
-                        help: "Apply a .mcdf character file (mods, appearance, body scale) to only this actor");
-                    actions.Button("Export…",
+                        help: "Apply a Mare character file's mods, appearance, "
+                            + "and body scale to this actor only");
+                    actions.Button("Export",
                         () => OpenMcdfExport(actor),
                         disabled: !exportable,
                         help: !penumbra.Available
@@ -361,7 +370,7 @@ public sealed class AppearancePane
                             : !glamourer.Available
                                 ? glamourer.Detail
                                 : mcdfOwnedNow
-                                    ? "Reset MCDF first — an imported file is never repackaged"
+                                    ? "Reset MCDF first. An imported character file cannot be exported again."
                                     : "Save this actor's mods, appearance, and body scale as a .mcdf");
                     if (showReset)
                     {
@@ -370,11 +379,12 @@ public sealed class AppearancePane
                             () => ReportExternal(
                                 _integration.ResetMcdf(actor), "Reset MCDF"),
                             help: mcdfOwnedNow
-                                ? "Remove everything this character file applied and restore the incoming external state"
+                                ? "Remove everything the imported character file applied to this actor"
                                 : "Retry deleting extracted files left behind by a failed import");
                     }
                 },
-                help: "Import a Mare/Brio/Ktisis character file onto only this actor, or export this actor's current mods, appearance, and body scale",
+                help: "Import a Mare character file (.mcdf) onto this actor, "
+                    + "or save this actor as one",
                 unavailable: !mcdfOwnedNow);
         }
 
@@ -482,6 +492,7 @@ public sealed class AppearancePane
     {
         { Kind: SceneEntityKind.Actor, Actor: { } actor } => actor,
         { Kind: SceneEntityKind.Bone, Bone: { } bone } => bone.Skeleton.Actor,
+        { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeActor } => gazeActor,
         _ => null,
     };
 

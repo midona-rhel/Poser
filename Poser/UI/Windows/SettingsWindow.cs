@@ -1,9 +1,13 @@
+using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Config;
+using Poser.Library;
+using Poser.Services;
 using Poser.UI.Views;
 
 namespace Poser.UI;
@@ -18,13 +22,15 @@ public class SettingsWindow : Window
 {
     private SettingsViewModel _vm = new();
     private bool _saving;
+    private readonly IAutoSaveService _autoSave;
 
-    public SettingsWindow()
+    public SettingsWindow(IAutoSaveService autoSave)
         : base($"Settings###{PluginConstants.PluginName}_settings",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoResize)
     {
+        _autoSave = autoSave;
     }
 
     public override void OnOpen()
@@ -77,6 +83,15 @@ public class SettingsWindow : Window
             Category = 1,
             OpenOnGPose = c.OpenOnGPoseEnter,
             CloseWithGPose = c.CloseWithGPose,
+            PreservePoseAcrossRedraws = c.PreservePoseAcrossRedraws,
+            FollowGameTarget = c.GPoseTargetChangesSelection,
+            TargetFollowsSelection = c.SelectionChangesGPoseTarget,
+
+            AutoSaveEnabled = c.AutoSave.Enabled,
+            AutoSaveIntervalSeconds = c.AutoSave.IntervalSeconds,
+            AutoSaveMaxKept = c.AutoSave.MaxAutoSaves.ToString(CultureInfo.InvariantCulture),
+            AutoSaveCleanOnExit = c.AutoSave.CleanOnExit,
+            AutoSaveFolder = _autoSave.RootDirectory,
 
             BoneDotRadius = c.Skeleton.BoneDotRadius,
             OverlaySelected = ImGui.ColorConvertU32ToFloat4(c.Skeleton.SelectedBoneColor),
@@ -93,9 +108,13 @@ public class SettingsWindow : Window
             Theme = c.UI.Theme,
             AccentIndex = c.UI.AccentIndex,
 
-            SidebarDock = (int)c.UI.SidebarDock,
-            InspectorDock = (int)c.UI.InspectorDock,
+            SplitSidebar = c.UI.SplitSidebar,
+            SplitToolbar = c.UI.SplitToolbar,
+            SplitInspector = c.UI.SplitInspector,
             TreeGuides = c.UI.ShowTreeGuides,
+
+            UseLibraryWhenImporting = c.Library.UseLibraryWhenImporting,
+            LibraryShowExtensions = c.Library.ShowFileExtensions,
 
             Version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "dev",
             OnSave = SaveToConfig,
@@ -105,6 +124,36 @@ public class SettingsWindow : Window
         };
         _vm.OnOpenRepository = () =>
             Process.Start(new ProcessStartInfo("https://github.com/midona-rhel/Poser") { UseShellExecute = true });
+        _vm.OnOpenFolder = path =>
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return;
+            try
+            {
+                // A seeded source (Brio/Anamnesis defaults) may point at a
+                // folder its own tool never created; Explorer errors on a
+                // missing path, so create it — the library scans it from now
+                // on anyway ("scanned once it exists").
+                System.IO.Directory.CreateDirectory(path);
+                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            }
+            catch
+            {
+                // An unreachable path (bad drive letter, permissions) has no
+                // surface here beyond doing nothing; the row's Status line
+                // already shows the path itself.
+            }
+        };
+
+        // Library sources: edited as copies, so Cancel leaves the configured
+        // roots untouched.
+        foreach (var source in c.Library.Sources)
+            _vm.LibrarySources.Add(new LibrarySourceVm
+            {
+                Name = source.Name,
+                Path = source.Path,
+                Enabled = source.Enabled,
+            });
 
         // Keybinds: stored overrides on top of the view defaults.
         for (int i = 0; i < _vm.Keybinds.Length; i++)
@@ -119,6 +168,26 @@ public class SettingsWindow : Window
 
         c.OpenOnGPoseEnter = _vm.OpenOnGPose;
         c.CloseWithGPose = _vm.CloseWithGPose;
+        c.PreservePoseAcrossRedraws = _vm.PreservePoseAcrossRedraws;
+        c.GPoseTargetChangesSelection = _vm.FollowGameTarget;
+        c.SelectionChangesGPoseTarget = _vm.TargetFollowsSelection;
+
+        // The interval slider is a float row over integer config; the kept count
+        // is free text, so it parses here and an unusable draft (empty, blank,
+        // non-numeric, zero, overflowing int) leaves the stored value alone
+        // rather than resetting the user's retention behind their back.
+        c.AutoSave.Enabled = _vm.AutoSaveEnabled;
+        c.AutoSave.IntervalSeconds = (int)MathF.Round(_vm.AutoSaveIntervalSeconds);
+        if (int.TryParse(
+                _vm.AutoSaveMaxKept.Trim(),
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out int keptAutoSaves)
+            && keptAutoSaves >= 1)
+            c.AutoSave.MaxAutoSaves = keptAutoSaves;
+        _vm.AutoSaveMaxKept =
+            c.AutoSave.MaxAutoSaves.ToString(CultureInfo.InvariantCulture);
+        c.AutoSave.CleanOnExit = _vm.AutoSaveCleanOnExit;
 
         c.Skeleton.BoneDotRadius = _vm.BoneDotRadius;
         c.Skeleton.SelectedBoneColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlaySelected);
@@ -135,12 +204,30 @@ public class SettingsWindow : Window
         c.UI.Theme = _vm.Theme;
         c.UI.AccentIndex = _vm.AccentIndex;
 
-        c.UI.SidebarDock = (PanelDock)_vm.SidebarDock;
-        c.UI.InspectorDock = (PanelDock)_vm.InspectorDock;
+        c.UI.SplitSidebar = _vm.SplitSidebar;
+        c.UI.SplitToolbar = _vm.SplitToolbar;
+        c.UI.SplitInspector = _vm.SplitInspector;
         c.UI.ShowTreeGuides = _vm.TreeGuides;
 
         foreach (var (action, binding) in _vm.Keybinds)
             c.UI.Keybinds[action] = binding;
+
+        c.Library.UseLibraryWhenImporting = _vm.UseLibraryWhenImporting;
+        c.Library.ShowFileExtensions = _vm.LibraryShowExtensions;
+        c.Library.Sources.Clear();
+        foreach (var source in _vm.LibrarySources)
+        {
+            string path = source.Path.Trim();
+            string name = source.Name.Trim();
+            if (path.Length == 0 && name.Length == 0)
+                continue;
+            c.Library.Sources.Add(new LibrarySourceConfig
+            {
+                Name = name,
+                Path = path,
+                Enabled = source.Enabled,
+            });
+        }
 
         _saving = true;
         ThemeSelection.Apply(c.UI.Theme, c.UI.AccentIndex);

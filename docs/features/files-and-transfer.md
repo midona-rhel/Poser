@@ -36,6 +36,42 @@ interchange with Brio and (via name conversion) Anamnesis.
   confirmation; the target actor freezes at dialog open. In-memory
   copy/stash uses `PortablePose` and is equally history-integrated.
 
+## Auto-save
+
+- While in GPose, every actor passing the authored-edits predicate (any
+  bone stack with a null layer — `CleanPoseFacade.HasAuthoredEdits`
+  semantics) exports through the normal `IPoseFileService.ExportPose`
+  path — auto-saves are byte-model-identical to manual exports — into
+  `<pluginConfigDir>/AutoSaves/<yyyy-MM-dd>/<HH-mm-ss> <actor>.pose`
+  (one folder per LOCAL day — user call 2026-08-08, replacing the
+  references' folder-per-save clutter; 24-hour prefix keeps name order ==
+  time order within a day; names sanitized, same-snapshot duplicates and
+  same-second collisions suffixed ` (2)`). No actor qualifies → no
+  folder. First save lands one full interval after entering GPose, then
+  every interval.
+- GPose exit takes one final snapshot while the pose is still intact —
+  the auto-save handler MUST stay first in `GPoseStateChangedEvent`
+  subscription order (eager-resolve order in `Poser.cs`; the scene
+  services are injected as factories to keep it so). Disconnect and
+  posing-disable both surface as this same edge. With clean-on-exit the
+  exit instead deletes all snapshots — a crash never runs it, so
+  snapshots survive for recovery.
+- Retention prunes from DISK to the configured count of SAVE EVENTS —
+  the files sharing one time prefix in a day folder, or one whole folder
+  of the pre-2026-08-08 folder-per-save layout, which ages out through
+  the same ordering with no migration. Newest-first by write DATE
+  (Brio's semantic, since a save is written once; key breaks ties, so a
+  renamed folder or file keeps its true age — floor 1), so it holds
+  across restarts; a day folder whose last event is pruned goes with it.
+  Every IO failure
+  logs an Error with the path and never aborts the remaining
+  actors/folders. Recovery: the titlebar burger menu → "Auto-saves…"
+  (enabled when the selected actor has a skeleton; the ONE entry point)
+  opens the import browser rooted at the auto-save directory; a
+  recovered file flows through the standard import pipeline. Settings
+  (General → AUTO-SAVE): enabled, interval 10–600 s, kept count (free
+  numeric input, floor 1, no cap), clean-on-exit — read live each tick.
+
 ## Character files (MCDF)
 
 - MCDF v1 (Mare/Brio/Ktisis interchange) is a legacy K4os LZ4 stream:

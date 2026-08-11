@@ -132,7 +132,14 @@ internal static class ServiceRegistration
         services.AddSingleton<CompanionCatalog>();
         services.AddSingleton<Game.Companions.CompanionCatalogLoader>();
         services.AddSingleton<Game.Animation.FacialPoseCapture>();
+        services.AddSingleton<Game.Posing.IkBakeCapture>();
+        services.AddSingleton<Game.Posing.PoseImportCapture>();
+        services.AddSingleton<Game.Posing.PoseExportCapture>();
+        // The pose library's CharaView preview. No force-resolve: the pane
+        // holds it, and it only subscribes the framework tick while open.
+        services.AddSingleton<Game.Preview.PosePreviewService>();
         services.AddSingleton<CleanSceneLifecycle>();
+        services.AddSingleton<TargetSyncService>();
         services.AddSingleton<IEditorState, EditorState>();
         return services;
     }
@@ -140,7 +147,14 @@ internal static class ServiceRegistration
     public static IServiceCollection AddPoserFeatures(this IServiceCollection services)
     {
         services.AddSingleton<ICameraService, CameraService>();
+        services.AddSingleton<ILightingService, Game.Lighting.LightingService>();
+        services.AddSingleton<IVirtualCameraService, Game.Cameras.VirtualCameraService>();
+        services.AddSingleton<IEnvironmentService, Game.Environment.EnvironmentService>();
+        services.AddSingleton<IWorldRenderingService, Game.Environment.WorldRenderingService>();
+        services.AddSingleton<IFestivalService, Game.Environment.FestivalService>();
         services.AddSingleton<IActorSpawnService, ActorSpawnService>();
+        services.AddSingleton<ISpawnCatalogService, SpawnCatalogService>();
+        services.AddSingleton<Library.IPoseLibraryService, Library.PoseLibraryService>();
         services.AddSingleton<Game.PropSpawnService>();
         services.AddSingleton<IGazeService, GazeService>();
         services.AddSingleton<ILiveTestService, LiveTestService>();
@@ -148,6 +162,25 @@ internal static class ServiceRegistration
         services.AddSingleton<CommandRouter>();
 
         services.AddSingleton<IPoseFileService, PoseFileService>();
+        services.AddSingleton<ILightFileService, LightFileService>();
+        services.AddSingleton<ICameraFileService, CameraFileService>();
+        // Factory-registered on purpose: the scene services are handed over as
+        // factories so constructing the auto-save does NOT construct them. They
+        // wipe their state from their own GPose-exit handlers, and the EventBus
+        // dispatches in subscription order — taking them as plain constructor
+        // arguments would subscribe them first and leave the exit snapshot
+        // nothing to write.
+        services.AddSingleton<IAutoSaveService>(sp => new AutoSaveService(
+            sp.GetRequiredService<IPluginLog>(),
+            sp.GetRequiredService<IFramework>(),
+            sp.GetRequiredService<IEventBus>(),
+            sp.GetRequiredService<IGPoseService>(),
+            sp.GetRequiredService<IActorManager>,
+            sp.GetRequiredService<ISkeletonService>,
+            sp.GetRequiredService<IBonePosingService>,
+            sp.GetRequiredService<IPoseFileService>,
+            sp.GetRequiredService<ConfigurationService>(),
+            sp.GetRequiredService<IDalamudPluginInterface>()));
         return services;
     }
 
@@ -161,13 +194,19 @@ internal static class ServiceRegistration
         services.AddSingleton<CompanionSection>();
         services.AddSingleton<AppearancePane>();
         services.AddSingleton<PropsPane>();
+        services.AddSingleton<LightPane>();
+        services.AddSingleton<CameraPane>();
+        services.AddSingleton<EnvironmentPane>();
+        services.AddSingleton<PoseLibraryPane>();
         services.AddSingleton<GraphicalBonePane>();
         services.AddSingleton<SkeletonOverlayPresentation>();
+        services.AddSingleton<PoseThumbnailCache>();
 
         services.AddSingleton<SkeletonOverlayWindow>();
         services.AddSingleton<GizmoOverlayWindow>();
         services.AddSingleton<MainWindow>();
         services.AddSingleton<SettingsWindow>();
+        services.AddSingleton<SpawnBrowserWindow>();
 
         services.AddSingleton<UiWindowSet>();
         services.AddSingleton<IUIManager, UIManager>();
