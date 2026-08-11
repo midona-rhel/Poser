@@ -291,6 +291,20 @@ public sealed class CleanSceneLifecycle : IDisposable
             builder.Append(camera.IsLive ? '1' : '0');
             builder.Append('|');
         }
+        // Props participate for the same reason: a spawn, destroy, or
+        // visibility flip must publish a new revision or the PROPS section
+        // never hears about it.
+        foreach (var prop in snapshot.Props)
+        {
+            builder.Append(prop.Id.LogicalId);
+            builder.Append(':');
+            builder.Append(prop.Id.Generation);
+            builder.Append(':');
+            builder.Append(prop.Name);
+            builder.Append(':');
+            builder.Append(prop.Visible ? '1' : '0');
+            builder.Append('|');
+        }
         return builder.ToString();
     }
 
