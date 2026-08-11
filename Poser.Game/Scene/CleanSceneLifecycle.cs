@@ -68,6 +68,8 @@ public sealed class CleanSceneLifecycle : IDisposable
         _events = events;
         _framework = framework;
         _events.Subscribe<ActorListChangedEvent>(OnActorListChanged);
+        _events.Subscribe<LightListChangedEvent>(OnLightListChanged);
+        _events.Subscribe<CameraListChangedEvent>(OnCameraListChanged);
         _events.Subscribe<SkeletonChangedEvent>(OnSkeletonChanged);
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseChanged);
         // Discovery, retries, and refreshes all run on the framework thread:
@@ -83,6 +85,8 @@ public sealed class CleanSceneLifecycle : IDisposable
         // Unhooking the pump stops any pending missing-skeleton retries.
         _framework.Update -= OnFrameworkUpdate;
         _events.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
+        _events.Unsubscribe<LightListChangedEvent>(OnLightListChanged);
+        _events.Unsubscribe<CameraListChangedEvent>(OnCameraListChanged);
         _events.Unsubscribe<SkeletonChangedEvent>(OnSkeletonChanged);
         _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseChanged);
 
@@ -162,6 +166,12 @@ public sealed class CleanSceneLifecycle : IDisposable
     private void RefreshCore()
     {
         var snapshot = _bindings.Refresh();
+        // The refresh is the only place that resolves a whole skeleton's bone
+        // names at once, so it owns the flush of whatever those lookups found
+        // untranslated. One line per refresh instead of one per bone: a modded
+        // 400-bone character used to pay hundreds of synchronous log writes on
+        // this exact tick. No-op when nothing new was seen.
+        Poser.Core.BoneInfo.BoneInfoService.FlushUntranslatedLog();
         // One structural signature coalesces every refresh source (events,
         // retries, session transitions): identical scenes publish nothing —
         // no snapshot churn, no revision increment, no gesture cancellation.
@@ -249,10 +259,46 @@ public sealed class CleanSceneLifecycle : IDisposable
             }
             builder.Append('|');
         }
+        // Lights participate structurally: without their name/kind/on state a
+        // spawn, rename, or toggle would coalesce away and never publish.
+        foreach (var light in snapshot.Lights)
+        {
+            builder.Append(light.Id.LogicalId);
+            builder.Append(':');
+            builder.Append(light.Id.Generation);
+            builder.Append(':');
+            builder.Append(light.Name);
+            builder.Append(':');
+            builder.Append((int)light.Kind);
+            builder.Append(':');
+            builder.Append(light.IsOn ? '1' : '0');
+            builder.Append('|');
+        }
+        // Cameras participate for the same reason: a create, rename, or live
+        // switch must publish a new revision.
+        foreach (var camera in snapshot.Cameras)
+        {
+            builder.Append(camera.Id.LogicalId);
+            builder.Append(':');
+            builder.Append(camera.Id.Generation);
+            builder.Append(':');
+            builder.Append(camera.Name);
+            builder.Append(':');
+            builder.Append((int)camera.Kind);
+            builder.Append(':');
+            builder.Append(camera.IsLive ? '1' : '0');
+            builder.Append('|');
+        }
         return builder.ToString();
     }
 
     private void OnActorListChanged(ActorListChangedEvent _) =>
+        Refresh();
+
+    private void OnLightListChanged(LightListChangedEvent _) =>
+        Refresh();
+
+    private void OnCameraListChanged(CameraListChangedEvent _) =>
         Refresh();
 
     private void OnSkeletonChanged(SkeletonChangedEvent _) =>

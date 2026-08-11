@@ -13,6 +13,11 @@ public sealed class ShellSidebarRow
     public TablerIcon Icon = TablerIcon.User;
     /// <summary>Named custom icon (PoserIconSources) — wins over Icon when set.</summary>
     public string? IconName;
+    /// <summary>Nested rows normally draw no mark, because their guide column
+    /// already spans the same distance the root's icon cell does. A nested row
+    /// that IS a thing rather than a grouping (the gaze anchor under an actor)
+    /// opts the mark back in.</summary>
+    public bool ForceIcon;
     public int Depth;              // 0 root, 1+ nested (20px indent per level)
     public bool HasChildren;
     /// <summary>Disclosure affordance shown but faded and inert — the row's
@@ -28,6 +33,17 @@ public sealed class ShellSidebarRow
     public bool ActorActions;
     public bool ActorVisible = true;
     public bool ActorPaused;
+    /// <summary>A light row's action slot: one eye, the same affordance an
+    /// actor row wears, switching the light off without losing a setting.
+    /// </summary>
+    public bool LightActions;
+    public bool LightOn = true;
+    /// <summary>A camera row's action slots: a lock protecting the shot,
+    /// then the video mark making this the LIVE camera — the light eye's
+    /// twin, except exactly one camera wears it at a time.</summary>
+    public bool CameraActions;
+    public bool CameraLive;
+    public bool CameraLocked;
     public IReadOnlyList<Domain.Identity.BoneId>? OverlayBones;
 
     /// <summary>Last child of its parent → curved-L branch instead of T.</summary>
@@ -40,6 +56,14 @@ public sealed class ShellSidebarSection
 {
     public string Title = "";
     public bool ShowPlus;
+    /// <summary>The header row is itself a target: it selects the section
+    /// rather than only naming it. Off leaves the header inert, which is what
+    /// every ordinary section is.</summary>
+    public bool Selectable;
+    /// <summary>Only meaningful with <see cref="Selectable"/>: the header wears
+    /// the row selection language while its section owns the workspace.
+    /// </summary>
+    public bool Active;
     public List<ShellSidebarRow> Rows = new();
 }
 
@@ -67,6 +91,8 @@ public sealed class AppShellViewModel
     public bool RotationPivotEnabled;
     public bool RotationPivotParentAvailable;
     public int SymmetryMode;          // 0 off, 1 link, 2 mirror
+    public bool AnimationOn;
+    public bool AnimationAvailable;
     public bool PhysicsOn;
     public bool PhysicsAvailable;
     public bool SkeletonOverlayOn;
@@ -102,6 +128,15 @@ public sealed class AppShellViewModel
     /// </summary>
     public bool ContentOwnsViewport;
 
+    /// <summary>
+    /// The pane takes the viewport WALL TO WALL: no shell horizontal inset and
+    /// no reserved scrollbar column, because the pane paints its own bands,
+    /// rules and gutters against the workspace edges. The library uses this —
+    /// its footer rule has to meet the same edges every other shell rule does.
+    /// Wins over <see cref="ContentOwnsViewport"/>.
+    /// </summary>
+    public bool ContentFlush;
+
     /// <summary>Sidebar width, resizable within 220–400px. Unscaled px.</summary>
     public float SidebarWidthPx = 280f;
     public Action<float>? OnSidebarResize;
@@ -119,8 +154,13 @@ public sealed class AppShellViewModel
     public Action<int>? OnGizmoSpace;
     public Action<int>? OnRotationPivot;
     public Action<int>? OnSymmetry;
+    public Action<bool>? OnAnimation;
     public Action<bool>? OnPhysics;
     public Action? OnUndo, OnRedo, OnSpawn, OnSettings, OnHideUi, OnPopOut, OnProject;
+    /// <summary>The titlebar command menu, told the burger button's
+    /// bottom-left screen position so the menu anchors under the button
+    /// instead of at the mouse.</summary>
+    public Action<Vector2>? OnBurger;
     public Action<bool>? OnSkeletonOverlay;
     public Action<ShellSidebarRow>? OnRowClicked;
     public Action<ShellSidebarRow>? OnRowContextMenu;
@@ -128,10 +168,16 @@ public sealed class AppShellViewModel
     public Action<ShellSidebarRow>? OnActorTarget;
     public Action<ShellSidebarRow>? OnActorVisibility;
     public Action<ShellSidebarRow>? OnActorPause;
+    public Action<ShellSidebarRow>? OnLightVisibility;
+    public Action<ShellSidebarRow>? OnCameraLive;
+    public Action<ShellSidebarRow>? OnCameraLock;
     public Action<ShellSidebarRow>? OnOverlayVisibility;
     public Func<IReadOnlyList<Domain.Identity.BoneId>, bool>?
         IsOverlayVisible;
     public Action<int>? OnSectionPlus;
+    /// <summary>A click on a <see cref="ShellSidebarSection.Selectable"/>
+    /// header, told the section index.</summary>
+    public Action<int>? OnSectionSelected;
 }
 
 /// <summary>
@@ -189,6 +235,12 @@ public static class AppShellView
     private static string _undoEmptyHelp = string.Empty;
     private static string _redoHelp = string.Empty;
     private static string _redoEmptyHelp = string.Empty;
+
+    /// <summary>The burger's press, reported by a hoisted callback that closes
+    /// over nothing and is consumed inside the same seat.</summary>
+    private static bool _burgerPressed;
+    private static readonly Action BurgerPressed =
+        static () => _burgerPressed = true;
 
     private static Vector4 Glass =>
         Crystarium.FloatingSurface.FillColor;
@@ -374,17 +426,32 @@ public static class AppShellView
             pillStyle);
     }
 
-    /// <summary>Undo, redo and spawn, right-aligned in the title cell.</summary>
+    /// <summary>Menu, undo, redo and spawn, right-aligned in the title cell.</summary>
     private static void DrawHistory(
         AppShellViewModel vm, float right, float top, float height, float s)
     {
         var theme = Crystarium.ActiveTheme;
         float side = theme.Controls.ShellIconAction;
         float step = (side + theme.Spacing.Two) * s;
-        int count = vm.ShowSpawn ? 3 : 2;
+        int count = vm.ShowSpawn ? 4 : 3;
         float y = top + (height - side * s) * 0.5f;
         float x = right - count * side * s - (count - 1) * theme.Spacing.Two * s;
 
+        // The command menu hangs off its own button, not off the pointer, so
+        // the seat hands its bottom-left corner to the opener. The click
+        // callback captures NOTHING — a warm titlebar frame must not mint a
+        // closure — so the press is reported through a static flag the seat
+        // reads back one line later, while the anchor is still a local.
+        IconAt(
+            new Vector2(x, y), TablerIcon.Menu2, side, BurgerPressed,
+            "##shell-burger",
+            help: "Actions");
+        if (_burgerPressed)
+        {
+            _burgerPressed = false;
+            vm.OnBurger?.Invoke(new Vector2(x, y + side * s));
+        }
+        x += step;
         IconAt(
             new Vector2(x, y), TablerIcon.ArrowBackUp, side, vm.OnUndo,
             "##shell-undo",
@@ -402,7 +469,7 @@ public static class AppShellView
         IconAt(
             new Vector2(x + step, y), TablerIcon.Plus, side, vm.OnSpawn,
             "##shell-spawn",
-            help: "Add an actor to the scene");
+            help: "Add an actor or prop to the scene");
     }
 
     private static void DrawTitleCenter(
@@ -429,10 +496,10 @@ public static class AppShellView
             index => vm.OnGizmoOperation?.Invoke(index),
             itemHelp: static index => index switch
             {
-                0 => "Move the selection",
-                1 => "Rotate the selection",
-                2 => "Scale the selection",
-                _ => "Move, rotate, or scale with the universal gizmo",
+                0 => "Use the gizmo to move the selection",
+                1 => "Use the gizmo to rotate the selection",
+                2 => "Use the gizmo to scale the selection",
+                _ => "Use one gizmo to move, rotate and scale",
             }) + gap;
         x = Segments(
             x, top, height,
@@ -441,8 +508,8 @@ public static class AppShellView
             vm.GizmoSpace,
             index => vm.OnGizmoSpace?.Invoke(index),
             itemHelp: static index => index == 0
-                ? "Use the selected target's local axes"
-                : "Use world-space axes") + gap;
+                ? "Use the selection's own axes"
+                : "Use the world axes") + gap;
         // Pivot keeps a permanent slot so tool/selection changes cannot move the
         // rest of the toolbar. Both choices refuse when pivot is inapplicable;
         // Parent additionally needs a live parent bone.
@@ -455,8 +522,8 @@ public static class AppShellView
             itemDisabled: index => !vm.RotationPivotEnabled
                 || (index == 1 && !vm.RotationPivotParentAvailable),
             itemHelp: static index => index == 0
-                ? "Rotate each selected target around itself"
-                : "Rotate around the selected bone's parent pivot") + gap;
+                ? "Rotate each selected bone in place"
+                : "Rotate the selected bone around its parent bone") + gap;
         Segments(
             x, top, height,
             "##shell-symmetry",
@@ -466,8 +533,8 @@ public static class AppShellView
             itemHelp: static index => index switch
             {
                 0 => "Edit only the current selection",
-                1 => "Apply the same edit to linked selections",
-                _ => "Apply mirrored edits across left and right bones",
+                1 => "Also apply the same edit to the opposite-side bone",
+                _ => "Also apply a mirrored edit to the opposite-side bone",
             });
     }
 
@@ -504,7 +571,7 @@ public static class AppShellView
             vm.SkeletonOverlayOn,
             () => vm.OnSkeletonOverlay?.Invoke(!vm.SkeletonOverlayOn),
             ControlStyle.Square(side),
-            help: "Toggle the skeleton overlay in the viewport",
+            help: "Show or hide the skeleton overlay in the game world",
             id: "##shell-armature");
     }
 
@@ -636,14 +703,24 @@ public static class AppShellView
             right =>
             {
                 right.Switch(
+                    "Animation",
+                    vm.AnimationOn,
+                    next => vm.OnAnimation?.Invoke(next),
+                    !vm.AnimationAvailable
+                        ? "Select an actor to pause its animation"
+                        : vm.AnimationOn
+                            ? "Switch off to pause this actor's animation"
+                            : "Switch on to resume this actor's animation",
+                    disabled: !vm.AnimationAvailable);
+                right.Switch(
                     "Physics",
                     vm.PhysicsOn,
                     next => vm.OnPhysics?.Invoke(next),
                     !vm.PhysicsAvailable
-                        ? "Select an actor or bone to control physics"
+                        ? "Select an actor or bone to freeze physics for the whole scene"
                         : vm.PhysicsOn
-                            ? "Switch off to freeze physics for the selected actor"
-                            : "Switch on to resume physics for the selected actor",
+                            ? "Switch off to freeze physics for the whole scene"
+                            : "Switch on to resume physics for the whole scene",
                     disabled: !vm.PhysicsAvailable);
                 if (vm.ShowPopOut)
                     right.Icon(
@@ -688,7 +765,15 @@ public static class AppShellView
                 | ImGuiWindowFlags.NoScrollWithMouse))
         {
             var viewportCursor = ImGui.GetCursorScreenPos();
-            if (vm.ContentOwnsViewport)
+            if (vm.ContentFlush)
+            {
+                vm.DrawContent?.Invoke(
+                    viewportCursor,
+                    new Vector2(
+                        childSize.X,
+                        MathF.Max(0f, ImGui.GetContentRegionAvail().Y)));
+            }
+            else if (vm.ContentOwnsViewport)
             {
                 float contentInset = MainHorizontalPadding * s;
                 var contentOrigin = viewportCursor
@@ -884,7 +969,7 @@ public static class AppShellView
         if (!string.Equals(undo, _undoShortcut, StringComparison.Ordinal))
         {
             _undoShortcut = undo;
-            _undoHelp = $"Take back the last pose edit · {undo}";
+            _undoHelp = $"Undo the last move, rotation or scale · {undo}";
             _undoEmptyHelp = $"Nothing to undo · {undo}";
         }
 

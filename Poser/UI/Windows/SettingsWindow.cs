@@ -1,9 +1,13 @@
+using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Config;
+using Poser.Library;
+using Poser.Services;
 using Poser.UI.Views;
 
 namespace Poser.UI;
@@ -18,46 +22,30 @@ public class SettingsWindow : Window
 {
     private SettingsViewModel _vm = new();
     private bool _saving;
-    private LiveSnapshot _snapshot;
+    private readonly IAutoSaveService _autoSave;
 
-    /// <summary>
-    /// The settings the running UI reads live, as they stood before the window
-    /// opened. Cancel/close restores exactly these; every other field on the
-    /// page is save-only and never reaches the running config.
-    /// </summary>
-    private readonly record struct LiveSnapshot(
-        float BoneDotRadius,
-        uint SelectedBoneColor,
-        uint HoveredBoneColor,
-        uint BoneColor,
-        uint IkChainColor,
-        uint MirroredBoneColor,
-        bool ShowSkeletonLines,
-        float BoneLineThickness,
-        float BoneLineOpacity,
-        bool ShowTreeGuides,
-        UITheme Theme,
-        int AccentIndex);
-
-    public SettingsWindow()
+    public SettingsWindow(IAutoSaveService autoSave)
         : base($"Settings###{PluginConstants.PluginName}_settings",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoResize)
     {
+        _autoSave = autoSave;
     }
 
     public override void OnOpen()
     {
         _saving = false;
-        _snapshot = Capture();
         LoadFromConfig();
     }
 
     public override void OnClose()
     {
         if (!_saving)
-            Restore();
+        {
+            var ui = ConfigurationService.Instance.Config.UI;
+            ThemeSelection.Apply(ui.Theme, ui.AccentIndex);
+        }
         _saving = false;
     }
 
@@ -85,72 +73,6 @@ public class SettingsWindow : Window
         {
             Interactive.EndOwner(owner);
         }
-
-        StageLive();
-    }
-
-    private static LiveSnapshot Capture()
-    {
-        var c = ConfigurationService.Instance.Config;
-        return new LiveSnapshot(
-            c.Skeleton.BoneDotRadius,
-            c.Skeleton.SelectedBoneColor,
-            c.Skeleton.HoveredBoneColor,
-            c.Skeleton.BoneColor,
-            c.Skeleton.IkChainColor,
-            c.Skeleton.MirroredBoneColor,
-            c.Skeleton.ShowSkeletonLines,
-            c.Skeleton.BoneLineThickness,
-            c.Skeleton.BoneLineOpacity,
-            c.UI.ShowTreeGuides,
-            c.UI.Theme,
-            c.UI.AccentIndex);
-    }
-
-    /// <summary>
-    /// Copies the live-readable edits into the running config every frame the
-    /// window is up, so overlay colors, dot size, line width/opacity and the
-    /// tree guides answer the controls immediately. Nothing is persisted —
-    /// Save writes and saves, Cancel restores <see cref="_snapshot"/>.
-    /// </summary>
-    private void StageLive()
-    {
-        var c = ConfigurationService.Instance.Config;
-        c.Skeleton.BoneDotRadius = _vm.BoneDotRadius;
-        c.Skeleton.SelectedBoneColor =
-            ImGui.ColorConvertFloat4ToU32(_vm.OverlaySelected);
-        c.Skeleton.HoveredBoneColor =
-            ImGui.ColorConvertFloat4ToU32(_vm.OverlayHovered);
-        c.Skeleton.BoneColor =
-            ImGui.ColorConvertFloat4ToU32(_vm.OverlayInactive);
-        c.Skeleton.IkChainColor =
-            ImGui.ColorConvertFloat4ToU32(_vm.OverlayIkChain);
-        c.Skeleton.MirroredBoneColor =
-            ImGui.ColorConvertFloat4ToU32(_vm.OverlayMirrored);
-        c.Skeleton.ShowSkeletonLines = _vm.ShowSkeletonLines;
-        c.Skeleton.BoneLineThickness = _vm.BoneLineThickness;
-        c.Skeleton.BoneLineOpacity = _vm.BoneLineOpacity;
-        c.UI.ShowTreeGuides = _vm.TreeGuides;
-    }
-
-    private void Restore()
-    {
-        var c = ConfigurationService.Instance.Config;
-        c.Skeleton.BoneDotRadius = _snapshot.BoneDotRadius;
-        c.Skeleton.SelectedBoneColor = _snapshot.SelectedBoneColor;
-        c.Skeleton.HoveredBoneColor = _snapshot.HoveredBoneColor;
-        c.Skeleton.BoneColor = _snapshot.BoneColor;
-        c.Skeleton.IkChainColor = _snapshot.IkChainColor;
-        c.Skeleton.MirroredBoneColor = _snapshot.MirroredBoneColor;
-        c.Skeleton.ShowSkeletonLines = _snapshot.ShowSkeletonLines;
-        c.Skeleton.BoneLineThickness = _snapshot.BoneLineThickness;
-        c.Skeleton.BoneLineOpacity = _snapshot.BoneLineOpacity;
-        c.UI.ShowTreeGuides = _snapshot.ShowTreeGuides;
-        c.UI.Theme = _snapshot.Theme;
-        c.UI.AccentIndex = _snapshot.AccentIndex;
-        // The preview painted Crystarium directly, so the config values are the
-        // only truth left to repaint from.
-        ThemeSelection.Apply(c.UI.Theme, c.UI.AccentIndex);
     }
 
     private void LoadFromConfig()
@@ -161,6 +83,15 @@ public class SettingsWindow : Window
             Category = 1,
             OpenOnGPose = c.OpenOnGPoseEnter,
             CloseWithGPose = c.CloseWithGPose,
+            PreservePoseAcrossRedraws = c.PreservePoseAcrossRedraws,
+            FollowGameTarget = c.GPoseTargetChangesSelection,
+            TargetFollowsSelection = c.SelectionChangesGPoseTarget,
+
+            AutoSaveEnabled = c.AutoSave.Enabled,
+            AutoSaveIntervalSeconds = c.AutoSave.IntervalSeconds,
+            AutoSaveMaxKept = c.AutoSave.MaxAutoSaves.ToString(CultureInfo.InvariantCulture),
+            AutoSaveCleanOnExit = c.AutoSave.CleanOnExit,
+            AutoSaveFolder = _autoSave.RootDirectory,
 
             BoneDotRadius = c.Skeleton.BoneDotRadius,
             OverlaySelected = ImGui.ColorConvertU32ToFloat4(c.Skeleton.SelectedBoneColor),
@@ -181,15 +112,47 @@ public class SettingsWindow : Window
             InspectorDock = (int)c.UI.InspectorDock,
             TreeGuides = c.UI.ShowTreeGuides,
 
+            UseLibraryWhenImporting = c.Library.UseLibraryWhenImporting,
+            LibraryShowExtensions = c.Library.ShowFileExtensions,
+
             Version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "dev",
             OnSave = SaveToConfig,
             OnCancel = () => IsOpen = false,
             OnClose = () => IsOpen = false,
-            OnAppearancePreview = () =>
-                ThemeSelection.Apply(_vm.Theme, _vm.AccentIndex),
+            OnThemePreview = ThemeSelection.Apply,
         };
         _vm.OnOpenRepository = () =>
             Process.Start(new ProcessStartInfo("https://github.com/midona-rhel/Poser") { UseShellExecute = true });
+        _vm.OnOpenFolder = path =>
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return;
+            try
+            {
+                // A seeded source (Brio/Anamnesis defaults) may point at a
+                // folder its own tool never created; Explorer errors on a
+                // missing path, so create it — the library scans it from now
+                // on anyway ("scanned once it exists").
+                System.IO.Directory.CreateDirectory(path);
+                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            }
+            catch
+            {
+                // An unreachable path (bad drive letter, permissions) has no
+                // surface here beyond doing nothing; the row's Status line
+                // already shows the path itself.
+            }
+        };
+
+        // Library sources: edited as copies, so Cancel leaves the configured
+        // roots untouched.
+        foreach (var source in c.Library.Sources)
+            _vm.LibrarySources.Add(new LibrarySourceVm
+            {
+                Name = source.Name,
+                Path = source.Path,
+                Enabled = source.Enabled,
+            });
 
         // Keybinds: stored overrides on top of the view defaults.
         for (int i = 0; i < _vm.Keybinds.Length; i++)
@@ -204,6 +167,26 @@ public class SettingsWindow : Window
 
         c.OpenOnGPoseEnter = _vm.OpenOnGPose;
         c.CloseWithGPose = _vm.CloseWithGPose;
+        c.PreservePoseAcrossRedraws = _vm.PreservePoseAcrossRedraws;
+        c.GPoseTargetChangesSelection = _vm.FollowGameTarget;
+        c.SelectionChangesGPoseTarget = _vm.TargetFollowsSelection;
+
+        // The interval slider is a float row over integer config; the kept count
+        // is free text, so it parses here and an unusable draft (empty, blank,
+        // non-numeric, zero, overflowing int) leaves the stored value alone
+        // rather than resetting the user's retention behind their back.
+        c.AutoSave.Enabled = _vm.AutoSaveEnabled;
+        c.AutoSave.IntervalSeconds = (int)MathF.Round(_vm.AutoSaveIntervalSeconds);
+        if (int.TryParse(
+                _vm.AutoSaveMaxKept.Trim(),
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out int keptAutoSaves)
+            && keptAutoSaves >= 1)
+            c.AutoSave.MaxAutoSaves = keptAutoSaves;
+        _vm.AutoSaveMaxKept =
+            c.AutoSave.MaxAutoSaves.ToString(CultureInfo.InvariantCulture);
+        c.AutoSave.CleanOnExit = _vm.AutoSaveCleanOnExit;
 
         c.Skeleton.BoneDotRadius = _vm.BoneDotRadius;
         c.Skeleton.SelectedBoneColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlaySelected);
@@ -226,6 +209,23 @@ public class SettingsWindow : Window
 
         foreach (var (action, binding) in _vm.Keybinds)
             c.UI.Keybinds[action] = binding;
+
+        c.Library.UseLibraryWhenImporting = _vm.UseLibraryWhenImporting;
+        c.Library.ShowFileExtensions = _vm.LibraryShowExtensions;
+        c.Library.Sources.Clear();
+        foreach (var source in _vm.LibrarySources)
+        {
+            string path = source.Path.Trim();
+            string name = source.Name.Trim();
+            if (path.Length == 0 && name.Length == 0)
+                continue;
+            c.Library.Sources.Add(new LibrarySourceConfig
+            {
+                Name = name,
+                Path = path,
+                Enabled = source.Enabled,
+            });
+        }
 
         _saving = true;
         ThemeSelection.Apply(c.UI.Theme, c.UI.AccentIndex);

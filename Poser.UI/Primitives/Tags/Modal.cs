@@ -108,19 +108,19 @@ public static partial class Crystarium
             var theme = Crystarium.ActiveTheme;
 
             // ── Header: title 14px/500 at 16px, close 24×24 at right 10px,
-            //    inset bottom border (border-secondary).
-            var titleFont = FontRegistry.Resolve(
-                FontFamily.Default,
-                FontWeight.Medium,
-                Crystarium.ActiveTheme.Typography.SurfaceTitleSize);
-            bool titlePushed = titleFont is { Available: true };
-            if (titlePushed) titleFont!.Push();
-            var titleSize = ImGui.CalcTextSize(title);
-            dl.AddText(winMin + new Vector2(
-                    Crystarium.ActiveTheme.Floating.HeaderInset * scale,
-                    (barHeight - titleSize.Y) * 0.5f),
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Text)), title);
-            if (titlePushed) titleFont!.Pop();
+            //    inset bottom border (border-secondary). Ink-seated on the
+            //    bar band through the canonical path.
+            float headerInset = Crystarium.ActiveTheme.Floating.HeaderInset * scale;
+            Crystarium.TextInBand(
+                new Vector2(winMin.X + headerInset, winMin.Y),
+                new Vector2(winMax.X - winMin.X - headerInset, barHeight),
+                title,
+                new TextStyle
+                {
+                    Size = Crystarium.ActiveTheme.Typography.SurfaceTitleSize,
+                    Weight = FontWeight.Medium,
+                    Color = theme.Text,
+                });
 
             float closeSize = Crystarium.ActiveTheme.Floating.CloseActionSize * scale;
             ImGui.SetCursorScreenPos(new Vector2(

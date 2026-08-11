@@ -9,6 +9,10 @@ using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Config;
 using Poser.Domain.Identity;
+using Poser.Domain.Scene;
+using Poser.Domain.Transforms;
+using Poser.Entities;
+using Poser.Game.Bindings;
 using Poser.Services;
 
 namespace Poser.UI;
@@ -26,6 +30,7 @@ public class SkeletonOverlayWindow : Window
     private readonly IEditorState _editorState;
     private readonly SkeletonOverlayPresentation _presentation;
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
+    private readonly StableBindingRegistry _bindings;
 
     // Configuration from settings
     private static SkeletonConfiguration Config => ConfigurationService.Instance.Config.Skeleton;
@@ -38,9 +43,20 @@ public class SkeletonOverlayWindow : Window
 
     private static uint BoneColor => Config.BoneColor;
     private static uint OutlineColor => Config.BoneOutlineColor;
-    private static uint SelectedBoneColor => Config.SelectedBoneColor;
+
+    // While the stored color still equals its fresh-install default, the
+    // selected/hovered family follows the live accent (theme + AccentIndex);
+    // an explicit ColorWell override pins the stored value instead.
+    private static uint SelectedBoneColor =>
+        Config.SelectedBoneColor == SkeletonConfiguration.DefaultSelectedBoneColor
+            ? ImGui.ColorConvertFloat4ToU32(Crystarium.ActiveTheme.Palette.Primary)
+            : Config.SelectedBoneColor;
     private static uint ModifiedBoneColor => Config.ModifiedBoneColor;
-    private static uint HoveredBoneColor => Config.HoveredBoneColor;
+    private static uint HoveredBoneColor =>
+        Config.HoveredBoneColor == SkeletonConfiguration.DefaultHoveredBoneColor
+            ? ImGui.ColorConvertFloat4ToU32(Vector4.Lerp(
+                Crystarium.ActiveTheme.Palette.Primary, Vector4.One, 0.35f))
+            : Config.HoveredBoneColor;
     private static uint IkChainColor => Config.IkChainColor;
     private static uint MirroredBoneColor => Config.MirroredBoneColor;
 
@@ -71,6 +87,21 @@ public class SkeletonOverlayWindow : Window
         public bool IsHovered { get; set; }
     }
 
+    /// <summary>One light's handle in the world. Lights carry no skeleton and
+    /// no hierarchy, so a light is exactly one dot plus a small mark saying
+    /// which way it faces.</summary>
+    private sealed class LightDisplayData
+    {
+        public string Name { get; init; } = "";
+        public SelectionId Id { get; init; }
+        public PoseTransform Transform { get; init; }
+        public Vector2 ScreenPos { get; init; }
+        public float CameraDistance { get; init; }
+        public bool IsSelected { get; init; }
+        public ILight? Live { get; init; }
+        public bool IsHovered { get; set; }
+    }
+
     // Hover list state (Ktisis-style)
     private List<BoneDisplayData>? _hoveredBones;
     private int _hoverIndex;
@@ -91,7 +122,8 @@ public class SkeletonOverlayWindow : Window
         ICameraService cameraService,
         IEditorState editorState,
         SkeletonOverlayPresentation presentation,
-        Application.Posing.IIkConfigurationPort ikPort)
+        Application.Posing.IIkConfigurationPort ikPort,
+        StableBindingRegistry bindings)
         : base("##poser_skeleton_overlay",
             ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoDecoration |
@@ -110,6 +142,7 @@ public class SkeletonOverlayWindow : Window
         _editorState = editorState;
         _presentation = presentation;
         _ikPort = ikPort;
+        _bindings = bindings;
 
         RespectCloseHotkey = false;
     }
@@ -121,6 +154,28 @@ public class SkeletonOverlayWindow : Window
         var io = ImGui.GetIO();
         Size = io.DisplaySize;
         SizeCondition = ImGuiCond.Always;
+    }
+
+    /// <summary>The titlebar Armature toggle. With the toggle Off the
+    /// overlay still anchors the current selection: selected bones and
+    /// selected actor origins stay visible on their own, so an edit made
+    /// from the workspace never loses its on-screen anchor. Everything
+    /// unselected stays hidden and non-interactive.</summary>
+    public bool UserVisible { get; set; }
+
+    private bool AnySelectionAnchor()
+    {
+        foreach (var id in _selection.Selected)
+            if (id.Kind is SceneEntityKind.Bone
+                or SceneEntityKind.Actor
+                // A gaze point belongs to an actor: keep that actor's skeleton
+                // anchored so aiming the gaze never blanks the dots under it.
+                or SceneEntityKind.GazeTarget
+                // A selected light anchors the overlay for the same reason an
+                // actor does: its handle is the edit's on-screen anchor.
+                or SceneEntityKind.Light)
+                return true;
+        return false;
     }
 
     public override void Draw()
@@ -144,14 +199,46 @@ public class SkeletonOverlayWindow : Window
         if (io.KeyAlt)
             return;
 
+        // The ARMATURE pass answers to the titlebar toggle and the selection
+        // anchor. The LIGHT pass does not: a light is invisible in the world
+        // and its handle is the only route to it from the viewport, so it
+        // draws whenever the scene holds lights — Ktisis and Brio both draw
+        // their light handles unconditionally. Alt still hides everything.
+        bool drawArmature = UserVisible || AnySelectionAnchor();
+
         var selectedIds = _selection.Selected.ToHashSet();
         var bones = new List<BoneDisplayData>();
         var actors = new List<ActorDisplayData>();
+        var lights = new List<LightDisplayData>();
         var cameraPosition = _cameraService.GetCameraPosition();
+
+        // Lights are otherwise invisible in the world: without a handle there
+        // is no way to select or even find one from the viewport.
+        foreach (var light in _scene.Snapshot.Lights)
+        {
+            if (_viewport.GetLightTransform(light.Id) is not { } lightTransform ||
+                !_cameraService.WorldToScreen(lightTransform.Position, out var lightScreen))
+                continue;
+            var lightSelectionId = SelectionId.ForLight(light.Id);
+            bool lightSelected = selectedIds.Contains(lightSelectionId);
+            var resolved = _bindings.Resolve(light.Id);
+            lights.Add(new LightDisplayData
+            {
+                Name = light.Name,
+                Id = lightSelectionId,
+                Transform = lightTransform,
+                ScreenPos = viewportPos + lightScreen,
+                CameraDistance = Vector3.Distance(
+                    cameraPosition, lightTransform.Position),
+                IsSelected = lightSelected,
+                Live = resolved.Success ? resolved.Value : null,
+            });
+        }
 
         // Collect all bones that project to screen successfully — snapshot
         // descriptors give identity/hierarchy, the viewport projection gives
         // model-space facts, and the camera service projects to screen.
+        if (drawArmature)
         foreach (var actor in _scene.Snapshot.Actors)
         {
             var actorSelectionId = SelectionId.ForActor(actor.Id);
@@ -235,11 +322,25 @@ public class SkeletonOverlayWindow : Window
         if (_editorState.SymmetryMode == SymmetryMode.Mirror)
             MarkMirrorPartners(bones);
 
+        // Armature toggle Off: only the selection's anchors survive — the
+        // selected bones' dots and selected actors' origin points. The
+        // filter runs BEFORE hover/press handling so hidden dots are not
+        // silently interactive.
+        if (!UserVisible)
+        {
+            bones = bones.Where(b => b.IsSelected).ToList();
+            actors = actors.Where(a => selectedIds.Contains(a.Id)).ToList();
+        }
+
         var actorRadius = 8f * ImGuiHelpers.GlobalScale;
         foreach (var actor in actors)
             actor.IsHovered = !pointerBlocked
                 && !listTravel
                 && IsHoveringDot(actor.ScreenPos, actorRadius);
+        foreach (var light in lights)
+            light.IsHovered = !pointerBlocked
+                && !listTravel
+                && IsHoveringDot(light.ScreenPos, actorRadius);
 
         // Update hover state
         if (pointerBlocked)
@@ -253,7 +354,7 @@ public class SkeletonOverlayWindow : Window
             UpdateHoverState(bones, mousePos);
         }
 
-        CommitPendingSelection(bones, actors);
+        CommitPendingSelection(bones, actors, lights);
 
         // Filter bones if ShowSelectedBonesOnly is enabled
         if (_editorState.ShowSelectedBonesOnly)
@@ -297,11 +398,24 @@ public class SkeletonOverlayWindow : Window
             drawList.AddCircle(actor.ScreenPos, radius * 0.45f, OutlineColor, 16, 1f * ImGuiHelpers.GlobalScale);
         }
 
+        DrawLights(drawList, viewportPos, lights, actorRadius);
+
         var hoveredActor = actors
             .Where(actor => actor.IsHovered)
             .OrderBy(actor => actor.CameraDistance)
             .FirstOrDefault();
-        if (hoveredActor != null && !pointerBlocked)
+        var hoveredLight = lights
+            .Where(light => light.IsHovered)
+            .OrderBy(light => light.CameraDistance)
+            .FirstOrDefault();
+        if (hoveredLight != null && !pointerBlocked)
+        {
+            var overlayMouse = ImGui.GetMousePos();
+            Crystarium.HoverHelp.Preview("sow-light",
+                overlayMouse - new Vector2(4f, 4f), overlayMouse + new Vector2(4f, 4f),
+                $"{hoveredLight.Name} — light");
+        }
+        else if (hoveredActor != null && !pointerBlocked)
         {
             var overlayMouse = ImGui.GetMousePos();
             Crystarium.HoverHelp.Preview("sow-actor",
@@ -319,7 +433,11 @@ public class SkeletonOverlayWindow : Window
         bool hasWorldBone = !listTravel
             ? bones.Any(bone => bone.IsHovered)
             : onFrozenCluster;
-        var worldTarget = hoveredActor?.Id
+        // A light handle sits in front of everything else it overlaps: it is
+        // the only route to a light from the viewport, and a bone dot behind it
+        // is still reachable from the sidebar.
+        var worldTarget = hoveredLight?.Id
+            ?? hoveredActor?.Id
             ?? (hasWorldBone && _hoveredBones is { Count: > 0 }
                 ? _hoveredBones[_hoverIndex].Id
                 : (SelectionId?)null);
@@ -508,13 +626,15 @@ public class SkeletonOverlayWindow : Window
 
     private void CommitPendingSelection(
         IReadOnlyList<BoneDisplayData> bones,
-        IReadOnlyList<ActorDisplayData> actors)
+        IReadOnlyList<ActorDisplayData> actors,
+        IReadOnlyList<LightDisplayData> lights)
     {
         if (_pendingSelection is not { } pending)
             return;
         _pendingSelection = null;
         bool stillPresent = bones.Any(bone => bone.Id.Equals(pending.Id))
-            || actors.Any(actor => actor.Id.Equals(pending.Id));
+            || actors.Any(actor => actor.Id.Equals(pending.Id))
+            || lights.Any(light => light.Id.Equals(pending.Id));
         if (!stillPresent
             || Interactive.PointerOccluded(
                 pending.Owner,
@@ -698,6 +818,253 @@ public class SkeletonOverlayWindow : Window
 
             drawList.AddCircleFilled(bone.ScreenPos, radius, color, 16);
             drawList.AddCircle(bone.ScreenPos, radius, OutlineColor, 16, outlineThickness * ImGuiHelpers.GlobalScale);
+        }
+    }
+
+    // ── light handles and facing marks ───────────────────────────────────
+    // A handle dot for every light plus one small directional mark. The mark
+    // states FACING only: range, falloff and panel extents are the Light
+    // tab's numbers, and drawing them in the world buried the handles.
+
+    private void DrawLights(
+        ImDrawListPtr drawList,
+        Vector2 viewportPos,
+        List<LightDisplayData> lights,
+        float dotRadius)
+    {
+        foreach (var light in lights)
+        {
+            var color = LightColor(light);
+            if (light.Live is { } live)
+                DrawLightShape(drawList, viewportPos, light, live, color, dotRadius);
+
+            float radius = light.IsSelected || light.IsHovered
+                ? dotRadius + 2f
+                : dotRadius;
+            uint dot = light.IsSelected
+                ? SelectedBoneColor
+                : ImGui.ColorConvertFloat4ToU32(color);
+            drawList.AddCircleFilled(light.ScreenPos, radius, dot, 20);
+            drawList.AddCircle(
+                light.ScreenPos, radius, OutlineColor, 20,
+                2f * ImGuiHelpers.GlobalScale);
+            // The inner ring reads as an aperture, which is what separates a
+            // light handle from an actor's transform point at a glance.
+            drawList.AddCircle(
+                light.ScreenPos, radius * 0.45f, OutlineColor, 16,
+                1f * ImGuiHelpers.GlobalScale);
+        }
+    }
+
+    /// <summary>The light's own emission colour, tone-mapped the way the Light
+    /// tab's colour well maps it — the native value is HDR and reaches far past
+    /// white. An unresolved light falls back to the bone family.</summary>
+    private static Vector4 LightColor(LightDisplayData light)
+    {
+        if (light.Live is not { } live)
+            return ColorToVector(BoneColor) with { W = light.IsSelected ? 1f : 0.6f };
+        var raw = live.Color;
+        return new Vector4(
+            MathF.Sqrt(MathF.Max(0f, raw.X) / 6f),
+            MathF.Sqrt(MathF.Max(0f, raw.Y) / 6f),
+            MathF.Sqrt(MathF.Max(0f, raw.Z) / 6f),
+            light.IsSelected ? 1f : 0.6f);
+    }
+
+    private static Vector4 ColorToVector(uint color) => new(
+        (color & 0xFF) / 255f,
+        ((color >> 8) & 0xFF) / 255f,
+        ((color >> 16) & 0xFF) / 255f,
+        ((color >> 24) & 0xFF) / 255f);
+
+    /// <summary>The screen size of a light's facing mark, before UI scale —
+    /// the world gizmo's handles span 80px, so a mark at this size sits under
+    /// them rather than competing with them.</summary>
+    private const float LightMarkPixels = 34f;
+
+    /// <summary>The world length that projects to <paramref name="pixels"/> at
+    /// this position's depth. Measured rather than derived from matrix cells:
+    /// project a unit offset perpendicular to the view direction, read off
+    /// pixels-per-world-unit, and divide — the same derivation as
+    /// <see cref="Controls.WorldGizmoProjection.WorldScale"/>. Marks built as
+    /// multiples of this keep a constant perceived size at any distance, so a
+    /// light's mark neither balloons up close nor vanishes far away. Zero when
+    /// the position or its offset will not project.</summary>
+    private float MarkWorldLength(Vector3 position, float pixels)
+    {
+        var fromCamera = position - _cameraService.GetCameraPosition();
+        if (fromCamera.LengthSquared() < 1e-8f)
+            return 0f;
+        var view = Vector3.Normalize(fromCamera);
+        var reference = MathF.Abs(Vector3.Dot(view, Vector3.UnitY)) > 0.99f
+            ? Vector3.UnitX
+            : Vector3.UnitY;
+        var lateral = Vector3.Normalize(Vector3.Cross(view, reference));
+        if (!_cameraService.WorldToScreen(position, out var origin) ||
+            !_cameraService.WorldToScreen(position + lateral, out var offset))
+            return 0f;
+        float pixelsPerWorldUnit = Vector2.Distance(origin, offset);
+        return pixelsPerWorldUnit < 1e-3f ? 0f : pixels / pixelsPerWorldUnit;
+    }
+
+    /// <summary>The per-kind facing mark: one simple stroke figure along the
+    /// beam (+Z of the light's rotation), sized in screen pixels. It says which
+    /// way the light points and — for a spot — how wide the throw opens, and
+    /// deliberately says nothing about range: extents are the Light tab's
+    /// numbers. Selection is emphasis on the same figure, never extra
+    /// geometry.</summary>
+    private void DrawLightShape(
+        ImDrawListPtr drawList,
+        Vector2 viewportPos,
+        LightDisplayData light,
+        ILight live,
+        Vector4 color,
+        float dotRadius)
+    {
+        bool selected = light.IsSelected;
+        var position = light.Transform.Position;
+        var rotation = light.Transform.Rotation;
+        var localX = Vector3.Transform(Vector3.UnitX, rotation);
+        var localY = Vector3.Transform(Vector3.UnitY, rotation);
+        var localZ = Vector3.Transform(Vector3.UnitZ, rotation);
+        float uiScale = ImGuiHelpers.GlobalScale;
+        float length = MarkWorldLength(position, LightMarkPixels * uiScale);
+        if (length <= 0f)
+            return;
+        // A light that is switched off still says which way it faces, quietly.
+        var stroke = live.IsOn ? color : color with { W = color.W * 0.35f };
+        float thickness = (selected ? 2.5f : 1.5f) * uiScale;
+
+        switch (live.Kind)
+        {
+            case LightKind.Directional:
+                DrawWorldArrow(
+                    drawList, viewportPos, position, localZ, localX, localY,
+                    length, thickness, stroke);
+                break;
+            case LightKind.Point:
+                // Omnidirectional: there is no facing to indicate, so the
+                // handle dot is the whole mark. Selection adds one ring around
+                // it, in screen space with the dot it belongs to.
+                if (selected)
+                    drawList.AddCircle(
+                        light.ScreenPos, dotRadius + 5f * uiScale,
+                        ImGui.ColorConvertFloat4ToU32(stroke), 24, thickness);
+                break;
+            case LightKind.Spot:
+                // Real cone ANGLE at a fixed perceived length: the width of the
+                // throw belongs to the mark, the distance it carries does not.
+                DrawWorldCone(
+                    drawList, viewportPos, position, localX, localY, localZ,
+                    0.5f * float.DegreesToRadians(live.SpotAngle),
+                    length, thickness, stroke);
+                break;
+            case LightKind.Area:
+            {
+                // The panel's throw leans with its skew angles — Ktisis
+                // composes AreaAngle into the facing before drawing, and a
+                // skewed panel whose arrow ignored the skew would lie.
+                var area = live.AreaAngle;
+                var skewed = Quaternion.Normalize(
+                    rotation * Quaternion.CreateFromYawPitchRoll(
+                        float.DegreesToRadians(area.X),
+                        float.DegreesToRadians(area.Y),
+                        0f));
+                var throwZ = Vector3.Transform(Vector3.UnitZ, skewed);
+                // An arrow with a crossbar for the panel it leaves. The bar is
+                // struck on both side axes so it never collapses edge-on.
+                DrawWorldArrow(
+                    drawList, viewportPos, position, throwZ, localX, localY,
+                    length, thickness, stroke);
+                var barX = Vector3.Normalize(localX) * (length * 0.35f);
+                var barY = Vector3.Normalize(localY) * (length * 0.35f);
+                DrawWorldLine(
+                    drawList, viewportPos,
+                    position - barX, position + barX, thickness, stroke);
+                DrawWorldLine(
+                    drawList, viewportPos,
+                    position - barY, position + barY, thickness, stroke);
+                break;
+            }
+        }
+    }
+
+    private void DrawWorldLine(
+        ImDrawListPtr drawList, Vector2 viewportPos,
+        Vector3 start, Vector3 end, float thickness, Vector4 color)
+    {
+        if (_cameraService.WorldToScreen(start, out var startScreen) &&
+            _cameraService.WorldToScreen(end, out var endScreen))
+            drawList.AddLine(
+                viewportPos + startScreen,
+                viewportPos + endScreen,
+                ImGui.ColorConvertFloat4ToU32(color),
+                thickness);
+    }
+
+    /// <summary>A shaft with four barbs, two per side axis: an arrow drawn on
+    /// one axis alone collapses to a line from half the angles a free camera
+    /// can take, and the facing mark has to read from all of them.</summary>
+    private void DrawWorldArrow(
+        ImDrawListPtr drawList, Vector2 viewportPos, Vector3 origin,
+        Vector3 direction, Vector3 sideOne, Vector3 sideTwo, float length,
+        float thickness, Vector4 color)
+    {
+        var axis = Vector3.Normalize(direction);
+        var tip = origin + axis * length;
+        DrawWorldLine(drawList, viewportPos, origin, tip, thickness, color);
+
+        float barb = length * 0.3f;
+        var shoulder = tip - axis * barb;
+        var spreadOne = Vector3.Normalize(sideOne) * (barb * 0.6f);
+        var spreadTwo = Vector3.Normalize(sideTwo) * (barb * 0.6f);
+        DrawWorldLine(drawList, viewportPos, tip, shoulder + spreadOne, thickness, color);
+        DrawWorldLine(drawList, viewportPos, tip, shoulder - spreadOne, thickness, color);
+        DrawWorldLine(drawList, viewportPos, tip, shoulder + spreadTwo, thickness, color);
+        DrawWorldLine(drawList, viewportPos, tip, shoulder - spreadTwo, thickness, color);
+    }
+
+    private void DrawWorldCircle(
+        ImDrawListPtr drawList, Vector2 viewportPos, Vector3 center,
+        Vector3 axisOne, Vector3 axisTwo, float radius, float thickness,
+        Vector4 color)
+    {
+        const int segments = 32;
+        for (int i = 0; i <= segments; i++)
+        {
+            float angle = (float)i / segments * MathF.Tau;
+            var point = center +
+                (MathF.Cos(angle) * axisOne + MathF.Sin(angle) * axisTwo) * radius;
+            // A point behind the camera simply contributes nothing; the path
+            // closes over the segment that stayed on screen.
+            if (_cameraService.WorldToScreen(point, out var screen))
+                drawList.PathLineTo(viewportPos + screen);
+        }
+        drawList.PathStroke(ImGui.ColorConvertFloat4ToU32(color), ImDrawFlags.None, thickness);
+        drawList.PathClear();
+    }
+
+    /// <summary>An open wire cone: the rim circle at <paramref name="height"/>
+    /// and four spokes back to the apex. Four spokes, because two would
+    /// collapse to a single stroke from the angles a free camera takes.</summary>
+    private void DrawWorldCone(
+        ImDrawListPtr drawList, Vector2 viewportPos, Vector3 apex,
+        Vector3 localX, Vector3 localY, Vector3 localZ, float angleRadians,
+        float height, float thickness, Vector4 color)
+    {
+        const int spokes = 4;
+        var rimCenter = apex + localZ * height;
+        float radius = height * MathF.Tan(angleRadians);
+        DrawWorldCircle(
+            drawList, viewportPos, rimCenter, localX, localY, radius,
+            thickness, color);
+
+        for (int spoke = 0; spoke < spokes; spoke++)
+        {
+            float angle = (float)spoke / spokes * MathF.Tau;
+            var rim = rimCenter +
+                (MathF.Cos(angle) * localX + MathF.Sin(angle) * localY) * radius;
+            DrawWorldLine(drawList, viewportPos, apex, rim, thickness, color);
         }
     }
 

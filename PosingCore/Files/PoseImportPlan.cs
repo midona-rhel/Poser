@@ -6,15 +6,17 @@ namespace Poser.Files;
 
 /// <summary>
 /// Everything one pose-file import would change, computed WITHOUT mutating
-/// anything: the exact bones the chosen scope resets, the absolute
-/// raw-basis file writes, and the owning actor's model transform when
-/// enabled. Every target appears at most once per role, so the atomic
-/// edit gives each exactly one deterministic final state.
+/// anything: the exact bones the chosen scope resets, the file's absolute
+/// transforms verbatim with their per-bone delta masks, and the owning
+/// actor's model transform when enabled. Every target appears at most once
+/// per role, so the edit gives each exactly one deterministic final state.
+/// A write's basis is NOT part of the plan: the apply pass supplies its own
+/// just-refreshed <c>bone.LastRawTransform</c> (Brio PoseImporter.cs:35).
 /// </summary>
 public sealed class PoseImportPlan
 {
     public List<IBone> Resets { get; } = new();
-    public List<(IBone Bone, Transform Desired)> Writes { get; } = new();
+    public List<(IBone Bone, Transform File, TransformComponents Components)> Writes { get; } = new();
 
     /// <summary>The owning actor and its desired absolute model transform;
     /// null when the import does not touch the model transform.</summary>

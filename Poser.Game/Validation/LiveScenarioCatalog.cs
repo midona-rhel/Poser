@@ -21,6 +21,7 @@ public static class LiveScenarioCatalog
         "posing.animation-interference",
         "posing.reset-region",
         "posing.copy-paste-pose",
+        "posing.ik-bake",
     });
 
     /// <summary>
@@ -36,5 +37,6 @@ public static class LiveScenarioCatalog
         "posing.animation-interference",
         "posing.reset-region",
         "posing.copy-paste-pose",
+        "posing.ik-bake",
     });
 }

@@ -12,6 +12,15 @@ internal static class Program
     [STAThread]
     private static unsafe int Main(string[] args)
     {
+        // A golden must be a pure function of the frame that produced it. In
+        // game the icon cache rasterizes bakes on a background worker and
+        // spends a bounded painter/upload budget per frame, so whether an
+        // icon has its texture yet depends on how many frames were pumped and
+        // how fast the worker ran. Synchronous bakes put every icon in its
+        // final state on the frame it is first repeated, for every capture
+        // mode below (the behaviour suites dispatch from here too).
+        Ui.IconBakesSynchronous = true;
+
         if (args.Length == 1 && args[0] == "--list")
         {
             foreach (var catalogItem in ComponentCatalog.All)

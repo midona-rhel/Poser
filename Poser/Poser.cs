@@ -64,12 +64,31 @@ public class Poser : IDalamudPlugin
         // Initialize configuration service (sets static Instance, must be before UI)
         var configuration =
             _serviceProvider.GetRequiredService<ConfigurationService>();
-        ThemeSelection.Apply(configuration.Config.UI.Theme);
+        ThemeSelection.Apply(
+            configuration.Config.UI.Theme,
+            configuration.Config.UI.AccentIndex);
+
+        // Auto-save subscribes to GPoseStateChangedEvent and MUST be resolved
+        // FIRST of all the event subscribers: the EventBus delivers in
+        // subscription order, and the GPose-exit snapshot has to run while the
+        // authored pose still exists. Every other handler for that event tears
+        // state down — ActorManager clears the actor list, SkeletonService and
+        // BonePosingService drop their caches, PosingService clears overrides,
+        // and CleanSceneLifecycle (resolved right below) cancels the active
+        // gesture and clears history. Resolve order IS the correctness
+        // guarantee here; it works only because AutoSaveService takes those
+        // services as factories rather than constructor arguments (see its
+        // registration in ServiceRegistration.AddPoserFeatures).
+        _ = _serviceProvider.GetRequiredService<IAutoSaveService>();
 
         // Activate the clean scene owner before constructing presentation.
         // Singleton registration is lazy: without resolving this service its
         // actor/skeleton subscriptions never run and SceneSession stays empty.
         _ = _serviceProvider.GetRequiredService<CleanSceneLifecycle>();
+
+        // Target sync is another lazy singleton with framework subscriptions
+        // as its only activity; resolve it or it never ticks.
+        _ = _serviceProvider.GetRequiredService<TargetSyncService>();
 
         // Create the active theme's complete typography matrix before any
         // presentation surface can measure with a fallback face.

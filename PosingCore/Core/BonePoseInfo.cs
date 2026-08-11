@@ -86,16 +86,30 @@ public class BonePoseInfo
     /// <param name="newTransform">The new transform.</param>
     /// <param name="original">The original transform before modification.</param>
     /// <param name="propagation">Which components to propagate.</param>
+    /// <param name="applyTo">Which components of the DELTA to keep — Brio
+    /// PoseInfo.Apply's applyTo (PoseInfo.cs:94,108): excluded components are
+    /// zeroed on the delta, never emulated by re-asserting a stale absolute.</param>
+    /// <param name="forceNewStack">Brio PoseInfo.Apply's forceNewStack
+    /// (PoseInfo.cs:94,103) — its PoseImporter passes true on EVERY file
+    /// write, which is what lets the expression import's head restore pop
+    /// exactly the stack its phase 1 appended with
+    /// <see cref="RemoveLastInteractiveStack"/> instead of a combined blob.</param>
     /// <returns>The final transform, or null if rejected due to NaN or near-identity.</returns>
-    public Transform? Apply(Transform newTransform, Transform original, TransformComponents? propagation = null)
+    public Transform? Apply(
+        Transform newTransform,
+        Transform original,
+        TransformComponents? propagation = null,
+        TransformComponents applyTo = TransformComponents.All,
+        bool forceNewStack = false)
     {
         var prop = propagation ?? DefaultPropagation;
 
-        // Calculate delta from original
-        var delta = CalculateDiff(newTransform, original);
+        // Calculate delta from original, then mask it (Brio PoseInfo.cs:108
+        // calc.Filter(applyTo)).
+        var delta = FilterDelta(CalculateDiff(newTransform, original), applyTo);
 
         // Find or create stack entry with matching propagation
-        var transformIndex = GetTransformIndex(prop, layer: null);
+        var transformIndex = GetTransformIndex(prop, layer: null, forceNewStack);
 
         // Get existing transform at this index
         var existing = _stacks[transformIndex].Transform;
@@ -132,7 +146,24 @@ public class BonePoseInfo
         return clone;
     }
 
-    private int GetTransformIndex(TransformComponents components, string? layer)
+    /// <summary>Brio's RemoveLastStack, as the expression import's head
+    /// restore uses it (PosingCapability.cs:238-247): pops the NEWEST
+    /// interactive stack — the head rotation its phase 1 just appended —
+    /// and leaves named service layers untouched.</summary>
+    public bool RemoveLastInteractiveStack()
+    {
+        for (var i = _stacks.Count - 1; i >= 0; i--)
+        {
+            if (_stacks[i].Layer != null)
+                continue;
+            _stacks.RemoveAt(i);
+            return true;
+        }
+        return false;
+    }
+
+    private int GetTransformIndex(
+        TransformComponents components, string? layer, bool forceNewStack = false)
     {
         var identityDelta = new Transform
         {
@@ -149,6 +180,11 @@ public class BonePoseInfo
 
         if (layer == null)
         {
+            if (forceNewStack)
+            {
+                _stacks.Add(new BonePoseTransformInfo(components, identityDelta, null));
+                return _stacks.Count - 1;
+            }
             var lastEntry = _stacks[^1];
             if (lastEntry.Layer == null && lastEntry.PropagateComponents == components)
                 return _stacks.Count - 1;
@@ -171,6 +207,22 @@ public class BonePoseInfo
 
     /// <summary>Public delta composition (matches the internal stack combine).</summary>
     public static Transform Combine(Transform a, Transform b) => CombineTransforms(a, b);
+
+    /// <summary>Brio's <c>Transform.Filter</c> (Core/Transform.cs:103-113) on a
+    /// stack DELTA: an excluded component becomes the delta identity — position
+    /// Vector3.Zero, rotation Quaternion.Identity, scale Vector3.Zero (scale
+    /// deltas are additive, matching Brio's convention).</summary>
+    public static Transform FilterDelta(Transform delta, TransformComponents applyTo)
+    {
+        if (applyTo == TransformComponents.All)
+            return delta;
+        return new Transform
+        {
+            Position = applyTo.HasFlag(TransformComponents.Position) ? delta.Position : Vector3.Zero,
+            Rotation = applyTo.HasFlag(TransformComponents.Rotation) ? delta.Rotation : Quaternion.Identity,
+            Scale = applyTo.HasFlag(TransformComponents.Scale) ? delta.Scale : Vector3.Zero,
+        };
+    }
 
     /// <summary>
     /// REPLACE the stack entry for a propagation set with an absolute delta —

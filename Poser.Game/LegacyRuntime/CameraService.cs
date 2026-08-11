@@ -166,4 +166,21 @@ public class CameraService : ICameraService
         var cameraPos = GetCameraPosition();
         return Vector3.Distance(cameraPos, worldPos);
     }
+
+    public Vector3 GetLookDirection()
+    {
+        // The centre-screen ray IS the look direction, and unprojection is
+        // convention-free: near-to-far in clip space is toward positive w,
+        // which the in-front test above already defines as "ahead".
+        var io = Dalamud.Bindings.ImGui.ImGui.GetIO();
+        var center = new Vector2(io.DisplaySize.X / 2f, io.DisplaySize.Y / 2f);
+        var probe = ScreenToWorld(center, 1f);
+        if (probe == Vector3.Zero)
+            return Vector3.Zero;
+        var direction = probe - GetCameraPosition();
+        float length = direction.Length();
+        return length < 0.0001f || !float.IsFinite(length)
+            ? Vector3.Zero
+            : direction / length;
+    }
 }

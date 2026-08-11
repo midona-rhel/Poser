@@ -28,6 +28,17 @@ public record ActorListChangedEvent(IReadOnlyList<IActor> Actors) : IEvent;
 /// </summary>
 public record SkeletonChangedEvent(IActor Actor, ISkeleton? Skeleton) : IEvent;
 
+/// <summary>
+/// Published when the spawned-light list changes (light spawned or destroyed).
+/// </summary>
+public record LightListChangedEvent(IReadOnlyList<ILight> Lights) : IEvent;
+
+/// <summary>
+/// Published when the virtual-camera list changes (camera created, destroyed,
+/// or the live camera switched).
+/// </summary>
+public record CameraListChangedEvent(IReadOnlyList<IVirtualCamera> Cameras) : IEvent;
+
 #endregion
 
 #region Selection Events
@@ -50,5 +61,12 @@ public record SkeletonChangedEvent(IActor Actor, ISkeleton? Skeleton) : IEvent;
 /// Published when a bone's transform changes during posing.
 /// </summary>
 public record BoneTransformChangedEvent(IBone Bone) : IEvent;
+
+/// <summary>
+/// A gaze entry's mode changed (any actor). Consumers re-read state from
+/// IGazeService; the payload stays empty so the native-thread publisher never
+/// marshals actor references.
+/// </summary>
+public record GazeStateChangedEvent : IEvent;
 
 #endregion

@@ -34,8 +34,14 @@ public sealed class ShellSidebar
     /// it, and the caller has to walk the strip with the same step.</summary>
     private const float ActionGap = 2f;
 
+    /// <summary>TreeRow's own pill geometry, which a selectable header wears
+    /// verbatim so section and row selection are one image.</summary>
+    private const float HeaderPillRadius = 5f;
+    private const float HeaderPillInset = 1f;
+
     private const string SearchId = "##shell-sidebar-search";
     private const string TreeId = "##shell-sidebar-tree";
+    private const string HeaderSelectId = "##select";
 
     private enum EntryKind : byte { Header, Row }
 
@@ -264,7 +270,10 @@ public sealed class ShellSidebar
                     row.Label.ToLowerInvariant(),
                     row.Depth,
                     Trunks(row.TreeLines),
-                    row.ActorActions ? 3 : row.OverlayBones != null ? 1 : 0,
+                    row.ActorActions ? 3
+                        : row.CameraActions ? 2
+                        : row.LightActions ||
+                            row.OverlayBones != null ? 1 : 0,
                     0f,
                     rowHeight));
             }
@@ -457,8 +466,9 @@ public sealed class ShellSidebar
             Icon = row.IconName == null ? row.Icon : null,
             IconName = row.IconName,
             // Nested rows draw no mark; their guide column already spans the
-            // same distance the root's icon cell does.
-            HideIcon = row.Depth > 0,
+            // same distance the root's icon cell does. ForceIcon opts one back
+            // in for a nested row that is a thing rather than a grouping.
+            HideIcon = row.Depth > 0 && !row.ForceIcon,
             Badge = string.IsNullOrEmpty(row.Count) ? null : row.Count,
             Depth = row.Depth,
             Trunks = entry.Trunks,
@@ -508,18 +518,24 @@ public sealed class ShellSidebar
         in Entry entry, Vector2 at, float width, float scale, Theme theme)
     {
         var section = _vm.Sections[entry.Section];
+        // Selectable is read LIVE off the section through the cached index,
+        // exactly as a row's Active is: a header changing state is not a
+        // structural change and must never dirty the flat cache.
+        if (section.Selectable)
+            PaintHeaderTarget(in entry, section, at, width, scale, theme);
+
         var style = new TextStyle
         {
             Size = theme.Typography.LabelSize,
             Weight = FontWeight.Medium,
             Color = theme.TextMuted,
         };
+        // The band is the header SLOT, not the run's own line box — a band
+        // equal to the measured height collapses the centering term and the
+        // seat degenerates to a hand pad.
         Crystarium.TextInBand(
-            new Vector2(
-                at.X + theme.Spacing.Two * scale,
-                at.Y + theme.Spacing.Two * scale),
-            new Vector2(width * scale, Crystarium.MeasureText(
-                section.Title, style).Y),
+            new Vector2(at.X + theme.Spacing.Two * scale, at.Y),
+            new Vector2(width * scale, entry.Height * scale),
             section.Title,
             style,
             TextAlign.Start);
@@ -535,6 +551,52 @@ public sealed class ShellSidebar
                 style: ControlStyle.Square(side),
                 id: entry.Id))
             _vm.OnSectionPlus?.Invoke(entry.Section);
+    }
+
+    /// <summary>
+    /// A selectable header's hit target and its highlight: the SAME pill the
+    /// tree row wears — root inset, gutter-stopped right edge, the shaved
+    /// bottom pixel — so a selected section and a selected row read as one
+    /// language. The header's own typography is untouched; the pill states the
+    /// selection.
+    /// </summary>
+    private void PaintHeaderTarget(
+        in Entry entry,
+        ShellSidebarSection section,
+        Vector2 at,
+        float width,
+        float scale,
+        Theme theme)
+    {
+        ImGui.SetCursorScreenPos(at);
+        // The plus reserves under the header's own id, so the header's target
+        // is pushed one level down rather than minting a second id string.
+        ImGui.PushID(entry.Id);
+        var hit = Interactive.Reserve(
+            HeaderSelectId,
+            new Vector2(width * scale, entry.Height * scale),
+            disabled: false);
+        ImGui.PopID();
+        if (section.ShowPlus)
+            ImGui.SetItemAllowOverlap();
+
+        var fill = section.Active
+            ? theme.Chrome.SidebarSelected
+            : hit.Hovered
+                ? theme.Chrome.SidebarHover
+                : Vector4.Zero;
+        if (fill.W > 0f)
+            ImGui.GetWindowDrawList().AddRectFilled(
+                new Vector2(
+                    hit.ScreenMin.X + HeaderPillInset * scale, hit.ScreenMin.Y),
+                new Vector2(
+                    hit.ScreenMax.X - theme.Scrollbar.GutterWidth * scale,
+                    hit.ScreenMax.Y - scale),
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(fill)),
+                HeaderPillRadius * scale);
+
+        if (hit.Activated)
+            _vm.OnSectionSelected?.Invoke(entry.Section);
     }
 
     /// <summary>
@@ -561,7 +623,7 @@ public sealed class ShellSidebar
                 if (Crystarium.IconButton(
                         TablerIcon.Crosshair,
                         style: square,
-                        help: "Set game target",
+                        help: "Target this actor in game",
                         id: "##target"))
                     _vm.OnActorTarget?.Invoke(row);
 
@@ -586,6 +648,60 @@ public sealed class ShellSidebar
                         id: "##pause",
                         slashed: row.ActorPaused))
                     _vm.OnActorPause?.Invoke(row);
+                return;
+            }
+
+            // One slot, the actor eye's twin: a light has nothing to target
+            // and no animation to pause, so switching it off is its whole
+            // inline vocabulary.
+            if (row.LightActions)
+            {
+                ImGui.SetCursorScreenPos(origin);
+                if (Crystarium.TemporaryIconToggle(
+                        TablerIcon.Eye,
+                        selected: false,
+                        style: square,
+                        help: row.LightOn
+                            ? "Switch this light off"
+                            : "Switch this light on",
+                        id: "##light-on",
+                        slashed: !row.LightOn))
+                    _vm.OnLightVisibility?.Invoke(row);
+                return;
+            }
+
+            // Two slots: the lock protecting the shot, then the camera's
+            // inline verb — "look through me". Both fade when off rather
+            // than wearing a slash: an unlocked camera and a parked camera
+            // both still work, they are just not in that state.
+            if (row.CameraActions)
+            {
+                ImGui.SetCursorScreenPos(origin);
+                if (Crystarium.TemporaryIconToggle(
+                        row.CameraLocked
+                            ? TablerIcon.Lock
+                            : TablerIcon.LockOpen,
+                        selected: false,
+                        style: square,
+                        help: row.CameraLocked
+                            ? "Unlock this camera"
+                            : "Lock this camera: keep its shot exactly as "
+                                + "framed",
+                        id: "##camera-lock",
+                        dimmed: !row.CameraLocked))
+                    _vm.OnCameraLock?.Invoke(row);
+
+                ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
+                if (Crystarium.TemporaryIconToggle(
+                        TablerIcon.Video,
+                        selected: false,
+                        style: square,
+                        help: row.CameraLive
+                            ? "The live camera — click to return to the main camera"
+                            : "Look through this camera",
+                        id: "##camera-live",
+                        dimmed: !row.CameraLive))
+                    _vm.OnCameraLive?.Invoke(row);
                 return;
             }
 

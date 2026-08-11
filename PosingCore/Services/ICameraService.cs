@@ -39,4 +39,11 @@ public interface ICameraService
     /// Gets the distance from the camera to a world position.
     /// </summary>
     float GetDepthToPosition(Vector3 worldPos);
+
+    /// <summary>
+    /// The camera's world-space look direction, derived from the
+    /// centre-screen unprojection ray rather than a view-matrix sign
+    /// convention. Normalized; Zero when no camera is active.
+    /// </summary>
+    Vector3 GetLookDirection();
 }

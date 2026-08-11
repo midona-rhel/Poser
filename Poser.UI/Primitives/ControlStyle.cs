@@ -65,6 +65,14 @@ public readonly record struct ControlStyle
 {
     public UiWidth Width { get; init; }
     public UiHeight Height { get; init; }
+
+    /// <summary>CSS <c>max-width</c>, in logical units: caps whatever
+    /// <see cref="Width"/> resolves to — intrinsic, Fixed, Fill, or a
+    /// control's own usability floor. A layout track that must contain its
+    /// control (a <see cref="Crystarium.FormPairCell"/> half) states its
+    /// span here; containment outranks any minimum the control would
+    /// otherwise enforce.</summary>
+    public float? MaxWidth { get; init; }
     // Toggle-only presentation: momentary IconButton and typed text Button
     // ignore this flag.
     public bool Selected { get; init; }
@@ -125,7 +133,7 @@ internal static class ControlSizing
         float availableLogical = ImGui.GetContentRegionAvail().X / scale;
         return new ResolvedControl(
             scale,
-            Width(style.Width, logicalContentWidth, availableLogical),
+            Width(style, logicalContentWidth, availableLogical),
             Height(style.Height, fallbackHeight));
     }
 
@@ -145,6 +153,20 @@ internal static class ControlSizing
             UiWidthKind.Fixed => width.Value,
             _ => content,
         };
+
+    /// <summary>The style-aware width: what <see cref="Width(UiWidth,
+    /// float, float)"/> resolves, held under the style's
+    /// <see cref="ControlStyle.MaxWidth"/>. Controls resolve through THIS
+    /// overload so a track cap governs every width kind.</summary>
+    public static float Width(
+        in ControlStyle style, float content, float available) =>
+        Cap(Width(style.Width, content, available), style.MaxWidth);
+
+    /// <summary>The <see cref="ControlStyle.MaxWidth"/> clamp, alone — for
+    /// a control that raises its resolved width afterwards (a usability
+    /// floor) and must re-assert containment on the result.</summary>
+    public static float Cap(float width, float? maxWidth) =>
+        maxWidth is { } max ? MathF.Min(width, max) : width;
 
     public static bool IsWorkspace(UiHeight height) =>
         height.Kind == UiHeightKind.Workspace;

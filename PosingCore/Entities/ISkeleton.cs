@@ -54,4 +54,13 @@ public interface ISkeleton : IEntity
     /// Refreshes the skeleton data from game memory.
     /// </summary>
     void Refresh();
+
+    /// <summary>
+    /// The skeleton's own rest ("reference") pose in model space, one entry
+    /// per mapped bone, computed from the native skeleton's reference locals
+    /// without touching the live pose. Attach-driven partial roots (every
+    /// partial root except the skeleton root) are skipped. Empty when the
+    /// native skeleton is unavailable.
+    /// </summary>
+    IReadOnlyList<(IBone Bone, Transform Reference)> CaptureReferencePose();
 }

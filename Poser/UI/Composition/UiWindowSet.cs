@@ -6,8 +6,8 @@ using System;
 namespace Poser.UI.Composition;
 
 /// <summary>
-/// Owns draw order for the focused posing workspace, settings, and the two
-/// viewport interaction canvases.
+/// Owns draw order for the focused posing workspace, settings, the spawn
+/// browser, and the two viewport interaction canvases.
 /// </summary>
 public sealed class UiWindowSet : IDisposable
 {
@@ -16,6 +16,7 @@ public sealed class UiWindowSet : IDisposable
     public GizmoOverlayWindow GizmoOverlay { get; }
     public SkeletonOverlayWindow SkeletonOverlay { get; }
     public SettingsWindow Settings { get; }
+    public SpawnBrowserWindow SpawnBrowser { get; }
     private readonly SkeletonOverlayPresentation _overlayPresentation;
 
     public UiWindowSet(
@@ -25,6 +26,7 @@ public sealed class UiWindowSet : IDisposable
         SkeletonOverlayWindow skeletonOverlay,
         GizmoOverlayWindow gizmoOverlay,
         SettingsWindow settings,
+        SpawnBrowserWindow spawnBrowser,
         SkeletonOverlayPresentation overlayPresentation)
     {
         _overlayPresentation = overlayPresentation;
@@ -41,7 +43,10 @@ public sealed class UiWindowSet : IDisposable
         Settings = settings;
         System.AddWindow(Settings);
 
-        Main.GetSkeletonOverlayOn = () => SkeletonOverlay.IsOpen;
+        SpawnBrowser = spawnBrowser;
+        System.AddWindow(SpawnBrowser);
+
+        Main.GetSkeletonOverlayOn = () => SkeletonOverlay.UserVisible;
         Main.OnSkeletonOverlayToggled += SetSkeletonOverlayOpen;
 
         // Loading mid-GPose obeys the same rule as entering it: the workspace
@@ -54,12 +59,14 @@ public sealed class UiWindowSet : IDisposable
     {
         Main.IsOpen = isOpen;
         GizmoOverlay.IsOpen = isOpen;
-        // The skeleton overlay starts Off each GPose/UI session: only the
-        // toolbar Armature action opens it, and a user toggle persists for the
-        // session. Session end still closes it so the next session starts Off.
+        // The window itself follows the session like the gizmo overlay; the
+        // Armature toggle starts Off each GPose/UI session and a bone
+        // selection forces the armature visible regardless of the toggle.
+        // Session end resets the toggle so the next session starts Off.
+        SkeletonOverlay.IsOpen = isOpen;
         if (!isOpen)
         {
-            SkeletonOverlay.IsOpen = false;
+            SkeletonOverlay.UserVisible = false;
             _overlayPresentation.Clear();
         }
     }
@@ -73,7 +80,7 @@ public sealed class UiWindowSet : IDisposable
     }
 
     private void SetSkeletonOverlayOpen(bool isOpen)
-        => SkeletonOverlay.IsOpen = isOpen;
+        => SkeletonOverlay.UserVisible = isOpen;
 
     public void Dispose()
     {

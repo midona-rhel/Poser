@@ -7,26 +7,7 @@ internal static class ThemeSelection
 {
     public static Theme Resolve(UITheme selection, int accentIndex)
     {
-        var theme = Base(selection);
-        var options = theme.Settings.AccentOptions;
-        // Index 0 means "the theme keeps its own primary". The swatch row is
-        // shared by every theme, but its first entry is only the DARK primary
-        // — re-applying it would recolor the light schemes.
-        if (accentIndex <= 0 || options is null || accentIndex >= options.Length)
-            return theme;
-        return theme.WithAccent(options[accentIndex]);
-    }
-
-    public static void Apply(UITheme selection, int accentIndex) =>
-        Crystarium.UseTheme(Resolve(selection, accentIndex));
-
-    /// <summary>Config-driven apply: the accent comes from the saved
-    /// configuration, so startup and reloads keep the chosen accent.</summary>
-    public static void Apply(UITheme selection) =>
-        Apply(selection, ConfigurationService.Instance.Config.UI.AccentIndex);
-
-    private static Theme Base(UITheme selection) =>
-        selection switch
+        var theme = selection switch
         {
             UITheme.Auto => WindowsUsesLightApps()
                 ? Theme.PictoLight
@@ -38,6 +19,16 @@ internal static class ThemeSelection
             UITheme.Purple => Theme.PictoPurple,
             _ => Theme.PictoDark,
         };
+        // Index 0 is "the theme's own primary": the baked value stays
+        // untouched so the accepted baseline is reproduced exactly.
+        var options = theme.Settings.AccentOptions;
+        return accentIndex > 0 && accentIndex < options.Length
+            ? theme.WithAccent(options[accentIndex])
+            : theme;
+    }
+
+    public static void Apply(UITheme selection, int accentIndex) =>
+        Crystarium.UseTheme(Resolve(selection, accentIndex));
 
     private static bool WindowsUsesLightApps()
     {

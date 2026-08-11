@@ -11,6 +11,20 @@ public static class BoneInfoService
 {
     private static IPluginLog? _log;
     private static readonly HashSet<string> _loggedUntranslated = new();
+
+    /// <summary>Names seen for the first time and not yet reported. A modded
+    /// character carries hundreds of bones outside the translation tables, and
+    /// every one of them used to cost a SEPARATE synchronous log write on the
+    /// framework tick that rebuilt the skeleton — the dominant term in the
+    /// 50-63 ms redraw hitch. The dedup set is unchanged (each name is still
+    /// reported exactly once per session); only the delivery is coalesced into
+    /// one line by <see cref="FlushUntranslatedLog"/>.</summary>
+    private static readonly List<string> _pendingUntranslated = new();
+
+    /// <summary>How many names one flushed line spells out before it
+    /// summarises the remainder as a count.</summary>
+    private const int MaxListedUntranslated = 40;
+
     private static readonly Dictionary<string, BoneData> _boneData = new();
     private static readonly HashSet<string> _nsfwBones = new();
 
@@ -20,7 +34,11 @@ public static class BoneInfoService
     public static void Initialize(IPluginLog log)
     {
         _log = log;
-        _loggedUntranslated.Clear();
+        lock (_loggedUntranslated)
+        {
+            _loggedUntranslated.Clear();
+            _pendingUntranslated.Clear();
+        }
         _boneData.Clear();
         _nsfwBones.Clear();
 
@@ -104,20 +122,49 @@ public static class BoneInfoService
             return data.Translation;
         }
 
-        // Log untranslated bone (only once per bone name). Multiple threads
-        // resolve display names (framework refreshes and the UI), and an
-        // unsynchronized HashSet corrupts permanently under concurrent Add.
-        var firstSighting = false;
+        // Record the untranslated bone (only once per bone name). Multiple
+        // threads resolve display names (framework refreshes and the UI), and
+        // an unsynchronized HashSet corrupts permanently under concurrent Add.
+        // NOTHING is written to the log here: a skeleton rebuild resolves every
+        // bone name in one framework tick, so per-name writes turned a redraw
+        // into hundreds of synchronous log writes. FlushUntranslatedLog emits
+        // them as one line.
         lock (_loggedUntranslated)
         {
-            firstSighting = _loggedUntranslated.Add(boneName);
-        }
-        if (_log != null && firstSighting)
-        {
-            _log.Warning($"[BoneInfo] Untranslated bone: {boneName}");
+            if (_loggedUntranslated.Add(boneName))
+                _pendingUntranslated.Add(boneName);
         }
 
         return boneName;
+    }
+
+    /// <summary>
+    /// Emits ONE warning listing every untranslated bone name seen since the
+    /// previous flush, and nothing at all when there is none — the common case,
+    /// so it is safe to call on every scene refresh. Each name still appears
+    /// exactly once per session; only the number of log writes changes.
+    /// </summary>
+    public static void FlushUntranslatedLog()
+    {
+        if (_log == null)
+            return;
+
+        string[] names;
+        lock (_loggedUntranslated)
+        {
+            if (_pendingUntranslated.Count == 0)
+                return;
+            names = _pendingUntranslated.ToArray();
+            _pendingUntranslated.Clear();
+        }
+
+        var listed = names.Length <= MaxListedUntranslated
+            ? names
+            : names[..MaxListedUntranslated];
+        var overflow = names.Length - listed.Length;
+        var suffix = overflow > 0 ? $" (+{overflow} more)" : string.Empty;
+        _log.Warning(
+            $"[BoneInfo] {names.Length} untranslated bone(s): {string.Join(", ", listed)}{suffix}");
     }
 
     /// <summary>

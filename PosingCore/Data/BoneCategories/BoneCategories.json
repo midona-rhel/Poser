@@ -1,0 +1,352 @@
+﻿{
+  "Categories": {
+   "headCategory": {
+      "Type": "Category",
+      "Bones": [
+        "hair",
+        "head",
+        "face",
+        "eyes",
+        "lips",
+        "jaw",
+        "ears",
+      ]
+    },
+    "hair": {
+      "Type": "Filter",
+      "Bones": [
+        "j_ex_h",
+        "j_kami_",
+        "j_ex_met_va"
+      ]
+    },
+    "head": {
+      "Type": "Filter",
+      "Bones": [
+        "j_kao",
+        "j_f_face"
+      ]
+    },
+    "face": {
+      "Type": "Filter",
+      "Bones": [
+        "j_f_miken_01_l",
+        "j_f_miken_01_r",
+        "j_f_miken_02_l",
+        "j_f_miken_02_r",
+        "j_f_mmayu_l",
+        "j_f_mmayu_r",
+        "j_f_mayu_l",
+        "j_f_mayu_r",
+        "j_f_dhoho_l",
+        "j_f_shoho_l",
+        "j_f_dhoho_r",
+        "j_f_shoho_r",
+        "j_f_dmemoto_r",
+        "j_f_dmemoto_l",
+        "j_f_hoho_r",
+        "j_f_hoho_l",
+        "j_f_uhana",
+        "j_f_dmiken_l",
+        "j_f_dmiken_r",
+        "j_f_hana_l",
+        "j_f_hana_r"
+      ]
+    },    
+    "eyes": {
+      "Type": "Filter",
+      "Bones": [
+        "j_f_eye_l",
+        "j_f_eye_r",
+        "j_f_eyepuru_l",
+        "j_f_eyepuru_r",
+        "j_f_mabdn_01_l",
+        "j_f_mabdn_02out_l",
+        "j_f_mabdn_03in_l",
+        "j_f_mabdn_01_r",
+        "j_f_mabdn_02out_r",
+        "j_f_mabdn_03in_r",
+        "j_f_mabup_01_l",
+        "j_f_mabup_02out_l",
+        "j_f_mabup_03in_l",
+        "j_f_mabup_01_r",
+        "j_f_mabup_02out_r",
+        "j_f_mabup_03in_r",
+        "j_f_mab_l",
+        "j_f_mab_r"
+      ]
+    },    
+    "lips": {
+      "Type": "Filter",
+      "Bones": [
+        "j_f_dmlip_01_l",
+        "j_f_dmlip_02_l",
+        "j_f_umlip_01_l",
+        "j_f_umlip_02_l",
+        "j_f_dmlip_01_r",
+        "j_f_dmlip_02_r",
+        "j_f_umlip_01_r",
+        "j_f_umlip_02_r",
+        "j_f_dlip_01_r",
+        "j_f_dlip_02_r",
+        "j_f_ulip_01_r",
+        "j_f_ulip_02_r",
+        "j_f_dlip_01_l",
+        "j_f_dlip_02_l",
+        "j_f_ulip_01_l",
+        "j_f_ulip_02_l",
+        "j_f_uslip_l",
+        "j_f_uslip_r",
+        "j_f_dslip_l",
+        "j_f_dslip_r"
+      ]
+    },
+    "jaw": {
+      "Type": "Filter",
+      "Bones": [
+        "j_f_ago",
+        "j_f_dago",
+        "j_f_bero_01",
+        "j_f_bero_02",
+        "j_f_bero_03",
+        "j_f_hagukidn",
+        "j_f_hagukiup"
+      ]
+    },
+    "ears": {
+      "Type": "Filter",
+      "Bones": [
+        "n_ear_a_",
+        "n_ear_b_",
+        "n_ear_",
+        "j_mimi",
+        "j_zer"
+      ]
+    },
+   "bodyCategory": {
+      "Type": "Category",
+      "Bones": [
+        "body",
+        "handsLeft",
+        "handsRight",
+        "legs",
+        "tail"
+      ]
+    },
+    "body": {
+      "Type": "Filter",
+      "Bones": [
+        "n_root",
+        "n_hara",
+        "j_kosi",
+        "j_kubi",
+        "j_sebo_",
+        "j_mune_",
+        "j_sako_",
+      ]
+    },
+    "handsLeft": {
+      "Type": "Filter",
+      "Bones": [
+        "j_ude_b_r",
+        "j_ko_a_r",
+        "n_hhiji_r",
+        "j_hito_a_r",
+        "j_kusu_a_r",
+        "j_ko_b_r",
+        "j_oya_a_r",
+        "j_hito_b_r",
+        "j_naka_a_r",
+        "j_kusu_b_r",
+        "j_naka_b_r",
+        "j_oya_b_r",
+        "j_te_r",
+        "j_hand_r",
+        "n_hte_r",
+        "n_hkata_r",
+        "j_ude_a_r",
+      ]
+    },
+    "handsRight": {
+      "Type": "Filter",
+      "Bones": [
+        "j_ude_b_l",
+        "j_ko_a_l",
+        "n_hhiji_l",
+        "j_hito_a_l",
+        "j_kusu_a_l",
+        "j_ko_b_l",
+        "j_oya_a_l",
+        "j_hito_b_l",
+        "j_naka_a_l",
+        "j_kusu_b_l",
+        "j_naka_b_l",
+        "j_oya_b_l",
+        "j_te_l",
+        "j_hand_l",
+        "n_hte_l",
+        "n_hkata_l",
+        "j_ude_a_l",
+      ]
+    },
+    "legs": {
+      "Type": "Filter",
+      "Bones": [
+        "j_asi_"
+      ]
+    },
+    "tail": {
+      "Type": "Filter",
+      "Bones": [
+        "n_sippo_"
+      ]
+    },
+    "ivcsCategory": {
+      "Type": "Category",
+      "Bones": [
+        "ivcsHandsLeft",
+        "ivcsHandsRight",
+        "ivcsPenis",
+        "ivcsVagina",
+        "ivcsAbdomen",
+        "ivcsLegs",
+        "ivcsButt",
+      ]
+    },
+    "ivcsAbdomen": {
+      "Type": "Filter",
+      "Bones": [
+        "iv_c_mune_",
+        "iv_kyokin_phys_",
+        "iv_fukubu_phys",
+        "iv_fukubu_phys_"
+      ]
+    },
+    "ivcsHandsRight": {
+      "Type": "Filter",
+      "Bones": [
+        "iv_ko_c_r",
+        "iv_kusu_c_r",
+        "iv_naka_c_r",
+        "iv_hito_c_r",
+        "iv_nitoukin_r",
+      ]
+    },
+    "ivcsHandsLeft": {
+      "Type": "Filter",
+      "Bones": [
+        "iv_ko_c_l",
+        "iv_kusu_c_l",
+        "iv_naka_c_l",
+        "iv_hito_c_l",
+        "iv_nitoukin_l",
+      ]
+    },
+    "ivcsLegs": {
+      "Type": "Filter",
+      "Bones": [
+        "iv_daitai_phys_",
+        "iv_asi_",
+      ]
+    },
+    "ivcsButt": {
+      "Type": "Filter",
+      "Bones": [
+        "iv_koumon",
+        "iv_koumon_",
+        "iv_shiri_",
+        "ya_shiri_phys_",
+      ]
+    },
+    "ivcsPenis": {
+      "Type": "Filter",
+      "Bones": [
+        "iv_kougan_",
+        "iv_ochinko_",
+        "j_penis",
+        "j_balls",
+        "iv_funyachin_phy_",
+        "iv_kintama_phys_"
+      ]
+    },
+    "ivcsVagina": {
+      "Type": "Filter",
+      "Bones": [
+        "iv_omanko",
+        "iv_kuritto",
+        "iv_inshin_"
+      ]
+    },
+   "otherCategory": {
+      "Type": "Category",
+      "Bones": [
+        "clothing",
+        "weapon",
+        "legacy"
+      ]
+    },
+    "clothing": {
+      "Type": "Filter",
+      "Bones": [
+        "n_hijisoubi_",
+        "n_hizasoubi_",
+        "n_kataarmor_",
+        "j_sk_",
+        "j_ex_top_",
+        "j_ex_met_a",
+        "j_ex_met_b",
+        "j_ex_met_c",
+        "j_ex_met_d",
+        "j_zacc"
+      ]
+    },
+    "weapon": {
+      "Type": "Filter",
+      "Bones": [
+        "n_buki_",
+        "j_buki"
+      ]
+    },
+    "prop": {
+      "Type": "Filter",
+      "Bones": []
+    },
+    "ornament": {
+      "Type": "Filter",
+      "Bones": []
+    },
+     "ex": {
+      "Type": "Filter",
+      "Bones": [
+        "j_f_noanim_ago",
+        "J_f_eyeprm_01_",
+        "j_f_eyeprm_02_",
+        "j_f_irisprm_",
+        "j_f_irisprm_",
+        "j_f_noanim_eyesize_",
+        "j_f_eyeprmroll_r"
+      ]
+    },
+    "legacy": {
+      "Type": "Filter",
+      "Bones": [
+        "j_ago",
+        "j_f_dmab_",
+        "j_f_umab_",
+        "j_f_memoto",
+        "j_f_miken_r",
+        "j_f_miken_l",
+        "j_f_ulip_b",
+        "j_f_lip_l",
+        "j_f_lip_r",
+        "j_f_dlip_b",
+        "j_f_dlip_a",
+        "j_f_ulip_a"
+      ]
+    },
+    "other": {
+      "Type": "Filter",
+      "Bones": []
+    }
+  }
+}

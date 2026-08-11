@@ -21,6 +21,15 @@ public class PoseFile
     public string? Description { get; set; }
     public string? Version { get; set; }
     public string? Base64Image { get; set; }
+
+    /// <summary>
+    /// Poser writes a plain string array; Brio's <c>TagCollection</c> writes
+    /// an array of tag OBJECTS. The converter reads both so a Brio-authored
+    /// .pose or clipboard payload that carries tags still loads — without it
+    /// the shape mismatch rejects the entire document, not just its tags
+    /// (<see cref="Converters.TagListConverter"/>).
+    /// </summary>
+    [JsonConverter(typeof(Converters.TagListConverter))]
     public List<string>? Tags { get; set; }
 
     public BoneData ModelDifference { get; set; } = BoneData.Identity;

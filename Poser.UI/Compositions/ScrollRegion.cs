@@ -29,12 +29,18 @@ public static partial class Crystarium
             new Vector2(width * scale, height * scale),
             false,
             ImGuiWindowFlags.NoSavedSettings);
+        // ImGui emits window decorations — the scrollbar among them — inside
+        // Begin, so the thumb is always in the prefix of the child's vertex
+        // buffer that precedes any content. Recording the split here bounds the
+        // rewrite below to those few vertices instead of the whole child (a
+        // library grid runs to thousands, every frame).
+        int decorationVertices = CurrentVertexCount();
         if (visible)
         {
             float contentWidth = MathF.Max(0f, width - gutter);
             content(new ScrollRegionScope(contentWidth, scale));
         }
-        NarrowVisibleScrollbarThumb();
+        NarrowVisibleScrollbarThumb(decorationVertices);
         ImGui.EndChild();
         ImGui.PopStyleVar();
         PopScrollbarStyle();
@@ -127,10 +133,19 @@ public static partial class Crystarium
         ImGui.PopStyleVar(2);
     }
 
+    private static unsafe int CurrentVertexCount() =>
+        ImGui.GetWindowDrawList().VtxBuffer.Size;
+
     /// <summary>Keeps the canonical gutter and hit target intact while
     /// narrowing only ImGui's emitted visible grab geometry.</summary>
-    private static unsafe void NarrowVisibleScrollbarThumb()
+    /// <param name="vertexCount">Exclusive end of the decoration prefix
+    /// recorded right after BeginChild. Zero means the child drew no
+    /// decorations at all, so there is no thumb to narrow.</param>
+    private static unsafe void NarrowVisibleScrollbarThumb(int vertexCount)
     {
+        if (vertexCount <= 0)
+            return;
+
         var draw = ImGui.GetWindowDrawList();
         float scale = ImGuiHelpers.GlobalScale;
         float gutter = Crystarium.ActiveTheme.Scrollbar.GutterWidth * scale;
@@ -141,7 +156,7 @@ public static partial class Crystarium
         uint hovered = ImGui.GetColorU32(ImGuiCol.ScrollbarGrabHovered);
         uint active = ImGui.GetColorU32(ImGuiCol.ScrollbarGrabActive);
         var vertices = (ImDrawVert*)draw.VtxBuffer.Data;
-        for (int i = 0; i < draw.VtxBuffer.Size; i++)
+        for (int i = 0; i < vertexCount; i++)
         {
             ref var vertex = ref vertices[i];
             if (vertex.Pos.X < left || vertex.Pos.X > right)

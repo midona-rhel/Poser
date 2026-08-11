@@ -10,6 +10,8 @@ public sealed class SceneSession
     private SceneSnapshot _snapshot = SceneSnapshot.Empty;
     private readonly Dictionary<Guid, ActorDescriptor> _actors = new();
     private readonly Dictionary<BoneLineage, BoneDescriptor> _bones = new();
+    private readonly Dictionary<Guid, LightDescriptor> _lights = new();
+    private readonly Dictionary<Guid, CameraDescriptor> _cameras = new();
 
     public SceneSession(SelectionSession selection)
     {
@@ -28,6 +30,8 @@ public sealed class SceneSession
 
         _actors.Clear();
         _bones.Clear();
+        _lights.Clear();
+        _cameras.Clear();
         foreach (var actor in snapshot.Actors)
         {
             _actors[actor.Id.LogicalId] = actor;
@@ -35,6 +39,12 @@ public sealed class SceneSession
             foreach (var bone in skeleton.Bones)
                 _bones[BoneLineage.From(bone.Id)] = bone;
         }
+
+        foreach (var light in snapshot.Lights)
+            _lights[light.Id.LogicalId] = light;
+
+        foreach (var camera in snapshot.Cameras)
+            _cameras[camera.Id.LogicalId] = camera;
 
         _snapshot = snapshot;
         Selection.Reconcile(Resolve);
@@ -48,6 +58,11 @@ public sealed class SceneSession
                 ? SelectionId.ForActor(current.Id)
                 : null;
 
+        if (id.Kind == SceneEntityKind.GazeTarget && id.Actor is { } gazeActor)
+            return _actors.TryGetValue(gazeActor.LogicalId, out var gazeOwner)
+                ? SelectionId.ForGazeTarget(gazeOwner.Id, id.Gaze ?? GazePart.Anchor)
+                : null;
+
         if (id.Kind == SceneEntityKind.Bone && id.Bone is { } bone)
         {
             if (_bones.TryGetValue(BoneLineage.From(bone), out var current))
@@ -58,6 +73,18 @@ public sealed class SceneSession
                 ? SelectionId.ForActor(owner.Id)
                 : null;
         }
+
+        // A destroyed light has no owner to fall back to; the selection drops.
+        if (id.Kind == SceneEntityKind.Light && id.Light is { } light)
+            return _lights.TryGetValue(light.LogicalId, out var currentLight)
+                ? SelectionId.ForLight(currentLight.Id)
+                : null;
+
+        // A destroyed camera drops the same way.
+        if (id.Kind == SceneEntityKind.Camera && id.Camera is { } camera)
+            return _cameras.TryGetValue(camera.LogicalId, out var currentCamera)
+                ? SelectionId.ForCamera(currentCamera.Id)
+                : null;
 
         return id;
     }
@@ -73,6 +100,10 @@ public sealed class SceneSession
                 target.Bone is { } bone &&
                 _bones.TryGetValue(BoneLineage.From(bone), out var current) &&
                 current.Id == bone,
+            TransformTargetKind.Light =>
+                target.Light is { } light &&
+                _lights.TryGetValue(light.LogicalId, out var currentLight) &&
+                currentLight.Id == light,
             _ => false,
         };
 

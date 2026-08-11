@@ -43,10 +43,63 @@ public sealed record ActorDescriptor(
     }
 }
 
+public enum LightKind
+{
+    Directional,
+    Point,
+    Spot,
+    Area,
+}
+
+/// <summary>Who owns the native light. Spawned lights are plugin-created and
+/// destroyable; GPose lights are the game's three camera lights (delist-only);
+/// World lights are captured copies of overworld lights whose suppressed
+/// original is restored on release.</summary>
+public enum LightOwnership
+{
+    Spawned,
+    GPose,
+    World,
+}
+
+/// <summary>One scene light. Live light properties are read through
+/// the lighting service; the descriptor carries only sidebar-visible state.</summary>
+public sealed record LightDescriptor(
+    LightId Id,
+    string Name,
+    LightKind Kind,
+    bool IsOn = true,
+    LightOwnership Ownership = LightOwnership.Spawned);
+
+/// <summary>How a virtual camera drives the game camera. A Game camera is the
+/// native orbit camera with overridden state; a Free camera replaces the view
+/// matrix outright and flies on its own position and rotation.</summary>
+public enum CameraKind
+{
+    Game,
+    Free,
+}
+
+/// <summary>One virtual camera. Live camera properties are read through the
+/// camera service; the descriptor carries only sidebar-visible state. IsLive
+/// marks the one camera currently driving the game's view.</summary>
+public sealed record CameraDescriptor(
+    CameraId Id,
+    string Name,
+    CameraKind Kind,
+    bool IsLive = false,
+    bool IsDefault = false);
+
 public sealed record SceneSnapshot(
     ulong Revision,
-    IReadOnlyList<ActorDescriptor> Actors)
+    IReadOnlyList<ActorDescriptor> Actors,
+    IReadOnlyList<LightDescriptor> Lights,
+    IReadOnlyList<CameraDescriptor> Cameras)
 {
     public static SceneSnapshot Empty { get; } =
-        new(0, Array.Empty<ActorDescriptor>());
+        new(
+            0,
+            Array.Empty<ActorDescriptor>(),
+            Array.Empty<LightDescriptor>(),
+            Array.Empty<CameraDescriptor>());
 }

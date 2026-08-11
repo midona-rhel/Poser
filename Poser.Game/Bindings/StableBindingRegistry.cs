@@ -31,6 +31,8 @@ public sealed class StableBindingRegistry
     private readonly IActorManager _actors;
     private readonly ISkeletonService _skeletons;
     private readonly IActorSpawnService _spawn;
+    private readonly ILightingService _lighting;
+    private readonly IVirtualCameraService _cameras;
     private readonly Dictionary<string, ActorLineage> _lineages =
         new(StringComparer.Ordinal);
     private Dictionary<ActorId, IActor> _actorBindings = new();
@@ -39,16 +41,31 @@ public sealed class StableBindingRegistry
         new(StringComparer.Ordinal);
     private Dictionary<(string Actor, PoseSlot Slot, int Partial, int Index), BoneId>
         _legacyBoneIds = new();
+    // Lights are plugin-owned objects with no native identity to re-derive, so
+    // their id is minted once per instance and kept by reference identity;
+    // generation never advances because the instance dies with the light.
+    private Dictionary<ILight, LightId> _lightIds =
+        new(LightReferenceComparer.Instance);
+    private Dictionary<LightId, ILight> _lightBindings = new();
+    // Cameras follow the light rule exactly: plugin-owned instances, ids by
+    // reference identity, the instance dies with the camera.
+    private Dictionary<IVirtualCamera, CameraId> _cameraIds =
+        new(ReferenceComparer<IVirtualCamera>.Instance);
+    private Dictionary<CameraId, IVirtualCamera> _cameraBindings = new();
     private ulong _revision;
 
     public StableBindingRegistry(
         IActorManager actors,
         ISkeletonService skeletons,
-        IActorSpawnService spawn)
+        IActorSpawnService spawn,
+        ILightingService lighting,
+        IVirtualCameraService cameras)
     {
         _actors = actors;
         _skeletons = skeletons;
         _spawn = spawn;
+        _lighting = lighting;
+        _cameras = cameras;
     }
 
     public SceneSnapshot CurrentSnapshot { get; private set; } =
@@ -72,6 +89,15 @@ public sealed class StableBindingRegistry
         var actorDescriptors = new List<ActorDescriptor>();
 
         foreach (var actor in _actors.Actors)
+            BindActor(actor, actorDescriptors);
+
+        // Auxiliary bodies (the CharaView preview) get ids and bone bindings
+        // so the import pipeline can reach them, but NO scene descriptor: the
+        // snapshot is what every pane, picker, and gizmo draws from.
+        foreach (var actor in _actors.AuxiliaryActors)
+            BindActor(actor, null);
+
+        void BindActor(IActor actor, List<ActorDescriptor>? descriptors)
         {
             var legacyKey = actor.Id.Unique;
             if (!_lineages.TryGetValue(legacyKey, out var lineage))
@@ -160,7 +186,7 @@ public sealed class StableBindingRegistry
             }
             actorBindings[actorId] = actor;
             legacyActorIds[legacyKey] = actorId;
-            actorDescriptors.Add(new ActorDescriptor(
+            descriptors?.Add(new ActorDescriptor(
                 actorId,
                 actor.Name,
                 skeletonDescriptors,
@@ -176,13 +202,63 @@ public sealed class StableBindingRegistry
                 slot.PresentBeforeScan = slot.Present;
         }
 
+        // Lights present and still valid keep their id; anything else drops
+        // out of both maps with this rebuild.
+        var lightIds = new Dictionary<ILight, LightId>(
+            LightReferenceComparer.Instance);
+        var lightBindings = new Dictionary<LightId, ILight>();
+        var lightDescriptors = new List<LightDescriptor>();
+        foreach (var light in _lighting.Lights)
+        {
+            if (!light.IsValid)
+                continue;
+            if (!_lightIds.TryGetValue(light, out var lightId))
+                lightId = LightId.New();
+            lightIds[light] = lightId;
+            lightBindings[lightId] = light;
+            lightDescriptors.Add(new LightDescriptor(
+                lightId,
+                light.Name,
+                light.Kind,
+                light.IsOn,
+                light.Ownership));
+        }
+
+        // Cameras keep their id while present and valid, exactly as lights
+        // do; the default camera lists first because the service keeps it so.
+        var cameraIds = new Dictionary<IVirtualCamera, CameraId>(
+            ReferenceComparer<IVirtualCamera>.Instance);
+        var cameraBindings = new Dictionary<CameraId, IVirtualCamera>();
+        var cameraDescriptors = new List<CameraDescriptor>();
+        foreach (var camera in _cameras.Cameras)
+        {
+            if (!camera.IsValid)
+                continue;
+            if (!_cameraIds.TryGetValue(camera, out var cameraId))
+                cameraId = CameraId.New();
+            cameraIds[camera] = cameraId;
+            cameraBindings[cameraId] = camera;
+            cameraDescriptors.Add(new CameraDescriptor(
+                cameraId,
+                camera.Name,
+                camera.Kind,
+                camera.IsLive,
+                camera.IsDefault));
+        }
+
         _actorBindings = actorBindings;
         _boneBindings = boneBindings;
         _legacyActorIds = legacyActorIds;
         _legacyBoneIds = legacyBoneIds;
+        _lightIds = lightIds;
+        _lightBindings = lightBindings;
+        _cameraIds = cameraIds;
+        _cameraBindings = cameraBindings;
         CurrentSnapshot = new SceneSnapshot(
             checked(++_revision),
-            actorDescriptors);
+            actorDescriptors,
+            lightDescriptors,
+            cameraDescriptors);
         return CurrentSnapshot;
     }
 
@@ -209,6 +285,64 @@ public sealed class StableBindingRegistry
                ReferenceEquals(bound, bone)
             ? id
             : null;
+    }
+
+    public LightId? GetLightId(ILight light) =>
+        _lightIds.TryGetValue(light, out var id) &&
+        _lightBindings.TryGetValue(id, out var bound) &&
+        ReferenceEquals(bound, light)
+            ? id
+            : null;
+
+    public CameraId? GetCameraId(IVirtualCamera camera) =>
+        _cameraIds.TryGetValue(camera, out var id) &&
+        _cameraBindings.TryGetValue(id, out var bound) &&
+        ReferenceEquals(bound, camera)
+            ? id
+            : null;
+
+    public BindingResult<IVirtualCamera> Resolve(CameraId id)
+    {
+        if (_cameraBindings.TryGetValue(id, out var camera) && camera.IsValid)
+            return new BindingResult<IVirtualCamera>(
+                BindingStatus.Success,
+                camera);
+
+        foreach (var candidate in _cameraBindings.Keys)
+        {
+            if (candidate.LogicalId != id.LogicalId)
+                continue;
+            return new BindingResult<IVirtualCamera>(
+                BindingStatus.StaleTarget,
+                Detail:
+                $"Camera generation {id.Generation} is stale; current is {candidate.Generation}.");
+        }
+
+        return new BindingResult<IVirtualCamera>(
+            BindingStatus.Missing,
+            Detail: $"Camera {id.LogicalId:N} is not present.");
+    }
+
+    public BindingResult<ILight> Resolve(LightId id)
+    {
+        if (_lightBindings.TryGetValue(id, out var light) && light.IsValid)
+            return new BindingResult<ILight>(
+                BindingStatus.Success,
+                light);
+
+        foreach (var candidate in _lightBindings.Keys)
+        {
+            if (candidate.LogicalId != id.LogicalId)
+                continue;
+            return new BindingResult<ILight>(
+                BindingStatus.StaleTarget,
+                Detail:
+                $"Light generation {id.Generation} is stale; current is {candidate.Generation}.");
+        }
+
+        return new BindingResult<ILight>(
+            BindingStatus.Missing,
+            Detail: $"Light {id.LogicalId:N} is not present.");
     }
 
     public BindingResult<IActor> Resolve(ActorId id)
@@ -260,6 +394,31 @@ public sealed class StableBindingRegistry
         return new BindingResult<IBone>(
             BindingStatus.Missing,
             Detail: $"Bone {id} is not present.");
+    }
+
+    /// <summary>Light identity is instance identity: two distinct lights with
+    /// identical settings are never the same light.</summary>
+    private sealed class LightReferenceComparer : IEqualityComparer<ILight>
+    {
+        public static LightReferenceComparer Instance { get; } = new();
+
+        public bool Equals(ILight? x, ILight? y) => ReferenceEquals(x, y);
+
+        public int GetHashCode(ILight obj) =>
+            System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
+    }
+
+    /// <summary>Instance identity for any plugin-owned entity — the camera's
+    /// twin of the light comparer.</summary>
+    private sealed class ReferenceComparer<T> : IEqualityComparer<T>
+        where T : class
+    {
+        public static ReferenceComparer<T> Instance { get; } = new();
+
+        public bool Equals(T? x, T? y) => ReferenceEquals(x, y);
+
+        public int GetHashCode(T obj) =>
+            System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
     }
 
     private sealed class ActorLineage(Guid logicalId)

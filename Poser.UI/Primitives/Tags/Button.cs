@@ -110,7 +110,8 @@ public static partial class Crystarium
         string? help = null,
         string? id = null,
         bool slashed = false,
-        bool flipX = false)
+        bool flipX = false,
+        bool dimmed = false)
     {
         var size = IconButtonSize(style);
         return RenderTemporaryIconToggle(
@@ -122,7 +123,8 @@ public static partial class Crystarium
             help,
             (min, max, opacity) => DrawLegacyButtonIcon(
                 min, max, icon, opacity, flipX),
-            onClick);
+            onClick,
+            dimmed);
     }
 
     /// <summary>Slice-5 bridge for registered custom SVG toggles.</summary>
@@ -172,7 +174,7 @@ public static partial class Crystarium
     internal static float ResolveButtonWidth(
         string label, ControlStyle style, float availableWidth) =>
         ControlSizing.Width(
-            style.Width,
+            style,
             IntrinsicButtonWidth(label, style),
             availableWidth);
 
@@ -535,11 +537,17 @@ public static partial class Crystarium
         bool disabled,
         string? help,
         Action<Vector2, Vector2, float> content,
-        Action? onClick)
+        Action? onClick,
+        bool dimmed = false)
     {
         float scale = ImGuiHelpers.GlobalScale;
         var hit = Interactive.Reserve(id, logicalSize * scale, disabled);
         float opacity = ToggleOpacity(disabled);
+        // A dimmed toggle states "not the active one" as a quieter glyph
+        // rather than a slash: still fully interactive, half present. Hover
+        // restores it, so the target reads live under the pointer.
+        if (dimmed && !disabled && !hit.Hovered)
+            opacity *= 0.45f;
         var draw = ImGui.GetWindowDrawList();
         PaintTemporaryToggleBox(
             draw, hit.ScreenMin, hit.ScreenMax, selected, hit.Hovered, disabled);
@@ -641,7 +649,7 @@ public static partial class Crystarium
                 style.Height,
                 ActiveTheme.Controls.ShellIconAction);
         float width = ControlSizing.Width(
-            style.Width,
+            style,
             height,
             ImGui.GetContentRegionAvail().X / ImGuiHelpers.GlobalScale);
         return new(width, height);
