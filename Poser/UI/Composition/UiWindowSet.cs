@@ -64,6 +64,9 @@ public sealed class UiWindowSet : IDisposable
         SidebarPart.OnReattach += ToggleDetached;
         ToolbarPart.OnReattach += ToggleDetached;
         Main.OnDetachToggleRequested += ToggleDetached;
+        // The strip's window roster: Scene closes and reopens from there.
+        Main.GetSceneWindowOpen = () => SidebarPart.IsOpen;
+        Main.OnSceneWindowToggleRequested += ToggleSceneWindow;
 
         Settings = settings;
         System.AddWindow(Settings);
@@ -111,7 +114,12 @@ public sealed class UiWindowSet : IDisposable
         bool detached = Main.IsOpen && _configService.Config.UI.DetachedShell;
         SidebarPart.IsOpen = detached;
         ToolbarPart.IsOpen = detached;
+        if (!detached)
+            Main.ContentHidden = false;
     }
+
+    private void ToggleSceneWindow() =>
+        SidebarPart.IsOpen = !SidebarPart.IsOpen;
 
     /// <summary>THE layout toggle. Detaching seats the sidebar window where
     /// the sidebar column stood and the toolbar strip above the old
@@ -187,6 +195,7 @@ public sealed class UiWindowSet : IDisposable
         Main.OnSkeletonOverlayToggled -= SetSkeletonOverlayOpen;
         Main.OnPopOutRequested -= CreatePopOut;
         Main.OnDetachToggleRequested -= ToggleDetached;
+        Main.OnSceneWindowToggleRequested -= ToggleSceneWindow;
         _overlayPresentation.Clear();
         System.RemoveAllWindows();
     }

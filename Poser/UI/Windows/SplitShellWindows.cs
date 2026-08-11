@@ -146,17 +146,6 @@ public sealed class SidebarPartWindow : Window
             });
 
         float closeSide = theme.Floating.CloseActionSize;
-        if (vm.ShowSpawn)
-        {
-            ImGui.SetCursorScreenPos(new Vector2(
-                max.X - theme.Floating.CloseInset * s
-                    - (closeSide + theme.Page.ActionGap + side) * s,
-                y));
-            Crystarium.IconButton(
-                TablerIcon.Plus, vm.OnSpawn, ControlStyle.Square(side),
-                help: "Add an actor or prop to the scene",
-                id: "##shell-spawn");
-        }
         ImGui.SetCursorScreenPos(new Vector2(
             max.X - theme.Floating.CloseInset * s - closeSide * s,
             min.Y + (height - closeSide * s) * 0.5f));

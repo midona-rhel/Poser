@@ -154,6 +154,7 @@ public sealed class AppShellViewModel
     /// inspector. Off is the compact single-window UI.</summary>
     public bool Detached;
 
+
     /// <summary>What the content's title names: the selected entity
     /// ("Sterling Vane", "Environment", "Library"), never the brand — the
     /// brand rides the toolbar.</summary>
@@ -410,11 +411,12 @@ public static class AppShellView
         else
         {
             DrawBrand(vm, min, height, s, dl);
-            // The title cell's content stops at the divider it carries.
+            // The title cell's content stops at the divider's x whether or
+            // not the divider paints this state: collapse must not shift the
+            // cluster by the rule's pixel (user 2026-08-11).
             DrawHistory(
                 vm,
-                min.X + cellWidth - (vm.Collapsed ? 0f : rule)
-                    - TitleActionInset * s,
+                min.X + cellWidth - rule - TitleActionInset * s,
                 min.Y,
                 height,
                 s);
@@ -1165,7 +1167,16 @@ public static class AppShellView
             disabled: !vm.CanRedo,
             flipX: true,
             help: vm.CanRedo ? _redoHelp : _redoEmptyHelp);
-        x += side * s + CenterInset * s;
+        x += step;
+        if (vm.ShowSpawn)
+        {
+            IconAt(
+                new Vector2(x, y), TablerIcon.Plus, side, vm.OnSpawn,
+                "##shell-spawn",
+                help: "Add an actor or prop to the scene");
+            x += step;
+        }
+        x += CenterInset * s - theme.Spacing.Two * s;
         DrawGizmoCluster(vm, x, origin.Y, height, s);
     }
 
@@ -1176,12 +1187,14 @@ public static class AppShellView
         float s = ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
         float gap = theme.Page.ActionGap * s;
-        float step = (theme.Controls.ShellIconAction + theme.Spacing.Two) * s;
+        float side = theme.Controls.ShellIconAction;
+        float step = (side + theme.Spacing.Two) * s;
+        // Burger, undo, redo, spawn, then the two window toggles at the end.
+        float icons = step * (vm.ShowSpawn ? 4f : 3f);
         return MeasureBrandPill(vm, s)
             + CenterInset * s
-            + step * 2f
-            + theme.Controls.ShellIconAction * s
-            + CenterInset * s
+            + icons
+            + CenterInset * s - theme.Spacing.Two * s
             + Crystarium.MeasureSegmentedControl(GizmoIcons).X + gap
             + Crystarium.MeasureSegmentedControl(SpaceItems).X + gap
             + Crystarium.MeasureSegmentedControl(PivotItems).X + gap
