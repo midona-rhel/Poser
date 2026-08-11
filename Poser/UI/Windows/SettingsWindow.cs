@@ -108,8 +108,9 @@ public class SettingsWindow : Window
             Theme = c.UI.Theme,
             AccentIndex = c.UI.AccentIndex,
 
-            SidebarDock = (int)c.UI.SidebarDock,
-            InspectorDock = (int)c.UI.InspectorDock,
+            SplitSidebar = c.UI.SplitSidebar,
+            SplitToolbar = c.UI.SplitToolbar,
+            SplitInspector = c.UI.SplitInspector,
             TreeGuides = c.UI.ShowTreeGuides,
 
             UseLibraryWhenImporting = c.Library.UseLibraryWhenImporting,
@@ -203,8 +204,9 @@ public class SettingsWindow : Window
         c.UI.Theme = _vm.Theme;
         c.UI.AccentIndex = _vm.AccentIndex;
 
-        c.UI.SidebarDock = (PanelDock)_vm.SidebarDock;
-        c.UI.InspectorDock = (PanelDock)_vm.InspectorDock;
+        c.UI.SplitSidebar = _vm.SplitSidebar;
+        c.UI.SplitToolbar = _vm.SplitToolbar;
+        c.UI.SplitInspector = _vm.SplitInspector;
         c.UI.ShowTreeGuides = _vm.TreeGuides;
 
         foreach (var (action, binding) in _vm.Keybinds)

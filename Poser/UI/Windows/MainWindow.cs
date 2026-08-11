@@ -62,6 +62,8 @@ public class MainWindow : Window
     /// <summary>Whether the rows were last built with a posable target.</summary>
     private bool _shellMenuPoseTarget;
     private bool _shellMenuRowsBuilt;
+    /// <summary>The split flags the rows were last built under, packed.</summary>
+    private int _shellMenuLayoutState = -1;
     private bool _ctxOpenRequested;
     private BoneId? _ctxBoneId;
     private IReadOnlyList<BoneId>? _ctxBoneOverlayBones;
@@ -95,6 +97,11 @@ public class MainWindow : Window
     private readonly HashSet<string> _knownActorNodes = new();
     private float _sidebarWidth = 280f;
     private readonly AppShellViewModel _vm = new();
+
+    /// <summary>The per-frame shell view model, for the split-part windows —
+    /// they are registered after this window, so a frame's model is already
+    /// built when they read it.</summary>
+    internal AppShellViewModel ShellVm => _vm;
     private string _activeTab = "Pose";
 
     /// <summary>The workspace is showing the pose library instead of the
@@ -290,6 +297,10 @@ public class MainWindow : Window
     /// the browser opens AT and the tab that affordance answers for.</summary>
     public event Action<Vector2, SpawnBrowserTab>? OnSpawnBrowserRequested;
 
+    /// <summary>Pop out the main content, frozen to this actor. The window
+    /// set answers by minting a <see cref="PopOutWindow"/>.</summary>
+    public event Action<ActorId>? OnPopOutRequested;
+
     public MainWindow(
         IGPoseService gPoseService,
         IActorManager actorManager,
@@ -324,7 +335,9 @@ public class MainWindow : Window
     {
         Size = new Vector2(DefaultWidth, DefaultHeight);
         SizeCondition = ImGuiCond.FirstUseEver;
-        SizeConstraints = ExpandedSizeConstraints();
+        // Construction predates the configuration read; PreDraw restates the
+        // effective floor every frame anyway.
+        SizeConstraints = ExpandedSizeConstraints(MinimumWidth);
 
         _gPoseService = gPoseService;
         _actorManager = actorManager;
@@ -425,6 +438,11 @@ public class MainWindow : Window
             _shellMenuOpenRequested = true;
         };
         _vm.OnHideUi = () => IsOpen = false;
+        _vm.OnPopOut = () =>
+        {
+            if (SelectedActorId() is { } popOut)
+                OnPopOutRequested?.Invoke(popOut);
+        };
         // The sidebar's add affordance. Every section plus opens the ONE
         // spawn browser, at the pointer, on that section's own tab — the
         // browser replaced the per-section mini choosers (user 2026-08-11:
@@ -611,14 +629,16 @@ public class MainWindow : Window
 
         // ONE width for the whole shell: every tab keeps the inspector
         // rail, so navigating can never move the frame. Only collapse and
-        // restore write Size.
+        // restore write Size. Split parts release their width: the floor
+        // follows what is actually attached this frame.
+        float minimumWidth = EffectiveMinimumWidth();
         SizeConstraints = _collapsed
             ? new WindowSizeConstraints
             {
-                MinimumSize = new Vector2(MinimumWidth, AppShellView.TitlebarHeight),
+                MinimumSize = new Vector2(minimumWidth, AppShellView.TitlebarHeight),
                 MaximumSize = new Vector2(float.MaxValue, AppShellView.TitlebarHeight),
             }
-            : ExpandedSizeConstraints();
+            : ExpandedSizeConstraints(minimumWidth);
 
         // Collapse and restore go through the Dalamud window size system;
         // ImGui.SetWindowSize inside Draw loses to it.
@@ -663,12 +683,26 @@ public class MainWindow : Window
     private float _lastWidth = DefaultWidth;
     private float _lastHeight = DefaultHeight;
 
-    private static WindowSizeConstraints ExpandedSizeConstraints()
+    private static WindowSizeConstraints ExpandedSizeConstraints(float minimumWidth)
         => new()
         {
-            MinimumSize = new Vector2(MinimumWidth, MinHeight),
+            MinimumSize = new Vector2(minimumWidth, MinHeight),
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue),
         };
+
+    /// <summary>The width floor for what is attached THIS frame: the shared
+    /// 1110px covers sidebar + content + rail; each split part hands its
+    /// column back.</summary>
+    private float EffectiveMinimumWidth()
+    {
+        var ui = Config.ConfigurationService.Instance.Config.UI;
+        float minimum = MinimumWidth;
+        if (ui.SplitSidebar)
+            minimum -= Crystarium.ActiveTheme.Shell.SidebarDefaultWidth;
+        if (ui.SplitInspector)
+            minimum -= AppShellView.RailWidth;
+        return minimum;
+    }
 
     public override void Draw()
     {
@@ -742,6 +776,10 @@ public class MainWindow : Window
         _vm.GPoseActive = _gPoseService.IsGPosing;
         _vm.SidebarWidthPx = _sidebarWidth;
         _vm.Collapsed = _collapsed;
+        var uiConfig = Config.ConfigurationService.Instance.Config.UI;
+        _vm.SidebarSplit = uiConfig.SplitSidebar;
+        _vm.ToolbarSplit = uiConfig.SplitToolbar;
+        _vm.InspectorSplit = uiConfig.SplitInspector;
         // The shell's retained per-row state is swept on structural change
         // only: an identical rescan publishes no new revision, so hover and
         // interaction identity survive every refresh that changed nothing.
@@ -758,11 +796,13 @@ public class MainWindow : Window
         // width. The outer window size is untouched by tab changes.
         // Library mode's rail hosts the import options (user placement);
         // every other mode keeps the selection-typed rail.
-        _vm.DrawRail = _collapsed
-            ? null
-            : _libraryMode
-                ? _poseFileSection.DrawOptionsRail
-                : _poseRail.Draw;
+        //
+        // The delegate is stated even while collapsed: the shell's own
+        // titlebar guard ignores it then, but a SPLIT inspector window keeps
+        // hosting the rail through a collapse of the main window.
+        _vm.DrawRail = _libraryMode
+            ? _poseFileSection.DrawOptionsRail
+            : _poseRail.Draw;
 
         _vm.GizmoOperation = (int)_editorState.TransformTool;
         _vm.GizmoSpace = (int)_editorState.TransformOrientation;
@@ -797,7 +837,9 @@ public class MainWindow : Window
         _vm.SkeletonOverlayOn = GetSkeletonOverlayOn?.Invoke() ?? false;
         _vm.CanUndo = _cleanTransforms.CanUndo;
         _vm.CanRedo = _cleanTransforms.CanRedo;
-        _vm.ShowPopOut = false;
+        // Pop-out follows the toolbar actor: any selection that resolves to
+        // an actor can be frozen into its own content window.
+        _vm.ShowPopOut = toolbarActor != null && !_libraryMode;
         // Entity creation has two entry points by design (approved shell): the
         // titlebar action and the ACTORS header. Both open the SAME surface,
         // the spawn browser (the LIGHTS and CAMERAS header pluses are the
@@ -986,7 +1028,7 @@ public class MainWindow : Window
                 Array.Fill(_categorySlots, -1);
                 foreach (var bone in skeleton.Bones)
                 {
-                    if (bone.IsHidden) continue;
+                    if (bone.IsHidden || IsBoneSuppressed(bone)) continue;
                     var cat = Core.BoneInfo.BoneInfoService.GetCategory(bone.Id.CanonicalName);
                     var slot = _categorySlots[(int)cat];
                     if (slot < 0)
@@ -1015,7 +1057,12 @@ public class MainWindow : Window
             bool hasMatchingAux = false;
             if (filtering)
             {
-                actorMatches = MatchesSidebarFilter(filter, actorLabel, actor.Name);
+                // Under anonymous mode the RAW name is not a match candidate:
+                // typing the real name must not locate the masked actor.
+                actorMatches =
+                    Config.ConfigurationService.Instance.Config.Display.AnonymousMode
+                        ? MatchesSidebarFilter(filter, actorLabel)
+                        : MatchesSidebarFilter(filter, actorLabel, actor.Name);
                 foreach (var (cat, bones) in groups)
                 {
                     if (MatchesSidebarFilter(
@@ -1046,7 +1093,7 @@ public class MainWindow : Window
                     }
                     foreach (var bone in aux.Bones)
                     {
-                        if (bone.IsHidden ||
+                        if (bone.IsHidden || IsBoneSuppressed(bone) ||
                             !MatchesSidebarFilter(
                                 filter, bone.DisplayName, bone.Id.CanonicalName))
                             continue;
@@ -1420,7 +1467,9 @@ public class MainWindow : Window
         var shown = new List<(SkeletonDescriptor Aux, List<BoneDescriptor> Visible, List<BoneDescriptor> Matching, bool GroupMatches)>();
         foreach (var aux in auxSkeletons)
         {
-            var visible = aux.Bones.Where(bone => !bone.IsHidden).ToList();
+            var visible = aux.Bones
+                .Where(bone => !bone.IsHidden && !IsBoneSuppressed(bone))
+                .ToList();
             if (visible.Count == 0)
                 continue;
             bool groupMatches = MatchesSidebarFilter(filter, SlotLabel(aux.Id.Slot));
@@ -1545,14 +1594,22 @@ public class MainWindow : Window
         return false;
     }
 
+    /// <summary>Extended/IVCS bones are DISPLAY-suppressed while
+    /// Display.ShowNsfwBones is off. Read live per build: the snapshot's own
+    /// IsHidden and every selection path are untouched.</summary>
+    private static bool IsBoneSuppressed(BoneDescriptor bone)
+        => !Config.ConfigurationService.Instance.Config.Display.ShowNsfwBones
+            && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName);
+
     /// <summary>Nickname, else the anonymous mask when enabled, else the
-    /// cleaned snapshot name — one stable-id display API for every surface.</summary>
-    private static string ActorDisplayName(ActorDescriptor actor)
+    /// cleaned snapshot name — one stable-id display API for every surface,
+    /// the pop-out windows included.</summary>
+    internal static string ActorDisplayName(ActorDescriptor actor)
         => Config.ConfigurationService.Instance.GetDisplayName(
             actor.Id.LogicalId, DisplayName(actor.Name));
 
     /// <summary>Strips the raw object-index suffix ("Name (201)") for display.</summary>
-    private static string DisplayName(string name)
+    internal static string DisplayName(string name)
         => System.Text.RegularExpressions.Regex.Replace(name, @"\s*\(\d+\)$", "");
 
     private void BuildTabs(SelectionId? primary)
@@ -2024,6 +2081,11 @@ public class MainWindow : Window
         ImportPose,
         ExportPose,
         AutoSaves,
+        LayoutSeparator,
+        PopOutContent,
+        DetachSidebar,
+        DetachToolbar,
+        DetachInspector,
         SettingsSeparator,
         OpenSettings,
     }
@@ -2059,10 +2121,17 @@ public class MainWindow : Window
         // has no right-clicked row to take a skeleton from. Same gate the actor
         // context menu applies to the same three commands.
         bool poseTarget = SelectedSkeleton() != null;
-        if (_shellMenuRowsBuilt && poseTarget == _shellMenuPoseTarget)
+        var uiConfig = Config.ConfigurationService.Instance.Config.UI;
+        int layoutState = (uiConfig.SplitSidebar ? 1 : 0)
+            | (uiConfig.SplitToolbar ? 2 : 0)
+            | (uiConfig.SplitInspector ? 4 : 0);
+        if (_shellMenuRowsBuilt
+            && poseTarget == _shellMenuPoseTarget
+            && layoutState == _shellMenuLayoutState)
             return;
         _shellMenuRowsBuilt = true;
         _shellMenuPoseTarget = poseTarget;
+        _shellMenuLayoutState = layoutState;
 
         _shellMenuItems[(int)ShellCommand.ShowLibrary] =
             new ContextMenuItem("Show library", TablerIcon.Photo);
@@ -2077,10 +2146,51 @@ public class MainWindow : Window
         _shellMenuItems[(int)ShellCommand.AutoSaves] =
             new ContextMenuItem(
                 "Auto-saves", TablerIcon.ArrowBackUp, disabled: !poseTarget);
+        _shellMenuItems[(int)ShellCommand.LayoutSeparator] =
+            ContextMenuItem.Separator;
+        _shellMenuItems[(int)ShellCommand.PopOutContent] =
+            new ContextMenuItem(
+                "Pop out content", TablerIcon.ArrowsDiagonal,
+                disabled: !poseTarget);
+        _shellMenuItems[(int)ShellCommand.DetachSidebar] =
+            new ContextMenuItem(
+                uiConfig.SplitSidebar ? "Attach sidebar" : "Detach sidebar",
+                TablerIcon.LayoutPanel);
+        _shellMenuItems[(int)ShellCommand.DetachToolbar] =
+            new ContextMenuItem(
+                uiConfig.SplitToolbar ? "Attach toolbar" : "Detach toolbar",
+                TablerIcon.ArrowsMove);
+        _shellMenuItems[(int)ShellCommand.DetachInspector] =
+            new ContextMenuItem(
+                uiConfig.SplitInspector
+                    ? "Attach inspector"
+                    : "Detach inspector",
+                TablerIcon.ExternalLink);
         _shellMenuItems[(int)ShellCommand.SettingsSeparator] =
             ContextMenuItem.Separator;
         _shellMenuItems[(int)ShellCommand.OpenSettings] =
             new ContextMenuItem("Open settings", TablerIcon.Settings);
+    }
+
+    /// <summary>Flips one split flag and saves: the window set syncs the part
+    /// windows off the configuration-changed event.</summary>
+    internal static void ToggleSplit(ShellPart part)
+    {
+        var svc = Config.ConfigurationService.Instance;
+        var ui = svc.Config.UI;
+        switch (part)
+        {
+            case ShellPart.Sidebar:
+                ui.SplitSidebar = !ui.SplitSidebar;
+                break;
+            case ShellPart.Toolbar:
+                ui.SplitToolbar = !ui.SplitToolbar;
+                break;
+            case ShellPart.Inspector:
+                ui.SplitInspector = !ui.SplitInspector;
+                break;
+        }
+        svc.ApplyChange();
     }
 
     /// <summary>Runs one command. The skeleton is resolved at invocation, not
@@ -2110,6 +2220,19 @@ public class MainWindow : Window
             case ShellCommand.AutoSaves:
                 if (SelectedSkeleton() is { } recoverSkeleton)
                     _poseFileSection.OpenAutoSaves(recoverSkeleton);
+                break;
+            case ShellCommand.PopOutContent:
+                if (SelectedActorId() is { } popOut)
+                    OnPopOutRequested?.Invoke(popOut);
+                break;
+            case ShellCommand.DetachSidebar:
+                ToggleSplit(ShellPart.Sidebar);
+                break;
+            case ShellCommand.DetachToolbar:
+                ToggleSplit(ShellPart.Toolbar);
+                break;
+            case ShellCommand.DetachInspector:
+                ToggleSplit(ShellPart.Inspector);
                 break;
             case ShellCommand.OpenSettings:
                 OnSettingsRequested?.Invoke();
@@ -2172,8 +2295,10 @@ public class MainWindow : Window
             () =>
             {
                 _renameTarget = actorId;
-                _renameValue = Config.ConfigurationService.Instance.GetNickname(actorId.LogicalId)
-                    ?? DisplayName(actor.Name);
+                // Seeds what the UI SHOWS — nickname, else the mask while
+                // anonymous mode is on. Prefilling the raw name would leak it.
+                _renameValue = Config.ConfigurationService.Instance.GetDisplayName(
+                    actorId.LogicalId, DisplayName(actor.Name));
                 _renameOpen = true;
             },
             () =>

@@ -29,6 +29,7 @@ public class SkeletonOverlayWindow : Window
     private readonly Game.Viewport.ViewportProjection _viewport;
     private readonly IEditorState _editorState;
     private readonly SkeletonOverlayPresentation _presentation;
+    private readonly Application.Posing.IIkConfigurationPort _ikPort;
     private readonly StableBindingRegistry _bindings;
 
     // Configuration from settings
@@ -56,6 +57,12 @@ public class SkeletonOverlayWindow : Window
             ? ImGui.ColorConvertFloat4ToU32(Vector4.Lerp(
                 Crystarium.ActiveTheme.Palette.Primary, Vector4.One, 0.35f))
             : Config.HoveredBoneColor;
+    private static uint IkChainColor => Config.IkChainColor;
+    private static uint MirroredBoneColor => Config.MirroredBoneColor;
+
+    private static bool ShowSkeletonLines => Config.ShowSkeletonLines;
+    private static bool ShowNsfwBones =>
+        ConfigurationService.Instance.Config.Display.ShowNsfwBones;
 
     // Bone display data
     private class BoneDisplayData
@@ -67,6 +74,8 @@ public class SkeletonOverlayWindow : Window
         public float CameraDistance { get; init; }
         public bool IsHovered { get; set; }
         public bool IsSelected { get; set; }
+        public bool IsIkChain { get; init; }
+        public bool IsMirrorPartner { get; set; }
     }
 
     private sealed class ActorDisplayData
@@ -113,6 +122,7 @@ public class SkeletonOverlayWindow : Window
         ICameraService cameraService,
         IEditorState editorState,
         SkeletonOverlayPresentation presentation,
+        Application.Posing.IIkConfigurationPort ikPort,
         StableBindingRegistry bindings)
         : base("##poser_skeleton_overlay",
             ImGuiWindowFlags.NoBackground |
@@ -131,6 +141,7 @@ public class SkeletonOverlayWindow : Window
         _cameraService = cameraService;
         _editorState = editorState;
         _presentation = presentation;
+        _ikPort = ikPort;
         _bindings = bindings;
 
         RespectCloseHotkey = false;
@@ -236,9 +247,11 @@ public class SkeletonOverlayWindow : Window
             {
                 actors.Add(new ActorDisplayData
                 {
-                    // Nickname / anonymous-mask aware, like every surface.
+                    // Nickname / anonymous-mask aware, like every surface. The
+                    // raw object-index suffix is stripped first so the mask and
+                    // nickname lookups see the same name the shell shows.
                     Name = ConfigurationService.Instance.GetDisplayName(
-                        actor.Id.LogicalId, actor.Name),
+                        actor.Id.LogicalId, StripObjectIndex(actor.Name)),
                     Id = actorSelectionId,
                     ScreenPos = viewportPos + actorScreen,
                     CameraDistance = Vector3.Distance(cameraPosition, actorTransform.Position),
@@ -259,11 +272,16 @@ public class SkeletonOverlayWindow : Window
             if (_viewport.GetSkeletonModelMatrix(descriptors[0].Id) is not { } modelMatrix)
                 continue;
 
+            var armedIkBones = CollectArmedIkBones(descriptors);
+            bool showNsfw = ShowNsfwBones;
+
             var boneScreenPositions = new Dictionary<BoneId, Vector2>();
             var boneWorldPositions = new Dictionary<BoneId, Vector3>();
             foreach (var bone in descriptors)
             {
                 if (bone.IsHidden || !_presentation.IsVisible(bone.Id))
+                    continue;
+                if (!showNsfw && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
                     continue;
                 if (_viewport.GetBoneModelTransform(bone.Id) is not { } boneTransform)
                     continue;
@@ -294,11 +312,15 @@ public class SkeletonOverlayWindow : Window
                     ScreenPos = screenPos,
                     ParentScreenPos = parentScreenPos,
                     CameraDistance = Vector3.Distance(cameraPosition, boneWorldPositions[bone.Id]),
-                    IsSelected = selectedIds.Contains(selectionId)
+                    IsSelected = selectedIds.Contains(selectionId),
+                    IsIkChain = armedIkBones?.Contains(bone.Id.CanonicalName) == true
                 });
             }
             }
         }
+
+        if (_editorState.SymmetryMode == SymmetryMode.Mirror)
+            MarkMirrorPartners(bones);
 
         // Armature toggle Off: only the selection's anchors survive — the
         // selected bones' dots and selected actors' origin points. The
@@ -349,7 +371,10 @@ public class SkeletonOverlayWindow : Window
         switch (_editorState.SkeletonViewMode)
         {
             case SkeletonViewMode.Default:
-                DrawLines(drawList, bones, lineOpacity);
+                // Octahedra/Joints have no connector lines to suppress: their
+                // bodies ARE the bones.
+                if (ShowSkeletonLines)
+                    DrawLines(drawList, bones, lineOpacity);
                 DrawDots(drawList, bones);
                 break;
             case SkeletonViewMode.Octahedra:
@@ -621,6 +646,84 @@ public class SkeletonOverlayWindow : Window
             _selection.Select(pending.Id);
     }
 
+    /// <summary>Strips the raw object-index suffix ("Name (201)"), matching
+    /// the shell's display rule.</summary>
+    private static string StripObjectIndex(string name)
+        => System.Text.RegularExpressions.Regex.Replace(name, @"\s*\(\d+\)$", "");
+
+    /// <summary>Canonical names of every member of an ARMED IK chain on this
+    /// exact skeleton — endpoint, both joints, and the optional twists. Null
+    /// when no chain on the skeleton is enabled.</summary>
+    private HashSet<string>? CollectArmedIkBones(
+        IReadOnlyList<Domain.Scene.BoneDescriptor> descriptors)
+    {
+        HashSet<string>? names = null;
+        foreach (var bone in descriptors)
+        {
+            // Only endpoints carry configuration, so at most four port reads
+            // per skeleton per frame.
+            var definition = Domain.Posing.IkChains.ForEndpoint(bone.Id.CanonicalName);
+            if (definition == null)
+                continue;
+            if (_ikPort.Get(TransformTargetId.ForBone(bone.Id)) is not { Enabled: true })
+                continue;
+
+            names ??= new HashSet<string>();
+            names.Add(bone.Id.CanonicalName);
+            names.Add(definition.Endpoint);
+            names.Add(definition.FirstJoint);
+            names.Add(definition.SecondJoint);
+            if (definition.FirstTwist != null)
+                names.Add(definition.FirstTwist);
+            if (definition.SecondTwist != null)
+                names.Add(definition.SecondTwist);
+        }
+        return names;
+    }
+
+    /// <summary>Flags the opposite-side partners of the selected bones so
+    /// Mirror symmetry shows what a transform will also move. Partners are
+    /// matched inside the selected bone's own skeleton, never across actors.</summary>
+    private static void MarkMirrorPartners(List<BoneDisplayData> bones)
+    {
+        HashSet<(SkeletonId, string)>? partners = null;
+        foreach (var bone in bones)
+        {
+            if (!bone.IsSelected || bone.Id.Bone is not { } boneId)
+                continue;
+            if (Core.PoseMath.GetMirrorBoneName(boneId.CanonicalName) is not { } mirror)
+                continue;
+            partners ??= new HashSet<(SkeletonId, string)>();
+            partners.Add((boneId.Skeleton, mirror));
+        }
+        if (partners == null)
+            return;
+
+        foreach (var bone in bones)
+        {
+            if (bone.IsSelected || bone.Id.Bone is not { } boneId)
+                continue;
+            bone.IsMirrorPartner = partners.Contains(
+                (boneId.Skeleton, boneId.CanonicalName));
+        }
+    }
+
+    /// <summary>The one color priority for bones: Selected > Hovered > IK >
+    /// mirror partner > fallback. Hover is opt-in because the dot layer leaves
+    /// hover feedback to the hover list.</summary>
+    private static uint ResolveBoneColor(BoneDisplayData bone, bool useHover, uint fallback)
+    {
+        if (bone.IsSelected)
+            return SelectedBoneColor;
+        if (useHover && bone.IsHovered)
+            return HoveredBoneColor;
+        if (bone.IsIkChain)
+            return IkChainColor;
+        if (bone.IsMirrorPartner)
+            return MirroredBoneColor;
+        return fallback;
+    }
+
     private void DrawLines(ImDrawListPtr drawList, List<BoneDisplayData> bones, float opacity)
     {
         // Ktisis style: bone color with opacity
@@ -643,18 +746,16 @@ public class SkeletonOverlayWindow : Window
         {
             var radius = DotRadius;
             float outlineThickness;
-            uint color;
+            var color = ResolveBoneColor(bone, useHover: false, BoneColor);
 
             if (bone.IsSelected)
             {
                 radius += 1.0f;
                 outlineThickness = 2.5f;
-                color = SelectedBoneColor;
             }
             else
             {
                 outlineThickness = 1.0f;
-                color = BoneColor;
             }
 
             // Filled circle
@@ -666,16 +767,15 @@ public class SkeletonOverlayWindow : Window
 
     private void DrawOctahedra(ImDrawListPtr drawList, List<BoneDisplayData> bones, float opacity)
     {
-        var defaultColor = SetAlpha(BoneColor, 0.6f);
-
         foreach (var bone in bones)
         {
             if (bone.ParentScreenPos == null) continue;
 
-            uint color;
-            if (bone.IsSelected) color = SelectedBoneColor;
-            else if (bone.IsHovered) color = HoveredBoneColor;
-            else color = defaultColor;
+            var color = ResolveBoneColor(bone, useHover: true, BoneColor);
+            // Everything that is neither selected nor hovered stays faded,
+            // tinted or not.
+            if (!bone.IsSelected && !bone.IsHovered)
+                color = SetAlpha(color, 0.6f);
 
             var fillColor = SetAlpha(color, GetAlpha(color) * 0.5f * opacity);
             var edgeColor = SetAlpha(color, opacity);
@@ -712,20 +812,9 @@ public class SkeletonOverlayWindow : Window
             var radius = 8f * ImGuiHelpers.GlobalScale;
             var outlineThickness = 2f;
 
-            uint color;
+            var color = ResolveBoneColor(bone, useHover: true, BoneColor);
             if (bone.IsSelected)
-            {
-                color = SelectedBoneColor;
                 radius += 2f * ImGuiHelpers.GlobalScale;
-            }
-            else if (bone.IsHovered)
-            {
-                color = HoveredBoneColor;
-            }
-            else
-            {
-                color = BoneColor;
-            }
 
             drawList.AddCircleFilled(bone.ScreenPos, radius, color, 16);
             drawList.AddCircle(bone.ScreenPos, radius, OutlineColor, 16, outlineThickness * ImGuiHelpers.GlobalScale);

@@ -98,7 +98,18 @@ public sealed class UIManager : IUIManager
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent e)
     {
-        _windows.SetPrimaryOpen(e.IsGPosing);
+        var config = _configService.Config;
+        if (e.IsGPosing)
+        {
+            if (config.OpenOnGPoseEnter)
+                _windows.SetPrimaryOpen(true);
+        }
+        else if (config.CloseWithGPose)
+        {
+            // The setting promises "hide ALL Poser windows", and settings is
+            // the one surface SetPrimaryOpen does not own.
+            _windows.CloseAll();
+        }
     }
 
     private void DrawUI()

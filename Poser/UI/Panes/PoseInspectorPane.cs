@@ -1254,9 +1254,16 @@ public class PoseInspectorPane
         // model-space bones (viewport projection) → orbit view → orthographic
         var positions = new Dictionary<BoneId, Vector3>();
         var center = Vector3.Zero;
+        // Extended/IVCS bones are DISPLAY-suppressed here like everywhere else;
+        // the snapshot's IsHidden and the selection are untouched.
+        bool showNsfw = Config.ConfigurationService.Instance
+            .Config.Display.ShowNsfwBones;
         foreach (var bone in skeleton.Bones)
         {
             if (bone.IsHidden) continue;
+            if (!showNsfw &&
+                Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
+                continue;
             if (_viewport.GetBoneModelTransform(bone.Id) is not { } value) continue;
             positions[bone.Id] = value.Position;
             center += value.Position;

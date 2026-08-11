@@ -1306,7 +1306,16 @@ public sealed class PoseLibraryPane
 
         if (source is null)
         {
-            ClosePreview();
+            // The seat STAYS on a preview-capable tab: the empty well and its
+            // reason are the affordance that a preview exists at all (user
+            // 2026-08-11: nothing indicated one until a tile was clicked).
+            // Only the MCDF tab, which can never preview, drops the section.
+            _previewBinder.Close();
+            _files.SetPreviewVisible(
+                _vm.PreviewAvailable,
+                wanted
+                    ? "No actor to preview on."
+                    : "Select a pose to preview.");
             return;
         }
 

@@ -61,8 +61,9 @@ public sealed class SettingsViewModel
     public float BoneLineThickness = 1.0f;
     public float BoneLineOpacity = 0.23f;
 
-    public int SidebarDock;
-    public int InspectorDock = 1;
+    public bool SplitSidebar;
+    public bool SplitToolbar;
+    public bool SplitInspector;
     public bool TreeGuides = true;
 
     public List<LibrarySourceVm> LibrarySources = [];
@@ -129,9 +130,6 @@ public static class SettingsView
         (TablerIcon.Folder, "Library"),
         (TablerIcon.Info, "About"),
     };
-
-    private static readonly string[] DockOptions =
-        ["Left", "Right", "Floating", "Hidden"];
 
     private static readonly string[] ThemeLabels =
     [
@@ -507,16 +505,21 @@ public static class SettingsView
     {
         page.Section("LAYOUT", form =>
         {
-            form.Segmented(
-                "Entity sidebar",
-                DockOptions,
-                vm.SidebarDock,
-                next => vm.SidebarDock = next);
-            form.Segmented(
-                "Inspector",
-                DockOptions,
-                vm.InspectorDock,
-                next => vm.InspectorDock = next);
+            form.Switch(
+                "Detach sidebar",
+                vm.SplitSidebar,
+                next => vm.SplitSidebar = next,
+                "The scene tree becomes its own floating window");
+            form.Switch(
+                "Detach toolbar",
+                vm.SplitToolbar,
+                next => vm.SplitToolbar = next,
+                "The gizmo toolbar becomes its own floating window");
+            form.Switch(
+                "Detach inspector",
+                vm.SplitInspector,
+                next => vm.SplitInspector = next,
+                "The inspector rail becomes its own floating window");
         }, divider: false);
         page.Section("TREE", form =>
             form.Switch(
