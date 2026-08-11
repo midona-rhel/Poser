@@ -506,89 +506,118 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         return result;
     }
 
-    /// <summary>Brio's input detour: the free camera eats the movement keys
-    /// and the right-drag look while it is live, so the game neither walks
-    /// the character nor orbits its own camera with them.</summary>
+    /// <summary>Brio's input detour, whole: a live free camera eats the
+    /// movement keys and the right-drag look, and a locked live camera of
+    /// ANY kind eats the game's camera input outright — the orbit drag, the
+    /// scroll zoom, and the movement keys — so nothing the game reads can
+    /// move the shot.</summary>
     private void HandleInputDetour(
         nint a1, nint a2, nint a3, MouseFrame* mouse, KeyboardFrame* keyboard)
     {
         _handleInputHook!.Original(a1, a2, a3, mouse, keyboard);
         try
         {
-            if (!_gPose.IsGPosing ||
-                _live is not { Kind: CameraKind.Free } live ||
+            if (!_gPose.IsGPosing || _live is not { } live ||
                 RaptureAtkModule.Instance()->AtkModule.IsTextInputActive())
                 return;
 
-            // A locked camera holds its shot: the look-drag and movement stop
-            // accumulating, but the movement keys are still eaten so the game
-            // does not act on them mid-lock (Brio's lock gate).
-            if (!live.IsLocked &&
-                mouse != null && mouse->IsButtonDown(MouseState.Right))
-            {
-                _freeMouseDelta += mouse->Delta;
-                mouse->HandleDelta();
-            }
+            if (live.Kind == CameraKind.Free)
+                HandleFreeCameraInput(live, mouse, keyboard);
 
-            if (keyboard == null || !live.MovementEnabled)
-                return;
-
-            int forwardBack = 0;
-            if (keyboard->KeyDown(VirtualKey.W)) forwardBack -= 1;
-            if (keyboard->KeyDown(VirtualKey.S)) forwardBack += 1;
-
-            int leftRight = 0;
-            if (keyboard->KeyDown(VirtualKey.A)) leftRight -= 1;
-            if (keyboard->KeyDown(VirtualKey.D)) leftRight += 1;
-
-            int upDown = 0;
-            if (keyboard->KeyDown(VirtualKey.Q) ||
-                keyboard->KeyDown(VirtualKey.SPACE))
-                upDown += 1;
-            if (keyboard->KeyDown(VirtualKey.E) ||
-                keyboard->KeyDown(VirtualKey.SHIFT))
-                upDown -= 1;
-
-            _freeMoveSpeed = live.MovementSpeed;
-            if (keyboard->KeyDown(VirtualKey.CONTROL))
-                _freeMoveSpeed = live.MovementSpeed * 3f;
-            else if (keyboard->KeyDown(VirtualKey.MENU))
-                _freeMoveSpeed = live.MovementSpeed * 0.3f;
-
-            keyboard->HandleKey(VirtualKey.W);
-            keyboard->HandleKey(VirtualKey.A);
-            keyboard->HandleKey(VirtualKey.S);
-            keyboard->HandleKey(VirtualKey.D);
-            keyboard->HandleKey(VirtualKey.Q);
-            keyboard->HandleKey(VirtualKey.E);
-            keyboard->HandleKey(VirtualKey.SPACE);
-
+            // Brio's full lock (GameInputService): the locked camera's frame
+            // of input is consumed after any freecam bookkeeping, whatever
+            // the camera kind.
             if (live.IsLocked)
             {
-                _freeForward = Vector3.Zero;
-                return;
+                if (mouse != null)
+                {
+                    mouse->HandleDelta();
+                    mouse->ScrollValue = 0;
+                }
+                if (keyboard != null)
+                {
+                    keyboard->HandleKey(VirtualKey.W);
+                    keyboard->HandleKey(VirtualKey.A);
+                    keyboard->HandleKey(VirtualKey.S);
+                    keyboard->HandleKey(VirtualKey.D);
+                    keyboard->HandleKey(VirtualKey.Q);
+                    keyboard->HandleKey(VirtualKey.E);
+                    keyboard->HandleKey(VirtualKey.SPACE);
+                }
             }
-
-            var input = new Vector3(leftRight, upDown, forwardBack);
-            if (live.IsPortraitMode)
-                input = Vector3.Transform(
-                    input,
-                    Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2f));
-
-            // Brio's frame vector: the input rotated by the camera's yaw (and
-            // pitch, unless lateral movement pins travel to the horizontal
-            // plane).
-            _freeForward = Vector3.Transform(
-                input,
-                Quaternion.CreateFromYawPitchRoll(
-                    live.Rotation.X,
-                    live.Move2D ? 0f : -live.Rotation.Y,
-                    live.Rotation.Z));
         }
         catch (Exception ex)
         {
             _log.Error($"VirtualCameraService: input handling failed: {ex}");
         }
+    }
+
+    private void HandleFreeCameraInput(
+        VirtualCamera live, MouseFrame* mouse, KeyboardFrame* keyboard)
+    {
+        // A locked camera holds its shot: the look-drag stops accumulating
+        // (the lock block below eats the delta itself).
+        if (!live.IsLocked &&
+            mouse != null && mouse->IsButtonDown(MouseState.Right))
+        {
+            _freeMouseDelta += mouse->Delta;
+            mouse->HandleDelta();
+        }
+
+        if (keyboard == null || !live.MovementEnabled)
+            return;
+
+        int forwardBack = 0;
+        if (keyboard->KeyDown(VirtualKey.W)) forwardBack -= 1;
+        if (keyboard->KeyDown(VirtualKey.S)) forwardBack += 1;
+
+        int leftRight = 0;
+        if (keyboard->KeyDown(VirtualKey.A)) leftRight -= 1;
+        if (keyboard->KeyDown(VirtualKey.D)) leftRight += 1;
+
+        int upDown = 0;
+        if (keyboard->KeyDown(VirtualKey.Q) ||
+            keyboard->KeyDown(VirtualKey.SPACE))
+            upDown += 1;
+        if (keyboard->KeyDown(VirtualKey.E) ||
+            keyboard->KeyDown(VirtualKey.SHIFT))
+            upDown -= 1;
+
+        _freeMoveSpeed = live.MovementSpeed;
+        if (keyboard->KeyDown(VirtualKey.CONTROL))
+            _freeMoveSpeed = live.MovementSpeed * 3f;
+        else if (keyboard->KeyDown(VirtualKey.MENU))
+            _freeMoveSpeed = live.MovementSpeed * 0.3f;
+
+        keyboard->HandleKey(VirtualKey.W);
+        keyboard->HandleKey(VirtualKey.A);
+        keyboard->HandleKey(VirtualKey.S);
+        keyboard->HandleKey(VirtualKey.D);
+        keyboard->HandleKey(VirtualKey.Q);
+        keyboard->HandleKey(VirtualKey.E);
+        keyboard->HandleKey(VirtualKey.SPACE);
+
+        if (live.IsLocked)
+        {
+            _freeForward = Vector3.Zero;
+            return;
+        }
+
+        var input = new Vector3(leftRight, upDown, forwardBack);
+        if (live.IsPortraitMode)
+            input = Vector3.Transform(
+                input,
+                Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2f));
+
+        // Brio's frame vector: the input rotated by the camera's yaw (and
+        // pitch, unless lateral movement pins travel to the horizontal
+        // plane).
+        _freeForward = Vector3.Transform(
+            input,
+            Quaternion.CreateFromYawPitchRoll(
+                live.Rotation.X,
+                live.Move2D ? 0f : -live.Rotation.Y,
+                live.Rotation.Z));
     }
 
     /// <summary>Brio's UpdateMatrix, whole: integrates the frame inputs into

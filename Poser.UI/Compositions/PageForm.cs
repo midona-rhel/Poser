@@ -1584,6 +1584,22 @@ public static partial class Crystarium
                 id: id);
         }
 
+        /// <summary>The cell's read-only value — plain text in the control
+        /// seat, the full-row <see cref="Crystarium.FormScope.ReadOnly"/>'s
+        /// twin. A fact is stated, never dressed as a disabled input.</summary>
+        public void Text(string value, bool unavailable = false)
+        {
+            LabelInBand(
+                Origin,
+                new Vector2(Width, ActiveTheme.Controls.FormRowHeight * Scale),
+                value,
+                new TextStyle
+                {
+                    Size = ActiveTheme.Typography.BodySize,
+                    Color = unavailable ? FormHintColor : FormValueColor,
+                });
+        }
+
         /// <summary>The cell's text field, filling its track.</summary>
         public void TextInput(
             string id, string value, Action<string> onChange,

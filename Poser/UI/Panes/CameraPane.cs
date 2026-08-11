@@ -303,13 +303,12 @@ public sealed class CameraPane
                 help: "The name this camera carries in the sidebar");
             cells.Cell(
                 "Type",
-                cell => cell.TextInput("##camera-type",
+                cell => cell.Text(
                     camera.IsDefault
                         ? "Main camera (default)"
                         : camera.Kind == CameraKind.Free
                             ? "Free camera"
-                            : "Game camera",
-                    _ => { }, disabled: true),
+                            : "Game camera"),
                 help: "Fixed at creation: a game camera orbits, a free "
                     + "camera flies");
         });
