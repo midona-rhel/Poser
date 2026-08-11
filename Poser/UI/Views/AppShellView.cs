@@ -152,10 +152,14 @@ public sealed class AppShellViewModel
     /// <summary>The split shell: a true flag means that part has left the
     /// main window for its own floating window, and the shell neither draws
     /// it nor reserves its cell. All false is the compact single-window UI.
-    /// </summary>
-    public bool SidebarSplit;
+    /// The sidebar never splits — it IS the main window's anchor.</summary>
     public bool ToolbarSplit;
     public bool InspectorSplit;
+
+    /// <summary>What the title cell names: the selected entity ("Sterling
+    /// Vane", "Environment", "Library"), never the brand — the brand rides
+    /// the toolbar.</summary>
+    public string TitleEntity = "Poser";
 
     public Action<int>? OnTab;
     public Action<int>? OnGizmoOperation;
@@ -214,9 +218,6 @@ public static class AppShellView
     private const float StatusInset = 10f;
     private const float StatusTextGap = 8f;
 
-    /// <summary>The title cell with the sidebar split off: brand, GPose pill
-    /// and the four-icon action cluster, nothing else to hold.</summary>
-    private const float CompactTitleCellWidth = 280f;
 
     private static readonly TablerIcon[] GizmoIcons =
     [
@@ -262,6 +263,13 @@ public static class AppShellView
         Crystarium.ActiveTheme.FormSeparator;
 
     public static float TitlebarHeight => Crystarium.ActiveTheme.Shell.TitlebarHeight;
+
+    /// <summary>The collapsed strip and every floating bar — the toolbar
+    /// window, the part and pop-out headers — share the modal bar height, so
+    /// a collapsed shell and a detached toolbar read as the same object
+    /// (user 2026-08-11).</summary>
+    public static float CollapsedBarHeight =>
+        Crystarium.ActiveTheme.Floating.ModalBarHeight;
     public static float SidebarWidth => Crystarium.ActiveTheme.Shell.SidebarDefaultWidth;
     public static float RowHeight => Crystarium.ActiveTheme.Controls.ListRowHeight;
     public static float ToolbarHeight => Crystarium.ActiveTheme.Shell.ToolbarHeight;
@@ -306,12 +314,11 @@ public static class AppShellView
             float railW = vm.DrawRail != null && !vm.InspectorSplit
                 ? RailWidth * s
                 : 0f;
-            float sbw = vm.SidebarSplit ? 0f : vm.SidebarWidthPx * s;
+            float sbw = vm.SidebarWidthPx * s;
 
-            if (!vm.SidebarSplit)
-                DrawSidebar(
-                    vm, new Vector2(min.X, bodyTop),
-                    new Vector2(min.X + sbw, max.Y), s, dl);
+            DrawSidebar(
+                vm, new Vector2(min.X, bodyTop),
+                new Vector2(min.X + sbw, max.Y), s, dl);
             DrawWorkspace(
                 vm,
                 new Vector2(min.X + sbw, bodyTop),
@@ -321,8 +328,7 @@ public static class AppShellView
             if (railW > 0f)
                 DrawRail(vm, new Vector2(max.X - railW, bodyTop), max, railW, s, dl);
 
-            if (!vm.SidebarSplit)
-                DrawSidebarResize(vm, min.X + sbw, bodyTop, max.Y, s);
+            DrawSidebarResize(vm, min.X + sbw, bodyTop, max.Y, s);
 
             // Panel fills are intentionally drawn after the base chassis.
             // Repaint the asymmetric glass edge last so sidebar and rail
@@ -341,13 +347,11 @@ public static class AppShellView
         AppShellViewModel vm, Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
     {
         var theme = Crystarium.ActiveTheme;
-        float height = TitlebarHeight * s;
+        float height =
+            (vm.Collapsed ? CollapsedBarHeight : TitlebarHeight) * s;
         float radius = theme.Radii.Window * s;
         float rule = 1f * s;
-        // With the sidebar split off, the title cell shrinks to the brand and
-        // its action cluster instead of holding a phantom sidebar's width.
-        float cellWidth =
-            (vm.SidebarSplit ? CompactTitleCellWidth : vm.SidebarWidthPx) * s;
+        float cellWidth = vm.SidebarWidthPx * s;
         float railWidth =
             vm.DrawRail != null && !vm.Collapsed && !vm.InspectorSplit
                 ? RailWidth * s
@@ -398,8 +402,41 @@ public static class AppShellView
         DrawTitleActions(vm, max.X, min.Y, height, s);
     }
 
+    /// <summary>The title cell names the SELECTED ENTITY — the brand and its
+    /// GPose pill live on the toolbar (user 2026-08-11). The label truncates
+    /// against the cell's right action cluster.</summary>
     private static void DrawBrand(
         AppShellViewModel vm, Vector2 min, float height, float s, ImDrawListPtr dl)
+    {
+        var theme = Crystarium.ActiveTheme;
+        float x = min.X + TitleInset * s;
+        int actions = vm.ShowSpawn ? 4 : 3;
+        float reserved = TitleInset * s
+            + actions * (theme.Controls.ShellIconAction + theme.Spacing.Two) * s
+            + TitleActionInset * s;
+        Crystarium.TextInBand(
+            new Vector2(x, min.Y),
+            new Vector2(
+                MathF.Max(1f, vm.SidebarWidthPx * s - x + min.X - reserved),
+                height),
+            vm.TitleEntity,
+            new TextStyle
+            {
+                Size = theme.Typography.BodySize,
+                Weight = FontWeight.SemiBold,
+                Color = theme.Chrome.Text,
+            },
+            TextConstraint.Truncate(
+                MathF.Max(1f, vm.SidebarWidthPx * s - x + min.X - reserved)));
+    }
+
+    /// <summary>"Poser" and the GPose pill, drawn at <paramref name="x"/> in
+    /// a band of <paramref name="height"/>; returns the x past them. One
+    /// renderer for the toolbar's two hosts — the titlebar centre and the
+    /// floating toolbar window.</summary>
+    private static float DrawBrandPill(
+        AppShellViewModel vm, float x, float top, float height, float s,
+        ImDrawListPtr dl)
     {
         var theme = Crystarium.ActiveTheme;
         var nameStyle = new TextStyle
@@ -408,13 +445,12 @@ public static class AppShellView
             Weight = FontWeight.SemiBold,
             Color = theme.Chrome.Text,
         };
-        float x = min.X + TitleInset * s;
         float nameWidth = Crystarium.MeasureText("Poser", nameStyle).X;
         Crystarium.TextInBand(
-            new Vector2(x, min.Y), new Vector2(nameWidth, height),
+            new Vector2(x, top), new Vector2(nameWidth, height),
             "Poser", nameStyle);
         if (!vm.GPoseActive)
-            return;
+            return x + nameWidth;
 
         var success = theme.Success;
         var pillStyle = new TextStyle
@@ -428,7 +464,7 @@ public static class AppShellView
         float dot = DotSize * s;
         var pillMin = new Vector2(
             x + nameWidth + theme.Spacing.Four * s,
-            min.Y + (height - pillHeight) * 0.5f);
+            top + (height - pillHeight) * 0.5f);
         var pillMax = pillMin + new Vector2(
             TitleActionInset * 2f * s + dot + theme.Spacing.Three * s + textWidth,
             pillHeight);
@@ -446,6 +482,35 @@ public static class AppShellView
             new Vector2(textWidth, pillHeight),
             "GPose",
             pillStyle);
+        return pillMax.X;
+    }
+
+    /// <summary>What <see cref="DrawBrandPill"/> spans, screen px.</summary>
+    private static float MeasureBrandPill(AppShellViewModel vm, float s)
+    {
+        var theme = Crystarium.ActiveTheme;
+        float width = Crystarium.MeasureText(
+            "Poser",
+            new TextStyle
+            {
+                Size = theme.Typography.BodySize,
+                Weight = FontWeight.SemiBold,
+            }).X;
+        if (!vm.GPoseActive)
+            return width;
+        float text = Crystarium.MeasureText(
+            "GPose",
+            new TextStyle
+            {
+                Size = theme.Typography.CaptionSize,
+                Weight = FontWeight.Medium,
+            }).X;
+        return width
+            + theme.Spacing.Four * s
+            + TitleActionInset * 2f * s
+            + DotSize * s
+            + theme.Spacing.Three * s
+            + text;
     }
 
     /// <summary>Menu, undo, redo and spawn, right-aligned in the title cell.</summary>
@@ -455,9 +520,7 @@ public static class AppShellView
         var theme = Crystarium.ActiveTheme;
         float side = theme.Controls.ShellIconAction;
         float step = (side + theme.Spacing.Two) * s;
-        // With the toolbar split off, undo/redo/spawn live in the floating
-        // toolbar and only the command menu stays on the title cell.
-        int count = vm.ToolbarSplit ? 1 : vm.ShowSpawn ? 4 : 3;
+        int count = vm.ShowSpawn ? 4 : 3;
         float y = top + (height - side * s) * 0.5f;
         float x = right - count * side * s - (count - 1) * theme.Spacing.Two * s;
 
@@ -475,8 +538,6 @@ public static class AppShellView
             _burgerPressed = false;
             vm.OnBurger?.Invoke(new Vector2(x, y + side * s));
         }
-        if (vm.ToolbarSplit)
-            return;
         x += step;
         IconAt(
             new Vector2(x, y), TablerIcon.ArrowBackUp, side, vm.OnUndo,
@@ -505,6 +566,11 @@ public static class AppShellView
         float side = theme.Controls.ShellIconAction;
         float gap = theme.Page.ActionGap * s;
         float x = left + CenterInset * s;
+        // The brand travels with the toolbar: it leads this cluster attached
+        // and leads the floating toolbar window detached.
+        x = DrawBrandPill(
+                vm, x, top, height, s, ImGui.GetWindowDrawList())
+            + CenterInset * s;
         if (vm.ShowProject)
         {
             IconAt(
@@ -601,6 +667,16 @@ public static class AppShellView
         IconAt(
             new Vector2(x, y), TablerIcon.Settings, side, vm.OnSettings,
             "##shell-settings", help: "Open Poser settings");
+        // The pop-out lives on the TITLE bar, not the workspace bar
+        // (user 2026-08-11).
+        if (vm.ShowPopOut)
+        {
+            x -= step;
+            IconAt(
+                new Vector2(x, y), TablerIcon.ExternalLink, side, vm.OnPopOut,
+                "##shell-popout",
+                help: "Pop the selected actor's content into its own window");
+        }
         // The armature toggle left this bar (user 2026-08-11): its
         // replacement is a design decision that has not landed, so the
         // SkeletonOverlayOn/OnSkeletonOverlay seams stay wired for it and
@@ -754,12 +830,6 @@ public static class AppShellView
                             ? "Switch off to freeze physics for the whole scene"
                             : "Switch on to resume physics for the whole scene",
                     disabled: !vm.PhysicsAvailable);
-                if (vm.ShowPopOut)
-                    right.Icon(
-                        TablerIcon.ExternalLink,
-                        () => vm.OnPopOut?.Invoke(),
-                        style: ControlStyle.Square(
-                            Crystarium.ActiveTheme.Controls.ShellIconAction));
             },
             ActionBarSeparator.None);
 
@@ -1054,66 +1124,19 @@ public static class AppShellView
     // help — so splitting a part moves it without resetting it. Exactly one
     // host draws a part per frame; the split flags are that gate.
 
-    /// <summary>The floating sidebar's content: the search band, the tree and
-    /// the status bar, drawn into the hosting window's content box. The glass
-    /// chassis is the caller's.</summary>
-    public static void DrawSidebarContent(
-        AppShellViewModel vm, Vector2 min, Vector2 max)
-    {
-        float s = ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
-        var dl = ImGui.GetWindowDrawList();
-        float rule = 1f * s;
-        float statusTop = max.Y - StatusbarHeight * s;
-        Sidebar.Draw(
-            vm,
-            min,
-            new Vector2(
-                max.X - min.X,
-                statusTop - theme.Spacing.One * s - min.Y));
-        dl.AddRectFilled(
-            new Vector2(min.X, statusTop),
-            new Vector2(max.X, statusTop + rule),
-            U32(BorderSecondary));
-        DrawStatusbar(
-            vm, new Vector2(min.X, statusTop + rule), max, s, dl);
-    }
-
-    /// <summary>The floating toolbar's content: undo/redo and spawn, then the
-    /// same four segment groups the titlebar centre hosts when attached.
+    /// <summary>The floating toolbar's content: the brand and its GPose pill,
+    /// then the same four segment groups the titlebar centre hosts when
+    /// attached. Undo/redo/spawn/actions stay with the scene sidebar's title
+    /// cell — they are the sidebar's, not the toolbar's (user 2026-08-11).
     /// </summary>
     public static void DrawToolbarContent(
         AppShellViewModel vm, Vector2 origin, float height)
     {
         float s = ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
-        float side = theme.Controls.ShellIconAction;
-        float step = (side + theme.Spacing.Two) * s;
-        float x = origin.X;
-        float y = origin.Y + (height - side * s) * 0.5f;
         SyncKeybindHelp();
-        IconAt(
-            new Vector2(x, y), TablerIcon.ArrowBackUp, side, vm.OnUndo,
-            "##shell-undo",
-            disabled: !vm.CanUndo,
-            help: vm.CanUndo ? _undoHelp : _undoEmptyHelp);
-        x += step;
-        IconAt(
-            new Vector2(x, y), TablerIcon.ArrowBackUp, side, vm.OnRedo,
-            "##shell-redo",
-            disabled: !vm.CanRedo,
-            flipX: true,
-            help: vm.CanRedo ? _redoHelp : _redoEmptyHelp);
-        x += step;
-        if (vm.ShowSpawn)
-        {
-            IconAt(
-                new Vector2(x, y), TablerIcon.Plus, side, vm.OnSpawn,
-                "##shell-spawn",
-                help: "Add an actor or prop to the scene");
-            x += step;
-        }
-        x += theme.Page.ActionGap * s;
+        float x = DrawBrandPill(
+                vm, origin.X, origin.Y, height, s, ImGui.GetWindowDrawList())
+            + CenterInset * s;
         DrawGizmoCluster(vm, x, origin.Y, height, s);
     }
 
@@ -1122,13 +1145,9 @@ public static class AppShellView
     public static float MeasureToolbar(AppShellViewModel vm)
     {
         float s = ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
-        float side = theme.Controls.ShellIconAction;
-        float step = (side + theme.Spacing.Two) * s;
-        float gap = theme.Page.ActionGap * s;
-        float icons = step * (vm.ShowSpawn ? 3 : 2);
-        return icons
-            + gap
+        float gap = Crystarium.ActiveTheme.Page.ActionGap * s;
+        return MeasureBrandPill(vm, s)
+            + CenterInset * s
             + Crystarium.MeasureSegmentedControl(GizmoIcons).X + gap
             + Crystarium.MeasureSegmentedControl(SpaceItems).X + gap
             + Crystarium.MeasureSegmentedControl(PivotItems).X + gap

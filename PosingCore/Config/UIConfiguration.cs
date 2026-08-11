@@ -22,9 +22,9 @@ public class UIConfiguration
     // Settings -> Display/UI (Crystarium shell; the ImGuiCol entries below are legacy-window theming)
     public UITheme Theme { get; set; } = UITheme.Dark;
     public int AccentIndex { get; set; } = 0;
-    // The split shell: each part can leave the main window and live as its
-    // own floating window. All false is the compact single-window UI.
-    public bool SplitSidebar { get; set; }
+    // The split shell: the toolbar and the inspector can leave the main
+    // window and live as their own floating windows. Both false is the
+    // compact single-window UI; the sidebar never splits.
     public bool SplitToolbar { get; set; }
     public bool SplitInspector { get; set; }
     public bool ShowTreeGuides { get; set; } = true;
