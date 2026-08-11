@@ -1,33 +1,30 @@
 using System;
-using System.Collections.Generic;
 using System.Numerics;
+using Poser.Application.Scene;
 using Poser.Core;
+using Poser.Domain.Identity;
 using Poser.Game;
+using Poser.Game.Bindings;
 
 namespace Poser.UI;
 
 /// <summary>
-/// The spawned props of the current GPose session: the list that owns their
-/// lifetime, and the transform of whichever one is being edited.
+/// The selected prop's editor — the pane behind the "Prop" tab that stands
+/// while a PROPS sidebar row is selected. The sidebar owns the list (rows,
+/// eye, the header's plus); this pane owns one prop: its visibility, its
+/// lifetime, and its transform.
 ///
-/// <para>A prop is a bare scene object — it is not in the object table, not in
-/// the scene snapshot and not a gizmo target — so the edited prop is chosen
-/// HERE rather than through <c>SelectionSession</c>, by the prop's own stable
-/// id. Lifetime clicks are DEFERRED to the end of the frame: the rows iterate
-/// the service's live list, and destroying a prop from inside that walk would
-/// invalidate it mid-frame.</para>
+/// <para>Lifetime clicks are DEFERRED to the end of the frame: destroying the
+/// prop republishes the scene mid-walk otherwise.</para>
 /// </summary>
 public sealed class PropsPane
 {
     private readonly PropSpawnService _props;
+    private readonly SceneSession _scene;
+    private readonly StableBindingRegistry _bindings;
 
-    private bool _openList = true;
+    private bool _openProp = true;
     private bool _openTransform = true;
-
-    /// <summary>The edited prop's stable id, not its position in the list: the
-    /// list changes under the pane whenever a prop is destroyed or GPose
-    /// ends.</summary>
-    private int _selectedId;
 
     /// <summary>The euler the wells are dragging. A quaternion re-derived every
     /// frame walks, so the drag owns the angles until it commits.</summary>
@@ -37,35 +34,37 @@ public sealed class PropsPane
     /// </summary>
     private Action? _pending;
 
-    public PropsPane(PropSpawnService props) => _props = props;
-
-    /// <summary>Edits a freshly spawned prop, so the thing just created is the
-    /// thing being edited.</summary>
-    public void Select(PropHandle prop) => _selectedId = prop.Id;
+    public PropsPane(
+        PropSpawnService props,
+        SceneSession scene,
+        StableBindingRegistry bindings)
+    {
+        _props = props;
+        _scene = scene;
+        _bindings = bindings;
+    }
 
     public void Draw(Vector2 origin, Vector2 size)
     {
-        Crystarium.Page("props", origin, size, page =>
+        Crystarium.Page("prop", origin, size, page =>
         {
-            var props = _props.Props;
-            if (props.Count == 0)
-                page.EmptyState("No props spawned.");
-
-            page.Section(
-                "PROPS",
-                _openList,
-                next => _openList = next,
-                form => ListRows(form, props),
-                divider: false);
-
-            if (Selected(props) is not { } selected)
+            if (SelectedProp() is not { } prop)
+            {
+                page.EmptyState("Select a prop in the sidebar.");
                 return;
+            }
 
             page.Section(
-                $"TRANSFORM — {selected.Name.ToUpperInvariant()}",
+                "PROP",
+                _openProp,
+                next => _openProp = next,
+                form => PropRows(form, prop),
+                divider: false);
+            page.Section(
+                "TRANSFORM",
                 _openTransform,
                 next => _openTransform = next,
-                form => TransformRows(form, selected));
+                form => TransformRows(form, prop));
         });
 
         var pending = _pending;
@@ -75,60 +74,41 @@ public sealed class PropsPane
 
     // ── sections ─────────────────────────────────────────────────────────
 
-    private void ListRows(
-        Crystarium.FormScope form, IReadOnlyList<PropHandle> props)
+    private void PropRows(Crystarium.FormScope form, PropHandle prop)
     {
-        form.Actions("Props", actions =>
+        form.Switch(
+            "Visible",
+            prop.Visible,
+            next => prop.Visible = next,
+            help: "Hide this prop without destroying it");
+        form.Actions("Lifetime", actions =>
         {
             actions.Button(
-                "Add prop",
-                () => _pending = AddProp,
-                help: "Spawn a prop at your character's position");
+                "Delete",
+                () => _pending = () =>
+                {
+                    prop.Destroy();
+                    _scene.Selection.Clear();
+                },
+                variant: ButtonVariant.Danger,
+                help: "Destroy this prop");
             actions.Button(
                 "Remove all",
-                () => _pending = RemoveAll,
-                disabled: props.Count == 0,
+                () => _pending = () =>
+                {
+                    _props.DestroyAll();
+                    _dragEuler = null;
+                    _scene.Selection.Clear();
+                },
                 variant: ButtonVariant.Danger,
                 help: "Destroy every prop spawned this session");
         });
-
-        for (int i = 0; i < props.Count; i++)
-        {
-            var prop = props[i];
-            bool editing = prop.Id == _selectedId;
-            form.SwitchActions(
-                prop.Name,
-                prop.Visible,
-                next => prop.Visible = next,
-                actions =>
-                {
-                    actions.Button(
-                        "Edit",
-                        () => _selectedId = prop.Id,
-                        disabled: editing,
-                        help: "Edit this prop's transform below");
-                    actions.Button(
-                        "Delete",
-                        () => _pending = prop.Destroy,
-                        variant: ButtonVariant.Danger,
-                        help: "Destroy this prop");
-                },
-                help: "Hide this prop without destroying it");
-        }
-
-        if (props.Count == 0)
-            form.Status(
-                "Props last for this GPose session and are destroyed when it ends.");
+        form.Status(
+            "Props last for this GPose session and are destroyed when it ends.");
     }
 
     private void TransformRows(Crystarium.FormScope form, PropHandle prop)
     {
-        if (!prop.IsValid)
-        {
-            form.Status("This prop is no longer available.");
-            return;
-        }
-
         form.AxisVector(
             "Translation",
             prop.Position,
@@ -162,31 +142,14 @@ public sealed class PropsPane
 
     // ── state ────────────────────────────────────────────────────────────
 
-    /// <summary>The edited prop, falling back to the first one still present
-    /// when the edited prop has been destroyed or GPose emptied the list.
-    /// </summary>
-    private PropHandle? Selected(IReadOnlyList<PropHandle> props)
+    private PropHandle? SelectedProp()
     {
-        for (int i = 0; i < props.Count; i++)
-        {
-            if (props[i].Id == _selectedId && props[i].IsValid)
-                return props[i];
-        }
-        if (props.Count == 0)
+        if (_scene.Selection.Primary is not
+            { Kind: SceneEntityKind.Prop, Prop: { } propId })
             return null;
-        _selectedId = props[0].Id;
-        return props[0];
-    }
-
-    private void AddProp()
-    {
-        if (_props.SpawnProp() is { } spawned)
-            Select(spawned);
-    }
-
-    private void RemoveAll()
-    {
-        _props.DestroyAll();
-        _dragEuler = null;
+        var resolved = _bindings.Resolve(propId);
+        return resolved.Success && resolved.Value is { IsValid: true } prop
+            ? prop
+            : null;
     }
 }
