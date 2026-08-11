@@ -1743,6 +1743,14 @@ public class MainWindow : Window
             CollectCategoryBones(child, into);
     }
 
+    /// <summary>Strips the redundant "IVCS " lead from a bone label shown
+    /// under an IVCS category — the ancestry already says it (user
+    /// 2026-08-11).</summary>
+    private static string PruneIvcsLead(string label) =>
+        label.StartsWith("IVCS ", StringComparison.Ordinal)
+            ? label["IVCS ".Length..]
+            : label;
+
     private void EmitKtisisCategory(
         ShellSidebarSection section,
         BuiltCategory category,
@@ -1750,8 +1758,18 @@ public class MainWindow : Window
         int depth,
         bool[]? lines,
         bool isLast,
-        bool filtering)
+        bool filtering,
+        bool underIvcs = false)
     {
+        // A child category under an IVCS ancestor drops its own "IVCS" too:
+        // "Genitals IVCS > Penis", not "> Penis IVCS".
+        string categoryLabel = underIvcs
+            ? category.Label
+                .Replace(" IVCS", "", StringComparison.Ordinal)
+                .Replace("IVCS ", "", StringComparison.Ordinal)
+            : category.Label;
+        underIvcs = underIvcs
+            || category.Label.Contains("IVCS", StringComparison.Ordinal);
         var catKey = parentKey + "/kcat:" + category.Id;
         if (_knownCategoryNodes.Add(catKey))
             _collapsedNodes.Add(catKey);
@@ -1767,7 +1785,7 @@ public class MainWindow : Window
             bone => bone.DisplayName == category.Label);
         section.Rows.Add(new ShellSidebarRow
         {
-            Label = category.Label,
+            Label = categoryLabel,
             Count = "",
             Depth = depth,
             HasChildren = true,
@@ -1795,7 +1813,9 @@ public class MainWindow : Window
             var boneSelectionId = SelectionId.ForBone(bones[b].Id);
             section.Rows.Add(new ShellSidebarRow
             {
-                Label = bones[b].DisplayName,
+                Label = underIvcs
+                    ? PruneIvcsLead(bones[b].DisplayName)
+                    : bones[b].DisplayName,
                 Count = "",
                 Depth = depth + 1,
                 IsLastChild =
@@ -1810,7 +1830,7 @@ public class MainWindow : Window
         for (int c = 0; c < category.Children.Count; c++)
             EmitKtisisCategory(
                 section, category.Children[c], catKey, depth + 1, childLines,
-                c == category.Children.Count - 1, filtering);
+                c == category.Children.Count - 1, filtering, underIvcs);
     }
 
     /// <summary>Whether an actor, any of its bones or slots, or any actor
