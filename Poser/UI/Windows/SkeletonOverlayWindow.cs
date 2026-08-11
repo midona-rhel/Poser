@@ -123,7 +123,8 @@ public class SkeletonOverlayWindow : Window
         IEditorState editorState,
         SkeletonOverlayPresentation presentation,
         Application.Posing.IIkConfigurationPort ikPort,
-        StableBindingRegistry bindings)
+        StableBindingRegistry bindings,
+        Dalamud.Plugin.Services.IPluginLog log)
         : base("##poser_skeleton_overlay",
             ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoDecoration |
@@ -143,9 +144,12 @@ public class SkeletonOverlayWindow : Window
         _presentation = presentation;
         _ikPort = ikPort;
         _bindings = bindings;
+        _log = log;
 
         RespectCloseHotkey = false;
     }
+
+    private readonly Dalamud.Plugin.Services.IPluginLog _log;
 
     public override void PreDraw()
     {
@@ -479,6 +483,15 @@ public class SkeletonOverlayWindow : Window
             ?? (hasWorldBone && _hoveredBones is { Count: > 0 }
                 ? _hoveredBones[_hoverIndex].Id
                 : (SelectionId?)null);
+        // Diagnostic breadcrumb for dead world clicks: one line per press
+        // naming every gate that can swallow it.
+        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+            _log.Debug(
+                $"[Overlay] press target={worldTarget?.ToString() ?? "none"} "
+                + $"blocked={pointerBlocked} listTravel={listTravel} "
+                + $"hasWorldBone={hasWorldBone} "
+                + $"gizmo={Controls.GizmoPointerOwnership.Owned} "
+                + $"hoverL={hoveredLight != null} hoverA={hoveredActor != null}");
         UpdateWorldPress(
             worldTarget,
             pointerBlocked || (listTravel && !hasWorldBone));
@@ -673,10 +686,13 @@ public class SkeletonOverlayWindow : Window
         bool stillPresent = bones.Any(bone => bone.Id.Equals(pending.Id))
             || actors.Any(actor => actor.Id.Equals(pending.Id))
             || lights.Any(light => light.Id.Equals(pending.Id));
-        if (!stillPresent
-            || Interactive.PointerOccluded(
-                pending.Owner,
-                pending.ReleasePoint))
+        bool releaseOccluded = Interactive.PointerOccluded(
+            pending.Owner,
+            pending.ReleasePoint);
+        _log.Debug(
+            $"[Overlay] commit {pending.Id} present={stillPresent} "
+            + $"occluded={releaseOccluded}");
+        if (!stillPresent || releaseOccluded)
             return;
         if (pending.Additive)
             _selection.Toggle(pending.Id);
