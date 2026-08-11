@@ -504,6 +504,18 @@ public class SkeletonOverlayWindow : Window
             ?? (hasWorldBone && _hoveredBones is { Count: > 0 }
                 ? _hoveredBones[_hoverIndex].Id
                 : (SelectionId?)null);
+        // Dalamud routes every click ImGui has not claimed BEFORE the press
+        // to the game — an unclaimed pointer means the press never reaches
+        // ImGui at all (no IsMouseClicked, ever). Claiming on hover is what
+        // makes a world dot clickable in the first place: the gizmo
+        // overlay's exact contract, held through the press so the release
+        // edge arrives too.
+        if (worldTarget != null || _pressedWorldTarget != null)
+        {
+            io.WantCaptureMouse = true;
+            ImGui.SetNextFrameWantCaptureMouse(true);
+        }
+
         // Diagnostic breadcrumb for dead world clicks: one line per press
         // naming every gate that can swallow it.
         if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
