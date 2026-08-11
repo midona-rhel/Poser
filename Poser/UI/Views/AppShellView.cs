@@ -33,6 +33,10 @@ public sealed class ShellSidebarRow
     public bool ActorActions;
     public bool ActorVisible = true;
     public bool ActorPaused;
+    /// <summary>The GAME's current target: its crosshair stands at full
+    /// opacity, every other actor's fades — the live camera's treatment.
+    /// </summary>
+    public bool ActorTargeted;
     /// <summary>A light row's action slot: one eye, the same affordance an
     /// actor row wears, switching the light off without losing a setting.
     /// </summary>

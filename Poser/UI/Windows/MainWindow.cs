@@ -1380,6 +1380,14 @@ public class MainWindow : Window
                 row.Active = _selection.IsSelected(id);
         }
 
+        // The GAME's target, once per frame: its row's crosshair stands at
+        // full opacity while every other actor's fades — the live camera's
+        // treatment (user 2026-08-11).
+        Guid? targetLineage =
+            _actorManager.GetGPoseTarget() is { } gposeTarget
+                && _bindings.GetActorId(gposeTarget) is { } gposeTargetId
+                ? gposeTargetId.LogicalId
+                : null;
         for (int a = 0; a < _actorRows.Count; a++)
         {
             var state = _actorRows[a];
@@ -1389,6 +1397,7 @@ public class MainWindow : Window
                 ? _spawnService.IsVisible(resolved.Value!)
                 : !state.SnapshotHidden;
             row.ActorPaused = _animation.IsPaused(state.Id);
+            row.ActorTargeted = targetLineage == state.Id.LogicalId;
 
             string label = Config.ConfigurationService.Instance.GetDisplayName(
                 state.Id.LogicalId, state.RawName);
