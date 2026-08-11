@@ -18,6 +18,9 @@
     <EmbeddedResource Include="Lighting\Data\gobos.csv" />
     <!-- Curated festival names, phases and area exclusions (Brio's data file). -->
     <EmbeddedResource Include="Data\Festivals.json" />
+    <!-- Curated spawnable prop models: name + weapon model triple (Ktisis's
+         community props library, Data/Library/props.json). -->
+    <EmbeddedResource Include="Data\props.json" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Poser.Domain\Poser.Domain.csproj" />
