@@ -2558,8 +2558,12 @@ public class MainWindow : Window
         {
             new("Set game target", TablerIcon.Crosshair),
             new(!_spawnService.IsVisible(actor) ? "Show" : "Hide", !_spawnService.IsVisible(actor) ? TablerIcon.Eye : TablerIcon.EyeOff),
+            // The icon carries the VERB the row performs: resume wears play,
+            // pause wears pause (user 2026-08-11).
             new(_animation.IsPaused(actorId) ? "Resume animation" : "Pause animation",
-                TablerIcon.PlayerPlay),
+                _animation.IsPaused(actorId)
+                    ? TablerIcon.PlayerPlay
+                    : TablerIcon.PlayerPause),
             new("Rename", TablerIcon.Edit),
             new("Clone", TablerIcon.Stack2),
             ContextMenuItem.Separator,

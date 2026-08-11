@@ -637,12 +637,15 @@ public sealed class ShellSidebar
                         slashed: !row.ActorVisible))
                     _vm.OnActorVisibility?.Invoke(row);
 
-                // A PAUSE button, not a slashed play: engaged it stands at
-                // full opacity, disengaged it fades — the live camera's own
+                // The icon states the STATE: play while playing, pause while
+                // paused — and the paused state stands at full opacity while
+                // the ordinary playing state fades, the live camera's own
                 // treatment (user 2026-08-11).
                 ImGui.SetCursorScreenPos(origin + new Vector2(step * 2f, 0f));
                 if (Crystarium.TemporaryIconToggle(
-                        TablerIcon.PlayerPause,
+                        row.ActorPaused
+                            ? TablerIcon.PlayerPause
+                            : TablerIcon.PlayerPlay,
                         selected: false,
                         style: square,
                         help: row.ActorPaused
