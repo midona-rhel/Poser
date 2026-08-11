@@ -239,7 +239,9 @@ public sealed class PopOutWindow : Window
     {
         var theme = Crystarium.ActiveTheme;
         float height = HeaderHeight * s;
-        float inset = theme.Floating.HeaderInset * s;
+        // The title stands on the content column's inset — one aligned left
+        // edge with the tab strip and the pane below it.
+        float inset = theme.Page.Inset * s;
         float side = theme.Floating.CloseActionSize;
         float step = (side + theme.Page.ActionGap) * s;
 

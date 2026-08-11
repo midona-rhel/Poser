@@ -637,16 +637,19 @@ public sealed class ShellSidebar
                         slashed: !row.ActorVisible))
                     _vm.OnActorVisibility?.Invoke(row);
 
+                // A PAUSE button, not a slashed play: engaged it stands at
+                // full opacity, disengaged it fades — the live camera's own
+                // treatment (user 2026-08-11).
                 ImGui.SetCursorScreenPos(origin + new Vector2(step * 2f, 0f));
                 if (Crystarium.TemporaryIconToggle(
-                        TablerIcon.PlayerPlay,
+                        TablerIcon.PlayerPause,
                         selected: false,
                         style: square,
                         help: row.ActorPaused
                             ? "Resume animation"
                             : "Pause animation",
                         id: "##pause",
-                        slashed: row.ActorPaused))
+                        dimmed: !row.ActorPaused))
                     _vm.OnActorPause?.Invoke(row);
                 return;
             }
@@ -708,9 +711,12 @@ public sealed class ShellSidebar
             if (row.OverlayBones is not { } bones)
                 return;
             bool visible = _vm.IsOverlayVisible?.Invoke(bones) ?? true;
+            // ONE eye whichever way it points: show and hide are the same
+            // button, the slash alone states the state (user 2026-08-11) —
+            // exactly the actor and light eyes' language.
             ImGui.SetCursorScreenPos(origin);
             if (Crystarium.TemporaryIconToggle(
-                    visible ? TablerIcon.Eye : TablerIcon.EyeOff,
+                    TablerIcon.Eye,
                     selected: false,
                     style: square,
                     help: visible
