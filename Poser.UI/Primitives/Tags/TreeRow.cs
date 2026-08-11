@@ -339,6 +339,12 @@ public static partial class Crystarium
         if (!props.HideIcon && hasMark)
         {
             float side = TreeIconSide * scale;
+            // A NESTED row's mark centres on its children's trunk — the
+            // guide line those children will hang from — instead of sitting
+            // a label-offset past its own (user 2026-08-11).
+            if (depth > 0)
+                x = hit.ScreenMin.X
+                    + (TreeTrunkX(depth + 1) - TreeIconSide * 0.5f) * scale;
             var markMin = theme.Optical.Snap(new Vector2(
                 x, hit.ScreenMin.Y + (height - side) * 0.5f));
             var markMax = markMin + new Vector2(side);

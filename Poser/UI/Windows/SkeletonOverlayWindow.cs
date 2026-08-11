@@ -199,14 +199,16 @@ public class SkeletonOverlayWindow : Window
         if (io.KeyAlt)
             return;
 
-        // The ARMATURE pass answers to the titlebar toggle and the selection
-        // anchor. The LIGHT pass does not: a light is invisible in the world
-        // and its handle is the only route to it from the viewport, so it
-        // draws whenever the scene holds lights — Ktisis and Brio both draw
-        // their light handles unconditionally. Alt still hides everything.
-        bool drawArmature = UserVisible || AnySelectionAnchor();
+        // The ARMATURE pass answers to the sidebar's opted-in bones (the
+        // Skeleton node and the finer eyes) and the selection anchor. The
+        // LIGHT pass does not: a light is invisible in the world and its
+        // handle is the only route to it from the viewport, so it draws
+        // whenever the scene holds lights — Ktisis and Brio both draw their
+        // light handles unconditionally. Alt still hides everything.
+        bool drawArmature = _presentation.AnyVisible || AnySelectionAnchor();
 
         var selectedIds = _selection.Selected.ToHashSet();
+        var shownActors = new HashSet<SelectionId>();
         var bones = new List<BoneDisplayData>();
         var actors = new List<ActorDisplayData>();
         var lights = new List<LightDisplayData>();
@@ -279,10 +281,17 @@ public class SkeletonOverlayWindow : Window
             var boneWorldPositions = new Dictionary<BoneId, Vector3>();
             foreach (var bone in descriptors)
             {
-                if (bone.IsHidden || !_presentation.IsVisible(bone.Id))
+                // Opted-in bones draw; a SELECTED bone draws regardless —
+                // the anchor rule.
+                bool shown = _presentation.IsVisible(bone.Id);
+                if (bone.IsHidden
+                    || (!shown && !selectedIds.Contains(
+                        SelectionId.ForBone(bone.Id))))
                     continue;
                 if (!showNsfw && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
                     continue;
+                if (shown)
+                    shownActors.Add(actorSelectionId);
                 if (_viewport.GetBoneModelTransform(bone.Id) is not { } boneTransform)
                     continue;
                 var worldPos = Vector3.Transform(boneTransform.Position, modelMatrix);
@@ -322,15 +331,14 @@ public class SkeletonOverlayWindow : Window
         if (_editorState.SymmetryMode == SymmetryMode.Mirror)
             MarkMirrorPartners(bones);
 
-        // Armature toggle Off: only the selection's anchors survive — the
-        // selected bones' dots and selected actors' origin points. The
+        // Actor origin dots follow their skeleton: shown when any of the
+        // actor's bones are opted in, or the actor itself is selected. The
         // filter runs BEFORE hover/press handling so hidden dots are not
         // silently interactive.
-        if (!UserVisible)
-        {
-            bones = bones.Where(b => b.IsSelected).ToList();
-            actors = actors.Where(a => selectedIds.Contains(a.Id)).ToList();
-        }
+        actors = actors
+            .Where(a =>
+                selectedIds.Contains(a.Id) || shownActors.Contains(a.Id))
+            .ToList();
 
         var actorRadius = 8f * ImGuiHelpers.GlobalScale;
         foreach (var actor in actors)
