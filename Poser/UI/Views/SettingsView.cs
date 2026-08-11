@@ -61,8 +61,7 @@ public sealed class SettingsViewModel
     public float BoneLineThickness = 1.0f;
     public float BoneLineOpacity = 0.23f;
 
-    public bool SplitToolbar;
-    public bool SplitInspector;
+    public bool DetachedShell;
     public bool TreeGuides = true;
 
     public List<LibrarySourceVm> LibrarySources = [];
@@ -505,15 +504,10 @@ public static class SettingsView
         page.Section("LAYOUT", form =>
         {
             form.Switch(
-                "Detach toolbar",
-                vm.SplitToolbar,
-                next => vm.SplitToolbar = next,
-                "The gizmo toolbar becomes its own floating window");
-            form.Switch(
-                "Detach inspector",
-                vm.SplitInspector,
-                next => vm.SplitInspector = next,
-                "The inspector rail becomes its own floating window");
+                "Detached UI",
+                vm.DetachedShell,
+                next => vm.DetachedShell = next,
+                "Float the toolbar and the scene sidebar as their own windows");
         }, divider: false);
         page.Section("TREE", form =>
             form.Switch(

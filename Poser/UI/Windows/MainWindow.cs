@@ -640,22 +640,48 @@ public class MainWindow : Window
             }
             : ExpandedSizeConstraints(minimumWidth);
 
-        // Collapse and restore go through the Dalamud window size system;
-        // ImGui.SetWindowSize inside Draw loses to it.
-        if (_collapsed)
+        // The detach toggle's one-frame reseat: width sheds or regains the
+        // sidebar column while the LEFT edge moves the same amount, so the
+        // content and the inspector hold their screen position.
+        if (_detachShift != 0 && !_collapsed)
         {
-            Size = new Vector2(_lastWidth, AppShellView.CollapsedBarHeight);
+            float gs = ImGuiHelpers.GlobalScale;
+            Position = new Vector2(
+                _lastPosition.X + _detachShift * _sidebarWidth * gs,
+                _lastPosition.Y);
+            PositionCondition = ImGuiCond.Always;
+            Size = new Vector2(
+                _lastWidth - _detachShift * _sidebarWidth, _lastHeight);
             SizeCondition = ImGuiCond.Always;
-        }
-        else if (_restorePending)
-        {
-            Size = new Vector2(_lastWidth, _savedHeight);
-            SizeCondition = ImGuiCond.Always;
-            _restorePending = false;
+            _detachShift = 0;
+            _shiftApplied = true;
         }
         else
         {
-            SizeCondition = ImGuiCond.FirstUseEver;
+            if (_shiftApplied)
+            {
+                Position = null;
+                _shiftApplied = false;
+            }
+            _detachShift = 0;
+
+            // Collapse and restore go through the Dalamud window size system;
+            // ImGui.SetWindowSize inside Draw loses to it.
+            if (_collapsed)
+            {
+                Size = new Vector2(_lastWidth, AppShellView.CollapsedBarHeight);
+                SizeCondition = ImGuiCond.Always;
+            }
+            else if (_restorePending)
+            {
+                Size = new Vector2(_lastWidth, _savedHeight);
+                SizeCondition = ImGuiCond.Always;
+                _restorePending = false;
+            }
+            else
+            {
+                SizeCondition = ImGuiCond.FirstUseEver;
+            }
         }
 
         // The shell draws its own chassis; keep child regions transparent and
@@ -691,16 +717,33 @@ public class MainWindow : Window
         };
 
     /// <summary>The width floor for what is attached THIS frame: the shared
-    /// 1110px covers sidebar + content + rail; a split inspector hands its
-    /// column back.</summary>
+    /// 1110px covers sidebar + content + rail; detached mode hands the
+    /// sidebar's column back and keeps the rail.</summary>
     private float EffectiveMinimumWidth()
     {
-        var ui = Config.ConfigurationService.Instance.Config.UI;
         float minimum = MinimumWidth;
-        if (ui.SplitInspector)
-            minimum -= AppShellView.RailWidth;
+        if (Config.ConfigurationService.Instance.Config.UI.DetachedShell)
+            minimum -= Crystarium.ActiveTheme.Shell.SidebarDefaultWidth;
         return minimum;
     }
+
+    /// <summary>The window rect as of the last drawn frame — the detach
+    /// orchestration reads it to seat the split windows where their parts
+    /// stood.</summary>
+    internal Vector2 LastPosition => _lastPosition;
+    internal float LastWidth => _lastWidth;
+    internal float LastHeight => _lastHeight;
+    internal float LastSidebarWidth => _sidebarWidth;
+
+    /// <summary>+1 detaching (shrink right past the departing sidebar), -1
+    /// merging (grow back left). Applied for one frame by PreDraw so the
+    /// CONTENT and the inspector hold their screen position through the
+    /// toggle.</summary>
+    internal void ApplyDetachShift(int direction) => _detachShift = direction;
+
+    private int _detachShift;
+    private bool _shiftApplied;
+    private Vector2 _lastPosition;
 
     /// <summary>The title cell's subject: the library mode, else the selected
     /// entity by kind, else the plain product name. Actor names travel the
@@ -740,6 +783,7 @@ public class MainWindow : Window
         float gs = ImGuiHelpers.GlobalScale;
         _lastWidth = ImGui.GetWindowSize().X / gs;
         _lastHeight = ImGui.GetWindowSize().Y / gs;
+        _lastPosition = ImGui.GetWindowPos();
         _overlayPresentation.Reconcile(_scene.Snapshot);
         ReconcilePendingSpawn();
         BuildViewModel();
@@ -810,9 +854,8 @@ public class MainWindow : Window
         _vm.GPoseActive = _gPoseService.IsGPosing;
         _vm.SidebarWidthPx = _sidebarWidth;
         _vm.Collapsed = _collapsed;
-        var uiConfig = Config.ConfigurationService.Instance.Config.UI;
-        _vm.ToolbarSplit = uiConfig.SplitToolbar;
-        _vm.InspectorSplit = uiConfig.SplitInspector;
+        _vm.Detached =
+            Config.ConfigurationService.Instance.Config.UI.DetachedShell;
         _vm.TitleEntity = TitleEntity(primary);
         // The shell's retained per-row state is swept on structural change
         // only: an identical rescan publishes no new revision, so hover and
@@ -2179,8 +2222,7 @@ public class MainWindow : Window
         AutoSaves,
         LayoutSeparator,
         PopOutContent,
-        DetachToolbar,
-        DetachInspector,
+        ToggleDetached,
         SettingsSeparator,
         OpenSettings,
     }
@@ -2217,8 +2259,7 @@ public class MainWindow : Window
         // context menu applies to the same three commands.
         bool poseTarget = SelectedSkeleton() != null;
         var uiConfig = Config.ConfigurationService.Instance.Config.UI;
-        int layoutState = (uiConfig.SplitToolbar ? 1 : 0)
-            | (uiConfig.SplitInspector ? 2 : 0);
+        int layoutState = uiConfig.DetachedShell ? 1 : 0;
         if (_shellMenuRowsBuilt
             && poseTarget == _shellMenuPoseTarget
             && layoutState == _shellMenuLayoutState)
@@ -2246,39 +2287,22 @@ public class MainWindow : Window
             new ContextMenuItem(
                 "Pop out content", TablerIcon.ArrowsDiagonal,
                 disabled: !poseTarget);
-        _shellMenuItems[(int)ShellCommand.DetachToolbar] =
+        _shellMenuItems[(int)ShellCommand.ToggleDetached] =
             new ContextMenuItem(
-                uiConfig.SplitToolbar ? "Attach toolbar" : "Detach toolbar",
-                TablerIcon.ArrowsMove);
-        _shellMenuItems[(int)ShellCommand.DetachInspector] =
-            new ContextMenuItem(
-                uiConfig.SplitInspector
-                    ? "Attach inspector"
-                    : "Detach inspector",
-                TablerIcon.ExternalLink);
+                uiConfig.DetachedShell ? "Merge the UI" : "Detach the UI",
+                TablerIcon.LayoutPanel);
         _shellMenuItems[(int)ShellCommand.SettingsSeparator] =
             ContextMenuItem.Separator;
         _shellMenuItems[(int)ShellCommand.OpenSettings] =
             new ContextMenuItem("Open settings", TablerIcon.Settings);
     }
 
-    /// <summary>Flips one split flag and saves: the window set syncs the part
-    /// windows off the configuration-changed event.</summary>
-    internal static void ToggleSplit(ShellPart part)
-    {
-        var svc = Config.ConfigurationService.Instance;
-        var ui = svc.Config.UI;
-        switch (part)
-        {
-            case ShellPart.Toolbar:
-                ui.SplitToolbar = !ui.SplitToolbar;
-                break;
-            case ShellPart.Inspector:
-                ui.SplitInspector = !ui.SplitInspector;
-                break;
-        }
-        svc.ApplyChange();
-    }
+    /// <summary>The ONE layout toggle. The window set orchestrates it — the
+    /// flag flip, the part placement, this window's reseat — so the request
+    /// only travels.</summary>
+    public event Action? OnDetachToggleRequested;
+
+    internal void RequestDetachToggle() => OnDetachToggleRequested?.Invoke();
 
     /// <summary>Runs one command. The skeleton is resolved at invocation, not
     /// captured at build: the row array outlives every selection it was built
@@ -2312,11 +2336,8 @@ public class MainWindow : Window
                 if (SelectedActorId() is { } popOut)
                     OnPopOutRequested?.Invoke(popOut);
                 break;
-            case ShellCommand.DetachToolbar:
-                ToggleSplit(ShellPart.Toolbar);
-                break;
-            case ShellCommand.DetachInspector:
-                ToggleSplit(ShellPart.Inspector);
+            case ShellCommand.ToggleDetached:
+                RequestDetachToggle();
                 break;
             case ShellCommand.OpenSettings:
                 OnSettingsRequested?.Invoke();

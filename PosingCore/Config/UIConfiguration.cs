@@ -22,11 +22,10 @@ public class UIConfiguration
     // Settings -> Display/UI (Crystarium shell; the ImGuiCol entries below are legacy-window theming)
     public UITheme Theme { get; set; } = UITheme.Dark;
     public int AccentIndex { get; set; } = 0;
-    // The split shell: the toolbar and the inspector can leave the main
-    // window and live as their own floating windows. Both false is the
-    // compact single-window UI; the sidebar never splits.
-    public bool SplitToolbar { get; set; }
-    public bool SplitInspector { get; set; }
+    // ONE toggle: detached mode floats the toolbar and the sidebar as their
+    // own windows while the main content keeps the inspector. Off is the
+    // compact single-window UI.
+    public bool DetachedShell { get; set; }
     public bool ShowTreeGuides { get; set; } = true;
     public bool MapMirrorSelection { get; set; }
     public System.Collections.Generic.Dictionary<string, string> Keybinds { get; set; } = new();
