@@ -189,6 +189,10 @@ public sealed class AppShellViewModel
     public Action<ShellSidebarRow>? OnOverlayVisibility;
     public Func<IReadOnlyList<Domain.Identity.BoneId>, bool>?
         IsOverlayVisible;
+    /// <summary>The world manip-handle toggle every entity row carries; the
+    /// handle state is read live, like the overlay eyes.</summary>
+    public Action<ShellSidebarRow>? OnHandleToggle;
+    public Func<ShellSidebarRow, bool>? IsHandleShown;
     public Action<int>? OnSectionPlus;
     /// <summary>A click on a <see cref="ShellSidebarSection.Selectable"/>
     /// header, told the section index.</summary>

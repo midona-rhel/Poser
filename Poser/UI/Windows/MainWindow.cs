@@ -594,6 +594,17 @@ public class MainWindow : Window
         // the same reach the actor eye has. IsOn participates in the scene
         // signature, so the toggle republishes the scene on the next refresh;
         // the warm-frame flag restate lands the eye's new state immediately.
+        // The manip-handle toggle every entity row leads with: purely a
+        // presentation mask over the world overlay, read live like the
+        // overlay eyes.
+        _vm.IsHandleShown = row =>
+            row.Tag is not SelectionId handleId
+            || _overlayPresentation.IsHandleShown(handleId);
+        _vm.OnHandleToggle = row =>
+        {
+            if (row.Tag is SelectionId handleId)
+                _overlayPresentation.ToggleHandle(handleId);
+        };
         _vm.OnLightVisibility = row =>
         {
             // A prop row wears the same eye seat: its toggle is draw

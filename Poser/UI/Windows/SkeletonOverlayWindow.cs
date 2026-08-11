@@ -218,10 +218,12 @@ public class SkeletonOverlayWindow : Window
         // is no way to select or even find one from the viewport.
         foreach (var light in _scene.Snapshot.Lights)
         {
+            var lightSelectionId = SelectionId.ForLight(light.Id);
+            if (!_presentation.IsHandleShown(lightSelectionId))
+                continue;
             if (_viewport.GetLightTransform(light.Id) is not { } lightTransform ||
                 !_cameraService.WorldToScreen(lightTransform.Position, out var lightScreen))
                 continue;
-            var lightSelectionId = SelectionId.ForLight(light.Id);
             bool lightSelected = selectedIds.Contains(lightSelectionId);
             var resolved = _bindings.Resolve(light.Id);
             lights.Add(new LightDisplayData
@@ -243,6 +245,9 @@ public class SkeletonOverlayWindow : Window
         // handle unchanged: a named dot that selects its SelectionId.
         foreach (var prop in _scene.Snapshot.Props)
         {
+            var propSelectionId = SelectionId.ForProp(prop.Id);
+            if (!_presentation.IsHandleShown(propSelectionId))
+                continue;
             if (_viewport.GetPropTransform(prop.Id) is not { } propTransform ||
                 !_cameraService.WorldToScreen(
                     propTransform.Position, out var propScreen))
@@ -250,7 +255,7 @@ public class SkeletonOverlayWindow : Window
             actors.Add(new ActorDisplayData
             {
                 Name = prop.Name,
-                Id = SelectionId.ForProp(prop.Id),
+                Id = propSelectionId,
                 ScreenPos = viewportPos + propScreen,
                 CameraDistance = Vector3.Distance(
                     cameraPosition, propTransform.Position),
@@ -264,7 +269,8 @@ public class SkeletonOverlayWindow : Window
         foreach (var actor in _scene.Snapshot.Actors)
         {
             var actorSelectionId = SelectionId.ForActor(actor.Id);
-            if (_viewport.GetActorTransform(actor.Id) is { } actorTransform &&
+            if (_presentation.IsHandleShown(actorSelectionId) &&
+                _viewport.GetActorTransform(actor.Id) is { } actorTransform &&
                 _cameraService.WorldToScreen(actorTransform.Position, out var actorScreen))
             {
                 actors.Add(new ActorDisplayData

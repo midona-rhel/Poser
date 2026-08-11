@@ -51,4 +51,33 @@ public sealed class SkeletonOverlayPresentation
     }
 
     public void Clear() => _shown.Clear();
+
+    // ── world manip handles ──────────────────────────────────────────────
+
+    /// <summary>Entities whose world handle is switched OFF — handles default
+    /// to shown, so the set holds the exceptions. Keyed by lineage so a
+    /// generation bump (rebind) keeps the choice.</summary>
+    private readonly HashSet<System.Guid> _hiddenHandles = new();
+
+    public bool IsHandleShown(SelectionId id) =>
+        HandleKey(id) is not { } key || !_hiddenHandles.Contains(key);
+
+    public void ToggleHandle(SelectionId id)
+    {
+        if (HandleKey(id) is not { } key)
+            return;
+        if (!_hiddenHandles.Add(key))
+            _hiddenHandles.Remove(key);
+    }
+
+    /// <summary>The lineage a handle choice sticks to; null for kinds that
+    /// carry no world handle.</summary>
+    private static System.Guid? HandleKey(SelectionId id) => id switch
+    {
+        { Kind: SceneEntityKind.Actor, Actor: { } actor } => actor.LogicalId,
+        { Kind: SceneEntityKind.Light, Light: { } light } => light.LogicalId,
+        { Kind: SceneEntityKind.Camera, Camera: { } camera } => camera.LogicalId,
+        { Kind: SceneEntityKind.Prop, Prop: { } prop } => prop.LogicalId,
+        _ => null,
+    };
 }

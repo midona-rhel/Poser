@@ -270,10 +270,10 @@ public sealed class ShellSidebar
                     row.Label.ToLowerInvariant(),
                     row.Depth,
                     Trunks(row.TreeLines),
-                    row.ActorActions ? 3
+                    row.ActorActions ? 4
                         : row.CameraActions ? 2
-                        : row.LightActions ||
-                            row.OverlayBones != null ? 1 : 0,
+                        : row.LightActions ? 2
+                        : row.OverlayBones != null ? 1 : 0,
                     0f,
                     rowHeight));
             }
@@ -619,10 +619,25 @@ public sealed class ShellSidebar
         {
             if (row.ActorActions)
             {
+                // The manip-handle toggle leads every entity strip: whether
+                // this entity's world handle draws at all (user 2026-08-12).
+                bool handleShown = _vm.IsHandleShown?.Invoke(row) ?? true;
+                ImGui.SetCursorScreenPos(origin);
+                if (Crystarium.TemporaryIconToggle(
+                        TablerIcon.ArrowsMove,
+                        selected: false,
+                        style: square,
+                        help: handleShown
+                            ? "Hide this actor's world handle"
+                            : "Show this actor's world handle",
+                        id: "##handle",
+                        dimmed: !handleShown))
+                    _vm.OnHandleToggle?.Invoke(row);
+
                 // The crosshair is the ACTIVE-actor mark: the game's target
                 // wears it at full opacity, everyone else faded — the live
                 // camera's own treatment.
-                ImGui.SetCursorScreenPos(origin);
+                ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
                 if (Crystarium.TemporaryIconToggle(
                         TablerIcon.Crosshair,
                         selected: false,
@@ -637,7 +652,7 @@ public sealed class ShellSidebar
                 // Hidden fades rather than wearing a slash — the one
                 // engaged/faded language every action slot speaks
                 // (user 2026-08-11).
-                ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
+                ImGui.SetCursorScreenPos(origin + new Vector2(step * 2f, 0f));
                 if (Crystarium.TemporaryIconToggle(
                         TablerIcon.Eye,
                         selected: false,
@@ -650,7 +665,7 @@ public sealed class ShellSidebar
                 // The icon states the STATE: play while playing, pause while
                 // paused — at plain opacity either way; state is the glyph's
                 // to tell, not the fade's (user 2026-08-11).
-                ImGui.SetCursorScreenPos(origin + new Vector2(step * 2f, 0f));
+                ImGui.SetCursorScreenPos(origin + new Vector2(step * 3f, 0f));
                 if (Crystarium.TemporaryIconToggle(
                         row.ActorPaused
                             ? TablerIcon.PlayerPause
@@ -665,19 +680,32 @@ public sealed class ShellSidebar
                 return;
             }
 
-            // One slot, the actor eye's twin: a light has nothing to target
-            // and no animation to pause, so switching it off is its whole
-            // inline vocabulary.
+            // Two slots, the actor strip's first and second: the manip-handle
+            // toggle, then the eye (a light's on-state, a prop's draw
+            // visibility).
             if (row.LightActions)
             {
+                bool handleShown = _vm.IsHandleShown?.Invoke(row) ?? true;
                 ImGui.SetCursorScreenPos(origin);
+                if (Crystarium.TemporaryIconToggle(
+                        TablerIcon.ArrowsMove,
+                        selected: false,
+                        style: square,
+                        help: handleShown
+                            ? "Hide this entity's world handle"
+                            : "Show this entity's world handle",
+                        id: "##handle",
+                        dimmed: !handleShown))
+                    _vm.OnHandleToggle?.Invoke(row);
+
+                ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
                 if (Crystarium.TemporaryIconToggle(
                         TablerIcon.Eye,
                         selected: false,
                         style: square,
                         help: row.LightOn
-                            ? "Switch this light off"
-                            : "Switch this light on",
+                            ? "Switch this off"
+                            : "Switch this on",
                         id: "##light-on",
                         dimmed: !row.LightOn))
                     _vm.OnLightVisibility?.Invoke(row);
