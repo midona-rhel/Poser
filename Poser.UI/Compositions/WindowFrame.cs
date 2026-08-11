@@ -58,6 +58,18 @@ public readonly record struct WindowFrameProps
 
     public string? CloseHelp { get; init; }
 
+    /// <summary>Extra title-bar icons, seated in the right cluster BEFORE
+    /// the close affordance (a pin, a mode toggle). Unstated adds nothing.
+    /// </summary>
+    public Action<Crystarium.ActionBarScope>? HeaderRight { get; init; }
+
+    /// <summary>Custom title-bar content instead of the <see cref="Title"/>
+    /// label — a search field, a breadcrumb. Told the WHOLE title-bar rect;
+    /// the right icon cluster still draws, so the content must size itself
+    /// to leave that cluster room. The label is skipped while stated.
+    /// </summary>
+    public Action<WindowFrameRect>? TitleContent { get; init; }
+
     /// <summary>Logical rail width, the 1px rule INCLUDED; 0 is no rail.
     /// </summary>
     public float RailWidth { get; init; }
@@ -151,15 +163,24 @@ public static partial class Crystarium
         string title = props.Title;
         var onClose = props.OnClose;
         string? closeHelp = props.CloseHelp;
+        var headerRight = props.HeaderRight;
+        bool customTitle = props.TitleContent is not null;
         ActionBar(
             $"{id}-header",
             new Vector2(min.X + inset, min.Y),
             new Vector2(size.X - inset * 2f, barHeight),
-            left => left.Label(title),
-            onClose is null
+            customTitle ? static _ => { } : left => left.Label(title),
+            onClose is null && headerRight is null
                 ? null
-                : right => right.Icon(TablerIcon.X, onClose, closeHelp),
+                : right =>
+                {
+                    headerRight?.Invoke(right);
+                    if (onClose is not null)
+                        right.Icon(TablerIcon.X, onClose, closeHelp);
+                },
             ActionBarSeparator.None);
+        props.TitleContent?.Invoke(new WindowFrameRect(
+            min, new Vector2(max.X, titleBottom)));
 
         var railRect = default(WindowFrameRect);
         float bodyLeft = min.X;

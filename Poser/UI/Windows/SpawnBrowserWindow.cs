@@ -5,6 +5,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
+using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using Poser.Application.Selection;
@@ -95,6 +96,23 @@ public sealed class SpawnBrowserWindow : Window
     private string _queryLower = string.Empty;
     private bool _refilter = true;
 
+    /// <summary>Tab per row, parallel to the VM's row list. Filled with the
+    /// rows, read by every refilter.</summary>
+    private readonly List<SpawnBrowserTab> _rowTabs = new();
+
+    /// <summary>Pinned survives across opens within the session; the window
+    /// closes on focus loss only while unpinned.</summary>
+    private bool _pinned;
+
+    /// <summary>Focus-loss closing arms only after the window has actually
+    /// held focus once — a freshly opened window is unfocused for a frame.
+    /// </summary>
+    private bool _hadFocus;
+
+    /// <summary>Where the invoking plus wants the window, applied by the
+    /// next PreDraw and cleared.</summary>
+    private Vector2? _pendingAnchor;
+
     // The caption is a STRING PER COUNT, not per frame: it is rebuilt only when
     // the number it states or the mode it states it in changes.
     private string _caption = string.Empty;
@@ -141,6 +159,31 @@ public sealed class SpawnBrowserWindow : Window
         _vm.OnActivate = Activate;
         _vm.OnClose = () => IsOpen = false;
         _vm.ResolveIcon = ResolveIcon;
+        _vm.OnTab = next =>
+        {
+            if (_vm.Tab == next)
+                return;
+            _vm.Tab = next;
+            _note = null;
+            _refilter = true;
+        };
+        _vm.OnPinToggle = () => _pinned = !_pinned;
+    }
+
+    /// <summary>Opens (or moves) the window AT the invoking affordance — the
+    /// titlebar plus or a section header's — on the tab that affordance
+    /// answers for. The anchor is clamped so the window stays on screen.
+    /// </summary>
+    public void OpenAt(Vector2 anchor, SpawnBrowserTab tab)
+    {
+        _pendingAnchor = anchor;
+        if (_vm.Tab != (int)tab)
+        {
+            _vm.Tab = (int)tab;
+            _refilter = true;
+        }
+        IsOpen = true;
+        BringToFront();
     }
 
     public override void OnOpen()
@@ -152,14 +195,37 @@ public sealed class SpawnBrowserWindow : Window
         _vm.Query = string.Empty;
         _note = null;
         _lastRow = -1;
+        _hadFocus = false;
     }
 
     public override void PreDraw()
     {
-        Size = new Vector2(
-            SpawnBrowserView.DesignWidth, SpawnBrowserView.DesignHeight);
+        // The view IS the window chrome — the ImGui host must contribute
+        // nothing. Without this the host's inner clip rect insets by half
+        // its WindowPadding and every full-bleed fill and rule is cut off
+        // the edges (user 2026-08-11: "nothing is really reaching the
+        // edge"). Same contract as MainWindow's shell.
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
+
+        float width = SpawnBrowserView.MeasureWidth();
+        Size = new Vector2(width, SpawnBrowserView.DesignHeight);
         SizeCondition = ImGuiCond.Always;
+        if (_pendingAnchor is { } anchor)
+        {
+            _pendingAnchor = null;
+            var scaled = new Vector2(width, SpawnBrowserView.DesignHeight)
+                * ImGuiHelpers.GlobalScale;
+            var viewport = ImGui.GetMainViewport();
+            Position = Vector2.Max(
+                viewport.WorkPos,
+                Vector2.Min(
+                    anchor, viewport.WorkPos + viewport.WorkSize - scaled));
+            PositionCondition = ImGuiCond.Always;
+        }
     }
+
+    public override void PostDraw() => ImGui.PopStyleVar(2);
 
     public override void Draw()
     {
@@ -169,6 +235,21 @@ public sealed class SpawnBrowserWindow : Window
             Refilter();
         SyncCloneRow();
         SyncStatus();
+        _vm.Pinned = _pinned;
+
+        // Menu semantics unless pinned: the window closes when focus leaves
+        // it. Armed only after it has HELD focus (a fresh open is unfocused
+        // for a frame), and held while the world-light picker owns focus —
+        // the picker is pumped from this Draw and would die with it.
+        bool focused = ImGui.IsWindowFocused(
+            ImGuiFocusedFlags.RootAndChildWindows);
+        if (focused)
+            _hadFocus = true;
+        else if (_hadFocus && !_pinned && !_worldPicker.IsOpen)
+        {
+            IsOpen = false;
+            return;
+        }
 
         // The view paints its own chassis (frame + chrome); the host window is
         // an undecorated, transparent shell that only supplies position + input.
@@ -269,6 +350,19 @@ public sealed class SpawnBrowserWindow : Window
             "##spawn-camera-file", "New camera from file", TablerIcon.File,
             noCameras));
 
+        // Tab per action row, by the fixed row order above. The prop entry
+        // is its own tab (a prop catalog arrives later); everything the
+        // companion catalog spawns is an ACTOR, so it files under Actors.
+        _rowTabs.Clear();
+        for (int i = 0; i < ActionRows; i++)
+            _rowTabs.Add(i == RowProp
+                ? SpawnBrowserTab.Props
+                : i < RowProp
+                    ? SpawnBrowserTab.Actors
+                    : i <= RowWorldLight
+                        ? SpawnBrowserTab.Lights
+                        : SpawnBrowserTab.Cameras);
+
         var entries = _catalog.Entries;
         for (int i = 0; i < entries.Count; i++)
         {
@@ -281,6 +375,7 @@ public sealed class SpawnBrowserWindow : Window
                 entry.IconId,
                 Badge(entry.Kind),
                 false));
+            _rowTabs.Add(SpawnBrowserTab.Actors);
         }
         _refilter = true;
     }
@@ -356,12 +451,17 @@ public sealed class SpawnBrowserWindow : Window
         _refilter = false;
         var visible = _vm.Visible;
         var rows = _vm.Rows;
+        var tab = (SpawnBrowserTab)_vm.Tab;
         visible.Clear();
         for (int i = 0; i < rows.Count; i++)
+        {
+            if (tab != SpawnBrowserTab.All && _rowTabs[i] != tab)
+                continue;
             if (_queryLower.Length == 0
                 || rows[i].LabelLower.Contains(
                     _queryLower, StringComparison.Ordinal))
                 visible.Add(i);
+        }
     }
 
     /// <summary>Clone is the one row whose availability moves with the

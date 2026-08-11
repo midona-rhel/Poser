@@ -6,6 +6,20 @@ using Dalamud.Interface.Utility;
 
 namespace Poser.UI.Views;
 
+/// <summary>The browser's category strips. All is the whole flat list; the
+/// rest are the plus buttons' own groups, so a section plus can open its
+/// group directly. The minion/mount/accessory catalog lives under Actors —
+/// catalog spawns ARE actors — with the badge stating the kind; Props holds
+/// the prop entry (a prop catalog arrives later, user 2026-08-11).</summary>
+public enum SpawnBrowserTab
+{
+    All,
+    Actors,
+    Lights,
+    Cameras,
+    Props,
+}
+
 /// <summary>
 /// One row of the flat spawn list. Every string it needs is minted when the
 /// list is built — the ImGui id, the label, and the label lowercased for the
@@ -34,6 +48,18 @@ public sealed class SpawnBrowserViewModel
 
     public string Query = string.Empty;
 
+    /// <summary>The active <see cref="SpawnBrowserTab"/>, as its index.
+    /// </summary>
+    public int Tab;
+
+    public Action<int>? OnTab;
+
+    /// <summary>Pinned stays open when focus leaves; unpinned closes.
+    /// </summary>
+    public bool Pinned;
+
+    public Action? OnPinToggle;
+
     /// <summary>The footer caption: the honest count, or the note explaining
     /// why the last activation did nothing.</summary>
     public string Status = string.Empty;
@@ -52,9 +78,11 @@ public sealed class SpawnBrowserViewModel
     public Func<uint, nint>? ResolveIcon;
 
     // Hoisted once per model: the frame's chrome must not mint a closure, and
-    // both of these close over nothing but this model.
-    internal Action<Crystarium.ActionBarScope>? Footer;
+    // all of these close over nothing but this model.
     internal Action<Crystarium.ScrollRegionScope>? List;
+    internal Action<Crystarium.ActionBarScope>? Footer;
+    internal Action<Crystarium.ActionBarScope>? Header;
+    internal Action<WindowFrameRect>? TitleContent;
 }
 
 /// <summary>
@@ -68,8 +96,24 @@ public sealed class SpawnBrowserViewModel
 /// </summary>
 public static class SpawnBrowserView
 {
-    public const float DesignWidth = 440f;
     public const float DesignHeight = 580f;
+
+    /// <summary>The window's width floor: room for the search row's field
+    /// plus its two icons even if the tab strip ever narrows.</summary>
+    private const float MinWidth = 320f;
+
+    /// <summary>The window is BUILT AROUND the tab strip: its logical width
+    /// is the strip plus the content inset each side (user 2026-08-11:
+    /// "build this around the width of the props spawner"). Callable
+    /// wherever an ImGui frame is current (PreDraw included).</summary>
+    public static float MeasureWidth()
+    {
+        var theme = Crystarium.ActiveTheme;
+        float scale = ImGuiHelpers.GlobalScale;
+        float inset = theme.Scrollbar.GutterWidth * RowBarShare + RowPadding;
+        float tabs = Crystarium.MeasureSegmentedControl(TabLabels).X / scale;
+        return MathF.Max(MinWidth, tabs + inset * 2f);
+    }
 
     private const string SearchId = "##spawn-browser-search";
     private const string ListId = "##spawn-browser-list";
@@ -77,6 +121,25 @@ public static class SpawnBrowserView
     /// <summary>The band under the title bar, which is also FilterPill's own
     /// natural search height.</summary>
     private const float SearchBandHeight = 36f;
+
+    /// <summary>The tab strip's row above the search, inside the same band.
+    /// </summary>
+    private const float TabBandHeight = 34f;
+
+    /// <summary>The tab strip is the SAME segmented pill every other tab
+    /// strip uses (the shell's workspace tabs), not hand-drawn buttons.
+    /// Order matches <see cref="SpawnBrowserTab"/>.</summary>
+    private static readonly string[] TabLabels =
+    [
+        "All",
+        "Actors",
+        "Lights",
+        "Cameras",
+        "Props",
+    ];
+
+    /// <summary>The pin/close side in the search row.</summary>
+    private const float HeaderButtonSide = 26f;
 
     /// <summary>The PILL's own height, and the 2px it breathes off each
     /// neighbour — together the pitch the clipper steps at.</summary>
@@ -113,7 +176,8 @@ public static class SpawnBrowserView
         ArgumentNullException.ThrowIfNull(vm);
         var theme = Crystarium.ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
-        var size = new Vector2(DesignWidth, DesignHeight) * scale;
+        float width = MeasureWidth();
+        var size = new Vector2(width, DesignHeight) * scale;
 
         // Enter is sampled BEFORE the body opens its scroll child, so the gate
         // is the host window's focus rather than whichever child owns the
@@ -123,49 +187,90 @@ public static class SpawnBrowserView
             && (ImGui.IsKeyPressed(ImGuiKey.Enter, repeat: false)
                 || ImGui.IsKeyPressed(ImGuiKey.KeypadEnter, repeat: false));
 
-        vm.Footer ??= scope => scope.Label(vm.Status);
         vm.List ??= region => DrawRows(vm, region);
+        vm.Footer ??= scope => scope.Label(vm.Status);
+        vm.Header ??= right => right.Icon(
+            TablerIcon.Pin,
+            () => vm.OnPinToggle?.Invoke(),
+            vm.Pinned
+                ? "Pinned — the window stays open. Click to unpin."
+                : "Pin the window open — unpinned, it closes when it "
+                    + "loses focus.",
+            style: new ControlStyle { Selected = vm.Pinned });
+        vm.TitleContent ??= rect => DrawSearchInTitle(vm, rect);
 
+        // THE window frame, exactly as before the title went: the search
+        // field IS the title-bar content now, the tab strip is the band,
+        // and the frame owns every rule, fill and hover treatment (user
+        // 2026-08-11: the hand-drawn chassis "doesn't look quite right").
         var rects = Crystarium.WindowFrame(
             "spawn-browser",
             origin,
             size,
             new WindowFrameProps
             {
-                Title = "Add to scene",
+                Title = string.Empty,
+                TitleContent = vm.TitleContent,
+                HeaderRight = vm.Header,
                 OnClose = vm.OnClose,
                 CloseHelp = "Close",
-                BandHeight = SearchBandHeight,
+                BandHeight = TabBandHeight,
                 FooterLeft = vm.Footer,
             });
 
-        DrawSearch(vm, rects.Band, scale, theme);
+        DrawTabs(vm, rects.Band.Min, scale, theme);
         DrawBody(vm, rects.Body, scale, theme);
 
         if (submit)
             ActivateFirstEnabled(vm);
     }
 
-    /// <summary>The band's content: the frame owns the band and its rule, this
-    /// owns the field seated in it.</summary>
-    private static void DrawSearch(
-        SpawnBrowserViewModel vm, WindowFrameRect band, float scale, Theme theme)
+    /// <summary>The tab strip row, under the search. The first tab's label
+    /// lands on the same content inset the rows below pad to, exactly as the
+    /// shell strip aligns to its toolbar inset.</summary>
+    private static void DrawTabs(
+        SpawnBrowserViewModel vm, Vector2 rowMin, float scale, Theme theme)
     {
-        float inset = theme.Scrollbar.GutterWidth;
-        float pillInset = inset * RowBarShare;
+        float inset =
+            (theme.Scrollbar.GutterWidth * RowBarShare + RowPadding) * scale;
+        var size = Crystarium.MeasureSegmentedControl(TabLabels);
+        ImGui.SetCursorScreenPos(new Vector2(
+            rowMin.X + inset,
+            rowMin.Y + (TabBandHeight * scale - size.Y) * 0.5f));
+        Crystarium.SegmentedControl(
+            "##spawn-browser-tabs",
+            TabLabels,
+            vm.Tab,
+            chosen => vm.OnTab?.Invoke(chosen),
+            alignFirstTabToCursor: true);
+    }
+
+    /// <summary>The title bar's content: the search field, sized to leave
+    /// the frame's right icon cluster (pin + close) its room.</summary>
+    private static void DrawSearchInTitle(
+        SpawnBrowserViewModel vm, WindowFrameRect bar)
+    {
+        var theme = Crystarium.ActiveTheme;
+        float scale = ImGuiHelpers.GlobalScale;
+        float width = bar.Size.X / scale;
+        float pillInset = theme.Scrollbar.GutterWidth * RowBarShare;
         // The margin makes up FilterPill's own pad, so the search glyph sits
         // over the row marks and the search text over the labels.
         float margin = MathF.Max(0f, pillInset + RowPadding - SearchInnerPad);
-        ImGui.SetCursorScreenPos(band.Min + new Vector2(margin * scale, 0f));
+        float cluster = theme.Floating.HeaderInset
+            + HeaderButtonSide * 2f
+            + theme.Spacing.Three * 2f;
+        ImGui.SetCursorScreenPos(bar.Min + new Vector2(
+            margin * scale,
+            (bar.Size.Y - SearchBandHeight * scale) * 0.5f));
         Crystarium.FilterPill(
             SearchId,
             vm.Query,
             vm.OnQuery ?? IgnoreQuery,
-            "Search minions, mounts, accessories",
+            "Search everything spawnable",
             new ControlStyle
             {
-                Width = UiWidth.Fixed(
-                    DesignWidth - margin - inset - SearchClearPad),
+                Width = UiWidth.Fixed(width - margin - cluster),
             });
     }
 
@@ -173,13 +278,13 @@ public static class SpawnBrowserView
         SpawnBrowserViewModel vm, WindowFrameRect body, float scale, Theme theme)
     {
         ImGui.SetCursorScreenPos(body.Min);
-        // Half-width bar: bar + its padding = the pill's left edge.
+        // The DEFAULT full gutter: the half-share bar this passed before
+        // rendered a scrollbar too thin to see (user 2026-08-11).
         Crystarium.ScrollRegion(
             ListId,
             body.Size.X / scale,
             body.Size.Y / scale,
-            vm.List!,
-            theme.Scrollbar.GutterWidth * RowBarShare);
+            vm.List!);
     }
 
     private static void DrawRows(
@@ -201,7 +306,7 @@ public static class SpawnBrowserView
             ImGui.Dummy(new Vector2(0f, pad));
             if (vm.Visible.Count == 0)
             {
-                EmptyLine(pillWidth, scale, theme);
+                CaptionLine("No matches.", pillWidth, scale, theme);
             }
             else
             {
@@ -336,9 +441,11 @@ public static class SpawnBrowserView
             vm.OnActivate?.Invoke(index);
     }
 
-    /// <summary>The list's empty state: one caption on a row band, padded to
-    /// where the labels above it would have started.</summary>
-    private static void EmptyLine(float pillWidth, float scale, Theme theme)
+    /// <summary>One caption on a row band — the empty state and the
+    /// activation note both use it — padded to where the labels above it
+    /// would have started.</summary>
+    private static void CaptionLine(
+        string text, float pillWidth, float scale, Theme theme)
     {
         var bandMin = ImGui.GetCursorScreenPos();
         float pillInset = theme.Scrollbar.GutterWidth * RowBarShare;
@@ -350,7 +457,7 @@ public static class SpawnBrowserView
             new Vector2(
                 MathF.Max(0f, pillInset + pillWidth - left) * scale,
                 RowHeight * scale),
-            "No matches.",
+            text,
             new TextStyle
             {
                 Size = theme.Typography.CaptionSize,

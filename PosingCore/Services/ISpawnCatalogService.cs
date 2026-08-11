@@ -4,17 +4,19 @@ using Poser.Game.Types;
 namespace Poser.Services;
 
 /// <summary>
-/// One spawnable the game sheets declare: the kind it attaches as, its sheet
-/// row id, the display name, that name PRE-LOWERCASED, and the sheet's icon.
-/// The lowercase copy is minted at build time because a search scans every
-/// entry on each keystroke and may allocate nothing while doing it.
+/// One spawnable the game sheets declare: its kind, its sheet row id, the
+/// display name, that name PRE-LOWERCASED, the sheet's icon, and the
+/// ModelChara row the entry draws as. The lowercase copy is minted at build
+/// time because a search scans every entry on each keystroke and may
+/// allocate nothing while doing it.
 /// </summary>
 public readonly record struct SpawnCatalogEntry(
     CompanionKind Kind,
     ushort Id,
     string Name,
     string NameLower,
-    uint IconId);
+    uint IconId,
+    int ModelCharaId);
 
 /// <summary>
 /// Every minion, mount and fashion accessory as ONE flat immutable list.

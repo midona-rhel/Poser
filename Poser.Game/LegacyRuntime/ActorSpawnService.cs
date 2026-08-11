@@ -29,6 +29,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
     private readonly IFramework _framework;
 
     private readonly HashSet<ushort> _spawnedIndexes = new();
+    private readonly Dictionary<ushort, CompanionKind> _spawnedKinds = new();
     private readonly Dictionary<nint, bool> _visibilityOverrides = new();
 
     public ActorSpawnService(
@@ -76,8 +77,43 @@ public unsafe class ActorSpawnService : IActorSpawnService
         return SpawnCloneFrom(source.Address, reserveCompanionSlot: true);
     }
 
+    public IActor? SpawnCatalogActor(SpawnCatalogEntry entry)
+    {
+        var localPlayer = _objectTable.GetObjectAddress(0);
+        if (localPlayer == nint.Zero)
+        {
+            _log.Warning("ActorSpawnService: Cannot spawn - no local player");
+            return null;
+        }
+        // No companion slot: the entry IS the actor, not something an owner
+        // carries in a slot.
+        var actor = SpawnCloneFrom(
+            localPlayer,
+            reserveCompanionSlot: false,
+            modelCharaId: entry.ModelCharaId,
+            name: entry.Name);
+        if (actor != null && actor.Address != nint.Zero)
+            _spawnedKinds[((GameObject*)actor.Address)->ObjectIndex] =
+                entry.Kind;
+        return actor;
+    }
+
+    public CompanionKind GetSpawnedKind(IActor actor)
+    {
+        if (actor.Address == nint.Zero)
+            return CompanionKind.None;
+        return _spawnedKinds.TryGetValue(
+            ((GameObject*)actor.Address)->ObjectIndex, out var kind)
+            ? kind
+            : CompanionKind.None;
+    }
+
     /// <summary>Shared spawn path: new battle character + appearance/position copy.</summary>
-    private IActor? SpawnCloneFrom(nint sourceAddress, bool reserveCompanionSlot)
+    private IActor? SpawnCloneFrom(
+        nint sourceAddress,
+        bool reserveCompanionSlot,
+        int modelCharaId = 0,
+        string? name = null)
     {
         try
         {
@@ -115,7 +151,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
             var newCharacter = (Character*)newObject;
 
             // Set a name for the character (like Brio does)
-            SetName((GameObject*)newObject, ToPoserName(newIndex));
+            SetName((GameObject*)newObject, name ?? ToPoserName(newIndex));
 
             // Copy appearance from the source actor
             var sourceCharacter = (Character*)sourceAddress;
@@ -127,6 +163,12 @@ public unsafe class ActorSpawnService : IActorSpawnService
             newCharacter->CharacterSetup.CopyFromCharacter(
                 newCharacter,
                 CharacterSetupContainer.CopyFlags.None);
+
+            // Catalog spawns must FIRST draw as the entry's model, so the id
+            // is written after the appearance copy and before EnableDraw
+            // (write site verified against Brio ActorAppearanceService).
+            if (modelCharaId != 0)
+                newCharacter->ModelContainer.ModelCharaId = modelCharaId;
 
             // Copy position
             newObject->Position = sourceCharacter->GameObject.Position;
@@ -222,6 +264,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
             com->DeleteObjectByIndex((ushort)idx, 0);
             _spawnedIndexes.Remove((ushort)idx);
+            _spawnedKinds.Remove((ushort)idx);
 
             _log.Debug($"ActorSpawnService: Destroyed actor at index {idx}");
 
@@ -469,6 +512,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
         if (com == null)
         {
             _spawnedIndexes.Clear();
+            _spawnedKinds.Clear();
             _visibilityOverrides.Clear();
             return;
         }
@@ -493,6 +537,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
         }
 
         _spawnedIndexes.Clear();
+        _spawnedKinds.Clear();
         _visibilityOverrides.Clear();
     }
 

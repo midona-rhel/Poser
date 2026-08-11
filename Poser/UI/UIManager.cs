@@ -84,7 +84,7 @@ public sealed class UIManager : IUIManager
         ];
 
         _windows.Main.OnSettingsRequested += ToggleSettingsWindow;
-        _windows.Main.OnSpawnBrowserRequested += ToggleSpawnBrowserWindow;
+        _windows.Main.OnSpawnBrowserRequested += OpenSpawnBrowserAt;
         _poseFileSection.OnLibraryRequested += OpenPoseLibrary;
         _configService.OnConfigurationChanged += ApplyConfiguredTheme;
 
@@ -242,8 +242,12 @@ public sealed class UIManager : IUIManager
     private void ToggleSettingsWindow()
         => _windows.Settings.IsOpen = !_windows.Settings.IsOpen;
 
-    private void ToggleSpawnBrowserWindow()
-        => _windows.SpawnBrowser.IsOpen = !_windows.SpawnBrowser.IsOpen;
+    // Open-or-move, never toggle: the unpinned browser already closes on
+    // focus loss, so a plus click while it is open MOVES it to that plus
+    // (and its tab) instead of silently swallowing the click.
+    private void OpenSpawnBrowserAt(
+        System.Numerics.Vector2 anchor, Views.SpawnBrowserTab tab)
+        => _windows.SpawnBrowser.OpenAt(anchor, tab);
 
     // Open, not toggle: "Library…" and a redirected "Import…" are openers, so
     // a second press must not close a library the user is already looking at.
@@ -265,7 +269,7 @@ public sealed class UIManager : IUIManager
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
 
         _windows.Main.OnSettingsRequested -= ToggleSettingsWindow;
-        _windows.Main.OnSpawnBrowserRequested -= ToggleSpawnBrowserWindow;
+        _windows.Main.OnSpawnBrowserRequested -= OpenSpawnBrowserAt;
         _poseFileSection.OnLibraryRequested -= OpenPoseLibrary;
         _configService.OnConfigurationChanged -= ApplyConfiguredTheme;
 

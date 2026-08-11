@@ -287,11 +287,18 @@ public static partial class Crystarium
 
         // ::placeholder is not a focus-gated pseudo-element: an empty
         // field shows it while the caret is in it, exactly as Blink does.
+        // Band-centred in the BOX rect — the same centring the search glyph
+        // gets — because the risen line-box top the value uses reads a few
+        // pixels low for a bare placeholder (user: "the preview text is a
+        // bit too low").
         if (next.Length == 0 && !string.IsNullOrEmpty(placeholder))
-            TextAt(
-                new Vector2(inputMin.X + textInset, inputMin.Y + framePadY),
+            TextInBand(
+                new Vector2(boxMin.X + textInset, boxMin.Y),
+                new Vector2(MathF.Max(0f, width - textInset), height),
                 placeholder!,
-                new TextStyle { Color = theme.TextMuted });
+                new TextStyle { Color = theme.TextMuted },
+                TextAlign.Start,
+                besideIcon: true);
 
         if (disabled)
         {

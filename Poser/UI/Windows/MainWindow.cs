@@ -285,9 +285,10 @@ public class MainWindow : Window
 
     public event Action? OnSettingsRequested;
 
-    /// <summary>Raised by both creation affordances — the titlebar plus and the
-    /// ACTORS header plus.</summary>
-    public event Action? OnSpawnBrowserRequested;
+    /// <summary>Raised by every creation affordance — the titlebar plus, the
+    /// section header plusses, and the shell menu — with the pointer position
+    /// the browser opens AT and the tab that affordance answers for.</summary>
+    public event Action<Vector2, SpawnBrowserTab>? OnSpawnBrowserRequested;
 
     public MainWindow(
         IGPoseService gPoseService,
@@ -424,19 +425,22 @@ public class MainWindow : Window
             _shellMenuOpenRequested = true;
         };
         _vm.OnHideUi = () => IsOpen = false;
-        // The sidebar's add affordance. Creation lives where the created
-        // thing will appear, so each section header owns its own plus rather
-        // than a separate spawn menu: ACTORS opens the spawn browser, LIGHTS
-        // opens the four-kind chooser at the pointer. Neither is the first
-        // section.
+        // The sidebar's add affordance. Every section plus opens the ONE
+        // spawn browser, at the pointer, on that section's own tab — the
+        // browser replaced the per-section mini choosers (user 2026-08-11:
+        // "it should spawn where the user click, either the plus at the top
+        // or the plus next to actors camera or lights").
         _vm.OnSectionPlus = index =>
         {
             if (index == LightsSectionIndex)
-                _lightMenuOpenRequested = true;
+                OnSpawnBrowserRequested?.Invoke(
+                    ImGui.GetMousePos(), SpawnBrowserTab.Lights);
             else if (index == CamerasSectionIndex)
-                _cameraMenuOpenRequested = true;
+                OnSpawnBrowserRequested?.Invoke(
+                    ImGui.GetMousePos(), SpawnBrowserTab.Cameras);
             else if (index == ActorsSectionIndex)
-                OnSpawnBrowserRequested?.Invoke();
+                OnSpawnBrowserRequested?.Invoke(
+                    ImGui.GetMousePos(), SpawnBrowserTab.Actors);
         };
         // The LIBRARY and ENVIRONMENT headers are the selectable ones, so no
         // other index can arrive. The library is a MODE over an untouched
@@ -457,7 +461,8 @@ public class MainWindow : Window
                 _selection.Select(EnvironmentSelection);
             }
         };
-        _vm.OnSpawn = () => OnSpawnBrowserRequested?.Invoke();
+        _vm.OnSpawn = () => OnSpawnBrowserRequested?.Invoke(
+            ImGui.GetMousePos(), SpawnBrowserTab.All);
         _vm.OnRowClicked = OnRowClicked;
         _vm.OnRowExpandToggled = row =>
         {
@@ -2089,7 +2094,8 @@ public class MainWindow : Window
                 ShowLibrary();
                 break;
             case ShellCommand.SpawnActor:
-                OnSpawnBrowserRequested?.Invoke();
+                OnSpawnBrowserRequested?.Invoke(
+                    ImGui.GetMousePos(), SpawnBrowserTab.All);
                 break;
             // Import/Export open the Brio menus — the ONE import and export
             // surface; the file dialogs live inside them.

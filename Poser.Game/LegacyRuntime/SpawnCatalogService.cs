@@ -45,7 +45,8 @@ public sealed class SpawnCatalogService : ISpawnCatalogService
                             CompanionKind.Companion,
                             row.RowId,
                             row.Singular.ExtractText(),
-                            row.Icon);
+                            row.Icon,
+                            (int)row.Model.RowId);
 
             var mounts = _data.GetExcelSheet<Mount>();
             if (mounts != null)
@@ -56,7 +57,8 @@ public sealed class SpawnCatalogService : ISpawnCatalogService
                             CompanionKind.Mount,
                             row.RowId,
                             row.Singular.ExtractText(),
-                            (uint)row.Icon);
+                            (uint)row.Icon,
+                            (int)row.ModelChara.RowId);
 
             var ornaments = _data.GetExcelSheet<Ornament>();
             if (ornaments != null)
@@ -67,7 +69,8 @@ public sealed class SpawnCatalogService : ISpawnCatalogService
                             CompanionKind.Ornament,
                             row.RowId,
                             row.Singular.ExtractText(),
-                            row.Icon);
+                            row.Icon,
+                            row.Model);
         }
         catch (Exception ex)
         {
@@ -86,13 +89,15 @@ public sealed class SpawnCatalogService : ISpawnCatalogService
         CompanionKind kind,
         uint rowId,
         string name,
-        uint iconId)
+        uint iconId,
+        int modelCharaId)
     {
         if (rowId > ushort.MaxValue || string.IsNullOrWhiteSpace(name))
             return;
         name = Capitalize(name);
         entries.Add(new SpawnCatalogEntry(
-            kind, (ushort)rowId, name, name.ToLowerInvariant(), iconId));
+            kind, (ushort)rowId, name, name.ToLowerInvariant(), iconId,
+            modelCharaId));
     }
 
     private static string Capitalize(string name) =>
