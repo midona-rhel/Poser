@@ -564,15 +564,10 @@ public static class AppShellView
         IconAt(
             new Vector2(x, y), TablerIcon.Settings, side, vm.OnSettings,
             "##shell-settings", help: "Open Poser settings");
-        x -= step;
-        ImGui.SetCursorScreenPos(new Vector2(x, y));
-        Crystarium.TemporaryIconToggle(
-            TablerIcon.Armature,
-            vm.SkeletonOverlayOn,
-            () => vm.OnSkeletonOverlay?.Invoke(!vm.SkeletonOverlayOn),
-            ControlStyle.Square(side),
-            help: "Show or hide the skeleton overlay in the game world",
-            id: "##shell-armature");
+        // The armature toggle left this bar (user 2026-08-11): its
+        // replacement is a design decision that has not landed, so the
+        // SkeletonOverlayOn/OnSkeletonOverlay seams stay wired for it and
+        // the overlay's own UserVisible semantics are untouched.
     }
 
     // ── sidebar ──────────────────────────────────────────────────────────

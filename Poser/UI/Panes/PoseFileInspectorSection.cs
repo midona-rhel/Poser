@@ -782,10 +782,17 @@ public sealed class PoseFileInspectorSection
     /// <summary>The library pane's push: whether the rail leads with the live
     /// pose preview. Restated every frame the pane draws, and false the moment
     /// it stops — the section must never draw a preview the pane has closed.
-    /// </summary>
-    public void SetPreviewVisible(bool visible) => _previewVisible = visible;
+    /// <paramref name="idleText"/> is what the empty well says while the seat
+    /// is up with no pose stated — the pane's reason ("select a pose"), so the
+    /// well is an affordance rather than a mystery box.</summary>
+    public void SetPreviewVisible(bool visible, string? idleText = null)
+    {
+        _previewVisible = visible;
+        _previewIdleText = idleText;
+    }
 
     private bool _previewVisible;
+    private string? _previewIdleText;
 
     /// <summary>
     /// The library pane's other push: whether it WOULD be driving the shared
@@ -1177,7 +1184,7 @@ public sealed class PoseFileInspectorSection
             (min, size) => DrawPreviewImage(
                 min, size, box.X, scale, theme,
                 ref _previewFadeRamp,
-                emptyText: null,
+                emptyText: mirror ? null : _previewIdleText,
                 showRender: !mirror));
         int rows = PreviewCameraRows(width, scale, theme);
         form.Canvas(
