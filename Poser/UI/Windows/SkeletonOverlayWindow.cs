@@ -266,10 +266,9 @@ public class SkeletonOverlayWindow : Window
             });
         }
 
-        // Collect all bones that project to screen successfully — snapshot
-        // descriptors give identity/hierarchy, the viewport projection gives
-        // model-space facts, and the camera service projects to screen.
-        if (drawArmature)
+        // Actor origin handles draw for EVERY actor, armature or not — the
+        // sidebar's manip toggle is their one gate (user 2026-08-12): the
+        // handle is how an actor is picked from the viewport at all.
         foreach (var actor in _scene.Snapshot.Actors)
         {
             var actorSelectionId = SelectionId.ForActor(actor.Id);
@@ -289,6 +288,15 @@ public class SkeletonOverlayWindow : Window
                     CameraDistance = Vector3.Distance(cameraPosition, actorTransform.Position),
                 });
             }
+        }
+
+        // Collect all bones that project to screen successfully — snapshot
+        // descriptors give identity/hierarchy, the viewport projection gives
+        // model-space facts, and the camera service projects to screen.
+        if (drawArmature)
+        foreach (var actor in _scene.Snapshot.Actors)
+        {
+            var actorSelectionId = SelectionId.ForActor(actor.Id);
 
             // The overlay projects every present slot skeleton; each slot has
             // its own model matrix (a weapon's draw object moves with the
@@ -361,18 +369,9 @@ public class SkeletonOverlayWindow : Window
         if (_editorState.SymmetryMode == SymmetryMode.Mirror)
             MarkMirrorPartners(bones);
 
-        // Actor origin dots follow their skeleton: shown when any of the
-        // actor's bones are opted in, or the actor itself is selected. The
-        // filter runs BEFORE hover/press handling so hidden dots are not
-        // silently interactive. A PROP entry rides this list but follows the
-        // LIGHT rule instead — its handle is the only viewport route to it,
-        // so it survives the armature filter (the handle toggle already
-        // filtered it upstream).
-        actors = actors
-            .Where(a =>
-                a.Id.Kind == SceneEntityKind.Prop ||
-                selectedIds.Contains(a.Id) || shownActors.Contains(a.Id))
-            .ToList();
+        // No armature filter here anymore: every entry above was already
+        // gated by its sidebar manip toggle at collection, and a masked
+        // handle was never collected — so nothing hidden is interactive.
 
         var actorRadius = 8f * ImGuiHelpers.GlobalScale;
         foreach (var actor in actors)
