@@ -33,6 +33,12 @@ public record SkeletonChangedEvent(IActor Actor, ISkeleton? Skeleton) : IEvent;
 /// </summary>
 public record LightListChangedEvent(IReadOnlyList<ILight> Lights) : IEvent;
 
+/// <summary>
+/// Published when the virtual-camera list changes (camera created, destroyed,
+/// or the live camera switched).
+/// </summary>
+public record CameraListChangedEvent(IReadOnlyList<IVirtualCamera> Cameras) : IEvent;
+
 #endregion
 
 #region Selection Events

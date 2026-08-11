@@ -23,12 +23,12 @@ namespace Poser.UI;
 /// docs/architecture/ui-workspace.md): owns the flat row list, the filter
 /// cache, the footer caption and every spawn/attach call the rows make.
 ///
-/// <para>ONE surface answers "add something to the scene": the six creation
+/// <para>ONE surface answers "add something to the scene": the creation
 /// actions and every minion, mount and fashion accessory the game declares, in
-/// one searchable list. Cameras and references stay absent (not disabled)
-/// until their runtime entity types exist; lights have theirs, so they are
-/// here — disabled only when the native lighting signatures are missing, where
-/// a spawn would be a silent no-op.</para>
+/// one searchable list. References stay absent (not disabled) until their
+/// runtime entity type exists; lights and cameras have theirs, so they are
+/// here — disabled only when their native signatures are missing, where a
+/// spawn would be a silent no-op.</para>
 /// </summary>
 public sealed class SpawnBrowserWindow : Window
 {
@@ -44,20 +44,18 @@ public sealed class SpawnBrowserWindow : Window
     private const int RowLightDirectional = 7;
     private const int RowLightFromFile = 8;
     private const int RowWorldLight = 9;
-    private const int ActionRows = 10;
+    private const int RowCameraGame = 10;
+    private const int RowCameraFree = 11;
+    private const int RowCameraFromFile = 12;
+    private const int ActionRows = 13;
 
     /// <summary>Double-click is a supported gesture on a single-click list, so
     /// a second activation of the SAME row inside this window is swallowed
     /// rather than spawning twice.</summary>
     private const double ReactivationSwallow = 0.35;
 
-    private const string NoActorNote =
-        "Minions, mounts and accessories attach to the selected actor — "
-        + "select an actor first.";
-
-    private const string NoSlotNote =
-        "The selected actor has no companion slot — use "
-        + "'New actor with companion slot'.";
+    private const string SpawnFailedNote =
+        "The spawn failed — GPose may be full or unavailable.";
 
     private const string NoWorldLightsNote =
         "No overworld light is close enough to capture — capture works in "
@@ -69,6 +67,8 @@ public sealed class SpawnBrowserWindow : Window
     private readonly Game.PropSpawnService _propService;
     private readonly ILightingService _lightingService;
     private readonly LightPane _lightPane;
+    private readonly IVirtualCameraService _cameraService;
+    private readonly CameraPane _cameraPane;
     private readonly ISpawnCatalogService _catalog;
     private readonly SelectionSession _selection;
     private readonly StableBindingRegistry _bindings;
@@ -115,6 +115,8 @@ public sealed class SpawnBrowserWindow : Window
         Game.PropSpawnService propService,
         ILightingService lightingService,
         LightPane lightPane,
+        IVirtualCameraService cameraService,
+        CameraPane cameraPane,
         ISpawnCatalogService catalog,
         SelectionSession selection,
         StableBindingRegistry bindings,
@@ -128,6 +130,8 @@ public sealed class SpawnBrowserWindow : Window
         _propService = propService;
         _lightingService = lightingService;
         _lightPane = lightPane;
+        _cameraService = cameraService;
+        _cameraPane = cameraPane;
         _catalog = catalog;
         _selection = selection;
         _bindings = bindings;
@@ -250,6 +254,20 @@ public sealed class SpawnBrowserWindow : Window
             "##spawn-world-light", "World light", TablerIcon.BuildingStore,
             noLights,
             help: "Copy a light the world places here and edit it"));
+        // The camera entries follow the light rule: without the native camera
+        // signature a create is a silent no-op, so they read as disabled.
+        bool noCameras = !_cameraService.IsAvailable;
+        rows.Add(ActionRow(
+            "##spawn-camera", "New camera", TablerIcon.Camera, noCameras,
+            help: "A second view over the game camera, switchable any time"));
+        rows.Add(ActionRow(
+            "##spawn-camera-free", "New free camera", TablerIcon.Video,
+            noCameras,
+            help: "A camera that flies free of the orbit, on WASD and "
+                + "right-drag"));
+        rows.Add(ActionRow(
+            "##spawn-camera-file", "New camera from file", TablerIcon.File,
+            noCameras));
 
         var entries = _catalog.Entries;
         for (int i = 0; i < entries.Count; i++)
@@ -435,19 +453,41 @@ public sealed class SpawnBrowserWindow : Window
                         Glyph = static _ => TablerIcon.Bulb,
                     });
                 return;
+            case RowCameraGame:
+            case RowCameraFree:
+            {
+                var created = _cameraService.CreateCamera(
+                    index == RowCameraFree ? CameraKind.Free : CameraKind.Game);
+                if (created == null)
+                {
+                    _note = "The camera could not be created — cameras exist "
+                        + "only inside GPose.";
+                    return;
+                }
+                // The camera pane owns the pending select; it is pumped by
+                // the main window every frame, so the selection lands however
+                // this window is dismissed.
+                _cameraPane.SelectWhenBound(created);
+                return;
+            }
+            case RowCameraFromFile:
+                // The pane owns the dialog and the import's own selection,
+                // exactly like the light file row above.
+                _cameraPane.OpenLoad();
+                return;
         }
 
-        // Catalog rows attach to the selected actor; they create nothing of
-        // their own, so with no actor there is nothing to attach to.
+        // Catalog rows spawn the entry as its OWN actor, classified by kind
+        // at spawn — never attached to an owner's slot, and with no
+        // post-spawn model surface anywhere.
         var entry = _catalog.Entries[index - ActionRows];
-        if (SelectedActor() is not { } owner)
+        var spawned = _spawnService.SpawnCatalogActor(entry);
+        if (spawned == null)
         {
-            _note = NoActorNote;
+            _note = SpawnFailedNote;
             return;
         }
-        if (!_spawnService.SetCompanion(
-                owner, new CompanionAttachment(entry.Kind, entry.Id)))
-            _note = NoSlotNote;
+        SelectSpawned(spawned);
     }
 
     /// <summary>The selection's actor — a bone selection resolves to the actor

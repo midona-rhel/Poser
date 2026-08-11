@@ -87,6 +87,7 @@ public enum TablerIcon
     LightPanel,
     ZoomIn,
     ZoomOut,
+    Video,
 }
 
 /// <summary>
@@ -219,6 +220,7 @@ public static class Tabler
         TablerIcon.LightPanel      => "light-panel",
         TablerIcon.ZoomIn          => "zoom-in",
         TablerIcon.ZoomOut         => "zoom-out",
+        TablerIcon.Video           => "video",
         _ => "circle",
     };
 }

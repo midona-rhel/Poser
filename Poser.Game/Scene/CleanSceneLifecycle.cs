@@ -69,6 +69,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         _framework = framework;
         _events.Subscribe<ActorListChangedEvent>(OnActorListChanged);
         _events.Subscribe<LightListChangedEvent>(OnLightListChanged);
+        _events.Subscribe<CameraListChangedEvent>(OnCameraListChanged);
         _events.Subscribe<SkeletonChangedEvent>(OnSkeletonChanged);
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseChanged);
         // Discovery, retries, and refreshes all run on the framework thread:
@@ -85,6 +86,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         _framework.Update -= OnFrameworkUpdate;
         _events.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
         _events.Unsubscribe<LightListChangedEvent>(OnLightListChanged);
+        _events.Unsubscribe<CameraListChangedEvent>(OnCameraListChanged);
         _events.Unsubscribe<SkeletonChangedEvent>(OnSkeletonChanged);
         _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseChanged);
 
@@ -272,6 +274,21 @@ public sealed class CleanSceneLifecycle : IDisposable
             builder.Append(light.IsOn ? '1' : '0');
             builder.Append('|');
         }
+        // Cameras participate for the same reason: a create, rename, or live
+        // switch must publish a new revision.
+        foreach (var camera in snapshot.Cameras)
+        {
+            builder.Append(camera.Id.LogicalId);
+            builder.Append(':');
+            builder.Append(camera.Id.Generation);
+            builder.Append(':');
+            builder.Append(camera.Name);
+            builder.Append(':');
+            builder.Append((int)camera.Kind);
+            builder.Append(':');
+            builder.Append(camera.IsLive ? '1' : '0');
+            builder.Append('|');
+        }
         return builder.ToString();
     }
 
@@ -279,6 +296,9 @@ public sealed class CleanSceneLifecycle : IDisposable
         Refresh();
 
     private void OnLightListChanged(LightListChangedEvent _) =>
+        Refresh();
+
+    private void OnCameraListChanged(CameraListChangedEvent _) =>
         Refresh();
 
     private void OnSkeletonChanged(SkeletonChangedEvent _) =>

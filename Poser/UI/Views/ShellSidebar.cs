@@ -259,7 +259,8 @@ public sealed class ShellSidebar
                     row.Depth,
                     Trunks(row.TreeLines),
                     row.ActorActions ? 3
-                        : row.LightActions || row.OverlayBones != null ? 1 : 0,
+                        : row.LightActions || row.CameraActions ||
+                            row.OverlayBones != null ? 1 : 0,
                     0f,
                     rowHeight));
             }
@@ -650,6 +651,24 @@ public sealed class ShellSidebar
                         id: "##light-on",
                         slashed: !row.LightOn))
                     _vm.OnLightVisibility?.Invoke(row);
+                return;
+            }
+
+            // One slot again: the camera's inline verb is "look through me".
+            // The slash means parked, exactly as it means off on the light.
+            if (row.CameraActions)
+            {
+                ImGui.SetCursorScreenPos(origin);
+                if (Crystarium.TemporaryIconToggle(
+                        TablerIcon.Video,
+                        selected: false,
+                        style: square,
+                        help: row.CameraLive
+                            ? "The live camera — click to return to the main camera"
+                            : "Look through this camera",
+                        id: "##camera-live",
+                        slashed: !row.CameraLive))
+                    _vm.OnCameraLive?.Invoke(row);
                 return;
             }
 

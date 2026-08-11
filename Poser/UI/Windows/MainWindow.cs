@@ -16,6 +16,7 @@ using Poser.Game;
 using Poser.Game.Bindings;
 using Poser.Game.Transforms;
 using Poser.Game.Posing;
+using Poser.Game.Types;
 using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
@@ -80,6 +81,8 @@ public class MainWindow : Window
     private readonly AppearancePane _appearancePane;
     private readonly LightPane _lightPane;
     private readonly ILightingService _lightingService;
+    private readonly CameraPane _cameraPane;
+    private readonly IVirtualCameraService _cameraService;
     private readonly EnvironmentPane _environmentPane;
     private readonly PoseLibraryPane _libraryPane;
     private readonly PoseFileInspectorSection _poseFileSection;
@@ -144,6 +147,15 @@ public class MainWindow : Window
     private readonly ShellSidebarSection _lightsSection = new()
     {
         Title = "LIGHTS",
+    };
+
+    /// <summary>The cameras section, the lights section's twin: flat rows,
+    /// one per virtual camera, rebuilt behind the same gate (the scene
+    /// revision carries a camera's create, rename and live switch) and
+    /// flag-refreshed on warm frames.</summary>
+    private readonly ShellSidebarSection _camerasSection = new()
+    {
+        Title = "CAMERAS",
     };
 
     /// <summary>The actor rows, with the snapshot facts a warm frame needs to
@@ -226,6 +238,15 @@ public class MainWindow : Window
         new() { Label = "Shadows" },
     ];
 
+    /// <summary>A camera's tab strip, the light strip's sibling: while a
+    /// camera is selected the tab set IS the camera editor, split between the
+    /// camera itself and the Ktisis bone-tracking graft.</summary>
+    private readonly ShellTab[] _cameraTabs =
+    [
+        new() { Label = "Camera" },
+        new() { Label = "Tracking" },
+    ];
+
     /// <summary>The library section is stated first, so its index is fixed.
     /// </summary>
     private const int LibrarySectionIndex = 0;
@@ -240,8 +261,11 @@ public class MainWindow : Window
     /// anything; the environment is never created or destroyed.</summary>
     private const int ActorsSectionIndex = 2;
 
-    /// <summary>Lights stand last, under the actors they light.</summary>
+    /// <summary>Lights stand under the actors they light.</summary>
     private const int LightsSectionIndex = 3;
+
+    /// <summary>Cameras stand last: they look at everything above them.</summary>
+    private const int CamerasSectionIndex = 4;
 
     /// <summary>Reports whether the skeleton overlay window is open (titlebar toggle state).</summary>
     public Func<bool>? GetSkeletonOverlayOn { get; set; }
@@ -270,6 +294,8 @@ public class MainWindow : Window
         AppearancePane appearancePane,
         LightPane lightPane,
         ILightingService lightingService,
+        CameraPane cameraPane,
+        IVirtualCameraService cameraService,
         EnvironmentPane environmentPane,
         PoseLibraryPane libraryPane,
         PoseFileInspectorSection poseFileSection,
@@ -305,6 +331,8 @@ public class MainWindow : Window
         _appearancePane = appearancePane;
         _lightPane = lightPane;
         _lightingService = lightingService;
+        _cameraPane = cameraPane;
+        _cameraService = cameraService;
         _environmentPane = environmentPane;
         _libraryPane = libraryPane;
         // The library's "Add source…" and its empty state both mean the same
@@ -395,6 +423,8 @@ public class MainWindow : Window
         {
             if (index == LightsSectionIndex)
                 _lightMenuOpenRequested = true;
+            else if (index == CamerasSectionIndex)
+                _cameraMenuOpenRequested = true;
             else if (index == ActorsSectionIndex)
                 OnSpawnBrowserRequested?.Invoke();
         };
@@ -492,6 +522,37 @@ public class MainWindow : Window
             light.IsOn = !light.IsOn;
             row.LightOn = light.IsOn;
         };
+        // The camera's inline verb, reachable without selecting it first:
+        // make this the live camera, or step the live one back to the main
+        // camera. Liveness participates in the scene signature, so the toggle
+        // republishes on the next refresh; the warm-frame flag restate lands
+        // the glyph's new state immediately.
+        _vm.OnCameraLive = row =>
+        {
+            if (row.Tag is not SelectionId
+                { Kind: SceneEntityKind.Camera, Camera: { } rowCameraId })
+                return;
+            var resolved = _bindings.Resolve(rowCameraId);
+            if (!resolved.Success ||
+                resolved.Value is not { IsValid: true } camera)
+                return;
+            if (!camera.IsLive)
+            {
+                _cameraService.SetLive(camera);
+            }
+            else if (!camera.IsDefault)
+            {
+                foreach (var candidate in _cameraService.Cameras)
+                {
+                    if (candidate.IsDefault)
+                    {
+                        _cameraService.SetLive(candidate);
+                        break;
+                    }
+                }
+            }
+            row.CameraLive = camera.IsLive;
+        };
         _vm.OnOverlayVisibility = row =>
         {
             if (row.OverlayBones is not { } bones)
@@ -579,6 +640,7 @@ public class MainWindow : Window
         AppShellView.Draw(_vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
         DrawShellMenu();
         DrawLightMenu();
+        DrawCameraMenu();
         DrawActorContextMenu();
         DrawBoneContextMenu();
         DrawOverlayContextMenu();
@@ -588,6 +650,7 @@ public class MainWindow : Window
         // surface next.
         _appearancePane.DrawBrowsers();
         _lightPane.DrawBrowsers();
+        _cameraPane.DrawBrowsers();
         _poseFileSection.DrawBrowsers();
         // Unconditional, exactly like the dialog pumps: a library spawn binds
         // its actor frames later, and leaving library mode must not strand it.
@@ -693,10 +756,10 @@ public class MainWindow : Window
         _vm.ShowPopOut = false;
         // Entity creation has two entry points by design (approved shell): the
         // titlebar action and the ACTORS header. Both open the SAME surface,
-        // the spawn browser (the LIGHTS header's plus is the one exception:
-        // there is only one kind of light to make, so it makes it). Cameras
-        // and references stay absent (not disabled) in the browser until
-        // their runtime entity types exist.
+        // the spawn browser (the LIGHTS and CAMERAS header pluses are the
+        // exceptions: each makes its own kind at the pointer). References
+        // stay absent (not disabled) in the browser until their runtime
+        // entity type exists.
         _vm.ShowSpawn = true;
         _vm.ShowProject = false;
 
@@ -850,10 +913,13 @@ public class MainWindow : Window
         // affordance, so the section carries no rows at all.
         _vm.Sections.Add(_environmentSection);
         _vm.Sections.Add(_actorsSection);
-        // Lights stand under the actors they light, above nothing else.
+        // Lights stand under the actors they light; cameras close the list,
+        // looking at everything above them.
         _vm.Sections.Add(_lightsSection);
+        _vm.Sections.Add(_camerasSection);
         _actorsSection.Rows.Clear();
         _lightsSection.Rows.Clear();
+        _camerasSection.Rows.Clear();
         _actorRows.Clear();
 
         bool filtering = filter.Length > 0;
@@ -962,7 +1028,7 @@ public class MainWindow : Window
             {
                 Label = actorLabel,
                 Count = "",
-                Icon = actor.IsCompanion ? TablerIcon.Paw : TablerIcon.User,
+                Icon = SidebarActorIcon(actor),
                 // The disclosure affordance is permanent; an unresolved
                 // skeleton only disables it until the snapshot exposes bones.
                 HasChildren = true,
@@ -1163,6 +1229,26 @@ public class MainWindow : Window
                 LightOn = light.IsOn,
             });
         }
+
+        // Cameras are flat like lights: one row per camera, the header's plus
+        // makes another, and the row's one action makes it the live camera.
+        foreach (var camera in _scene.Snapshot.Cameras)
+        {
+            if (filtering && !MatchesSidebarFilter(filter, camera.Name))
+                continue;
+            var cameraSelectionId = SelectionId.ForCamera(camera.Id);
+            _camerasSection.Rows.Add(new ShellSidebarRow
+            {
+                Label = camera.Name,
+                Count = "",
+                Icon = camera.Kind == CameraKind.Free
+                    ? TablerIcon.Video
+                    : TablerIcon.Camera,
+                Tag = cameraSelectionId,
+                CameraActions = true,
+                CameraLive = camera.IsLive,
+            });
+        }
     }
 
     /// <summary>The mark for one light KIND, shared by the sidebar rows and
@@ -1192,6 +1278,26 @@ public class MainWindow : Window
         // the header's plus is absent rather than inert. The answer is a field
         // read, so it is restated here rather than gated.
         _lightsSection.ShowPlus = _lightingService.IsAvailable;
+        // The camera plus follows the same rule, plus the GPose gate: virtual
+        // cameras only exist inside a GPose session.
+        _camerasSection.ShowPlus =
+            _cameraService.IsAvailable && _gPoseService.IsGPosing;
+
+        var cameraRows = _camerasSection.Rows;
+        for (int i = 0; i < cameraRows.Count; i++)
+        {
+            var cameraRow = cameraRows[i];
+            if (cameraRow.Tag is not SelectionId cameraSelection)
+                continue;
+            cameraRow.Active = _selection.IsSelected(cameraSelection);
+            // The live mark reads the LIVE camera, not the descriptor: the
+            // switch moves the scene signature, and waiting for the republish
+            // would leave the glyph a frame or more behind the click.
+            if (cameraSelection.Camera is { } rowCameraId &&
+                _bindings.Resolve(rowCameraId) is
+                    { Success: true, Value: { } liveCamera })
+                cameraRow.CameraLive = liveCamera.IsLive;
+        }
 
         var lightRows = _lightsSection.Rows;
         for (int i = 0; i < lightRows.Count; i++)
@@ -1424,6 +1530,7 @@ public class MainWindow : Window
         {
             { Kind: SceneEntityKind.Environment } => _environmentTabs,
             { Kind: SceneEntityKind.Light } => _lightTabs,
+            { Kind: SceneEntityKind.Camera } => _cameraTabs,
             _ => _selectionTabs,
         };
         // The active tab is preserved WITHIN a strip, so a selection change
@@ -1502,6 +1609,23 @@ public class MainWindow : Window
         return null;
     }
 
+    /// <summary>Catalog spawns carry their spawn kind's icon; slot
+    /// companions keep the paw; everything else is a person.</summary>
+    private TablerIcon SidebarActorIcon(ActorDescriptor actor)
+    {
+        var resolved = _bindings.Resolve(actor.Id);
+        var kind = resolved.Success && resolved.Value is { } live
+            ? _spawnService.GetSpawnedKind(live)
+            : CompanionKind.None;
+        return kind switch
+        {
+            CompanionKind.Companion => TablerIcon.Paw,
+            CompanionKind.Mount => TablerIcon.Horse,
+            CompanionKind.Ornament => TablerIcon.Diamond,
+            _ => actor.IsCompanion ? TablerIcon.Paw : TablerIcon.User,
+        };
+    }
+
     // ── shell callbacks ──────────────────────────────────────────────────
 
     private void OnTabClicked(int index)
@@ -1541,6 +1665,7 @@ public class MainWindow : Window
         _vm.ContentUsesPage =
             tab is "Animation" or "Appearance" or "Light"
                 or "Shadows"
+                or "Camera" or "Tracking"
                 or "Weather" or "Sky" or "Atmosphere" or "World";
     }
 
@@ -1650,6 +1775,21 @@ public class MainWindow : Window
             return;
         }
 
+        // The two camera tabs stand only while a camera is selected — the
+        // labels are unique across every strip, so the label is the whole
+        // dispatch, exactly like the light's.
+        if (_activeTab == "Camera")
+        {
+            _cameraPane.DrawCamera(origin, size);
+            return;
+        }
+
+        if (_activeTab == "Tracking")
+        {
+            _cameraPane.DrawTracking(origin, size);
+            return;
+        }
+
         _poseInspector.Draw(origin, size);
     }
 
@@ -1734,6 +1874,52 @@ public class MainWindow : Window
         int clicked = Crystarium.FloatingMenu.Draw("##lights-add");
         if (clicked >= 0 && clicked < LightMenuKinds.Length)
             SpawnLight(LightMenuKinds[clicked]);
+    }
+
+    /// <summary>The CAMERAS header's chooser, positional against the switch
+    /// in <see cref="DrawCameraMenu"/>. Retained like the light menu's rows.
+    /// </summary>
+    private static readonly ContextMenuItem[] CameraMenuItems =
+    [
+        new("New camera", TablerIcon.Camera),
+        new("New free camera", TablerIcon.Video),
+        new("New camera from file…", TablerIcon.Download),
+    ];
+
+    private bool _cameraMenuOpenRequested;
+
+    /// <summary>The CAMERAS header's plus: a camera has two kinds and the
+    /// kind decides how it drives the game view, so the choice is asked for
+    /// before the camera exists — Brio's "New…" menu, the lights' idiom.
+    /// </summary>
+    private void DrawCameraMenu()
+    {
+        if (_cameraMenuOpenRequested)
+        {
+            _cameraMenuOpenRequested = false;
+            Crystarium.FloatingMenu.Open(
+                "##cameras-add", ImGui.GetMousePos(), CameraMenuItems);
+        }
+        switch (Crystarium.FloatingMenu.Draw("##cameras-add"))
+        {
+            case 0:
+                CreateCamera(Domain.Scene.CameraKind.Game);
+                break;
+            case 1:
+                CreateCamera(Domain.Scene.CameraKind.Free);
+                break;
+            case 2:
+                _cameraPane.OpenLoad();
+                break;
+        }
+    }
+
+    /// <summary>Creates one camera of the chosen kind and arms it for
+    /// selection once the scene refresh has bound it.</summary>
+    private void CreateCamera(Domain.Scene.CameraKind kind)
+    {
+        if (_cameraService.CreateCamera(kind) is { } created)
+            _cameraPane.SelectWhenBound(created);
     }
 
     /// <summary>Second half of <see cref="SelectSpawned"/> and
@@ -1901,7 +2087,9 @@ public class MainWindow : Window
             new("Rename", TablerIcon.Edit),
             new("Clone", TablerIcon.Stack2),
             ContextMenuItem.Separator,
-            new("Detach companion", TablerIcon.X),
+            new("Detach companion", TablerIcon.X,
+                disabled: _spawnService.GetCompanionInfo(actor).Kind
+                    == CompanionKind.None),
         };
         var actions = new List<Action?>
         {
@@ -1939,11 +2127,18 @@ public class MainWindow : Window
         items.Add(new ContextMenuItem(
             "Export pose", TablerIcon.DeviceFloppy,
             disabled: !actor.HasSkeleton));
+        items.Add(new ContextMenuItem(
+            "Stash pose", TablerIcon.ArrowDown, disabled: !actor.HasSkeleton));
+        items.Add(new ContextMenuItem(
+            "Apply stashed pose", TablerIcon.ArrowBackUp,
+            disabled: !actor.HasSkeleton || !_cleanPose.HasStash));
         actions.Add(null); // separator
         // Both rows open the Brio menus — the ONE import/export surface;
         // the file dialogs (and the actor-side presets) live inside them.
         actions.Add(() => _poseFileSection.RequestImportMenu(withPresets: true));
         actions.Add(() => _poseFileSection.RequestExportMenu());
+        actions.Add(() => _cleanPose.Stash(actor));
+        actions.Add(() => _cleanPose.ApplyStash(actor));
 
         if (_spawnService.IsSpawnedActor(actor))
         {
@@ -2072,11 +2267,11 @@ public class MainWindow : Window
     {
         if (_ctxOverlayBones is not { } bones)
             return;
-        bool ownerPresent = _scene.Snapshot.Actors.Any(actor =>
+        var owner = _scene.Snapshot.Actors.FirstOrDefault(actor =>
             actor.Skeletons.Any(skeleton =>
                 skeleton.Bones.Any(candidate =>
                     bones.Contains(candidate.Id))));
-        if (!ownerPresent)
+        if (owner == null)
         {
             _ctxOverlayBones = null;
             Crystarium.FloatingMenu.Dismiss("##overlay-ctx");
@@ -2088,6 +2283,8 @@ public class MainWindow : Window
             new ContextMenuItem(
                 visible ? "Hide category from overlay" : "Show category in overlay",
                 visible ? TablerIcon.EyeOff : TablerIcon.Eye),
+            new ContextMenuItem("Show only this category", TablerIcon.Crosshair),
+            new ContextMenuItem("Show all categories", TablerIcon.Eye),
         };
         if (_overlayCtxOpenRequested)
         {
@@ -2095,8 +2292,28 @@ public class MainWindow : Window
             Crystarium.FloatingMenu.Open(
                 "##overlay-ctx", ImGui.GetMousePos(), items);
         }
-        if (Crystarium.FloatingMenu.Draw("##overlay-ctx") == 0)
-            _overlayPresentation.SetVisible(bones, !visible);
+        int clicked = Crystarium.FloatingMenu.Draw("##overlay-ctx");
+        if (clicked < 0)
+            return;
+        // Isolate/show-all operate on the owning actor's bones only, so other
+        // actors' overlay masks are untouched.
+        var ownerBones = owner.Skeletons
+            .SelectMany(skeleton => skeleton.Bones)
+            .Select(candidate => candidate.Id)
+            .ToArray();
+        switch (clicked)
+        {
+            case 0:
+                _overlayPresentation.SetVisible(bones, !visible);
+                break;
+            case 1:
+                _overlayPresentation.SetVisible(ownerBones, false);
+                _overlayPresentation.SetVisible(bones, true);
+                break;
+            case 2:
+                _overlayPresentation.SetVisible(ownerBones, true);
+                break;
+        }
     }
 
     private void DrawRenameModal()

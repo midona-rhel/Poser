@@ -64,11 +64,20 @@ public readonly record struct LightId(Guid LogicalId, uint Generation)
     public override string ToString() => $"{LogicalId:N}@{Generation}";
 }
 
+/// <summary>One virtual camera at one exact native binding generation.</summary>
+public readonly record struct CameraId(Guid LogicalId, uint Generation)
+{
+    public static CameraId New() => new(Guid.NewGuid(), 0);
+    public CameraId NextGeneration() => new(LogicalId, checked(Generation + 1));
+    public override string ToString() => $"{LogicalId:N}@{Generation}";
+}
+
 public enum SceneEntityKind
 {
     Actor,
     Bone,
     Light,
+    Camera,
     Environment,
     GazeTarget,
 }
@@ -88,7 +97,8 @@ public readonly record struct SelectionId
         string? externalId,
         Guid? ownerActorLineage = null,
         LightId? light = null,
-        GazePart? gaze = null)
+        GazePart? gaze = null,
+        CameraId? camera = null)
     {
         Kind = kind;
         Actor = actor;
@@ -97,6 +107,7 @@ public readonly record struct SelectionId
         OwnerActorLineage = ownerActorLineage;
         Light = light;
         Gaze = gaze;
+        Camera = camera;
     }
 
     public SceneEntityKind Kind { get; }
@@ -106,6 +117,7 @@ public readonly record struct SelectionId
     public Guid? OwnerActorLineage { get; }
     public LightId? Light { get; }
     public GazePart? Gaze { get; }
+    public CameraId? Camera { get; }
 
     public Guid? ActorLineage =>
         Actor?.LogicalId ??
@@ -120,6 +132,9 @@ public readonly record struct SelectionId
 
     public static SelectionId ForLight(LightId light) =>
         new(SceneEntityKind.Light, null, null, null, light: light);
+
+    public static SelectionId ForCamera(CameraId camera) =>
+        new(SceneEntityKind.Camera, null, null, null, camera: camera);
 
     public static SelectionId ForBoneGroup(ActorId actor, string id)
     {
@@ -148,6 +163,7 @@ public readonly record struct SelectionId
         SceneEntityKind.Bone when Bone is { } bone => $"bone:{bone}",
         SceneEntityKind.Bone => $"bone-group:{OwnerActorLineage:N}:{ExternalId}",
         SceneEntityKind.Light => $"light:{Light}",
+        SceneEntityKind.Camera => $"camera:{Camera}",
         SceneEntityKind.Environment => "environment",
         SceneEntityKind.GazeTarget => $"gaze:{Actor}:{Gaze}",
         _ => throw new InvalidOperationException($"Unknown selection kind {Kind}."),
