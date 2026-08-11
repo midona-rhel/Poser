@@ -1624,11 +1624,15 @@ public class MainWindow : Window
         // the list under Other.
         if (categoriesFollow)
         {
-            var byName = new Dictionary<string, BoneDescriptor>(
+            // Ordinals record the skeleton's own enumeration order: bones
+            // list flat inside their category in THAT order, as Ktisis'
+            // BindBones sorts by bone index.
+            var byName = new Dictionary<string, (BoneDescriptor Bone, int Ordinal)>(
                 StringComparer.Ordinal);
+            int ordinal = 0;
             foreach (var (_, bones) in groups)
                 foreach (var bone in bones)
-                    byName[bone.Id.CanonicalName] = bone;
+                    byName[bone.Id.CanonicalName] = (bone, ordinal++);
 
             var claimed = new HashSet<string>(StringComparer.Ordinal);
             var built = new List<BuiltCategory>();
@@ -1641,7 +1645,7 @@ public class MainWindow : Window
             // Whatever the tree left unclaimed — modded bones outside the
             // Ktisis schema — keeps a home.
             var leftovers = new List<BoneDescriptor>();
-            foreach (var bone in byName.Values)
+            foreach (var (bone, _) in byName.Values)
                 if (!claimed.Contains(bone.Id.CanonicalName)
                     && (!filtering || MatchesSidebarFilter(
                         filter, bone.DisplayName, bone.Id.CanonicalName)))
@@ -1663,7 +1667,7 @@ public class MainWindow : Window
                 bool skeletonLast = !auxFollows;
                 var allBoneIds = new BoneId[byName.Count];
                 int i = 0;
-                foreach (var bone in byName.Values)
+                foreach (var (bone, _) in byName.Values)
                     allBoneIds[i++] = bone.Id;
                 section.Rows.Add(new ShellSidebarRow
                 {
@@ -1735,15 +1739,19 @@ public class MainWindow : Window
 
     private BuiltCategory? BuildKtisisCategory(
         Core.BoneInfo.KtisisBoneCategory category,
-        Dictionary<string, BoneDescriptor> byName,
+        Dictionary<string, (BoneDescriptor Bone, int Ordinal)> byName,
         HashSet<string> claimed,
         string filter,
         bool filtering)
     {
-        var all = new List<BoneDescriptor>();
+        var claimedHere = new List<(BoneDescriptor Bone, int Ordinal)>();
         foreach (var name in category.Bones)
-            if (byName.TryGetValue(name, out var bone) && claimed.Add(name))
-                all.Add(bone);
+            if (byName.TryGetValue(name, out var entry) && claimed.Add(name))
+                claimedHere.Add(entry);
+        claimedHere.Sort(static (a, b) => a.Ordinal - b.Ordinal);
+        var all = new List<BoneDescriptor>(claimedHere.Count);
+        foreach (var (bone, _) in claimedHere)
+            all.Add(bone);
 
         bool categoryMatches = filtering
             && MatchesSidebarFilter(filter, category.Label, category.Id);
@@ -1844,89 +1852,32 @@ public class MainWindow : Window
             : category.VisibleBones.FindAll(
                 bone => !bone.Id.Equals(mergedBone.Id));
 
-        // Ktisis' other rule: bones nest by the SKELETON's own parenting
-        // inside their category, so a hand row discloses its fingers and
-        // every node — parent or leaf — is a real, selectable bone (user
-        // 2026-08-11). A bone whose parent is outside the category (or
-        // filtered away) roots at the category level.
-        var present = new HashSet<BoneId>();
-        foreach (var bone in bones)
-            present.Add(bone.Id);
-        var childBones = new Dictionary<BoneId, List<BoneDescriptor>>();
-        var boneRoots = new List<BoneDescriptor>();
-        foreach (var bone in bones)
-        {
-            if (bone.Parent is { } parent && present.Contains(parent))
-            {
-                if (!childBones.TryGetValue(parent, out var siblings))
-                    childBones[parent] = siblings = new List<BoneDescriptor>();
-                siblings.Add(bone);
-            }
-            else
-            {
-                boneRoots.Add(bone);
-            }
-        }
-
-        for (int b = 0; b < boneRoots.Count; b++)
-            EmitCategoryBone(
-                section, boneRoots[b], childBones, catKey, depth + 1,
-                childLines,
-                b == boneRoots.Count - 1 && category.Children.Count == 0,
-                filtering, underIvcs);
-
+        // Ktisis' own ordering, read from PoseBuilder: GROUPS sort before
+        // bones (SkeletonNode.OrderByPriority), and bones bind FLAT in
+        // skeleton index order (BindBones: SortPriority = base + BoneIndex).
         for (int c = 0; c < category.Children.Count; c++)
             EmitKtisisCategory(
                 section, category.Children[c], catKey, depth + 1, childLines,
-                c == category.Children.Count - 1, filtering, underIvcs);
-    }
+                c == category.Children.Count - 1 && bones.Count == 0,
+                filtering, underIvcs);
 
-    /// <summary>One bone row inside a category: selectable always, and a
-    /// DISCLOSING parent when the skeleton parents other category bones
-    /// under it — body selects, chevron discloses, the merged-row
-    /// contract.</summary>
-    private void EmitCategoryBone(
-        ShellSidebarSection section,
-        BoneDescriptor bone,
-        Dictionary<BoneId, List<BoneDescriptor>> childBones,
-        string parentKey,
-        int depth,
-        bool[]? lines,
-        bool isLast,
-        bool filtering,
-        bool underIvcs)
-    {
-        childBones.TryGetValue(bone.Id, out var children);
-        bool hasChildren = children is { Count: > 0 };
-        var boneSelectionId = SelectionId.ForBone(bone.Id);
-        string boneKey = parentKey + "/bone:" + bone.Id.CanonicalName;
-        if (hasChildren && _knownCategoryNodes.Add(boneKey))
-            _collapsedNodes.Add(boneKey);
-        bool expanded =
-            hasChildren && (filtering || !_collapsedNodes.Contains(boneKey));
-        section.Rows.Add(new ShellSidebarRow
+        for (int b = 0; b < bones.Count; b++)
         {
-            Label = underIvcs
-                ? PruneIvcsLead(bone.DisplayName)
-                : bone.DisplayName,
-            Count = "",
-            Depth = depth,
-            HasChildren = hasChildren,
-            Expanded = expanded,
-            IsLastChild = isLast,
-            TreeLines = lines,
-            Active = _selection.IsSelected(boneSelectionId),
-            Tag = boneSelectionId,
-            ExpandKey = hasChildren ? boneKey : null,
-            OverlayBones = new[] { bone.Id },
-        });
-        if (!expanded || children == null)
-            return;
-        var childLines = Descend(lines ?? [], isLast);
-        for (int c = 0; c < children.Count; c++)
-            EmitCategoryBone(
-                section, children[c], childBones, boneKey, depth + 1,
-                childLines, c == children.Count - 1, filtering, underIvcs);
+            var boneSelectionId = SelectionId.ForBone(bones[b].Id);
+            section.Rows.Add(new ShellSidebarRow
+            {
+                Label = underIvcs
+                    ? PruneIvcsLead(bones[b].DisplayName)
+                    : bones[b].DisplayName,
+                Count = "",
+                Depth = depth + 1,
+                IsLastChild = b == bones.Count - 1,
+                TreeLines = childLines,
+                Active = _selection.IsSelected(boneSelectionId),
+                Tag = boneSelectionId,
+                OverlayBones = new[] { bones[b].Id },
+            });
+        }
     }
 
     /// <summary>Whether an actor, any of its bones or slots, or any actor

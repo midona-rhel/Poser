@@ -4,19 +4,27 @@ using Poser.Domain.Scene;
 
 namespace Poser.UI;
 
-/// <summary>Session presentation mask for the skeleton overlay only.</summary>
+/// <summary>
+/// Session presentation mask for the skeleton overlay. Bones start HIDDEN:
+/// the sidebar's Skeleton node (and the finer category/bone eyes) opt them
+/// in — the replaced armature toggle's per-actor successor (user
+/// 2026-08-11). Selection anchors bypass this mask at the overlay.
+/// </summary>
 public sealed class SkeletonOverlayPresentation
 {
-    private readonly HashSet<BoneId> _hidden = new();
+    private readonly HashSet<BoneId> _shown = new();
 
-    public bool IsVisible(BoneId bone) => !_hidden.Contains(bone);
+    /// <summary>Whether anything at all is opted in.</summary>
+    public bool AnyVisible => _shown.Count > 0;
+
+    public bool IsVisible(BoneId bone) => _shown.Contains(bone);
 
     public bool AreVisible(IReadOnlyList<BoneId> bones)
     {
         foreach (var bone in bones)
-            if (_hidden.Contains(bone))
+            if (!_shown.Contains(bone))
                 return false;
-        return true;
+        return bones.Count > 0;
     }
 
     public void SetVisible(IReadOnlyList<BoneId> bones, bool visible)
@@ -24,23 +32,23 @@ public sealed class SkeletonOverlayPresentation
         foreach (var bone in bones)
         {
             if (visible)
-                _hidden.Remove(bone);
+                _shown.Add(bone);
             else
-                _hidden.Add(bone);
+                _shown.Remove(bone);
         }
     }
 
     public void Reconcile(SceneSnapshot snapshot)
     {
-        if (_hidden.Count == 0)
+        if (_shown.Count == 0)
             return;
         var present = new HashSet<BoneId>();
         foreach (var actor in snapshot.Actors)
             foreach (var skeleton in actor.Skeletons)
                 foreach (var bone in skeleton.Bones)
                     present.Add(bone.Id);
-        _hidden.RemoveWhere(bone => !present.Contains(bone));
+        _shown.RemoveWhere(bone => !present.Contains(bone));
     }
 
-    public void Clear() => _hidden.Clear();
+    public void Clear() => _shown.Clear();
 }
