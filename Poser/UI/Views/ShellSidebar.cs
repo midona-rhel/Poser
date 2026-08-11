@@ -619,14 +619,24 @@ public sealed class ShellSidebar
         {
             if (row.ActorActions)
             {
+                // The crosshair is the ACTIVE-actor mark: the game's target
+                // wears it at full opacity, everyone else faded — the live
+                // camera's own treatment.
                 ImGui.SetCursorScreenPos(origin);
-                if (Crystarium.IconButton(
+                if (Crystarium.TemporaryIconToggle(
                         TablerIcon.Crosshair,
+                        selected: false,
                         style: square,
-                        help: "Target this actor in game",
-                        id: "##target"))
+                        help: row.ActorTargeted
+                            ? "The game's current target"
+                            : "Target this actor in game",
+                        id: "##target",
+                        dimmed: !row.ActorTargeted))
                     _vm.OnActorTarget?.Invoke(row);
 
+                // Hidden fades rather than wearing a slash — the one
+                // engaged/faded language every action slot speaks
+                // (user 2026-08-11).
                 ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
                 if (Crystarium.TemporaryIconToggle(
                         TablerIcon.Eye,
@@ -634,19 +644,23 @@ public sealed class ShellSidebar
                         style: square,
                         help: row.ActorVisible ? "Hide actor" : "Show actor",
                         id: "##visible",
-                        slashed: !row.ActorVisible))
+                        dimmed: !row.ActorVisible))
                     _vm.OnActorVisibility?.Invoke(row);
 
+                // The icon states the STATE: play while playing, pause while
+                // paused — at plain opacity either way; state is the glyph's
+                // to tell, not the fade's (user 2026-08-11).
                 ImGui.SetCursorScreenPos(origin + new Vector2(step * 2f, 0f));
                 if (Crystarium.TemporaryIconToggle(
-                        TablerIcon.PlayerPlay,
+                        row.ActorPaused
+                            ? TablerIcon.PlayerPause
+                            : TablerIcon.PlayerPlay,
                         selected: false,
                         style: square,
                         help: row.ActorPaused
                             ? "Resume animation"
                             : "Pause animation",
-                        id: "##pause",
-                        slashed: row.ActorPaused))
+                        id: "##pause"))
                     _vm.OnActorPause?.Invoke(row);
                 return;
             }
@@ -665,7 +679,7 @@ public sealed class ShellSidebar
                             ? "Switch this light off"
                             : "Switch this light on",
                         id: "##light-on",
-                        slashed: !row.LightOn))
+                        dimmed: !row.LightOn))
                     _vm.OnLightVisibility?.Invoke(row);
                 return;
             }
@@ -708,16 +722,18 @@ public sealed class ShellSidebar
             if (row.OverlayBones is not { } bones)
                 return;
             bool visible = _vm.IsOverlayVisible?.Invoke(bones) ?? true;
+            // ONE eye whichever way it points, fading when hidden — the
+            // engaged/faded language every action slot speaks.
             ImGui.SetCursorScreenPos(origin);
             if (Crystarium.TemporaryIconToggle(
-                    visible ? TablerIcon.Eye : TablerIcon.EyeOff,
+                    TablerIcon.Eye,
                     selected: false,
                     style: square,
                     help: visible
                         ? "Hide from skeleton overlay"
                         : "Show in skeleton overlay",
                     id: "##overlay",
-                    slashed: !visible))
+                    dimmed: !visible))
                 _vm.OnOverlayVisibility?.Invoke(row);
         }
         finally

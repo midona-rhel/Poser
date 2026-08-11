@@ -130,7 +130,9 @@ public sealed class SidebarPartWindow : Window
         var theme = Crystarium.ActiveTheme;
         var vm = _main.ShellVm;
         float height = theme.Floating.ModalBarHeight * s;
-        float inset = theme.Floating.HeaderInset * s;
+        // The label stands on the content column's inset — the search pill's
+        // own left edge — so the window's left side reads as one line.
+        float inset = theme.Page.Inset * s;
         float side = theme.Controls.ShellIconAction;
         float y = min.Y + (height - side * s) * 0.5f;
 

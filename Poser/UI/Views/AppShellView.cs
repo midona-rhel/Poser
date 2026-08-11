@@ -33,6 +33,10 @@ public sealed class ShellSidebarRow
     public bool ActorActions;
     public bool ActorVisible = true;
     public bool ActorPaused;
+    /// <summary>The GAME's current target: its crosshair stands at full
+    /// opacity, every other actor's fades — the live camera's treatment.
+    /// </summary>
+    public bool ActorTargeted;
     /// <summary>A light row's action slot: one eye, the same affordance an
     /// actor row wears, switching the light off without losing a setting.
     /// </summary>
@@ -394,11 +398,14 @@ public static class AppShellView
             string title = vm.TitleEntity == "Poser"
                 ? "Inspector"
                 : $"Inspector – {vm.TitleEntity}";
+            // The title stands on the CONTENT column's own inset, so the
+            // window's left side reads as one aligned edge: title, tab
+            // strips, content (user 2026-08-11).
             Crystarium.TextInBand(
-                new Vector2(min.X + theme.Floating.HeaderInset * s, min.Y),
+                new Vector2(min.X + MainHorizontalPadding * s, min.Y),
                 new Vector2(
                     MathF.Max(1f, max.X - min.X
-                        - theme.Floating.HeaderInset * 2f * s),
+                        - MainHorizontalPadding * 2f * s),
                     height),
                 title,
                 new TextStyle
