@@ -296,6 +296,10 @@ public class MainWindow : Window
     /// ACTORS header plus.</summary>
     public event Action? OnSpawnBrowserRequested;
 
+    /// <summary>Pop out the main content, frozen to this actor. The window
+    /// set answers by minting a <see cref="PopOutWindow"/>.</summary>
+    public event Action<ActorId>? OnPopOutRequested;
+
     public MainWindow(
         IGPoseService gPoseService,
         IActorManager actorManager,
@@ -433,6 +437,11 @@ public class MainWindow : Window
             _shellMenuOpenRequested = true;
         };
         _vm.OnHideUi = () => IsOpen = false;
+        _vm.OnPopOut = () =>
+        {
+            if (SelectedActorId() is { } popOut)
+                OnPopOutRequested?.Invoke(popOut);
+        };
         // The sidebar's add affordance. Creation lives where the created
         // thing will appear, so each section header owns its own plus rather
         // than a separate spawn menu: ACTORS opens the spawn browser, LIGHTS
@@ -823,7 +832,9 @@ public class MainWindow : Window
         _vm.SkeletonOverlayOn = GetSkeletonOverlayOn?.Invoke() ?? false;
         _vm.CanUndo = _cleanTransforms.CanUndo;
         _vm.CanRedo = _cleanTransforms.CanRedo;
-        _vm.ShowPopOut = false;
+        // Pop-out follows the toolbar actor: any selection that resolves to
+        // an actor can be frozen into its own content window.
+        _vm.ShowPopOut = toolbarActor != null && !_libraryMode;
         // Entity creation has two entry points by design (approved shell): the
         // titlebar action and the ACTORS header. Both open the SAME surface,
         // the spawn browser (the LIGHTS and CAMERAS header pluses are the
@@ -1586,13 +1597,14 @@ public class MainWindow : Window
             && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName);
 
     /// <summary>Nickname, else the anonymous mask when enabled, else the
-    /// cleaned snapshot name — one stable-id display API for every surface.</summary>
-    private static string ActorDisplayName(ActorDescriptor actor)
+    /// cleaned snapshot name — one stable-id display API for every surface,
+    /// the pop-out windows included.</summary>
+    internal static string ActorDisplayName(ActorDescriptor actor)
         => Config.ConfigurationService.Instance.GetDisplayName(
             actor.Id.LogicalId, DisplayName(actor.Name));
 
     /// <summary>Strips the raw object-index suffix ("Name (201)") for display.</summary>
-    private static string DisplayName(string name)
+    internal static string DisplayName(string name)
         => System.Text.RegularExpressions.Regex.Replace(name, @"\s*\(\d+\)$", "");
 
     private void BuildTabs(SelectionId? primary)
@@ -2065,6 +2077,7 @@ public class MainWindow : Window
         ExportPose,
         AutoSaves,
         LayoutSeparator,
+        PopOutContent,
         DetachSidebar,
         DetachToolbar,
         DetachInspector,
@@ -2130,6 +2143,10 @@ public class MainWindow : Window
                 "Auto-saves", TablerIcon.ArrowBackUp, disabled: !poseTarget);
         _shellMenuItems[(int)ShellCommand.LayoutSeparator] =
             ContextMenuItem.Separator;
+        _shellMenuItems[(int)ShellCommand.PopOutContent] =
+            new ContextMenuItem(
+                "Pop out content", TablerIcon.ArrowsDiagonal,
+                disabled: !poseTarget);
         _shellMenuItems[(int)ShellCommand.DetachSidebar] =
             new ContextMenuItem(
                 uiConfig.SplitSidebar ? "Attach sidebar" : "Detach sidebar",
@@ -2197,6 +2214,10 @@ public class MainWindow : Window
             case ShellCommand.AutoSaves:
                 if (SelectedSkeleton() is { } recoverSkeleton)
                     _poseFileSection.OpenAutoSaves(recoverSkeleton);
+                break;
+            case ShellCommand.PopOutContent:
+                if (SelectedActorId() is { } popOut)
+                    OnPopOutRequested?.Invoke(popOut);
                 break;
             case ShellCommand.DetachSidebar:
                 ToggleSplit(ShellPart.Sidebar);

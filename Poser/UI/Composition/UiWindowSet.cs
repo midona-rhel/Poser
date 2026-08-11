@@ -2,6 +2,7 @@ using Dalamud.Interface.Windowing;
 using Poser.Config;
 using Poser.Services;
 using System;
+using System.Collections.Generic;
 
 namespace Poser.UI.Composition;
 
@@ -23,10 +24,18 @@ public sealed class UiWindowSet : IDisposable
     public InspectorPartWindow InspectorPart { get; }
     private readonly SkeletonOverlayPresentation _overlayPresentation;
     private readonly ConfigurationService _configService;
+    private readonly IServiceProvider _services;
+
+    /// <summary>The living pop-outs, plus the ones dismissed mid-draw that
+    /// still await removal — a window cannot leave the window system while
+    /// the system is iterating it.</summary>
+    private readonly List<PopOutWindow> _popOuts = new();
+    private readonly List<PopOutWindow> _dismissedPopOuts = new();
 
     public UiWindowSet(
         IGPoseService gPoseService,
         ConfigurationService configService,
+        IServiceProvider services,
         MainWindow main,
         SkeletonOverlayWindow skeletonOverlay,
         GizmoOverlayWindow gizmoOverlay,
@@ -36,6 +45,7 @@ public sealed class UiWindowSet : IDisposable
     {
         _overlayPresentation = overlayPresentation;
         _configService = configService;
+        _services = services;
         // Draw order is intentional: overlays first, normal windows after them.
         SkeletonOverlay = skeletonOverlay;
         System.AddWindow(SkeletonOverlay);
@@ -67,6 +77,7 @@ public sealed class UiWindowSet : IDisposable
 
         Main.GetSkeletonOverlayOn = () => SkeletonOverlay.UserVisible;
         Main.OnSkeletonOverlayToggled += SetSkeletonOverlayOpen;
+        Main.OnPopOutRequested += CreatePopOut;
 
         // Split flags change through ApplyChange (the burger menu, the
         // settings page), and this is the one sync point that turns them
@@ -113,6 +124,32 @@ public sealed class UiWindowSet : IDisposable
     {
         SetPrimaryOpen(false);
         Settings.IsOpen = false;
+        // Closing dismisses them (their OnClose), and the removal itself
+        // waits out the draw pass.
+        foreach (var popOut in _popOuts.ToArray())
+            popOut.IsOpen = false;
+    }
+
+    /// <summary>Mints the frozen content window for one actor. Windows the
+    /// user dismissed earlier leave the system here, outside its draw pass.
+    /// </summary>
+    private void CreatePopOut(Domain.Identity.ActorId actor)
+    {
+        FlushDismissed();
+        var window = PopOutWindow.Create(_services, Main, actor);
+        window.OnDismissed += dismissed => _dismissedPopOuts.Add(dismissed);
+        _popOuts.Add(window);
+        System.AddWindow(window);
+    }
+
+    private void FlushDismissed()
+    {
+        foreach (var window in _dismissedPopOuts)
+        {
+            _popOuts.Remove(window);
+            System.RemoveWindow(window);
+        }
+        _dismissedPopOuts.Clear();
     }
 
     private void SetSkeletonOverlayOpen(bool isOpen)
@@ -122,6 +159,7 @@ public sealed class UiWindowSet : IDisposable
     {
         _configService.OnConfigurationChanged -= SyncSplitWindows;
         Main.OnSkeletonOverlayToggled -= SetSkeletonOverlayOpen;
+        Main.OnPopOutRequested -= CreatePopOut;
         _overlayPresentation.Clear();
         System.RemoveAllWindows();
     }
