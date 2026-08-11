@@ -1491,9 +1491,11 @@ public class MainWindow : Window
             .ToList();
 
         bool actorMatches = MatchesSidebarFilter(filter, actorLabel, actor.Name);
+        // Category names are the Ktisis tree's — the same labels the rows
+        // below will wear.
         bool hasMatchingBone = groups.Exists(group =>
-            MatchesSidebarFilter(filter, Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(group.Cat), group.Cat.ToString())
-            || group.Bones.Exists(bone => MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName)));
+            group.Bones.Exists(bone => MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName)))
+            || (groups.Count > 0 && KtisisCategoryLabelMatches(filter));
         bool hasMatchingAux = auxSkeletons.Exists(aux =>
             MatchesSidebarFilter(filter, SlotLabel(aux.Id.Slot))
             || aux.Bones.Any(bone => !bone.IsHidden && !IsBoneSuppressed(bone) &&
@@ -1617,97 +1619,198 @@ public class MainWindow : Window
         }
 
         // The actor folds DIRECTLY into bone categories (no skeleton
-        // node), categories into bones. Category set = curated grouping;
-        // the Ktisis-definitions toggle swaps the set once its data lands.
+        // node). The category set and its NESTING are Ktisis' own tree,
+        // verbatim (user 2026-08-11); bones the tree does not claim close
+        // the list under Other.
         if (categoriesFollow)
         {
-            var displayedGroups = new List<(Core.BoneInfo.BoneCategory Cat, List<BoneDescriptor> Visible, List<BoneDescriptor> All)>();
-            foreach (var (cat, bones) in groups)
-            {
-                string categoryLabel = Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(cat);
-                bool categoryMatches = filtering && MatchesSidebarFilter(filter, categoryLabel, cat.ToString());
-                var visibleBones = !filtering || categoryMatches
-                    ? bones
-                    : bones.FindAll(bone => MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName));
-                if (!filtering || visibleBones.Count > 0)
-                    displayedGroups.Add((cat, visibleBones, bones));
-            }
+            var byName = new Dictionary<string, BoneDescriptor>(
+                StringComparer.Ordinal);
+            foreach (var (_, bones) in groups)
+                foreach (var bone in bones)
+                    byName[bone.Id.CanonicalName] = bone;
 
-            for (int g = 0; g < displayedGroups.Count; g++)
-            {
-                var (cat, visibleBones, allBones) = displayedGroups[g];
-                var catKey = actorKey + "/cat:" + cat;
-                if (_knownCategoryNodes.Add(catKey))
-                    _collapsedNodes.Add(catKey);
-                bool catExpanded = filtering || !_collapsedNodes.Contains(catKey);
-                bool catLast = g == displayedGroups.Count - 1 && !auxFollows;
-                string categoryLabel = Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(cat);
-                // When a category contains a bone whose display name IS
-                // the category name (Root → n_root "Root"), the two rows
-                // are redundant: the bone becomes the category row. Its
-                // body selects the bone (Tag) while its chevron toggles
-                // the category (ExpandKey) — one Root, not Root > Root.
-                var mergedBone = allBones.Find(bone => bone.DisplayName == categoryLabel);
-                if (mergedBone != null)
-                {
-                    var mergedId = SelectionId.ForBone(mergedBone.Id);
-                    section.Rows.Add(new ShellSidebarRow
-                    {
-                        Label = categoryLabel,
-                        Count = "",
-                        Depth = depth + 1,
-                        HasChildren = true,
-                        Expanded = catExpanded,
-                        IsLastChild = catLast,
-                        TreeLines = childLines,
-                        Active = _selection.IsSelected(mergedId),
-                        Tag = mergedId,
-                        ExpandKey = catKey,
-                        OverlayBones = allBones.Select(bone => bone.Id).ToArray(),
-                    });
-                }
-                else
-                {
-                    section.Rows.Add(new ShellSidebarRow
-                    {
-                        Label = categoryLabel,
-                        Count = "",
-                        Depth = depth + 1,
-                        HasChildren = true,
-                        Expanded = catExpanded,
-                        IsLastChild = catLast,
-                        TreeLines = childLines,
-                        Tag = catKey,
-                        OverlayBones = allBones.Select(bone => bone.Id).ToArray(),
-                    });
-                }
-                if (!catExpanded) continue;
-                var boneLines = Descend(childLines, catLast);
-                var childBones = mergedBone == null
-                    ? visibleBones
-                    : visibleBones.FindAll(bone => !bone.Id.Equals(mergedBone.Id));
-                for (int b = 0; b < childBones.Count; b++)
-                {
-                    var boneSelectionId = SelectionId.ForBone(childBones[b].Id);
-                    section.Rows.Add(new ShellSidebarRow
-                    {
-                        Label = childBones[b].DisplayName,
-                        Count = "",
-                        Depth = depth + 2,
-                        IsLastChild = b == childBones.Count - 1,
-                        TreeLines = boneLines,
-                        Active = _selection.IsSelected(boneSelectionId),
-                        Tag = boneSelectionId,
-                        OverlayBones = new[] { childBones[b].Id },
-                    });
-                }
-            }
+            var claimed = new HashSet<string>(StringComparer.Ordinal);
+            var built = new List<BuiltCategory>();
+            foreach (var rootCategory in Core.BoneInfo.KtisisBoneCategories.Roots)
+                if (BuildKtisisCategory(
+                        rootCategory, byName, claimed, filter, filtering)
+                    is { } presentRoot)
+                    built.Add(presentRoot);
+
+            // Whatever the tree left unclaimed — modded bones outside the
+            // Ktisis schema — keeps a home.
+            var leftovers = new List<BoneDescriptor>();
+            foreach (var bone in byName.Values)
+                if (!claimed.Contains(bone.Id.CanonicalName)
+                    && (!filtering || MatchesSidebarFilter(
+                        filter, bone.DisplayName, bone.Id.CanonicalName)))
+                    leftovers.Add(bone);
+            if (leftovers.Count > 0)
+                built.Add(new BuiltCategory(
+                    "Other", "Other", leftovers, leftovers, []));
+
+            for (int g = 0; g < built.Count; g++)
+                EmitKtisisCategory(
+                    section, built[g], actorKey, depth + 1, childLines,
+                    g == built.Count - 1 && !auxFollows, filtering);
         }
 
         if (!filtering || hasMatchingAux)
             AddAuxiliarySlotGroups(
                 section, actorKey, auxSkeletons, filter, filtering,
                 depth + 1, childLines);
+    }
+
+    /// <summary>Every Ktisis category label, flattened once, for the filter
+    /// oracle: a query naming any category keeps the actor visible.</summary>
+    private static string[]? _ktisisLabels;
+
+    private static bool KtisisCategoryLabelMatches(string filter)
+    {
+        if (_ktisisLabels == null)
+        {
+            var labels = new List<string>();
+            void Walk(Core.BoneInfo.KtisisBoneCategory category)
+            {
+                labels.Add(category.Label);
+                foreach (var child in category.Children)
+                    Walk(child);
+            }
+            foreach (var root in Core.BoneInfo.KtisisBoneCategories.Roots)
+                Walk(root);
+            _ktisisLabels = labels.ToArray();
+        }
+        foreach (var label in _ktisisLabels)
+            if (MatchesSidebarFilter(filter, label))
+                return true;
+        return false;
+    }
+
+    /// <summary>One Ktisis category, pruned to what THIS skeleton carries and
+    /// what the filter keeps: its own present bones (all of them when the
+    /// category label matched, the matching ones otherwise) and its surviving
+    /// children. Null when nothing below survives.</summary>
+    private sealed record BuiltCategory(
+        string Id,
+        string Label,
+        List<BoneDescriptor> VisibleBones,
+        List<BoneDescriptor> AllBones,
+        List<BuiltCategory> Children);
+
+    private BuiltCategory? BuildKtisisCategory(
+        Core.BoneInfo.KtisisBoneCategory category,
+        Dictionary<string, BoneDescriptor> byName,
+        HashSet<string> claimed,
+        string filter,
+        bool filtering)
+    {
+        var all = new List<BoneDescriptor>();
+        foreach (var name in category.Bones)
+            if (byName.TryGetValue(name, out var bone) && claimed.Add(name))
+                all.Add(bone);
+
+        bool categoryMatches = filtering
+            && MatchesSidebarFilter(filter, category.Label, category.Id);
+        var visible = !filtering || categoryMatches
+            ? all
+            : all.FindAll(bone => MatchesSidebarFilter(
+                filter, bone.DisplayName, bone.Id.CanonicalName));
+
+        var children = new List<BuiltCategory>();
+        foreach (var child in category.Children)
+            if (BuildKtisisCategory(child, byName, claimed, filter, filtering)
+                is { } present)
+                children.Add(present);
+
+        // A pruned node: nothing of this skeleton lives here, or the filter
+        // kept none of it.
+        if (children.Count == 0
+            && (filtering ? visible.Count == 0 : all.Count == 0))
+            return null;
+        return new BuiltCategory(
+            category.Id, category.Label, visible, all, children);
+    }
+
+    /// <summary>All bone ids under a built category, for the row's overlay
+    /// eye.</summary>
+    private static void CollectCategoryBones(
+        BuiltCategory category, List<BoneId> into)
+    {
+        foreach (var bone in category.AllBones)
+            into.Add(bone.Id);
+        foreach (var child in category.Children)
+            CollectCategoryBones(child, into);
+    }
+
+    private void EmitKtisisCategory(
+        ShellSidebarSection section,
+        BuiltCategory category,
+        string parentKey,
+        int depth,
+        bool[]? lines,
+        bool isLast,
+        bool filtering)
+    {
+        var catKey = parentKey + "/kcat:" + category.Id;
+        if (_knownCategoryNodes.Add(catKey))
+            _collapsedNodes.Add(catKey);
+        bool expanded = filtering || !_collapsedNodes.Contains(catKey);
+        var overlayBones = new List<BoneId>();
+        CollectCategoryBones(category, overlayBones);
+
+        // When a category contains a bone whose display name IS the category
+        // name (Head → j_head "Head"), the two rows are redundant: the bone
+        // becomes the category row. Its body selects the bone (Tag) while
+        // its chevron toggles the category (ExpandKey).
+        var mergedBone = category.AllBones.Find(
+            bone => bone.DisplayName == category.Label);
+        section.Rows.Add(new ShellSidebarRow
+        {
+            Label = category.Label,
+            Count = "",
+            Depth = depth,
+            HasChildren = true,
+            Expanded = expanded,
+            IsLastChild = isLast,
+            TreeLines = lines,
+            Active = mergedBone != null
+                && _selection.IsSelected(SelectionId.ForBone(mergedBone.Id)),
+            Tag = mergedBone != null
+                ? SelectionId.ForBone(mergedBone.Id)
+                : catKey,
+            ExpandKey = mergedBone != null ? catKey : null,
+            OverlayBones = overlayBones.ToArray(),
+        });
+        if (!expanded)
+            return;
+
+        var childLines = Descend(lines ?? [], isLast);
+        var bones = mergedBone == null
+            ? category.VisibleBones
+            : category.VisibleBones.FindAll(
+                bone => !bone.Id.Equals(mergedBone.Id));
+        for (int b = 0; b < bones.Count; b++)
+        {
+            var boneSelectionId = SelectionId.ForBone(bones[b].Id);
+            section.Rows.Add(new ShellSidebarRow
+            {
+                Label = bones[b].DisplayName,
+                Count = "",
+                Depth = depth + 1,
+                IsLastChild =
+                    b == bones.Count - 1 && category.Children.Count == 0,
+                TreeLines = childLines,
+                Active = _selection.IsSelected(boneSelectionId),
+                Tag = boneSelectionId,
+                OverlayBones = new[] { bones[b].Id },
+            });
+        }
+
+        for (int c = 0; c < category.Children.Count; c++)
+            EmitKtisisCategory(
+                section, category.Children[c], catKey, depth + 1, childLines,
+                c == category.Children.Count - 1, filtering);
     }
 
     /// <summary>Whether an actor, any of its bones or slots, or any actor
