@@ -1,3 +1,4 @@
+using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
@@ -87,6 +88,8 @@ public sealed class StableBindingRegistry
         var legacyBoneIds =
             new Dictionary<(string Actor, PoseSlot Slot, int Partial, int Index), BoneId>();
         var actorDescriptors = new List<ActorDescriptor>();
+        var descriptorAddresses = new List<nint>();
+        var companionOwners = new Dictionary<nint, ActorId>();
 
         foreach (var actor in _actors.Actors)
             BindActor(actor, actorDescriptors);
@@ -193,7 +196,15 @@ public sealed class StableBindingRegistry
                 actor.IsPlayer,
                 actor.IsCompanion,
                 !_spawn.IsVisible(actor)));
+            descriptorAddresses.Add(actor.Address);
+            if (!actor.IsCompanion)
+                CollectAttachments(actor.Address, actorId, companionOwners);
         }
+
+        LinkCompanionOwners(
+            actorDescriptors,
+            descriptorAddresses,
+            companionOwners);
 
         foreach (var lineage in _lineages.Values)
         {
@@ -260,6 +271,49 @@ public sealed class StableBindingRegistry
             lightDescriptors,
             cameraDescriptors);
         return CurrentSnapshot;
+    }
+
+    /// <summary>
+    /// Reads the three attachment pointers a character can hold and records
+    /// each target address against its owner. Only characters are scanned and
+    /// only their own fields are read: no native sibling or child chain is
+    /// ever traversed, so the map stays a one-level companion→owner relation.
+    /// </summary>
+    private static unsafe void CollectAttachments(
+        nint address,
+        ActorId owner,
+        Dictionary<nint, ActorId> companionOwners)
+    {
+        if (address == nint.Zero)
+            return;
+        var native = (Character*)address;
+        if (native == null || native->ChildObject == null)
+            return;
+
+        if (native->CompanionData.CompanionObject != null)
+            companionOwners[(nint)native->CompanionData.CompanionObject] = owner;
+        if (native->Mount.MountObject != null)
+            companionOwners[(nint)native->Mount.MountObject] = owner;
+        if (native->OrnamentData.OrnamentObject != null)
+            companionOwners[(nint)native->OrnamentData.OrnamentObject] = owner;
+    }
+
+    private static void LinkCompanionOwners(
+        List<ActorDescriptor> descriptors,
+        List<nint> addresses,
+        Dictionary<nint, ActorId> companionOwners)
+    {
+        if (companionOwners.Count == 0)
+            return;
+        for (int i = 0; i < descriptors.Count; i++)
+        {
+            var descriptor = descriptors[i];
+            if (!descriptor.IsCompanion)
+                continue;
+            if (companionOwners.TryGetValue(addresses[i], out var owner) &&
+                !owner.Equals(descriptor.Id))
+                descriptors[i] = descriptor with { OwnerActor = owner };
+        }
     }
 
     public ActorId? GetActorId(IActor actor) =>

@@ -89,6 +89,7 @@ public class MainWindow : Window
     private readonly PoseLibraryPane _libraryPane;
     private readonly PoseFileInspectorSection _poseFileSection;
     private readonly Game.Animation.AnimationCatalogLoader _animationCatalog;
+    private readonly Game.Companions.CompanionCatalogLoader _companionCatalog;
     private readonly PoseRailPane _poseRail;
     private bool _collapsed;
     private float _savedHeight = DefaultHeight;
@@ -216,16 +217,19 @@ public class MainWindow : Window
         new() { Label = "Pose" },
         new() { Label = "Animation" },
         new() { Label = "Appearance" },
+        new() { Label = "Props" },
     ];
 
-    /// <summary>A creature's strip is Pose alone: stance, lips, gaze and
-    /// appearance are humanoid concepts, and a strip stating them for a
-    /// minion would claim controls that do nothing real. Pausing a creature
-    /// stays available through the sidebar and context-menu pause actions.
+    /// <summary>A creature's strip is Pose plus Appearance: stance, lips and
+    /// gaze are humanoid concepts, but Appearance carries the minion's own
+    /// section — swap the model, detach from the owner — and the pane shows
+    /// only that section for a creature. Pausing a creature stays available
+    /// through the sidebar and context-menu pause actions.
     /// </summary>
     private readonly ShellTab[] _creatureTabs =
     [
         new() { Label = "Pose" },
+        new() { Label = "Appearance" },
     ];
 
     /// <summary>The environment's own tab strip: selecting the environment
@@ -323,8 +327,11 @@ public class MainWindow : Window
         PoseFileInspectorSection poseFileSection,
         Application.Animation.AnimationSession animation,
         Game.Animation.AnimationCatalogLoader animationCatalog,
+        Game.Companions.CompanionCatalogLoader companionCatalog,
         PoseRailPane poseRail,
         GraphicalBonePane graphicalBonePane,
+        Game.PropSpawnService propService,
+        PropsPane propsPane,
         SkeletonOverlayPresentation overlayPresentation,
         IGazeService gazeService,
         IEventBus eventBus)
@@ -350,6 +357,8 @@ public class MainWindow : Window
         _bonePosingService = bonePosingService;
 
         _spawnService = spawnService;
+        _propService = propService;
+        _propsPane = propsPane;
         _poseInspector = poseInspector;
         _animationPane = animationPane;
         _appearancePane = appearancePane;
@@ -378,6 +387,7 @@ public class MainWindow : Window
         // and does nothing else: the publisher is not the draw thread.
         eventBus.Subscribe<GazeStateChangedEvent>(_ => _gazeDirty = true);
         _animationCatalog = animationCatalog;
+        _companionCatalog = companionCatalog;
         _poseInspector.DrawMapInline = graphicalBonePane.DrawInline;
         graphicalBonePane.SidesSwapped =
             Config.ConfigurationService.Instance.Config.UI.MapMirrorSelection;
@@ -1009,6 +1019,8 @@ public class MainWindow : Window
             _cleanTransforms.Redo();
     }
 
+    private static readonly bool[] RootTreeLines = Array.Empty<bool>();
+
     /// <summary>
     /// Restates the sidebar. The row TREE is assembled only when the gate below
     /// flips; every other frame walks the retained rows and refreshes the flags
@@ -1085,286 +1097,16 @@ public class MainWindow : Window
         bool filtering = filter.Length > 0;
 
         var actors = _actorsSection;
-        foreach (var actor in _scene.Snapshot.Actors)
+        var snapshot = _scene.Snapshot.Actors;
+        foreach (var actor in snapshot)
         {
-            var actorKey = "actor:" + actor.Id.LogicalId;
-            // The snapshot's raw name is fixed until the next revision, so the
-            // object-index strip runs here and the warm-frame label refresh is
-            // a pair of dictionary lookups.
-            string rawName = DisplayName(actor.Name);
-            string actorLabel = Config.ConfigurationService.Instance.GetDisplayName(
-                actor.Id.LogicalId, rawName);
-
-            var groups = new List<(Core.BoneInfo.BoneCategory Cat, List<BoneDescriptor> Bones)>();
-            var skeleton = actor.CharacterSkeleton;
-            if (skeleton != null)
-            {
-                Array.Fill(_categorySlots, -1);
-                foreach (var bone in skeleton.Bones)
-                {
-                    if (bone.IsHidden || IsBoneSuppressed(bone)) continue;
-                    var cat = Core.BoneInfo.BoneInfoService.GetCategory(bone.Id.CanonicalName);
-                    var slot = _categorySlots[(int)cat];
-                    if (slot < 0)
-                    {
-                        groups.Add((cat, new List<BoneDescriptor>()));
-                        slot = groups.Count - 1;
-                        _categorySlots[(int)cat] = slot;
-                    }
-                    groups[slot].Bones.Add(bone);
-                }
-                groups.Sort((a, b) => ((int)a.Cat).CompareTo((int)b.Cat));
-            }
-
-            // Present auxiliary slots become one additional group each under
-            // the same actor row (slots are never separate actors).
-            var auxSkeletons = actor.Skeletons
-                .Where(s => s.Id.Slot != Domain.Identity.PoseSlot.Character)
-                .OrderBy(s => (int)s.Id.Slot)
-                .ToList();
-
-            // The match strings exist only when a filter does: unfiltered,
-            // every "matches" answer below is true by construction and none of
-            // these three is read.
-            bool actorMatches = false;
-            bool hasMatchingBone = false;
-            bool hasMatchingAux = false;
-            if (filtering)
-            {
-                // Under anonymous mode the RAW name is not a match candidate:
-                // typing the real name must not locate the masked actor.
-                actorMatches =
-                    Config.ConfigurationService.Instance.Config.Display.AnonymousMode
-                        ? MatchesSidebarFilter(filter, actorLabel)
-                        : MatchesSidebarFilter(filter, actorLabel, actor.Name);
-                foreach (var (cat, bones) in groups)
-                {
-                    if (MatchesSidebarFilter(
-                            filter,
-                            Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(cat),
-                            cat.ToString()))
-                    {
-                        hasMatchingBone = true;
-                        break;
-                    }
-                    foreach (var bone in bones)
-                    {
-                        if (!MatchesSidebarFilter(
-                                filter, bone.DisplayName, bone.Id.CanonicalName))
-                            continue;
-                        hasMatchingBone = true;
-                        break;
-                    }
-                    if (hasMatchingBone)
-                        break;
-                }
-                foreach (var aux in auxSkeletons)
-                {
-                    if (MatchesSidebarFilter(filter, SlotLabel(aux.Id.Slot)))
-                    {
-                        hasMatchingAux = true;
-                        break;
-                    }
-                    foreach (var bone in aux.Bones)
-                    {
-                        if (bone.IsHidden || IsBoneSuppressed(bone) ||
-                            !MatchesSidebarFilter(
-                                filter, bone.DisplayName, bone.Id.CanonicalName))
-                            continue;
-                        hasMatchingAux = true;
-                        break;
-                    }
-                    if (hasMatchingAux)
-                        break;
-                }
-                if (!actorMatches && !hasMatchingBone && !hasMatchingAux)
-                    continue;
-            }
-
-            // Actor roots first appear collapsed; lineage keys survive
-            // refreshes, so a scene refresh cannot reset existing disclosure.
-            // Only explicit disclosure clicks expand — external bone selection
-            // (map, matrix, overlay, gizmo) never changes tree disclosure.
-            if (_knownActorNodes.Add(actorKey))
-                _collapsedNodes.Add(actorKey);
-            bool expanded = filtering || !_collapsedNodes.Contains(actorKey);
-            var actorSelectionId = SelectionId.ForActor(actor.Id);
-            var actorRow = new ShellSidebarRow
-            {
-                Label = actorLabel,
-                Count = "",
-                Icon = SidebarActorIcon(actor),
-                // The disclosure affordance is permanent; an unresolved
-                // skeleton only disables it until the snapshot exposes bones.
-                HasChildren = true,
-                ExpanderDisabled = skeleton == null,
-                Expanded = expanded,
-                Tag = actorSelectionId,
-                ActorActions = true,
-            };
-            actors.Rows.Add(actorRow);
-            // Selection, visibility, pause and the display name are stated by
-            // the flag refresh — including for this frame.
-            _actorRows.Add(new ActorRowState(
-                actorRow, actor.Id, rawName, actor.IsHidden));
-
-            // The gaze anchor is a child of the ACTOR, not of any skeleton: it
-            // exists exactly while the gaze is a fixed world point, and it
-            // stands above the bone categories because it is the one child the
-            // world gizmo can grab. An actor that no longer resolves has no
-            // live gaze to read, so it contributes no row.
-            if (expanded &&
-                _bindings.Resolve(actor.Id) is { Success: true, Value: { } gazeActor } &&
-                _gazeService.GetGazeState(gazeActor).Mode == GazeTargetMode.Position)
-            {
-                // The same "is anything left under this actor" question the
-                // categories answer with catLast, asked one level earlier.
-                bool categoriesFollowGaze =
-                    skeleton != null && (!filtering || hasMatchingBone);
-                bool auxFollowsGaze = auxSkeletons.Count > 0 &&
-                    (!filtering || hasMatchingAux);
-                bool gazeLast = !categoriesFollowGaze && !auxFollowsGaze;
-                // Unlike actors and categories, this key is NOT seeded into
-                // _collapsedNodes when it is first seen: a key the set does not
-                // hold is an EXPANDED key, so the three aim points stand open
-                // the moment the gaze becomes a world point. Only an explicit
-                // chevron click puts the key in, and it survives from there.
-                var gazeKey = actorKey + "/gaze";
-                bool gazeExpanded = filtering || !_collapsedNodes.Contains(gazeKey);
-                actors.Rows.Add(new ShellSidebarRow
-                {
-                    Label = "Gaze control",
-                    Count = "",
-                    Depth = 1,
-                    IconName = "eye",
-                    ForceIcon = true,
-                    // Like a merged category/bone row: the body still selects
-                    // the shared anchor (Tag) while the chevron toggles the
-                    // string key (ExpandKey).
-                    HasChildren = true,
-                    Expanded = gazeExpanded,
-                    IsLastChild = gazeLast,
-                    Tag = SelectionId.ForGazeTarget(actor.Id),
-                    ExpandKey = gazeKey,
-                });
-                // The gaze is three points, not one: eyes, head and body each
-                // carry their own target, and each is separately selectable so
-                // the world gizmo can grab one part alone.
-                if (gazeExpanded)
-                {
-                    for (int p = 0; p < GazeParts.Length; p++)
-                    {
-                        var (partLabel, partIcon, part) = GazeParts[p];
-                        var partId = SelectionId.ForGazeTarget(actor.Id, part);
-                        actors.Rows.Add(new ShellSidebarRow
-                        {
-                            Label = partLabel,
-                            Count = "",
-                            Depth = 2,
-                            IconName = partIcon,
-                            ForceIcon = true,
-                            HasChildren = false,
-                            IsLastChild = p == GazeParts.Length - 1,
-                            // Level 1 is the gaze row itself: its trunk
-                            // continues exactly while something follows it
-                            // under the actor, the same question gazeLast asks.
-                            TreeLines = new[] { false, !gazeLast },
-                            Active = _selection.IsSelected(partId),
-                            Tag = partId,
-                        });
-                    }
-                }
-            }
-
-            // The actor folds DIRECTLY into bone categories (no skeleton
-            // node), categories into bones. Category set = curated grouping;
-            // the Ktisis-definitions toggle swaps the set once its data lands.
-            if (expanded && skeleton != null && (!filtering || hasMatchingBone))
-            {
-                bool auxFollows = auxSkeletons.Count > 0 &&
-                    (!filtering || hasMatchingAux);
-                var displayedGroups = new List<(Core.BoneInfo.BoneCategory Cat, List<BoneDescriptor> Visible, List<BoneDescriptor> All)>();
-                foreach (var (cat, bones) in groups)
-                {
-                    string categoryLabel = Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(cat);
-                    bool categoryMatches = filtering && MatchesSidebarFilter(filter, categoryLabel, cat.ToString());
-                    var visibleBones = !filtering || categoryMatches
-                        ? bones
-                        : bones.FindAll(bone => MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName));
-                    if (!filtering || visibleBones.Count > 0)
-                        displayedGroups.Add((cat, visibleBones, bones));
-                }
-
-                for (int g = 0; g < displayedGroups.Count; g++)
-                {
-                    var (cat, visibleBones, allBones) = displayedGroups[g];
-                    var catKey = actorKey + "/cat:" + cat;
-                    if (_knownCategoryNodes.Add(catKey))
-                        _collapsedNodes.Add(catKey);
-                    bool catExpanded = filtering || !_collapsedNodes.Contains(catKey);
-                    bool catLast = g == displayedGroups.Count - 1 && !auxFollows;
-                    string categoryLabel = Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(cat);
-                    // When a category contains a bone whose display name IS
-                    // the category name (Root → n_root "Root"), the two rows
-                    // are redundant: the bone becomes the category row. Its
-                    // body selects the bone (Tag) while its chevron toggles
-                    // the category (ExpandKey) — one Root, not Root > Root.
-                    var mergedBone = allBones.Find(bone => bone.DisplayName == categoryLabel);
-                    if (mergedBone != null)
-                    {
-                        var mergedId = SelectionId.ForBone(mergedBone.Id);
-                        actors.Rows.Add(new ShellSidebarRow
-                        {
-                            Label = categoryLabel,
-                            Count = "",
-                            Depth = 1,
-                            HasChildren = true,
-                            Expanded = catExpanded,
-                            IsLastChild = catLast,
-                            Active = _selection.IsSelected(mergedId),
-                            Tag = mergedId,
-                            ExpandKey = catKey,
-                            OverlayBones = allBones.Select(bone => bone.Id).ToArray(),
-                        });
-                    }
-                    else
-                    {
-                        actors.Rows.Add(new ShellSidebarRow
-                        {
-                            Label = categoryLabel,
-                            Count = "",
-                            Depth = 1,
-                            HasChildren = true,
-                            Expanded = catExpanded,
-                            IsLastChild = catLast,
-                            Tag = catKey,
-                            OverlayBones = allBones.Select(bone => bone.Id).ToArray(),
-                        });
-                    }
-                    if (!catExpanded) continue;
-                    var childBones = mergedBone == null
-                        ? visibleBones
-                        : visibleBones.FindAll(bone => !bone.Id.Equals(mergedBone.Id));
-                    for (int b = 0; b < childBones.Count; b++)
-                    {
-                        var boneSelectionId = SelectionId.ForBone(childBones[b].Id);
-                        actors.Rows.Add(new ShellSidebarRow
-                        {
-                            Label = childBones[b].DisplayName,
-                            Count = "",
-                            Depth = 2,
-                            IsLastChild = b == childBones.Count - 1,
-                            TreeLines = new[] { false, !catLast },
-                            Active = _selection.IsSelected(boneSelectionId),
-                            Tag = boneSelectionId,
-                            OverlayBones = new[] { childBones[b].Id },
-                        });
-                    }
-                }
-            }
-
-            if (expanded && (!filtering || hasMatchingAux))
-                AddAuxiliarySlotGroups(actors, actorKey, auxSkeletons, filter, filtering);
+            // An attached companion is drawn inside its owner's subtree; one
+            // whose owner left the scene falls back to a root of its own.
+            if (actor.OwnerActor is { } owner && ContainsActor(snapshot, owner))
+                continue;
+            AddActorRows(
+                actors, actor, snapshot, filter, filtering,
+                0, RootTreeLines, true);
         }
 
         // Lights are flat: a spawned light owns nothing beneath it, so the
@@ -1516,6 +1258,343 @@ public class MainWindow : Window
         }
     }
 
+    private static bool ContainsActor(
+        IReadOnlyList<ActorDescriptor> snapshot,
+        ActorId id)
+    {
+        foreach (var actor in snapshot)
+            if (actor.Id.Equals(id))
+                return true;
+        return false;
+    }
+
+    private static bool IsOwnedBy(ActorDescriptor candidate, ActorDescriptor owner)
+        => candidate.IsCompanion
+            && candidate.OwnerActor is { } link
+            && link.Equals(owner.Id)
+            && !candidate.Id.Equals(owner.Id);
+
+    /// <summary>Trunk flags for the children of a row: the row's own ancestor
+    /// flags plus one for the row itself, set when siblings still follow it.</summary>
+    private static bool[] Descend(bool[] lines, bool isLast)
+    {
+        var descended = new bool[lines.Length + 1];
+        Array.Copy(lines, descended, lines.Length);
+        descended[lines.Length] = !isLast;
+        return descended;
+    }
+
+    /// <summary>
+    /// One actor's subtree: owned companions first, then bone categories, then
+    /// auxiliary slots. Depth and trunk flags are inherited, so an attached
+    /// companion draws the same tree one level in and keeps its own subtree.
+    /// </summary>
+    private void AddActorRows(
+        ShellSidebarSection section,
+        ActorDescriptor actor,
+        IReadOnlyList<ActorDescriptor> snapshot,
+        string filter,
+        bool filtering,
+        int depth,
+        bool[] lines,
+        bool isLast)
+    {
+        var actorKey = "actor:" + actor.Id.LogicalId;
+        // The snapshot's raw name is fixed until the next revision, so the
+        // object-index strip runs here and the warm-frame label refresh is
+        // a pair of dictionary lookups.
+        string rawName = DisplayName(actor.Name);
+        string actorLabel = Config.ConfigurationService.Instance.GetDisplayName(
+            actor.Id.LogicalId, rawName);
+
+        List<ActorDescriptor>? companions = null;
+        foreach (var candidate in snapshot)
+        {
+            if (IsOwnedBy(candidate, actor))
+                (companions ??= new List<ActorDescriptor>()).Add(candidate);
+        }
+
+        var groups = new List<(Core.BoneInfo.BoneCategory Cat, List<BoneDescriptor> Bones)>();
+        var skeleton = actor.CharacterSkeleton;
+        if (skeleton != null)
+        {
+            foreach (var bone in skeleton.Bones)
+            {
+                if (bone.IsHidden || IsBoneSuppressed(bone)) continue;
+                var cat = Core.BoneInfo.BoneInfoService.GetCategory(bone.Id.CanonicalName);
+                var slot = groups.FindIndex(g => g.Cat == cat);
+                if (slot < 0) { groups.Add((cat, new List<BoneDescriptor>())); slot = groups.Count - 1; }
+                groups[slot].Bones.Add(bone);
+            }
+            groups.Sort((a, b) => ((int)a.Cat).CompareTo((int)b.Cat));
+        }
+
+        // Present auxiliary slots become one additional group each under
+        // the same actor row (slots are never separate actors).
+        var auxSkeletons = actor.Skeletons
+            .Where(s => s.Id.Slot != Domain.Identity.PoseSlot.Character)
+            .OrderBy(s => (int)s.Id.Slot)
+            .ToList();
+
+        bool actorMatches = MatchesSidebarFilter(filter, actorLabel, actor.Name);
+        bool hasMatchingBone = groups.Exists(group =>
+            MatchesSidebarFilter(filter, Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(group.Cat), group.Cat.ToString())
+            || group.Bones.Exists(bone => MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName)));
+        bool hasMatchingAux = auxSkeletons.Exists(aux =>
+            MatchesSidebarFilter(filter, SlotLabel(aux.Id.Slot))
+            || aux.Bones.Any(bone => !bone.IsHidden && !IsBoneSuppressed(bone) &&
+                MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName)));
+        var shownCompanions = companions;
+        if (filtering && companions != null)
+            shownCompanions = companions.FindAll(
+                companion => ActorSubtreeMatches(companion, snapshot, filter));
+        if (filtering && !actorMatches && !hasMatchingBone && !hasMatchingAux
+            && (shownCompanions == null || shownCompanions.Count == 0))
+            return;
+
+        // Actor roots first appear collapsed; lineage keys survive
+        // refreshes, so a scene refresh cannot reset existing disclosure.
+        // Only explicit disclosure clicks expand — external bone selection
+        // (map, matrix, overlay, gizmo) never changes tree disclosure.
+        if (_knownActorNodes.Add(actorKey))
+            _collapsedNodes.Add(actorKey);
+        bool expanded = filtering || !_collapsedNodes.Contains(actorKey);
+        var actorSelectionId = SelectionId.ForActor(actor.Id);
+        var actorRow = new ShellSidebarRow
+        {
+            Label = actorLabel,
+            Count = "",
+            Icon = SidebarActorIcon(actor),
+            Depth = depth,
+            ForceIcon = depth > 0,
+            // The disclosure affordance is permanent; an unresolved
+            // skeleton only disables it until the snapshot exposes bones.
+            HasChildren = true,
+            ExpanderDisabled = skeleton == null,
+            Expanded = expanded,
+            IsLastChild = isLast,
+            TreeLines = lines,
+            Tag = actorSelectionId,
+            ActorActions = true,
+        };
+        section.Rows.Add(actorRow);
+        // Selection, visibility, pause and the display name are stated by
+        // the flag refresh — including for this frame.
+        _actorRows.Add(new ActorRowState(
+            actorRow, actor.Id, rawName, actor.IsHidden));
+        if (!expanded)
+            return;
+
+        bool companionsFollow = shownCompanions is { Count: > 0 };
+        bool categoriesFollow = skeleton != null && (!filtering || hasMatchingBone);
+        bool auxFollows = auxSkeletons.Count > 0 && (!filtering || hasMatchingAux);
+        var childLines = Descend(lines, isLast);
+
+        // The gaze anchor is a child of the ACTOR, not of any skeleton: it
+        // exists exactly while the gaze is a fixed world point, and it
+        // stands above everything else because it is the one child the
+        // world gizmo can grab. An actor that no longer resolves has no
+        // live gaze to read, so it contributes no row.
+        if (_bindings.Resolve(actor.Id) is { Success: true, Value: { } gazeActor } &&
+            _gazeService.GetGazeState(gazeActor).Mode == GazeTargetMode.Position)
+        {
+            bool gazeLast = !companionsFollow && !categoriesFollow && !auxFollows;
+            // Unlike actors and categories, this key is NOT seeded into
+            // _collapsedNodes when it is first seen: a key the set does not
+            // hold is an EXPANDED key, so the three aim points stand open
+            // the moment the gaze becomes a world point. Only an explicit
+            // chevron click puts the key in, and it survives from there.
+            var gazeKey = actorKey + "/gaze";
+            bool gazeExpanded = filtering || !_collapsedNodes.Contains(gazeKey);
+            section.Rows.Add(new ShellSidebarRow
+            {
+                Label = "Gaze control",
+                Count = "",
+                Depth = depth + 1,
+                IconName = "eye",
+                ForceIcon = true,
+                // Like a merged category/bone row: the body still selects
+                // the shared anchor (Tag) while the chevron toggles the
+                // string key (ExpandKey).
+                HasChildren = true,
+                Expanded = gazeExpanded,
+                IsLastChild = gazeLast,
+                TreeLines = childLines,
+                Tag = SelectionId.ForGazeTarget(actor.Id),
+                ExpandKey = gazeKey,
+            });
+            // The gaze is three points, not one: eyes, head and body each
+            // carry their own target, and each is separately selectable so
+            // the world gizmo can grab one part alone.
+            if (gazeExpanded)
+            {
+                var partLines = Descend(childLines, gazeLast);
+                for (int p = 0; p < GazeParts.Length; p++)
+                {
+                    var (partLabel, partIcon, part) = GazeParts[p];
+                    var partId = SelectionId.ForGazeTarget(actor.Id, part);
+                    section.Rows.Add(new ShellSidebarRow
+                    {
+                        Label = partLabel,
+                        Count = "",
+                        Depth = depth + 2,
+                        IconName = partIcon,
+                        ForceIcon = true,
+                        HasChildren = false,
+                        IsLastChild = p == GazeParts.Length - 1,
+                        TreeLines = partLines,
+                        Active = _selection.IsSelected(partId),
+                        Tag = partId,
+                    });
+                }
+            }
+        }
+
+        // Attached companions lead the subtree: they are actors, and actors
+        // read before the owner's own bones.
+        if (shownCompanions != null)
+        {
+            for (int c = 0; c < shownCompanions.Count; c++)
+                AddActorRows(
+                    section, shownCompanions[c], snapshot, filter, filtering,
+                    depth + 1, childLines,
+                    c == shownCompanions.Count - 1
+                        && !categoriesFollow && !auxFollows);
+        }
+
+        // The actor folds DIRECTLY into bone categories (no skeleton
+        // node), categories into bones. Category set = curated grouping;
+        // the Ktisis-definitions toggle swaps the set once its data lands.
+        if (categoriesFollow)
+        {
+            var displayedGroups = new List<(Core.BoneInfo.BoneCategory Cat, List<BoneDescriptor> Visible, List<BoneDescriptor> All)>();
+            foreach (var (cat, bones) in groups)
+            {
+                string categoryLabel = Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(cat);
+                bool categoryMatches = filtering && MatchesSidebarFilter(filter, categoryLabel, cat.ToString());
+                var visibleBones = !filtering || categoryMatches
+                    ? bones
+                    : bones.FindAll(bone => MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName));
+                if (!filtering || visibleBones.Count > 0)
+                    displayedGroups.Add((cat, visibleBones, bones));
+            }
+
+            for (int g = 0; g < displayedGroups.Count; g++)
+            {
+                var (cat, visibleBones, allBones) = displayedGroups[g];
+                var catKey = actorKey + "/cat:" + cat;
+                if (_knownCategoryNodes.Add(catKey))
+                    _collapsedNodes.Add(catKey);
+                bool catExpanded = filtering || !_collapsedNodes.Contains(catKey);
+                bool catLast = g == displayedGroups.Count - 1 && !auxFollows;
+                string categoryLabel = Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(cat);
+                // When a category contains a bone whose display name IS
+                // the category name (Root → n_root "Root"), the two rows
+                // are redundant: the bone becomes the category row. Its
+                // body selects the bone (Tag) while its chevron toggles
+                // the category (ExpandKey) — one Root, not Root > Root.
+                var mergedBone = allBones.Find(bone => bone.DisplayName == categoryLabel);
+                if (mergedBone != null)
+                {
+                    var mergedId = SelectionId.ForBone(mergedBone.Id);
+                    section.Rows.Add(new ShellSidebarRow
+                    {
+                        Label = categoryLabel,
+                        Count = "",
+                        Depth = depth + 1,
+                        HasChildren = true,
+                        Expanded = catExpanded,
+                        IsLastChild = catLast,
+                        TreeLines = childLines,
+                        Active = _selection.IsSelected(mergedId),
+                        Tag = mergedId,
+                        ExpandKey = catKey,
+                        OverlayBones = allBones.Select(bone => bone.Id).ToArray(),
+                    });
+                }
+                else
+                {
+                    section.Rows.Add(new ShellSidebarRow
+                    {
+                        Label = categoryLabel,
+                        Count = "",
+                        Depth = depth + 1,
+                        HasChildren = true,
+                        Expanded = catExpanded,
+                        IsLastChild = catLast,
+                        TreeLines = childLines,
+                        Tag = catKey,
+                        OverlayBones = allBones.Select(bone => bone.Id).ToArray(),
+                    });
+                }
+                if (!catExpanded) continue;
+                var boneLines = Descend(childLines, catLast);
+                var childBones = mergedBone == null
+                    ? visibleBones
+                    : visibleBones.FindAll(bone => !bone.Id.Equals(mergedBone.Id));
+                for (int b = 0; b < childBones.Count; b++)
+                {
+                    var boneSelectionId = SelectionId.ForBone(childBones[b].Id);
+                    section.Rows.Add(new ShellSidebarRow
+                    {
+                        Label = childBones[b].DisplayName,
+                        Count = "",
+                        Depth = depth + 2,
+                        IsLastChild = b == childBones.Count - 1,
+                        TreeLines = boneLines,
+                        Active = _selection.IsSelected(boneSelectionId),
+                        Tag = boneSelectionId,
+                        OverlayBones = new[] { childBones[b].Id },
+                    });
+                }
+            }
+        }
+
+        if (!filtering || hasMatchingAux)
+            AddAuxiliarySlotGroups(
+                section, actorKey, auxSkeletons, filter, filtering,
+                depth + 1, childLines);
+    }
+
+    /// <summary>Whether an actor, any of its bones or slots, or any actor
+    /// attached to it satisfies the sidebar filter.</summary>
+    private bool ActorSubtreeMatches(
+        ActorDescriptor actor,
+        IReadOnlyList<ActorDescriptor> snapshot,
+        string filter)
+    {
+        if (MatchesSidebarFilter(filter, ActorDisplayName(actor), actor.Name))
+            return true;
+
+        foreach (var skeleton in actor.Skeletons)
+        {
+            bool character = skeleton.Id.Slot == Domain.Identity.PoseSlot.Character;
+            if (!character && MatchesSidebarFilter(filter, SlotLabel(skeleton.Id.Slot)))
+                return true;
+            foreach (var bone in skeleton.Bones)
+            {
+                if (bone.IsHidden || IsBoneSuppressed(bone)) continue;
+                if (MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName))
+                    return true;
+                if (!character) continue;
+                var cat = Core.BoneInfo.BoneInfoService.GetCategory(bone.Id.CanonicalName);
+                if (MatchesSidebarFilter(
+                        filter,
+                        Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(cat),
+                        cat.ToString()))
+                    return true;
+            }
+        }
+
+        foreach (var candidate in snapshot)
+        {
+            if (IsOwnedBy(candidate, actor)
+                && ActorSubtreeMatches(candidate, snapshot, filter))
+                return true;
+        }
+        return false;
+    }
+
     private static string SlotLabel(Domain.Identity.PoseSlot slot) => slot switch
     {
         Domain.Identity.PoseSlot.MainHand => "Main Hand",
@@ -1536,7 +1615,9 @@ public class MainWindow : Window
         string actorKey,
         List<SkeletonDescriptor> auxSkeletons,
         string filter,
-        bool filtering)
+        bool filtering,
+        int depth,
+        bool[] lines)
     {
         var shown = new List<(SkeletonDescriptor Aux, List<BoneDescriptor> Visible, List<BoneDescriptor> Matching, bool GroupMatches)>();
         foreach (var aux in auxSkeletons)
@@ -1568,23 +1649,25 @@ public class MainWindow : Window
             {
                 Label = slotLabel,
                 Count = "",
-                Depth = 1,
+                Depth = depth,
                 HasChildren = true,
                 Expanded = slotExpanded,
                 IsLastChild = groupLast,
+                TreeLines = lines,
                 Tag = slotKey,
                 OverlayBones = visible.Select(bone => bone.Id).ToArray(),
             });
             if (!slotExpanded)
                 continue;
 
+            var slotLines = Descend(lines, groupLast);
             if (filtering && !groupMatches)
             {
                 // Temporary filtered reveal: matching bones flat.
                 for (int b = 0; b < matching.Count; b++)
                     section.Rows.Add(BoneRow(
-                        matching[b], 2, b == matching.Count - 1,
-                        new[] { false, !groupLast }, hasChildren: false,
+                        matching[b], depth + 1, b == matching.Count - 1,
+                        slotLines, hasChildren: false,
                         expanded: false, expandKey: null));
                 continue;
             }
@@ -1608,7 +1691,7 @@ public class MainWindow : Window
                 }
             }
 
-            void Emit(BoneDescriptor bone, int depth, bool isLast, bool[] lines)
+            void Emit(BoneDescriptor bone, int boneDepth, bool isLast, bool[] boneLines)
             {
                 bool hasKids = children.ContainsKey(bone.Id);
                 var boneKey = slotKey + "/bone:" + bone.Id.PartialId + ":" + bone.Id.BoneIndex;
@@ -1617,19 +1700,18 @@ public class MainWindow : Window
                     _collapsedNodes.Add(boneKey);
                 bool boneExpanded = !_collapsedNodes.Contains(boneKey);
                 section.Rows.Add(BoneRow(
-                    bone, depth, isLast, lines,
+                    bone, boneDepth, isLast, boneLines,
                     hasKids, boneExpanded, hasKids ? boneKey : null));
                 if (!hasKids || !boneExpanded)
                     return;
                 var kids = children[bone.Id];
-                var childLines = lines.Append(!isLast).ToArray();
+                var kidLines = Descend(boneLines, isLast);
                 for (int k = 0; k < kids.Count; k++)
-                    Emit(kids[k], depth + 1, k == kids.Count - 1, childLines);
+                    Emit(kids[k], boneDepth + 1, k == kids.Count - 1, kidLines);
             }
 
-            var rootLines = new[] { false, !groupLast };
             for (int r = 0; r < roots.Count; r++)
-                Emit(roots[r], 2, r == roots.Count - 1, rootLines);
+                Emit(roots[r], depth + 1, r == roots.Count - 1, slotLines);
         }
     }
 
@@ -1866,7 +1948,7 @@ public class MainWindow : Window
         // is the same either way. WHICH pane draws it is decided by the
         // selection in DrawTabContent, never by this label.
         _vm.ContentUsesPage =
-            tab is "Animation" or "Appearance" or "Light"
+            tab is "Animation" or "Appearance" or "Props" or "Light"
                 or "Shadows"
                 or "Camera"
                 or "Weather" or "Sky" or "Atmosphere" or "World";
@@ -1949,7 +2031,14 @@ public class MainWindow : Window
 
         if (_activeTab == "Appearance")
         {
+            _companionCatalog.EnsureLoaded();
             _appearancePane.Draw(origin, size);
+            return;
+        }
+
+        if (_activeTab == "Props")
+        {
+            _propsPane.Draw(origin, size);
             return;
         }
 
@@ -2013,6 +2102,9 @@ public class MainWindow : Window
             { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeOwner } => gazeOwner,
             _ => null,
         };
+
+    private readonly Game.PropSpawnService _propService;
+    private readonly PropsPane _propsPane;
 
     /// <summary>Selects a freshly spawned actor so the thing just created
     /// is the thing being edited. The scene has not rescanned yet, so the

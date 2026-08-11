@@ -19,13 +19,17 @@ public sealed record SkeletonDescriptor(
 /// One scene actor owning a slot-indexed set of present skeletons. Slots are
 /// never separate actors; absent auxiliary slots are normal.
 /// </summary>
+/// <param name="OwnerActor">The character this companion is attached to, when
+/// the attachment resolves to another present actor. Companions remain their
+/// own actors; the link is presentation lineage, not ownership of state.</param>
 public sealed record ActorDescriptor(
     ActorId Id,
     string Name,
     IReadOnlyList<SkeletonDescriptor> Skeletons,
     bool IsPlayer = false,
     bool IsCompanion = false,
-    bool IsHidden = false)
+    bool IsHidden = false,
+    ActorId? OwnerActor = null)
 {
     /// <summary>The Character-slot skeleton; explicitly slot-scoped —
     /// callers needing another slot use <see cref="GetSkeleton"/>.</summary>

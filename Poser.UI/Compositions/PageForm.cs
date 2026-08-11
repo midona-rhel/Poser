@@ -978,15 +978,37 @@ public static partial class Crystarium
 
         /// <summary>A read-only value alone on its band, at body size.
         /// </summary>
+        /// <param name="icon">An already-resolved game texture, drawn in the
+        /// control cell's own icon slot; 0 is no mark and costs the value no
+        /// width.</param>
         public void ReadOnly(string label, string value, string? help = null,
-            bool unavailable = false)
+            bool unavailable = false, nint icon = 0)
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
+            float band = ActiveTheme.Controls.FormRowHeight * row.Scale;
+            float left = row.ControlOrigin.X;
+            float width = row.ControlWidth;
+            if (icon != 0)
+            {
+                float side = ActiveTheme.Controls.IconSize * row.Scale;
+                float gap = ActiveTheme.Spacing.Three * row.Scale;
+                var markMin = ActiveTheme.Optical.Snap(new Vector2(
+                    left, row.ControlOrigin.Y + (band - side) * 0.5f));
+                ImGui.GetWindowDrawList().AddImage(
+                    new ImTextureID(icon),
+                    markMin,
+                    markMin + new Vector2(side),
+                    Vector2.Zero,
+                    Vector2.One,
+                    ImGui.ColorConvertFloat4ToU32(
+                        ColorEx.ApplyAlpha(Vector4.One)));
+                left += side + gap;
+                width = MathF.Max(0f, width - side - gap);
+            }
             LabelInBand(
-                row.ControlOrigin,
-                new(row.ControlWidth,
-                    ActiveTheme.Controls.FormRowHeight * row.Scale),
+                new Vector2(left, row.ControlOrigin.Y),
+                new(width, band),
                 value,
                 new TextStyle
                 {

@@ -26,8 +26,10 @@ public sealed class AppearancePane
     private readonly ActorPresentationSession _presentation;
     private readonly ActorIntegrationSession _integration;
     private readonly SceneSession _scene;
+    private readonly CompanionSection _companions;
 
     private string _status = string.Empty;
+    private bool _openCompanion = true;
     private bool _openGeneral = true;
     private bool _openWetSurface = true;
     private bool _openExternalAppearance = true;
@@ -67,11 +69,13 @@ public sealed class AppearancePane
     public AppearancePane(
         ActorPresentationSession presentation,
         ActorIntegrationSession integration,
-        SceneSession scene)
+        SceneSession scene,
+        CompanionSection companions)
     {
         _presentation = presentation;
         _integration = integration;
         _scene = scene;
+        _companions = companions;
     }
 
     /// <summary>Pumps MCDF dialogs at window level so they survive tab changes.</summary>
@@ -92,21 +96,36 @@ public sealed class AppearancePane
                 page.EmptyState();
                 return;
             }
+            page.Status(_status);
+
+            // The companion rows answer to the native attachment slot alone,
+            // so they LEAD and are drawn for actors that carry no presentation
+            // state at all — a minion is one. The rule is a divider BETWEEN
+            // sections, so this first one draws neither the rule nor the
+            // margin above it.
+            var descriptor = Describe(actor);
+            if (descriptor is { } minion && CompanionSection.IsMinion(minion))
+                page.Section("MINION", _openCompanion,
+                    next => _openCompanion = next,
+                    form => _companions.MinionRows(form, minion),
+                    divider: false);
+            else
+                page.Section("COMPANION", _openCompanion,
+                    next => _openCompanion = next,
+                    form => _companions.OwnerRows(form, actor),
+                    divider: false);
+
             if (!_presentation.IsSupported(actor)
                 || _presentation.Read(actor) is not { } reading)
             {
-                page.EmptyState("This actor does not support appearance effects.");
+                page.Status("This actor does not support appearance effects.");
                 return;
             }
 
             var owned = _presentation.OverridesFor(actor);
-            page.Status(_status);
 
-            // The rule is a divider BETWEEN sections, so the page's first
-            // section draws neither the rule nor the margin above it.
             page.Section("GENERAL", _openGeneral, next => _openGeneral = next,
-                form => GeneralRows(form, actor, owned, reading),
-                divider: false);
+                form => GeneralRows(form, actor, owned, reading));
             page.Section("WET SURFACE", _openWetSurface,
                 next => _openWetSurface = next,
                 form => WetSurfaceRows(form, actor, owned, reading));
@@ -121,6 +140,8 @@ public sealed class AppearancePane
                 next => _openCharacterFile = next,
                 form => CharacterFileRows(form, actor, external));
         });
+
+        _companions.DrawPicker();
     }
 
     /// <summary>The shared surface's pick, dispatched by owner name against the
