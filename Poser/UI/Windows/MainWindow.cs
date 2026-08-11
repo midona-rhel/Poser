@@ -305,6 +305,13 @@ public class MainWindow : Window
     /// set answers by minting a <see cref="PopOutWindow"/>.</summary>
     public event Action<ActorId>? OnPopOutRequested;
 
+    /// <summary>The strip's Scene toggle: the window set flips the Scene
+    /// window and answers its state through <see cref="GetSceneWindowOpen"/>.
+    /// </summary>
+    public event Action? OnSceneWindowToggleRequested;
+
+    public Func<bool>? GetSceneWindowOpen { get; set; }
+
     public MainWindow(
         IGPoseService gPoseService,
         IActorManager actorManager,
@@ -447,7 +454,18 @@ public class MainWindow : Window
             _shellMenuAnchor = anchor;
             _shellMenuOpenRequested = true;
         };
-        _vm.OnHideUi = () => IsOpen = false;
+        // Detached: the X closes just this Inspector window — the strip
+        // reopens it. Attached: the X hides the whole UI as ever.
+        _vm.OnHideUi = () =>
+        {
+            if (Config.ConfigurationService.Instance.Config.UI.DetachedShell)
+                ContentHidden = true;
+            else
+                IsOpen = false;
+        };
+        _vm.OnToggleInspectorWindow = () => ContentHidden = !ContentHidden;
+        _vm.OnToggleSceneWindow =
+            () => OnSceneWindowToggleRequested?.Invoke();
         _vm.OnPopOut = () =>
         {
             if (SelectedActorId() is { } popOut)
@@ -650,6 +668,32 @@ public class MainWindow : Window
             }
             : ExpandedSizeConstraints(minimumWidth);
 
+        // Hidden Inspector (detached, closed from the strip): an inputless
+        // pixel that keeps building frames for the parts, restored to its
+        // last real size when the strip reopens it.
+        if (_contentHidden)
+        {
+            SizeConstraints = new WindowSizeConstraints
+            {
+                MinimumSize = new Vector2(1f, 1f),
+                MaximumSize = new Vector2(1f, 1f),
+            };
+            Size = new Vector2(1f, 1f);
+            SizeCondition = ImGuiCond.Always;
+            PushShellStyles();
+            return;
+        }
+        if (_contentRestorePending)
+        {
+            _contentRestorePending = false;
+            SizeConstraints =
+                ExpandedSizeConstraints(EffectiveMinimumWidth());
+            Size = _hiddenRestoreSize;
+            SizeCondition = ImGuiCond.Always;
+            PushShellStyles();
+            return;
+        }
+
         // The detach toggle's one-frame reseat: width sheds or regains the
         // sidebar column while the LEFT edge moves the same amount, so the
         // content and the inspector hold their screen position.
@@ -694,8 +738,15 @@ public class MainWindow : Window
             }
         }
 
-        // The shell draws its own chassis; keep child regions transparent and
-        // give the hosted legacy panes the themed widget colors they expect.
+        PushShellStyles();
+    }
+
+    /// <summary>The shell draws its own chassis; keep child regions
+    /// transparent and give the hosted legacy panes the themed widget colors
+    /// they expect. Every PreDraw path ends here — PostDraw pops
+    /// unconditionally.</summary>
+    private static void PushShellStyles()
+    {
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Vector4.Zero);
         ImGui.PushStyleColor(ImGuiCol.Text, Crystarium.ActiveTheme.Text);
         ImGui.PushStyleColor(ImGuiCol.TextDisabled, Crystarium.ActiveTheme.TextDim);
@@ -755,6 +806,36 @@ public class MainWindow : Window
     private bool _shiftApplied;
     private Vector2 _lastPosition;
 
+    /// <summary>Detached mode only: the Inspector window closed FROM THE
+    /// TOOLBAR (or its own X). The window object stays open — it still
+    /// builds the frame's view model and pumps the menus and dialogs the
+    /// whole shell shares — but it shrinks to an inputless pixel and draws
+    /// no chassis until the strip reopens it.</summary>
+    internal bool ContentHidden
+    {
+        get => _contentHidden;
+        set
+        {
+            if (_contentHidden == value)
+                return;
+            _contentHidden = value;
+            if (value)
+            {
+                _hiddenRestoreSize = new Vector2(_lastWidth, _lastHeight);
+                Flags |= ImGuiWindowFlags.NoInputs;
+            }
+            else
+            {
+                Flags &= ~ImGuiWindowFlags.NoInputs;
+                _contentRestorePending = true;
+            }
+        }
+    }
+
+    private bool _contentHidden;
+    private bool _contentRestorePending;
+    private Vector2 _hiddenRestoreSize;
+
     /// <summary>The title cell's subject: the library mode, else the selected
     /// entity by kind, else the plain product name. Actor names travel the
     /// masked display route like every other surface.</summary>
@@ -797,7 +878,12 @@ public class MainWindow : Window
         _overlayPresentation.Reconcile(_scene.Snapshot);
         ReconcilePendingSpawn();
         BuildViewModel();
-        AppShellView.Draw(_vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
+        // Hidden Inspector: the frame still built everything the parts read,
+        // and the menu/dialog pumps below still run — only the chassis and
+        // its content stay undrawn.
+        if (!_contentHidden)
+            AppShellView.Draw(
+                _vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
         DrawShellMenu();
         DrawLightMenu();
         DrawCameraMenu();
@@ -864,6 +950,8 @@ public class MainWindow : Window
         _vm.Detached =
             Config.ConfigurationService.Instance.Config.UI.DetachedShell;
         _vm.TitleEntity = TitleEntity(primary);
+        _vm.SceneWindowOpen = GetSceneWindowOpen?.Invoke() ?? true;
+        _vm.InspectorWindowOpen = !_contentHidden;
         // The shell's retained per-row state is swept on structural change
         // only: an identical rescan publishes no new revision, so hover and
         // interaction identity survive every refresh that changed nothing.
