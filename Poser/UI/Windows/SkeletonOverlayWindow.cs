@@ -488,7 +488,7 @@ public class SkeletonOverlayWindow : Window
         // Diagnostic breadcrumb for dead world clicks: one line per press
         // naming every gate that can swallow it.
         if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-            _log.Debug(
+            _log.Information(
                 $"[Overlay] press target={worldTarget?.ToString() ?? "none"} "
                 + $"blocked={pointerBlocked} listTravel={listTravel} "
                 + $"hasWorldBone={hasWorldBone} "
@@ -691,7 +691,7 @@ public class SkeletonOverlayWindow : Window
         bool releaseOccluded = Interactive.PointerOccluded(
             pending.Owner,
             pending.ReleasePoint);
-        _log.Debug(
+        _log.Information(
             $"[Overlay] commit {pending.Id} present={stillPresent} "
             + $"occluded={releaseOccluded}");
         if (!stillPresent || releaseOccluded)
