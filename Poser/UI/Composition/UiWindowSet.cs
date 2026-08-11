@@ -19,7 +19,6 @@ public sealed class UiWindowSet : IDisposable
     public SkeletonOverlayWindow SkeletonOverlay { get; }
     public SettingsWindow Settings { get; }
     public SpawnBrowserWindow SpawnBrowser { get; }
-    public SidebarPartWindow SidebarPart { get; }
     public ToolbarPartWindow ToolbarPart { get; }
     public InspectorPartWindow InspectorPart { get; }
     private readonly SkeletonOverlayPresentation _overlayPresentation;
@@ -58,13 +57,10 @@ public sealed class UiWindowSet : IDisposable
 
         // The split parts draw MainWindow's per-frame view model, so they are
         // registered — and therefore drawn — after it.
-        SidebarPart = new SidebarPartWindow(main);
-        System.AddWindow(SidebarPart);
         ToolbarPart = new ToolbarPartWindow(main);
         System.AddWindow(ToolbarPart);
         InspectorPart = new InspectorPartWindow(main);
         System.AddWindow(InspectorPart);
-        SidebarPart.OnReattach += () => MainWindow.ToggleSplit(ShellPart.Sidebar);
         ToolbarPart.OnReattach += () => MainWindow.ToggleSplit(ShellPart.Toolbar);
         InspectorPart.OnReattach +=
             () => MainWindow.ToggleSplit(ShellPart.Inspector);
@@ -113,7 +109,6 @@ public sealed class UiWindowSet : IDisposable
     private void SyncSplitWindows()
     {
         var ui = _configService.Config.UI;
-        SidebarPart.IsOpen = Main.IsOpen && ui.SplitSidebar;
         ToolbarPart.IsOpen = Main.IsOpen && ui.SplitToolbar;
         InspectorPart.IsOpen = Main.IsOpen && ui.SplitInspector;
     }

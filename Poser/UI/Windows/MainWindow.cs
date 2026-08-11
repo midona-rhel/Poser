@@ -645,8 +645,8 @@ public class MainWindow : Window
         SizeConstraints = _collapsed
             ? new WindowSizeConstraints
             {
-                MinimumSize = new Vector2(minimumWidth, AppShellView.TitlebarHeight),
-                MaximumSize = new Vector2(float.MaxValue, AppShellView.TitlebarHeight),
+                MinimumSize = new Vector2(minimumWidth, AppShellView.CollapsedBarHeight),
+                MaximumSize = new Vector2(float.MaxValue, AppShellView.CollapsedBarHeight),
             }
             : ExpandedSizeConstraints(minimumWidth);
 
@@ -654,7 +654,7 @@ public class MainWindow : Window
         // ImGui.SetWindowSize inside Draw loses to it.
         if (_collapsed)
         {
-            Size = new Vector2(_lastWidth, AppShellView.TitlebarHeight);
+            Size = new Vector2(_lastWidth, AppShellView.CollapsedBarHeight);
             SizeCondition = ImGuiCond.Always;
         }
         else if (_restorePending)
@@ -701,17 +701,48 @@ public class MainWindow : Window
         };
 
     /// <summary>The width floor for what is attached THIS frame: the shared
-    /// 1110px covers sidebar + content + rail; each split part hands its
+    /// 1110px covers sidebar + content + rail; a split inspector hands its
     /// column back.</summary>
     private float EffectiveMinimumWidth()
     {
         var ui = Config.ConfigurationService.Instance.Config.UI;
         float minimum = MinimumWidth;
-        if (ui.SplitSidebar)
-            minimum -= Crystarium.ActiveTheme.Shell.SidebarDefaultWidth;
         if (ui.SplitInspector)
             minimum -= AppShellView.RailWidth;
         return minimum;
+    }
+
+    /// <summary>The title cell's subject: the library mode, else the selected
+    /// entity by kind, else the plain product name. Actor names travel the
+    /// masked display route like every other surface.</summary>
+    private string TitleEntity(SelectionId? primary)
+    {
+        if (_libraryMode)
+            return "Library";
+        return primary switch
+        {
+            { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
+                Actor: { } actorId } =>
+                FindActor(actorId.LogicalId) is { } actor
+                    ? ActorDisplayName(actor)
+                    : "Poser",
+            { Kind: SceneEntityKind.Bone, Bone: { } boneId } =>
+                FindActor(boneId.Skeleton.Actor.LogicalId) is { } owner
+                    ? ActorDisplayName(owner)
+                    : "Poser",
+            { Kind: SceneEntityKind.Environment } => "Environment",
+            { Kind: SceneEntityKind.Light } => LightTitle(primary.Value),
+            { Kind: SceneEntityKind.Camera } => "Camera",
+            _ => "Poser",
+        };
+    }
+
+    private string LightTitle(SelectionId id)
+    {
+        foreach (var light in _scene.Snapshot.Lights)
+            if (id.Light is { } lightId && light.Id.Equals(lightId))
+                return light.Name;
+        return "Light";
     }
 
     public override void Draw()
@@ -787,9 +818,9 @@ public class MainWindow : Window
         _vm.SidebarWidthPx = _sidebarWidth;
         _vm.Collapsed = _collapsed;
         var uiConfig = Config.ConfigurationService.Instance.Config.UI;
-        _vm.SidebarSplit = uiConfig.SplitSidebar;
         _vm.ToolbarSplit = uiConfig.SplitToolbar;
         _vm.InspectorSplit = uiConfig.SplitInspector;
+        _vm.TitleEntity = TitleEntity(primary);
         // The shell's retained per-row state is swept on structural change
         // only: an identical rescan publishes no new revision, so hover and
         // interaction identity survive every refresh that changed nothing.
@@ -2175,7 +2206,6 @@ public class MainWindow : Window
         AutoSaves,
         LayoutSeparator,
         PopOutContent,
-        DetachSidebar,
         DetachToolbar,
         DetachInspector,
         SettingsSeparator,
@@ -2214,9 +2244,8 @@ public class MainWindow : Window
         // context menu applies to the same three commands.
         bool poseTarget = SelectedSkeleton() != null;
         var uiConfig = Config.ConfigurationService.Instance.Config.UI;
-        int layoutState = (uiConfig.SplitSidebar ? 1 : 0)
-            | (uiConfig.SplitToolbar ? 2 : 0)
-            | (uiConfig.SplitInspector ? 4 : 0);
+        int layoutState = (uiConfig.SplitToolbar ? 1 : 0)
+            | (uiConfig.SplitInspector ? 2 : 0);
         if (_shellMenuRowsBuilt
             && poseTarget == _shellMenuPoseTarget
             && layoutState == _shellMenuLayoutState)
@@ -2244,10 +2273,6 @@ public class MainWindow : Window
             new ContextMenuItem(
                 "Pop out content", TablerIcon.ArrowsDiagonal,
                 disabled: !poseTarget);
-        _shellMenuItems[(int)ShellCommand.DetachSidebar] =
-            new ContextMenuItem(
-                uiConfig.SplitSidebar ? "Attach sidebar" : "Detach sidebar",
-                TablerIcon.LayoutPanel);
         _shellMenuItems[(int)ShellCommand.DetachToolbar] =
             new ContextMenuItem(
                 uiConfig.SplitToolbar ? "Attach toolbar" : "Detach toolbar",
@@ -2272,9 +2297,6 @@ public class MainWindow : Window
         var ui = svc.Config.UI;
         switch (part)
         {
-            case ShellPart.Sidebar:
-                ui.SplitSidebar = !ui.SplitSidebar;
-                break;
             case ShellPart.Toolbar:
                 ui.SplitToolbar = !ui.SplitToolbar;
                 break;
@@ -2316,9 +2338,6 @@ public class MainWindow : Window
             case ShellCommand.PopOutContent:
                 if (SelectedActorId() is { } popOut)
                     OnPopOutRequested?.Invoke(popOut);
-                break;
-            case ShellCommand.DetachSidebar:
-                ToggleSplit(ShellPart.Sidebar);
                 break;
             case ShellCommand.DetachToolbar:
                 ToggleSplit(ShellPart.Toolbar);

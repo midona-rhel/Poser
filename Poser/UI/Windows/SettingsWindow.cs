@@ -108,7 +108,6 @@ public class SettingsWindow : Window
             Theme = c.UI.Theme,
             AccentIndex = c.UI.AccentIndex,
 
-            SplitSidebar = c.UI.SplitSidebar,
             SplitToolbar = c.UI.SplitToolbar,
             SplitInspector = c.UI.SplitInspector,
             TreeGuides = c.UI.ShowTreeGuides,
@@ -204,7 +203,6 @@ public class SettingsWindow : Window
         c.UI.Theme = _vm.Theme;
         c.UI.AccentIndex = _vm.AccentIndex;
 
-        c.UI.SplitSidebar = _vm.SplitSidebar;
         c.UI.SplitToolbar = _vm.SplitToolbar;
         c.UI.SplitInspector = _vm.SplitInspector;
         c.UI.ShowTreeGuides = _vm.TreeGuides;

@@ -24,9 +24,12 @@ namespace Poser.UI;
 /// </summary>
 public sealed class PopOutWindow : Window
 {
-    private const float HeaderHeight = 34f;
     private const float MinContentWidth = 620f;
     private const float MinContentHeight = 420f;
+
+    /// <summary>The bar is the modal bar every floating frame wears.</summary>
+    private static float HeaderHeight =>
+        Crystarium.ActiveTheme.Floating.ModalBarHeight;
 
     private static readonly string[] TabLabels =
         ["Pose", "Animation", "Appearance"];
@@ -41,7 +44,9 @@ public sealed class PopOutWindow : Window
     private readonly AnimationPane _animationPane;
     private readonly AppearancePane _appearancePane;
     private readonly Game.Animation.AnimationCatalogLoader _animationCatalog;
+    private readonly Application.Animation.AnimationSession _animation;
     private readonly SelectionScope _scope;
+    private readonly ActorId _frozenActor;
     private readonly Guid _lineage;
     private readonly string _ownerId;
     private readonly int _identity;
@@ -75,6 +80,8 @@ public sealed class PopOutWindow : Window
         _appearancePane = services.GetRequiredService<AppearancePane>();
         _animationCatalog = services
             .GetRequiredService<Game.Animation.AnimationCatalogLoader>();
+        _animation = services
+            .GetRequiredService<Application.Animation.AnimationSession>();
 
         // This window's OWN inspector/map pair: a frozen subject must not
         // share gesture or edit-session state with the live window's panes —
@@ -104,6 +111,7 @@ public sealed class PopOutWindow : Window
                     MainWindow.DisplayName(legacyActor.Name))
                 : MainWindow.DisplayName(legacyActor.Name);
 
+        _frozenActor = actor;
         _lineage = actor.LogicalId;
         _scope = new SelectionScope(SelectionId.ForActor(actor));
         _selection.TrackScope(_scope);
@@ -195,16 +203,14 @@ public sealed class PopOutWindow : Window
             _ownerId, InteractionLayer.Window, min, max);
         try
         {
-            float radius = Crystarium.ActiveTheme.Radii.Window;
-            Crystarium.FloatingSurface.PrependShellBlur(
-                dl, min, max, radius * s);
+            // The file dialog's chassis, verbatim (user: every floating
+            // window wears the same glass).
             Crystarium.FloatingSurface.DrawChrome(
-                dl, min, max, radius, shadow: false, blur: false);
+                dl, min, max, Crystarium.ActiveTheme.Radii.Window);
             float headerBottom = DrawHeader(actor, min, max, s, dl);
             if (!_collapsed)
                 DrawBody(
                     new Vector2(min.X, headerBottom), max, s);
-            Crystarium.FloatingSurface.DrawBorder(min, max, radius);
         }
         finally
         {
@@ -235,8 +241,8 @@ public sealed class PopOutWindow : Window
     {
         var theme = Crystarium.ActiveTheme;
         float height = HeaderHeight * s;
-        float inset = theme.Page.Inset * s;
-        float side = theme.Controls.ShellIconAction;
+        float inset = theme.Floating.HeaderInset * s;
+        float side = theme.Floating.CloseActionSize;
         float step = (side + theme.Page.ActionGap) * s;
 
         Crystarium.TextInBand(
@@ -251,7 +257,7 @@ public sealed class PopOutWindow : Window
             });
 
         float y = min.Y + (height - side * s) * 0.5f;
-        float x = max.X - inset - side * s;
+        float x = max.X - theme.Floating.CloseInset * s - side * s;
         ImGui.SetCursorScreenPos(new Vector2(x, y));
         Crystarium.IconButton(
             "x",
@@ -280,11 +286,11 @@ public sealed class PopOutWindow : Window
             return min.Y + height;
         float rule = MathF.Max(1f, s);
         dl.AddRectFilled(
-            new Vector2(min.X, min.Y + height),
-            new Vector2(max.X, min.Y + height + rule),
+            new Vector2(min.X, MathF.Round(min.Y + height - rule)),
+            new Vector2(max.X, MathF.Round(min.Y + height)),
             ImGui.ColorConvertFloat4ToU32(
                 ColorEx.ApplyAlpha(theme.FormSeparator)));
-        return min.Y + height + rule;
+        return min.Y + height;
     }
 
     private void DrawBody(Vector2 min, Vector2 max, float s)
@@ -302,6 +308,44 @@ public sealed class PopOutWindow : Window
             _tab,
             chosen => _tab = chosen,
             alignFirstTabToCursor: true);
+
+        // The same right cluster the shell's workspace bar wears — animation
+        // and physics — acting on THIS window's frozen actor, whatever bone
+        // its scope currently selects.
+        var frozen = _frozenActor;
+        bool animationAvailable = _animation.IsSupported(frozen);
+        bool animationOn =
+            _animation.OverridesFor(frozen).OverallSpeed is not 0f;
+        bool physicsOn = !_animation.OwnsPhysics(frozen);
+        Crystarium.ActionBar(
+            $"popout-actions-{_identity}",
+            new Vector2(min.X + inset, min.Y),
+            new Vector2(max.X - min.X - inset * 2f, barHeight),
+            static _ => { },
+            right =>
+            {
+                right.Switch(
+                    "Animation",
+                    animationOn,
+                    next =>
+                    {
+                        if (next) _animation.ClearSpeed(frozen);
+                        else _animation.SetSpeed(frozen, 0f);
+                    },
+                    animationOn
+                        ? "Switch off to pause this actor's animation"
+                        : "Switch on to resume this actor's animation",
+                    disabled: !animationAvailable);
+                right.Switch(
+                    "Physics",
+                    physicsOn,
+                    next => _animation.SetPhysicsFrozen(frozen, !next),
+                    physicsOn
+                        ? "Switch off to freeze physics for the whole scene"
+                        : "Switch on to resume physics for the whole scene",
+                    disabled: !animationAvailable);
+            },
+            ActionBarSeparator.None);
 
         var contentOrigin = new Vector2(min.X + inset, min.Y + barHeight);
         var contentSize = new Vector2(

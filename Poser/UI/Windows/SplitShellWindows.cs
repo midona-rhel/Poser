@@ -7,26 +7,25 @@ using Poser.UI.Views;
 
 namespace Poser.UI;
 
-/// <summary>The three parts the shell can split off.</summary>
+/// <summary>The parts the shell can split off. The sidebar never splits —
+/// it is the main window's anchor (user 2026-08-11).</summary>
 public enum ShellPart
 {
-    Sidebar,
     Toolbar,
     Inspector,
 }
 
 /// <summary>
-/// One detached part of the split shell: an undecorated glass window with a
-/// slim header band — the part's name and the reattach action — above a
-/// content box the subclass fills. Parts draw from <see cref="MainWindow"/>'s
-/// per-frame view model, so the window set registers them AFTER it; a part
-/// whose main window is closed draws nothing rather than a stale frame.
+/// One detached part of the split shell: the file dialog's glass chassis —
+/// shadow, blur, border, the same <see cref="Crystarium.FloatingSurface"/>
+/// treatment every floating surface wears — with a modal-bar-height header
+/// (the part's name and the reattach action) above a content box the
+/// subclass fills. Parts draw from <see cref="MainWindow"/>'s per-frame view
+/// model, so the window set registers them AFTER it; a part whose main
+/// window is closed draws nothing rather than a stale frame.
 /// </summary>
 public abstract class ShellPartWindow : Window
 {
-    /// <summary>The header band: drag surface, label, reattach.</summary>
-    protected const float HeaderHeight = 30f;
-
     protected readonly MainWindow Main;
     private readonly string _label;
     private readonly string _ownerId;
@@ -69,7 +68,7 @@ public abstract class ShellPartWindow : Window
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
         ImGui.PushStyleVar(
             ImGuiStyleVar.WindowRounding,
-            10f * ImGuiHelpers.GlobalScale);
+            Crystarium.ActiveTheme.Radii.Window * ImGuiHelpers.GlobalScale);
     }
 
     public override void PostDraw()
@@ -84,6 +83,7 @@ public abstract class ShellPartWindow : Window
         if (!Main.IsOpen)
             return;
         float s = ImGuiHelpers.GlobalScale;
+        var theme = Crystarium.ActiveTheme;
         var min = ImGui.GetWindowPos();
         var max = min + ImGui.GetWindowSize();
         var dl = ImGui.GetWindowDrawList();
@@ -91,14 +91,12 @@ public abstract class ShellPartWindow : Window
             _ownerId, InteractionLayer.Window, min, max);
         try
         {
-            float radius = Crystarium.ActiveTheme.Radii.Window;
-            Crystarium.FloatingSurface.PrependShellBlur(
-                dl, min, max, radius * s);
+            // The file dialog's chassis, verbatim: DrawChrome with its
+            // defaults IS the glass every floating surface wears.
             Crystarium.FloatingSurface.DrawChrome(
-                dl, min, max, radius, shadow: false, blur: false);
+                dl, min, max, theme.Radii.Window);
             float headerBottom = DrawHeader(min, max, s, dl);
             DrawContent(new Vector2(min.X, headerBottom), max, s);
-            Crystarium.FloatingSurface.DrawBorder(min, max, radius);
         }
         finally
         {
@@ -110,21 +108,21 @@ public abstract class ShellPartWindow : Window
         Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
     {
         var theme = Crystarium.ActiveTheme;
-        float height = HeaderHeight * s;
-        float inset = theme.Page.Inset * s;
+        float height = theme.Floating.ModalBarHeight * s;
+        float inset = theme.Floating.HeaderInset * s;
         Crystarium.TextInBand(
             new Vector2(min.X + inset, min.Y),
             new Vector2(max.X - min.X - inset * 2f, height),
             _label,
             new TextStyle
             {
-                Size = theme.Typography.CaptionSize,
+                Size = theme.Typography.BodySize,
                 Weight = FontWeight.SemiBold,
-                Color = theme.TextMuted,
+                Color = theme.Chrome.Text,
             });
-        float side = theme.Controls.ShellIconAction;
+        float side = theme.Floating.CloseActionSize;
         ImGui.SetCursorScreenPos(new Vector2(
-            max.X - inset - side * s,
+            max.X - theme.Floating.CloseInset * s - side * s,
             min.Y + (height - side * s) * 0.5f));
         Crystarium.IconButton(
             "x",
@@ -134,36 +132,14 @@ public abstract class ShellPartWindow : Window
             id: _reattachId);
         float rule = MathF.Max(1f, s);
         dl.AddRectFilled(
-            new Vector2(min.X, min.Y + height),
-            new Vector2(max.X, min.Y + height + rule),
+            new Vector2(min.X, MathF.Round(min.Y + height - rule)),
+            new Vector2(max.X, MathF.Round(min.Y + height)),
             ImGui.ColorConvertFloat4ToU32(
-                ColorEx.ApplyAlpha(Crystarium.ActiveTheme.FormSeparator)));
-        return min.Y + height + rule;
+                ColorEx.ApplyAlpha(theme.FormSeparator)));
+        return min.Y + height;
     }
 
     protected abstract void DrawContent(Vector2 min, Vector2 max, float s);
-}
-
-/// <summary>The scene tree as its own floating window: the SAME retained
-/// sidebar (cache, search, status bar) the shell seats when attached.
-/// </summary>
-public sealed class SidebarPartWindow : ShellPartWindow
-{
-    public SidebarPartWindow(MainWindow main)
-        : base(main, $"Scene###{PluginConstants.PluginName}_split_sidebar",
-            "Scene")
-    {
-        Size = new Vector2(300f, 520f);
-        SizeCondition = ImGuiCond.FirstUseEver;
-        SizeConstraints = new WindowSizeConstraints
-        {
-            MinimumSize = new Vector2(240f, 320f),
-            MaximumSize = new Vector2(420f, float.MaxValue),
-        };
-    }
-
-    protected override void DrawContent(Vector2 min, Vector2 max, float s) =>
-        AppShellView.DrawSidebarContent(Main.ShellVm, min, max);
 }
 
 /// <summary>The inspector rail as its own floating window, hosting whatever
@@ -188,9 +164,10 @@ public sealed class InspectorPartWindow : ShellPartWindow
         AppShellView.DrawRailContent(Main.ShellVm, min, max);
 }
 
-/// <summary>The gizmo toolbar as its own floating strip: undo/redo, spawn
-/// and the four segment groups, self-sized, with the reattach on its far
-/// end instead of a header band.</summary>
+/// <summary>The toolbar as its own floating strip: the brand and its GPose
+/// pill, then the four segment groups, self-sized, with the reattach on its
+/// far end. Undo/redo/spawn/actions stay with the scene sidebar's title
+/// cell.</summary>
 public sealed class ToolbarPartWindow : Window
 {
     private readonly MainWindow _main;
@@ -212,20 +189,21 @@ public sealed class ToolbarPartWindow : Window
         base.PreDraw();
         float s = ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
-        float inset = theme.Page.Inset;
-        float side = theme.Controls.ShellIconAction;
+        float inset = theme.Floating.HeaderInset;
+        float side = theme.Floating.CloseActionSize;
         // Self-sized: content, one action gap, the reattach square, insets.
         Size = new Vector2(
             AppShellView.MeasureToolbar(_main.ShellVm) / s
                 + inset * 2f
                 + theme.Page.ActionGap
                 + side,
-            AppShellView.TitlebarHeight);
+            AppShellView.CollapsedBarHeight);
         SizeCondition = ImGuiCond.Always;
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
         ImGui.PushStyleVar(
-            ImGuiStyleVar.WindowRounding, 10f * ImGuiHelpers.GlobalScale);
+            ImGuiStyleVar.WindowRounding,
+            theme.Radii.Window * ImGuiHelpers.GlobalScale);
     }
 
     public override void PostDraw()
@@ -248,17 +226,14 @@ public sealed class ToolbarPartWindow : Window
             "poser-part-toolbar", InteractionLayer.Window, min, max);
         try
         {
-            float radius = theme.Radii.Window;
-            Crystarium.FloatingSurface.PrependShellBlur(
-                dl, min, max, radius * s);
             Crystarium.FloatingSurface.DrawChrome(
-                dl, min, max, radius, shadow: false, blur: false);
-            float inset = theme.Page.Inset * s;
+                dl, min, max, theme.Radii.Window);
+            float inset = theme.Floating.HeaderInset * s;
             AppShellView.DrawToolbarContent(
                 _main.ShellVm, new Vector2(min.X + inset, min.Y), size.Y);
-            float side = theme.Controls.ShellIconAction;
+            float side = theme.Floating.CloseActionSize;
             ImGui.SetCursorScreenPos(new Vector2(
-                max.X - inset - side * s,
+                max.X - theme.Floating.CloseInset * s - side * s,
                 min.Y + (size.Y - side * s) * 0.5f));
             Crystarium.IconButton(
                 "x",
@@ -266,7 +241,6 @@ public sealed class ToolbarPartWindow : Window
                 ControlStyle.Square(side),
                 help: "Reattach to the main window",
                 id: "##part-reattach-toolbar");
-            Crystarium.FloatingSurface.DrawBorder(min, max, radius);
         }
         finally
         {
