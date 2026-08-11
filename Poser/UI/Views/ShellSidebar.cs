@@ -138,6 +138,12 @@ public sealed class ShellSidebar
     private float _totalHeight;
     private int _slotCount;
 
+    /// <summary>Per-frame: the settings' tree-guide switch, inverted for
+    /// <see cref="TreeRowProps.HideGuides"/>. Hoisted so hosts without a
+    /// configuration service (the capture harness) never dereference one.
+    /// </summary>
+    private bool _hideGuides;
+
     public ShellSidebar()
     {
         // Hoisted once: a per-frame lambda is exactly the cost this sidebar
@@ -173,6 +179,12 @@ public sealed class ShellSidebar
             ControlStyle.Workspace with { Width = UiWidth.Fixed(pillWidth) });
 
         Sync(vm, theme);
+
+        // Read once per frame, and tolerant of hosts that run this view with
+        // no configuration service at all (the capture harness): no service
+        // means the guides stay on.
+        _hideGuides = Config.ConfigurationService.Instance is { } config
+            && !config.Config.UI.ShowTreeGuides;
 
         // The search field stays OUTSIDE the scroll child so a large skeleton
         // cannot push the sidebar's primary navigation affordance out of view.
@@ -451,10 +463,9 @@ public sealed class ShellSidebar
             Depth = row.Depth,
             Trunks = entry.Trunks,
             IsLastChild = row.IsLastChild,
-            // Read live: the ink is the only thing the switch changes, so no
+            // Live: the ink is the only thing the switch changes, so no
             // cached entry (least of all Trunks) has to be invalidated.
-            HideGuides = !Config.ConfigurationService.Instance
-                .Config.UI.ShowTreeGuides,
+            HideGuides = _hideGuides,
             Expander = row.HasChildren
                 ? row.Expanded
                     ? SidebarExpander.Open
