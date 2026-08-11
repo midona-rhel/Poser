@@ -94,16 +94,26 @@ public sealed record CameraDescriptor(
     bool IsLive = false,
     bool IsDefault = false);
 
+/// <summary>One spawned scene prop. Live transform and visibility are read
+/// through the prop handle; the descriptor carries only sidebar-visible
+/// state.</summary>
+public sealed record PropDescriptor(
+    PropId Id,
+    string Name,
+    bool Visible = true);
+
 public sealed record SceneSnapshot(
     ulong Revision,
     IReadOnlyList<ActorDescriptor> Actors,
     IReadOnlyList<LightDescriptor> Lights,
-    IReadOnlyList<CameraDescriptor> Cameras)
+    IReadOnlyList<CameraDescriptor> Cameras,
+    IReadOnlyList<PropDescriptor> Props)
 {
     public static SceneSnapshot Empty { get; } =
         new(
             0,
             Array.Empty<ActorDescriptor>(),
             Array.Empty<LightDescriptor>(),
-            Array.Empty<CameraDescriptor>());
+            Array.Empty<CameraDescriptor>(),
+            Array.Empty<PropDescriptor>());
 }

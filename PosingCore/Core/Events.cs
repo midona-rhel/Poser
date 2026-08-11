@@ -34,6 +34,13 @@ public record SkeletonChangedEvent(IActor Actor, ISkeleton? Skeleton) : IEvent;
 public record LightListChangedEvent(IReadOnlyList<ILight> Lights) : IEvent;
 
 /// <summary>
+/// Published when the spawned-prop list changes (prop spawned or destroyed).
+/// Carries no payload — the prop handle type lives above this assembly, and
+/// every subscriber re-reads the live list anyway.
+/// </summary>
+public record PropListChangedEvent : IEvent;
+
+/// <summary>
 /// Published when the virtual-camera list changes (camera created, destroyed,
 /// or the live camera switched).
 /// </summary>

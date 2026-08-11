@@ -53,6 +53,11 @@ public sealed class StableBindingRegistry
     private Dictionary<IVirtualCamera, CameraId> _cameraIds =
         new(ReferenceComparer<IVirtualCamera>.Instance);
     private Dictionary<CameraId, IVirtualCamera> _cameraBindings = new();
+    // Props follow the light rule exactly: plugin-owned handles, ids by
+    // reference identity, the handle dies with the prop.
+    private Dictionary<PropHandle, PropId> _propIds =
+        new(ReferenceComparer<PropHandle>.Instance);
+    private Dictionary<PropId, PropHandle> _propBindings = new();
     private ulong _revision;
 
     public StableBindingRegistry(
@@ -60,14 +65,18 @@ public sealed class StableBindingRegistry
         ISkeletonService skeletons,
         IActorSpawnService spawn,
         ILightingService lighting,
-        IVirtualCameraService cameras)
+        IVirtualCameraService cameras,
+        PropSpawnService props)
     {
         _actors = actors;
         _skeletons = skeletons;
         _spawn = spawn;
         _lighting = lighting;
         _cameras = cameras;
+        _props = props;
     }
+
+    private readonly PropSpawnService _props;
 
     public SceneSnapshot CurrentSnapshot { get; private set; } =
         SceneSnapshot.Empty;
@@ -257,6 +266,25 @@ public sealed class StableBindingRegistry
                 camera.IsDefault));
         }
 
+        // Props keep their id while present and valid, exactly as lights do.
+        var propIds = new Dictionary<PropHandle, PropId>(
+            ReferenceComparer<PropHandle>.Instance);
+        var propBindings = new Dictionary<PropId, PropHandle>();
+        var propDescriptors = new List<PropDescriptor>();
+        foreach (var prop in _props.Props)
+        {
+            if (!prop.IsValid)
+                continue;
+            if (!_propIds.TryGetValue(prop, out var propId))
+                propId = PropId.New();
+            propIds[prop] = propId;
+            propBindings[propId] = prop;
+            propDescriptors.Add(new PropDescriptor(
+                propId,
+                prop.Name,
+                prop.Visible));
+        }
+
         _actorBindings = actorBindings;
         _boneBindings = boneBindings;
         _legacyActorIds = legacyActorIds;
@@ -265,11 +293,14 @@ public sealed class StableBindingRegistry
         _lightBindings = lightBindings;
         _cameraIds = cameraIds;
         _cameraBindings = cameraBindings;
+        _propIds = propIds;
+        _propBindings = propBindings;
         CurrentSnapshot = new SceneSnapshot(
             checked(++_revision),
             actorDescriptors,
             lightDescriptors,
-            cameraDescriptors);
+            cameraDescriptors,
+            propDescriptors);
         return CurrentSnapshot;
     }
 
@@ -375,6 +406,25 @@ public sealed class StableBindingRegistry
         return new BindingResult<IVirtualCamera>(
             BindingStatus.Missing,
             Detail: $"Camera {id.LogicalId:N} is not present.");
+    }
+
+    public PropId? GetPropId(PropHandle prop) =>
+        _propIds.TryGetValue(prop, out var id) &&
+        _propBindings.TryGetValue(id, out var bound) &&
+        ReferenceEquals(bound, prop)
+            ? id
+            : null;
+
+    public BindingResult<PropHandle> Resolve(PropId id)
+    {
+        if (_propBindings.TryGetValue(id, out var prop) && prop.IsValid)
+            return new BindingResult<PropHandle>(
+                BindingStatus.Success,
+                prop);
+
+        return new BindingResult<PropHandle>(
+            BindingStatus.Missing,
+            Detail: $"Prop {id.LogicalId:N} is not present.");
     }
 
     public BindingResult<ILight> Resolve(LightId id)

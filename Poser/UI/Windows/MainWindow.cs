@@ -147,6 +147,16 @@ public class MainWindow : Window
         ShowPlus = true,
     };
 
+    /// <summary>The props section, retained like ACTORS: flat rows, one per
+    /// spawned prop, rebuilt behind the same gate (the scene revision carries
+    /// a prop's spawn, destroy and visibility) and flag-refreshed on warm
+    /// frames.</summary>
+    private readonly ShellSidebarSection _propsSection = new()
+    {
+        Title = "PROPS",
+        ShowPlus = true,
+    };
+
     /// <summary>The lights section, retained like ACTORS. Lights are flat — a
     /// spawned light owns nothing beneath it — so its rows are one per light,
     /// rebuilt behind the same gate (the scene revision carries a light's
@@ -217,7 +227,13 @@ public class MainWindow : Window
         new() { Label = "Pose" },
         new() { Label = "Animation" },
         new() { Label = "Appearance" },
-        new() { Label = "Props" },
+    ];
+
+    /// <summary>A prop's strip, the camera strip's sibling: while a prop is
+    /// selected the one tab IS the prop editor.</summary>
+    private readonly ShellTab[] _propTabs =
+    [
+        new() { Label = "Prop" },
     ];
 
     /// <summary>The environment's own tab strip: selecting the environment
@@ -270,11 +286,15 @@ public class MainWindow : Window
     /// anything; the environment is never created or destroyed.</summary>
     private const int ActorsSectionIndex = 2;
 
+    /// <summary>Props stand between the actors and the lights: scene
+    /// furniture, owned by nobody.</summary>
+    private const int PropsSectionIndex = 3;
+
     /// <summary>Lights stand under the actors they light.</summary>
-    private const int LightsSectionIndex = 3;
+    private const int LightsSectionIndex = 4;
 
     /// <summary>Cameras stand last: they look at everything above them.</summary>
-    private const int CamerasSectionIndex = 4;
+    private const int CamerasSectionIndex = 5;
 
     /// <summary>Reports whether the skeleton overlay window is open (titlebar toggle state).</summary>
     public Func<bool>? GetSkeletonOverlayOn { get; set; }
@@ -465,7 +485,10 @@ public class MainWindow : Window
         // or the plus next to actors camera or lights").
         _vm.OnSectionPlus = index =>
         {
-            if (index == LightsSectionIndex)
+            if (index == PropsSectionIndex)
+                OnSpawnBrowserRequested?.Invoke(
+                    ImGui.GetMousePos(), SpawnBrowserTab.Props);
+            else if (index == LightsSectionIndex)
                 OnSpawnBrowserRequested?.Invoke(
                     ImGui.GetMousePos(), SpawnBrowserTab.Lights);
             else if (index == CamerasSectionIndex)
@@ -573,6 +596,18 @@ public class MainWindow : Window
         // the warm-frame flag restate lands the eye's new state immediately.
         _vm.OnLightVisibility = row =>
         {
+            // A prop row wears the same eye seat: its toggle is draw
+            // visibility rather than a light's on-state.
+            if (row.Tag is SelectionId
+                { Kind: SceneEntityKind.Prop, Prop: { } propId })
+            {
+                var prop = _bindings.Resolve(propId);
+                if (!prop.Success || prop.Value is not { IsValid: true } handle)
+                    return;
+                handle.Visible = !handle.Visible;
+                row.LightOn = handle.Visible;
+                return;
+            }
             if (row.Tag is not SelectionId
                 { Kind: SceneEntityKind.Light, Light: { } lightId })
                 return;
@@ -1163,9 +1198,11 @@ public class MainWindow : Window
         _vm.Sections.Add(_actorsSection);
         // Lights stand under the actors they light; cameras close the list,
         // looking at everything above them.
+        _vm.Sections.Add(_propsSection);
         _vm.Sections.Add(_lightsSection);
         _vm.Sections.Add(_camerasSection);
         _actorsSection.Rows.Clear();
+        _propsSection.Rows.Clear();
         _lightsSection.Rows.Clear();
         _camerasSection.Rows.Clear();
         _actorRows.Clear();
@@ -1183,6 +1220,23 @@ public class MainWindow : Window
             AddActorRows(
                 actors, actor, snapshot, filter, filtering,
                 0, RootTreeLines, true);
+        }
+
+        // Props are flat like lights: one row per spawned prop, the header's
+        // plus makes another, and the eye seat toggles draw visibility.
+        foreach (var prop in _scene.Snapshot.Props)
+        {
+            if (filtering && !MatchesSidebarFilter(filter, prop.Name))
+                continue;
+            _propsSection.Rows.Add(new ShellSidebarRow
+            {
+                Label = prop.Name,
+                Count = "",
+                Icon = TablerIcon.Diamond,
+                Tag = SelectionId.ForProp(prop.Id),
+                LightActions = true,
+                LightOn = prop.Visible,
+            });
         }
 
         // Lights are flat: a spawned light owns nothing beneath it, so the
@@ -1285,6 +1339,21 @@ public class MainWindow : Window
                 cameraRow.CameraLive = liveCamera.IsLive;
                 cameraRow.CameraLocked = liveCamera.IsLocked;
             }
+        }
+
+        var propRows = _propsSection.Rows;
+        for (int i = 0; i < propRows.Count; i++)
+        {
+            var propRow = propRows[i];
+            if (propRow.Tag is not SelectionId propSelection)
+                continue;
+            propRow.Active = _selection.IsSelected(propSelection);
+            // The eye reads the LIVE handle: visibility moves the scene
+            // signature, and waiting for the republish would leave the glyph
+            // behind the click that flipped it.
+            if (propSelection.Prop is { } propId &&
+                _bindings.Resolve(propId) is { Success: true, Value: { } prop })
+                propRow.LightOn = prop.Visible;
         }
 
         var lightRows = _lightsSection.Rows;
@@ -1869,6 +1938,7 @@ public class MainWindow : Window
             { Kind: SceneEntityKind.Environment } => _environmentTabs,
             { Kind: SceneEntityKind.Light } => _lightTabs,
             { Kind: SceneEntityKind.Camera } => _cameraTabs,
+            { Kind: SceneEntityKind.Prop } => _propTabs,
             // Creatures share the actor strip: their skeleton poses, their
             // battle-chara body animates, and the Appearance pane hides the
             // humanoid-only sections itself.
@@ -2004,7 +2074,7 @@ public class MainWindow : Window
         // is the same either way. WHICH pane draws it is decided by the
         // selection in DrawTabContent, never by this label.
         _vm.ContentUsesPage =
-            tab is "Animation" or "Appearance" or "Props" or "Light"
+            tab is "Animation" or "Appearance" or "Prop" or "Light"
                 or "Shadows"
                 or "Camera"
                 or "Weather" or "Sky" or "Atmosphere" or "World";
@@ -2091,7 +2161,10 @@ public class MainWindow : Window
             return;
         }
 
-        if (_activeTab == "Props")
+        // The prop tab stands only while a prop is selected — the label is
+        // unique across every strip, so it is the whole dispatch, exactly
+        // like the camera's.
+        if (_activeTab == "Prop")
         {
             _propsPane.Draw(origin, size);
             return;

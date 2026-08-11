@@ -64,6 +64,14 @@ public readonly record struct LightId(Guid LogicalId, uint Generation)
     public override string ToString() => $"{LogicalId:N}@{Generation}";
 }
 
+/// <summary>One spawned scene prop at one exact native binding generation.</summary>
+public readonly record struct PropId(Guid LogicalId, uint Generation)
+{
+    public static PropId New() => new(Guid.NewGuid(), 0);
+    public PropId NextGeneration() => new(LogicalId, checked(Generation + 1));
+    public override string ToString() => $"{LogicalId:N}@{Generation}";
+}
+
 /// <summary>One virtual camera at one exact native binding generation.</summary>
 public readonly record struct CameraId(Guid LogicalId, uint Generation)
 {
@@ -80,6 +88,7 @@ public enum SceneEntityKind
     Camera,
     Environment,
     GazeTarget,
+    Prop,
 }
 
 /// <summary>Which gaze point a gaze-target selection addresses. Anchor is the
@@ -98,7 +107,8 @@ public readonly record struct SelectionId
         Guid? ownerActorLineage = null,
         LightId? light = null,
         GazePart? gaze = null,
-        CameraId? camera = null)
+        CameraId? camera = null,
+        PropId? prop = null)
     {
         Kind = kind;
         Actor = actor;
@@ -108,6 +118,7 @@ public readonly record struct SelectionId
         Light = light;
         Gaze = gaze;
         Camera = camera;
+        Prop = prop;
     }
 
     public SceneEntityKind Kind { get; }
@@ -118,6 +129,7 @@ public readonly record struct SelectionId
     public LightId? Light { get; }
     public GazePart? Gaze { get; }
     public CameraId? Camera { get; }
+    public PropId? Prop { get; }
 
     public Guid? ActorLineage =>
         Actor?.LogicalId ??
@@ -135,6 +147,9 @@ public readonly record struct SelectionId
 
     public static SelectionId ForCamera(CameraId camera) =>
         new(SceneEntityKind.Camera, null, null, null, camera: camera);
+
+    public static SelectionId ForProp(PropId prop) =>
+        new(SceneEntityKind.Prop, null, null, null, prop: prop);
 
     public static SelectionId ForBoneGroup(ActorId actor, string id)
     {
@@ -164,6 +179,7 @@ public readonly record struct SelectionId
         SceneEntityKind.Bone => $"bone-group:{OwnerActorLineage:N}:{ExternalId}",
         SceneEntityKind.Light => $"light:{Light}",
         SceneEntityKind.Camera => $"camera:{Camera}",
+        SceneEntityKind.Prop => $"prop:{Prop}",
         SceneEntityKind.Environment => "environment",
         SceneEntityKind.GazeTarget => $"gaze:{Actor}:{Gaze}",
         _ => throw new InvalidOperationException($"Unknown selection kind {Kind}."),
