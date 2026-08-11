@@ -108,8 +108,7 @@ public class SettingsWindow : Window
             Theme = c.UI.Theme,
             AccentIndex = c.UI.AccentIndex,
 
-            SplitToolbar = c.UI.SplitToolbar,
-            SplitInspector = c.UI.SplitInspector,
+            DetachedShell = c.UI.DetachedShell,
             TreeGuides = c.UI.ShowTreeGuides,
 
             UseLibraryWhenImporting = c.Library.UseLibraryWhenImporting,
@@ -203,8 +202,7 @@ public class SettingsWindow : Window
         c.UI.Theme = _vm.Theme;
         c.UI.AccentIndex = _vm.AccentIndex;
 
-        c.UI.SplitToolbar = _vm.SplitToolbar;
-        c.UI.SplitInspector = _vm.SplitInspector;
+        c.UI.DetachedShell = _vm.DetachedShell;
         c.UI.ShowTreeGuides = _vm.TreeGuides;
 
         foreach (var (action, binding) in _vm.Keybinds)

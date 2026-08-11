@@ -149,16 +149,14 @@ public sealed class AppShellViewModel
     public bool Collapsed;
     public Action<bool>? OnCollapse;
 
-    /// <summary>The split shell: a true flag means that part has left the
-    /// main window for its own floating window, and the shell neither draws
-    /// it nor reserves its cell. All false is the compact single-window UI.
-    /// The sidebar never splits — it IS the main window's anchor.</summary>
-    public bool ToolbarSplit;
-    public bool InspectorSplit;
+    /// <summary>ONE toggle: detached mode floats the toolbar strip and the
+    /// sidebar as their own windows; this window keeps the content and the
+    /// inspector. Off is the compact single-window UI.</summary>
+    public bool Detached;
 
-    /// <summary>What the title cell names: the selected entity ("Sterling
-    /// Vane", "Environment", "Library"), never the brand — the brand rides
-    /// the toolbar.</summary>
+    /// <summary>What the content's title names: the selected entity
+    /// ("Sterling Vane", "Environment", "Library"), never the brand — the
+    /// brand rides the toolbar.</summary>
     public string TitleEntity = "Poser";
 
     public Action<int>? OnTab;
@@ -311,14 +309,15 @@ public static class AppShellView
             }
 
             float bodyTop = min.Y + TitlebarHeight * s;
-            float railW = vm.DrawRail != null && !vm.InspectorSplit
-                ? RailWidth * s
-                : 0f;
-            float sbw = vm.SidebarWidthPx * s;
+            float railW = vm.DrawRail != null ? RailWidth * s : 0f;
+            // Detached mode: the sidebar is its own window; the content and
+            // the inspector stay together here.
+            float sbw = vm.Detached ? 0f : vm.SidebarWidthPx * s;
 
-            DrawSidebar(
-                vm, new Vector2(min.X, bodyTop),
-                new Vector2(min.X + sbw, max.Y), s, dl);
+            if (!vm.Detached)
+                DrawSidebar(
+                    vm, new Vector2(min.X, bodyTop),
+                    new Vector2(min.X + sbw, max.Y), s, dl);
             DrawWorkspace(
                 vm,
                 new Vector2(min.X + sbw, bodyTop),
@@ -328,7 +327,8 @@ public static class AppShellView
             if (railW > 0f)
                 DrawRail(vm, new Vector2(max.X - railW, bodyTop), max, railW, s, dl);
 
-            DrawSidebarResize(vm, min.X + sbw, bodyTop, max.Y, s);
+            if (!vm.Detached)
+                DrawSidebarResize(vm, min.X + sbw, bodyTop, max.Y, s);
 
             // Panel fills are intentionally drawn after the base chassis.
             // Repaint the asymmetric glass edge last so sidebar and rail
@@ -351,16 +351,15 @@ public static class AppShellView
             (vm.Collapsed ? CollapsedBarHeight : TitlebarHeight) * s;
         float radius = theme.Radii.Window * s;
         float rule = 1f * s;
-        float cellWidth = vm.SidebarWidthPx * s;
+        float cellWidth = vm.Detached ? 0f : vm.SidebarWidthPx * s;
         float railWidth =
-            vm.DrawRail != null && !vm.Collapsed && !vm.InspectorSplit
-                ? RailWidth * s
-                : 0f;
+            vm.DrawRail != null && !vm.Collapsed ? RailWidth * s : 0f;
 
-        if (vm.Collapsed)
+        if (vm.Collapsed || vm.Detached)
         {
-            // Collapsed means ONE continuous titlebar, not an empty window with
-            // a surviving sidebar cell: one glass strip, no divider, no rail.
+            // Collapsed — and detached, whose sidebar cell is a window of its
+            // own — means ONE continuous titlebar: one glass strip, no
+            // divider.
             dl.AddRectFilled(
                 min, new Vector2(max.X, min.Y + height), U32(Glass), radius);
         }
@@ -371,64 +370,46 @@ public static class AppShellView
                 min, cellMax, U32(Glass), radius, ImDrawFlags.RoundCornersTopLeft);
             dl.AddRectFilled(
                 new Vector2(cellMax.X - rule, min.Y), cellMax, U32(BorderPrimary));
-            if (railWidth > 0f)
-            {
-                // With the rail present the right cluster stands on a surface-1
-                // cell continuous with the rail below it (shell rule).
-                var railMin = new Vector2(max.X - railWidth, min.Y);
-                dl.AddRectFilled(
-                    railMin,
-                    new Vector2(max.X, min.Y + height),
-                    U32(theme.SurfaceRaised),
-                    radius,
-                    ImDrawFlags.RoundCornersTopRight);
-                dl.AddRectFilled(
-                    railMin,
-                    new Vector2(railMin.X + rule, min.Y + height),
-                    U32(BorderPrimary));
-            }
+        }
+        if (!vm.Collapsed && railWidth > 0f)
+        {
+            // With the rail present the right cluster stands on a surface-1
+            // cell continuous with the rail below it (shell rule).
+            var railMin = new Vector2(max.X - railWidth, min.Y);
+            dl.AddRectFilled(
+                railMin,
+                new Vector2(max.X, min.Y + height),
+                U32(theme.SurfaceRaised),
+                radius,
+                ImDrawFlags.RoundCornersTopRight);
+            dl.AddRectFilled(
+                railMin,
+                new Vector2(railMin.X + rule, min.Y + height),
+                U32(BorderPrimary));
         }
 
-        DrawBrand(vm, min, height, s, dl);
-        // The title cell's content stops at the divider it carries.
-        DrawHistory(
-            vm,
-            min.X + cellWidth - (vm.Collapsed ? 0f : rule) - TitleActionInset * s,
-            min.Y,
-            height,
-            s);
-        if (!vm.ToolbarSplit)
-            DrawTitleCenter(vm, min.X + cellWidth, min.Y, height, s);
+        if (!vm.Detached)
+        {
+            DrawBrand(vm, min, height, s, dl);
+            // The title cell's content stops at the divider it carries.
+            DrawHistory(
+                vm,
+                min.X + cellWidth - (vm.Collapsed ? 0f : rule)
+                    - TitleActionInset * s,
+                min.Y,
+                height,
+                s);
+        }
+        DrawTitleCenter(vm, min.X + cellWidth, min.Y, height, s);
         DrawTitleActions(vm, max.X, min.Y, height, s);
     }
 
-    /// <summary>The title cell names the SELECTED ENTITY — the brand and its
-    /// GPose pill live on the toolbar (user 2026-08-11). The label truncates
-    /// against the cell's right action cluster.</summary>
+    /// <summary>The sidebar's title cell OWNS the brand and its GPose pill
+    /// while attached; detached mode takes them to the floating toolbar
+    /// (user 2026-08-11).</summary>
     private static void DrawBrand(
         AppShellViewModel vm, Vector2 min, float height, float s, ImDrawListPtr dl)
-    {
-        var theme = Crystarium.ActiveTheme;
-        float x = min.X + TitleInset * s;
-        int actions = vm.ShowSpawn ? 4 : 3;
-        float reserved = TitleInset * s
-            + actions * (theme.Controls.ShellIconAction + theme.Spacing.Two) * s
-            + TitleActionInset * s;
-        Crystarium.TextInBand(
-            new Vector2(x, min.Y),
-            new Vector2(
-                MathF.Max(1f, vm.SidebarWidthPx * s - x + min.X - reserved),
-                height),
-            vm.TitleEntity,
-            new TextStyle
-            {
-                Size = theme.Typography.BodySize,
-                Weight = FontWeight.SemiBold,
-                Color = theme.Chrome.Text,
-            },
-            TextConstraint.Truncate(
-                MathF.Max(1f, vm.SidebarWidthPx * s - x + min.X - reserved)));
-    }
+        => DrawBrandPill(vm, min.X + TitleInset * s, min.Y, height, s, dl);
 
     /// <summary>"Poser" and the GPose pill, drawn at <paramref name="x"/> in
     /// a band of <paramref name="height"/>; returns the x past them. One
@@ -566,11 +547,24 @@ public static class AppShellView
         float side = theme.Controls.ShellIconAction;
         float gap = theme.Page.ActionGap * s;
         float x = left + CenterInset * s;
-        // The brand travels with the toolbar: it leads this cluster attached
-        // and leads the floating toolbar window detached.
-        x = DrawBrandPill(
-                vm, x, top, height, s, ImGui.GetWindowDrawList())
-            + CenterInset * s;
+        // The content's title: the SELECTED ENTITY leads the segment above
+        // the workspace, whichever host carries the toolbar cluster.
+        var entityStyle = new TextStyle
+        {
+            Size = theme.Typography.BodySize,
+            Weight = FontWeight.SemiBold,
+            Color = theme.Chrome.Text,
+        };
+        float entityWidth =
+            Crystarium.MeasureText(vm.TitleEntity, entityStyle).X;
+        Crystarium.TextInBand(
+            new Vector2(x, top),
+            new Vector2(entityWidth, height),
+            vm.TitleEntity,
+            entityStyle);
+        if (vm.Detached)
+            return;
+        x += entityWidth + CenterInset * s;
         if (vm.ShowProject)
         {
             IconAt(
@@ -981,21 +975,29 @@ public static class AppShellView
             });
     }
 
-    /// <summary>The floating inspector's content: the rail's surface-1 fill
-    /// and the same scroll seam, inside the hosting window's content box.
-    /// Draws nothing when the frame has no rail delegate (collapsed main).
-    /// </summary>
-    public static void DrawRailContent(
+    /// <summary>The floating sidebar's content: the search band, the tree and
+    /// the status bar, drawn into the hosting window's content box. The
+    /// chassis is the caller's.</summary>
+    public static void DrawSidebarContent(
         AppShellViewModel vm, Vector2 min, Vector2 max)
     {
-        if (vm.DrawRail == null)
-            return;
         float s = ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
-        ImGui.GetWindowDrawList().AddRectFilled(
-            min, max, U32(theme.SurfaceRaised), theme.Radii.Window * s,
-            ImDrawFlags.RoundCornersBottom);
-        RailScrollSeam(vm, min, max, max.X - min.X, s);
+        var dl = ImGui.GetWindowDrawList();
+        float rule = 1f * s;
+        float statusTop = max.Y - StatusbarHeight * s;
+        Sidebar.Draw(
+            vm,
+            min,
+            new Vector2(
+                max.X - min.X,
+                statusTop - theme.Spacing.One * s - min.Y));
+        dl.AddRectFilled(
+            new Vector2(min.X, statusTop),
+            new Vector2(max.X, statusTop + rule),
+            U32(BorderSecondary));
+        DrawStatusbar(
+            vm, new Vector2(min.X, statusTop + rule), max, s, dl);
     }
 
     // ── shared seats ─────────────────────────────────────────────────────
@@ -1124,19 +1126,31 @@ public static class AppShellView
     // help — so splitting a part moves it without resetting it. Exactly one
     // host draws a part per frame; the split flags are that gate.
 
-    /// <summary>The floating toolbar's content: the brand and its GPose pill,
-    /// then the same four segment groups the titlebar centre hosts when
-    /// attached. Undo/redo/spawn/actions stay with the scene sidebar's title
-    /// cell — they are the sidebar's, not the toolbar's (user 2026-08-11).
-    /// </summary>
+    /// <summary>The floating toolbar's content: the brand and its GPose
+    /// pill, the command menu, then the same four segment groups the
+    /// titlebar centre hosts when attached. Undo/redo/spawn stay with the
+    /// scene sidebar's title cell (user 2026-08-11).</summary>
     public static void DrawToolbarContent(
         AppShellViewModel vm, Vector2 origin, float height)
     {
         float s = ImGuiHelpers.GlobalScale;
+        var theme = Crystarium.ActiveTheme;
+        float side = theme.Controls.ShellIconAction;
         SyncKeybindHelp();
         float x = DrawBrandPill(
                 vm, origin.X, origin.Y, height, s, ImGui.GetWindowDrawList())
             + CenterInset * s;
+        float y = origin.Y + (height - side * s) * 0.5f;
+        IconAt(
+            new Vector2(x, y), TablerIcon.Menu2, side, BurgerPressed,
+            "##shell-burger",
+            help: "Actions");
+        if (_burgerPressed)
+        {
+            _burgerPressed = false;
+            vm.OnBurger?.Invoke(new Vector2(x, y + side * s));
+        }
+        x += side * s + CenterInset * s;
         DrawGizmoCluster(vm, x, origin.Y, height, s);
     }
 
@@ -1145,8 +1159,11 @@ public static class AppShellView
     public static float MeasureToolbar(AppShellViewModel vm)
     {
         float s = ImGuiHelpers.GlobalScale;
-        float gap = Crystarium.ActiveTheme.Page.ActionGap * s;
+        var theme = Crystarium.ActiveTheme;
+        float gap = theme.Page.ActionGap * s;
         return MeasureBrandPill(vm, s)
+            + CenterInset * s
+            + theme.Controls.ShellIconAction * s
             + CenterInset * s
             + Crystarium.MeasureSegmentedControl(GizmoIcons).X + gap
             + Crystarium.MeasureSegmentedControl(SpaceItems).X + gap

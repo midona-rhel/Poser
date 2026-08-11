@@ -19,8 +19,8 @@ public sealed class UiWindowSet : IDisposable
     public SkeletonOverlayWindow SkeletonOverlay { get; }
     public SettingsWindow Settings { get; }
     public SpawnBrowserWindow SpawnBrowser { get; }
+    public SidebarPartWindow SidebarPart { get; }
     public ToolbarPartWindow ToolbarPart { get; }
-    public InspectorPartWindow InspectorPart { get; }
     private readonly SkeletonOverlayPresentation _overlayPresentation;
     private readonly ConfigurationService _configService;
     private readonly IServiceProvider _services;
@@ -57,13 +57,13 @@ public sealed class UiWindowSet : IDisposable
 
         // The split parts draw MainWindow's per-frame view model, so they are
         // registered — and therefore drawn — after it.
+        SidebarPart = new SidebarPartWindow(main);
+        System.AddWindow(SidebarPart);
         ToolbarPart = new ToolbarPartWindow(main);
         System.AddWindow(ToolbarPart);
-        InspectorPart = new InspectorPartWindow(main);
-        System.AddWindow(InspectorPart);
-        ToolbarPart.OnReattach += () => MainWindow.ToggleSplit(ShellPart.Toolbar);
-        InspectorPart.OnReattach +=
-            () => MainWindow.ToggleSplit(ShellPart.Inspector);
+        SidebarPart.OnReattach += ToggleDetached;
+        ToolbarPart.OnReattach += ToggleDetached;
+        Main.OnDetachToggleRequested += ToggleDetached;
 
         Settings = settings;
         System.AddWindow(Settings);
@@ -103,14 +103,45 @@ public sealed class UiWindowSet : IDisposable
         SyncSplitWindows();
     }
 
-    /// <summary>A part window is open exactly while its split flag is set and
+    /// <summary>A part window is open exactly while detached mode is on and
     /// the workspace itself is up — parts are pieces of the main window, not
     /// windows of their own standing.</summary>
     private void SyncSplitWindows()
     {
+        bool detached = Main.IsOpen && _configService.Config.UI.DetachedShell;
+        SidebarPart.IsOpen = detached;
+        ToolbarPart.IsOpen = detached;
+    }
+
+    /// <summary>THE layout toggle. Detaching seats the sidebar window where
+    /// the sidebar column stood and the toolbar strip above the old
+    /// titlebar; the main window sheds the column in the same frame, so the
+    /// content and the inspector never move. Merging reverses it.</summary>
+    private void ToggleDetached()
+    {
         var ui = _configService.Config.UI;
-        ToolbarPart.IsOpen = Main.IsOpen && ui.SplitToolbar;
-        InspectorPart.IsOpen = Main.IsOpen && ui.SplitInspector;
+        bool detaching = !ui.DetachedShell;
+        ui.DetachedShell = detaching;
+        if (detaching)
+        {
+            float gs = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+            SidebarPart.PlaceAt(
+                Main.LastPosition,
+                new System.Numerics.Vector2(
+                    Main.LastSidebarWidth, Main.LastHeight));
+            ToolbarPart.PlaceAt(new System.Numerics.Vector2(
+                Main.LastPosition.X,
+                MathF.Max(
+                    0f,
+                    Main.LastPosition.Y
+                        - (Views.AppShellView.CollapsedBarHeight + 8f) * gs)));
+            Main.ApplyDetachShift(+1);
+        }
+        else
+        {
+            Main.ApplyDetachShift(-1);
+        }
+        _configService.ApplyChange();
     }
 
     /// <summary>Every surface down, settings included. Only the
@@ -155,6 +186,7 @@ public sealed class UiWindowSet : IDisposable
         _configService.OnConfigurationChanged -= SyncSplitWindows;
         Main.OnSkeletonOverlayToggled -= SetSkeletonOverlayOpen;
         Main.OnPopOutRequested -= CreatePopOut;
+        Main.OnDetachToggleRequested -= ToggleDetached;
         _overlayPresentation.Clear();
         System.RemoveAllWindows();
     }

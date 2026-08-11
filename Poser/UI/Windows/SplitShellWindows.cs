@@ -7,52 +7,71 @@ using Poser.UI.Views;
 
 namespace Poser.UI;
 
-/// <summary>The parts the shell can split off. The sidebar never splits —
-/// it is the main window's anchor (user 2026-08-11).</summary>
-public enum ShellPart
-{
-    Toolbar,
-    Inspector,
-}
-
 /// <summary>
-/// One detached part of the split shell: the file dialog's glass chassis —
-/// shadow, blur, border, the same <see cref="Crystarium.FloatingSurface"/>
-/// treatment every floating surface wears — with a modal-bar-height header
-/// (the part's name and the reattach action) above a content box the
-/// subclass fills. Parts draw from <see cref="MainWindow"/>'s per-frame view
-/// model, so the window set registers them AFTER it; a part whose main
-/// window is closed draws nothing rather than a stale frame.
+/// Detached mode's SCENE window: the sidebar exactly as it lives attached —
+/// search, tree, status bar — under a modal-height bar carrying undo/redo,
+/// the spawn plus and the reattach. Draws from <see cref="MainWindow"/>'s
+/// per-frame view model, so the window set registers it AFTER the main
+/// window; the file dialog's glass chassis, verbatim.
 /// </summary>
-public abstract class ShellPartWindow : Window
+public sealed class SidebarPartWindow : Window
 {
-    protected readonly MainWindow Main;
-    private readonly string _label;
-    private readonly string _ownerId;
-    private readonly string _reattachId;
+    private readonly MainWindow _main;
+    private Vector2? _pendingPos;
+    private Vector2? _pendingSize;
 
-    /// <summary>Reattach clicked: the binder flips the split flag off and the
-    /// window-set sync closes this window.</summary>
+    /// <summary>Reattach clicked: the window set merges the shell.</summary>
     public event Action? OnReattach;
 
-    protected ShellPartWindow(MainWindow main, string name, string label)
-        : base(name,
+    public SidebarPartWindow(MainWindow main)
+        : base($"Scene###{PluginConstants.PluginName}_split_sidebar",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoBackground)
     {
-        Main = main;
-        _label = label;
-        _ownerId = $"poser-part-{label}";
-        _reattachId = $"##part-reattach-{label}";
+        _main = main;
+        Size = new Vector2(300f, 520f);
+        SizeCondition = ImGuiCond.FirstUseEver;
+        SizeConstraints = new WindowSizeConstraints
+        {
+            MinimumSize = new Vector2(240f, 320f),
+            MaximumSize = new Vector2(420f, float.MaxValue),
+        };
         RespectCloseHotkey = false;
     }
 
-    // The same widget palette MainWindow pushes: the hosted panes render
-    // identically whichever window seats them.
+    /// <summary>Seats the window at the detach moment: the sidebar stays in
+    /// the same place it occupied inside the main window, so the toggle
+    /// reads as a split, not a teleport. Screen px; size logical.</summary>
+    public void PlaceAt(Vector2 position, Vector2 sizeLogical)
+    {
+        _pendingPos = position;
+        _pendingSize = sizeLogical;
+    }
+
     public override void PreDraw()
     {
         base.PreDraw();
+        if (_pendingPos is { } pos)
+        {
+            Position = pos;
+            PositionCondition = ImGuiCond.Always;
+            _pendingPos = null;
+        }
+        else
+        {
+            Position = null;
+        }
+        if (_pendingSize is { } size)
+        {
+            Size = size;
+            SizeCondition = ImGuiCond.Always;
+            _pendingSize = null;
+        }
+        else
+        {
+            SizeCondition = ImGuiCond.FirstUseEver;
+        }
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Vector4.Zero);
         ImGui.PushStyleColor(ImGuiCol.Text, Crystarium.ActiveTheme.Text);
         ImGui.PushStyleColor(ImGuiCol.TextDisabled, Crystarium.ActiveTheme.TextDim);
@@ -80,7 +99,7 @@ public abstract class ShellPartWindow : Window
 
     public override void Draw()
     {
-        if (!Main.IsOpen)
+        if (!_main.IsOpen)
             return;
         float s = ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
@@ -88,15 +107,14 @@ public abstract class ShellPartWindow : Window
         var max = min + ImGui.GetWindowSize();
         var dl = ImGui.GetWindowDrawList();
         var owner = Interactive.BeginOwner(
-            _ownerId, InteractionLayer.Window, min, max);
+            "poser-part-sidebar", InteractionLayer.Window, min, max);
         try
         {
-            // The file dialog's chassis, verbatim: DrawChrome with its
-            // defaults IS the glass every floating surface wears.
             Crystarium.FloatingSurface.DrawChrome(
                 dl, min, max, theme.Radii.Window);
-            float headerBottom = DrawHeader(min, max, s, dl);
-            DrawContent(new Vector2(min.X, headerBottom), max, s);
+            float headerBottom = DrawBar(min, max, s, dl);
+            AppShellView.DrawSidebarContent(
+                _main.ShellVm, new Vector2(min.X, headerBottom), max);
         }
         finally
         {
@@ -104,32 +122,50 @@ public abstract class ShellPartWindow : Window
         }
     }
 
-    private float DrawHeader(
-        Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
+    /// <summary>The scene bar: undo/redo and the spawn plus — the cell
+    /// cluster this window inherited — and the reattach on the far end.
+    /// </summary>
+    private float DrawBar(Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
     {
         var theme = Crystarium.ActiveTheme;
+        var vm = _main.ShellVm;
         float height = theme.Floating.ModalBarHeight * s;
         float inset = theme.Floating.HeaderInset * s;
-        Crystarium.TextInBand(
-            new Vector2(min.X + inset, min.Y),
-            new Vector2(max.X - min.X - inset * 2f, height),
-            _label,
-            new TextStyle
-            {
-                Size = theme.Typography.BodySize,
-                Weight = FontWeight.SemiBold,
-                Color = theme.Chrome.Text,
-            });
-        float side = theme.Floating.CloseActionSize;
+        float side = theme.Controls.ShellIconAction;
+        float step = (side + theme.Spacing.Two) * s;
+        float y = min.Y + (height - side * s) * 0.5f;
+        float x = min.X + inset;
+
+        ImGui.SetCursorScreenPos(new Vector2(x, y));
+        Crystarium.IconButton(
+            TablerIcon.ArrowBackUp, vm.OnUndo, ControlStyle.Square(side),
+            disabled: !vm.CanUndo, id: "##shell-undo");
+        x += step;
+        ImGui.SetCursorScreenPos(new Vector2(x, y));
+        Crystarium.IconButton(
+            TablerIcon.ArrowBackUp, vm.OnRedo, ControlStyle.Square(side),
+            disabled: !vm.CanRedo, id: "##shell-redo", flipX: true);
+        x += step;
+        if (vm.ShowSpawn)
+        {
+            ImGui.SetCursorScreenPos(new Vector2(x, y));
+            Crystarium.IconButton(
+                TablerIcon.Plus, vm.OnSpawn, ControlStyle.Square(side),
+                help: "Add an actor or prop to the scene",
+                id: "##shell-spawn");
+        }
+
+        float closeSide = theme.Floating.CloseActionSize;
         ImGui.SetCursorScreenPos(new Vector2(
-            max.X - theme.Floating.CloseInset * s - side * s,
-            min.Y + (height - side * s) * 0.5f));
+            max.X - theme.Floating.CloseInset * s - closeSide * s,
+            min.Y + (height - closeSide * s) * 0.5f));
         Crystarium.IconButton(
             "x",
             () => OnReattach?.Invoke(),
-            ControlStyle.Square(side),
-            help: "Reattach to the main window",
-            id: _reattachId);
+            ControlStyle.Square(closeSide),
+            help: "Merge the shell back into one window",
+            id: "##part-reattach-sidebar");
+
         float rule = MathF.Max(1f, s);
         dl.AddRectFilled(
             new Vector2(min.X, MathF.Round(min.Y + height - rule)),
@@ -138,39 +174,15 @@ public abstract class ShellPartWindow : Window
                 ColorEx.ApplyAlpha(theme.FormSeparator)));
         return min.Y + height;
     }
-
-    protected abstract void DrawContent(Vector2 min, Vector2 max, float s);
 }
 
-/// <summary>The inspector rail as its own floating window, hosting whatever
-/// the rail would host attached — the selection inspector, or the library's
-/// import options while the library is open.</summary>
-public sealed class InspectorPartWindow : ShellPartWindow
-{
-    public InspectorPartWindow(MainWindow main)
-        : base(main, $"Inspector###{PluginConstants.PluginName}_split_inspector",
-            "Inspector")
-    {
-        Size = new Vector2(AppShellView.RailWidth, 560f);
-        SizeCondition = ImGuiCond.FirstUseEver;
-        SizeConstraints = new WindowSizeConstraints
-        {
-            MinimumSize = new Vector2(AppShellView.RailWidth, 320f),
-            MaximumSize = new Vector2(AppShellView.RailWidth, float.MaxValue),
-        };
-    }
-
-    protected override void DrawContent(Vector2 min, Vector2 max, float s) =>
-        AppShellView.DrawRailContent(Main.ShellVm, min, max);
-}
-
-/// <summary>The toolbar as its own floating strip: the brand and its GPose
-/// pill, then the four segment groups, self-sized, with the reattach on its
-/// far end. Undo/redo/spawn/actions stay with the scene sidebar's title
-/// cell.</summary>
+/// <summary>Detached mode's TOOLBAR strip: the brand and its GPose pill,
+/// the command menu, the four segment groups, self-sized, reattach on the
+/// far end. The file dialog's glass chassis, verbatim.</summary>
 public sealed class ToolbarPartWindow : Window
 {
     private readonly MainWindow _main;
+    private Vector2? _pendingPos;
 
     public event Action? OnReattach;
 
@@ -184,9 +196,22 @@ public sealed class ToolbarPartWindow : Window
         RespectCloseHotkey = false;
     }
 
+    /// <summary>Seats the strip at the detach moment (screen px).</summary>
+    public void PlaceAt(Vector2 position) => _pendingPos = position;
+
     public override void PreDraw()
     {
         base.PreDraw();
+        if (_pendingPos is { } pos)
+        {
+            Position = pos;
+            PositionCondition = ImGuiCond.Always;
+            _pendingPos = null;
+        }
+        else
+        {
+            Position = null;
+        }
         float s = ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
         float inset = theme.Floating.HeaderInset;
@@ -239,7 +264,7 @@ public sealed class ToolbarPartWindow : Window
                 "x",
                 () => OnReattach?.Invoke(),
                 ControlStyle.Square(side),
-                help: "Reattach to the main window",
+                help: "Merge the shell back into one window",
                 id: "##part-reattach-toolbar");
         }
         finally
