@@ -2429,7 +2429,8 @@ public class PoseInspectorPane
         // Lights have no legacy entity view; their selection kind is the
         // authorization the entity check gives actors and bones.
         if (_entity is not (IActor or IBone) &&
-            _primary is not { Kind: SceneEntityKind.Light })
+            _primary is not { Kind: SceneEntityKind.Light } &&
+            _primary is not { Kind: SceneEntityKind.Prop })
             return;
 
         if (_cleanGesture is not { } gesture ||
