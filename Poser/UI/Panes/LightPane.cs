@@ -294,7 +294,7 @@ public sealed class LightPane
             cells.Cell(
                 "Range",
                 cell => cell.Slider("##light-range", light.Range, 0f, 999f,
-                    value => light.Range = value, format: "0",
+                    value => light.Range = value,
                     scale: SliderScale.Log),
                 help: "How far the light reaches");
         });
@@ -323,14 +323,13 @@ public sealed class LightPane
                     cells.Cell(
                         "Cone angle",
                         cell => cell.Slider("##light-cone", light.SpotAngle,
-                            0f, 180f, value => light.SpotAngle = value,
-                            format: "0"),
+                            0f, 180f, value => light.SpotAngle = value),
                         help: "How wide the cone opens, in degrees");
                     cells.Cell(
                         "Falloff angle",
                         cell => cell.Slider("##light-cone-falloff",
                             light.FalloffAngle, 0f, 180f,
-                            value => light.FalloffAngle = value, format: "0"),
+                            value => light.FalloffAngle = value),
                         help: "How soft the cone's edge is, in degrees");
                 });
                 break;
@@ -343,8 +342,7 @@ public sealed class LightPane
                         cell => cell.Slider("##light-area-x", area.X,
                             -90f, 90f,
                             value => light.AreaAngle =
-                                light.AreaAngle with { X = value },
-                            format: "0"),
+                                light.AreaAngle with { X = value }),
                         help: "How far the panel skews horizontally, in "
                             + "degrees");
                     cells.Cell(
@@ -352,13 +350,12 @@ public sealed class LightPane
                         cell => cell.Slider("##light-area-y", area.Y,
                             -90f, 90f,
                             value => light.AreaAngle =
-                                light.AreaAngle with { Y = value },
-                            format: "0"),
+                                light.AreaAngle with { Y = value }),
                         help: "How far the panel skews vertically, in "
                             + "degrees");
                 });
                 form.Slider("Falloff angle", light.FalloffAngle, 0f, 180f,
-                    value => light.FalloffAngle = value, "0",
+                    value => light.FalloffAngle = value,
                     help: "How soft the panel's edge is, in degrees");
                 break;
         }
@@ -491,7 +488,7 @@ public sealed class LightPane
                 help: "Let scenery cast shadows from this light");
         });
         form.Slider("Character range", light.CharacterShadowRange,
-            0f, 1000f, value => light.CharacterShadowRange = value, "0",
+            0f, 1000f, value => light.CharacterShadowRange = value,
             help: "How far character shadows are still drawn",
             scale: SliderScale.Log);
         form.Cells(cells =>
@@ -507,7 +504,7 @@ public sealed class LightPane
                 "Shadow far",
                 cell => cell.Slider("##light-shadow-far",
                     light.ShadowPlaneFar, 0f, 1000f,
-                    value => light.ShadowPlaneFar = value, format: "0.0",
+                    value => light.ShadowPlaneFar = value,
                     scale: SliderScale.Log, logCurvature: 9999f),
                 help: "The furthest distance shadows reach");
         });

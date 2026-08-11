@@ -104,8 +104,9 @@ public class PoseRailPane
 
             // A light takes no action row: neither actor overrides nor bone
             // resets address anything it has, and its own actions live on
-            // the Light tab.
-            if (!_inspector.IsLightSelection)
+            // the Light tab. A gaze point takes none either — its buttons
+            // would act on the owning actor while claiming to act on it.
+            if (!_inspector.IsLightSelection && !_inspector.IsGazeSelection)
             {
                 ImGui.SetCursorScreenPos(cursor);
                 if (_inspector.IsActorSelection)

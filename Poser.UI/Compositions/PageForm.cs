@@ -338,13 +338,14 @@ public static partial class Crystarium
         /// derived unit) instead of shipping a second read-only row beside
         /// it.</param>
         public void Slider(string label, float value, float minimum, float maximum,
-            Action<float> onChange, string format = "0.00", string? help = null,
+            Action<float> onChange, string? format = null, string? help = null,
             bool disabled = false, ControlStyle style = default,
             IReadOnlyList<float>? marks = null,
             Action? onBegin = null,
             Action? onCommit = null,
             SliderScale scale = SliderScale.Linear,
-            Func<float, string>? readout = null)
+            Func<float, string>? readout = null,
+            float logCurvature = 99f)
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
@@ -364,19 +365,29 @@ public static partial class Crystarium
                 disabled,
                 onBegin: onBegin,
                 onCommit: onCommit,
-                scale: scale);
-            string text = readout is { } state
-                ? state(displayedValue)
-                : displayedValue.ToString(format, CultureInfo.InvariantCulture);
-            DrawTextRight(
+                scale: scale,
+                logCurvature: logCurvature);
+            // Unstated format means the shared adaptive rule; the band is a
+            // click-to-type edit either way, and the edit shows full
+            // precision the label never carries.
+            Crystarium.SliderReadout(
+                $"{id}-readout",
                 new(row.ControlOrigin.X + row.ControlWidth -
                     ActiveTheme.Form.ValueColumnWidth * row.Scale, row.Origin.Y),
                 ActiveTheme.Form.ValueColumnWidth * row.Scale,
                 ActiveTheme.Controls.FormRowHeight * row.Scale,
-                ActiveTheme.Typography.CaptionSize,
-                FontFamily.Mono,
-                FormLabelColor,
-                text);
+                displayedValue,
+                minimum,
+                maximum,
+                typed =>
+                {
+                    onChange(typed);
+                    onCommit?.Invoke();
+                },
+                readout ?? (format is { } fixedFormat
+                    ? v => v.ToString(fixedFormat, CultureInfo.InvariantCulture)
+                    : null),
+                disabled);
             _page.EndRow(row, id, help);
         }
 
@@ -1375,7 +1386,7 @@ public static partial class Crystarium
         /// row's does, taken out of the cell's right edge.</summary>
         public void Slider(
             string id, float value, float minimum, float maximum,
-            Action<float> onChange, string format = "0.00",
+            Action<float> onChange, string? format = null,
             bool disabled = false,
             SliderScale scale = SliderScale.Linear,
             Func<float, string>? readout = null,
@@ -1401,17 +1412,21 @@ public static partial class Crystarium
                 help,
                 scale: scale,
                 logCurvature: logCurvature);
-            DrawTextRight(
+            // Unstated format means the shared adaptive rule; the band is a
+            // click-to-type edit either way.
+            Crystarium.SliderReadout(
+                $"{id}-readout",
                 new Vector2(Origin.X + Width - readoutWidth, Origin.Y),
                 readoutWidth,
                 ActiveTheme.Controls.FormRowHeight * Scale,
-                ActiveTheme.Typography.CaptionSize,
-                FontFamily.Mono,
-                FormLabelColor,
-                readout is { } state
-                    ? state(displayed)
-                    : displayed.ToString(
-                        format, CultureInfo.InvariantCulture));
+                displayed,
+                minimum,
+                maximum,
+                typed => onChange(typed),
+                readout ?? (format is { } fixedFormat
+                    ? v => v.ToString(fixedFormat, CultureInfo.InvariantCulture)
+                    : null),
+                disabled);
         }
 
         public void Switch(

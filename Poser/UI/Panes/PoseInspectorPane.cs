@@ -561,15 +561,18 @@ public class PoseInspectorPane
             return;
         }
 
-        // The rule is a divider BETWEEN sections, and TRANSLATION applies to
-        // every primary and is therefore always the rail's first.
-        Section(
-            "translation",
-            "TRANSLATION",
-            _openTranslation,
-            next => _openTranslation = next,
-            DrawTransform,
-            divider: false);
+        // The rule is a divider BETWEEN sections, and TRANSLATION is the
+        // rail's first for every primary that HAS one — a gaze point's
+        // position is the world handle's alone, and xyz rows here would
+        // edit the owning actor while claiming to edit the point.
+        if (_primary is not { Kind: SceneEntityKind.GazeTarget })
+            Section(
+                "translation",
+                "TRANSLATION",
+                _openTranslation,
+                next => _openTranslation = next,
+                DrawTransform,
+                divider: false);
 
         if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } railBone })
         {
@@ -2123,6 +2126,12 @@ public class PoseInspectorPane
     /// bone action row addresses anything a light has.</summary>
     public bool IsLightSelection =>
         _primary is { Kind: SceneEntityKind.Light };
+
+    /// <summary>Whether the primary is a gaze point: the rail names the
+    /// owning actor but offers neither transform rows nor action buttons —
+    /// the point is the world handle's alone.</summary>
+    public bool IsGazeSelection =>
+        _primary is { Kind: SceneEntityKind.GazeTarget };
 
     /// <summary>Whether the inspector is editing the actor itself rather than a
     /// bone. A gaze point counts: it belongs to the actor, so the rail keeps
