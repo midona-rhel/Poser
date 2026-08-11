@@ -1650,10 +1650,45 @@ public class MainWindow : Window
                 built.Add(new BuiltCategory(
                     "Other", "Other", leftovers, leftovers, []));
 
-            for (int g = 0; g < built.Count; g++)
-                EmitKtisisCategory(
-                    section, built[g], actorKey, depth + 1, childLines,
-                    g == built.Count - 1 && !auxFollows, filtering);
+            // Ktisis' shape: ONE Skeleton node under the actor hosts the
+            // categories, and its eye shows or hides the whole skeleton in
+            // the overlay (user 2026-08-11) — the armature toggle's
+            // replacement, per actor.
+            if (built.Count > 0)
+            {
+                var skeletonKey = actorKey + "/skeleton";
+                _knownCategoryNodes.Add(skeletonKey);
+                bool skeletonExpanded =
+                    filtering || !_collapsedNodes.Contains(skeletonKey);
+                bool skeletonLast = !auxFollows;
+                var allBoneIds = new BoneId[byName.Count];
+                int i = 0;
+                foreach (var bone in byName.Values)
+                    allBoneIds[i++] = bone.Id;
+                section.Rows.Add(new ShellSidebarRow
+                {
+                    Label = "Skeleton",
+                    Count = "",
+                    Icon = TablerIcon.Armature,
+                    ForceIcon = true,
+                    Depth = depth + 1,
+                    HasChildren = true,
+                    Expanded = skeletonExpanded,
+                    IsLastChild = skeletonLast,
+                    TreeLines = childLines,
+                    Tag = skeletonKey,
+                    OverlayBones = allBoneIds,
+                });
+                if (skeletonExpanded)
+                {
+                    var categoryLines = Descend(childLines, skeletonLast);
+                    for (int g = 0; g < built.Count; g++)
+                        EmitKtisisCategory(
+                            section, built[g], skeletonKey, depth + 2,
+                            categoryLines,
+                            g == built.Count - 1, filtering);
+                }
+            }
         }
 
         if (!filtering || hasMatchingAux)
@@ -1808,29 +1843,90 @@ public class MainWindow : Window
             ? category.VisibleBones
             : category.VisibleBones.FindAll(
                 bone => !bone.Id.Equals(mergedBone.Id));
-        for (int b = 0; b < bones.Count; b++)
+
+        // Ktisis' other rule: bones nest by the SKELETON's own parenting
+        // inside their category, so a hand row discloses its fingers and
+        // every node — parent or leaf — is a real, selectable bone (user
+        // 2026-08-11). A bone whose parent is outside the category (or
+        // filtered away) roots at the category level.
+        var present = new HashSet<BoneId>();
+        foreach (var bone in bones)
+            present.Add(bone.Id);
+        var childBones = new Dictionary<BoneId, List<BoneDescriptor>>();
+        var boneRoots = new List<BoneDescriptor>();
+        foreach (var bone in bones)
         {
-            var boneSelectionId = SelectionId.ForBone(bones[b].Id);
-            section.Rows.Add(new ShellSidebarRow
+            if (bone.Parent is { } parent && present.Contains(parent))
             {
-                Label = underIvcs
-                    ? PruneIvcsLead(bones[b].DisplayName)
-                    : bones[b].DisplayName,
-                Count = "",
-                Depth = depth + 1,
-                IsLastChild =
-                    b == bones.Count - 1 && category.Children.Count == 0,
-                TreeLines = childLines,
-                Active = _selection.IsSelected(boneSelectionId),
-                Tag = boneSelectionId,
-                OverlayBones = new[] { bones[b].Id },
-            });
+                if (!childBones.TryGetValue(parent, out var siblings))
+                    childBones[parent] = siblings = new List<BoneDescriptor>();
+                siblings.Add(bone);
+            }
+            else
+            {
+                boneRoots.Add(bone);
+            }
         }
+
+        for (int b = 0; b < boneRoots.Count; b++)
+            EmitCategoryBone(
+                section, boneRoots[b], childBones, catKey, depth + 1,
+                childLines,
+                b == boneRoots.Count - 1 && category.Children.Count == 0,
+                filtering, underIvcs);
 
         for (int c = 0; c < category.Children.Count; c++)
             EmitKtisisCategory(
                 section, category.Children[c], catKey, depth + 1, childLines,
                 c == category.Children.Count - 1, filtering, underIvcs);
+    }
+
+    /// <summary>One bone row inside a category: selectable always, and a
+    /// DISCLOSING parent when the skeleton parents other category bones
+    /// under it — body selects, chevron discloses, the merged-row
+    /// contract.</summary>
+    private void EmitCategoryBone(
+        ShellSidebarSection section,
+        BoneDescriptor bone,
+        Dictionary<BoneId, List<BoneDescriptor>> childBones,
+        string parentKey,
+        int depth,
+        bool[]? lines,
+        bool isLast,
+        bool filtering,
+        bool underIvcs)
+    {
+        childBones.TryGetValue(bone.Id, out var children);
+        bool hasChildren = children is { Count: > 0 };
+        var boneSelectionId = SelectionId.ForBone(bone.Id);
+        string boneKey = parentKey + "/bone:" + bone.Id.CanonicalName;
+        if (hasChildren && _knownCategoryNodes.Add(boneKey))
+            _collapsedNodes.Add(boneKey);
+        bool expanded =
+            hasChildren && (filtering || !_collapsedNodes.Contains(boneKey));
+        section.Rows.Add(new ShellSidebarRow
+        {
+            Label = underIvcs
+                ? PruneIvcsLead(bone.DisplayName)
+                : bone.DisplayName,
+            Count = "",
+            Depth = depth,
+            HasChildren = hasChildren,
+            Expanded = expanded,
+            IsLastChild = isLast,
+            TreeLines = lines,
+            Active = _selection.IsSelected(boneSelectionId),
+            Tag = boneSelectionId,
+            ExpandKey = hasChildren ? boneKey : null,
+            OverlayBones = new[] { bone.Id },
+        });
+        if (!expanded || children == null)
+            return;
+        var childLines = Descend(lines ?? [], isLast);
+        for (int c = 0; c < children.Count; c++)
+            EmitCategoryBone(
+                section, children[c], childBones, boneKey, depth + 1,
+                childLines, c == children.Count - 1, filtering, underIvcs);
     }
 
     /// <summary>Whether an actor, any of its bones or slots, or any actor
