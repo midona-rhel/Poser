@@ -360,9 +360,13 @@ public class SkeletonOverlayWindow : Window
         // Actor origin dots follow their skeleton: shown when any of the
         // actor's bones are opted in, or the actor itself is selected. The
         // filter runs BEFORE hover/press handling so hidden dots are not
-        // silently interactive.
+        // silently interactive. A PROP entry rides this list but follows the
+        // LIGHT rule instead — its handle is the only viewport route to it,
+        // so it survives the armature filter (the handle toggle already
+        // filtered it upstream).
         actors = actors
             .Where(a =>
+                a.Id.Kind == SceneEntityKind.Prop ||
                 selectedIds.Contains(a.Id) || shownActors.Contains(a.Id))
             .ToList();
 
