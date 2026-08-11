@@ -211,6 +211,16 @@ public class MainWindow : Window
         new() { Label = "Appearance" },
     ];
 
+    /// <summary>A creature's strip is Pose alone: stance, lips, gaze and
+    /// appearance are humanoid concepts, and a strip stating them for a
+    /// minion would claim controls that do nothing real. Pausing a creature
+    /// stays available through the sidebar and context-menu pause actions.
+    /// </summary>
+    private readonly ShellTab[] _creatureTabs =
+    [
+        new() { Label = "Pose" },
+    ];
+
     /// <summary>The environment's own tab strip: selecting the environment
     /// swaps the whole strip, because none of the actor tabs mean anything for
     /// it. The environment carries eleven sections — one tab holding all of them
@@ -239,12 +249,12 @@ public class MainWindow : Window
     ];
 
     /// <summary>A camera's tab strip, the light strip's sibling: while a
-    /// camera is selected the tab set IS the camera editor, split between the
-    /// camera itself and the Ktisis bone-tracking graft.</summary>
+    /// camera is selected the one tab IS the camera editor — the camera's
+    /// offset and its bone tracking live on the inspector rail instead.
+    /// </summary>
     private readonly ShellTab[] _cameraTabs =
     [
         new() { Label = "Camera" },
-        new() { Label = "Tracking" },
     ];
 
     /// <summary>The library section is stated first, so its index is fixed.
@@ -481,6 +491,18 @@ public class MainWindow : Window
                 _ctxBoneOverlayBones = row.OverlayBones;
                 _boneCtxOpenRequested = true;
             }
+            else if (row.Tag is SelectionId
+                { Kind: SceneEntityKind.Light, Light: { } ctxLight })
+            {
+                _ctxLightId = ctxLight;
+                _lightCtxOpenRequested = true;
+            }
+            else if (row.Tag is SelectionId
+                { Kind: SceneEntityKind.Camera, Camera: { } ctxCamera })
+            {
+                _ctxCameraId = ctxCamera;
+                _cameraCtxOpenRequested = true;
+            }
             else if (row.OverlayBones != null)
             {
                 _ctxOverlayBones = row.OverlayBones;
@@ -644,7 +666,10 @@ public class MainWindow : Window
         DrawActorContextMenu();
         DrawBoneContextMenu();
         DrawOverlayContextMenu();
+        DrawLightContextMenu();
+        DrawCameraContextMenu();
         DrawRenameModal();
+        DrawEntityRenameModal();
         // Both file-dialog pumps live at the shell, so a dialog opened from a
         // tab or a context menu survives whatever the user does to that
         // surface next.
@@ -1240,7 +1265,9 @@ public class MainWindow : Window
             _camerasSection.Rows.Add(new ShellSidebarRow
             {
                 Label = camera.Name,
-                Count = "",
+                // The badge slot marks the session's own camera: the one
+                // that cannot be destroyed and that live falls back to.
+                Count = camera.IsDefault ? "Default" : "",
                 Icon = camera.Kind == CameraKind.Free
                     ? TablerIcon.Video
                     : TablerIcon.Camera,
@@ -1531,7 +1558,7 @@ public class MainWindow : Window
             { Kind: SceneEntityKind.Environment } => _environmentTabs,
             { Kind: SceneEntityKind.Light } => _lightTabs,
             { Kind: SceneEntityKind.Camera } => _cameraTabs,
-            _ => _selectionTabs,
+            _ => IsCreatureSelection(primary) ? _creatureTabs : _selectionTabs,
         };
         // The active tab is preserved WITHIN a strip, so a selection change
         // inside the actor set cannot silently throw the user back to Pose; a
@@ -1546,6 +1573,29 @@ public class MainWindow : Window
             tabs[i].Active = tabs[i].Label == _activeTab;
             _vm.Tabs.Add(tabs[i]);
         }
+    }
+
+    /// <summary>Whether the primary selection resolves to a creature — a
+    /// slot companion or a catalog spawn (minion/mount/accessory). Bone
+    /// selections classify by their owning actor.</summary>
+    private bool IsCreatureSelection(SelectionId? primary)
+    {
+        var actorId = primary switch
+        {
+            { Kind: SceneEntityKind.Actor, Actor: { } actor } => actor,
+            { Kind: SceneEntityKind.Bone, Bone: { } bone } =>
+                bone.Skeleton.Actor,
+            { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeActor } =>
+                gazeActor,
+            _ => (ActorId?)null,
+        };
+        if (actorId is not { } id)
+            return false;
+        var resolved = _bindings.Resolve(id);
+        if (!resolved.Success || resolved.Value is not { } live)
+            return false;
+        return live.IsCompanion ||
+            _spawnService.GetSpawnedKind(live) != CompanionKind.None;
     }
 
     // ── status bar, restated only when its numbers move ─────────────────
@@ -1665,7 +1715,7 @@ public class MainWindow : Window
         _vm.ContentUsesPage =
             tab is "Animation" or "Appearance" or "Light"
                 or "Shadows"
-                or "Camera" or "Tracking"
+                or "Camera"
                 or "Weather" or "Sky" or "Atmosphere" or "World";
     }
 
@@ -1775,18 +1825,12 @@ public class MainWindow : Window
             return;
         }
 
-        // The two camera tabs stand only while a camera is selected — the
-        // labels are unique across every strip, so the label is the whole
-        // dispatch, exactly like the light's.
+        // The camera tab stands only while a camera is selected — the label
+        // is unique across every strip, so it is the whole dispatch, exactly
+        // like the light's.
         if (_activeTab == "Camera")
         {
             _cameraPane.DrawCamera(origin, size);
-            return;
-        }
-
-        if (_activeTab == "Tracking")
-        {
-            _cameraPane.DrawTracking(origin, size);
             return;
         }
 
@@ -2314,6 +2358,213 @@ public class MainWindow : Window
                 _overlayPresentation.SetVisible(ownerBones, true);
                 break;
         }
+    }
+
+    // ── light / camera context menus ────────────────────────────────────
+
+    private LightId? _ctxLightId;
+    private bool _lightCtxOpenRequested;
+    private CameraId? _ctxCameraId;
+    private bool _cameraCtxOpenRequested;
+
+    /// <summary>The entity rename modal's state: lights and cameras carry
+    /// their name ON the entity, so one modal writes whichever apply hook the
+    /// opening menu handed it — unlike the actor modal, which writes a
+    /// nickname beside a name the game owns.</summary>
+    private bool _entityRenameOpen;
+    private string _entityRenameValue = "";
+    private string _entityRenameTitle = "";
+    private Action<string>? _entityRenameApply;
+
+    /// <summary>Right-click light menu: the lifetime verbs the actor menu
+    /// gives its rows, spoken in the light's vocabulary — the eye, the file,
+    /// and the ownership-aware destroy/release the ACTIONS section makes.
+    /// </summary>
+    private void DrawLightContextMenu()
+    {
+        if (_ctxLightId is not { } lightId)
+            return;
+        var resolved = _bindings.Resolve(lightId);
+        if (!resolved.Success || resolved.Value is not { IsValid: true } light)
+        {
+            _ctxLightId = null;
+            Crystarium.FloatingMenu.Dismiss("##light-ctx");
+            return;
+        }
+
+        var items = new List<ContextMenuItem>
+        {
+            new(light.IsOn ? "Switch off" : "Switch on",
+                light.IsOn ? TablerIcon.EyeOff : TablerIcon.Eye),
+            new("Rename", TablerIcon.Edit),
+            new("Clone", TablerIcon.Stack2),
+            new("Save to file…", TablerIcon.DeviceFloppy),
+            ContextMenuItem.Separator,
+        };
+        var actions = new List<Action?>
+        {
+            () => light.IsOn = !light.IsOn,
+            () => OpenEntityRename(
+                "Rename light", light.Name, next => light.Name = next),
+            () => _lightingService.CloneLight(light),
+            () => _lightPane.OpenSave(light),
+            null, // separator
+        };
+        if (light.Ownership == LightOwnership.Spawned)
+        {
+            items.Add(new ContextMenuItem(
+                "Destroy", TablerIcon.Trash, danger: true));
+            actions.Add(() =>
+            {
+                _lightingService.DestroyLight(light);
+                _selection.Clear();
+            });
+        }
+        else
+        {
+            items.Add(new ContextMenuItem("Release", TablerIcon.X));
+            actions.Add(() =>
+            {
+                _lightingService.ReleaseLight(light);
+                _selection.Clear();
+            });
+        }
+
+        if (_lightCtxOpenRequested)
+        {
+            _lightCtxOpenRequested = false;
+            Crystarium.FloatingMenu.Open(
+                "##light-ctx", ImGui.GetMousePos(), items.ToArray());
+        }
+        int clicked = Crystarium.FloatingMenu.Draw("##light-ctx");
+        if (clicked >= 0 && clicked < actions.Count)
+            actions[clicked]?.Invoke();
+    }
+
+    /// <summary>Right-click camera menu: look-through and lock — the two
+    /// verbs worth reaching without selecting — then the same lifetime set
+    /// the light menu speaks. The default camera cannot be destroyed.
+    /// </summary>
+    private void DrawCameraContextMenu()
+    {
+        if (_ctxCameraId is not { } cameraId)
+            return;
+        var resolved = _bindings.Resolve(cameraId);
+        if (!resolved.Success ||
+            resolved.Value is not { IsValid: true } camera)
+        {
+            _ctxCameraId = null;
+            Crystarium.FloatingMenu.Dismiss("##camera-ctx");
+            return;
+        }
+
+        var items = new List<ContextMenuItem>
+        {
+            new(camera.IsLive
+                    ? "Return to main camera"
+                    : "Look through", TablerIcon.Video,
+                disabled: camera.IsLive && camera.IsDefault),
+            new(camera.IsLocked ? "Unlock" : "Lock",
+                camera.IsLocked ? TablerIcon.LockOpen : TablerIcon.Lock),
+            new("Rename", TablerIcon.Edit, disabled: camera.IsLocked),
+            new("Clone", TablerIcon.Stack2),
+            new("Save to file…", TablerIcon.DeviceFloppy),
+            new("Reset properties", TablerIcon.Refresh,
+                disabled: camera.IsLocked),
+        };
+        var actions = new List<Action?>
+        {
+            () =>
+            {
+                if (!camera.IsLive)
+                {
+                    _cameraService.SetLive(camera);
+                    return;
+                }
+                foreach (var candidate in _cameraService.Cameras)
+                {
+                    if (candidate.IsDefault)
+                    {
+                        _cameraService.SetLive(candidate);
+                        break;
+                    }
+                }
+            },
+            () => camera.IsLocked = !camera.IsLocked,
+            () => OpenEntityRename(
+                "Rename camera", camera.Name, next => camera.Name = next),
+            () =>
+            {
+                if (_cameraService.CloneCamera(camera) is { } clone)
+                    _cameraPane.SelectWhenBound(clone);
+            },
+            () => _cameraPane.OpenSave(camera),
+            () => camera.ResetProperties(),
+        };
+        if (!camera.IsDefault)
+        {
+            items.Add(ContextMenuItem.Separator);
+            items.Add(new ContextMenuItem(
+                "Destroy", TablerIcon.Trash, danger: true));
+            actions.Add(null);
+            actions.Add(() =>
+            {
+                _cameraService.DestroyCamera(camera);
+                _selection.Clear();
+            });
+        }
+
+        if (_cameraCtxOpenRequested)
+        {
+            _cameraCtxOpenRequested = false;
+            Crystarium.FloatingMenu.Open(
+                "##camera-ctx", ImGui.GetMousePos(), items.ToArray());
+        }
+        int clicked = Crystarium.FloatingMenu.Draw("##camera-ctx");
+        if (clicked >= 0 && clicked < actions.Count)
+            actions[clicked]?.Invoke();
+    }
+
+    private void OpenEntityRename(
+        string title, string current, Action<string> apply)
+    {
+        _entityRenameTitle = title;
+        _entityRenameValue = current;
+        _entityRenameApply = apply;
+        _entityRenameOpen = true;
+    }
+
+    /// <summary>The light/camera rename modal. The apply hook captured the
+    /// live entity at open; a stale entity write is a no-op on an invalid
+    /// native, exactly as the pane's own name row would be.</summary>
+    private void DrawEntityRenameModal()
+    {
+        if (!_entityRenameOpen || _entityRenameApply is not { } apply)
+            return;
+        Crystarium.Modal(
+            "##rename-entity",
+            _entityRenameOpen,
+            next => _entityRenameOpen = next,
+            _entityRenameTitle,
+            () =>
+        {
+            Crystarium.TextInput(
+                "##rename-entity-input", _entityRenameValue,
+                next => _entityRenameValue = next);
+            ImGui.Dummy(new Vector2(0f, 8f * ImGuiHelpers.GlobalScale));
+            if (Crystarium.Button(
+                    "Save",
+                    variant: ButtonVariant.Primary,
+                    id: "rename-entity-save"))
+            {
+                if (_entityRenameValue.Trim() is { Length: > 0 } trimmed)
+                    apply(trimmed);
+                _entityRenameOpen = false;
+            }
+            ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
+            if (Crystarium.Button("Cancel", id: "rename-entity-cancel"))
+                _entityRenameOpen = false;
+        });
     }
 
     private void DrawRenameModal()

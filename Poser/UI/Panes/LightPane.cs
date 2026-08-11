@@ -639,7 +639,9 @@ public sealed class LightPane
         });
     }
 
-    private void OpenSave(ILight light)
+    /// <summary>Public for the sidebar context menu: same dialog, same pump.
+    /// </summary>
+    public void OpenSave(ILight light)
     {
         _saveBrowser.Open(_lastPath, path =>
         {

@@ -106,7 +106,9 @@ public class PoseRailPane
             // resets address anything it has, and its own actions live on
             // the Light tab. A gaze point takes none either — its buttons
             // would act on the owning actor while claiming to act on it.
-            if (!_inspector.IsLightSelection && !_inspector.IsGazeSelection)
+            // A camera's actions live on the Camera tab the same way.
+            if (!_inspector.IsLightSelection && !_inspector.IsGazeSelection &&
+                !_inspector.IsCameraSelection)
             {
                 ImGui.SetCursorScreenPos(cursor);
                 if (_inspector.IsActorSelection)
@@ -138,7 +140,11 @@ public class PoseRailPane
             cursor.Y += 22f * s;
         }
 
-        cursor.Y += DrawRotationGizmo(dl, cursor, width, s);
+        // A camera has no rotation for the rings to edit — its view is
+        // angle/pan, owned by the Camera tab — so the gizmo stands down
+        // rather than drawing an inert widget.
+        if (!_inspector.IsCameraSelection)
+            cursor.Y += DrawRotationGizmo(dl, cursor, width, s);
 
         // relocated inspector sections (compact width)
         _inspector.DrawRailSections(cursor, width);

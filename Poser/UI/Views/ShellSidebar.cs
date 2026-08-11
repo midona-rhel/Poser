@@ -655,7 +655,8 @@ public sealed class ShellSidebar
             }
 
             // One slot again: the camera's inline verb is "look through me".
-            // The slash means parked, exactly as it means off on the light.
+            // A parked camera fades rather than wearing a slash — the camera
+            // still works, it is just not the one being looked through.
             if (row.CameraActions)
             {
                 ImGui.SetCursorScreenPos(origin);
@@ -667,7 +668,7 @@ public sealed class ShellSidebar
                             ? "The live camera — click to return to the main camera"
                             : "Look through this camera",
                         id: "##camera-live",
-                        slashed: !row.CameraLive))
+                        dimmed: !row.CameraLive))
                     _vm.OnCameraLive?.Invoke(row);
                 return;
             }

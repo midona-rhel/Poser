@@ -236,6 +236,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         clone.FoV = original.FoV;
         clone.DelimitCamera = original.DelimitCamera;
         clone.Orthographic = original.Orthographic;
+        clone.IsLocked = original.IsLocked;
         clone.IsTracking = original.IsTracking;
         clone.TrackingMode = original.TrackingMode;
         foreach (var bone in original.TrackedBones)
@@ -488,7 +489,11 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
                 RaptureAtkModule.Instance()->AtkModule.IsTextInputActive())
                 return;
 
-            if (mouse != null && mouse->IsButtonDown(MouseState.Right))
+            // A locked camera holds its shot: the look-drag and movement stop
+            // accumulating, but the movement keys are still eaten so the game
+            // does not act on them mid-lock (Brio's lock gate).
+            if (!live.IsLocked &&
+                mouse != null && mouse->IsButtonDown(MouseState.Right))
             {
                 _freeMouseDelta += mouse->Delta;
                 mouse->HandleDelta();
@@ -526,6 +531,12 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             keyboard->HandleKey(VirtualKey.Q);
             keyboard->HandleKey(VirtualKey.E);
             keyboard->HandleKey(VirtualKey.SPACE);
+
+            if (live.IsLocked)
+            {
+                _freeForward = Vector3.Zero;
+                return;
+            }
 
             var input = new Vector3(leftRight, upDown, forwardBack);
             if (live.IsPortraitMode)

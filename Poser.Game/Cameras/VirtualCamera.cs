@@ -46,6 +46,8 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
 
     public bool IsDefault { get; }
 
+    public bool IsLocked { get; set; }
+
     private NativeCamera* Live => IsLive ? _service.Native : null;
 
     // ── orbit state ──────────────────────────────────────────────────────

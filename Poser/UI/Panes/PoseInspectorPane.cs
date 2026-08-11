@@ -12,6 +12,7 @@ using Poser.Entities;
 using Poser.Game;
 using Poser.Game.Transforms;
 using Poser.Game.Posing;
+using Poser.Game.Types;
 using Poser.Services;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
@@ -201,10 +202,14 @@ public class PoseInspectorPane
         ExpressionInspectorSection expressionSection,
         PoseFileInspectorSection poseFileSection,
         Application.Posing.IIkConfigurationPort ikPort,
-        Game.Posing.IkBakeCapture ikBake)
+        Game.Posing.IkBakeCapture ikBake,
+        IActorSpawnService spawnService,
+        CameraPane cameraPane)
     {
         _ikPort = ikPort;
         _ikBake = ikBake;
+        _spawnService = spawnService;
+        _cameraPane = cameraPane;
         _selection = scene.Selection;
         _scene = scene;
         _bindings = bindings;
@@ -218,6 +223,21 @@ public class PoseInspectorPane
         _editorState = editorState;
         Reset3DCamera();
     }
+
+    private readonly IActorSpawnService _spawnService;
+
+    /// <summary>The camera pane owns the camera rail sections (translation-
+    /// as-offset and tracking) exactly as it owns the Camera tab; the
+    /// inspector only declares where they sit.</summary>
+    private readonly CameraPane _cameraPane;
+    private bool _openCameraTracking = true;
+
+    /// <summary>Gaze and expression are humanoid concepts: a slot companion
+    /// or a catalog spawn (minion/mount/accessory) gets neither section.
+    /// </summary>
+    private bool IsCreature(IActor actor) =>
+        actor.IsCompanion ||
+        _spawnService.GetSpawnedKind(actor) != CompanionKind.None;
 
     // Retained resolution. The resolver reads exactly two things — the ordered
     // selection and the scene snapshot — and building its answer costs a
@@ -561,6 +581,35 @@ public class PoseInspectorPane
             return;
         }
 
+        // A camera's rail is the camera pane's: TRANSLATION edits the
+        // camera's OFFSET (its one positional fact), and TRACKING is the
+        // Ktisis graft — the whole tracking surface lives here, not on the
+        // Camera tab.
+        if (_primary is { Kind: SceneEntityKind.Camera })
+        {
+            if (!_cameraPane.HasRailCamera)
+            {
+                ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
+                return;
+            }
+            Section(
+                "translation",
+                "TRANSLATION",
+                _openTranslation,
+                next => _openTranslation = next,
+                _cameraPane.DrawRailTranslation,
+                divider: false);
+            if (_cameraPane.RailHasTracking)
+                Section(
+                    "camera-tracking",
+                    "TRACKING",
+                    _openCameraTracking,
+                    next => _openCameraTracking = next,
+                    _cameraPane.DrawRailTracking);
+            ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
+            return;
+        }
+
         // The rule is a divider BETWEEN sections, and TRANSLATION is the
         // rail's first for every primary that HAS one — a gaze point's
         // position is the world handle's alone, and xyz rows here would
@@ -594,14 +643,15 @@ public class PoseInspectorPane
         {
             var actor = OwningActor();
             var skeleton = OwningSkeleton();
-            if (actor != null)
+            bool humanoid = actor != null && !IsCreature(actor);
+            if (actor != null && humanoid)
                 Section(
                     "gaze",
                     "GAZE",
                     _openGaze,
                     next => _openGaze = next,
                     form => DrawGaze(form, actor, wide: false));
-            if (actor != null && _expressionSection.CanDraw)
+            if (actor != null && humanoid && _expressionSection.CanDraw)
                 Section(
                     "expression",
                     "EXPRESSION",
@@ -918,7 +968,7 @@ public class PoseInspectorPane
                     first = false;
                 }
 
-                if (actor != null)
+                if (actor != null && !IsCreature(actor))
                     Section(
                         "gaze",
                         "GAZE",
@@ -2118,6 +2168,19 @@ public class PoseInspectorPane
             }
             return ("Light", "light", 0);
         }
+        if (_primary is { Kind: SceneEntityKind.Camera, Camera: { } primaryCamera })
+        {
+            foreach (var camera in _scene.Snapshot.Cameras)
+            {
+                if (camera.Id.Equals(primaryCamera))
+                    return (camera.Name, camera.IsDefault
+                        ? "main camera · default"
+                        : camera.Kind == CameraKind.Free
+                            ? "free camera"
+                            : "game camera", 0);
+            }
+            return ("Camera", "camera", 0);
+        }
         return ("", "", 0);
     }
 
@@ -2132,6 +2195,13 @@ public class PoseInspectorPane
     /// the point is the world handle's alone.</summary>
     public bool IsGazeSelection =>
         _primary is { Kind: SceneEntityKind.GazeTarget };
+
+    /// <summary>Whether the inspector is editing a camera: the rail keeps
+    /// TRANSLATION (the camera's offset) and gains TRACKING, but neither the
+    /// action row nor the rotation gizmo addresses anything a camera has —
+    /// its rotation is angle/pan, edited on the Camera tab.</summary>
+    public bool IsCameraSelection =>
+        _primary is { Kind: SceneEntityKind.Camera };
 
     /// <summary>Whether the inspector is editing the actor itself rather than a
     /// bone. A gaze point counts: it belongs to the actor, so the rail keeps

@@ -807,6 +807,41 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
+        /// <summary>A lone numeric well — drag to adjust, double-click to
+        /// type — for a value whose range is unbounded or whose travel does
+        /// not deserve a track. The well is the slider readout's twin, at the
+        /// standard value-column width.</summary>
+        public void Number(
+            string label,
+            float value,
+            Action<float> onChange,
+            float perPixel,
+            string format = "0.00",
+            string? help = null,
+            bool disabled = false,
+            Action? onCommit = null)
+        {
+            string id = Id(label);
+            var row = _page.BeginRow(label);
+            ImGui.SetCursorScreenPos(row.CenterControl(
+                ActiveTheme.Controls.WorkspaceHeight));
+            Crystarium.AxisWell(
+                $"{id}-value",
+                "",
+                value,
+                onChange,
+                onCommit,
+                ActiveTheme.FormValue,
+                perPixel,
+                format,
+                ControlStyle.Workspace with
+                {
+                    Width = UiWidth.Fixed(ActiveTheme.Form.ValueColumnWidth),
+                },
+                disabled);
+            _page.EndRow(row, id, help);
+        }
+
         public void NumericSlider(
             string label,
             float value,
@@ -1484,6 +1519,32 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(
                 Center(ActiveTheme.Controls.SwitchHeight));
             Crystarium.Switch(id, value, onChange, Constrain(), disabled, help);
+        }
+
+        /// <summary>The cell's lone numeric well — the full-row
+        /// <see cref="Crystarium.FormScope.Number"/> at the same standard
+        /// value-column width, seated in the cell's track.</summary>
+        public void Number(
+            string id, float value, Action<float> onChange,
+            float perPixel, string format = "0.00",
+            bool disabled = false, Action? onCommit = null)
+        {
+            ImGui.SetCursorScreenPos(
+                Center(ActiveTheme.Controls.WorkspaceHeight));
+            Crystarium.AxisWell(
+                $"{id}-value",
+                "",
+                value,
+                onChange,
+                onCommit,
+                ActiveTheme.FormValue,
+                perPixel,
+                format,
+                Constrain(ControlStyle.Workspace with
+                {
+                    Width = UiWidth.Fixed(ActiveTheme.Form.ValueColumnWidth),
+                }),
+                disabled);
         }
 
         public void ColorWell(

@@ -31,6 +31,12 @@ public interface IVirtualCamera
     /// destroyable; every other camera is spawned beside it.</summary>
     bool IsDefault { get; }
 
+    /// <summary>A locked camera keeps its framing: every property edit is
+    /// disabled and a live free camera stops responding to movement input.
+    /// Switching which camera is live stays allowed — the lock protects the
+    /// shot, not the session.</summary>
+    bool IsLocked { get; set; }
+
     // ── orbit (Game) state, native units ─────────────────────────────────
 
     /// <summary>Horizontal/vertical orbit angle in radians.</summary>
