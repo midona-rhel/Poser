@@ -201,16 +201,20 @@ public sealed class AppearancePane
                 help: "Write the model id and redraw the actor"));
     }
 
-    /// <summary>A creature is a native attached companion or a catalog spawn —
-    /// either way a non-humanoid model the human-appearance surfaces cannot
-    /// serve.</summary>
+    /// <summary>A creature is a native attached companion, a catalog spawn, or
+    /// any actor currently drawing a non-zero model id — either way a
+    /// non-humanoid model the human-appearance surfaces (Glamourer designs,
+    /// Customize+ profiles, MCDF) cannot serve. The rows come back the moment
+    /// the model id returns to 0.</summary>
     private bool IsCreature(ActorId id)
     {
         if (Describe(id) is { IsCompanion: true })
             return true;
         var resolved = _bindings.Resolve(id);
-        return resolved.Success && resolved.Value is { } live
-            && _spawn.GetSpawnedKind(live) != Game.Types.CompanionKind.None;
+        if (!resolved.Success || resolved.Value is not { } live)
+            return false;
+        return _spawn.GetSpawnedKind(live) != Game.Types.CompanionKind.None
+            || _spawn.GetModelCharaId(live) != 0;
     }
 
     /// <summary>The shared surface's pick, dispatched by owner name against the
