@@ -260,14 +260,15 @@ public static class AppShellView
     private static Vector4 BorderSecondary =>
         Crystarium.ActiveTheme.FormSeparator;
 
-    public static float TitlebarHeight => Crystarium.ActiveTheme.Shell.TitlebarHeight;
-
-    /// <summary>The collapsed strip and every floating bar — the toolbar
-    /// window, the part and pop-out headers — share the modal bar height, so
-    /// a collapsed shell and a detached toolbar read as the same object
-    /// (user 2026-08-11).</summary>
-    public static float CollapsedBarHeight =>
+    /// <summary>ONE bar height: the titlebar (expanded AND collapsed), the
+    /// floating toolbar, the part and pop-out headers all share the modal bar
+    /// height — collapse must not move a single icon (user 2026-08-11).
+    /// </summary>
+    public static float TitlebarHeight =>
         Crystarium.ActiveTheme.Floating.ModalBarHeight;
+
+    /// <inheritdoc cref="TitlebarHeight"/>
+    public static float CollapsedBarHeight => TitlebarHeight;
     public static float SidebarWidth => Crystarium.ActiveTheme.Shell.SidebarDefaultWidth;
     public static float RowHeight => Crystarium.ActiveTheme.Controls.ListRowHeight;
     public static float ToolbarHeight => Crystarium.ActiveTheme.Shell.ToolbarHeight;
@@ -293,11 +294,9 @@ public static class AppShellView
         {
             float radius = Crystarium.ActiveTheme.Radii.Window;
 
-            // One shell-level blur; child panels only add translucent fills.
-            Crystarium.FloatingSurface.PrependShellBlur(
-                dl, min, max, radius * s);
-            Crystarium.FloatingSurface.DrawChrome(
-                dl, min, max, radius, shadow: false, blur: false);
+            // THE one window chrome — the same DrawChrome defaults every
+            // floating surface calls (user 2026-08-11: one chrome everywhere).
+            Crystarium.FloatingSurface.DrawChrome(dl, min, max, radius);
 
             SyncKeybindHelp();
             DrawTitlebar(vm, min, max, s, dl);
@@ -347,8 +346,7 @@ public static class AppShellView
         AppShellViewModel vm, Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
     {
         var theme = Crystarium.ActiveTheme;
-        float height =
-            (vm.Collapsed ? CollapsedBarHeight : TitlebarHeight) * s;
+        float height = TitlebarHeight * s;
         float radius = theme.Radii.Window * s;
         float rule = 1f * s;
         float cellWidth = vm.Detached ? 0f : vm.SidebarWidthPx * s;
@@ -388,7 +386,28 @@ public static class AppShellView
                 U32(BorderPrimary));
         }
 
-        if (!vm.Detached)
+        if (vm.Detached)
+        {
+            // The detached main window IS the inspector's window: it names
+            // itself so, with the selected entity (user 2026-08-11).
+            string title = vm.TitleEntity == "Poser"
+                ? "Inspector"
+                : $"Inspector – {vm.TitleEntity}";
+            Crystarium.TextInBand(
+                new Vector2(min.X + theme.Floating.HeaderInset * s, min.Y),
+                new Vector2(
+                    MathF.Max(1f, max.X - min.X
+                        - theme.Floating.HeaderInset * 2f * s),
+                    height),
+                title,
+                new TextStyle
+                {
+                    Size = theme.Typography.BodySize,
+                    Weight = FontWeight.SemiBold,
+                    Color = theme.Chrome.Text,
+                });
+        }
+        else
         {
             DrawBrand(vm, min, height, s, dl);
             // The title cell's content stops at the divider it carries.
@@ -399,8 +418,8 @@ public static class AppShellView
                 min.Y,
                 height,
                 s);
+            DrawTitleCenter(vm, min.X + cellWidth, min.Y, height, s);
         }
-        DrawTitleCenter(vm, min.X + cellWidth, min.Y, height, s);
         DrawTitleActions(vm, max.X, min.Y, height, s);
     }
 
@@ -547,24 +566,6 @@ public static class AppShellView
         float side = theme.Controls.ShellIconAction;
         float gap = theme.Page.ActionGap * s;
         float x = left + CenterInset * s;
-        // The content's title: the SELECTED ENTITY leads the segment above
-        // the workspace, whichever host carries the toolbar cluster.
-        var entityStyle = new TextStyle
-        {
-            Size = theme.Typography.BodySize,
-            Weight = FontWeight.SemiBold,
-            Color = theme.Chrome.Text,
-        };
-        float entityWidth =
-            Crystarium.MeasureText(vm.TitleEntity, entityStyle).X;
-        Crystarium.TextInBand(
-            new Vector2(x, top),
-            new Vector2(entityWidth, height),
-            vm.TitleEntity,
-            entityStyle);
-        if (vm.Detached)
-            return;
-        x += entityWidth + CenterInset * s;
         if (vm.ShowProject)
         {
             IconAt(
@@ -1127,15 +1128,16 @@ public static class AppShellView
     // host draws a part per frame; the split flags are that gate.
 
     /// <summary>The floating toolbar's content: the brand and its GPose
-    /// pill, the command menu, then the same four segment groups the
-    /// titlebar centre hosts when attached. Undo/redo/spawn stay with the
-    /// scene sidebar's title cell (user 2026-08-11).</summary>
+    /// pill, the command menu, undo/redo, then the same four segment groups
+    /// the titlebar centre hosts when attached. The spawn plus stays with
+    /// the scene window (user 2026-08-11).</summary>
     public static void DrawToolbarContent(
         AppShellViewModel vm, Vector2 origin, float height)
     {
         float s = ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
         float side = theme.Controls.ShellIconAction;
+        float step = (side + theme.Spacing.Two) * s;
         SyncKeybindHelp();
         float x = DrawBrandPill(
                 vm, origin.X, origin.Y, height, s, ImGui.GetWindowDrawList())
@@ -1150,6 +1152,19 @@ public static class AppShellView
             _burgerPressed = false;
             vm.OnBurger?.Invoke(new Vector2(x, y + side * s));
         }
+        x += step;
+        IconAt(
+            new Vector2(x, y), TablerIcon.ArrowBackUp, side, vm.OnUndo,
+            "##shell-undo",
+            disabled: !vm.CanUndo,
+            help: vm.CanUndo ? _undoHelp : _undoEmptyHelp);
+        x += step;
+        IconAt(
+            new Vector2(x, y), TablerIcon.ArrowBackUp, side, vm.OnRedo,
+            "##shell-redo",
+            disabled: !vm.CanRedo,
+            flipX: true,
+            help: vm.CanRedo ? _redoHelp : _redoEmptyHelp);
         x += side * s + CenterInset * s;
         DrawGizmoCluster(vm, x, origin.Y, height, s);
     }
@@ -1161,8 +1176,10 @@ public static class AppShellView
         float s = ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
         float gap = theme.Page.ActionGap * s;
+        float step = (theme.Controls.ShellIconAction + theme.Spacing.Two) * s;
         return MeasureBrandPill(vm, s)
             + CenterInset * s
+            + step * 2f
             + theme.Controls.ShellIconAction * s
             + CenterInset * s
             + Crystarium.MeasureSegmentedControl(GizmoIcons).X + gap

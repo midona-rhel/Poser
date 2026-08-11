@@ -122,8 +122,8 @@ public sealed class SidebarPartWindow : Window
         }
     }
 
-    /// <summary>The scene bar: undo/redo and the spawn plus — the cell
-    /// cluster this window inherited — and the reattach on the far end.
+    /// <summary>The scene bar: the window's name, the spawn plus, the
+    /// reattach — undo/redo live on the toolbar strip (user 2026-08-11).
     /// </summary>
     private float DrawBar(Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
     {
@@ -132,30 +132,31 @@ public sealed class SidebarPartWindow : Window
         float height = theme.Floating.ModalBarHeight * s;
         float inset = theme.Floating.HeaderInset * s;
         float side = theme.Controls.ShellIconAction;
-        float step = (side + theme.Spacing.Two) * s;
         float y = min.Y + (height - side * s) * 0.5f;
-        float x = min.X + inset;
 
-        ImGui.SetCursorScreenPos(new Vector2(x, y));
-        Crystarium.IconButton(
-            TablerIcon.ArrowBackUp, vm.OnUndo, ControlStyle.Square(side),
-            disabled: !vm.CanUndo, id: "##shell-undo");
-        x += step;
-        ImGui.SetCursorScreenPos(new Vector2(x, y));
-        Crystarium.IconButton(
-            TablerIcon.ArrowBackUp, vm.OnRedo, ControlStyle.Square(side),
-            disabled: !vm.CanRedo, id: "##shell-redo", flipX: true);
-        x += step;
+        Crystarium.TextInBand(
+            new Vector2(min.X + inset, min.Y),
+            new Vector2(max.X - min.X - inset * 2f, height),
+            "Scene",
+            new TextStyle
+            {
+                Size = theme.Typography.BodySize,
+                Weight = FontWeight.SemiBold,
+                Color = theme.Chrome.Text,
+            });
+
+        float closeSide = theme.Floating.CloseActionSize;
         if (vm.ShowSpawn)
         {
-            ImGui.SetCursorScreenPos(new Vector2(x, y));
+            ImGui.SetCursorScreenPos(new Vector2(
+                max.X - theme.Floating.CloseInset * s
+                    - (closeSide + theme.Page.ActionGap + side) * s,
+                y));
             Crystarium.IconButton(
                 TablerIcon.Plus, vm.OnSpawn, ControlStyle.Square(side),
                 help: "Add an actor or prop to the scene",
                 id: "##shell-spawn");
         }
-
-        float closeSide = theme.Floating.CloseActionSize;
         ImGui.SetCursorScreenPos(new Vector2(
             max.X - theme.Floating.CloseInset * s - closeSide * s,
             min.Y + (height - closeSide * s) * 0.5f));

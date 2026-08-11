@@ -46,7 +46,6 @@ public sealed class PopOutWindow : Window
     private readonly Game.Animation.AnimationCatalogLoader _animationCatalog;
     private readonly Application.Animation.AnimationSession _animation;
     private readonly SelectionScope _scope;
-    private readonly ActorId _frozenActor;
     private readonly Guid _lineage;
     private readonly string _ownerId;
     private readonly int _identity;
@@ -111,7 +110,6 @@ public sealed class PopOutWindow : Window
                     MainWindow.DisplayName(legacyActor.Name))
                 : MainWindow.DisplayName(legacyActor.Name);
 
-        _frozenActor = actor;
         _lineage = actor.LogicalId;
         _scope = new SelectionScope(SelectionId.ForActor(actor));
         _selection.TrackScope(_scope);
@@ -210,7 +208,7 @@ public sealed class PopOutWindow : Window
             float headerBottom = DrawHeader(actor, min, max, s, dl);
             if (!_collapsed)
                 DrawBody(
-                    new Vector2(min.X, headerBottom), max, s);
+                    actor, new Vector2(min.X, headerBottom), max, s);
         }
         finally
         {
@@ -293,7 +291,8 @@ public sealed class PopOutWindow : Window
         return min.Y + height;
     }
 
-    private void DrawBody(Vector2 min, Vector2 max, float s)
+    private void DrawBody(
+        in ActorDescriptor actor, Vector2 min, Vector2 max, float s)
     {
         var theme = Crystarium.ActiveTheme;
         float inset = theme.Page.Inset * s;
@@ -310,9 +309,10 @@ public sealed class PopOutWindow : Window
             alignFirstTabToCursor: true);
 
         // The same right cluster the shell's workspace bar wears — animation
-        // and physics — acting on THIS window's frozen actor, whatever bone
-        // its scope currently selects.
-        var frozen = _frozenActor;
+        // and physics — acting on THIS window's frozen actor through its
+        // CURRENT id (the creation-time id goes stale across redraws, and a
+        // stale id read as "no override" would freeze the switches).
+        var frozen = actor.Id;
         bool animationAvailable = _animation.IsSupported(frozen);
         bool animationOn =
             _animation.OverridesFor(frozen).OverallSpeed is not 0f;
@@ -347,10 +347,13 @@ public sealed class PopOutWindow : Window
             },
             ActionBarSeparator.None);
 
+        // No extra bottom inset: the hosted pane owns its own footer band,
+        // exactly as it does inside the main window (user 2026-08-11: the
+        // pop-out's footer read wider than the shell's).
         var contentOrigin = new Vector2(min.X + inset, min.Y + barHeight);
         var contentSize = new Vector2(
             MathF.Max(1f, max.X - min.X - inset * 2f),
-            MathF.Max(1f, max.Y - contentOrigin.Y - inset));
+            MathF.Max(1f, max.Y - contentOrigin.Y));
 
         // THE substitution: while this window draws its content, the frozen
         // scope IS the selection — every pane and facade below resolves and
