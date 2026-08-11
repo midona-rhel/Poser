@@ -185,6 +185,7 @@ public sealed unsafe class PropSpawnService : IDisposable
                 "Prop " + id.ToString(CultureInfo.InvariantCulture),
                 (nint)weapon);
             _props.Add(handle);
+            _events.Publish(new PropListChangedEvent());
             return handle;
         }
         catch (Exception ex)
@@ -200,15 +201,19 @@ public sealed unsafe class PropSpawnService : IDisposable
     {
         if (handle == null)
             return;
-        _props.Remove(handle);
+        if (_props.Remove(handle))
+            _events.Publish(new PropListChangedEvent());
         DestroyNative(handle);
     }
 
     public void DestroyAll()
     {
+        if (_props.Count == 0)
+            return;
         for (int i = 0; i < _props.Count; i++)
             DestroyNative(_props[i]);
         _props.Clear();
+        _events.Publish(new PropListChangedEvent());
     }
 
     private void DestroyNative(PropHandle handle)
