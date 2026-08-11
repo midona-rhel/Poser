@@ -106,6 +106,7 @@ public class MainWindow : Window
         PoseRailPane poseRail,
         GraphicalBonePane graphicalBonePane,
         Game.PropSpawnService propService,
+        PropsPane propsPane,
         SkeletonOverlayPresentation overlayPresentation)
         : base($"{PluginConstants.PluginName}###poser_main_window",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
@@ -128,6 +129,7 @@ public class MainWindow : Window
 
         _spawnService = spawnService;
         _propService = propService;
+        _propsPane = propsPane;
         _poseInspector = poseInspector;
         _animationPane = animationPane;
         _appearancePane = appearancePane;
@@ -896,11 +898,12 @@ public class MainWindow : Window
         // Tabs are rebuilt each frame; the active one is preserved so a
         // selection change cannot silently throw the user back to Pose.
         _vm.Tabs.Clear();
-        if (_activeTab is not ("Pose" or "Animation" or "Appearance"))
+        if (_activeTab is not ("Pose" or "Animation" or "Appearance" or "Props"))
             _activeTab = "Pose";
         _vm.Tabs.Add(new ShellTab { Label = "Pose", Active = _activeTab == "Pose" });
         _vm.Tabs.Add(new ShellTab { Label = "Animation", Active = _activeTab == "Animation" });
         _vm.Tabs.Add(new ShellTab { Label = "Appearance", Active = _activeTab == "Appearance" });
+        _vm.Tabs.Add(new ShellTab { Label = "Props", Active = _activeTab == "Props" });
     }
 
     private void BuildStatus(SelectionId? primary)
@@ -954,7 +957,7 @@ public class MainWindow : Window
     {
         _vm.ContentOwnsViewport = tab == "Pose";
         _vm.ContentUsesPage =
-            tab is "Animation" or "Appearance";
+            tab is "Animation" or "Appearance" or "Props";
     }
 
     private void OnRowClicked(ShellSidebarRow row)
@@ -1027,6 +1030,12 @@ public class MainWindow : Window
             return;
         }
 
+        if (_activeTab == "Props")
+        {
+            _propsPane.Draw(origin, size);
+            return;
+        }
+
         _poseInspector.Draw(origin, size);
     }
 
@@ -1068,7 +1077,7 @@ public class MainWindow : Window
                 () => SelectSpawned(_spawnService.SpawnNewActor(reserveCompanionSlot: false)),
                 () => SelectSpawned(_spawnService.SpawnNewActor(reserveCompanionSlot: true)),
                 null,
-                () => _propService.SpawnProp(),
+                SpawnProp,
             };
             Crystarium.FloatingMenu.Open("##sidebar-add", ImGui.GetMousePos(), items);
         }
@@ -1080,6 +1089,18 @@ public class MainWindow : Window
 
     private List<Action?> _addActions = new();
     private readonly Game.PropSpawnService _propService;
+    private readonly PropsPane _propsPane;
+
+    /// <summary>The prop half of <see cref="SelectSpawned"/>: a prop is not a
+    /// scene entity, so there is nothing to reconcile — it is edited on the
+    /// Props tab, which the creation click therefore opens.</summary>
+    private void SpawnProp()
+    {
+        if (_propService.SpawnProp() is not { } prop)
+            return;
+        _propsPane.Select(prop);
+        _activeTab = "Props";
+    }
 
     /// <summary>Selects a freshly spawned actor so the thing just created
     /// is the thing being edited. The scene has not rescanned yet, so the
