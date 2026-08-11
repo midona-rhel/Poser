@@ -17,11 +17,12 @@ using AttachmentKind = Poser.Game.Types.CompanionKind;
 namespace Poser.UI;
 
 /// <summary>
-/// The companion attachment rows, hosted by the Appearance pane: one section
-/// for an OWNER (what is attached to it) and one for a MINION (what it is, and
-/// what it could be instead). Both edit the same native slot through the same
-/// owner actor, so both drive ONE surface — the section's own
-/// <see cref="Crystarium.SearchPicker{T}"/> over the whole catalog.
+/// The companion-slot attach surface: a <see cref="Crystarium.SearchPicker{T}"/>
+/// over the whole minion/mount/ornament catalog, opened from an actor's
+/// context menu and applied to that actor's native slot. Deliberately NOT a
+/// pane section — standalone creatures come from the spawn browser, and the
+/// slot only matters for riding a mount or carrying an ornament, so the
+/// surface stays out of the way until asked for.
 ///
 /// <para>The catalog's kind and the native container's kind are DIFFERENT
 /// enums — a catalog row is always attachable, so it has no None — and they
@@ -44,11 +45,9 @@ public sealed class CompanionSection
     private ActorId? _pickOwner;
 
     /// <summary>The strip's selection, controlled and persistent like every
-    /// other picker strip; the minion section reseeds it on open because a
-    /// swap starts from what the actor already is.</summary>
+    /// other picker strip; an open with something attached reseeds it because
+    /// a swap starts from what the actor already is.</summary>
     private int _kindIndex;
-
-    private string _status = string.Empty;
 
     /// <summary>Sheet icon ids are not guaranteed to exist and the game icon
     /// lookup THROWS for those, so a failure is remembered: an exception per
@@ -100,138 +99,18 @@ public sealed class CompanionSection
         _setKind = chosen => _kindIndex = chosen;
     }
 
-    /// <summary>What an actor's rows are: a companion actor is edited as the
-    /// thing attached, everything else as the thing that owns one.</summary>
-    public static bool IsMinion(ActorDescriptor descriptor) =>
-        descriptor.IsCompanion;
-
-    // ── owner rows ───────────────────────────────────────────────────────
-
-    /// <summary>The attachment an ordinary actor carries. The section is shown
-    /// even without a companion slot — the row is the place that explains why
-    /// nothing can be attached.</summary>
-    public void OwnerRows(Crystarium.FormScope form, ActorId actorId)
-    {
-        if (Resolve(actorId) is not { } owner)
-        {
-            form.Status("This actor is no longer available.");
-            return;
-        }
-
-        bool loaded = _catalog.IsLoaded;
-        bool slot = _spawn.HasCompanionSlot(owner);
-        var current = _spawn.GetCompanionInfo(owner);
-
-        AttachmentRow(
-            form,
-            "Minion",
-            actorId,
-            owner,
-            current,
-            disabled: !slot || !loaded,
-            seedKind: null,
-            help: "Attach a minion, mount or ornament to this actor");
-
-        if (!slot)
-            form.Status(
-                "This actor has no companion slot. Spawn a new actor with a companion slot to attach one.");
-        else if (!loaded)
-            form.Status("Building minion catalog…");
-        Report(form);
-    }
-
-    // ── minion rows ──────────────────────────────────────────────────────
-
-    /// <summary>A companion actor edits itself through its OWNER: the native
-    /// slot belongs to the owner, so an orphaned minion has nothing to
-    /// act on and says so rather than showing dead buttons.</summary>
-    public void MinionRows(
-        Crystarium.FormScope form, ActorDescriptor descriptor)
-    {
-        if (descriptor.OwnerActor is not { } ownerId)
-        {
-            form.Status(
-                "This minion's owner is not in the scene, so it cannot be swapped or detached.");
-            return;
-        }
-        if (Resolve(ownerId) is not { } owner)
-        {
-            form.Status("This minion's owner is no longer available.");
-            return;
-        }
-
-        var current = _spawn.GetCompanionInfo(owner);
-        var known = Known(current);
-        form.ReadOnly(
-            "Model",
-            NameFor(current),
-            help: "What this actor currently is",
-            unavailable: known == null,
-            icon: known is { } entry ? ResolveIcon(entry.Icon) : 0);
-
-        AttachmentRow(
-            form,
-            "Swap model",
-            ownerId,
-            owner,
-            current,
-            disabled: !_catalog.IsLoaded,
-            seedKind: ToCatalog(current.Kind),
-            help: "Replace this actor with another minion, mount or ornament");
-
-        if (!_catalog.IsLoaded)
-            form.Status("Building minion catalog…");
-        Report(form);
-    }
-
-    /// <summary>The last failure, if any. A form status row is a real row, so
-    /// an empty message must not claim one.</summary>
-    private void Report(Crystarium.FormScope form)
-    {
-        if (_status.Length > 0)
-            form.Status(_status);
-    }
-
     // ── the one surface ──────────────────────────────────────────────────
 
-    /// <summary>The shared trigger row: the picker beside the detach that
-    /// empties the same slot.</summary>
-    private void AttachmentRow(
-        Crystarium.FormScope form,
-        string label,
-        ActorId ownerId,
-        IActor owner,
-        Attachment current,
-        bool disabled,
-        CompanionKind? seedKind,
-        string help)
+    /// <summary>Opens the picker against the owner frozen here, seeded to what
+    /// the slot already carries so an attach reads as a swap when one is
+    /// there.</summary>
+    public void OpenAttachPicker(ActorId ownerId)
     {
-        bool attached = current.Kind != AttachmentKind.None;
-        form.Picker(
-            label,
-            attached ? NameFor(current) : "None",
-            () => Open(ownerId, current, seedKind),
-            actions => actions.Button(
-                "Detach",
-                () =>
-                {
-                    _spawn.DestroyCompanion(owner);
-                    _status = string.Empty;
-                },
-                disabled: !attached,
-                help: "Remove what is attached to this actor"),
-            help: help,
-            disabled: disabled);
-    }
-
-    /// <summary>Opens the surface against the owner frozen here. The trigger
-    /// button is the last reserved item, which is what the picker anchors
-    /// to.</summary>
-    private void Open(
-        ActorId ownerId, Attachment current, CompanionKind? seedKind)
-    {
+        if (Resolve(ownerId) is not { } owner)
+            return;
         _pickOwner = ownerId;
-        if (seedKind is { } seed)
+        var current = _spawn.GetCompanionInfo(owner);
+        if (ToCatalog(current.Kind) is { } seed)
         {
             int index = Array.IndexOf(KindValues, (CompanionKind?)seed);
             _kindIndex = index < 0 ? 0 : index;
@@ -255,17 +134,13 @@ public sealed class CompanionSection
         if (_picker.Draw() is not { } chosen || _pickOwner is not { } ownerId)
             return;
         if (Resolve(ownerId) is not { } owner)
-        {
-            _status = "That actor is no longer available.";
             return;
-        }
         // One call both attaches and swaps: the backend empties the slot
-        // before it fills it.
-        _status = _spawn.SetCompanion(
+        // before it fills it. A failure is the service's log line — the menu
+        // item that opens this surface is gated on the slot existing.
+        _spawn.SetCompanion(
             owner,
-            new Attachment(ToAttachment(chosen.Item.Kind), chosen.Item.Id))
-            ? string.Empty
-            : $"{chosen.Item.Name}: this actor has no companion slot.";
+            new Attachment(ToAttachment(chosen.Item.Kind), chosen.Item.Id));
     }
 
     private PickerOptions<CompanionEntry> Options() => new()
@@ -329,20 +204,6 @@ public sealed class CompanionSection
         ToCatalog(current.Kind) is { } kind
             ? _catalog.Find(kind, current.Id)
             : null;
-
-    private string NameFor(Attachment current) =>
-        current.Kind == AttachmentKind.None
-            ? "None"
-            : Known(current) is { } entry
-                ? entry.Name
-                : $"{KindName(current.Kind)} {current.Id}";
-
-    private static string KindName(AttachmentKind kind) => kind switch
-    {
-        AttachmentKind.Mount => "Mount",
-        AttachmentKind.Ornament => "Ornament",
-        _ => "Minion",
-    };
 
     /// <summary>A minion row is named by its id and the others by what they
     /// are — the kinds a caller has to tell apart at a glance.</summary>

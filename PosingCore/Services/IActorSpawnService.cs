@@ -28,12 +28,21 @@ public interface IActorSpawnService : IDisposable
 
     /// <summary>
     /// Spawn a catalog entry (minion/mount/accessory) as its OWN actor: a
-    /// fresh battle character that first draws as the entry's ModelChara.
-    /// The model id is a spawn parameter only — Poser exposes no post-spawn
-    /// model editing — and the spawn is classified by the entry's kind
-    /// (<see cref="GetSpawnedKind"/>).
+    /// fresh battle character that first draws as the entry's ModelChara,
+    /// classified by the entry's kind (<see cref="GetSpawnedKind"/>).
     /// </summary>
     IActor? SpawnCatalogActor(SpawnCatalogEntry entry);
+
+    /// <summary>The actor's ModelChara row id; 0 is the human base.</summary>
+    int GetModelCharaId(IActor actor);
+
+    /// <summary>
+    /// Writes the model id and fully redraws the actor (Brio's mechanism:
+    /// draw down, wait ready, draw up). The human customize/equipment bytes
+    /// survive in DrawData behind a creature model, so writing 0 restores the
+    /// human look.
+    /// </summary>
+    void SetModelCharaId(IActor actor, int modelCharaId);
 
     /// <summary>The kind a spawned actor was classified as at spawn; None
     /// for plain spawns, clones, and actors not spawned by this service.

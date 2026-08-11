@@ -220,18 +220,6 @@ public class MainWindow : Window
         new() { Label = "Props" },
     ];
 
-    /// <summary>A creature's strip is Pose plus Appearance: stance, lips and
-    /// gaze are humanoid concepts, but Appearance carries the minion's own
-    /// section — swap the model, detach from the owner — and the pane shows
-    /// only that section for a creature. Pausing a creature stays available
-    /// through the sidebar and context-menu pause actions.
-    /// </summary>
-    private readonly ShellTab[] _creatureTabs =
-    [
-        new() { Label = "Pose" },
-        new() { Label = "Appearance" },
-    ];
-
     /// <summary>The environment's own tab strip: selecting the environment
     /// swaps the whole strip, because none of the actor tabs mean anything for
     /// it. The environment carries eleven sections — one tab holding all of them
@@ -332,6 +320,7 @@ public class MainWindow : Window
         GraphicalBonePane graphicalBonePane,
         Game.PropSpawnService propService,
         PropsPane propsPane,
+        CompanionSection companions,
         SkeletonOverlayPresentation overlayPresentation,
         IGazeService gazeService,
         IEventBus eventBus)
@@ -359,6 +348,7 @@ public class MainWindow : Window
         _spawnService = spawnService;
         _propService = propService;
         _propsPane = propsPane;
+        _companions = companions;
         _poseInspector = poseInspector;
         _animationPane = animationPane;
         _appearancePane = appearancePane;
@@ -758,6 +748,9 @@ public class MainWindow : Window
         DrawLightMenu();
         DrawCameraMenu();
         DrawActorContextMenu();
+        // Window-level: the attach picker outlives the context menu that
+        // opened it.
+        _companions.DrawPicker();
         DrawBoneContextMenu();
         DrawOverlayContextMenu();
         DrawLightContextMenu();
@@ -1750,7 +1743,10 @@ public class MainWindow : Window
             { Kind: SceneEntityKind.Environment } => _environmentTabs,
             { Kind: SceneEntityKind.Light } => _lightTabs,
             { Kind: SceneEntityKind.Camera } => _cameraTabs,
-            _ => IsCreatureSelection(primary) ? _creatureTabs : _selectionTabs,
+            // Creatures share the actor strip: their skeleton poses, their
+            // battle-chara body animates, and the Appearance pane hides the
+            // humanoid-only sections itself.
+            _ => _selectionTabs,
         };
         // The active tab is preserved WITHIN a strip, so a selection change
         // inside the actor set cannot silently throw the user back to Pose; a
@@ -1765,29 +1761,6 @@ public class MainWindow : Window
             tabs[i].Active = tabs[i].Label == _activeTab;
             _vm.Tabs.Add(tabs[i]);
         }
-    }
-
-    /// <summary>Whether the primary selection resolves to a creature — a
-    /// slot companion or a catalog spawn (minion/mount/accessory). Bone
-    /// selections classify by their owning actor.</summary>
-    private bool IsCreatureSelection(SelectionId? primary)
-    {
-        var actorId = primary switch
-        {
-            { Kind: SceneEntityKind.Actor, Actor: { } actor } => actor,
-            { Kind: SceneEntityKind.Bone, Bone: { } bone } =>
-                bone.Skeleton.Actor,
-            { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeActor } =>
-                gazeActor,
-            _ => (ActorId?)null,
-        };
-        if (actorId is not { } id)
-            return false;
-        var resolved = _bindings.Resolve(id);
-        if (!resolved.Success || resolved.Value is not { } live)
-            return false;
-        return live.IsCompanion ||
-            _spawnService.GetSpawnedKind(live) != CompanionKind.None;
     }
 
     // ── status bar, restated only when its numbers move ─────────────────
@@ -1988,7 +1961,6 @@ public class MainWindow : Window
 
         if (_activeTab == "Appearance")
         {
-            _companionCatalog.EnsureLoaded();
             _appearancePane.Draw(origin, size);
             return;
         }
@@ -2062,6 +2034,7 @@ public class MainWindow : Window
 
     private readonly Game.PropSpawnService _propService;
     private readonly PropsPane _propsPane;
+    private readonly CompanionSection _companions;
 
     /// <summary>Selects a freshly spawned actor so the thing just created
     /// is the thing being edited. The scene has not rescanned yet, so the
@@ -2388,6 +2361,14 @@ public class MainWindow : Window
             new("Rename", TablerIcon.Edit),
             new("Clone", TablerIcon.Stack2),
             ContextMenuItem.Separator,
+            // The companion slot exists for riding a mount or carrying an
+            // ornament — standalone creatures come from the spawn browser —
+            // so its two verbs live here, out of every pane.
+            new("Attach companion", TablerIcon.Paw,
+                disabled: !_spawnService.HasCompanionSlot(actor),
+                help: _spawnService.HasCompanionSlot(actor)
+                    ? "Attach a minion, mount or ornament to this actor"
+                    : "Only actors spawned with a companion slot can attach one"),
             new("Detach companion", TablerIcon.X,
                 disabled: _spawnService.GetCompanionInfo(actor).Kind
                     == CompanionKind.None),
@@ -2419,6 +2400,11 @@ public class MainWindow : Window
                     _selection.Select(SelectionId.ForActor(cloneId));
             },
             null, // separator
+            () =>
+            {
+                _companionCatalog.EnsureLoaded();
+                _companions.OpenAttachPicker(actorId);
+            },
             () => _spawnService.DestroyCompanion(actor),
         };
 

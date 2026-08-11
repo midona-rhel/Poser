@@ -436,6 +436,42 @@ public unsafe class ActorSpawnService : IActorSpawnService
         return character != null && character->ChildObject != null;
     }
 
+    public int GetModelCharaId(IActor actor)
+    {
+        var character = (Character*)actor.Address;
+        return character == null ? 0 : character->ModelContainer.ModelCharaId;
+    }
+
+    public void SetModelCharaId(IActor actor, int modelCharaId)
+    {
+        var character = (Character*)actor.Address;
+        if (character == null
+            || character->ModelContainer.ModelCharaId == modelCharaId)
+            return;
+
+        // Brio's model change verbatim: write the id, then a full redraw —
+        // draw down, wait for ready, draw up. The customize and equipment
+        // bytes stay in DrawData behind a creature model, which is what makes
+        // writing 0 later bring the human look back.
+        character->ModelContainer.ModelCharaId = modelCharaId;
+        var address = actor.Address;
+        character->GameObject.DisableDraw();
+        PollUntil(
+            () =>
+            {
+                var gameObject = (GameObject*)address;
+                return gameObject != null && gameObject->IsReadyToDraw();
+            },
+            () =>
+            {
+                var gameObject = (GameObject*)address;
+                if (gameObject != null)
+                    gameObject->EnableDraw();
+            },
+            timeoutMs: 2000,
+            what: $"model chara {modelCharaId}");
+    }
+
     private static CompanionAttachment ReadCompanionInfo(Character* native)
     {
         if (native->ChildObject == null)
