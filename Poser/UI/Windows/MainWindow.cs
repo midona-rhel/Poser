@@ -62,6 +62,8 @@ public class MainWindow : Window
     /// <summary>Whether the rows were last built with a posable target.</summary>
     private bool _shellMenuPoseTarget;
     private bool _shellMenuRowsBuilt;
+    /// <summary>The split flags the rows were last built under, packed.</summary>
+    private int _shellMenuLayoutState = -1;
     private bool _ctxOpenRequested;
     private BoneId? _ctxBoneId;
     private IReadOnlyList<BoneId>? _ctxBoneOverlayBones;
@@ -95,6 +97,11 @@ public class MainWindow : Window
     private readonly HashSet<string> _knownActorNodes = new();
     private float _sidebarWidth = 280f;
     private readonly AppShellViewModel _vm = new();
+
+    /// <summary>The per-frame shell view model, for the split-part windows —
+    /// they are registered after this window, so a frame's model is already
+    /// built when they read it.</summary>
+    internal AppShellViewModel ShellVm => _vm;
     private string _activeTab = "Pose";
 
     /// <summary>The workspace is showing the pose library instead of the
@@ -323,7 +330,9 @@ public class MainWindow : Window
     {
         Size = new Vector2(DefaultWidth, DefaultHeight);
         SizeCondition = ImGuiCond.FirstUseEver;
-        SizeConstraints = ExpandedSizeConstraints();
+        // Construction predates the configuration read; PreDraw restates the
+        // effective floor every frame anyway.
+        SizeConstraints = ExpandedSizeConstraints(MinimumWidth);
 
         _gPoseService = gPoseService;
         _actorManager = actorManager;
@@ -606,14 +615,16 @@ public class MainWindow : Window
 
         // ONE width for the whole shell: every tab keeps the inspector
         // rail, so navigating can never move the frame. Only collapse and
-        // restore write Size.
+        // restore write Size. Split parts release their width: the floor
+        // follows what is actually attached this frame.
+        float minimumWidth = EffectiveMinimumWidth();
         SizeConstraints = _collapsed
             ? new WindowSizeConstraints
             {
-                MinimumSize = new Vector2(MinimumWidth, AppShellView.TitlebarHeight),
+                MinimumSize = new Vector2(minimumWidth, AppShellView.TitlebarHeight),
                 MaximumSize = new Vector2(float.MaxValue, AppShellView.TitlebarHeight),
             }
-            : ExpandedSizeConstraints();
+            : ExpandedSizeConstraints(minimumWidth);
 
         // Collapse and restore go through the Dalamud window size system;
         // ImGui.SetWindowSize inside Draw loses to it.
@@ -658,12 +669,26 @@ public class MainWindow : Window
     private float _lastWidth = DefaultWidth;
     private float _lastHeight = DefaultHeight;
 
-    private static WindowSizeConstraints ExpandedSizeConstraints()
+    private static WindowSizeConstraints ExpandedSizeConstraints(float minimumWidth)
         => new()
         {
-            MinimumSize = new Vector2(MinimumWidth, MinHeight),
+            MinimumSize = new Vector2(minimumWidth, MinHeight),
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue),
         };
+
+    /// <summary>The width floor for what is attached THIS frame: the shared
+    /// 1110px covers sidebar + content + rail; each split part hands its
+    /// column back.</summary>
+    private float EffectiveMinimumWidth()
+    {
+        var ui = Config.ConfigurationService.Instance.Config.UI;
+        float minimum = MinimumWidth;
+        if (ui.SplitSidebar)
+            minimum -= Crystarium.ActiveTheme.Shell.SidebarDefaultWidth;
+        if (ui.SplitInspector)
+            minimum -= AppShellView.RailWidth;
+        return minimum;
+    }
 
     public override void Draw()
     {
@@ -737,6 +762,10 @@ public class MainWindow : Window
         _vm.GPoseActive = _gPoseService.IsGPosing;
         _vm.SidebarWidthPx = _sidebarWidth;
         _vm.Collapsed = _collapsed;
+        var uiConfig = Config.ConfigurationService.Instance.Config.UI;
+        _vm.SidebarSplit = uiConfig.SplitSidebar;
+        _vm.ToolbarSplit = uiConfig.SplitToolbar;
+        _vm.InspectorSplit = uiConfig.SplitInspector;
         // The shell's retained per-row state is swept on structural change
         // only: an identical rescan publishes no new revision, so hover and
         // interaction identity survive every refresh that changed nothing.
@@ -753,11 +782,13 @@ public class MainWindow : Window
         // width. The outer window size is untouched by tab changes.
         // Library mode's rail hosts the import options (user placement);
         // every other mode keeps the selection-typed rail.
-        _vm.DrawRail = _collapsed
-            ? null
-            : _libraryMode
-                ? _poseFileSection.DrawOptionsRail
-                : _poseRail.Draw;
+        //
+        // The delegate is stated even while collapsed: the shell's own
+        // titlebar guard ignores it then, but a SPLIT inspector window keeps
+        // hosting the rail through a collapse of the main window.
+        _vm.DrawRail = _libraryMode
+            ? _poseFileSection.DrawOptionsRail
+            : _poseRail.Draw;
 
         _vm.GizmoOperation = (int)_editorState.TransformTool;
         _vm.GizmoSpace = (int)_editorState.TransformOrientation;
@@ -2033,6 +2064,10 @@ public class MainWindow : Window
         ImportPose,
         ExportPose,
         AutoSaves,
+        LayoutSeparator,
+        DetachSidebar,
+        DetachToolbar,
+        DetachInspector,
         SettingsSeparator,
         OpenSettings,
     }
@@ -2068,10 +2103,17 @@ public class MainWindow : Window
         // has no right-clicked row to take a skeleton from. Same gate the actor
         // context menu applies to the same three commands.
         bool poseTarget = SelectedSkeleton() != null;
-        if (_shellMenuRowsBuilt && poseTarget == _shellMenuPoseTarget)
+        var uiConfig = Config.ConfigurationService.Instance.Config.UI;
+        int layoutState = (uiConfig.SplitSidebar ? 1 : 0)
+            | (uiConfig.SplitToolbar ? 2 : 0)
+            | (uiConfig.SplitInspector ? 4 : 0);
+        if (_shellMenuRowsBuilt
+            && poseTarget == _shellMenuPoseTarget
+            && layoutState == _shellMenuLayoutState)
             return;
         _shellMenuRowsBuilt = true;
         _shellMenuPoseTarget = poseTarget;
+        _shellMenuLayoutState = layoutState;
 
         _shellMenuItems[(int)ShellCommand.ShowLibrary] =
             new ContextMenuItem("Show library", TablerIcon.Photo);
@@ -2086,10 +2128,47 @@ public class MainWindow : Window
         _shellMenuItems[(int)ShellCommand.AutoSaves] =
             new ContextMenuItem(
                 "Auto-saves", TablerIcon.ArrowBackUp, disabled: !poseTarget);
+        _shellMenuItems[(int)ShellCommand.LayoutSeparator] =
+            ContextMenuItem.Separator;
+        _shellMenuItems[(int)ShellCommand.DetachSidebar] =
+            new ContextMenuItem(
+                uiConfig.SplitSidebar ? "Attach sidebar" : "Detach sidebar",
+                TablerIcon.LayoutPanel);
+        _shellMenuItems[(int)ShellCommand.DetachToolbar] =
+            new ContextMenuItem(
+                uiConfig.SplitToolbar ? "Attach toolbar" : "Detach toolbar",
+                TablerIcon.ArrowsMove);
+        _shellMenuItems[(int)ShellCommand.DetachInspector] =
+            new ContextMenuItem(
+                uiConfig.SplitInspector
+                    ? "Attach inspector"
+                    : "Detach inspector",
+                TablerIcon.ExternalLink);
         _shellMenuItems[(int)ShellCommand.SettingsSeparator] =
             ContextMenuItem.Separator;
         _shellMenuItems[(int)ShellCommand.OpenSettings] =
             new ContextMenuItem("Open settings", TablerIcon.Settings);
+    }
+
+    /// <summary>Flips one split flag and saves: the window set syncs the part
+    /// windows off the configuration-changed event.</summary>
+    internal static void ToggleSplit(ShellPart part)
+    {
+        var svc = Config.ConfigurationService.Instance;
+        var ui = svc.Config.UI;
+        switch (part)
+        {
+            case ShellPart.Sidebar:
+                ui.SplitSidebar = !ui.SplitSidebar;
+                break;
+            case ShellPart.Toolbar:
+                ui.SplitToolbar = !ui.SplitToolbar;
+                break;
+            case ShellPart.Inspector:
+                ui.SplitInspector = !ui.SplitInspector;
+                break;
+        }
+        svc.ApplyChange();
     }
 
     /// <summary>Runs one command. The skeleton is resolved at invocation, not
@@ -2118,6 +2197,15 @@ public class MainWindow : Window
             case ShellCommand.AutoSaves:
                 if (SelectedSkeleton() is { } recoverSkeleton)
                     _poseFileSection.OpenAutoSaves(recoverSkeleton);
+                break;
+            case ShellCommand.DetachSidebar:
+                ToggleSplit(ShellPart.Sidebar);
+                break;
+            case ShellCommand.DetachToolbar:
+                ToggleSplit(ShellPart.Toolbar);
+                break;
+            case ShellCommand.DetachInspector:
+                ToggleSplit(ShellPart.Inspector);
                 break;
             case ShellCommand.OpenSettings:
                 OnSettingsRequested?.Invoke();
