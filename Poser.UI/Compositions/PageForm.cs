@@ -350,8 +350,11 @@ public static partial class Crystarium
             string id = Id(label);
             var row = _page.BeginRow(label);
             float displayedValue = value;
+            // The track stops one ActionGap short of the well, exactly as
+            // NumericSlider spaces the same pair.
             float controlWidth = row.ControlWidth -
-                ActiveTheme.Form.ValueColumnWidth * row.Scale;
+                ActiveTheme.Form.ValueColumnWidth * row.Scale -
+                ActiveTheme.Page.ActionGap * row.Scale;
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 style.Height, ActiveTheme.Controls.SliderHeight)));
             Crystarium.Slider(
@@ -1416,7 +1419,9 @@ public static partial class Crystarium
             float logCurvature = 99f)
         {
             float readoutWidth = ActiveTheme.Form.ValueColumnWidth * Scale;
-            float track = MathF.Max(1f, Width - readoutWidth);
+            float track = MathF.Max(
+                1f,
+                Width - readoutWidth - ActiveTheme.Page.ActionGap * Scale);
             float displayed = value;
             ImGui.SetCursorScreenPos(
                 Center(ActiveTheme.Controls.SliderHeight));
