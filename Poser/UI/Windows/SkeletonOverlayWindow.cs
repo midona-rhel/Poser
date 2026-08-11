@@ -184,6 +184,25 @@ public class SkeletonOverlayWindow : Window
 
     public override void Draw()
     {
+        // First line of the frame, before every gate: a left press ALWAYS
+        // logs, so a missing line means this method never ran that frame.
+        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+            _log.Information(
+                $"[Overlay] frame-press mouse={ImGui.GetIO().MousePos} "
+                + $"alt={ImGui.GetIO().KeyAlt}");
+        try
+        {
+            DrawCore();
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"[Overlay] draw failed: {ex}");
+            throw;
+        }
+    }
+
+    private void DrawCore()
+    {
         var drawList = ImGui.GetBackgroundDrawList();
         var viewportPos = ImGui.GetMainViewport().Pos;
         var io = ImGui.GetIO();
