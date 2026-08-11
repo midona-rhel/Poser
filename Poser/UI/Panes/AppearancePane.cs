@@ -8,7 +8,9 @@ using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
+using Poser.Game.Bindings;
 using Poser.Game.Presentation;
+using Poser.Services;
 
 namespace Poser.UI;
 
@@ -26,11 +28,14 @@ public sealed class AppearancePane
     private readonly ActorPresentationSession _presentation;
     private readonly ActorIntegrationSession _integration;
     private readonly SceneSession _scene;
-    private readonly CompanionSection _companions;
+    private readonly IActorSpawnService _spawn;
+    private readonly StableBindingRegistry _bindings;
 
     private string _status = string.Empty;
-    private bool _openCompanion = true;
+    private bool _openModel = true;
     private bool _openGeneral = true;
+    private ActorId? _modelActor;
+    private string _modelText = "0";
     private bool _openWetSurface = true;
     private bool _openExternalAppearance = true;
     private bool _openCharacterFile = true;
@@ -70,12 +75,14 @@ public sealed class AppearancePane
         ActorPresentationSession presentation,
         ActorIntegrationSession integration,
         SceneSession scene,
-        CompanionSection companions)
+        IActorSpawnService spawn,
+        StableBindingRegistry bindings)
     {
         _presentation = presentation;
         _integration = integration;
         _scene = scene;
-        _companions = companions;
+        _spawn = spawn;
+        _bindings = bindings;
     }
 
     /// <summary>Pumps MCDF dialogs at window level so they survive tab changes.</summary>
@@ -98,50 +105,112 @@ public sealed class AppearancePane
             }
             page.Status(_status);
 
-            // The companion rows answer to the native attachment slot alone,
-            // so they LEAD and are drawn for actors that carry no presentation
-            // state at all — a minion is one. The rule is a divider BETWEEN
-            // sections, so this first one draws neither the rule nor the
-            // margin above it.
-            var descriptor = Describe(actor);
-            if (descriptor is { } minion && CompanionSection.IsMinion(minion))
-                page.Section("MINION", _openCompanion,
-                    next => _openCompanion = next,
-                    form => _companions.MinionRows(form, minion),
-                    divider: false);
-            else
-                page.Section("COMPANION", _openCompanion,
-                    next => _openCompanion = next,
-                    form => _companions.OwnerRows(form, actor),
-                    divider: false);
+            // Sections that cannot serve the actor are ABSENT, not disabled
+            // with an excuse: wet/tint rows need presentation support, and the
+            // human-appearance surfaces (external plugins, MCDF) mean nothing
+            // on a creature model.
+            bool creature = IsCreature(actor);
 
-            if (!_presentation.IsSupported(actor)
-                || _presentation.Read(actor) is not { } reading)
+            // The model IS the actor's identity, so its section leads and is
+            // never absent: any character actor can wear any ModelChara row,
+            // and 0 brings the human look back (the customize/equipment bytes
+            // survive in DrawData behind a creature model).
+            page.Section("MODEL", _openModel, next => _openModel = next,
+                form => ModelRows(form, actor),
+                divider: false);
+            bool first = false;
+
+            if (_presentation.IsSupported(actor)
+                && _presentation.Read(actor) is { } reading)
             {
-                page.Status("This actor does not support appearance effects.");
-                return;
+                var owned = _presentation.OverridesFor(actor);
+                page.Section("GENERAL", _openGeneral,
+                    next => _openGeneral = next,
+                    form => GeneralRows(form, actor, owned, reading),
+                    divider: !first);
+                first = false;
+                page.Section("WET SURFACE", _openWetSurface,
+                    next => _openWetSurface = next,
+                    form => WetSurfaceRows(form, actor, owned, reading));
             }
 
-            var owned = _presentation.OverridesFor(actor);
+            if (!creature)
+            {
+                RefreshReadouts(actor);
+                var external = _integration.OverridesFor(actor);
 
-            page.Section("GENERAL", _openGeneral, next => _openGeneral = next,
-                form => GeneralRows(form, actor, owned, reading));
-            page.Section("WET SURFACE", _openWetSurface,
-                next => _openWetSurface = next,
-                form => WetSurfaceRows(form, actor, owned, reading));
+                page.Section("EXTERNAL APPEARANCE", _openExternalAppearance,
+                    next => _openExternalAppearance = next,
+                    form => ExternalAppearanceRows(form, actor, external),
+                    divider: !first);
+                first = false;
+                page.Section("CHARACTER FILE (MCDF)", _openCharacterFile,
+                    next => _openCharacterFile = next,
+                    form => CharacterFileRows(form, actor, external));
+            }
 
-            RefreshReadouts(actor);
-            var external = _integration.OverridesFor(actor);
-
-            page.Section("EXTERNAL APPEARANCE", _openExternalAppearance,
-                next => _openExternalAppearance = next,
-                form => ExternalAppearanceRows(form, actor, external));
-            page.Section("CHARACTER FILE (MCDF)", _openCharacterFile,
-                next => _openCharacterFile = next,
-                form => CharacterFileRows(form, actor, external));
         });
+    }
 
-        _companions.DrawPicker();
+    /// <summary>The model-id editor: an edit buffer applied on click, never
+    /// per keystroke — every apply is a full actor redraw.</summary>
+    private void ModelRows(Crystarium.FormScope form, ActorId id)
+    {
+        var resolved = _bindings.Resolve(id);
+        if (!resolved.Success || resolved.Value is not { } live)
+        {
+            form.Status("This actor is no longer available.");
+            return;
+        }
+
+        int current = _spawn.GetModelCharaId(live);
+        if (_modelActor != id)
+        {
+            _modelActor = id;
+            _modelText = current.ToString(
+                System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        form.TextInput(
+            "Model id",
+            _modelText,
+            next => _modelText = next,
+            help: "The ModelChara row this actor draws as. 0 is the human base; applying redraws the actor.");
+        form.ReadOnlyWithActions(
+            "Current",
+            current.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            actions => actions.Button(
+                "Apply",
+                () =>
+                {
+                    if (int.TryParse(
+                            _modelText,
+                            System.Globalization.NumberStyles.Integer,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out var next)
+                        && next >= 0)
+                    {
+                        _spawn.SetModelCharaId(live, next);
+                        _status = string.Empty;
+                    }
+                    else
+                    {
+                        _status = "Model id must be a whole number.";
+                    }
+                },
+                help: "Write the model id and redraw the actor"));
+    }
+
+    /// <summary>A creature is a native attached companion or a catalog spawn —
+    /// either way a non-humanoid model the human-appearance surfaces cannot
+    /// serve.</summary>
+    private bool IsCreature(ActorId id)
+    {
+        if (Describe(id) is { IsCompanion: true })
+            return true;
+        var resolved = _bindings.Resolve(id);
+        return resolved.Success && resolved.Value is { } live
+            && _spawn.GetSpawnedKind(live) != Game.Types.CompanionKind.None;
     }
 
     /// <summary>The shared surface's pick, dispatched by owner name against the
