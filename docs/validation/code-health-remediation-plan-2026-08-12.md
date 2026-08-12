@@ -29,6 +29,9 @@ the homes indexed by `docs/README.md`.
 - Every ongoing and final report begins `TL;DR: <state>; <next action/blocker>`.
   Required testing is given as a concrete card: prerequisite, exact actions,
   expected result, cleanup, and evidence to report.
+- Every Luna task must explicitly send its complete ongoing blocker or final
+  report to the organizer task with the task-messaging tool before ending.
+  A final answer left only in the child task is insufficient.
 - Feature work never silently enters a code-health tranche. New discoveries
   become linked PBIs or explicit parked decisions.
 
