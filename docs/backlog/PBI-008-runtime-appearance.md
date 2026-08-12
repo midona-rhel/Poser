@@ -113,9 +113,10 @@ minimum height and supported UI scales.
 5. Remove dead/duplicate paths and update the product boundary plus one concise
    runtime-appearance contract under `docs/features/`.
 
-Use new reviewable commits without amend or rebase after review starts. Claude
-runs only the game-loaded Debug build; Codex runs Release once after live
-acceptance.
+Use new reviewable commits without amend or rebase after review starts.
+Release is the non-deployment validation gate. A Debug build is only the
+announced deployment action for the exact reviewed head after readiness is
+confirmed; see `docs/process/testing.md`.
 
 ## Acceptance
 
@@ -142,6 +143,6 @@ acceptance.
 
 Report base/head, commit map, stable ownership and restoration rules, verified
 native fields, draw-object replacement behavior, Glamourer API/availability
-behavior, UI structure, removed duplicate paths, Debug build result, and the
-remaining in-game walkthrough. Compilation does not prove native writes,
+behavior, UI structure, removed duplicate paths, Release validation result,
+deployment decision, and the remaining in-game walkthrough. Compilation does not prove native writes,
 restoration, redraw survival, IPC targeting, or visual correctness.

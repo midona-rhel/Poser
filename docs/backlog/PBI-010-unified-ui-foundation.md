@@ -409,7 +409,7 @@ evidence only and cannot close a slice.
 After each accepted slice, run only:
 
 ```text
-dotnet build Poser.slnx -c Debug --no-restore
+dotnet build Poser.slnx -c Release --no-restore --nologo
 git diff --check <slice-base>..HEAD
 ```
 

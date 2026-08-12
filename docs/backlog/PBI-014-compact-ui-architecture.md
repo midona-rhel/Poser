@@ -2,7 +2,7 @@
 
 | Control | Value |
 |---|---|
-| Status | Phases 1–4 accepted at `c71d682`; phases 5–8 superseded by PBI-015 |
+| Status | Accepted — phases 1–4 at `c71d682`; phases 5–8 Superseded by PBI-015 |
 | Size | Extra large, delivered as individually accepted phases |
 | Implementation owner | Claude |
 | Review owner | Codex |

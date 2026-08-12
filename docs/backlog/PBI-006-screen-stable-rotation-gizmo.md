@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Complete |
+| Status | Accepted |
 | Size | Large |
 | Implementation owner | Claude |
 | Review owner | Codex |
@@ -145,11 +145,13 @@ Use reviewable commits without amend or rebase after review starts.
   multi-selection, undo/redo, and release selection suppression do not regress.
 - No stock/custom double drawing and no permanent scrollbar or overlay input
   leak is introduced.
-- Claude runs only the game-loaded Debug build for handoff. Codex runs Release
-  once after live acceptance as the closure gate.
+- Release is the non-deployment validation gate. A Debug build is only the
+  announced deployment action for the exact reviewed head after readiness is
+  confirmed; see `docs/process/testing.md`.
 
 ## Handoff
 
 Report base/head, commit map, changed paths, the distinct inspector/world
-projection decisions, world styling approach, removed legacy paths, Debug
-build result, and remaining in-game checks. Compilation is not visual proof.
+projection decisions, world styling approach, removed legacy paths, Release
+validation result, deployment decision, and remaining in-game checks.
+Compilation is not visual proof.

@@ -167,11 +167,13 @@ Use reviewable commits without amend or rebase after review starts.
   actions and shortcut-bearing toolbar buttons render the appropriate content.
 - Hover cards flip/clamp at all window edges, never capture input, never create
   scrollbars, and never coexist with native ImGui tooltips.
-- Claude runs only the game-loaded Debug build for handoff. Codex runs Release
-  once after live acceptance as the closure gate.
+- Release is the non-deployment validation gate. A Debug build is only the
+  announced deployment action for the exact reviewed head after readiness is
+  confirmed; see `docs/process/testing.md`.
 
 ## Handoff
 
 Report base/head, commit map, changed paths, centralized baseline decisions,
-IK row metrics, migrated tooltip paths, Picto parity details, Debug build
-result, and remaining in-game checks. Compilation is not visual proof.
+IK row metrics, migrated tooltip paths, Picto parity details, Release
+validation result, deployment decision, and remaining in-game checks.
+Compilation is not visual proof.

@@ -362,8 +362,10 @@ not resize when dialogs/popovers open.
 
 Use reviewable commits without amend/rebase after review starts. Suggested
 commits: contract/DTO → external runtime ports → selectors → MCDF import →
-MCDF export → pose atomic import → UI/lifecycle/docs. Claude runs only the
-game-loaded Debug build; Codex runs Release once after live acceptance.
+MCDF export → pose atomic import → UI/lifecycle/docs. Release is the
+non-deployment validation gate. A Debug build is only the announced deployment
+action for the exact reviewed head after readiness is confirmed; see
+`docs/process/testing.md`.
 
 ## Acceptance
 
@@ -417,7 +419,7 @@ payload types, and cancel/failure injection after each mutating import phase.
 Report base/head, commit map, supported API versions and endpoint labels,
 MCDF format/limits, exact baseline and ownership model, transaction and
 rollback phases, temporary-resource cleanup, export capture/filter rules,
-pose-history migration, UI structure, removed paths, Debug build result, and
-the remaining in-game matrix. Compilation proves none of the IPC behavior,
+pose-history migration, UI structure, removed paths, Release validation result,
+deployment decision, and the remaining in-game matrix. Compilation proves none of the IPC behavior,
 redraw reconciliation, format interoperability, cancellation, restoration,
 or visual acceptance.

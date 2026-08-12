@@ -2,7 +2,7 @@
 
 | Control | Value |
 |---|---|
-| Status | Slices 1–3 accepted; remaining slices superseded by PBI-014 (controls normalize during the structural migration and are accepted through its catalog) |
+| Status | Accepted — slices 1–3; remaining slices Superseded by PBI-014 |
 | Size | Extra large, delivered as individually accepted component slices |
 | Implementation owner | Claude |
 | Review owner | Codex |
@@ -53,7 +53,8 @@ detection, complete catalog routing, six themes, and three scales.
    call site that represents that component.
 6. Delete the superseded component, local drawing recipe, token, and compatibility
    overload. Do not leave two valid ways to render the same ordinary control.
-7. Run the Debug production build and `git diff --check`. Then three capture
+7. Run the Release validation build and `git diff --check`. A Debug build is
+   deployment-only under `docs/process/testing.md`. Then three capture
    runs, each bounded at five minutes, splitting the axes by what they can
    actually detect — geometry is theme-invariant (Picto themes change color
    tokens only), so scales run against one theme and themes run against one
@@ -207,7 +208,7 @@ Deleted competing paths:
 Required states captured:
 Automated reports:
 Residual pixels and explanation:
-Debug build:
+Release validation:
 git diff --check:
 In-game locations for user inspection:
 No visual/runtime claim:

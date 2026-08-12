@@ -177,8 +177,9 @@ A layer's pause affects only that layer; the transport affects the actor.
    concise animation contract under `docs/features/`.
 
 Use new reviewable commits without amend or rebase after review starts.
-Claude runs only the game-loaded Debug build; Codex runs Release once after
-live acceptance.
+Release is the non-deployment validation gate. A Debug build is only the
+announced deployment action for the exact reviewed head after readiness is
+confirmed; see `docs/process/testing.md`.
 
 ## Acceptance
 
@@ -204,5 +205,6 @@ live acceptance.
 
 Report base/head, commit map, stable state and restoration ownership, catalog
 coverage, supported slots, playback/blend/loop/scrub behavior, removed legacy
-paths, Debug build result, and the remaining in-game walkthrough. Compilation
+ paths, Release validation result, deployment decision, and the remaining
+ in-game walkthrough. Compilation
 does not prove native playback, restoration, blending, or UI behavior.

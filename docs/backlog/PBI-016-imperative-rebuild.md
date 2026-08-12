@@ -2,7 +2,7 @@
 
 | Control | Value |
 |---|---|
-| Status | Code phases complete on `feature/pbi-015-reactive-ui-core`; in-game checkpoints outstanding |
+| Status | Acceptance pending — code phases complete; in-game checkpoints outstanding |
 | Supersedes | [PBI-015](PBI-015-react-style-imgui-core.md) |
 | Pixel spec | tag `reactive-final` (`bf557b7`) and the PNGs frozen from it |
 | Byte baseline | `tools/ui-conformance/accepted-c71d682-hashes.txt` (71 states) |

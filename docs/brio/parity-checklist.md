@@ -5,8 +5,9 @@
 > and git has never tracked those filenames on any branch. This file is rebuilt from a fresh
 > three-way source audit; it does not carry over any earlier Done/Not-done rows.
 >
-> Audit basis: Poser `feature/imperative-rebuild` @ `cd77073` (working tree), Ktisis clone @
-> `a5ae200d` (0.3.9.2 with the 0.4-style layout), Brio clone @ `73bb59d`. Mechanisms were
+> Audit basis: Poser `feature/imperative-rebuild` @ `e6c2c77` plus the inherited
+> 2026-08-12 working-tree snapshot, Ktisis clone @ `a5ae200d` (0.3.9.2 with the 0.4-style
+> layout), Brio clone @ `73bb59d`. Mechanisms were
 > verified against reference call sites, not doc claims.
 >
 > **Standing exclusions (user, 2026-08-03):** animation-timeline features (timeline UI,
@@ -20,6 +21,33 @@ Exposure legend used below — **UI**: reachable in the real windows; **backend-
 exists, nothing user-facing calls it; **command-only**: chat command only (counts as a gap
 per standing rule); **absent**: no code. Ordered by workflow importance. Each task is sized
 for a single focused session.
+
+### Verification pass 2026-08-12 (source-verified against HEAD `e6c2c77` plus the inherited working tree; in-game validation pending on all DONE rows — only the user calls done)
+
+| Gap | Verdict |
+|---|---|
+| 1 Redraw pose carryover | **DONE** |
+| 2 Rest poses | **PARTIAL** — A/T done (import surfaces, per user rule 2026-08-08); reference pose backend-complete, deliberately UI-hidden |
+| 3 Pose library | **DONE** (exceeds spec) |
+| 4 Auto-save | **DONE** |
+| 5 Freeze-on-import | **DONE** |
+| 6 Target sync | **DONE** |
+| 7 Copy/paste pose UI | **DONE pending in-game validation** — stash/apply is the retained UI; clipboard covers cross-session transfer |
+| 8 Gaze fixed-position | **DONE** (ships as "Point" mode, exceeds spec) |
+| 9 IK bake | **DONE** |
+| 10 Overlay filter wiring | not started |
+| 11 Bone visibility presets | not started |
+| 12 Overworld actor | not started |
+| 13A Companion attach UI | **DONE by spawn-as-actor design** — owner-slot attach/current-state display intentionally not exposed |
+| 13B Actor-to-bone attach | not started |
+| 14 Scene save/load | not started |
+| 15 IPC provider | not started |
+| 16 Keybind expansion | not started |
+| 17 Import options | **PARTIAL, accepted as-is** — (a) done, (b) filter-only, (c) not started after the selected-scope precondition was removed |
+| 18 Transform lock | not started |
+| 19 Linked-bones toggle | not started |
+| 20 Ray-snap translate | not started |
+| Polish table | nothing started |
 
 ### 1. Pose is lost when the actor redraws
 
@@ -36,6 +64,15 @@ history and animation entries for the old generation are released
 design: the Appearance pane's Penumbra-collection / Glamourer / MCDF actions request redraws
 (`Poser.Application/Integration/ActorIntegrationSession.cs:91,116,399`), so using Poser's own
 appearance integrations wipes the pose you just authored.
+
+**Verified 2026-08-11: DONE.** Carryover store `Poser.Game/LegacyRuntime/PoseCarryover.cs`
+keyed `(LogicalId, Slot)` with 30 s expiry; capture runs before both purge paths
+(`BonePosingService.cs:597-598,1007-1008`), restore in `OnSkeletonChanged`
+(`BonePosingService.cs:429-482`) with no history entry; rotation everywhere, root position
+only, scale never. Config `PreservePoseAcrossRedraws` default-on, Settings → BEHAVIOR
+"Keep pose through redraws" (`SettingsView.cs:350-354`). Deviation: restore hangs off
+`SkeletonChangedEvent` inside `BonePosingService`, not the lifecycle retry pump —
+functionally equivalent. Known hole: capture bails if the actor loses its binding mid-redraw.
 
 **Task:** Add a redraw pose-carryover: before `PurgeSkeletonState` runs for a replaced
 `(actor, slot)`, capture the authored `SkeletonPoseInfo` (and the actor's world-transform
@@ -57,6 +94,19 @@ them body-scope rotation-only from the import popup ("Import A-Pose"/"Import T-P
 **Poser:** absent. The Reset Bone/Body/Face/Hair ops return to the *animation* pose, not a
 neutral rest pose; there is no A/T-pose anywhere.
 
+**Verified 2026-08-11: PARTIAL.** A-pose/T-pose are done end-to-end: embedded
+`PosingCore/Data/RestPoses/BrioAPose.pose`/`BrioTPose.pose` (`RestPoses.cs:29-30`),
+`CleanPoseFacade.ApplyRestPose` (one undoable edit, rotation-only body,
+reset-before-import for A→T→A idempotence), "Presets" row with A-pose/T-pose buttons in the
+import surfaces (`PoseFileInspectorSection.cs:992-999`) reachable from actor context menu,
+titlebar burger, and FILES Import — per user rule 2026-08-08 rest presets live with import,
+not the POSE rail. Reference pose: backend-complete (`CleanPoseFacade.ApplyReferencePose`,
+`Skeleton.CaptureReferencePose`) but **deliberately UI-hidden** until the capture path is
+proven in game (`PoseInspectorPane.cs:1991-1995`) — the one remaining item.
+
+**User call 2026-08-11: accepted as-is** ("rest poses is fine") — reference pose stays
+UI-hidden; do not reopen without a new user decision.
+
 **Task:** Embed A-pose and T-pose files (Poser already reads Brio-v3 `.pose`, so Brio's
 embedded files work as-is) and add "A-Pose", "T-Pose" buttons to the POSE rail section plus
 actor context-menu entries. Apply through the existing import pipeline with Body scope +
@@ -75,6 +125,15 @@ config switch making every "Import" button open the library instead of the OS pi
 
 **Poser:** absent — two raw file dialogs only. `PoseFile.Base64Image`/`Tags` are serialized
 but never surfaced (`PosingCore/Files/PoseFile.cs:23-24`).
+
+**Verified 2026-08-11: DONE (exceeds spec).** Full workspace mode: `PoseLibraryService` +
+`PoseLibraryPane`/`PoseLibraryView`, entered from the sidebar LIBRARY header, titlebar
+burger, FILES "Library" button, and the import menu's "From library". Seeded Brio/Anamnesis
+source folders with Settings management (`SettingsView.cs:552-623`), thumbnail grid
+(`PoseThumbnailCache`), text + tag filters, favorites (star, context menu, virtual folder),
+apply-to-actor picker, spawn-as-new-actor (`PoseLibraryPane.cs:1634-1690`), shared
+import-options rail. Beyond spec: live CharaView pose preview, `UseLibraryWhenImporting`
+redirect, "Export to library", MCDF and Auto-saves tabs.
 
 **Task:** Build a pose-library surface in the shell (new pane or modal reachable from the
 FILES section): configurable source folders in Settings (seed Brio's and Anamnesis' default
@@ -95,12 +154,14 @@ Brio: `AutoSaveService` timer during GPose writing a scene file and, with
 clean-on-exit, and a "View Auto-Saves" browser (`Game/Core/AutoSaveService.cs`,
 `FileUIHelpers.cs:33-69`).
 
-**Poser:** implemented (awaiting in-game validation) — `AutoSaveService`
-(`PosingCore/Files/AutoSaveService.cs`): interval + GPose-exit snapshots of
-authored-edit actors via `ExportPose` into `<configDir>/AutoSaves/<UTC>/`,
-disk-based retention, clean-on-exit, Settings rows (General → AUTO-SAVE),
-titlebar burger menu "Auto-saves…" recovery entry. Normative:
-`docs/features/files-and-transfer.md` § Auto-save.
+**Verified 2026-08-11: DONE.** `AutoSaveService` (`PosingCore/Files/AutoSaveService.cs`),
+eagerly resolved at startup (`Poser.cs:79-82`), timer armed only in GPose, GPose-exit
+snapshot, disk-based retention counting save events, clean-on-exit, Settings rows
+(General → AUTO-SAVE incl. "Open in Explorer"), burger "Auto-saves" recovery entry plus a
+richer library Auto-saves tab. Layout is `<configDir>/AutoSaves/<yyyy-MM-dd>/<HH-mm-ss>
+<actor>.pose` — per-day folders, not folder-per-save (user call 2026-08-08, documented at
+`AutoSaveService.cs:33-39`; normative: `docs/features/files-and-transfer.md` § Auto-save).
+Flag: clean-on-exit *replaces* the exit snapshot rather than snapshot-then-clean.
 
 **Task:** Add an auto-save service: while in GPose, on a configurable interval, export every
 actor with authored edits via the existing `PoseFileService.Export` into
@@ -121,6 +182,15 @@ Ktisis is frozen by definition while posing is enabled.
 importing onto an actor whose animation is playing applies edits against a moving baseline
 and the result is immediately fought by playback.
 
+**Verified 2026-08-11: DONE.** Pause bracket in `CleanPoseFacade` (`:366-444`): capture
+prior speed → `Pause` → settle +4 ticks → `RewindPausedControls` (Brio's
+`StopSpeedAndResetTimeline` sequence) → restore unless frozen, with failure/throw
+restoration; freeze decision is `options.FreezeOnImport || Config.FreezeActorOnPoseImport`.
+"Freeze" checkbox in the import options row (`PoseFileInspectorSection.cs:1036-1046`);
+every import source (file, clipboard, stash, reapply, library, spawn-as-new, rest presets)
+funnels through the bracket. Flag: the checkbox writes the config default directly — one
+persistent control, no per-import-only freeze (intentional per `:79`).
+
 **Task:** Bracket `ImportPose` with the existing per-actor pause machinery
 (`AnimationSession` speed override): pause before applying, restore afterwards unless a new
 "Freeze actor" checkbox in the FILES import options is set (plus a config default mirroring
@@ -140,6 +210,12 @@ click-targeting.
 `IActorManager.GetGPoseTarget()` has zero callers (`Poser.Game/LegacyRuntime/ActorManager.cs:179`);
 targeting an actor in game changes nothing in Poser.
 
+**Verified 2026-08-11: DONE.** `Poser.Game/Scene/TargetSyncService.cs` (commit `c382836`):
+per-frame edge-detected sync, GPose-target → primary selection via `SelectionSession.Promote`
+(default on, Brio parity) and reverse direction (default off); Settings → BEHAVIOR rows
+"Follow game target" / "Game target follows selection". Minor: target→selection isn't
+explicitly gated on `IsGPosing` (relies on `GPoseTarget` being null outside GPose).
+
 **Task:** Add a per-frame target sync: when the GPose target changes and resolves to a scene
 actor, promote it to the primary selection (`SelectionSession`), behind a Settings toggle
 defaulting on to match Brio; add the reverse toggle (selection sets GPose target) defaulting
@@ -153,9 +229,26 @@ stash parity). Brio has clipboard copy/paste for the model transform. Poser's ow
 strictly stronger than both — a whole-pose `PortablePose` capture/apply that works across
 actors — but it is unreachable.
 
-**Poser:** backend-only — `CleanPoseFacade.Copy`/`.Paste` exist and are exercised only by
-`LiveTestService` (`CleanPoseFacade.cs:294,297`); the validation harness even has a
-`posing.copy-paste-pose` scenario for it.
+**Current Poser:** retained stash/apply is reachable from the actor context menu and
+the clipboard is the cross-session/cross-tool transfer path. `CleanPoseFacade.Copy`/`.Paste`
+remain harness-facing (`CleanPoseFacade.cs:294,297`); this is not an absent transfer
+capability, but it is not a separate Copy/Paste rail affordance.
+
+**Verified 2026-08-11: PARTIAL.** The clipboard half shipped (commit `11a4633`):
+`PosingCore/Files/PoseClipboard.cs` (Brio-compatible compressed JSON), "From clipboard"
+import (`PoseFileInspectorSection.cs:970-973`) and "To Clipboard" export (`:445`), both
+reachable from the actor context menu and FILES rail, with round-trip tests. Still missing:
+the Copy/Paste pair itself — `CleanPoseFacade.Copy`/`.Paste` retain **zero UI callers**
+(LiveTest only), the rail Transfer group is still Stash/Apply, and no context-menu
+Copy/Paste rows exist. Clipboard also rides `PoseFile`, not the stronger `PortablePose`.
+
+**Resolution 2026-08-11 (honest audit + menu fix):** `Copy`/`Paste` on the facade are the
+*same machinery* as Stash/Apply — `PoseTransferService.Stash` is `Capture` into the single
+slot, `ApplyStash` is `Apply` of it; the facade pair exists for the harness round-trip
+scenario, not as an unshipped feature. The real gap was discoverability, fixed at menu
+level: "Stash pose" / "Apply stashed pose" rows added to the actor context menu
+(`MainWindow.cs`, pose group; apply disabled until a stash exists). Cross-session/cross-tool
+transfer stays with the clipboard. Gap considered closed pending in-game validation.
 
 **Task:** Surface it: "Copy pose" / "Paste pose" buttons in the POSE rail section and actor
 context menu (paste disabled until a copy exists, tooltip showing source actor + timestamp
@@ -177,6 +270,14 @@ gizmo-tracking pseudo-modes (`Interface/Editor/Properties/ActorPropertyList.cs:1
 **Poser:** partial — GAZE section has Off/Fwd/Cam/Actor with per-part enable+lock
 (`PoseInspectorPane.cs:1141-1241`), but no way to aim at an arbitrary world point.
 
+**Verified 2026-08-11: DONE (exceeds spec).** Ships as **"Point"** mode (UI label differs
+from the task's "Position"): `GazeTargetMode.Position` with a shared anchor *plus three
+divergeable per-part points* (`IGazeService.cs:20,52-59`), actor↔camera midpoint seeding on
+mode entry (`GazeService.cs:244-245,542`), per-part numeric Vector3 + snap-to-camera
+(`PoseInspectorPane.cs:1580-1665`), world gizmo grabs the gaze target with bone-gizmo
+mutual exclusion (`GizmoOverlayWindow.cs:275-282,615-619`), sidebar gaze-target child rows
+while active (`MainWindow.cs:986-987`). No history entries, as specced.
+
 **Task:** Add a **Position** gaze mode: seed the target at the actor↔camera midpoint on
 enable (Ktisis' `GetCameraLerpFor` behavior), show a numeric Vector3 with a "set to camera"
 snap per part, and while Position mode is active with no bone gizmo in use, render the
@@ -196,6 +297,14 @@ into the pose, so its IK is effectively always baked.
 (`PoseInspectorPane.cs:1263-1448`), but nothing converts the solved result into ordinary
 pose edits, so disarming a chain abandons the solved placement and exports/undo interact
 with a transient state.
+
+**Verified 2026-08-11: DONE.** `Poser.Game/Posing/IkBakeCapture.cs`: Brio's ResetIK order
+(export solved skeleton → clear stacks → disarm → re-import), framework-thread guarded,
+refused mid-gesture, full rollback on failure; one history entry "Bake IK"
+(`IkBakeCapture.cs:482`). "Bake" button in the IK rail section
+(`PoseInspectorPane.cs:1757-1770`), enabled via `CanBake`. Deviation (documented at
+`IkBakeCapture.cs:175-178`): bakes the whole skeleton like Brio, not only the chain bones.
+Live-test coverage exists (`LiveTestService.cs:943`).
 
 **Task:** Add "Bake IK" to the IK rail section (enabled while the chain is armed and has
 produced a solve): capture the solved model-space transforms of the affected chain bones,
@@ -217,6 +326,11 @@ never written (`:248-259`); `Skeleton.ShowSkeletonLines`, `IkChainColor`,
 `MirroredBoneColor`, and `Display.ShowNsfwBones` are saved by Settings but have **no
 reader** — the NSFW toggle silently does nothing while IVCS rows always render
 (`AnamnesisMatrixTable.cs:98-104`); `BoneDisplayMode`/`DebugMode` are dead state.
+
+**Verified 2026-08-11: NOT STARTED** (all seven sub-items; the cited line numbers drifted —
+the read-never-written sites are now `SkeletonOverlayWindow.cs:337-338` and `:349-359` —
+but every finding still holds; `Display.ShowNsfwBones` now even defaults **off** while IVCS
+rows still render unconditionally, so the shipped default state lies).
 
 **Task:** One wiring session: add a small overlay-options popup on the Armature titlebar
 toggle (right-click): view mode selector, "Selected bones only" switch, and a category
@@ -265,9 +379,30 @@ sites before implementation (standing rule).
 charas transform relative to the attach point (`Interface/Components/Workspace/SceneDragDropHandler.cs:29-73`,
 `Editor/Posing/Attachment/AttachManager.cs`, `Scene/Entities/Character/CharaEntity.cs:94-105`).
 
-**Poser:** absent for arbitrary attachment. Related but distinct: companion/mount/ornament
-attach is **backend-only** — `IActorSpawnService.SetCompanion`/`GetCompanionInfo` are
-implemented with zero callers (`ActorSpawnService.cs:290,365`) while Detach companion has UI.
+**Current Poser:** arbitrary actor-to-bone attachment remains absent by user decision.
+Companion/mount/ornament catalog entries spawn as standalone actors; Detach companion
+remains for clones that arrive with a slot companion.
+
+**Verified 2026-08-11: session A DONE, session B NOT STARTED.** Companion attach ships via
+the `+` spawn browser: catalog rows badged Minion/Mount/Accessory, activation calls
+`SetCompanion` (`SpawnBrowserWindow.cs:313-318,448-450`) with real failure notes; reachable
+from titlebar, ACTORS header, and context menu. Two holes: `GetCompanionInfo` still has
+**zero callers** (the picker is write-only — no current-attachment display), and attach
+lives in the spawn browser while Detach stays in the context menu.
+
+**Design pivot (user, 2026-08-11):** the attach-companion *concept* leaves the UI. No model
+editing is ever exposed in Poser, and instead of attaching catalog entries to an owner's
+slot, the spawn browser's minion/mount/accessory rows now **spawn the entry as its own
+actor** — a fresh battle character whose `ModelCharaId` is written internally at spawn
+(before first draw; mechanism verified against Brio `ActorAppearanceService`), named from
+the sheet, auto-selected, and **automatically classified** by kind
+(`IActorSpawnService.GetSpawnedKind`; sidebar shows Paw/Horse/Diamond accordingly).
+"Detach companion" remains, gated on `GetCompanionInfo` (its first caller), because clones
+can still arrive with a slot companion; `SetCompanion` survives as internal machinery with
+no UI caller by design. Do not re-add an attach surface without a new user decision.
+Bone attachment (B):
+nothing — no drag-drop anywhere in the repo; the only bone-attach code is the lights path,
+not reusable for charas.
 
 **Task (session A — cheap, backend exists):** companion attach UI: an "Attach…" actor
 context-menu item opening a searchable companion/mount/ornament picker feeding
@@ -343,9 +478,24 @@ bones" (filters 20 ear-bone names so Viera/ear poses don't corrupt other races,
 selection's top-level bones after a selected-bones+position import so groups don't drift,
 `PosingManager.cs:242-253`).
 
-**Poser:** `ApplyModelTransform` is backend-only — the option exists and is honored
-(`PoseImportOptions.cs:59`, `PoseFileService.cs:209`) but `PoseFileInspectorSection.BuildOptions`
-never sets it (`PoseFileInspectorSection.cs:119-145`). Ear exclusion and anchoring are absent.
+**Current Poser:** the Model transform option is wired and honored. Ear handling is
+filter-only, while selected-scope anchoring remains absent and is accepted as-is by the
+user decision recorded below.
+
+**Verified 2026-08-11: PARTIAL.** (a) **DONE** — "Model" checkbox
+(`PoseFileInspectorSection.cs:1100-1105`) wired through `BuildOptions` and honored
+(`PoseFileService.cs:242`). (b) filter-only — no dedicated exclude-ears control; an "Ears"
+category exists in the Brio-style bone-filter popup (covers Ktisis' 20 names via prefixes)
+but the filter is disabled whenever Body/Expression typed import is active
+(`:1133-1141`, `:2163-2165`), i.e. exactly the common paths. (c) **NOT STARTED — and its
+precondition was removed**: the Selected-scope/descendants rows were dropped from the
+import UI (user 2026-08-10, `:1124-1125`); selected-bones import is now backend-only dead
+code (`CleanPoseFacade.cs:195-222` has no UI caller passing bones). The import surface was
+otherwise rebuilt well beyond this task: Smart import, clipboard both ways, Reapply last,
+From stash, Brio bone-filter popup, live CharaView preview, shared three-mount options band.
+
+**User call 2026-08-11: accepted as-is** ("import is good enough for now") — (b) and (c)
+stay parked; do not reopen without a new user decision.
 
 **Task:** Three additions to the FILES import options: a "Model transform" checkbox wiring
 the existing flag (trivial); an "Exclude ears" checkbox implemented as a name-set filter in
@@ -416,8 +566,11 @@ history-entry contract. Config toggle mirroring `AllowRaySnap`.
 
 - Weapon/prop/ornament slots in pose files: Poser round-trips MainHand/OffHand/Prop/Ornament;
   Ktisis never writes them (`EntityPoseConverter.cs:33` TODO), Brio does.
-- Import scopes: Poser's Full/Body/Expression/Selected + per-component + descendants +
-  reset-first matches or exceeds both references' popup options (given gap 17's three items).
+- Import scopes: Poser's per-component + reset-first + Brio type matrix matches both
+  references' popup options (given gap 17's remaining items). *2026-08-11 note:* the
+  Selected/descendants scope this bullet originally credited was removed from the UI on
+  2026-08-10 (user call) — the import surface now mirrors Brio's popup; selected-bones
+  import survives backend-only.
 - Stance/idle-pose control, weapon drawn, position lock, per-layer speed/pause, physics
   freeze: present with real UI (Animation tab / toolbar).
 - Stash/apply pose transfer: parity with Ktisis' stash, including timestamp.

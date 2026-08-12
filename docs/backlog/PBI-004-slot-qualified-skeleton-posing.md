@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Complete |
+| Status | Accepted |
 | Size | Large |
 | Implementation owner | Claude |
 | Review owner | Codex |
@@ -206,8 +206,8 @@ Do not amend or rebase after review begins.
       cross-slot fallback.
 - [ ] Slot-blind retained APIs, caches, and pose keys are removed.
 - [ ] Canonical documentation matches the final implementation.
-- [ ] `dotnet build Poser.slnx -c Debug --no-restore` and Release complete
-      with zero errors and warnings.
+- [ ] Release build completes with zero errors and warnings. Debug is a separate
+      deployment action governed by `docs/process/testing.md`.
 
 ## In-game acceptance
 

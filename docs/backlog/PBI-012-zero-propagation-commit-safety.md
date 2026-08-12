@@ -111,5 +111,5 @@ through each retained edit surface:
 
 Report the exact base/head range, the layer that reproduced the defect, the
 domain invariant changed, runtime failure mapping, history/rollback behavior,
-focused scenario output, Debug build, `git diff --check`, and the remaining
-in-game checklist. Compilation alone is not runtime acceptance.
+focused scenario output, Release validation, `git diff --check`, and the
+remaining in-game checklist. Compilation alone is not runtime acceptance.

@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Complete |
+| Status | Accepted |
 | Implementation owner | Claude |
 | Review owner | Codex |
 | Acceptance owner | User, in game |

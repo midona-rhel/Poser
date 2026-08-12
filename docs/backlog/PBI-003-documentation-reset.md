@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Complete |
+| Status | Accepted |
 | Size | Medium |
 | Implementation owner | Claude |
 | Review owner | Codex |

@@ -1,4 +1,6 @@
-# PBI-015 phase-0 legacy inventory (at `c71d682`)
+# PBI-015A — phase-0 legacy inventory (at `c71d682`)
+
+| Status | Audit |
 
 Severance authority: a legacy surface is deleted only when every file listed
 for it here has migrated (slice gate 5). Product consumers and

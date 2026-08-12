@@ -87,7 +87,8 @@ rounding or any other theme value.
 - No window class relies solely on `PostDraw` to unwind state established in
   `PreDraw`.
 - Every pop count is owned by the same scope that performed the pushes.
-- Debug build and `git diff --check` pass. Report existing unrelated warnings
+- Release validation and `git diff --check` pass. Debug is deployment-only;
+  report existing unrelated warnings
   honestly.
 
 ## In-game acceptance
@@ -121,5 +122,6 @@ rounding or any other theme value.
 
 Report the exact base/head range, every migrated style owner, deleted direct
 mutation paths, exception-unwind design, probe output for normal and injected
-failure frames, Debug build, `git diff --check`, and remaining in-game checks.
+failure frames, Release validation, `git diff --check`, and remaining in-game
+checks.
 Compilation does not prove cross-plugin isolation.
