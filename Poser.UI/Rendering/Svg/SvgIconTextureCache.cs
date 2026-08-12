@@ -25,23 +25,6 @@ public static partial class Crystarium
         get => SvgIconTextureCache.Uploader;
         set => SvgIconTextureCache.Uploader = value;
     }
-
-    /// <summary>
-    /// Rasterize icon bakes ON the calling thread, the frame they are asked
-    /// for, with no per-frame painter or upload budget. Off by default: in
-    /// game the budgets and the background rasterizer are what keep a reload,
-    /// a first shell draw, or a theme retint — all of which make every
-    /// visible icon a cache miss in ONE frame — from costing a ~300ms hitch.
-    ///
-    /// <para>The capture harness sets this so a golden is a pure function of
-    /// its frame: with budgets on, whether an icon has its texture yet
-    /// depends on how many frames the harness happened to pump.</para>
-    /// </summary>
-    public static bool IconBakesSynchronous
-    {
-        get => SvgIconTextureCache.SynchronousBakes;
-        set => SvgIconTextureCache.SynchronousBakes = value;
-    }
 }
 
 /// <summary>
@@ -72,9 +55,6 @@ internal static class SvgIconTextureCache
     /// <summary>Completed rasterizations packed and uploaded per ImGui frame.
     /// </summary>
     private const int UploadBudget = 8;
-
-    /// <summary>See <see cref="Crystarium.IconBakesSynchronous"/>.</summary>
-    internal static bool SynchronousBakes;
 
     /// <summary><see cref="Handle"/> 0 with <see cref="Painter"/> false is a
     /// bakeable draw whose mask is empty — it draws nothing, correctly.
@@ -370,10 +350,6 @@ internal static class SvgIconTextureCache
             _paints = 0;
             _uploads = 0;
         }
-        // Unconditional: in synchronous mode nothing ever enqueues, so this is
-        // a single IsEmpty check and the goldens see no difference — but if
-        // the flag is flipped mid-session, work already in flight still lands
-        // instead of stranding its keys in Pending forever.
         if (!Completed.IsEmpty)
             Integrate(ref _uploads);
 
@@ -384,25 +360,6 @@ internal static class SvgIconTextureCache
         {
             slot.LastDraw = _drawTick;
             entry = slot;
-        }
-        else if (SynchronousBakes)
-        {
-            if (!Repeated(key))
-                return false;
-            // The bake is rasterized in LOCAL space: RenderCore floors the
-            // box to whole pixels, and an integer translation of stroke
-            // geometry has identical per-pixel coverage, so where the icon
-            // SITS can never matter to the bitmap. Screen coordinates used
-            // to leak in through their float exponent — dragging a window
-            // across a power-of-two x or y re-baked every visible icon in
-            // one frame (~320ms).
-            entry = Bake(
-                doc, max - min, tint, flipX, strokeWidth,
-                groupOpacity, groupBackground, styleAlpha);
-            entry.LastDraw = _drawTick;
-            if (Cache.Count >= MaxEntries)
-                EvictStale();
-            Cache[key] = entry;
         }
         else
         {
@@ -452,26 +409,6 @@ internal static class SvgIconTextureCache
                 White);
         }
         return true;
-    }
-
-    private static Entry Bake(
-        SvgDocument doc,
-        Vector2 size,
-        Vector4? tint,
-        bool flipX,
-        float? strokeWidth,
-        float groupOpacity,
-        Vector4 groupBackground,
-        float styleAlpha)
-    {
-        // Fills and multicolour documents keep the painter's ordering.
-        if (!doc.TryResolveMask(
-                Vector2.Zero, size, tint, flipX, strokeWidth,
-                groupOpacity, groupBackground, styleAlpha, out var baked))
-            return new Entry(0, default, default, null, true);
-        if (baked is null)
-            return new Entry(0, default, default, null, false);
-        return Upload(baked);
     }
 
     /// <summary>Records the key and reports whether it had already been
