@@ -32,11 +32,11 @@ public readonly record struct FileSidePanel(
     float Width, Action<Vector2, Vector2, string?> Draw);
 
 /// <summary>One listing row, as the dialog sees it.</summary>
-file readonly record struct FileListingEntry(
+internal readonly record struct FileListingEntry(
     string Name, string FullPath, bool IsDirectory, DateTime Modified);
 
 /// <summary>One quick-menu destination.</summary>
-file readonly record struct FileQuickEntry(
+internal readonly record struct FileQuickEntry(
     string Name, string Path, TablerIcon Icon);
 
 /// <summary>
@@ -44,7 +44,7 @@ file readonly record struct FileQuickEntry(
 /// filtering and the error line are the DIALOG's policy and stay above this
 /// line; hidden-attribute suppression is the filesystem's own and stays below.
 /// </summary>
-file interface IFileListingSource
+internal interface IFileListingSource
 {
     /// <summary>Fills <paramref name="into"/> with the folder's contents, in
     /// no particular order. Throwing is the contract for an unreadable folder:
@@ -1035,7 +1035,7 @@ public static partial class Crystarium
     /// </summary>
     private sealed class LocalFileListing : IFileListingSource
     {
-        private static readonly LocalFileListing Instance = new();
+        internal static readonly LocalFileListing Instance = new();
 
         public string DefaultPath =>
             Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
