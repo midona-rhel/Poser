@@ -1251,6 +1251,7 @@ public unsafe class BonePosingService : IBonePosingService
         var poseInfo = GetPoseInfo(bone.Skeleton);
         var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
         bonePoseInfo.RestoreInteractiveStacks(stacks);
+    }
 
     /// <summary>
     /// FinalizeSkeletonsDetour - matches Brio's FinalizeSkeletonUpdate exactly.
