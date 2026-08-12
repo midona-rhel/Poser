@@ -7,7 +7,6 @@ using Dalamud.Interface.Utility;
 using Poser.Application.Transforms;
 using Poser.Application.Posing;
 using Poser.Core;
-using Poser.Core.Helpers;
 using Poser.Entities;
 using Poser.Game;
 using Poser.Game.Transforms;
