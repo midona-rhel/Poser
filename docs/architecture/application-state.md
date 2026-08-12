@@ -52,7 +52,10 @@ lifecycle contract. On final exit it:
 
 The persistence worker receives immutable snapshots only and final exit joins
 it. It never reads live Game/runtime state and is not a detached best-effort
-worker. If capture, cancellation/drain, restoration, or teardown cannot
-complete, the outcome is `RecoveryRequired` with durable failure evidence.
+worker. A final snapshot is not successful merely because capture returned:
+atomic write failure, persistence-worker failure, or final worker join/drain
+failure also makes the outcome `RecoveryRequired` with durable failure
+evidence, as do capture, cancellation/drain, restoration, or teardown
+failures.
 Autosave file layout, retention, and atomic-write rules are normative in
 [files-and-transfer.md](../features/files-and-transfer.md).

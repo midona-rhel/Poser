@@ -19,6 +19,16 @@ guard, never portable identity. Exact actor, skeleton, slot, and bone
 generations are re-resolved immediately before a write; failed resolution is
 explicit, and no native object or address is handed to Application or UI.
 
+The current Application-facing native transform write/capture path is
+`ITransformRuntimePort`, implemented by Game's `TransformRuntimePort`; it
+captures, applies, and restores transform targets. It resolves exact
+generations through `StableBindingRegistry` immediately before native access.
+`ViewportProjection` is the frame-scoped spatial read for UI presentation, not
+a gesture baseline. The remaining Game runtime ports and hooks include
+animation, presentation, integration/MCDF, scene lifecycle, and the native
+camera, lighting, environment, and skeleton-finalization hooks; these remain
+Game-owned while their transitional callers move off PosingCore.
+
 - Animation/IK/physics run first; Poser reapplies persistent layers in the
   skeleton hook, then caches, reparents, caches, and publishes the final
   snapshot. Freeze is a convenience, not a suppression precondition.

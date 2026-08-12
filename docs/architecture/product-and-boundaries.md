@@ -32,13 +32,18 @@ listed as retained is not part of the active product surface.
 ## Compiler-real boundaries
 
 The current solution is transitional. `PosingCore` is a shared mixed legacy
-layer; `Poser.Game` is the sole native/runtime assembly, even though many of
-its files are under `LegacyRuntime` and use `Poser.Game` namespaces. `Domain`
-has no project references, `Application` references `Domain`, `Game` references
-`Domain`, `Application`, and `PosingCore`, and host `Poser` composes all of
-those with the single `Poser.UI` assembly. Product UI still has host-side
-`Poser/UI` code alongside the rendering/primitives assembly; that split is
-transitional, not a second UI ownership model.
+layer that still contains transitional unsafe/native/Dalamud/runtime code,
+including entities such as `ActorBase` and `Skeleton` and its
+`AllowUnsafeBlocks` setting. `Poser.Game` is the compiler-real native/runtime
+destination and boundary, but it is not yet the sole native/runtime assembly
+while that PosingCore code remains; in the target graph, `Poser.Game` is the
+sole native/runtime assembly. Many Game files are under `LegacyRuntime` and
+use `Poser.Game` namespaces. `Domain` has no project references, `Application`
+references `Domain`, `Game` references `Domain`, `Application`, and
+`PosingCore`, and host `Poser` composes all of those with the single
+`Poser.UI` assembly. Product UI still has host-side `Poser/UI` code alongside
+the rendering/primitives assembly; that split is transitional, not a second UI
+ownership model.
 
 The target graph keeps the `Poser.Game` name; there is no `Poser.Runtime`
 rename. `Poser.Domain` contains pure values and policies. `Poser.Application`
@@ -78,15 +83,20 @@ consumes Application read models/actions and owns only surface state; Host
 composes. No generic manager, service, repository, mediator, service locator,
 capability bag, or interface-per-class framework is introduced.
 
-Each LegacyRuntime or PosingCore owner is deleted only after its exact caller
-inventory is zero, a stable-generation replacement exists, tests and fault
-evidence pass, composition references are gone, and no pointer, address,
-index, or native object escapes `Poser.Game`. PosingCore codecs, assets, and
-policies migrate selectively. Broad interfaces/entities, EventBus, and legacy
-mutable owners are removed after their callers move; they are not recreated
-under new generic names.
+Deletion proof has two distinct levels. A `LegacyRuntime` owner/file may leave
+only when its exact callers are zero or replaced, its composition registration
+is removed or replaced, its native leases are transferred or released, and
+the replacement passes ordinary and fault-path tests. The replacement must
+also preserve the accepted generation/lifecycle contract and keep pointers,
+addresses, indices, and native objects inside `Poser.Game`. The `PosingCore`
+project may be removed only after its solution/project-reference edges and
+production/test callers are zero, migrated generation/lifecycle contracts are
+accepted, and no forbidden native edge remains. PosingCore codecs, assets,
+and policies migrate selectively. Broad interfaces/entities, EventBus, and
+legacy mutable owners are removed after their callers move; they are not
+recreated under new generic names.
 
 The actual in-game Poser UI is the only visual oracle. The durable visual and
-testing rules live in [architecture/ui-workspace.md](ui-workspace.md) and
+testing rules live in [ui-workspace.md](ui-workspace.md) and
 [process/testing.md](../process/testing.md); this document does not create a
 synthetic lab or substitute visual gate.

@@ -60,9 +60,11 @@ interchange with Brio and (via name conversion) Anamnesis.
 - Capture produces an immutable snapshot. The persistence worker receives only
   that snapshot, performs atomic file writes, and is joined by final exit. It
   never reads live runtime state and is never detached as best-effort work. A
-  capture, cancellation/drain, restore, or teardown failure yields
-  `RecoveryRequired` plus durable evidence. Lifecycle ownership and receipt
-  semantics are defined once in
+  final snapshot is not successful merely because capture occurred: atomic
+  write failure, persistence-worker failure, and final worker join/drain
+  failure, as well as capture, cancellation/drain, restore, or teardown
+  failure, yield `RecoveryRequired` plus durable evidence. Lifecycle ownership
+  and receipt semantics are defined once in
   [application-state.md](../architecture/application-state.md).
 - Retention prunes from DISK to the configured count of SAVE EVENTS —
   the files sharing one time prefix in a day folder, or one whole folder
