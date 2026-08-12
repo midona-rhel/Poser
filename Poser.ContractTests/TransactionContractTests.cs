@@ -15,8 +15,10 @@ public sealed class TransactionContractTests
         app.Scene.Refresh(TestScenes.ActorAndBoneScene(
             TestIds.Actor(),
             second.Bone!.Value));
-        app.Runtime.Seed(TestStates.For(first));
-        app.Runtime.Seed(TestStates.For(second));
+        var firstInitial = TestStates.At(first, -4);
+        var secondInitial = TestStates.At(second, 7, hasOverride: false);
+        app.Runtime.Seed(firstInitial);
+        app.Runtime.Seed(secondInitial);
         app.Runtime.FailApplyCall = 2;
         app.Runtime.FailureDetail = "native capability unavailable";
         app.Runtime.FailureStatus = TransformPortStatus.NativeUnavailable;
@@ -31,11 +33,13 @@ public sealed class TransactionContractTests
 
         Assert.False(result.Success);
         Assert.Contains("native capability", result.Detail!);
+        // Current production behavior restores every captured target when any
+        // absolute write fails, including targets after the failing write.
         Assert.Equal(
             new[] { first, second },
             app.Runtime.RestoreCalls);
-        Assert.Equal(PoseTransform.Identity, app.Runtime.State(first).Transform);
-        Assert.Equal(PoseTransform.Identity, app.Runtime.State(second).Transform);
+        Assert.Equal(firstInitial, app.Runtime.State(first));
+        Assert.Equal(secondInitial, app.Runtime.State(second));
         Assert.False(app.History.CanUndo);
     }
 
@@ -45,7 +49,8 @@ public sealed class TransactionContractTests
         var target = TestIds.ActorTarget();
         using var app = new TransformApplicationHarness();
         app.Scene.Refresh(TestScenes.ActorScene(TestIds.Actor()));
-        app.Runtime.Seed(TestStates.For(target));
+        var initial = TestStates.At(target, -9);
+        app.Runtime.Seed(initial);
         app.Runtime.FailCaptureCall = 2;
         app.Runtime.FailureStatus = TransformPortStatus.NativeUnavailable;
         app.Runtime.FailureDetail = "native capability unavailable";
@@ -58,12 +63,12 @@ public sealed class TransactionContractTests
         Assert.False(result.Success);
         Assert.Contains("native capability", result.Detail!);
         Assert.Equal(new[] { target }, app.Runtime.RestoreCalls);
-        Assert.Equal(PoseTransform.Identity, app.Runtime.State(target).Transform);
+        Assert.Equal(initial, app.Runtime.State(target));
         Assert.False(app.History.CanUndo);
     }
 
     [Fact]
-    public void Native_unavailable_is_a_failed_capability_outcome_not_a_successful_edit()
+    public void Unavailable_runtime_is_refused_without_false_success()
     {
         var target = TestIds.ActorTarget();
         using var app = new TransformApplicationHarness();

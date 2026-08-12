@@ -80,4 +80,38 @@ public sealed class DomainApplicationContractTests
         Assert.Empty(app.Runtime.ApplyCalls);
         Assert.False(app.History.CanUndo);
     }
+
+    [Fact]
+    public void Replaced_slot_generation_rejects_old_same_name_bone_without_mutating_replacement()
+    {
+        var actor = TestIds.Actor();
+        var oldTarget = TestIds.BoneTarget(skeletonGeneration: 0);
+        var replacementTarget = TestIds.BoneTarget(skeletonGeneration: 1);
+        using var app = new TransformApplicationHarness();
+        app.Scene.Refresh(TestScenes.ActorAndBoneScene(
+            actor,
+            oldTarget.Bone!.Value));
+
+        var replacementInitial = TestStates.At(
+            replacementTarget,
+            11,
+            hasOverride: false);
+        app.Runtime.Seed(replacementInitial);
+        app.Scene.Refresh(TestScenes.ActorAndBoneScene(
+            actor,
+            replacementTarget.Bone!.Value));
+
+        var result = app.Commands.SetAbsolute(
+            oldTarget,
+            TestStates.Translated(99),
+            "stale slot edit");
+
+        Assert.False(result.Success);
+        Assert.Contains("stale", result.Detail!, StringComparison.OrdinalIgnoreCase);
+        Assert.True(app.Scene.Contains(replacementTarget));
+        Assert.False(app.Scene.Contains(oldTarget));
+        Assert.Empty(app.Runtime.ApplyCalls);
+        Assert.Equal(replacementInitial, app.Runtime.State(replacementTarget));
+        Assert.False(app.History.CanUndo);
+    }
 }

@@ -135,11 +135,17 @@ internal sealed class FakeTransformRuntime : ITransformRuntimePort
 internal static class TestStates
 {
     public static TransformTargetState For(TransformTargetId target) =>
+        At(target, 0);
+
+    public static TransformTargetState At(
+        TransformTargetId target,
+        float positionX,
+        bool? hasOverride = null) =>
         new(
             target,
-            PoseTransform.Identity,
+            Translated(positionX),
             new BonePose(),
-            HasOverride: target.Kind == TransformTargetKind.Actor);
+            HasOverride: hasOverride ?? target.Kind == TransformTargetKind.Actor);
 
     public static PoseTransform Translated(float x) =>
         PoseTransform.CreateChecked(
