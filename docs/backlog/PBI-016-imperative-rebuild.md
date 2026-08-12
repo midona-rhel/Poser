@@ -154,7 +154,7 @@ that carries it now.
 | The hand-rolled double-click detector is deleted in favour of the kernel's | `Rendering\Internal\Interactive.cs` `Reserve` |
 | A frame may declare that its host already painted the glass, so it does not stack a second shadow | `Compositions\WindowFrame.cs` `WindowFrameProps.HostPaintsChrome` |
 | Disabled-opacity adjudication: the disabled arrow keeps the CSS-correct 0.2 that the accepted `icon-button-disabled` state froze, over the golden's double-multiplied 0.16 | `Primitives\Tags\Button.cs` `IconButtonDisabledOpacity` |
-| The public dialog shape is frozen — ctor / `Open` / `Draw` / `IsOpen` plus the `Source`/`Rehome` fixture seam | `Compositions\FileDialog.cs` |
+| The retained public dialog shape is frozen — constructor / `Open` / `Draw` / `IsOpen`; former `Source`/`Rehome` capture seams were removed with the synthetic lab | `Compositions\FileDialog.cs` |
 
 ### Animation (`ed0919e`)
 
