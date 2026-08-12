@@ -10,9 +10,7 @@ namespace Poser.UI;
 /// Segoe UI on Windows: by walking the Segoe UI font-link chain
 /// (<c>FontLink\SystemLink</c>) in registry order and taking the first
 /// linked face that actually covers Japanese — Meiryo UI before
-/// Yu Gothic UI on machines that ship both. The SAME resolver runs in
-/// the game plugin and in the conformance capture host, so both merge
-/// the identical file, face, weight, and metrics.
+/// Yu Gothic UI on machines that ship both.
 /// </summary>
 public static class WindowsFontFallback
 {

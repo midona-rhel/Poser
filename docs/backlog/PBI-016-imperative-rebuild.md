@@ -2,10 +2,9 @@
 
 | Control | Value |
 |---|---|
-| Status | Acceptance pending — code phases complete; in-game checkpoints outstanding |
+| Status | Historical — code phases complete; synthetic visual workflow retired |
 | Supersedes | [PBI-015](PBI-015-react-style-imgui-core.md) |
-| Pixel spec | tag `reactive-final` (`bf557b7`) and the PNGs frozen from it |
-| Byte baseline | `tools/ui-conformance/accepted-c71d682-hashes.txt` (71 states) |
+| Visual acceptance | Manual comparison of the real in-game current and rewritten UI |
 | Approved plan | "UI Rebuild: Imperative Return on the Crystarium Foundation" |
 
 ## Why
@@ -25,9 +24,9 @@ These are the standing constraints, not a phase list:
   imperative `Draw()` over a shared helper layer. Brio's 19 windows average 378
   non-blank lines over one `static partial` helper class; CS+ adds window
   chassis classes; Penumbra is the performance reference.
-- **Pixel parity with the accepted look.** The rebuild re-expresses; it does not
-  redesign. Divergence from the frozen oracles is a defect unless the user
-  accepts it as a supersession.
+- **Behavior and layout invariants.** The rebuild re-expresses; it does not
+  redesign. Visual acceptance belongs to the real in-game UI and the user's
+  manual acceptance card.
 - **Clean slate.** Re-express rather than port framework code. Panes return to
   their imperative ancestors where an ancestor exists.
 - **Penumbra-class performance.** Warm frames recompute nothing. No text is
@@ -39,8 +38,7 @@ These are the standing constraints, not a phase list:
 - **Reusability is the organizing principle** — but only where a second real
   consumer exists. A shape with one caller stays private to that caller.
 - **No full archive.** The imperative Crystarium control library is the
-  surviving foundation, byte-frozen by the accepted hash set. Only the reactive
-  block was thrown away.
+  surviving foundation. Only the reactive block was thrown away.
 
 ## Architecture
 
@@ -93,7 +91,7 @@ that carries it now.
 | A seat tie resolves toward the HIGHER seat — a tie resolved low is the defect this kills | `Primitives\Tags\Text.cs` `InkSnapY` |
 | ONE icon-adjacent bias, −1.5 CSS px: a run beside an icon is judged against the icon ink. Two independently accepted measurements (the sidebar seat, ContextMenu's `RowInkRise`) agree on the value exactly | `Primitives\Tags\Text.cs` `IconAdjacentInkBias` |
 | ContextMenu's local row-rise constant is deleted; the metric seat supersedes it | `Primitives\Tags\ContextMenu.cs` (`TextInBand(..., besideIcon: true)` call sites) |
-| Eight sidebar-row states re-recorded at the accepted seat; the legacy baseline predated that acceptance | `tools\ui-conformance\accepted-c71d682-hashes.txt` |
+| Eight sidebar-row states re-recorded at the accepted seat; the legacy baseline predated that acceptance | Historical visual acceptance record; retired |
 | `arrow-left` / `arrow-right` added to the icon registry | `Icons\TablerSvgSources.cs` |
 
 ### TreeRow and WindowFrame (`2d3585f`)
@@ -144,7 +142,7 @@ that carries it now.
 | The clipper is a VISIBILITY ORACLE mapped through exact per-entry offsets, not a uniform pitch: the header band and the inter-section gap survive instead of being quantized away | `Poser\UI\Views\ShellSidebar.cs` `_slots`, `Entry.Top`/`Height` |
 | The cache holds (section, row) PATHS, never row references — the view model rebuilds row objects every frame, so a held reference would freeze selection and badges | `Poser\UI\Views\ShellSidebar.cs` `Entry.Section` / `Entry.Row` |
 | A per-frame row-count guard catches structural changes that arrive without a revision bump | `Poser\UI\Views\ShellSidebar.cs` `_rowCounts` |
-| The perf contract is p95 draw < 1.5 ms and ZERO allocation of the sidebar's own, at 300 rows over 600 warm frames | `tools\ui-conformance\verify-sidebar-perf.ps1` |
+| The sidebar warm path stays allocation-free and avoids tree/string/text work for clipped rows | `Poser\UI\Views\ShellSidebar.cs` |
 
 ### FileDialog and the gutter rule (`73e2abf`)
 
@@ -208,8 +206,7 @@ that carries it now.
 |---|---|
 | `LegacyCrystarium` → `Crystarium`: the shim died with its directory and the 290 existing call sites resolve to the real class | repo-wide; `Poser.UI` |
 | The four per-surface `OpticalTokens` text constants die — `TextInBand`'s metric seat orphaned them. `Snap()` and the rest of `Optical` survive | `Rendering\Theme.cs` `Optical` |
-| The frozen golden PNGs stay as the accepted record; `i-*` are the living states | `tools\ui-conformance\golden-rebuild\` |
-| Nothing merges into the accepted baseline until the in-game checkpoint, and `-AllowAdded` retires with it | `tools\ui-conformance\accepted-c71d682-hashes.txt` |
+| The real in-game UI, not a synthetic image baseline, is the visual acceptance target | `docs\process\testing.md` |
 
 ### Standing product decisions carried through unchanged
 
@@ -223,44 +220,20 @@ These predate the rebuild and were re-asserted by it rather than re-decided:
 | On the bone map, Ctrl AND Shift both extend: the map has no row order, so no range gesture reserves Shift | `Poser\UI\Panes\GraphicalBonePane.cs` |
 | Bone-map selection is the theme's primary, not ImGui's style highlight | `Poser\UI\Panes\GraphicalBonePane.cs` |
 
-## Verification
+## Verification disposition
 
-**Frozen oracles.** `tools\ui-conformance\golden-rebuild\` holds the nine
-reactive-only accepted designs captured at tag `reactive-final` —
-`rpicker-open`, `rpicker-multi`, `rsettings-frame`, `rsegmented`, `rswatches`,
-`ricon-actions`, `rscrollarea`, `rtreerow`, `rfiledialog` — plus
-`golden-rebuild-hashes.txt`. They are the pixel spec the imperative
-re-expressions were judged against and are not a live gate.
-
-**Regime.** Every phase ran:
-
-- `verify-accepted-hashes.ps1 -AllowAdded` — 71 accepted states byte-identical.
-  13 states are added and not yet accepted: the eight `i-*` re-expressions plus
-  five never-accepted imperative form states (`colorwell`,
-  `colorwell-disabled`, `progress`, `slider`, `slider-disabled`). They merge
-  into the baseline, and `-AllowAdded` retires, on the in-game checkpoint.
-- `verify-kernel.ps1 --kernel-behavior`, `verify-tokens.ps1`,
-  `verify-button-clip.ps1`, `verify-actionbar-allocation.ps1`,
-  `verify-batch-isolation.ps1`.
-- `verify-sidebar-perf.ps1` — 300 synthetic rows, 600 warm frames, p95 under
-  1.5 ms and zero sidebar-own allocation.
+The synthetic browser, capture-host, screenshot, pixel-diff, golden-image, and
+hash-gate workflow described by the original PBI is retired and is not an
+executable acceptance requirement. Future work uses Release build/test gates,
+ordinary application contract tests, and a manual in-game visual card.
 
 ## Outstanding
 
-- **In-game checkpoints.** None of the five have run. The perf acceptance is
-  60 fps with a fully-expanded 260-bone actor and zero Dalamud hitch lines; the
-  visual acceptance covers the metric-seat shifts (the settings-page section
-  header and the picker's uniform −1px), side by side against `reactive-final`.
-- **Merging the `i-*` hashes.** On acceptance, fold the 13 added states into
-  `accepted-c71d682-hashes.txt` and drop `-AllowAdded` from the phase gate.
+- **In-game acceptance.** The remaining visual/runtime proof is manual and
+  belongs to the real Poser UI, not a synthetic baseline.
 - **SVG icon painter allocation.** The painter allocates roughly 1.8 KB per icon
   draw even on mask-cache hits (16.07 MB over the sidebar perf run, all of it
   the painter). It predates this program and is a `Rendering\Svg` follow-up, not
   a sidebar cost.
-- **`verify-icon-button.ps1`** fails exactly as it did before this program
-  started (`plus=29`). Tracked separately; the hash gate proves the renderer is
-  byte-identical.
-- **`picto-reference.html` dead variants.** Cells for states the catalog no
-  longer captures.
 - **Pose-preview provider seam.** `FileDialog`'s preview renders nothing until a
   provider is supplied.

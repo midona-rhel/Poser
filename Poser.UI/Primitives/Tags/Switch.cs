@@ -58,7 +58,7 @@ public static partial class Crystarium
     /// <summary>Picto's <c>transition: transform .2s ease, opacity .2s ease</c>
     /// and the track's <c>background-color .2s ease</c> — one ramp drives all
     /// three, keyed by the caller's identity. Zero identity paints the end
-    /// state (a capture's static frames, a disabled fixture).</summary>
+    /// state for callers that do not need an animated transition.</summary>
     private static readonly Transition SwitchTransition =
         Transition.CubicBezier(0.2f, 0.25f, 0.1f, 0.25f, 1f);
 

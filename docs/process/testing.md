@@ -17,10 +17,10 @@
   (exit 0 success, 1 failure, 2 running, 3 invalid). Artifacts per run are
   `live-tests/<UTC>/run.json`, `events.jsonl`, `report.json`, `summary.md`,
   and `snapshots/`.
-- UI conformance is a separate existing standalone capture/comparison harness
-  under [`tools/ui-conformance`](../../tools/ui-conformance/README.md). It
-  covers component sheets and pixel/interaction evidence; it is not a native
-  runtime or live-game acceptance substitute.
+- Visual UI acceptance is manual and in-game. Compare the real current plugin
+  with the real rewritten plugin using a small screenshot/video/action card;
+  synthetic component catalogs and standalone capture labs are not product
+  evidence.
 - Non-deployment validation uses Release only:
   `dotnet build Poser.slnx -c Release --no-restore --nologo` and
   `dotnet test Poser.slnx -c Release --no-restore --nologo`.
@@ -28,4 +28,4 @@
   the announced deployment action for the exact reviewed head after readiness
   is confirmed. Never use Debug as an ordinary compile or test substitute.
 - Visual and native behavior still requires the applicable in-game acceptance
-  card; compilation and standalone UI capture are not runtime proof.
+  card; compilation is not runtime proof.

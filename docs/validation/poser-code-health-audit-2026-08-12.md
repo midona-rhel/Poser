@@ -287,9 +287,8 @@ Do this early because contradictory instructions cause AI-authored divergence:
 
 - `docs/architecture/product-and-boundaries.md` calls registered, reachable
   cameras, lights, libraries, autosave, animation, and related features deferred.
-- `docs/process/testing.md` says seven scenarios and prohibits a UI/standalone
-  harness that currently exists under `tools/ui-conformance`; the live catalog
-  has eight scenarios.
+- `docs/process/testing.md` records eight live scenarios and manual in-game
+  visual acceptance; the retired synthetic UI laboratory is not a test gate.
 - The older backend audit is useful evidence but false about current tests and
   some reachable directories/events. Keep it only as a dated non-normative
   validation snapshot, update it, or delete it after verified findings become

@@ -32,21 +32,19 @@ public readonly record struct FileSidePanel(
     float Width, Action<Vector2, Vector2, string?> Draw);
 
 /// <summary>One listing row, as the dialog sees it.</summary>
-internal readonly record struct FileListingEntry(
+file readonly record struct FileListingEntry(
     string Name, string FullPath, bool IsDirectory, DateTime Modified);
 
 /// <summary>One quick-menu destination.</summary>
-internal readonly record struct FileQuickEntry(
+file readonly record struct FileQuickEntry(
     string Name, string Path, TablerIcon Icon);
 
 /// <summary>
-/// THE DIALOG'S VIEW OF THE DISK, and the only one. Everything the frame draws
-/// is what this seam reported, so a conformance fixture injects a fake listing
-/// and the capture performs no filesystem I/O at all. Ordering, extension
+/// THE DIALOG'S VIEW OF THE DISK, and the only one. Ordering, extension
 /// filtering and the error line are the DIALOG's policy and stay above this
 /// line; hidden-attribute suppression is the filesystem's own and stays below.
 /// </summary>
-internal interface IFileListingSource
+file interface IFileListingSource
 {
     /// <summary>Fills <paramref name="into"/> with the folder's contents, in
     /// no particular order. Throwing is the contract for an unreadable folder:
@@ -151,9 +149,7 @@ public static partial class Crystarium
         private FilePreviewResult? _preview;
         private string? _previewPath;
 
-        /// <summary>The listing seam. Defaulted to the real filesystem; a
-        /// fixture replaces it before the first <see cref="Rehome"/>.</summary>
-        internal IFileListingSource Source = LocalFileListing.Instance;
+        private readonly IFileListingSource _source = LocalFileListing.Instance;
 
         public FileDialog(
             string title,
@@ -273,11 +269,8 @@ public static partial class Crystarium
 
         /// <summary>
         /// Points the dialog at a folder and clears everything a session owns.
-        /// Split out of <see cref="Open"/> because a fixture wants the state
-        /// without the window claim: claiming the exclusive chain for a surface
-        /// nobody draws would occlude the rest of a capture.
         /// </summary>
-        internal void Rehome(string initialPath)
+        private void Rehome(string initialPath)
         {
             _selectedPath = null;
             _selectedIsDirectory = false;
@@ -288,10 +281,10 @@ public static partial class Crystarium
             _back.Clear();
             _forward.Clear();
             if (_quick.Count == 0)
-                Source.QuickAccess(_quick);
+                _source.QuickAccess(_quick);
             if (string.IsNullOrEmpty(initialPath)
-                || !Source.DirectoryExists(initialPath))
-                initialPath = Source.DefaultPath;
+                || !_source.DirectoryExists(initialPath))
+                initialPath = _source.DefaultPath;
             NavigateTo(initialPath);
         }
 
@@ -299,14 +292,12 @@ public static partial class Crystarium
             RenderFrame(frame.Min, frame.Size, hostPaintsChrome: true);
 
         /// <summary>
-        /// The frame, rendered into a caller-owned box. The window is the
-        /// PRODUCT's host; the chassis has to be inspectable without one, which
-        /// is what the conformance fixture calls.
+        /// The frame, rendered into the product window's caller-owned box.
         /// </summary>
         /// <param name="hostPaintsChrome"><c>FloatingSurface.Window</c> already
         /// draws the glass for every window it hosts, so the product path tells
         /// the frame not to draw a second shadow over the first.</param>
-        internal void RenderFrame(
+        private void RenderFrame(
             Vector2 origin, Vector2 size, bool hostPaintsChrome = false)
         {
             Theme theme = Crystarium.ActiveTheme;
@@ -394,7 +385,7 @@ public static partial class Crystarium
                         _forward.Count == 0, square);
                     left.Icon(
                         TablerIcon.ArrowUp, Up, "Open the parent folder",
-                        Source.Parent(_currentPath) is null, square);
+                        _source.Parent(_currentPath) is null, square);
                 },
                 null,
                 ActionBarSeparator.None);
@@ -940,7 +931,7 @@ public static partial class Crystarium
 
         private void Up()
         {
-            if (Source.Parent(_currentPath) is { } parent)
+            if (_source.Parent(_currentPath) is { } parent)
                 Travel(parent);
         }
 
@@ -950,7 +941,7 @@ public static partial class Crystarium
         private void CommitPath()
         {
             string next = _pathEdit.Trim();
-            if (next.Length == 0 || !Source.DirectoryExists(next))
+            if (next.Length == 0 || !_source.DirectoryExists(next))
                 return;
             Travel(next);
         }
@@ -1005,7 +996,7 @@ public static partial class Crystarium
             _lastError = null;
             try
             {
-                Source.Enumerate(_currentPath, _scratch);
+                _source.Enumerate(_currentPath, _scratch);
             }
             catch (Exception ex)
             {
@@ -1044,7 +1035,7 @@ public static partial class Crystarium
     /// </summary>
     private sealed class LocalFileListing : IFileListingSource
     {
-        internal static readonly LocalFileListing Instance = new();
+        private static readonly LocalFileListing Instance = new();
 
         public string DefaultPath =>
             Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);

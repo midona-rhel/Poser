@@ -13,9 +13,8 @@ public static partial class Crystarium
     /// <summary>
     /// Host hook for turning a straight-alpha RGBA8 bitmap into an ImGui
     /// texture. Crystarium cannot reference a graphics device, so the host
-    /// (Dalamud's texture provider in game, the D3D11 device in the capture
-    /// harness) supplies the upload and, if its handle needs an owner alive,
-    /// a keepalive the cache disposes with the texture.
+    /// supplies the upload and, if its handle needs an owner alive, a
+    /// keepalive the cache disposes with the texture.
     ///
     /// <para>Without it every icon falls back to the per-pixel painter —
     /// correct, but hundreds of 1px rects per glyph per frame.</para>

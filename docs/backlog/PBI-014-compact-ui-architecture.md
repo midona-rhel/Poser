@@ -9,7 +9,7 @@
 | Runtime and visual acceptance | User |
 | Supersedes | PBI-011 remaining component slices (slices 1–3 accepted and retained) |
 | Feature branch | `codex/ui-simplification-reset` |
-| Rollback pin / inherited baseline | `pbi-011-ui-conformance-pin-20260731` (`86ef855`) |
+| Rollback pin / inherited baseline | `pbi-011-component-conformance-pin-20260731` (`86ef855`) |
 | Pre-PBI checkpoint | `d27d232` — inherited icon-button/SVG/harness worktree, NOT accepted, excluded from phase accounting |
 
 > **Superseded scope.** Phase 4 closed at `c71d682`. The Chromium-atlas

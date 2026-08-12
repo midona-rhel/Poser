@@ -77,8 +77,8 @@ public static class FontRegistry
 
     /// <summary>CJK ranges merged from the font-link fallback face:
     /// ideographic punctuation + kana, unified ideographs, and fullwidth
-    /// forms. Shared with the conformance host so the capture and
-    /// in-game font paths request identical coverage.</summary>
+    /// forms. The in-game font path requests identical coverage for every
+    /// theme and scale.</summary>
     public static readonly ushort[] CjkMergeRanges =
     [
         0x3000, 0x30ff,
@@ -394,8 +394,8 @@ public static class FontRegistry
                         // atlas cost. The shared font-link resolver picks
                         // the face Chromium falls back to from Segoe UI
                         // (Meiryo UI before Yu Gothic UI), and the merge
-                        // sizes by THAT face's own metrics so both the
-                        // game and the capture host render identically.
+                        // sizes by THAT face's own metrics so the game renders
+                        // consistently with the selected font path.
                         if (key.Family == FontFamily.Default
                             && WindowsFontFallback.ResolveJapanese(
                                 (int)key.Weight) is { } cjkFace)

@@ -75,9 +75,9 @@ The four architecture docs are dense, current, and name real classes — rare an
 
 1. **The backend migration is undocumented.** Grep for "LegacyRuntime" in `docs/` → zero hits. Nothing records which features run on legacy vs clean paths (answer, recoverable only from code: *all native writes terminate in LegacyRuntime; the clean layer is orchestration on top*), what PosingCore is today, or what qualifies a service to leave LegacyRuntime. `ServiceRegistration.cs` is the de-facto migration document.
 2. **The old testing claim was false.** The current canonical testing doc records
-   the existing `tools/ui-conformance` standalone capture/comparison harness and
-   keeps it distinct from the live native gate; Release is the non-deployment
-   validation configuration and Debug is deployment-only.
+   manual in-game visual acceptance for the real Poser UI and keeps it distinct
+   from the live native gate; Release is the non-deployment validation
+   configuration and Debug is deployment-only.
 3. The historical PBI-016 status line and duplicate PBI-015 IDs required
    reconciliation; the current backlog now records acceptance state and uses
    PBI-015A for the legacy inventory. `docs/brio/` contains the retained parity
@@ -121,8 +121,8 @@ The original zero-coverage premise is superseded by the current tree:
   reference-pose, and AutoSave behavior.
 - `/poser test` (with the retained `/poser selftest` alias) routes to
   `LiveTestService`; `LiveScenarioCatalog` defines eight scenarios and the
-  harness requires a live GPose session. The standalone UI conformance harness
-  under `tools/ui-conformance` is a separate visual/interaction gate.
+  harness requires a live GPose session. Real UI visual acceptance is manual and
+  in-game; ordinary contract tests are not substituted by synthetic pixels.
 - No Domain/Application test project is present in the current solution. Clean
   application history/gesture seams, binding resolution, MCDF, and most native
   lifecycle failure paths remain sparse or dark; this audit does not treat the

@@ -80,6 +80,4 @@ Windows/SettingsWindow.cs, Windows/SkeletonOverlayWindow.cs (canvas).
 - tooling source: 5,738 (adds handwritten .html/.js/.json to the earlier
   4,953 .cs/.py/.ps1-only figure; Markdown docs excluded by design)
 - accepted catalog: 71 states, hashes in
-  `tools/ui-conformance/accepted-c71d682-hashes.txt`, enforced by
-  `tools/ui-conformance/verify-accepted-hashes.ps1` (fails on any added,
-  missing, or changed state)
+  the retired synthetic accepted-state hash gate (historical evidence only)

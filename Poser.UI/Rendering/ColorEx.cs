@@ -60,7 +60,7 @@ public static class ColorEx
     /// exact for every backdrop: alpha = o(1−af)/(1−o·af) and the color
     /// absorbs the excess fill contribution. An opaque fill admits no
     /// backdrop-independent solution, so it references the theme
-    /// surface (the capture backdrop) instead.
+    /// surface instead.
     /// </summary>
     internal static Vector4 DisabledLabelCompensation(
         Vector4 text, Vector4 fill, Vector4 surface, float groupOpacity)

@@ -134,8 +134,7 @@ public static class Tabler
     }
 
     /// <summary>Every shipped icon name — hand-authored sources plus the
-    /// generated Tabler set, ordinal-sorted. The conformance grid renders
-    /// exactly this list; the reference generator mirrors it.</summary>
+    /// generated Tabler set, ordinal-sorted.</summary>
     public static IReadOnlyList<string> ShippedNames() =>
         PoserIconSources.Sources.Keys
             .Union(TablerSvgSources.Sources.Keys)

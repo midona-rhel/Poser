@@ -58,14 +58,9 @@ nunit-*.xml
 .claude/settings.local.json
 CLAUDE.md
 
-# Local ImGui and retired UI-verifier artifacts
+# Local ImGui artifacts
 /imgui.ini
 /tools/__pycache__/
 /tools/uiverify/
-/tools/ui-conformance/artifacts/
-/tools/ui-conformance/.scratch-*/
-/tools/ui-conformance/__pycache__/
 /docs/validation/**/*.png
 /PosingCore/Data/GameData/
-tools/ui-conformance/icon-fixtures.generated.js
-tools/ui-conformance/icon-names.generated.txt

@@ -60,10 +60,9 @@ public readonly record struct Theme
     public static Theme PictoDark => new()
     {
         IsLight = false,
-        // Color identity flows from the generated PictoTokens (projection of
-        // the canonical tokens.css); --verify-tokens checks the complete
-        // field mapping and regeneration drift. Fields NOT wired to a token
-        // are declared extensions in the verifier's classification.
+        // Color identity flows from the committed PictoTokens projection of the
+        // canonical tokens.css. Fields not wired to a token are product
+        // extensions and are declared explicitly below.
         Surface = PictoTokens.Dark.BgApp,
         SurfaceRaised = PictoTokens.Dark.Surface1,
         SurfaceSunken = PictoTokens.Dark.Surface2,

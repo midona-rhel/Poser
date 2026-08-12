@@ -134,8 +134,8 @@ section headers and tree drawn over a FLAT cache of visible entries.
   the live row through the cached path. `_rowCounts` catches a structural change
   that arrives without a revision bump.
 - A warm frame walks no tree, builds no string, and measures no text for a
-  clipped row. `verify-sidebar-perf.ps1` is the gate: 300 rows, 600 warm frames,
-  p95 draw under 1.5 ms and zero allocation of the sidebar's own.
+  clipped row. This remains an ordinary application performance invariant;
+  authoritative acceptance is performed against the real in-game workspace.
 
 **Expansion state is not stored in the sidebar.** Rows carry `Expanded` and
 `ExpandKey` from the view-model builder, whose truth is `MainWindow`'s collapsed
@@ -163,9 +163,8 @@ fitting is composition-internal and never a substitute for that clip. Wrapping
 never hard-breaks an over-wide word, accumulates the fractional line advance
 unrounded, half-leading-centers each line, and expands preserved tabs to 8-space
 stops under PreWrap. CJK (Default family only — mono and italic stay lean)
-merges the face Chromium's Segoe UI font-link chain falls back to (Meiryo UI
-before Yu Gothic UI), resolved by `WindowsFontFallback` shared verbatim between
-the game and the capture host.
+  merges the face Chromium's Segoe UI font-link chain falls back to (Meiryo UI
+  before Yu Gothic UI), resolved by `WindowsFontFallback`.
 
 **A constraint applies only on OVERFLOW.** A run that fits is drawn whole; a bar
 label that fits keeps its descenders. Shaving a fitting run is a recurring
@@ -234,25 +233,23 @@ through `FloatingSurface`'s open/sync/release helpers, and all floating
 placement (anchored, point, side-preference) lives in `FloatingSurface`. The
 disabled-help hover gate is `HoverHelp.Gate`.
 
-These invariants are proven by `verify-kernel.ps1` (`--kernel-behavior`), run
-when kernel code changes.
+These invariants are covered by ordinary application contract checks and the
+manual in-game acceptance card when kernel code changes.
 
 ## Theme and tokens
 
 The active `Theme` value owns colors, typography, metrics, radii, shadows,
 motion, and optical corrections together; a theme change installs one complete
 replacement value rather than mutating tokens. The CANONICAL color source is the
-sibling Picto `tokens.css`; `PictoTokens.g.cs` is committed GENERATED output
-(regenerate with `generate-tokens.ps1` — developer-only; production
-build/load/packaging consume the committed file and never need Picto or a
-generator). Only tokens Crystarium consumes are generated. Theme factories and
+sibling Picto `tokens.css`; `PictoTokens.g.cs` is committed generated output.
+Product-owned regeneration tooling is still required when the canonical source
+changes; production build/load/packaging consume the committed file and never
+need Picto at runtime. Only tokens Crystarium consumes are generated. Theme factories and
 the two family builders wire every token-derived field to it; metrics,
 typography, radii, and motion stay typed handwritten members.
 
-Six-theme color parity is proven by `verify-tokens.ps1` — source-hash drift,
-regeneration diff, and the COMPLETE field mapping (top-level, Chrome, Glass,
-Palette.Primary) with intentional differences classified once as extensions —
-never by rendering six themes. The persisted selector mirrors Picto's portable
+Six-theme color identity is carried by the committed token projection and the
+complete Theme factories. The persisted selector mirrors Picto's portable
 color themes; Auto resolves the Windows app mode. Platform window-material
 themes are out of scope.
 
@@ -347,34 +344,10 @@ and draws neither the rule nor the margin above it. `FormScope.Pair` is the
 paired-attribute band (row split at the middle, mirrored label+control halves);
 `ColorWellScope` is the equal-track wells row.
 
-## Conformance harness
+## Visual acceptance
 
-`tools\ui-conformance\` compares Crystarium against the Picto reference and
-against its own accepted bytes. Two independent things live there:
-
-**The comparison sheets** (`run.ps1`, `sheets.py`, `picto-reference.html`,
-`Crystarium.Capture`, `sheet-catalog.json`). One headless Edge process renders
-every reference state cell on a single page, each cell in its own shadow root;
-one `Crystarium.Capture --batch` process renders each candidate state in a fresh
-ImGui context with REAL pointer, keyboard and frame timing — states are never
-visually forced. `sheets.py --compose` pairs them into Picto | Crystarium | red
-diff with an overlay slider. Judge the sheets visually; the percentages exist to
-localize, not as a pass gate.
-
-**The byte gates**, which ARE pass/fail:
-
-- `verify-accepted-hashes.ps1` — every candidate state against
-  `accepted-c71d682-hashes.txt`. Added / missing / changed all fail; the
-  accepted file grows only on user acceptance, and `-AllowAdded` is the
-  development affordance for states awaiting it.
-- `verify-kernel.ps1 --kernel-behavior` — the interaction invariants above.
-- `verify-tokens.ps1` — six-theme color parity by token equality.
-- `verify-sidebar-perf.ps1` — the sidebar's p95 draw and zero-allocation gates.
-- `verify-button-clip.ps1`, `verify-icon-button.ps1`,
-  `verify-actionbar-allocation.ps1`, `verify-batch-isolation.ps1` —
-  engine-level behavioral invariants.
-
-`golden-rebuild\` holds the nine PNGs frozen at tag `reactive-final`: the
-accepted look of the designs that existed only in the deleted reactive layer.
-They are the record the imperative re-expressions were judged against, not a
-live gate. See [PBI-016](../backlog/PBI-016-imperative-rebuild.md).
+The actual in-game Poser UI is the only visual oracle. Compare the real current
+plugin and the real rewritten plugin with a small manual screenshot/video/action
+card, starting from a named in-game state and recording the expected interaction
+result. Synthetic component catalogs, standalone capture hosts, browser
+references, screenshot baselines, and pixel-diff workflows are retired.

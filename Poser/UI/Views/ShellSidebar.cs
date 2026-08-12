@@ -145,8 +145,8 @@ public sealed class ShellSidebar
     private int _slotCount;
 
     /// <summary>Per-frame: the settings' tree-guide switch, inverted for
-    /// <see cref="TreeRowProps.HideGuides"/>. Hoisted so hosts without a
-    /// configuration service (the capture harness) never dereference one.
+    /// <see cref="TreeRowProps.HideGuides"/>. Hoisted so a host without a
+    /// configuration service never dereferences one.
     /// </summary>
     private bool _hideGuides;
 
@@ -186,9 +186,8 @@ public sealed class ShellSidebar
 
         Sync(vm, theme);
 
-        // Read once per frame, and tolerant of hosts that run this view with
-        // no configuration service at all (the capture harness): no service
-        // means the guides stay on.
+        // Read once per frame, and tolerate hosts that run this view with no
+        // configuration service: no service means the guides stay on.
         _hideGuides = Config.ConfigurationService.Instance is { } config
             && !config.Config.UI.ShowTreeGuides;
 

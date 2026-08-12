@@ -2,7 +2,7 @@
 
 | Control | Value |
 |---|---|
-| Status | Accepted — slices 1–3; remaining slices Superseded by PBI-014 |
+| Status | Historical — synthetic conformance workflow superseded (2026-08-12) |
 | Size | Extra large, delivered as individually accepted component slices |
 | Implementation owner | Claude |
 | Review owner | Codex |
@@ -22,9 +22,9 @@ disabled state, and layout stability must also match.
 ## Outcome
 
 Every retained piece of ordinary application chrome has one canonical
-Crystarium implementation, one Picto-derived behavioral contract, and one
-automated comparison fixture. Product panes compose those controls; they do not
-draw local variants. The entire application supports the portable Picto themes
+Crystarium implementation and one Picto-derived behavioral contract. Product
+panes compose those controls; they do not draw local variants. The entire
+application supports the portable Picto themes
 Dark, Light, Light Gray, Gray, Blue, and Purple. Acrylic, Mica, Liquid Glass, and
 other platform materials remain out of scope.
 
@@ -32,63 +32,14 @@ Specialized posing canvases remain specialized: body/face maps, matrix content,
 3D content, and gizmos are not converted into generic widgets. Their surrounding
 tabs, toolbars, footers, scrolling, and input ownership are in scope.
 
-## Non-negotiable delivery loop
+## Disposition
 
-Work on exactly **one numbered component slice at a time**:
-
-Before slice 1, Codex accepts the harness baseline: source hashes, stale-reference
-detection, complete catalog routing, six themes, and three scales.
-
-1. Identify the exact current Picto TSX/CSS source and record it in the fixture.
-   Do not substitute a visually similar component or invented sample data.
-2. Inspect the TSX component itself: public props, controlled state, internal
-   transient state, composition, DOM hierarchy, event flow, and CSS selectors.
-   Translate that design deliberately into immediate-mode UI; do not copy only
-   the final pixels or mechanically imitate React.
-3. Define the smallest reusable, product-agnostic Crystarium API that covers the
-   catalog fixture and every retained production consumer.
-4. Add every required state to `tools/ui-conformance`: Picto reference,
-   Crystarium candidate, red diff, metrics, and the visual inspection page.
-5. Normalize the canonical Crystarium component and migrate every retained Poser
-   call site that represents that component.
-6. Delete the superseded component, local drawing recipe, token, and compatibility
-   overload. Do not leave two valid ways to render the same ordinary control.
-7. Run the Release validation build and `git diff --check`. A Debug build is
-   deployment-only under `docs/process/testing.md`. Then three capture
-   runs, each bounded at five minutes, splitting the axes by what they can
-   actually detect — geometry is theme-invariant (Picto themes change color
-   tokens only), so scales run against one theme and themes run against one
-   scale instead of a full cross-product:
-
-   ```powershell
-   # complete catalog regression, Dark/100%
-   .\tools\ui-conformance\run.ps1 all -Clean -Scales 1 -Themes dark
-   # geometry: current component across scales, one theme
-   .\tools\ui-conformance\run.ps1 <component> -Scales 1,1.25,1.5 -Themes dark
-   # theme colors: current component across themes, one scale
-   .\tools\ui-conformance\run.ps1 <component> -Scales 1 `
-       -Themes dark,light,lightgray,gray,blue,purple
-   ```
-
-   The later runs preserve the earlier results in the same inspection window.
-
-   Every report records the Picto-source manifest and candidate rendering manifest hash;
-   the aggregate window marks preserved results stale instead of presenting
-   them as evidence for a different build.
-8. Stop and hand the slice to Codex with the API design, state ownership, source
-   paths, changed paths, deleted paths, reports, residual pixels, and explicit
-   in-game locations.
-9. Codex reviews both the reusable code design and automated comparison.
-10. The user inspects the comparison window and the same component in game.
-11. Record the accepted commit below. Only then begin the next numbered slice.
-
-Claude must not batch later components, continue while acceptance is pending, or
-claim visual/runtime success from compilation or image metrics.
-
-For this PBI, the focused `tools/ui-conformance` capture and pixel-diff workflow
-is required and supersedes the general process prohibition on standalone UI and
-pixel-diff harnesses. It does not authorize npm, DevHost, IPC click simulation,
-generic screenshot automation, or generic unit-test infrastructure.
+The numbered capture, browser-reference, screenshot, pixel-diff, and hash-gate
+directions below are historical and no longer executable. The synthetic
+component catalog was not the Poser application and is retired. Future visual
+acceptance compares the real current and rewritten in-game UI with a small
+manual screenshot/video/action card; ordinary tests cover state, commands,
+ownership, lifecycle, and layout invariants.
 
 ## Shared behavior contract
 

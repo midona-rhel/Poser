@@ -3,11 +3,17 @@
 Superseded by [PBI-016](PBI-016-imperative-rebuild.md). The framework reached
 the accepted look and then could not carry it: a 260-bone sidebar drew at
 30 fps, UiBuilder hitched past 200 ms, and the migrated panes came out 40–100%
-*larger* than the imperative ancestors they replaced. The look is kept — frozen
-as PNG oracles at tag `reactive-final` — and re-expressed imperatively over the
-Crystarium helper layer. Everything below is the record of the framework's
+*larger* than the imperative ancestors they replaced. The look is kept and
+re-expressed imperatively over the Crystarium helper layer. Everything below is
+the record of the framework's
 design, not of the shipped architecture; read `PBI-016-imperative-rebuild.md`
 for what exists.
+
+> **Historical disposition (2026-08-12).** The authoring, delivery, comparison,
+> and slice-gate directions below describe a superseded synthetic UI framework.
+> They are retained only as migration history and are not executable. Future
+> visual acceptance is manual and in-game against the real Poser UI; ordinary
+> tests cover real state, command, ownership, lifecycle, and layout contracts.
 
 | Control | Value |
 |---|---|
@@ -25,8 +31,8 @@ for what exists.
 ## Product and authoring contract
 
 The UI rendered at the accepted phase-4 SVG baseline is the product contract.
-Keep its pixels, flow, motion and behavior, using the component catalog at
-`tools/ui-conformance/artifacts/index.html` as the visual oracle. Undo the
+Keep its flow, motion and behavior. The actual in-game Poser UI is the visual
+oracle; synthetic component catalogs are retired. Undo the
 Chromium atlas direction: retain the accepted runtime SVG renderer. Its
 roughly 1.3–1.6k lines are a better trade than generated texture coverage,
 loader lifecycle and atlas memory.

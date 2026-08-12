@@ -16,13 +16,4 @@
 		<!-- Exclude nested build output from source globbing. -->
 		<Compile Remove="Rendering\bin\**\*.cs;Rendering\obj\**\*.cs" />
 	</ItemGroup>
-
-	<ItemGroup>
-		<!-- The conformance host drives kernel internals (Motion) directly.
-		     Deliberately NOT granted to Poser: the product assembly must
-		     stay on the public surface, which is what makes
-		     Crystarium.OpenPopover the compile-enforced open path. -->
-		<InternalsVisibleTo Include="Crystarium.Capture" />
-	</ItemGroup>
-
 </Project>
