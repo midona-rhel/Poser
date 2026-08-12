@@ -233,8 +233,9 @@ through `FloatingSurface`'s open/sync/release helpers, and all floating
 placement (anchored, point, side-preference) lives in `FloatingSurface`. The
 disabled-help hover gate is `HoverHelp.Gate`.
 
-These invariants are covered by ordinary application contract checks and the
-manual in-game acceptance card when kernel code changes.
+These invariants require ordinary application contract tests, which do not yet
+exist and are a required follow-up. Manual in-game acceptance remains the
+current visual gate when kernel code changes.
 
 ## Theme and tokens
 
