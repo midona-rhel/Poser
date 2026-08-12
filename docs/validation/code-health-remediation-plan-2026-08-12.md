@@ -68,17 +68,37 @@ they are observations, not new architecture contracts.
 
 ## IK bake safety hold
 
-The current live-gate artifact has AcceptanceQualified=false. Two diagnoses
-conflict: a moving-baseline harness contract versus missing post-disarm
-settle/history omission. Independent adjudication is pending. Treat Bake IK as
-unsafe until that adjudication is recorded:
+The current live-gate artifact has AcceptanceQualified=false and Release
+remains unqualified. The independent adjudication verdict is **INSUFFICIENT
+EVIDENCE PENDING INSTRUMENTATION**. Diagnosis A strongly explains the observed
+eight harness failures: the harness captures absolute T0, applies no animation
+pause, waits frames, and compares raw transforms/direct CreatePoseFile output
+to historical absolutes over a moving baseline. Diagnosis B remains a real,
+unproven production risk: there is no explicit separate post-disarm settle,
+and the identity/Written/history inclusion path can omit a target without a
+prior interactive override. Treat Bake IK as unsafe and unqualified meanwhile:
 
 - no harness fix or production Bake IK fix is authorized;
 - no slice may turn either diagnosis into a normative architecture rule;
 - no /poser test posing.ik-bake result is a passing gate for this program;
+- do not prescribe a harness fix or production fix and do not change the
+  normative Bake contract yet;
 - generic receipt/epoch contracts may be characterized with fakes, but the IK
-  bake caller, harness, and behavior remain excluded until the organizer
-  resolves the conflict.
+  bake caller, harness, and behavior remain excluded until instrumentation
+  produces sufficient evidence.
+
+Before any production IK rewrite, schedule a diagnostic-only IK qualification
+tranche. It may add structured diagnostics to the validation path and the
+production PoseExportCapture observation, but it may not change Bake semantics,
+history, settle timing, or acceptance rules. Use the same actor, chain, and
+witness for controlled A/B cases with animation running versus explicitly
+paused/speed 0. Record animation timeline/speed/control state; desired, basis,
+delta, identity, Written, order, and history targets and stack counts;
+immediate post-complete state; undo/redo stack state; and the production
+PoseExportCapture result. Validate export through PoseExportCapture rather than
+direct CreatePoseFile. The tranche reports evidence only; Release stays
+unqualified and Bake IK remains unsafe until the organizer authorizes a
+separate production contract.
 
 ## Target architecture and ownership
 
@@ -154,7 +174,8 @@ is not replaced by another capture, browser, golden, component, or pixel lab.
   reset/history preserves them; explicit Reset All remains the exception.
 - Transform propagation accepts every valid subset of All, including None;
   unknown bits fail typed at the boundary. Fixed supported IK policy is
-  preserved until the Bake IK adjudication and a new contract authorize change.
+  preserved until the diagnostic-only qualification tranche and a new contract
+  authorize change.
 - Portable pose entries are ordered and structurally identified by slot,
   partial, canonical name, and a BonePath/parent path where needed. Ambiguous
   matches are explicit failures or user choices. Legacy duplicate-name files
@@ -469,6 +490,53 @@ receipt and ordinary live evidence.
 timeline tests, receipt-state table, and explicit confirmation that
 IkBakeCapture, the harness, and the disputed artifact were untouched.
 
+### Diagnostic-only IK qualification tranche (4D; before any production rewrite)
+
+**State owner / sole Luna writer:** organizer-owned diagnostic Luna writer;
+this is instrumentation and evidence collection, not a production behavior
+owner. It must run before any later slice is allowed to rewrite Bake IK.
+
+**Allowed:** diagnostic-only logging in
+Poser.Game/Validation/LiveTestService.cs and the production capture observation
+in Poser.Game/Posing/PoseExportCapture.cs, plus the persisted diagnostic report
+path. **Excluded:** IkBakeCapture semantic changes, settle/history/identity
+fixes, harness contract changes, acceptance-rule changes, and any production
+rewrite based on either diagnosis.
+
+**Contract / tests first:** use the same actor, chain, and witness for
+structured A/B cases with animation running versus explicitly paused/speed 0.
+Log animation timeline, baseline, speed, and control state; desired, basis,
+delta, identity, Written, order, and history targets and stack counts;
+immediate post-complete state; undo/redo stack state; and the production
+PoseExportCapture result. Validate export through PoseExportCapture rather than
+direct CreatePoseFile. The diagnostic output must correlate one
+actor/generation without asserting a Bake semantic verdict.
+
+**How evidence distinguishes the diagnoses:** Diagnosis A is supported when the
+running case diverges while the explicitly paused/speed-0 case converges, with
+the identity/Written/order/history targets and stack counts otherwise equal;
+that demonstrates a moving animation baseline. Diagnosis B remains supported
+if the paused/speed-0 case still omits a target or mismatches, and the trace
+shows a missing identity/Written/history inclusion or a separate post-disarm
+settle requirement. If both conditions occur or the fields are incomplete, the
+result remains insufficient evidence and authorizes no production change.
+
+**Release / Debug:** Release remains unqualified for the current artifact.
+Organizer-owned Release instrumentation/build evidence is required; Debug is
+required only if the exact reviewed diagnostic head must observe the live game,
+after the normal auto-deploy notice. The diagnostic result is not acceptance.
+
+**Rollback seam / evidence:** diagnostics are additive and removable; retain
+the pre-instrumentation accepted head and report both A/B traces, all requested
+fields, immediate/undo/redo states, and the production PoseExportCapture trace.
+The organizer may authorize a separate production contract only after this
+evidence is independently reviewed. Until then Bake IK remains unsafe and
+unqualified.
+
+**Review / completion evidence:** independent exact-range diagnostic review and
+rework, complete structured traces, explicit verdict on evidence sufficiency,
+and no semantic production change.
+
 ## Slice 5 — exact bindings, spawn handles, and relationships
 
 **State owner / sole Luna writer:** one identity/spawn Luna writer, with
@@ -772,7 +840,7 @@ Glamourer-owned systems, timeline authoring, and unresolved IK-bake behavior.
 | 11A Whole-shot scene save/restore | After 5, 7, 9, and 10. SceneStore plus versioned scene codec and atomic recovery owns actors/props/lights/cameras/environment/relationships; one scene transaction and one read model. Implement as vertical scene files, not a generic scene manager. |
 | 11B Nearby overworld actors | After exact spawn handles in 5. Game discovers exact visible identity; Application owns import/receipt; UI exposes the action. |
 | 11C Actor/prop/light relationships | Core handle/parent contract starts in 5; persistence/clone/reload completion is a separate 11C range. Missing parent is explicit recovery, never silent detachment. |
-| 11D Arbitrary/schema IK | After fixed IK safety and organizer adjudication of the Bake IK hold. New chain definitions require a pure policy and native contract first; until then this gap is Parked, with no bake diagnosis encoded. |
+| 11D Arbitrary/schema IK | After fixed IK safety, the diagnostic-only qualification tranche, and explicit organizer authorization. New chain definitions require a pure policy and native contract first; until then this gap is Parked, with no Bake diagnosis encoded. |
 | 11E Camera target relationships | Base camera behavior is 9; stable target identity, tracking, lock/offset persistence, and missing-target recovery are a scene-model vertical after 11A. |
 | 11F Model ID | Poser owns capture/reset/search/metadata and pose-file hint through presentation/storage contracts; equipment/customization/design remain external. |
 | 11G Selected/reference import and evaluated-pose mirror/bake | Existing exact native reference and selected-scope paths get separate typed actions. Evaluated-pose mirror is explicit and warned; it must not change safe animation-layer mirror semantics. Bake IK remains excluded. |
@@ -848,6 +916,11 @@ proof, Release results/warnings, final live artifact with
 AcceptanceQualified=true where required, actual UI acceptance, product-gap
 dispositions, and all accepted head SHAs recorded.
 
+The IK-bake result is not release-qualified while the verdict is INSUFFICIENT
+EVIDENCE PENDING INSTRUMENTATION; the diagnostic-only tranche and separate
+organizer authorization are required before any normative Bake change, and no
+unresolved diagnosis is hidden in this result.
+
 ## Mapping from the old program and audits
 
 The old Release 0/Train 1–8 program is superseded by the slices above. No
@@ -860,12 +933,12 @@ requirement disappears; the map below records its new owner or disposition.
 | Release 0 clean baseline, redeploy, and full manual smoke | Superseded by accepted T1.1 Slice 0. Do not redo a baseline deployment in this program; organizer uses the accepted SHA and runs the next applicable Release/live card. |
 | Train 1.1 contract-test foundation | Accepted at Slice 0; extend only through Slice 1/2 contracts. |
 | Train 1.2 startup rollback and Gaze | Slice 3. |
-| Train 1.3 IK allocation and bone-hook health | Slice 3 for allocation/capability refusal; Bake IK behavior and harness remain on the adjudication hold. |
+| Train 1.3 IK allocation and bone-hook health | Slice 3 for allocation/capability refusal; Bake IK behavior and harness remain on the instrumentation qualification hold. |
 | Train 1.4 PBI-012 masks | Slice 1 pure correction and Slice 6 pose transaction callers. |
 | Train 1.5 transaction outcome/recovery | Slice 2. |
 | Train 2.1 import receipt/late callback | Receipt contract Slice 4; caller/materialization Slice 8. |
 | Train 2.2 pending import/IK/facial recovery | Slice 4 epoch contract and Slice 8 import/facial materialization; IK bake excluded. |
-| Train 2.3 live harness cancellation/deep cleanup | Slice 3 lifecycle order and Slice 12 final hardening; no Bake IK harness change before adjudication. |
+| Train 2.3 live harness cancellation/deep cleanup | Slice 3 lifecycle order and Slice 12 final hardening; no Bake IK harness change before the diagnostic-only qualification tranche. |
 | Train 3.1–3.4 autosave and GPose exit | Slice 3 lifecycle contract; Slice 7 autosave final capture/queue/join; Slice 9/11 owner migrations. |
 | Train 4.1 MCDF | Slice 8 McdfTransaction, redraw barrier, file boundary, and cleanup. |
 | Train 4.2–4.3 spawn/companion | Slice 5 core ownership and Slice 11 feature completion. |
@@ -914,7 +987,7 @@ requirement disappears; the map below records its new owner or disposition.
 | Whole-shot scene save/restore | 11A after 5, 7, 9, 10. |
 | Nearby overworld actors | 11B after 5. |
 | Actor/prop/light relationships | 5 core; 11C persistence/clone completion. |
-| Arbitrary/schema IK | 11D only after fixed-IK safety and independent IK adjudication; otherwise Parked. |
+| Arbitrary/schema IK | 11D only after fixed-IK safety, the diagnostic-only qualification tranche, and explicit organizer authorization; otherwise Parked. |
 | Camera target relationship | 9 base camera; 11E scene relationship/persistence. |
 | Model ID ownership/search/reset/metadata | 9 presentation ownership; 11F product completion and storage. |
 | Selected/reference import UI | 8 safe materialization contracts; 11G typed UI action. |
