@@ -7,14 +7,17 @@ plan for the code-health and feature audits. Durable contracts remain in the
 normative homes indexed by [docs/README.md](../README.md).
 
 This candidate changes only this plan. The sole UI-lab/tombstone candidate is
-the exact chain `727ccb7 -> cb86af7 ->
-3ea67f5100ea6808a67f8dcf7d0ab3d22f9f86ea`. That chain owns
+the complete chain `727ccb7 -> cb86af7 ->
+3ea67f5100ea6808a67f8dcf7d0ab3d22f9f86ea ->
+9de84646a5f2d4c84c9609069d92b87100556300 ->
+c7d2c2e44bd008896d84f05cd716f75bcc7464f4`. The organizer accepted this
+candidate after Release build/tests (175/175, no Debug/live). It is not yet
+integrated into this plan's current head; until integration, the current
+normative UI/testing baseline remains in force. The chain owns
 `tools/ui-conformance/**`, `docs/process/testing.md`,
-`docs/architecture/ui-workspace.md`, and the PBI-011/015/015A/016 tombstones.
-It remains Review until its final reviewer and the organizer's Release gates
-accept and integrate that head. Until integration, the current normative
-UI/testing baseline remains in force. This plan records the accepted direction
-and execution contract; it does not edit those paths or create a second owner.
+`docs/architecture/ui-workspace.md`, and the PBI-011/014/015/015A/016
+dispositions/tombstones. This plan records the accepted candidate and
+execution contract; it does not edit those paths or create a second owner.
 
 ## TL;DR
 
@@ -69,7 +72,7 @@ they are observations, not new architecture contracts.
 | Runtime/native quarantine is not yet compiler-real | PosingCore still permits unsafe code and contains native entity/file/runtime code; Poser.Game still references it. Poser.UI is currently the Crystarium kernel project, while product UI under Poser/UI is in the host. Poser/UI/Panes/GraphicalBonePane.cs still imports native client structs. |
 | Native failure is inconsistent | Gaze construction is an eager, signature/hook failure path; IK and bone-hook capability loss can be silent. Current contract tests cover application seams, not the full native lifecycle. |
 | Dated gate evidence is not final acceptance | The audit snapshot reports 166 Release tests passing and a successful Release build with three warnings. Treat that as historical evidence to reverify at each accepted head; warnings must be removed or explicitly accepted by the organizer. |
-| The UI visual lab is transitional tooling | tools/ui-conformance contains the synthetic component/Picto/browser/golden/capture lab. The exact UI-lab/tombstone chain named above is the sole owner of its deletion and the related UI/testing/PBI paths; it remains Review until final reviewer and organizer Release acceptance/integration. The target actual-in-game-only oracle is conditional on that accepted head; until then the current [testing baseline](../process/testing.md) and [UI workspace baseline](../architecture/ui-workspace.md) remain in force. No replacement lab or synthetic visual gate is authorized. |
+| The UI visual lab is transitional tooling | tools/ui-conformance contains the synthetic component/Picto/browser/golden/capture lab. The complete chain named above is the sole owner of its deletion and the related UI/testing/PBI paths; the organizer accepted it after Release build/tests (175/175, no Debug/live), but it is not yet integrated into this plan's current head. The target actual-in-game-only oracle is conditional on integration; until then the current [testing baseline](../process/testing.md) and [UI workspace baseline](../architecture/ui-workspace.md) remain in force. No replacement lab or synthetic visual gate is authorized. |
 
 ## IK bake safety hold
 
@@ -339,8 +342,8 @@ fact that this program begins at T1.1 rather than redoing it.
 writer, before the Slice 1 implementation writer starts. The exact
 UI-lab/tombstone chain named at the top remains the sole owner of
 `docs/process/testing.md`, `docs/architecture/ui-workspace.md`, and its
-PBI tombstones; this prerequisite links to that chain and does not duplicate
-or edit its paths.
+PBI-011/014/015/015A/016 dispositions/tombstones; this prerequisite links to
+that chain and does not duplicate or edit its paths.
 
 **Allowed:** the existing normative homes
 `docs/architecture/product-and-boundaries.md`,
@@ -351,30 +354,42 @@ hygiene; and the exact UI-lab/tombstone chain's owned UI/testing paths when
 that chain performs its own update. **Excluded:** source, tests, project
 files, a second migration plan, and a document per class or interface.
 
-**Reconciliation contract:** reconcile the current
-`product-and-boundaries.md` Core/Runtime naming with the Review target while
-retaining `Poser.Game` as the sole native/runtime project; reconcile the
-`files-and-transfer.md` event-order/autosave wording with the explicit
-SessionLifecycleCoordinator order (final autosave capture, operation
-invalidation, restoration, destruction); and reconcile
-`application-state.md` and `posing-runtime.md` stable identity, exact binding,
+**Reconciliation contract:** the accepted diff must reconcile the following
+source-backed collisions in the existing normative homes. The master plan is
+only the assignment and evidence index; it does not satisfy R6 itself.
+
+| Required reconciliation | Current role/traversal to record | Durable home and exit evidence |
+|---|---|---|
+| PosingCore versus LegacyRuntime roles | `PosingCore/PosingCore.csproj` currently supplies `Poser.Core`, `Poser.Entities`, `Poser.Services`, `Poser.Files`, `Poser.Library`, `Poser.Config`, and `Poser.Game` namespaces. Its `Entities/ActorBase.cs`, `Skeleton.cs`, `Bone.cs`, `Core/NativeHelpers.cs`, and `Game/ExpressionService.cs` still cross live/native boundaries, while `Poser.Game/LegacyRuntime` contains the concrete `Poser.Game` services. | `product-and-boundaries.md` assigns each current area to Domain, Application, host-free Persistence, Game, UI/product assets, or Host; `posing-runtime.md` keeps all unsafe/native access in Game. Evidence maps every current owner and caller before/after. |
+| PosingCore area classification | `Core/PoseMath` and bone metadata are pure candidates; `Entities`/`NativeHelpers` are live/native candidates; `Files`/`Library`/`AutoSave` are codec, index, and storage candidates; `Services` are transitional contracts; `Config` and embedded UI/data assets are product/configuration candidates. | `product-and-boundaries.md` records Domain for pure math/policies, Application for logical state/actions and narrow ports, host-free Persistence for codecs/stores when proven, Game for live entities/native adapters, UI/product assets for surface state/assets, and Host for composition. `files-and-transfer.md` owns file/autosave terminology; `posing-runtime.md` owns native ordering and ports. |
+| Features and native writes crossing the split | Actor/GPose discovery and exit (`ActorManager`, `GPoseService`); skeleton/slot/bone reads and apply hooks (`SkeletonService`, `SlotCharacterBases`, `BonePosingService`); IK/gaze/position overrides (`IKService`, `GazeService`, `PosingService`, `TransformRuntimePort`); actor/companion/prop/model/visibility spawn (`ActorSpawnService`, `PropSpawnService`); pose import/export, file/library/autosave, animation, presentation, camera, light, environment, and MCDF paths all currently cross old `Poser.Services`/entity contracts. | `posing-runtime.md` names `TransformRuntimePort` as the one native write path and records the remaining Game ports/hooks; `product-and-boundaries.md` records the feature owner and external-appearance boundary; `files-and-transfer.md` records storage/autosave ownership. Evidence is caller search plus compiler-real dependency proof, not a namespace rename. |
+| Target naming and interface policy | Current docs still say `Poser.Core` and `Poser.Runtime`, while the project is `PosingCore` and the native project is `Poser.Game`. | `product-and-boundaries.md` names Domain, Application, current `Poser.Game`, conditional host-free Persistence, current Poser.UI, and Host; `posing-runtime.md` names the native boundary. Keep `Poser.Game`, do not add `Poser.Runtime` or `Poser.UI.Kernel`, and retain concrete owners with interfaces only at real runtime/storage seams. |
+| LegacyRuntime exit/deletion criteria | `Poser.Game/LegacyRuntime` is a folder whose classes use the `Poser.Game` namespace; it is not a target assembly boundary. | `posing-runtime.md` requires characterization/ordinary tests, accepted caller migration, exact-generation and lifecycle proof, no remaining PosingCore edge, and no native write outside Game before each LegacyRuntime owner/file is removed. Failed cleanup remains recoverable; no wholesale folder deletion. |
+| Namespace quirks | `PosingCore.csproj` has RootNamespace `Poser`; `Poser.Game/LegacyRuntime/*.cs` declares `namespace Poser.Game`; `Poser.Core`, `Poser.Entities`, `Poser.Files`, and `Poser.Services` therefore do not identify separate assemblies. | `product-and-boundaries.md` is the terminology/glossary home; `posing-runtime.md` records the actual assembly/native boundary and aliases. Evidence includes namespace-to-project and project-reference checks. |
+| Terminology collision | “PosingCore”, “Poser.Core”, “Poser.Domain”, stale “Poser.Runtime”, and the `LegacyRuntime` folder are currently easy to conflate. | Reconcile the terms in the two existing homes and link from other docs. A concise `backend-migration-state` home may be proposed only if the writer proves no existing home fits; it must not become a per-class document or a substitute for this plan's non-normative assignment. |
+
+The same accepted diff must reconcile `files-and-transfer.md` event-order/
+autosave wording with the explicit SessionLifecycleCoordinator order (final
+autosave capture, operation invalidation, restoration, destruction), and
+`application-state.md`/`posing-runtime.md` stable identity, exact binding,
 operation receipt/epoch, selection, and lifecycle contracts. The writer must
-also record every other named stale normative home found by the contradiction
-sweep, assign it to an existing home, and link rather than duplicate prose.
-The UI actual-in-game-only policy is conditional on integration of the
-accepted UI-lab/tombstone chain; until then the current normative UI/testing
-baseline remains in force. A new concise normative home is allowed only if no
-existing home fits and it follows `docs/README.md` policy.
+record every other named stale normative home found by the contradiction sweep,
+assign it to an existing home, and link rather than duplicate prose. The UI
+actual-in-game-only policy is conditional on integration of the accepted
+UI-lab/tombstone chain; until then the current normative UI/testing baseline
+remains in force.
 
 **Tests/review/gates:** perform path/link and contradiction checks first, then
 independent exact-range review and rework. Evidence is the accepted normative
-diff set, a named contradiction report showing each stale claim's disposition,
-and the accepted UI-lab/tombstone-chain head when applicable. Release: N/A for
-docs-only work; Debug: N/A. **Rollback seam:** the prior accepted normative
-heads and the pre-reconciliation links remain recoverable in Git. The target
-direction remains a Review proposal until this prerequisite is accepted; no
-Slice 1 implementation may claim that stale normative docs are already
-changed.
+diff set for the named homes, the owner/traversal matrix above, a contradiction
+report showing every stale claim's disposition, compiler-real project/namespace
+proof, and the accepted UI-lab/tombstone-chain head when applicable. Release:
+N/A for docs-only work; Debug: N/A. **Rollback seam:** the prior accepted
+normative heads and pre-reconciliation links remain recoverable in Git. The
+target direction remains a Review proposal until this prerequisite is
+accepted; no Slice 1 implementation may claim that stale normative docs are
+already changed, and no migration-state document is accepted merely because
+this plan names it.
 
 ## Slice 1 — contract repair, dependency freeze, and pure Domain corrections
 
@@ -385,22 +400,25 @@ UI/testing, and listed PBI cleanup.
 
 **Allowed:** Poser.Domain/**; narrow Application contract/state paths under
 Poser.Application/Scene, Poser.Application/Selection, and explicit storage
-contracts; transitional Poser.ContractTests/**; creation/migration of the final
-Poser.Domain.Tests/** and Poser.Application.Tests/** targets; their
-Poser.slnx project entries/references; project-reference/dependency checks;
-and source/reference tombstones needed to make this plan authoritative.
+contracts; transitional `Poser.ContractTests/**` with its Application coverage
+retained in place; creation/migration of the final `Poser.Domain.Tests/**`
+target and only its `Poser.slnx` project entry/reference;
+project-reference/dependency checks; and source/reference tombstones needed to
+make this plan authoritative.
 **Excluded:** runtime/native behavior, PosingCore deletion, UI surface
-rewrites, IK bake behavior, broad backlog prose, and any generic framework.
+rewrites, `Poser.Application.Tests/**` and its project entry, IK bake behavior,
+broad backlog prose, and any generic framework.
 
 **Non-overlapping candidates:**
 
 1. Freeze the six-assembly target graph, the Poser.Game runtime boundary,
    conditional host-free Persistence rule, and the no-separate-kernel decision.
-2. Create/migrate the final Poser.Domain.Tests and Poser.Application.Tests
-   targets from the transitional T1.1 Poser.ContractTests coverage, retaining
-   the accepted tests as characterization while adding the missing Domain and
-   Application contract families. Later owner slices add their own final test
-   families; this item is not complete at Slice 0.
+2. Create/migrate only the final `Poser.Domain.Tests` target from the
+   transitional T1.1 coverage. Retain transitional Application coverage in
+   `Poser.ContractTests`; Slice 2 exclusively creates/migrates
+   `Poser.Application.Tests` and owns its Application families. Later owner
+   slices add their own final test families; this item is not complete at
+   Slice 0.
 3. Correct stable IDs, SceneStore/SelectionScope contracts, complete
    SceneSnapshot fields needed for relationships/ownership, and fixed IK
    policy. Converge SceneSession to the one scene owner; do not create a
@@ -415,14 +433,14 @@ rewrites, IK bake behavior, broad backlog prose, and any generic framework.
    remains Slice 12. The exact UI-lab/tombstone chain owns its cleanup and has
    no replacement.
 
-**Tests first:** create/migrate the final Domain and Application test targets
-while retaining the accepted Poser.ContractTests characterization. Cover all
-eight propagation masks, including None; unknown bits; exact
-slot/generation/bone identity; ordered selection scopes; complete scene
-snapshot round-trip; portable duplicate, ambiguous, path, and legacy-name
-fixtures; and fixed IK unsupported-endpoint outcomes. Later slices add their
-missing contract families in their own target. Tests must prove no silent
-history or state mutation.
+**Tests first:** create/migrate `Poser.Domain.Tests` only while retaining the
+accepted `Poser.ContractTests` characterization, including its transitional
+Application coverage. Domain tests cover all eight propagation masks,
+including None; unknown bits; exact slot/generation/bone identity; ordered
+selection scopes; complete scene snapshot round-trip; portable duplicate,
+ambiguous, path, and legacy-name fixtures; and fixed IK unsupported-endpoint
+outcomes. Slice 2 owns migration of Application families. Tests must prove no
+silent history or state mutation.
 
 **Invariants:** pure Domain math; stable generation/slot identity; explicit
 selection scopes; no raw address; no diagnosis or production fix for Bake IK;
@@ -436,9 +454,10 @@ PortablePose constructor, and current file adapters remain callable until
 the new contract tests and one consumer each are accepted.
 
 **Review / completion evidence:** independent exact-range review and rework
-loop; accepted final-test-target output, graph proof, ambiguity fixtures, and a
-mapping of every tombstoned caller. This tranche does not claim acceptance of
-the UI-lab/tombstone chain or the actual-in-game-only policy.
+loop; accepted `Poser.Domain.Tests` output, its project-graph proof, ambiguity
+fixtures, and a mapping of every tombstoned caller. This tranche does not
+claim acceptance of `Poser.Application.Tests`, the UI-lab/tombstone chain, or
+the actual-in-game-only policy.
 
 ## Slice 2 — Application mutation, outcome, and recovery kernel
 
@@ -447,8 +466,10 @@ MutationCoordinator and its concrete callers.
 
 **Allowed:** Poser.Application/Transforms/**, the cohesive mutation portions
 of Poser.Application/Posing/**, new outcome/recovery records beside those
-owners, `Poser.Application.Tests/**`, and the retained transitional
-`Poser.ContractTests/**`. **Excluded:** native/runtime ports, Persistence
+owners, creation/migration of `Poser.Application.Tests/**`, its `Poser.slnx`
+project entry/reference, and the retained transitional
+`Poser.ContractTests/**` cases while they are migrated. **Excluded:**
+`Poser.Domain.Tests/**` ownership, native/runtime ports, Persistence
 implementation, UI, EventBus replacement, async caller migration, and a
 generic operation framework.
 
@@ -458,12 +479,13 @@ capture/write/restore result. On rollback failure, the outcome carries the
 primary and rollback failures, does not append history, marks recovery required,
 and prevents a new write until retry or explicit stale-target disposal.
 
-**Tests first:** create/migrate the final Application test target and add fake
+**Tests first:** exclusively create/migrate `Poser.Application.Tests` and move
+the Application families out of their transitional `Poser.ContractTests`
+coverage only after the final target proves the same contract. Add fake
 ITransformRuntimePort tests for success, partial write, capture failure,
 restore failure, stale target, unavailable capability, one history patch,
 cancel, undo, redo, and recovery quarantine. Characterize existing native phase
-ordering before changing any caller; retain transitional T1.1 coverage until
-the final target proves the same contract.
+ordering before changing any caller; `Poser.Domain.Tests` is owned by Slice 1.
 
 **Invariants:** frozen baselines, total deltas, one patch, exact target
 containment, no false success, and no shared rollback ledger or hidden async
@@ -477,8 +499,11 @@ and clean facades as adapters until each caller has the new outcome and its
 ordinary/contract tests; remove an adapter only after the caller proof.
 
 **Review / completion evidence:** exact-range independent review, rework and
-full-range recheck; outcome matrix, recovery record, history evidence, and no
-new broad I*Service or mediator abstraction.
+full-range recheck; accepted `Poser.Application.Tests` output, migrated
+Application-family inventory, outcome matrix, recovery record, history
+evidence, and no new broad I*Service or mediator abstraction. This slice owns
+the Application test target exclusively; it does not alter Domain test
+ownership.
 
 ## Slice 3 — one SessionLifecycleCoordinator, startup rollback, and capability health
 
@@ -1035,7 +1060,7 @@ requirement disappears; the map below records its new owner or disposition.
 | Old item | New slice or disposition |
 |---|---|
 | Release 0 clean baseline, redeploy, and full manual smoke | Superseded by accepted T1.1 Slice 0. Do not redo a baseline deployment in this program; organizer uses the accepted SHA and runs the next applicable Release/live card. |
-| Train 1.1 contract-test foundation | Accepted transitional Poser.ContractTests coverage at Slice 0; create/migrate final Domain and Application test targets and missing families in Slice 1/2 and their later owner slices. |
+| Train 1.1 contract-test foundation | Accepted transitional Poser.ContractTests coverage at Slice 0; Slice 1 creates/migrates only Poser.Domain.Tests, while Slice 2 exclusively creates/migrates Poser.Application.Tests and owns Application families; later owner slices add their own families. |
 | Train 1.2 startup rollback and Gaze | Slice 3. |
 | Train 1.3 IK allocation and bone-hook health | Slice 3 for allocation/capability refusal; Bake IK behavior and harness remain on the instrumentation qualification hold. |
 | Train 1.4 PBI-012 masks | Slice 1 pure correction and Slice 6 pose transaction callers. |
@@ -1049,7 +1074,7 @@ requirement disappears; the map below records its new owner or disposition.
 | Train 4.4–4.6 environment/world light/default camera | Slice 9, with whole-shot relationships in Slice 11. |
 | Train 5 persistence/recovery | Slice 7; visible UI readout in Slice 10. |
 | Train 6 animation/native patch | Slice 9. |
-| Train 7 UI ownership/style | Slice 10 product surfaces; the exact UI-lab/tombstone chain `727ccb7 -> cb86af7 -> 3ea67f5100ea6808a67f8dcf7d0ab3d22f9f86ea` solely owns `tools/ui-conformance`, UI/testing, UI-workspace, and PBI-011/015/015A/016 tombstones, remaining Review until final reviewer and organizer Release acceptance/integration. |
+| Train 7 UI ownership/style | Slice 10 product surfaces; the complete accepted UI-lab/tombstone chain `727ccb7 -> cb86af7 -> 3ea67f5100ea6808a67f8dcf7d0ab3d22f9f86ea -> 9de84646a5f2d4c84c9609069d92b87100556300 -> c7d2c2e44bd008896d84f05cd716f75bcc7464f4` solely owns `tools/ui-conformance`, UI/testing, UI-workspace, and PBI-011/014/015/015A/016 dispositions/tombstones. The organizer accepted it after Release build/tests (175/175, no Debug/live); it is not yet integrated into this plan's current head. |
 | Train 8 structural extraction/DRY | Local extraction follows each Slice 1–11 contract test; final PosingCore/facade/EventBus deletion and assembly enforcement are Slice 12. The old “structural work last” rule is superseded. |
 
 ### Code-health finding map
@@ -1071,12 +1096,12 @@ requirement disappears; the map below records its new owner or disposition.
 
 | Old R item | New slice or disposition |
 |---|---|
-| R1 tests in Domain/Application | T1.1 is accepted transitional Poser.ContractTests coverage only. Slice 1 creates/migrates final Poser.Domain.Tests; Slice 2 creates/migrates final Poser.Application.Tests; missing contract families continue with their owning slices. R1 is not complete at Slice 0. |
+| R1 tests in Domain/Application | T1.1 is accepted transitional Poser.ContractTests coverage only. Slice 1 creates/migrates only final Poser.Domain.Tests and retains transitional Application coverage in Poser.ContractTests. Slice 2 exclusively creates/migrates final Poser.Application.Tests and owns Application test families, migrating that coverage only after proof. Missing families continue with their owning slices. R1 is not complete at Slice 0. |
 | R2 PosingCore pure-core coverage | Slice 7 format/policy characterization and Slice 12 migration proof; preserve useful tests while the source moves. |
 | R3 Gaze degradation | Slice 3. |
 | R4 capability-health surface | Slice 3 read model and Slice 10 UI. |
 | R5 namespace honesty | Only proof-driven moves in Slice 5/6/9/12; do not cosmetic-rename Poser.Game or introduce a Runtime project. |
-| R6 durable migration-state/normative cleanup | This master plan is non-normative and cannot satisfy durable cleanup. Prerequisite 1A assigns reconciliation to the existing product-and-boundaries, application-state, posing-runtime, and files-and-transfer homes, with the exact UI-lab/tombstone chain solely owning UI-workspace/testing/PBI cleanup. Evidence is accepted normative diffs, contradiction/link checks, exact review, and organizer acceptance; no document per class and no duplicate migration plan. |
+| R6 durable migration-state/normative cleanup | This master plan is non-normative and cannot satisfy durable cleanup. Executable Prerequisite 1A assigns the PosingCore/LegacyRuntime role, traversal, naming, namespace, terminology, and deletion-criteria reconciliation to existing product-and-boundaries/posing-runtime homes, with application-state/files-and-transfer and the accepted UI-lab/tombstone chain covering their contracts. Evidence is the accepted diff/link/contradiction and compiler-real ownership record, exact review, and organizer acceptance; no document per class and no duplicate migration plan. |
 | R7 ISessionScoped enrollment | Superseded: one explicit SessionLifecycleCoordinator owns phases; no generic enrollment interface. |
 | R8 feature-manifest registration | Superseded as a framework: Host keeps explicit composition; per-feature registration may be mechanically split only when it does not add a manifest/manager abstraction. |
 | R9 ActorIntegrationSession split | Slice 8 after file-boundary/redraw tests; McdfTransaction only, retain vendor orchestration. |
