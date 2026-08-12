@@ -12,17 +12,6 @@ public enum TransformOrientation
 }
 
 /// <summary>
-/// Bone display mode for skeleton hierarchy.
-/// </summary>
-public enum BoneDisplayMode
-{
-    /// <summary>Show bones in their natural hierarchy.</summary>
-    Hierarchy,
-    /// <summary>Group bones by category (Head, Arms, Legs, etc.).</summary>
-    Category
-}
-
-/// <summary>
 /// Transform tool - which operation the gizmo performs.
 /// </summary>
 public enum TransformTool
@@ -76,12 +65,6 @@ public interface IEditorState
 
     /// <summary>Current transform tool (Move, Rotate, Scale).</summary>
     TransformTool TransformTool { get; set; }
-
-    /// <summary>Debug mode - expands all entities and logs untranslated bones.</summary>
-    bool DebugMode { get; set; }
-
-    /// <summary>Bone display mode - hierarchy or category grouping.</summary>
-    BoneDisplayMode BoneDisplayMode { get; set; }
 
     /// <summary>Skeleton visualization mode for the overlay.</summary>
     SkeletonViewMode SkeletonViewMode { get; set; }

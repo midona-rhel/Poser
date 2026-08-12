@@ -191,27 +191,6 @@ public unsafe class PosingService : IPosingService
         return true;
     }
 
-    public void SetPosition(IActor actor, Vector3 position)
-    {
-        var current = GetEffectiveTransform(actor);
-        current.Position = position;
-        SetTransformOverride(actor, current);
-    }
-
-    public void SetRotation(IActor actor, Quaternion rotation)
-    {
-        var current = GetEffectiveTransform(actor);
-        current.Rotation = rotation;
-        SetTransformOverride(actor, current);
-    }
-
-    public void SetScale(IActor actor, Vector3 scale)
-    {
-        var current = GetEffectiveTransform(actor);
-        current.Scale = scale;
-        SetTransformOverride(actor, current);
-    }
-
     public Transform GetOriginalTransform(IActor actor)
     {
         if (_originalTransforms.TryGetValue(actor.Address, out var original))

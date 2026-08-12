@@ -48,26 +48,7 @@ public record CameraListChangedEvent(IReadOnlyList<IVirtualCamera> Cameras) : IE
 
 #endregion
 
-#region Selection Events
-
-/// <summary>
-/// Published when selection changes. Contains ALL currently selected entities.
-/// Used by components that need to react to selection changes (e.g., skeleton overlay).
-/// </summary>
-
-/// <summary>
-/// Published when bone selection changes specifically.
-/// Used for backwards compatibility and focused bone selection handling.
-/// </summary>
-
-#endregion
-
 #region Service Events
-
-/// <summary>
-/// Published when a bone's transform changes during posing.
-/// </summary>
-public record BoneTransformChangedEvent(IBone Bone) : IEvent;
 
 /// <summary>
 /// A gaze entry's mode changed (any actor). Consumers re-read state from

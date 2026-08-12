@@ -1066,7 +1066,6 @@ public unsafe class BonePosingService : IBonePosingService
             }
         }
 
-        _eventBus.Publish(new BoneTransformChangedEvent(bone));
     }
 
     public Poser.Domain.Posing.IkChainConfig? GetIkConfiguration(IBone bone)
@@ -1185,30 +1184,6 @@ public unsafe class BonePosingService : IBonePosingService
             (short)endpoint.BoneIndex);
     }
 
-    public int ResetRegion(ISkeleton skeleton, string region)
-    {
-        bool IsFace(string n) => n.StartsWith("j_f_") || n == "j_kao" || n.StartsWith("j_ago");
-        bool IsHair(string n) => n.StartsWith("j_kami") || n.StartsWith("j_ex_h") || n.StartsWith("j_ex_met");
-
-        Func<string, bool> match = region.ToLowerInvariant() switch
-        {
-            "face" => IsFace,
-            "hair" => IsHair,
-            "body" => n => !IsFace(n) && !IsHair(n),
-            _ => _ => true,
-        };
-
-        int reset = 0;
-        foreach (var bone in skeleton.Bones)
-        {
-            if (!match(bone.BoneName) || !HasModifications(bone))
-                continue;
-            ResetBone(bone);
-            reset++;
-        }
-        return reset;
-    }
-
     public bool HasEnabledIk(ISkeleton skeleton) =>
         HasEnabledChains(SkeletonKey.Of(skeleton));
 
@@ -1220,7 +1195,6 @@ public unsafe class BonePosingService : IBonePosingService
         _evaluationObservations.Remove(
             (SkeletonKey.Of(bone.Skeleton), bone.PartialId, bone.BoneIndex));
 
-        _eventBus.Publish(new BoneTransformChangedEvent(bone));
     }
 
     public void ResetSkeleton(ISkeleton skeleton)
@@ -1276,9 +1250,7 @@ public unsafe class BonePosingService : IBonePosingService
     {
         var poseInfo = GetPoseInfo(bone.Skeleton);
         var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
-        if (bonePoseInfo.RestoreInteractiveStacks(stacks))
-            _eventBus.Publish(new BoneTransformChangedEvent(bone));
-    }
+        bonePoseInfo.RestoreInteractiveStacks(stacks);
 
     /// <summary>
     /// FinalizeSkeletonsDetour - matches Brio's FinalizeSkeletonUpdate exactly.
@@ -1384,11 +1356,6 @@ public unsafe class BonePosingService : IBonePosingService
         }
     }
 
-    public void SnapshotSkeleton(ISkeleton skeleton)
-    {
-        _skeletonsToUpdate.Add(SkeletonKey.Of(skeleton));
-    }
-
     public void FlipBone(IBone bone)
     {
         if (bone is VirtualBone)
@@ -1420,39 +1387,6 @@ public unsafe class BonePosingService : IBonePosingService
         // Brio's PosingCapability.FlipBone which accumulates and never clears.
         bonePoseInfo.Apply(newTransform, bone.LastRawTransform);
 
-        _eventBus.Publish(new BoneTransformChangedEvent(bone));
-    }
-
-    public void MirrorPose(ISkeleton skeleton)
-    {
-        var poseInfo = GetPoseInfo(skeleton);
-        var bones = new Dictionary<(string Name, int PartialId), IBone>();
-        foreach (var bone in skeleton.Bones)
-            bones[(bone.BoneName, bone.PartialId)] = bone;
-
-        foreach (var bone in skeleton.Bones)
-        {
-            if (!bone.BoneName.EndsWith("_l", StringComparison.Ordinal))
-                continue;
-
-            var mirrorName = GetMirrorBoneName(bone.BoneName);
-            if (mirrorName == null || !bones.TryGetValue((mirrorName, bone.PartialId), out var mirrorBone))
-                continue;
-
-            var leftInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
-            var rightInfo = poseInfo.GetPoseInfo(mirrorBone.BoneName, mirrorBone.PartialId);
-            var leftStacks = leftInfo.Stacks.ToArray();
-            var rightStacks = rightInfo.Stacks.ToArray();
-
-            leftInfo.ReplaceStacks(rightStacks.Select(MirrorStack));
-            rightInfo.ReplaceStacks(leftStacks.Select(MirrorStack));
-
-            _eventBus.Publish(new BoneTransformChangedEvent(bone));
-            _eventBus.Publish(new BoneTransformChangedEvent(mirrorBone));
-        }
-
-        static BonePoseTransformInfo MirrorStack(BonePoseTransformInfo stack)
-            => stack with { Transform = PoseMath.MirrorPoseDelta(stack.Transform) };
     }
 
     public string? GetMirrorBoneName(string boneName) => PoseMath.GetMirrorBoneName(boneName);

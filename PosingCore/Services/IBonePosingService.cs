@@ -33,8 +33,6 @@ public readonly record struct TransitiveActionOutcome(
 /// </summary>
 public interface IBonePosingService : IDisposable
 {
-    // Bone transform changes are published via EventBus: BoneTransformChangedEvent
-
     /// <summary>
     /// Get the pose info for a skeleton.
     /// </summary>
@@ -97,9 +95,6 @@ public interface IBonePosingService : IDisposable
     void ClearIkConfigurations(ISkeleton skeleton);
 
     /// <summary>
-    /// Get the IK configuration for a bone.
-    /// </summary>
-    /// <summary>
     /// True when any bone on the skeleton has IK enabled (used to guard the
     /// post-import face reconcile, which would fight live IK).
     /// </summary>
@@ -151,21 +146,10 @@ public interface IBonePosingService : IDisposable
         out BoneEvaluationObservation observation);
 
     /// <summary>
-    /// Snapshot all bones in a skeleton at their current transforms.
-    /// This freezes the entire skeleton including gaze bones.
-    /// </summary>
-    void SnapshotSkeleton(ISkeleton skeleton);
-
-    /// <summary>
     /// Flips a bone's rotation (X = 180 - X, Y = -Y).
     /// Used to mirror pose on a single bone.
     /// </summary>
     void FlipBone(IBone bone);
-
-    /// <summary>
-    /// Mirrors the entire pose by swapping left/right bone transforms.
-    /// </summary>
-    void MirrorPose(ISkeleton skeleton);
 
     /// <summary>
     /// Gets the mirror bone name for a given bone (swaps _l and _r suffixes).
@@ -174,23 +158,10 @@ public interface IBonePosingService : IDisposable
     string? GetMirrorBoneName(string boneName);
 
     /// <summary>
-    /// Begin an orbit drag: the bones rotate around <paramref name="pivot"/>
-    /// (typically the primary bone's parent). The session snapshots base
-    /// transforms and existing stack deltas; feed it the TOTAL drag rotation
-    /// each frame. Orbit now runs through the clean transform gesture with a
-    /// frozen pivot; this comment block documents the retained pivot helpers.
-    /// </summary>
-
-    /// <summary>
     /// Linked bones (Anamnesis parity): posing one bone in a link set (both
     /// eyes; Viera ear-variant chains) applies the same delta to the others.
     /// Default on; per-session toggle.
     /// </summary>
     bool LinkedBonesEnabled { get; set; }
 
-    /// <summary>Bulk IK (Ktisis parity): arm/disarm IK on every eligible chain end (hands/feet).</summary>
-
-
-    /// <summary>Reset only the bones of one region: "body", "face" or "hair" (Anamnesis per-partial reference pose parity).</summary>
-    int ResetRegion(ISkeleton skeleton, string region);
 }

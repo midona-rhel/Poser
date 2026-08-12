@@ -13,8 +13,6 @@ public class EditorState : IEditorState
 {
     public TransformOrientation TransformOrientation { get; set; } = TransformOrientation.Local;
     public TransformTool TransformTool { get; set; } = TransformTool.Rotate;
-    public bool DebugMode { get; set; } = false;
-    public BoneDisplayMode BoneDisplayMode { get; set; } = BoneDisplayMode.Category;
     public SkeletonViewMode SkeletonViewMode { get; set; } = SkeletonViewMode.Default;
     public bool ShowSelectedBonesOnly { get; set; } = false;
     public SymmetryMode SymmetryMode { get; set; } = SymmetryMode.Off;
