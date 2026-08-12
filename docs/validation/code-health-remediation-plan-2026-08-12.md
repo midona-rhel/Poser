@@ -42,6 +42,15 @@ Automated pass -> Acceptance pending -> Accepted`. Exceptional states are
 `Blocked`, `Reverted`, `Superseded`, and `Parked`, each with an owner and reason.
 “Complete” means Accepted, not compiled, deployed, merged, or apparently working.
 
+These tranche execution states are distinct from the PBI backlog vocabulary.
+PBIs use one status from: `Proposed` (idea under consideration), `Ready`
+(scoped and eligible to implement), `Implementation present` (code exists but
+acceptance is not complete), `Acceptance pending` (awaiting required runtime or
+user acceptance), `Accepted`, `Superseded`, `Parked`, or `Audit`. Define and
+interpret these PBI statuses here; individual PBIs should not restate the
+vocabulary. `Ready` is valid for deliberately scoped but not-yet-implemented
+work.
+
 At tranche start the organizer records:
 
 - immutable base SHA/tag, unique `codex/` branch/worktree, owner and Luna effort;

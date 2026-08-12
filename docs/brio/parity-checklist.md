@@ -5,10 +5,15 @@
 > and git has never tracked those filenames on any branch. This file is rebuilt from a fresh
 > three-way source audit; it does not carry over any earlier Done/Not-done rows.
 >
-> Audit basis: Poser `feature/imperative-rebuild` @ `e6c2c77` plus the inherited
-> 2026-08-12 working-tree snapshot, Ktisis clone @ `a5ae200d` (0.3.9.2 with the 0.4-style
-> layout), Brio clone @ `73bb59d`. Mechanisms were
-> verified against reference call sites, not doc claims.
+> Runtime/source basis: Poser code `HEAD` `e6c2c77`; later docs-only candidate
+> commits do not change this runtime truth. Reference basis: Ktisis clone @
+> `a5ae200d` (0.3.9.2 with the 0.4-style layout) and Brio clone @ `73bb59d`.
+> Inherited documentation snapshots informing this checklist were
+> `docs/validation/poser-feature-gap-audit-2026-08-12.md`,
+> `docs/validation/poser-code-health-audit-2026-08-12.md`,
+> `docs/validation/code-health-remediation-plan-2026-08-12.md`, and
+> `docs/architecture/backend-maintainability-audit.md`; mechanisms were
+> verified against source/reference call sites, not doc claims.
 >
 > **Standing exclusions (user, 2026-08-03):** animation-timeline features (timeline UI,
 > per-slot scrub/blend editors) and native appearance/equipment/customize editing (Poser
@@ -22,23 +27,27 @@ exists, nothing user-facing calls it; **command-only**: chat command only (count
 per standing rule); **absent**: no code. Ordered by workflow importance. Each task is sized
 for a single focused session.
 
-### Verification pass 2026-08-12 (source-verified against HEAD `e6c2c77` plus the inherited working tree; in-game validation pending on all DONE rows — only the user calls done)
+### Source-verified / acceptance-pending pass 2026-08-12 (against code `HEAD` `e6c2c77`; only the user calls live behavior Accepted)
 
-| Gap | Verdict |
+In this table, **Source-verified** means the implementation or product decision
+is resolved by source inspection and/or an explicit user decision. It does not
+mean live-game acceptance; that remains pending on the applicable rows.
+
+| Gap | Source status |
 |---|---|
-| 1 Redraw pose carryover | **DONE** |
+| 1 Redraw pose carryover | **Source-verified; acceptance pending** |
 | 2 Rest poses | **PARTIAL** — A/T done (import surfaces, per user rule 2026-08-08); reference pose backend-complete, deliberately UI-hidden |
-| 3 Pose library | **DONE** (exceeds spec) |
-| 4 Auto-save | **DONE** |
-| 5 Freeze-on-import | **DONE** |
-| 6 Target sync | **DONE** |
-| 7 Copy/paste pose UI | **DONE pending in-game validation** — stash/apply is the retained UI; clipboard covers cross-session transfer |
-| 8 Gaze fixed-position | **DONE** (ships as "Point" mode, exceeds spec) |
-| 9 IK bake | **DONE** |
+| 3 Pose library | **Source-verified; acceptance pending** (exceeds spec) |
+| 4 Auto-save | **Source-verified; acceptance pending** |
+| 5 Freeze-on-import | **Source-verified; acceptance pending** |
+| 6 Target sync | **Source-verified; acceptance pending** |
+| 7 Copy/paste pose UI | **Source-verified; acceptance pending** — stash/apply is the retained UI; clipboard covers cross-session transfer |
+| 8 Gaze fixed-position | **Source-verified; acceptance pending** (ships as "Point" mode, exceeds spec) |
+| 9 IK bake | **Source-verified; acceptance pending** |
 | 10 Overlay filter wiring | not started |
 | 11 Bone visibility presets | not started |
 | 12 Overworld actor | not started |
-| 13A Companion attach UI | **DONE by spawn-as-actor design** — owner-slot attach/current-state display intentionally not exposed |
+| 13A Companion attach UI | **Decision-resolved/source-verified; acceptance pending** — owner-slot attach/current-state display intentionally not exposed |
 | 13B Actor-to-bone attach | not started |
 | 14 Scene save/load | not started |
 | 15 IPC provider | not started |
@@ -404,10 +413,9 @@ Bone attachment (B):
 nothing — no drag-drop anywhere in the repo; the only bone-attach code is the lights path,
 not reusable for charas.
 
-**Task (session A — cheap, backend exists):** companion attach UI: an "Attach…" actor
-context-menu item opening a searchable companion/mount/ornament picker feeding
-`SetCompanion`, displaying current state from `GetCompanionInfo`, next to the existing
-Detach item.
+**Superseded task (session A — user decision 2026-08-11):** the earlier request for
+an owner-slot "Attach…" context-menu picker and current-state display is superseded
+by the design pivot above. Do not reintroduce that UI without a new user decision.
 **Task (session B — native work):** Ktisis-style bone attachment: sidebar drag-drop of an
 actor row onto a partial-0 bone row, attach via the skeleton-attach mechanism (grep Ktisis'
 `AttachUtility` call sites and verify struct semantics first per standing rule), link
