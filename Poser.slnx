@@ -6,4 +6,5 @@
   <Project Path="Poser.Game/Poser.Game.csproj" />
   <Project Path="PosingCore/PosingCore.csproj" />
   <Project Path="PosingCore.Tests/PosingCore.Tests.csproj" />
+  <Project Path="Poser.ContractTests/Poser.ContractTests.csproj" />
 </Solution>
