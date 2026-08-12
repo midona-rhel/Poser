@@ -2,18 +2,19 @@
 # Poser master greenfield migration and feature plan
 
 Date: 2026-08-12. Revision input: 2026-08-13. Status: Review (planning
-candidate; not Accepted). This is the single dated, non-normative execution
-plan for the code-health and feature audits. Durable contracts remain in the
-normative homes indexed by [docs/README.md](../README.md).
+candidate; this plan status remains Review). This is the single dated,
+non-normative execution plan for the code-health and feature audits. Durable
+contracts remain in the normative homes indexed by [docs/README.md](../README.md).
 
 This candidate changes only this plan. The sole UI-lab/tombstone candidate is
 the complete chain `727ccb7 -> cb86af7 ->
 3ea67f5100ea6808a67f8dcf7d0ab3d22f9f86ea ->
 9de84646a5f2d4c84c9609069d92b87100556300 ->
-c7d2c2e44bd008896d84f05cd716f75bcc7464f4`. The organizer accepted this
-candidate after Release build/tests (175/175, no Debug/live). It is not yet
-integrated into this plan's current head; until integration, the current
-normative UI/testing baseline remains in force. The chain owns
+c7d2c2e44bd008896d84f05cd716f75bcc7464f4`, integrated at organizer-accepted
+head `cdf306e1c946a0af09ddd2c55ab83be0c2449ba9`. The organizer accepted that
+head after independent no-findings review and Release build/tests (175/175,
+no Debug/live); the actual-in-game-only UI visual policy is now in force. The
+chain owns
 `tools/ui-conformance/**`, `docs/process/testing.md`,
 `docs/architecture/ui-workspace.md`, and the PBI-011/014/015/015A/016
 dispositions/tombstones. This plan records the accepted candidate and
@@ -72,7 +73,7 @@ they are observations, not new architecture contracts.
 | Runtime/native quarantine is not yet compiler-real | PosingCore still permits unsafe code and contains native entity/file/runtime code; Poser.Game still references it. Poser.UI is currently the Crystarium kernel project, while product UI under Poser/UI is in the host. Poser/UI/Panes/GraphicalBonePane.cs still imports native client structs. |
 | Native failure is inconsistent | Gaze construction is an eager, signature/hook failure path; IK and bone-hook capability loss can be silent. Current contract tests cover application seams, not the full native lifecycle. |
 | Dated gate evidence is not final acceptance | The audit snapshot reports 166 Release tests passing and a successful Release build with three warnings. Treat that as historical evidence to reverify at each accepted head; warnings must be removed or explicitly accepted by the organizer. |
-| The UI visual lab is transitional tooling | tools/ui-conformance contains the synthetic component/Picto/browser/golden/capture lab. The complete chain named above is the sole owner of its deletion and the related UI/testing/PBI paths; the organizer accepted it after Release build/tests (175/175, no Debug/live), but it is not yet integrated into this plan's current head. The target actual-in-game-only oracle is conditional on integration; until then the current [testing baseline](../process/testing.md) and [UI workspace baseline](../architecture/ui-workspace.md) remain in force. No replacement lab or synthetic visual gate is authorized. |
+| The UI visual lab is transitional tooling | The integrated chain named above deleted `tools/ui-conformance` and owns the related UI/testing/PBI paths. The organizer accepted integrated head `cdf306e` after independent no-findings review and Release build/tests (175/175, no Debug/live). The actual in-game UI is now the sole visual oracle; no replacement lab or synthetic visual gate is authorized. |
 
 ## IK bake safety hold
 
@@ -163,9 +164,9 @@ lifecycle wiring only. UI has no reference to Game or native entities.
 Tests and tools follow the narrowest layer they exercise. PosingCore.Tests
 may be migrated with a feature, but it is not a reason to retain PosingCore.
 The exact UI-lab/tombstone chain named at the top owns the disjoint lab and
-related documentation/PBI cleanup. Its actual-in-game-only target policy is
-operative only after that accepted head is integrated; it is not replaced by
-another capture, browser, golden, component, or pixel lab.
+related documentation/PBI cleanup. Its actual-in-game-only policy is operative
+at integrated head `cdf306e`; it is not replaced by another capture, browser,
+golden, component, or pixel lab.
 
 ### Concrete end-state owners
 
@@ -215,11 +216,9 @@ another capture, browser, golden, component, or pixel lab.
   and recovery.
 - There is no animation-authoring timeline. Playback, stance, scrubbing,
   expression, gaze, and physics controls remain useful features.
-- After the accepted UI-lab/tombstone chain is integrated, actual in-game Poser
-  UI is the only visual oracle. The synthetic
-  component/Picto/browser/golden/capture lab is deleted by that sole chain
-  owner and is not replaced. Until then, the current normative UI/testing
-  baseline remains in force.
+- At integrated head `cdf306e`, actual in-game Poser UI is the only visual
+  oracle. The synthetic component/Picto/browser/golden/capture lab was deleted
+  by that sole chain owner and is not replaced.
 
 ### Explicitly rejected abstractions
 
@@ -375,9 +374,7 @@ autosave capture, operation invalidation, restoration, destruction), and
 operation receipt/epoch, selection, and lifecycle contracts. The writer must
 record every other named stale normative home found by the contradiction sweep,
 assign it to an existing home, and link rather than duplicate prose. The UI
-actual-in-game-only policy is conditional on integration of the accepted
-UI-lab/tombstone chain; until then the current normative UI/testing baseline
-remains in force.
+actual-in-game-only policy is operative at integrated head `cdf306e`.
 
 **Tests/review/gates:** perform path/link and contradiction checks first, then
 independent exact-range review and rework. Evidence is the accepted normative
@@ -456,8 +453,8 @@ the new contract tests and one consumer each are accepted.
 **Review / completion evidence:** independent exact-range review and rework
 loop; accepted `Poser.Domain.Tests` output, its project-graph proof, ambiguity
 fixtures, and a mapping of every tombstoned caller. This tranche does not
-claim acceptance of `Poser.Application.Tests`, the UI-lab/tombstone chain, or
-the actual-in-game-only policy.
+claim acceptance of `Poser.Application.Tests`; the UI-lab/tombstone chain and
+actual-in-game-only policy are already recorded at integrated head `cdf306e`.
 
 ## Slice 2 — Application mutation, outcome, and recovery kernel
 
@@ -911,10 +908,8 @@ mutation ownership, synthetic lab creation, browser/Picto/golden/capture
 replacement, and broad styling framework changes.
 
 **Contract:** record the actual in-game Poser UI baseline before the first
-surface cutover. Until the accepted UI-lab/tombstone chain is integrated, the
-current normative testing/UI-workspace baseline remains in force and this
-slice cannot claim the actual-in-game-only policy as operative. After that
-integration, move product surfaces into the current Poser.UI assembly only as
+surface cutover. The actual-in-game-only policy is already normative at
+integrated head `cdf306e`. Move product surfaces into the current Poser.UI assembly only as
 they consume typed Application actions/read models; do not create
 Poser.UI.Kernel. UI owns filter/disclosure/hover/picker/dialog, per-surface
 selection scope and ephemeral state. It never owns pose accumulation, native
@@ -923,10 +918,9 @@ not reference Runtime or native entities.
 
 Surface candidates are attached/detached shell reopening; per-pop-out panes
 and disposal; capability/receipt/recovery readouts; and exception-safe style
-ownership. Each is a separate range. Once the accepted UI-lab/tombstone chain
-is integrated, visual correctness is accepted only by the actual in-game UI;
-standalone component sheets, browser capture, golden hashes, and synthetic
-pointer/keyboard labs are not gates and are not replaced.
+ownership. Each is a separate range. Visual correctness is accepted only by
+the actual in-game UI; standalone component sheets, browser capture, golden
+hashes, and synthetic pointer/keyboard labs are not gates and are not replaced.
 
 **Tests first:** Application read-model/action tests and source/assembly checks
 that UI cannot reference Game or native namespaces; ordinary pane lifecycle
@@ -934,9 +928,7 @@ and disposal tests where available. No synthetic visual test is added.
 
 **Invariants:** one surface owns one ephemeral state set; typed action has one
 final outcome; status is visible for pending/applied/rolled-back/recovery;
-visual acceptance follows the current normative baseline until the accepted
-UI-lab/tombstone chain is integrated, then is in game only; actual product
-assets remain available.
+visual acceptance is in game only; actual product assets remain available.
 
 **Release / Debug:** organizer Release build/test and source checks. Debug:
 required for each user-visible surface cutover after exact review, with a
@@ -1074,7 +1066,7 @@ requirement disappears; the map below records its new owner or disposition.
 | Train 4.4–4.6 environment/world light/default camera | Slice 9, with whole-shot relationships in Slice 11. |
 | Train 5 persistence/recovery | Slice 7; visible UI readout in Slice 10. |
 | Train 6 animation/native patch | Slice 9. |
-| Train 7 UI ownership/style | Slice 10 product surfaces; the complete accepted UI-lab/tombstone chain `727ccb7 -> cb86af7 -> 3ea67f5100ea6808a67f8dcf7d0ab3d22f9f86ea -> 9de84646a5f2d4c84c9609069d92b87100556300 -> c7d2c2e44bd008896d84f05cd716f75bcc7464f4` solely owns `tools/ui-conformance`, UI/testing, UI-workspace, and PBI-011/014/015/015A/016 dispositions/tombstones. The organizer accepted it after Release build/tests (175/175, no Debug/live); it is not yet integrated into this plan's current head. |
+| Train 7 UI ownership/style | Slice 10 product surfaces; the complete accepted UI-lab/tombstone chain `727ccb7 -> cb86af7 -> 3ea67f5100ea6808a67f8dcf7d0ab3d22f9f86ea -> 9de84646a5f2d4c84c9609069d92b87100556300 -> c7d2c2e44bd008896d84f05cd716f75bcc7464f4` solely owns `tools/ui-conformance`, UI/testing, UI-workspace, and PBI-011/014/015/015A/016 dispositions/tombstones. The organizer accepted integrated head `cdf306e` after independent no-findings review and Release build/tests (175/175, no Debug/live); actual-in-game-only policy is in force. |
 | Train 8 structural extraction/DRY | Local extraction follows each Slice 1–11 contract test; final PosingCore/facade/EventBus deletion and assembly enforcement are Slice 12. The old “structural work last” rule is superseded. |
 
 ### Code-health finding map
@@ -1155,11 +1147,9 @@ following against exact reviewed heads:
 - Portable poses and scene files are versioned, validated, atomic, structurally
   identified, ambiguity-visible, and compatible with useful existing formats;
   recovery is persisted and visible.
-- The accepted UI-lab/tombstone chain is integrated, the actual in-game UI is
-  visually accepted as the sole oracle, and the synthetic UI lab is deleted
-  and not replaced. Until that chain is integrated, the current normative
-  UI/testing baseline remains in force and this completion condition is not
-  claimed. Product assets and retained feature/format behavior remain.
+- The accepted UI-lab/tombstone chain is integrated at `cdf306e`, the actual
+  in-game UI is the sole visual oracle, and the synthetic UI lab is deleted and
+  not replaced. Product assets and retained feature/format behavior remain.
 - Every feature-gap row is Implemented, Acceptance pending, Parked, or
   Rejected with a current owner and rationale. Timeline authoring and external
   appearance ownership remain rejected boundaries.

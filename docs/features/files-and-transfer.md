@@ -49,13 +49,21 @@ interchange with Brio and (via name conversion) Anamnesis.
   same-second collisions suffixed ` (2)`). No actor qualifies → no
   folder. First save lands one full interval after entering GPose, then
   every interval.
-- GPose exit takes one final snapshot while the pose is still intact —
-  the auto-save handler MUST stay first in `GPoseStateChangedEvent`
-  subscription order (eager-resolve order in `Poser.cs`; the scene
-  services are injected as factories to keep it so). Disconnect and
-  posing-disable both surface as this same edge. With clean-on-exit the
-  exit instead deletes all snapshots — a crash never runs it, so
-  snapshots survive for recovery.
+- Periodic and final capture are explicit operations of the one
+  `SessionLifecycleCoordinator`. Final capture occurs while the session is
+  readable, before operation-epoch invalidation, cancellation/drain,
+  restoration, and native/resource teardown. Event-subscription order,
+  dependency-construction order, and a first subscriber are not correctness
+  contracts. Disconnect, posing-disable, and plugin exit use the same ordered
+  lifecycle edge. With clean-on-exit the ordered exit deletes all snapshots;
+  a crash never runs it, so snapshots survive for recovery.
+- Capture produces an immutable snapshot. The persistence worker receives only
+  that snapshot, performs atomic file writes, and is joined by final exit. It
+  never reads live runtime state and is never detached as best-effort work. A
+  capture, cancellation/drain, restore, or teardown failure yields
+  `RecoveryRequired` plus durable evidence. Lifecycle ownership and receipt
+  semantics are defined once in
+  [application-state.md](../architecture/application-state.md).
 - Retention prunes from DISK to the configured count of SAVE EVENTS —
   the files sharing one time prefix in a day folder, or one whole folder
   of the pre-2026-08-08 folder-per-save layout, which ages out through
@@ -71,6 +79,15 @@ interchange with Brio and (via name conversion) Anamnesis.
   recovered file flows through the standard import pipeline. Settings
   (General → AUTO-SAVE): enabled, interval 10–600 s, kept count (free
   numeric input, floor 1, no cap), clean-on-exit — read live each tick.
+
+The storage boundary is intentionally narrow. Versioned codecs, finite-value
+validation, same-directory atomic replacement, autosave queue/join, library
+index, and quarantine/recovery records belong to host-free `Poser.Persistence`
+only if that assembly can reference `Domain` and the minimum Application
+storage contracts. It must never reference Game, Dalamud, ImGui, native state,
+or live UI state; otherwise the implementation remains behind the same ports
+in Application. Native materialization stays in Game and logical transaction,
+identity, and receipt semantics stay in Application.
 
 ## Character files (MCDF)
 

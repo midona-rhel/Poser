@@ -1,34 +1,46 @@
 # Posing runtime
 
-Native boundary in `Poser.Game`; framework thread only; pointers never escape.
+`Poser.Game` is the native boundary: framework-thread work, unsafe offsets,
+signatures, hooks, native index hints, and handle revalidation stay there;
+pointers and native addresses never escape it. The current assembly is
+compiler-real even while its `LegacyRuntime` folder is a compatibility seam.
+The folder contains concrete owners such as actor/GPose, skeleton/slot/bone,
+transform/pose/IK/gaze, spawn/companion/prop, animation/presentation/
+integration/MCDF, camera/light/environment, and the native portions of files
+and configuration. They still consume `PosingCore` entities, services, and
+policies through the transitional graph; see
+[product-and-boundaries.md](product-and-boundaries.md) for the complete
+inventory and exit proof.
 
-- Ordering (Brio, deliberate): game animation/IK/physics first, then Poser
-  reapplies persistent layers in the skeleton hook, cache → reparent →
-  cache → finalize snapshot. Never Ktisis-style suppression; freeze is a
-  convenience, not a precondition.
-- Slot discovery follows Brio `GetCharacterBases`: Character from the actor
-  draw object, MainHand/OffHand/Prop from weapon draw data, Ornament from
-  the ornament object. Missing slots are normal; every present slot joins
-  the same per-frame apply ordering, and slot replacement releases only
-  that slot's bindings, caches, and pose state.
-- Pose deltas key by `(Slot, BoneName, PartialId)`; slot-blind or name-only
-  keying is a bug — a Character stack must never reach a same-named
-  weapon/ornament bone. Named layers (expression) are replaced in place,
-  never accumulated.
-  Normal reset and history restore interactive layers while preserving the
-  current named producer layers; only **Reset All** explicitly resets
-  expression, gaze, manual regions, and IK.
-- `LastTransform`/`LastRawTransform` are observations, not storage; an
-  identity-default `LastRawTransform` = exploded skeleton; never mix caches
-  across partials for absolute targets.
-- `TransformRuntimePort` is the one native write path: re-resolves exact
-  generations immediately before use, validates finiteness, restores
-  captured interactive layers before applying, fails explicitly.
-- `CleanSceneLifecycle` owns refresh/teardown (0.5→5 s skeleton retry; all
-  refreshes coalesce through one structural signature — no change publishes
-  nothing). `StableBindingRegistry` maps ids ↔ native, exact generations.
-- `ViewportProjection` is the UI's only spatial read: frame-scoped immutable
-  values; gestures never take baselines from it.
-- Physics freeze = Anamnesis/Brio NOP patch; IK = the game's own Havok
-  solvers; unsafe offsets live beside the code. `IEventBus` is transitional
-  notification only.
+The target keeps `Poser.Game` (never `Poser.Runtime`) as the sole native/runtime
+assembly. Its public edges expose opaque handles, validated observations, and
+narrow Application ports. A native `BoneIndex` is a lookup hint and mismatch
+guard, never portable identity. Exact actor, skeleton, slot, and bone
+generations are re-resolved immediately before a write; failed resolution is
+explicit, and no native object or address is handed to Application or UI.
+
+- Animation/IK/physics run first; Poser reapplies persistent layers in the
+  skeleton hook, then caches, reparents, caches, and publishes the final
+  snapshot. Freeze is a convenience, not a suppression precondition.
+- Slot discovery follows the actor draw object, weapon draw data, and ornament
+  object. Missing slots are normal; present slots share ordering, and slot
+  replacement releases only that slot's bindings, caches, and pose state.
+- Pose deltas are keyed by `(Slot, BoneName, PartialId)`. Slot-blind or
+  name-only lookup is invalid. Named producer layers are replaced in place;
+  normal reset/history preserves them and Reset All is explicit.
+- `LastTransform` and `LastRawTransform` are observations, not storage.
+  Absolute targets never mix partial caches, and the viewport is a frame-scoped
+  read projection rather than a gesture baseline.
+
+The runtime-side lifecycle implementation is transitional. Its correctness
+must come from the single Application `SessionLifecycleCoordinator`, not from
+EventBus subscription order or construction order. Lifecycle phases and final
+autosave capture are normative in
+[application-state.md](application-state.md) and
+[files-and-transfer.md](../features/files-and-transfer.md).
+
+Persistence, when justified as a separate assembly, is host-free and never
+reads live Game state. It receives immutable snapshots through Application
+contracts. UI receives read models/actions only; it does not reference native
+entities or baselines. The eventual deletion rule for this boundary is in
+[product-and-boundaries.md](product-and-boundaries.md).
