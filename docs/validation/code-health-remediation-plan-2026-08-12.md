@@ -6,10 +6,15 @@ candidate; not Accepted). This is the single dated, non-normative execution
 plan for the code-health and feature audits. Durable contracts remain in the
 normative homes indexed by [docs/README.md](../README.md).
 
-This candidate changes only this plan. The parallel UI writer owns the UI-lab
-deletion, the UI testing/process home, the UI workspace home, and the
-PBI-011/015/015A/016 dispositions. This plan records that accepted direction
-by link and execution contract; it does not edit those paths.
+This candidate changes only this plan. The sole UI-lab/tombstone candidate is
+the exact chain `727ccb7 -> cb86af7 ->
+3ea67f5100ea6808a67f8dcf7d0ab3d22f9f86ea`. That chain owns
+`tools/ui-conformance/**`, `docs/process/testing.md`,
+`docs/architecture/ui-workspace.md`, and the PBI-011/015/015A/016 tombstones.
+It remains Review until its final reviewer and the organizer's Release gates
+accept and integrate that head. Until integration, the current normative
+UI/testing baseline remains in force. This plan records the accepted direction
+and execution contract; it does not edit those paths or create a second owner.
 
 ## TL;DR
 
@@ -59,12 +64,12 @@ they are observations, not new architecture contracts.
 | Checked fact | Evidence and consequence |
 |---|---|
 | T1.1 is the accepted base | git show dd055101... is tagged poser-train-1-1-accepted-2026-08-12; its three changes harden Poser.ContractTests characterization for activation, transaction rollback, and exact replacement-generation refusal. No production code changed in that commit. |
-| The current solution is transitional | Poser.slnx still contains Poser.UI, host Poser, Poser.Application, Poser.Domain, Poser.Game, PosingCore, PosingCore.Tests, and Poser.ContractTests. |
+| The current solution is transitional | Poser.slnx still contains Poser.UI, host Poser, Poser.Application, Poser.Domain, Poser.Game, PosingCore, PosingCore.Tests, and Poser.ContractTests. The final Poser.Domain.Tests and Poser.Application.Tests targets do not yet exist; T1.1 is transitional Poser.ContractTests coverage. |
 | Current compiler direction is sound but incomplete | Poser.Domain has no project references; Poser.Application references Domain; Poser.Game references Domain, Application, and PosingCore; host Poser references all of those plus UI. The migration preserves this direction while removing the PosingCore edge. |
 | Runtime/native quarantine is not yet compiler-real | PosingCore still permits unsafe code and contains native entity/file/runtime code; Poser.Game still references it. Poser.UI is currently the Crystarium kernel project, while product UI under Poser/UI is in the host. Poser/UI/Panes/GraphicalBonePane.cs still imports native client structs. |
 | Native failure is inconsistent | Gaze construction is an eager, signature/hook failure path; IK and bone-hook capability loss can be silent. Current contract tests cover application seams, not the full native lifecycle. |
 | Dated gate evidence is not final acceptance | The audit snapshot reports 166 Release tests passing and a successful Release build with three warnings. Treat that as historical evidence to reverify at each accepted head; warnings must be removed or explicitly accepted by the organizer. |
-| The UI visual lab is transitional tooling | tools/ui-conformance contains the synthetic component/Picto/browser/golden/capture lab. The parallel UI writer owns its disjoint deletion. The product target has one visual oracle: the actual in-game Poser UI; no replacement lab or synthetic visual gate is authorized. See [ui-workspace.md](../architecture/ui-workspace.md) for the parallel normative update. |
+| The UI visual lab is transitional tooling | tools/ui-conformance contains the synthetic component/Picto/browser/golden/capture lab. The exact UI-lab/tombstone chain named above is the sole owner of its deletion and the related UI/testing/PBI paths; it remains Review until final reviewer and organizer Release acceptance/integration. The target actual-in-game-only oracle is conditional on that accepted head; until then the current [testing baseline](../process/testing.md) and [UI workspace baseline](../architecture/ui-workspace.md) remain in force. No replacement lab or synthetic visual gate is authorized. |
 
 ## IK bake safety hold
 
@@ -78,29 +83,42 @@ unproven production risk: there is no explicit separate post-disarm settle,
 and the identity/Written/history inclusion path can omit a target without a
 prior interactive override. Treat Bake IK as unsafe and unqualified meanwhile:
 
-- no harness fix or production Bake IK fix is authorized;
+- no harness fix or production Bake IK fix is authorized; only the additive,
+  diagnostic-only harness path explicitly scoped in 4D is allowed;
 - no slice may turn either diagnosis into a normative architecture rule;
 - no /poser test posing.ik-bake result is a passing gate for this program;
 - do not prescribe a harness fix or production fix and do not change the
   normative Bake contract yet;
 - generic receipt/epoch contracts may be characterized with fakes, but the IK
-  bake caller, harness, and behavior remain excluded until instrumentation
-  produces sufficient evidence.
+  bake caller, production semantics, and behavior remain excluded until
+  instrumentation produces sufficient evidence. The 4D diagnostic path is not
+  a harness or production fix and cannot change the Bake contract.
 
 Before any production IK rewrite, schedule a diagnostic-only IK qualification
-tranche. It may add structured diagnostics to the validation path and the
-production PoseExportCapture observation, but it may not change Bake semantics,
-history, settle timing, or acceptance rules. Use the same actor, chain, and
-witness for controlled A/B cases with animation running versus explicitly
-paused/speed 0. Record animation timeline/speed/control state; desired, basis,
-delta, identity, Written, order, and history targets and stack counts;
-immediate post-complete state; undo/redo stack state; and the production
-PoseExportCapture result. Validate export through PoseExportCapture rather than
-direct CreatePoseFile. The tranche reports evidence only; Release stays
-unqualified and Bake IK remains unsafe until the organizer authorizes a
-separate production contract.
+tranche. It may add an additive diagnostic-only harness path in
+`LiveTestService` (or a separately named diagnostic scenario) and structured
+logging, but it may not change Bake semantics, history, settle timing, or
+acceptance rules. Both pre- and post-state exports must go through the existing
+production `CleanPoseFacade`/`PoseExportCapture` capture API, never direct
+`CreatePoseFile`, and completion must carry the exact actor/session generation
+and operation receipt. Recreate/reset the identical controlled actor
+generation, or deterministically restore the same raw, interactive-stack,
+history, IK, target, witness, and animation baseline before each arm; assert
+baseline equality before interpretation, otherwise the result remains
+insufficient. Use the same actor, chain, and witness for controlled A/B cases
+with animation running versus explicitly paused/speed 0. Record animation
+timeline/speed/control state; desired, basis, delta, identity, Written, order,
+and history targets and stack counts; immediate post-complete state; undo/redo
+stack state; and the production PoseExportCapture result. The tranche reports
+evidence only; Release stays unqualified and Bake IK remains unsafe until the
+organizer authorizes a separate production contract.
 
 ## Target architecture and ownership
+
+The target direction below is a Review proposal, not an already changed
+normative contract. Slice 1 implementation cannot begin until its normative
+reconciliation prerequisite is accepted; this non-normative plan is not
+evidence that the current normative homes have already been updated.
 
 ### Minimal compiler-real assembly graph
 
@@ -141,8 +159,10 @@ lifecycle wiring only. UI has no reference to Game or native entities.
 
 Tests and tools follow the narrowest layer they exercise. PosingCore.Tests
 may be migrated with a feature, but it is not a reason to retain PosingCore.
-The synthetic UI lab is a disjoint cleanup owned by the parallel UI writer and
-is not replaced by another capture, browser, golden, component, or pixel lab.
+The exact UI-lab/tombstone chain named at the top owns the disjoint lab and
+related documentation/PBI cleanup. Its actual-in-game-only target policy is
+operative only after that accepted head is integrated; it is not replaced by
+another capture, browser, golden, component, or pixel lab.
 
 ### Concrete end-state owners
 
@@ -192,9 +212,11 @@ is not replaced by another capture, browser, golden, component, or pixel lab.
   and recovery.
 - There is no animation-authoring timeline. Playback, stance, scrubbing,
   expression, gaze, and physics controls remain useful features.
-- Actual in-game Poser UI is the only visual oracle. The synthetic
-  component/Picto/browser/golden/capture lab is deleted by its parallel owner
-  and is not replaced.
+- After the accepted UI-lab/tombstone chain is integrated, actual in-game Poser
+  UI is the only visual oracle. The synthetic
+  component/Picto/browser/golden/capture lab is deleted by that sole chain
+  owner and is not replaced. Until then, the current normative UI/testing
+  baseline remains in force.
 
 ### Explicitly rejected abstractions
 
@@ -311,43 +333,96 @@ this record-only slice.
 **Review / completion evidence:** the tag, SHA, changed-path list, and the
 fact that this program begins at T1.1 rather than redoing it.
 
+### Prerequisite 1A — normative reconciliation before Slice 1 implementation
+
+**State owner / sole writer:** one existing-normative-home documentation Luna
+writer, before the Slice 1 implementation writer starts. The exact
+UI-lab/tombstone chain named at the top remains the sole owner of
+`docs/process/testing.md`, `docs/architecture/ui-workspace.md`, and its
+PBI tombstones; this prerequisite links to that chain and does not duplicate
+or edit its paths.
+
+**Allowed:** the existing normative homes
+`docs/architecture/product-and-boundaries.md`,
+`docs/architecture/application-state.md`,
+`docs/architecture/posing-runtime.md`, and
+`docs/features/files-and-transfer.md`; `docs/README.md` only for index/link
+hygiene; and the exact UI-lab/tombstone chain's owned UI/testing paths when
+that chain performs its own update. **Excluded:** source, tests, project
+files, a second migration plan, and a document per class or interface.
+
+**Reconciliation contract:** reconcile the current
+`product-and-boundaries.md` Core/Runtime naming with the Review target while
+retaining `Poser.Game` as the sole native/runtime project; reconcile the
+`files-and-transfer.md` event-order/autosave wording with the explicit
+SessionLifecycleCoordinator order (final autosave capture, operation
+invalidation, restoration, destruction); and reconcile
+`application-state.md` and `posing-runtime.md` stable identity, exact binding,
+operation receipt/epoch, selection, and lifecycle contracts. The writer must
+also record every other named stale normative home found by the contradiction
+sweep, assign it to an existing home, and link rather than duplicate prose.
+The UI actual-in-game-only policy is conditional on integration of the
+accepted UI-lab/tombstone chain; until then the current normative UI/testing
+baseline remains in force. A new concise normative home is allowed only if no
+existing home fits and it follows `docs/README.md` policy.
+
+**Tests/review/gates:** perform path/link and contradiction checks first, then
+independent exact-range review and rework. Evidence is the accepted normative
+diff set, a named contradiction report showing each stale claim's disposition,
+and the accepted UI-lab/tombstone-chain head when applicable. Release: N/A for
+docs-only work; Debug: N/A. **Rollback seam:** the prior accepted normative
+heads and the pre-reconciliation links remain recoverable in Git. The target
+direction remains a Review proposal until this prerequisite is accepted; no
+Slice 1 implementation may claim that stale normative docs are already
+changed.
+
 ## Slice 1 — contract repair, dependency freeze, and pure Domain corrections
 
 **State owner / sole Luna writer:** one contract-and-Domain Luna writer. A
-disjoint UI-tooling writer owns the synthetic-lab deletion and the UI/PBI paths
-named above; this candidate does not edit them.
+separate UI-surface writer may later own product-surface migrations, but the
+exact UI-lab/tombstone chain named above is the only owner of the lab,
+UI/testing, and listed PBI cleanup.
 
 **Allowed:** Poser.Domain/**; narrow Application contract/state paths under
 Poser.Application/Scene, Poser.Application/Selection, and explicit storage
-contracts; Poser.ContractTests/**; project-reference/dependency checks;
-source/reference tombstones needed to make this plan authoritative. A separate
-cleanup candidate may delete tools/ui-conformance/** after recording the actual
-in-game UI baseline. **Excluded:** runtime/native behavior, PosingCore
-deletion, UI surface rewrites, IK bake behavior, broad backlog prose, and any
-generic framework.
+contracts; transitional Poser.ContractTests/**; creation/migration of the final
+Poser.Domain.Tests/** and Poser.Application.Tests/** targets; their
+Poser.slnx project entries/references; project-reference/dependency checks;
+and source/reference tombstones needed to make this plan authoritative.
+**Excluded:** runtime/native behavior, PosingCore deletion, UI surface
+rewrites, IK bake behavior, broad backlog prose, and any generic framework.
 
 **Non-overlapping candidates:**
 
 1. Freeze the six-assembly target graph, the Poser.Game runtime boundary,
    conditional host-free Persistence rule, and the no-separate-kernel decision.
-2. Correct stable IDs, SceneStore/SelectionScope contracts, complete
+2. Create/migrate the final Poser.Domain.Tests and Poser.Application.Tests
+   targets from the transitional T1.1 Poser.ContractTests coverage, retaining
+   the accepted tests as characterization while adding the missing Domain and
+   Application contract families. Later owner slices add their own final test
+   families; this item is not complete at Slice 0.
+3. Correct stable IDs, SceneStore/SelectionScope contracts, complete
    SceneSnapshot fields needed for relationships/ownership, and fixed IK
    policy. Converge SceneSession to the one scene owner; do not create a
    parallel store.
-3. Correct PoseLayer.None, finite/normalized pure transform policy, and typed
+4. Correct PoseLayer.None, finite/normalized pure transform policy, and typed
    unknown-mask failure.
-4. Correct PortablePose structural identity: ordered entries, explicit
+5. Correct PortablePose structural identity: ordered entries, explicit
    BonePath, ambiguity reporting, and native index as a hint only. Preserve
    useful legacy format behavior through an explicit compatibility adapter.
-5. Search-verified dead API/event/documentation tombstones may land here when
+6. Search-verified dead API/event/documentation tombstones may land here when
    they do not overlap an active owner. EventBus replacement/deletion itself
-   remains Slice 12. The UI-lab cleanup is disjoint and has no replacement.
+   remains Slice 12. The exact UI-lab/tombstone chain owns its cleanup and has
+   no replacement.
 
-**Tests first:** extend Poser.ContractTests with all eight propagation masks,
-including None; unknown bits; exact slot/generation/bone identity; ordered
-selection scopes; complete scene snapshot round-trip; portable duplicate,
-ambiguous, path, and legacy-name fixtures; and fixed IK unsupported-endpoint
-outcomes. Tests must prove no silent history or state mutation.
+**Tests first:** create/migrate the final Domain and Application test targets
+while retaining the accepted Poser.ContractTests characterization. Cover all
+eight propagation masks, including None; unknown bits; exact
+slot/generation/bone identity; ordered selection scopes; complete scene
+snapshot round-trip; portable duplicate, ambiguous, path, and legacy-name
+fixtures; and fixed IK unsupported-endpoint outcomes. Later slices add their
+missing contract families in their own target. Tests must prove no silent
+history or state mutation.
 
 **Invariants:** pure Domain math; stable generation/slot identity; explicit
 selection scopes; no raw address; no diagnosis or production fix for Bake IK;
@@ -361,9 +436,9 @@ PortablePose constructor, and current file adapters remain callable until
 the new contract tests and one consumer each are accepted.
 
 **Review / completion evidence:** independent exact-range review and rework
-loop; accepted test output, graph proof, ambiguity fixtures, and a mapping of
-every tombstoned caller. The disjoint UI writer separately reports the actual
-in-game baseline and lab deletion; this tranche does not claim either.
+loop; accepted final-test-target output, graph proof, ambiguity fixtures, and a
+mapping of every tombstoned caller. This tranche does not claim acceptance of
+the UI-lab/tombstone chain or the actual-in-game-only policy.
 
 ## Slice 2 — Application mutation, outcome, and recovery kernel
 
@@ -372,9 +447,10 @@ MutationCoordinator and its concrete callers.
 
 **Allowed:** Poser.Application/Transforms/**, the cohesive mutation portions
 of Poser.Application/Posing/**, new outcome/recovery records beside those
-owners, and Poser.ContractTests/**. **Excluded:** native/runtime ports,
-Persistence implementation, UI, EventBus replacement, async caller migration,
-and a generic operation framework.
+owners, `Poser.Application.Tests/**`, and the retained transitional
+`Poser.ContractTests/**`. **Excluded:** native/runtime ports, Persistence
+implementation, UI, EventBus replacement, async caller migration, and a
+generic operation framework.
 
 **Contract:** migrate discrete transform, gesture, and pose-edit paths to one
 typed ChangeOutcome. The private per-call rollback ledger records every
@@ -382,10 +458,12 @@ capture/write/restore result. On rollback failure, the outcome carries the
 primary and rollback failures, does not append history, marks recovery required,
 and prevents a new write until retry or explicit stale-target disposal.
 
-**Tests first:** fake ITransformRuntimePort tests for success, partial write,
-capture failure, restore failure, stale target, unavailable capability, one
-history patch, cancel, undo, redo, and recovery quarantine. Characterize
-existing native phase ordering before changing any caller.
+**Tests first:** create/migrate the final Application test target and add fake
+ITransformRuntimePort tests for success, partial write, capture failure,
+restore failure, stale target, unavailable capability, one history patch,
+cancel, undo, redo, and recovery quarantine. Characterize existing native phase
+ordering before changing any caller; retain transitional T1.1 coverage until
+the final target proves the same contract.
 
 **Invariants:** frozen baselines, total deltas, one patch, exact target
 containment, no false success, and no shared rollback ledger or hidden async
@@ -488,7 +566,10 @@ receipt and ordinary live evidence.
 
 **Review / completion evidence:** exact-range independent review/rework, epoch
 timeline tests, receipt-state table, and explicit confirmation that
-IkBakeCapture, the harness, and the disputed artifact were untouched.
+IkBakeCapture, the existing Bake scenario semantics, and the disputed artifact
+were untouched. If 4D is included in the reviewed range, its additive
+diagnostic path is checked separately from those unchanged production
+semantics.
 
 ### Diagnostic-only IK qualification tranche (4D; before any production rewrite)
 
@@ -496,30 +577,47 @@ IkBakeCapture, the harness, and the disputed artifact were untouched.
 this is instrumentation and evidence collection, not a production behavior
 owner. It must run before any later slice is allowed to rewrite Bake IK.
 
-**Allowed:** diagnostic-only logging in
-Poser.Game/Validation/LiveTestService.cs and the production capture observation
-in Poser.Game/Posing/PoseExportCapture.cs, plus the persisted diagnostic report
-path. **Excluded:** IkBakeCapture semantic changes, settle/history/identity
-fixes, harness contract changes, acceptance-rule changes, and any production
+**Allowed:** an additive diagnostic-only harness contract in
+`Poser.Game/Validation/LiveTestService.cs` (or a separately named diagnostic
+scenario in that validation area), its structured logging, and the existing
+`LiveTestResult`/`LiveTestRunReport` persisted report path. The path may call
+the existing production `CleanPoseFacade.CapturePoseFile` /
+`PoseExportCapture` API, with no semantic change to that API; both its pre- and
+post-state exports must use that capture boundary. Each completion must carry
+and verify the exact actor logical ID and generation, session generation, and
+diagnostic operation receipt/epoch; a mismatched callback is diagnostic
+failure/insufficient evidence and cannot write the report. **Excluded:**
+`IkBakeCapture` changes; changes to the existing Bake scenario's production
+capture, semantics, verdict rules, or normative contract; direct
+`CreatePoseFile` in the diagnostic path; settle/history/identity fixes;
+unrelated harness contracts; acceptance-rule changes; and any production
 rewrite based on either diagnosis.
 
-**Contract / tests first:** use the same actor, chain, and witness for
+**Contract / tests first:** before either A/B arm, recreate/reset the identical
+controlled actor generation, or deterministically restore the same raw,
+interactive-stack, history, IK, target, witness, and animation baseline. Log a
+baseline fingerprint and assert equality across arms before interpretation; if
+the actor generation or any required baseline field cannot be matched, the
+outcome stays insufficient. Use the same actor, chain, and witness for
 structured A/B cases with animation running versus explicitly paused/speed 0.
 Log animation timeline, baseline, speed, and control state; desired, basis,
 delta, identity, Written, order, and history targets and stack counts;
-immediate post-complete state; undo/redo stack state; and the production
-PoseExportCapture result. Validate export through PoseExportCapture rather than
-direct CreatePoseFile. The diagnostic output must correlate one
-actor/generation without asserting a Bake semantic verdict.
+immediate post-complete state; undo/redo stack state; exact actor/session
+generation and receipt; and both production `PoseExportCapture` results.
+Validate both exports through `CleanPoseFacade.CapturePoseFile` /
+`PoseExportCapture`, rather than direct `CreatePoseFile`. The diagnostic
+output reports evidence only and never asserts a Bake semantic verdict.
 
 **How evidence distinguishes the diagnoses:** Diagnosis A is supported when the
-running case diverges while the explicitly paused/speed-0 case converges, with
-the identity/Written/order/history targets and stack counts otherwise equal;
-that demonstrates a moving animation baseline. Diagnosis B remains supported
-if the paused/speed-0 case still omits a target or mismatches, and the trace
-shows a missing identity/Written/history inclusion or a separate post-disarm
-settle requirement. If both conditions occur or the fields are incomplete, the
-result remains insufficient evidence and authorizes no production change.
+matched-baseline running case diverges while the explicitly paused/speed-0 case
+converges, with the identity/Written/order/history targets and stack counts
+otherwise equal; that demonstrates a moving animation baseline. Diagnosis B
+remains supported if the matched paused/speed-0 case still omits a target or
+mismatches, and the trace shows a missing identity/Written/history inclusion or
+a separate post-disarm settle requirement. If baseline equality cannot be
+asserted, both conditions occur, or the fields/receipt correlation are
+incomplete, the result remains insufficient evidence and authorizes no
+production change.
 
 **Release / Debug:** Release remains unqualified for the current artifact.
 Organizer-owned Release instrumentation/build evidence is required; Debug is
@@ -775,9 +873,10 @@ whole-shot work.
 
 ## Slice 10 — actual UI surfaces, per-surface state, and read models
 
-**State owner / sole Luna writer:** the UI-surface Luna writer. This slice is
-separate from the parallel UI-lab/docs writer and must not edit that writer's
-paths concurrently.
+**State owner / sole Luna writer:** the UI-surface Luna writer, after the
+normative prerequisite is accepted. This writer owns product-surface migration
+only; the exact UI-lab/tombstone chain named at the top remains the sole owner
+of the lab, UI/testing, and listed PBI cleanup.
 
 **Allowed:** current Poser.UI/** kernel/product assets, typed Application
 read-model/action contracts, and one product-surface migration at a time from
@@ -787,8 +886,11 @@ mutation ownership, synthetic lab creation, browser/Picto/golden/capture
 replacement, and broad styling framework changes.
 
 **Contract:** record the actual in-game Poser UI baseline before the first
-surface cutover. Move product surfaces into the current Poser.UI assembly only
-as they consume typed Application actions/read models; do not create
+surface cutover. Until the accepted UI-lab/tombstone chain is integrated, the
+current normative testing/UI-workspace baseline remains in force and this
+slice cannot claim the actual-in-game-only policy as operative. After that
+integration, move product surfaces into the current Poser.UI assembly only as
+they consume typed Application actions/read models; do not create
 Poser.UI.Kernel. UI owns filter/disclosure/hover/picker/dialog, per-surface
 selection scope and ephemeral state. It never owns pose accumulation, native
 baselines, history, cached native entities, or a singleton pane target. It does
@@ -796,10 +898,10 @@ not reference Runtime or native entities.
 
 Surface candidates are attached/detached shell reopening; per-pop-out panes
 and disposal; capability/receipt/recovery readouts; and exception-safe style
-ownership. Each is a separate range. Visual correctness is accepted only by
-the actual in-game UI; standalone component sheets, browser capture, golden
-hashes, and synthetic pointer/keyboard labs are not gates and are not
-replaced.
+ownership. Each is a separate range. Once the accepted UI-lab/tombstone chain
+is integrated, visual correctness is accepted only by the actual in-game UI;
+standalone component sheets, browser capture, golden hashes, and synthetic
+pointer/keyboard labs are not gates and are not replaced.
 
 **Tests first:** Application read-model/action tests and source/assembly checks
 that UI cannot reference Game or native namespaces; ordinary pane lifecycle
@@ -807,7 +909,9 @@ and disposal tests where available. No synthetic visual test is added.
 
 **Invariants:** one surface owns one ephemeral state set; typed action has one
 final outcome; status is visible for pending/applied/rolled-back/recovery;
-visual acceptance is in game only; actual product assets remain available.
+visual acceptance follows the current normative baseline until the accepted
+UI-lab/tombstone chain is integrated, then is in game only; actual product
+assets remain available.
 
 **Release / Debug:** organizer Release build/test and source checks. Debug:
 required for each user-visible surface cutover after exact review, with a
@@ -821,7 +925,7 @@ adapters until its in-game card passes; one surface is cut over at a time.
 
 **Review / completion evidence:** actual in-game baseline, per-surface exact
 range review/rework, dependency proof, Release output, focused live card, and
-the parallel writer's separate lab-deletion report linked by the organizer.
+the accepted/integrated UI-lab/tombstone-chain head recorded by the organizer.
 
 ## Slice 11 — whole-shot and remaining product verticals
 
@@ -883,8 +987,8 @@ their vertical migrations; PosingCore/** files proven unused or migrated;
 PosingCore/PosingCore.csproj, PosingCore.Tests references, Poser.slnx,
 Poser.Game.csproj, host composition, EventBus/Events and broad legacy
 contract callers; source/dependency checks. **Excluded:** new feature work,
-UI-lab paths owned in parallel, unresolved behavior fixes, and cosmetic
-Poser.Game renaming.
+the exact UI-lab/tombstone-chain paths owned by that chain, unresolved behavior
+fixes, and cosmetic Poser.Game renaming.
 
 **Contract:** delete a facade only after a caller search, local characterization
 test, exact-range review, and rollback seam have passed. Delete EventBus only
@@ -931,7 +1035,7 @@ requirement disappears; the map below records its new owner or disposition.
 | Old item | New slice or disposition |
 |---|---|
 | Release 0 clean baseline, redeploy, and full manual smoke | Superseded by accepted T1.1 Slice 0. Do not redo a baseline deployment in this program; organizer uses the accepted SHA and runs the next applicable Release/live card. |
-| Train 1.1 contract-test foundation | Accepted at Slice 0; extend only through Slice 1/2 contracts. |
+| Train 1.1 contract-test foundation | Accepted transitional Poser.ContractTests coverage at Slice 0; create/migrate final Domain and Application test targets and missing families in Slice 1/2 and their later owner slices. |
 | Train 1.2 startup rollback and Gaze | Slice 3. |
 | Train 1.3 IK allocation and bone-hook health | Slice 3 for allocation/capability refusal; Bake IK behavior and harness remain on the instrumentation qualification hold. |
 | Train 1.4 PBI-012 masks | Slice 1 pure correction and Slice 6 pose transaction callers. |
@@ -945,7 +1049,7 @@ requirement disappears; the map below records its new owner or disposition.
 | Train 4.4–4.6 environment/world light/default camera | Slice 9, with whole-shot relationships in Slice 11. |
 | Train 5 persistence/recovery | Slice 7; visible UI readout in Slice 10. |
 | Train 6 animation/native patch | Slice 9. |
-| Train 7 UI ownership/style | Slice 10; synthetic lab/docs deletion is the parallel writer's disjoint cleanup. |
+| Train 7 UI ownership/style | Slice 10 product surfaces; the exact UI-lab/tombstone chain `727ccb7 -> cb86af7 -> 3ea67f5100ea6808a67f8dcf7d0ab3d22f9f86ea` solely owns `tools/ui-conformance`, UI/testing, UI-workspace, and PBI-011/015/015A/016 tombstones, remaining Review until final reviewer and organizer Release acceptance/integration. |
 | Train 8 structural extraction/DRY | Local extraction follows each Slice 1–11 contract test; final PosingCore/facade/EventBus deletion and assembly enforcement are Slice 12. The old “structural work last” rule is superseded. |
 
 ### Code-health finding map
@@ -967,12 +1071,12 @@ requirement disappears; the map below records its new owner or disposition.
 
 | Old R item | New slice or disposition |
 |---|---|
-| R1 tests in Domain/Application | Accepted T1.1 Slice 0; extend Slice 1/2. |
+| R1 tests in Domain/Application | T1.1 is accepted transitional Poser.ContractTests coverage only. Slice 1 creates/migrates final Poser.Domain.Tests; Slice 2 creates/migrates final Poser.Application.Tests; missing contract families continue with their owning slices. R1 is not complete at Slice 0. |
 | R2 PosingCore pure-core coverage | Slice 7 format/policy characterization and Slice 12 migration proof; preserve useful tests while the source moves. |
 | R3 Gaze degradation | Slice 3. |
 | R4 capability-health surface | Slice 3 read model and Slice 10 UI. |
 | R5 namespace honesty | Only proof-driven moves in Slice 5/6/9/12; do not cosmetic-rename Poser.Game or introduce a Runtime project. |
-| R6 backend migration document | This master plan is the execution artifact; the parallel owners update their normative homes. No duplicate migration document is added here. |
+| R6 durable migration-state/normative cleanup | This master plan is non-normative and cannot satisfy durable cleanup. Prerequisite 1A assigns reconciliation to the existing product-and-boundaries, application-state, posing-runtime, and files-and-transfer homes, with the exact UI-lab/tombstone chain solely owning UI-workspace/testing/PBI cleanup. Evidence is accepted normative diffs, contradiction/link checks, exact review, and organizer acceptance; no document per class and no duplicate migration plan. |
 | R7 ISessionScoped enrollment | Superseded: one explicit SessionLifecycleCoordinator owns phases; no generic enrollment interface. |
 | R8 feature-manifest registration | Superseded as a framework: Host keeps explicit composition; per-feature registration may be mechanically split only when it does not add a manifest/manager abstraction. |
 | R9 ActorIntegrationSession split | Slice 8 after file-boundary/redraw tests; McdfTransaction only, retain vendor orchestration. |
@@ -1026,8 +1130,11 @@ following against exact reviewed heads:
 - Portable poses and scene files are versioned, validated, atomic, structurally
   identified, ambiguity-visible, and compatible with useful existing formats;
   recovery is persisted and visible.
-- Actual in-game UI is visually accepted; the synthetic UI lab is deleted and
-  not replaced. Product assets and retained feature/format behavior remain.
+- The accepted UI-lab/tombstone chain is integrated, the actual in-game UI is
+  visually accepted as the sole oracle, and the synthetic UI lab is deleted
+  and not replaced. Until that chain is integrated, the current normative
+  UI/testing baseline remains in force and this completion condition is not
+  claimed. Product assets and retained feature/format behavior remain.
 - Every feature-gap row is Implemented, Acceptance pending, Parked, or
   Rejected with a current owner and rationale. Timeline authoring and external
   appearance ownership remain rejected boundaries.
