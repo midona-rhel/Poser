@@ -190,6 +190,14 @@ public sealed class AtomicPoseFileStore
         try
         {
             using var stream = _fileSystem.OpenRead(path);
+            if (stream.Length <= 0)
+            {
+                return ValidationReadFailure(
+                    PoseFileValidationFailure.Create(
+                        PoseFileValidationFailureKind.Document,
+                        "The pose file is empty."),
+                    path);
+            }
             if (stream.Length > PoseFileLimits.MaxFileBytes)
             {
                 return ReadFailure(

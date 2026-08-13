@@ -132,6 +132,23 @@ public sealed class PoseFilePersistenceTests
     }
 
     [Fact]
+    public void Read_rejects_an_empty_file_before_decoding()
+    {
+        using var fixture = new StoreFixture();
+        using (File.Create(fixture.Destination))
+        {
+        }
+
+        var result = AtomicPoseFileStore.Default.Read(fixture.Destination);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(PoseFileStoreFailureKind.Validation, result.Failure?.Kind);
+        Assert.Equal(
+            PoseFileValidationFailureKind.Document,
+            result.Failure?.ValidationFailure?.Kind);
+    }
+
+    [Fact]
     public void Read_accepts_a_valid_file_at_exactly_32_mib()
     {
         using var fixture = new StoreFixture();
