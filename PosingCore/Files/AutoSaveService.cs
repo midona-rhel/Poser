@@ -8,7 +8,6 @@ using System.Threading.Tasks;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Poser.Config;
-using Poser.Core;
 using Poser.Entities;
 using Poser.Services;
 
@@ -48,16 +47,10 @@ namespace Poser.Files;
 /// folders accumulate (Ktisis leaves them).</item>
 /// </list>
 ///
-/// <para>WHY THE SCENE SERVICES ARE INJECTED AS FACTORIES: on GPose exit
-/// <c>ActorManager</c>, <c>SkeletonService</c>, <c>BonePosingService</c> and
-/// <c>PosingService</c> all wipe their state from their own
-/// <c>GPoseStateChangedEvent</c> handlers. The EventBus dispatches in
-/// subscription order, and a constructor argument is always constructed — and
-/// therefore subscribed — before the constructor that consumes it. Taking those
-/// services directly would guarantee this service subscribed last and found an
-/// empty scene, making the exit snapshot a permanent no-op. Resolving them
-/// lazily lets this service subscribe first (see the eager resolve in
-/// <c>Poser.Poser</c>) and read the still-intact pose on the way out.</para>
+/// <para>The application lifecycle coordinator requests the final capture
+/// explicitly before publishing the legacy GPose exit event. The scene services
+/// remain factories so the capture reads their current state without making
+/// composition depend on an event-subscriber order.</para>
 /// </summary>
 public class AutoSaveService : IAutoSaveService
 {
@@ -69,7 +62,6 @@ public class AutoSaveService : IAutoSaveService
 
     private readonly IPluginLog _log;
     private readonly IFramework? _framework;
-    private readonly IEventBus _eventBus;
     private readonly IGPoseService _gpose;
     private readonly Func<IActorManager> _actors;
     private readonly Func<ISkeletonService> _skeletons;
@@ -77,6 +69,7 @@ public class AutoSaveService : IAutoSaveService
     private readonly Func<IPoseFileService> _poseFiles;
     private readonly ConfigurationService _configuration;
     private readonly Func<DateTime> _clock;
+    private readonly Func<Action, bool> _dispatch;
 
     private DateTime? _nextDueUtc;
     private bool _disposed;
@@ -93,7 +86,6 @@ public class AutoSaveService : IAutoSaveService
     public AutoSaveService(
         IPluginLog log,
         IFramework framework,
-        IEventBus eventBus,
         IGPoseService gpose,
         Func<IActorManager> actors,
         Func<ISkeletonService> skeletons,
@@ -104,7 +96,6 @@ public class AutoSaveService : IAutoSaveService
         : this(
             log,
             framework,
-            eventBus,
             gpose,
             actors,
             skeletons,
@@ -123,7 +114,6 @@ public class AutoSaveService : IAutoSaveService
     internal AutoSaveService(
         IPluginLog log,
         IFramework? framework,
-        IEventBus eventBus,
         IGPoseService gpose,
         Func<IActorManager> actors,
         Func<ISkeletonService> skeletons,
@@ -131,11 +121,11 @@ public class AutoSaveService : IAutoSaveService
         Func<IPoseFileService> poseFiles,
         ConfigurationService configuration,
         string rootDirectory,
-        Func<DateTime>? utcClock = null)
+        Func<DateTime>? utcClock = null,
+        Func<Action, bool>? dispatch = null)
     {
         _log = log;
         _framework = framework;
-        _eventBus = eventBus;
         _gpose = gpose;
         _actors = actors;
         _skeletons = skeletons;
@@ -143,6 +133,11 @@ public class AutoSaveService : IAutoSaveService
         _poseFiles = poseFiles;
         _configuration = configuration;
         _clock = utcClock ?? (() => DateTime.UtcNow);
+        _dispatch = dispatch ?? (work =>
+        {
+            _ = Task.Run(work);
+            return true;
+        });
         RootDirectory = rootDirectory;
 
         try
@@ -158,7 +153,6 @@ public class AutoSaveService : IAutoSaveService
 
         if (_framework != null)
             _framework.Update += OnFrameworkUpdate;
-        _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
     }
 
     private AutoSaveConfiguration Settings => _configuration.Config.AutoSave;
@@ -195,27 +189,26 @@ public class AutoSaveService : IAutoSaveService
     }
 
     /// <summary>
-    /// GPose exit is the one edge that also covers Ktisis' save-on-disconnect
-    /// and save-on-posing-disable: in Poser's model both surface here.
+    /// Explicit final-capture boundary. GPoseService calls this before it
+    /// publishes the legacy exit event, so the capture does not depend on
+    /// EventBus subscription order.
     /// </summary>
-    internal void OnGPoseStateChanged(GPoseStateChangedEvent e)
+    public AutoSaveCaptureResult CaptureForExit()
     {
-        if (e.IsGPosing)
-            return;
-
         _nextDueUtc = null;
 
         var settings = Settings;
         if (!settings.Enabled)
-            return;
+            return AutoSaveCaptureResult.NotCaptured("Auto-save is disabled.");
 
         if (settings.CleanOnExit)
         {
             CleanAll();
-            return;
+            return AutoSaveCaptureResult.NotCaptured(
+                "Clean-on-exit is enabled; snapshots were cleaned.");
         }
 
-        SaveNow("gpose-exit");
+        return CaptureAndDispatch("gpose-exit");
     }
 
     /// <summary>
@@ -235,16 +228,20 @@ public class AutoSaveService : IAutoSaveService
     /// "nothing had authored edits" and "the previous snapshot is still being
     /// written", both of which are no-ops by design.
     /// </summary>
-    public int SaveNow(string reason)
+    public int SaveNow(string reason) => CaptureAndDispatch(reason).CapturedActors;
+
+    private AutoSaveCaptureResult CaptureAndDispatch(string reason)
     {
         if (Interlocked.CompareExchange(ref _writeInFlight, 1, 0) != 0)
-            return 0;
+            return AutoSaveCaptureResult.NotCaptured(
+                "A previous auto-save dispatch is still in flight.");
 
-        var dispatched = false;
+        var dispatchAccepted = false;
         try
         {
             var captured = new List<CapturedPose>();
             var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string? captureFailure = null;
 
             foreach (var actor in _actors().Actors)
             {
@@ -262,6 +259,7 @@ public class AutoSaveService : IAutoSaveService
                 }
                 catch (Exception ex)
                 {
+                    captureFailure ??= ex.Message;
                     _log.Error(
                         $"Auto-save ({reason}): could not inspect actor '{actor.Name}': {ex.Message}");
                 }
@@ -269,28 +267,68 @@ public class AutoSaveService : IAutoSaveService
 
             if (captured.Count == 0)
             {
+                if (captureFailure != null)
+                {
+                    return AutoSaveCaptureResult.Failure(
+                        $"Auto-save ({reason}) could not capture an actor: {captureFailure}");
+                }
+
                 _log.Debug($"Auto-save ({reason}): no actors with authored edits, skipping");
-                return 0;
+                return AutoSaveCaptureResult.NotCaptured(
+                    "No actors had authored edits.");
             }
 
             // Read on this thread so the worker never touches configuration.
             var keep = Math.Max(1, Settings.MaxAutoSaves);
             var nowUtc = _clock();
-            LastSaveUtc = nowUtc;
 
-            Task.Run(() => WriteSnapshot(reason, nowUtc, keep, captured));
-            dispatched = true;
-            return captured.Count;
+            try
+            {
+                dispatchAccepted = _dispatch(
+                    () => WriteSnapshot(reason, nowUtc, keep, captured));
+            }
+            catch (Exception ex)
+            {
+                _log.Error($"Auto-save ({reason}) dispatch failed: {ex}");
+                return AutoSaveCaptureResult.Failure(
+                    $"Auto-save ({reason}) dispatch failed: {ex.Message}",
+                    captured.Count);
+            }
+
+            if (dispatchAccepted)
+            {
+                LastSaveUtc = nowUtc;
+                if (captureFailure != null)
+                {
+                    return AutoSaveCaptureResult.Failure(
+                        $"Auto-save ({reason}) captured {captured.Count} actor(s), " +
+                        $"but another actor failed: {captureFailure}",
+                        captured.Count,
+                        dispatchAccepted: true);
+                }
+
+                return AutoSaveCaptureResult.DispatchStarted(captured.Count);
+            }
+
+            if (captureFailure != null)
+            {
+                return AutoSaveCaptureResult.Failure(
+                    $"Auto-save ({reason}) captured {captured.Count} actor(s), " +
+                    $"but another actor failed: {captureFailure}",
+                    captured.Count);
+            }
+
+            return AutoSaveCaptureResult.Captured(captured.Count);
         }
         catch (Exception ex)
         {
-            // Runs on the framework tick: nothing here may escape.
             _log.Error($"Auto-save ({reason}) failed: {ex}");
-            return 0;
+            return AutoSaveCaptureResult.Failure(
+                $"Auto-save ({reason}) failed: {ex.Message}");
         }
         finally
         {
-            if (!dispatched)
+            if (!dispatchAccepted)
                 Interlocked.Exchange(ref _writeInFlight, 0);
         }
     }
@@ -571,11 +609,9 @@ public class AutoSaveService : IAutoSaveService
     }
 
     /// <summary>
-    /// Unhook only. Neither reference saves on dispose and DI teardown order is
-    /// uncontrolled, so a dispose-time export could touch already-dead services.
-    /// An in-flight <see cref="WriteSnapshot"/> is deliberately NOT waited on:
-    /// it holds a detached copy and only touches the disk, so letting it finish
-    /// is both safe and the only way the last snapshot survives teardown.
+    /// Unhook the framework tick only. An in-flight <see cref="WriteSnapshot"/>
+    /// is deliberately not waited on: it holds a detached copy and only touches
+    /// the disk.
     /// </summary>
     public void Dispose()
     {
@@ -585,7 +621,6 @@ public class AutoSaveService : IAutoSaveService
 
         if (_framework != null)
             _framework.Update -= OnFrameworkUpdate;
-        _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         GC.SuppressFinalize(this);
     }
 }

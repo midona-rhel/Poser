@@ -1,5 +1,6 @@
 using System;
 using Dalamud.Plugin.Services;
+using Poser.Application.Lifecycle;
 using Poser.Core;
 using Poser.Services;
 
@@ -10,16 +11,22 @@ public class GPoseService : IGPoseService
     private readonly IClientState _clientState;
     private readonly IFramework _framework;
     private readonly IEventBus _eventBus;
+    private readonly ISessionLifecycleCoordinator _lifecycle;
 
     private bool _lastGPoseState = false;
 
     public bool IsGPosing => _clientState.IsGPosing;
 
-    public GPoseService(IClientState clientState, IFramework framework, IEventBus eventBus)
+    public GPoseService(
+        IClientState clientState,
+        IFramework framework,
+        IEventBus eventBus,
+        ISessionLifecycleCoordinator lifecycle)
     {
         _clientState = clientState;
         _framework = framework;
         _eventBus = eventBus;
+        _lifecycle = lifecycle;
 
         _framework.Update += OnFrameworkUpdate;
     }
@@ -31,6 +38,10 @@ public class GPoseService : IGPoseService
         if (currentState != _lastGPoseState)
         {
             _lastGPoseState = currentState;
+            if (currentState)
+                _lifecycle.OnGposeEntered();
+            else
+                _lifecycle.OnGposeExit();
             _eventBus.Publish(new GPoseStateChangedEvent(currentState));
         }
     }

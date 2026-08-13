@@ -7,6 +7,7 @@ using System.Linq;
 using System.Numerics;
 using System.Reflection;
 using System.Threading;
+using System.Threading.Tasks;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using NSubstitute;
@@ -82,6 +83,13 @@ internal sealed class AutoSaveHarness : IDisposable
     /// <summary>Value returned by the injected clock; mutate freely mid-test.</summary>
     public DateTime NowUtc { get; set; } = new(2026, 3, 4, 6, 0, 0, DateTimeKind.Utc);
 
+    /// <summary>Worker boundary; override to test capture without dispatch.</summary>
+    public Func<Action, bool> Dispatch { get; set; } = work =>
+    {
+        _ = Task.Run(work);
+        return true;
+    };
+
     public AutoSaveConfiguration Settings => Configuration.Config.AutoSave;
 
     public AutoSaveHarness()
@@ -122,7 +130,6 @@ internal sealed class AutoSaveHarness : IDisposable
     public AutoSaveService Service => _service ??= new AutoSaveService(
         Log,
         (IFramework?)null,
-        EventBus,
         GPose,
         () => ActorManager,
         () => Skeletons,
@@ -130,7 +137,8 @@ internal sealed class AutoSaveHarness : IDisposable
         () => PoseFiles,
         Configuration,
         Root,
-        () => NowUtc);
+        () => NowUtc,
+        Dispatch);
 
     /// <summary>
     /// A minimal but genuine pose: two bones, so <c>PoseFile.Save</c> produces

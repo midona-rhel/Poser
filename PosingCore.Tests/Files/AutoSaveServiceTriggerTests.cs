@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using NSubstitute;
 using Poser.Core;
+using Poser.Services;
 using Poser.Tests.Fixtures;
 
 namespace Poser.Tests.Files;
@@ -188,7 +189,7 @@ public class AutoSaveServiceTriggerTests
     }
 
     [Fact]
-    public void Leaving_gpose_takes_one_final_snapshot()
+    public void Exit_capture_takes_one_final_snapshot()
     {
         using var h = new AutoSaveHarness();
         h.Settings.Enabled = true;
@@ -196,8 +197,9 @@ public class AutoSaveServiceTriggerTests
         var alpha = h.AddActor("Alpha");
         h.AddActor("Beta", authored: false);
 
-        h.Service.OnGPoseStateChanged(new GPoseStateChangedEvent(false));
+        var result = h.Service.CaptureForExit();
 
+        Assert.Equal(AutoSaveCaptureStatus.DispatchStarted, result.Status);
         Assert.Equal(1, h.CaptureCallCount);
         h.PoseFiles.Received(1).CreatePoseFile(alpha.Skeletons);
 
@@ -209,13 +211,13 @@ public class AutoSaveServiceTriggerTests
     }
 
     [Fact]
-    public void Entering_gpose_does_not_snapshot_or_clean()
+    public void Construction_does_not_snapshot_or_clean()
     {
         using var h = new AutoSaveHarness();
         h.SeedSnapshot("2026-03-04 05-00-00Z");
         h.AddActor("Alpha");
 
-        h.Service.OnGPoseStateChanged(new GPoseStateChangedEvent(true));
+        _ = h.Service;
 
         Assert.Equal(0, h.CaptureCallCount);
         Assert.Single(Directory.GetDirectories(h.Root));
@@ -233,8 +235,9 @@ public class AutoSaveServiceTriggerTests
         h.SeedSnapshot("2026-03-04 05-01-00Z", withFile: true);
         h.SeedSnapshot("2026-03-04 05-02-00Z", withFile: true);
 
-        h.Service.OnGPoseStateChanged(new GPoseStateChangedEvent(false));
+        var result = h.Service.CaptureForExit();
 
+        Assert.Equal(AutoSaveCaptureStatus.NotCaptured, result.Status);
         Assert.Equal(0, h.CaptureCallCount);
         Assert.Empty(Directory.GetDirectories(h.Root));
         Assert.True(Directory.Exists(h.Root), "only the snapshots go, not the root");
@@ -251,8 +254,9 @@ public class AutoSaveServiceTriggerTests
         h.SeedSnapshot("2026-03-04 05-00-00Z", withFile: true);
         h.SeedSnapshot("2026-03-04 05-01-00Z", withFile: true);
 
-        h.Service.OnGPoseStateChanged(new GPoseStateChangedEvent(false));
+        var result = h.Service.CaptureForExit();
 
+        Assert.Equal(AutoSaveCaptureStatus.NotCaptured, result.Status);
         Assert.Equal(0, h.CaptureCallCount);
         Assert.Equal(2, Directory.GetDirectories(h.Root).Length);
     }
@@ -266,7 +270,8 @@ public class AutoSaveServiceTriggerTests
 
         h.TickAt(At(0));                                                  // armed, due at 60
         h.Settings.Enabled = false;
-        h.Service.OnGPoseStateChanged(new GPoseStateChangedEvent(false));  // disarms first
+        var result = h.Service.CaptureForExit();  // disarms first
+        Assert.Equal(AutoSaveCaptureStatus.NotCaptured, result.Status);
         h.Settings.Enabled = true;
 
         h.TickAt(At(60));                                                 // re-arms, due at 120
@@ -277,13 +282,14 @@ public class AutoSaveServiceTriggerTests
     }
 
     [Fact]
-    public void Constructor_subscribes_to_the_gpose_event()
+    public void Constructor_does_not_subscribe_to_the_gpose_exit_event()
     {
         using var h = new AutoSaveHarness();
 
         _ = h.Service;
 
-        h.EventBus.Received(1).Subscribe(Arg.Any<Action<GPoseStateChangedEvent>>());
+        h.EventBus.DidNotReceive().Subscribe(
+            Arg.Any<Action<Poser.Core.GPoseStateChangedEvent>>());
     }
 
     [Fact]
@@ -295,7 +301,7 @@ public class AutoSaveServiceTriggerTests
         service.Dispose();
         service.Dispose();
 
-        // Unhooking twice would remove a second, unrelated subscription.
-        h.EventBus.Received(1).Unsubscribe(Arg.Any<Action<GPoseStateChangedEvent>>());
+        h.EventBus.DidNotReceive().Unsubscribe(
+            Arg.Any<Action<Poser.Core.GPoseStateChangedEvent>>());
     }
 }

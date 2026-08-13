@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using NSubstitute;
 using Poser.Files;
+using Poser.Services;
 using Poser.Tests.Fixtures;
 
 namespace Poser.Tests.Files;
@@ -17,6 +18,39 @@ namespace Poser.Tests.Files;
 /// </summary>
 public class AutoSaveServiceSnapshotTests
 {
+    [Fact]
+    public void CaptureForExit_reports_capture_when_worker_dispatch_is_not_accepted()
+    {
+        using var h = new AutoSaveHarness
+        {
+            Dispatch = _ => false
+        };
+        h.AddActor("Alpha");
+
+        var result = h.Service.CaptureForExit();
+
+        Assert.Equal(AutoSaveCaptureStatus.Captured, result.Status);
+        Assert.Equal(1, result.CapturedActors);
+        Assert.False(result.DispatchAccepted);
+        Assert.Null(h.Service.LastSaveUtc);
+    }
+
+    [Fact]
+    public void CaptureForExit_reports_failure_without_throwing_when_capture_fails()
+    {
+        using var h = new AutoSaveHarness();
+        var broken = h.AddActor("Broken");
+        h.FailCaptureFor(broken, new IOException("skeleton copy failed"));
+
+        var result = h.Service.CaptureForExit();
+
+        Assert.Equal(AutoSaveCaptureStatus.Failure, result.Status);
+        Assert.Contains("skeleton copy failed", result.Detail);
+        Assert.Equal(0, result.CapturedActors);
+        Assert.Equal(1, h.CaptureCallCount);
+        h.WaitForWrite();
+    }
+
     [Fact]
     public void SaveNow_captures_only_actors_with_authored_edits()
     {

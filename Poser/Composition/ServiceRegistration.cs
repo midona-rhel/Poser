@@ -7,6 +7,7 @@ using Dalamud.Plugin.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Poser.Application.Animation;
 using Poser.Application.Companions;
+using Poser.Application.Lifecycle;
 using Poser.Application.Posing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
@@ -20,6 +21,7 @@ using Poser.Game.Posing;
 using Poser.Game.Scene;
 using Poser.Game.Transforms;
 using Poser.Game.Validation;
+using Poser.Lifecycle;
 using Poser.Services;
 using Poser.UI;
 using Poser.UI.Composition;
@@ -69,6 +71,13 @@ internal static class ServiceRegistration
         services.AddSingleton<ConfigurationService>();
         services.AddSingleton<EventBus>();
         services.AddSingleton<IEventBus>(sp => sp.GetRequiredService<EventBus>());
+
+        services.AddSingleton<IFinalCapturePort>(sp =>
+            new AutoSaveFinalCapturePort(
+                () => sp.GetRequiredService<IAutoSaveService>()));
+        services.AddSingleton<SessionLifecycleCoordinator>();
+        services.AddSingleton<ISessionLifecycleCoordinator>(sp =>
+            sp.GetRequiredService<SessionLifecycleCoordinator>());
 
         services.AddSingleton<IGPoseService, GPoseService>();
         services.AddSingleton<IActorManager, ActorManager>();
@@ -164,16 +173,12 @@ internal static class ServiceRegistration
         services.AddSingleton<IPoseFileService, PoseFileService>();
         services.AddSingleton<ILightFileService, LightFileService>();
         services.AddSingleton<ICameraFileService, CameraFileService>();
-        // Factory-registered on purpose: the scene services are handed over as
-        // factories so constructing the auto-save does NOT construct them. They
-        // wipe their state from their own GPose-exit handlers, and the EventBus
-        // dispatches in subscription order — taking them as plain constructor
-        // arguments would subscribe them first and leave the exit snapshot
-        // nothing to write.
+        // The final exit capture resolves this service lazily through the
+        // lifecycle port, keeping composition acyclic while the legacy event
+        // subscribers remain independent teardown owners.
         services.AddSingleton<IAutoSaveService>(sp => new AutoSaveService(
             sp.GetRequiredService<IPluginLog>(),
             sp.GetRequiredService<IFramework>(),
-            sp.GetRequiredService<IEventBus>(),
             sp.GetRequiredService<IGPoseService>(),
             sp.GetRequiredService<IActorManager>,
             sp.GetRequiredService<ISkeletonService>,
