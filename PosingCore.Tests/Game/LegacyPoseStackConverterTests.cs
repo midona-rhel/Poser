@@ -3,6 +3,7 @@ using System.Numerics;
 using Poser.Application.Transforms;
 using Poser.Core;
 using Poser.Domain.Identity;
+using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
 using Poser.Game.Transforms;
 using DomainComponents = Poser.Domain.Posing.TransformComponents;
@@ -37,6 +38,115 @@ public sealed class LegacyPoseStackConverterTests
         var layer = Assert.Single(result.State!.Pose.Layers);
         Assert.Equal((DomainComponents)mask, layer.Propagation);
         Assert.Equal("legacy-0", layer.Id.Name);
+    }
+
+    [Fact]
+    public void Named_layers_are_filtered_without_reindexing_interactive_capture()
+    {
+        var target = BoneTarget();
+        var transform = PoseTransform.CreateChecked(
+            new Vector3(7, -8, 9),
+            Quaternion.CreateFromYawPitchRoll(0.25f, -0.5f, 0.75f),
+            new Vector3(1.5f, 2.5f, 3.5f));
+        var animatedBaselineRotation =
+            Quaternion.CreateFromYawPitchRoll(-0.75f, 0.5f, -0.25f);
+        var normalizedHalf = 1f / MathF.Sqrt(2f);
+        var firstPosition = new Vector3(1.25f, -2.5f, 3.75f);
+        var firstScale = new Vector3(-0.25f, 0.5f, 1.75f);
+        var secondPosition = new Vector3(-4.5f, 5.25f, -6.75f);
+        var secondScale = new Vector3(2.5f, -3.25f, 4.75f);
+        var stacks = new[]
+        {
+            Layer(LegacyComponents.All, layer: "expression"),
+            Layer(
+                LegacyComponents.Position,
+                new Transform(
+                    firstPosition,
+                    new Quaternion(
+                        float.MaxValue,
+                        0,
+                        0,
+                        float.MaxValue),
+                    firstScale)),
+            Layer(LegacyComponents.None, layer: "gaze"),
+            Layer(
+                LegacyComponents.Rotation | LegacyComponents.Scale,
+                new Transform(
+                    secondPosition,
+                    new Quaternion(0, -float.MaxValue, 0, 0),
+                    secondScale)),
+        };
+
+        var result = LegacyPoseStackConverter.Convert(
+            target,
+            transform,
+            animatedBaselineRotation,
+            stacks);
+
+        Assert.True(result.Success, result.Detail);
+        var state = Assert.IsType<TransformTargetState>(result.State);
+        Assert.Equal(target, state.Target);
+        Assert.Equal(transform, state.Transform);
+        Assert.Equal(animatedBaselineRotation, state.AnimatedBaselineRotation);
+        Assert.True(state.HasOverride);
+        Assert.Equal(0UL, state.Pose.Version);
+        Assert.Collection(
+            state.Pose.Layers,
+            layer =>
+            {
+                Assert.Equal(
+                    new PoseLayerId(PoseLayerKind.Manual, "legacy-1"),
+                    layer.Id);
+                Assert.Equal(DomainComponents.Position, layer.Propagation);
+                Assert.Equal(firstPosition, layer.Delta.Position);
+                Assert.Equal(
+                    new Quaternion(normalizedHalf, 0, 0, normalizedHalf),
+                    layer.Delta.Rotation);
+                Assert.Equal(firstScale, layer.Delta.Scale);
+            },
+            layer =>
+            {
+                Assert.Equal(
+                    new PoseLayerId(PoseLayerKind.Manual, "legacy-3"),
+                    layer.Id);
+                Assert.Equal(
+                    DomainComponents.Rotation | DomainComponents.Scale,
+                    layer.Propagation);
+                Assert.Equal(secondPosition, layer.Delta.Position);
+                Assert.Equal(new Quaternion(0, -1, 0, 0), layer.Delta.Rotation);
+                Assert.Equal(secondScale, layer.Delta.Scale);
+            });
+    }
+
+    [Fact]
+    public void Named_only_capture_preserves_metadata_without_an_override()
+    {
+        var target = BoneTarget();
+        var transform = PoseTransform.CreateChecked(
+            new Vector3(-3, 2, -1),
+            Quaternion.CreateFromYawPitchRoll(-0.125f, 0.25f, -0.5f),
+            new Vector3(0.75f, 1.25f, 1.5f));
+        var animatedBaselineRotation =
+            Quaternion.CreateFromYawPitchRoll(0.5f, -0.25f, 0.125f);
+        var stacks = new[]
+        {
+            Layer(LegacyComponents.All, layer: "expression"),
+        };
+
+        var result = LegacyPoseStackConverter.Convert(
+            target,
+            transform,
+            animatedBaselineRotation,
+            stacks);
+
+        Assert.True(result.Success, result.Detail);
+        var state = Assert.IsType<TransformTargetState>(result.State);
+        Assert.Equal(target, state.Target);
+        Assert.Equal(transform, state.Transform);
+        Assert.Equal(animatedBaselineRotation, state.AnimatedBaselineRotation);
+        Assert.False(state.HasOverride);
+        Assert.Equal(0UL, state.Pose.Version);
+        Assert.Empty(state.Pose.Layers);
     }
 
     [Fact]
