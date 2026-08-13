@@ -18,11 +18,11 @@ public enum AutoSaveHealthStatus
     Cancelled,
 }
 
-/// <summary>Immutable bounded observation of one autosave operation.</summary>
-public sealed class AutoSaveHealthRecord
+/// <summary>One independently attributable recovery obligation.</summary>
+public sealed class AutoSaveHealthRecoveryEntry
 {
     [JsonConstructor]
-    internal AutoSaveHealthRecord(
+    internal AutoSaveHealthRecoveryEntry(
         string operationId,
         string reason,
         AutoSaveHealthStatus status,
@@ -60,7 +60,7 @@ public sealed class AutoSaveHealthRecord
     public string? Detail { get; }
     public IReadOnlyList<string> RecoveryEvidencePaths { get; }
 
-    internal static AutoSaveHealthRecord Create(
+    internal static AutoSaveHealthRecoveryEntry Create(
         string operationId,
         string reason,
         AutoSaveHealthStatus status,
@@ -72,6 +72,87 @@ public sealed class AutoSaveHealthRecord
         string? failurePhase = null,
         string? detail = null,
         IEnumerable<string>? recoveryEvidencePaths = null) =>
+        new(operationId, reason, status, createdUtc, updatedUtc, intendedActors,
+            writtenActors, affectedPaths?.ToArray(), failurePhase, detail,
+            recoveryEvidencePaths?.ToArray());
+
+    private static string Limit(string? value, int max) =>
+        string.IsNullOrEmpty(value) ? string.Empty : value.Length <= max ? value : value[..max];
+
+    private static IReadOnlyList<string> Freeze(IEnumerable<string>? values) =>
+        Array.AsReadOnly((values ?? Array.Empty<string>())
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Take(256)
+            .Select(static value => Limit(value, 1024))
+            .ToArray());
+}
+
+/// <summary>Immutable bounded observation of one autosave operation.</summary>
+public sealed class AutoSaveHealthRecord
+{
+    internal const int MaxRecoveryEntries = 4;
+
+    [JsonConstructor]
+    internal AutoSaveHealthRecord(
+        string operationId,
+        string reason,
+        AutoSaveHealthStatus status,
+        DateTime createdUtc,
+        DateTime updatedUtc,
+        int intendedActors,
+        int writtenActors,
+        IReadOnlyList<string>? affectedPaths,
+        string? failurePhase,
+        string? detail,
+        IReadOnlyList<string>? recoveryEvidencePaths,
+        IReadOnlyList<AutoSaveHealthRecoveryEntry>? recoveryEntries,
+        int recoveryOverflowCount)
+    {
+        OperationId = Limit(operationId, 128);
+        Reason = Limit(reason, 128);
+        Status = status;
+        CreatedUtc = createdUtc;
+        UpdatedUtc = updatedUtc;
+        IntendedActors = Math.Clamp(intendedActors, 0, 8192);
+        WrittenActors = Math.Clamp(writtenActors, 0, IntendedActors);
+        AffectedPaths = Freeze(affectedPaths);
+        FailurePhase = failurePhase is null ? null : Limit(failurePhase, 128);
+        Detail = detail is null ? null : Limit(detail, 4096);
+        RecoveryEvidencePaths = Freeze(recoveryEvidencePaths);
+        var incomingRecoveryEntries = recoveryEntries?.ToArray() ?? Array.Empty<AutoSaveHealthRecoveryEntry>();
+        RecoveryEntries = FreezeEntries(incomingRecoveryEntries);
+        RecoveryOverflowCount = Math.Max(0, recoveryOverflowCount) +
+            Math.Max(0, incomingRecoveryEntries.Length - MaxRecoveryEntries);
+    }
+
+    public string OperationId { get; }
+    public string Reason { get; }
+    public AutoSaveHealthStatus Status { get; }
+    public DateTime CreatedUtc { get; }
+    public DateTime UpdatedUtc { get; }
+    public int IntendedActors { get; }
+    public int WrittenActors { get; }
+    public IReadOnlyList<string> AffectedPaths { get; }
+    public string? FailurePhase { get; }
+    public string? Detail { get; }
+    public IReadOnlyList<string> RecoveryEvidencePaths { get; }
+    public IReadOnlyList<AutoSaveHealthRecoveryEntry> RecoveryEntries { get; }
+    public int RecoveryOverflowCount { get; }
+
+    internal static AutoSaveHealthRecord Create(
+        string operationId,
+        string reason,
+        AutoSaveHealthStatus status,
+        DateTime createdUtc,
+        DateTime updatedUtc,
+        int intendedActors = 0,
+        int writtenActors = 0,
+        IEnumerable<string>? affectedPaths = null,
+        string? failurePhase = null,
+        string? detail = null,
+        IEnumerable<string>? recoveryEvidencePaths = null,
+        IEnumerable<AutoSaveHealthRecoveryEntry>? recoveryEntries = null,
+        int recoveryOverflowCount = 0) =>
         new(
             operationId,
             reason,
@@ -83,7 +164,9 @@ public sealed class AutoSaveHealthRecord
             affectedPaths?.ToArray(),
             failurePhase,
             detail,
-            recoveryEvidencePaths?.ToArray());
+            recoveryEvidencePaths?.ToArray(),
+            recoveryEntries?.ToArray(),
+            recoveryOverflowCount);
 
     internal AutoSaveHealthRecord With(
         AutoSaveHealthStatus? status = null,
@@ -92,7 +175,9 @@ public sealed class AutoSaveHealthRecord
         IEnumerable<string>? affectedPaths = null,
         string? failurePhase = null,
         string? detail = null,
-        IEnumerable<string>? recoveryEvidencePaths = null) =>
+        IEnumerable<string>? recoveryEvidencePaths = null,
+        IEnumerable<AutoSaveHealthRecoveryEntry>? recoveryEntries = null,
+        int? recoveryOverflowCount = null) =>
         Create(
             OperationId,
             Reason,
@@ -104,7 +189,9 @@ public sealed class AutoSaveHealthRecord
             affectedPaths ?? AffectedPaths,
             failurePhase ?? FailurePhase,
             detail ?? Detail,
-            recoveryEvidencePaths ?? RecoveryEvidencePaths);
+            recoveryEvidencePaths ?? RecoveryEvidencePaths,
+            recoveryEntries ?? RecoveryEntries,
+            recoveryOverflowCount ?? RecoveryOverflowCount);
 
     private static string Limit(string? value, int max) =>
         string.IsNullOrEmpty(value) ? string.Empty : value.Length <= max ? value : value[..max];
@@ -114,6 +201,12 @@ public sealed class AutoSaveHealthRecord
             .Where(static value => !string.IsNullOrWhiteSpace(value))
             .Take(256)
             .Select(static value => Limit(value, 1024))
+            .ToArray());
+
+    private static IReadOnlyList<AutoSaveHealthRecoveryEntry> FreezeEntries(
+        IEnumerable<AutoSaveHealthRecoveryEntry>? values) =>
+        Array.AsReadOnly((values ?? Array.Empty<AutoSaveHealthRecoveryEntry>())
+            .Take(MaxRecoveryEntries)
             .ToArray());
 }
 
@@ -237,6 +330,7 @@ public sealed class AutoSaveHealthStore
         string? backup = null;
         var replaceAttempted = false;
         var moveAttempted = false;
+        var tempCleanupAttempted = false;
         try
         {
             byte[] bytes;
@@ -324,11 +418,30 @@ public sealed class AutoSaveHealthStore
                 evidence.AddRange(Observe(temp));
                 evidence.AddRange(Observe(backup));
             }
+
+            // A pre-commit temp is not recovery evidence once cleanup succeeds.
+            // Remove it before constructing the result so the returned paths
+            // describe only files that still exist.
+            if (temp is not null && !replaceAttempted && !moveAttempted)
+            {
+                tempCleanupAttempted = true;
+                try
+                {
+                    _fileSystem.Delete(temp);
+                    evidence.RemoveAll(path => string.Equals(path, temp, StringComparison.Ordinal));
+                    temp = null;
+                }
+                catch (Exception cleanup)
+                {
+                    evidence.Add(temp!);
+                    ex = new IOException($"{ex.Message}; temp cleanup failed: {cleanup.Message}", ex);
+                }
+            }
             return AutoSaveHealthWriteResult.Failed(ex.Message, evidence);
         }
         finally
         {
-            if (temp is not null && !replaceAttempted && !moveAttempted)
+            if (temp is not null && !tempCleanupAttempted && !replaceAttempted && !moveAttempted)
             {
                 try { _fileSystem.Delete(temp); }
                 catch { /* temp remains recoverable through the failure evidence */ }

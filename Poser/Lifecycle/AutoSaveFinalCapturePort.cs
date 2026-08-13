@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Poser.Application.Lifecycle;
 using Poser.Files;
 using Poser.Services;
@@ -43,7 +44,27 @@ internal sealed class AutoSaveFinalCapturePort : IFinalCapturePort
                 health.AffectedPaths,
                 health.FailurePhase,
                 terminal.Detail ?? health.Detail,
-                health.RecoveryEvidencePaths);
+                health.RecoveryEvidencePaths,
+                health.RecoveryEntries.Select(entry => new FinalPersistenceRecoveryEntry(
+                    entry.OperationId,
+                    entry.Reason,
+                    entry.Status switch
+                    {
+                        AutoSaveHealthStatus.Written => FinalPersistenceStatus.Written,
+                        AutoSaveHealthStatus.Cleaned => FinalPersistenceStatus.Cleaned,
+                        AutoSaveHealthStatus.RecoveryRequired => FinalPersistenceStatus.RecoveryRequired,
+                        AutoSaveHealthStatus.Queued or AutoSaveHealthStatus.DispatchAccepted => FinalPersistenceStatus.Pending,
+                        _ => FinalPersistenceStatus.NotAttempted,
+                    },
+                    entry.CreatedUtc,
+                    entry.UpdatedUtc,
+                    entry.IntendedActors,
+                    entry.WrittenActors,
+                    entry.AffectedPaths,
+                    entry.FailurePhase,
+                    entry.Detail,
+                    entry.RecoveryEvidencePaths)),
+                health.RecoveryOverflowCount);
         var mapped = result.Status switch
         {
             AutoSaveCaptureStatus.NotCaptured =>

@@ -318,36 +318,29 @@ public class AutoSaveService : IAutoSaveService
 
     private void RetainHealthRecoveryLocked(AutoSaveHealthRecord recovery)
     {
-        if (_pendingHealthRecovery is null)
-        {
-            _pendingHealthRecovery = recovery;
-            return;
-        }
-
+        var entry = AutoSaveHealthRecoveryEntry.Create(
+            recovery.OperationId,
+            recovery.Reason,
+            recovery.Status,
+            recovery.CreatedUtc,
+            recovery.UpdatedUtc,
+            recovery.IntendedActors,
+            recovery.WrittenActors,
+            recovery.AffectedPaths,
+            recovery.FailurePhase,
+            recovery.Detail,
+            recovery.RecoveryEvidencePaths);
         var prior = _pendingHealthRecovery;
-        var operationId = LimitHealthText(
-            $"{prior.OperationId},{recovery.OperationId}", 128);
-        var reason = LimitHealthText($"{prior.Reason},{recovery.Reason}", 128);
-        var detail = LimitHealthText(
-            $"{DescribeHealthRecovery(prior)}; additionally {DescribeHealthRecovery(recovery)}",
-            4096);
-        var evidence = prior.RecoveryEvidencePaths
-            .Concat(recovery.RecoveryEvidencePaths)
-            .Distinct(StringComparer.Ordinal)
-            .Take(256)
+        var allEntries = (prior?.RecoveryEntries ?? Array.Empty<AutoSaveHealthRecoveryEntry>())
+            .Concat(new[] { entry })
             .ToArray();
-        _pendingHealthRecovery = AutoSaveHealthRecord.Create(
-            operationId,
-            reason,
-            AutoSaveHealthStatus.RecoveryRequired,
-            prior.CreatedUtc,
-            DateTime.UtcNow,
-            Math.Max(prior.IntendedActors, recovery.IntendedActors),
-            Math.Min(prior.WrittenActors, recovery.WrittenActors),
-            prior.AffectedPaths.Concat(recovery.AffectedPaths).Take(256),
-            "HealthTransition",
-            detail,
-            evidence);
+        var overflow = (prior?.RecoveryOverflowCount ?? 0) +
+            Math.Max(0, allEntries.Length - AutoSaveHealthRecord.MaxRecoveryEntries);
+        _pendingHealthRecovery = (prior ?? recovery).With(
+            status: AutoSaveHealthStatus.RecoveryRequired,
+            updatedUtc: DateTime.UtcNow,
+            recoveryEntries: allEntries.Take(AutoSaveHealthRecord.MaxRecoveryEntries),
+            recoveryOverflowCount: overflow);
     }
 
     private static string LimitHealthText(string value, int max) =>
@@ -943,6 +936,8 @@ public class AutoSaveService : IAutoSaveService
             var mergedDetail = healthRecord.Detail ?? result.Detail;
             var mergedEvidence = healthRecord.RecoveryEvidencePaths;
             var mergedPaths = healthRecord.AffectedPaths;
+            var mergedRecoveryEntries = healthRecord.RecoveryEntries;
+            var mergedRecoveryOverflow = healthRecord.RecoveryOverflowCount;
             var failurePhase = healthRecord.FailurePhase;
             if (pendingRecovery is not null)
             {
@@ -959,6 +954,15 @@ public class AutoSaveService : IAutoSaveService
                     .Distinct(StringComparer.Ordinal)
                     .Take(256)
                     .ToArray();
+                mergedRecoveryEntries = healthRecord.RecoveryEntries
+                    .Concat(pendingRecovery.RecoveryEntries)
+                    .Take(AutoSaveHealthRecord.MaxRecoveryEntries)
+                    .ToArray();
+                mergedRecoveryOverflow = healthRecord.RecoveryOverflowCount +
+                    pendingRecovery.RecoveryOverflowCount +
+                    Math.Max(0, healthRecord.RecoveryEntries.Count +
+                        pendingRecovery.RecoveryEntries.Count -
+                        AutoSaveHealthRecord.MaxRecoveryEntries);
                 failurePhase = pendingRecovery.FailurePhase ?? "HealthTransition";
             }
             var healthStatus = result.Status switch
@@ -985,7 +989,9 @@ public class AutoSaveService : IAutoSaveService
                 clean
                     ? result.Detail ?? mergedDetail
                     : mergedDetail,
-                mergedEvidence),
+                mergedEvidence,
+                mergedRecoveryEntries,
+                mergedRecoveryOverflow),
                 healthGeneration,
                 retainFailure: true);
             if (!healthUpdate.Succeeded)

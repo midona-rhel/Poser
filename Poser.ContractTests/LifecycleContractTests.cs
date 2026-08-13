@@ -439,7 +439,23 @@ public sealed class LifecycleContractTests
               "AffectedPaths": ["a.pose", "b.pose"],
               "FailurePhase": "ActorWrite",
               "Detail": "first actor failed",
-              "RecoveryEvidencePaths": ["a.tmp"]
+              "RecoveryEvidencePaths": ["a.tmp"],
+              "RecoveryEntries": [
+                {
+                  "OperationId": "cancel-1",
+                  "Reason": "interval",
+                  "Status": 5,
+                  "CreatedUtc": "2026-08-13T10:00:00Z",
+                  "UpdatedUtc": "2026-08-13T10:00:01Z",
+                  "IntendedActors": 2,
+                  "WrittenActors": 0,
+                  "AffectedPaths": ["cancel.pose"],
+                  "FailurePhase": "HealthTransition",
+                  "Detail": "cancel failed",
+                  "RecoveryEvidencePaths": ["cancel.tmp"]
+                }
+              ],
+              "RecoveryOverflowCount": 3
             }
             """));
 
@@ -454,6 +470,11 @@ public sealed class LifecycleContractTests
         Assert.Equal(1, result.PersistenceEvidence.WrittenActors);
         Assert.Equal("ActorWrite", result.PersistenceEvidence.FailurePhase);
         Assert.Equal(new[] { "a.tmp" }, result.PersistenceEvidence.RecoveryEvidencePaths);
+        Assert.Equal(3, result.PersistenceEvidence.RecoveryOverflowCount);
+        var recoveryEntry = Assert.Single(result.PersistenceEvidence.RecoveryEntries);
+        Assert.Equal("cancel-1", recoveryEntry.OperationId);
+        Assert.Equal("HealthTransition", recoveryEntry.FailurePhase);
+        Assert.Equal(new[] { "cancel.tmp" }, recoveryEntry.RecoveryEvidencePaths);
         Assert.Equal(
             new FinalCaptureResult(
                 FinalCaptureStatus.DispatchStarted,

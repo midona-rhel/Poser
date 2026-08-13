@@ -473,7 +473,7 @@ public class AutoSaveServiceSnapshotTests
         Assert.Equal(finalQueued.OperationId, health!.OperationId);
         Assert.Equal(AutoSaveHealthStatus.RecoveryRequired, health.Status);
         Assert.Contains(pendingOperationId, health.Detail);
-        Assert.Contains(health.RecoveryEvidencePaths, path => path.Contains(".tmp", StringComparison.Ordinal));
+        Assert.DoesNotContain(health.RecoveryEvidencePaths, path => path.Contains(".tmp", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using Poser.Files;
 
 namespace Poser.Tests.Files;
@@ -83,6 +84,47 @@ public sealed class AutoSaveHealthStoreTests
         Assert.Equal(1, read.WrittenActors);
         Assert.Equal("ActorWrite", read.FailurePhase);
         Assert.Equal(new[] { "a.tmp" }, read.RecoveryEvidencePaths);
+    }
+
+    [Fact]
+    public void Health_record_round_trips_structured_recovery_entries_and_overflow()
+    {
+        using var root = new TempRoot();
+        var store = new AutoSaveHealthStore(root.Path);
+        var entries = new[]
+        {
+            AutoSaveHealthRecoveryEntry.Create(
+                "cancel-1", "interval", AutoSaveHealthStatus.RecoveryRequired,
+                DateTime.UtcNow, DateTime.UtcNow, 2, 1,
+                new[] { "a.pose" }, "HealthTransition", "flush one", new[] { "a.tmp" }),
+            AutoSaveHealthRecoveryEntry.Create(
+                "cancel-2", "interval", AutoSaveHealthStatus.RecoveryRequired,
+                DateTime.UtcNow, DateTime.UtcNow, 3, 0,
+                new[] { "b.pose" }, "Admission", "flush two", new[] { "b.tmp" }),
+        };
+        entries = entries.Concat(new[]
+        {
+            AutoSaveHealthRecoveryEntry.Create("cancel-3", "interval", AutoSaveHealthStatus.RecoveryRequired,
+                DateTime.UtcNow, DateTime.UtcNow, 1, 0),
+            AutoSaveHealthRecoveryEntry.Create("cancel-4", "interval", AutoSaveHealthStatus.RecoveryRequired,
+                DateTime.UtcNow, DateTime.UtcNow, 1, 0),
+            AutoSaveHealthRecoveryEntry.Create("cancel-5", "interval", AutoSaveHealthStatus.RecoveryRequired,
+                DateTime.UtcNow, DateTime.UtcNow, 1, 0),
+            AutoSaveHealthRecoveryEntry.Create("cancel-6", "interval", AutoSaveHealthStatus.RecoveryRequired,
+                DateTime.UtcNow, DateTime.UtcNow, 1, 0),
+        }).ToArray();
+
+        Assert.True(store.Write(AutoSaveHealthRecord.Create(
+            "final", "gpose-exit", AutoSaveHealthStatus.RecoveryRequired,
+            DateTime.UtcNow, DateTime.UtcNow,
+            recoveryEntries: entries)).Succeeded);
+
+        var read = store.Read()!;
+        Assert.Equal(2, read.RecoveryOverflowCount);
+        Assert.Equal(new[] { "cancel-1", "cancel-2", "cancel-3", "cancel-4" },
+            read.RecoveryEntries.Select(entry => entry.OperationId));
+        Assert.Equal(new[] { "a.tmp" }, read.RecoveryEntries[0].RecoveryEvidencePaths);
+        Assert.Equal(3, read.RecoveryEntries[1].IntendedActors);
     }
 
     [Fact]
@@ -171,6 +213,27 @@ public sealed class AutoSaveHealthStoreTests
         Assert.NotNull(new AutoSaveHealthStore(root.Path).Read());
     }
 
+    [Fact]
+    public void Precommit_flush_failure_reports_only_surviving_evidence_and_preserves_old_record()
+    {
+        using var root = new TempRoot();
+        var normal = new AutoSaveHealthStore(root.Path);
+        Assert.True(normal.Write(AutoSaveHealthRecord.Create(
+            "old", "interval", AutoSaveHealthStatus.Written,
+            DateTime.UtcNow, DateTime.UtcNow)).Succeeded);
+
+        var failing = new AutoSaveHealthStore(
+            root.Path, new FlushFailureFileSystem(new SystemAutoSaveHealthFileSystem()));
+        var result = failing.Write(AutoSaveHealthRecord.Create(
+            "new", "final", AutoSaveHealthStatus.Queued,
+            DateTime.UtcNow, DateTime.UtcNow));
+
+        Assert.False(result.Succeeded);
+        Assert.Empty(result.RecoveryEvidencePaths);
+        Assert.Equal("old", normal.Read()!.OperationId);
+        Assert.Empty(Directory.EnumerateFiles(root.Path, ".*.tmp"));
+    }
+
     private sealed class TempRoot : IDisposable
     {
         public string Path { get; } = System.IO.Path.Combine(
@@ -238,6 +301,19 @@ public sealed class AutoSaveHealthStoreTests
         public Stream OpenRead(string path) => _inner.OpenRead(path);
         public Stream CreateNew(string path) => throw new IOException("simulated health write failure");
         public void FlushToDisk(Stream stream) => _inner.FlushToDisk(stream);
+        public bool Exists(string path) => _inner.Exists(path);
+        public void Replace(string source, string destination, string backup) => _inner.Replace(source, destination, backup);
+        public void Move(string source, string destination) => _inner.Move(source, destination);
+        public void Delete(string path) => _inner.Delete(path);
+    }
+
+    private sealed class FlushFailureFileSystem : IAutoSaveHealthFileSystem
+    {
+        private readonly IAutoSaveHealthFileSystem _inner;
+        public FlushFailureFileSystem(IAutoSaveHealthFileSystem inner) => _inner = inner;
+        public Stream OpenRead(string path) => _inner.OpenRead(path);
+        public Stream CreateNew(string path) => _inner.CreateNew(path);
+        public void FlushToDisk(Stream stream) => throw new IOException("simulated flush failure");
         public bool Exists(string path) => _inner.Exists(path);
         public void Replace(string source, string destination, string backup) => _inner.Replace(source, destination, backup);
         public void Move(string source, string destination) => _inner.Move(source, destination);

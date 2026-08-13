@@ -31,10 +31,10 @@ public enum FinalPersistenceStatus
     RecoveryRequired,
 }
 
-/// <summary>Immutable additive evidence for terminal final persistence.</summary>
-public sealed class FinalPersistenceEvidence
+/// <summary>Immutable Application projection of one autosave recovery obligation.</summary>
+public sealed class FinalPersistenceRecoveryEntry
 {
-    public FinalPersistenceEvidence(
+    public FinalPersistenceRecoveryEntry(
         string operationId,
         string reason,
         FinalPersistenceStatus status,
@@ -71,6 +71,54 @@ public sealed class FinalPersistenceEvidence
     public string? FailurePhase { get; }
     public string? Detail { get; }
     public IReadOnlyList<string> RecoveryEvidencePaths { get; }
+}
+
+/// <summary>Immutable additive evidence for terminal final persistence.</summary>
+public sealed class FinalPersistenceEvidence
+{
+    public FinalPersistenceEvidence(
+        string operationId,
+        string reason,
+        FinalPersistenceStatus status,
+        DateTime createdUtc,
+        DateTime updatedUtc,
+        int intendedActors,
+        int writtenActors,
+        IEnumerable<string>? affectedPaths,
+        string? failurePhase,
+        string? detail,
+        IEnumerable<string>? recoveryEvidencePaths,
+        IEnumerable<FinalPersistenceRecoveryEntry>? recoveryEntries = null,
+        int recoveryOverflowCount = 0)
+    {
+        OperationId = operationId;
+        Reason = reason;
+        Status = status;
+        CreatedUtc = createdUtc;
+        UpdatedUtc = updatedUtc;
+        IntendedActors = intendedActors;
+        WrittenActors = writtenActors;
+        AffectedPaths = Array.AsReadOnly((affectedPaths ?? Array.Empty<string>()).ToArray());
+        FailurePhase = failurePhase;
+        Detail = detail;
+        RecoveryEvidencePaths = Array.AsReadOnly((recoveryEvidencePaths ?? Array.Empty<string>()).ToArray());
+        RecoveryEntries = Array.AsReadOnly((recoveryEntries ?? Array.Empty<FinalPersistenceRecoveryEntry>()).Take(4).ToArray());
+        RecoveryOverflowCount = Math.Max(0, recoveryOverflowCount);
+    }
+
+    public string OperationId { get; }
+    public string Reason { get; }
+    public FinalPersistenceStatus Status { get; }
+    public DateTime CreatedUtc { get; }
+    public DateTime UpdatedUtc { get; }
+    public int IntendedActors { get; }
+    public int WrittenActors { get; }
+    public IReadOnlyList<string> AffectedPaths { get; }
+    public string? FailurePhase { get; }
+    public string? Detail { get; }
+    public IReadOnlyList<string> RecoveryEvidencePaths { get; }
+    public IReadOnlyList<FinalPersistenceRecoveryEntry> RecoveryEntries { get; }
+    public int RecoveryOverflowCount { get; }
 }
 
 /// <summary>
