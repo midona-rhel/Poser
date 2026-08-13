@@ -1,4 +1,5 @@
 using Dalamud.Plugin.Services;
+using Poser.Application.Operations;
 using Poser.Application.Posing;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
@@ -16,6 +17,13 @@ public sealed class CleanPoseFacade
     private readonly StableBindingRegistry _bindings;
     private readonly PoseEditService _edits;
     private readonly PoseTransferService _transfers;
+    private long _armEpoch;
+
+    /// <summary>Terminal receipts for imports initiated through this legacy
+    /// facade. Consumers must compare operation and actor identity before
+    /// updating their own view model.</summary>
+    public event Action<OperationReceipt>? ImportPendingPublished;
+    public event Action<OperationReceipt>? ImportReceiptPublished;
 
     public CleanPoseFacade(
         StableBindingRegistry bindings,
@@ -61,6 +69,7 @@ public sealed class CleanPoseFacade
     /// IsPending takes over. One import in flight at a time, across the
     /// 4-tick window included.</summary>
     private bool _importArming;
+    private Action? _restoreImportArm;
 
     /// <summary>Whether an import is armed or still applying. The engine takes
     /// ONE at a time (see <see cref="BeginImport"/>), so a caller that would
@@ -338,7 +347,31 @@ public sealed class CleanPoseFacade
             return PoseEditResult.Fail(
                 "Nothing in this file applies to the chosen scope.");
         if (_importArming || _imports.IsPending)
-            return PoseEditResult.Fail("A pose import is already applying.");
+        {
+            // A newer request owns the facade's arm epoch. Restore the prior
+            // request before allowing the replacement to pause/arm, so a late
+            // first callback cannot restore the second request's speed.
+            _armEpoch++;
+            _importArming = false;
+            _restoreImportArm?.Invoke();
+            _restoreImportArm = null;
+            if (_imports.IsPending)
+            {
+                if (!_framework.IsInFrameworkUpdateThread)
+                    return PoseEditResult.Fail(
+                        "A pose import is already applying.");
+                var cancelled = _imports.CancelActive(
+                    "Pose import superseded by a newer request.");
+                if (cancelled.OperationReceipt?.State ==
+                    OperationReceiptState.RecoveryRequired)
+                    return PoseEditResult.Fail(cancelled.Detail ??
+                        "The previous pose import requires recovery.") with
+                    {
+                        Recovery = cancelled.Recovery,
+                        OperationReceipt = cancelled.OperationReceipt,
+                    };
+            }
+        }
 
         // The apply window runs paused, in Brio's exact sequence (every
         // Brio ImportPose goes through ActionTimelineCapability.
@@ -377,8 +410,12 @@ public sealed class CleanPoseFacade
                 pausedForImport = _animation.Pause(pauseId).Success;
         }
 
+        long armEpoch = ++_armEpoch;
+
         void RestorePriorSpeed()
         {
+            if (armEpoch != _armEpoch)
+                return;
             if (!pausedForImport || animationTarget is not { } restoreId)
                 return;
             // The pause is only Poser's to undo while it still holds: a
@@ -390,6 +427,7 @@ public sealed class CleanPoseFacade
                 _animation.SetSpeed(restoreId, speed);
             else
                 _animation.Resume(restoreId);
+            _restoreImportArm = null;
         }
 
         // The settle tick (Brio ATC:120-165): the rewind and the
@@ -400,6 +438,7 @@ public sealed class CleanPoseFacade
         // tick (IK bake landed meanwhile, gesture started) logs through
         // the same channel as Report and restores the speed.
         _importArming = true;
+        _restoreImportArm = RestorePriorSpeed;
         _framework.RunOnTick(() =>
         {
             _importArming = false;
@@ -423,6 +462,13 @@ public sealed class CleanPoseFacade
                         if (!freeze || !success)
                             _framework.RunOnTick(RestorePriorSpeed, delayTicks: 2);
                     },
+                    onReceipt: receipt =>
+                    {
+                        // The receipt is authoritative. The arm epoch is a
+                        // facade-local supersession guard for late callbacks.
+                        if (armEpoch == _armEpoch)
+                            ImportReceiptPublished?.Invoke(receipt);
+                    },
                     // Expression imports run Brio's head dance: the engine
                     // captures the pre-import head at arm time and restores
                     // it after the apply stage.
@@ -432,6 +478,19 @@ public sealed class CleanPoseFacade
                     _log.Warning(
                         $"Pose edit '{description}' failed: {begun.Detail ?? "The pose import failed."}");
                     _framework.RunOnTick(RestorePriorSpeed, delayTicks: 2);
+                }
+                else if (begun.OperationReceipt is { } pending)
+                {
+                    try
+                    {
+                        if (armEpoch == _armEpoch)
+                            ImportPendingPublished?.Invoke(pending);
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Warning(
+                            $"Pose edit '{description}' pending callback threw: {ex.Message}");
+                    }
                 }
             }
             catch (Exception ex)
@@ -443,6 +502,9 @@ public sealed class CleanPoseFacade
                 RestorePriorSpeed();
             }
         }, delayTicks: 4);
+        // The operation is admitted by the settle-tick Begin call. Preserve
+        // the legacy synchronous arm result; the authoritative pending and
+        // terminal receipts travel through PoseImportCapture's receipt event.
         return PoseEditResult.Ok(plan.FileBoneCount);
     }
 

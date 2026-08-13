@@ -1,4 +1,5 @@
 using System.Numerics;
+using Poser.Application.Operations;
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
@@ -31,6 +32,10 @@ public readonly record struct GestureResult(
 
     /// <summary>Additive evidence, excluded from legacy positional equality.</summary>
     public TransformRecoveryReceipt? Recovery { get; init; }
+
+    /// <summary>Additive operation evidence, excluded from legacy positional
+    /// equality, hashing, and deconstruction.</summary>
+    public OperationReceipt? OperationReceipt { get; init; }
 
     public bool Equals(GestureResult other) =>
         Success == other.Success &&
@@ -404,6 +409,26 @@ public sealed class TransformGestureService : IDisposable
         if (!recovery.Complete)
             PendingRecovery = recovery;
         return recovery;
+    }
+
+    /// <summary>
+    /// Restores an operation-owned exact snapshot through the same ordered
+    /// recovery barrier used by gesture cancellation. This is intentionally
+    /// the only public recovery entry point for another application workflow:
+    /// incomplete evidence remains the identity-bound <see
+    /// cref="PendingRecovery"/> token and must be retried through
+    /// <see cref="RetryRecovery"/>.
+    /// </summary>
+    public GestureResult RestoreForOperation(
+        IReadOnlyList<TransformTargetState> states)
+    {
+        if (PendingRecovery is { } pending)
+            return RecoveryRequired(pending);
+        using var transition = TryEnterTransition();
+        if (transition == null)
+            return Busy();
+        var recovery = AttemptRecovery(states);
+        return RecoveryResult(recovery);
     }
 
     internal GestureResult? RecoveryBarrier() =>

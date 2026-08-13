@@ -1,5 +1,6 @@
 using System.Numerics;
 using Poser.Application.Scene;
+using Poser.Application.Operations;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
@@ -28,6 +29,10 @@ public readonly record struct PoseEditResult(
 
     /// <summary>Additive evidence, excluded from legacy positional equality.</summary>
     public TransformRecoveryReceipt? Recovery { get; init; }
+
+    /// <summary>Additive operation evidence, excluded from legacy positional
+    /// equality, hashing, and deconstruction.</summary>
+    public OperationReceipt? OperationReceipt { get; init; }
 
     public bool Equals(PoseEditResult other) =>
         Success == other.Success &&

@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Poser.Application.Integration;
+using Poser.Application.Operations;
 using Poser.Application.Posing;
 using Poser.Application.Selection;
 using Poser.Config;
@@ -220,6 +221,9 @@ public sealed class PoseLibraryPane
     /// <summary>Why the last apply or spawn did nothing, or null. Cleared by
     /// the next one and by any filter change.</summary>
     private string? _note;
+    private bool _awaitingImportReceipt;
+    private Guid? _pendingImportOperation;
+    private ActorId? _pendingImportActor;
 
 
     private int _lastAppliedTile = -1;
@@ -276,6 +280,8 @@ public sealed class PoseLibraryPane
         _files = files;
         _actors = actors;
         _previewBinder = new PosePreviewBinder(preview, poseFacade);
+        _poseFacade.ImportPendingPublished += OnImportPending;
+        _poseFacade.ImportReceiptPublished += OnImportTerminal;
 
         _vm.OnQuery = next => _vm.Query = next;
         _vm.OnSelectFolder = SelectFolder;
@@ -308,6 +314,26 @@ public sealed class PoseLibraryPane
         // Spawning needs no selection and no scene state; the service answers
         // null when the game refuses, which is a note rather than a gate.
         _vm.CanSpawn = true;
+    }
+
+    private void OnImportPending(OperationReceipt receipt)
+    {
+        if (!_awaitingImportReceipt)
+            return;
+        _awaitingImportReceipt = false;
+        _pendingImportOperation = receipt.OperationId;
+        _pendingImportActor = receipt.TargetActorId;
+    }
+
+    private void OnImportTerminal(OperationReceipt receipt)
+    {
+        if (_pendingImportOperation != receipt.OperationId ||
+            _pendingImportActor != receipt.TargetActorId)
+            return;
+        _pendingImportOperation = null;
+        _pendingImportActor = null;
+        if (receipt.State is not OperationReceiptState.Applied)
+            _note = $"Apply: {receipt.Detail ?? receipt.State.ToString()}.";
     }
 
     /// <summary>
@@ -1617,7 +1643,10 @@ public sealed class PoseLibraryPane
         // baseline is stale from this call on — the NEXT tile has to be shown
         // landing on this one, not on what stood before it.
         _previewBinder.InvalidateBaseline();
+        _awaitingImportReceipt = true;
         var result = _poseFacade.ImportPose(actor, path, BuildImportOptions(path));
+        if (!result.Success)
+            _awaitingImportReceipt = false;
         _note = result.Success ? cmpNote : Failure(result);
     }
 
@@ -1694,7 +1723,10 @@ public sealed class PoseLibraryPane
         ClearPendingSpawn();
 
         _selection.Select(SelectionId.ForActor(id));
+        _awaitingImportReceipt = true;
         var result = _poseFacade.ImportPose(spawned, path, options);
+        if (!result.Success)
+            _awaitingImportReceipt = false;
         _note = result.Success ? null : Failure(result);
     }
 

@@ -1,9 +1,13 @@
 using System;
 using System.Collections.Generic;
 using Dalamud.Plugin.Services;
+using Poser.Application.Lifecycle;
+using Poser.Application.Operations;
+using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Core;
 using Poser.Domain.Identity;
+using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Files;
@@ -63,6 +67,8 @@ public sealed class PoseImportCapture : IDisposable
     private const int FlattenDelayTicks = 2;
 
     private readonly IFramework _framework;
+    private readonly SceneSession _scene;
+    private readonly ISessionGenerationSource _sessions;
     private readonly StableBindingRegistry _bindings;
     private readonly IBonePosingService _posing;
     private readonly ITransformRuntimePort _runtime;
@@ -99,6 +105,11 @@ public sealed class PoseImportCapture : IDisposable
     private sealed class Import
     {
         public required long Generation;
+        public required Guid OperationId;
+        public required OperationEpoch OperationEpoch;
+        public required SessionGeneration SessionGeneration;
+        public required ActorId TargetActorId;
+        public required IReadOnlyList<TransformTargetId> Targets;
         public required string Description;
         /// <summary>The CURRENT stage's batches. <see cref="BeginReconcile"/>
         /// replaces the verified apply slots with the one reconcile slot.</summary>
@@ -121,6 +132,7 @@ public sealed class PoseImportCapture : IDisposable
         /// fires it; a pending import dropped by Dispose does not either
         /// (session teardown restores animation state wholesale).</summary>
         public Action<bool>? OnFinished;
+        public Action<OperationReceipt>? OnReceipt;
         /// <summary>The import targets the pose library's hidden preview
         /// body. Its changes are scenery, never user edits — they must not
         /// spend the user's undo stack.</summary>
@@ -154,6 +166,9 @@ public sealed class PoseImportCapture : IDisposable
         public ISkeleton? CharacterSkeleton;
         public string? Failure;
         public bool Completing;
+        public bool Invalidated;
+        public OperationReceipt? PendingReceipt;
+        public bool TerminalPublished;
     }
 
     /// <summary>One j_kao instance's target for the expression head
@@ -196,9 +211,18 @@ public sealed class PoseImportCapture : IDisposable
 
     private Import? _pending;
     private long _generation;
+    private OperationEpoch? _lastOperationEpoch;
+    private bool _disposed;
+
+    /// <summary>Raised once for each accepted operation's terminal receipt.
+    /// Delivery is framework-thread-only and synchronous refusals publish
+    /// nothing.</summary>
+    public event Action<OperationReceipt>? ReceiptPublished;
 
     public PoseImportCapture(
         IFramework framework,
+        SceneSession scene,
+        ISessionGenerationSource sessions,
         StableBindingRegistry bindings,
         IBonePosingService posing,
         ITransformRuntimePort runtime,
@@ -210,6 +234,8 @@ public sealed class PoseImportCapture : IDisposable
         IPluginLog log)
     {
         _framework = framework;
+        _scene = scene;
+        _sessions = sessions;
         _bindings = bindings;
         _posing = posing;
         _runtime = runtime;
@@ -220,12 +246,49 @@ public sealed class PoseImportCapture : IDisposable
         _skeletons = skeletons;
         _log = log;
         _posing.TransitiveActionsEnded += OnTransitiveActionsEnded;
+        _scene.SceneChanged += OnSceneChanged;
     }
 
     /// <summary>Whether an import is armed and has not finished: true from
     /// registration until the pass has executed the actions AND the history
     /// entry has been appended (or the whole edit rolled back).</summary>
     public bool IsPending => _pending != null;
+
+    /// <summary>Framework-thread supersession path. The active operation is
+    /// invalidated before its ordered restore, and publishes exactly one
+    /// Cancelled (or RecoveryRequired) terminal receipt.</summary>
+    public GestureResult CancelActive(string detail = "Pose import superseded.")
+    {
+        if (!_framework.IsInFrameworkUpdateThread)
+            return GestureResult.Fail(
+                "Pose import cancellation must run on the framework thread.");
+        if (_pending is not { } import)
+            return GestureResult.Fail("No pose import is active.");
+
+        Invalidate(import);
+        var recovery = Rollback(import);
+        var terminal = recovery.Complete
+            ? OperationReceipt.Cancelled(
+                import.OperationId,
+                import.OperationEpoch,
+                import.SessionGeneration,
+                import.TargetActorId,
+                detail,
+                recovery)
+            : OperationReceipt.RecoveryRequired(
+                import.OperationId,
+                import.OperationEpoch,
+                import.SessionGeneration,
+                import.TargetActorId,
+                TransformRecoveryDetail(detail, recovery),
+                recovery);
+        Notify(import, terminal);
+        return GestureResult.Fail(detail) with
+        {
+            Recovery = recovery,
+            OperationReceipt = terminal,
+        };
+    }
 
     /// <summary>
     /// Arms one plan, on one tick: capture every affected target, apply the
@@ -238,14 +301,23 @@ public sealed class PoseImportCapture : IDisposable
         PoseImportPlan plan,
         string description,
         Action<bool>? onFinished = null,
-        bool expression = false)
+        bool expression = false,
+        Action<OperationReceipt>? onReceipt = null)
     {
+        if (_disposed)
+            return GestureResult.Fail("Pose import is disposed.");
         if (!_framework.IsInFrameworkUpdateThread)
             return GestureResult.Fail("Pose import must run on the framework thread.");
         if (_pending != null)
             return GestureResult.Fail("A pose import is already applying.");
         if (_ikBake.IsPending)
             return GestureResult.Fail("An IK bake is still applying.");
+        if (_gestures.PendingRecovery is { } pendingRecovery)
+            return GestureResult.Fail(
+                "Transform recovery must complete before another mutation.") with
+            {
+                Recovery = pendingRecovery,
+            };
         // A live transform gesture owns bones right now; importing under it
         // would interleave two writers on the same targets.
         if (_gestures.ActiveGesture != null)
@@ -258,16 +330,26 @@ public sealed class PoseImportCapture : IDisposable
             ?? (plan.Writes.Count > 0 ? plan.Writes[0].Bone.Skeleton.Actor
                 : plan.Resets.Count > 0 ? plan.Resets[0].Skeleton.Actor
                 : null);
+        if (planActor is null || _bindings.GetActorId(planActor) is not { } planActorId)
+            return GestureResult.Fail("The import actor could not be resolved.");
+        if (_sessions.ActiveSessionGeneration is not { IsValid: true } sessionGeneration)
+            return GestureResult.Fail("Pose import requires an active session.");
 
         var import = new Import
         {
             Generation = ++_generation,
+            OperationId = Guid.NewGuid(),
+            OperationEpoch = default,
+            SessionGeneration = sessionGeneration,
+            TargetActorId = planActorId,
+            Targets = Array.Empty<TransformTargetId>(),
             Description = description,
             Slots = new List<SlotImport>(),
             Order = new List<TransformTargetId>(),
             Before = new Dictionary<TransformTargetId, TransformTargetState>(),
             Resets = new HashSet<TransformTargetId>(),
             OnFinished = onFinished,
+            OnReceipt = onReceipt,
             Expression = expression,
             PreviewTarget = planActor?.ActorKind == ActorKind.Preview,
         };
@@ -356,6 +438,9 @@ public sealed class PoseImportCapture : IDisposable
         {
             if (_bindings.GetActorId(modelActor) is not { } modelActorId)
                 return GestureResult.Fail("The actor could not be resolved.");
+            if (modelActorId != planActorId)
+                return GestureResult.Fail(
+                    "The model transform targets a different actor generation.");
             var target = TransformTargetId.ForActor(modelActorId);
             if (!import.Before.ContainsKey(target))
             {
@@ -374,6 +459,16 @@ public sealed class PoseImportCapture : IDisposable
 
         if (import.Order.Count == 0)
             return GestureResult.Fail("No target of this import could be bound.");
+
+        if (import.Order.Any(target => target.ActorLineage != planActorId.LogicalId))
+            return GestureResult.Fail(
+                "An import target belongs to a different actor generation.");
+
+        import.OperationEpoch = _lastOperationEpoch is { } last
+            ? last.Next()
+            : OperationEpoch.First;
+        _lastOperationEpoch = import.OperationEpoch;
+        import.Targets = import.Order.ToArray();
 
         // Reset-before-import, synchronously — the bake's STEP 2
         // (IkBakeCapture.cs:285-298): clear the scope's authored stacks so
@@ -402,21 +497,24 @@ public sealed class PoseImportCapture : IDisposable
             import.Written.Add(modelEdit.Target);
         }
 
-        // A plan without file writes (reset-only, model-only) has no pass to
-        // wait for; it completes here as the same single history entry.
+        // A plan without file writes (reset-only, model-only) still follows
+        // the receipt contract: accepted means Pending first, then a queued
+        // framework completion performs the one history decision.
         if (import.Slots.Count == 0)
         {
-            var failure = AppendHistory(import);
-            if (failure == null)
+            _pending = import;
+            import.PendingReceipt = OperationReceipt.Pending(
+                import.OperationId,
+                import.OperationEpoch,
+                import.SessionGeneration,
+                import.TargetActorId,
+                description);
+            _framework.RunOnTick(
+                () => Complete(import.Generation));
+            return GestureResult.Ok() with
             {
-                Notify(import, true);
-                return GestureResult.Ok();
-            }
-            // Begin itself reports this failure, so the callback stays
-            // silent — it fires only for imports Begin returned Ok for.
-            _log.Warning($"Pose import failed: {failure}");
-            Rollback(import);
-            return GestureResult.Fail(failure);
+                OperationReceipt = import.PendingReceipt,
+            };
         }
 
         // Register the per-bone file writes for the next pass — Brio's
@@ -430,10 +528,19 @@ public sealed class PoseImportCapture : IDisposable
                 (bone, poseInfo) => ApplyBone(import, scope, bone, poseInfo));
         }
 
+        import.PendingReceipt = OperationReceipt.Pending(
+            import.OperationId,
+            import.OperationEpoch,
+            import.SessionGeneration,
+            import.TargetActorId,
+            description);
         _framework.RunOnTick(
             () => OnTimeout(import.Generation),
             delayTicks: CompletionTimeoutTicks);
-        return GestureResult.Ok();
+        return GestureResult.Ok() with
+        {
+            OperationReceipt = import.PendingReceipt,
+        };
     }
 
     /// <summary>
@@ -455,6 +562,11 @@ public sealed class PoseImportCapture : IDisposable
     {
         try
         {
+            // This callback runs at the native boundary. It may only inspect
+            // the active token; framework/session/binding validation belongs
+            // to the deferred framework callback.
+            if (!IsLive(import))
+                return;
             if (!slot.Writes.TryGetValue(
                     (bone.PartialId, bone.BoneIndex), out var entry))
                 return;
@@ -519,7 +631,9 @@ public sealed class PoseImportCapture : IDisposable
     /// thread.</summary>
     private void OnTransitiveActionsEnded(TransitiveActionOutcome outcome)
     {
-        if (_pending is not { } import)
+        // Native callbacks are record-only. In particular, do not read
+        // SceneSession, StableBindingRegistry, or session state here.
+        if (_pending is not { } import || !IsLive(import))
             return;
         var complete = true;
         var known = false;
@@ -569,6 +683,86 @@ public sealed class PoseImportCapture : IDisposable
         }
     }
 
+    private bool IsLive(Import import) =>
+        !_disposed &&
+        !import.Invalidated &&
+        ReferenceEquals(_pending, import);
+
+    /// <summary>Framework-thread identity gate for every deferred phase.</summary>
+    private bool IsFrameworkCurrent(Import import)
+    {
+        if (!IsLive(import) ||
+            _sessions.ActiveSessionGeneration is not { } currentSession ||
+            currentSession != import.SessionGeneration)
+            return false;
+
+        foreach (var target in import.Targets)
+        {
+            if (!_bindingsTargetIsCurrent(target))
+                return false;
+            // Preview actors are auxiliary and intentionally absent from the
+            // committed scene model; ordinary imports require both exact
+            // scene and exact binding admission.
+            if (!import.PreviewTarget && !_scene.Contains(target))
+                return false;
+        }
+        return true;
+    }
+
+    private bool _bindingsTargetIsCurrent(TransformTargetId target) =>
+        target.Kind switch
+        {
+            TransformTargetKind.Actor =>
+                target.Actor is { } actor && _bindings.Resolve(actor).Success,
+            TransformTargetKind.Bone =>
+                target.Bone is { } bone && _bindings.Resolve(bone).Success,
+            TransformTargetKind.Light =>
+                target.Light is { } light && _bindings.Resolve(light).Success,
+            TransformTargetKind.Prop =>
+                target.Prop is { } prop && _bindings.Resolve(prop).Success,
+            _ => false,
+        };
+
+    private bool GuardFramework(Import import, string detail)
+    {
+        if (IsFrameworkCurrent(import))
+            return true;
+        if (IsLive(import))
+            FailAndPublish(import, detail);
+        return false;
+    }
+
+    private void FailAndPublish(Import import, string detail)
+    {
+        if (!IsLive(import))
+            return;
+        import.Failure ??= detail;
+        Invalidate(import);
+        var recovery = Rollback(import);
+        var terminal = recovery.Complete
+            ? OperationReceipt.RolledBack(
+                import.OperationId,
+                import.OperationEpoch,
+                import.SessionGeneration,
+                import.TargetActorId,
+                detail,
+                recovery)
+            : OperationReceipt.RecoveryRequired(
+                import.OperationId,
+                import.OperationEpoch,
+                import.SessionGeneration,
+                import.TargetActorId,
+                TransformRecoveryDetail(detail, recovery),
+                recovery);
+        Notify(import, terminal);
+    }
+
+    private void OnSceneChanged(SceneSnapshot _)
+    {
+        if (_pending is { } import)
+            GuardFramework(import, "The pose import scene or target was replaced.");
+    }
+
     /// <summary>Where the reconcile outcome goes next: a body import is
     /// done, an expression import continues into Brio's whole-pose flatten
     /// (its phase-2 Snapshot runs Reconcile(reset: true) — the phase-2
@@ -577,6 +771,8 @@ public sealed class PoseImportCapture : IDisposable
     /// reconcile: false at :156).</summary>
     private void FinishAfterReconcile(Import import)
     {
+        if (!GuardFramework(import, "The pose import target was replaced."))
+            return;
         if (import.Expression && import.Failure == null)
             _framework.RunOnTick(
                 () => BeginFlatten(import.Generation),
@@ -588,6 +784,8 @@ public sealed class PoseImportCapture : IDisposable
     private void OnTimeout(long generation)
     {
         if (_pending is not { } import || import.Generation != generation)
+            return;
+        if (!GuardFramework(import, "The pose import session or target was replaced."))
             return;
         import.Failure ??= import.Stage switch
         {
@@ -618,6 +816,8 @@ public sealed class PoseImportCapture : IDisposable
     private void BeginFlatten(long generation)
     {
         if (_pending is not { } import || import.Generation != generation)
+            return;
+        if (!GuardFramework(import, "The pose import session or target was replaced."))
             return;
 
         var applied = import.Failure == null;
@@ -751,6 +951,8 @@ public sealed class PoseImportCapture : IDisposable
     {
         if (_pending is not { } import || import.Generation != generation)
             return;
+        if (!GuardFramework(import, "The pose import session or target was replaced."))
+            return;
 
         var applied = import.Failure == null;
         if (applied)
@@ -820,6 +1022,8 @@ public sealed class PoseImportCapture : IDisposable
     private void BeginReconcile(long generation)
     {
         if (_pending is not { } import || import.Generation != generation)
+            return;
+        if (!GuardFramework(import, "The pose import session or target was replaced."))
             return;
 
         // A failed or unexecuted apply phase completes (and rolls back) via
@@ -965,7 +1169,8 @@ public sealed class PoseImportCapture : IDisposable
     {
         if (_pending is not { } import || import.Generation != generation)
             return;
-        _pending = null;
+        if (!GuardFramework(import, "The pose import session or target was replaced."))
+            return;
 
         var failure = import.Failure;
         if (failure == null)
@@ -981,28 +1186,85 @@ public sealed class PoseImportCapture : IDisposable
         }
 
         if (failure == null)
-            failure = AppendHistory(import);
+        {
+            try
+            {
+                failure = AppendHistory(import);
+            }
+            catch (Exception exception)
+            {
+                failure = $"Could not append pose import history: {exception.Message}";
+            }
+        }
 
         if (failure != null)
         {
+            // Invalidate before the ordered recovery sweep. Late native,
+            // timeout, and queued framework callbacks can now only no-op.
+            Invalidate(import);
             _log.Warning($"Pose import failed: {failure}");
-            Rollback(import);
+            var recovery = Rollback(import);
+            var terminal = recovery.Complete
+                ? OperationReceipt.RolledBack(
+                    import.OperationId,
+                    import.OperationEpoch,
+                    import.SessionGeneration,
+                    import.TargetActorId,
+                    failure,
+                    recovery)
+                : OperationReceipt.RecoveryRequired(
+                    import.OperationId,
+                    import.OperationEpoch,
+                    import.SessionGeneration,
+                    import.TargetActorId,
+                    TransformRecoveryDetail(failure, recovery),
+                    recovery);
+            Notify(import, terminal);
+            return;
         }
-        Notify(import, failure == null);
+
+        Invalidate(import);
+        Notify(import, OperationReceipt.Applied(
+            import.OperationId,
+            import.OperationEpoch,
+            import.SessionGeneration,
+            import.TargetActorId,
+            import.Description));
     }
 
     /// <summary>The callback runs application code (the facade's speed
     /// restore); a throw there must not escape into the framework tick or
     /// the pass bookkeeping.</summary>
-    private void Notify(Import import, bool success)
+    private void Notify(Import import, OperationReceipt terminal)
     {
+        if (import.TerminalPublished)
+            return;
+        import.TerminalPublished = true;
         try
         {
-            import.OnFinished?.Invoke(success);
+            import.OnFinished?.Invoke(terminal.State == OperationReceiptState.Applied);
         }
         catch (Exception ex)
         {
             _log.Warning($"Pose import completion callback threw: {ex.Message}");
+        }
+
+        try
+        {
+            import.OnReceipt?.Invoke(terminal);
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"Pose import receipt callback threw: {ex.Message}");
+        }
+
+        try
+        {
+            ReceiptPublished?.Invoke(terminal);
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"Pose import receipt subscriber threw: {ex.Message}");
         }
     }
 
@@ -1024,6 +1286,8 @@ public sealed class PoseImportCapture : IDisposable
         var after = new List<TransformTargetState>();
         foreach (var target in import.Order)
         {
+            if (!IsFrameworkCurrent(import))
+                return "The pose import session or target was replaced.";
             var state = import.Before[target];
             // HasOverride is set by the capture to "this target had authored
             // layers", i.e. exactly what the reset cleared.
@@ -1044,22 +1308,36 @@ public sealed class PoseImportCapture : IDisposable
 
     /// <summary>Puts back every captured state. Nothing of the import
     /// survives a failure.</summary>
-    private void Rollback(Import import)
+    private TransformRecoveryReceipt Rollback(Import import)
     {
-        foreach (var target in import.Order)
+        var restored = _gestures.RestoreForOperation(
+            import.Order.Select(target => import.Before[target]).ToArray());
+        if (restored.Recovery is not { } recovery)
         {
-            try
-            {
-                var restored = _runtime.Restore(import.Before[target]);
-                if (!restored.Success)
-                    _log.Warning(
-                        $"Pose import rollback: {restored.Detail ?? target.ToString()}");
-            }
-            catch (Exception ex)
-            {
-                _log.Warning($"Pose import rollback threw for {target}: {ex.Message}");
-            }
+            // The recovery service always returns typed evidence; retain a
+            // complete empty receipt if a future implementation violates it.
+            recovery = new TransformRecoveryReceipt(Array.Empty<TransformRecoveryAttempt>());
         }
+        return recovery;
+    }
+
+    private static string TransformRecoveryDetail(
+        string primaryFailure,
+        TransformRecoveryReceipt recovery) =>
+        recovery.Complete
+            ? primaryFailure
+            : $"{primaryFailure} Rollback also failed: " +
+              string.Join(
+                      "; ",
+                  recovery.Failures.Select(failure =>
+                      failure.Detail ??
+                      $"Could not restore {failure.RequestedState.Target}."));
+
+    private void Invalidate(Import import)
+    {
+        import.Invalidated = true;
+        if (ReferenceEquals(_pending, import))
+            _pending = null;
     }
 
     /// <summary>Brio's <c>Transform.IsApproximatelySame(Transform.Identity)</c>
@@ -1082,7 +1360,11 @@ public sealed class PoseImportCapture : IDisposable
     /// waiting for is dropped.</summary>
     public void Dispose()
     {
+        _disposed = true;
         _posing.TransitiveActionsEnded -= OnTransitiveActionsEnded;
+        _scene.SceneChanged -= OnSceneChanged;
+        if (_pending is { } import)
+            Invalidate(import);
         _pending = null;
     }
 }

@@ -8,6 +8,7 @@ using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
 using Poser.Entities;
 using Poser.Files;
+using Poser.Application.Operations;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Library;
@@ -45,6 +46,9 @@ public sealed class PoseFileInspectorSection
     /// the highlight/option compare has one implementation.</summary>
     private readonly PosePreviewBinder _importPreview;
     private string _status = string.Empty;
+    private bool _awaitingImportReceipt;
+    private Guid? _pendingImportOperation;
+    private ActorId? _pendingImportActor;
     private readonly Crystarium.FileDialog _importBrowser =
         new("Import Pose", new[] { ".pose", ".cmp" }, isSaveMode: false);
     private readonly Crystarium.FileDialog _exportBrowser =
@@ -118,6 +122,8 @@ public sealed class PoseFileInspectorSection
         _textures = textures;
         _library = library;
         _importPreview = new PosePreviewBinder(preview, poseFacade);
+        _poseFacade.ImportPendingPublished += OnImportPending;
+        _poseFacade.ImportReceiptPublished += OnImportTerminal;
         _freeze = config.Config.FreezeActorOnPoseImport;
 
         // The import dialog's shape (user 2026-08-10): the three columns —
@@ -130,6 +136,26 @@ public sealed class PoseFileInspectorSection
             new FileSidePanel(_importBandHeight, DrawImportOptionsBand);
         _importBrowser.SidePanels.Add(
             new FileSidePanel(ImportPreviewColumnWidth, DrawImportPreviewPanel));
+    }
+
+    private void OnImportPending(OperationReceipt receipt)
+    {
+        if (!_awaitingImportReceipt)
+            return;
+        _awaitingImportReceipt = false;
+        _pendingImportOperation = receipt.OperationId;
+        _pendingImportActor = receipt.TargetActorId;
+    }
+
+    private void OnImportTerminal(OperationReceipt receipt)
+    {
+        if (_pendingImportOperation != receipt.OperationId ||
+            _pendingImportActor != receipt.TargetActorId)
+            return;
+        _pendingImportOperation = null;
+        _pendingImportActor = null;
+        if (receipt.State is not OperationReceiptState.Applied)
+            _status = $"Import: {receipt.Detail ?? receipt.State.ToString()}.";
     }
 
     public void DrawBrowsers()
@@ -1483,10 +1509,13 @@ public sealed class PoseFileInspectorSection
         if (SelectedSkeleton() is { } skeleton)
         {
             NotePoseApplied();
+            _awaitingImportReceipt = true;
             _status = _poseFacade.ApplyRestPose(skeleton.Actor, pose) is
                 { Success: false } failed
                 ? $"Preset: {failed.Detail}"
                 : string.Empty;
+            if (_status.StartsWith("Preset:", StringComparison.Ordinal))
+                _awaitingImportReceipt = false;
         }
         else
             _status = "Select an actor first.";
@@ -1718,8 +1747,11 @@ public sealed class PoseFileInspectorSection
         }
 
         NotePoseApplied();
+        _awaitingImportReceipt = true;
         var imported = _poseFacade.ImportPose(
             skeleton.Actor, path, cmp ?? BuildOptions());
+        if (!imported.Success)
+            _awaitingImportReceipt = false;
         _status = imported.Success ? notice : $"Import: {imported.Detail}";
     }
 
@@ -1772,8 +1804,11 @@ public sealed class PoseFileInspectorSection
         _lastImportPath = null;
 
         NotePoseApplied();
+        _awaitingImportReceipt = true;
         var imported = _poseFacade.ImportPose(
             skeleton.Actor, pose, BuildOptions(), description);
+        if (!imported.Success)
+            _awaitingImportReceipt = false;
         _status = imported.Success ? notice : $"{statusPrefix}: {imported.Detail}";
     }
 
