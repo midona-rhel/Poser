@@ -9,6 +9,20 @@ namespace Poser.Application.Integration;
 /// </summary>
 public interface IMcdfFileBoundary
 {
+    /// <summary>Returns the display name for a user-selected MCDF path.</summary>
+    string GetFileName(string path);
+
+    /// <summary>Allocates and creates one unique caller-owned extraction
+    /// directory. The caller registers the returned path before reading.</summary>
+    IntegrationValue<string> CreateOperationDirectory();
+
+    /// <summary>Inspects Penumbra's raw resource map. All filesystem policy
+    /// (canonicalization, readability, metadata, and real-root containment)
+    /// is completed before observations cross into the application.</summary>
+    IntegrationValue<McdfExportInspection> InspectExportCandidates(
+        string modRoot,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> resources);
+
     /// <summary>
     /// Reads, validates, and extracts a complete package into the
     /// CALLER-OWNED operation directory. The boundary never deletes it —

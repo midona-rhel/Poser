@@ -31,6 +31,146 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         AllowTrailingCommas = true,
     };
 
+    public string GetFileName(string path)
+    {
+        try
+        {
+            return Path.GetFileName(path);
+        }
+        catch
+        {
+            return path;
+        }
+    }
+
+    public IntegrationValue<string> CreateOperationDirectory()
+    {
+        try
+        {
+            string root = Path.Combine(Path.GetTempPath(), "Poser");
+            Directory.CreateDirectory(root);
+            for (int attempt = 0; attempt < 8; attempt++)
+            {
+                string directory = Path.Combine(root, $"mcdf-{Guid.NewGuid():N}");
+                try
+                {
+                    Directory.CreateDirectory(directory);
+                    return IntegrationValue<string>.Ok(directory);
+                }
+                catch (IOException) when (attempt < 7)
+                {
+                    // A GUID collision is exceptionally unlikely, but the
+                    // allocation contract remains deterministic and bounded.
+                }
+            }
+            return IntegrationValue<string>.Fail(
+                "The MCDF operation directory could not be allocated.");
+        }
+        catch (Exception ex)
+        {
+            return IntegrationValue<string>.Fail(
+                $"The MCDF operation directory could not be allocated: {ex.Message}");
+        }
+    }
+
+    public IntegrationValue<McdfExportInspection> InspectExportCandidates(
+        string modRoot,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> resources)
+    {
+        string realRoot;
+        try
+        {
+            string fullRoot = Path.GetFullPath(modRoot);
+            if (!Directory.Exists(fullRoot))
+                return IntegrationValue<McdfExportInspection>.Fail(
+                    "Penumbra's mod directory is missing or inaccessible.");
+            using var entries = Directory.EnumerateFileSystemEntries(fullRoot).GetEnumerator();
+            // Advance once so an ACL failure is observed by the boundary.
+            _ = entries.MoveNext();
+            realRoot = ResolveRealPath(fullRoot) ?? string.Empty;
+            if (realRoot.Length == 0 || !Directory.Exists(realRoot))
+                return IntegrationValue<McdfExportInspection>.Fail(
+                    "Penumbra's mod directory could not be resolved to a real path.");
+        }
+        catch (Exception)
+        {
+            return IntegrationValue<McdfExportInspection>.Fail(
+                "Penumbra's mod directory is missing or inaccessible.");
+        }
+
+        var candidates = new List<McdfExportCandidate>();
+        var skipped = new List<string>();
+        foreach (var (actualRaw, gamePathsRaw) in resources)
+        {
+            if (actualRaw.Length > 1 && actualRaw[1] == ':')
+            {
+                string fullPath;
+                try
+                {
+                    fullPath = Path.GetFullPath(actualRaw);
+                }
+                catch
+                {
+                    skipped.Add($"{actualRaw} (not a usable path)");
+                    continue;
+                }
+
+                string? realFile;
+                try
+                {
+                    realFile = ResolveRealPath(fullPath);
+                    if (realFile == null)
+                    {
+                        skipped.Add($"{actualRaw} (could not resolve the real path)");
+                        continue;
+                    }
+                    if (EscapesRoot(Path.GetRelativePath(realRoot, realFile)))
+                    {
+                        skipped.Add($"{actualRaw} (outside the Penumbra mod directory)");
+                        continue;
+                    }
+
+                    using var stream = new FileStream(
+                        realFile, FileMode.Open, FileAccess.Read,
+                        FileShare.ReadWrite | FileShare.Delete);
+                    long length = stream.Length;
+                    candidates.Add(new McdfExportCandidate(
+                        actualRaw, gamePathsRaw.ToArray(),
+                        McdfExportCandidateKind.LocalFile, realFile, length));
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    skipped.Add($"{actualRaw} (not readable)");
+                }
+                catch (FileNotFoundException)
+                {
+                    skipped.Add($"{actualRaw} (missing on disk)");
+                }
+                catch (DirectoryNotFoundException)
+                {
+                    skipped.Add($"{actualRaw} (missing on disk)");
+                }
+                catch (IOException)
+                {
+                    skipped.Add($"{actualRaw} (metadata could not be read)");
+                }
+                catch
+                {
+                    skipped.Add($"{actualRaw} (could not resolve the real path)");
+                }
+            }
+            else
+            {
+                candidates.Add(new McdfExportCandidate(
+                    actualRaw, gamePathsRaw.ToArray(),
+                    McdfExportCandidateKind.GamePath, null, 0));
+            }
+        }
+
+        return IntegrationValue<McdfExportInspection>.Ok(
+            new McdfExportInspection(candidates, skipped));
+    }
+
     private sealed class WireData
     {
         public string Description { get; set; } = string.Empty;
@@ -483,4 +623,53 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
             offset += got;
         }
     }
+
+    /// <summary>Resolves every reparse point in a path, including
+    /// intermediate directories, and restarts from each final target.</summary>
+    private static string? ResolveRealPath(string fullPath)
+    {
+        var separators = new[]
+        {
+            Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar,
+        };
+        string path = fullPath;
+        for (int pass = 0; pass < 8; pass++)
+        {
+            string? root = Path.GetPathRoot(path);
+            if (string.IsNullOrEmpty(root))
+                return null;
+            string current = root;
+            bool jumped = false;
+            foreach (var segment in path[root.Length..]
+                .Split(separators, StringSplitOptions.RemoveEmptyEntries))
+            {
+                current = Path.Combine(current, segment);
+                FileSystemInfo info = Directory.Exists(current)
+                    ? new DirectoryInfo(current)
+                    : new FileInfo(current);
+                if (info.LinkTarget == null)
+                    continue;
+                var resolved = info.ResolveLinkTarget(returnFinalTarget: true);
+                if (resolved == null)
+                    return null;
+                var remainder = path[current.Length..].TrimStart('\\', '/');
+                path = remainder.Length == 0
+                    ? resolved.FullName
+                    : Path.Combine(resolved.FullName, remainder);
+                jumped = true;
+                break;
+            }
+            if (!jumped)
+                return path;
+        }
+        return null;
+    }
+
+    private static bool EscapesRoot(string relative) =>
+        Path.IsPathRooted(relative)
+        || relative == ".."
+        || relative.StartsWith(".." + Path.DirectorySeparatorChar,
+            StringComparison.Ordinal)
+        || relative.StartsWith("../", StringComparison.Ordinal);
 }

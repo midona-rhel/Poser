@@ -106,6 +106,31 @@ public sealed record McdfPackage(
 /// <summary>One local file to embed on export, with every game path it replaces.</summary>
 public sealed record McdfExportFile(IReadOnlyList<string> GamePaths, string LocalPath);
 
+public enum McdfExportCandidateKind
+{
+    LocalFile,
+    GamePath,
+}
+
+/// <summary>
+/// Immutable filesystem observation supplied by the MCDF boundary. Local
+/// paths are canonical real paths proven readable and contained by the mod
+/// root; game-path observations retain their source text for application
+/// semantic filtering and swap decisions.
+/// </summary>
+public sealed record McdfExportCandidate(
+    string ActualPath,
+    IReadOnlyList<string> GamePaths,
+    McdfExportCandidateKind Kind,
+    string? LocalPath,
+    long Length);
+
+/// <summary>Validated export candidates plus deterministic per-resource
+/// skips. The application owns only MCDF path semantics after this point.</summary>
+public sealed record McdfExportInspection(
+    IReadOnlyList<McdfExportCandidate> Candidates,
+    IReadOnlyList<string> Skipped);
+
 /// <summary>Everything an MCDF export writes. Capture is complete before
 /// writing starts; writing never touches the actor.</summary>
 public sealed record McdfExportContent(

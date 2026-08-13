@@ -714,7 +714,7 @@ public sealed class ActorIntegrationSession
         var operation = new InFlightImport
         {
             Target = actor,
-            FileName = System.IO.Path.GetFileName(path),
+            FileName = _files.GetFileName(path),
         };
         _inFlight = operation;
         _mcdfProgress = new McdfProgress(
@@ -790,8 +790,13 @@ public sealed class ActorIntegrationSession
             // cleanup obligation instead of an orphaned directory. Then
             // read, validate, extract: pure file work, off the framework
             // thread and entirely off the actor.
-            string operationDirectory = System.IO.Path.Combine(
-                System.IO.Path.GetTempPath(), "Poser", $"mcdf-{Guid.NewGuid():N}");
+            var allocated = _files.CreateOperationDirectory();
+            if (!allocated.Success || allocated.Value is not { } operationDirectory)
+            {
+                await FailAsync(allocated.Detail
+                    ?? "The MCDF operation directory could not be allocated.");
+                return;
+            }
             await _port.OnFrameworkThread(() =>
             {
                 operation.OperationDirectory = operationDirectory;
@@ -1434,15 +1439,19 @@ public sealed class ActorIntegrationSession
             }
         }
 
+        var inspected = _files.InspectExportCandidates(root, tree);
+        if (!inspected.Success || inspected.Value is not { } observation)
+            return IntegrationResult.Fail(
+                inspected.Detail ?? "The export resources could not be inspected.");
         var (content, skipped, contentError) = BuildExportContent(
-            description, glamourerState, customizeData, manipulationData, tree, root);
+            description, glamourerState, customizeData, manipulationData, observation);
         if (contentError != null || content == null)
             return IntegrationResult.Fail(contentError ?? "The export content could not be built.");
 
         _mcdfCancellation?.Dispose();
         _mcdfCancellation = new CancellationTokenSource();
         var cancellation = _mcdfCancellation.Token;
-        string fileName = System.IO.Path.GetFileName(path);
+        string fileName = _files.GetFileName(path);
         _mcdfProgress = new McdfProgress(actor, fileName, McdfOperationKind.Export,
             McdfPhase.WritingPackage, 0, content.Files.Count, 0, 0, true, null);
         Changed?.Invoke();
@@ -1459,7 +1468,7 @@ public sealed class ActorIntegrationSession
         List<string> skipped,
         CancellationToken cancellation)
     {
-        string fileName = System.IO.Path.GetFileName(path);
+        string fileName = _files.GetFileName(path);
         int filesTotal = content.Files.Count;
         long bytesTotal = 0;
         try
@@ -1515,82 +1524,31 @@ public sealed class ActorIntegrationSession
             string glamourerState,
             string customizeData,
             string manipulationData,
-            IReadOnlyDictionary<string, IReadOnlyList<string>> resources,
-            string modRoot)
+            McdfExportInspection observation)
     {
-        var skipped = new List<string>();
+        var skipped = observation.Skipped.ToList();
         var files = new List<McdfExportFile>();
         var swaps = new Dictionary<string, string>(StringComparer.Ordinal);
         // Which exported source already serves each game path; identical
         // duplicates are ignored, conflicting ones fail the export.
         var sources = new Dictionary<string, string>(StringComparer.Ordinal);
-        string realRoot;
-        try
-        {
-            var resolvedRoot = ResolveRealPath(System.IO.Path.GetFullPath(modRoot));
-            if (resolvedRoot == null)
-                return (null, skipped, "Penumbra's mod directory could not be resolved to a real path.");
-            realRoot = resolvedRoot;
-        }
-        catch (Exception ex)
-        {
-            return (null, skipped, $"Penumbra's mod directory is not a usable path: {ex.Message}");
-        }
-
-        foreach (var (actualRaw, gamePathsRaw) in resources)
+        foreach (var candidate in observation.Candidates)
         {
             // A local filesystem path is a file replacement; anything else
             // is a game path — identical means unmodified, different means
             // a swap.
-            bool isLocalFile = actualRaw.Length > 1 && actualRaw[1] == ':';
+            bool isLocalFile = candidate.Kind == McdfExportCandidateKind.LocalFile;
+            string actualRaw = candidate.ActualPath;
+            var gamePathsRaw = candidate.GamePaths;
 
             string sourceKey;
-            string? localFull = null;
+            string? localFull = candidate.LocalPath;
             string swapTarget = string.Empty;
             if (isLocalFile)
             {
-                try
-                {
-                    localFull = System.IO.Path.GetFullPath(actualRaw);
-                }
-                catch (Exception)
-                {
-                    skipped.Add($"{actualRaw} (not a usable path)");
+                if (localFull is null)
                     continue;
-                }
-                if (!System.IO.File.Exists(localFull))
-                {
-                    skipped.Add($"{actualRaw} (missing on disk)");
-                    continue;
-                }
-                // REAL containment: every reparse point along the path —
-                // including intermediate directory junctions/symlinks — is
-                // resolved to its final filesystem target, so a file under
-                // <root>\junction\… that really lives elsewhere is caught,
-                // and lexical tricks like <root>\..\outside never pass.
-                string? realFile;
-                try
-                {
-                    realFile = ResolveRealPath(localFull);
-                }
-                catch (Exception)
-                {
-                    // Malformed or inaccessible reparse data must become a
-                    // skipped resource, never escape the export.
-                    realFile = null;
-                }
-                if (realFile == null)
-                {
-                    skipped.Add($"{actualRaw} (could not resolve the real path)");
-                    continue;
-                }
-                if (EscapesRoot(System.IO.Path.GetRelativePath(realRoot, realFile)))
-                {
-                    skipped.Add($"{actualRaw} (outside the Penumbra mod directory)");
-                    continue;
-                }
-                localFull = realFile;
-                sourceKey = realFile;
+                sourceKey = localFull;
             }
             else
             {
@@ -1643,64 +1601,6 @@ public sealed class ActorIntegrationSession
             description, glamourerState, customizeData, manipulationData, files, swaps),
             skipped, null);
     }
-
-    /// <summary>
-    /// Resolves the REAL final filesystem path: every reparse point
-    /// (symbolic link, junction) the walk encounters — including
-    /// intermediate directories — is followed to its final target, and the
-    /// walk restarts on the target so ITS ancestors resolve too. Returns
-    /// null on a broken link or a link cycle.
-    /// </summary>
-    private static string? ResolveRealPath(string fullPath)
-    {
-        var separators = new[]
-        {
-            System.IO.Path.DirectorySeparatorChar,
-            System.IO.Path.AltDirectorySeparatorChar,
-        };
-        string path = fullPath;
-        for (int pass = 0; pass < 8; pass++)
-        {
-            string? root = System.IO.Path.GetPathRoot(path);
-            if (string.IsNullOrEmpty(root))
-                return null;
-            string current = root;
-            bool jumped = false;
-            foreach (var segment in path[root.Length..]
-                .Split(separators, StringSplitOptions.RemoveEmptyEntries))
-            {
-                current = System.IO.Path.Combine(current, segment);
-                System.IO.FileSystemInfo info = System.IO.Directory.Exists(current)
-                    ? new System.IO.DirectoryInfo(current)
-                    : new System.IO.FileInfo(current);
-                if (info.LinkTarget == null)
-                    continue;
-                var resolved = info.ResolveLinkTarget(returnFinalTarget: true);
-                if (resolved == null)
-                    return null;
-                // Splice the untraversed remainder onto the resolved
-                // target and restart the walk from the top.
-                var remainder = path[current.Length..].TrimStart('\\', '/');
-                path = remainder.Length == 0
-                    ? resolved.FullName
-                    : System.IO.Path.Combine(resolved.FullName, remainder);
-                jumped = true;
-                break;
-            }
-            if (!jumped)
-                return path;
-        }
-        return null; // Unresolvable nesting depth; treat as a cycle.
-    }
-
-    /// <summary>Segment-exact escape test: only a leading ".." SEGMENT (or
-    /// a rooted result) escapes — a legitimate directory whose name merely
-    /// begins with ".." does not.</summary>
-    private static bool EscapesRoot(string relative) =>
-        System.IO.Path.IsPathRooted(relative)
-        || relative == ".."
-        || relative.StartsWith(".." + System.IO.Path.DirectorySeparatorChar, StringComparison.Ordinal)
-        || relative.StartsWith("../", StringComparison.Ordinal);
 
     private IntegrationResult? McdfGate(ActorId actor)
     {
