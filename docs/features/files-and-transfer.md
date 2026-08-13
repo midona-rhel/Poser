@@ -12,7 +12,19 @@ interchange with Brio and (via name conversion) Anamnesis.
   serialize as comma-space strings via the custom converters (the
   Brio/Anamnesis wire format — without them structs write as `{}`). Unknown
   members are ignored both ways, so Brio v3 files load fine. Poser writes no
-  format version; adopt `FileVersion` first if diverging.
+  format version; adopt `FileVersion` first if diverging. Reads are bounded to
+  32 MiB and JSON depth 64; each slot collection is bounded to 8,192 entries,
+  all five to 32,768, and bone names/tags to 256 characters (256 tags). Used
+  numerics must be finite and rotations nondegenerate. Quaternion normalization
+  occurs only when materializing a plan; `ModelDifference.Scale` is additive,
+  so zero is valid. Anamnesis aliases that converge on one game name are a
+  deterministic conflict, never last-write-wins.
+- Saves validate and serialize completely before touching the destination,
+  write and durably flush a unique same-directory temp, reopen and validate it,
+  then replace/move atomically. Failure preserves the previous destination;
+  an undeletable temp is returned as recovery evidence. Legacy nullable/bool
+  codec methods are intentionally lossy compatibility wrappers over typed
+  `.pose` outcomes.
 - `ModelDifference` applies only with `ApplyModelTransform` (default false,
   Brio parity). Anamnesis names rewrite through the 161-entry Brio table.
 - `.cmp` carries no positions — import forces `ApplyPosition = false` so a
