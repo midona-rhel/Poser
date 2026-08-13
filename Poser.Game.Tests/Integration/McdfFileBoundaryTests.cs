@@ -611,6 +611,31 @@ public sealed class McdfFileBoundaryTests
     }
 
     [Fact]
+    public async Task Existing_destination_race_after_revalidation_is_refused_without_overwrite()
+    {
+        using var files = new TempFiles();
+        string source = Path.Combine(files.Root, "body.mdl");
+        string destination = Path.Combine(files.Root, "export.mcdf");
+        string foreign = Path.Combine(files.Root, "foreign.mcdf");
+        File.WriteAllText(source, "payload");
+        File.WriteAllText(destination, "original destination");
+        File.WriteAllText(foreign, "foreign destination");
+        var boundary = new McdfFileBoundary(
+            afterDestinationRevalidation: _ => File.Replace(foreign, destination, null));
+
+        var result = await boundary.WritePackage(
+            destination,
+            new McdfExportContent("", "", "", "",
+                [new McdfExportFile(["a/body.mdl"], source)],
+                new Dictionary<string, string>()),
+            _ => { }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("foreign destination", File.ReadAllText(destination));
+        Assert.Contains("backup", result.Detail!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Commit_renames_the_exact_owned_temp_handle_not_a_path_replacement()
     {
         if (!OperatingSystem.IsWindows())

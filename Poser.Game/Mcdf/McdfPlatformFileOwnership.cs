@@ -126,7 +126,7 @@ internal static class McdfPlatformFileOwnership
     internal static SafeFileHandle OpenDestinationForCommit(string path)
     {
         var handle = CreateFile(
-            path, GenericRead | ReadAttributes,
+            path, GenericRead | ReadAttributes | Delete,
             ShareRead | ShareWrite | ShareDelete, IntPtr.Zero,
             OpenExisting, FileAttributeNormal, IntPtr.Zero);
         if (handle.IsInvalid)

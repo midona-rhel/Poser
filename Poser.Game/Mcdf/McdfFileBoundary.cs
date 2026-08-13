@@ -43,6 +43,7 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
     private readonly Func<SafeFileHandle, string?> _getOperationIdentity;
     private readonly Action<SafeFileHandle> _markDeleteOnClose;
     private readonly Action<string>? _beforeDestinationCommit;
+    private readonly Action<string>? _afterDestinationRevalidation;
     private readonly Func<SafeFileHandle, string?> _getDestinationIdentity;
 
     public McdfFileBoundary() : this(Guid.NewGuid, null, null)
@@ -59,6 +60,7 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         Func<SafeFileHandle, string?>? getOperationIdentity = null,
         Action<SafeFileHandle>? markDeleteOnClose = null,
         Action<string>? beforeDestinationCommit = null,
+        Action<string>? afterDestinationRevalidation = null,
         Func<SafeFileHandle, string?>? getDestinationIdentity = null)
     {
         _newGuid = newGuid ?? Guid.NewGuid;
@@ -75,6 +77,7 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         _markDeleteOnClose =
             markDeleteOnClose ?? McdfPlatformFileOwnership.MarkDeleteOnClose;
         _beforeDestinationCommit = beforeDestinationCommit;
+        _afterDestinationRevalidation = afterDestinationRevalidation;
         _getDestinationIdentity =
             getDestinationIdentity ?? McdfPlatformFileOwnership.TryGetIdentity;
     }
@@ -779,6 +782,9 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         bool moved = false;
         FileStream? ownedOutput = null;
         SafeFileHandle? destinationHandle = null;
+        string? destinationBackupPath = null;
+        bool destinationBackedUp = false;
+        bool destinationBackupDeleted = false;
         IntegrationValue<McdfWriteStats> result =
             IntegrationValue<McdfWriteStats>.Fail(
                 "Writing the package failed unexpectedly.");
@@ -966,6 +972,24 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                         StringComparison.Ordinal))
                     throw new WriteFailureException(
                         "The existing destination changed before commit; the export was refused.");
+                _afterDestinationRevalidation?.Invoke(fullDestination);
+                cancellation.ThrowIfCancellationRequested();
+                destinationBackupPath = CreateDestinationBackupPath(fullDestination);
+                try
+                {
+                    McdfPlatformFileOwnership.CommitExactHandle(
+                        destinationHandle, destinationBackupPath, replaceExisting: false);
+                }
+                catch (Exception ex)
+                {
+                    throw new WriteFailureException(
+                        $"The admitted destination could not be moved to its owned backup: {ex.Message}");
+                }
+                destinationBackedUp = true;
+                if (File.Exists(fullDestination))
+                    throw new WriteFailureException(
+                        "A foreign destination appeared during the commit transaction; "
+                        + "the export was refused.");
             }
             else if (File.Exists(fullDestination))
             {
@@ -974,7 +998,7 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
             }
             cancellation.ThrowIfCancellationRequested();
             McdfPlatformFileOwnership.CommitExactHandle(
-                ownedOutput.SafeFileHandle, fullDestination, destinationExisted);
+                ownedOutput.SafeFileHandle, fullDestination, replaceExisting: false);
             moved = true;
             ownedOutput.Dispose();
             ownedOutput = null;
@@ -997,6 +1021,31 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         }
         finally
         {
+            if (destinationBackedUp && moved && destinationHandle != null)
+            {
+                try
+                {
+                    _markDeleteOnClose(destinationHandle);
+                    destinationBackupDeleted = true;
+                }
+                catch (Exception cleanupError)
+                {
+                    string original = result.Detail
+                        ?? "The export completed, but destination cleanup failed.";
+                    result = IntegrationValue<McdfWriteStats>.Fail(
+                        $"{original} Destination backup cleanup also failed: "
+                        + $"{cleanupError.Message} The owned backup was retained at "
+                        + $"{destinationBackupPath} for manual cleanup.");
+                }
+            }
+            else if (destinationBackedUp && !destinationBackupDeleted)
+            {
+                string original = result.Detail
+                    ?? "Writing the package failed.";
+                result = IntegrationValue<McdfWriteStats>.Fail(
+                    $"{original} The exact admitted destination was retained at "
+                    + $"{destinationBackupPath} as recovery evidence.");
+            }
             if (!moved && ownedOutput != null)
             {
                 try
@@ -1021,6 +1070,16 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
 
     private sealed class WriteFailureException(string message)
         : IOException(message);
+
+    private static string CreateDestinationBackupPath(string destination)
+    {
+        string directory = Path.GetDirectoryName(destination)
+            ?? throw new IOException("The destination directory could not be resolved.");
+        string name = Path.GetFileName(destination);
+        return Path.Combine(
+            directory,
+            $".{name}.mcdf-backup-{Guid.NewGuid():N}");
+    }
 
     private static void ReadExact(Stream stream, byte[] buffer, string what)
     {
