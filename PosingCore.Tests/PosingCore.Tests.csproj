@@ -79,9 +79,10 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<!-- PosingCore exposes the AutoSaveService test seams via
-		     InternalsVisibleTo (PosingCore.csproj). -->
+		<!-- Transitional PosingCore and Game seams are exposed only to this
+		     Game-facing test assembly. -->
 		<ProjectReference Include="..\PosingCore\PosingCore.csproj" />
+		<ProjectReference Include="..\Poser.Game\Poser.Game.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>

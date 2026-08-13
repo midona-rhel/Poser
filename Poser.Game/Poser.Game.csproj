@@ -26,5 +26,6 @@
     <ProjectReference Include="..\Poser.Domain\Poser.Domain.csproj" />
     <ProjectReference Include="..\Poser.Application\Poser.Application.csproj" />
     <ProjectReference Include="..\PosingCore\PosingCore.csproj" />
+    <InternalsVisibleTo Include="PosingCore.Tests" />
   </ItemGroup>
 </Project>

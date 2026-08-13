@@ -276,21 +276,14 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
                 TransformPortStatus.InvalidTransform,
                 $"Bone {boneId} returned an invalid transform.");
 
-        var layers = _bones.CapturePoseStacks(bone)
-            .Select((layer, index) => ToDomainLayer(layer, index))
-            .Where(layer => layer.HasValue)
-            .Select(layer => layer!.Value)
-            .ToArray();
-        var pose = new BonePose(layers);
-        return TransformPortResult.Ok(new TransformTargetState(
+        var stacks = _bones.CapturePoseStacks(bone);
+        var animatedBaselineRotation =
+            _bones.GetAnimatedBaseline(bone).Rotation;
+        return LegacyPoseStackConverter.Convert(
             target,
             converted.Value,
-            pose,
-            layers.Length > 0)
-        {
-            AnimatedBaselineRotation =
-                _bones.GetAnimatedBaseline(bone).Rotation,
-        });
+            animatedBaselineRotation,
+            stacks);
     }
 
     private bool OnFrameworkThread() =>
@@ -328,27 +321,6 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
     private static LegacyTransform ToLegacy(DomainTransform value) =>
         new(value.Position, value.Rotation, value.Scale);
 
-    private static PoseLayer? ToDomainLayer(
-        LegacyLayer layer,
-        int index)
-    {
-        // Manual gesture history intentionally excludes named service layers.
-        if (layer.Layer != null)
-            return null;
-        var delta = new PoseDelta(
-            layer.Transform.Position,
-            layer.Transform.Rotation,
-            layer.Transform.Scale);
-        if (!delta.IsValid)
-            return null;
-        return new PoseLayer(
-            new PoseLayerId(
-                PoseLayerKind.Manual,
-                $"legacy-{index}"),
-            ToDomainComponents(layer.PropagateComponents),
-            delta.Normalized());
-    }
-
     private static IReadOnlyList<LegacyLayer> ToLegacyLayers(BonePose pose) =>
         pose.InteractiveOnly().Layers.Select(layer =>
             new LegacyLayer(
@@ -357,10 +329,6 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
                     layer.Delta.Position,
                     layer.Delta.Rotation,
                     layer.Delta.Scale))).ToArray();
-
-    private static DomainComponents ToDomainComponents(
-        LegacyComponents components) =>
-        (DomainComponents)(int)components;
 
     private static LegacyComponents ToLegacyComponents(
         DomainComponents components) =>

@@ -19,7 +19,11 @@ entities, framework services, or live UI state.
   frozen values, rolls back on partial failure, and commits one
   `TransformPatch`. Cancel and undo/redo use the same restore path; discrete
   edits are rejected during a gesture. There is one transform history owner.
-- `PortablePose` is actor-independent and matches `(slot, partial, name)`;
+- `PortablePose` is actor-independent and matches structural
+  `PortableBoneKey`/`BonePath` identity, retains ordered duplicate-name
+  variants, and treats the native index only as a hint; legacy
+  slot-plus-partial-plus-name matching or broadcast requires the explicit
+  compatibility adapter or legacy matching policy;
   named producer layers never transfer. Transform and pose contracts cross to
   the native boundary through the narrow ports described in
   [posing-runtime.md](posing-runtime.md).
