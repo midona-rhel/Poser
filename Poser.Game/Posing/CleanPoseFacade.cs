@@ -17,13 +17,14 @@ public sealed class CleanPoseFacade
     private readonly StableBindingRegistry _bindings;
     private readonly PoseEditService _edits;
     private readonly PoseTransferService _transfers;
-    private long _armEpoch;
+    private ImportArm? _importArm;
 
-    /// <summary>Terminal receipts for imports initiated through this legacy
-    /// facade. Consumers must compare operation and actor identity before
-    /// updating their own view model.</summary>
-    public event Action<OperationReceipt>? ImportPendingPublished;
-    public event Action<OperationReceipt>? ImportReceiptPublished;
+    private sealed class ImportArm
+    {
+        public required PoseImportOperation Operation;
+        public required ActorId TargetActorId;
+        public required Action Restore;
+    }
 
     public CleanPoseFacade(
         StableBindingRegistry bindings,
@@ -68,19 +69,18 @@ public sealed class CleanPoseFacade
     /// tick hands the plan to <see cref="PoseImportCapture"/>, whose own
     /// IsPending takes over. One import in flight at a time, across the
     /// 4-tick window included.</summary>
-    private bool _importArming;
-    private Action? _restoreImportArm;
-
     /// <summary>Whether an import is armed or still applying. The engine takes
     /// ONE at a time (see <see cref="BeginImport"/>), so a caller that would
     /// only be refused — the pose preview's staged sequence — waits on this
     /// instead of spending its stage against a failure.</summary>
-    public bool IsImportBusy => _importArming || _imports.IsPending;
+    public bool IsImportBusy => _importArm != null || _imports.IsPending;
 
     private readonly PoseImportCapture _imports;
     private readonly PoseExportCapture _exports;
     private readonly Poser.Config.ConfigurationService _configuration;
     private readonly IPoseFileService _poseFiles;
+
+    public ActorId? GetActorId(IActor actor) => _bindings.GetActorId(actor);
 
     /// <summary>
     /// File export dispatch through <see cref="PoseExportCapture"/> rather
@@ -203,7 +203,8 @@ public sealed class CleanPoseFacade
         IActor actor,
         string path,
         PoseImportOptions options,
-        IReadOnlyList<BoneId>? selectedBones = null)
+        IReadOnlyList<BoneId>? selectedBones = null,
+        Action<OperationReceipt>? onReceipt = null)
     {
         // Selected scope: the frozen BoneIds must all belong to the exact
         // actor generation this import was opened for, and each must still
@@ -234,7 +235,7 @@ public sealed class CleanPoseFacade
         if (plan == null)
             return PoseEditResult.Fail("The pose file could not be read.");
         return BeginImport(actor, plan, options,
-            $"Import {System.IO.Path.GetFileName(path)}");
+            $"Import {System.IO.Path.GetFileName(path)}", onReceipt);
     }
 
     /// <summary>In-memory variant of the file import — same plan builder,
@@ -245,11 +246,12 @@ public sealed class CleanPoseFacade
         IActor actor,
         PoseFile poseFile,
         PoseImportOptions options,
-        string description)
+        string description,
+        Action<OperationReceipt>? onReceipt = null)
     {
         var plan = _poseFiles.BuildImportPlan(
             _skeletons.GetSkeletons(actor), poseFile, options);
-        return BeginImport(actor, plan, options, description);
+        return BeginImport(actor, plan, options, description, onReceipt);
     }
 
     /// <summary>
@@ -269,7 +271,10 @@ public sealed class CleanPoseFacade
     /// file does not carry — j_kao, Viera ears, hair — which the bare
     /// ResetBeforeImport body scope would wipe (IsFaceBone misses them).
     /// </summary>
-    public PoseEditResult ApplyRestPose(IActor actor, RestPose pose)
+    public PoseEditResult ApplyRestPose(
+        IActor actor,
+        RestPose pose,
+        Action<OperationReceipt>? onReceipt = null)
     {
         var description = pose == RestPose.APose ? "A-pose" : "T-pose";
         var poseFile = RestPoses.Get(pose);
@@ -280,7 +285,7 @@ public sealed class CleanPoseFacade
             filter.Add((PoseSlot.Character, name));
         options.BoneFilter = filter;
         return Report(description, ImportPose(
-            actor, poseFile, options, description));
+            actor, poseFile, options, description, onReceipt));
     }
 
     /// <summary>
@@ -334,7 +339,8 @@ public sealed class CleanPoseFacade
         IActor actor,
         PoseImportPlan plan,
         PoseImportOptions options,
-        string description)
+        string description,
+        Action<OperationReceipt>? onReceipt = null)
     {
         // Synchronous validation BEFORE the pause side effect: both
         // ImportPose overloads build the plan before calling here (a bad
@@ -346,31 +352,26 @@ public sealed class CleanPoseFacade
         if (plan.IsEmpty)
             return PoseEditResult.Fail(
                 "Nothing in this file applies to the chosen scope.");
-        if (_importArming || _imports.IsPending)
+        if (_importArm != null || _imports.IsPending)
         {
-            // A newer request owns the facade's arm epoch. Restore the prior
-            // request before allowing the replacement to pause/arm, so a late
-            // first callback cannot restore the second request's speed.
-            _armEpoch++;
-            _importArming = false;
-            _restoreImportArm?.Invoke();
-            _restoreImportArm = null;
-            if (_imports.IsPending)
-            {
-                if (!_framework.IsInFrameworkUpdateThread)
-                    return PoseEditResult.Fail(
-                        "A pose import is already applying.");
-                var cancelled = _imports.CancelActive(
-                    "Pose import superseded by a newer request.");
-                if (cancelled.OperationReceipt?.State ==
-                    OperationReceiptState.RecoveryRequired)
-                    return PoseEditResult.Fail(cancelled.Detail ??
-                        "The previous pose import requires recovery.") with
-                    {
-                        Recovery = cancelled.Recovery,
-                        OperationReceipt = cancelled.OperationReceipt,
-                    };
-            }
+            if (!_framework.IsInFrameworkUpdateThread)
+                return PoseEditResult.Fail("A pose import is already applying.");
+            var priorArm = _importArm;
+            var cancelled = _imports.CancelActive(
+                "Pose import superseded by a newer request.");
+            // Restore the old owner before a replacement can pause. Its own
+            // delayed completion restore is idempotent and cannot touch the
+            // replacement's state.
+            priorArm?.Restore();
+            if (ReferenceEquals(_importArm, priorArm))
+                _importArm = null;
+            if (cancelled.OperationReceipt is not { State: OperationReceiptState.Cancelled })
+                return PoseEditResult.Fail(cancelled.Detail ??
+                    "The previous pose import could not be cancelled safely.") with
+                {
+                    Recovery = cancelled.Recovery,
+                    OperationReceipt = cancelled.OperationReceipt,
+                };
         }
 
         // The apply window runs paused, in Brio's exact sequence (every
@@ -410,12 +411,12 @@ public sealed class CleanPoseFacade
                 pausedForImport = _animation.Pause(pauseId).Success;
         }
 
-        long armEpoch = ++_armEpoch;
-
+        var restored = false;
         void RestorePriorSpeed()
         {
-            if (armEpoch != _armEpoch)
+            if (restored)
                 return;
+            restored = true;
             if (!pausedForImport || animationTarget is not { } restoreId)
                 return;
             // The pause is only Poser's to undo while it still holds: a
@@ -427,8 +428,68 @@ public sealed class CleanPoseFacade
                 _animation.SetSpeed(restoreId, speed);
             else
                 _animation.Resume(restoreId);
-            _restoreImportArm = null;
         }
+
+        void ScheduleRestore()
+        {
+            try
+            {
+                _framework.RunOnTick(RestorePriorSpeed, delayTicks: 2);
+            }
+            catch (Exception ex)
+            {
+                _log.Warning(
+                    $"Pose edit '{description}' restore scheduling failed: {ex.Message}");
+                RestorePriorSpeed();
+            }
+        }
+
+        ImportArm? arm = null;
+        void PublishReceipt(OperationReceipt receipt)
+        {
+            if (receipt.State != OperationReceiptState.Pending &&
+                ReferenceEquals(_importArm, arm))
+                _importArm = null;
+            try
+            {
+                onReceipt?.Invoke(receipt);
+            }
+            catch (Exception ex)
+            {
+                _log.Warning(
+                    $"Pose edit '{description}' receipt callback threw: {ex.Message}");
+            }
+        }
+
+        var reserved = _imports.Reserve(
+            actor,
+            description,
+            out var operation,
+            onFinished: success =>
+            {
+                if (!freeze || !success)
+                    ScheduleRestore();
+            },
+            onReceipt: PublishReceipt);
+        if (!reserved.Success || operation == null ||
+            reserved.OperationReceipt is not { } pending)
+        {
+            RestorePriorSpeed();
+            return PoseEditResult.Fail(
+                reserved.Detail ?? "The pose import could not be admitted.") with
+            {
+                Recovery = reserved.Recovery,
+                OperationReceipt = reserved.OperationReceipt,
+            };
+        }
+        arm = new ImportArm
+        {
+            Operation = operation,
+            TargetActorId = pending.TargetActorId,
+            Restore = RestorePriorSpeed,
+        };
+        _importArm = arm;
+        PublishReceipt(pending);
 
         // The settle tick (Brio ATC:120-165): the rewind and the
         // registration both run on the framework thread 4 ticks after the
@@ -437,75 +498,66 @@ public sealed class CleanPoseFacade
         // the plan is validated and scheduled; a failure on the settle
         // tick (IK bake landed meanwhile, gesture started) logs through
         // the same channel as Report and restores the speed.
-        _importArming = true;
-        _restoreImportArm = RestorePriorSpeed;
-        _framework.RunOnTick(() =>
+        try
         {
-            _importArming = false;
-            try
+            _framework.RunOnTick(() =>
             {
-                // Unconditional, as Brio's is: every control at speed 0
-                // rewinds, whether this import paused it or the user had.
-                if (animationTarget is { } rewindId)
+                // First instruction: a stale arm cannot rewind, begin, or restore
+                // any newer request's animation owner.
+                if (!ReferenceEquals(_importArm, arm) ||
+                    !_imports.IsCurrent(arm.Operation))
+                    return;
+                try
                 {
-                    var rewound = _animation.RewindPausedControls(rewindId);
-                    if (!rewound.Success)
-                        _log.Warning(
-                            $"Pose edit '{description}': settle rewind failed: {rewound.Detail}");
-                }
+                    // Unconditional, as Brio's is: every control at speed 0
+                    // rewinds, whether this import paused it or the user had.
+                    if (animationTarget is { } rewindId)
+                    {
+                        var rewound = _animation.RewindPausedControls(rewindId);
+                        if (!rewound.Success)
+                            _log.Warning(
+                                $"Pose edit '{description}': settle rewind failed: {rewound.Detail}");
+                    }
 
-                var begun = _imports.Begin(
-                    plan,
-                    description,
-                    onFinished: success =>
-                    {
-                        if (!freeze || !success)
-                            _framework.RunOnTick(RestorePriorSpeed, delayTicks: 2);
-                    },
-                    onReceipt: receipt =>
-                    {
-                        // The receipt is authoritative. The arm epoch is a
-                        // facade-local supersession guard for late callbacks.
-                        if (armEpoch == _armEpoch)
-                            ImportReceiptPublished?.Invoke(receipt);
-                    },
-                    // Expression imports run Brio's head dance: the engine
-                    // captures the pre-import head at arm time and restores
-                    // it after the apply stage.
-                    expression: options.AsExpression);
-                if (!begun.Success)
-                {
-                    _log.Warning(
-                        $"Pose edit '{description}' failed: {begun.Detail ?? "The pose import failed."}");
-                    _framework.RunOnTick(RestorePriorSpeed, delayTicks: 2);
-                }
-                else if (begun.OperationReceipt is { } pending)
-                {
-                    try
-                    {
-                        if (armEpoch == _armEpoch)
-                            ImportPendingPublished?.Invoke(pending);
-                    }
-                    catch (Exception ex)
+                    var begun = _imports.Begin(
+                        arm.Operation,
+                        plan,
+                        expression: options.AsExpression);
+                    if (!begun.Success)
                     {
                         _log.Warning(
-                            $"Pose edit '{description}' pending callback threw: {ex.Message}");
+                            $"Pose edit '{description}' failed: {begun.Detail ?? "The pose import failed."}");
+                        ScheduleRestore();
                     }
                 }
-            }
-            catch (Exception ex)
+                catch (Exception ex)
+                {
+                    // The pause must not outlive a throwing arm; restore
+                    // immediately rather than leaving the actor frozen.
+                    _log.Error(
+                        $"Pose edit '{description}' failed while arming: {ex.Message}");
+                    RestorePriorSpeed();
+                }
+            }, delayTicks: 4);
+        }
+        catch (Exception ex)
+        {
+            var cancelled = _imports.CancelActive(
+                $"Pose import arm scheduling failed: {ex.Message}");
+            RestorePriorSpeed();
+            if (ReferenceEquals(_importArm, arm))
+                _importArm = null;
+            return PoseEditResult.Fail(
+                cancelled.Detail ?? "The pose import could not be scheduled.") with
             {
-                // The pause must not outlive a throwing arm; restore
-                // immediately rather than leaving the actor frozen.
-                _log.Error(
-                    $"Pose edit '{description}' failed while arming: {ex.Message}");
-                RestorePriorSpeed();
-            }
-        }, delayTicks: 4);
-        // The operation is admitted by the settle-tick Begin call. Preserve
-        // the legacy synchronous arm result; the authoritative pending and
-        // terminal receipts travel through PoseImportCapture's receipt event.
-        return PoseEditResult.Ok(plan.FileBoneCount);
+                Recovery = cancelled.Recovery,
+                OperationReceipt = cancelled.OperationReceipt,
+            };
+        }
+        return PoseEditResult.Ok(plan.FileBoneCount) with
+        {
+            OperationReceipt = pending,
+        };
     }
 
     private readonly ISkeletonService _skeletons;

@@ -1,7 +1,9 @@
 using System;
 using Dalamud.Plugin.Services;
 using Poser.Application.Lifecycle;
+using Poser.Application.Operations;
 using Poser.Core;
+using Poser.Game.Posing;
 using Poser.Services;
 
 namespace Poser.Game;
@@ -18,6 +20,7 @@ public class GPoseService : IGPoseService
     private readonly IEventBus _eventBus;
     private readonly IPluginLog _log;
     private readonly ISessionLifecycleCoordinator _lifecycle;
+    private readonly Func<IPoseImportLifecycleControl>? _importControl;
     private readonly object _stateGate = new();
 
     private bool _lastGPoseState = false;
@@ -32,13 +35,15 @@ public class GPoseService : IGPoseService
         IFramework framework,
         IEventBus eventBus,
         IPluginLog log,
-        ISessionLifecycleCoordinator lifecycle)
+        ISessionLifecycleCoordinator lifecycle,
+        Func<IPoseImportLifecycleControl>? importControl = null)
     {
         _clientState = clientState;
         _framework = framework;
         _eventBus = eventBus;
         _log = log;
         _lifecycle = lifecycle;
+        _importControl = importControl;
 
         _framework.Update += OnFrameworkUpdate;
     }
@@ -123,6 +128,18 @@ public class GPoseService : IGPoseService
     {
         if (!_sessionActive)
             return false;
+
+        var imports = _importControl?.Invoke();
+        if (imports?.IsPending == true)
+        {
+            var drained = imports.CancelActive("GPose session exited.");
+            if (drained.OperationReceipt is not
+                { State: OperationReceiptState.Cancelled })
+            {
+                _log.Error(
+                    $"GPose exit pose-import drain failed: {drained.Detail ?? "unknown failure"}");
+            }
+        }
 
         var exit = _lifecycle.OnGposeExit();
         _sessionActive = false;

@@ -12,6 +12,7 @@ using Poser.Config;
 using Poser.Core;
 using Poser.Core.BoneInfo;
 using Poser.Game;
+using Poser.Game.Posing;
 using Poser.Game.Scene;
 using Poser.Services;
 using Poser.UI;
@@ -189,6 +190,9 @@ public class Poser : IDalamudPlugin
             // edge ran. Close token admission before cleanup can dispose any
             // provider-owned collaborator, so no late GPose entry can reopen
             // the graph during teardown.
+            serviceProvider.GetService<PoseImportCapture>()?
+                .InvalidateForHostTeardown(
+                    "Pose import invalidated because framework unload dispatch did not complete its drain.");
             lifecycle?.InvalidateForUnload();
             try
             {

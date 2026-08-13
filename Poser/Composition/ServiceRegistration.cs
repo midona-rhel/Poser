@@ -1,3 +1,4 @@
+using System;
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.Command;
@@ -145,6 +146,8 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Animation.FacialPoseCapture>();
         services.AddSingleton<Game.Posing.IkBakeCapture>();
         services.AddSingleton<Game.Posing.PoseImportCapture>();
+        services.AddSingleton<Func<Game.Posing.IPoseImportLifecycleControl>>(sp =>
+            () => sp.GetRequiredService<Game.Posing.PoseImportCapture>());
         services.AddSingleton<Game.Posing.PoseExportCapture>();
         // The pose library's CharaView preview. No force-resolve: the pane
         // holds it, and it only subscribes the framework tick while open.

@@ -14,9 +14,11 @@ using Poser.Application.Operations;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Core;
+using Poser.ContractTests.Fixtures;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Game;
+using Poser.Game.Posing;
 using Poser.Services;
 using ProductionPoser::Poser.Composition;
 
@@ -339,6 +341,9 @@ public sealed class LifecycleContractTests
     [Fact]
     public void Faulted_framework_unload_dispatch_still_disposes_provider()
     {
+        using var app = new PoseImportCaptureHarness();
+        var receipts = new List<OperationReceipt>();
+        Assert.True(app.BeginResetImport(receipts.Add).Success);
         var framework = Substitute.For<IFramework>();
         var gpose = Substitute.For<IGPoseService>();
         var lifecycle = Substitute.For<ISessionLifecycleCoordinator>();
@@ -346,9 +351,12 @@ public sealed class LifecycleContractTests
         framework.IsInFrameworkUpdateThread.Returns(false);
         framework.RunOnFrameworkThread(Arg.Any<Action>())
             .Returns(Task.FromException(new InvalidOperationException("dispatcher faulted")));
+        lifecycle.When(value => value.InvalidateForUnload()).Do(_ =>
+            Assert.Equal(OperationReceiptState.Failed, Assert.Single(receipts).State));
 
         using var provider = new ServiceCollection()
             .AddSingleton<ISessionLifecycleCoordinator>(lifecycle)
+            .AddSingleton(app.Imports)
             .AddSingleton<DisposalProbe>()
             .BuildServiceProvider();
         var probe = provider.GetRequiredService<DisposalProbe>();
@@ -361,6 +369,8 @@ public sealed class LifecycleContractTests
             cleanup: static () => { });
 
         Assert.True(probe.Disposed);
+        Assert.False(app.Imports.IsPending);
+        Assert.Null(receipts[0].Recovery);
         lifecycle.Received(1).InvalidateForUnload();
         log.Received(1).Error(
             Arg.Is<string>(message => message.Contains("dispatcher faulted")));
@@ -369,6 +379,9 @@ public sealed class LifecycleContractTests
     [Fact]
     public void Canceled_framework_unload_dispatch_still_disposes_provider()
     {
+        using var app = new PoseImportCaptureHarness();
+        var receipts = new List<OperationReceipt>();
+        Assert.True(app.BeginResetImport(receipts.Add).Success);
         var framework = Substitute.For<IFramework>();
         var gpose = Substitute.For<IGPoseService>();
         var lifecycle = Substitute.For<ISessionLifecycleCoordinator>();
@@ -376,9 +389,12 @@ public sealed class LifecycleContractTests
         framework.IsInFrameworkUpdateThread.Returns(false);
         framework.RunOnFrameworkThread(Arg.Any<Action>())
             .Returns(Task.FromCanceled(new CancellationToken(canceled: true)));
+        lifecycle.When(value => value.InvalidateForUnload()).Do(_ =>
+            Assert.Equal(OperationReceiptState.Failed, Assert.Single(receipts).State));
 
         using var provider = new ServiceCollection()
             .AddSingleton<ISessionLifecycleCoordinator>(lifecycle)
+            .AddSingleton(app.Imports)
             .AddSingleton<DisposalProbe>()
             .BuildServiceProvider();
         var probe = provider.GetRequiredService<DisposalProbe>();
@@ -391,6 +407,8 @@ public sealed class LifecycleContractTests
             cleanup: static () => { });
 
         Assert.True(probe.Disposed);
+        Assert.False(app.Imports.IsPending);
+        Assert.Null(receipts[0].Recovery);
         lifecycle.Received(1).InvalidateForUnload();
         log.Received(1).Error(
             Arg.Is<string>(message => message.Contains("canceled")));
@@ -777,6 +795,7 @@ public sealed class LifecycleContractTests
     [Fact]
     public void Production_registration_defers_autosave_until_exit_and_orders_attempt_before_legacy_event()
     {
+        using var importHarness = new PoseImportCaptureHarness();
         var clientState = Substitute.For<IClientState>();
         var framework = Substitute.For<IFramework>();
         var log = Substitute.For<IPluginLog>();
@@ -796,6 +815,7 @@ public sealed class LifecycleContractTests
             services.AddSingleton<IDalamudPluginInterface>(pluginInterface);
             services.AddPoserCore();
             services.AddPoserFeatures();
+            services.AddSingleton<PoseImportCapture>(importHarness.Imports);
             var actorManager = Substitute.For<IActorManager>();
             actorManager.Actors.Returns(Array.Empty<IActor>());
             services.AddSingleton<IActorManager>(actorManager);
@@ -831,6 +851,9 @@ public sealed class LifecycleContractTests
             });
 
             _ = provider.GetRequiredService<IGPoseService>();
+            Assert.Same(
+                importHarness.Imports,
+                provider.GetRequiredService<Func<IPoseImportLifecycleControl>>()());
             Assert.False(Directory.Exists(autoSaveRoot));
 
             clientState.IsGPosing.Returns(true);
