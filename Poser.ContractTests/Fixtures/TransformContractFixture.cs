@@ -86,8 +86,11 @@ internal sealed class FakeTransformRuntime : ITransformRuntimePort
 {
     private readonly Dictionary<TransformTargetId, TransformTargetState> _states = new();
 
+    public List<TransformTargetId> CaptureCalls { get; } = new();
     public List<TransformTargetId> ApplyCalls { get; } = new();
     public List<TransformTargetId> RestoreCalls { get; } = new();
+    public Action? DuringApply { get; set; }
+    public Action? DuringRestore { get; set; }
     public int? FailApplyCall { get; set; }
     public bool MutateBeforeApplyFailure { get; set; }
     public int? FailCaptureCall { get; set; }
@@ -111,6 +114,7 @@ internal sealed class FakeTransformRuntime : ITransformRuntimePort
 
     public TransformPortResult Capture(TransformTargetId target)
     {
+        CaptureCalls.Add(target);
         _captureCount++;
         if (FailCaptureCall == _captureCount)
             return TransformPortResult.Fail(
@@ -130,6 +134,7 @@ internal sealed class FakeTransformRuntime : ITransformRuntimePort
         bool rawBaseline = false)
     {
         ApplyCalls.Add(baseline.Target);
+        DuringApply?.Invoke();
         if (FailApplyCall == ApplyCalls.Count)
         {
             if (MutateBeforeApplyFailure)
@@ -146,6 +151,7 @@ internal sealed class FakeTransformRuntime : ITransformRuntimePort
     public TransformPortResult Restore(TransformTargetState state)
     {
         RestoreCalls.Add(state.Target);
+        DuringRestore?.Invoke();
         var call = RestoreCalls.Count;
         if (FailRestoreCalls.Contains(call))
         {

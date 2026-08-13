@@ -11,9 +11,10 @@ public sealed record TransformRecoveryAttempt(
 
 /// <summary>
 /// Typed evidence for an exhaustive restore sweep. Requested states remain the
-/// frozen retry payload; a failed port call is mutation-unknown.
+/// frozen retry payload; a failed port call is mutation-unknown. Receipts have
+/// reference identity so only the exact current pending token can be retried.
 /// </summary>
-public sealed record TransformRecoveryReceipt
+public sealed class TransformRecoveryReceipt
 {
     private readonly IReadOnlyList<TransformRecoveryAttempt> _attempts;
     private readonly IReadOnlyList<TransformRecoveryAttempt> _failures;

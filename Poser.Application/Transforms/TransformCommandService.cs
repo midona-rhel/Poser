@@ -33,6 +33,9 @@ public sealed class TransformCommandService
     {
         if (_gestures.RecoveryBarrier() is { } recoveryBarrier)
             return recoveryBarrier;
+        using var transition = _gestures.TryEnterTransition();
+        if (transition == null)
+            return _gestures.Busy();
         if (_gestures.ActiveGesture != null)
             return GestureResult.Fail(
                 "A transform gesture is active.");
@@ -85,6 +88,9 @@ public sealed class TransformCommandService
     {
         if (_gestures.RecoveryBarrier() is { } recoveryBarrier)
             return recoveryBarrier;
+        using var transition = _gestures.TryEnterTransition();
+        if (transition == null)
+            return _gestures.Busy();
         if (_gestures.ActiveGesture != null)
             return GestureResult.Fail("A transform gesture is active.");
         if (writes.Count == 0)
@@ -134,6 +140,9 @@ public sealed class TransformCommandService
     {
         if (_gestures.RecoveryBarrier() is { } recoveryBarrier)
             return recoveryBarrier;
+        using var transition = _gestures.TryEnterTransition();
+        if (transition == null)
+            return _gestures.Busy();
         if (_gestures.ActiveGesture != null)
             return GestureResult.Fail(
                 "A transform gesture is active.");

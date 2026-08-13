@@ -400,6 +400,8 @@ public sealed class TransactionContractTests
         Assert.Same(pending, app.Gestures.PendingRecovery);
         Assert.True(app.Runtime.State(bone).HasOverride);
         Assert.False(app.History.CanUndo);
+        var captureCount = app.Runtime.CaptureCalls.Count;
+        var applyCount = app.Runtime.ApplyCalls.Count;
         var restoreCount = app.Runtime.RestoreCalls.Count;
 
         AssertBarrier(app.Gestures.Begin(Gesture(bone)), pending);
@@ -412,9 +414,22 @@ public sealed class TransactionContractTests
         AssertBarrier(app.PoseEdits.Reset(new[] { bone }, PoseRegion.All, "blocked"), pending);
         AssertBarrier(app.PoseEdits.Flip(bone, "blocked"), pending);
         AssertBarrier(app.PoseEdits.Mirror(new[] { bone }, "blocked"), pending);
+        AssertBarrier(app.PoseEdits.CapturePortable(Array.Empty<TransformTargetId>()), pending);
+        AssertBarrier(
+            new PoseTransferService(app.PoseEdits)
+                .Capture(Array.Empty<TransformTargetId>()),
+            pending);
         AssertBarrier(app.PoseEdits.ApplyPortable(new[] { bone }, pose, "blocked"), pending);
+        AssertBarrier(app.PoseEdits.ApplyPortable(
+            Array.Empty<TransformTargetId>(), null!, "blocked null"), pending);
+        var unrelatedGesture = TransformGestureId.New();
+        AssertBarrier(app.Gestures.Update(unrelatedGesture, default), pending);
+        AssertBarrier(app.Gestures.Commit(unrelatedGesture), pending);
+        AssertBarrier(app.Gestures.Cancel(unrelatedGesture), pending);
         AssertBarrier(app.Gestures.Undo(), pending);
         AssertBarrier(app.Gestures.Redo(), pending);
+        Assert.Equal(captureCount, app.Runtime.CaptureCalls.Count);
+        Assert.Equal(applyCount, app.Runtime.ApplyCalls.Count);
         Assert.Equal(restoreCount, app.Runtime.RestoreCalls.Count);
 
         app.Runtime.FailRestoreCalls.Clear();
@@ -427,6 +442,150 @@ public sealed class TransactionContractTests
         Assert.Null(recovered.Detail);
         Assert.Null(app.Gestures.PendingRecovery);
         Assert.Equal(initial, app.Runtime.State(bone));
+        Assert.False(app.History.CanUndo);
+    }
+
+    [Fact]
+    public void Retry_replaces_partial_receipt_and_stale_token_returns_current_instance()
+    {
+        var target = TestIds.ActorTarget();
+        using var app = ActorHarness(target, TestStates.At(target, -2));
+        app.Runtime.FailApplyCall = 1;
+        app.Runtime.MutateBeforeApplyFailure = true;
+        app.Runtime.FailRestoreCalls.UnionWith(new[] { 1, 2 });
+
+        var failed = app.Commands.SetAbsolute(
+            target,
+            TestStates.Translated(7),
+            "retry token");
+        var original = Assert.IsType<TransformRecoveryReceipt>(failed.Recovery);
+
+        var partialRetry = app.Gestures.RetryRecovery(original);
+        var replacement = Assert.IsType<TransformRecoveryReceipt>(partialRetry.Recovery);
+        Assert.False(partialRetry.Success);
+        Assert.NotSame(original, replacement);
+        Assert.Same(replacement, app.Gestures.PendingRecovery);
+        var restoreCount = app.Runtime.RestoreCalls.Count;
+
+        var stale = app.Gestures.RetryRecovery(original);
+
+        Assert.False(stale.Success);
+        Assert.Contains("current", stale.Detail!, StringComparison.OrdinalIgnoreCase);
+        Assert.Same(replacement, stale.Recovery);
+        Assert.Same(replacement, app.Gestures.PendingRecovery);
+        Assert.Equal(restoreCount, app.Runtime.RestoreCalls.Count);
+
+        app.Runtime.FailRestoreCalls.Clear();
+        var complete = app.Gestures.RetryRecovery(replacement);
+
+        Assert.True(complete.Success);
+        Assert.True(Assert.IsType<TransformRecoveryReceipt>(complete.Recovery).Complete);
+        Assert.Null(app.Gestures.PendingRecovery);
+
+        var none = app.Gestures.RetryRecovery(replacement);
+        Assert.False(none.Success);
+        Assert.Contains("No transform recovery", none.Detail!);
+        Assert.Null(none.Recovery);
+    }
+
+    [Fact]
+    public void Additive_recovery_preserves_legacy_result_equality_hash_and_deconstruction()
+    {
+        var receipt = new TransformRecoveryReceipt(
+            Array.Empty<TransformRecoveryAttempt>());
+        Assert.NotEqual(
+            receipt,
+            new TransformRecoveryReceipt(Array.Empty<TransformRecoveryAttempt>()));
+        var gestureId = TransformGestureId.New();
+        var gesture = new GestureResult(false, "same", gestureId);
+        var gestureWithRecovery = gesture with { Recovery = receipt };
+        Assert.Equal(gesture, gestureWithRecovery);
+        Assert.True(gesture == gestureWithRecovery);
+        Assert.Equal(gesture.GetHashCode(), gestureWithRecovery.GetHashCode());
+        var (gestureSuccess, gestureDetail, deconstructedId) = gestureWithRecovery;
+        Assert.False(gestureSuccess);
+        Assert.Equal("same", gestureDetail);
+        Assert.Equal(gestureId, deconstructedId);
+
+        var edit = new PoseEditResult(false, 3, "same");
+        var editWithRecovery = edit with { Recovery = receipt };
+        Assert.Equal(edit, editWithRecovery);
+        Assert.True(edit == editWithRecovery);
+        Assert.Equal(edit.GetHashCode(), editWithRecovery.GetHashCode());
+        var (editSuccess, affected, editDetail) = editWithRecovery;
+        Assert.False(editSuccess);
+        Assert.Equal(3, affected);
+        Assert.Equal("same", editDetail);
+
+        var pose = Portable(TestIds.BoneTarget(), 1);
+        var capture = new PoseCaptureResult(false, pose, "same");
+        var captureWithRecovery = capture with { Recovery = receipt };
+        Assert.Equal(capture, captureWithRecovery);
+        Assert.True(capture == captureWithRecovery);
+        Assert.Equal(capture.GetHashCode(), captureWithRecovery.GetHashCode());
+        var (captureSuccess, capturedPose, captureDetail) = captureWithRecovery;
+        Assert.False(captureSuccess);
+        Assert.Same(pose, capturedPose);
+        Assert.Equal("same", captureDetail);
+    }
+
+    [Fact]
+    public void Reentrant_apply_is_busy_without_nested_runtime_calls()
+    {
+        var target = TestIds.ActorTarget();
+        using var app = ActorHarness(target, TestStates.At(target, 0));
+        GestureResult? reentrant = null;
+        app.Runtime.DuringApply = () =>
+        {
+            app.Runtime.DuringApply = null;
+            reentrant = app.Commands.SetAbsolute(
+                target,
+                TestStates.Translated(99),
+                "reentrant");
+        };
+
+        var outer = app.Commands.SetAbsolute(
+            target,
+            TestStates.Translated(2),
+            "outer");
+
+        Assert.True(outer.Success);
+        Assert.NotNull(reentrant);
+        Assert.False(reentrant.Value.Success);
+        Assert.Contains("busy", reentrant.Value.Detail!, StringComparison.OrdinalIgnoreCase);
+        Assert.Single(app.Runtime.ApplyCalls);
+        Assert.Empty(app.Runtime.RestoreCalls);
+        Assert.Null(app.Gestures.PendingRecovery);
+        Assert.True(app.History.CanUndo);
+    }
+
+    [Fact]
+    public void Reentrant_restore_is_busy_without_double_restore_or_pending_overwrite()
+    {
+        var target = TestIds.ActorTarget();
+        using var app = ActorHarness(target, TestStates.At(target, 0));
+        app.Runtime.FailApplyCall = 1;
+        app.Runtime.MutateBeforeApplyFailure = true;
+        app.Runtime.FailRestoreCalls.Add(1);
+        GestureResult? reentrant = null;
+        app.Runtime.DuringRestore = () =>
+        {
+            app.Runtime.DuringRestore = null;
+            reentrant = app.Gestures.Cancel(TransformGestureId.New());
+        };
+
+        var outer = app.Commands.SetAbsolute(
+            target,
+            TestStates.Translated(2),
+            "outer failure");
+
+        var pending = Assert.IsType<TransformRecoveryReceipt>(outer.Recovery);
+        Assert.False(outer.Success);
+        Assert.NotNull(reentrant);
+        Assert.False(reentrant.Value.Success);
+        Assert.Contains("busy", reentrant.Value.Detail!, StringComparison.OrdinalIgnoreCase);
+        Assert.Single(app.Runtime.RestoreCalls);
+        Assert.Same(pending, app.Gestures.PendingRecovery);
         Assert.False(app.History.CanUndo);
     }
 
@@ -492,6 +651,15 @@ public sealed class TransactionContractTests
 
     private static void AssertBarrier(
         PoseEditResult result,
+        TransformRecoveryReceipt pending)
+    {
+        Assert.False(result.Success);
+        Assert.Contains("recovery", result.Detail!, StringComparison.OrdinalIgnoreCase);
+        Assert.Same(pending, result.Recovery);
+    }
+
+    private static void AssertBarrier(
+        PoseCaptureResult result,
         TransformRecoveryReceipt pending)
     {
         Assert.False(result.Success);

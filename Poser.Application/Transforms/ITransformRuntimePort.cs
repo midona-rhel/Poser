@@ -45,7 +45,11 @@ public readonly record struct TransformPortResult(
         new(status, detail);
 }
 
-/// <summary>Native boundary used by application transform commands.</summary>
+/// <summary>
+/// Native boundary used by serialized Application/framework-thread transform
+/// transitions. Implementations may synchronously call observers; Application
+/// rejects any mutation reentered through those callbacks.
+/// </summary>
 public interface ITransformRuntimePort
 {
     TransformPortResult Capture(TransformTargetId target);
